@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+
+        <record id="odoogpt_openai_log_view_list" model="ir.ui.view">
+            <field name="name">openai.log.view.list</field>
+            <field name="model">openai.log</field>
+            <field name="arch" type="xml">
+                <tree name="openai_model_tree" string="OpenAI Logs" create="0" edit="0">
+                    <field name="date" />
+                    <field name="type" />
+                    <field name="parsed_request" optional="hide" />
+                    <field name="parsed_response" optional="hide" />
+                </tree>
+            </field>
+        </record>
+
+        <record id="odoogpt_openai_log_view_form" model="ir.ui.view">
+            <field name="name">openai.log.view.form</field>
+            <field name="model">openai.log</field>
+            <field name="arch" type="xml">
+                <form name="openai_model_form" create="0" edit="0">
+                    <sheet>
+                        <group colspan="2" >
+                            <field name="type" />
+                        </group>
+
+                        <group colspan="2" cols="1" string="Request">
+                            <div colspan="2">
+                                <div>
+                                    <label for="raw_request" />
+                                </div>
+                                <field name="raw_request" nolabel="1" class="font-monospace" />
+    
+                                <div>
+                                    <label for="parsed_request" />
+                                </div>
+                                <field name="parsed_request" nolabel="1" />
+                            </div>
+                        </group>
+                        
+                        <group colspan="2" cols="1" string="Response">
+                            <div colspan="2">
+                                <div>
+                                    <label for="raw_response" />
+                                </div>
+                                <field name="raw_response" nolabel="1" class="font-monospace" />
+    
+                                <div>
+                                    <label for="parsed_response" />
+                                </div>
+                                <field name="parsed_response" nolabel="1" />
+                            </div>
+                        </group>
+                    </sheet>
+                </form>
+            </field>
+        </record>
+
+
+        <record id="openai_log_act_window" model="ir.actions.act_window">
+            <field name="name">OdooGPT OpenAI Logs</field>
+            <field name="type">ir.actions.act_window</field>
+            <field name="res_model">openai.log</field>
+            <field name="view_mode">tree,form</field>
+            <field name="target">current</field>
+        </record>
+    </data>
+</odoo>

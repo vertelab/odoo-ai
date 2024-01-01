@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+
+        <record id="odoogpt_res_users_form_view" model="ir.ui.view">
+            <field name="name">ai_bot.res.users.form.view</field>
+            <field name="model">res.users</field>
+            <field name="inherit_id" ref="base.view_users_form" />
+            <field name="arch" type="xml">
+                <xpath expr="//form/sheet/notebook" position="inside">
+                    <page name="page_openai_settings" string="Ai_bot settings" groups="base.group_erp_manager">
+                        <div>
+                            <p class="text-muted">
+                                Change any OdooGPT settings by enabling it and editing it
+                            </p>
+
+                            <table class="w-100">
+                                <tbody>
+                                    <tr>
+                                        <td width="100%"><field name="openai_api_key" class="w-100"/></td>
+                                    </tr>
+                                    <tr>
+                                        <td width="100%"><field name="openai_api_key" class="w-100"/></td>
+                                    </tr>
+                                    <tr>
+                                        <td width="100%"><field name="openai_api_key" class="w-100"/></td>
+                                    </tr>
+                                    <tr>
+                                        <td width="100%"><field name="openai_api_key" class="w-100"/></td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </page>
+                </xpath>
+            </field>
+        </record>
+<!--
+
+        <record id="openai_res_users_form_simple_modif_view" model="ir.ui.view">
+            <field name="name">openai.res.users.form.simple.modif.view</field>
+            <field name="model">res.users</field>
+            <field name="inherit_id" ref="base.view_users_form_simple_modif" />
+            <field name="arch" type="xml">
+                <xpath expr="//form//notebook" position="inside">
+                    <page name="page_openai_settings" string="OpenAI settings" groups="odoogpt.group_odoogpt_user_settings_basic">
+                        <div>
+
+                            <p class="text-muted">
+                                Change any OdooGPT settings by enabling it and editing it
+                            </p>
+
+                            <table name="page_odoogpt_settings_table" class="page_odoogpt_settings_table w-100">
+                                <tbody>
+                                    <tr groups="odoogpt.group_odoogpt_user_settings_all">
+                                        <td class="text-nowrap">
+                                            <field name="odoogpt_openai_api_key_customize" nolabel="1"/>
+                                            <label for="odoogpt_openai_api_key_customize"/>
+                                        </td>
+                                        <td width="100%"><field name="odoogpt_openai_api_key" class="w-100" attrs="{'readonly': [('odoogpt_openai_api_key_customize', '!=', True)]}"/></td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </page>
+                </xpath>
+            </field>
+        </record>
+-->
+
+    </data>
+</odoo>
