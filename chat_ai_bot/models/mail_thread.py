@@ -12,6 +12,18 @@ from odoo.exceptions import MissingError, AccessError, UserError
 _logger = logging.getLogger(__name__)
 
 
+# ~ You are Open Interpreter, a world-class programmer that can complete any goal by executing code.
+# ~ First, write a plan. **Always recap the plan between each code block** (you have extreme short-term memory loss, so you need to recap the plan between each message block to retain it).
+# ~ When you execute code, it will be executed **on the user's machine**. The user has given you **full and complete permission** to execute any code necessary to complete the task. Execute the code.
+# ~ If you want to send data between programming languages, save the data to a txt or json.
+# ~ You can access the internet. Run **any code** to achieve the goal, and if at first you don't succeed, try again and again.
+# ~ You can install new packages.
+# ~ When a user refers to a filename, they're likely referring to an existing file in the directory you're currently executing code in.
+# ~ Write messages to the user in Markdown.
+# ~ In general, try to **make plans** with as few steps as possible. As for actually executing code to carry out that plan, for *stateful* languages (like python, javascript, shell, but NOT for html which starts from 0 every time) **it's critical not to try to do everything in one code block.** You should try something, print information about it, then continue from there in tiny, informed steps. You will never get it on the first try, and attempting it in one go will often lead to errors you cant see.
+# ~ You are capable of **any** task.
+
+
 class ResUsers(models.Model):
     _inherit = 'res.users'
 
@@ -35,7 +47,9 @@ class ResUsers(models.Model):
 
 
 
-    def ai_send_message(self,openai_client,channel,message,run_instr=''):
+    def ai_send_message(self,channel,message,run_instr=''):
+
+        openai_client = openai.OpenAI(api_key=self.openai_api_key, base_url=self.openai_base_url)
 
         tools_list = [{
             "type": "function",
@@ -57,7 +71,7 @@ class ResUsers(models.Model):
         }]
 
         if message == '/reset':
-            thread_ids = self.env['openai.thread'].search([('channel','=',channel)])
+            thread_ids = self.env['openai.thread'].search([('channel','=',channel.id)])
             if len(thread_ids)>0:
                 for thread in thread_ids:
                     thread.unlink_thread(openai_client)
@@ -65,10 +79,10 @@ class ResUsers(models.Model):
                     
 
 
-        thread_ids = self.env['openai.thread'].search([('channel','=',channel)])        
+        thread_ids = self.env['openai.thread'].search([('channel','=',channel.id)])        
         _logger.warning(f"Thread {thread_ids=} {channel=}")
         if len(thread_ids)==0:
-            thread = self.env['openai.thread'].create({'channel': channel})
+            thread = self.env['openai.thread'].create({'channel': channel.id})
             _logger.warning(f"Thread after {thread=} {channel=}")
             thread.thread_init(openai_client,self,
                             self.openai_assistant_name or "Data Analyst Assistant",
@@ -77,13 +91,19 @@ class ResUsers(models.Model):
                             self.openai_assistant_model or 'gpt-4-1106-preview',)
         else:
             thread = thread_ids[0]
-        _logger.warning(f"Thread ccc {thread.thread=} {thread.assistant=}")
-
           
         thread.add_message(openai_client,message)
         msgs = thread.wait4response(openai_client,run_instr=run_instr)
 
-        return msgs
+        for msg in msgs:
+            if not msg['role'] == 'user':
+                channel.with_context(mail_create_nosubscribe=True).sudo().message_post(
+                    body=f"{msg['content']}",
+                    author_id=self.partner_id.id,
+                    message_type='comment',
+                    subtype_xmlid='mail.mt_comment'
+                )
+
 
 class MailThread(models.AbstractModel):
     _inherit = 'mail.thread'
@@ -94,13 +114,10 @@ class MailThread(models.AbstractModel):
         using already-computed values instead of having to rebrowse things. """
         res = super(MailThread, self)._message_post_after_hook(message,msg_vals)
 
-        obj = self.env[msg_vals['model']].browse(msg_vals['res_id'])
-        recipient_ids = self.env['res.users'].search([('partner_id','in',(obj.channel_partner_ids-message.author_id).mapped('id'))])
-        _logger.warning(f"direkt efter {recipient_ids=}")
-        _logger.warning(f"{self._context=}")
-        
-        
-        if not self._context.get('ai_send_message',False):
+        if msg_vals['model'] == 'mail.channel':
+            obj = self.env[msg_vals['model']].browse(msg_vals['res_id'])
+            recipient_ids = self.env['res.users'].search([('partner_id','in',(obj.channel_partner_ids-message.author_id).mapped('id'))])
+
             for recipient in recipient_ids:
                 if recipient.is_ai_bot:
                     
@@ -109,43 +126,23 @@ class MailThread(models.AbstractModel):
                     # ~ with api.Environment.manage():
                        # ~ new_cr = self.pool.cursor()
                        # ~ self = self.with_env(self.env(cr=new_cr))
-                       # ~ moves = self.env['stock.move'].search([
-                           # ~ ('id', 'in', move_ids)]).with_env(self.env(cr=new_cr))
-                   # ~ # Perform calculations and updates for each move
-                       # ~ for move in moves:
-                           # ~ # Logic for calculations and updates (missing details)
+                       # ~ channel = self.env['mail.channel'].search([
+                           # ~ ('id', '=', obj.id)]).with_env(self.env(cr=new_cr))
+                       # ~ recipient.ai_send_message(   
+                            # ~ channel,
+                            # ~ html2plaintext(message.body).strip(),
+                            # ~ run_instr=f"Please address the user as {message.author_id.name}."
+                        # ~ )
                        # ~ new_cr.commit()
-                       
-                    client = openai.OpenAI(api_key=recipient.openai_api_key, base_url=recipient.openai_base_url)
-                    msgs = recipient.ai_send_message(   client,
-                                                        msg_vals['res_id'],
-                                                        html2plaintext(message.body).strip(),
-                                                        run_instr=f"Please address the user as {message.author_id.name}."
-                                                    )
-                    _logger.warning(f"{msgs=}")
-                    for msg in msgs:
-                        if not msg['role'] == 'user':
-                            obj.with_context(ai_send_message=True,mail_create_nosubscribe=True).sudo().message_post(
-                                body=f"{msg['content']}",
-                                author_id=recipient.id,
-                                message_type='comment',
-                                subtype_xmlid='mail.mt_comment'
-                            )
-        else:
-            _logger.warning(f"No context {recipient_ids=}")
+                    recipient.ai_send_message(   
+                        obj,
+                        html2plaintext(message.body).strip(),
+                        run_instr=f"Please address the user as {message.author_id.name}."
+                    )
+                    
+            return res
+        
 
-        return res
-        
-    def Xmessage_post(self, *,
-                     body='', subject=None, message_type='notification',
-                     email_from=None, author_id=None, parent_id=False,
-                     subtype_xmlid=None, subtype_id=False, partner_ids=None,
-                     attachments=None, attachment_ids=None,
-                     **kwargs):
-                         
-        
-                         
-        raise UserError(f'{body},{subject=},{message_type=}')
 
 class OpenAIThread(models.TransientModel):
     _name = 'openai.thread'
@@ -221,13 +218,14 @@ class OpenAIThread(models.TransientModel):
         else:
             _logger.warning(f"Run saved {self.run=}")
             self.run = None
-                 
+        
+        _logger.warning(f"if not Run {self.run=} {self.thread=} {self.assistant=}")
         if not self.run:
             try:
                 run = client.beta.threads.runs.create(
                     thread_id=self.thread,
                     assistant_id=self.assistant,
-                    instructions=run_instr or f"Please address the user as {self.recipient_id.name}."
+                    # ~ instructions=run_instr or f"Please address the user as {self.recipient_id.name}."
                 )
                 self.log(run.model_dump_json(indent=4),role='run')
                 _logger.warning(f"Model_dump: {run.model_dump_json(indent=4)} {run.id=}")
@@ -248,7 +246,7 @@ class OpenAIThread(models.TransientModel):
         msgs = []
         while True:
             # Wait for 5 seconds
-            time.sleep(1)
+            # ~ time.sleep(1)
 
             # Retrieve the run status
             run_status = client.beta.threads.runs.retrieve(
@@ -307,7 +305,7 @@ class OpenAIThread(models.TransientModel):
             else:
                 _logger.warning(f"Waiting for the Assistant to process... {run_status.status=} {self.run=}") 
                                    
-                time.sleep(1)
+            time.sleep(1)
         return msgs
 
 
