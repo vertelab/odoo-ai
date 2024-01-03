@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 {
-    'name': 'Chat AI-Bot',
-    'summary': 'Make OdooBot finally useful. Integrate with OpenAI ChatGPT (GPT-3) or other LLM',
-    'description': """Make OdooBot useful by adding OpenAI GPT-3 intelligence """,
+    'name': 'Chat AI-Bot for OpenAI',
+    'summary': 'AI Bot for LLM-servers compatible with OpenAI/using openai-api',
+    'description': """AI Bot for LLM-servers compatible with OpenAI/using openai-api """,
     'license': 'AGPL-3',
     'version': '16.0.1.0.3',
     'category': 'Productivity/Discuss',
@@ -10,7 +10,7 @@
     'website': 'https://vertel.se',
 
     'depends': [
-        'mail_bot','mail',
+        'chat_ai_bot_common'
     ],
     'external_dependencies': {
         'python': [
@@ -19,21 +19,7 @@
     },
 
     'data': [
-        'security/res_groups.xml',
-        'security/ir.model.access.csv',
-
-        'views/res_users.xml',
-
-        'views/openai_log.xml',
-
-        'views/menu.xml',
     ],
-
-#    'assets': {
-#        'mail.assets_messaging': [
-#            'odoogpt/static/src/models/*.js',
-#        ],
-#    },
 
 #    'images': [
 #        'static/description/cover/odoogpt.png',
