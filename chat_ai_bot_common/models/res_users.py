@@ -31,7 +31,14 @@ class ResUsers(models.Model):
 
         #TODO Announce this command move to JS/controller
         if message == '/reset':
-            return thread.thread_unlink(openai_client,channel)
+            for msg in thread.thread_unlink(openai_client,channel):
+                if not msg['role'] == 'user':
+                    channel.with_context(mail_create_nosubscribe=True).sudo().message_post(
+                        body=f"{msg['content']}",
+                        author_id=self.partner_id.id,
+                        message_type='comment',
+                        subtype_xmlid='mail.mt_comment'
+                )
           
         thread.add_message(openai_client,message)
         for msg in thread.wait4response(openai_client):

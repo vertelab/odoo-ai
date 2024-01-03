@@ -84,4 +84,6 @@ class OpenAIThread(models.TransientModel):
         for thread in self.env['openai.thread'].search([('channel_id','=',channel.id)]):
             thread._thread_unlink(client,channel)
         self.env['openai.thread'].search([('channel_id','=',channel.id)]).unlink()
-        return [{'role': 'assistant','content': _('Reset done') }]
+        msg=[{'role': 'assistant','content': _('Reset done') }]
+        self.log(msg[0]['content'],self.recipient_id.partner_id,role=msg[0]['role'])
+        return msg
