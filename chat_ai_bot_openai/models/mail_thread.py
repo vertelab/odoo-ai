@@ -9,6 +9,8 @@ from odoo.tools import html2plaintext, plaintext2html
 from odoo import models, fields, api, _
 from odoo.exceptions import MissingError, AccessError, UserError
 
+from odoo.addons.queue_job.job import Job
+
 _logger = logging.getLogger(__name__)
 
 
@@ -43,14 +45,94 @@ class ResUsers(models.Model):
     openai_assistant_model = fields.Char(required=False)
     openai_assistant = fields.Char(required=False)
     
-
-
-
-
-    def ai_send_message(self,channel,message,run_instr=''):
+    def ai_message_post(self,channel,author,message):
 
         openai_client = openai.OpenAI(api_key=self.openai_api_key, base_url=self.openai_base_url)
 
+        #TODO Announce this command
+        if message == '/reset':
+            thread_ids = self.env['openai.thread'].search([('channel','=',channel.id)])
+            if len(thread_ids)>0:
+                for thread in thread_ids:
+                    thread.unlink_thread(openai_client)
+            return []
+                    
+        thread_ids = self.env['openai.thread'].search([('channel','=',channel.id)])        
+        _logger.warning(f"Thread {thread_ids=} {channel=}")
+        if len(thread_ids)==0:
+            thread = self.env['openai.thread'].create({'channel': channel.id})
+            _logger.warning(f"Thread after {thread=} {channel=}")
+            thread.thread_init(openai_client,self,
+                            )
+        else:
+            thread = thread_ids[0]
+          
+        thread.add_message(openai_client,message)
+        for msg in thread.wait4response(openai_client,author):
+            if not msg['role'] == 'user':
+                _logger.warning(f"{msg['role']} {msg['content']}")
+                channel.with_context(mail_create_nosubscribe=True).sudo().message_post(
+                    body=f"{msg['content']}",
+                    author_id=self.partner_id.id,
+                    message_type='comment',
+                    subtype_xmlid='mail.mt_comment'
+                )
+
+
+class MailThread(models.AbstractModel):
+    _inherit = 'mail.thread'
+
+    def _message_post_after_hook(self, message, msg_vals):
+        """ Hook to add custom behavior after having posted the message. Both
+        message and computed value are given, to try to lessen query count by
+        using already-computed values instead of having to rebrowse things. """
+        res = super(MailThread, self)._message_post_after_hook(message,msg_vals)
+
+        if msg_vals['model'] == 'mail.channel':
+
+            obj = self.env[msg_vals['model']].browse(msg_vals['res_id'])
+
+            for recipient in self.env['res.users'].search(
+                        [('partner_id','in',(obj.channel_partner_ids-message.author_id).mapped('id'))]
+                    ):
+                if recipient.is_ai_bot:
+                    #TODO non-blocking option syspar: recipient.with_delay().ai_send_message( 
+                    recipient.ai_message_post(   
+                        obj,
+                        message.author_id,
+                        html2plaintext(message.body).strip(),
+                    )
+                    
+            return res
+        
+# ~ https://www.linkedin.com/pulse/run-background-process-odoo-multi-threading-ahmed-rashad-mba-/
+# ~ https://www.cybrosys.com/blog/the-significance-of-multi-threading-in-odoo-16
+# ~ with api.Environment.manage():
+   # ~ new_cr = self.pool.cursor()
+   # ~ self = self.with_env(self.env(cr=new_cr))
+   # ~ obj = self.env['mail.channel'].browse(obj.id)
+   # ~ recipient = self.env['res.users'].browse(recipient.id)
+   # ~ recipient.ai_send_message(   
+        # ~ obj,
+        # ~ html2plaintext(message.body).strip(),
+        # ~ run_instr=f"Please address the user as {message.author_id.name}."
+    # ~ )
+   # ~ new_cr.commit()
+
+
+class OpenAIThread(models.TransientModel):
+    _name = 'openai.thread'
+    
+    channel = fields.Char(required=False)
+    assistant = fields.Char(required=False)
+    thread = fields.Char(required=False)
+    run = fields.Char(required=False)
+    recipient_id = fields.Many2one(comodel_name='res.users', string='Recipient')
+    
+
+    
+    def thread_init(self,client,user):
+        
         tools_list = [{
             "type": "function",
             "function": {
@@ -70,102 +152,14 @@ class ResUsers(models.Model):
             }
         }]
 
-        if message == '/reset':
-            thread_ids = self.env['openai.thread'].search([('channel','=',channel.id)])
-            if len(thread_ids)>0:
-                for thread in thread_ids:
-                    thread.unlink_thread(openai_client)
-            return []
-                    
-
-
-        thread_ids = self.env['openai.thread'].search([('channel','=',channel.id)])        
-        _logger.warning(f"Thread {thread_ids=} {channel=}")
-        if len(thread_ids)==0:
-            thread = self.env['openai.thread'].create({'channel': channel.id})
-            _logger.warning(f"Thread after {thread=} {channel=}")
-            thread.thread_init(openai_client,self,
-                            self.openai_assistant_name or "Data Analyst Assistant",
-                            self.openai_assistant_instructions or "You are a personal Data Analyst Assistant",
-                            self.openai_assistant_tools or tools_list,
-                            self.openai_assistant_model or 'gpt-4-1106-preview',)
-        else:
-            thread = thread_ids[0]
-          
-        thread.add_message(openai_client,message)
-        msgs = thread.wait4response(openai_client,run_instr=run_instr)
-
-        for msg in msgs:
-            if not msg['role'] == 'user':
-                channel.with_context(mail_create_nosubscribe=True).sudo().message_post(
-                    body=f"{msg['content']}",
-                    author_id=self.partner_id.id,
-                    message_type='comment',
-                    subtype_xmlid='mail.mt_comment'
-                )
-
-
-class MailThread(models.AbstractModel):
-    _inherit = 'mail.thread'
-
-    def _message_post_after_hook(self, message, msg_vals):
-        """ Hook to add custom behavior after having posted the message. Both
-        message and computed value are given, to try to lessen query count by
-        using already-computed values instead of having to rebrowse things. """
-        res = super(MailThread, self)._message_post_after_hook(message,msg_vals)
-
-        if msg_vals['model'] == 'mail.channel':
-            obj = self.env[msg_vals['model']].browse(msg_vals['res_id'])
-            recipient_ids = self.env['res.users'].search([('partner_id','in',(obj.channel_partner_ids-message.author_id).mapped('id'))])
-
-            for recipient in recipient_ids:
-                if recipient.is_ai_bot:
-                    
-                    # ~ https://www.linkedin.com/pulse/run-background-process-odoo-multi-threading-ahmed-rashad-mba-/
-                    # ~ https://www.cybrosys.com/blog/the-significance-of-multi-threading-in-odoo-16
-                    # ~ with api.Environment.manage():
-                       # ~ new_cr = self.pool.cursor()
-                       # ~ self = self.with_env(self.env(cr=new_cr))
-                       # ~ channel = self.env['mail.channel'].search([
-                           # ~ ('id', '=', obj.id)]).with_env(self.env(cr=new_cr))
-                       # ~ recipient.ai_send_message(   
-                            # ~ channel,
-                            # ~ html2plaintext(message.body).strip(),
-                            # ~ run_instr=f"Please address the user as {message.author_id.name}."
-                        # ~ )
-                       # ~ new_cr.commit()
-                    recipient.ai_send_message(   
-                        obj,
-                        html2plaintext(message.body).strip(),
-                        run_instr=f"Please address the user as {message.author_id.name}."
-                    )
-                    
-            return res
-        
-
-
-class OpenAIThread(models.TransientModel):
-    _name = 'openai.thread'
-    
-    channel = fields.Char(required=False)
-    assistant = fields.Char(required=False)
-    thread = fields.Char(required=False)
-    run = fields.Char(required=False)
-    recipient_id = fields.Many2one(comodel_name='res.users', string='Recipient')
-    
-    
-
-    
-    def thread_init(self,client,user,assistant_name,assistant_instructions,assistant_tools,
-                         assistant_model='gpt-4-1106-preview'):
         _logger.warning(f"Thread Init {client=} {user=}")
         if not user.openai_assistant:
             
-            user.openai_assistant = self.assistant = client.beta.assistants.create(
-                    name=assistant_name,
-                    instructions=assistant_instructions,
-                    tools=assistant_tools,
-                    model=assistant_model,
+            user.openai_assistant = user.assistant = client.beta.assistants.create(
+                    name=user.assistant_name or "Data Analyst Assistant",
+                    instructions=user.openai_assistant_instructions or "You are a personal Data Analyst Assistant",
+                    tools=tools_list,
+                    model=user.openai_assistant_model or 'gpt-4-1106-preview',
                 ).id
         else:
             self.assistant = user.openai_assistant
@@ -205,7 +199,7 @@ class OpenAIThread(models.TransientModel):
             _logger.warning(f"OPENAI: Thread Status error {e.status_code} {e.response}")
             self.log(f"OPENAI: Thread Status error {e.status_code} {e.response}",status_code=e.status_code,role='openai',)
         
-    def wait4response(self,client,run_instr=''):
+    def wait4response(self,client,author):
 
         if self.run:
             run_status = client.beta.threads.runs.retrieve(
@@ -225,7 +219,7 @@ class OpenAIThread(models.TransientModel):
                 run = client.beta.threads.runs.create(
                     thread_id=self.thread,
                     assistant_id=self.assistant,
-                    # ~ instructions=run_instr or f"Please address the user as {self.recipient_id.name}."
+                    instructions=f"Please address the user as {author.name}."
                 )
                 self.log(run.model_dump_json(indent=4),role='run')
                 _logger.warning(f"Model_dump: {run.model_dump_json(indent=4)} {run.id=}")
@@ -318,6 +312,7 @@ class OpenAIThread(models.TransientModel):
             _logger.warning(f"OPENAI: Delete Ratelimit {e.status_code} {e.response}")
         except openai.APIStatusError as e:
             _logger.warning(f"OPENAI: Delete Status error {e.status_code} {e.response}")
+        self.recipient_id.openai_assistant = None
         self.unlink()
             
             
