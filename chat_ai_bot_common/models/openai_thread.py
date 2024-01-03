@@ -15,16 +15,24 @@ class OpenAIThread(models.TransientModel):
     thread = fields.Char(required=False)
     run = fields.Char(required=False)
     recipient_id = fields.Many2one(comodel_name='res.users', string='Recipient')
-    author_id = fields.Many2one(comodel_name='res.users', string='Author')
+    author_id = fields.Many2one(comodel_name='res.partner', string='Author')
+    
+    
+    @api.model
+    def client_init(self,user):
+        return None
+    
+    
     
     def thread_values(self,channel,recipient,author):
         return {
                 'channel_id': channel.id,
                 'recipient_id': recipient.id,
-                'author': author.id,
+                'author_id': author.id,
                 'thread': channel.name,
             }
     
+    @api.model
     def thread_init(self,client,channel,recipient,author):
         """
             Initialize a thread, create if not available
@@ -37,39 +45,43 @@ class OpenAIThread(models.TransientModel):
             thread = thread_ids[0]
         return thread
 
-    def log_values(self,message,role='user',status_code=200):
-        return {'recipient_id':self.recipient_id.id,
-                                       'channel_id': self.channel, 
-                                       'assistant': self.assistant, 
-                                       'thread': self.thread,
-                                       'run':self.run,
-                                       'message': message,
-                                       'status_code': status_code,
-                                       'role': role})
-        
-    def log(self,message,role='user',status_code=200):
-        self.env['openai.log'].create(self.log_values(message,role,status_code))
+    def log_values(self,message,author,role='user',status_code=200):
+        return {
+            'author_id':author.id,
+            'channel_id': self.channel_id.id, 
+            'assistant': self.assistant, 
+            'thread': self.thread,
+            'run':self.run,
+            'message': message,
+            'status_code': status_code,
+            'role': role
+           }
+
+    def log(self,message,author,role='user',status_code=200):
+        self.env['openai.log'].create(self.log_values(message,author,role,status_code))
         
     def add_message(self,client,message,role='user'):
         """
             Add a Message to a Thread
         """
-        self.log(message)
+        self.log(message,self.author_id,role=role)
                 
-    def wait4response(self,client,author):
+    def wait4response(self,client):
         """
             Wait for the LLM to response
         """
-        return [{'role': 'assistant','content': _('Please install driver for a LLM') }]
+        msg = [{'role': 'assistant','content': _('Please install driver for a LLM') }]
+        self.log(msg[0]['content'],self.recipient_id.partner_id,role=msg[0]['role'])
+        return msg
        
-    def _unlink_thread(self,client,channel):
+    def _thread_unlink(self,client,channel):
         return
 
-    def unlink_thread(self,client,channel):
+    def thread_unlink(self,client,channel):
         """
              Tidy up and delete the thread
         """
-        for thread in self.env['openai.thread'].search([('channel','=',channel.id)]):
-            thread._unlink_thread(channel)
-        self.env['openai.thread'].search([('channel','=',channel.id)]).unlink()
+        for thread in self.env['openai.thread'].search([('channel_id','=',channel.id)]):
+            thread._thread_unlink(client,channel)
+        self.env['openai.thread'].search([('channel_id','=',channel.id)]).unlink()
         return [{'role': 'assistant','content': _('Reset done') }]

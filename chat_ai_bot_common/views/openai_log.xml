@@ -14,7 +14,7 @@
                     <field name="channel_id" optional="hide" />
                     <field name="status_code" optional="hide" />
                     <field name="assistant" optional="hide" />
-                    <field name="recipient_id" optional="hide" />
+                    <field name="author_id" optional="hide" />
                     <field name="message" optional="hide" />
                 </tree>
             </field>
@@ -34,7 +34,7 @@
                     <field name="channel_id"  />
                     <field name="status_code"  />
                     <field name="assistant"  />
-                    <field name="recipient_id"  />
+                    <field name="author_id"  />
                         </group>
 
                         <group colspan="2" cols="1" string="Request/resp">

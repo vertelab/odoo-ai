@@ -106,7 +106,7 @@ class OpenAIThread(models.TransientModel):
             _logger.warning(f"OPENAI: Thread Status error {e.status_code} {e.response}")
             self.log(f"OPENAI: Thread Status error {e.status_code} {e.response}",status_code=e.status_code,role='openai',)
         
-    def wait4response(self,client,author):
+    def wait4response(self,client):
 
         if self.run:
             run_status = client.beta.threads.runs.retrieve(

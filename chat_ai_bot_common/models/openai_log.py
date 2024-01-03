@@ -20,7 +20,7 @@ class OpenaiLog(models.Model):
     status_code = fields.Integer(required=False)
     thread = fields.Char(string='Thread ID',help="Thread ID for the request")
     run = fields.Char(string='Run ID',help="Run ID for the request")
-    recipient_id = fields.Many2one(comodel_name='res.users', string='Recipient')
+    author_id = fields.Many2one(comodel_name='res.partner', string='Author',help="Part/consignor that sent this message")
     
     message = fields.Text(
         string='Raw Request',

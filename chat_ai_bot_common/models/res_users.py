@@ -26,12 +26,12 @@ class ResUsers(models.Model):
     
     def ai_message_post(self,channel,author,message):
 
-        openai_client = self.env['openai.thread'].client_init(recipient)
-        thread = self.env['openai.thread'].thread_init(openai_client,channel,recipient,author)        
+        openai_client = self.env['openai.thread'].client_init(self)
+        thread = self.env['openai.thread'].thread_init(openai_client,channel,self,author)        
 
         #TODO Announce this command move to JS/controller
         if message == '/reset':
-            return thread.unlink(openai_client,channel,recipient,author)
+            return thread.thread_unlink(openai_client,channel)
           
         thread.add_message(openai_client,message)
         for msg in thread.wait4response(openai_client):

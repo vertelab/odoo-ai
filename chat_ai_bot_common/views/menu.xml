@@ -15,7 +15,7 @@
             id="openai_settings_logs_menu"
             name="Other"
             groups="base.group_erp_manager"
-            parent="chat_ai_bot.OpenAI_settings_menu"
+            parent="chat_ai_bot_common.OpenAI_settings_menu"
             sequence="90"
         >
             <menuitem
