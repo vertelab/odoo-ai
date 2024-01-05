@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 
 import logging
+import pickle
+import base64
 
 from odoo import models, fields, api, _
 from odoo.exceptions import MissingError, AccessError, UserError
@@ -16,6 +18,7 @@ class OpenAIThread(models.TransientModel):
     run = fields.Char(required=False)
     recipient_id = fields.Many2one(comodel_name='res.users', string='Recipient')
     author_id = fields.Many2one(comodel_name='res.partner', string='Author')
+    client = fields.Text()
     
     
     @api.model
@@ -87,3 +90,9 @@ class OpenAIThread(models.TransientModel):
         msg=[{'role': 'assistant','content': _('Reset done') }]
         self.log(msg[0]['content'],self.recipient_id.partner_id,role=msg[0]['role'])
         return msg
+
+    def load_client(self):
+        return pickle.loads(base64.decode(self.client))
+    def client_init(self,client):
+        self.client = base64.encode(pickle.dumps(client))
+    

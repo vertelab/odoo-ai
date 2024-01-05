@@ -71,15 +71,13 @@ class OpenAIThread(models.TransientModel):
 
         _logger.warning(f"Thread Init {client=} {recipient=}")
         if not recipient.openai_assistant:
-            
-            recipient.openai_assistant = thread.assistant = client.beta.assistants.create(
+            recipient.openai_assistant = client.beta.assistants.create(
                     name=recipient.openai_assistant_name or "Data Analyst Assistant",
                     instructions=recipient.openai_assistant_instructions or "You are a personal Data Analyst Assistant",
                     tools=tools_list,
                     model=recipient.openai_assistant_model or 'gpt-4-1106-preview',
                 ).id
-        else:
-            thread.assistant = recipient.openai_assistant
+        thread.assistant = recipient.openai_assistant
         thread.thread = client.beta.threads.create().id
         return thread
             
