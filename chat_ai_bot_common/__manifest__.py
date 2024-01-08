@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+-Bot# -*- coding: utf-8 -*-
 ##############################################################################
 #
 #    Odoo SA, Open Source Management Solution, third party addon
