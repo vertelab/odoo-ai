@@ -18,7 +18,6 @@
 #    along with this program. If not, see <http://www.gnu.org/licenses/>.
 #
 ##############################################################################
-
 {
     'name': 'Chat AI-Bot: for OpenAI',
     'version': '16.01.0.3',
