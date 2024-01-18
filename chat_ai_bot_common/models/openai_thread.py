@@ -90,8 +90,8 @@ class OpenAIThread(models.TransientModel):
         return pickle.loads(self.client)
 
     def client_init(self, client):
-        print("self---", self)
-        self.write({'client': client})
+        # self.client = base64.encode(pickle.dumps(client))
+        self.client = self.custom_serialize(client)
         return client
 
     def custom_serialize(self, obj):
