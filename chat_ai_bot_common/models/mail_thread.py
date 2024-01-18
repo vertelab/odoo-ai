@@ -8,6 +8,7 @@ from odoo.exceptions import MissingError, AccessError, UserError
 
 _logger = logging.getLogger(__name__)
 
+
 # ~ You are Open Interpreter, a world-class programmer that can complete any goal by executing code.
 # ~ First, write a plan. **Always recap the plan between each code block** (you have extreme short-term memory loss, so you need to recap the plan between each message block to retain it).
 # ~ When you execute code, it will be executed **on the user's machine**. The user has given you **full and complete permission** to execute any code necessary to complete the task. Execute the code.
@@ -26,37 +27,35 @@ class MailThread(models.AbstractModel):
         """ Hook to add custom behavior after having posted the message. Both
         message and computed value are given, to try to lessen query count by
         using already-computed values instead of having to rebrowse things. """
-        res = super(MailThread, self)._message_post_after_hook(message,msg_vals)
+        res = super(MailThread, self)._message_post_after_hook(message, msg_vals)
 
         if msg_vals['model'] == 'mail.channel':
 
             obj = self.env[msg_vals['model']].browse(msg_vals['res_id'])
 
             for recipient in self.env['res.users'].search(
-                        [('partner_id','in',(obj.channel_partner_ids-message.author_id).mapped('id'))]
-                    ):
+                    [('partner_id', 'in', (obj.channel_partner_ids - message.author_id).mapped('id'))]
+            ):
                 if recipient.is_ai_bot:
-                    #TODO non-blocking option syspar: recipient.with_delay().ai_send_message( 
-                    recipient.ai_message_post(   
+                    # TODO non-blocking option syspar: recipient.with_delay().ai_send_message(
+                    recipient.ai_message_post(
                         obj,
                         message.author_id,
                         html2plaintext(message.body).strip(),
                     )
-                    
+
             return res
-        
+
 # ~ https://www.linkedin.com/pulse/run-background-process-odoo-multi-threading-ahmed-rashad-mba-/
 # ~ https://www.cybrosys.com/blog/the-significance-of-multi-threading-in-odoo-16
 # ~ with api.Environment.manage():
-   # ~ new_cr = self.pool.cursor()
-   # ~ self = self.with_env(self.env(cr=new_cr))
-   # ~ obj = self.env['mail.channel'].browse(obj.id)
-   # ~ recipient = self.env['res.users'].browse(recipient.id)
-   # ~ recipient.ai_send_message(   
-        # ~ obj,
-        # ~ html2plaintext(message.body).strip(),
-        # ~ run_instr=f"Please address the user as {message.author_id.name}."
-    # ~ )
-   # ~ new_cr.commit()
-
-
+# ~ new_cr = self.pool.cursor()
+# ~ self = self.with_env(self.env(cr=new_cr))
+# ~ obj = self.env['mail.channel'].browse(obj.id)
+# ~ recipient = self.env['res.users'].browse(recipient.id)
+# ~ recipient.ai_send_message(
+# ~ obj,
+# ~ html2plaintext(message.body).strip(),
+# ~ run_instr=f"Please address the user as {message.author_id.name}."
+# ~ )
+# ~ new_cr.commit()

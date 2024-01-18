@@ -11,6 +11,7 @@ from odoo.exceptions import MissingError, AccessError, UserError
 
 _logger = logging.getLogger(__name__)
 
+
 # import pickle
 # var = pickle.dimps(my_obj)
 # obj = pickle.loads(var)
@@ -30,62 +31,61 @@ _logger = logging.getLogger(__name__)
 # ~ You are capable of **any** task.
 
 
-#TODO driver type on recipient so we know if it's us 
-#TODO use litellm.utils.function_to_dict https://litellm.vercel.app/docs/completion/function_call#litellmfunction_to_dict---convert-functions-to-dictionary-for-openai-function-calling
+# TODO driver type on recipient so we know if it's us
+# TODO use litellm.utils.function_to_dict https://litellm.vercel.app/docs/completion/function_call#litellmfunction_to_dict---convert-functions-to-dictionary-for-openai-function-calling
 
 class OpenAIThread(models.TransientModel):
     _inherit = 'openai.thread'
-    
+
     message = fields.Text(string='Message')
     role = fields.Char(string='Role')
-    
-    def thread_values(self,channel,recipient,author):
-        return super(OpenAIThread,self).thread_values(channel,recipient,author)
-    
+
+    def thread_values(self, channel, recipient, author):
+        return super(OpenAIThread, self).thread_values(channel, recipient, author)
+
     @api.model
-    def thread_init(self,client,channel,recipient,author):
-        #TODO driver type from recipient, is it us?
-        thread = super(OpenAIThread,self).thread_init(client,channel,recipient,author)
-        cient = thread.client_init(OpenInterpreter())
+    def thread_init(self, client, channel, recipient, author):
+        # TODO driver type from recipient, is it us?
+        thread = super(OpenAIThread, self).thread_init(client, channel, recipient, author)
+        client = thread.client_init(OpenInterpreter())
         _logger.warning(f"Thread Init {client=} {recipient=}")
         if not recipient.openai_assistant:
-            recipient.openai_assistant = UUID.hex
+            recipient.openai_assistant = uuid.UUID.hex
         thread.assistant = recipient.openai_assistant
-        thread.thread = UUID.hex
+        thread.thread = uuid.UUID.hex
         return thread
-            
-    def log(self,message,author,role='user',status_code=200):
-        self.env['openai.log'].create({'author_id':author.id,
-                                       'channel_id': self.channel_id.id, 
-                                       'assistant': self.assistant, 
+
+    def log(self, message, author, role='user', status_code=200):
+        self.env['openai.log'].create({'author_id': author.id,
+                                       'channel_id': self.channel_id.id,
+                                       'assistant': self.assistant,
                                        'thread': self.thread,
-                                       'run':self.run,
+                                       'run': self.run,
                                        'message': message,
                                        'status_code': status_code,
                                        'role': role})
-        
-        
-    def add_message(self,client,message,role='user'):
+
+    def add_message(self, client, message, role='user'):
         """
             Add a Message to a Thread
         """
-        self.log(message,self.author_id,role=role)
-        self.write({'message': message,'role': role})
-                
-    def wait4response(self,client):
-        #TODO log does not save the correct author (it should be AI-bot)
+        self.log(message, self.author_id, role=role)
+        self.write({'message': message, 'role': role})
+
+    def wait4response(self, client):
+        # TODO log does not save the correct author (it should be AI-bot)
         client = self.load_client()
-        
-        msgs = client.chat(message=self.message,display=False,stream=False)
-        self.log(f"OPENAI: {self.message=} {msgs=}",self.recipient_id.parent_id,status_code=200,role='OpenInterpreter',)
+
+        msgs = client.chat(message=self.message, display=False, stream=False)
+        self.log(f"OPENAI: {self.message=} {msgs=}", self.recipient_id.parent_id, status_code=200,
+                 role='OpenInterpreter', )
         _logger.warning(f"OPENAI: {self.message=} {msgs=}")
         return [msgs]
-            
 
-    def _unlink_thread(self,client,channel):
+    def _unlink_thread(self, client, channel):
         self.recipient_id.openai_assistant = None
-            
-    def get_stock_price(self,symbol: str) -> float:
+
+    def get_stock_price(self, symbol: str) -> float:
         stock = yf.Ticker(symbol)
         price = stock.history(period="1d")['Close'].iloc[-1]
         return price
