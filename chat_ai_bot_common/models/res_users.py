@@ -27,8 +27,8 @@ class ResUsers(models.Model):
 
     def ai_message_post(self, channel, author, message):
 
-        # ~ openai_client = self.env['openai.thread'].client_init(self)
-        openai_client = None
+        openai_client = self.env['openai.thread'].client_init(self)
+        # openai_client = None
         thread = self.env['openai.thread'].thread_init(openai_client, channel, self, author)
 
         # TODO Announce this command move to JS/controller

@@ -94,4 +94,6 @@ class OpenAIThread(models.TransientModel):
         return pickle.loads(base64.decode(self.client))
 
     def client_init(self, client):
-        self.client = base64.encode(pickle.dumps(client))
+        print(client.read())
+        # self.client = base64.encode(pickle.dumps(client.read()))
+        self.client = pickle.dumps(client.read())
