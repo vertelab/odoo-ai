@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-
+import json
 import logging
 import pickle
 import base64
@@ -12,6 +12,7 @@ _logger = logging.getLogger(__name__)
 
 class OpenAIThread(models.TransientModel):
     _name = 'openai.thread'
+    _description = 'OpenAI Thread'
 
     channel_id = fields.Many2one(comodel_name='mail.channel', string="Channel", help="")  #
     assistant = fields.Char(required=False)
@@ -20,10 +21,6 @@ class OpenAIThread(models.TransientModel):
     recipient_id = fields.Many2one(comodel_name='res.users', string='Recipient')
     author_id = fields.Many2one(comodel_name='res.partner', string='Author')
     client = fields.Text()
-
-    @api.model
-    def client_init(self, user):
-        return None
 
     def thread_values(self, channel, recipient, author):
         return {
@@ -34,8 +31,7 @@ class OpenAIThread(models.TransientModel):
         }
 
     @api.model
-    def thread_init(self, channel, recipient, author):
-        # _logger.warning(f"Entering thread_init with client={client}")
+    def thread_init(self, client, channel, recipient, author):
         """
             Initialize a thread, create if not available
         """
@@ -91,8 +87,20 @@ class OpenAIThread(models.TransientModel):
         return msg
 
     def load_client(self):
-        return pickle.loads(base64.decode(self.client))
+        return pickle.loads(self.client)
 
     def client_init(self, client):
-        # self.client = base64.encode(pickle.dumps(client.read()))
-        self.client = pickle.dumps(client.read())
+        # self.client = base64.encode(pickle.dumps(client))
+        self.client = self.custom_serialize(client)
+        return client
+
+    def custom_serialize(self, obj):
+        from ssl import SSLContext
+        data = {}
+        for key, value in obj.__dict__.items():
+            if isinstance(value, SSLContext):
+                # Skip or handle SSLContext
+                continue
+            else:
+                data[key] = value
+        return data

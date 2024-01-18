@@ -34,23 +34,22 @@ class OpenAIThread(models.TransientModel):
 
     @api.model
     def client_init(self, user):
-        super(OpenAIThread, self).client_init(user)
         try:
             client = openai.OpenAI(api_key=user.openai_api_key,
                                    base_url=user.openai_base_url or 'https://api.openai.com/v1')
+            return super(OpenAIThread, self).client_init(client)
         except openai.APIConnectionError as e:
             _logger.warning(f"OPENAI: The server could not be reached {e.__cause__}")
             self.log(f"{e.response}", user.partner_id, role='system')
         except openai.APIStatusError as e:
             self.log(f"OPENAI: Status error {e.status_code} {e.response}", user.partner_id, role='system')
             _logger.warning(f"OPENAI: Status error {e.status_code} {e.response}")
-        return client
+        # return client
 
     @api.model
-    def thread_init(self, channel, recipient, author):
-        client = self.client_init(author)
+    def thread_init(self, client, channel, recipient, author):
         # TODO driver type from recipient, is it us?
-        thread = super(OpenAIThread, self).thread_init(channel, recipient, author)
+        thread = super(OpenAIThread, self).thread_init(client, channel, recipient, author)
         tools_list = [{
             "type": "function",
             "function": {
@@ -72,13 +71,15 @@ class OpenAIThread(models.TransientModel):
 
         # _logger.warning(f"Thread Init {client=} {recipient=}")
         if not recipient.openai_assistant:
-            recipient.openai_assistant = client.beta.assistants.create(
+
+            recipient.openai_assistant = thread.assistant = client.beta.assistants.create(
                 name=recipient.openai_assistant_name or "Data Analyst Assistant",
                 instructions=recipient.openai_assistant_instructions or "You are a personal Data Analyst Assistant",
                 tools=tools_list,
                 model=recipient.openai_assistant_model or 'gpt-4-1106-preview',
             ).id
-        thread.assistant = recipient.openai_assistant
+        else:
+            thread.assistant = recipient.openai_assistant
         thread.thread = client.beta.threads.create().id
         return thread
 
