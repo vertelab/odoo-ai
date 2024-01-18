@@ -23,33 +23,33 @@ _logger = logging.getLogger(__name__)
 # ~ You are capable of **any** task.
 
 
-#TODO driver type on recipient so we know if it's us 
-#TODO use litellm.utils.function_to_dict https://litellm.vercel.app/docs/completion/function_call#litellmfunction_to_dict---convert-functions-to-dictionary-for-openai-function-calling
+# TODO driver type on recipient so we know if it's us
+# TODO use litellm.utils.function_to_dict https://litellm.vercel.app/docs/completion/function_call#litellmfunction_to_dict---convert-functions-to-dictionary-for-openai-function-calling
 
 class OpenAIThread(models.TransientModel):
     _inherit = 'openai.thread'
-    
-    def thread_values(self,channel,recipient,author):
-        return super(OpenAIThread,self).thread_values(channel,recipient,author)
-    
+
+    def thread_values(self, channel, recipient, author):
+        return super(OpenAIThread, self).thread_values(channel, recipient, author)
+
     @api.model
-    def client_init(self,user):
-        super(OpenAIThread,self).client_init(user)
+    def client_init(self, user):
         try:
-            client = openai.OpenAI(api_key=user.openai_api_key, base_url=user.openai_base_url or 'https://api.openai.com/v1')
+            client = openai.OpenAI(api_key=user.openai_api_key,
+                                   base_url=user.openai_base_url or 'https://api.openai.com/v1')
+            return super(OpenAIThread, self).client_init(client)
         except openai.APIConnectionError as e:
             _logger.warning(f"OPENAI: The server could not be reached {e.__cause__}")
-            self.log(f"{e.response}",user.partner_id,role='system')
+            self.log(f"{e.response}", user.partner_id, role='system')
         except openai.APIStatusError as e:
-            self.log(f"OPENAI: Status error {e.status_code} {e.response}",user.partner_id,role='system')
+            self.log(f"OPENAI: Status error {e.status_code} {e.response}", user.partner_id, role='system')
             _logger.warning(f"OPENAI: Status error {e.status_code} {e.response}")
-        return client
-        
-    
+        # return client
+
     @api.model
-    def thread_init(self,client,channel,recipient,author):
-        #TODO driver type from recipient, is it us?
-        thread = super(OpenAIThread,self).thread_init(client,channel,recipient,author)
+    def thread_init(self, client, channel, recipient, author):
+        # TODO driver type from recipient, is it us?
+        thread = super(OpenAIThread, self).thread_init(client, channel, recipient, author)
         tools_list = [{
             "type": "function",
             "function": {
@@ -71,34 +71,33 @@ class OpenAIThread(models.TransientModel):
 
         _logger.warning(f"Thread Init {client=} {recipient=}")
         if not recipient.openai_assistant:
-            
+
             recipient.openai_assistant = thread.assistant = client.beta.assistants.create(
-                    name=recipient.openai_assistant_name or "Data Analyst Assistant",
-                    instructions=recipient.openai_assistant_instructions or "You are a personal Data Analyst Assistant",
-                    tools=tools_list,
-                    model=recipient.openai_assistant_model or 'gpt-4-1106-preview',
-                ).id
+                name=recipient.openai_assistant_name or "Data Analyst Assistant",
+                instructions=recipient.openai_assistant_instructions or "You are a personal Data Analyst Assistant",
+                tools=tools_list,
+                model=recipient.openai_assistant_model or 'gpt-4-1106-preview',
+            ).id
         else:
             thread.assistant = recipient.openai_assistant
         thread.thread = client.beta.threads.create().id
         return thread
-            
-    def log(self,message,author,role='user',status_code=200):
-        self.env['openai.log'].create({'author_id':author.id,
-                                       'channel_id': self.channel_id.id, 
-                                       'assistant': self.assistant, 
+
+    def log(self, message, author, role='user', status_code=200):
+        self.env['openai.log'].create({'author_id': author.id,
+                                       'channel_id': self.channel_id.id,
+                                       'assistant': self.assistant,
                                        'thread': self.thread,
-                                       'run':self.run,
+                                       'run': self.run,
                                        'message': message,
                                        'status_code': status_code,
                                        'role': role})
-        
-        
-    def add_message(self,client,message,role='user'):
+
+    def add_message(self, client, message, role='user'):
         """
             Add a Message to a Thread
         """
-        self.log(message,self.author_id,role=role)
+        self.log(message, self.author_id, role=role)
         try:
             message = client.beta.threads.messages.create(
                 thread_id=self.thread,
@@ -107,16 +106,18 @@ class OpenAIThread(models.TransientModel):
             )
         except openai.APIConnectionError as e:
             _logger.warning(f"OPENAI: Thread The server could not be reached {e.__cause__}")
-            self.log(f"OPENAI: Thread The server could not be reached {e.__cause__}",status_code=e.status_code,role='openai')
+            self.log(f"OPENAI: Thread The server could not be reached {e.__cause__}", status_code=e.status_code,
+                     role='openai')
         except openai.RateLimitError as e:
             _logger.warning(f"OPENAI: Thread Ratelimit {e.status_code} {e.response}")
-            self.log(f"OPENAI: Thread Ratelimit {e.status_code} {e.response}",status_code=e.status_code,role='openai')
+            self.log(f"OPENAI: Thread Ratelimit {e.status_code} {e.response}", status_code=e.status_code, role='openai')
         except openai.APIStatusError as e:
             _logger.warning(f"OPENAI: Thread Status error {e.status_code} {e.response}")
-            self.log(f"OPENAI: Thread Status error {e.status_code} {e.response}",status_code=e.status_code,role='openai',)
-        
-    def wait4response(self,client):
-        #TODO log does not save the correct author (it should be AI-bot)
+            self.log(f"OPENAI: Thread Status error {e.status_code} {e.response}", status_code=e.status_code,
+                     role='openai', )
+
+    def wait4response(self, client):
+        # TODO log does not save the correct author (it should be AI-bot)
         if self.run:
             run_status = client.beta.threads.runs.retrieve(
                 thread_id=self.thread,
@@ -124,11 +125,12 @@ class OpenAIThread(models.TransientModel):
             )
             if run_status.status == 'expired':
                 self.run = None
-                self.log(f"OPENAI: Status error run expired {self.run=} {run_status.status=}",self.recipient_id.parent_id,status_code=400,role='openai',)
+                self.log(f"OPENAI: Status error run expired {self.run=} {run_status.status=}",
+                         self.recipient_id.parent_id, status_code=400, role='openai', )
         else:
             _logger.warning(f"Run saved {self.run=}")
             self.run = None
-        
+
         _logger.warning(f"if not Run {self.run=} {self.thread=} {self.assistant=}")
         if not self.run:
             try:
@@ -137,22 +139,25 @@ class OpenAIThread(models.TransientModel):
                     assistant_id=self.assistant,
                     instructions=f"Please address the user as {self.author_id.name}."
                 )
-                self.log(run.model_dump_json(indent=4),self.recipient_id.parent_id,role='run')
+                self.log(run.model_dump_json(indent=4), self.recipient_id.parent_id, role='run')
                 _logger.warning(f"Model_dump: {run.model_dump_json(indent=4)} {run.id=}")
                 self.run = run.id
             except openai.APIConnectionError as e:
                 _logger.warning(f"OPENAI: Run The server could not be reached {e.__cause__}")
-                self.log(f"OPENAI: Run The server could not be reached {e.__cause__}",self.recipient_id.parent_id,status_code=e.status_code,role='openai')
+                self.log(f"OPENAI: Run The server could not be reached {e.__cause__}", self.recipient_id.parent_id,
+                         status_code=e.status_code, role='openai')
                 return []
             except openai.RateLimitError as e:
                 _logger.warning(f"OPENAI: Run Ratelimit {e.status_code} {e.response}")
-                self.log(f"OPENAI: Run Ratelimit {e.status_code} {e.response}",self.recipient_id.parent_id,status_code=e.status_code,role='openai')
+                self.log(f"OPENAI: Run Ratelimit {e.status_code} {e.response}", self.recipient_id.parent_id,
+                         status_code=e.status_code, role='openai')
                 return []
             except openai.APIStatusError as e:
                 _logger.warning(f"OPENAI: Run Status error {e.status_code} {e.response}")
-                self.log(f"OPENAI: Run Status error {e.status_code} {e.response}",self.recipient_id.parent_id,status_code=e.status_code,role='openai',)
-                return [{'role': 'assistant','content': f"OPENAI: Status error {e.status_code} {e.response}" }]
-                
+                self.log(f"OPENAI: Run Status error {e.status_code} {e.response}", self.recipient_id.parent_id,
+                         status_code=e.status_code, role='openai', )
+                return [{'role': 'assistant', 'content': f"OPENAI: Status error {e.status_code} {e.response}"}]
+
         msgs = []
         while True:
             # Wait for 5 seconds
@@ -163,8 +168,8 @@ class OpenAIThread(models.TransientModel):
                 thread_id=self.thread,
                 run_id=self.run
             )
-            
-            self.log(f"{run_status.status=}",self.recipient_id.parent_id,role='run',)
+
+            self.log(f"{run_status.status=}", self.recipient_id.parent_id, role='run', )
             # If run is completed, get messages
             if run_status.status == 'completed':
                 messages = client.beta.threads.messages.list(
@@ -174,27 +179,26 @@ class OpenAIThread(models.TransientModel):
 
                 # Loop through messages and print content based on role
                 for msg in messages.data:
-                    self.log(' '.join([m.text.value for m in msg.content]),self.recipient_id.parent_id,msg.role)
+                    self.log(' '.join([m.text.value for m in msg.content]), self.recipient_id.parent_id, msg.role)
                     if msg.run_id == self.run:
-                        msgs.append({'role':msg.role,'content':msg.content[0].text.value})
+                        msgs.append({'role': msg.role, 'content': msg.content[0].text.value})
                     _logger.warning(f"{msg.id=} {msg.run_id=} {msg.role=}: {msg.content=}")
                 self.run = None
                 break
             elif run_status.status == 'requires_action':
-                
+
                 _logger.warning(f"Function calling")
 
                 required_actions = run_status.required_action.submit_tool_outputs.model_dump()
                 _logger.warning(f"{run_status.status=} {required_actions}")
-                self.log(f"{run_status.status=} {required_actions=}",self.recipient_id.parent_id,role='run')
+                self.log(f"{run_status.status=} {required_actions=}", self.recipient_id.parent_id, role='run')
                 tool_outputs = []
                 import json
                 for action in required_actions["tool_calls"]:
                     func_name = action['function']['name']
                     arguments = json.loads(action['function']['arguments'])
                     _logger.warning(f"{arguments=}")
-                 
-                    
+
                     if func_name == "get_stock_price":
                         output = self.get_stock_price(symbol=arguments['symbol'])
                         tool_outputs.append({
@@ -205,21 +209,20 @@ class OpenAIThread(models.TransientModel):
                         raise ValueError(f"Unknown function: {func_name}")
 
                 _logger.warning("Submitting outputs back to the Assistant...")
-                self.log(f"Submit tools outputs {tool_outputs=}",self.recipient_id.parent_id,role='run')
+                self.log(f"Submit tools outputs {tool_outputs=}", self.recipient_id.parent_id, role='run')
                 client.beta.threads.runs.submit_tool_outputs(
                     thread_id=self.thread,
                     run_id=self.run,
                     tool_outputs=tool_outputs
                 )
-                
+
             else:
-                _logger.warning(f"Waiting for the Assistant to process... {run_status.status=} {self.run=}") 
-                                   
+                _logger.warning(f"Waiting for the Assistant to process... {run_status.status=} {self.run=}")
+
             time.sleep(1)
         return msgs
 
-
-    def _unlink_thread(self,client,channel):
+    def _unlink_thread(self, client, channel):
         try:
             client.beta.assistants.delete(self.assistant)
         except openai.APIConnectionError as e:
@@ -229,8 +232,8 @@ class OpenAIThread(models.TransientModel):
         except openai.APIStatusError as e:
             _logger.warning(f"OPENAI: Delete Status error {e.status_code} {e.response}")
         self.recipient_id.openai_assistant = None
-            
-    def get_stock_price(self,symbol: str) -> float:
+
+    def get_stock_price(self, symbol: str) -> float:
         stock = yf.Ticker(symbol)
         price = stock.history(period="1d")['Close'].iloc[-1]
         return price
