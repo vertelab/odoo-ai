@@ -20,3 +20,5 @@
         if not operator:
             operator = self._get_less_active_operator(operator_statuses, self.available_operator_ids)
         return operator
+_get_operator
+gör super på get operator
