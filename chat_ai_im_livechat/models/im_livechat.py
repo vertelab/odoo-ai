@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+-# -*- coding: utf-8 -*-
 # Part of Odoo. See LICENSE file for full copyright and licensing details.
 import base64
 import random
@@ -10,10 +10,19 @@ from odoo import api, Command, fields, models, modules, _
 
 # https://github.com/odoo/odoo/blob/17.0/addons/im_livechat/models/im_livechat_channel.py#L266
 
-
 class getOperator(models.Model):
     _inherit = 
 
+
+    
+@api.model
+def _get_operator(self):
+    res = supergetOperator(getOperator, self).aktion_confirmed()
+    raise UseError(_("---------  Action confirmed is can celed --------"))
+    return res
+
+
+    
 
 
 
