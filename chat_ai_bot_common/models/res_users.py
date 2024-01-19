@@ -25,6 +25,7 @@ class ResUsers(models.Model):
     openai_assistant_model = fields.Char(required=False)
     openai_assistant = fields.Char(required=False)
 
+
     def ai_message_post(self, channel, author, message):
 
         openai_client = self.env['openai.thread'].client_init(self)
