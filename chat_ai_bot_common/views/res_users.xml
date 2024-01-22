@@ -19,18 +19,16 @@
                             </p>
 
                             <group string="LLM-settings">
-                            <field name="openai_api_key"/>
-                            <field name="openai_base_url"/>
-                            <field name="openai_model"/>
+                                <field name="llm_type"/>
+                                <field name="openai_api_key"/>
+                                <field name="openai_base_url"/>
+                                <field name="openai_model"/>
                             </group>
                             <group string="Assistant-settings">
-                            <field name="openai_assistant_name"/>
-                            <field name="openai_assistant"/>
-                            <field name="openai_assistant_instructions"/>
-                           
+                                <field name="openai_assistant_name"/>
+                                <field name="openai_assistant"/>
+                                <field name="openai_assistant_instructions"/>
                             </group>
-
-
                             
                         </div>
                     </page>

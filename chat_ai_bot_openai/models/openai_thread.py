@@ -3,6 +3,7 @@
 import openai
 import time
 import yfinance as yf
+import json
 import logging
 
 from odoo import models, fields, api, _
@@ -193,7 +194,7 @@ class OpenAIThread(models.TransientModel):
                 _logger.warning(f"{run_status.status=} {required_actions}")
                 self.log(f"{run_status.status=} {required_actions=}", self.recipient_id.parent_id, role='run')
                 tool_outputs = []
-                import json
+
                 for action in required_actions["tool_calls"]:
                     func_name = action['function']['name']
                     arguments = json.loads(action['function']['arguments'])

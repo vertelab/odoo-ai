@@ -93,13 +93,3 @@ class OpenAIThread(models.TransientModel):
         # self.client = base64.encode(pickle.dumps(client)
         return client
 
-    def custom_serialize(self, obj):
-        from ssl import SSLContext
-        data = {}
-        for key, value in obj.__dict__.items():
-            if isinstance(value, SSLContext):
-                # Skip or handle SSLContext
-                continue
-            else:
-                data[key] = value
-        return data

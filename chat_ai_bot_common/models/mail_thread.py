@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 
 import logging
+import time
+import threading
 
 from odoo.tools import html2plaintext, plaintext2html
 from odoo import models, fields, api, _
@@ -37,14 +39,13 @@ class MailThread(models.AbstractModel):
                     [('partner_id', 'in', (obj.channel_partner_ids - message.author_id).mapped('id'))]
             ):
                 if recipient.is_ai_bot:
-                    # TODO non-blocking option syspar: recipient.with_delay().ai_send_message(
-                    recipient.ai_message_post(
-                        obj,
-                        message.author_id,
-                        html2plaintext(message.body).strip(),
+                    ai_action = threading.Thread(
+                        target=recipient._run_ai_message_post,
+                        args=(recipient, obj, message.author_id, html2plaintext(message.body).strip())
                     )
-
-            return res
+                    ai_action.start()
+                    # return {'type': 'ir.actions.client', 'tag': 'reload'}
+        return res
 
 # ~ https://www.linkedin.com/pulse/run-background-process-odoo-multi-threading-ahmed-rashad-mba-/
 # ~ https://www.cybrosys.com/blog/the-significance-of-multi-threading-in-odoo-16
