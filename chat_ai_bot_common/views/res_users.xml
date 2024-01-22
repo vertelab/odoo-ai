@@ -7,8 +7,7 @@
             <field name="model">res.users</field>
             <field name="inherit_id" ref="base.view_users_form" />
             <field name="arch" type="xml">
-                <field name="lang" position="before">
-                    <lable for="is_ai_bot"/>
+                <field name="active" position="before">
                     <field name="is_ai_bot"/>
                 </field>
                 
