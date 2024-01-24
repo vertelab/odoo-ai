@@ -1,4 +1,4 @@
 id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
 access_openai_log_erp_manager,access_openai_log_erp_manager,model_openai_log,base.group_erp_manager,1,1,1,1
 access_openai_log_user,access_openai_log_user,model_openai_log,base.group_user,1,0,1,0
-chat_ai_bot_openai.access_openai_thread,access_openai_thread,chat_ai_bot_openai.model_openai_thread,base.group_user,1,1,1,1
+chat_ai_bot_openai.access_openai_thread,access_openai_thread,chat_ai_bot_common.model_openai_thread,base.group_user,1,1,1,1

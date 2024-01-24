@@ -45,7 +45,8 @@
     ],
     'external_dependencies': {
         'python': [
-            'open-interpreter'
+            'open-interpreter',
+            'yfinance'
         ]
     },
     'data': [
