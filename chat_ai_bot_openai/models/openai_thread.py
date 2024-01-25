@@ -34,23 +34,22 @@ class OpenAIThread(models.TransientModel):
         return super(OpenAIThread, self).thread_values(channel, recipient, author)
 
     @api.model
-    def client_init(self, user):
+    def openai_client_init(self, user):
         try:
             client = openai.OpenAI(api_key=user.openai_api_key,
                                    base_url=user.openai_base_url or 'https://api.openai.com/v1')
-            return super(OpenAIThread, self).client_init(client)
+            return client
         except openai.APIConnectionError as e:
             _logger.warning(f"OPENAI: The server could not be reached {e.__cause__}")
             self.log(f"{e.response}", user.partner_id, role='system')
         except openai.APIStatusError as e:
             self.log(f"OPENAI: Status error {e.status_code} {e.response}", user.partner_id, role='system')
             _logger.warning(f"OPENAI: Status error {e.status_code} {e.response}")
-        # return client
 
     @api.model
-    def thread_init(self, client, channel, recipient, author):
+    def openai_thread_init(self, client, channel, recipient, author):
         # TODO driver type from recipient, is it us?
-        thread = super(OpenAIThread, self).thread_init(client, channel, recipient, author)
+        thread = self.thread_init(client, channel, recipient, author)
         tools_list = [{
             "type": "function",
             "function": {
@@ -94,7 +93,7 @@ class OpenAIThread(models.TransientModel):
                                        'status_code': status_code,
                                        'role': role})
 
-    def add_message(self, client, message, role='user'):
+    def openai_add_message(self, client, message, role='user'):
         """
             Add a Message to a Thread
         """
@@ -117,7 +116,7 @@ class OpenAIThread(models.TransientModel):
             self.log(f"OPENAI: Thread Status error {e.status_code} {e.response}", status_code=e.status_code,
                      role='openai', )
 
-    def wait4response(self, client):
+    def openai_wait4response(self, client):
         # TODO log does not save the correct author (it should be AI-bot)
         if self.run:
             run_status = client.beta.threads.runs.retrieve(
@@ -162,8 +161,6 @@ class OpenAIThread(models.TransientModel):
         msgs = []
         while True:
             # Wait for 5 seconds
-            # ~ time.sleep(1)
-
             # Retrieve the run status
             run_status = client.beta.threads.runs.retrieve(
                 thread_id=self.thread,

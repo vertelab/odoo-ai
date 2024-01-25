@@ -1,23 +1,23 @@
 # -*- coding: utf-8 -*-
 
-from interpreter import OpenInterpreter
+from interpreter import OpenInterpreter, interpreter
 import time
+from dotenv import load_dotenv
 import yfinance as yf
 import logging
 import uuid
+import os
 
 from odoo import models, fields, api, _
 from odoo.exceptions import MissingError, AccessError, UserError
 
 _logger = logging.getLogger(__name__)
 
+load_dotenv()
 
-# import pickle
-# var = pickle.dimps(my_obj)
-# obj = pickle.loads(var)
+openai_api_key = os.getenv('OPENAI_API_KEY')
 
 # https://github.com/KillianLucas/open-interpreter/blob/main/docs/NCU_MIGRATION_GUIDE.md
-
 
 # ~ You are Open Interpreter, a world-class programmer that can complete any goal by executing code.
 # ~ First, write a plan. **Always recap the plan between each code block** (you have extreme short-term memory loss, so you need to recap the plan between each message block to retain it).
@@ -40,14 +40,19 @@ class OpenAIThread(models.TransientModel):
     message = fields.Text(string='Message')
     role = fields.Char(string='Role')
 
-    def thread_values(self, channel, recipient, author):
-        return super(OpenAIThread, self).thread_values(channel, recipient, author)
+    @api.model
+    def open_interpreter_client_init(self, user):
+        try:
+            client = OpenInterpreter()
+            return client
+        except Exception as e:
+            _logger.warning(f"OpenInterpreter: The server could not be reached {e.__cause__}")
+            self.log(f"{e}", user.partner_id, role='system')
 
     @api.model
-    def thread_init(self, client, channel, recipient, author):
+    def open_interpreter_thread_init(self, client, channel, recipient, author):
         # TODO driver type from recipient, is it us?
-        thread = super(OpenAIThread, self).thread_init(client, channel, recipient, author)
-        client = thread.client_init(OpenInterpreter())
+        thread = self.thread_init(client, channel, recipient, author)
         _logger.warning(f"Thread Init {client=} {recipient=}")
         if not recipient.openai_assistant:
             recipient.openai_assistant = uuid.UUID.hex
@@ -55,32 +60,21 @@ class OpenAIThread(models.TransientModel):
         thread.thread = uuid.UUID.hex
         return thread
 
-    def log(self, message, author, role='user', status_code=200):
-        self.env['openai.log'].create({'author_id': author.id,
-                                       'channel_id': self.channel_id.id,
-                                       'assistant': self.assistant,
-                                       'thread': self.thread,
-                                       'run': self.run,
-                                       'message': message,
-                                       'status_code': status_code,
-                                       'role': role})
-
-    def add_message(self, client, message, role='user'):
+    def open_interpreter_add_message(self, client, message, role='user'):
         """
             Add a Message to a Thread
         """
         self.log(message, self.author_id, role=role)
         self.write({'message': message, 'role': role})
 
-    def wait4response(self, client):
+    def open_interpreter_wait4response(self, interpreter_client):
         # TODO log does not save the correct author (it should be AI-bot)
-        client = self.load_client()
 
-        msgs = client.chat(message=self.message, display=False, stream=False)
-        self.log(f"OPENAI: {self.message=} {msgs=}", self.recipient_id.parent_id, status_code=200,
+        msgs = interpreter_client.chat(message=self.message, display=False, stream=False, )
+        self.log(f"OpenInterpreter: {self.message=} {msgs=}", self.recipient_id.parent_id, status_code=200,
                  role='OpenInterpreter', )
-        _logger.warning(f"OPENAI: {self.message=} {msgs=}")
-        return [msgs]
+        _logger.warning(f"OpenInterpreter: {self.message=} {msgs=}")
+        return msgs
 
     def _unlink_thread(self, client, channel):
         self.recipient_id.openai_assistant = None

@@ -30,13 +30,12 @@ class OpenAIThread(models.TransientModel):
             'thread': channel.name,
         }
 
-    @api.model
+    # @api.model
     def thread_init(self, client, channel, recipient, author):
         """
             Initialize a thread, create if not available
         """
         thread_ids = self.env['openai.thread'].search([('channel_id', '=', channel.id)])
-        # _logger.warning(f"Thread {thread_ids=} {channel=}")
         if len(thread_ids) == 0:
             thread = self.env['openai.thread'].create(self.thread_values(channel, recipient, author))
         else:
@@ -62,15 +61,15 @@ class OpenAIThread(models.TransientModel):
         """
             Add a Message to a Thread
         """
-        self.log(message, self.author_id, role=role)
+        if hasattr(self, '%s_add_message' % self.recipient_id.llm_type):
+            return getattr(self, '%s_add_message' % self.recipient_id.llm_type)(client, message, role)
+        return False
 
     def wait4response(self, client):
-        """
-            Wait for the LLM to response
-        """
-        msg = [{'role': 'assistant', 'content': _('Please install driver for a LLM')}]
-        self.log(msg[0]['content'], self.recipient_id.partner_id, role=msg[0]['role'])
-        return msg
+        """ Returns the form action URL, for form-based acquirer implementations. """
+        if hasattr(self, '%s_wait4response' % self.recipient_id.llm_type):
+            return getattr(self, '%s_wait4response' % self.recipient_id.llm_type)(client)
+        return False
 
     def _thread_unlink(self, client, channel):
         return
@@ -89,7 +88,7 @@ class OpenAIThread(models.TransientModel):
     def load_client(self):
         return pickle.loads(self.client)
 
-    def client_init(self, client):
-        # self.client = base64.encode(pickle.dumps(client)
-        return client
+    # def client_init(self, client):
+    #     # self.client = base64.encode(pickle.dumps(client)
+    #     return client
 
