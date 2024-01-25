@@ -6,6 +6,10 @@ __pycache__/
 # C extensions
 *.so
 
+# SQL Server files
+*.mdf
+*.ldf
+
 # Distribution / packaging
 .Python
 build/
