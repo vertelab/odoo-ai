@@ -40,7 +40,7 @@ class MailThread(models.AbstractModel):
             ):
                 if recipient.is_ai_bot:
                     ai_action = threading.Thread(
-                        target=recipient._run_ai_message_post,
+                        target=recipient.run_ai_message_post,
                         args=(recipient, obj, message.author_id, html2plaintext(message.body).strip())
                     )
                     ai_action.start()
