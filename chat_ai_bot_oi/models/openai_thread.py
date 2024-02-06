@@ -15,7 +15,7 @@ _logger = logging.getLogger(__name__)
 
 load_dotenv()
 
-openai_api_key = os.getenv('OPENAI_API_KEY')
+openai_ = os.getenv('OPENAI_API_KEY')
 
 # https://github.com/KillianLucas/open-interpreter/blob/main/docs/NCU_MIGRATION_GUIDE.md
 

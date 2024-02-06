@@ -28,6 +28,7 @@ class ResUsers(models.Model):
     llm_type = fields.Selection([], string="LLM Type", default=False)
 
     def run_ai_message_post(self, recipient, channel, author, message):
+        _logger.warning("run_ai_message_post start of chain of functions"*10)
         """ Returns the form action URL, for form-based acquirer implementations. """
         if hasattr(self, '%s_run_ai_message_post' % self.llm_type):
             return getattr(self, '%s_run_ai_message_post' % self.llm_type)(recipient, channel, author, message)

@@ -12,6 +12,8 @@ class ResUsers(models.Model):
     llm_type = fields.Selection(selection_add=[('openai', "OpenAI")], ondelete={'openai': 'set default'})
 
     def openai_run_ai_message_post(self, recipient, channel, author, message):
+        _logger.error("openai_run_ai_message_post second part of chain of functions")
+        _logger.error(f"{self=}, {recipient=}, {channel=}, {author=}, {message=}")
         time.sleep(3)
         with self.env.registry.cursor() as cr:
             try:
