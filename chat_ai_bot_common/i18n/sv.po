@@ -1,0 +1,356 @@
+# Translation of Odoo Server.
+# This file contains the translation of the following modules:
+# 	* chat_ai_bot_common
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: Odoo Server 16.0-20240225\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2024-02-27 06:59+0000\n"
+"PO-Revision-Date: 2024-02-27 07:05+0000\n"
+"Last-Translator: \n"
+"Language-Team: \n"
+"Language: sv\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: \n"
+"X-Generator: Poedit 3.0.1\n"
+
+#. module: chat_ai_bot_common
+#: model_terms:ir.ui.view,arch_db:chat_ai_bot_common.view_users_form
+msgid "Ai_bot settings"
+msgstr "Ai_bot-inställningar"
+
+#. module: chat_ai_bot_common
+#: model:res.groups,name:chat_ai_bot_common.group_openai_user_settings_all
+msgid "All"
+msgstr "Alla"
+
+#. module: chat_ai_bot_common
+#: model:res.groups,comment:chat_ai_bot_common.group_openai_user_settings_all
+msgid ""
+"Allow self editing ALL OpenAI settings: All in Medium + OpenAI Token, Max "
+"Tokens. Warning! This will allow the user to see the OpenAI token "
+"associated with him."
+msgstr ""
+"Tillåt självredigering av ALLA OpenAI-inställningar: Allt i Medium + OpenAI "
+"Token, Max Tokens. Varning! Detta gör att användaren kan se den OpenAI-"
+"token som är associerad med honom."
+
+#. module: chat_ai_bot_common
+#: model:res.groups,comment:chat_ai_bot_common.group_openai_user_settings_medium
+msgid ""
+"Allow self editing some OpenAI settings: All in Basic + Model, Temperature"
+msgstr ""
+"Tillåt självredigering av vissa OpenAI-inställningar: Allt i Basic + "
+"Modell, Temperatur"
+
+#. module: chat_ai_bot_common
+#: model:res.groups,comment:chat_ai_bot_common.group_openai_user_settings_basic
+msgid ""
+"Allow self editing some OpenAI settings: Chat method, Prefix, Suffix or "
+"System Message"
+msgstr ""
+"Tillåt självredigering av vissa OpenAI-inställningar: Chattmetod, Prefix, "
+"Suffix eller Systemmeddelande"
+
+#. module: chat_ai_bot_common
+#: model:ir.module.category,description:chat_ai_bot_common.module_category_openai_user_settings
+msgid ""
+"Allow user to self edit his own settings about OdooGPT bot from the "
+"settings menu"
+msgstr ""
+"Tillåt användaren att själv redigera sina egna inställningar för OdooGPT-"
+"bot från inställningsmenyn"
+
+#. module: chat_ai_bot_common
+#: model:ir.model.fields,field_description:chat_ai_bot_common.field_openai_log__assistant
+#: model:ir.model.fields,field_description:chat_ai_bot_common.field_openai_thread__assistant
+msgid "Assistant"
+msgstr "Assistent"
+
+#. module: chat_ai_bot_common
+#: model_terms:ir.ui.view,arch_db:chat_ai_bot_common.view_users_form
+msgid "Assistant-settings"
+msgstr "Assistent-inställningar"
+
+#. module: chat_ai_bot_common
+#: model:ir.model.fields,field_description:chat_ai_bot_common.field_openai_log__author_id
+#: model:ir.model.fields,field_description:chat_ai_bot_common.field_openai_thread__author_id
+msgid "Author"
+msgstr "Författare"
+
+#. module: chat_ai_bot_common
+#: model:res.groups,name:chat_ai_bot_common.group_openai_user_settings_basic
+msgid "Basic"
+msgstr "Grundläggande"
+
+#. module: chat_ai_bot_common
+#: model_terms:ir.ui.view,arch_db:chat_ai_bot_common.view_users_form
+msgid "Change any Open AI settings"
+msgstr "Ändra eventuella inställningar för Open AI"
+
+#. module: chat_ai_bot_common
+#: model:ir.model.fields,field_description:chat_ai_bot_common.field_openai_log__channel_id
+#: model:ir.model.fields,field_description:chat_ai_bot_common.field_openai_thread__channel_id
+msgid "Channel"
+msgstr "Kanal"
+
+#. module: chat_ai_bot_common
+#: model:ir.actions.act_window,name:chat_ai_bot_common.openai_log_act_window
+msgid "Chat AI Bot Logs"
+msgstr "Chatt AI Bot Loggar"
+
+#. module: chat_ai_bot_common
+#: model:ir.model.fields,field_description:chat_ai_bot_common.field_res_users__chat_system_message
+msgid "Chat System Message"
+msgstr "Chatt System Meddelande"
+
+#. module: chat_ai_bot_common
+#: model:ir.model.fields,field_description:chat_ai_bot_common.field_openai_thread__client
+msgid "Client"
+msgstr "Kund"
+
+#. module: chat_ai_bot_common
+#: model:ir.model.fields,field_description:chat_ai_bot_common.field_openai_log__create_uid
+#: model:ir.model.fields,field_description:chat_ai_bot_common.field_openai_thread__create_uid
+msgid "Created by"
+msgstr "Skapad av"
+
+#. module: chat_ai_bot_common
+#: model:ir.model.fields,field_description:chat_ai_bot_common.field_openai_log__create_date
+#: model:ir.model.fields,field_description:chat_ai_bot_common.field_openai_thread__create_date
+msgid "Created on"
+msgstr "Skapad på"
+
+#. module: chat_ai_bot_common
+#: model:ir.model.fields,field_description:chat_ai_bot_common.field_openai_log__date
+#: model:ir.model.fields,help:chat_ai_bot_common.field_openai_log__date
+msgid "Date"
+msgstr "Datum"
+
+#. module: chat_ai_bot_common
+#: model:ir.model.fields,field_description:chat_ai_bot_common.field_openai_log__display_name
+#: model:ir.model.fields,field_description:chat_ai_bot_common.field_openai_thread__display_name
+msgid "Display Name"
+msgstr "Visningsnamn"
+
+#. module: chat_ai_bot_common
+#: model:ir.model,name:chat_ai_bot_common.model_mail_thread
+msgid "Email Thread"
+msgstr "E-post tråd"
+
+#. module: chat_ai_bot_common
+#: model:ir.model.fields,field_description:chat_ai_bot_common.field_openai_log__id
+#: model:ir.model.fields,field_description:chat_ai_bot_common.field_openai_thread__id
+msgid "ID"
+msgstr "ID"
+
+#. module: chat_ai_bot_common
+#: model:ir.model.fields,field_description:chat_ai_bot_common.field_res_users__is_ai_bot
+msgid "Is an AI-Bot"
+msgstr "Är en AI-robot"
+
+#. module: chat_ai_bot_common
+#: model:ir.model.fields,field_description:chat_ai_bot_common.field_res_users__llm_type
+msgid "LLM Type"
+msgstr "Typ av LLM"
+
+#. module: chat_ai_bot_common
+#: model_terms:ir.ui.view,arch_db:chat_ai_bot_common.view_users_form
+msgid "LLM-settings"
+msgstr "LLM-inställningar"
+
+#. module: chat_ai_bot_common
+#: model:ir.model.fields,field_description:chat_ai_bot_common.field_openai_log____last_update
+#: model:ir.model.fields,field_description:chat_ai_bot_common.field_openai_thread____last_update
+msgid "Last Modified on"
+msgstr "Senast ändrad den"
+
+#. module: chat_ai_bot_common
+#: model:ir.model.fields,field_description:chat_ai_bot_common.field_openai_log__write_uid
+#: model:ir.model.fields,field_description:chat_ai_bot_common.field_openai_thread__write_uid
+msgid "Last Updated by"
+msgstr "Senast uppdaterad av"
+
+#. module: chat_ai_bot_common
+#: model:ir.model.fields,field_description:chat_ai_bot_common.field_openai_log__write_date
+#: model:ir.model.fields,field_description:chat_ai_bot_common.field_openai_thread__write_date
+msgid "Last Updated on"
+msgstr "Senast uppdaterad den"
+
+#. module: chat_ai_bot_common
+#: model:res.groups,name:chat_ai_bot_common.group_openai_user_settings_medium
+msgid "Medium"
+msgstr "Medium"
+
+#. module: chat_ai_bot_common
+#: model:ir.module.category,description:chat_ai_bot_common.module_category_openai
+#: model:ir.module.category,name:chat_ai_bot_common.module_category_openai
+#: model:ir.ui.menu,name:chat_ai_bot_common.OpenAI_settings_menu
+msgid "OpenAI"
+msgstr "OpenAI"
+
+#. module: chat_ai_bot_common
+#: model:ir.model,name:chat_ai_bot_common.model_openai_log
+msgid "OpenAI Log"
+msgstr "OpenAI-loggen"
+
+#. module: chat_ai_bot_common
+#: model:ir.ui.menu,name:chat_ai_bot_common.openai_settings_logs_log_menu
+#: model_terms:ir.ui.view,arch_db:chat_ai_bot_common.odoogpt_openai_log_view_list
+msgid "OpenAI Logs"
+msgstr "OpenAI-loggar"
+
+#. module: chat_ai_bot_common
+#: model:ir.model,name:chat_ai_bot_common.model_openai_thread
+msgid "OpenAI Thread"
+msgstr "Tråd om OpenAI"
+
+#. module: chat_ai_bot_common
+#: model:ir.module.category,name:chat_ai_bot_common.module_category_openai_user_settings
+msgid "OpenAI User Settings"
+msgstr "Användarinställningar för OpenAI"
+
+#. module: chat_ai_bot_common
+#: model:ir.model.fields,field_description:chat_ai_bot_common.field_res_users__openai_api_key
+msgid "Openai Api Key"
+msgstr "Nyckel till Openai Api"
+
+#. module: chat_ai_bot_common
+#: model:ir.model.fields,field_description:chat_ai_bot_common.field_res_users__openai_assistant
+msgid "Openai Assistant"
+msgstr "Assistent för Openai"
+
+#. module: chat_ai_bot_common
+#: model:ir.model.fields,field_description:chat_ai_bot_common.field_res_users__openai_assistant_instructions
+msgid "Openai Assistant Instructions"
+msgstr "Instruktioner för Openai-assistenten"
+
+#. module: chat_ai_bot_common
+#: model:ir.model.fields,field_description:chat_ai_bot_common.field_res_users__openai_assistant_model
+msgid "Openai Assistant Model"
+msgstr "Assistentmodell för Openai"
+
+#. module: chat_ai_bot_common
+#: model:ir.model.fields,field_description:chat_ai_bot_common.field_res_users__openai_assistant_name
+msgid "Openai Assistant Name"
+msgstr "Openai Assistent Namn"
+
+#. module: chat_ai_bot_common
+#: model:ir.model.fields,field_description:chat_ai_bot_common.field_res_users__openai_assistant_tools
+msgid "Openai Assistant Tools"
+msgstr "Assistentverktyg för Openai"
+
+#. module: chat_ai_bot_common
+#: model:ir.model.fields,field_description:chat_ai_bot_common.field_res_users__openai_base_url
+msgid "Openai Base Url"
+msgstr "Openai Bas Url"
+
+#. module: chat_ai_bot_common
+#: model:ir.model.fields,field_description:chat_ai_bot_common.field_res_users__openai_max_tokens
+msgid "Openai Max Tokens"
+msgstr "Openai Max Tokens"
+
+#. module: chat_ai_bot_common
+#: model:ir.model.fields,field_description:chat_ai_bot_common.field_res_users__openai_model
+msgid "Openai Model"
+msgstr "Openai-modell"
+
+#. module: chat_ai_bot_common
+#: model:ir.model.fields,field_description:chat_ai_bot_common.field_res_users__openai_prompt_prefix
+msgid "Openai Prompt Prefix"
+msgstr "Openai Utfärdande av prefix"
+
+#. module: chat_ai_bot_common
+#: model:ir.model.fields,field_description:chat_ai_bot_common.field_res_users__openai_prompt_suffix
+msgid "Openai Prompt Suffix"
+msgstr "Suffix för Openai Prompt"
+
+#. module: chat_ai_bot_common
+#: model:ir.model.fields,field_description:chat_ai_bot_common.field_res_users__openai_temperature
+msgid "Openai Temperature"
+msgstr "Temperatur i öppet hav"
+
+#. module: chat_ai_bot_common
+#: model:ir.ui.menu,name:chat_ai_bot_common.openai_settings_logs_menu
+msgid "Other"
+msgstr "Andra"
+
+#. module: chat_ai_bot_common
+#: model:ir.model.fields,help:chat_ai_bot_common.field_openai_log__author_id
+msgid "Part/consignor that sent this message"
+msgstr "Part/avsändare som skickat detta meddelande"
+
+#. module: chat_ai_bot_common
+#: model:ir.model.fields,field_description:chat_ai_bot_common.field_openai_log__message
+msgid "Raw Request"
+msgstr "Rå förfrågan"
+
+#. module: chat_ai_bot_common
+#: model:ir.model.fields,field_description:chat_ai_bot_common.field_openai_thread__recipient_id
+msgid "Recipient"
+msgstr "Mottagare"
+
+#. module: chat_ai_bot_common
+#: model:ir.model.fields,help:chat_ai_bot_common.field_openai_log__message
+msgid "Request/RESPONSE, as-is, sent to OpenAI Api"
+msgstr "Begäran/SVAR, i befintligt skick, skickas till OpenAI Api"
+
+#. module: chat_ai_bot_common
+#: model_terms:ir.ui.view,arch_db:chat_ai_bot_common.odoogpt_openai_log_view_form
+msgid "Request/resp"
+msgstr "Begäran/resp"
+
+#. module: chat_ai_bot_common
+#. odoo-python
+#: code:addons/chat_ai_bot_common/models/openai_thread.py:0
+#, python-format
+msgid "Reset done"
+msgstr "Återställning utförd"
+
+#. module: chat_ai_bot_common
+#: model:ir.model.fields,field_description:chat_ai_bot_common.field_openai_log__role
+msgid "Role"
+msgstr "Roll"
+
+#. module: chat_ai_bot_common
+#: model:ir.model.fields,field_description:chat_ai_bot_common.field_openai_thread__run
+msgid "Run"
+msgstr "Kör"
+
+#. module: chat_ai_bot_common
+#: model:ir.model.fields,field_description:chat_ai_bot_common.field_openai_log__run
+msgid "Run ID"
+msgstr "Kör ID"
+
+#. module: chat_ai_bot_common
+#: model:ir.model.fields,help:chat_ai_bot_common.field_openai_log__run
+msgid "Run ID for the request"
+msgstr "Kör-ID för begäran"
+
+#. module: chat_ai_bot_common
+#: model:ir.model.fields,field_description:chat_ai_bot_common.field_openai_log__status_code
+msgid "Status Code"
+msgstr "Statuskod"
+
+#. module: chat_ai_bot_common
+#: model:ir.model.fields,field_description:chat_ai_bot_common.field_openai_thread__thread
+msgid "Thread"
+msgstr "Tråd"
+
+#. module: chat_ai_bot_common
+#: model:ir.model.fields,field_description:chat_ai_bot_common.field_openai_log__thread
+msgid "Thread ID"
+msgstr "Tråd-ID"
+
+#. module: chat_ai_bot_common
+#: model:ir.model.fields,help:chat_ai_bot_common.field_openai_log__thread
+msgid "Thread ID for the request"
+msgstr "Tråd-ID för begäran"
+
+#. module: chat_ai_bot_common
+#: model:ir.model,name:chat_ai_bot_common.model_res_users
+msgid "User"
+msgstr "Användare"
