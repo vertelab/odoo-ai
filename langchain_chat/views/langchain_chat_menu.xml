@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<odoo>
+    <menuitem
+        id="menu_langchain_root"
+        name="Langchain Chat"
+        sequence="10"
+        action="action_langchain_chat"/>
+</odoo>

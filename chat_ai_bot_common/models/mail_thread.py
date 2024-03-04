@@ -8,7 +8,12 @@ from odoo.tools import html2plaintext, plaintext2html
 from odoo import models, fields, api, _
 from odoo.exceptions import MissingError, AccessError, UserError
 
+# Logger settings. In this module we set messages in green textcolor
 _logger = logging.getLogger(__name__)
+# Set textcolor into green, must be head in message. (gn for green)
+blue = "\033[34m"
+# Reset Color to default, must be tail in message. (cr for color reset)
+color_reset = "\033[0m"
 
 
 # ~ You are Open Interpreter, a world-class programmer that can complete any goal by executing code.
@@ -33,6 +38,7 @@ class MailThread(models.AbstractModel):
 
         if msg_vals['model'] == 'mail.channel':
 
+            _logger.info(f"{blue}MailThread.{color_reset}")
             obj = self.env[msg_vals['model']].browse(msg_vals['res_id'])
 
             for recipient in self.env['res.users'].search(

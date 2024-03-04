@@ -7,7 +7,12 @@ import base64
 from odoo import models, fields, api, _
 from odoo.exceptions import MissingError, AccessError, UserError
 
+# Logger settings. In this module we set messages in green textcolor
 _logger = logging.getLogger(__name__)
+# Set textcolor into green, must be head in message. (gn for green)
+blue = "\033[34m"
+# Reset Color to default, must be tail in message. (cr for color reset)
+color_reset = "\033[0m"
 
 
 class OpenAIThread(models.TransientModel):
@@ -30,8 +35,9 @@ class OpenAIThread(models.TransientModel):
             'thread': channel.name,
         }
 
-    # @api.model
+    #@api.model
     def thread_init(self, client, channel, recipient, author):
+        _logger.warning("\033[1;36mCommon / thread_init\033[0m]") 
         """
             Initialize a thread, create if not available
         """
@@ -43,6 +49,7 @@ class OpenAIThread(models.TransientModel):
         return thread
 
     def log_values(self, message, author, role='user', status_code=200):
+        _logger.warning("\033[1;36mCommon / log_values\033[0m]") 
         return {
             'author_id': author.id,
             'channel_id': self.channel_id.id,
@@ -55,28 +62,39 @@ class OpenAIThread(models.TransientModel):
         }
 
     def log(self, message, author, role='user', status_code=200):
+        _logger.warning("\033[1;36mCommon / log\033[0m]") 
         self.env['openai.log'].create(self.log_values(message, author, role, status_code))
 
-    def add_message(self, client, message, role='user'):
+    def add_message(self, client, message, user_id, role='user'):
+        _logger.warning("\033[1;36mCommon / add_message\033[0m]") 
         """
             Add a Message to a Thread
+            meant to be overrriden
         """
-        if hasattr(self, '%s_add_message' % self.recipient_id.llm_type):
-            return getattr(self, '%s_add_message' % self.recipient_id.llm_type)(client, message, role)
         return False
 
-    def wait4response(self, client):
-        """ Returns the form action URL, for form-based acquirer implementations. """
-        if hasattr(self, '%s_wait4response' % self.recipient_id.llm_type):
-            return getattr(self, '%s_wait4response' % self.recipient_id.llm_type)(client)
+    def wait4response(self, client, user_id):
+        _logger.warning("\033[1;36mCommon / wait4response\033[0m]") 
+        """ Returns the form action URL, for form-based acquirer implementations. #meant to be overrriden """
         return False
 
     def _thread_unlink(self, client, channel):
+        _logger.warning("\033[1;36mCommon / _thread_unlink\033[0m")
+        #TODO When is this supposed to be called?
         return
 
+    def unlink(self):
+        _logger.warning("\033[1;36mCommon / unlink\033[0m]")
+        #for record in self:
+        #    record.thread_unlink(client)
+        ##TODO Where Im is supposed to get the client from?
+        return super(OpenAIThread, self).unlink()
+    
     def thread_unlink(self, client, channel):
-        """
-             Tidy up and delete the thread
+        _logger.warning("\033[1;36mCommon / thread_unlink\033[0m]") 
+        """ 
+             Tidy up and delete the thread 
+             TODO When is this supposed to be called?
         """
         for thread in self.env['openai.thread'].search([('channel_id', '=', channel.id)]):
             thread._thread_unlink(client, channel)
@@ -86,9 +104,11 @@ class OpenAIThread(models.TransientModel):
         return msg
 
     def load_client(self):
+        _logger.warning("\033[1;36mCommon / load_client\033[0m]") 
         return pickle.loads(self.client)
 
-    # def client_init(self, client):
-    #     # self.client = base64.encode(pickle.dumps(client)
-    #     return client
-
+    @api.model
+    def client_init(self, client):
+         _logger.warning("\033[1;36mCommon / client_init\033[0m]") 
+         return False
+         #meant to be overrriden

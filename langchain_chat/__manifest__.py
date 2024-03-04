@@ -18,41 +18,38 @@
 #    along with this program. If not, see <http://www.gnu.org/licenses/>.
 #
 ##############################################################################
-
 {
-    'name': 'Chat AI-Bot: Common',
-    'version': '16.0.1.0.3',
+    'name': 'Langchain Chat',
+    'version': '16.00.0.0',
     # Version ledger: 16.0 = Odoo version. 1 = Major. Non regressionable code. 2 = Minor. New features that are regressionable. 3 = Bug fixes
-    'summary': 'Make OdooBot finally useful. Create users that you chat with just like ChatGPT. Integrate with OpenAI ChatGPT (GPT-3) or other LLM',
+    'summary': 'Easy Chat using LangChain',
     # Categories can be used to filter modules in modules listing
-    # Check https://github.com/odoo/odoo/blob/16.0/odoo/addons/base/data/ir_module_category_data.xml
+    # Check https://github.com/odoo/odoo/blob/14.0/odoo/addons/base/data/ir_module_category_data.xml
     # for the full list
-    'category': 'Productivity / Discuss',
+    'category': 'Productivity/Discuss',
     'description': """
-    Make OdooBot useful by adding OpenAI GPT intelligence.
-    Depends on https://apps.odoo.com/apps/modules/16.0/web_field_slider/
+    A custom chat bot designed to be interpendent and easy to use.
     """,
     #'sequence': '1',
     'author': 'Vertel AB',
-    'website': 'https://vertel.se/apps/odoo-ai/chat_ai_bot_common',
-    'images': ['static/description/banner.png'], # 560x280 px.
     'license': 'AGPL-3',
-    'contributor': '',
+    'contributor': 'Andreas',
     'maintainer': 'Vertel AB',
     'repository': 'https://github.com/vertelab/odoo-ai',
-    # Any module necessary for this one to work correctly
-    'depends': [
-        'mail',
-        'web_field_slider',
-    ],
+    'depends': ["base"],
     'data': [
-        'security/res_groups.xml',
-        'security/ir.model.access.csv',
-        'views/res_users.xml',
-        'views/openai_log.xml',
-        'views/menu.xml',
-    ],
+        "security/ir.model.access.csv",
+        "views/langchain_chat_view.xml",
+        "views/langchain_chat_settings.xml",
+        "views/langchain_chat_menu.xml",
+        ],
+        'external_dependencies': {
+        'python': [
+            'openai'
+        ]
+    },
     'installable': True,
     'auto_install': False,
     'application': False,
 }
+# vim:expandtab:smartindent:tabstop=4:softtabstop=4:shiftwidth=4:

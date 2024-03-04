@@ -1,15 +1,21 @@
 # -*- coding: utf-8 -*-
 
-import openai
+import openai, uuid
 import time
 import yfinance as yf
 import json
 import logging
+import requests as req
 
 from odoo import models, fields, api, _
 from odoo.exceptions import MissingError, AccessError, UserError
 
+# Logger settings. In this module we set messages in green textcolor
 _logger = logging.getLogger(__name__)
+# Set textcolor into green, must be head in message. (gn for green)
+magenta = "\033[35m"
+# Reset Color to default, must be tail in message. (cr for color reset)
+color_reset = "\033[0m"
 
 
 # ~ You are Open Interpreter, a world-class programmer that can complete any goal by executing code.
@@ -34,22 +40,31 @@ class OpenAIThread(models.TransientModel):
         return super(OpenAIThread, self).thread_values(channel, recipient, author)
 
     @api.model
-    def openai_client_init(self, user):
+    def client_init(self, user):
+        if user.llm_type != "openai":
+            return super().client_init(user)
+            #return super(OpenAIThread, self).client_init(user)
+        
         try:
+            _logger.info(f"\033[1;35m M:OpenAI bot / F:openai_thread / C:OpenAIThread / client_init: Init Api Key. \033[0m")
             client = openai.OpenAI(api_key=user.openai_api_key,
-                                   base_url=user.openai_base_url or 'https://api.openai.com/v1')
+                                   base_url=user.openai_base_url or 'https://api.openai.com/v1') #Alt: http://192.168.1.68:8000/v1
             return client
         except openai.APIConnectionError as e:
-            _logger.warning(f"OPENAI: The server could not be reached {e.__cause__}")
+            _logger.error(f"OPENAI: The server could not be reached {e.__cause__}")
             self.log(f"{e.response}", user.partner_id, role='system')
         except openai.APIStatusError as e:
             self.log(f"OPENAI: Status error {e.status_code} {e.response}", user.partner_id, role='system')
-            _logger.warning(f"OPENAI: Status error {e.status_code} {e.response}")
+            _logger.error(f"OPENAI: Status error {e.status_code} {e.response}")
 
     @api.model
-    def openai_thread_init(self, client, channel, recipient, author):
+    def thread_init(self, client, channel, recipient, author):
         # TODO driver type from recipient, is it us?
-        thread = self.thread_init(client, channel, recipient, author)
+        if recipient.llm_type != "openai":
+            return super(OpenAIThread, self).thread_init(client, channel, recipient, author)
+        
+        thread = super(OpenAIThread, self).thread_init(client, channel, recipient, author)
+        _logger.info(f"\033[1;35m M:OpenAI bot / F:openai_thread / C:OpenAIThread / thread_init: Reading tools. \033[0m")
         tools_list = [{
             "type": "function",
             "function": {
@@ -80,7 +95,11 @@ class OpenAIThread(models.TransientModel):
             ).id
         else:
             thread.assistant = recipient.openai_assistant
-        thread.thread = client.beta.threads.create().id
+        client_thread = client.beta.threads.create()
+        _logger.error(f"{client_thread=}")
+        _logger.error(f"{client_thread.__dict__=}")
+        thread.thread = client_thread.id
+        _logger.error(f"{thread.thread=}")
         return thread
 
     def log(self, message, author, role='user', status_code=200):
@@ -93,10 +112,13 @@ class OpenAIThread(models.TransientModel):
                                        'status_code': status_code,
                                        'role': role})
 
-    def openai_add_message(self, client, message, role='user'):
+    def add_message(self, client, message, user_id, role='user'):
         """
             Add a Message to a Thread
         """
+        if user_id.llm_type != "openai":
+            return super(OpenAIThread, self).add_message(client, message, user_id, role)
+        
         self.log(message, self.author_id, role=role)
         try:
             message = client.beta.threads.messages.create(
@@ -116,7 +138,10 @@ class OpenAIThread(models.TransientModel):
             self.log(f"OPENAI: Thread Status error {e.status_code} {e.response}", status_code=e.status_code,
                      role='openai', )
 
-    def openai_wait4response(self, client):
+    def wait4response(self, client, user_id):
+        if user_id.llm_type != "openai":
+            return super(OpenAIThread, self).wait4response(client, user_id)
+        
         # TODO log does not save the correct author (it should be AI-bot)
         if self.run:
             run_status = client.beta.threads.runs.retrieve(
@@ -128,6 +153,7 @@ class OpenAIThread(models.TransientModel):
                 self.log(f"OPENAI: Status error run expired {self.run=} {run_status.status=}",
                          self.recipient_id.parent_id, status_code=400, role='openai', )
         else:
+            _logger.info(f"\033[1;35m M:OpenAI bot / F:openai_thread / C:OpenAIThread / wait4response: Run Saved. \033[0m")
             _logger.warning(f"Run saved {self.run=}")
             self.run = None
 
@@ -202,7 +228,7 @@ class OpenAIThread(models.TransientModel):
                         tool_outputs.append({
                             "tool_call_id": action['id'],
                             "output": output
-                        })
+                        })                    
                     else:
                         raise ValueError(f"Unknown function: {func_name}")
 
@@ -220,7 +246,13 @@ class OpenAIThread(models.TransientModel):
             time.sleep(1)
         return msgs
 
-    def _unlink_thread(self, client, channel):
+    def _thread_unlink(self, client, channel):
+        _logger.info(f"\033[1;35m M:OpenAI bot / F:openai_thread / C:OpenAIThread / _thread_unlink: Entered \033[0m")
+        #_logger.warning("openai _thread_unlink"*10)
+        if self.recipient_id.llm_type != "openai":
+            return super(OpenAIThread, self)._thread_unlink(client, channel)
+        return
+        ##TODO Where Im is supposed to get the client form
         try:
             client.beta.assistants.delete(self.assistant)
         except openai.APIConnectionError as e:
@@ -231,7 +263,11 @@ class OpenAIThread(models.TransientModel):
             _logger.warning(f"OPENAI: Delete Status error {e.status_code} {e.response}")
         self.recipient_id.openai_assistant = None
 
+        return super(OpenAIThread, self)._thread_unlink(client, channel)
+
     def get_stock_price(self, symbol: str) -> float:
+        _logger.info(f"\033[1;35m M:OpenAI bot / F:openai_thread / C:OpenAIThread / get_stock_price: Entered \033[0m")
         stock = yf.Ticker(symbol)
         price = stock.history(period="1d")['Close'].iloc[-1]
         return price
+    

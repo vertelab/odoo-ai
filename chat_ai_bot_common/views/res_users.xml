@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
     <data>
-
         <record id="view_users_form" model="ir.ui.view">
             <field name="name">ai_bot.res.users.form.view</field>
             <field name="model">res.users</field>
@@ -9,31 +8,36 @@
             <field name="arch" type="xml">
                 <field name="active" position="before">
                     <field name="is_ai_bot"/>
-                </field>
-                
+                </field>               
                 <xpath expr="//form/sheet/notebook" position="inside">
-                    <page name="page_openai_settings" string="Ai_bot settings" groups="base.group_erp_manager" attrs="{'invisible': [('is_ai_bot', '=', False)]}">
+                    <page name="page_openai_settings" string="Ai_bot settings" groups="base.group_erp_manager" attrs="{'invisible': [('is_ai_bot', '=', False)], 'style': 'background-color: #555555'}">
                         <div>
                             <p class="text-muted">
-                                Change any Open AI settings
+                                <h5>Configure OpenAI Settings</h5>
                             </p>
-
-                            <group string="LLM-settings">
-                                <field name="llm_type"/>
-                                <field name="openai_api_key"/>
-                                <field name="openai_base_url"/>
-                                <field name="openai_model"/>
-                            </group>
-                            <group string="Assistant-settings">
-                                <field name="openai_assistant_name"/>
-                                <field name="openai_assistant"/>
-                                <field name="openai_assistant_instructions"/>
-                            </group>
-                            
-                        </div>
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <group string="Common LLM Settings:">
+                                        <field name="llm_type" string="Used LLM Model:" help="Select the installed LLM" />
+                                        <field name="openai_temperature" string="Temperature (0.0-1.0):" widget="slider" step="0.1" min="0.0" max="1.0" />
+                                    </group>
+                                </div>
+                                <div class="col-md-6">
+                                    <group string="OpenAI API Settings:">
+                                        <field name="openai_api_key" string="OpenAI API Key" />
+                                        <field name="openai_base_url" string="OpenAI Base URL" />
+                                        <field name="openai_model" string="OpenAI Model" />
+                                    </group>
+                                </div>
+                            </div>
+                            <group string="Assistant Settings">
+                                <field name="openai_assistant_name" string="Assistant Name" />
+                                <field name="openai_assistant" string="Assistant Code" />
+                                <field name="openai_assistant_instructions" string="Assistant Message" />
+                            </group>                         
+                        </div>               
                     </page>
-                </xpath>
-               
+                </xpath>               
             </field>
         </record>
         
@@ -41,6 +45,8 @@
         
         
 <!--
+
+        <field string="Second Temp (0.0-1.0):" field_type="float" name="openai_temperature" widget="slider" min="0.0" max="1.0"/>
 
         <record id="openai_res_users_form_simple_modif_view" model="ir.ui.view">
             <field name="name">openai.res.users.form.simple.modif.view</field>

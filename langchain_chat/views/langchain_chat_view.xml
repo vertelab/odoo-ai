@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<odoo>
+    <record id="langchain_chat_view_form" model="ir.ui.view">
+        <field name="name">langchain.chat.form</field>
+        <field name="model">langchain.chat</field>
+        <field name="arch" type="xml">
+            <form>
+                <sheet>
+                    <group>
+                        <field name="prompt"/>
+                        <field name="response"/>
+                    </group>
+                    <group>
+                        <button name="generate_response" string="Get Answer"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_langchain_chat" model="ir.actions.act_window">
+        <field name="name">Langchain Chat</field>
+        <field name="type">ir.actions.act_window</field>
+        <field name="res_model">langchain.chat</field>
+        <field name="view_mode">form</field>
+        <field name="views" type="xml">
+            <view id="langchain_chat_view_form" />
+        </field>
+    </record>
+
+</odoo>
