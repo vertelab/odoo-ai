@@ -15,7 +15,7 @@ class ResUsers(models.Model):
             return super(ResUsers, self).run_ai_message_post(recipient, channel, author, message)
         
         _logger.info(f"Waiting some seconds...")            
-        time.sleep(2)
+        time.sleep(3)
         
         with self.env.registry.cursor() as cr:
             try:

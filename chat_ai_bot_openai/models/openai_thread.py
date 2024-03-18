@@ -46,7 +46,7 @@ class OpenAIThread(models.TransientModel):
             #return super(OpenAIThread, self).client_init(user)
         
         try:
-            _logger.info(f"\033[1;35m M:OpenAI bot / F:openai_thread / C:OpenAIThread / client_init: Init Api Key. \033[0m")
+            _logger.info(f"[\033[1;36m OpenAI: client_init -> Init Api Key and Base URL. \033[0m")
             client = openai.OpenAI(api_key=user.openai_api_key,
                                    base_url=user.openai_base_url or 'https://api.openai.com/v1') #Alt: http://192.168.1.68:8000/v1
             return client
@@ -96,10 +96,10 @@ class OpenAIThread(models.TransientModel):
         else:
             thread.assistant = recipient.openai_assistant
         client_thread = client.beta.threads.create()
-        _logger.error(f"{client_thread=}")
-        _logger.error(f"{client_thread.__dict__=}")
+        # _logger.error(f"{client_thread=}")
+        # _logger.error(f"{client_thread.__dict__=}")
         thread.thread = client_thread.id
-        _logger.error(f"{thread.thread=}")
+        # _logger.error(f"{thread.thread=}")
         return thread
 
     def log(self, message, author, role='user', status_code=200):

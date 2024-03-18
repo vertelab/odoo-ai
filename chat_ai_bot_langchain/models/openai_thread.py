@@ -22,6 +22,8 @@ class OpenAIThread(models.TransientModel):
         if user.llm_type != "langchain":
             return super().client_init(user)
         
+        _logger.info(f"OpenAI Base URL (from user): \033[1;32m[{user.openai_base_url}]\033[0m")
+        
         ###
         # base_url = user.openai_base_url or 'http://192.168.1.68:8000/v1'
         # temperature = user.openai_temperature or 0.5
@@ -30,7 +32,16 @@ class OpenAIThread(models.TransientModel):
         # conversation = Conversation(adapter=adapter)
         ###
         
-        client = ChatOpenAI(base_url=user.openai_base_url or 'http://192.168.1.68:8000/v1', temperature="0.5") #https://api.openai.com/v1       
+        client = ChatOpenAI(
+            base_url = user.openai_base_url or 'http://192.168.1.68:8000/v1',
+            temperature = user.openai_temperature or 0.5,
+            max_tokens = user.openai_max_tokens or 200) 
+        
+        #https://api.openai.com/v1
+        #_logger.info(f"OpenAI Base URL (used): \033[1;32m[{client.base_url}]\033[0m")
+        #_logger.info(f"Base URL: \033[1;32m[{client}]\033[0m")
+        _logger.info(f"Temperature: \033[1;32m[{client.temperature}]\033[0m")
+        _logger.info(f"Max tokens: \033[1;32m[{client.max_tokens}]\033[0m")       
         return client
      
     @api.model
@@ -45,13 +56,14 @@ class OpenAIThread(models.TransientModel):
 
         return thread
     
-    def add_message(self, client, message, user_id, role='odoo user'):
-        
+    def add_message(self, client, message, user, role='odoo user'):
+              
         _logger.info(f"Added message: [\"\033[1;32m{message}\033[0m\"]")
         response = client.invoke([
-                    #SystemMessage(content=self.role), #You are a covetous and jelous dragon.
-                    HumanMessage(content=message)
-        ])
+                    HumanMessage(content=message)],
+                    max_tokens = user.openai_max_tokens                   
+        )   
+        _logger.info(f"Response: \033[1;32m{response}\033[0m")     
         self.write({'message': message, 'role': role})
         return response
 
@@ -59,21 +71,31 @@ class OpenAIThread(models.TransientModel):
         
         if user_id.llm_type != "langchain":
                 return super(OpenAIThread, self).wait4response(client, user_id)
+            
+        if self.message is None:
+            raise ValueError("Message is None")    
               
-        response = self.add_message(client, self.message, user_id) 
-        
-        _logger.info(f"Message is processing...")
+        response = self.add_message(client, self.message, user_id)
+               
+        # Testing logging
+         
+        _logger.info(f"\033[1;37mThis is a info message\033[0m") 
+        _logger.info(f"\033[5;35mThis is a info message\033[0m") 
+        _logger.info(f"\033[2;32mThis is a info message\033[0m") 
+        _logger.info(f"\033[6;31mThis is a error message! ⛓️‍💥\033[0m") 
+        _logger.info(f"\033[3;33mThis is a warning message\033[0m") 
+        _logger.info(f"\033[4;34mThis is a debug message\033[0m") 
+        _logger.info(f"\033[7;36mWe are in a critical situation!!!\033[0m")       
                    
         if isinstance(response, AIMessage) and hasattr(response, 'content'):
-            extracted_content = response.content
+            extracted_content = (f"{response.content} [END]")
             _logger.info(f"Response.content")
             
         else:
             extracted_content = str(response)
             _logger.info(f"Str response")
             
-        #return f"<b>AI Boy:</b> {extracted_content}"
-        return f"<span style='color:purple;'><b>AI Boy:</b></span> <i>{extracted_content}</i>"
+        return f"<span style='color:purple;'><b>LangChain:</b></span> <i>{extracted_content}</i>"
 
     def _thread_unlink(self, client, channel):
 

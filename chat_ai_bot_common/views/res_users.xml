@@ -10,23 +10,26 @@
                     <field name="is_ai_bot"/>
                 </field>               
                 <xpath expr="//form/sheet/notebook" position="inside">
-                    <page name="page_openai_settings" string="Ai_bot settings" groups="base.group_erp_manager" attrs="{'invisible': [('is_ai_bot', '=', False)], 'style': 'background-color: #555555'}">
+                    <page name="page_openai_settings" string="Ai_bot settings" groups="base.group_erp_manager" attrs="{'invisible': [('is_ai_bot', '=', False)]}">
                         <div>
                             <p class="text-muted">
-                                <h5>Configure OpenAI Settings</h5>
-                            </p>
+                                <h5>Configure AI-Bot Settings:</h5>
+                            </p>                          
                             <div class="row">
+                                <group string="Used Sub-Module">
+                                    <field name="llm_type" string="Active Library:" help="Choose between installed frameworks/libraries to use a LLM." options="{'no_create': True}" required="1"/>
+                                </group>
                                 <div class="col-md-6">
                                     <group string="Common LLM Settings:">
-                                        <field name="llm_type" string="Used LLM Model:" help="Select the installed LLM" />
-                                        <field name="openai_temperature" string="Temperature (0.0-1.0):" widget="slider" step="0.1" min="0.0" max="1.0" />
+                                        <field name="openai_max_tokens" string="Max Used Tokens:" help="Set a maximum value for used tokens." widget="slider" step="5" min="5" max="300" />                                      
+                                        <field name="openai_temperature" string="Temperature (0.0-1.0):" help="Set a maximum value for temperature." widget="slider" step="0.1" min="0.0" max="1.0" />
                                     </group>
                                 </div>
                                 <div class="col-md-6">
                                     <group string="OpenAI API Settings:">
-                                        <field name="openai_api_key" string="OpenAI API Key" />
-                                        <field name="openai_base_url" string="OpenAI Base URL" />
-                                        <field name="openai_model" string="OpenAI Model" />
+                                        <field name="openai_api_key" string="OpenAI API Key" placeholder="Required field! Open AI will not work without it!" />
+                                        <field name="openai_base_url" string="OpenAI Base URL" placeholder="None selected, 'https://api.openai.com/' or Local LLM will be used." />
+                                        <field name="openai_model" string="OpenAI Model" placeholder="None selected, LLM model 'gpt-4-1106-preview' will be used." />
                                     </group>
                                 </div>
                             </div>
@@ -40,9 +43,7 @@
                 </xpath>               
             </field>
         </record>
-        
-
-        
+  
         
 <!--
 

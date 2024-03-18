@@ -56,7 +56,12 @@ class OpenAIThread(models.TransientModel):
         try: 
             _logger.warning("\033[1;36mOpen Interpreter / client_init --> Set OI as 'Client'...\033[0m]") 
             client = OpenInterpreter()
+            
+            # Log the temperature
+            _logger.info(f"OI: Temperature is set to \033[1;32m[{user.openai_temperature}]\033[0m")
+            
             return client
+        
         except Exception as e:
             _logger.warning(f"Open Interpreter: The server could not be reached {e.__cause__}")
             self.log(f"{e}", user.partner_id, role='system')
