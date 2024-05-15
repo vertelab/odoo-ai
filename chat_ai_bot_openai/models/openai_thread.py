@@ -162,10 +162,22 @@ class OpenAIThread(models.TransientModel):
         while True:
             # Wait for 5 seconds
             # Retrieve the run status
-            run_status = client.beta.threads.runs.retrieve(
-                thread_id=self.thread,
-                run_id=self.run
-            )
+            try:
+                run_status = client.beta.threads.runs.retrieve(
+                    thread_id=self.thread,
+                    run_id=self.run
+                )
+                self.log(run.model_dump_json(indent=4), self.recipient_id.parent_id, role='run')
+                _logger.warning(f"Model_dump: {run.model_dump_json(indent=4)} {run.id=}")
+            except openai.APIConnectionError as e:
+                _logger.warning(f"OPENAI: Error getting run_status {e.__cause__}")
+                self.log(f"OPENAI: Error getting run_status {e.__cause__}", self.recipient_id.parent_id,
+                         status_code=e.status_code, role='openai')
+                
+                return []
+            
+            
+            
 
             self.log(f"{run_status.status=}", self.recipient_id.parent_id, role='run', )
             # If run is completed, get messages

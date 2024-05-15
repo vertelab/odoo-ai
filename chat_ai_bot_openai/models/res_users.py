@@ -23,17 +23,21 @@ class ResUsers(models.Model):
                 openai_client = env['openai.thread'].openai_client_init(user_id)
 
                 thread = env['openai.thread'].sudo().openai_thread_init(openai_client, channel_id, user_id, author)
-                thread.add_message(openai_client, message)
-
-                for msg in thread.wait4response(openai_client):
-                    if not msg['role'] == 'user':
-                        channel_id.with_context(mail_create_nosubscribe=True).message_post(
-                            body=f"{msg['content']}",
-                            author_id=user_id.partner_id.id,
-                            message_type='comment',
-                            subtype_xmlid='mail.mt_comment'
-                        )
+                if message == '/reset':
+                    thread.unlink(openai_client,channel_id)
+                else:
+                    thread.add_message(openai_client, message)
+                    for msg in thread.wait4response(openai_client):
+                        if not msg['role'] == 'user':
+                            channel_id.with_context(mail_create_nosubscribe=True).message_post(
+                                body=f"{msg['content']}",
+                                author_id=user_id.partner_id.id,
+                                message_type='comment',
+                                subtype_xmlid='mail.mt_comment'
+                            )
                 env.cr.commit()
                 return {}
             except Exception as e:
                 _logger.error(f"{e}")
+                if thread and openai_client and channel_id:
+                    thread.unlink(openai_client,channel_id)
