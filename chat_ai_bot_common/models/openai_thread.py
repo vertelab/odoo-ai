@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 import json
 import logging
 import pickle
@@ -9,11 +8,9 @@ from odoo.exceptions import MissingError, AccessError, UserError
 
 _logger = logging.getLogger(__name__)
 
-
 class OpenAIThread(models.TransientModel):
     _name = 'openai.thread'
     _description = 'OpenAI Thread'
-
     channel_id = fields.Many2one(comodel_name='discuss.channel', string="Channel", help="")  #
     assistant = fields.Char(required=False)
     thread = fields.Char(required=False)

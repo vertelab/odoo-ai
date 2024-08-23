@@ -1,7 +1,4 @@
-# -*- coding: utf-8 -*-
-
 from odoo import models, fields, _
-
 
 class OpenaiLog(models.Model):
     _name = 'openai.log'

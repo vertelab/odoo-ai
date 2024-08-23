@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 import logging
 import time
 import threading
@@ -30,7 +28,6 @@ class MailThread(models.AbstractModel):
         message and computed value are given, to try to lessen query count by
         using already-computed values instead of having to rebrowse things. """
         res = super(MailThread, self)._message_post_after_hook(message, msg_vals)
-
         if msg_vals['model'] == 'discuss.channel':
 
             obj = self.env[msg_vals['model']].browse(msg_vals['res_id'])
@@ -52,7 +49,7 @@ class MailThread(models.AbstractModel):
 # ~ with api.Environment.manage():
 # ~ new_cr = self.pool.cursor()
 # ~ self = self.with_env(self.env(cr=new_cr))
-# ~ obj = self.env['discuss.channel'].browse(obj.id)
+#~ obj = self.env['discuss.channel'].browse(obj.id)
 # ~ recipient = self.env['res.users'].browse(recipient.id)
 # ~ recipient.ai_send_message(
 # ~ obj,

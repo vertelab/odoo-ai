@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 ##############################################################################
 #
 #    Odoo SA, Open Source Management Solution, third party addon
@@ -21,8 +20,7 @@
 
 {
     'name': 'Chat AI-Bot: Common',
-    'version': '1.3',
-    # Version ledger: 16.0 = Odoo version. 1 = Major. Non regressionable code. 2 = Minor. New features that are regressionable. 3 = Bug fixes
+    'version': '1.4',
     'summary': 'Make OdooBot finally useful. Create users that you chat with just like ChatGPT. Integrate with OpenAI ChatGPT (GPT-3) or other LLM',
     # Categories can be used to filter modules in modules listing
     # Check https://github.com/odoo/odoo/blob/16.0/odoo/addons/base/data/ir_module_category_data.xml
