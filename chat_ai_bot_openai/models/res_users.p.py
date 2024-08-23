@@ -17,7 +17,11 @@ class ResUsers(models.Model):
                 env = api.Environment(cr, self.env.uid, self.env.context)
 
                 user_id = env['res.users'].browse(recipient.id)
+                # #if VERSION >= "17.0"
+                channel_id = env['discuss.channel'].browse(channel.id)
+                # #elif VERSION == "16.0"
                 channel_id = env['mail.channel'].browse(channel.id)
+                # #endif
                 openai_client = env['openai.thread'].openai_client_init(user_id)
 
                 thread = env['openai.thread'].sudo().openai_thread_init(openai_client, channel_id, user_id, author)

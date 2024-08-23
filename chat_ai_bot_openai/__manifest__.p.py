@@ -19,7 +19,11 @@
 ##############################################################################
 {
     'name': 'Chat AI-Bot: for OpenAI',
+    # #if VERSION >= "17.0"
+    'version': '1.4',
+    # #elif VERSION == "16.0"
     'version': '1.3',
+    # #endif
     # Version ledger: 16.0 = Odoo version. 1 = Major. Non regressionable code. 2 = Minor. New features that are regressionable. 3 = Bug fixes
     'summary': 'AI Bot for LLM-servers compatible with OpenAI/using openai-ap',
     # Categories can be used to filter modules in modules listing
@@ -45,6 +49,9 @@
         'python': [
             'openai',
             'yfinance',
+            # #if VERSION >= "17.0"
+            'lxml_html_clean'
+            # #endif
         ]
     },
 
