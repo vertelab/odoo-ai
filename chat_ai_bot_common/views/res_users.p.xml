@@ -11,7 +11,11 @@
                 </field>
                 
                 <xpath expr="//form/sheet/notebook" position="inside">
+                    <!-- #if VERSION >= "17.0" -->
+                    <page name="page_openai_settings" string="Ai_bot settings" groups="base.group_erp_manager" invisible = "is_ai_bot == False" >
+                    <!-- #elif VERSION == "16.0" -->
                     <page name="page_openai_settings" string="Ai_bot settings" groups="base.group_erp_manager" attrs="{'invisible': [('is_ai_bot', '=', False)]}">
+                    <!-- #endif -->
                         <div>
                             <p class="text-muted">
                                 Change any Open AI settings
