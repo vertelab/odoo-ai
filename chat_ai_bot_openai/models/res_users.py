@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 import logging
 import time
 from odoo import models, fields, api, _
@@ -19,7 +18,6 @@ class ResUsers(models.Model):
 
                 user_id = env['res.users'].browse(recipient.id)
                 channel_id = env['discuss.channel'].browse(channel.id)
-
                 openai_client = env['openai.thread'].openai_client_init(user_id)
 
                 thread = env['openai.thread'].sudo().openai_thread_init(openai_client, channel_id, user_id, author)

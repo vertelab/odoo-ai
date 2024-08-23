@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 import openai
 import time
 import yfinance as yf
@@ -69,7 +67,7 @@ class OpenAIThread(models.TransientModel):
             }
         }]
 
-        _logger.warning(f"Thread Init {client=} {recipient=}")
+        # _logger.warning(f"Thread Init {client=} {recipient=}")
         if not recipient.openai_assistant:
 
             recipient.openai_assistant = thread.assistant = client.beta.assistants.create(
