@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+
+        <record model="ir.module.category" id="module_category_openai">
+            <field name="name">OpenAI</field>
+            <field name="sequence">150</field>
+            <field name="parent_id" eval="False"/>
+            <field name="description">OpenAI</field>
+        </record>
+
+        <record model="ir.module.category" id="module_category_openai_user_settings">
+            <field name="name">OpenAI User Settings</field>
+            <field name="parent_id" eval="module_category_openai"/>
+            <field name="description">Allow user to self edit his own settings about OdooGPT bot from the settings menu</field>
+        </record>
+
+
+        <record model="res.groups" id="group_openai_user_settings_basic">
+            <field name="name">Basic</field>
+            <field name="category_id" ref="module_category_openai_user_settings"/>
+            <field name="comment">Allow self editing some OpenAI settings: Chat method, Prefix, Suffix or System Message</field>
+        </record>
+        <record model="res.groups" id="group_openai_user_settings_medium">
+            <field name="name">Medium</field>
+            <field name="category_id" ref="module_category_openai_user_settings"/>
+            <field name="implied_ids" eval="[Command.link(ref('group_openai_user_settings_basic'))]"/>
+            <field name="comment">Allow self editing some OpenAI settings: All in Basic + Model, Temperature</field>
+        </record>
+        <record model="res.groups" id="group_openai_user_settings_all">
+            <field name="name">All</field>
+            <field name="category_id" ref="module_category_openai_user_settings"/>
+            <field name="implied_ids" eval="[Command.link(ref('group_openai_user_settings_medium'))]"/>
+            <field name="users" eval="[Command.link(ref('base.user_root')), Command.link(ref('base.user_admin'))]"/>
+            <field name="comment">Allow self editing ALL OpenAI settings: All in Medium + OpenAI Token, Max Tokens. Warning! This will allow the user to see the OpenAI token associated with him.</field>
+        </record>
+    </data>
+</odoo>
