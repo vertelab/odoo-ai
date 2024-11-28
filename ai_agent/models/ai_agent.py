@@ -22,12 +22,6 @@ class AIAgent(models.Model):
     ai_prompt_template = fields.Html()
     ai_agent_llm_id = fields.Many2one(comodel_name="ai.agent.llm")
 
-    def create_agent(self, **kwargs):
-        template_prompt = self._create_ai_templet_prompt(kwargs.keys())
-        message = template_prompt.invoke(kwargs)
-        answer = self._instantiate_model().invoke(message)
-        return answer.content
-
     def test(self):
         for record in self:
             record.ai_prompt_template = \
