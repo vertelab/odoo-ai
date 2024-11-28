@@ -20,7 +20,9 @@ class MailAIChannel(models.Model):
         'res.company', string='Company', index=True,
         default=lambda self: self.env.company)
 
-    ai_model_id = fields.Char()
+    ai_agent_id = fields.Many2one('ai.agent', string="AI Agent")
+
+    ai_model_id = fields.Many2one('ai.agent.llm', string="AI Agent Model", related="ai_agent_id.ai_agent_model_id")
 
     alias_id = fields.Many2one(
         'mail.alias', string='Alias', ondelete="restrict", required=True,
@@ -32,15 +34,15 @@ class MailAIChannel(models.Model):
         'res.users', related='alias_id.alias_user_id', readonly=False, inherited=True,
         domain=lambda self: [('groups_id', 'in', self.env.ref('sales_team.group_sale_salesman_all_leads').id)])
 
-    def write(self, vals):
-        result = super(MailAIChannel, self).write(vals)
-        for rec in self:
-            alias_vals = rec._alias_get_creation_values()
-            rec.write({
-                'alias_name': alias_vals.get('alias_name', rec.alias_name),
-                'alias_defaults': alias_vals.get('alias_defaults'),
-            })
-        return result
+    # def write(self, vals):
+    #     result = super(MailAIChannel, self).write(vals)
+    #     for rec in self:
+    #         alias_vals = rec._alias_get_creation_values()
+    #         rec.write({
+    #             'alias_name': alias_vals.get('alias_name', rec.alias_name),
+    #             'alias_defaults': alias_vals.get('alias_defaults'),
+    #         })
+    #     return result
 
     def _alias_get_creation_values(self):
         values = super(MailAIChannel, self)._alias_get_creation_values()

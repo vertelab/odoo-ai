@@ -40,10 +40,13 @@
                         </h1>
                     </div>
                     <group>
-                        <group name="left" string="Team Details">
+                        <group name="left" string="Details">
                             <field name="active" invisible="1"/>
                             <field name="sequence" invisible="1"/>
-                             <label for="alias_name" string="Email Alias"/>
+                            <field name="ai_agent_id"/>
+                            <field name="ai_model_id"/>
+
+                            <label for="alias_name" string="Email Alias"/>
                             <div class="oe_inline" name="alias_def">
                                 <field name="alias_id" class="oe_read_only oe_inline"
                                     string="Email Alias" required="0"

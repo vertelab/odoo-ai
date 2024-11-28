@@ -3,12 +3,27 @@
 
 import logging
 
-
 from odoo import api, fields, models, tools, SUPERUSER_ID
 from odoo.tools.translate import _
 from odoo.tools.misc import get_lang
 
 _logger = logging.getLogger(__name__)
+
+prompt_template = """
+You are a deal analyzer. Based on the criteria below, determine if the email contains a "good deal":
+- Substantial discount (40% or more).
+- Value addition (e.g., "Buy One Get One Free" or additional bonuses).
+- Significant price reduction compared to the market price.
+- Urgency or exclusivity that makes the deal appealing.
+
+If the deal is good, return "GOOD DEAL" and explain why in one sentence.
+If the deal is not good, return "NOT A GOOD DEAL" and explain why in one sentence.
+
+### Email Content:
+{email}
+
+### Response:
+"""
 
 
 class MailAI(models.Model):
@@ -133,3 +148,7 @@ class MailAI(models.Model):
 
     def get_mail_activity(self):
         message_ids = self.message_ids
+        ai_answer = self.mail_channel_id.ai_agent_id.create_agent(
+            email=message_ids.mapped('body')[0]
+        )
+        print(ai_answer)

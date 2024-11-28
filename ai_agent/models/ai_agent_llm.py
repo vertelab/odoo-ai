@@ -9,12 +9,11 @@ import logging
 
 _logger = logging.getLogger(__name__)
 
+
 class AIAgentModel(models.Model):
     _name = 'ai.agent.llm'
-    _description = 'scaffold_test.scaffold_test'
+    _description = 'AI Agent LLM'
 
     name = fields.Char(required=True)
     is_key_required = fields.Boolean(default=True)
     ai_api_key = fields.Char()
-
-

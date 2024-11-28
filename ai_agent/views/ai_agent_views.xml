@@ -1,74 +1,74 @@
 <odoo>
-  <data>
+    <data>
 
-    <record id="ai_agent_form" model="ir.ui.view">
-      <field name="name">ai.agent.form</field>
-      <field name="model">ai.agent</field>
-      <field name="arch" type="xml">
-        <form>
-          <sheet>
-            <group>
-              <group>
-                <field name="name" modifiers="{&quot;required&quot;: true}"/>
-              </group>
-            </group>
-            <group>
-              <field name="ai_prompt_template"/>
-            </group>
-            <group>
-              <group>
-                <field name="ai_agent_model_id" can_create="true" can_write="true"/>
-              </group>
-            </group>
-            <group>
-              <separator/>
-            </group>
-          </sheet>
-        </form>
-      </field>
-    </record>
+        <record id="ai_agent_form" model="ir.ui.view">
+            <field name="name">ai.agent.form</field>
+            <field name="model">ai.agent</field>
+            <field name="arch" type="xml">
+                <form>
+                    <sheet>
+                        <group>
+                            <group>
+                                <field name="name" modifiers="{&quot;required&quot;: true}"/>
+                            </group>
+                        </group>
+                        <group>
+                            <field name="ai_prompt_template"/>
+                        </group>
+                        <group>
+                            <group>
+                                <field name="ai_agent_model_id" can_create="true" can_write="true"/>
+                            </group>
+                        </group>
+                        <group>
+                            <separator/>
+                        </group>
+                    </sheet>
+                </form>
+            </field>
+        </record>
 
-    <record id="ai_agent_tree" model="ir.ui.view">
-      <field name="name">ai.agent.tree</field>
-      <field name="model">ai.agent</field>
-      <field name="arch" type="xml">
-       <tree >
-          <field name="name" modifiers="{&quot;required&quot;: true}"/>
-        </tree>
-      </field>
-    </record>
+        <record id="ai_agent_tree" model="ir.ui.view">
+            <field name="name">ai.agent.tree</field>
+            <field name="model">ai.agent</field>
+            <field name="arch" type="xml">
+                <tree >
+                    <field name="name" modifiers="{&quot;required&quot;: true}"/>
+                </tree>
+            </field>
+        </record>
 
-    <!-- <record id="view_company_form" model="ir.ui.view">
-      <field name="name">view.company.form.rss.url</field>
-      <field name="model">res.company</field>
-      <field name="inherit_id" ref="base.view_company_form"/>
-      <field name="arch" type="xml">
-        <xpath expr="//notebook[@colspan='4']/page[@name='general_info']" position="after">
-          <page name="ai_config" string="AI Config">
-            <group>
-              <group>
-                <field name="ai_company_context"/>
-              </group>
-              <group>
-                <field name="ai_model"/>
-                <field name="ai_api_key"/>
-              </group>
-            </group>
-          </page>
-        </xpath>
-      </field>
-    </record> -->
+        <!-- <record id="view_company_form" model="ir.ui.view">
+          <field name="name">view.company.form.rss.url</field>
+          <field name="model">res.company</field>
+          <field name="inherit_id" ref="base.view_company_form"/>
+          <field name="arch" type="xml">
+            <xpath expr="//notebook[@colspan='4']/page[@name='general_info']" position="after">
+              <page name="ai_config" string="AI Config">
+                <group>
+                  <group>
+                    <field name="ai_company_context"/>
+                  </group>
+                  <group>
+                    <field name="ai_model"/>
+                    <field name="ai_api_key"/>
+                  </group>
+                </group>
+              </page>
+            </xpath>
+          </field>
+        </record> -->
 
-    <record id="action_ai_agent" model="ir.actions.act_window">
-      <field name="name">Agents</field>
-      <field name="res_model">ai.agent</field>
-      <field name="view_mode">tree,form</field>
-    </record>
+        <record id="action_ai_agent" model="ir.actions.act_window">
+            <field name="name">Agents</field>
+            <field name="res_model">ai.agent</field>
+            <field name="view_mode">tree,form</field>
+        </record>
 
-    <menuitem id="ai_agent.menu_ai_agent_root" name="Agents" action="action_ai_agent"/>
+        <menuitem id="ai_agent.menu_ai_agent_root" name="Agents" action="action_ai_agent"/>
 
-    <menuitem id="ai_agent.menu_ai_agent_configuration" parent="ai_agent.menu_ai_agent_root" name="Configuration" action="action_ai_agent"/>
+        <menuitem id="ai_agent.menu_ai_agent_configuration" parent="ai_agent.menu_ai_agent_root" name="Configuration" action="action_ai_agent"/>
 
 
-  </data>
+    </data>
 </odoo>
