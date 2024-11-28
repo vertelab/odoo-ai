@@ -1,0 +1,46 @@
+<odoo>
+    <data>
+
+        <record id="ai_agent_llm_tree" model="ir.ui.view">
+            <field name="name">ai.agent.llm.tree</field>
+            <field name="model">ai.agent.llm</field>
+            <field name="arch" type="xml">
+                <tree >
+                    <field name="name" modifiers="{&quot;required&quot;: true}"/>
+                </tree>
+            </field>
+        </record>
+
+        <record id="ai_agent_llm_form" model="ir.ui.view">
+            <field name="name">ai.agent.llm.form</field>
+            <field name="model">ai.agent.llm</field>
+            <field name="arch" type="xml">
+                <form>
+                    <sheet>
+                        <group>
+                            <group>
+                                <field name="name" modifiers="{&quot;required&quot;: true}"/>
+                                <field name="ai_api_key"/>
+                            </group>
+                            <group>
+                                <field name="is_key_required"/>
+                            </group>
+                        </group>
+                        <group>
+                            <separator/>
+                        </group>
+                    </sheet>
+                </form>
+            </field>
+        </record>
+
+        <record id="action_ai_agent_llm" model="ir.actions.act_window">
+            <field name="name">Agent LLM</field>
+            <field name="res_model">ai.agent.llm</field>
+            <field name="view_mode">tree,form</field>
+        </record>
+
+        <menuitem id="ai_agent.menu_ai_agent_llm" name="LLMs" parent="ai_agent.menu_ai_agent_configuration" action="action_ai_agent_llm"/>
+
+    </data>
+</odoo>
