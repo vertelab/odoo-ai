@@ -22,7 +22,7 @@ class MailAIChannel(models.Model):
 
     ai_agent_id = fields.Many2one('ai.agent', string="AI Agent")
 
-    ai_model_id = fields.Many2one('ai.agent.llm', string="AI Agent Model", related="ai_agent_id.ai_agent_model_id")
+    ai_model_id = fields.Many2one('ai.agent.llm', string="AI Agent Model", related="ai_agent_id.ai_agent_llm_id")
 
     alias_id = fields.Many2one(
         'mail.alias', string='Alias', ondelete="restrict", required=True,

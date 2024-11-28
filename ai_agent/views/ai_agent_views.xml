@@ -5,6 +5,9 @@
             <field name="name">ai.agent.form</field>
             <field name="model">ai.agent</field>
             <field name="arch" type="xml">
+                <header>
+                    <button name="test" type="object" string="Test"/>
+                </header>
                 <form>
                     <sheet>
                         <group>
@@ -17,7 +20,7 @@
                         </group>
                         <group>
                             <group>
-                                <field name="ai_agent_model_id" can_create="true" can_write="true"/>
+                                <field name="ai_agent_llm_id" can_create="true" can_write="true"/>
                             </group>
                         </group>
                         <group>
@@ -37,27 +40,6 @@
                 </tree>
             </field>
         </record>
-
-        <!-- <record id="view_company_form" model="ir.ui.view">
-          <field name="name">view.company.form.rss.url</field>
-          <field name="model">res.company</field>
-          <field name="inherit_id" ref="base.view_company_form"/>
-          <field name="arch" type="xml">
-            <xpath expr="//notebook[@colspan='4']/page[@name='general_info']" position="after">
-              <page name="ai_config" string="AI Config">
-                <group>
-                  <group>
-                    <field name="ai_company_context"/>
-                  </group>
-                  <group>
-                    <field name="ai_model"/>
-                    <field name="ai_api_key"/>
-                  </group>
-                </group>
-              </page>
-            </xpath>
-          </field>
-        </record> -->
 
         <record id="action_ai_agent" model="ir.actions.act_window">
             <field name="name">Agents</field>
