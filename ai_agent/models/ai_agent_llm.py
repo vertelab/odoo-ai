@@ -9,7 +9,7 @@ import logging
 
 _logger = logging.getLogger(__name__)
 
-class AIAgentModel(models.Model):
+class AIAgentLLM(models.Model):
     _name = 'ai.agent.llm'
     _description = 'scaffold_test.scaffold_test'
 

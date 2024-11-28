@@ -5,6 +5,9 @@
       <field name="name">ai.agent.form</field>
       <field name="model">ai.agent</field>
       <field name="arch" type="xml">
+        <header>
+          <button name="test" type="object" string="Test"/>
+        </header>
         <form>
           <sheet>
             <group>
@@ -17,7 +20,7 @@
             </group>
             <group>
               <group>
-                <field name="ai_agent_model_id" can_create="true" can_write="true"/>
+                <field name="ai_agent_llm_id" can_create="true" can_write="true"/>
               </group>
             </group>
             <group>
@@ -32,7 +35,7 @@
       <field name="name">ai.agent.tree</field>
       <field name="model">ai.agent</field>
       <field name="arch" type="xml">
-       <tree >
+        <tree >
           <field name="name" modifiers="{&quot;required&quot;: true}"/>
         </tree>
       </field>
