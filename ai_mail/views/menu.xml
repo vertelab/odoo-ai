@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- Top menu item -->
+    <!--
+        This menu item's purpose is to overwrite another one defined in
+        the base module in order to set new groups.
+    -->
+    <menuitem
+        id="mail_ai_menu_root"
+        name="Mail AI"
+        web_icon="ai_mail,static/description/icon.svg"
+        sequence="25"/>
+
+    <!-- SALES (MAIN USER MENU) -->
+    <menuitem
+        id="mail_ai_menu_mail_root"
+        name="Emails"
+        parent="mail_ai_menu_root"
+        action="ai_mail.ai_mail_action"
+        sequence="1"/>
+
+    <menuitem
+        id="mail_ai_menu_mail"
+        name="Emails"
+        parent="mail_ai_menu_mail_root"
+        groups="sales_team.group_sale_salesman"
+        action="ai_mail.ai_mail_action"
+        sequence="2"/>
+
+
+    <!-- CONFIGURATION -->
+    <menuitem
+        id="mail_ai_menu_config"
+        name="Configuration"
+        parent="mail_ai_menu_root"
+        sequence="25" groups="sales_team.group_sale_manager"/>
+
+    <menuitem
+        id="mail_ai_channel_menu_config"
+        name="Mail Channels"
+        parent="mail_ai_menu_config"
+        action="ai_mail.mail_channel_ai_action_config"
+        sequence="0"/>
+
+    <menuitem
+        id="mail_ai_config_settings_menu"
+        name="Settings"
+        parent="mail_ai_menu_config"
+        action="ai_mail.mail_ai_config_settings_action"
+        groups="base.group_system"
+        sequence="5"/>
+
+</odoo>
