@@ -21,6 +21,7 @@ class AIAgent(models.Model):
     name = fields.Char(required=True)
     ai_prompt_template = fields.Html()
     ai_agent_llm_id = fields.Many2one(comodel_name="ai.agent.llm")
+    ai_type = fields.Selection(selection=[("default","Default")], default="default" ,required=True)
 
     def create_agent(self, **kwargs):
         template_prompt = self._create_ai_templet_prompt(kwargs.keys())
@@ -31,19 +32,18 @@ class AIAgent(models.Model):
     def test(self):
         for record in self:
             record.ai_prompt_template = \
-                """
+            """
             {answer}
             ==============
              Below this text, you have a question, and above you have the answer. Return the answer to the question.
             ==============
             {question} 
-            """
+            """.strip()
             answer = "42"
             question = "what is the meaning of life the universe and everything?"
             _logger.error(f"{record.create_agent(answer=answer, question=question)}")
 
     def create_agent(self, **kwargs):
-
         template_prompt = self._create_ai_templet_prompt(kwargs.keys())
         message = template_prompt.invoke(kwargs)
         answer = self._instantiate_model().invoke(message)
