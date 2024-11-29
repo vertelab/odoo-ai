@@ -4,8 +4,10 @@
 import logging
 
 from odoo import api, fields, models, tools, SUPERUSER_ID
+from odoo.exceptions import UserError
 from odoo.tools.translate import _
 from odoo.tools.misc import get_lang
+
 
 _logger = logging.getLogger(__name__)
 
@@ -16,7 +18,7 @@ You are a deal analyzer. Based on the criteria below, determine if the email con
 - Significant price reduction compared to the market price.
 - Urgency or exclusivity that makes the deal appealing.
 
-If the deal is good, return "GOOD DEAL" and explain why in one sentence.
+If the deal is good, return call the create_lead function.
 If the deal is not good, return "NOT A GOOD DEAL" and explain why in one sentence.
 
 ### Email Content:
@@ -30,7 +32,7 @@ class MailAI(models.Model):
     _name = "mail.ai"
     _description = "Mail managed by AI"
     _order = "id desc"
-    _inherit = ['mail.thread.cc',
+    _inherit = ['ai.agent', 'mail.thread.cc',
                 'mail.thread.blacklist',
                 'mail.activity.mixin',
                 'utm.mixin',
@@ -74,6 +76,7 @@ class MailAI(models.Model):
     email_from = fields.Char(
         'Email', tracking=40, index='trigram',
         readonly=False, store=True)
+    crm_lead_id = fields.Many2one('crm.lead', readonly=True)
 
     # ------------------------------------------------------------
     # MAILING
@@ -151,4 +154,26 @@ class MailAI(models.Model):
         ai_answer = self.mail_channel_id.ai_agent_id.create_agent(
             email=message_ids.mapped('body')[0]
         )
-        print(ai_answer)
+        raise UserError(ai_answer)
+
+    def create_lead(self):
+        lead_vals = {
+            'name': self.name,
+            'email_from': self.email_from,
+            'mail_ai_id': self.id,
+            'type': 'lead'
+        }
+        lead_id = self.env['crm.lead'].create(lead_vals)
+        self.write({'crm_lead_id': lead_id.id})
+
+    def action_show_crm_lead(self):
+        return {
+            'name': _('Lead'),
+            'res_model': 'crm.lead',
+            'view_mode': 'form',
+            'res_id': self.crm_lead_id.id,
+            'target': 'self',
+            'type': 'ir.actions.act_window',
+        }
+
+
