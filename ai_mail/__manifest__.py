@@ -43,13 +43,15 @@
     'depends': [
         'mail',
         'base',
-        'sales_team'
+        'sales_team',
+        'crm'
     ],
     'data': [
         'security/ir.model.access.csv',
         'views/mail_ai_views.xml',
         'views/mail_channel_ai_views.xml',
         'views/res_config_settings_views.xml',
+        'views/crm_lead_view.xml',
         'views/menu.xml',
 
     ],
