@@ -24,6 +24,8 @@ class MailAIChannel(models.Model):
 
     ai_model_id = fields.Many2one('ai.agent.llm', string="AI Agent Model", related="ai_agent_id.ai_agent_llm_id")
 
+    type = fields.Selection([('None',"none")])
+
     alias_id = fields.Many2one(
         'mail.alias', string='Alias', ondelete="restrict", required=True,
         help="The email address associated with this channel. New emails received will automatically create new leads "

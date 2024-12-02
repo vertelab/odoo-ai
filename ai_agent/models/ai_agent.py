@@ -21,6 +21,7 @@ class AIAgent(models.Model):
     name = fields.Char(required=True)
     ai_prompt_template = fields.Html()
     ai_agent_llm_id = fields.Many2one(comodel_name="ai.agent.llm")
+    type = fields.Selection([("none", "None")])
 
     def test(self):
         for record in self:
@@ -36,19 +37,24 @@ class AIAgent(models.Model):
             question = "what is the meaning of life the universe and everything?"
             _logger.error(f"{record.create_agent(answer=answer, question=question)}")
 
-    def create_agent(self, **kwargs):
-
-        template_prompt = self._create_ai_templet_prompt(kwargs.keys())
-        message = template_prompt.invoke(kwargs)
+    def prompt_agent(self, partial_variables, **kwargs):
+        message = self._create_ai_templet_prompt(partial_variables, **kwargs)
         answer = self._instantiate_model().invoke(message)
+        print("answer", answer.content)
         return answer.content
 
-    def _create_ai_templet_prompt(self, *args):
-        return PromptTemplate(template=self.ai_prompt_template, input_variables=args)
+    def _create_ai_template_prompt(self, partial_variables=False, **kwargs):
+        template = PromptTemplate(
+            template=self.ai_prompt_template,
+            input_variables=kwargs.keys(),
+            partial_variables={"json_format": partial_variables}
+        )
+        message = template.invoke(kwargs)
+        return message
 
     def _instantiate_model(self):
         if not self.ai_agent_llm_id:
             raise UserError(_(" "))
-        llm = getattr(langchain_openai, self.name)(api_key=self.ai_agent_llm_id.ai_api_key, model="gpt-4o")
+        llm_name = self.ai_agent_llm_id.name
+        llm = getattr(langchain_openai, llm_name)(api_key=self.ai_agent_llm_id.ai_api_key, model="gpt-4o")
         return llm
-

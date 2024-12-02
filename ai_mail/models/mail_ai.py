@@ -55,8 +55,8 @@ class MailAI(models.Model):
     description = fields.Html('Notes')
     active = fields.Boolean('Active', default=True, tracking=True)
 
-    mail_channel_id = fields.Many2one(
-        'mail.channel.ai', string='Channel', readonly=True, store=True)
+    # mail_channel_id = fields.Many2one(
+    #     'mail.channel.ai', string='Channel', readonly=True, store=True)
 
     color = fields.Integer('Color Index', default=0)
 
@@ -76,7 +76,18 @@ class MailAI(models.Model):
     email_from = fields.Char(
         'Email', tracking=40, index='trigram',
         readonly=False, store=True)
-    crm_lead_id = fields.Many2one('crm.lead', readonly=True)
+
+    mail_alias_id = fields.Many2one('mail.alias')
+
+    ##Ai stuff
+    def ai_method(self):
+        pass
+
+    # @api.model
+    # def create(self, values):
+    #     res = super.create()
+    #     res.ai_method()
+    #     return res
 
     # ------------------------------------------------------------
     # MAILING
@@ -122,10 +133,10 @@ class MailAI(models.Model):
         if msg_dict.get('to'):
             mail_to = tools.email_normalize_all(msg_dict.get('to'))[-1]
             if mail_to:
-                mail_channel_ai_id = self.env['mail.channel.ai'].search([
+                mail_alias = self.env['mail.alias'].search([
                     ('alias_name', '=', mail_to.split('@')[0])
                 ])
-                defaults['mail_channel_id'] = mail_channel_ai_id.id
+                defaults['mail_alias_id'] = mail_alias.id
         defaults.update(custom_values)
 
         return super(MailAI, self).message_new(msg_dict, custom_values=defaults)
@@ -149,31 +160,5 @@ class MailAI(models.Model):
                 ]).write({'partner_id': new_partner[0].id})
         return super(MailAI, self)._message_post_after_hook(message, msg_vals)
 
-    def get_mail_activity(self):
-        message_ids = self.message_ids
-        ai_answer = self.mail_channel_id.ai_agent_id.create_agent(
-            email=message_ids.mapped('body')[0]
-        )
-        raise UserError(ai_answer)
-
-    def create_lead(self):
-        lead_vals = {
-            'name': self.name,
-            'email_from': self.email_from,
-            'mail_ai_id': self.id,
-            'type': 'lead'
-        }
-        lead_id = self.env['crm.lead'].create(lead_vals)
-        self.write({'crm_lead_id': lead_id.id})
-
-    def action_show_crm_lead(self):
-        return {
-            'name': _('Lead'),
-            'res_model': 'crm.lead',
-            'view_mode': 'form',
-            'res_id': self.crm_lead_id.id,
-            'target': 'self',
-            'type': 'ir.actions.act_window',
-        }
 
 

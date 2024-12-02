@@ -4,4 +4,4 @@ from odoo import models, api, fields, _
 class AIAgent(models.Model):
     _inherit = "ai.agent"
 
-    type = fields.Selection(selection_add=[()])
+    type = fields.Selection(selection_add=[('e-avrop', 'E-avrop')])

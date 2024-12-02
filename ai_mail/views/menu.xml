@@ -36,12 +36,7 @@
         parent="mail_ai_menu_root"
         sequence="25" groups="sales_team.group_sale_manager"/>
 
-    <menuitem
-        id="mail_ai_channel_menu_config"
-        name="Mail Channels"
-        parent="mail_ai_menu_config"
-        action="ai_mail.mail_channel_ai_action_config"
-        sequence="0"/>
+
 
     <menuitem
         id="mail_ai_config_settings_menu"

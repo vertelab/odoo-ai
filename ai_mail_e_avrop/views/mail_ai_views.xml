@@ -6,27 +6,27 @@
         <field name="arch" type="xml">
             <form create="false" duplicate="false">
                 <header>
-<!--                    <button name="get_mail_activity" string="Mail Activity" class="btn btn-primary" type="object"/>-->
-                        <button name="ai_method" type="object" string="test"/>
-<!--                    <button name="create_lead" string="Create Lead" class="btn btn-primary" type="object" attrs="{'invisible': [('crm_lead_id', '!=', False)]}"/>-->
+                    <button name="get_mail_activity" string="Mail Activity" class="btn btn-primary" type="object"/>
+                    <button name="create_lead" string="Create Lead" class="btn btn-primary" type="object" attrs="{'invisible': [('crm_lead_id', '!=', False)]}"/>
                 </header>
                 <sheet>
                     <field name="active" invisible="1"/>
                     <field name="company_id" invisible="1"/>
                     <div class="oe_button_box" name="button_box">
-<!--                        <button name="action_show_crm_lead" type="object" class="oe_stat_button" icon="fa-funnel" attrs="{'invisible': [('crm_lead_id', '=', False)]}">-->
-<!--                            <div class="o_stat_info">-->
-<!--                                <span class="o_stat_text">Leads</span>-->
-<!--                            </div>-->
-<!--                        </button>-->
+                        <button name="action_show_crm_lead" type="object" class="oe_stat_button" icon="fa-funnel" attrs="{'invisible': [('crm_lead_id', '=', False)]}">
+                            <div class="o_stat_info">
+                                <span class="o_stat_text">Leads</span>
+                            </div>
+                        </button>
                     </div>
                     <div class="oe_title">
                         <h1><field class="text-break" name="name" placeholder="e.g. Subject"/></h1>
                     </div>
                     <group>
                         <group>
-                            <field name="mail_alias_id"/>
                             <field name="email_from"/>
+                            <field name="mail_channel_id"/>
+                            <field name="crm_lead_id" invisible="1"/>
                         </group>
                     </group>
 
@@ -55,7 +55,7 @@
                 <field name="company_id" invisible="1"/>
                 <field name="create_date" optional="hide"/>
                 <field name="name"/>
-<!--                <field name="mail_channel_id"/>-->
+                <field name="mail_channel_id"/>
             </tree>
         </field>
     </record>
