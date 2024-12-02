@@ -16,25 +16,9 @@ from langchain_core.output_parsers import JsonOutputParser
 _logger = logging.getLogger(__name__)
 
 
-# prompt_template = """
-# You are a deal analyzer. Based on the criteria below, determine if the email contains a "good deal":
-# - Substantial discount (40% or more).
-# - Value addition (e.g., "Buy One Get One Free" or additional bonuses).
-# - Significant price reduction compared to the market price.
-# - Urgency or exclusivity that makes the deal appealing.
-#
-# If the deal is good, return call the create_lead function.
-# If the deal is not good, return "NOT A GOOD DEAL" and explain why in one sentence.
-#
-# ### Email Content:
-# {email}
-#
-# ### Response:
-# """
-
-class Person(BaseModel):
-    create_new_crm: bool = Field(description="New CRM")
-    answer: str = Field(description="Answer")
+class CRMAnalysis(BaseModel):
+    create_new_crm: bool = Field(description="Whether to create a new CRM lead or not")
+    answer: str = Field(description="Explanation of the decision")
 
 
 class MailAI(models.Model):
@@ -47,7 +31,7 @@ class MailAI(models.Model):
             message_ids = self.message_ids
             agent = self.env['ai.agent'].search([('type', '=', 'e-avrop')])[0]
 
-            parser = JsonOutputParser(pydantic_object=Person)
+            parser = JsonOutputParser(pydantic_object=CRMAnalysis)
 
             answer = agent.prompt_agent(
                 partial_variables=parser.get_format_instructions(),

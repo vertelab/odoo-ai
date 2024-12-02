@@ -1,6 +1,7 @@
 import os
 
 import os
+import json
 from langchain_core.prompts import PromptTemplate
 import langchain_openai
 from langchain_openai import ChatOpenAI
@@ -21,31 +22,36 @@ class AIAgent(models.Model):
     name = fields.Char(required=True)
     ai_prompt_template = fields.Html()
     ai_agent_llm_id = fields.Many2one(comodel_name="ai.agent.llm")
-    type = fields.Selection([("none", "None")])
+    ai_type = fields.Selection(selection=[("default", "Default")], default="default", required=True)
 
     def test(self):
         for record in self:
-            record.ai_prompt_template = \
+            ai_prompt_template = \
                 """
             {answer}
             ==============
              Below this text, you have a question, and above you have the answer. Return the answer to the question.
             ==============
             {question} 
-            """
+            """.strip()
             answer = "42"
             question = "what is the meaning of life the universe and everything?"
-            _logger.error(f"{record.create_agent(answer=answer, question=question)}")
+            raise UserError(
+                f"{record.prompt_agent(prompt=ai_prompt_template, answer=answer, question=question)}"
+            )
 
-    def prompt_agent(self, partial_variables, **kwargs):
-        message = self._create_ai_templet_prompt(partial_variables, **kwargs)
-        answer = self._instantiate_model().invoke(message)
-        print("answer", answer.content)
-        return answer.content
+    def prompt_agent(self, prompt=False, partial_variables=False, **kwargs):
+        try:
+            response = self._instantiate_model().invoke(
+                self._create_ai_template_prompt(prompt, partial_variables, **kwargs)
+            )
+            return response.content
+        except Exception as e:
+            raise UserError(e)
 
-    def _create_ai_template_prompt(self, partial_variables=False, **kwargs):
+    def _create_ai_template_prompt(self, prompt, partial_variables=False, **kwargs):
         template = PromptTemplate(
-            template=self.ai_prompt_template,
+            template=prompt or self.ai_prompt_template,
             input_variables=kwargs.keys(),
             partial_variables={"json_format": partial_variables}
         )

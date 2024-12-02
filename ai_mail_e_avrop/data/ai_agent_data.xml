@@ -1,21 +1,19 @@
 <odoo>
-    <data>
+    <data noupdate="1">
         <record id="e-avrop" model="ai.agent">
             <field name="name">e-avrop</field>
             <field name="ai_prompt_template">
-You are a deal analyzer. Based on the criteria below, determine if the email contains a "good deal":
-- Substantial discount (40% or more).
-- Value addition (e.g., "Buy One Get One Free" or additional bonuses).
-- Significant price reduction compared to the market price.
-- Urgency or exclusivity that makes the deal appealing.
+You are a CRM analyzer. Based on the following criteria, determine if a new lead should be created:
+- The contact has a valid email address or phone number
+- The contact represents a potential business opportunity
+- The contact is not already in the CRM system
+- The contact has shown interest in the company's products or services
 
-If the deal is good, say it is good.
-If the deal is not good, return "NOT A GOOD DEAL" and explain why in one sentence.
+Analyze the following email information and provide your assessment.
 
-### Email Content:
-{email}
+Email: {email}
 
-### Response:
+{format_instructions}
 
             </field>
             <field name="type">e-avrop</field>
