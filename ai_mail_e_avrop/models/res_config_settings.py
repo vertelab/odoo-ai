@@ -6,7 +6,8 @@ from dateutil.relativedelta import relativedelta
 
 from odoo import api, exceptions, fields, models, _
 
-
 class ResConfigSettings(models.TransientModel):
     _inherit = 'res.config.settings'
+
+    
 

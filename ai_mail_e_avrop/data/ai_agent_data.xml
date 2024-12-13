@@ -1,22 +1,22 @@
 <odoo>
     <data noupdate="1">
-        <record id="e-avrop" model="ai.agent">
+
+        <record id="ai_agent_e-avrop" model="ai.agent">
             <field name="name">e-avrop</field>
             <field name="ai_prompt_template">
-You are a CRM analyzer. Based on the following criteria, determine if a new lead should be created:
-- The contact has a valid email address or phone number
-- The contact represents a potential business opportunity
-- The contact is not already in the CRM system
-- The contact has shown interest in the company's products or services
-
-Analyze the following email information and provide your assessment.
-
-Email: {email}
-
+{mail} 
+==============
+Above you have a mail for a tender. Please analyze its purpose and case number.
+==============
 {format_instructions}
-
             </field>
-            <field name="type">e-avrop</field>
+            <field name="ai_type">e-avrop</field>
+        </record>
+
+        <record id="ai_quest_e-avrop" model="ai.quest">
+            <field name="name">e-avrop</field>
+            <field name="ai_type">e-avrop</field>
+            <field name="alias_model_id" ref="ai_agent.model_ai_quest_session"/>
         </record>
     </data>
 </odoo>

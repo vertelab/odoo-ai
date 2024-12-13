@@ -44,7 +44,8 @@
         'mail',
         'base',
         'sales_team',
-        'crm'
+        'crm',
+        "ai_agent"
     ],
     'data': [
         #'security/ir.model.access.csv',

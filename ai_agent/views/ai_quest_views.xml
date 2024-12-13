@@ -1,0 +1,13 @@
+<odoo>
+    <data>
+
+        <record id="action_ai_quest" model="ir.actions.act_window">
+            <field name="name">AI Quest</field>
+            <field name="res_model">ai.quest</field>
+            <field name="view_mode">tree,form</field>
+        </record>
+
+        <menuitem id="ai_agent.menu_ai_quest" name="Ai Quest" parent="ai_agent.menu_ai_agent_configuration" action="action_ai_quest"/>
+
+    </data>
+</odoo>

@@ -1,6 +1,5 @@
 from odoo import models, api, fields, _
 
-
 class AIAgent(models.Model):
     _inherit = "ai.agent"
 
