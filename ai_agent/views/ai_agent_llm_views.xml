@@ -25,7 +25,9 @@
                             </group>
                             <group>
                                 <field name="llm_type"/>
-                                <field name="model" />
+                                <field name="model"/>
+                                <field name="product_tmpl_id"/>
+                                <field name="model_id"/>
                             </group>
                         </group>
                         <group>

@@ -22,6 +22,9 @@ class AIAgentLLM(models.Model):
     ai_api_key = fields.Char()
     status = fields.Selection(selection=[("default", "Default")], default="default")
     endpoint = fields.Char()
+    product_tmpl_id = fields.Many2one('product.template')
+    model_id = fields.Many2one('product.template.attribute.value', string="Model",
+                               domain="[('product_tmpl_id', '=', product_tmpl_id)]")
 
     def get_llm(self):
         return f"{self.llm_type}(" + "model=" + "'" + f"{self.model if self.model else ''}" + "'" + "," + "api_key=" + "'" + f"{self.ai_api_key if self.ai_api_key else ''}" + "'" + ")"

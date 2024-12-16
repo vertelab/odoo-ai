@@ -35,7 +35,7 @@
     'website': 'https://vertel.se/apps/odoo-',
     'images': ['static/description/banner.png'],  # 560x280
     'license': 'AGPL-3',
-    'depends': ['base','mail'],
+    'depends': ['base', 'mail', 'product'],
     'data': [
         "security/ir.model.access.csv",
         "wizard/ai_agent_test_wizard_views.xml",
