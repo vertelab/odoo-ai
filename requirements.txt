@@ -3,3 +3,4 @@ openai==1.8.0
 open-interpreter==0.2.0 
 jupyter_client
 jupyter_core
+langchain[all]

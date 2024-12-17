@@ -21,7 +21,7 @@
 
 {
     'name': 'Mail AI: Mailbox for AI',
-    'version': '16.01.0.3',
+    'version': '0.3',
     # Version ledger: 16.0 = Odoo version. 1 = Major. Non regressionable code. 2 = Minor. New features that are regressionable. 3 = Bug fixes
     'summary': 'Mailbox for AI',
     # Categories can be used to filter modules in modules listing
