@@ -3,4 +3,13 @@ openai==1.8.0
 open-interpreter==0.2.0 
 jupyter_client
 jupyter_core
-langchain[all]
+langchain
+langchain-community
+langchain-core
+langchain-tools
+langchain-openai
+langchain-mistralai
+langchain-google-vertexai
+langchain-cohere
+langchain-fireworks 
+langchain-huggingface 
