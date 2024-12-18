@@ -15,7 +15,6 @@ class AIAgentLLM(models.Model):
     name = fields.Char(required=True)
     is_key_required = fields.Boolean(default=True)
     llm_type = fields.Char(required=True)
-    model = fields.Char()
     ai_api_key = fields.Char()
     status = fields.Selection(selection=[("not_confirmed", "Not Confirmed"),("confirmed", "Confirmed"),("error", "Error")], default="not_confirmed")
     status_color = fields.Integer(compute="compute_status_color")
@@ -63,4 +62,4 @@ class AIAgentLLM(models.Model):
         self.message_post(body=f"{body} | {self.last_run}",message_type="notification")
 
     def get_llm(self):
-        return f"{self.llm_type}(" + "model=" + "'" + f"{self.model if self.model else ''}" + "'" + "," + "api_key=" + "'" + f"{self.ai_api_key if self.ai_api_key else ''}" + "'" + ")"
+        return f"{self.llm_type}(" + "model=" + "'" + f"{self.model_id.name if self.model_id.name else ''}" + "'" + "," + "api_key=" + "'" + f"{self.ai_api_key if self.ai_api_key else ''}" + "'" + ")"
