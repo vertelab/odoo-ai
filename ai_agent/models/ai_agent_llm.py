@@ -20,6 +20,7 @@ class AIAgentLLM(models.Model):
     status = fields.Selection(selection=[("not_confirmed", "Not Confirmed"),("confirmed", "Confirmed"),("error", "Error")], default="not_confirmed")
     status_color = fields.Integer(compute="compute_status_color")
     endpoint = fields.Char()
+<<<<<<< HEAD
     ai_agent_ids = fields.One2many(comodel_name="ai.agent",inverse_name="ai_agent_llm_id")
     color = fields.Integer(default=lambda self: randint(1, 11))
     is_favorite = fields.Boolean()
@@ -67,6 +68,11 @@ class AIAgentLLM(models.Model):
     #         if record.last_run:
 
         
+=======
+    product_tmpl_id = fields.Many2one('product.template')
+    model_id = fields.Many2one('product.template.attribute.value', string="Model",
+                               domain="[('product_tmpl_id', '=', product_tmpl_id)]")
+>>>>>>> 995ba1009d105343d7cccbbe7973b741e482c98e
 
     def get_llm(self):
         return f"{self.llm_type}(" + "model=" + "'" + f"{self.model if self.model else ''}" + "'" + "," + "api_key=" + "'" + f"{self.ai_api_key if self.ai_api_key else ''}" + "'" + ")"
