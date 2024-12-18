@@ -48,7 +48,6 @@ class AIQuest(models.Model):
         values = super(AIQuest, self)._alias_get_creation_values()
         values['alias_model_id'] = self.env['ir.model']._get('ai.quest.session').id
         values['alias_name'] = "e-avrop"
-        values['original'] = True
         values['alias_defaults'] = defaults = literal_eval(self.alias_defaults or "{}")
         defaults['ai_type'] = 'e-avrop'
         defaults['ai_quest_id'] = self.id
