@@ -1,12 +1,10 @@
 import os
 import json
 from langchain_core.prompts import PromptTemplate
-import langchain_openai
 from langchain_openai import ChatOpenAI
 from langchain_mistralai import ChatMistralAI
-from pydantic import BaseModel, Field
-from langchain_core.output_parsers import JsonOutputParser
 from httpx import HTTPStatusError
+from random import randint
 
 # from langchain_core.output_parsers import StrOutputParse
 
@@ -22,6 +20,8 @@ class AIAgent(models.Model):
     _description = 'AI Agent'
 
     name = fields.Char(required=True)
+    color = fields.Integer(default=lambda self: randint(1, 11))
+    is_favorite = fields.Boolean()
     ai_prompt_template = fields.Html()
     ai_agent_llm_id = fields.Many2one(comodel_name="ai.agent.llm")
     ai_type = fields.Selection(selection=[("default", "Default")], default="default", required=True)
@@ -33,6 +33,8 @@ class AIAgent(models.Model):
     ai_agent_data_ids = fields.One2many(comodel_name="ai.agent.data", inverse_name="agent_id")
 
     def prompt_agent(self, test_prompt=False, parser=False, session=False, **kwargs):
+
+        _logger.error(f"{session.session=}")
 
         #return "Test"
 
@@ -47,13 +49,14 @@ class AIAgent(models.Model):
             )
             
         except HTTPStatusError as e:
-            self.ai_agent_llm_id.message_post(body=f"{e}",message_type="notification")
+            self.ai_agent_llm_id.log_message(body=e,is_error=True)
             _logger.error(f"{e=}")
 
         except Exception as e:
             _logger.error(f"{e=}")
 
         _logger.error(f"{response=}")
+        self.ai_agent_llm_id.log_message(body="Success!!!")
 
         if response and session:
             self.ai_quest_session_id = session.id

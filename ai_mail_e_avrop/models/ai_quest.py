@@ -28,6 +28,7 @@ class AIQuest(models.Model):
         return ai_quest
     
     def mail(self,mail,session):
+        _logger.error(f"{session.session=}")
         parser = JsonOutputParser(pydantic_object=jsonResponse)
         if self.ai_type == "e-avrop":
             agent_id = self.env["ai.agent"].search([("ai_type", "=", "e-avrop")], limit=1)
@@ -36,9 +37,9 @@ class AIQuest(models.Model):
             response = json.loads(response)
             if response.get("case_nummber"):
                 lead = self.env["crm.lead"].create({"name": f"{mail.subject}[{response.get('case_nummber')}]", "email_from": mail.email_from})
-                if response.get("question_and_answer") != "false":
+                if response.get("question_and_answer") != False:
                     lead.message_post(body=f"{response.get('question_and_answer')}",message_type="notification")
-                if response.get("prerequisite_change") != "false":
+                if response.get("prerequisite_change") != False:
                     lead.message_post(body=f"{response.get('prerequisite_change')}",message_type="notification")
                 lead.message_post(body=f"{mail.body}",message_type="notification")
 
@@ -47,6 +48,7 @@ class AIQuest(models.Model):
         values = super(AIQuest, self)._alias_get_creation_values()
         values['alias_model_id'] = self.env['ir.model']._get('ai.quest.session').id
         values['alias_name'] = "e-avrop"
+        values['original'] = True
         values['alias_defaults'] = defaults = literal_eval(self.alias_defaults or "{}")
         defaults['ai_type'] = 'e-avrop'
         defaults['ai_quest_id'] = self.id
