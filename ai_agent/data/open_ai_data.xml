@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+
+        <record id="open_ai_product_attribute_model" model="product.attribute">
+            <field name="name">model</field>
+            <field name="create_variant">always</field>
+        </record>
+        <record id="open_ai_product_attribute_api_type" model="product.attribute">
+            <field name="name">api_type</field>
+            <field name="create_variant">always</field>
+        </record>
+        <record id="open_ai_product_attribute_token_type" model="product.attribute">
+            <field name="name">token_type</field>
+            <field name="create_variant">always</field>
+        </record>
+        <record id="open_ai_product_attribute_data_type" model="product.attribute">
+            <field name="name">data_type</field>
+            <field name="create_variant">always</field>
+        </record>
+
+        <record id="open_ai_product_attribute_value_gpt-4o" model="product.attribute.value">
+            <field name="name">gpt-4o</field>
+            <field name="attribute_id" ref="ai_agent.open_ai_product_attribute_model"/>
+        </record>
+        <record id="open_ai_product_attribute_value_gpt-4o-2024-11-20" model="product.attribute.value">
+            <field name="name">gpt-4o-2024-11-20</field>
+            <field name="attribute_id" ref="ai_agent.open_ai_product_attribute_model"/>
+        </record>
+        <record id="open_ai_product_attribute_value_gpt-4o-2024-08-06" model="product.attribute.value">
+            <field name="name">gpt-4o-2024-08-06</field>
+            <field name="attribute_id" ref="ai_agent.open_ai_product_attribute_model"/>
+        </record>
+        <record id="open_ai_product_attribute_value_gpt-4o-audio-preview" model="product.attribute.value">
+            <field name="name">gpt-4o-audio-preview</field>
+            <field name="attribute_id" ref="ai_agent.open_ai_product_attribute_model"/>
+        </record>
+        <record id="open_ai_product_attribute_value_gpt-4o-audio-preview-2024-12-17" model="product.attribute.value">
+            <field name="name">gpt-4o-audio-preview-2024-12-17</field>
+            <field name="attribute_id" ref="ai_agent.open_ai_product_attribute_model"/>
+        </record>
+        <record id="open_ai_product_attribute_value_gpt-4o-audio-preview-2024-10-01" model="product.attribute.value">
+            <field name="name">gpt-4o-audio-preview-2024-10-01</field>
+            <field name="attribute_id" ref="ai_agent.open_ai_product_attribute_model"/>
+        </record>
+        <record id="open_ai_product_attribute_value_gpt-4o-2024-05-13" model="product.attribute.value">
+            <field name="name">gpt-4o-2024-05-13</field>
+            <field name="attribute_id" ref="ai_agent.open_ai_product_attribute_model"/>
+        </record>
+
+        <record id="open_ai_product_attribute_value_sync" model="product.attribute.value">
+            <field name="name">sync</field>
+            <field name="attribute_id" ref="ai_agent.open_ai_product_attribute_api_type"/>
+        </record>
+        <record id="open_ai_product_attribute_value_batch" model="product.attribute.value">
+            <field name="name">batch</field>
+            <field name="attribute_id" ref="ai_agent.open_ai_product_attribute_api_type"/>
+        </record>
+
+        <record id="open_ai_product_attribute_value_input" model="product.attribute.value">
+            <field name="name">input</field>
+            <field name="attribute_id" ref="ai_agent.open_ai_product_attribute_token_type"/>
+        </record>
+        <record id="open_ai_product_attribute_value_input_cached" model="product.attribute.value">
+            <field name="name">input cached</field>
+            <field name="attribute_id" ref="ai_agent.open_ai_product_attribute_token_type"/>
+        </record>
+        <record id="open_ai_product_attribute_value_output" model="product.attribute.value">
+            <field name="name">output</field>
+            <field name="attribute_id" ref="ai_agent.open_ai_product_attribute_token_type"/>
+        </record>
+
+        <record id="open_ai_product_attribute_value_text" model="product.attribute.value">
+            <field name="name">text</field>
+            <field name="attribute_id" ref="ai_agent.open_ai_product_attribute_data_type"/>
+        </record>
+        <record id="open_ai_product_attribute_value_audio" model="product.attribute.value">
+            <field name="name">audio</field>
+            <field name="attribute_id" ref="ai_agent.open_ai_product_attribute_data_type"/>
+        </record>
+
+        <!-- <record id="open_ai_product_template" model="product.template">
+            <field name="attribute_id" ref=""/>
+            <field name="value_ids" eval=""/>
+        </record> -->
+
+        <record id="open_ai_product_template" model="product.template">
+            <field name="name">Open-AI</field>
+        </record>
+
+    </data>
+</odoo>
