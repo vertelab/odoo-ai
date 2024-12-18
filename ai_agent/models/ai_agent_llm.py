@@ -20,13 +20,14 @@ class AIAgentLLM(models.Model):
     status = fields.Selection(selection=[("not_confirmed", "Not Confirmed"),("confirmed", "Confirmed"),("error", "Error")], default="not_confirmed")
     status_color = fields.Integer(compute="compute_status_color")
     endpoint = fields.Char()
-<<<<<<< HEAD
     ai_agent_ids = fields.One2many(comodel_name="ai.agent",inverse_name="ai_agent_llm_id")
     color = fields.Integer(default=lambda self: randint(1, 11))
     is_favorite = fields.Boolean()
     agent_count = fields.Integer(compute="compute_agent_count")
     last_run = fields.Datetime()
-    # is_last_run = fields.Boolean(compute=)
+    product_tmpl_id = fields.Many2one('product.template')
+    model_id = fields.Many2one('product.template.attribute.value', string="Model",
+                               domain="[('product_tmpl_id', '=', product_tmpl_id)]")
 
     def action_get_agents(self):
         action = {
@@ -60,19 +61,6 @@ class AIAgentLLM(models.Model):
             self.status = "error"
         self.last_run = fields.Datetime.now()
         self.message_post(body=f"{body} | {self.last_run}",message_type="notification")
-        
-    # @api.depneds("last_run")
-    # def compute_is_last_run(self):
-    #     for record in self:
-    #         record.is_last_run = False
-    #         if record.last_run:
-
-        
-=======
-    product_tmpl_id = fields.Many2one('product.template')
-    model_id = fields.Many2one('product.template.attribute.value', string="Model",
-                               domain="[('product_tmpl_id', '=', product_tmpl_id)]")
->>>>>>> 995ba1009d105343d7cccbbe7973b741e482c98e
 
     def get_llm(self):
         return f"{self.llm_type}(" + "model=" + "'" + f"{self.model if self.model else ''}" + "'" + "," + "api_key=" + "'" + f"{self.ai_api_key if self.ai_api_key else ''}" + "'" + ")"
