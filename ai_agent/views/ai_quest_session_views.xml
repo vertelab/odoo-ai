@@ -1,33 +1,64 @@
 <odoo>
     <data>
+
+        <record id="ai_quest_session_list" model="ir.ui.view">
+            <field name="name">ai.quest.sesion.list</field>
+            <field name="model">ai.quest.session</field>
+            <field name="arch" type="xml">
+                <tree string="AI Quest Session">
+                    <field name="session"/>
+                    <field name="ai_type"/>
+                    <field name="ai_quest_id"/>
+                    <field name="startdate" optional="hide"/>
+                    <field name="enddate" optional="hide"/>
+                </tree>
+            </field>
+        </record>
+
+        <record id="ai_quest_session_search" model="ir.ui.view">
+            <field name="name">ai.quest.session.search</field>
+            <field name="model">ai.quest.session</field>
+            <field name="arch" type="xml">
+                <search string="Search AI Quest Sessions">
+                    <field name="session" string="Session ID"/>
+                    <field name="ai_quest_id"/>
+                    <field name="ai_agent_ids"/>
+                    <field name="ai_agent_llm_id"/>
+                    <field name="startdate"/>
+                    <field name="enddate"/>
+                    <field name="type_of_output"/>
+                    <filter string="Draft" name="draft" domain="[('status', '=', 'draft')]"/>
+                    <filter string="Active" name="active" domain="[('status', '=', 'active')]"/>
+                    <filter string="Done" name="done" domain="[('status', '=', 'done')]"/>
+                    <group expand="0" string="Group By">
+                        <filter string="AI Quest" name="group_by_ai_quest" context="{'group_by': 'ai_quest_id'}"/>
+                        <filter string="Status" name="group_by_status" context="{'group_by': 'status'}"/>
+                        <filter string="AI Type" name="group_by_ai_type" context="{'group_by': 'ai_type'}"/>
+                        <filter string="AI Agent LLM" name="group_by_ai_agent_llm" context="{'group_by': 'ai_agent_llm_id'}"/>
+                        <filter string="Start Date" name="group_by_startdate" context="{'group_by': 'startdate'}"/>
+                        <filter string="End Date" name="group_by_enddate" context="{'group_by': 'enddate'}"/>
+                    </group>
+                </search>
+            </field>
+        </record>
+
         <record id="ai_quest_session_form" model="ir.ui.view">
             <field name="name">ai.quest.sesion.form</field>
             <field name="model">ai.quest.session</field>
             <field name="arch" type="xml">
                 <form>
+                    <header>
+                        <field name="status" widget="statusbar" statusbar_visible="active,done" options="{'fold_field': 'fold'}" />
+                    </header>
                     <sheet string="AI Quest Session">
                         <group>
                             <group>
-                                <field name="status"/>
                                 <field name="ai_type"/>
+                                <field name="session"/>
                             </group>
                             <group>
                                 <field name="ai_quest_id" can_create="true" can_write="true"/>
-                                <field name="session"/>
-                            </group>
-                        </group>
-                        <group>
-                            <field name="ai_agent_ids">
-                                <tree>
-                                    <field name="name" modifiers="{&quot;required&quot;: true}"/>
-                                </tree>
-                            </field>
-                        </group>
-                        <group>
-                            <group>
                                 <field name="startdate"/>
-                            </group>
-                            <group>
                                 <field name="enddate"/>
                             </group>
                         </group>
@@ -49,6 +80,15 @@
                                         <field name="model_name"/>
                                         <field name="ai_id" optional="hide"/>
                                         <field name="system_fingerprint" optional="hide"/>
+                                    </tree>
+                                </field>
+                            </page>
+                            <page name="agents" string="Agents">
+                                <field name="ai_agent_ids">
+                                    <tree>
+                                        <field name="name" modifiers="{&quot;required&quot;: true}"/>
+                                        <field name="ai_agent_llm_id" />
+                                        <field name="ai_type" />
                                     </tree>
                                 </field>
                             </page>

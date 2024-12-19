@@ -10,12 +10,14 @@ class AIQuestSession(models.Model):
     _name = 'ai.quest.session'
     _description = 'AI Quest Session'
     _inherit = ["mail.thread", "mail.activity.mixin"]
+    _rec_name = "session"
 
     ai_quest_id = fields.Many2one(comodel_name="ai.quest")
-    status = fields.Selection(selection=[("draft",_("Draft")),("active",_("Active")),("done",_("Done"))], default="draft")
+    status = fields.Selection(selection=[("draft",_("Draft")),("active",_("Active")),("done",_("Done")),("error",_("Error"))], default="draft")
     session = fields.Char(default=lambda self: str(uuid.uuid4()))
     ai_type = fields.Selection(selection=[("default","Default")], default="default")
-    ai_agent_ids = fields.One2many(comodel_name="ai.agent", inverse_name="ai_quest_session_id")
+    ai_agent_ids = fields.Many2many(comodel_name="ai.agent")
+    ai_agent_llm_id = fields.Many2one(comodel_name="ai.agent.llm")
     ai_quest_session_line_ids = fields.One2many(comodel_name="ai.quest.session.line", inverse_name="ai_quest_session_id")
     startdate = fields.Datetime()
     enddate = fields.Datetime()
@@ -41,8 +43,4 @@ class AIQuestSession(models.Model):
         ai_quest_session_line_id = self.env["ai.quest.session.line"].create(record)
         self.ai_quest_session_line_ids = [(4,ai_quest_session_line_id.id)]
 
-    @api.depends("session")
-    def compute_display_name(self):
-        for record in self:
-            record.display_name = record.session
 

@@ -1,10 +1,139 @@
 <odoo>
     <data>
 
+        <record id="ai_quest_list" model="ir.ui.view">
+            <field name="name">ai.quest.list</field>
+            <field name="model">ai.quest</field>
+            <field name="arch" type="xml">
+                <tree string="AI Quest">
+                    <field name="name"/>
+                    <field name="ai_type"/>
+                    <field name="status"/>
+                </tree>
+            </field>
+        </record>
+
+        <record id="ai_quest_search" model="ir.ui.view">
+            <field name="name">ai.quest.search</field>
+            <field name="model">ai.quest</field>
+            <field name="arch" type="xml">
+                <search string="Search AI Quests">
+                    <field name="name"/>
+                    <field name="description"/>
+                    <filter string="Draft" name="draft" domain="[('status', '=', 'draft')]"/>
+                    <filter string="Active" name="active" domain="[('status', '=', 'active')]"/>
+                    <filter string="Done" name="done" domain="[('status', '=', 'done')]"/>
+                    <filter string="Favorite" name="favorite" domain="[('is_favorite', '=', True)]"/>
+                    <group expand="0" string="Group By">
+                        <filter string="Status" name="group_by_status" context="{'group_by': 'status'}"/>
+                        <filter string="AI Type" name="group_by_ai_type" context="{'group_by': 'ai_type'}"/>
+                    </group>
+                </search>
+            </field>
+        </record>
+
+        <record id="ai_quest_form" model="ir.ui.view">
+            <field name="name">ai.quest.form</field>
+            <field name="model">ai.quest</field>
+            <field name="arch" type="xml">
+                <form>
+                    <header>
+                        <field name="status" widget="statusbar" statusbar_visible="active,done" options="{'fold_field': 'fold'}" />
+                        <button name="start" type="object" string="Start" class="btn-primary"/>
+                    </header>
+                    <sheet string="AI Quest">
+                        <group>
+                            <group>
+                                <field name="name"/>
+                                <field name="description"/>
+
+                            </group>
+                            <group>
+                                <field name="ai_type"/>
+                            </group>
+                        </group>
+                        <notebook>
+                            <page name="ai_sessions" string="AI Sessions">
+                                <field name="ai_quest_session_ids">
+                                    <tree string="AI Quest Session">
+                                        <field name="session" modifiers="{&quot;readonly&quot;: true}"/>
+                                    </tree>
+                                </field>
+                            </page>
+                            <page name="mail" string="Mail">
+                                <group>
+                                    <field name="alias_name" on_change="1"/>
+                                </group>
+                            </page>
+                        </notebook>
+                    </sheet>
+                    <div class="oe_chatter">
+                        <field name="message_follower_ids" widget="mail_followers" />
+                        <field name="activity_ids" widget="mail_activity" />
+                        <field name="message_ids" widget="mail_thread" />
+                    </div>
+                </form>
+            </field>
+        </record>
+
+        <record id="ai_quest_kanban" model="ir.ui.view">
+            <field name="name">ai.quest.kanban</field>
+            <field name="model">ai.quest</field>
+            <field name="arch" type="xml">
+                <kanban class="o_kanban_mobile" sample="1">
+                    <field name="name"/>
+                    <field name="color"/>
+                    <templates>
+                        <t t-name="kanban-box">
+                            <div t-attf-class="#{kanban_color(record.color.raw_value)} oe_kanban_content oe_kanban_global_click o_kanban_get_form">
+                                <div class="o_project_kanban_main ">
+                                    <div class="o_kanban_card_content mw-100">
+                                        <div class="o_kanban_primary_left">
+                                            <div class="oe_kanban_details">
+                                                <span>
+                                                    <field name="is_favorite" widget="boolean_favorite" nolabel="1" force_save="1"/>
+                                                </span>
+                                                <span class="o_text_overflow" t-att-title="record.name.value">
+                                                    <t t-esc="record.name.value"/>
+                                                </span>
+                                            </div>
+                                            <field name="ai_quest_session_ids" widget="many2many_tags" options="{'color_field': 'color'}"/>
+                                        </div>
+                                    </div>
+                                    <!-- <div class="o_kanban_record_bottom mt-3">
+                            <div class="oe_kanban_bottom_left">
+                                <t t-if="record.agent_count.value != 0">
+                                    <div class="o_project_kanban_boxes d-flex align-items-baseline">
+                                        <a class="o_project_kanban_box" name="action_get_agents" type="object">
+                                            <div>
+                                                <span class="o_value">
+                                                    <t t-esc="record.agent_count.value"/>
+                                                </span>
+                                                <span class="o_label ms-1">
+                                                    <t t-set="agent_label" t-value="'Agents '"/>
+                                                    <t t-esc="agent_label"/>
+                                                </span>
+                                            </div>
+                                        </a>
+                                    </div>
+                                </t>
+                            </div>
+                            <div class="oe_kanban_bottom_right">
+                                <span t-att-class="'o_status_bubble mx-0 o_color_bubble_' + record.status_color.value" t-att-title="record.status.value"></span>
+                            </div>
+                        </div> -->
+                                </div>
+                            </div>
+                        </t>
+                    </templates>
+                </kanban>
+            </field>
+        </record>
+
         <record id="action_ai_quest" model="ir.actions.act_window">
             <field name="name">AI Quest</field>
             <field name="res_model">ai.quest</field>
-            <field name="view_mode">tree,form</field>
+            <field name="view_mode">kanban,tree,form</field>
         </record>
 
         <menuitem id="ai_agent.menu_ai_quest" name="Ai Quest" parent="ai_agent.menu_ai_agent_configuration" action="action_ai_quest"/>

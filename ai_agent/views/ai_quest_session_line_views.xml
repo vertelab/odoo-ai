@@ -1,0 +1,89 @@
+<odoo>
+
+    <record id="ai_quest_session_line_list" model="ir.ui.view">
+        <field name="name">ai.quest.session.line.list</field>
+        <field name="model">ai.quest.session.line</field>
+        <field name="arch" type="xml">
+            <tree string="AI Quest Session Lines">
+                <field name="display_name"/>
+                <field name="ai_quest_session_id"/>
+                <field name="model_name"/>
+                <field name="ai_id" optional="hide"/>
+                <field name="input_tokens" optional="hide"/>
+                <field name="output_tokens" optional="hide"/>
+                <field name="total_tokens" optional="hide"/>
+                <field name="finish_reason" optional="hide"/>
+                <field name="audio" optional="hide"/>
+                <field name="reasoning" optional="hide"/>
+                <field name="system_fingerprint" optional="hide"/>
+                <field name="cache_read" optional="hide"/>
+            </tree>
+        </field>
+    </record>
+
+    <record id="ai_quest_session_line_search" model="ir.ui.view">
+        <field name="name">ai.quest.session.line.search</field>
+        <field name="model">ai.quest.session.line</field>
+        <field name="arch" type="xml">
+            <search string="Search AI Quest Session Lines">
+                <field name="display_name" string="Display Name"/>
+                <field name="ai_quest_session_id"/>
+                <field name="ai_id"/>
+                <field name="model_name"/>
+                <field name="system_fingerprint"/>
+                <field name="finish_reason"/>
+                <filter string="Has Audio" name="has_audio" domain="[('audio', '>', 0)]"/>
+                <filter string="Has Cache Read" name="has_cache_read" domain="[('cache_read', '>', 0)]"/>
+                <filter string="Has Reasoning" name="has_reasoning" domain="[('reasoning', '>', 0)]"/>
+                <group expand="0" string="Group By">
+                    <filter string="AI Quest Session" name="group_by_session" context="{'group_by': 'ai_quest_session_id'}"/>
+                    <filter string="Model Name" name="group_by_model" context="{'group_by': 'model_name'}"/>
+                    <filter string="Finish Reason" name="group_by_finish_reason" context="{'group_by': 'finish_reason'}"/>
+                </group>
+                <separator/>
+            </search>
+        </field>
+    </record>
+
+    <record id="ai_quest_session_line_form" model="ir.ui.view">
+        <field name="name">ai.quest.session.line.form</field>
+        <field name="model">ai.quest.session.line</field>
+        <field name="arch" type="xml">
+            <form>
+                <sheet string="AI Quest Session Line">
+                    <group>
+                        <field name="ai_quest_session_id" can_create="true" can_write="true"/>
+                        <field name="model_name"/>
+                        <field name="system_fingerprint"/>
+                    </group>
+                    <group>
+                        <separator/>
+                    </group>
+                    <group>
+                        <group>
+                            <field name="input_tokens"/>
+                            <field name="output_tokens"/>
+                            <field name="total_tokens"/>
+                            <field name="cache_read"/>
+                            <field name="audio"/>
+                            <field name="reasoning"/>
+                        </group>
+                        <group>
+                            <field name="ai_id"/>
+                            <field name="finish_reason"/>
+                        </group>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_ai_quest_session_line" model="ir.actions.act_window">
+        <field name="name">AI Quest Session Lines</field>
+        <field name="res_model">ai.quest.session.line</field>
+        <field name="view_mode">tree,form</field>
+    </record>
+
+    <menuitem id="ai_agent.menu_ai_quest_session_line" name="Ai Quest Session Lines" parent="ai_agent.menu_ai_agent_configuration" action="action_ai_quest_session_line"/>
+
+</odoo>

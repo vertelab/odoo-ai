@@ -11,12 +11,47 @@
             </field>
         </record>
 
+        <record id="ai_agent_llm_search" model="ir.ui.view">
+            <field name="name">ai.agent.llm.search</field>
+            <field name="model">ai.agent.llm</field>
+            <field name="arch" type="xml">
+                <search string="Search AI Agent LLM">
+                    <field name="name"/>
+                    <field name="llm_type"/>
+                    <field name="endpoint"/>
+                    <field name="product_tmpl_id"/>
+                    <field name="model_id"/>
+                    <field name="last_run"/>
+                    <filter string="Key Required" name="key_required" domain="[('is_key_required', '=', True)]"/>
+                    <filter string="Favorite" name="favorite" domain="[('is_favorite', '=', True)]"/>
+                    <filter string="Not Confirmed" name="not_confirmed" domain="[('status', '=', 'not_confirmed')]"/>
+                    <filter string="Confirmed" name="confirmed" domain="[('status', '=', 'confirmed')]"/>
+                    <filter string="Error" name="error" domain="[('status', '=', 'error')]"/>
+                    <group expand="0" string="Group By">
+                        <filter string="LLM Type" name="group_by_llm_type" context="{'group_by': 'llm_type'}"/>
+                        <filter string="Status" name="group_by_status" context="{'group_by': 'status'}"/>
+                        <filter string="Product Template" name="group_by_product_tmpl" context="{'group_by': 'product_tmpl_id'}"/>
+                        <filter string="Model" name="group_by_model" context="{'group_by': 'model_id'}"/>
+                        <filter string="Last Run" name="group_by_last_run" context="{'group_by': 'last_run'}"/>
+                    </group>
+                </search>
+            </field>
+        </record>
+
         <record id="ai_agent_llm_form" model="ir.ui.view">
             <field name="name">ai.agent.llm.form</field>
             <field name="model">ai.agent.llm</field>
             <field name="arch" type="xml">
                 <form>
+                    <header>
+                        <field name="status" widget="statusbar" statusbar_visible="not_confirmed,confirmed" options="{'clickable': '1', 'fold_field': 'fold'}" />
+                    </header>
                     <sheet>
+                        <div name="button_box" id="button_box" class="oe_button_box">
+                            <button name="action_get_session_lines" class="oe_stat_button" type="object" icon="fa-list" attrs="{'invisible': [('session_line_count', '=', 0)]}">
+                                <field string="Session Lines" name="session_line_count" widget="statinfo"/>
+                            </button>
+                        </div>
                         <group>
                             <group>
                                 <field name="name" modifiers="{&quot;required&quot;: true}"/>

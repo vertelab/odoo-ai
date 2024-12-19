@@ -1,11 +1,12 @@
 from random import randint
+from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_openai import ChatOpenAI
 
 from odoo import models, fields, api, _
 from odoo.exceptions import UserError, AccessError, ValidationError
 import logging
 
 _logger = logging.getLogger(__name__)
-
 
 class AIAgentLLM(models.Model):
     _name = 'ai.agent.llm'
@@ -27,6 +28,9 @@ class AIAgentLLM(models.Model):
     product_tmpl_id = fields.Many2one('product.template')
     model_id = fields.Many2one('product.template.attribute.value', string="Model",
                                domain="[('product_tmpl_id', '=', product_tmpl_id)]")
+    ai_quest_session_ids = fields.One2many(comodel_name="ai.quest.session", inverse_name="ai_agent_llm_id")
+    session_line_count = fields.Integer(compute="compute_session_line_count")
+
 
     def action_get_agents(self):
         action = {
@@ -39,21 +43,16 @@ class AIAgentLLM(models.Model):
         }
         return action
 
-    @api.depends("status")
-    def compute_status_color(self):
-        for record in self:
-            record.status_color = 0
-            if record.status == "not_confirmed":
-                record.status_color = 3
-            elif record.status == "confirmed":
-                record.status_color = 10
-            elif record.status == "error":
-                record.status_color = 1
-
-    @api.depends("ai_agent_ids")
-    def compute_agent_count(self):
-        for record in self:
-            record.agent_count = len(record.ai_agent_ids)
+    def action_get_session_lines(self):
+        action = {
+            'name': 'Session Lines',
+            'type': 'ir.actions.act_window',
+            'res_model': 'ai.quest.session.line',
+            'view_mode': 'tree,form',
+            'target': 'current',
+            'domain': [("ai_quest_session_id", 'in', self.ai_quest_session_ids.ids)]
+        }
+        return action
 
     def log_message(self,body,is_error=False):
         if is_error:
@@ -63,3 +62,27 @@ class AIAgentLLM(models.Model):
 
     def get_llm(self):
         return f"{self.llm_type}(" + "model=" + "'" + f"{self.model_id.name if self.model_id.name else ''}" + "'" + "," + "api_key=" + "'" + f"{self.ai_api_key if self.ai_api_key else ''}" + "'" + ")"
+
+    @api.depends("ai_quest_session_ids")
+    def compute_session_line_count(self):
+        for record in self:
+            line_count = 0
+            for session in record.ai_quest_session_ids:
+                line_count += len(session.ai_quest_session_line_ids)
+            record.session_line_count = line_count
+
+    @api.depends("status")
+    def compute_status_color(self):
+        for record in self:
+            record.status_color = 0
+            if record.status == "not_confirmed":
+                record.status_color = 3 # Orange
+            elif record.status == "confirmed":
+                record.status_color = 10 # Green
+            elif record.status == "error":
+                record.status_color = 1 # Red
+
+    @api.depends("ai_agent_ids")
+    def compute_agent_count(self):
+        for record in self:
+            record.agent_count = len(record.ai_agent_ids)

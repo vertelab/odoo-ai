@@ -18,10 +18,12 @@ _logger = logging.getLogger(__name__)
 class AIAgent(models.Model):
     _name = 'ai.agent'
     _description = 'AI Agent'
+    _inherit = ["mail.thread", "mail.activity.mixin"]
 
     name = fields.Char(required=True)
     color = fields.Integer(default=lambda self: randint(1, 11))
     is_favorite = fields.Boolean()
+    status = fields.Selection(selection=[("draft",_("Draft")),("active",_("Active")),("done",_("Done")),("error",_("Error"))], default="draft")
     ai_prompt_template = fields.Html()
     ai_agent_llm_id = fields.Many2one(comodel_name="ai.agent.llm")
     ai_type = fields.Selection(selection=[("default", "Default")], default="default", required=True)
@@ -29,14 +31,12 @@ class AIAgent(models.Model):
     ai_role = fields.Char()
     ai_goal = fields.Text()
     ai_backstory = fields.Text()
-    ai_quest_session_id = fields.Many2one(comodel_name="ai.quest.session")
+    ai_quest_session_ids = fields.Many2many(comodel_name="ai.quest.session")
     ai_agent_data_ids = fields.One2many(comodel_name="ai.agent.data", inverse_name="agent_id")
 
     def prompt_agent(self, test_prompt=False, parser=False, session=False, **kwargs):
 
         _logger.error(f"{session.session=}")
-
-        #return "Test"
 
         if not self.ai_agent_llm_id:
             raise UserError("No LLM")
@@ -59,8 +59,9 @@ class AIAgent(models.Model):
         self.ai_agent_llm_id.log_message(body="Success!!!")
 
         if response and session:
-            self.ai_quest_session_id = session.id
             session.store_session_data(response)
+            self.ai_quest_session_ids = [(4, session.id, 0)]
+            session.ai_agent_llm_id = self.ai_agent_llm_id
 
         return response.content if response else ""
         
