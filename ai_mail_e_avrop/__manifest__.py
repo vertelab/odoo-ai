@@ -48,14 +48,7 @@
         "ai_agent"
     ],
     'data': [
-        #'security/ir.model.access.csv',
-        #'views/mail_ai_views.xml',
-        #'views/mail_channel_ai_views.xml',
-        #'views/res_config_settings_views.xml',
-        #'views/crm_lead_view.xml',
-        #'views/menu.xml',
         'data/ai_agent_data.xml'
-
     ],
     'installable': True,
     'auto_install': False,

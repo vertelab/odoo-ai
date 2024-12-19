@@ -18,17 +18,3 @@ class AIQuestSession(models.Model):
             self.ai_quest_id.mail(mail=self.message_ids[0],session=self)
 
         return thread_ids
-
-    # @api.model
-    def message_process(self, model, message, custom_values=None,
-                        save_original=False, strip_attachments=False,
-                        thread_id=None):
-        thread_id = super(AIQuestSession,self).message_process(
-                                                model, 
-                                                message, 
-                                                custom_values=custom_values,
-                                                save_original=save_original or self.ai_type == "e-avrop",
-                                                strip_attachments=strip_attachments,
-                                                thread_id=thread_id
-                                            )
-        return thread_id
