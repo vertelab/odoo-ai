@@ -7,16 +7,15 @@
             <tree string="AI Quest Session Lines">
                 <field name="display_name"/>
                 <field name="ai_quest_session_id"/>
-                <field name="model_name"/>
-                <field name="ai_id" optional="hide"/>
-                <field name="input_tokens" optional="hide"/>
-                <field name="output_tokens" optional="hide"/>
-                <field name="total_tokens" optional="hide"/>
-                <field name="finish_reason" optional="hide"/>
-                <field name="audio" optional="hide"/>
-                <field name="reasoning" optional="hide"/>
+                <field name="ai_quest_id"/>
+                <field name="ai_agent_id"/>
+                <field name="ai_llm_id"/>
+                <field name="model_id"/>
+                <field name="product_tmpl_id" optional="hide"/>
+                <field name="token" optional="hide"/>
+                <field name="token_sys" optional="hide"/>
                 <field name="system_fingerprint" optional="hide"/>
-                <field name="cache_read" optional="hide"/>
+                <field name="finish_reason"/>
             </tree>
         </field>
     </record>
@@ -28,16 +27,13 @@
             <search string="Search AI Quest Session Lines">
                 <field name="display_name" string="Display Name"/>
                 <field name="ai_quest_session_id"/>
-                <field name="ai_id"/>
-                <field name="model_name"/>
                 <field name="system_fingerprint"/>
                 <field name="finish_reason"/>
-                <filter string="Has Audio" name="has_audio" domain="[('audio', '>', 0)]"/>
-                <filter string="Has Cache Read" name="has_cache_read" domain="[('cache_read', '>', 0)]"/>
-                <filter string="Has Reasoning" name="has_reasoning" domain="[('reasoning', '>', 0)]"/>
                 <group expand="0" string="Group By">
                     <filter string="AI Quest Session" name="group_by_session" context="{'group_by': 'ai_quest_session_id'}"/>
-                    <filter string="Model Name" name="group_by_model" context="{'group_by': 'model_name'}"/>
+                    <filter string="AI Quest" name="group_by_session2" context="{'group_by': 'ai_quest_id'}"/>
+                    <filter string="Model" name="group_by_session3" context="{'group_by': 'model_id'}"/>
+                    <filter string="Product" name="group_by_product" context="{'group_by': 'product_tmpl_id'}"/>
                     <filter string="Finish Reason" name="group_by_finish_reason" context="{'group_by': 'finish_reason'}"/>
                 </group>
                 <separator/>
@@ -52,8 +48,14 @@
             <form>
                 <sheet string="AI Quest Session Line">
                     <group>
+                        <field name="datetime"/>
                         <field name="ai_quest_session_id" can_create="true" can_write="true"/>
-                        <field name="model_name"/>
+                        <field name="product_tmpl_id"/>
+                        <field name="ai_quest_id"/>
+                        <field name="ai_agent_id"/>
+                        <field name="ai_llm_id"/>
+                        <field name="model_id"/>
+                        
                         <field name="system_fingerprint"/>
                     </group>
                     <group>
@@ -61,12 +63,13 @@
                     </group>
                     <group>
                         <group>
-                            <field name="input_tokens"/>
-                            <field name="output_tokens"/>
-                            <field name="total_tokens"/>
-                            <field name="cache_read"/>
-                            <field name="audio"/>
-                            <field name="reasoning"/>
+                            <field name="api_type_id"/>
+                            <field name="data_type_id"/>
+                            <field name="token_type_id"/>
+                            <field name="token"/>
+                            <field name="token_monetary"/>
+                            <field name="token_currency"/>
+                            <field name="token_sys"/>
                         </group>
                         <group>
                             <field name="ai_id"/>

@@ -44,6 +44,7 @@
         "views/ai_quest_views.xml",
         "views/ai_quest_session_views.xml",
         "views/ai_quest_session_line_views.xml",
+        "views/product_template_views.xml",
         "data/open_ai_data.xml",
      ],
     "external_dependencies": {

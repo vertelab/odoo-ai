@@ -10,17 +10,24 @@ class AIQuestSessionLine(models.Model):
     _inherit = ["mail.thread", "mail.activity.mixin"]
     _rec_name = "display_name"
 
+    datetime = fields.Datetime(string='Datetime',default=fields.Datetime.now()) # fields.datetime.add|context_timestamp|end_of|now|start_of|substract|to_datetime|to_string|today
     display_name = fields.Char(compute="compute_display_name")
+    product_tmpl_id = fields.Many2one(comodel_name='product.template',string="",help="") # domain|context|ondelete="'set null', 'restrict', 'cascade'"|auto_join|delegate
     ai_quest_session_id = fields.Many2one(comodel_name="ai.quest.session")
-    ai_id = fields.Char()
-    input_tokens = fields.Integer()
-    output_tokens = fields.Integer()
-    total_tokens = fields.Integer()
-    audio = fields.Integer()
-    cache_read = fields.Integer()
-    # audio = fields.Integer()
-    reasoning = fields.Integer()
-    model_name = fields.Char()
+    ai_quest_id = fields.Many2one(comodel_name="ai.quest", related="ai_quest_session_id.ai_quest_id",stored=True)
+    ai_agent_id = fields.Many2one(comodel_name="ai.agent")
+    ai_llm_id = fields.Many2one(comodel_name="ai.llm")
+    model_id = fields.Many2one(comodel_name="product.attribute.value")
+    api_type_id = fields.Many2one(comodel_name="product.attribute.value")
+    data_type_id = fields.Many2one(comodel_name="product.attribute.value")
+
+    token_type_id = fields.Many2one(comodel_name="product.attribute.value")    
+    token = fields.Integer()
+    token_currency = fields.Many2one(comodel_name='res.currency',string="Currency",help="") # domain|context|ondelete="'set null', 'restrict', 'cascade'"|auto_join|delegate
+    token_monetary = fields.Monetary()
+    token_sys = fields.Integer() # Compute, stored  llm_additional_rate * (token * pricelist | token_monetary(currency)) -> company_id.currency_id * 1000 billigate frågan = 1
+    llm_additional_rate = fields.Float(string='Additional rate', related="product_tmpl_id.llm_additional_rate")
+
     system_fingerprint = fields.Char()
     finish_reason = fields.Char()
 

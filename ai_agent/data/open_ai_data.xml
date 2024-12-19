@@ -2,22 +2,17 @@
 <odoo>
     <data>
 
+        <record id="open_ai_product_template" model="product.template">
+            <field name="name">Open-AI</field>
+        </record>
+
+
+<!-- Model -->
         <record id="open_ai_product_attribute_model" model="product.attribute">
             <field name="name">model</field>
             <field name="create_variant">always</field>
         </record>
-        <record id="open_ai_product_attribute_api_type" model="product.attribute">
-            <field name="name">api_type</field>
-            <field name="create_variant">always</field>
-        </record>
-        <record id="open_ai_product_attribute_token_type" model="product.attribute">
-            <field name="name">token_type</field>
-            <field name="create_variant">always</field>
-        </record>
-        <record id="open_ai_product_attribute_data_type" model="product.attribute">
-            <field name="name">data_type</field>
-            <field name="create_variant">always</field>
-        </record>
+
 
         <record id="open_ai_product_attribute_value_gpt-4o" model="product.attribute.value">
             <field name="name">gpt-4o</field>
@@ -47,6 +42,24 @@
             <field name="name">gpt-4o-2024-05-13</field>
             <field name="attribute_id" ref="ai_agent.open_ai_product_attribute_model"/>
         </record>
+        
+        <!-- Attribute Line -->
+        <record id="open_ai_product_template_attribute_line_model" model="product.template.attribute.line">
+            <field name="product_tmpl_id" ref="open_ai_product_template"/>
+            <field name="attribute_id" ref="open_ai_product_attribute_model"/>
+            <field name="value_ids" eval="[(6, 0, [
+                    ref('open_ai_product_attribute_value_gpt-4o'), ref('open_ai_product_attribute_value_gpt-4o-2024-11-20'),
+                    ref('open_ai_product_attribute_value_gpt-4o-2024-08-06'), ref('open_ai_product_attribute_value_gpt-4o-audio-preview'),
+                    ref('open_ai_product_attribute_value_gpt-4o-audio-preview-2024-12-17'), ref('open_ai_product_attribute_value_gpt-4o-audio-preview-2024-10-01'),
+                    ref('open_ai_product_attribute_value_gpt-4o-2024-05-13'),
+                    ])]"/>
+        </record>
+        
+        <!-- Api Type -->
+        <record id="open_ai_product_attribute_api_type" model="product.attribute">
+            <field name="name">api_type</field>
+            <field name="create_variant">always</field>
+        </record>
 
         <record id="open_ai_product_attribute_value_sync" model="product.attribute.value">
             <field name="name">sync</field>
@@ -56,6 +69,22 @@
             <field name="name">batch</field>
             <field name="attribute_id" ref="ai_agent.open_ai_product_attribute_api_type"/>
         </record>
+
+        <!-- Attribute Line -->
+        <record id="open_ai_product_template_attribute_line_api_typ" model="product.template.attribute.line">
+            <field name="product_tmpl_id" ref="open_ai_product_template"/>
+            <field name="attribute_id" ref="open_ai_product_attribute_api_type"/>
+            <field name="value_ids" eval="[(6, 0, [ref('open_ai_product_attribute_value_sync'), ref('open_ai_product_attribute_value_batch')])]"/>
+        </record>
+
+
+        <!-- Token Type -->
+        <record id="open_ai_product_attribute_token_type" model="product.attribute">
+            <field name="name">token_type</field>
+            <field name="create_variant">always</field>
+        </record>
+
+
 
         <record id="open_ai_product_attribute_value_input" model="product.attribute.value">
             <field name="name">input</field>
@@ -69,7 +98,23 @@
             <field name="name">output</field>
             <field name="attribute_id" ref="ai_agent.open_ai_product_attribute_token_type"/>
         </record>
+        
+        <!-- Attribute Line -->
+        <record id="open_ai_product_template_attribute_line_token_type" model="product.template.attribute.line">
+            <field name="product_tmpl_id" ref="open_ai_product_template"/>
+            <field name="attribute_id" ref="open_ai_product_attribute_token_type"/>
+            <field name="value_ids" eval="[(6, 0, [ref('open_ai_product_attribute_value_input'), ref('open_ai_product_attribute_value_input_cached'),
+                                                   ref('open_ai_product_attribute_value_output'),
+                ])]"/>
+        </record>
 
+        <!-- Data Type -->
+        
+        <record id="open_ai_product_attribute_data_type" model="product.attribute">
+            <field name="name">data_type</field>
+            <field name="create_variant">always</field>
+        </record>
+                
         <record id="open_ai_product_attribute_value_text" model="product.attribute.value">
             <field name="name">text</field>
             <field name="attribute_id" ref="ai_agent.open_ai_product_attribute_data_type"/>
@@ -79,14 +124,15 @@
             <field name="attribute_id" ref="ai_agent.open_ai_product_attribute_data_type"/>
         </record>
 
-        <!-- <record id="open_ai_product_template" model="product.template">
-            <field name="attribute_id" ref=""/>
-            <field name="value_ids" eval=""/>
-        </record> -->
-
-        <record id="open_ai_product_template" model="product.template">
-            <field name="name">Open-AI</field>
+        <!-- Attribute Line -->
+        <record id="open_ai_product_template_attribute_line_data_type" model="product.template.attribute.line">
+            <field name="product_tmpl_id" ref="open_ai_product_template"/>
+            <field name="attribute_id" ref="open_ai_product_attribute_data_type"/>
+            <field name="value_ids" eval="[(6, 0, [ref('open_ai_product_attribute_value_text'), ref('open_ai_product_attribute_value_audio')])]"/>
         </record>
+
+
+
 
     </data>
 </odoo>
