@@ -1,0 +1,29 @@
+<odoo>
+  <record id="view_product_template_product_form" model="ir.ui.view">
+    <field name="name">product.template.product.form</field>
+    <field name="model">product.template</field>
+    <field name="inherit_id" ref="product.product_template_only_form_view"/>
+    <field name="arch" type="xml">
+      <div name="options" position="inside">
+        <span class="d-inline-block">
+          <field name="is_llm"/>
+          <label for="is_llm"/>
+        </span>
+      </div>
+      <page name="inventory" position="after">
+        <page name="llm" string="LLM" attrs="{'invisible':[('is_llm', '=', False)]}">
+          <group>
+            <group>
+              <field name="token_sys"/>
+              <field name="llm_additional_rate" />
+            </group>
+            <group >
+              <field name="llm_type"/>
+            </group>
+          </group>
+          <field name="ai_session_lines_ids"/>
+        </page>
+      </page>
+    </field>
+  </record>
+</odoo>

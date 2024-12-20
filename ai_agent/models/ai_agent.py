@@ -59,9 +59,9 @@ class AIAgent(models.Model):
         self.ai_agent_llm_id.log_message(body="Success!!!")
 
         if response and session:
+            session.ai_agent_llm_id = self.ai_agent_llm_id
             session.store_session_data(response)
             self.ai_quest_session_ids = [(4, session.id, 0)]
-            session.ai_agent_llm_id = self.ai_agent_llm_id
 
         return response.content if response else ""
         

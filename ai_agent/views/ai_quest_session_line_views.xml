@@ -9,7 +9,6 @@
                 <field name="ai_quest_session_id"/>
                 <field name="ai_quest_id"/>
                 <field name="ai_agent_id"/>
-                <field name="ai_llm_id"/>
                 <field name="model_id"/>
                 <field name="product_tmpl_id" optional="hide"/>
                 <field name="token" optional="hide"/>
@@ -31,8 +30,10 @@
                 <field name="finish_reason"/>
                 <group expand="0" string="Group By">
                     <filter string="AI Quest Session" name="group_by_session" context="{'group_by': 'ai_quest_session_id'}"/>
-                    <filter string="AI Quest" name="group_by_session2" context="{'group_by': 'ai_quest_id'}"/>
-                    <filter string="Model" name="group_by_session3" context="{'group_by': 'model_id'}"/>
+                    <filter string="Token Type" name="group_by_token_type" context="{'group_by': 'token_type_id'}"/>
+                    <filter string="Data Type" name="group_by_data_type" context="{'group_by': 'data_type_id'}"/>
+                    <filter string="API Type" name="group_by_api_type" context="{'group_by': 'api_type_id'}"/>
+                    <filter string="Model" name="group_by_model" context="{'group_by': 'model_id'}"/>
                     <filter string="Product" name="group_by_product" context="{'group_by': 'product_tmpl_id'}"/>
                     <filter string="Finish Reason" name="group_by_finish_reason" context="{'group_by': 'finish_reason'}"/>
                 </group>
@@ -48,23 +49,24 @@
             <form>
                 <sheet string="AI Quest Session Line">
                     <group>
-                        <field name="datetime"/>
-                        <field name="ai_quest_session_id" can_create="true" can_write="true"/>
-                        <field name="product_tmpl_id"/>
-                        <field name="ai_quest_id"/>
-                        <field name="ai_agent_id"/>
-                        <field name="ai_llm_id"/>
-                        <field name="model_id"/>
-                        
-                        <field name="system_fingerprint"/>
+                        <group>
+                            <field name="ai_quest_id"/>
+                            <field name="ai_agent_id"/>
+                            <field name="model_id"/>
+                            <field name="system_fingerprint"/>
+                        </group>
+                        <group>
+                            <field name="datetime"/>
+                            <field name="ai_quest_session_id" can_create="true" can_write="true"/>
+                            <field name="product_tmpl_id"/>
+                        </group>
                     </group>
                     <group>
                         <separator/>
                     </group>
                     <group>
                         <group>
-                            <field name="api_type_id"/>
-                            <field name="data_type_id"/>
+
                             <field name="token_type_id"/>
                             <field name="token"/>
                             <field name="token_monetary"/>
@@ -72,7 +74,8 @@
                             <field name="token_sys"/>
                         </group>
                         <group>
-                            <field name="ai_id"/>
+                            <field name="api_type_id"/>
+                            <field name="data_type_id"/>
                             <field name="finish_reason"/>
                         </group>
                     </group>
