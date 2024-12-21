@@ -37,7 +37,9 @@
     'license': 'AGPL-3',
     'depends': ['base', 'mail', 'product'],
     'data': [
+
         "security/ir.model.access.csv",
+        "data/open_ai_data.xml",
         "wizard/ai_agent_test_wizard_views.xml",
         "views/ai_agent_views.xml",
         "views/ai_agent_llm_views.xml",
@@ -45,7 +47,6 @@
         "views/ai_quest_session_views.xml",
         "views/ai_quest_session_line_views.xml",
         "views/product_template_views.xml",
-        "data/open_ai_data.xml",
      ],
     "external_dependencies": {
        "python": ["langchain-core",],

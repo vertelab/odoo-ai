@@ -24,11 +24,28 @@ class AIQuestSession(models.Model):
     type_of_output = fields.Text()
 
     def store_session_data(self,session):
-        response_metadata = session.response_metadata
         usage_metadata = session.usage_metadata
-        record = self.unwrap_dict(dict(usage_metadata))
-        record.update({"model_name": response_metadata["model_name"], "finish_reason": response_metadata["finish_reason"], "ai_id": session.id})
-        self.create_ai_quest_session_line(record)
+        response_metadata = session.response_metadata
+        usage_metadata_dict = self.unwrap_dict(dict(usage_metadata))
+
+        model_id = self.env["product.attribute.value"].search([("name", "=", response_metadata["model_name"]),("attribute_id", "=", self.env.ref("ai_agent.open_ai_product_attribute_model").id)],limit=1)
+        api_type_id = self.env["product.attribute.value"].search([("name", "=", "sync"),("attribute_id", "=", self.env.ref("ai_agent.open_ai_product_attribute_api_type").id)],limit=1)
+        data_type_id = self.env["product.attribute.value"].search([("name", "=", "text"),("attribute_id", "=", self.env.ref("ai_agent.open_ai_product_attribute_data_type").id)],limit=1)
+        token_type_ids = self.env["product.attribute.value"].search([("attribute_id", "=", self.env.ref("ai_agent.open_ai_product_attribute_token_type").id)])
+
+        record = {
+                    "product_tmpl_id": self.ai_agent_llm_id.product_tmpl_id.id,
+                    "model_id": model_id.id, 
+                    "api_type_id": api_type_id.id, 
+                    "data_type_id": data_type_id.id, 
+                    "finish_reason": response_metadata["finish_reason"],
+                    "system_fingerprint": response_metadata["system_fingerprint"]
+                }
+
+        for token_type_id in token_type_ids:    
+            search_term = f"{token_type_id.name}_tokens" if token_type_id.name != "input cached" else "cache_read"
+            record.update({"token": usage_metadata_dict[search_term], "token_type_id": token_type_id.id})
+            self.create_ai_quest_session_line(record)
 
     def unwrap_dict(self,val_dict):
         new_dict = {}

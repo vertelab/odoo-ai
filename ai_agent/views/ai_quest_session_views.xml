@@ -73,12 +73,16 @@
                             <page name="lines" string="Lines">
                                 <field name="ai_quest_session_line_ids">
                                     <tree>
+                                        <field name="token_type_id"/>
+                                        <field name="token"/>
+                                        <field name="token_monetary"/>
+                                        <field name="token_currency"/>
                                         <field name="finish_reason"/>
-                                        <field name="input_tokens"/>
-                                        <field name="output_tokens"/>
-                                        <field name="total_tokens" />
-                                        <field name="model_name"/>
-                                        <field name="ai_id" optional="hide"/>
+                                        <field name="product_tmpl_id" optional="hide"/>
+                                        <field name="model_id" optional="hide"/>
+                                        <field name="api_type_id" optional="hide"/>
+                                        <field name="data_type_id" optional="hide"/>
+                                        <field name="token_sys" optional="hide"/>
                                         <field name="system_fingerprint" optional="hide"/>
                                     </tree>
                                 </field>

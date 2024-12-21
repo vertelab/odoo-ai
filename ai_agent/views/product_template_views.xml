@@ -1,52 +1,29 @@
-<?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <record id="product_template_tree_view" model="ir.ui.view">
-        <field name="name">product.template.product.tree</field>
-        <field name="model">product.template</field>
-       <field name="inherit_id" ref="peoduct.product_template_tree_view" />
-        <field name="arch" type="xml">
-                <field name="sale_ok" position="after">
-                      <field name="is_llm" optional="show" />
-                      <field name="llm_type" optional="show" />
-                      <field name="token_sys" optional="show" />
-                    </field>
-        </field>
-    </record>
-
-    <record id="product_template_form_view" model="ir.ui.view">
-        <field name="name">product.template.product.form</field>
-        <field name="model">product.template</field>
-        <field name="mode">primary</field>
-        <field name="priority" eval="8" />
-        <field name="inherit_id" ref="product.product_template_form_view"/>
-        <field name="arch" type="xml">
-<!--
-            <div name="button_box" position="inside">
-                <button name="%(product.product_variant_action)d" type="action"
-                    icon="fa-sitemap" class="oe_stat_button"
-                    attrs="{'invisible': [('product_variant_count', '&lt;=', 1)]}"
-                    groups="product.group_product_variant">
-                    <field string="Variants" name="product_variant_count" widget="statinfo" />
-                </button>
-            </div>
--->
-
-<div name="options" position="inside">
-                        <span class="d-inline-block">
-                            <field name="is_llm"/>
-                            <label for="is_llm"/>
-                        </span>
-                    </div>
-
-
-            <xpath expr="//page[@name='general_information']" position="after">
-                <page name="ai_llm" string="LLM" >                    
-                    <field name="is_llm" optional="show" />
-                      <field name="llm_type" optional="show" />
-                </page>
-            </xpath>
-        </field>
-    </record>
-
-
+  <record id="view_product_template_product_form" model="ir.ui.view">
+    <field name="name">product.template.product.form</field>
+    <field name="model">product.template</field>
+    <field name="inherit_id" ref="product.product_template_only_form_view"/>
+    <field name="arch" type="xml">
+      <div name="options" position="inside">
+        <span class="d-inline-block">
+          <field name="is_llm"/>
+          <label for="is_llm"/>
+        </span>
+      </div>
+      <page name="inventory" position="after">
+        <page name="llm" string="LLM" attrs="{'invisible':[('is_llm', '=', False)]}">
+          <group>
+            <group>
+              <field name="token_sys"/>
+              <field name="llm_additional_rate" />
+            </group>
+            <group >
+              <field name="llm_type"/>
+            </group>
+          </group>
+          <field name="ai_session_lines_ids"/>
+        </page>
+      </page>
+    </field>
+  </record>
 </odoo>

@@ -4,10 +4,12 @@
 
         <record id="open_ai_product_template" model="product.template">
             <field name="name">Open-AI</field>
+            <field name="is_llm">True</field>
+            <field name="llm_type">ChatOpenAI</field>
         </record>
 
 
-<!-- Model -->
+        <!-- Model -->
         <record id="open_ai_product_attribute_model" model="product.attribute">
             <field name="name">model</field>
             <field name="create_variant">always</field>
@@ -42,7 +44,7 @@
             <field name="name">gpt-4o-2024-05-13</field>
             <field name="attribute_id" ref="ai_agent.open_ai_product_attribute_model"/>
         </record>
-        
+
         <!-- Attribute Line -->
         <record id="open_ai_product_template_attribute_line_model" model="product.template.attribute.line">
             <field name="product_tmpl_id" ref="open_ai_product_template"/>
@@ -54,7 +56,7 @@
                     ref('open_ai_product_attribute_value_gpt-4o-2024-05-13'),
                     ])]"/>
         </record>
-        
+
         <!-- Api Type -->
         <record id="open_ai_product_attribute_api_type" model="product.attribute">
             <field name="name">api_type</field>
@@ -98,7 +100,7 @@
             <field name="name">output</field>
             <field name="attribute_id" ref="ai_agent.open_ai_product_attribute_token_type"/>
         </record>
-        
+
         <!-- Attribute Line -->
         <record id="open_ai_product_template_attribute_line_token_type" model="product.template.attribute.line">
             <field name="product_tmpl_id" ref="open_ai_product_template"/>
@@ -109,12 +111,12 @@
         </record>
 
         <!-- Data Type -->
-        
+
         <record id="open_ai_product_attribute_data_type" model="product.attribute">
             <field name="name">data_type</field>
             <field name="create_variant">always</field>
         </record>
-                
+
         <record id="open_ai_product_attribute_value_text" model="product.attribute.value">
             <field name="name">text</field>
             <field name="attribute_id" ref="ai_agent.open_ai_product_attribute_data_type"/>
@@ -130,9 +132,6 @@
             <field name="attribute_id" ref="open_ai_product_attribute_data_type"/>
             <field name="value_ids" eval="[(6, 0, [ref('open_ai_product_attribute_value_text'), ref('open_ai_product_attribute_value_audio')])]"/>
         </record>
-
-
-
 
     </data>
 </odoo>
