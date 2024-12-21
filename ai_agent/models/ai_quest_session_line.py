@@ -7,8 +7,8 @@ _logger = logging.getLogger(__name__)
 class AIQuestSessionLine(models.Model):
     _name = 'ai.quest.session.line'
     _description = 'AI Quest Session Line'
-    _inherit = ["mail.thread", "mail.activity.mixin"]
-    _rec_name = "display_name"
+    # ~ _inherit = ['ai.quest.session.line',"mail.thread", "mail.activity.mixin"]
+    # ~ _rec_name = "display_name"
 
     datetime = fields.Datetime(string='Datetime',default=fields.Datetime.now()) # fields.datetime.add|context_timestamp|end_of|now|start_of|substract|to_datetime|to_string|today
     display_name = fields.Char(compute="compute_display_name")
@@ -31,8 +31,8 @@ class AIQuestSessionLine(models.Model):
     system_fingerprint = fields.Char()
     finish_reason = fields.Char()
 
-    @api.depends("model_id","ai_quest_session_id.session")
-    def compute_display_name(self):
-        for record in self:
-            record.display_name = f"{record.model_id.name} [{record.ai_quest_session_id.session}]"
+    # ~ @api.depends("model_id","ai_quest_session_id.session")
+    # ~ def compute_display_name(self):
+        # ~ for record in self:
+            # ~ record.display_name = f"{record.model_id.name} [{record.ai_quest_session_id.session}]"
    

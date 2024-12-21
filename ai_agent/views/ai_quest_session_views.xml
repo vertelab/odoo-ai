@@ -70,6 +70,7 @@
                             <separator/>
                         </group>
                         <notebook>
+<!--
                             <page name="lines" string="Lines">
                                 <field name="ai_quest_session_line_ids">
                                     <tree>
@@ -87,6 +88,7 @@
                                     </tree>
                                 </field>
                             </page>
+-->
                             <page name="agents" string="Agents">
                                 <field name="ai_agent_ids">
                                     <tree>

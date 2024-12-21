@@ -26,7 +26,7 @@ class AIAgentLLM(models.Model):
     last_run = fields.Datetime()
     product_tmpl_id = fields.Many2one(comodel_name='product.template',domain="[('is_llm','=',True)]", required=True)
     llm_type = fields.Char(related="product_tmpl_id.llm_type", required=True)
-    model_id = fields.Many2one('product.template.attribute.value', string="Model", required=True)
+    model_id = fields.Many2one(comodel_name='product.template.attribute.value', string="Model", required=True, ) # domain="[('product_tmpl_id', '=', product_tmpl_id),('attribute_id','=', ref('ai_agent.open_ai_product_attribute_model'))]")
     ai_quest_session_ids = fields.One2many(comodel_name="ai.quest.session", inverse_name="ai_agent_llm_id")
     session_line_count = fields.Integer(compute="compute_session_line_count")
 

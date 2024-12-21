@@ -5,6 +5,7 @@
         <field name="model">ai.quest.session.line</field>
         <field name="arch" type="xml">
             <tree string="AI Quest Session Lines">
+                <field name="datetime"/>
                 <field name="display_name"/>
                 <field name="ai_quest_session_id"/>
                 <field name="ai_quest_id"/>

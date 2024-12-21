@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+
+      
+
+        <!-- Model -->
+        <record id="product_attribute_model" model="product.attribute">
+            <field name="name">model</field>
+            <field name="create_variant">always</field>
+        </record>
+
+
+
+        <!-- Api Type -->
+        <record id="product_attribute_api_type" model="product.attribute">
+            <field name="name">api_type</field>
+            <field name="create_variant">always</field>
+        </record>
+
+      
+
+
+
+        <!-- Token Type -->
+        <record id="product_attribute_token_type" model="product.attribute">
+            <field name="name">token_type</field>
+            <field name="create_variant">always</field>
+        </record>
+
+        <record id="product_attribute_value_input" model="product.attribute.value">
+            <field name="name">input</field>
+            <field name="attribute_id" ref="ai_agent.product_attribute_token_type"/>
+        </record>
+        <record id="product_attribute_value_input_cached" model="product.attribute.value">
+            <field name="name">input cached</field>
+            <field name="attribute_id" ref="ai_agent.product_attribute_token_type"/>
+        </record>
+        <record id="product_attribute_value_output" model="product.attribute.value">
+            <field name="name">output</field>
+            <field name="attribute_id" ref="ai_agent.product_attribute_token_type"/>
+        </record>
+
+       
+        <!-- Data Type -->
+
+        <record id="product_attribute_data_type" model="product.attribute">
+            <field name="name">data_type</field>
+            <field name="create_variant">always</field>
+        </record>
+
+        <record id="product_attribute_value_text" model="product.attribute.value">
+            <field name="name">text</field>
+            <field name="attribute_id" ref="ai_agent.product_attribute_data_type"/>
+        </record>
+        <record id="product_attribute_value_audio" model="product.attribute.value">
+            <field name="name">audio</field>
+            <field name="attribute_id" ref="ai_agent.product_attribute_data_type"/>
+        </record>
+        <record id="product_attribute_value_image" model="product.attribute.value">
+            <field name="name">image</field>
+            <field name="attribute_id" ref="ai_agent.product_attribute_data_type"/>
+        </record>
+
+    </data>
+</odoo>
