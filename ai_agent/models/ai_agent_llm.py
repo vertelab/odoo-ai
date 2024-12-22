@@ -1,6 +1,10 @@
 from random import randint
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
+from langchain_mistralai import ChatMistralAI
+
+
+from httpx import HTTPStatusError
 
 from odoo import models, fields, api, _
 from odoo.exceptions import UserError, AccessError, ValidationError
@@ -62,6 +66,55 @@ class AIAgentLLM(models.Model):
     def get_llm(self):
         return f"{self.llm_type}(" + "model=" + "'" + f"{self.model_id.name if self.model_id.name else ''}" + "'" + "," + "api_key=" + "'" + f"{self.ai_api_key if self.ai_api_key else ''}" + "'" + ")"
 
+    def invoke(self,input,config=None,
+                    ai_quest_session_id=None,ai_quest_id=None,ai_agent_id=None,debug=False,
+                ):
+        try:
+            response = eval(self.get_llm()).invoke(input,config)            
+        except HTTPStatusError as e:
+            self.log_message(body=e,is_error=True)
+            _logger.error(f"{e=}")
+            return None
+        except Exception as e:
+            self.log_message(body=e,is_error=True)
+            _logger.error(f"{e=}")
+            return None
+        
+        content = response.content
+        additional_kwargs = response.additional_kwargs
+        response_metadata = response.response_metadata
+        usage_metadata = dict(response_metadata.get('usage_metadata',{}))
+        # ~ raise UserError(f"{response.usage_metadata=} {response.usage_metadata['input_tokens']=} ")
+
+        for token_type,token in response.usage_metadata.items():
+            _logger.error(f"{token_type=} {token=}")
+            if token_type == 'total_tokens':
+                next
+            token_type_id = self.env['product.attribute.value'].search([('name','=',token_type)])
+            # ~ if not token_type_id:
+                # ~ pass
+            self.env['ai.quest.session.line'].new_line(values=
+                {
+                    'ai_quest_session_id': ai_quest_session_id,
+                    'ai_quest_id': ai_quest_id,
+                    'ai_agent_id': ai_agent_id,
+                    'ai_llm_id': self.id,
+                    'product_tmpl_id': self.product_tmpl_id.id,
+                    'model_id': self.model_id.id,
+                    'model_real': response_metadata.get('model'),
+                    'api_type_id': None,
+                    'data_type_id': None,
+                    'token_type_id': token_type_id.id if token_type_id else None,
+                    'token': token,
+                    'system_fingerprint': response.id,
+                    'finish_reason': response_metadata.get('finish_reason'),
+                }
+            )
+            
+        if debug:
+            self.log_message(body="%s" % response,is_error=False)
+        return content
+
     @api.depends("ai_quest_session_ids")
     def compute_session_line_count(self):
         for record in self:
@@ -85,3 +138,12 @@ class AIAgentLLM(models.Model):
     def compute_agent_count(self):
         for record in self:
             record.agent_count = len(record.ai_agent_ids)
+
+
+
+
+    def test_llm(self):        
+        if self.invoke("""
+                {"question": "what is the meaning of life the universe and everything?", "answer": 42}
+                """,debug=True):
+            self.status = "confirmed"

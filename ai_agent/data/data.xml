@@ -29,15 +29,15 @@
         </record>
 
         <record id="product_attribute_value_input" model="product.attribute.value">
-            <field name="name">input</field>
+            <field name="name">input_tokens</field>
             <field name="attribute_id" ref="ai_agent.product_attribute_token_type"/>
         </record>
         <record id="product_attribute_value_input_cached" model="product.attribute.value">
-            <field name="name">input cached</field>
+            <field name="name">input cached_tokens</field>
             <field name="attribute_id" ref="ai_agent.product_attribute_token_type"/>
         </record>
         <record id="product_attribute_value_output" model="product.attribute.value">
-            <field name="name">output</field>
+            <field name="name">output_tokens</field>
             <field name="attribute_id" ref="ai_agent.product_attribute_token_type"/>
         </record>
 

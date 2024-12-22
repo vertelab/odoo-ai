@@ -18,6 +18,7 @@ class AIQuestSessionLine(models.Model):
     ai_llm_id = fields.Many2one(comodel_name="ai.llm")
     
     product_tmpl_id = fields.Many2one(comodel_name='product.template', string="",help="") # domain|context|ondelete="'set null', 'restrict', 'cascade'"|auto_join|delegate
+    model_real = fields.Char()
     model_id = fields.Many2one(comodel_name="product.attribute.value")
     api_type_id = fields.Many2one(comodel_name="product.attribute.value")
     data_type_id = fields.Many2one(comodel_name="product.attribute.value")
@@ -31,6 +32,10 @@ class AIQuestSessionLine(models.Model):
     system_fingerprint = fields.Char()
     finish_reason = fields.Char()
 
+
+    def new_line(self,values):
+        return self.env['ai.quest.session.line'].create(values)
+        
     # ~ @api.depends("model_id","ai_quest_session_id.session")
     # ~ def compute_display_name(self):
         # ~ for record in self:
