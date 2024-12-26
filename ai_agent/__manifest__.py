@@ -22,21 +22,19 @@
 # https://www.odoo.com/documentation/14.0/reference/module.html
 #
 {
-    'name': 'AI Agents',
-    'version': '1.0',
-    'summary': """
-        Short (1 phrase/line) summary of the module's purpose, used as
-        subtitle on modules listing or apps.odoo.com""",
-    'category': 'Productivity',
-    'description': """
+    "name": "AI Agents",
+    "version": "1.0",
+    "summary": "AI Agent orchestration",
+    "category": "Productivity",
+    "description": """
         Long description of module's purpose
     """,
-    'author': 'Vertel AB',
-    'website': 'https://vertel.se/apps/odoo-',
-    'images': ['static/description/banner.png'],  # 560x280
-    'license': 'AGPL-3',
-    'depends': ['mail', 'product'],
-    'data': [
+    "author": "Vertel AB",
+    "website": "https://vertel.se/apps/odoo-",
+    "images": ["static/description/banner.png"],  # 560x280
+    "license": "AGPL-3",
+    "depends": ["mail", "product"],
+    "data": [
         "security/ir.model.access.csv",
         "data/data.xml",
         "data/open_ai_data.xml",
@@ -48,13 +46,15 @@
         "views/ai_quest_session_views.xml",
         "views/ai_quest_session_line_views.xml",
         "views/product_template_views.xml",
-     ],
+    ],
     "external_dependencies": {
-       "python": ["langchain-core",],
-     },
-    'demo': [],
-    'application': False,
-    'installable': True,    
-    'auto_install': False,
-    #"post_init_hook": "post_init_hook",
+        "python": [
+            "langchain-core",
+        ],
+    },
+    "demo": [],
+    "application": False,
+    "installable": True,
+    "auto_install": False,
+    # "post_init_hook": "post_init_hook",
 }

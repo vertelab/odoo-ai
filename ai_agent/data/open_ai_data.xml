@@ -18,40 +18,50 @@
             <field name="name">gpt-4o</field>
             <field name="attribute_id" ref="ai_agent.product_attribute_model"/>
         </record>
-        <record id="open_ai_product_attribute_value_gpt-4o-2024-11-20" model="product.attribute.value">
-            <field name="name">gpt-4o-2024-11-20</field>
-            <field name="attribute_id" ref="ai_agent.product_attribute_model"/>
-        </record>
-        <record id="open_ai_product_attribute_value_gpt-4o-2024-08-06" model="product.attribute.value">
-            <field name="name">gpt-4o-2024-08-06</field>
-            <field name="attribute_id" ref="ai_agent.product_attribute_model"/>
-        </record>
         <record id="open_ai_product_attribute_value_gpt-4o-audio-preview" model="product.attribute.value">
             <field name="name">gpt-4o-audio-preview</field>
             <field name="attribute_id" ref="ai_agent.product_attribute_model"/>
         </record>
-        <record id="open_ai_product_attribute_value_gpt-4o-audio-preview-2024-12-17" model="product.attribute.value">
-            <field name="name">gpt-4o-audio-preview-2024-12-17</field>
+        <record id="open_ai_product_attribute_value_gpt-4o-mini" model="product.attribute.value">
+            <field name="name">gpt-4o-mini</field>
             <field name="attribute_id" ref="ai_agent.product_attribute_model"/>
         </record>
-        <record id="open_ai_product_attribute_value_gpt-4o-audio-preview-2024-10-01" model="product.attribute.value">
-            <field name="name">gpt-4o-audio-preview-2024-10-01</field>
+        <record id="open_ai_product_attribute_value_gpt-4o-mini-audio-preview" model="product.attribute.value">
+            <field name="name">gpt-4o-mini-audio-preview</field>
             <field name="attribute_id" ref="ai_agent.product_attribute_model"/>
         </record>
-        <record id="open_ai_product_attribute_value_gpt-4o-2024-05-13" model="product.attribute.value">
-            <field name="name">gpt-4o-2024-05-13</field>
+        <record id="open_ai_product_attribute_value_o1" model="product.attribute.value">
+            <field name="name">o1</field>
             <field name="attribute_id" ref="ai_agent.product_attribute_model"/>
         </record>
+        <record id="open_ai_product_attribute_value_o1-mini" model="product.attribute.value">
+            <field name="name">o1-mini</field>
+            <field name="attribute_id" ref="ai_agent.product_attribute_model"/>
+        </record>
+        <record id="open_ai_product_attribute_value_text-embedding-3-small" model="product.attribute.value">
+            <field name="name">text-embedding-3-small</field>
+            <field name="attribute_id" ref="ai_agent.product_attribute_model"/>
+        </record>
+        <record id="open_ai_product_attribute_value_text-embedding-3-large" model="product.attribute.value">
+            <field name="name">text-embedding-3-large</field>
+            <field name="attribute_id" ref="ai_agent.product_attribute_model"/>
+        </record>
+
+
 
         <!-- Attribute Line -->
         <record id="open_ai_product_template_attribute_line_model" model="product.template.attribute.line">
             <field name="product_tmpl_id" ref="open_ai_product_template"/>
             <field name="attribute_id" ref="product_attribute_model"/>
             <field name="value_ids" eval="[(6, 0, [
-                    ref('open_ai_product_attribute_value_gpt-4o'), ref('open_ai_product_attribute_value_gpt-4o-2024-11-20'),
-                    ref('open_ai_product_attribute_value_gpt-4o-2024-08-06'), ref('open_ai_product_attribute_value_gpt-4o-audio-preview'),
-                    ref('open_ai_product_attribute_value_gpt-4o-audio-preview-2024-12-17'), ref('open_ai_product_attribute_value_gpt-4o-audio-preview-2024-10-01'),
-                    ref('open_ai_product_attribute_value_gpt-4o-2024-05-13'),
+                            ref('gpt-4o'),
+                            ref('gpt-4o-audio-preview'),
+                            ref('gpt-4o-mini'),
+                            ref('gpt-4o-mini-audio-preview'),
+                            ref('o1'),
+                            ref('o1-mini'),
+                            ref('text-embedding-3-small'),
+                            ref('text-embedding-3-large'),
                     ])]"/>
         </record>
 
