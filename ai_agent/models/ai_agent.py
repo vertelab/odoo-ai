@@ -33,6 +33,8 @@ class AIAgent(models.Model):
     ai_backstory = fields.Text()
     ai_quest_session_ids = fields.Many2many(comodel_name="ai.quest.session")
     ai_agent_data_ids = fields.One2many(comodel_name="ai.agent.data", inverse_name="agent_id")
+    ai_temperature = fields.Float(string='temperature', default=0.7,help="Temperature controls the randomness and creativity of the model's output, <1.0 more predictable and consistant >1.0 more diverse and creative responses")
+    debug = fields.Boolean(string='Debug')
 
     def prompt_agent(self, test_prompt=False, parser=False, session=False, **kwargs):
 
@@ -80,3 +82,6 @@ class AIAgent(models.Model):
         _logger.error(f"{action=}")
         action["context"] = {"default_ai_agent_id": self.id}
         return action
+
+    def test(self):
+        pass

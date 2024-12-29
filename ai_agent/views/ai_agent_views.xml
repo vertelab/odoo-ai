@@ -18,6 +18,7 @@
                 <search string="Search AI Agents">
                     <field name="name"/>
                     <field name="ai_agent_llm_id"/>
+                    <field name="ai_temperature"/>
                     <field name="ai_role"/>
                     <field name="ai_type"/>
                     <field name="ai_discription"/>
@@ -39,6 +40,7 @@
                 <form>
                     <header>
                         <button name="get_test_wizard" type="object" string="Test"/>
+                        <button name="test" type="object" string="Test2"/>
                     </header>
                     <sheet>
                         <group>
@@ -48,6 +50,7 @@
                             </group>
                             <group>
                                 <field name="ai_agent_llm_id" can_create="true" can_write="true"/>
+                                <field name="ai_temperature"/>
                             </group>
                         </group>
                         <group>

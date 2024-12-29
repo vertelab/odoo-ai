@@ -2,6 +2,7 @@ from random import randint
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from langchain_mistralai import ChatMistralAI
+from langchain.agents import AgentExecutor, create_openai_tools_agent, create_json_chat_agent, create_react_agent
 
 
 from httpx import HTTPStatusError
@@ -63,8 +64,58 @@ class AIAgentLLM(models.Model):
         self.last_run = fields.Datetime.now()
         self.message_post(body=f"{body} | {self.last_run}",message_type="notification")
 
-    def get_llm(self):
-        return f"{self.llm_type}(" + "model=" + "'" + f"{self.model_id.name if self.model_id.name else ''}" + "'" + "," + "api_key=" + "'" + f"{self.ai_api_key if self.ai_api_key else ''}" + "'" + ")"
+    def get_llm(self,verbose=False,temperature=0.7,callbacks=None):
+        
+
+        # ~ Core Parameters
+        # ~ model: Specifies the OpenAI model to use.
+            # ~ Example: ChatOpenAI(model="gpt-4") 
+        # ~ temperature: Controls the randomness of the output. Higher values (e.g., 0.8) produce more creative responses, while lower values (e.g., 0.2) generate more focused and deterministic outputs1
+            # ~ 2
+            # ~ .
+            # ~ Example: ChatOpenAI(temperature=0.5) 
+        # ~ max_tokens: Limits the length of the generated response.
+            # ~ Example: ChatOpenAI(max_tokens=100)
+        # ~ API Configuration
+        # ~ api_key: Your OpenAI API key.
+            # ~ Example: ChatOpenAI(api_key="your-api-key-here") 
+        # ~ base_url: Custom API endpoint URL.
+            # ~ Example: ChatOpenAI(base_url="https://custom-openai-endpoint.com") 
+        # ~ organization: Your OpenAI organization ID.
+            # ~ Example: ChatOpenAI(organization="org-123456")
+        # ~ Request Handling
+        # ~ timeout: Maximum time (in seconds) to wait for a response.
+            # ~ Example: ChatOpenAI(timeout=30) 
+        # ~ max_retries: Number of retry attempts for failed requests.
+            # ~ Example: ChatOpenAI(max_retries=3) 
+        # ~ streaming: Enables streaming of partial results as they're generated.
+            # ~ Example: ChatOpenAI(streaming=True)
+        # ~ Advanced Options
+        # ~ n: Number of chat completions to generate for each prompt2.
+            # ~ Example: ChatOpenAI(n=2) 
+        # ~ model_kwargs: Additional parameters to pass to the API call.
+            # ~ Example: ChatOpenAI(model_kwargs={"presence_penalty": 0.6}) 
+        # ~ callbacks: Custom callback handlers for monitoring the generation process.
+            # ~ Example: ChatOpenAI(callbacks=[MyCustomCallback()])
+        # ~ Caching and Performance
+        # ~ cache: Enables caching of responses.
+            # ~ Example: ChatOpenAI(cache=True) 
+        # ~ rate_limiter: Custom rate limiter for API calls.
+            # ~ Example: ChatOpenAI(rate_limiter=MyRateLimiter())
+        
+         # ~ tiktoken_model_name: Optional[str] = None, 
+         # ~ default_headers: Optional[Mapping[str, str]] = None, 
+         # ~ default_query: Optional[Mapping[str, object]] = None, 
+         # ~ http_client: Optional[Any] = None) -> Non
+        
+        
+        
+        return f"{self.llm_type}(" + \
+            f"model='{self.model_id.name}'," + \
+            f"api_key='{self.ai_api_key or ''}'," + \
+            f"temperature={temperature}," + \
+            f"verbose={verbose}," + \
+            f"callbacks={callbacks})" 
 
     def invoke(self,input,config=None,
                     ai_quest_session_id=None,ai_quest_id=None,ai_agent_id=None,debug=False,
@@ -147,3 +198,23 @@ class AIAgentLLM(models.Model):
                 {"question": "what is the meaning of life the universe and everything?", "answer": 42}
                 """,debug=True):
             self.status = "confirmed"
+
+            
+    def get_agent_executor(self,prompt,tools,temperature=1.0,verbose=False,callbacks=None):
+        # ~ raise UserError(self.get_llm(temperature=temperature,verbose=verbose))
+        return AgentExecutor(
+                agent=create_openai_tools_agent(eval(self.get_llm(temperature=temperature,verbose=verbose)), tools, prompt),
+                tools=tools,
+                verbose=verbose,
+                callbacks=callbacks,
+            )
+
+# ~ agent_executor.invoke(
+    # ~ {
+        # ~ "input": "what's my name?",
+        # ~ "chat_history": [
+            # ~ HumanMessage(content="hi! my name is bob"),
+            # ~ AIMessage(content="Hello Bob! How can I assist you today?"),
+        # ~ ],
+    # ~ }
+# ~ )

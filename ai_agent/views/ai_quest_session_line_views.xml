@@ -4,19 +4,32 @@
         <field name="name">ai.quest.session.line.list</field>
         <field name="model">ai.quest.session.line</field>
         <field name="arch" type="xml">
-            <tree string="AI Quest Session Lines">
-                <field name="datetime"/>
-                <field name="display_name"/>
-                <field name="ai_quest_session_id"/>
-                <field name="ai_quest_id"/>
-                <field name="ai_agent_id"/>
-                <field name="model_id"/>
-                <field name="product_tmpl_id" optional="hide"/>
-                <field name="token" optional="hide"/>
-                <field name="token_sys" optional="hide"/>
-                <field name="system_fingerprint" optional="hide"/>
-                <field name="finish_reason"/>
-            </tree>
+<tree string="AI Quest Session Lines">
+    <field name="datetime"/>
+    <field name="display_name"/>
+    <field name="ai_quest_session_id"/>
+    <field name="ai_quest_id"/>
+    <field name="ai_agent_id"/>
+    <field name="model_id"/>
+    <field name="finish_reason"/>
+    <field name="commercial_partner_id" optional="hide"/>
+    <field name="user_id" optional="hide"/>
+    <field name="product_tmpl_id" optional="hide"/>
+    <field name="token" optional="hide"/>
+    <field name="token_sys" optional="hide"/>
+    <field name="token_monetary" optional="hide"/>
+    <field name="token_currency" optional="hide"/>
+    <field name="system_fingerprint" optional="hide"/>
+    <field name="run_id" optional="hide"/>
+    <field name="model_real" optional="hide"/>
+    <field name="api_type_id" optional="hide"/>
+    <field name="data_type_id" optional="hide"/>
+    <field name="token_type_id" optional="hide"/>
+    <field name="db_name" optional="hide"/>
+    <field name="db_uuid" optional="hide"/>
+    <field name="ai_llm_id" optional="hide"/>
+    <field name="llm_additional_rate" optional="hide"/>
+</tree>
         </field>
     </record>
 

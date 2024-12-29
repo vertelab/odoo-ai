@@ -6,11 +6,12 @@
             <field name="model">ai.quest.session</field>
             <field name="arch" type="xml">
                 <tree string="AI Quest Session">
+                    <field name="startdate" />
                     <field name="session"/>
                     <field name="ai_type"/>
                     <field name="ai_quest_id"/>
-                    <field name="startdate" optional="hide"/>
                     <field name="enddate" optional="hide"/>
+                    <field name="time_difference_ms" optional="hide"/>
                 </tree>
             </field>
         </record>
@@ -26,6 +27,7 @@
                     <field name="ai_agent_llm_id"/>
                     <field name="startdate"/>
                     <field name="enddate"/>
+                    <field name="time_difference_ms" />                    
                     <field name="type_of_output"/>
                     <filter string="Draft" name="draft" domain="[('status', '=', 'draft')]"/>
                     <filter string="Active" name="active" domain="[('status', '=', 'active')]"/>
@@ -59,7 +61,8 @@
                             <group>
                                 <field name="ai_quest_id" can_create="true" can_write="true"/>
                                 <field name="startdate"/>
-                                <field name="enddate"/>
+                                <field name="enddate"/>                    
+                                <field name="time_difference_ms" />  
                             </group>
                         </group>
                         <group>
