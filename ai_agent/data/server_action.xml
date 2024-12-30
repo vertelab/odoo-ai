@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+
+    <record model="ir.actions.server" id="create_llm">
+        <field name="name">Create LLM for each model</field>
+        <field name="model_id" ref="model_product_template" />
+        <field name="binding_model_id" ref="model_product_template" />
+        <field name="binding_type">action</field>
+        <field name="state">code</field>
+        <field name="code">
+            records.create_llm()
+        </field>
+    </record>
+
+    <record model="ir.actions.server" id="update_api__key">
+        <field name="name">Update API Key</field>
+        <field name="model_id" ref="model_ai_agent_llm" />
+        <field name="binding_model_id" ref="model_ai_agent_llm" />
+        <field name="binding_type">action</field>
+        <field name="state">code</field>
+        <field name="code">
+            records.update_api_key()
+        </field>
+    </record>
+
+    </data>
+</odoo>

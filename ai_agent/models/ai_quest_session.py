@@ -71,10 +71,10 @@ class AIQuestSession(models.Model):
         else:
             session = self.env['ai.quest.session'].create({
                     'status': 'active',
-                    'ai_agent_llm_id': llm.id,
-                    'ai_agent_llm_ids': (6,0,[llm.id]),
+                    'ai_agent_llm_id': llm.id if llm else None,
+                    'ai_agent_llm_ids': [(6, 0, [llm.id])] if llm else None,  
                     'debug': debug,
-                        })
+            })
             if session.debug:
                 session.log(llm,f"[session] init {session.name=} {llm.name=}")
         return session    

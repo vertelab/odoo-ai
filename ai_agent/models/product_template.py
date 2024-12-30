@@ -20,14 +20,15 @@ class ProductTemplate(models.Model):
 
 
     def create_llm(self):
-        for model in self.env["product.template.attribute.value"].search([('product_tmpl_id','=',self.id),
-                                                                        ("attribute_id", "=", self.env.ref("ai_agent.product_attribute_model").id)]):
-                self.env['ai.agent.llm'].create({
-                        'ai_api_key': self.ai_api_key,
-                        'model_id': model.id,
-                        'product_tmpl_id': self.id,
-                        'name': f"{self.name}-{model.name}",
-                })
+        for p in self:
+            for model in self.env["product.template.attribute.value"].search([('product_tmpl_id','=',p.id),
+                                                                            ("attribute_id", "=", self.env.ref("ai_agent.product_attribute_model").id)]):
+                    self.env['ai.agent.llm'].create({
+                            'ai_api_key': p.ai_api_key,
+                            'model_id': model.id,
+                            'product_tmpl_id': p.id,
+                            'name': f"{p.name}-{model.name}",
+                    })
                 
 
     def action_get_session_lines(self):

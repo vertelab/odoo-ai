@@ -16,18 +16,6 @@ import logging
 _logger = logging.getLogger(__name__)
 
 
-
-
-
-
-
-
-
-
-
-
-
-
 class AIAgent(models.Model):
     _name = 'ai.agent'
     _description = 'AI Agent'

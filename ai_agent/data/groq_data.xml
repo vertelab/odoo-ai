@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
   <data>
-    <record id="groq_ai_product_template" model="product.template">
-      <field name="name">Groq-AI</field>
+    <record id="groq_product_template" model="product.template">
+      <field name="name">Groq</field>
       <field name="is_llm">True</field>
       <field name="llm_type">ChatGroq</field>
     </record>
@@ -15,11 +15,11 @@
       <field name="name">gemma2-9b-it</field>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
     </record>
-    <record id="groq_product_attribute_value_llama-3.3-70b-versatile" model="product.attribute.value">
+    <record id="groq_product_attribute_value_llama-3-3-70b-versatile" model="product.attribute.value">
       <field name="name">llama-3.3-70b-versatile</field>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
     </record>
-    <record id="groq_product_attribute_value_llama-3.1-8b-instant" model="product.attribute.value">
+    <record id="groq_product_attribute_value_llama-3-1-8b-instant" model="product.attribute.value">
       <field name="name">llama-3.1-8b-instant</field>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
     </record>
@@ -49,20 +49,33 @@
     </record>
     <!-- Attribute Line -->
     <record id="groq_ai_product_template_attribute_line_model" model="product.template.attribute.line">
-      <field name="product_tmpl_id" ref="groq_ai_product_template" />
+      <field name="product_tmpl_id" ref="groq_product_template" />
       <field name="attribute_id" ref="product_attribute_model" />
       <field name="value_ids" eval="[(6, 0, [
-                            ref('distil-whisper-large-v3-en'),
-                            ref('gemma2-9b-it'),
-                            ref('llama-3.3-70b-versatile'),
-                            ref('llama-3.1-8b-instant'),
-                            ref('llama-guard-3-8b'),
-                            ref('llama3-70b-8192'),
-                            ref('llama3-8b-8192'),
-                            ref('mixtral-8x7b-32768'),
-                            ref('whisper-large-v3'),
-                            ref('whisper-large-v3-turbo'),
+                            ref('groq_product_attribute_value_distil-whisper-large-v3-en'),
+                            ref('groq_product_attribute_value_gemma2-9b-it'),
+                            ref('groq_product_attribute_value_llama-3-3-70b-versatile'),
+                            ref('groq_product_attribute_value_llama-3-1-8b-instant'),
+                            ref('groq_product_attribute_value_llama-guard-3-8b'),
+                            ref('groq_product_attribute_value_llama3-70b-8192'),
+                            ref('groq_product_attribute_value_llama3-8b-8192'),
+                            ref('groq_product_attribute_value_mixtral-8x7b-32768'),
+                            ref('groq_product_attribute_value_whisper-large-v3'),
+                            ref('groq_product_attribute_value_whisper-large-v3-turbo'),
                     ])]" />
+    </record>
+    <record id="groq_product_template_attribute_line_token_type" model="product.template.attribute.line">
+      <field name="product_tmpl_id" ref="groq_product_template" />
+      <field name="attribute_id" ref="product_attribute_token_type" />
+      <field name="value_ids" eval="[(6, 0, [
+         ref('product_attribute_value_input_tokens'),
+         ref('product_attribute_value_input_tokens_audio'),
+         ref('product_attribute_value_input_tokens_cache_read'),
+         ref('product_attribute_value_input_cached'),
+         ref('product_attribute_value_output_tokens'),
+         ref('product_attribute_value_output_tokens_audio'),
+         ref('product_attribute_value_output_tokens_reasoning'),
+         ])]" />
     </record>
   </data>
 </odoo>

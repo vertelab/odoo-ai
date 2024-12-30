@@ -231,11 +231,30 @@ class AIAgentLLM(models.Model):
                 record.status_color = 1 # Red
 
 
-    def test_llm(self):        
-        if self.invoke("""
+    def test_llm(self):
+        
+        session = self.env['ai.quest.session'].llm_init(self)
+        try:
+            response = eval(self.get_llm()).invoke(
+            """
                 {"question": "what is the meaning of life the universe and everything?", "answer": 42}
-                """,debug=True):
-            self.status = "confirmed"
+                """            
+            ,debug=True)            
+        except HTTPStatusError as e:
+            self.log_message(body=e,is_error=True)
+            _logger.error(f"{e=}")
+            return None
+        except Exception as e:
+            self.log_message(body=e,is_error=True)
+            _logger.error(f"{e=}")
+            return None
+        
+        for message in response['messages']:
+            if isinstance(message,AIMessage):
+                session.store_session_data(message)
+                _logger.warning(f"final_stage: {message.id=} {message.usage_metadata=} ")
+        session.state='done'
+        self.status = "confirmed"
 
             
     def get_agent_executor(self,prompt,tools,temperature=1.0,verbose=False,callbacks=None):
