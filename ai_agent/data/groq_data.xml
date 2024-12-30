@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+  <data>
+    <record id="open_ai_product_template" model="product.template">
+      <field name="name">Open-AI</field>
+      <field name="is_llm">True</field>
+      <field name="llm_type">ChatOpenAI</field>
+    </record>
+    <!-- Model -->
+    <record id="open_ai_product_attribute_value_gpt-4o" model="product.attribute.value">
+      <field name="name">gpt-4o</field>
+      <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+    </record>
+    <record id="open_ai_product_attribute_value_gpt-4o-audio-preview" model="product.attribute.value">
+      <field name="name">gpt-4o-audio-preview</field>
+      <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+    </record>
+    <record id="open_ai_product_attribute_value_gpt-4o-mini" model="product.attribute.value">
+      <field name="name">gpt-4o-mini</field>
+      <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+    </record>
+    <record id="open_ai_product_attribute_value_gpt-4o-mini-audio-preview" model="product.attribute.value">
+      <field name="name">gpt-4o-mini-audio-preview</field>
+      <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+    </record>
+    <record id="open_ai_product_attribute_value_o1" model="product.attribute.value">
+      <field name="name">o1</field>
+      <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+    </record>
+    <record id="open_ai_product_attribute_value_o1-mini" model="product.attribute.value">
+      <field name="name">o1-mini</field>
+      <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+    </record>
+    <record id="open_ai_product_attribute_value_text-embedding-3-small" model="product.attribute.value">
+      <field name="name">text-embedding-3-small</field>
+      <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+    </record>
+    <record id="open_ai_product_attribute_value_text-embedding-3-large" model="product.attribute.value">
+      <field name="name">text-embedding-3-large</field>
+      <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+    </record>
+    <!-- Attribute Line -->
+    <record id="open_ai_product_template_attribute_line_model" model="product.template.attribute.line">
+      <field name="product_tmpl_id" ref="open_ai_product_template" />
+      <field name="attribute_id" ref="product_attribute_model" />
+      <field name="value_ids" eval="[(6, 0, [
+                            ref('open_ai_product_attribute_value_gpt-4o'),
+                            ref('open_ai_product_attribute_value_gpt-4o-audio-preview'),
+                            ref('open_ai_product_attribute_value_gpt-4o-mini'),
+                            ref('open_ai_product_attribute_value_gpt-4o-mini-audio-preview'),
+                            ref('open_ai_product_attribute_value_o1'),
+                            ref('open_ai_product_attribute_value_o1-mini'),
+                            ref('open_ai_product_attribute_value_text-embedding-3-small'),
+                            ref('open_ai_product_attribute_value_text-embedding-3-large'),
+                    ])]" />
+    </record>
+  </data>
+</odoo>
