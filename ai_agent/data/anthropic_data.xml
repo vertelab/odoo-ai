@@ -30,8 +30,8 @@
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
     </record>
     <!-- Attribute Line -->
-    <record id="groq_ai_product_template_attribute_line_model" model="product.template.attribute.line">
-      <field name="product_tmpl_id" ref="groq_ai_product_template" />
+    <record id="anthropic_ai_product_template_attribute_line_model" model="product.template.attribute.line">
+      <field name="product_tmpl_id" ref="anthropic_ai_product_template" />
       <field name="attribute_id" ref="product_attribute_model" />
       <field name="value_ids" eval="[(6, 0, [
                             ref('claude-3-5-sonnet-latest'),
