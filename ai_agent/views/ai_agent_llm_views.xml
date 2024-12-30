@@ -47,17 +47,18 @@
           </header>
           <sheet>
             <div name="button_box" id="button_box" class="oe_button_box">
-<!--
-              <button name="action_get_session_lines" class="oe_stat_button" type="object" icon="fa-list" attrs="{'invisible': [('session_line_count', '=', 0)]}">
--->
-              <button name="action_get_session_lines" class="oe_stat_button" type="object" icon="fa-list" >
+             <button name="action_get_agents" class="oe_stat_button " type="object" icon="fa-user-secret">
+                <field string="Agents" name="ai_agent_count" widget="statinfo" />
+              </button>             
+              <button name="action_get_quests" class="oe_stat_button " type="object" icon="fa-rocket">
+                <field string="Quests" name="quest_count" widget="statinfo" />
+              </button>
+              <button name="action_get_sessions" class="oe_stat_button" type="object" icon="fa-flag-checkered">
+                <field string="Sessions" name="session_count" widget="statinfo" />
+              </button>
+              <button name="action_get_session_lines" class="oe_stat_button" type="object" icon="fa-list">
                 <field string="Session Lines" name="session_line_count" widget="statinfo" />
               </button>
-
-                <button name="action_get_agents"  class="oe_stat_button" type="object" icon="fa-list">
-                        <field string="Session Lines" name="session_line_count" widget="statinfo" />
-              </button> 
-                    
             </div>
             <group>
               <group>
@@ -94,7 +95,7 @@
           <field name="status" />
           <field name="status_color" />
           <field name="last_run" />
-          <field name="agent_count" />
+          <field name="ai_agent_count" />
           <field name="ai_agent_ids" />
           <templates>
             <t t-name="kanban-box">
@@ -119,12 +120,12 @@
                   </div>
                   <div class="o_kanban_record_bottom mt-3">
                     <div class="oe_kanban_bottom_left">
-                      <t t-if="record.agent_count.value != 0">
+                      <t t-if="record.ai_agent_count.value != 0">
                         <div class="o_project_kanban_boxes d-flex align-items-baseline">
                           <a class="o_project_kanban_box" name="action_get_agents" type="object">
                             <div>
                               <span class="o_value">
-                                <t t-esc="record.agent_count.value" />
+                                <t t-esc="record.ai_agent_count.value" />
                               </span>
                               <span class="o_label ms-1">
                                 <t t-set="agent_label" t-value="'Agents '" />

@@ -42,6 +42,19 @@
                         <button name="start" type="object" string="Start" class="btn-primary"/>
                     </header>
                     <sheet string="AI Quest">
+                        <div name="button_box" id="button_box" class="oe_button_box">
+
+              <button name="action_get_sessions" class="oe_stat_button" type="object" icon="fa-list" >
+                <field string="Sessions" name="session_count" widget="statinfo" />
+              </button>
+
+              <button name="action_get_session_lines" class="oe_stat_button" type="object" icon="fa-list" >
+                <field string="Session Lines" name="session_line_count" widget="statinfo" />
+              </button>
+
+
+                    
+            </div>
                         <group>
                             <group>
                                 <field name="name"/>
@@ -54,7 +67,7 @@
                         </group>
                         <notebook>
                             <page name="ai_sessions" string="AI Sessions">
-                                <field name="ai_quest_session_ids">
+                                <field name="session_ids">
                                     <tree string="AI Quest Session">
                                         <field name="session" modifiers="{&quot;readonly&quot;: true}"/>
                                     </tree>
@@ -97,7 +110,7 @@
                                                     <t t-esc="record.name.value"/>
                                                 </span>
                                             </div>
-                                            <field name="ai_quest_session_ids" widget="many2many_tags" options="{'color_field': 'color'}"/>
+                                            <field name="session_ids" widget="many2many_tags" options="{'color_field': 'color'}"/>
                                         </div>
                                     </div>
                                     <!-- <div class="o_kanban_record_bottom mt-3">

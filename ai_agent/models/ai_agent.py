@@ -15,6 +15,19 @@ import logging
 
 _logger = logging.getLogger(__name__)
 
+
+
+
+
+
+
+
+
+
+
+
+
+
 class AIAgent(models.Model):
     _name = 'ai.agent'
     _description = 'AI Agent'
@@ -31,10 +44,70 @@ class AIAgent(models.Model):
     ai_role = fields.Char()
     ai_goal = fields.Text()
     ai_backstory = fields.Text()
-    ai_quest_session_ids = fields.Many2many(comodel_name="ai.quest.session")
+    # ~ session_ids = fields.One2many(comodel_name="ai.quest.session", )
+    session_line_ids = fields.One2many(comodel_name="ai.quest.session.line",inverse_name="ai_agent_id")
     ai_agent_data_ids = fields.One2many(comodel_name="ai.agent.data", inverse_name="agent_id")
     ai_temperature = fields.Float(string='temperature', default=0.7,help="Temperature controls the randomness and creativity of the model's output, <1.0 more predictable and consistant >1.0 more diverse and creative responses")
     debug = fields.Boolean(string='Debug')
+    session_count = fields.Integer(compute="compute_session_count")
+    session_line_count = fields.Integer(compute="compute_session_line_count")
+    quest_count = fields.Integer(compute="compute_quest_count")
+    quest_ids = fields.Many2many(comodel_name="ai.quest")
+
+    def action_get_quests(self):
+        action = {
+            'name': 'AI Quests',
+            'type': 'ir.actions.act_window',
+            'res_model': 'ai.quest',
+            'view_mode': 'kanban,tree,form',
+            'target': 'current',
+            'domain': [("session_line_ids.ai_agent_id", '=', self.id)]
+        }
+        return action
+
+    def action_get_session_lines(self):
+        action = {
+            'name': 'Session Lines',
+            'type': 'ir.actions.act_window',
+            'res_model': 'ai.quest.session.line',
+            'view_mode': 'tree,form',
+            'target': 'current',
+            'domain': [("ai_agent_id", '=', self.id)],
+        }
+        return action
+    def action_get_sessions(self):
+        action = {
+            'name': 'Sessions',
+            'type': 'ir.actions.act_window',
+            'res_model': 'ai.quest.session',
+            'view_mode': 'tree,form',
+            'target': 'current',
+            'domain': [("session_line_ids.ai_agent_id", '=', self.id)]
+        }
+        return action
+
+
+    @api.depends("session_line_ids")
+    def compute_session_line_count(self):
+        for record in self:
+            record.session_line_count = len(record.session_line_ids)
+
+    @api.depends("session_line_ids")
+    def compute_session_count(self):
+        for record in self:
+            record.session_count = len(set(record.session_line_ids.filtered(lambda x: x.ai_agent_id.id == record.id).mapped('ai_quest_session_id')))
+
+
+    @api.depends("session_line_ids")
+    def compute_quest_count(self):
+        for record in self:
+            record.quest_count = len(set(record.session_line_ids.filtered(lambda x: x.ai_agent_id.id == record.id).mapped('ai_quest_id')))
+
+
+
+
+
+
 
     def prompt_agent(self, test_prompt=False, parser=False, session=False, **kwargs):
 

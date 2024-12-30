@@ -36,6 +36,7 @@
     "depends": ["mail", "product"],
     "data": [
         "security/ir.model.access.csv",
+        "data/server_action.xml",
         "data/data.xml",
         "data/open_ai_data.xml",
         "data/mistral_data.xml",

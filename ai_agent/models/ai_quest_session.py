@@ -20,7 +20,7 @@ class AIQuestSession(models.Model):
     ai_agent_llm_id = fields.Many2one(comodel_name="ai.agent.llm")
     ai_agent_llm_ids = fields.Many2many(comodel_name="ai.agent.llm")
     ai_quest_id = fields.Many2one(comodel_name="ai.quest")
-    ai_quest_session_line_ids = fields.One2many(comodel_name="ai.quest.session.line", inverse_name="ai_quest_session_id")
+    session_line_ids = fields.One2many(comodel_name="ai.quest.session.line", inverse_name="ai_quest_session_id")
     ai_type = fields.Selection(selection=[("default","Default")], default="default")
     color = fields.Integer()
     commercial_partner_id = fields.Many2one(comodel_name='res.partner',string="Partner", related="user_id.partner_id.commercial_partner_id", help="", store=True)

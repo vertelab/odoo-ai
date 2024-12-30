@@ -1,183 +1,184 @@
 <odoo>
-    <data>
-
-        <record id="ai_agent_list" model="ir.ui.view">
-            <field name="name">ai.agent.list</field>
-            <field name="model">ai.agent</field>
-            <field name="arch" type="xml">
-                <tree>
-                    <field name="name" modifiers="{&quot;required&quot;: true}"/>
-                </tree>
-            </field>
-        </record>
-
-        <record id="ai_agent_search" model="ir.ui.view">
-            <field name="name">ai.agent.search</field>
-            <field name="model">ai.agent</field>
-            <field name="arch" type="xml">
-                <search string="Search AI Agents">
-                    <field name="name"/>
-                    <field name="ai_agent_llm_id"/>
-                    <field name="ai_temperature"/>
-                    <field name="ai_role"/>
-                    <field name="ai_type"/>
-                    <field name="ai_discription"/>
-                    <field name="ai_goal"/>
-                    <field name="ai_backstory"/>
-                    <filter string="Favorite" name="favorite" domain="[('is_favorite', '=', True)]"/>
-                    <group expand="0" string="Group By">
-                        <filter string="AI Agent LLM" name="group_by_llm" context="{'group_by': 'ai_agent_llm_id'}"/>
-                        <filter string="AI Type" name="group_by_type" context="{'group_by': 'ai_type'}"/>
-                    </group>
-                </search>
-            </field>
-        </record>
-
-        <record id="ai_agent_form" model="ir.ui.view">
-            <field name="name">ai.agent.form</field>
-            <field name="model">ai.agent</field>
-            <field name="arch" type="xml">
-                <form>
-                    <header>
-                        <button name="get_test_wizard" type="object" string="Test"/>
-                        <button name="test" type="object" string="Test2"/>
-                    </header>
-                    <sheet>
-                        <group>
-                            <group>
-                                <field name="name" modifiers="{&quot;required&quot;: true}"/>
-                                <field name="ai_type"/>
-                            </group>
-                            <group>
-                                <field name="ai_agent_llm_id" can_create="true" can_write="true"/>
-                                <field name="ai_temperature"/>
-                            </group>
-                        </group>
-                        <group>
-                            <separator/>
-                        </group>
-                        <group>
-                            <field name="ai_role"/>
-                            <field name="ai_goal"/>
-                            <field name="ai_backstory"/>
-                            <field name="ai_prompt_template" widget="html" class="oe-bordered-editor" options="{'style-inline': true, 'codeview': true, 'dynamic_placeholder': true}"/>
-                        </group>
-                    </sheet>
-                    <div class="oe_chatter">
-                        <field name="message_follower_ids" widget="mail_followers" />
-                        <field name="activity_ids" widget="mail_activity" />
-                        <field name="message_ids" widget="mail_thread" />
-                    </div>
-                </form>
-            </field>
-        </record>
-
-        <record id="ai_agent_kanban" model="ir.ui.view">
-            <field name="name">ai.agent.kanban</field>
-            <field name="model">ai.agent</field>
-            <field name="arch" type="xml">
-                <kanban class="o_kanban_mobile" sample="1">
-                    <field name="name"/>
-                    <field name="id"/>
-                    <field name="color"/>
-                    <templates>
-                        <t t-name="kanban-box">
-                            <div t-attf-class="#{kanban_color(record.color.raw_value)} oe_kanban_content oe_kanban_global_click o_kanban_get_form">
-                                <div class="o_project_kanban_main ">
-                                    <div class="o_kanban_card_content mw-100">
-                                        <div class="o_kanban_primary_left">
-                                            <div class="oe_kanban_details">
-                                                <span>
-                                                    <field name="is_favorite" widget="boolean_favorite" nolabel="1" force_save="1"/>
-                                                </span>
-                                                <span class="o_text_overflow" t-att-title="record.name.value">
-                                                    <t t-esc="record.name.value"/>
-                                                </span>
-                                            </div>
-                                            <field name="ai_agent_llm_id" widget="badge" options="{'color_field': 'color'}"/>
-                                        </div>
-                                    </div>
-                                    <!-- <div class="o_kanban_record_bottom mt-3">
-                            <div class="oe_kanban_bottom_left">
-                                <t t-if="record.agent_count.value != 0">
-                                    <div class="o_project_kanban_boxes d-flex align-items-baseline">
-                                        <a class="o_project_kanban_box" name="action_get_agents" type="object">
-                                            <div>
-                                                <span class="o_value">
-                                                    <t t-esc="record.agent_count.value"/>
-                                                </span>
-                                                <span class="o_label ms-1">
-                                                    <t t-set="agent_label" t-value="'Agents '"/>
-                                                    <t t-esc="agent_label"/>
-                                                </span>
-                                            </div>
-                                        </a>
-                                    </div>
-                                </t>
-                            </div>
-                            <div class="oe_kanban_bottom_right">
-                                <span t-att-class="'o_status_bubble mx-0 o_color_bubble_' + record.status_color.value" t-att-title="record.status.value"></span>
-                            </div>
-                        </div> -->
-                                </div>
-                            </div>
-                        </t>
-                    </templates>
-                </kanban>
-            </field>
-        </record>
-
-        <!-- <templates>
+  <data>
+    <record id="ai_agent_list" model="ir.ui.view">
+      <field name="name">ai.agent.list</field>
+      <field name="model">ai.agent</field>
+      <field name="arch" type="xml">
+        <tree>
+          <field name="name" modifiers="{&quot;required&quot;: true}" />
+        </tree>
+      </field>
+    </record>
+    <record id="ai_agent_search" model="ir.ui.view">
+      <field name="name">ai.agent.search</field>
+      <field name="model">ai.agent</field>
+      <field name="arch" type="xml">
+        <search string="Search AI Agents">
+          <field name="name" />
+          <field name="ai_agent_llm_id" />
+          <field name="ai_temperature" />
+          <field name="ai_role" />
+          <field name="ai_type" />
+          <field name="ai_discription" />
+          <field name="ai_goal" />
+          <field name="ai_backstory" />
+          <filter string="Favorite" name="favorite" domain="[('is_favorite', '=', True)]" />
+          <group expand="0" string="Group By">
+            <filter string="AI Agent LLM" name="group_by_llm" context="{'group_by': 'ai_agent_llm_id'}" />
+            <filter string="AI Type" name="group_by_type" context="{'group_by': 'ai_type'}" />
+          </group>
+        </search>
+      </field>
+    </record>
+    <record id="ai_agent_form" model="ir.ui.view">
+      <field name="name">ai.agent.form</field>
+      <field name="model">ai.agent</field>
+      <field name="arch" type="xml">
+        <form>
+          <header>
+            <button name="get_test_wizard" type="object" string="Test" />
+            <button name="test" type="object" string="Test2" />
+          </header>
+          <sheet>
+            <div name="button_box" id="button_box" class="oe_button_box">
+              <button name="action_get_quests" class="oe_stat_button " type="object" icon="fa-rocket">
+                <field string="Quests" name="quest_count" widget="statinfo" />
+              </button>
+              <button name="action_get_sessions" class="oe_stat_button" type="object" icon="fa-flag-checkered">
+                <field string="Sessions" name="session_count" widget="statinfo" />
+              </button>
+              <button name="action_get_session_lines" class="oe_stat_button" type="object" icon="fa-list">
+                <field string="Session Lines" name="session_line_count" widget="statinfo" />
+              </button>
+            </div>
+            <group>
+              <group>
+                <field name="name" modifiers="{&quot;required&quot;: true}" />
+                <field name="ai_type" />
+              </group>
+              <group>
+                <field name="ai_agent_llm_id" can_create="true" can_write="true" />
+                <field name="ai_temperature" />
+              </group>
+            </group>
+            <group>
+              <separator />
+            </group>
+            <group>
+              <field name="ai_role" />
+              <field name="ai_goal" />
+              <field name="ai_backstory" />
+              <field name="ai_prompt_template" widget="html" class="oe-bordered-editor" options="{'style-inline': true, 'codeview': true, 'dynamic_placeholder': true}" />
+            </group>
+          </sheet>
+          <div class="oe_chatter">
+            <field name="message_follower_ids" widget="mail_followers" />
+            <field name="activity_ids" widget="mail_activity" />
+            <field name="message_ids" widget="mail_thread" />
+          </div>
+        </form>
+      </field>
+    </record>
+    <record id="ai_agent_kanban" model="ir.ui.view">
+      <field name="name">ai.agent.kanban</field>
+      <field name="model">ai.agent</field>
+      <field name="arch" type="xml">
+        <kanban class="o_kanban_mobile" sample="1">
+          <field name="name" />
+          <field name="id" />
+          <field name="color" />
+          <templates>
             <t t-name="kanban-box">
-                <div t-attf-class="#{kanban_color(record.color.raw_value)} oe_kanban_content oe_kanban_global_click o_kanban_get_form">
-                    <div class="o_project_kanban_main ">
-                        <div class="o_kanban_card_content mw-100">
-                            <div class="o_kanban_primary_left">
-                                <div class="oe_kanban_details">
-                                    <strong class="o_kanban_record_title">
-                                        <field name="name"/>
-                                    </strong>
-                                </div>
-                                <field name="ai_agent_llm_id" widget="badge" options="{'color_field': 'color'}"/>
-                            </div>
-                        </div>
-                        <div class="o_kanban_record_bottom mt-3">
-                            <div class="oe_kanban_bottom_left">
-                                <t t-if="record.agent_count.value != 0">
-                                    <div class="o_project_kanban_boxes d-flex align-items-baseline">
-                                        <a class="o_project_kanban_box" name="action_get_agents" type="object">
-                                            <div>
-                                                <span class="o_value">
-                                                    <t t-esc="record.agent_count.value"/>
-                                                </span>
-                                                <span class="o_label ms-1">
-                                                    <t t-set="agent_label" t-value="'Agents '"/>
-                                                    <t t-esc="agent_label"/>
-                                                </span>
-                                            </div>
-                                        </a>
-                                    </div>
-                                </t>
-                            </div>
-                            <div class="oe_kanban_bottom_right">
-                                <span t-att-class="'o_status_bubble mx-0 o_color_bubble_' + record.status_color.value" t-att-title="record.status.value"></span>
-                            </div>
-                        </div> 
+              <div t-attf-class="#{kanban_color(record.color.raw_value)} oe_kanban_content oe_kanban_global_click o_kanban_get_form">
+                <div class="o_project_kanban_main ">
+                  <div class="o_kanban_card_content mw-100">
+                    <div class="o_kanban_primary_left">
+                      <div class="oe_kanban_details">
+                        <span>
+                          <field name="is_favorite" widget="boolean_favorite" nolabel="1" force_save="1" />
+                        </span>
+                        <span class="o_text_overflow" t-att-title="record.name.value">
+                          <t t-esc="record.name.value" />
+                        </span>
+                      </div>
+                      <field name="ai_agent_llm_id" widget="badge" options="{'color_field': 'color'}" />
                     </div>
+                  </div>
+                  <!-- <div class="o_kanban_record_bottom mt-3">
+                       <div class="oe_kanban_bottom_left">
+                       <t t-if="record.agent_count.value != 0">
+                       <div class="o_project_kanban_boxes d-flex align-items-baseline">
+                       <a class="o_project_kanban_box" name="action_get_agents" type="object">
+                       <div>
+                       <span class="o_value">
+                       <t t-esc="record.agent_count.value"/>
+                       </span>
+                       <span class="o_label ms-1">
+                       <t t-set="agent_label" t-value="'Agents '"/>
+                       <t t-esc="agent_label"/>
+                       </span>
+                       </div>
+                       </a>
+                       </div>
+                       </t>
+                       </div>
+                       <div class="oe_kanban_bottom_right">
+                       <span t-att-class="'o_status_bubble mx-0 o_color_bubble_' + record.status_color.value" t-att-title="record.status.value"></span>
+                       </div>
+                       </div> -->
                 </div>
+              </div>
             </t>
-        </templates> -->
-
-        <record id="action_ai_agent" model="ir.actions.act_window">
-            <field name="name">Agents</field>
-            <field name="res_model">ai.agent</field>
-            <field name="view_mode">kanban,tree,form</field>
-        </record>
-
-        <menuitem id="ai_agent.menu_ai_agent_root" name="AI" action="action_ai_agent"/>
-
-        <menuitem id="ai_agent.menu_ai_agent_configuration" parent="ai_agent.menu_ai_agent_root" name="Configuration"/>
-
-
-    </data>
+          </templates>
+        </kanban>
+      </field>
+    </record>
+    <!-- <templates>
+         <t t-name="kanban-box">
+         <div t-attf-class="#{kanban_color(record.color.raw_value)} oe_kanban_content oe_kanban_global_click o_kanban_get_form">
+         <div class="o_project_kanban_main ">
+         <div class="o_kanban_card_content mw-100">
+         <div class="o_kanban_primary_left">
+         <div class="oe_kanban_details">
+         <strong class="o_kanban_record_title">
+         <field name="name"/>
+         </strong>
+         </div>
+         <field name="ai_agent_llm_id" widget="badge" options="{'color_field': 'color'}"/>
+         </div>
+         </div>
+         <div class="o_kanban_record_bottom mt-3">
+         <div class="oe_kanban_bottom_left">
+         <t t-if="record.agent_count.value != 0">
+         <div class="o_project_kanban_boxes d-flex align-items-baseline">
+         <a class="o_project_kanban_box" name="action_get_agents" type="object">
+         <div>
+         <span class="o_value">
+         <t t-esc="record.agent_count.value"/>
+         </span>
+         <span class="o_label ms-1">
+         <t t-set="agent_label" t-value="'Agents '"/>
+         <t t-esc="agent_label"/>
+         </span>
+         </div>
+         </a>
+         </div>
+         </t>
+         </div>
+         <div class="oe_kanban_bottom_right">
+         <span t-att-class="'o_status_bubble mx-0 o_color_bubble_' + record.status_color.value" t-att-title="record.status.value"></span>
+         </div>
+         </div> 
+         </div>
+         </div>
+         </t>
+         </templates> -->
+    <record id="action_ai_agent" model="ir.actions.act_window">
+      <field name="name">Agents</field>
+      <field name="res_model">ai.agent</field>
+      <field name="view_mode">kanban,tree,form</field>
+    </record>
+    <menuitem id="ai_agent.menu_ai_agent_root" name="AI" action="action_ai_agent" />
+    <menuitem id="ai_agent.menu_ai_agent_configuration" parent="ai_agent.menu_ai_agent_root" name="Configuration" />
+  </data>
 </odoo>

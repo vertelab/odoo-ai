@@ -7,6 +7,7 @@ from langchain_core.callbacks.base import BaseCallbackManager
 from langchain_core.messages import AIMessage, HumanMessage, ChatMessage, SystemMessage, ToolMessage
 from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
+from langchain_mistralai import ChatMistralAI
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph, MessagesState
 from langgraph.prebuilt import ToolNode
@@ -263,8 +264,8 @@ class AIAgent(models.Model):
         tools = [search]
         tool_node = ToolNode(tools)
         
-        # ~ model_str = self.ai_agent_llm_id.get_llm(verbose=True,temperature=0.7)
-        # ~ _logger.warning(f"{model_str}")
+        model_str = self.ai_agent_llm_id.get_llm(verbose=True,temperature=0.7)
+        _logger.warning(f"{model_str}")
         model = eval(self.ai_agent_llm_id.get_llm(verbose=True,temperature=0.7)).bind_tools(tools)
         # Define the function that determines whether to continue or not
         def should_continue(state: MessagesState) -> Literal["tools", END]:
@@ -277,15 +278,26 @@ class AIAgent(models.Model):
             return END
 
 
-        # Define the function that calls the model
         def call_model(state: MessagesState):
-            messages = state['messages']  
-            _logger.warning(f"call_model {state=}")
-            # ~ with callback_handler as cb:
-            response = model.invoke(messages)
-            # We return a list, because this will get added to the existing list
-            return {"messages": [response],}
-                    # ~ 'totalt_tokens': cb.total_tokens}
+            try:
+                messages = state['messages']
+                _logger.warning(f"call_model {state=}")
+                
+                response = model.invoke(messages)
+                
+                return {"messages": [response]}
+            
+            except Exception as e:
+                _logger.error(f"Error in call_model: {str(e)}")
+                
+                # Create an error message
+                error_message = AIMessage(content=f"An error occurred: {str(e)}")
+                
+                # You might want to add a system message to indicate the error as well
+                system_error_message = SystemMessage(content="The model encountered an error. Please try again or contact support if the issue persists.")
+                
+                # Return both the error message and the system message
+                return {"messages": [system_error_message, error_message]}
 
 
         # Define a new graph

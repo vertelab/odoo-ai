@@ -65,23 +65,26 @@
                     ])]" />
     </record>
     <!-- Token Type -->
-<!--
     <record id="mistral_product_template_attribute_line_token_type" model="product.template.attribute.line">
       <field name="product_tmpl_id" ref="mistral_product_template" />
       <field name="attribute_id" ref="product_attribute_token_type" />
       <field name="value_ids" eval="[(6, 0, [
-                        ref('product_attribute_value_input'),
-                        ref('product_attribute_value_output'),
-                ])]" />
+         ref('product_attribute_value_input_tokens'),
+         ref('product_attribute_value_input_tokens_audio'),
+         ref('product_attribute_value_input_tokens_cache_read'),
+         ref('product_attribute_value_input_cached'),
+         ref('product_attribute_value_output_tokens'),
+         ref('product_attribute_value_output_tokens_audio'),
+         ref('product_attribute_value_output_tokens_reasoning'),
+         ])]" />
     </record>
--->
     <!-- Data Type -->
-<!--
-    <record id="mistral_product_template_attribute_line_data_type" model="product.template.attribute.line">
-      <field name="product_tmpl_id" ref="mistral_product_template" />
-      <field name="attribute_id" ref="product_attribute_data_type" />
-      <field name="value_ids" eval="[(6, 0, [ref('product_attribute_value_text'), ref('product_attribute_value_image')])]" />
-    </record>
--->
+    <!--
+         <record id="mistral_product_template_attribute_line_data_type" model="product.template.attribute.line">
+         <field name="product_tmpl_id" ref="mistral_product_template" />
+         <field name="attribute_id" ref="product_attribute_data_type" />
+         <field name="value_ids" eval="[(6, 0, [ref('product_attribute_value_text'), ref('product_attribute_value_image')])]" />
+         </record>
+    -->
   </data>
 </odoo>

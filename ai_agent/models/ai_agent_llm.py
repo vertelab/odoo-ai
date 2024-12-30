@@ -18,24 +18,36 @@ class AIAgentLLM(models.Model):
     _description = 'AI Agent LLM'
     _inherit = ["mail.thread", "mail.activity.mixin"]
 
-    name = fields.Char(required=True)
-    is_key_required = fields.Boolean(default=True)
-    ai_api_key = fields.Char()
-    status = fields.Selection(selection=[("not_confirmed", "Not Confirmed"),("confirmed", "Confirmed"),("error", "Error")], default="not_confirmed")
-    status_color = fields.Integer(compute="compute_status_color")
-    endpoint = fields.Char()
+
+    ai_agent_count = fields.Integer(compute="compute_ai_agent_count")
     ai_agent_ids = fields.One2many(comodel_name="ai.agent",inverse_name="ai_agent_llm_id")
+    ai_api_key = fields.Char(default=lambda self: self.product_tmpl_id.ai_api_key)
     color = fields.Integer(default=lambda self: randint(1, 11))
+    endpoint = fields.Char()
     is_favorite = fields.Boolean()
-    agent_count = fields.Integer(compute="compute_agent_count")
+    is_key_required = fields.Boolean(default=True)
     last_run = fields.Datetime()
-    product_tmpl_id = fields.Many2one(comodel_name='product.template',domain="[('is_llm','=',True)]", required=True)
     llm_type = fields.Char(related="product_tmpl_id.llm_type", required=True)
     model_id = fields.Many2one(comodel_name='product.template.attribute.value', string="Model", required=True, ) # domain="[('product_tmpl_id', '=', product_tmpl_id),('attribute_id','=', ref('ai_agent.open_ai_product_attribute_model'))]")
-    ai_quest_session_ids = fields.One2many(comodel_name="ai.quest.session", inverse_name="ai_agent_llm_id")
+    name = fields.Char(required=True)
+    product_tmpl_id = fields.Many2one(comodel_name='product.template',domain="[('is_llm','=',True)]", required=True)
+    quest_count = fields.Integer(compute="compute_quest_count")
+    session_count = fields.Integer(compute="compute_session_count")
     session_line_count = fields.Integer(compute="compute_session_line_count")
-
-
+    session_line_ids = fields.One2many(comodel_name="ai.quest.session.line", inverse_name="ai_llm_id")
+    status = fields.Selection(selection=[("not_confirmed", "Not Confirmed"),("confirmed", "Confirmed"),("error", "Error")], default="not_confirmed")
+    status_color = fields.Integer(compute="compute_status_color")
+        
+    def action_get_quests(self):
+        action = {
+            'name': 'AI Quests',
+            'type': 'ir.actions.act_window',
+            'res_model': 'ai.quest',
+            'view_mode': 'kanban,tree,form',
+            'target': 'current',
+            'domain': [("session_line_ids.ai_llm_id", '=', self.id)]
+        }
+        return action
     def action_get_agents(self):
         action = {
             'name': 'AI Agents',
@@ -43,20 +55,60 @@ class AIAgentLLM(models.Model):
             'res_model': 'ai.agent',
             'view_mode': 'kanban,tree,form',
             'target': 'current',
-            'domain': [("id", 'in', self.ai_agent_ids.ids)]
+            'domain': [("session_line_ids.ai_llm_id", '=', self.id)]
         }
         return action
+
 
     def action_get_session_lines(self):
         action = {
             'name': 'Session Lines',
             'type': 'ir.actions.act_window',
             'res_model': 'ai.quest.session.line',
-            'view_mode': 'tree,form',
+            'view_mode': 'tree,form,calendar,pivot',
             'target': 'current',
-            'domain': [("ai_quest_session_id", 'in', self.ai_quest_session_ids.ids)]
+            'domain': [("ai_llm_id", '=', self.id)],
         }
         return action
+    def action_get_sessions(self):
+        action = {
+            'name': 'Sessions',
+            'type': 'ir.actions.act_window',
+            'res_model': 'ai.quest.session',
+            'view_mode': 'tree,form',
+            'target': 'current',
+            'domain': [("session_line_ids.ai_llm_id", '=', self.id)]
+        }
+        return action
+
+
+    @api.depends("session_line_ids")
+    def compute_session_line_count(self):
+        for record in self:
+            record.session_line_count = len(record.session_line_ids)
+
+    @api.depends("session_line_ids")
+    def compute_session_count(self):
+        for record in self:
+            record.session_count = len(set(record.session_line_ids.filtered(lambda x: x.ai_llm_id.id == record.id).mapped('ai_quest_session_id')))
+
+
+    @api.depends("session_line_ids")
+    def compute_quest_count(self):
+        for record in self:
+            record.quest_count = len(set(record.session_line_ids.filtered(lambda x: x.ai_llm_id.id == record.id).mapped('ai_quest_id')))
+
+    @api.depends("ai_agent_ids")
+    def compute_ai_agent_count(self):
+        for record in self:
+            record.ai_agent_count = len(record.ai_agent_ids)
+
+
+        
+        
+        
+        
+        
 
     def log_message(self,body,is_error=False):
         if is_error:
@@ -166,13 +218,6 @@ class AIAgentLLM(models.Model):
             self.log_message(body="%s" % response,is_error=False)
         return content
 
-    @api.depends("ai_quest_session_ids")
-    def compute_session_line_count(self):
-        for record in self:
-            line_count = 0
-            for session in record.ai_quest_session_ids:
-                line_count += len(session.ai_quest_session_line_ids)
-            record.session_line_count = line_count
 
     @api.depends("status")
     def compute_status_color(self):
@@ -184,13 +229,6 @@ class AIAgentLLM(models.Model):
                 record.status_color = 10 # Green
             elif record.status == "error":
                 record.status_color = 1 # Red
-
-    @api.depends("ai_agent_ids")
-    def compute_agent_count(self):
-        for record in self:
-            record.agent_count = len(record.ai_agent_ids)
-
-
 
 
     def test_llm(self):        
@@ -208,6 +246,10 @@ class AIAgentLLM(models.Model):
                 verbose=verbose,
                 callbacks=callbacks,
             )
+
+    def update_api_key(self):
+        for llm in self:
+            llm.ai_api_key = llm.product_tmpl_id.ai_api_key
 
 # ~ agent_executor.invoke(
     # ~ {

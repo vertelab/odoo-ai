@@ -37,49 +37,47 @@ class AIQuestSessionLine(models.Model):
 
     @api.model
     def new_line(self,session,aimessage,agent=None, debug=False):
-        usage_metadata = aimessage.usage_metadata
-        response_metadata = aimessage.response_metadata
-        usage_metadata_dict = self.unwrap_dict(dict(usage_metadata))
 
-        # ~ model_id = self.env["product.attribute.value"].search([("name", "=", response_metadata["model_name"]),("attribute_id", "=", self.env.ref("ai_agent.open_ai_product_attribute_model").id)],limit=1)
+        token_types={
+                'input_tokens':            aimessage.usage_metadata['input_tokens'], 
+                'input_tokens_audio':      aimessage.usage_metadata.get('input_token_details',{'audio':0})['audio'],
+                'input_tokens_cache_read': aimessage.usage_metadata.get('input_token_details',{'cache_read':0})['cache_read'],
+                'output_tokens':           aimessage.usage_metadata['output_tokens'], 
+                'output_tokens_audio':     aimessage.usage_metadata.get('output_token_details',{'audio':0})['audio'],
+                'output_tokens_reasoning': aimessage.usage_metadata.get('output_token_details',{'reasoning':0})['reasoning'],
+        }  # Don't count tokens twice
+        token_types['input_tokens']  -= (token_types['input_tokens_audio'] +token_types['input_tokens_cache_read'])
+        token_types['output_tokens'] -= (token_types['output_tokens_audio']+token_types['output_tokens_reasoning'])
+        
         api_type_id = self.env["product.attribute.value"].search([("name", "=", "sync"),("attribute_id", "=", self.env.ref("ai_agent.product_attribute_api_type").id)],limit=1)
         data_type_id = self.env["product.attribute.value"].search([("name", "=", "text"),("attribute_id", "=", self.env.ref("ai_agent.product_attribute_data_type").id)],limit=1)
         token_type_ids = self.env["product.attribute.value"].search([("attribute_id", "=", self.env.ref("ai_agent.product_attribute_token_type").id)])
 
-        for token_type_id in token_type_ids:    
-            search_term = f"{token_type_id.name}_tokens" if token_type_id.name != "input cached" else "cache_read"
-            record = {
-                "ai_agent_id": agent.id if agent else (session.ai_agent_id.id if session and session.ai_agent_id else None),
-                "ai_llm_id":   agent.ai_agent_llm_id.id if agent and agent.ai_agent_llm_id else (session.ai_agent_llm_id.id if session.ai_agent_llm_id else None),
-                "ai_quest_id": session.ai_quest_id.id if session.ai_quest_id else None,
-                "ai_quest_session_id": session.id,
-                "api_type_id": api_type_id.id,
-                "commercial_partner_id": session.commercial_partner_id.id,
-                "data_type_id": data_type_id.id,
-                "db_name":     session.db_name,
-                "db_uuid":     session.db_uuid,
-                "finish_reason": response_metadata["finish_reason"],            
-                "model_id":     agent.ai_agent_llm_id.model_id.id if agent else session.ai_agent_llm_id.model_id.id , 
-                "model_real":   aimessage.model_name,
-                "product_tmpl_id": session.ai_agent_llm_id.product_tmpl_id.id,
-                "run_id":       aimessage.id,
-                "system_fingerprint": response_metadata["system_fingerprint"],
-                "token_type_id":token_type_id.id,
-                "user_id":      session.user_id.id,
-                'token':        usage_metadata_dict[search_term], 
-            }
-            line = self.create(record)
-            if debug:
-                session.log(llm,f"[session] line {line.name=} {record=}")
-        
-    def unwrap_dict(self,val_dict):
-        new_dict = {}
-        for key, value in val_dict.items():
-            if type(value) == dict:
-                new_dict.update(self.unwrap_dict(value))
-                continue 
-            new_dict[key] = value
-        return new_dict
+        for token_type,token in token_types.items():
+            if token > 0:   
+                record = {
+                    "ai_agent_id":  agent.id if agent else (session.ai_agent_id.id if session and session.ai_agent_id else None),
+                    "ai_llm_id":    agent.ai_agent_llm_id.id if agent and agent.ai_agent_llm_id else (session.ai_agent_llm_id.id if session.ai_agent_llm_id else None),
+                    "ai_quest_id":  session.ai_quest_id.id if session.ai_quest_id else None,
+                    "ai_quest_session_id": session.id,
+                    "api_type_id":  api_type_id.id,
+                    "commercial_partner_id": session.commercial_partner_id.id,
+                    "data_type_id": data_type_id.id,
+                    "db_name":      session.db_name,
+                    "db_uuid":      session.db_uuid,
+                    "finish_reason":aimessage.response_metadata.get("finish_reason",''),            
+                    "model_id":     agent.ai_agent_llm_id.model_id.product_attribute_value_id.id if agent else session.ai_agent_llm_id.model_id.product_attribute_value_id.id, 
+                    "model_real":   aimessage.response_metadata.get("model_name",None) or aimessage.response_metadata.get("model",None),
+                    "product_tmpl_id": session.ai_agent_llm_id.product_tmpl_id.id,
+                    "run_id":       aimessage.id,
+                    "system_fingerprint": aimessage.response_metadata.get("system_fingerprint",''),
+                    "token":        token, 
+                    "token_type_id":self.env.ref(f"ai_agent.product_attribute_value_{token_type}").id,
+                    "user_id":      session.user_id.id,
+                }
+                line = self.create(record)
+                if debug:
+                    session.log(llm,f"[session] line {line.name=} {record=}")
     
     @api.depends("model_id","ai_quest_session_id.session")
     def compute_display_name(self):

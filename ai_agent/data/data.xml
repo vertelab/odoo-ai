@@ -28,20 +28,41 @@
             <field name="create_variant">always</field>
         </record>
 
-        <record id="product_attribute_value_input" model="product.attribute.value">
+        <record id="product_attribute_value_input_tokens" model="product.attribute.value">
             <field name="name">input_tokens</field>
+            <field name="attribute_id" ref="ai_agent.product_attribute_token_type"/>
+        </record>
+        <record id="product_attribute_value_input_tokens_audio" model="product.attribute.value">
+            <field name="name">input_tokens_audio</field>
+            <field name="attribute_id" ref="ai_agent.product_attribute_token_type"/>
+        </record>
+        <record id="product_attribute_value_input_tokens_cache_read" model="product.attribute.value">
+            <field name="name">input_tokens_cache_read</field>
             <field name="attribute_id" ref="ai_agent.product_attribute_token_type"/>
         </record>
         <record id="product_attribute_value_input_cached" model="product.attribute.value">
             <field name="name">input cached_tokens</field>
             <field name="attribute_id" ref="ai_agent.product_attribute_token_type"/>
         </record>
-        <record id="product_attribute_value_output" model="product.attribute.value">
+        <record id="product_attribute_value_output_tokens" model="product.attribute.value">
             <field name="name">output_tokens</field>
             <field name="attribute_id" ref="ai_agent.product_attribute_token_type"/>
         </record>
+                <record id="product_attribute_value_output_tokens_audio" model="product.attribute.value">
+            <field name="name">output_tokens_audio</field>
+            <field name="attribute_id" ref="ai_agent.product_attribute_token_type"/>
+        </record>
+        <record id="product_attribute_value_output_tokens_reasoning" model="product.attribute.value">
+            <field name="name">output_tokens_reasoning</field>
+            <field name="attribute_id" ref="ai_agent.product_attribute_token_type"/>
+        </record>
+<!--
+        This is to be mapped with the pricelist
+       usage_metadata={'input_tokens': 56, 'output_tokens': 16, 'total_tokens': 72, 
+                'input_token_details': {'audio': 0, 'cache_read': 0}, 
+                'output_token_details': {'audio': 0, 'reasoning': 0}}), 
 
-       
+-->
         <!-- Data Type -->
 
         <record id="product_attribute_data_type" model="product.attribute">
