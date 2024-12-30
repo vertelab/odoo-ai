@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
   <data>
+    <!-- Source: https://console.groq.com/docs/models -->
     <record id="groq_ai_product_template" model="product.template">
       <field name="name">Groq-AI</field>
       <field name="is_llm">True</field>
