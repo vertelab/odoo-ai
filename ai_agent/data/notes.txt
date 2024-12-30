@@ -1,0 +1,9 @@
+2024-12-30
+To be added:
+AntropicLLM
+Fireworks
+Google AI
+Huggingface Endpoint
+Ollama
+
+Source: https://python.langchain.com/v0.1/docs/integrations/llms/fireworks/
