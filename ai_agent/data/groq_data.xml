@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
   <data>
-    <record id="open_ai_product_template" model="product.template">
+    <record id="groq_ai_product_template" model="product.template">
       <field name="name">Groq-AI</field>
       <field name="is_llm">True</field>
       <field name="llm_type">ChatGroq</field>
@@ -11,37 +11,45 @@
       <field name="name">distil-whisper-large-v3-en</field>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
     </record>
-    <record id="open_ai_product_attribute_value_gpt-4o-audio-preview" model="product.attribute.value">
-      <field name="name">gpt-4o-audio-preview</field>
+    <record id="groq_product_attribute_value_gemma2-9b-it" model="product.attribute.value">
+      <field name="name">gemma2-9b-it</field>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
     </record>
-    <record id="open_ai_product_attribute_value_gpt-4o-mini" model="product.attribute.value">
-      <field name="name">gpt-4o-mini</field>
+    <record id="groq_product_attribute_value_llama-3.3-70b-versatile" model="product.attribute.value">
+      <field name="name">llama-3.3-70b-versatile</field>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
     </record>
-    <record id="open_ai_product_attribute_value_gpt-4o-mini-audio-preview" model="product.attribute.value">
-      <field name="name">gpt-4o-mini-audio-preview</field>
+    <record id="groq_product_attribute_value_llama-3.1-8b-instant" model="product.attribute.value">
+      <field name="name">llama-3.1-8b-instant</field>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
     </record>
-    <record id="open_ai_product_attribute_value_o1" model="product.attribute.value">
-      <field name="name">o1</field>
+    <record id="groq_product_attribute_value_llama-guard-3-8b" model="product.attribute.value">
+      <field name="name">llama-guard-3-8b</field>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
     </record>
-    <record id="open_ai_product_attribute_value_o1-mini" model="product.attribute.value">
-      <field name="name">o1-mini</field>
+    <record id="groq_product_attribute_value_llama3-70b-8192" model="product.attribute.value">
+      <field name="name">llama3-70b-8192</field>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
     </record>
-    <record id="open_ai_product_attribute_value_text-embedding-3-small" model="product.attribute.value">
-      <field name="name">text-embedding-3-small</field>
+    <record id="groq_product_attribute_value_llama3-8b-8192" model="product.attribute.value">
+      <field name="name">llama3-8b-8192</field>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
     </record>
-    <record id="open_ai_product_attribute_value_text-embedding-3-large" model="product.attribute.value">
-      <field name="name">text-embedding-3-large</field>
+    <record id="groq_product_attribute_value_mixtral-8x7b-32768" model="product.attribute.value">
+      <field name="name">mixtral-8x7b-32768</field>
+      <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+    </record>
+    <record id="groq_product_attribute_value_whisper-large-v3" model="product.attribute.value">
+      <field name="name">whisper-large-v3</field>
+      <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+    </record>
+    <record id="groq_product_attribute_value_whisper-large-v3-turbo" model="product.attribute.value">
+      <field name="name">whisper-large-v3-turbo</field>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
     </record>
     <!-- Attribute Line -->
-    <record id="open_ai_product_template_attribute_line_model" model="product.template.attribute.line">
-      <field name="product_tmpl_id" ref="open_ai_product_template" />
+    <record id="groq_ai_product_template_attribute_line_model" model="product.template.attribute.line">
+      <field name="product_tmpl_id" ref="groq_ai_product_template" />
       <field name="attribute_id" ref="product_attribute_model" />
       <field name="value_ids" eval="[(6, 0, [
                             ref('distil-whisper-large-v3-en'),
