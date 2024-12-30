@@ -9,24 +9,24 @@
       <field name="llm_type">ChatGroq_XXXXXXXXXXXX_NOT_CORRECT!</field>
     </record>
     <!-- Model -->
-    <record id="anthropic_product_attribute_value_" model="product.attribute.value">
-      <field name="name"></field>
+    <record id="anthropic_product_attribute_value_claude-3-5-sonnet-latest" model="product.attribute.value">
+      <field name="name">claude-3-5-sonnet-latest</field>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
     </record>
-    <record id="anthropic_product_attribute_value_" model="product.attribute.value">
-      <field name="name"></field>
+    <record id="anthropic_product_attribute_value_claude-3-5-haiku-latest" model="product.attribute.value">
+      <field name="name">claude-3-5-haiku-latest</field>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
     </record>
-    <record id="anthropic_product_attribute_value_" model="product.attribute.value">
-      <field name="name"></field>
+    <record id="anthropic_product_attribute_value_claude-3-opus-latest" model="product.attribute.value">
+      <field name="name">claude-3-opus-latest</field>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
     </record>
-    <record id="anthropic_product_attribute_value_" model="product.attribute.value">
-      <field name="name"></field>
+    <record id="anthropic_product_attribute_value_claude-3-sonnet-latest" model="product.attribute.value">
+      <field name="name">claude-3-sonnet-latest</field>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
     </record>
-    <record id="anthropic_product_attribute_value_" model="product.attribute.value">
-      <field name="name"></field>
+    <record id="anthropic_product_attribute_value_claude-3-haiku-latest" model="product.attribute.value">
+      <field name="name">claude-3-haiku-latest</field>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
     </record>
     <!-- Attribute Line -->
