@@ -44,14 +44,16 @@
       <field name="product_tmpl_id" ref="open_ai_product_template" />
       <field name="attribute_id" ref="product_attribute_model" />
       <field name="value_ids" eval="[(6, 0, [
-                            ref('open_ai_product_attribute_value_gpt-4o'),
-                            ref('open_ai_product_attribute_value_gpt-4o-audio-preview'),
-                            ref('open_ai_product_attribute_value_gpt-4o-mini'),
-                            ref('open_ai_product_attribute_value_gpt-4o-mini-audio-preview'),
-                            ref('open_ai_product_attribute_value_o1'),
-                            ref('open_ai_product_attribute_value_o1-mini'),
-                            ref('open_ai_product_attribute_value_text-embedding-3-small'),
-                            ref('open_ai_product_attribute_value_text-embedding-3-large'),
+                            ref('distil-whisper-large-v3-en'),
+                            ref('gemma2-9b-it'),
+                            ref('llama-3.3-70b-versatile'),
+                            ref('llama-3.1-8b-instant'),
+                            ref('llama-guard-3-8b'),
+                            ref('llama3-70b-8192'),
+                            ref('llama3-8b-8192'),
+                            ref('mixtral-8x7b-32768'),
+                            ref('whisper-large-v3'),
+                            ref('whisper-large-v3-turbo'),
                     ])]" />
     </record>
   </data>
