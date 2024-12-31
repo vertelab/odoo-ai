@@ -18,6 +18,7 @@ class AIQuest(models.Model):
     is_favorite = fields.Boolean()
     name = fields.Char(required=True)
     agent_count = fields.Integer(compute="compute_agent_count")
+    llm_count = fields.Integer(compute="compute_llm_count")
     session_count = fields.Integer(compute="compute_session_count")
     session_ids = fields.One2many(comodel_name="ai.quest.session", inverse_name="ai_quest_id")
     session_line_count = fields.Integer(compute="compute_session_line_count")
@@ -29,7 +30,22 @@ class AIQuest(models.Model):
     def start(self):
         pass
 
+    @api.depends('session_line_ids')
+    def compute_llm_count(self):
+        for record in self:
+            record.llm_count = len(set(record.session_line_ids.mapped('ai_agent_llm_id')))
 
+
+    def action_get_llms(self):
+        action = {
+            'name': 'LLMs',
+            'type': 'ir.actions.act_window',
+            'res_model': 'ai.agent.llm',
+            'view_mode': 'kanban,tree,form,calendar',
+            'target': 'current',
+            'domain': [("session_line_ids.ai_quest_id", '=', self.id)]
+        }
+        return action
     def action_get_session_lines(self):
         action = {
             'name': 'Session Lines',

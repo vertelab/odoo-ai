@@ -60,7 +60,7 @@ class AIQuestSession(models.Model):
             'res_model': 'ai.agent.llm',
             'view_mode': 'kanban,tree,form,calendar',
             'target': 'current',
-            'domain': [("session_line_ids.ai_quest_id", '=', self.id)]
+            'domain': [("session_line_ids.ai_quest_session_id", '=', self.id)]
         }
         return action
     def action_get_agents(self):
