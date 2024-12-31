@@ -9,42 +9,52 @@
     <!-- Model -->
     <record id="groq_product_attribute_value_distil-whisper-large-v3-en" model="product.attribute.value">
       <field name="name">distil-whisper-large-v3-en</field>
+      <field name="licence">mit</field>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
     </record>
     <record id="groq_product_attribute_value_gemma2-9b-it" model="product.attribute.value">
       <field name="name">gemma2-9b-it</field>
+       <field name="licence">gemma-terms-of-use</field>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
     </record>
     <record id="groq_product_attribute_value_llama-3-3-70b-versatile" model="product.attribute.value">
       <field name="name">llama-3.3-70b-versatile</field>
+       <field name="licence">llama-community</field>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
     </record>
     <record id="groq_product_attribute_value_llama-3-1-8b-instant" model="product.attribute.value">
       <field name="name">llama-3.1-8b-instant</field>
+       <field name="licence">llama-community</field>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
     </record>
     <record id="groq_product_attribute_value_llama-guard-3-8b" model="product.attribute.value">
       <field name="name">llama-guard-3-8b</field>
+             <field name="licence">llama-community</field>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
     </record>
     <record id="groq_product_attribute_value_llama3-70b-8192" model="product.attribute.value">
       <field name="name">llama3-70b-8192</field>
+             <field name="licence">llama-community</field>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
     </record>
     <record id="groq_product_attribute_value_llama3-8b-8192" model="product.attribute.value">
       <field name="name">llama3-8b-8192</field>
+             <field name="licence">llama-community</field>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
     </record>
     <record id="groq_product_attribute_value_mixtral-8x7b-32768" model="product.attribute.value">
       <field name="name">mixtral-8x7b-32768</field>
+       <field name="licence">apache-2.0</field>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
     </record>
     <record id="groq_product_attribute_value_whisper-large-v3" model="product.attribute.value">
       <field name="name">whisper-large-v3</field>
+            <field name="licence">mit</field>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
     </record>
     <record id="groq_product_attribute_value_whisper-large-v3-turbo" model="product.attribute.value">
       <field name="name">whisper-large-v3-turbo</field>
+            <field name="licence">mit</field>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
     </record>
     <!-- Attribute Line -->

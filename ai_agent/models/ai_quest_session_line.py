@@ -37,18 +37,19 @@ class AIQuestSessionLine(models.Model):
 
     @api.model
     def new_line(self,session,aimessage,agent=None, debug=False):
-
-        token_types={
-                'input_tokens':            aimessage.usage_metadata['input_tokens'], 
-                'input_tokens_audio':      aimessage.usage_metadata.get('input_token_details',{'audio':0})['audio'],
-                'input_tokens_cache_read': aimessage.usage_metadata.get('input_token_details',{'cache_read':0})['cache_read'],
-                'output_tokens':           aimessage.usage_metadata['output_tokens'], 
-                'output_tokens_audio':     aimessage.usage_metadata.get('output_token_details',{'audio':0})['audio'],
-                'output_tokens_reasoning': aimessage.usage_metadata.get('output_token_details',{'reasoning':0})['reasoning'],
-        }  # Don't count tokens twice
-        token_types['input_tokens']  -= (token_types['input_tokens_audio'] +token_types['input_tokens_cache_read'])
-        token_types['output_tokens'] -= (token_types['output_tokens_audio']+token_types['output_tokens_reasoning'])
-        
+        if aimessage and aimessage.usage_metadata:
+            token_types={
+                    'input_tokens':            aimessage.usage_metadata.get('input_tokens',0), 
+                    'input_tokens_audio':      aimessage.usage_metadata.get('input_token_details',{'audio':0})['audio'],
+                    'input_tokens_cache_read': aimessage.usage_metadata.get('input_token_details',{'cache_read':0})['cache_read'],
+                    'output_tokens':           aimessage.usage_metadata.get('output_tokens',0), 
+                    'output_tokens_audio':     aimessage.usage_metadata.get('output_token_details',{'audio':0})['audio'],
+                    'output_tokens_reasoning': aimessage.usage_metadata.get('output_token_details',{'reasoning':0})['reasoning'],
+            }  # Don't count tokens twice
+            token_types['input_tokens']  -= (token_types['input_tokens_audio'] +token_types['input_tokens_cache_read'])
+            token_types['output_tokens'] -= (token_types['output_tokens_audio']+token_types['output_tokens_reasoning'])
+        else:
+            token_types={}
         api_type_id = self.env["product.attribute.value"].search([("name", "=", "sync"),("attribute_id", "=", self.env.ref("ai_agent.product_attribute_api_type").id)],limit=1)
         data_type_id = self.env["product.attribute.value"].search([("name", "=", "text"),("attribute_id", "=", self.env.ref("ai_agent.product_attribute_data_type").id)],limit=1)
         token_type_ids = self.env["product.attribute.value"].search([("attribute_id", "=", self.env.ref("ai_agent.product_attribute_token_type").id)])

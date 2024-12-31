@@ -41,13 +41,15 @@ class AIAgent(models.Model):
     session_line_count = fields.Integer(compute="compute_session_line_count")
     quest_count = fields.Integer(compute="compute_quest_count")
     quest_ids = fields.Many2many(comodel_name="ai.quest")
+    last_run = fields.Datetime()
+
 
     def action_get_quests(self):
         action = {
             'name': 'AI Quests',
             'type': 'ir.actions.act_window',
             'res_model': 'ai.quest',
-            'view_mode': 'kanban,tree,form',
+            'view_mode': 'kanban,tree,form,calendar',
             'target': 'current',
             'domain': [("session_line_ids.ai_agent_id", '=', self.id)]
         }
@@ -58,7 +60,7 @@ class AIAgent(models.Model):
             'name': 'Session Lines',
             'type': 'ir.actions.act_window',
             'res_model': 'ai.quest.session.line',
-            'view_mode': 'tree,form',
+            'view_mode': 'tree,form,calendar,pivot',
             'target': 'current',
             'domain': [("ai_agent_id", '=', self.id)],
         }
@@ -68,7 +70,7 @@ class AIAgent(models.Model):
             'name': 'Sessions',
             'type': 'ir.actions.act_window',
             'res_model': 'ai.quest.session',
-            'view_mode': 'tree,form',
+            'view_mode': 'tree,form,calendar',
             'target': 'current',
             'domain': [("session_line_ids.ai_agent_id", '=', self.id)]
         }
@@ -98,7 +100,7 @@ class AIAgent(models.Model):
 
 
     def prompt_agent(self, test_prompt=False, parser=False, session=False, **kwargs):
-
+        self.last_run = fields.Datetime.now()
         _logger.error(f"{session.session=}")
 
         if not self.ai_agent_llm_id:
@@ -145,4 +147,11 @@ class AIAgent(models.Model):
         return action
 
     def test(self):
+        self.last_run = fields.Datetime.now()
         pass
+
+    def log_message(self,body,is_error=False):
+        if is_error:
+            self.status = "error"
+        self.last_run = fields.Datetime.now()
+        self.message_post(body=f"{body} | {self.last_run}",message_type="notification")

@@ -42,6 +42,7 @@
         "data/mistral_data.xml",
         "data/anthropic_data.xml",
         "data/groq_data.xml",
+        "data/google_data.xml",
         "wizard/ai_agent_test_wizard_views.xml",
         "views/ai_agent_views.xml",
         "views/ai_agent_llm_views.xml",

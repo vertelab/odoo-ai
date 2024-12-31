@@ -15,12 +15,13 @@ class AIQuestSession(models.Model):
 
     
     # ~ analytic_account_id = fields.Many2one(comodel_name='analytic.account',string="",help="") # domain|context|ondelete="'set null', 'restrict', 'cascade'"|auto_join|delegate
+    ai_agent_count = fields.Integer(compute='_compute_ai_agent_count')
     ai_agent_id = fields.Many2one(comodel_name="ai.agent")
     ai_agent_ids = fields.Many2many(comodel_name="ai.agent")
     ai_agent_llm_id = fields.Many2one(comodel_name="ai.agent.llm")
     ai_agent_llm_ids = fields.Many2many(comodel_name="ai.agent.llm")
+    ai_llm_count = fields.Integer(compute='_compute_ai_llm_count')
     ai_quest_id = fields.Many2one(comodel_name="ai.quest")
-    session_line_ids = fields.One2many(comodel_name="ai.quest.session.line", inverse_name="ai_quest_session_id")
     ai_type = fields.Selection(selection=[("default","Default")], default="default")
     color = fields.Integer()
     commercial_partner_id = fields.Many2one(comodel_name='res.partner',string="Partner", related="user_id.partner_id.commercial_partner_id", help="", store=True)
@@ -29,11 +30,76 @@ class AIQuestSession(models.Model):
     debug = fields.Boolean(string='Debug', help="Logs interesting data")
     enddate = fields.Datetime()
     session = fields.Char(default=lambda self: str(uuid.uuid4()))
+    session_line_count = fields.Integer(compute='_compute_session_line_count')
+    session_line_ids = fields.One2many(comodel_name="ai.quest.session.line", inverse_name="ai_quest_session_id")
     startdate = fields.Datetime(default=fields.Datetime.now())
     status = fields.Selection(selection=[("draft",_("Draft")),("active",_("Active")),("done",_("Done")),("error",_("Error"))], default="draft")
     time_difference_ms = fields.Integer(string='Time Difference (ms)', compute='_compute_time_difference')
     type_of_output = fields.Text()
     user_id = fields.Many2one(comodel_name='res.users',string="User",help="")
+    
+    @api.depends('ai_agent_llm_ids')
+    def _compute_ai_llm_count(self):
+        for record in self:
+            record.ai_llm_count = len(record.ai_agent_llm_ids)
+
+    @api.depends('ai_agent_ids')
+    def _compute_ai_agent_count(self):
+        for record in self:
+            record.ai_agent_count = len(record.ai_agent_ids)
+
+    @api.depends('session_line_ids')
+    def _compute_session_line_count(self):
+        for record in self:
+            record.session_line_count = len(record.session_line_ids)
+
+    def action_get_llms(self):
+        action = {
+            'name': 'LLMs',
+            'type': 'ir.actions.act_window',
+            'res_model': 'ai.agent.llm',
+            'view_mode': 'kanban,tree,form,calendar',
+            'target': 'current',
+            'domain': [("session_line_ids.ai_quest_id", '=', self.id)]
+        }
+        return action
+    def action_get_agents(self):
+        action = {
+            'name': 'AI Agents',
+            'type': 'ir.actions.act_window',
+            'res_model': 'ai.agent',
+            'view_mode': 'kanban,tree,form',
+            'target': 'current',
+            'domain': [("session_line_ids.ai_quest_session_id", '=', self.id)]
+        }
+        return action
+
+
+    def action_get_session_lines(self):
+        action = {
+            'name': 'Session Lines',
+            'type': 'ir.actions.act_window',
+            'res_model': 'ai.quest.session.line',
+            'view_mode': 'tree,form,calendar,pivot',
+            'target': 'current',
+            'domain': [("ai_quest_session_id", '=', self.id)],
+        }
+        return action
+    def action_get_sessions(self):
+        action = {
+            'name': 'Sessions',
+            'type': 'ir.actions.act_window',
+            'res_model': 'ai.quest.session',
+            'view_mode': 'tree,form,calendar',
+            'target': 'current',
+            'domain': [("ai_quest_id", '=', self.id)]
+        }
+        return action
+
+    
+    
+    
+    
     @api.model
     def _get_db_uuid(self):
         return self.env['ir.config_parameter'].sudo().get_param('database.uuid')
@@ -62,6 +128,7 @@ class AIQuestSession(models.Model):
 
     @api.model
     def llm_init(self,llm,debug=False):
+        llm.last_run = fields.Datetime.now()
         session_ids =  self.env['ai.quest.session'].search([
                 ('ai_agent_llm_id','=',llm.id),('status','=','active')], limit=1)
         if len(session_ids)>=1:
@@ -81,6 +148,7 @@ class AIQuestSession(models.Model):
 
     @api.model
     def agent_init(self,agent,debug=False):
+        agent.last_run = fields.Datetime.now()
         session_ids =  self.env['ai.quest.session'].search([
                 ('ai_agent_id','=',agent.id),('status','=','active')], limit=1)
         if len(session_ids)>=1:
@@ -104,6 +172,7 @@ class AIQuestSession(models.Model):
         return session    
     @api.model
     def quest_init(self,quest,agents=[],debug=False):
+        quest.last_run = fields.Datetime.now()
         session_ids =  self.env['ai.quest.session'].search([
                 ('ai_quest_id','=',quest.id),('status','=','active')], limit=1)
         if len(session_ids)>=1:

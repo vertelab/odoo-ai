@@ -289,7 +289,7 @@ class AIAgent(models.Model):
             
             except Exception as e:
                 _logger.error(f"Error in call_model: {str(e)}")
-                
+                self.log_message(f"Error in call_model: {str(e)}",is_error=True)
                 # Create an error message
                 error_message = AIMessage(content=f"An error occurred: {str(e)}")
                 
@@ -355,6 +355,7 @@ class AIAgent(models.Model):
             
         
         # ~ _logger.warning(f"{final_state['totalt_tokens']}")
+
 
             
 

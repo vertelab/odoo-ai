@@ -43,17 +43,18 @@
                     </header>
                     <sheet string="AI Quest">
                         <div name="button_box" id="button_box" class="oe_button_box">
-
-              <button name="action_get_sessions" class="oe_stat_button" type="object" icon="fa-list" >
+              <button name="action_get_llms" class="oe_stat_button " type="object" icon="fa-database">
+                <field string="LLMs" name="ai_llm_count" widget="statinfo" />
+              </button>
+              <button name="action_get_agents" class="oe_stat_button " type="object" icon="fa-user-secret">
+                <field string="Agents" name="ai_agent_count" widget="statinfo" />
+              </button>
+            <button name="action_get_sessions" class="oe_stat_button" type="object" icon="fa-flag-checkered">
                 <field string="Sessions" name="session_count" widget="statinfo" />
               </button>
-
-              <button name="action_get_session_lines" class="oe_stat_button" type="object" icon="fa-list" >
+              <button name="action_get_session_lines" class="oe_stat_button" type="object" icon="fa-list">
                 <field string="Session Lines" name="session_line_count" widget="statinfo" />
               </button>
-
-
-                    
             </div>
                         <group>
                             <group>
@@ -66,13 +67,6 @@
                             </group>
                         </group>
                         <notebook>
-                            <page name="ai_sessions" string="AI Sessions">
-                                <field name="session_ids">
-                                    <tree string="AI Quest Session">
-                                        <field name="session" modifiers="{&quot;readonly&quot;: true}"/>
-                                    </tree>
-                                </field>
-                            </page>
                             <page name="mail" string="Mail">
                                 <group>
                                     <field name="alias_name" on_change="1"/>
@@ -142,14 +136,30 @@
                 </kanban>
             </field>
         </record>
+        
+        
+        <record id="view_ai_quest_calendar" model="ir.ui.view">
+        <field name="name">ai.quest.calendar</field>
+        <field name="model">ai.quest</field>
+        <field name="arch" type="xml">
+            <calendar string="AI Quests" date_start="last_run" color="color" mode="month">
+                <field name="name"/>
+                <field name="ai_type"/>
+                <field name="status"/>
+                <field name="session_count"/>
+                <field name="session_line_count"/>
+                <field name="is_favorite" widget="boolean_favorite"/>
+            </calendar>
+        </field>
+    </record>
 
         <record id="action_ai_quest" model="ir.actions.act_window">
             <field name="name">AI Quest</field>
             <field name="res_model">ai.quest</field>
-            <field name="view_mode">kanban,tree,form</field>
+            <field name="view_mode">kanban,tree,form,calendar</field>
         </record>
 
-        <menuitem id="ai_agent.menu_ai_quest" name="Ai Quest" parent="ai_agent.menu_ai_agent_configuration" action="action_ai_quest"/>
+        <menuitem id="ai_agent.menu_ai_quest" name="Ai Quest" parent="ai_agent.menu_ai_agent_menu" action="action_ai_quest"/>
 
     </data>
 </odoo>

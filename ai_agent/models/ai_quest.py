@@ -17,11 +17,14 @@ class AIQuest(models.Model):
     description = fields.Text()
     is_favorite = fields.Boolean()
     name = fields.Char(required=True)
+    agent_count = fields.Integer(compute="compute_agent_count")
     session_count = fields.Integer(compute="compute_session_count")
     session_ids = fields.One2many(comodel_name="ai.quest.session", inverse_name="ai_quest_id")
     session_line_count = fields.Integer(compute="compute_session_line_count")
     session_line_ids = fields.One2many(comodel_name="ai.quest.session", inverse_name="ai_quest_id")
     status = fields.Selection(selection=[("draft",_("Draft")),("active",_("Active")),("done",_("Done")),("error",_("Error"))], default="draft")
+    last_run = fields.Datetime()
+
    
     def start(self):
         pass
@@ -34,7 +37,7 @@ class AIQuest(models.Model):
             'res_model': 'ai.quest.session.line',
             'view_mode': 'tree,form',
             'target': 'current',
-            'domain': [("id", 'in', self.session_line_ids.ids)]
+            'domain': [("ai_quest_id", '=', self.id)]
         }
         return action
     def action_get_sessions(self):
@@ -44,10 +47,19 @@ class AIQuest(models.Model):
             'res_model': 'ai.quest.session',
             'view_mode': 'tree,form',
             'target': 'current',
-            'domain': [("id", 'in', self.session_ids.ids)]
+            'domain': [("ai_quest_id", '=', self.id)]
         }
         return action
-
+    def action_get_agents(self):
+        action = {
+            'name': 'AI Agents',
+            'type': 'ir.actions.act_window',
+            'res_model': 'ai.agent',
+            'view_mode': 'kanban,tree,form',
+            'target': 'current',
+            'domain': [("session_line_ids.ai_quest_id", '=', self.id)]
+        }
+        return action
 
     @api.depends("session_line_ids")
     def compute_session_line_count(self):
@@ -58,3 +70,7 @@ class AIQuest(models.Model):
     def compute_session_count(self):
         for record in self:
             record.session_count = len(record.session_ids)
+    @api.depends("session_line_ids")
+    def compute_agent_count(self):
+        for record in self:
+            record.agent_count = len(set(record.session_line_ids.mapped('ai_agent_id')))

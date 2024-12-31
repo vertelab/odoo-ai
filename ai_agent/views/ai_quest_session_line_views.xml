@@ -97,11 +97,25 @@
             </form>
         </field>
     </record>
-
+    <record id="view_ai_quest_session_line_calendar" model="ir.ui.view">
+        <field name="name">ai.quest.session.line.calendar</field>
+        <field name="model">ai.quest.session.line</field>
+        <field name="arch" type="xml">
+            <calendar string="AI Quest Session Lines" date_start="datetime" color="ai_agent_id" mode="month">
+                <field name="ai_quest_id"/>
+                <field name="ai_agent_id"/>
+                <field name="ai_llm_id"/>
+                <field name="model_id"/>
+                <field name="token"/>
+                <field name="token_monetary"/>
+                <field name="user_id"/>
+            </calendar>
+        </field>
+    </record>
     <record id="action_ai_quest_session_line" model="ir.actions.act_window">
-        <field name="name">AI Quest Session Lines</field>
+        <field name="name">Session Lines</field>
         <field name="res_model">ai.quest.session.line</field>
-        <field name="view_mode">tree,form</field>
+        <field name="view_mode">tree,form,calendar,pivot</field>
     </record>
 
     <menuitem id="ai_agent.menu_ai_quest_session_line" name="Ai Quest Session Lines" parent="ai_agent.menu_ai_agent_configuration" action="action_ai_quest_session_line"/>
