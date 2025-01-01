@@ -184,6 +184,11 @@ class AIAgentLLM(models.Model):
     def invoke(self,input,config=None,
                     ai_quest_session_id=None,ai_quest_id=None,ai_agent_id=None,debug=False,
                 ):
+                    
+                    
+                    
+                    
+                    
         try:
             response = eval(self.get_llm()).invoke(input,config)            
         except HTTPStatusError as e:
@@ -244,6 +249,65 @@ class AIAgentLLM(models.Model):
 
 
     def test_llm(self):
+        session = self.env['ai.quest.session'].llm_init(self)
+
+        def call_model(state: MessagesState):
+            try:
+                messages = state['messages']
+                _logger.warning(f"call_model {state=}")
+                
+                response = model.invoke(messages)
+                
+                return {"messages": [response]}
+            
+            except Exception as e:
+                _logger.error(f"Error in call_model: {str(e)}")
+                self.log_message(f"Error in call_model: {str(e)}",is_error=True)
+                # Create an error message
+                error_message = AIMessage(content=f"An error occurred: {str(e)}")
+                
+                # You might want to add a system message to indicate the error as well
+                system_error_message = SystemMessage(content="The model encountered an error. Please try again or contact support if the issue persists.")
+                
+                # Return both the error message and the system message
+                return {"messages": [system_error_message, error_message]}
+
+        final_state = app.invoke(
+            {"messages": [HumanMessage(content="what is the weather in sf, answer in swedish and celsius")]},
+            config={"configurable": {"thread_id": 42},
+                    #"callbacks":[callback_handler]
+                    }
+        )
+        _logger.info(f"{final_state['messages'][-1].content}")
+        if self.debug == True:
+            _logger.warning(f"{final_state=}")
+        for message in final_state['messages']:
+            if isinstance(message,AIMessage):
+          # ~ 'model_name': 'gpt-4o-2024-08-06', 
+          # ~ 'system_fingerprint': 'fp_e161c81bbd', 
+          # ~ 'finish_reason': 'stop', 'logprobs': None}, 
+          # ~ id='run-c3a803af-f425-45f3-b13b-12ab2e9fd7e4-0', 
+                session.store_session_data(message)
+                
+                _logger.warning(f"final_stage: {message.id=} {message.usage_metadata=} ")
+            
+        
+        # ~ _logger.warning(f"{final_state['totalt_tokens']}")
+
+
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
         
         session = self.env['ai.quest.session'].llm_init(self)
         try:

@@ -172,6 +172,7 @@ class AIQuestSession(models.Model):
         return session    
     @api.model
     def quest_init(self,quest,agents=[],debug=False):
+        _logger.warning(f"{quest.id=} {agents=}")
         quest.last_run = fields.Datetime.now()
         session_ids =  self.env['ai.quest.session'].search([
                 ('ai_quest_id','=',quest.id),('status','=','active')], limit=1)
@@ -180,13 +181,23 @@ class AIQuestSession(models.Model):
             if session.debug:
                 session.log(agent,f"[session] revisit {session.name=}")
         else:
+            r = {
+                'status': 'active',
+                'ai_quest_id': quest.id,
+                'ai_agent_id': agents[0].id if agents else None,
+                'ai_agent_llm_id': agents[0].ai_agent_llm_id.id if agents else None,
+                }
+            _logger.warning(f"{r=}")    
             session = self.env['ai.quest.session'].create({
                 'status': 'active',
                 'ai_quest_id': quest.id,
                 'ai_agent_id': agents[0].id if agents else None,
-                'ai_agent_ids': (6,0,[agent.id for agent in agents]),
                 'ai_agent_llm_id': agents[0].ai_agent_llm_id.id if agents else None,
-                'ai_agent_llm_ids': (6,0,[agent.ai_agent_llm_id.id for agent in agents]),
+                })
+            if agents:
+                session.write({    
+                    'ai_agent_ids': [(4, agent.id) for agent in agents],
+                    'ai_agent_llm_ids': [(4, agent.ai_agent_llm_id.id) for agent in agents if agent.ai_agent_llm_id],
                 })
             if session.debug:
                 session.log(agent,f"[session] init {session.name=}")

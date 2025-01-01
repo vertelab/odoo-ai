@@ -26,12 +26,12 @@ class AIAgent(models.Model):
     is_favorite = fields.Boolean()
     status = fields.Selection(selection=[("draft",_("Draft")),("active",_("Active")),("done",_("Done")),("error",_("Error"))], default="draft")
     ai_prompt_template = fields.Html()
-    ai_agent_llm_id = fields.Many2one(comodel_name="ai.agent.llm")
+    ai_agent_llm_id = fields.Many2one(comodel_name="ai.agent.llm",string="LLM",help="Choose Large Language Model",domain="[('status','=','confirmed')]")
     ai_type = fields.Selection(selection=[("default", "Default")], default="default", required=True)
     ai_discription = fields.Text()
-    ai_role = fields.Char()
-    ai_goal = fields.Text()
-    ai_backstory = fields.Text()
+    ai_role = fields.Char(string="Role")
+    ai_goal = fields.Text(string="Goal")
+    ai_backstory = fields.Text(string="Backstory")
     # ~ session_ids = fields.One2many(comodel_name="ai.quest.session", )
     session_line_ids = fields.One2many(comodel_name="ai.quest.session.line",inverse_name="ai_agent_id")
     ai_agent_data_ids = fields.One2many(comodel_name="ai.agent.data", inverse_name="agent_id")
@@ -93,12 +93,6 @@ class AIAgent(models.Model):
         for record in self:
             record.quest_count = len(set(record.session_line_ids.filtered(lambda x: x.ai_agent_id.id == record.id).mapped('ai_quest_id')))
 
-
-
-
-
-
-
     def prompt_agent(self, test_prompt=False, parser=False, session=False, **kwargs):
         self.last_run = fields.Datetime.now()
         _logger.error(f"{session.session=}")
@@ -115,18 +109,22 @@ class AIAgent(models.Model):
             
         except HTTPStatusError as e:
             self.ai_agent_llm_id.log_message(body=e,is_error=True)
-            _logger.error(f"{e=}")
+            _logger.error(f"HTTPStatusError {e=}")
+            self.ai_agent_llm_id.log_message(body=f"HTTPStatusError {e=}")
+            self.ai_agent_id.status = self.ai_agent_llm_id.status = 'error'
+            self.ai_agent_id.log_message(body=f"HTTPStatusError {e=}")
 
         except Exception as e:
             _logger.error(f"{e=}")
-
+            self.ai_agent_llm_id.log_message(body=f" {e=}")
+            self.ai_agent_id.log_message(body=f" {e=}")
+            
         _logger.error(f"{response=}")
         self.ai_agent_llm_id.log_message(body="Success!!!")
 
         if response and session:
             session.ai_agent_llm_id = self.ai_agent_llm_id
             session.store_session_data(response)
-            self.ai_quest_session_ids = [(4, session.id, 0)]
 
         return response.content if response else ""
         
