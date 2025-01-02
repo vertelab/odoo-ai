@@ -98,6 +98,18 @@ class AIQuestSession(models.Model):
 
     
     
+    def _message_set_main_attachment_id(self, attachment_ids):
+        thread_ids = super(AIQuestSession,self)._message_set_main_attachment_id(attachment_ids)
+
+        _logger.error(f"{self.session=}")
+
+        if self.ai_quest_id and self.message_ids[0].message_type == "email":
+
+            _logger.warning(f"{self.message_ids[0]=}")
+
+            self.ai_quest_id.mail(mail=self.message_ids[0].body,session=self)
+
+        return thread_ids
     
     
     @api.model

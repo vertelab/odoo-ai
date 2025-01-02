@@ -7,3 +7,4 @@ ai_agent.access_ai_quest,access_ai_quest,ai_agent.model_ai_quest,base.group_user
 ai_agent.access_ai_quest_session,access_ai_quest_session,ai_agent.model_ai_quest_session,base.group_user,1,1,1,1
 ai_agent.access_ai_quest_session_line,access_ai_quest_session_line,ai_agent.model_ai_quest_session_line,base.group_user,1,1,1,1
 ai_agent.ai_quest_agent_access_rights,AI Quest Agent Access,model_ai_quest_agent,base.group_user,1,1,1,1
+ai_agent.access_ai_quest_test_mail_wizard,access_ai_quest_test_mail_wizard,ai_agent.model_ai_quest_test_mail_wizard,base.group_user,1,1,1,1

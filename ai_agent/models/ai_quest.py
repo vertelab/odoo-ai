@@ -1,6 +1,6 @@
 from random import randint
 import re
-import unidecode
+import unidecode, json
 
 from odoo import models, fields, api, _
 from odoo.exceptions import UserError, AccessError, ValidationError
@@ -272,6 +272,23 @@ class AIQuest(models.Model):
         # ~ return agent.prompt_agent(message.body,session=session)
         # ~ return f"Bot received: {message.body}"
 
+    def mail(self,mail,session):
+        _logger.error(f"{session.session=}")
+        if self.init_type == "mail":
+            # parser = JsonOutputParser(pydantic_object=jsonResponse)
+            agent_id = self.ai_agent_ids[0].ai_agent_id
+            response = agent_id.prompt_agent(mail=mail,session=session)
+            response = response.replace('json\n','').replace('```','')
+            response = json.loads(response)
+            session.message_post(body=f"{response}",message_type="notification")
+
+    def mail_test_wizard(self):
+        action = self.env.ref("ai_agent.action_ai_quest_test_mail_wizard").read()[0]
+        # _logger.error(f"{action=}")
+        action["context"] = {"default_ai_quest_id": self.id}
+        return action
+
+
     # ------------------------------------------------------------
     # MESSAGING
     # ------------------------------------------------------------
@@ -427,7 +444,6 @@ class MailMessage(models.Model):
     _inherit = 'mail.message'
     
     ai_quest_session_id = fields.Many2one(comodel_name='ai.quest.session',string="Session",help="") 
-
 
 
 class MailChannel(models.Model):

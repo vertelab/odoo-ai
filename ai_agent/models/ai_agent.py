@@ -3,6 +3,7 @@ import json
 from langchain_core.prompts import PromptTemplate
 from langchain_openai import ChatOpenAI
 from langchain_mistralai import ChatMistralAI
+from langchain_groq import ChatGroq
 from httpx import HTTPStatusError
 from random import randint
 
@@ -111,13 +112,12 @@ class AIAgent(models.Model):
             self.ai_agent_llm_id.log_message(body=e,is_error=True)
             _logger.error(f"HTTPStatusError {e=}")
             self.ai_agent_llm_id.log_message(body=f"HTTPStatusError {e=}")
-            self.ai_agent_id.status = self.ai_agent_llm_id.status = 'error'
-            self.ai_agent_id.log_message(body=f"HTTPStatusError {e=}")
+            self.status = self.ai_agent_llm_id.status = 'error'
 
         except Exception as e:
             _logger.error(f"{e=}")
             self.ai_agent_llm_id.log_message(body=f" {e=}")
-            self.ai_agent_id.log_message(body=f" {e=}")
+            self.log_message(body=f" {e=}")
             
         _logger.error(f"{response=}")
         self.ai_agent_llm_id.log_message(body="Success!!!")
@@ -146,7 +146,6 @@ class AIAgent(models.Model):
 
     def test(self):
         self.last_run = fields.Datetime.now()
-        pass
 
     def log_message(self,body,is_error=False):
         if is_error:
