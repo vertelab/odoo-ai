@@ -17,6 +17,7 @@ class AIQuestAgent(models.Model):
     sequence = fields.Integer(string='Sequence')
     ai_agent_id = fields.Many2one(comodel_name='ai.agent',string="Agent",help="") # domain|context|ondelete="'set null', 'restrict', 'cascade'"|auto_join|delegateagent_count = fields.Integer(compute="compute_agent_count")
 
+# https://readmedium.com/langgraph-made-easy-a-beginners-guide-part-2-196e8b179119
 
 DEFAULT_PYTHON_CODE = """# Available variables:
 #  - env: Odoo Environment on which the action is triggered
