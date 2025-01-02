@@ -161,6 +161,21 @@ class AIQuest(models.Model):
         }
         return action
 
+    @api.depends("session_line_ids")
+    def compute_session_line_count(self):
+        for record in self:
+            record.session_line_count = len(record.session_line_ids)
+
+    @api.depends("session_ids")
+    def compute_session_count(self):
+        for record in self:
+            record.session_count = len(record.session_ids)
+
+    @api.depends("session_line_ids")
+    def compute_agent_count(self):
+        for record in self:
+            record.agent_count = len(set(record.session_line_ids.mapped('ai_agent_id')))
+
     @api.onchange('model_id')
     def _onchange_model_id(self):
         if self.init_type == 'server-action':
@@ -176,24 +191,6 @@ class AIQuest(models.Model):
                     'name': self.name,
                     'model_id': self.model_id.id,
                 })
-
-    def _get_eid(self):
-        if not self.name:
-            raise ValidationError("Set a name for this quest")
-        eid = list(self.get_external_id().values())[0]
-        _logger.warning(f"{eid=}")
-        if not eid:
-            eid = unidecode.unidecode(
-                re.sub(
-                    r'[^a-zA-Z0-9åäö\s]', '', self.name.lower()
-                ).replace(' ', '_')) + f"_{int(''.join(filter(str.isdigit, str(self.id))))}"
-            self.env['ir.model.data'].create({
-                'name': eid,
-                'module': 'new',
-                'model': 'ai.quest',
-                'res_id': self.id,
-            })
-        return eid
 
     @api.onchange('init_type')
     def _onchange_init_type(self):
@@ -239,20 +236,101 @@ class AIQuest(models.Model):
                 })
         self.name = name
 
+ 
+
+    def _get_eid(self):
+        if not self.name:
+            raise ValidationError("Set a name for this quest")
+        eid = list(self.get_external_id().values())[0]
+        if not eid:
+            self.env['ir.model.data'].create({
+                'name': unidecode.unidecode(
+                            re.sub(
+                                r'[^a-zA-Z0-9åäö\s]', '', self.name.lower()
+                            ).replace(' ', '_')) + f"_{int(''.join(filter(str.isdigit, str(self.id))))}",
+                'module': 'new',
+                'model': 'ai.quest',
+                'res_id': self.id,
+            })
+        return eid
+
+
+    def log_message(self, body, is_error=False):
+        if is_error:
+            self.status = "error"
+        self.last_run = fields.Datetime.now()
+        self.message_post(body=f"{body} | {self.last_run}", message_type="notification")
+
+
+    def test_mail(self):
+     return {
+        'type': 'ir.actions.act_window',
+        'name': 'Test Mail',
+        'res_model': 'ai.quest.test.mail.wizard',
+        'view_mode': 'form',
+        'view_id': self.env.ref('ai_agent.test_mail_wizard_view').id,
+        'target': 'new',
+        'context': {'default_ai_quest_id': self.id},
+    }
+
+
+    # ------------------------------------------------------------
+    # Init type API
+    # ------------------------------------------------------------
+
+    def _server_action_values(self, **kwarg):
+        return {    'agent': self.ai_agent_ids[0].ai_agent_id,
+                    'session': self.env['ai.quest.session'].quest_init(self, agents=[self.ai_agent_ids[0].ai_agent_id]),
+            }
+        
     def server_action(self, records):
         if self.init_type == 'server-action' and self.server_action_id:
             #     # self.log_message(f'server-action {records}')
             for rec in records:
-                response = self._run_action_code_multi()
+                vals = _server_action_values(records=records)
+                if self.code:
+                    return self.with_context({'records': records, 'session': vals['session']}).run()
+                else:
+                    return vals['agent'].prompt_agent('',session=vals['session'])
+                
+                #response = self._run_action_code_multi() # Isnt it run()??????
                 # if it is res.partner then comment can work, other models might be description - so watch out for that
                 # Here is the code that words on the code tab
                   # - action =agent.prompt_agent(session=session, context="ai_company_context", document="whether", question="What is the whether like today?")
-                rec.write({'comment': markdown.markdown(response)})
+                #rec.write({'comment': markdown.markdown(response)})
 
-    def _run_action_code_multi(self):
-        eval_context = self._get_eval_context()
-        safe_eval(self.code.strip(), eval_context, mode="exec", nocopy=True, filename=str(self))
-        return eval_context.get('action')
+    def _cron_values(self, **kwarg):
+        return {'agent':   self.ai_agent_ids[0].ai_agent_id,
+                'session': self.env['ai.quest.session'].quest_init(self, agents=[self.ai_agent_ids[0].ai_agent_id]),
+            }
+
+    def cron(self, records):
+        self.ensure_one()
+        if self.init_type == 'cron' and self.cron_id:
+            vals = self._cron_values()
+            if self.code:
+                return self.with_context({'records': records, 'session': vals['session']}).run()
+            else:
+                return vals['agent'].prompt_agent('',session=vals['session'])
+
+    def _chat_values(self, **kwarg):
+        return {'agent': self.ai_agent_ids[0].ai_agent_id,
+                'session': kwarg['message'].parent_id.ai_quest_session_id if kwarg['message'].parent_id and kwarg['message'].parent_id.ai_quest_session_id else \
+                           kwarg['message'].parent_id.ai_quest_session_id if kwarg['message'].ai_quest_session_id else \
+                           self.env['ai.quest.session'].quest_init(self, agents=[self.ai_agent_ids[0].ai_agent_id]),
+            }
+
+    def chat(self, message):
+        if self.init_type == 'chat' and self.channel_id:
+            vals = self._chat_values(message=message)
+            if self.code:
+                return self.with_context({'parameter': message, 'session': vals['session']}).run()
+            else:
+                return vals['agent'].prompt_agent(message.body,session=vals['session'])
+
+    # ------------------------------------------------------------
+    # Python CODE eval
+    # ------------------------------------------------------------
 
     def _get_eval_context(self, action=None):
         """ Prepare the context used when evaluating python code, like the
@@ -309,71 +387,7 @@ class AIQuest(models.Model):
         print(self)
         return eval_context
 
-    def cron(self, records):
-        self.ensure_one()
-        if self.init_type == 'cron' and self.cron_id:
-            self.log_message('cron')
 
-    @api.depends("session_line_ids")
-    def compute_session_line_count(self):
-        for record in self:
-            record.session_line_count = len(record.session_line_ids)
-
-    @api.depends("session_ids")
-    def compute_session_count(self):
-        for record in self:
-            record.session_count = len(record.session_ids)
-
-    @api.depends("session_line_ids")
-    def compute_agent_count(self):
-        for record in self:
-            record.agent_count = len(set(record.session_line_ids.mapped('ai_agent_id')))
-
-    def log_message(self, body, is_error=False):
-        if is_error:
-            self.status = "error"
-        self.last_run = fields.Datetime.now()
-        self.message_post(body=f"{body} | {self.last_run}", message_type="notification")
-
-    # ------------------------------------------------------------
-    # ORM
-    # ------------------------------------------------------------
-
-    def write(self, vals):
-        result = super(AIQuest, self).write(vals)
-        if 'init_type' in vals and vals.get('init_type') == 'mail':
-            for quest in self:
-                alias_vals = quest._alias_get_creation_values()
-                quest.write({
-                    'alias_name': alias_vals.get('alias_name', quest.alias_name),
-                    'alias_defaults': alias_vals.get('alias_defaults'),
-                })
-        return result
-
-    def chat(self, message):
-        # Implement your bot logic here
-        # This is a simple example that just echoes the message
-        agent = self.ai_agent_ids[0].ai_agent_id
-        session = message.parent_id.ai_quest_session_id if message.parent_id and message.parent_id.ai_quest_session_id else \
-            message.parent_id.ai_quest_session_id if message.ai_quest_session_id else \
-                self.env['ai.quest.session'].quest_init(self, agents=[agent])
-        res = self.with_context({'parameter': message, 'session': session}).run()
-        _logger.warning(f"{res=}")
-        # ~ _logger.warning(f"{agent=}")
-        # ~ return agent.prompt_agent(message.body,session=session)
-        # ~ return f"Bot received: {message.body}"
-
-    # ------------------------------------------------------------
-    # MESSAGING
-    # ------------------------------------------------------------
-
-    def _alias_get_creation_values(self):
-        values = super(AIQuest, self)._alias_get_creation_values()
-        values['alias_model_id'] = self.env['ir.model']._get('ai.quest.session').id
-        if self.id:
-            values['alias_defaults'] = defaults = {}
-            defaults['ai_quest_id'] = self.id
-        return values
 
     def _get_runner(self):
         multi = True
@@ -472,6 +486,41 @@ class AIQuest(models.Model):
         return res or False
 
 
+    # ------------------------------------------------------------
+    # ORM
+    # ------------------------------------------------------------
+
+    def _alias_get_creation_values(self):
+        values = super(AIQuest, self)._alias_get_creation_values()
+        values['alias_model_id'] = self.env['ir.model']._get('ai.quest.session').id
+        if self.id:
+            values['alias_defaults'] = defaults = {}
+            defaults['ai_quest_id'] = self.id
+        return values
+
+
+    def write(self, vals):
+        result = super(AIQuest, self).write(vals)
+        if 'init_type' in vals and vals.get('init_type') == 'mail':
+            for quest in self:
+                alias_vals = quest._alias_get_creation_values()
+                quest.write({
+                    'alias_name': alias_vals.get('alias_name', quest.alias_name),
+                    'alias_defaults': alias_vals.get('alias_defaults'),
+                })
+        for quest in self:
+            if quest.server_action_id:
+                quest.server_action_id.write({'name': quest.name,'code': f"action = env.ref('{quest._get_eid()}').server_action(records)"})    
+            if quest.cron_id:
+                quest.cron_id.write({'name': quest.name,'code': f"action = env.ref('{quest._get_eid()}').cron()"})    
+            if quest.channel_id:
+                quest.channel_id.write({'name': quest.name,'ai_quest_id': quest.id,})    
+            if quest.chat_user_id:
+                quest.chat_user_id.write({'name': quest.name,'login': quest.name,'ai_quest_id': quest.id,})    
+        return result
+
+
+
 class MailMessage(models.Model):
     _inherit = 'mail.message'
 
@@ -500,3 +549,10 @@ class MailChannel(models.Model):
                         subtype_xmlid='mail.mt_comment',
                     )
         return message
+
+class ResUsers(models.Model):
+    _inherit = 'res.users'
+
+    ai_quest_id = fields.Many2one(comodel_name='ai.quest', string="Quest", help="")
+    ai_quest_session_id = fields.Many2one(comodel_name='ai.quest.session', string="Session", help="")
+

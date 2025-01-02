@@ -6,7 +6,7 @@
         <field name="arch" type="xml">
             <form>
                 <group>
-                    <field name="ai_quest_id"/> <!--attrs="{'invisible': [('ai_quest_id', '!=', False)]}"-->
+                    <field name="ai_quest_id" attrs="{'invisible': [('ai_quest_id', '!=', False)]}" />
                 </group>
                 <group>
                     <field name="eml_file"/>

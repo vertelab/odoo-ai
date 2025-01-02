@@ -37,6 +37,7 @@
           <header>
             <field name="status" widget="statusbar" statusbar_visible="active,done" options="{'fold_field': 'fold'}" />
             <button name="start" type="object" string="Start" class="btn-primary" />
+             <button name="test_mail" type="object" string="Test" class="btn-primary" attrs="{'invisible': [('init_type', '!=', 'mail')]}" />
           </header>
           <sheet string="AI Quest">
             <div name="button_box" id="button_box" class="oe_button_box">
