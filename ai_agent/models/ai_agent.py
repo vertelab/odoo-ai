@@ -3,6 +3,7 @@ import json
 from langchain_core.prompts import PromptTemplate
 from langchain_openai import ChatOpenAI
 from langchain_mistralai import ChatMistralAI
+from langchain_groq import ChatGroq
 from httpx import HTTPStatusError
 from random import randint
 
@@ -151,7 +152,6 @@ class AIAgent(models.Model):
 
     def test(self):
         self.last_run = fields.Datetime.now()
-        pass
 
     def log_message(self, body, is_error=False):
         if is_error:
