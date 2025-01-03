@@ -326,7 +326,7 @@ class AIQuest(models.Model):
             }
 
     def chat(self, message):
-        if self.init_type == 'chat' and self.channel_id:
+        if self.init_type == 'chat' or "channel" and self.channel_id:
             vals = self._chat_values(message=message)
             if self.code:
                 return self.with_context({'parameter': message, 'session': vals['session']}).run()
@@ -547,6 +547,7 @@ class MailChannel(models.Model):
         if message.author_id != self.env.ref('base.partner_root'):
             if self.ai_quest_id:
                 bot_response = self.ai_quest_id.chat(message)
+                _logger.error(f"{bot_response=}")
                 if bot_response:
                     self.with_user(self.env.ref('base.user_root')).message_post(
                         body=bot_response,
