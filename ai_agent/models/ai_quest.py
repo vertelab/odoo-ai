@@ -2,9 +2,10 @@ from random import randint
 import re
 import unidecode
 import base64
+import json
+import markdown
 from pytz import timezone
 from functools import partial
-import markdown
 from odoo import models, fields, api, _, tools, Command
 
 from odoo.exceptions import UserError, AccessError, ValidationError, Warning
@@ -262,17 +263,21 @@ class AIQuest(models.Model):
         self.message_post(body=f"{body} | {self.last_run}", message_type="notification")
 
 
-    def test_mail(self):
-     return {
-        'type': 'ir.actions.act_window',
-        'name': 'Test Mail',
-        'res_model': 'ai.quest.test.mail.wizard',
-        'view_mode': 'form',
-        'view_id': self.env.ref('ai_agent.test_mail_wizard_view').id,
-        'target': 'new',
-        'context': {'default_ai_quest_id': self.id},
-    }
+     def mail(self,mail,session):
+        _logger.error(f"{session.session=}")
+        if self.init_type == "mail":
+            # parser = JsonOutputParser(pydantic_object=jsonResponse)
+            agent_id = self.ai_agent_ids[0].ai_agent_id
+            response = agent_id.prompt_agent(mail=mail,session=session)
+            response = response.replace('json\n','').replace('```','')
+            response = json.loads(response)
+            session.message_post(body=f"{response}",message_type="notification")
 
+    def mail_test_wizard(self):
+        action = self.env.ref("ai_agent.action_ai_quest_test_mail_wizard").read()[0]
+        # _logger.error(f"{action=}")
+        action["context"] = {"default_ai_quest_id": self.id}
+        return action
 
     # ------------------------------------------------------------
     # Init type API
