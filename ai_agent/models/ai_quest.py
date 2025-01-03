@@ -309,9 +309,10 @@ class AIQuest(models.Model):
             #rec.write({'comment': markdown.markdown(response)})
 
     def _cron_values(self, **kwarg):
-        return {'agent': self.ai_agent_ids[0].ai_agent_id,
-                'session': self.env['ai.quest.session'].quest_init(self, agents=[self.ai_agent_ids[0].ai_agent_id]),
-                }
+        return {
+            'agent': self.ai_agent_ids[0].ai_agent_id,
+            'session': self.env['ai.quest.session'].quest_init(self, agents=[self.ai_agent_ids[0].ai_agent_id]),
+        }
 
     def cron(self, records):
         self.ensure_one()
