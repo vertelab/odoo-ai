@@ -146,10 +146,7 @@ class AIQuest(models.Model):
     def search_duck_tool(query: str):
         """Search for information on duckduck."""
         search = DuckDuckGoSearchResults()
-        result = search.invoke("Obama")
-        print(result)
-
-        return f"Found results for: {query}"
+        return search
 
     def should_continue(self, state: MessagesState) -> Literal["tools", END]:
         messages = state['messages']
