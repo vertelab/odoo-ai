@@ -261,12 +261,12 @@ class AIQuest(models.Model):
         self.message_post(body=f"{body} | {self.last_run}", message_type="notification")
 
     def mail(self, mail, session):
-        _logger.error(f"{session.session=}")
+        # _logger.error(f"{session.session=}")
         if self.init_type == "mail":
             # parser = JsonOutputParser(pydantic_object=jsonResponse)
             agent_id = self.ai_agent_ids[0].ai_agent_id
             # response = agent_id.prompt_agent(mail=mail, session=session)
-            response = self.run()
+            response = self.run(mail=mail)
             response = response.replace('json\n', '').replace('```', '')
             response = json.loads(response)
             session.message_post(body=f"{response}", message_type="notification")
@@ -288,6 +288,8 @@ class AIQuest(models.Model):
         }
 
     def server_action(self, records):
+        # print("000", self.env.context)
+        # print(self.env.context.get('active_ids'))
         if self.init_type == 'server-action' and self.server_action_id:
             vals = self._server_action_values(records=records)
 
@@ -343,7 +345,7 @@ class AIQuest(models.Model):
     # Python CODE eval
     # ------------------------------------------------------------
 
-    def _get_eval_context(self, action=None):
+    def _get_eval_context(self, action=None, kw=None):
         """ Prepare the context used when evaluating python code, like the
         python formulas or code server actions.
 
@@ -384,7 +386,10 @@ class AIQuest(models.Model):
             'self': self,
             'agent': agent,
             'prompt_template': prompt_template,
-            'company_id': self.env.user.company_id
+            'company_id': self.env.user.company_id,
+            'context': self.env.context,
+            # 'mail':
+            **kw
         })
         return eval_context
 
@@ -400,10 +405,10 @@ class AIQuest(models.Model):
     def _get_agent_session(self, agent):
         return self.env['ai.quest.session'].quest_init(self, agents=[agent])
 
-    def run(self):
+    def run(self, **kwargs):
         res = False
         for action in self.sudo():
-            eval_context = self._get_eval_context(action)
+            eval_context = self._get_eval_context(action, kwargs)
             records = self.env.context.get('records')
             if records:
                 try:
