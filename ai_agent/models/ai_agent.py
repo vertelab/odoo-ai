@@ -25,32 +25,34 @@ class AIAgent(models.Model):
     _description = 'AI Agent'
     _inherit = ["mail.thread", "mail.activity.mixin"]
 
-    name = fields.Char(required=True)
-    color = fields.Integer(default=lambda self: randint(1, 11))
-    is_favorite = fields.Boolean()
-    status = fields.Selection(
-        selection=[("draft", _("Draft")), ("active", _("Active")), ("done", _("Done")), ("error", _("Error"))],
-        default="draft")
-    ai_prompt_template = fields.Html()
-    ai_agent_llm_id = fields.Many2one(comodel_name="ai.agent.llm", string="LLM", help="Choose Large Language Model",
-                                      domain="[('status','=','confirmed')]")
-    ai_type = fields.Selection(selection=[("default", "Default")], default="default", required=True)
-    ai_discription = fields.Text()
-    ai_role = fields.Char(string="Role")
-    ai_goal = fields.Text(string="Goal")
-    ai_backstory = fields.Text(string="Backstory")
+
     # ~ session_ids = fields.One2many(comodel_name="ai.quest.session", )
-    session_line_ids = fields.One2many(comodel_name="ai.quest.session.line", inverse_name="ai_agent_id")
     ai_agent_data_ids = fields.One2many(comodel_name="ai.agent.data", inverse_name="agent_id")
-    ai_temperature = fields.Float(string='temperature', default=0.7,
-                                  help="Temperature controls the randomness and creativity of the model's output, "
-                                       "<1.0 more predictable and consistant >1.0 more diverse and creative responses")
+    ai_agent_llm_id = fields.Many2one(comodel_name="ai.agent.llm", string="LLM", help="Choose Large Language Model",      
+                                      domain="[('status','=','confirmed')]")
+    ai_backstory = fields.Text(string="Backstory")
+    ai_discription = fields.Text()
+    ai_goal = fields.Text(string="Goal")
+    ai_prompt_template = fields.Html()
+    ai_role = fields.Char(string="Role")
+    ai_temperature = fields.Float(string='temperature', default=0.7,                                  
+            help="Temperature controls the randomness and creativity of the model's output, <1.0 more predictable and consistant "
+                 ">1.0 more diverse and creative responses")
+    ai_type = fields.Selection(selection=[("default", "Default")], default="default", required=True)
+    color = fields.Integer(default=lambda self: randint(1, 11))
     debug = fields.Boolean(string='Debug')
-    session_count = fields.Integer(compute="compute_session_count")
-    session_line_count = fields.Integer(compute="compute_session_line_count")
+    is_favorite = fields.Boolean()
+    last_run = fields.Datetime()
+    name = fields.Char(required=True)
     quest_count = fields.Integer(compute="compute_quest_count")
     quest_ids = fields.Many2many(comodel_name="ai.quest")
-    last_run = fields.Datetime()
+    session_count = fields.Integer(compute="compute_session_count")
+    session_line_count = fields.Integer(compute="compute_session_line_count")
+    session_line_ids = fields.One2many(comodel_name="ai.quest.session.line", inverse_name="ai_agent_id")
+    status = fields.Selection(        
+        selection=[("draft", _("Draft")), ("active", _("Active")), ("done", _("Done")), ("error", _("Error"))],        
+        default="draft")
+    tag_ids = fields.Many2many(comodel_name='product.tag', string='Tags')
 
     def action_get_quests(self):
         action = {

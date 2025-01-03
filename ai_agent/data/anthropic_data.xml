@@ -6,7 +6,7 @@
     <record id="anthropic_product_template" model="product.template">
       <field name="name">Anthropic</field>
       <field name="is_llm">True</field>
-      <field name="llm_type">Chatanthropic_XXXXXXXXXXXX_NOT_CORRECT!</field>
+      <field name="llm_type">ChatAnthropic</field>
     </record>
     <!-- Model -->
     <record id="anthropic_product_attribute_value_claude-3-5-sonnet-latest" model="product.attribute.value">

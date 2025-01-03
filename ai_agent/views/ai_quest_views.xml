@@ -18,13 +18,18 @@
         <search string="Search AI Quests">
           <field name="name" />
           <field name="description" />
+          <field name="tag_ids" />
           <filter string="Draft" name="draft" domain="[('status', '=', 'draft')]" />
           <filter string="Active" name="active" domain="[('status', '=', 'active')]" />
           <filter string="Done" name="done" domain="[('status', '=', 'done')]" />
+          <filter string="Error" name="done" domain="[('status', '=', 'error')]" />
           <filter string="Favorite" name="favorite" domain="[('is_favorite', '=', True)]" />
+          <filter string="My Quests" name="my_quest" domain="[('user_id', '=', uid)]" help="My Quests" />
           <group expand="0" string="Group By">
             <filter string="Status" name="group_by_status" context="{'group_by': 'status'}" />
             <filter string="AI Type" name="group_by_ai_type" context="{'group_by': 'ai_type'}" />
+            <filter string="Owner" name="group_by_user" context="{'group_by': 'user_id'}" />
+            <filter string="Customer" name="group_by_partner" context="{'group_by': 'partner_id'}" />
           </group>
         </search>
       </field>
@@ -35,9 +40,9 @@
       <field name="arch" type="xml">
         <form>
           <header>
-            <field name="status" widget="statusbar" statusbar_visible="active,done" options="{'fold_field': 'fold'}" />
+            <field name="status" widget="statusbar" statusbar_visible="active,done" options="{'clickable': '1', 'fold_field': 'fold'}" />
             <button name="start" type="object" string="Start" class="btn-primary" />
-             <button name="mail_test_wizard" type="object" string="Test" class="btn-primary" attrs="{'invisible': [('init_type', '!=', 'mail')]}" />
+            <button name="mail_test_wizard" type="object" string="Test" class="btn-primary" attrs="{'invisible': [('init_type', '!=', 'mail')]}" />
           </header>
           <sheet string="AI Quest">
             <div name="button_box" id="button_box" class="oe_button_box">
@@ -57,10 +62,12 @@
             <group>
               <group>
                 <field name="name" />
-                 <field name="ai_type" />
+                <field name="ai_type" />
+                <field name="user_id" />
+                <field name="partner_id" />
+                <field name="tag_ids" widget="many2many_tags" />
               </group>
               <group>
-               
                 <field name="init_type" />
                 <field name="alias_name" on_change="1" attrs="{'invisible': [('init_type', '!=', 'mail')]}" />
                 <label for="alias_name" string="Email Alias" attrs="{'invisible': [('init_type', '!=', 'mail')]}" />
@@ -79,25 +86,24 @@
                 <field name="model_id" attrs="{'invisible': [('init_type', 'not in', ['server-action','cron'])], 'required': [('init_type', 'in', ['server-action','cron'])]}" />
                 <field name="server_action_id" attrs="{'invisible': [('init_type', '!=', 'server-action')], 'required': [('init_type', '=', 'server-action')]}" />
                 <field name="cron_id" attrs="{'invisible': [('init_type', '!=', 'cron')], 'required': [('init_type', '=', 'cron')]}" />
-                <field name="filter_domain" widget="domain" options="{'model': 'res.partner'}" attrs="{'invisible': [('init_type', '!=', 'cron')]}"/>
-
+                <field name="filter_domain" widget="domain" options="{'model': 'res.partner'}" attrs="{'invisible': [('init_type', '!=', 'cron')]}" />
                 <field name="channel_id" attrs="{'invisible': [('init_type', '!=', 'channel')], 'required': [('init_type', '=', 'channel')]}" />
                 <field name="chat_user_id" attrs="{'invisible': [('init_type', '!=', 'chat')], 'required': [('init_type', '=', 'chat')]}" />
               </group>
             </group>
             <notebook>
-            <page string="Description" id="desc" >
-                <field name="description"/>
+              <page string="Description" id="desc">
+                <field name="description" />
               </page>
-              <page string="Code" id="code" >
-                <field name="code"/>
+              <page string="Code" id="code">
+                <field name="code" />
               </page>
-              <page string="Agents" id="agent" >
+              <page string="Agents" id="agent">
                 <field name="ai_agent_ids">
-                    <tree string="AI Quest Agents" editable="bottom" >
-                    <field name="sequence"  widget="handle"/>
-                    <field name="ai_agent_id"/>
-                </tree>
+                  <tree string="AI Quest Agents" editable="bottom">
+                    <field name="sequence" widget="handle" />
+                    <field name="ai_agent_id" />
+                  </tree>
                 </field>
               </page>
               <page string="Server Action" id="server-action" attrs="{'invisible': [('init_type', '!=', 'server-action')]}" />
