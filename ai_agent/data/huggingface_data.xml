@@ -1,71 +1,70 @@
 <odoo>
-<data>
+    <data>
+        <!-- HuggingFace -->
+        <record id="huggingface_product_template" model="product.template">
+            <field name="name">HuggingFace</field>
+            <field name="is_llm">True</field>
+            <field name="llm_type">HuggingFaceHub</field>
+        </record>
+        <record id="huggingface_product_attribute_value_gpt2" model="product.attribute.value">
+            <field name="name">gpt2</field>
+            <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+        </record>
+        <record id="huggingface_product_attribute_value_bert" model="product.attribute.value">
+            <field name="name">bert-base-uncased</field>
+            <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+        </record>
 
-<!-- HuggingFace -->
-<record id="huggingface_product_template" model="product.template">
-  <field name="name">HuggingFace</field>
-  <field name="is_llm">True</field>
-  <field name="llm_type">HuggingFaceHub</field>
-</record>
-<record id="huggingface_product_attribute_value_gpt2" model="product.attribute.value">
-  <field name="name">gpt2</field>
-  <field name="attribute_id" ref="ai_agent.product_attribute_model" />
-</record>
-<record id="huggingface_product_attribute_value_bert" model="product.attribute.value">
-  <field name="name">bert-base-uncased</field>
-  <field name="attribute_id" ref="ai_agent.product_attribute_model" />
-</record>
+        <!-- Embeddings -->
+        <record id="openai_embedding_product_template" model="product.template">
+            <field name="name">OpenAI Embedding</field>
+            <field name="is_embedding">True</field>
+            <field name="embedding_type">OpenAIEmbeddings</field>
+        </record>
+        <record id="openai_embedding_product_attribute_value_ada002" model="product.attribute.value">
+            <field name="name">text-embedding-ada-002</field>
+            <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+        </record>
 
-<!-- Embeddings -->
-<record id="openai_embedding_product_template" model="product.template">
-  <field name="name">OpenAI Embedding</field>
-  <field name="is_embedding">True</field>
-  <field name="embedding_type">OpenAIEmbeddings</field>
-</record>
-<record id="openai_embedding_product_attribute_value_ada002" model="product.attribute.value">
-  <field name="name">text-embedding-ada-002</field>
-  <field name="attribute_id" ref="ai_agent.product_attribute_model" />
-</record>
+        <record id="huggingface_embedding_product_template" model="product.template">
+            <field name="name">HuggingFace Embedding</field>
+            <field name="is_embedding">True</field>
+            <field name="embedding_type">HuggingFaceEmbeddings</field>
+        </record>
+        <record id="huggingface_embedding_product_attribute_value_mpnet" model="product.attribute.value">
+            <field name="name">sentence-transformers/all-mpnet-base-v2</field>
+            <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+        </record>
 
-<record id="huggingface_embedding_product_template" model="product.template">
-  <field name="name">HuggingFace Embedding</field>
-  <field name="is_embedding">True</field>
-  <field name="embedding_type">HuggingFaceEmbeddings</field>
-</record>
-<record id="huggingface_embedding_product_attribute_value_mpnet" model="product.attribute.value">
-  <field name="name">sentence-transformers/all-mpnet-base-v2</field>
-  <field name="attribute_id" ref="ai_agent.product_attribute_model" />
-</record>
+        <record id="cohere_embedding_product_template" model="product.template">
+            <field name="name">Cohere Embedding</field>
+            <field name="is_embedding">True</field>
+            <field name="embedding_type">CohereEmbeddings</field>
+        </record>
+        <record id="cohere_embedding_product_attribute_value_embed" model="product.attribute.value">
+            <field name="name">embed-multilingual-v2.0</field>
+            <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+        </record>
 
-<record id="cohere_embedding_product_template" model="product.template">
-  <field name="name">Cohere Embedding</field>
-  <field name="is_embedding">True</field>
-  <field name="embedding_type">CohereEmbeddings</field>
-</record>
-<record id="cohere_embedding_product_attribute_value_embed" model="product.attribute.value">
-  <field name="name">embed-multilingual-v2.0</field>
-  <field name="attribute_id" ref="ai_agent.product_attribute_model" />
-</record>
+        <record id="sentence_transformers_embedding_product_template" model="product.template">
+            <field name="name">SentenceTransformers Embedding</field>
+            <field name="is_embedding">True</field>
+            <field name="embedding_type">SentenceTransformerEmbeddings</field>
+        </record>
+        <record id="sentence_transformers_embedding_product_attribute_value_distilbert" model="product.attribute.value">
+            <field name="name">distilbert-base-nli-mean-tokens</field>
+            <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+        </record>
 
-<record id="sentence_transformers_embedding_product_template" model="product.template">
-  <field name="name">SentenceTransformers Embedding</field>
-  <field name="is_embedding">True</field>
-  <field name="embedding_type">SentenceTransformerEmbeddings</field>
-</record>
-<record id="sentence_transformers_embedding_product_attribute_value_distilbert" model="product.attribute.value">
-  <field name="name">distilbert-base-nli-mean-tokens</field>
-  <field name="attribute_id" ref="ai_agent.product_attribute_model" />
-</record>
-
-<!-- Token Type (gemensam för alla) -->
-<record id="common_product_template_attribute_line_token_type" model="product.template.attribute.line">
-  <field name="product_tmpl_id" eval="ref('gpt_sw3_product_template') + ref('openai_product_template') + ref('cohere_product_template') + ref('ai21_product_template') + ref('huggingface_product_template') + ref('openai_embedding_product_template') + ref('huggingface_embedding_product_template') + ref('cohere_embedding_product_template') + ref('sentence_transformers_embedding_product_template')" />
-  <field name="attribute_id" ref="product_attribute_token_type" />
-  <field name="value_ids" eval="[(6, 0, [
+        <!-- Token Type (gemensam för alla) -->
+        <record id="common_product_template_attribute_line_token_type" model="product.template.attribute.line">
+            <field name="product_tmpl_id" eval="ref('gpt_sw3_product_template') + ref('openai_product_template') + ref('cohere_product_template') + ref('ai21_product_template') + ref('huggingface_product_template') + ref('openai_embedding_product_template') + ref('huggingface_embedding_product_template') + ref('cohere_embedding_product_template') + ref('sentence_transformers_embedding_product_template')" />
+            <field name="attribute_id" ref="product_attribute_token_type" />
+            <field name="value_ids" eval="[(6, 0, [
      ref('product_attribute_value_input_tokens'),
      ref('product_attribute_value_output_tokens'),
      ])]" />
-</record>
+        </record>
 
-  </data>
+    </data>
 </odoo>
