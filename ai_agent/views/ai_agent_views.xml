@@ -33,6 +33,7 @@
           <field name="ai_discription" />
           <field name="ai_goal" />
           <field name="ai_backstory" />
+          <field name="tag_ids" />
           <filter string="Favorite" name="favorite" domain="[('is_favorite', '=', True)]" />
           <group expand="0" string="Group By">
             <filter string="AI Agent LLM" name="group_by_llm" context="{'group_by': 'ai_agent_llm_id'}" />
@@ -67,33 +68,32 @@
               <group>
                 <field name="name" modifiers="{&quot;required&quot;: true}" />
                 <field name="ai_type" />
+                <field name="tag_ids" widget="many2many_tags" />
               </group>
               <group>
-                <field name="ai_agent_llm_id" attrs="{'required': [('status', '!=', 'draft')]}"/>
+                <field name="ai_agent_llm_id" attrs="{'required': [('status', '!=', 'draft')]}" />
                 <field name="ai_temperature" />
                 <field name="last_run" />
               </group>
             </group>
-<!--
+            <!--
+                 <group>
+                 <separator />
+            -->
             <group>
-              <separator />
--->
-                <group>
-                  <field name="ai_role" />
-                  <field name="ai_goal" />
-                </group>
-<!--
+              <field name="ai_role" />
+              <field name="ai_goal" />
             </group>
--->
+            <!--
+                 </group>
+            -->
             <notebook>
-
               <page string="Template" id="template">
-                  <field name="ai_prompt_template" widget="html" class="oe-bordered-editor" options="{'style-inline': true, 'codeview': true, 'dynamic_placeholder': true}" nolabel="1"/>
+                <field name="ai_prompt_template" widget="html" class="oe-bordered-editor" options="{'style-inline': true, 'codeview': true, 'dynamic_placeholder': true}" nolabel="1" />
               </page>
               <page string="Backstory" id="backstory">
-                  <field name="ai_backstory" nolabel="1"/>
+                <field name="ai_backstory" nolabel="1" />
               </page>
-
             </notebook>
           </sheet>
           <div class="oe_chatter">
@@ -104,45 +104,45 @@
         </form>
       </field>
     </record>
-<!--
-    <record id="ai_agent_kanban" model="ir.ui.view">
-      <field name="name">ai.agent.kanban</field>
-      <field name="model">ai.agent</field>
-      <field name="arch" type="xml">
-        <kanban class="o_kanban_mobile" sample="1">
-          <field name="name" />
-          <field name="id" />
-          <field name="color" />
-          <templates>
-            <t t-name="kanban-box">
-              <div t-attf-class="#{kanban_color(record.color.raw_value)} oe_kanban_content oe_kanban_global_click o_kanban_get_form">
-                <div class="o_project_kanban_main ">
-                  <div class="o_kanban_card_content mw-100">
-                    <div class="o_kanban_primary_left">
-                      <div class="oe_kanban_details">
-                        <span>
-                          <field name="is_favorite" widget="boolean_favorite" nolabel="1" force_save="1" />
-                        </span>
-                        <t t-if="record.last_run.value != False">
-                          <span class="fa fa-clock-o me-2" title="Dates" />
-                          <field name="last_run" />
-                        </t>
-                        <br />
-                        <span class="o_text_overflow" t-att-title="record.name.value">
-                          <t t-esc="record.name.value" />
-                        </span>
-                      </div>
-                      <field name="ai_agent_llm_id" widget="badge" options="{'color_field': 'color'}" />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </t>
-          </templates>
-        </kanban>
-      </field>
-    </record>
--->
+    <!--
+         <record id="ai_agent_kanban" model="ir.ui.view">
+         <field name="name">ai.agent.kanban</field>
+         <field name="model">ai.agent</field>
+         <field name="arch" type="xml">
+         <kanban class="o_kanban_mobile" sample="1">
+         <field name="name" />
+         <field name="id" />
+         <field name="color" />
+         <templates>
+         <t t-name="kanban-box">
+         <div t-attf-class="#{kanban_color(record.color.raw_value)} oe_kanban_content oe_kanban_global_click o_kanban_get_form">
+         <div class="o_project_kanban_main ">
+         <div class="o_kanban_card_content mw-100">
+         <div class="o_kanban_primary_left">
+         <div class="oe_kanban_details">
+         <span>
+         <field name="is_favorite" widget="boolean_favorite" nolabel="1" force_save="1" />
+         </span>
+         <t t-if="record.last_run.value != False">
+         <span class="fa fa-clock-o me-2" title="Dates" />
+         <field name="last_run" />
+         </t>
+         <br />
+         <span class="o_text_overflow" t-att-title="record.name.value">
+         <t t-esc="record.name.value" />
+         </span>
+         </div>
+         <field name="ai_agent_llm_id" widget="badge" options="{'color_field': 'color'}" />
+         </div>
+         </div>
+         </div>
+         </div>
+         </t>
+         </templates>
+         </kanban>
+         </field>
+         </record>
+    -->
     <!-- Kanban View -->
     <record id="view_ai_agent_kanban" model="ir.ui.view">
       <field name="name">ai.agent.kanban</field>
@@ -196,7 +196,7 @@
                   </div>
                   <div class="oe_kanban_bottom_right">
                     <span class="o_kanban_record_last_run">
-                      <i class="fa fa-clock-o" />
+                      <i class="fa fa-clock-o" title="Date" />
                       <field name="last_run" />
                     </span>
                   </div>

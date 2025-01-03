@@ -1,6 +1,5 @@
 <odoo>
     <data>
-
         <!-- HuggingFace -->
         <record id="huggingface_product_template" model="product.template">
             <field name="name">HuggingFace</field>
@@ -17,7 +16,7 @@
         </record>
 
         <!-- Embeddings -->
-        <!-- <record id="openai_embedding_product_template" model="product.template">
+        <record id="openai_embedding_product_template" model="product.template">
             <field name="name">OpenAI Embedding</field>
             <field name="is_embedding">True</field>
             <field name="embedding_type">OpenAIEmbeddings</field>
@@ -25,7 +24,7 @@
         <record id="openai_embedding_product_attribute_value_ada002" model="product.attribute.value">
             <field name="name">text-embedding-ada-002</field>
             <field name="attribute_id" ref="ai_agent.product_attribute_model" />
-        </record> -->
+        </record>
 
         <record id="huggingface_embedding_product_template" model="product.template">
             <field name="name">HuggingFace Embedding</field>
@@ -36,7 +35,7 @@
             <field name="name">sentence-transformers/all-mpnet-base-v2</field>
             <field name="attribute_id" ref="ai_agent.product_attribute_model" />
         </record>
-<!-- 
+
         <record id="cohere_embedding_product_template" model="product.template">
             <field name="name">Cohere Embedding</field>
             <field name="is_embedding">True</field>
@@ -55,7 +54,7 @@
         <record id="sentence_transformers_embedding_product_attribute_value_distilbert" model="product.attribute.value">
             <field name="name">distilbert-base-nli-mean-tokens</field>
             <field name="attribute_id" ref="ai_agent.product_attribute_model" />
-        </record> -->
+        </record>
 
         <!-- Token Type (gemensam för alla) -->
         <record id="common_product_template_attribute_line_token_type" model="product.template.attribute.line">
