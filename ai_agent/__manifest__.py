@@ -43,6 +43,7 @@
         "data/anthropic_data.xml",
         "data/groq_data.xml",
         "data/google_data.xml",
+        "data/huggingface_data.xml",
         "wizard/ai_agent_test_wizard_views.xml",
         "wizard/ai_quest_test_mail_wizard_views.xml",
         "views/ai_quest_views.xml",
