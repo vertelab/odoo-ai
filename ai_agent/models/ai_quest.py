@@ -30,6 +30,7 @@ class AIQuestAgent(models.Model):
     ai_agent_id = fields.Many2one(comodel_name='ai.agent', string="Agent",
                                   help="")  # domain|context|ondelete="'set null', 'restrict', 'cascade'"|auto_join|delegateagent_count = fields.Integer(compute="compute_agent_count")
 
+
 # https://readmedium.com/langgraph-made-easy-a-beginners-guide-part-2-196e8b179119
 
 DEFAULT_PYTHON_CODE = """# Available variables:
@@ -237,8 +238,6 @@ class AIQuest(models.Model):
                 })
         self.name = name
 
- 
-
     def _get_eid(self):
         if not self.name:
             raise ValidationError("Set a name for this quest")
@@ -246,15 +245,14 @@ class AIQuest(models.Model):
         if not eid:
             self.env['ir.model.data'].create({
                 'name': unidecode.unidecode(
-                            re.sub(
-                                r'[^a-zA-Z0-9åäö\s]', '', self.name.lower()
-                            ).replace(' ', '_')) + f"_{int(''.join(filter(str.isdigit, str(self.id))))}",
+                    re.sub(
+                        r'[^a-zA-Z0-9åäö\s]', '', self.name.lower()
+                    ).replace(' ', '_')) + f"_{int(''.join(filter(str.isdigit, str(self.id))))}",
                 'module': 'new',
                 'model': 'ai.quest',
                 'res_id': self.id,
             })
         return eid
-
 
     def log_message(self, body, is_error=False):
         if is_error:
@@ -262,16 +260,16 @@ class AIQuest(models.Model):
         self.last_run = fields.Datetime.now()
         self.message_post(body=f"{body} | {self.last_run}", message_type="notification")
 
-
-     def mail(self,mail,session):
+    def mail(self, mail, session):
         _logger.error(f"{session.session=}")
         if self.init_type == "mail":
             # parser = JsonOutputParser(pydantic_object=jsonResponse)
             agent_id = self.ai_agent_ids[0].ai_agent_id
-            response = agent_id.prompt_agent(mail=mail,session=session)
-            response = response.replace('json\n','').replace('```','')
+            # response = agent_id.prompt_agent(mail=mail, session=session)
+            response = self.run()
+            response = response.replace('json\n', '').replace('```', '')
             response = json.loads(response)
-            session.message_post(body=f"{response}",message_type="notification")
+            session.message_post(body=f"{response}", message_type="notification")
 
     def mail_test_wizard(self):
         action = self.env.ref("ai_agent.action_ai_quest_test_mail_wizard").read()[0]
@@ -284,30 +282,36 @@ class AIQuest(models.Model):
     # ------------------------------------------------------------
 
     def _server_action_values(self, **kwarg):
-        return {    'agent': self.ai_agent_ids[0].ai_agent_id,
-                    'session': self.env['ai.quest.session'].quest_init(self, agents=[self.ai_agent_ids[0].ai_agent_id]),
-            }
-        
+        return {
+            'agent': self.ai_agent_ids[0].ai_agent_id,
+            'session': self.env['ai.quest.session'].quest_init(self, agents=[self.ai_agent_ids[0].ai_agent_id]),
+        }
+
     def server_action(self, records):
         if self.init_type == 'server-action' and self.server_action_id:
-            #     # self.log_message(f'server-action {records}')
+            vals = self._server_action_values(records=records)
+
             for rec in records:
-                vals = _server_action_values(records=records)
-                if self.code:
-                    return self.with_context({'records': records, 'session': vals['session']}).run()
-                else:
-                    return vals['agent'].prompt_agent('',session=vals['session'])
-                
-                #response = self._run_action_code_multi() # Isnt it run()??????
-                # if it is res.partner then comment can work, other models might be description - so watch out for that
-                # Here is the code that words on the code tab
-                  # - action =agent.prompt_agent(session=session, context="ai_company_context", document="whether", question="What is the whether like today?")
-                #rec.write({'comment': markdown.markdown(response)})
+                res = self.with_context({'records': records, 'session': vals['session']}).run()
+                rec.write({'comment': markdown.markdown(res)})
+            self.log_message(f'server-action {records}')
+
+            #     vals = self._server_action_values(records=records)
+            #     if self.code:
+            #         return self.with_context({'records': records, 'session': vals['session']}).run()
+            #     else:
+            #         return vals['agent'].prompt_agent('',session=vals['session'])
+            #
+            #response = self._run_action_code_multi() # Isnt it run()??????
+            # if it is res.partner then comment can work, other models might be description - so watch out for that
+            # Here is the code that words on the code tab
+            # - action =agent.prompt_agent(session=session, context="ai_company_context", document="whether", question="What is the whether like today?")
+            #rec.write({'comment': markdown.markdown(response)})
 
     def _cron_values(self, **kwarg):
-        return {'agent':   self.ai_agent_ids[0].ai_agent_id,
+        return {'agent': self.ai_agent_ids[0].ai_agent_id,
                 'session': self.env['ai.quest.session'].quest_init(self, agents=[self.ai_agent_ids[0].ai_agent_id]),
-            }
+                }
 
     def cron(self, records):
         self.ensure_one()
@@ -316,14 +320,15 @@ class AIQuest(models.Model):
             if self.code:
                 return self.with_context({'records': records, 'session': vals['session']}).run()
             else:
-                return vals['agent'].prompt_agent('',session=vals['session'])
+                return vals['agent'].prompt_agent('', session=vals['session'])
 
     def _chat_values(self, **kwarg):
         return {'agent': self.ai_agent_ids[0].ai_agent_id,
-                'session': kwarg['message'].parent_id.ai_quest_session_id if kwarg['message'].parent_id and kwarg['message'].parent_id.ai_quest_session_id else \
-                           kwarg['message'].parent_id.ai_quest_session_id if kwarg['message'].ai_quest_session_id else \
-                           self.env['ai.quest.session'].quest_init(self, agents=[self.ai_agent_ids[0].ai_agent_id]),
-            }
+                'session': kwarg['message'].parent_id.ai_quest_session_id if kwarg['message'].parent_id and kwarg[
+                    'message'].parent_id.ai_quest_session_id else \
+                    kwarg['message'].parent_id.ai_quest_session_id if kwarg['message'].ai_quest_session_id else \
+                        self.env['ai.quest.session'].quest_init(self, agents=[self.ai_agent_ids[0].ai_agent_id]),
+                }
 
     def chat(self, message):
         if self.init_type == 'chat' and self.channel_id:
@@ -331,7 +336,7 @@ class AIQuest(models.Model):
             if self.code:
                 return self.with_context({'parameter': message, 'session': vals['session']}).run()
             else:
-                return vals['agent'].prompt_agent(message.body,session=vals['session'])
+                return vals['agent'].prompt_agent(message.body, session=vals['session'])
 
     # ------------------------------------------------------------
     # Python CODE eval
@@ -344,14 +349,6 @@ class AIQuest(models.Model):
         :param action: the current server action
         :type action: browse record
         :returns: dict -- evaluation context given to (safe_)safe_eval """
-
-        # def log(message, level="info"):
-        #     with self.pool.cursor() as cr:
-        #         cr.execute("""
-        #             INSERT INTO ir_logging(create_date, create_uid, type, dbname, name, level, message, path, line, func)
-        #             VALUES (NOW() at time zone 'UTC', %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        #         """, (
-        #         self.env.uid, 'server', self._cr.dbname, __name__, level, message, "action", action.id, action.name))
 
         agent = self.ai_agent_ids[0].ai_agent_id
         prompt_template = PromptTemplate(
@@ -388,99 +385,53 @@ class AIQuest(models.Model):
             'prompt_template': prompt_template,
             'company_id': self.env.user.company_id
         })
-
-        print(self)
         return eval_context
-
-
 
     def _get_runner(self):
         multi = True
         t = self.env.registry[self._name]
-        fn = getattr(t, f'_run_action_{self.state}_multi', None) \
-             or getattr(t, f'run_action_{self.state}_multi', None)
-        if not fn:
-            multi = False
-            fn = getattr(t, f'_run_action_{self.state}', None) or getattr(t, f'run_action_{self.state}', None)
-        if fn and fn.__name__.startswith('run_action_'):
-            fn = partial(fn, self)
-        return fn, multi
+        return getattr(t, '_run_action_code_multi'), multi
+
+    def _run_action_code_multi(self, eval_context):
+        safe_eval(self.code.strip(), eval_context, mode="exec", nocopy=True, filename=str(self))
+        return eval_context.get('action')
+
+    def _get_agent_session(self, agent):
+        return self.env['ai.quest.session'].quest_init(self, agents=[agent])
 
     def run(self):
-        print("=====")
-        """ Runs the server action. For each server action, the
-        :samp:`_run_action_{TYPE}[_multi]` method is called. This allows easy
-        overriding of the server actions.
-
-        The ``_multi`` suffix means the runner can operate on multiple records,
-        otherwise if there are multiple records the runner will be called once
-        for each.
-
-        The call context should contain the following keys:
-
-        active_id
-            id of the current object (single mode)
-        active_model
-            current model that should equal the action's model
-        active_ids (optional)
-           ids of the current records (mass mode). If ``active_ids`` and
-           ``active_id`` are present, ``active_ids`` is given precedence.
-        :return: an ``action_id`` to be executed, or ``False`` is finished
-                 correctly without return action
-        """
         res = False
         for action in self.sudo():
-            #TODO add security on ai.quest
-            # ~ action_groups = action.groups_id
-            # ~ if action_groups:
-            # ~ if not (action_groups & self.env.user.groups_id):
-            # ~ raise AccessError(_("You don't have enough access rights to run this action."))
-            # ~ else:
-            # ~ try:
-            # ~ self.env[action.model_name].check_access_rights("write")
-            # ~ except AccessError:
-            # ~ _logger.warning("Forbidden server action %r executed while the user %s does not have access to %s.",
-            # ~ action.name, self.env.user.login, action.model_name,
-            # ~ )
-            # ~ raise
-
             eval_context = self._get_eval_context(action)
-            records = eval_context.get('record') or eval_context['model']
-            records |= eval_context.get('records') or eval_context['model']
+            records = self.env.context.get('records')
             if records:
                 try:
                     records.check_access_rule('write')
                 except AccessError:
-                    _logger.warning("Forbidden server action %r executed while the user %s does not have access to %s.",
-                                    action.name, self.env.user.login, records,
-                                    )
+                    _logger.warning(
+                        "Forbidden server action %r executed while the user %s does not have access to %s.",
+                        action.name, self.env.user.login, records,
+                    )
                     raise
 
-            def _run_action_code_multi(self, eval_context):
-                safe_eval(self.code.strip(), eval_context, mode="exec", nocopy=True,
-                          filename=str(self))  # nocopy allows to return 'action'
+            runner, multi = action._get_runner()
 
-            return eval_context.get('action')
+            agent = self.ai_agent_ids[0].ai_agent_id
+            session = self._get_agent_session(agent)
 
-            runner, multi = "_run_action_code_multi", True
             if runner and multi:
                 # call the multi method
                 run_self = action.with_context(eval_context['env'].context)
                 res = runner(run_self, eval_context=eval_context)
-                raise UserError(f"{res=} {eval_context=}")
-            elif runner:
-                active_id = self._context.get('active_id')
-                if not active_id and self._context.get('onchange_self'):
-                    active_id = self._context['onchange_self']._origin.id
-                    if not active_id:  # onchange on new record
-                        res = runner(action, eval_context=eval_context)
-                active_ids = self._context.get('active_ids', [active_id] if active_id else [])
-                for active_id in active_ids:
-                    # run context dedicated to a particular active_id
-                    run_self = action.with_context(active_ids=[active_id], active_id=active_id)
-                    eval_context["env"].context = run_self._context
-                    res = runner(run_self, eval_context=eval_context)
-                raise UserError(f"{res=} {eval_context=}")
+
+                # action = agent.prompt_agent(
+                #     session=session,
+                #     context="ai_company_context",
+                #     document="whether",
+                #     question="What is the whether like today?"
+                # )
+
+                return res
             else:
                 _logger.warning(
                     "Found no way to execute server action %r of type %r, ignoring it. "
@@ -489,7 +440,6 @@ class AIQuest(models.Model):
                     action.name, action.state
                 )
         return res or False
-
 
     # ------------------------------------------------------------
     # ORM
@@ -503,7 +453,6 @@ class AIQuest(models.Model):
             defaults['ai_quest_id'] = self.id
         return values
 
-
     def write(self, vals):
         result = super(AIQuest, self).write(vals)
         if 'init_type' in vals and vals.get('init_type') == 'mail':
@@ -515,15 +464,15 @@ class AIQuest(models.Model):
                 })
         for quest in self:
             if quest.server_action_id:
-                quest.server_action_id.write({'name': quest.name,'code': f"action = env.ref('{quest._get_eid()}').server_action(records)"})    
+                quest.server_action_id.write(
+                    {'name': quest.name, 'code': f"action = env.ref('{quest._get_eid()}').server_action(records)"})
             if quest.cron_id:
-                quest.cron_id.write({'name': quest.name,'code': f"action = env.ref('{quest._get_eid()}').cron()"})    
+                quest.cron_id.write({'name': quest.name, 'code': f"action = env.ref('{quest._get_eid()}').cron()"})
             if quest.channel_id:
-                quest.channel_id.write({'name': quest.name,'ai_quest_id': quest.id,})    
+                quest.channel_id.write({'name': quest.name, 'ai_quest_id': quest.id, })
             if quest.chat_user_id:
-                quest.chat_user_id.write({'name': quest.name,'login': quest.name,'ai_quest_id': quest.id,})    
+                quest.chat_user_id.write({'name': quest.name, 'login': quest.name, 'ai_quest_id': quest.id, })
         return result
-
 
 
 class MailMessage(models.Model):
@@ -555,9 +504,9 @@ class MailChannel(models.Model):
                     )
         return message
 
+
 class ResUsers(models.Model):
     _inherit = 'res.users'
 
     ai_quest_id = fields.Many2one(comodel_name='ai.quest', string="Quest", help="")
     ai_quest_session_id = fields.Many2one(comodel_name='ai.quest.session', string="Session", help="")
-

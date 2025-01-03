@@ -196,7 +196,7 @@
                   </div>
                   <div class="oe_kanban_bottom_right">
                     <span class="o_kanban_record_last_run">
-                      <i class="fa fa-clock-o" />
+                      <i class="fa fa-clock-o" title="Date"/>
                       <field name="last_run" />
                     </span>
                   </div>
