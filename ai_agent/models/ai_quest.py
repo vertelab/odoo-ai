@@ -263,7 +263,7 @@ class AIQuest(models.Model):
         self.message_post(body=f"{body} | {self.last_run}", message_type="notification")
 
 
-     def mail(self,mail,session):
+    def mail(self,mail,session):
         _logger.error(f"{session.session=}")
         if self.init_type == "mail":
             # parser = JsonOutputParser(pydantic_object=jsonResponse)
