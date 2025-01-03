@@ -101,6 +101,10 @@ class AIQuest(models.Model):
     filter_domain = fields.Char(
         string='Filter Name',
         related='model_id.model', readonly=False, related_sudo=True)
+    tag_ids = fields.Many2many(comodel_name='product.tag', string='Tags')
+    user_id = fields.Many2one(comodel_name='res.users',string="Owner",help="") 
+    partner_id = fields.Many2one(comodel_name='res.partner',string="Customer",help="") 
+
 
     def _get_alias_model_name(self):
         return 'ai.quest'
