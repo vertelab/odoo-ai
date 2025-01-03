@@ -39,6 +39,7 @@
         "data/server_action.xml",
         "data/data.xml",
         "data/open_ai_data.xml",
+        # "data/huggingface_data.xml",
         "data/mistral_data.xml",
         "data/anthropic_data.xml",
         "data/groq_data.xml",
