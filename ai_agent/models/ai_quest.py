@@ -15,6 +15,22 @@ from odoo.tools.float_utils import float_compare
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import PromptTemplate
 
+from typing import Annotated, Literal, TypedDict
+
+from langchain_core.messages import HumanMessage
+from langchain_openai import ChatOpenAI
+from langchain_anthropic import ChatAnthropic
+from langchain_core.tools import tool
+from langchain_community.tools import DuckDuckGoSearchRun, DuckDuckGoSearchResults
+
+from langchain_community.utilities.duckduckgo_search import DuckDuckGoSearchAPIWrapper
+from langchain_community.tools.yahoo_finance_news import YahooFinanceNewsTool
+from langchain_community.utilities.wikipedia import WikipediaAPIWrapper
+from langchain_community.tools.wikipedia.tool import WikipediaQueryRun
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.graph import END, START, StateGraph, MessagesState
+from langgraph.prebuilt import ToolNode
+
 import logging
 
 _logger = logging.getLogger(__name__)
@@ -24,11 +40,9 @@ class AIQuestAgent(models.Model):
     _name = 'ai.quest.agent'
     _description = 'AI Quest AGent'
 
-    ai_quest_id = fields.Many2one(comodel_name='ai.quest', string="",
-                                  help="")  # domain|context|ondelete="'set null', 'restrict', 'cascade'"|auto_join|delegate
+    ai_quest_id = fields.Many2one(comodel_name='ai.quest', string="", help="")
     sequence = fields.Integer(string='Sequence')
-    ai_agent_id = fields.Many2one(comodel_name='ai.agent', string="Agent",
-                                  help="")  # domain|context|ondelete="'set null', 'restrict', 'cascade'"|auto_join|delegateagent_count = fields.Integer(compute="compute_agent_count")
+    ai_agent_id = fields.Many2one(comodel_name='ai.agent', string="Agent", help="")
 
 
 # https://readmedium.com/langgraph-made-easy-a-beginners-guide-part-2-196e8b179119
@@ -93,10 +107,8 @@ class AIQuest(models.Model):
                        default=DEFAULT_PYTHON_CODE,
                        help="Write Python code that the action will execute. Some variables are "
                             "available for use; help about python expression is given in the help tab.")
-    channel_id = fields.Many2one(comodel_name='mail.channel', string="Channel",
-                                 help="")  # domain|context|ondelete="'set null', 'restrict', 'cascade'"|auto_join|delegate
-    chat_user_id = fields.Many2one(comodel_name='res.users', string="Chat User",
-                                   help="")  # domain|context|ondelete="'set null', 'restrict', 'cascade'"|auto_join|delegate
+    channel_id = fields.Many2one(comodel_name='mail.channel', string="Channel", help="")
+    chat_user_id = fields.Many2one(comodel_name='res.users', string="Chat User", help="")
 
     filter_domain = fields.Char(
         string='Filter Name',
@@ -112,7 +124,86 @@ class AIQuest(models.Model):
         return values
 
     def start(self):
-        pass
+        self.run()
+
+    @tool
+    def weather_tool(query: str):
+        """Get weather information."""
+        if "sf" in query.lower() or "san francisco" in query.lower():
+            return "It's 60 degrees and foggy."
+        return "It's 90 degrees and sunny."
+
+    @tool
+    def search_tool(query: str):
+        """Search for information."""
+        return f"Found results for: {query}"
+
+    @tool
+    def search_duck_tool(query: str):
+        """Search for information on duckduck."""
+        search = DuckDuckGoSearchResults()
+        result = search.invoke("Obama")
+        print(result)
+
+        return f"Found results for: {query}"
+
+    def should_continue(self, state: MessagesState) -> Literal["tools", END]:
+        messages = state['messages']
+        last_message = messages[-1]
+        # If the LLM makes a tool call, then we route to the "tools" node
+        if last_message.tool_calls:
+            return "tools"
+        # Otherwise, we stop (reply to the user)
+        return END
+
+    def get_tools(self, tool_names=None):
+        # Get all methods ending with _tool
+        all_tools = [getattr(self, attr) for attr in dir(self) if attr.endswith('_tool')]
+
+        if not tool_names:
+            return all_tools
+
+        if isinstance(tool_names, str):
+            tool_names = [tool_names]
+
+        return [getattr(self, f"{name}_tool") for name in tool_names]
+
+    # def get_tools(self, tool_name=None):
+    #     # Initialize DuckDuckGo wrapper with explicit parameters
+    #     search_wrapper = DuckDuckGoSearchAPIWrapper(
+    #         max_results=2,
+    #         time='d',  # last 24h
+    #         backend='api'
+    #     )
+    #     search = DuckDuckGoSearchRun(api_wrapper=search_wrapper)
+    #     wikipedia = WikipediaQueryRun(api_wrapper=WikipediaAPIWrapper())
+    #
+    #     community_tools = {
+    #         'search': search,
+    #         'wikipedia': wikipedia
+    #     }
+    #
+    #     if tool_name:
+    #         return [community_tools.get(tool_name)]
+    #     return list(community_tools.values())
+
+    def call_model(self, state: MessagesState):
+        messages = state['messages']
+
+        print("messages", messages)
+
+        # Get tools for this instance
+        x_tools = self.get_tools()
+        # Invoke model
+        response = eval(
+            self.ai_agent_ids[0].ai_agent_id.ai_agent_llm_id.get_llm()
+        ).bind_tools(x_tools).invoke(messages)
+
+        print(response.content)
+
+        _logger.info(f"{response.content=}")
+
+        return {"messages": [response]}
 
     @api.depends('session_line_ids')
     def compute_llm_count(self):
@@ -288,8 +379,6 @@ class AIQuest(models.Model):
         }
 
     def server_action(self, records):
-        # print("000", self.env.context)
-        # print(self.env.context.get('active_ids'))
         if self.init_type == 'server-action' and self.server_action_id:
             vals = self._server_action_values(records=records)
 
@@ -304,11 +393,6 @@ class AIQuest(models.Model):
             #     else:
             #         return vals['agent'].prompt_agent('',session=vals['session'])
             #
-            #response = self._run_action_code_multi() # Isnt it run()??????
-            # if it is res.partner then comment can work, other models might be description - so watch out for that
-            # Here is the code that words on the code tab
-            # - action =agent.prompt_agent(session=session, context="ai_company_context", document="whether", question="What is the whether like today?")
-            #rec.write({'comment': markdown.markdown(response)})
 
     def _cron_values(self, **kwarg):
         return {
@@ -388,8 +472,20 @@ class AIQuest(models.Model):
             'prompt_template': prompt_template,
             'company_id': self.env.user.company_id,
             'context': self.env.context,
-            # 'mail':
-            **kw
+
+            **kw,
+
+            # langgraph
+            'START': START,
+            'END': END,
+            'ToolNode': ToolNode,
+            'StateGraph': StateGraph,
+            'MessagesState': MessagesState,
+            'HumanMessage': HumanMessage,
+            'ChatOpenAI': ChatOpenAI,
+
+            'MemorySaver': MemorySaver,
+            # 'DuckDuckGoSearchRun': DuckDuckGoSearchRun()
         })
         return eval_context
 
@@ -429,13 +525,6 @@ class AIQuest(models.Model):
                 # call the multi method
                 run_self = action.with_context(eval_context['env'].context)
                 res = runner(run_self, eval_context=eval_context)
-
-                # action = agent.prompt_agent(
-                #     session=session,
-                #     context="ai_company_context",
-                #     document="whether",
-                #     question="What is the whether like today?"
-                # )
 
                 return res
             else:
