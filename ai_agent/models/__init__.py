@@ -5,3 +5,6 @@ from . import ai_agent
 from . import ai_agent_llm
 from . import ai_agent_data
 from . import product_template
+from . import res_company
+from . import res_users
+from . import mail

@@ -16,7 +16,7 @@ class ProductTemplate(models.Model):
     @api.depends("ai_session_lines_ids")
     def compute_session_line_count(self):
         for record in self:
-            record.session_line_count = len(record.ai_session_lines_ids)
+            record.session_line_count = sum([l.token_sys or 0 for l in record.ai_session_lines_ids])
 
 
     def create_llm(self):
@@ -33,7 +33,7 @@ class ProductTemplate(models.Model):
 
     def action_get_session_lines(self):
         action = {
-            'name': 'Session Lines',
+            'name': 'Tokens',
             'type': 'ir.actions.act_window',
             'res_model': 'ai.quest.session.line',
             'view_mode': 'tree,form',

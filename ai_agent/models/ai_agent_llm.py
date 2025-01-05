@@ -55,7 +55,8 @@ class AIAgentLLM(models.Model):
         default="not_confirmed")
     status_color = fields.Integer(compute="compute_status_color")
     tag_ids = fields.Many2many(comodel_name='product.tag', string='Tags')
-
+    image_128 = fields.Image("Image", max_width=128, max_height=128, related="product_tmpl_id.image_128")
+    
 
     def action_get_quests(self):
         action = {
@@ -104,7 +105,7 @@ class AIAgentLLM(models.Model):
     @api.depends("session_line_ids")
     def compute_session_line_count(self):
         for record in self:
-            record.session_line_count = len(record.session_line_ids)
+            record.session_line_count = sum([l.token_sys or 0 for l in record.session_line_ids])
 
     @api.depends("session_line_ids")
     def compute_session_count(self):

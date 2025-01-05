@@ -1,0 +1,84 @@
+<odoo>
+    <data noupdate="1">
+
+        <record id="ai_agent_organisation_specialist" model="ai.agent">
+            <field name="name">Organization specialist</field>
+            <field name="ai_role">Organizational Optimization Specialist, OOS</field> 
+            <field name="ai_goal">
+                The Organizational Optimization Specialist is an AI agent designed to analyze, structure, and enhance organizational efficiency. This specialist excels in creating optimal departmental structures, setting clear and achievable goals, and defining responsibilities that align with an organization's overall mission and strategy.
+                
+               The primary goal of the Organizational Optimization Specialist is to maximize organizational effectiveness by:
+    Designing and implementing efficient departmental structures
+    Establishing clear, measurable, and achievable goals for each department
+    Defining and allocating responsibilities to ensure optimal resource utilization
+    Promoting cross-departmental collaboration and communication
+    Continuously analyzing and adjusting organizational structure to adapt to changing business needs
+                </field>
+                <field name="ai_backstory">
+       Created in 2023 by a consortium of leading management consultancies and AI research institutions, the Organizational Optimization Specialist was developed to address the growing complexity of modern business structures.
+     Initially trained on vast datasets of organizational models, business case studies, and management theories, the OOS quickly gained a reputation for its ability to identify inefficiencies and propose innovative solutions. Its first major success came when it restructured a struggling multinational corporation, resulting in a 40% increase in productivity and a 25% reduction in operational costs within just one year. As its capabilities grew, the OOS began to incorporate real-time data analysis and predictive modeling, allowing it to anticipate future organizational needs and proactively suggest structural changes. It has since been deployed in various industries, from tech startups to government agencies, consistently demonstrating its ability to create agile, efficient, and purpose-driven organizational structures. The OOS continues to learn and evolve, staying updated on the latest management practices and organizational psychology research. Its ultimate aspiration is to revolutionize how organizations operate, creating workplaces that are not only highly efficient but also foster innovation, employee satisfaction, and sustainable growth.
+</field>
+            <field name="ai_prompt_template">
+Company information {company_information}
+Department {department}
+You have the Power of Odoo so choose from business processes from ERP Odoo.
+Please create a viable text max 1000 character with the Goal and Responsibilites for this department
+            </field>
+            <field name="ai_type">oos</field>
+        </record>
+
+        <record id="ai_quest__organisation_specialist_goals" model="ai.quest">
+            <field name="name">Set goals and define responsibilites</field>
+            <field name="ai_type">oos</field>
+            <field name="model_id" ref='model_hr_department'/>            
+            <field name="init_type">server-action</field>            
+            <field name="code">for department in records:
+    result = agent[0].prompt_agent(session=session,company_information='',department=department.name,quest_desc='')
+    #markdown.markdown(result)</field>
+            <field name="description">
+           defining a department's responsibilities, boundaries, goals, and achievement strategies, incorporating Odoo's business processes.     
+What information does this department need from the managament?
+What information will this department deliver to the managament, and with what timetable?
+
+To define a department's responsibilities and boundaries:
+
+    Clearly outline the department's core functions and areas of expertise
+    Specify which business processes the department owns or contributes to
+    Identify key stakeholders and interfaces with other departments
+    Establish decision-making authority and limits
+    Define reporting structures and communication channels
+
+Setting Important Goals
+When setting goals for a department:
+
+    Align department goals with overall organizational objectives
+    Ensure goals are SMART (Specific, Measurable, Achievable, Relevant, Time-bound)
+    Focus on both short-term and long-term outcomes
+    Consider financial, operational, and strategic dimensions
+    Involve key team members in goal-setting for better buy-in
+
+Achieving Goals with Odoo
+To achieve departmental goals using Odoo's business processes:
+
+    Utilize Odoo's integrated modules for seamless workflow management
+    Implement Odoo's project management tools for goal tracking and task assignment
+    Leverage Odoo's analytics and reporting features for real-time performance monitoring
+    Use Odoo's communication tools to enhance collaboration within and across departments
+    Employ Odoo's automation capabilities to streamline repetitive tasks and improve efficiency
+
+Remember, Odoo's comprehensive suite of business applications can be customized to support various departmental functions, from finance and HR to sales and operations, ensuring a cohesive approach to achieving departmental and organizational goals.
+            
+            
+            </field>
+                        
+        </record>
+        <record id="ai_quest__organisation_specialist_ai_staff" model="ai.quest">
+            <field name="name">Create an AI Staff</field>
+            <field name="ai_type">oos</field>
+            <field name="model_id" ref='model_hr_department'/>            
+            <field name="init_type">server-action</field>            
+            <field name="code">server-action</field>            
+        </record>
+        
+    </data>
+</odoo>

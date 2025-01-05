@@ -4,8 +4,10 @@ from langchain_core.prompts import PromptTemplate
 from langchain_openai import ChatOpenAI
 from langchain_mistralai import ChatMistralAI
 from langchain_groq import ChatGroq
+from langchain_anthropic import ChatAnthropic
 from httpx import HTTPStatusError
 from random import randint
+
 
 # from langchain_core.output_parsers import StrOutputParse
 
@@ -53,6 +55,8 @@ class AIAgent(models.Model):
         selection=[("draft", _("Draft")), ("active", _("Active")), ("done", _("Done")), ("error", _("Error"))],        
         default="draft")
     tag_ids = fields.Many2many(comodel_name='product.tag', string='Tags')
+    image_128 = fields.Image("Image", max_width=128, max_height=128)
+    
 
     def action_get_quests(self):
         action = {
@@ -90,7 +94,7 @@ class AIAgent(models.Model):
     @api.depends("session_line_ids")
     def compute_session_line_count(self):
         for record in self:
-            record.session_line_count = len(record.session_line_ids)
+            record.session_line_count = sum([l.token_sys or 0 for l in record.session_line_ids])
 
     @api.depends("session_line_ids")
     def compute_session_count(self):
@@ -106,8 +110,9 @@ class AIAgent(models.Model):
                 set(record.session_line_ids.filtered(lambda x: x.ai_agent_id.id == record.id).mapped('ai_quest_id')))
 
     def prompt_agent(self, test_prompt=False, parser=False, session=False, **kwargs):
+        _logger.error(f"{self=}{session=}{kwargs=}")
         self.last_run = fields.Datetime.now()
-        _logger.error(f"{session.session=}")
+        _logger.error(f"{session.session=} {self.last_run=}")
 
         if not self.ai_agent_llm_id:
             raise UserError("No LLM")
@@ -136,9 +141,9 @@ class AIAgent(models.Model):
 
         if response and session:
             session.ai_agent_llm_id = self.ai_agent_llm_id
-            session.store_session_data(response)
-
-        return response.content if response else ""
+            # ~ session.store_session_data(response)
+            return response
+        return None
 
     def _create_ai_template_prompt(self, kwargs, test_prompt=False, parser=False, ):
         template = PromptTemplate(

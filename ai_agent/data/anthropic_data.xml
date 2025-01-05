@@ -7,6 +7,14 @@
       <field name="name">Anthropic</field>
       <field name="is_llm">True</field>
       <field name="llm_type">ChatAnthropic</field>
+      <field name="image_1920" type="base64" file="ai_agent/static/img/anthropic_logo.png" />
+    </record>
+    <record id="anthropic_res_partner" model="res.partner">
+      <field name="name">Anthropic PBC</field>
+      <field name="is_company">1</field>
+      <field name="country_id" ref="base.us" />
+      <field name="website">https://www.anthropic.com/</field>
+      <field name="image_1920" type="base64" file="ai_agent/static/img/anthropic_logo.png" />
     </record>
     <!-- Model -->
     <record id="anthropic_product_attribute_value_claude-3-5-sonnet-latest" model="product.attribute.value">
@@ -41,6 +49,14 @@
                             ref('anthropic_product_attribute_value_claude-3-haiku-latest'),
                     ])]" />
     </record>
+<!--
+    <record id="anthropic_product_supplierinfo_1" model="product.supplierinfo">
+      <field name="product_id" ref="anthropic_product_template" />
+      <field name="partner_id" ref="anthropic_res_partner" />
+      <field name="price">0.0034</field>
+      <field name="currency_id" ref="base.USD" />
+    </record>
+-->
     <!-- Token Type -->
     <record id="anthropic_product_template_attribute_line_token_type" model="product.template.attribute.line">
       <field name="product_tmpl_id" ref="anthropic_product_template" />

@@ -53,6 +53,7 @@
         "views/ai_quest_session_views.xml",
         "views/ai_quest_session_line_views.xml",
         "views/product_template_views.xml",
+        "views/res_company_views.xml",
     ],
     "external_dependencies": {
         "python": [
@@ -60,7 +61,7 @@
         ],
     },
     "demo": [],
-    "application": False,
+    "application": True,
     "installable": True,
     "auto_install": False,
     # "post_init_hook": "post_init_hook",

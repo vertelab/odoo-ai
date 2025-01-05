@@ -12,8 +12,8 @@
       </div>
       
        <div name="button_box" position="inside">
-              <button name="action_get_session_lines" class="oe_stat_button" type="object" icon="fa-list">
-                <field string="Session Lines" name="session_line_count" widget="statinfo" />
+              <button name="action_get_session_lines" class="oe_stat_button" type="object" icon="fa-money">
+                <field string="Tokens" name="session_line_count" widget="statinfo" />
               </button>
         </div>
       

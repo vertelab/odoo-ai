@@ -4,7 +4,7 @@
         <field name="name">ai.quest.session.line.list</field>
         <field name="model">ai.quest.session.line</field>
         <field name="arch" type="xml">
-<tree string="AI Quest Session Lines">
+<tree string="Tokens">
     <field name="datetime"/>
     <field name="display_name"/>
     <field name="ai_quest_session_id"/>
@@ -15,8 +15,8 @@
     <field name="commercial_partner_id" optional="hide"/>
     <field name="user_id" optional="hide"/>
     <field name="product_tmpl_id" optional="hide"/>
-    <field name="token" optional="hide"/>
-    <field name="token_sys" optional="hide"/>
+    <field name="token" optional="show"  sum="Total Tokens" />
+    <field name="token_sys" optional="show" sum="Total System Tokens"/>
     <field name="token_monetary" optional="hide"/>
     <field name="token_currency" optional="hide"/>
     <field name="system_fingerprint" optional="hide"/>
@@ -113,7 +113,7 @@
         </field>
     </record>
     <record id="action_ai_quest_session_line" model="ir.actions.act_window">
-        <field name="name">Session Lines</field>
+        <field name="name">Tokens</field>
         <field name="res_model">ai.quest.session.line</field>
         <field name="view_mode">tree,form,calendar,pivot</field>
     </record>

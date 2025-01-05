@@ -60,13 +60,19 @@
               <button name="action_get_sessions" class="oe_stat_button" type="object" icon="fa-flag-checkered">
                 <field string="Sessions" name="session_count" widget="statinfo" />
               </button>
-              <button name="action_get_session_lines" class="oe_stat_button" type="object" icon="fa-list">
-                <field string="Session Lines" name="session_line_count" widget="statinfo" />
+              <button name="action_get_session_lines" class="oe_stat_button" type="object" icon="fa-money">
+                <field string="Tokens" name="session_line_count" widget="statinfo" />
               </button>
+            </div>
+            <field name="image_128" widget="image" class="oe_avatar" />
+            <div class="oe_title">
+              <label for="name" string="Name" />
+              <h1>
+                <field name="name" class="oe_inline" modifiers="{&quot;required&quot;: true}" default_focus="1" placeholder="e.g. support" readonly="0" />
+              </h1>
             </div>
             <group>
               <group>
-                <field name="name" modifiers="{&quot;required&quot;: true}" />
                 <field name="ai_type" />
                 <field name="tag_ids" widget="many2many_tags" />
               </group>

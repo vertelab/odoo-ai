@@ -73,6 +73,7 @@ class AIQuestSessionLine(models.Model):
                     "run_id":       aimessage.id,
                     "system_fingerprint": aimessage.response_metadata.get("system_fingerprint",''),
                     "token":        token, 
+                    "token_sys":    token * 12, 
                     "token_type_id":self.env.ref(f"ai_agent.product_attribute_value_{token_type}").id,
                     "user_id":      session.user_id.id,
                 }
@@ -85,3 +86,7 @@ class AIQuestSessionLine(models.Model):
         for record in self:
             record.display_name = f"[{record.ai_quest_session_id.session}] {record.datetime}"
   
+    @api.depends("tokens")
+    def compute_token_sys(self):
+        for record in self:
+            record.token_sys = record.token * 12

@@ -6,6 +6,35 @@ import logging
 
 _logger = logging.getLogger(__name__)
 
+
+class AISessionObject(models.Model):
+    _name = 'ai.session.object'
+    _description = 'AI Sesson Object'
+
+    @api.depends('object_id')
+    def _get_model(self):
+        for record in self:
+            if record.object_id:
+                record.model_id = self.env['ir.model'].search([('model','=',record.object_id._name)],limit=1)
+
+    datetime = fields.Datetime(string='Date',default=fields.Datetime.now()) # fields.datetime.add|context_timestamp|end_of|now|start_of|substract|to_datetime|to_string|today
+    ai_quest_id = fields.Many2one(comodel_name='ai.quest', related="ai_session_id.ai_quest_id", store=True)
+    ai_session_id = fields.Many2one(comodel_name='ai.quest.session', string="", help="")
+    model_id = fields.Many2one(comodel_name='ir.model',compute=_get_model,store=True)
+    object_id = fields.Reference(string='Object',
+                                    selection=lambda m:  [(model.model, model.name) for model in m.env['ir.model'].sudo().search([])],
+                                    readonly=False, required=True)
+
+    display_name = fields.Char(string="Object",compute='_compute_display_name')
+    color = fields.Integer(related="ai_session_id.ai_quest_id.color")
+
+
+    @api.depends('object_id')
+    def _compute_display_name(self):
+        for record in self:
+            record.display_name = f"[{record.model_id.name}] {record.object_id.display_name} "
+
+
 class AIQuestSession(models.Model):
     _name = 'ai.quest.session'
     _description = 'AI Quest Session'
@@ -31,7 +60,9 @@ class AIQuestSession(models.Model):
     enddate = fields.Datetime()
     session = fields.Char(default=lambda self: str(uuid.uuid4()))
     session_line_count = fields.Integer(compute='_compute_session_line_count')
+    session_object_count = fields.Integer(compute='_compute_session_object_count')
     session_line_ids = fields.One2many(comodel_name="ai.quest.session.line", inverse_name="ai_quest_session_id")
+    session_object_ids = fields.One2many(comodel_name="ai.session.object", inverse_name="ai_session_id")
     startdate = fields.Datetime(default=fields.Datetime.now())
     status = fields.Selection(selection=[("draft",_("Draft")),("active",_("Active")),("done",_("Done")),("error",_("Error"))], default="draft")
     time_difference_ms = fields.Integer(string='Time Difference (ms)', compute='_compute_time_difference')
@@ -51,7 +82,7 @@ class AIQuestSession(models.Model):
     @api.depends('session_line_ids')
     def _compute_session_line_count(self):
         for record in self:
-            record.session_line_count = len(record.session_line_ids)
+            record.session_line_count = sum([l.token_sys or 0 for l in record.session_line_ids])
 
     def action_get_llms(self):
         action = {
@@ -96,7 +127,22 @@ class AIQuestSession(models.Model):
         }
         return action
 
-    
+    def action_get_session_objects(self):
+        action = {
+            'name': 'Objetcs',
+            'type': 'ir.actions.act_window',
+            'res_model': 'ai.session.object',
+            'view_mode': 'tree,calendar',
+            'target': 'current',
+            'domain': [("ai_session_id", '=', self.id)]
+        }
+        return action
+
+    @api.depends("session_object_ids")
+    def _compute_session_object_count(self):
+        for record in self:
+            record.session_object_count = len(record.session_object_ids)
+
     
     def _message_set_main_attachment_id(self, attachment_ids):
         thread_ids = super(AIQuestSession,self)._message_set_main_attachment_id(attachment_ids)
@@ -183,8 +229,8 @@ class AIQuestSession(models.Model):
             session.log(agent,f"[session] init {session.name=} {agent.name=}")
         return session    
     @api.model
-    def quest_init(self,quest,agents=[],debug=False):
-        _logger.warning(f"{quest.id=} {agents=}")
+    def quest_init(self,quest,debug=False):
+        _logger.warning(f"{quest.id=}")
         quest.last_run = fields.Datetime.now()
         session_ids =  self.env['ai.quest.session'].search([
                 ('ai_quest_id','=',quest.id),('status','=','active')], limit=1)
@@ -193,6 +239,7 @@ class AIQuestSession(models.Model):
             if session.debug:
                 session.log(agent,f"[session] revisit {session.name=}")
         else:
+            agents = [a.ai_agent_id for a in quest.ai_agent_ids] 
             r = {
                 'status': 'active',
                 'ai_quest_id': quest.id,
