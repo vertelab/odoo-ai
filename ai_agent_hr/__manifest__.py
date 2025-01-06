@@ -44,6 +44,9 @@
     'data': [
         'data/ai_agent_data.xml',
         'views/hr_department_views.xml',
+        'views/ai_quest_views.xml',
+        'views/ai_quest_session_views.xml',
+        'views/ai_quest_session_line_views.xml',
     ],
     'installable': True,
     'auto_install': False,

@@ -4,6 +4,8 @@ from odoo import models, fields, api, _
 from odoo.exceptions import UserError, AccessError, ValidationError
 import logging
 
+from langchain_core.messages import AIMessage, HumanMessage, ChatMessage, SystemMessage, ToolMessage
+
 _logger = logging.getLogger(__name__)
 
 
@@ -176,8 +178,18 @@ class AIQuestSession(models.Model):
             else:
                 record.time_difference_ms = 0
 
-    def store_session_data(self,aimessage,agent=None):
-        self.env['ai.quest.session.line'].new_line(self,aimessage,agent=agent, debug=self.debug)
+    def store_session_data(self,result=[],objects=[],agent=None):
+        for message in result:
+            if isinstance(message,AIMessage):
+                session.store_session_data(message)
+                self.env['ai.quest.session.line'].new_line(self,message,agent=agent, debug=self.debug)
+        if objects:
+            for o in objects:
+                self.env['ai.session.object'].create({
+                    'ai_session_id': self.id,
+                    'object_id': (o._name,o.id),
+                })
+        self.status = 'done'
 
     def log(self,obj,message):
         _logger.info(message)

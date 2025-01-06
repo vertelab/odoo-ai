@@ -62,8 +62,9 @@
                 <field string="Session Objects" name="session_object_count" widget="statinfo" />
               </button>
             </div>
-            <field name="avatar_128" invisible="0" />
-            <field name="image_128" widget="image" class="oe_avatar" />
+                        <field name="avatar_128" invisible="1"/>
+                        <field name="image_128" widget="image" class="oe_avatar" options="{'size': [90, 90], 'preview_image':'avatar_128'}"/>
+
             <div class="oe_title">
               <label for="name" string="Name" />
               <h1>
@@ -116,7 +117,6 @@
                   </tree>
                 </field>
               </page>
-              <page string="Server Action" id="server-action" attrs="{'invisible': [('init_type', '!=', 'server-action')]}" />
             </notebook>
           </sheet>
           <div class="oe_chatter">
@@ -132,7 +132,7 @@
     <field name="name">ai.quest.kanban</field>
     <field name="model">ai.quest</field>
     <field name="arch" type="xml">
-        <kanban default_group_by="status" class="o_kanban_small_column" 
+        <kanban  class="o_kanban_small_column" 
                 quick_create="false" records_draggable="false">
             <field name="id"/>
             <field name="name"/>
@@ -316,6 +316,7 @@
         </calendar>
       </field>
     </record>
+<!--
     <record id="view_ai_quest_kanban" model="ir.ui.view">
       <field name="name">ai.quest.kanban</field>
       <field name="model">ai.quest</field>
@@ -391,6 +392,7 @@
         </kanban>
       </field>
     </record>
+-->
     <record id="action_ai_quest" model="ir.actions.act_window">
       <field name="name">AI Quest</field>
       <field name="res_model">ai.quest</field>

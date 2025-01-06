@@ -1,6 +1,7 @@
 import os
 import json
 from langchain_core.prompts import PromptTemplate
+from langchain.schema import SystemMessage, HumanMessage
 from langchain_openai import ChatOpenAI
 from langchain_mistralai import ChatMistralAI
 from langchain_groq import ChatGroq
@@ -22,6 +23,11 @@ from langchain_core.prompts import PromptTemplate
 _logger = logging.getLogger(__name__)
 
 
+class DefaultDict(dict):
+    def __missing__(self, key):
+        return f'{key}: missing'  # Return an empty string or any default value you prefer
+
+
 class AIAgent(models.Model):
     _name = 'ai.agent'
     _description = 'AI Agent'
@@ -40,7 +46,7 @@ class AIAgent(models.Model):
     ai_temperature = fields.Float(string='temperature', default=0.7,                                  
             help="Temperature controls the randomness and creativity of the model's output, <1.0 more predictable and consistant "
                  ">1.0 more diverse and creative responses")
-    ai_type = fields.Selection(selection=[("default", "Default")], default="default", required=True)
+    ai_type = fields.Selection(selection=[("default", "Default"),('ai-programmer','AI Programmer')], default="default", required=True)
     color = fields.Integer(default=lambda self: randint(1, 11))
     debug = fields.Boolean(string='Debug')
     is_favorite = fields.Boolean()
@@ -118,12 +124,27 @@ class AIAgent(models.Model):
             raise UserError("No LLM")
 
         response = False
+          
+        # Create system message with agent context
+        system_message = SystemMessage(content=f"""
+Role: {self.ai_role}
+Goal: {self.ai_goal}
+Backstory: {self.ai_backstory}
 
-        try:
-            response = eval(self.ai_agent_llm_id.get_llm()).invoke(
-                self._create_ai_template_prompt(kwargs, test_prompt, parser)
-            )
-
+Context and Guidelines:
+- Always maintain the specified role
+- Focus on achieving the defined goal
+- Use the backstory to inform your responses
+""")
+        human = HumanMessage(content=self.ai_prompt_template.format_map(DefaultDict(kwargs)))
+        try:            
+            _logger.error(f"{system_message=}{self._create_ai_template_prompt(kwargs, test_prompt, parser)=}")
+            response = eval(self.ai_agent_llm_id.get_llm()).invoke([system_message,human])
+            # ~ response = eval(self.ai_agent_llm_id.get_llm()).invoke([
+                    # ~ system_message,
+                    # ~ self._create_ai_template_prompt(kwargs, test_prompt, parser)]
+            # ~ )
+            _logger.error(f"{response=}")
         except HTTPStatusError as e:
             self.ai_agent_llm_id.log_message(body=e, is_error=True)
             _logger.error(f"HTTPStatusError {e=}")

@@ -112,7 +112,7 @@ class AIQuest(models.Model):
     ai_agent_ids = fields.One2many(comodel_name='ai.quest.agent', inverse_name='ai_quest_id', string="",
                                    help="")  # domain|context|auto_join|limit
     agent_count = fields.Integer(compute="compute_agent_count")
-    ai_type = fields.Selection(selection=[("default", "Default")], default="default")
+    ai_type = fields.Selection(selection=[("default", "Default"),('ai-programmer','AI Programmer')], default="default", required=True)
     color = fields.Integer(default=lambda self: randint(1, 11))
     description = fields.Text()
     init_type = fields.Selection(
@@ -337,15 +337,17 @@ class AIQuest(models.Model):
             raise ValidationError("Set a name for this quest")
         eid = list(self.get_external_id().values())[0]
         if not eid:
-            self.env['ir.model.data'].create({
-                'name': unidecode.unidecode(
-                    re.sub(
+            eid_name = unidecode.unidecode(re.sub(
                         r'[^a-zA-Z0-9åäö\s]', '', self.name.lower()
-                    ).replace(' ', '_')) + f"_{int(''.join(filter(str.isdigit, str(self.id))))}",
-                'module': 'new',
-                'model': 'ai.quest',
-                'res_id': self.id,
-            })
+                    ).replace(' ', '_')) + f"_{int(''.join(filter(str.isdigit, str(self.id))))}"
+            eid = self.env['ir.model.data'].search([('name','=',eid_name)],limit=1)
+            if not eid:
+                self.env['ir.model.data'].create({
+                    'name': eid_name,
+                    'module': 'new',
+                    'model': 'ai.quest',
+                    'res_id': self.id,
+                })
         return eid
 
     def log_message(self, body, is_error=False):
@@ -372,12 +374,9 @@ class AIQuest(models.Model):
     def server_action(self, records):
         if self.init_type == 'server-action' and self.server_action_id:
             vals = self._server_action_values(records=records)
-
-            for rec in records:
-                session=vals.get('session',self.env['ai.quest.session'].quest_init(self,debug=False))
-                res = self.run(session=session,records=records)
+            res = self.run(records=records)
                 #session.store_session_data(self,result=result)
-            self.log_message(f'server-action {records}')
+            self.log_message(f'server-action {res}')
 
             #     vals = self._server_action_values(records=records)
             #     if self.code:
@@ -399,7 +398,6 @@ class AIQuest(models.Model):
                 records={}
             vals = self._cron_values(records=records)
             result = self.run(**vals)
-            vals['session'].store_session_data(self,result=result)
     def _chat_values(self, **kwarg):
         return kwarg
     def chat(self, message):
@@ -409,7 +407,6 @@ class AIQuest(models.Model):
                       self.env['ai.quest.session'].quest_init(self)
             vals = self._chat_values(session=session,message=message)
             res = self.run(**vals)
-            vals['session'].store_session_data(self,result=res)
 
     def _mail_values(self, **kwarg):
         return kwarg
@@ -419,7 +416,6 @@ class AIQuest(models.Model):
         if self.init_type == "mail":
             vals = self._mail_values(message=message,session=session)
             res = self.run(**vals)
-            vals['session'].store_session_data(self,result=res)
 
             # parser = JsonOutputParser(pydantic_object=jsonResponse)
             # ~ agent_id = self.ai_agent_ids[0].ai_agent_id
@@ -566,6 +562,8 @@ class AIQuest(models.Model):
 
         eval_context = {
             'action': action,            
+            'result': [],            
+            'objects': [],            
             'env': self.env,
             'self': self,
             'session': kw.get('session',self.env['ai.quest.session'].quest_init(self)),
@@ -598,8 +596,14 @@ class AIQuest(models.Model):
         return eval_context
 
     def run(self, **kwargs):
-        result = safe_eval(self.code,self._get_eval_context(None, kwargs),mode="exec")
-        return result
+        local_dict = {}
+        eval_context = self._get_eval_context(None, kwargs)
+        res = safe_eval(self.code,eval_context,local_dict,mode="exec",nocopy=True)
+        session = local_dict.get('session',eval_context['session'])
+        session.status = 'done'
+        objects = local_dict.get('objects',[]).extend(local_dict.get('records',[]))
+        session.store_session_data(result=local_dict.get('result'),objects=objects)
+        return local_dict
         raise UserError(f"{result=}")
         
         #for department in records:
@@ -630,9 +634,7 @@ class AIQuest(models.Model):
         safe_eval(run_self.code.strip(), eval_context, mode="exec", nocopy=True, filename=str(self))
         _logger.warning(f"{self.code=}  {eval_context=}")
         
-        objects = eval_context.get('objects',[]).extend(eval_context.get('records',[]))
-        eval_context['session'].store_session_data(self,result=eval_context['result'],objects=objects)
-
+    
         
         return eval_context.get('result',None)
 
