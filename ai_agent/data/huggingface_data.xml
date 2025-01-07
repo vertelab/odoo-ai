@@ -5,6 +5,7 @@
       <field name="name">HuggingFace</field>
       <field name="is_llm">True</field>
       <field name="llm_type">HuggingFaceHub</field>
+      <field name="image_1920" type="base64" file="ai_agent/static/img/huggingface_ai-logo.png" />
     </record>
     <record id="huggingface_product_attribute_value_gpt2" model="product.attribute.value">
       <field name="name">gpt2</field>
