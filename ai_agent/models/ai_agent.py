@@ -144,17 +144,12 @@ Context and Guidelines:
 - Use the backstory to inform your responses
 """)
         human = HumanMessage(content=self.ai_prompt_template.format_map(DefaultDict(kwargs)))
-<<<<<<< HEAD
         try: 
             if debug:           
                 self.log_message(f"{system_message=}{self._create_ai_template_prompt(kwargs, test_prompt, parser)=}")
                 _logger.error(f"{system_message=}{self._create_ai_template_prompt(kwargs, test_prompt, parser)=}")
             response = eval(self.ai_agent_llm_id.get_llm()).invoke([system_message,human])
-=======
-        try:
-            _logger.error(f"{system_message=}{self._create_ai_template_prompt(kwargs, test_prompt, parser)=}")
-            response = eval(self.ai_agent_llm_id.get_llm()).invoke([system_message, human])
->>>>>>> 403d460fff94cc12b0cf398dbaf1a6b4d3de6ce0
+
             # ~ response = eval(self.ai_agent_llm_id.get_llm()).invoke([
             # ~ system_message,
             # ~ self._create_ai_template_prompt(kwargs, test_prompt, parser)]
