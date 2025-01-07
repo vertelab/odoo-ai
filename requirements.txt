@@ -5,4 +5,6 @@ langchain-core
 langchain-openai
 langchain-mistralai
 langchain-groq
+langchain_anthropic
+langgraph
 markdown
