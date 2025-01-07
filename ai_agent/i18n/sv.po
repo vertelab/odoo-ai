@@ -7,7 +7,7 @@ msgstr ""
 "Project-Id-Version: Odoo Server 16.0-20241230\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2025-01-07 10:42+0000\n"
-"PO-Revision-Date: 2025-01-07 16:06+0100\n"
+"PO-Revision-Date: 2025-01-07 16:30+0100\n"
 "Last-Translator: \n"
 "Language-Team: \n"
 "Language: sv\n"
@@ -354,7 +354,7 @@ msgstr "Ai Llm Räkning"
 #: model:ir.model.fields,field_description:ai_agent.field_ai_agent__ai_prompt_template
 #: model:ir.model.fields,field_description:ai_agent.field_ai_agent_test_wizard__ai_prompt_template
 msgid "Ai Prompt Template"
-msgstr "Ai Prompt Mall"
+msgstr "Mall för AI-Instruktion"
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest_agent__ai_quest_id
@@ -492,7 +492,7 @@ msgstr "Chattanvändare"
 #. module: ai_agent
 #: model:ir.model.fields.selection,name:ai_agent.selection__ai_quest__init_type__channel
 msgid "Chat with Channel"
-msgstr "Chatta med kanalen"
+msgstr "Chatta med kanal"
 
 #. module: ai_agent
 #: model:ir.model.fields.selection,name:ai_agent.selection__ai_quest__init_type__chat
@@ -860,12 +860,12 @@ msgstr "Har meddelande"
 #. module: ai_agent
 #: model:ir.model.fields,help:ai_agent.field_ai_quest__init_type
 msgid "How the Quest is initialized"
-msgstr "Hur Quest initialiseras"
+msgstr "Hur uppdraget initsieras"
 
 #. module: ai_agent
 #: model:product.template,name:ai_agent.huggingface_product_template
 msgid "HuggingFace"
-msgstr "Kramande ansikte"
+msgstr "HuggingFace"
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_agent__id
@@ -941,7 +941,7 @@ msgstr "Bild"
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest__init_type
 msgid "Initiate"
-msgstr "Inleda"
+msgstr "Initiera"
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_agent__is_favorite
@@ -1041,7 +1041,7 @@ msgstr "Senast ändrad den"
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest__last_run
 #: model_terms:ir.ui.view,arch_db:ai_agent.ai_agent_llm_search
 msgid "Last Run"
-msgstr "Sista körningen"
+msgstr "Senaste körningen"
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_agent__write_uid
@@ -1879,7 +1879,7 @@ msgstr "gemini pro"
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.google_llm_product_attribute_value_gemini-pro-vision
 msgid "gemini-pro-vision"
-msgstr "gemini-provision"
+msgstr "gemini-pro-vision"
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.groq_product_attribute_value_gemma2-9b-it
@@ -2089,12 +2089,12 @@ msgstr "text-bison-001"
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.open_ai_product_attribute_value_text-embedding-3-large
 msgid "text-embedding-3-large"
-msgstr "text-inbäddning-3-large"
+msgstr "text-embedding-3-large"
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.open_ai_product_attribute_value_text-embedding-3-small
 msgid "text-embedding-3-small"
-msgstr "text-inbäddning-3-small"
+msgstr "text-embedding-3-small"
 
 #. module: ai_agent
 #: model:product.attribute,name:ai_agent.product_attribute_token_type
