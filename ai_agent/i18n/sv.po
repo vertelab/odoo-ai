@@ -7,7 +7,7 @@ msgstr ""
 "Project-Id-Version: Odoo Server 16.0-20241230\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2025-01-07 10:42+0000\n"
-"PO-Revision-Date: 2025-01-07 13:31+0100\n"
+"PO-Revision-Date: 2025-01-07 14:23+0100\n"
 "Last-Translator: \n"
 "Language-Team: \n"
 "Language: sv\n"
@@ -20,7 +20,7 @@ msgstr ""
 #. module: ai_agent
 #: model_terms:ir.ui.view,arch_db:ai_agent.view_ai_agent_kanban
 msgid "<i class=\"fa fa-clock-o\" title=\"Date\"/>"
-msgstr "<i class=\"fa fa-clock-o\" title=\"Datum\"/>"
+msgstr "<i class=\"fa fa-clock-o\" title=\"Datum\"/>e"
 
 #. module: ai_agent
 #: model_terms:ir.ui.view,arch_db:ai_agent.ai_agent_llm_kanban
@@ -1019,7 +1019,7 @@ msgstr "LLM Typ"
 #: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_form
 #: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_session_form
 msgid "LLMs"
-msgstr "Magisterexamen"
+msgstr "LLMs"
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_agent____last_update
