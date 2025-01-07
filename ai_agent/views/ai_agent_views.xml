@@ -134,6 +134,9 @@
                                 <div class="oe_kanban_details">
                                     <div class="o_kanban_record_top mb-0">
                                         <div class="o_kanban_record_headings">
+                                            <span style="margin-right: 5px;">
+                                                <field name="is_favorite" widget="boolean_favorite" nolabel="1" force_save="1" />
+                                            </span>
                                             <strong class="o_kanban_record_title">
                                                 <field name="name"/>
                                             </strong>
@@ -163,9 +166,8 @@
 
                                     <div class="oe_kanban_footer mt-3">
                                          <div class="o_kanban_record_bottom">
-                                            <div class="oe_kanban_bottom_left">
-                                                <field name="is_favorite" widget="boolean_favorite" nolabel="1" force_save="1" />
-                                            </div>
+                                            <div class="oe_kanban_bottom_left"/>
+
                                             <div class="oe_kanban_bottom_right">
                                                 <t t-if="record.last_run.value != False">
                                                     <span class="fa fa-clock-o me-2" title="Dates" />

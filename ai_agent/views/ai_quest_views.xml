@@ -154,6 +154,11 @@
                                 <div class="oe_kanban_details">
                                     <div class="o_kanban_record_top mb-0">
                                         <div class="o_kanban_record_headings">
+
+                                            <span style="margin-right: 5px;">
+                                                <field name="is_favorite" widget="boolean_favorite" nolabel="1" force_save="1" />
+                                            </span>
+
                                             <strong class="o_kanban_record_title">
                                                 <field name="name"/>
                                             </strong>
@@ -189,7 +194,7 @@
                                                 <field name="init_type"/>
                                             </div>
                                             <div class="oe_kanban_bottom_right">
-                                                <field name="is_favorite" widget="boolean_favorite" nolabel="1" force_save="1" />
+<!--                                                <field name="is_favorite" widget="boolean_favorite" nolabel="1" force_save="1" />-->
                                                 <field name="user_id" widget="many2one_avatar_user"/>
                                             </div>
                                         </div>
