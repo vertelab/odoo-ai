@@ -110,6 +110,10 @@ class AIQuest(models.Model):
     _inherit = ["mail.thread", "mail.activity.mixin", "mail.alias.mixin"]
     _description = 'AI Quest'
 
+    @api.model
+    def _generate_random_token(self):
+        return ''.join(choice('abcdefghijkmnopqrstuvwxyzABCDEFGHIJKLMNPQRSTUVWXYZ23456789') for _i in range(10))
+
     ai_agent_ids = fields.One2many(comodel_name='ai.quest.agent', inverse_name='ai_quest_id', string="",
                                    help="")  # domain|context|auto_join|limit
     agent_count = fields.Integer(compute="compute_agent_count")
@@ -163,17 +167,16 @@ class AIQuest(models.Model):
     image_128 = fields.Image("Image", max_width=128, max_height=128)
     avatar_128 = fields.Image("Avatar", max_width=128, max_height=128, compute='_compute_avatar_128')
 
-    @api.model
-    def _generate_random_token(self):
-        return ''.join(choice('abcdefghijkmnopqrstuvwxyzABCDEFGHIJKLMNPQRSTUVWXYZ23456789') for _i in range(10))
+    uuid = fields.Char('UUID', size=50, default=_generate_random_token, copy=False)
 
-    @api.depends('init_type', 'image_128', )
+    @api.depends('init_type', 'image_128', 'uuid')
     def _compute_avatar_128(self):
         for record in self:
             record.avatar_128 = record.image_128 or record._generate_avatar()
 
     def _generate_avatar(self):
         _logger.warning('avatal')
+        print("uuid", self.uuid)
         avatar = {
             'manual': avatar_manual,
             'mail': avatar_mail,
@@ -182,7 +185,9 @@ class AIQuest(models.Model):
             'cron': avatar_cron,
             'server-action': avatar_cron,
         }[self.init_type]
-        avatar = avatar.replace('fill="#875a7b"', f'fill="{get_hsl_from_seed(self._generate_random_token())}"')
+        bgcolor = get_hsl_from_seed(self.uuid)
+        avatar = avatar.replace('fill="#875a7b"', f'fill="{bgcolor}"')
+        print(avatar)
         return base64.b64encode(avatar.encode())
 
     @api.depends('session_line_ids')
