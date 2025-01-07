@@ -30,20 +30,19 @@ class AIAgent(models.Model):
     _description = 'AI Agent'
     _inherit = ["mail.thread", "mail.activity.mixin"]
 
-
-    # ~ session_ids = fields.One2many(comodel_name="ai.quest.session", )
     ai_agent_data_ids = fields.One2many(comodel_name="ai.agent.data", inverse_name="agent_id")
-    ai_agent_llm_id = fields.Many2one(comodel_name="ai.agent.llm", string="LLM", help="Choose Large Language Model",      
+    ai_agent_llm_id = fields.Many2one(comodel_name="ai.agent.llm", string="LLM", help="Choose Large Language Model",
                                       domain="[('status','=','confirmed')]")
     ai_backstory = fields.Text(string="Backstory")
     ai_discription = fields.Text()
     ai_goal = fields.Text(string="Goal")
     ai_prompt_template = fields.Html()
     ai_role = fields.Char(string="Role")
-    ai_temperature = fields.Float(string='temperature', default=0.7,                                  
-            help="Temperature controls the randomness and creativity of the model's output, <1.0 more predictable and consistant "
-                 ">1.0 more diverse and creative responses")
-    ai_type = fields.Selection(selection=[("default", "Default"),('ai-programmer','AI Programmer')], default="default", required=True)
+    ai_temperature = fields.Float(string='temperature', default=0.7,
+                                  help="Temperature controls the randomness and creativity of the model's output, "
+                                       "<1.0 more predictable and consistent >1.0 more diverse and creative responses")
+    ai_type = fields.Selection(selection=[("default", "Default"), ('ai-programmer', 'AI Programmer')],
+                               default="default", required=True)
     color = fields.Integer(default=lambda self: randint(1, 11))
     debug = fields.Boolean(string='Debug')
     is_favorite = fields.Boolean()
@@ -54,12 +53,17 @@ class AIAgent(models.Model):
     session_count = fields.Integer(compute="compute_session_count")
     session_line_count = fields.Integer(compute="compute_session_line_count")
     session_line_ids = fields.One2many(comodel_name="ai.quest.session.line", inverse_name="ai_agent_id")
-    status = fields.Selection(        
-        selection=[("draft", _("Draft")), ("active", _("Active")), ("done", _("Done")), ("error", _("Error"))],        
+    status = fields.Selection(
+        selection=[("draft", _("Draft")), ("active", _("Active")), ("done", _("Done")), ("error", _("Error"))],
         default="draft")
     tag_ids = fields.Many2many(comodel_name='product.tag', string='Tags')
     image_128 = fields.Image("Image", max_width=128, max_height=128)
-    
+    base_image_128 = fields.Image("Base Image", max_width=128, max_height=128, compute='_compute_base_image_128')
+
+    @api.depends('image_128')
+    def _compute_base_image_128(self):
+        for record in self:
+            record.base_image_128 = record.image_128 or record.ai_agent_llm_id.image_128
 
     def action_get_quests(self):
         action = {
@@ -112,16 +116,20 @@ class AIAgent(models.Model):
             record.quest_count = len(
                 set(record.session_line_ids.filtered(lambda x: x.ai_agent_id.id == record.id).mapped('ai_quest_id')))
 
-    def prompt_agent(self, test_prompt=False, parser=False, session=False, **kwargs):
-        _logger.error(f"{self=}{session=}{kwargs=}")
+    def prompt_agent(self, test_prompt=False, parser=False, session=False,debug=False, **kwargs):
+        if debug:
+            _logger.error(f"{self=}{session=}{kwargs=}")
         self.last_run = fields.Datetime.now()
-        _logger.error(f"{session.session=} {self.last_run=}")
+        if debug:
+            _logger.error(f"{session.session=} {self.last_run=}")
 
         if not self.ai_agent_llm_id:
+            if debug:
+                self.log_message("No LLM")
             raise UserError("No LLM")
 
         response = False
-          
+
         # Create system message with agent context
         system_message = SystemMessage(content=f"""
 Role: {self.ai_role}
@@ -135,14 +143,25 @@ Context and Guidelines:
 """)
 
         # human = HumanMessage(content=self.ai_prompt_template.format_map(DefaultDict(kwargs)))
-        try:            
-            # _logger.error(f"{system_message=}{self._create_ai_template_prompt(kwargs, test_prompt, parser)=}")
-            # response = eval(self.ai_agent_llm_id.get_llm()).invoke([system_message,human])
-            response = eval(self.ai_agent_llm_id.get_llm()).invoke(
-                [
-                    self._create_ai_template_prompt(kwargs, test_prompt, parser)
-                ]
-            )
+        # try:            
+        #     # _logger.error(f"{system_message=}{self._create_ai_template_prompt(kwargs, test_prompt, parser)=}")
+        #     # response = eval(self.ai_agent_llm_id.get_llm()).invoke([system_message,human])
+        #     response = eval(self.ai_agent_llm_id.get_llm()).invoke(
+        #         [
+        #             self._create_ai_template_prompt(kwargs, test_prompt, parser)
+        #         ]
+        #     )
+        human = HumanMessage(content=self.ai_prompt_template.format_map(DefaultDict(kwargs)))
+        try: 
+            if debug:           
+                self.log_message(f"{system_message=}{self._create_ai_template_prompt(kwargs, test_prompt, parser)=}")
+                _logger.error(f"{system_message=}{self._create_ai_template_prompt(kwargs, test_prompt, parser)=}")
+            response = eval(self.ai_agent_llm_id.get_llm()).invoke([system_message,human])
+
+            # ~ response = eval(self.ai_agent_llm_id.get_llm()).invoke([
+            # ~ system_message,
+            # ~ self._create_ai_template_prompt(kwargs, test_prompt, parser)]
+            # ~ )
             _logger.error(f"{response=}")
         except HTTPStatusError as e:
             self.ai_agent_llm_id.log_message(body=e, is_error=True)
@@ -188,4 +207,3 @@ Context and Guidelines:
             self.status = "error"
         self.last_run = fields.Datetime.now()
         self.message_post(body=f"{body} | {self.last_run}", message_type="notification")
-

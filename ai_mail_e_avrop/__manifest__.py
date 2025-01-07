@@ -20,8 +20,8 @@
 ##############################################################################
 
 {
-    'name': 'Mail AI: Mailbox for AI',
-    'version': '16.01.0.3',
+    'name': 'odoo-ai: Mailbox for AI',
+    'version': '1.0.3',
     # Version ledger: 16.0 = Odoo version. 1 = Major. Non regressionable code. 2 = Minor. New features that are regressionable. 3 = Bug fixes
     'summary': 'Mailbox for AI',
     # Categories can be used to filter modules in modules listing
@@ -33,7 +33,7 @@
     """,
     #'sequence': '1',
     'author': 'Vertel AB',
-    'website': 'https://vertel.se/apps/odoo-ai/chat_ai_bot_oi',
+    'website': 'https://vertel.se/apps/odoo-ai/ai_mail_e_avrop',
     'images': ['static/description/banner.png'],  # 560x280 px.
     'license': 'AGPL-3',
     'contributor': '',

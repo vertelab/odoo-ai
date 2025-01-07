@@ -38,17 +38,21 @@
       <field name="name">Set goals and define responsibilites</field>
       <field name="ai_type">oos</field>
       <field name="model_id" ref='model_hr_department' />
-            <field name="server_action_id" ref="ai_quest__organisation_specialist_goals_server_agent"/>
-
+      <field name="server_action_id" ref="ai_quest__organisation_specialist_goals_server_agent"/>
       <field name="init_type">server-action</field>
       <field name="code">for department in records:
-    result = agents[0].prompt_agent(session=session,department=department.name,
+    result = agents[0].prompt_agent(session=session,debug=quest.debug,department=department.name,
                                     company_information=f"{company_id.name=} {company_id.company_mission=} {company_id.company_values=}",
-                                    quest_instructions=quest.description)
-    department.write({'goals_responsibilities': quest.markdown2html(result.content)})
+                                    quest_instructions=quest.description,quest_list=[])
+    if result:
+        department.write({'goals_responsibilities': quest.markdown2html(result.content)})
+    elif quest.debug:
+        department.message_post(body=f"no result {result=}", message_type="notification")
+        continue
+    else:
+        continue
       </field>
-      <field name="description">
-        As an AI Organizational Specialist, your task is to analyze and optimize the structure, goals, and responsibilities of the [DEPARTMENT_NAME] department. Consider the company's overall mission, vision, and strategic objectives when formulating your recommendations. Your analysis should cover the following areas:
+      <field name="description">As an AI Organizational Specialist, your task is to analyze and optimize the structure, goals, and responsibilities of the [DEPARTMENT_NAME] department. Consider the company's overall mission, vision, and strategic objectives when formulating your recommendations. Your analysis should cover the following areas:
         
         1. Department Responsibilities and Boundaries:
         - Core functions and areas of expertise
@@ -109,8 +113,7 @@
       <field name="server_action_id" ref="ai_quest__organisation_specialist_ai_staff_server_agent"/>
       <field name="model_id" ref='model_hr_department' />
       <field name="init_type">server-action</field>
-      <field name="description">
-        As an AI Organizational Specialist, your task is to create a team of AI staff members to support the department in achieving its goals,
+      <field name="description">As an AI Organizational Specialist, your task is to create a team of AI staff members to support the department in achieving its goals,
         fulfilling its responsibilities, and managing both internal and management reporting. Each AI staff member should be designed as an ai.quest, functioning as an agentic 
         co-worker.
         
@@ -138,12 +141,14 @@
       <field name="code">objects=[]
 for department in records:
     quest_list = [{'name': q.name, 'description': q.description, 'init_type': q.init_type} for q in self.env['ai.quest'].search([('department_id','=',department.id)])]
-    result = agents[0].prompt_agent(session=session,department=f"{department.name=} {department.goals_responsibilities=}",
+    result = agents[0].prompt_agent(session=session,debug=quest.debug,department=f"{department.name=} {department.goals_responsibilities=}",
                                     company_information=f"{company_id.name=} {company_id.company_mission=} {company_id.company_values=}",
                                     quest_instructions=quest.description, quest_list=quest_list)
-    _logger.warning(f"{quest.extract_dicts(result.content)=}")
+    if quest.debug:
+        _logger.warning(f"{quest.extract_dicts(result.content)=}")
     for  ai_staff in quest.extract_dicts(result.content):
-        _logger.warning(f"Quest to create {ai_staff=}")
+        if quest.debug:
+            _logger.warning(f"Quest to create {ai_staff=}")
         objects.append(env['ai.quest'].create({
                     'name': ai_staff['name'],
                     'description': f"{ai_staff['description']}",

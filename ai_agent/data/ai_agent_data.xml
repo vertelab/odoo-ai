@@ -42,14 +42,15 @@ Questra's ultimate aspiration is to elevate organizational efficiency and innova
       <field name="code"><![CDATA[agent_ids=[]
 for quest in records:
     agent_list = [{'name': a.name, 'role': a.ai_role,'goal': a.ai_goal,'template': a.ai_prompt_template,} for a in self.env['ai.agent'].search([])]
-    result = agents[0].prompt_agent(session=session,
+    result = agents[0].prompt_agent(session=session,debug=quest.debug,
                                     company_information=f"{company_id.name=} {company_id.company_mission=} {company_id.company_values=}",
                                     quest_name=quest.name,quest_description=quest.description,quest_init_type=quest.init_type, quest_model=quest.model_id.model,
                                     agent_list=agent_list,
                                     tools=['websearch','news_search','company_financial_information','webscraping'],
                                     )
-    _logger.warning(f"{result=}")
-    _logger.warning(f"{quest.extract_dicts(result.content)=}")
+    if quest.debug:
+        _logger.warning(f"{result=}")
+        _logger.warning(f"{quest.extract_dicts(result.content)=}")
     for  agent in quest.extract_dicts(result.content).get('new_agents',{}):
             agent_ids.append(env['ai.agent'].create({
                     'name': agent['name'],
@@ -65,8 +66,7 @@ quest.write({'agent_ids': [6,0,[[a.id for a in agent_ids]]],
               'code': quest.extract_dicts(result.content).get('code',""),
             })
 ]]></field>
-      <field name="description"><![CDATA[
-As an AI Programmer Specialist, your task is to analyze, optimize, and implement the agentic quest "[QUEST_NAME]". Your objective is to create a sophisticated multi-agent system that efficiently fulfills the quest's goals while aligning with the company's mission, vision, and strategic objectives.
+      <field name="description"><![CDATA[As an AI Programmer Specialist, your task is to analyze, optimize, and implement the agentic quest "[QUEST_NAME]". Your objective is to create a sophisticated multi-agent system that efficiently fulfills the quest's goals while aligning with the company's mission, vision, and strategic objectives.
 
 1. Quest Analysis:
    - Thoroughly analyze the quest "[QUEST_NAME]", its objectives, and potential challenges.

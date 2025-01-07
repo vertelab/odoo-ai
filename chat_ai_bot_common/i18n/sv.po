@@ -7,7 +7,7 @@ msgstr ""
 "Project-Id-Version: Odoo Server 16.0-20240225\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2024-02-27 06:59+0000\n"
-"PO-Revision-Date: 2024-02-27 07:05+0000\n"
+"PO-Revision-Date: 2025-01-07 13:33+0100\n"
 "Last-Translator: \n"
 "Language-Team: \n"
 "Language: sv\n"
@@ -15,7 +15,7 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: \n"
-"X-Generator: Poedit 3.0.1\n"
+"X-Generator: Poedit 3.4.2\n"
 
 #. module: chat_ai_bot_common
 #: model_terms:ir.ui.view,arch_db:chat_ai_bot_common.view_users_form
@@ -30,12 +30,12 @@ msgstr "Alla"
 #. module: chat_ai_bot_common
 #: model:res.groups,comment:chat_ai_bot_common.group_openai_user_settings_all
 msgid ""
-"Allow self editing ALL OpenAI settings: All in Medium + OpenAI Token, Max "
-"Tokens. Warning! This will allow the user to see the OpenAI token "
+"Allow self editing ALL OpenAI settings: All in Medium + OpenAI pollett, Max "
+"Tokens. Warning! This will allow the user to see the OpenAI pollett "
 "associated with him."
 msgstr ""
 "Tillåt självredigering av ALLA OpenAI-inställningar: Allt i Medium + OpenAI "
-"Token, Max Tokens. Varning! Detta gör att användaren kan se den OpenAI-"
+"Token, Max polletts. Varning! Detta gör att användaren kan se den OpenAI-"
 "token som är associerad med honom."
 
 #. module: chat_ai_bot_common
@@ -250,8 +250,8 @@ msgstr "Openai Bas Url"
 
 #. module: chat_ai_bot_common
 #: model:ir.model.fields,field_description:chat_ai_bot_common.field_res_users__openai_max_tokens
-msgid "Openai Max Tokens"
-msgstr "Openai Max Tokens"
+msgid "Openai Max polletts"
+msgstr "Openai Max polletts"
 
 #. module: chat_ai_bot_common
 #: model:ir.model.fields,field_description:chat_ai_bot_common.field_res_users__openai_model

@@ -5,6 +5,7 @@
       <field name="name">Groq</field>
       <field name="is_llm">True</field>
       <field name="llm_type">ChatGroq</field>
+      <field name="image_1920" type="base64" file="ai_agent/static/img/groq-ai-logo.png" />
     </record>
     <!-- Model -->
     <record id="groq_product_attribute_value_distil-whisper-large-v3-en" model="product.attribute.value">
