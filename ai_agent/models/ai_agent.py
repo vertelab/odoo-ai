@@ -115,12 +115,16 @@ class AIAgent(models.Model):
             record.quest_count = len(
                 set(record.session_line_ids.filtered(lambda x: x.ai_agent_id.id == record.id).mapped('ai_quest_id')))
 
-    def prompt_agent(self, test_prompt=False, parser=False, session=False, **kwargs):
-        _logger.error(f"{self=}{session=}{kwargs=}")
+    def prompt_agent(self, test_prompt=False, parser=False, session=False,debug=False, **kwargs):
+        if debug:
+            _logger.error(f"{self=}{session=}{kwargs=}")
         self.last_run = fields.Datetime.now()
-        _logger.error(f"{session.session=} {self.last_run=}")
+        if debug:
+            _logger.error(f"{session.session=} {self.last_run=}")
 
         if not self.ai_agent_llm_id:
+            if debug:
+                self.log_message("No LLM")
             raise UserError("No LLM")
 
         response = False
@@ -137,8 +141,10 @@ Context and Guidelines:
 - Use the backstory to inform your responses
 """)
         human = HumanMessage(content=self.ai_prompt_template.format_map(DefaultDict(kwargs)))
-        try:            
-            _logger.error(f"{system_message=}{self._create_ai_template_prompt(kwargs, test_prompt, parser)=}")
+        try: 
+            if debug:           
+                self.log_message(f"{system_message=}{self._create_ai_template_prompt(kwargs, test_prompt, parser)=}")
+                _logger.error(f"{system_message=}{self._create_ai_template_prompt(kwargs, test_prompt, parser)=}")
             response = eval(self.ai_agent_llm_id.get_llm()).invoke([system_message,human])
             # ~ response = eval(self.ai_agent_llm_id.get_llm()).invoke([
                     # ~ system_message,

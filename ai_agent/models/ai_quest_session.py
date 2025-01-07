@@ -178,18 +178,23 @@ class AIQuestSession(models.Model):
             else:
                 record.time_difference_ms = 0
 
-    def store_session_data(self,result=[],objects=[],agent=None):
-        for message in result:
-            if isinstance(message,AIMessage):
-                session.store_session_data(message)
-                self.env['ai.quest.session.line'].new_line(self,message,agent=agent, debug=self.debug)
-        if objects:
-            for o in objects:
-                self.env['ai.session.object'].create({
-                    'ai_session_id': self.id,
-                    'object_id': (o._name,o.id),
-                })
-        self.status = 'done'
+    def store_session_data(self,result=None,objects=[],agent=None):
+        if result is not None:            
+            for message in result:
+                if isinstance(message,AIMessage):
+                    session.store_session_data(message)
+                    self.env['ai.quest.session.line'].new_line(self,message,agent=agent, debug=self.debug)
+            if objects:
+                for o in objects:
+                    self.env['ai.session.object'].create({
+                        'ai_session_id': self.id,
+                        'object_id': (o._name,o.id),
+                    })
+            self.status = 'done'
+        else:
+            self.status = 'error'
+            if self.ai_quest_id.debug:
+                self.message_post(body=f'Missing {result=}')   
 
     def log(self,obj,message):
         _logger.info(message)

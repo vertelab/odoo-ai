@@ -7,4 +7,5 @@ langchain-mistralai
 langchain-groq
 langchain_anthropic
 langgraph
+langchain_community
 markdown

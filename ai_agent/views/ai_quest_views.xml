@@ -100,6 +100,7 @@
                                 <field name="filter_domain" widget="domain" options="{'model': 'res.partner'}" attrs="{'invisible': [('init_type', '!=', 'cron')]}" />
                                 <field name="channel_id" attrs="{'invisible': [('init_type', '!=', 'channel')], 'required': [('init_type', '=', 'channel')]}" />
                                 <field name="chat_user_id" attrs="{'invisible': [('init_type', '!=', 'chat')], 'required': [('init_type', '=', 'chat')]}" />
+                                <field name="debug"/>
                             </group>
                         </group>
                         <notebook>

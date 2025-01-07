@@ -161,6 +161,7 @@ class AIQuest(models.Model):
     partner_id = fields.Many2one(comodel_name='res.partner',string="Customer",help="") 
     image_128 = fields.Image("Image", max_width=128, max_height=128)
     avatar_128 = fields.Image("Avatar", max_width=128, max_height=128, compute='_compute_avatar_128')
+    debug = fields.Boolean(string='Debug',help='More logging')
     
     @api.model
     def _generate_random_token(self):
@@ -597,12 +598,25 @@ class AIQuest(models.Model):
 
     def run(self, **kwargs):
         local_dict = {}
-        eval_context = self._get_eval_context(None, kwargs)
-        res = safe_eval(self.code,eval_context,local_dict,mode="exec",nocopy=True)
+        try:
+            eval_context = self._get_eval_context(None, kwargs)
+            res = safe_eval(self.code,eval_context,local_dict,mode="exec",nocopy=True)
+        except ValueError as e:
+            self.log_message(f"ValueError {e=}", is_error=True)
+            if self.debug:
+                self.log_message(f"{self.code=} {eval_context=} {local_dict=}")
+            return None
+        except Exception as e:
+            _logger.error(f"{e=}")
+            self.log_message(f" {e=}")
+
         session = local_dict.get('session',eval_context['session'])
         session.status = 'done'
         objects = local_dict.get('objects',[]).extend(local_dict.get('records',[]))
         session.store_session_data(result=local_dict.get('result'),objects=objects)
+        if self.debug:
+            self.log_message(f"{self.code=} {eval_context=} {local_dict=}")
+
         return local_dict
         raise UserError(f"{result=}")
         
