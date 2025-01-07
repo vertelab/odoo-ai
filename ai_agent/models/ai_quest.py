@@ -175,8 +175,6 @@ class AIQuest(models.Model):
             record.avatar_128 = record.image_128 or record._generate_avatar()
 
     def _generate_avatar(self):
-        _logger.warning('avatal')
-        print("uuid", self.uuid)
         avatar = {
             'manual': avatar_manual,
             'mail': avatar_mail,
@@ -187,7 +185,6 @@ class AIQuest(models.Model):
         }[self.init_type]
         bgcolor = get_hsl_from_seed(self.uuid)
         avatar = avatar.replace('fill="#875a7b"', f'fill="{bgcolor}"')
-        print(avatar)
         return base64.b64encode(avatar.encode())
 
     @api.depends('session_line_ids')
