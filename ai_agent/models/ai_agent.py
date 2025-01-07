@@ -60,6 +60,12 @@ class AIAgent(models.Model):
         default="draft")
     tag_ids = fields.Many2many(comodel_name='product.tag', string='Tags')
     image_128 = fields.Image("Image", max_width=128, max_height=128)
+    base_image_128 = fields.Image("Base Image", max_width=128, max_height=128, compute='_compute_base_image_128')
+
+    @api.depends('image_128')
+    def _compute_base_image_128(self):
+        for record in self:
+            record.base_image_128 = record.image_128 or record.ai_agent_llm_id.image_128
 
     def action_get_quests(self):
         action = {

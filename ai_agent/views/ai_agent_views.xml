@@ -129,7 +129,7 @@
                         <t t-name="kanban-box">
                             <div t-attf-class="oe_kanban_global_click o_ai_agent_kanban #{kanban_color(record.color.raw_value)}">
                                 <div class="o_kanban_image me-1">
-                                    <img t-att-src="kanban_image('ai.agent', 'image_128', record.id.raw_value)" alt="LLM Agents" class="o_image_64_contain"/>
+                                    <img t-att-src="kanban_image('ai.agent', 'base_image_128', record.id.raw_value)" alt="LLM Agents" class="o_image_64_contain"/>
                                 </div>
                                 <div class="oe_kanban_details">
                                     <div class="o_kanban_record_top mb-0">
