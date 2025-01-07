@@ -42,7 +42,7 @@ class AIAgentLLM(models.Model):
                                related='model_id.product_attribute_value_id.licence')
     llm_type = fields.Char(related="product_tmpl_id.llm_type", required=True)
     model_id = fields.Many2one(comodel_name='product.template.attribute.value', string="Model",
-                               required=True, )  # domain="[('product_tmpl_id', '=', product_tmpl_id),('attribute_id','=', ref('ai_agent.open_ai_product_attribute_model'))]")
+                               required=True, )
     name = fields.Char(required=True)
     product_tmpl_id = fields.Many2one(comodel_name='product.template', string="Provider",
                                       domain="[('is_llm','=',True)]", required=True)
@@ -56,7 +56,6 @@ class AIAgentLLM(models.Model):
     status_color = fields.Integer(compute="compute_status_color")
     tag_ids = fields.Many2many(comodel_name='product.tag', string='Tags')
     image_128 = fields.Image("Image", max_width=128, max_height=128, related="product_tmpl_id.image_128")
-    
 
     def action_get_quests(self):
         action = {

@@ -77,6 +77,7 @@ avatar_server_action = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 5
 <circle cx="345.04" cy="265.03" r="26.41" fill="#ffffff"/>
 </svg>'''
 
+
 class AIQuestAgent(models.Model):
     _name = 'ai.quest.agent'
     _description = 'AI Quest AGent'
@@ -112,7 +113,8 @@ class AIQuest(models.Model):
     ai_agent_ids = fields.One2many(comodel_name='ai.quest.agent', inverse_name='ai_quest_id', string="",
                                    help="")  # domain|context|auto_join|limit
     agent_count = fields.Integer(compute="compute_agent_count")
-    ai_type = fields.Selection(selection=[("default", "Default"),('ai-programmer','AI Programmer')], default="default", required=True)
+    ai_type = fields.Selection(selection=[("default", "Default"), ('ai-programmer', 'AI Programmer')],
+                               default="default", required=True)
     color = fields.Integer(default=lambda self: randint(1, 11))
     description = fields.Text()
     init_type = fields.Selection(
@@ -137,14 +139,13 @@ class AIQuest(models.Model):
         default="draft")
 
     alias_id = fields.Many2one(comodel_name='mail.alias', string='Alias', ondelete="restrict", required=True,
-                               help="The email address associated with this channel. New emails received will automatically create new leads assigned to the channel.")
+                               help="The email address associated with this channel. New emails received will "
+                                    "automatically create new leads assigned to the channel.")
     alias_user_id = fields.Many2one(comodel_name='res.users', related='alias_id.alias_user_id', readonly=False,
-                                    inherited=True, )  # ~ domain=lambda self: [('groups_id', 'in', self.env.ref('sales_team.group_sale_salesman_all_leads').id)]
+                                    inherited=True, )
 
-    cron_id = fields.Many2one(comodel_name='ir.cron', string="Scheduled Action", help="",
-                              ondelete="cascade")  # domain|context|ondelete="'set null', 'restrict', 'cascade'"|auto_join|delegate
-    model_id = fields.Many2one(comodel_name='ir.model', string="Model",
-                               help="Bind this Quest to yhis model")  # domain|context|ondelete="'set null', 'restrict', 'cascade'"|auto_join|delegate
+    cron_id = fields.Many2one(comodel_name='ir.cron', string="Scheduled Action", help="", ondelete="cascade")
+    model_id = fields.Many2one(comodel_name='ir.model', string="Model", help="Bind this Quest to this model")
 
     code = fields.Text(string='Python Code', groups='base.group_system',
                        default=DEFAULT_PYTHON_CODE,
@@ -157,16 +158,16 @@ class AIQuest(models.Model):
         string='Filter Name',
         related='model_id.model', readonly=False, related_sudo=True)
     tag_ids = fields.Many2many(comodel_name='product.tag', string='Tags')
-    user_id = fields.Many2one(comodel_name='res.users',string="Owner",help="") 
-    partner_id = fields.Many2one(comodel_name='res.partner',string="Customer",help="") 
+    user_id = fields.Many2one(comodel_name='res.users', string="Owner", help="")
+    partner_id = fields.Many2one(comodel_name='res.partner', string="Customer", help="")
     image_128 = fields.Image("Image", max_width=128, max_height=128)
     avatar_128 = fields.Image("Avatar", max_width=128, max_height=128, compute='_compute_avatar_128')
-    
+
     @api.model
     def _generate_random_token(self):
         return ''.join(choice('abcdefghijkmnopqrstuvwxyzABCDEFGHIJKLMNPQRSTUVWXYZ23456789') for _i in range(10))
 
-    @api.depends('init_type', 'image_128',)
+    @api.depends('init_type', 'image_128', )
     def _compute_avatar_128(self):
         for record in self:
             record.avatar_128 = record.image_128 or record._generate_avatar()
@@ -183,7 +184,6 @@ class AIQuest(models.Model):
         }[self.init_type]
         avatar = avatar.replace('fill="#875a7b"', f'fill="{get_hsl_from_seed(self._generate_random_token())}"')
         return base64.b64encode(avatar.encode())
-
 
     @api.depends('session_line_ids')
     def compute_llm_count(self):
@@ -241,13 +241,13 @@ class AIQuest(models.Model):
             'res_model': 'ai.session.object',
             'view_mode': 'tree,calendar',
             'target': 'current',
-            'context':{
+            'context': {
                 "searchpanel_default_department_id": active_id,
                 "default_department_id": active_id,
                 "search_default_group_department": 1,
                 "search_default_department_id": active_id,
                 "expand": 1
-                },
+            },
             'domain': [("session_object_ids.ai_quest_id", '=', self.id)]
         }
         return action
@@ -302,7 +302,7 @@ class AIQuest(models.Model):
                     'code': f"action = env.ref('{self._get_eid()}').cron()",
                 })
         # ~ if self.init_type != 'server-action' and self.server_action_id:
-            # ~ self.server_action_id.unlink()
+        # ~ self.server_action_id.unlink()
 
         if self.init_type == 'server-action':
             if not self.server_action_id:
@@ -313,7 +313,7 @@ class AIQuest(models.Model):
                     'code': f"action = env.ref('{self._get_eid()}').server_action(records)",
                 })
         # ~ if self.init_type != 'channel' and self.channel_id:
-            # ~ self.channel_id.unlink()
+        # ~ self.channel_id.unlink()
 
         if self.init_type == 'channel':
             if not self.channel_id:
@@ -322,7 +322,7 @@ class AIQuest(models.Model):
                     'ai_quest_id': self.id,
                 })
         # ~ if self.init_type != 'chat' and self.chat_user_id:
-            # ~ self.chat_user_id.unlink()
+        # ~ self.chat_user_id.unlink()
 
         if self.init_type == 'chat':
             if not self.chat_user_id:
@@ -338,9 +338,9 @@ class AIQuest(models.Model):
         eid = list(self.get_external_id().values())[0]
         if not eid:
             eid_name = unidecode.unidecode(re.sub(
-                        r'[^a-zA-Z0-9åäö\s]', '', self.name.lower()
-                    ).replace(' ', '_')) + f"_{int(''.join(filter(str.isdigit, str(self.id))))}"
-            eid = self.env['ir.model.data'].search([('name','=',eid_name)],limit=1)
+                r'[^a-zA-Z0-9åäö\s]', '', self.name.lower()
+            ).replace(' ', '_')) + f"_{int(''.join(filter(str.isdigit, str(self.id))))}"
+            eid = self.env['ir.model.data'].search([('name', '=', eid_name)], limit=1)
             if not eid:
                 self.env['ir.model.data'].create({
                     'name': eid_name,
@@ -355,8 +355,6 @@ class AIQuest(models.Model):
             self.status = "error"
         self.last_run = fields.Datetime.now()
         self.message_post(body=f"{body} | {self.last_run}", message_type="notification")
-
-
 
     def mail_test_wizard(self):
         action = self.env.ref("ai_agent.action_ai_quest_test_mail_wizard").read()[0]
@@ -375,7 +373,7 @@ class AIQuest(models.Model):
         if self.init_type == 'server-action' and self.server_action_id:
             vals = self._server_action_values(records=records)
             res = self.run(records=records)
-                #session.store_session_data(self,result=result)
+            #session.store_session_data(self,result=result)
             self.log_message(f'server-action {res}')
 
             #     vals = self._server_action_values(records=records)
@@ -386,26 +384,28 @@ class AIQuest(models.Model):
             #
 
     def _cron_values(self, **kwarg):
-        return kwarg               
+        return kwarg
 
     def cron(self, records):
         self.ensure_one()
         if self.init_type == 'cron' and self.cron_id:
             if self.filter_domain:
                 domain = safe_eval.safe_eval(self_sudo.filter_domain, self._get_eval_context())
-                records=self.env[self.model_id.model].search(domain)
+                records = self.env[self.model_id.model].search(domain)
             else:
-                records={}
+                records = {}
             vals = self._cron_values(records=records)
             result = self.run(**vals)
+
     def _chat_values(self, **kwarg):
         return kwarg
+
     def chat(self, message):
         if self.init_type == 'chat' or "channel" and self.channel_id:
             session = message.parent_id.ai_quest_session_id if message.parent_id and message.parent_id.ai_quest_session_id else \
-                      message.parent_id.ai_quest_session_id if message.ai_quest_session_id else \
-                      self.env['ai.quest.session'].quest_init(self)
-            vals = self._chat_values(session=session,message=message)
+                message.parent_id.ai_quest_session_id if message.ai_quest_session_id else \
+                    self.env['ai.quest.session'].quest_init(self)
+            vals = self._chat_values(session=session, message=message)
             res = self.run(**vals)
 
     def _mail_values(self, **kwarg):
@@ -414,7 +414,7 @@ class AIQuest(models.Model):
     def mail(self, mail, session):
         # _logger.error(f"{session.session=}")
         if self.init_type == "mail":
-            vals = self._mail_values(message=message,session=session)
+            vals = self._mail_values(message=message, session=session)
             res = self.run(**vals)
 
             # parser = JsonOutputParser(pydantic_object=jsonResponse)
@@ -425,19 +425,18 @@ class AIQuest(models.Model):
             # ~ response = json.loads(response)
             # ~ session.message_post(body=f"{response}", message_type="notification")
 
-
     # ------------------------------------------------------------
     # Python code helpers
     # ------------------------------------------------------------
-            
+
     @api.model
-    def extract_dicts(self,text):
+    def extract_dicts(self, text):
         # Regular expression to match JSON-like structures
         pattern = r'\{[^}]+\}'
-        
+
         # Find all matches
         matches = re.findall(pattern, text)
-        
+
         # Parse each match into a dictionary
         result = []
         for match in matches:
@@ -449,11 +448,11 @@ class AIQuest(models.Model):
                 result.append(data)
             except json.JSONDecodeError:
                 _logger.error(f"Failed to parse: {match}")
-    
+
         return result
 
     @api.model
-    def markdown2html(self,text):
+    def markdown2html(self, text):
         return markdown.markdown(text)
 
     # ------------------------------------------------------------
@@ -548,8 +547,6 @@ class AIQuest(models.Model):
 
         return {"messages": [response]}
 
-
-
     def _get_eval_context(self, action=None, kw=None):
         """ Prepare the context used when evaluating python code, like the
         python formulas or code server actions.
@@ -558,21 +555,21 @@ class AIQuest(models.Model):
         :type action: browse record
         :returns: dict -- evaluation context given to (safe_)safe_eval """
 
-        records = kw.get('records',None)
+        records = kw.get('records', None)
 
         eval_context = {
-            'action': action,            
-            'result': [],            
-            'objects': [],            
+            'action': action,
+            'result': [],
+            'objects': [],
             'env': self.env,
             'self': self,
-            'session': kw.get('session',self.env['ai.quest.session'].quest_init(self)),
+            'session': kw.get('session', self.env['ai.quest.session'].quest_init(self)),
             'quest': self,
             'agents': [a.ai_agent_id for a in self.ai_agent_ids],
             'PromptTemplate': PromptTemplate,
             'company_id': self.env.user.company_id,
             'context': self.env.context,
-            'record':  records[0] if records else None,
+            'record': records[0] if records else None,
             'records': records,
             # langgraph
             'START': START,
@@ -598,23 +595,22 @@ class AIQuest(models.Model):
     def run(self, **kwargs):
         local_dict = {}
         eval_context = self._get_eval_context(None, kwargs)
-        res = safe_eval(self.code,eval_context,local_dict,mode="exec",nocopy=True)
-        session = local_dict.get('session',eval_context['session'])
+        res = safe_eval(self.code, eval_context, local_dict, mode="exec", nocopy=True)
+        session = local_dict.get('session', eval_context['session'])
         session.status = 'done'
-        objects = local_dict.get('objects',[]).extend(local_dict.get('records',[]))
-        session.store_session_data(result=local_dict.get('result'),objects=objects)
+        objects = local_dict.get('objects', []).extend(local_dict.get('records', []))
+        session.store_session_data(result=local_dict.get('result'), objects=objects)
         return local_dict
         raise UserError(f"{result=}")
-        
+
         #for department in records:
- #   _logger.warning(f{department})
-# ~ result = agent[0].prompt_agent(session=session,department=record.name)
- #                                                       #company_information=company_id.company_mission+company_id.company_values,
- #                                                       department=department.name,
- #                                                      quest_instructions=quest.description)
-    #markdown.markdown(result)
-        
-        
+        #   _logger.warning(f{department})
+        # ~ result = agent[0].prompt_agent(session=session,department=record.name)
+        #                                                       #company_information=company_id.company_mission+company_id.company_values,
+        #                                                       department=department.name,
+        #                                                      quest_instructions=quest.description)
+        #markdown.markdown(result)
+
         res = False
         action = self.sudo()
         eval_context = self._get_eval_context(action, kwargs)
@@ -633,10 +629,8 @@ class AIQuest(models.Model):
         run_self = action.with_context(eval_context['env'].context)
         safe_eval(run_self.code.strip(), eval_context, mode="exec", nocopy=True, filename=str(self))
         _logger.warning(f"{self.code=}  {eval_context=}")
-        
-    
-        
-        return eval_context.get('result',None)
+
+        return eval_context.get('result', None)
 
     # ------------------------------------------------------------
     # ORM
@@ -670,5 +664,3 @@ class AIQuest(models.Model):
             if quest.chat_user_id:
                 quest.chat_user_id.write({'name': quest.name, 'login': quest.name, 'ai_quest_id': quest.id, })
         return result
-
-
