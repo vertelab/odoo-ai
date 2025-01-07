@@ -43,7 +43,7 @@
       <field name="code">for department in records:
     result = agents[0].prompt_agent(session=session,debug=quest.debug,department=department.name,
                                     company_information=f"{company_id.name=} {company_id.company_mission=} {company_id.company_values=}",
-                                    quest_instructions=quest.description)
+                                    quest_instructions=quest.description,quest_list=[])
     if result:
         department.write({'goals_responsibilities': quest.markdown2html(result.content)})
     elif quest.debug:
