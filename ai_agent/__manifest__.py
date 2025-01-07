@@ -22,7 +22,7 @@
 # https://www.odoo.com/documentation/14.0/reference/module.html
 #
 {
-    "name": "AI Agents",
+    "name": "AI Agent",
     "version": "1.0",
     "summary": "AI Agent orchestration",
     "category": "Productivity",
@@ -30,7 +30,7 @@
         Long description of module's purpose
     """,
     "author": "Vertel AB",
-    "website": "https://vertel.se/apps/odoo-",
+    "website": "https://vertel.se/apps/odoo-ai/ai_agent",
     "images": ["static/description/banner.png"],  # 560x280
     "license": "AGPL-3",
     "depends": ["mail", "product"],
