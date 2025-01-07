@@ -8,17 +8,14 @@ from langchain_groq import ChatGroq
 from langchain_anthropic import ChatAnthropic
 from httpx import HTTPStatusError
 from random import randint
+from langchain_core.output_parsers import StrOutputParser
 
-
-# from langchain_core.output_parsers import StrOutputParse
 
 from odoo import models, fields, api, _
 from odoo.exceptions import UserError, AccessError, ValidationError
 from odoo.tools.safe_eval import safe_eval
 import logging
 
-from langchain_core.output_parsers import StrOutputParser
-from langchain_core.prompts import PromptTemplate
 
 _logger = logging.getLogger(__name__)
 
@@ -136,14 +133,16 @@ Context and Guidelines:
 - Focus on achieving the defined goal
 - Use the backstory to inform your responses
 """)
-        human = HumanMessage(content=self.ai_prompt_template.format_map(DefaultDict(kwargs)))
+
+        # human = HumanMessage(content=self.ai_prompt_template.format_map(DefaultDict(kwargs)))
         try:            
-            _logger.error(f"{system_message=}{self._create_ai_template_prompt(kwargs, test_prompt, parser)=}")
-            response = eval(self.ai_agent_llm_id.get_llm()).invoke([system_message,human])
-            # ~ response = eval(self.ai_agent_llm_id.get_llm()).invoke([
-                    # ~ system_message,
-                    # ~ self._create_ai_template_prompt(kwargs, test_prompt, parser)]
-            # ~ )
+            # _logger.error(f"{system_message=}{self._create_ai_template_prompt(kwargs, test_prompt, parser)=}")
+            # response = eval(self.ai_agent_llm_id.get_llm()).invoke([system_message,human])
+            response = eval(self.ai_agent_llm_id.get_llm()).invoke(
+                [
+                    self._create_ai_template_prompt(kwargs, test_prompt, parser)
+                ]
+            )
             _logger.error(f"{response=}")
         except HTTPStatusError as e:
             self.ai_agent_llm_id.log_message(body=e, is_error=True)
@@ -172,7 +171,7 @@ Context and Guidelines:
             input_variables=kwargs.keys(),
             partial_variables={"format_instructions": parser.get_format_instructions() if parser else False}
         )
-        message = template.invoke(kwargs)
+        message = template.format(**kwargs)
         return message
 
     def get_test_wizard(self):

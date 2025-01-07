@@ -54,6 +54,7 @@ class AIQuestSessionLine(models.Model):
         data_type_id = self.env["product.attribute.value"].search([("name", "=", "text"),("attribute_id", "=", self.env.ref("ai_agent.product_attribute_data_type").id)],limit=1)
         token_type_ids = self.env["product.attribute.value"].search([("attribute_id", "=", self.env.ref("ai_agent.product_attribute_token_type").id)])
 
+        _logger.error(f"{token_types=}")
         for token_type,token in token_types.items():
             if token > 0:   
                 record = {

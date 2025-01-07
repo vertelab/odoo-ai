@@ -42,8 +42,6 @@ class AIQuestSession(models.Model):
     _description = 'AI Quest Session'
     _inherit = ["mail.thread", "mail.activity.mixin"]
     _rec_name = "session"
-
-
     
     # ~ analytic_account_id = fields.Many2one(comodel_name='analytic.account',string="",help="") # domain|context|ondelete="'set null', 'restrict', 'cascade'"|auto_join|delegate
     ai_agent_count = fields.Integer(compute='_compute_ai_agent_count')
@@ -153,9 +151,9 @@ class AIQuestSession(models.Model):
 
         if self.ai_quest_id and self.message_ids[0].message_type == "email":
 
-            _logger.warning(f"{self.message_ids[0]=}")
+            _logger.warning(f"{self.message_ids[0].body=}")
 
-            self.ai_quest_id.mail(mail=self.message_ids[0].body,session=self)
+            self.ai_quest_id.mail(mail=self.message_ids[0],session=self)
 
         return thread_ids
     
@@ -179,10 +177,12 @@ class AIQuestSession(models.Model):
                 record.time_difference_ms = 0
 
     def store_session_data(self,result=[],objects=[],agent=None):
+        _logger.warning(f"store session data before loop {result=} {objects=}")
         for message in result:
+            _logger.error(f"Enter fuction??? {message=}")
             if isinstance(message,AIMessage):
-                session.store_session_data(message)
-                self.env['ai.quest.session.line'].new_line(self,message,agent=agent, debug=self.debug)
+                #session.store_session_data(message)
+                self.env['ai.quest.session.line'].new_line(session=self,aimessage=message,agent=agent, debug=self.debug)
         if objects:
             for o in objects:
                 self.env['ai.session.object'].create({

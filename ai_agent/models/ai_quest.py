@@ -10,6 +10,7 @@ from secrets import choice
 from odoo.exceptions import UserError, AccessError, ValidationError, Warning
 from odoo.tools.safe_eval import safe_eval, test_python_expr
 from odoo.tools.float_utils import float_compare
+from odoo.tools.mail import html2plaintext
 
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import PromptTemplate
@@ -242,13 +243,9 @@ class AIQuest(models.Model):
             'view_mode': 'tree,calendar',
             'target': 'current',
             'context':{
-                "searchpanel_default_department_id": active_id,
-                "default_department_id": active_id,
-                "search_default_group_department": 1,
-                "search_default_department_id": active_id,
                 "expand": 1
                 },
-            'domain': [("session_object_ids.ai_quest_id", '=', self.id)]
+            'domain': [("ai_quest_id", '=', self.id)]
         }
         return action
 
@@ -270,7 +267,7 @@ class AIQuest(models.Model):
     @api.depends("session_line_ids")
     def compute_agent_count(self):
         for record in self:
-            record.agent_count = len(set(record.session_line_ids.mapped('ai_agent_id')))
+            record.agent_count = len(record.ai_agent_ids)
 
     @api.onchange('model_id')
     def _onchange_model_id(self):
@@ -414,16 +411,11 @@ class AIQuest(models.Model):
     def mail(self, mail, session):
         # _logger.error(f"{session.session=}")
         if self.init_type == "mail":
-            vals = self._mail_values(message=message,session=session)
+            mail_body = html2plaintext(self.markdown2html(mail.body)).replace("<b>","").replace("</b>","").replace("<br>","").replace("<p>","").replace("</p>","").replace("\n","")
+            # _logger.error(f"{mail_body=}")
+            vals = self._mail_values(mail=mail,mail_body=mail_body,session=session, records=[session])
             res = self.run(**vals)
-
-            # parser = JsonOutputParser(pydantic_object=jsonResponse)
-            # ~ agent_id = self.ai_agent_ids[0].ai_agent_id
-            # response = agent_id.prompt_agent(mail=mail, session=session)
-            # ~ response = self.run(mail=mail)
-            # ~ response = response.replace('json\n', '').replace('```', '')
-            # ~ response = json.loads(response)
-            # ~ session.message_post(body=f"{response}", message_type="notification")
+            return res
 
 
     # ------------------------------------------------------------
@@ -455,6 +447,10 @@ class AIQuest(models.Model):
     @api.model
     def markdown2html(self,text):
         return markdown.markdown(text)
+
+    def json2dict(self,text):
+        text = text.split('```')[1].replace("json","").replace("\n","")
+        return json.loads(text)
 
     # ------------------------------------------------------------
     # Python CODE eval
@@ -562,8 +558,6 @@ class AIQuest(models.Model):
 
         eval_context = {
             'action': action,            
-            'result': [],            
-            'objects': [],            
             'env': self.env,
             'self': self,
             'session': kw.get('session',self.env['ai.quest.session'].quest_init(self)),
@@ -599,9 +593,10 @@ class AIQuest(models.Model):
         local_dict = {}
         eval_context = self._get_eval_context(None, kwargs)
         res = safe_eval(self.code,eval_context,local_dict,mode="exec",nocopy=True)
+        _logger.error(f"{local_dict=}")
         session = local_dict.get('session',eval_context['session'])
         session.status = 'done'
-        objects = local_dict.get('objects',[]).extend(local_dict.get('records',[]))
+        objects = local_dict.get('objects',[]).extend(eval_context.get('records',[]))
         session.store_session_data(result=local_dict.get('result'),objects=objects)
         return local_dict
         raise UserError(f"{result=}")
