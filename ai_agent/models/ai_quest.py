@@ -238,7 +238,7 @@ class AIQuest(models.Model):
             'res_model': 'ai.agent',
             'view_mode': 'kanban,tree,form',
             'target': 'current',
-            'domain': [("session_line_ids.ai_quest_id", '=', self.id)]
+            'domain': [("quest_ids", 'in', self.id)]
         }
         return action
 
@@ -283,7 +283,7 @@ class AIQuest(models.Model):
                 self.server_action_id.write({
                     'name': self.name,
                     'model_id': self.model_id.id,
-                    'binding_model_id': self.model_id.id,
+                    'binding_model_id': self.model_id.id if self.status == 'active' else None,
                 })
         if self.init_type == 'cron':
             if self.cron_id:
@@ -374,7 +374,7 @@ class AIQuest(models.Model):
         return kwarg
 
     def server_action(self, records):
-        if self.init_type == 'server-action' and self.server_action_id:
+        if self.init_type == 'server-action' and self.server_action_id and self.status == 'active':
             vals = self._server_action_values(records=records)
             res = self.run(records=records)
             #session.store_session_data(self,result=result)
@@ -392,7 +392,7 @@ class AIQuest(models.Model):
 
     def cron(self, records):
         self.ensure_one()
-        if self.init_type == 'cron' and self.cron_id:
+        if self.init_type == 'cron' and self.cron_id and self.status == 'active':
             if self.filter_domain:
                 domain = safe_eval.safe_eval(self_sudo.filter_domain, self._get_eval_context())
                 records = self.env[self.model_id.model].search(domain)
@@ -405,7 +405,7 @@ class AIQuest(models.Model):
         return kwarg
 
     def chat(self, message):
-        if self.init_type == 'chat' or "channel" and self.channel_id:
+        if self.init_type == 'chat' or "channel" and self.channel_id and self.status == 'active':
             session = message.parent_id.ai_quest_session_id if message.parent_id and message.parent_id.ai_quest_session_id else \
                 message.parent_id.ai_quest_session_id if message.ai_quest_session_id else \
                     self.env['ai.quest.session'].quest_init(self)
@@ -417,7 +417,7 @@ class AIQuest(models.Model):
 
     def mail(self, mail, session):
         # _logger.error(f"{session.session=}")
-        if self.init_type == "mail":
+        if self.init_type == "mail" and self.status == 'active':
             mail_body = html2plaintext(self.markdown2html(mail.body)).replace("<b>","").replace("</b>","").replace("<br>","").replace("<p>","").replace("</p>","").replace("\n","")
             # _logger.error(f"{mail_body=}")
             vals = self._mail_values(mail=mail,mail_body=mail_body,session=session, records=[session])
@@ -568,10 +568,18 @@ class AIQuest(models.Model):
             'quest': self,
             'agents': [a.ai_agent_id for a in self.ai_agent_ids],
             'PromptTemplate': PromptTemplate,
+            'UseLang': f"Use language {self.env.user.lang}",
             'company_id': self.env.user.company_id,
             'context': self.env.context,
             'record': records[0] if records else None,
             'records': records,
+            # context
+            # ~ 'llm_list': ' '.join([f"'name': {llm.name} 'provider': {llm.product_tmpl_id.name}" for llm in self.env['ai.agent.llm'].search([])]),
+            'agent_list': ' '.join([f"'name': {a.name}, 'role': {a.ai_role},'goal': {a.ai_goal},'template': {a.ai_prompt_template}" for a in self.env['ai.agent'].search([])]),
+            'quest_list': ' ',
+            # ~ 'quest_list': ' '.join([f"'name': {q.name}, 'description': {q.description}, 'init_type': {q.init_type}" for q in self.env['ai.quest'].search([('status','in',['draft','active'])])]),
+            'module_list': '',
+            # ~ 'module_list': ' '.join([f"{m['name']}: {m['description']}" for m in self.env['ir.module.module'].search_read([('application', '=', True)], ['name', 'description'])]),
             # langgraph
             'START': START,
             'END': END,
@@ -597,22 +605,24 @@ class AIQuest(models.Model):
         local_dict = {}
         try:
             eval_context = self._get_eval_context(None, kwargs)
+            if self.debug:
+                _logger.warning(f"{eval_context=}" + f"{self.code=}\n=======\n {local_dict=}")
             res = safe_eval(self.code,eval_context,local_dict,mode="exec",nocopy=True)
         except ValueError as e:
             self.log_message(f"ValueError {e=}", is_error=True)
             if self.debug:
-                self.log_message(f"{self.code=} {eval_context=} {local_dict=}")
+                self.log_message(f"{e=}\n\n=====\n{self.code=}\n=======\n {local_dict=}")
             return None
         except Exception as e:
             _logger.error(f"{e=}")
             self.log_message(f" {e=}")
-
+            if self.debug:
+                self.log_message(f"{e=}\n\n=====\n{self.code=}\n=======\n {local_dict=}")
+            return None
         session = local_dict.get('session',eval_context['session'])
         session.status = 'done'
         objects = local_dict.get('objects',[]).extend(eval_context.get('records',[]))
         session.store_session_data(result=local_dict.get('result'),objects=objects)
-        if self.debug:
-            self.log_message(f"{self.code=} {eval_context=} {local_dict=}")
 
         return local_dict
         raise UserError(f"{result=}")
@@ -670,7 +680,8 @@ class AIQuest(models.Model):
         for quest in self:
             if quest.server_action_id:
                 quest.server_action_id.write(
-                    {'name': quest.name, 'code': f"action = env.ref('{quest._get_eid()}').server_action(records)"})
+                    {'name': quest.name, 'code': f"action = env.ref('{quest._get_eid()}').server_action(records)",
+                     'binding_model_id': self.model_id.id if self.status == 'active' else None})
             if quest.cron_id:
                 quest.cron_id.write({'name': quest.name, 'code': f"action = env.ref('{quest._get_eid()}').cron()"})
             if quest.channel_id:

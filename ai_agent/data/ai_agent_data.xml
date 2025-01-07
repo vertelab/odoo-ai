@@ -19,7 +19,7 @@ Questra's ultimate aspiration is to elevate organizational efficiency and innova
       <field name="ai_prompt_template">
         agent_list {agent_list}
         tools {tools}
-        quest {quest_name} {quest_description} {quest_init_type}
+        quest {quest_name} {quest_description} {quest_init_type} {quest_model}
         Company information {company_information}
       </field>
       <field name="ai_type">ai-programmer</field>
@@ -41,7 +41,6 @@ Questra's ultimate aspiration is to elevate organizational efficiency and innova
       <field name="init_type">server-action</field>
       <field name="code"><![CDATA[agent_ids=[]
 for quest in records:
-    agent_list = [{'name': a.name, 'role': a.ai_role,'goal': a.ai_goal,'template': a.ai_prompt_template,} for a in self.env['ai.agent'].search([])]
     result = agents[0].prompt_agent(session=session,debug=quest.debug,
                                     company_information=f"{company_id.name=} {company_id.company_mission=} {company_id.company_values=}",
                                     quest_name=quest.name,quest_description=quest.description,quest_init_type=quest.init_type, quest_model=quest.model_id.model,
@@ -59,7 +58,7 @@ for quest in records:
                     "ai_backstory": agent['ai_backstory'],
                     "ai_prompt_template": agent['ai_prompt_template'],
                 }))
-    for  agent in quest.extract_dicts(result.content).get('agents',{}):
+    for  agent in quest.json2dict(result.content).get('agents',{}):
             agent_ids.append(env['ai.agent'].browse(int(agent['agent_id'])))
 objects = agent_ids
 quest.write({'agent_ids': [6,0,[[a.id for a in agent_ids]]],

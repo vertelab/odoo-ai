@@ -39,7 +39,7 @@
     </record>
 
     <record id="action_product_template" model="ir.actions.act_window">
-        <field name="name">LLM Providors</field>
+        <field name="name">AI Providers</field>
         <field name="res_model">product.template</field>
         <field name="view_mode">tree,form</field>
         <field name='target'>current</field>

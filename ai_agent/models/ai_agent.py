@@ -141,6 +141,8 @@ Context and Guidelines:
 - Focus on achieving the defined goal
 - Use the backstory to inform your responses
 """)
+        if debug:
+            self.log_message(f"{system_message}")
 
         # human = HumanMessage(content=self.ai_prompt_template.format_map(DefaultDict(kwargs)))
         # try:            
@@ -152,6 +154,8 @@ Context and Guidelines:
         #         ]
         #     )
         human = HumanMessage(content=self.ai_prompt_template.format_map(DefaultDict(kwargs)))
+        if debug:
+            self.log_message(f"{human}")        
         try: 
             if debug:           
                 self.log_message(f"{system_message=}{self._create_ai_template_prompt(kwargs, test_prompt, parser)=}")

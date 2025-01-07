@@ -61,7 +61,7 @@
         <field name="model">ai.quest.session.line</field>
         <field name="arch" type="xml">
             <form>
-                <sheet string="AI Quest Session Line">
+                <sheet string="AI Tokens">
                     <group>
                         <group>
                             <field name="ai_quest_id"/>
@@ -101,7 +101,7 @@
         <field name="name">ai.quest.session.line.calendar</field>
         <field name="model">ai.quest.session.line</field>
         <field name="arch" type="xml">
-            <calendar string="AI Quest Session Lines" date_start="datetime" color="ai_agent_id" mode="month">
+            <calendar string="AI Tokens" date_start="datetime" color="ai_agent_id" mode="month">
                 <field name="ai_quest_id"/>
                 <field name="ai_agent_id"/>
                 <field name="ai_llm_id"/>
@@ -118,6 +118,6 @@
         <field name="view_mode">tree,form,calendar,pivot</field>
     </record>
 
-    <menuitem id="ai_agent.menu_ai_quest_session_line" name="Ai Quest Session Lines" parent="ai_agent.menu_ai_agent_configuration" action="action_ai_quest_session_line"/>
+    <menuitem id="ai_agent.menu_ai_quest_session_line" name="AI Tokens" parent="ai_agent.menu_ai_agent_configuration" action="action_ai_quest_session_line"/>
 
 </odoo>

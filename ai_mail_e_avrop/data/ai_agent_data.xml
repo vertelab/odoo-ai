@@ -4,10 +4,10 @@
         <record id="ai_agent_e-avrop" model="ai.agent">
             <field name="name">e-avrop</field>
             <field name="ai_prompt_template">
-{mail}<br>
-===============<br>
-The email above contains information about a tender. Please respond with information that was found in this JSON format: {{ "case_number": str, "question_and_answer": str, "prerequisite_change": str }} If you can't find the relevant information to put in the JSON fields, please input "false". The case number for this tender should be put in this filed -> case_number. The question and answer part of the mail should be put in this filed -> question_and_answer. The changes that has been made to the tender should be put in this filed -> prerequisite_change.<br>
-===============<br>
+{mail}
+===============
+The email above contains information about a tender. Please respond with information that was found in this JSON format: {{ "case_number": str, "question_and_answer": str, "prerequisite_change": str }} If you can't find the relevant information to put in the JSON fields, please input "false". The case number for this tender should be put in this filed -> case_number. The question and answer part of the mail should be put in this filed -> question_and_answer. The changes that has been made to the tender should be put in this filed -> prerequisite_change.
+===============
             </field>
             <field name="ai_type">e-avrop</field>
         </record>

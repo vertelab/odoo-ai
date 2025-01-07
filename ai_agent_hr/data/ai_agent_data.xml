@@ -22,6 +22,8 @@
         Department {department}
         quest_instructions {quest_instructions}
         quest_list {quest_list}
+        department job_list   {job_list}
+        odoo_modules {module_list}
       </field>
       <field name="ai_type">oos</field>
     </record>
@@ -43,7 +45,10 @@
       <field name="code">for department in records:
     result = agents[0].prompt_agent(session=session,debug=quest.debug,department=department.name,
                                     company_information=f"{company_id.name=} {company_id.company_mission=} {company_id.company_values=}",
-                                    quest_instructions=quest.description,quest_list=[])
+                                    quest_instructions=f"{quest.description} {UseLang}",quest_list=[],
+                                    module_list=module_list,
+                                    job_list=quest._get_jobs(department),
+                                    )
     if result:
         department.write({'goals_responsibilities': quest.markdown2html(result.content)})
     elif quest.debug:
@@ -136,20 +141,24 @@
         
         Create a comprehensive list of AI staff members (quest_list) that covers all aspects of the department's needs. If the existing list has fewer than 10 members, expand it to at least 10. If it's already close to 10, add at least one new member to enhance the team's capabilities.
         
-        Ensure that each AI staff member has a clear, specific role that contributes to the department's success. Consider various aspects such as data analysis, process optimization, customer interaction, strategic planning, and reporting when designing the AI staff team.
+        Ensure that each AI staff member has a clear, specific role that contributes to the department's success. Consider various aspects such as data analysis, process optimization, customer interaction, strategic planning, and reporting when designing the AI staff team. Remember to use the Json-format and no other text.
       </field>
       <field name="code">objects=[]
 for department in records:
-    quest_list = [{'name': q.name, 'description': q.description, 'init_type': q.init_type} for q in self.env['ai.quest'].search([('department_id','=',department.id)])]
     result = agents[0].prompt_agent(session=session,debug=quest.debug,department=f"{department.name=} {department.goals_responsibilities=}",
                                     company_information=f"{company_id.name=} {company_id.company_mission=} {company_id.company_values=}",
-                                    quest_instructions=quest.description, quest_list=quest_list)
+                                    quest_instructions=f"{quest.description} {UseLang}",
+                                    #quest_list=quest._get_quest_list_department(department),
+                                    quest_list='',
+                                    job_list=quest._get_jobs(department),
+                                    module_list=module_list,
+                                    )
     if quest.debug:
-        _logger.warning(f"{quest.extract_dicts(result.content)=}")
-    for  ai_staff in quest.extract_dicts(result.content):
+        _logger.warning(f"{quest.json2dict(result.content)=}")
+    for  ai_staff in quest.json2dict(result.content):
         if quest.debug:
             _logger.warning(f"Quest to create {ai_staff=}")
-        objects.append(env['ai.quest'].create({
+        objects.append(self.env['ai.quest'].create({
                     'name': ai_staff['name'],
                     'description': f"{ai_staff['description']}",
                     'init_type': ai_staff['init_type'],

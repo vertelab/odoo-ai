@@ -18,8 +18,12 @@ class AIQuest(models.Model):
 
     department_id = fields.Many2one(comodel_name='hr.department',)
     ai_type = fields.Selection(selection_add=[('oos', 'OOS'),('ai-staff','AI Staff')], ondelete={'oos': 'cascade','ai-staff': 'cascade'})
+        
+    def _get_quest_list_department(self,department):
+        return ' '.join([f"'name': {q.name}, 'description': {q.description}, 'init_type': {q.init_type}" for q in self.env['ai.quest'].search([('department_id','=',department.id)])])
 
-            
+    def _get_jobs(self,department):
+        return ' '.join(set((job['name'],job['description']) for job in self.env['hr.job'].search_read([('employee_ids', 'in', self.env['hr.employee'].search([('department_id', '=', department.id)]).ids)], ['name', 'description'])))
 
 class AISession(models.Model):
     _inherit = "ai.quest.session"

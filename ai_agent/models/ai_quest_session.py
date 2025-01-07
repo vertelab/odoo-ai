@@ -180,10 +180,10 @@ class AIQuestSession(models.Model):
         if result is not None:            
             _logger.warning(f"store session data before loop {result=} {objects=}")
         for message in result:
-                _logger.error(f"Enter fuction??? {message=}")
+            _logger.error(f"Enter fuction??? {message=}")
             if isinstance(message,AIMessage):
-                    #session.store_session_data(message)
-                    self.env['ai.quest.session.line'].new_line(session=self,aimessage=message,agent=agent, debug=self.debug)
+                #session.store_session_data(message)
+                self.env['ai.quest.session.line'].new_line(session=self,aimessage=message,agent=agent, debug=self.debug)
             if objects:
                 for o in objects:
                     self.env['ai.session.object'].create({
