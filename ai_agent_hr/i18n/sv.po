@@ -1,0 +1,146 @@
+# Translation of Odoo Server.
+# This file contains the translation of the following modules:
+# 	* ai_agent_hr
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: Odoo Server 16.0-20241230\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2025-01-07 10:44+0000\n"
+"PO-Revision-Date: 2025-01-07 13:32+0100\n"
+"Last-Translator: \n"
+"Language-Team: \n"
+"Language: sv\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+"X-Generator: Poedit 3.4.2\n"
+
+#. module: ai_agent_hr
+#: model:ir.model,name:ai_agent_hr.model_ai_agent
+msgid "AI Agent"
+msgstr "AI-agent"
+
+#. module: ai_agent_hr
+#: model:ir.model,name:ai_agent_hr.model_ai_quest
+msgid "AI Quest"
+msgstr "AI Quest"
+
+#. module: ai_agent_hr
+#: model:ir.model,name:ai_agent_hr.model_ai_quest_session
+msgid "AI Quest Session"
+msgstr "AI Quest-session"
+
+#. module: ai_agent_hr
+#: model:ir.model,name:ai_agent_hr.model_ai_quest_session_line
+msgid "AI Quest Session Line"
+msgstr "AI Quest Session Line"
+
+#. module: ai_agent_hr
+#: model:ir.actions.act_window,name:ai_agent_hr.act_ai_staff_from_department
+#: model:ir.model.fields.selection,name:ai_agent_hr.selection__ai_agent__ai_type__ai-staff
+#: model:ir.model.fields.selection,name:ai_agent_hr.selection__ai_quest__ai_type__ai-staff
+#: model:ir.model.fields.selection,name:ai_agent_hr.selection__ai_quest_session__ai_type__ai-staff
+#: model_terms:ir.ui.view,arch_db:ai_agent_hr.hr_department_view_kanban
+#: model_terms:ir.ui.view,arch_db:ai_agent_hr.view_department_form
+#: model_terms:ir.ui.view,arch_db:ai_agent_hr.view_department_tree
+msgid "AI Staff"
+msgstr "AI-personal"
+
+#. module: ai_agent_hr
+#: model_terms:ir.actions.act_window,help:ai_agent_hr.act_ai_staff_from_department
+msgid "Add a new Ai Staff (AI Quest)"
+msgstr "Lägg till en ny Ai Staff (AI Quest)"
+
+#. module: ai_agent_hr
+#: model:ir.model.fields,field_description:ai_agent_hr.field_hr_department__ai_quest_ids
+msgid "Ai Quest"
+msgstr "Ai Quest"
+
+#. module: ai_agent_hr
+#: model:ir.model.fields,field_description:ai_agent_hr.field_ai_agent__ai_type
+#: model:ir.model.fields,field_description:ai_agent_hr.field_ai_quest__ai_type
+#: model:ir.model.fields,field_description:ai_agent_hr.field_ai_quest_session__ai_type
+msgid "Ai Type"
+msgstr "Ai Typ"
+
+#. module: ai_agent_hr
+#: model:ir.actions.server,name:ai_agent_hr.ai_quest__organisation_specialist_ai_staff_server_agent
+msgid "Create an AI Staff"
+msgstr "Skapa en AI-personal"
+
+#. module: ai_agent_hr
+#: model:ir.model,name:ai_agent_hr.model_hr_department
+#: model:ir.model.fields,field_description:ai_agent_hr.field_ai_quest__department_id
+#: model:ir.model.fields,field_description:ai_agent_hr.field_ai_quest_session__department_id
+#: model:ir.model.fields,field_description:ai_agent_hr.field_ai_quest_session_line__department_id
+#: model_terms:ir.ui.view,arch_db:ai_agent_hr.ai_quest_search
+#: model_terms:ir.ui.view,arch_db:ai_agent_hr.ai_quest_session_line_search
+#: model_terms:ir.ui.view,arch_db:ai_agent_hr.ai_quest_session_search
+msgid "Department"
+msgstr "Avdelning"
+
+#. module: ai_agent_hr
+#: model:ir.model.fields,field_description:ai_agent_hr.field_hr_department__goals_responsibilities
+#: model_terms:ir.ui.view,arch_db:ai_agent_hr.view_department_form
+msgid "Goals and responsibilities"
+msgstr "Mål och ansvarsområden"
+
+#. module: ai_agent_hr
+#: model:ir.model.fields.selection,name:ai_agent_hr.selection__ai_agent__ai_type__oos
+#: model:ir.model.fields.selection,name:ai_agent_hr.selection__ai_quest__ai_type__oos
+#: model:ir.model.fields.selection,name:ai_agent_hr.selection__ai_quest_session__ai_type__oos
+msgid "OOS"
+msgstr "OOS"
+
+#. module: ai_agent_hr
+#: model:ir.model.fields,field_description:ai_agent_hr.field_hr_department__session_ids
+msgid "Session"
+msgstr "Session"
+
+#. module: ai_agent_hr
+#: model:ir.model.fields,field_description:ai_agent_hr.field_hr_department__session_count
+msgid "Session Count"
+msgstr "Antal sessioner"
+
+#. module: ai_agent_hr
+#: model:ir.model.fields,field_description:ai_agent_hr.field_hr_department__session_line_ids
+msgid "Session Line"
+msgstr "Session Linje"
+
+#. module: ai_agent_hr
+#: model:ir.model.fields,field_description:ai_agent_hr.field_hr_department__session_line_count
+msgid "Session Line Count"
+msgstr "Session Linjeantal"
+
+#. module: ai_agent_hr
+#: model_terms:ir.ui.view,arch_db:ai_agent_hr.view_department_form
+msgid "Sessions"
+msgstr "Sessioner"
+
+#. module: ai_agent_hr
+#: model:ir.actions.server,name:ai_agent_hr.ai_quest__organisation_specialist_goals_server_agent
+msgid "Set goals and define responsibilites"
+msgstr "Sätt upp mål och definiera ansvarsområden"
+
+#. module: ai_agent_hr
+#: model_terms:ir.ui.view,arch_db:ai_agent_hr.view_department_form
+msgid "Tokens"
+msgstr "Tokens"
+
+#. module: ai_agent_hr
+#: model:ir.model.fields,field_description:ai_agent_hr.field_hr_department__total_ai_staff
+msgid "Total AI Staff"
+msgstr "Total AI-personal"
+
+#. module: ai_agent_hr
+#: model_terms:ir.actions.act_window,help:ai_agent_hr.act_ai_staff_from_department
+msgid ""
+"With just a quick glance on the Odoo AI Staff screen, you\n"
+"          can easily find all the information you need for each virtual person;\n"
+"          capabilities, responsibillities etc."
+msgstr ""
+"Med bara en snabb blick på Odoo AI Staff-skärmen kan du\n"
+"          kan du enkelt hitta all information du behöver för varje virtuell person;\n"
+"          förmågor, ansvarsområden etc."
