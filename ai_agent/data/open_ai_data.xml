@@ -5,6 +5,7 @@
       <field name="name">Open-AI</field>
       <field name="is_llm">True</field>
       <field name="llm_type">ChatOpenAI</field>
+      <field name="image_1920" type="base64" file="ai_agent/static/img/open-ai-logo.jpg" />
     </record>
     <!-- Model -->
     <record id="open_ai_product_attribute_value_gpt-4o" model="product.attribute.value">
