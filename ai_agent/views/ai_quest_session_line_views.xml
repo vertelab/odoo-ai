@@ -4,7 +4,7 @@
         <field name="name">ai.quest.session.line.list</field>
         <field name="model">ai.quest.session.line</field>
         <field name="arch" type="xml">
-            <tree string="Tokens">
+            <tree string="AI Tokens">
                 <field name="datetime"/>
                 <field name="display_name"/>
                 <field name="ai_quest_session_id"/>
@@ -37,7 +37,7 @@
         <field name="name">ai.quest.session.line.search</field>
         <field name="model">ai.quest.session.line</field>
         <field name="arch" type="xml">
-            <search string="Search AI Quest Session Lines">
+            <search string="Search AI Tokens">
                 <field name="display_name" string="Display Name"/>
                 <field name="ai_quest_session_id"/>
                 <field name="system_fingerprint"/>
@@ -113,7 +113,7 @@
         </field>
     </record>
     <record id="action_ai_quest_session_line" model="ir.actions.act_window">
-        <field name="name">Tokens</field>
+        <field name="name">AI Tokens</field>
         <field name="res_model">ai.quest.session.line</field>
         <field name="view_mode">tree,form,calendar,pivot</field>
     </record>

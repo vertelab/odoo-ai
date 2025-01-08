@@ -22,7 +22,7 @@
 # https://www.odoo.com/documentation/14.0/reference/module.html
 #
 {
-    'name': 'AI Chat',
+    'name': 'odoo-ai: AI Chat',
     'version': '1.0',
     'summary': """
         Short (1 phrase/line) summary of the module's purpose, used as
@@ -33,7 +33,7 @@
     """,
     #'sequence': 1,
     'author': 'Vertel AB',
-    'website': 'https://vertel.se/apps/odoo-',
+    'website': 'https://vertel.se/apps/odoo-ai/ai_chat',
     'images': ['static/description/banner.png'], # 560x280
     'license': 'AGPL-3',
     'depends': ["ai_agent","mail"],

@@ -20,7 +20,7 @@
 ##############################################################################
 
 {
-    'name': 'Agent Orchestration HR',
+    'name': 'odoo-ai: Agent Orchestration HR',
     'version': '0.3',
     'summary': 'Agent Orchestration HR',
     'category': 'Productivity / Discuss',

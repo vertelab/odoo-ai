@@ -20,7 +20,7 @@
 ##############################################################################
 
 {
-    'name': 'Chat AI-Bot: for Open Interpreter',
+    'name': 'odoo-ai: Chat AI-Bot: for Open Interpreter',
     'version': '0.3',
     # Version ledger: XX.0 = Odoo version. 1 = Major. Non regressionable code. 2 = Minor. New features that are regressionable. 3 = Bug fixes
     'summary': 'AI Bot for LLM-servers compatible with Open Interpreter',

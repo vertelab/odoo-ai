@@ -19,7 +19,7 @@
 ##############################################################################
 
 {
-    'name': 'Chat AI-Bot: Common',
+    'name': 'odoo-ai: Chat AI-Bot: Common',
     'version': '1.3',
     'summary': 'Make OdooBot finally useful. Create users that you chat with just like ChatGPT. Integrate with OpenAI ChatGPT (GPT-3) or other LLM',
     # Categories can be used to filter modules in modules listing
