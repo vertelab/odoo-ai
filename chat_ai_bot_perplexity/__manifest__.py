@@ -19,7 +19,7 @@
 #
 ##############################################################################
 {
-    'name': 'Chat AI-Bot: Perplex',
+    'name': 'odoo-ai: Chat AI-Bot: Perplexity',
     'version': '0.1',
     'summary': 'AI Bot with websearch capabilitie',
     # Categories can be used to filter modules in modules listing
