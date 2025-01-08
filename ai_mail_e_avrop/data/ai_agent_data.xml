@@ -15,18 +15,21 @@ The email above contains information about a tender. Please respond with informa
         <record id="ai_quest_e-avrop" model="ai.quest">
             <field name="name">e-avrop</field>
             <field name="ai_type">e-avrop</field>
+            <field name="alias_name">e-avrop</field>
             <field name="alias_model_id" ref="ai_agent.model_ai_quest_session"/>
             <field name="init_type">mail</field>
+            <field name="image_128" type="base64" file="ai_mail_e_avrop/static/src/images/e-avrop.jpeg"/>
             <field name="code">
 result = []
-object = []
+object = [] 
 result.append(agents[0].prompt_agent(mail=mail_body,session=session))
 response = self.json2dict(result[0].content)
-if response.get("case_number"):
-    lead = env["crm.lead"].create({"name": f"{mail.subject}[{response.get('case_number')}]", "email_from": mail.email_from})
-    if response.get("question_and_answer") != False: lead.message_post(body=f"{response.get('question_and_answer')}",message_type="notification")
-    if response.get("prerequisite_change") != False: lead.message_post(body=f"{response.get('prerequisite_change')}",message_type="notification")
-    lead.message_post(body=f"{mail_body}",message_type="notification")
+lead = env["crm.lead"].search([("tender_case_number", "=", response.get("case_number"))])
+if not lead:
+    lead = env["crm.lead"].create({"name": f"{mail.subject}[{response.get('case_number')}]", "email_from": mail.email_from, "tender_case_number": response.get("case_number")})
+if response.get("question_and_answer").lower() != "false": lead.message_post(body=f"{response.get('question_and_answer')}",message_type="notification")
+if response.get("prerequisite_change").lower() != "false": lead.message_post(body=f"{response.get('prerequisite_change')}",message_type="notification") 
+lead.message_post(body=f"{mail_body}",message_type="notification")
             </field>
         </record>
 

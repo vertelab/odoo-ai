@@ -16,24 +16,16 @@ class jsonResponse(BaseModel):
     prerequisite_change: str = Field(description="The changes that has been made to the tender. If you can't find this return false")
 
 class AIQuest(models.Model):
-    _name = 'ai.quest'
     _inherit = "ai.quest"
 
     ai_type = fields.Selection(selection_add=[('e-avrop', 'E-avrop')], ondelete={'e-avrop': 'cascade'})
-    # user_id = fields.Char()
-
-    def create(self,val_list):
-        ai_quest = super(AIQuest,self).create(val_list)
-        self._alias_get_creation_values()
-        return ai_quest
 
     def _alias_get_creation_values(self):
         values = super(AIQuest, self)._alias_get_creation_values()
-        values['alias_model_id'] = self.env['ir.model']._get('ai.quest.session').id
-        values['alias_name'] = "e-avrop"
-        values['alias_defaults'] = defaults = literal_eval(self.alias_defaults or "{}")
-        defaults['ai_type'] = 'e-avrop'
-        defaults['ai_quest_id'] = self.id
+        if self.ai_type == "e-avrop":
+            values['alias_defaults'] = defaults = literal_eval(self.alias_defaults or "{}")
+            defaults['ai_type'] = 'e-avrop'
+            defaults['ai_quest_id'] = self.id
         return values
 
 

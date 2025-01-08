@@ -1,0 +1,38 @@
+<odoo>
+    <record id="crm_lead_view_form" model="ir.ui.view">
+        <field name="name">crm.lead.form.e-avrop</field>
+        <field name="model">crm.lead</field>
+        <field name="inherit_id" ref="crm.crm_lead_view_form"/>
+        <field name="arch" type="xml">
+            <field name="tag_ids" position="after">
+                <field name="tender_case_number"/>
+            </field>
+        </field>
+    </record>
+
+    <record id="crm_lead_view_tree" model="ir.ui.view">
+        <field name="name">crm.lead.tree.e-avrop</field>
+        <field name="model">crm.lead</field>
+        <field name="inherit_id" ref="crm.crm_case_tree_view_oppor"/>
+        <field name="arch" type="xml">
+            <field name="tag_ids" position="after">
+                <field name="tender_case_number" optional="hide"/>
+            </field>
+        </field>
+    </record>
+
+    <record id="crm_lead_view_search" model="ir.ui.view">
+        <field name="name">crm.lead.search.e-avrop</field>
+        <field name="model">crm.lead</field>
+        <field name="inherit_id" ref="crm.view_crm_case_opportunities_filter"/>
+        <field name="arch" type="xml">
+            <field name="tag_ids" position="after">
+                <field name="tender_case_number"/>
+            </field>
+            <filter name="date_closed" position="after">
+                <filter string="Tender Case Number" name="tender_case_number" context="{'group_by':'tender_case_number'}"/>
+            </filter>
+        </field>
+    </record>
+
+</odoo>

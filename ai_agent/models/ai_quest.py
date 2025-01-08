@@ -308,6 +308,10 @@ class AIQuest(models.Model):
         # ~ if self.init_type != 'server-action' and self.server_action_id:
         # ~ self.server_action_id.unlink()
 
+        if self.init_type == "mail":
+            if not self.alias_name:
+                self.alias_name = self.name
+
         if self.init_type == 'server-action':
             if not self.server_action_id:
                 self.server_action_id = self.server_action_id.create({

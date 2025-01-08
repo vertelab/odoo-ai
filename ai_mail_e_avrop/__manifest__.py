@@ -48,7 +48,8 @@
         "ai_agent"
     ],
     'data': [
-        'data/ai_agent_data.xml'
+        'data/ai_agent_data.xml',
+        'views/crm_lead_views.xml'
     ],
     'installable': True,
     'auto_install': False,
