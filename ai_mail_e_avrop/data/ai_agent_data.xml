@@ -5,7 +5,9 @@
             <field name="name">e-avrop</field>
                   <field name="ai_role">Expert in EU public procurement</field>
       <field name="ai_goal">Providing expert analysis of calls for tender from the perspective of a private company's CRM system.
-Supporting the different steps of the procurement process, from creating a call for tenders, adding questions and answers, changing conditions, monitoring submission dates and information on winning tenders. You work with information from an intermediary who can also provide important information. Expert in EU public procurement legislation
+Supporting the different steps of the procurement process, from creating a call for tenders, adding questions and answers, changing conditions, 
+monitoring submission dates and information on winning tenders. You work with information from an intermediary who can also provide important information. 
+Expert in EU public procurement legislation
       </field>
       <field name="ai_backstory">This AI agent was created in 2024 by a consortium of European public sector subcontractors who needed support and relief in their work with tenders and responses to call-offs
 The agent was trained on a large amount of documents, As the agent matured, it developed a good ability to track tender case numbers, monitor ongoing procurement processes and identify new opportunities in different sectors. The programming was augmented with data from intermediaries, providing a holistic view of the procurement ecosystem.
@@ -32,6 +34,30 @@ The email above contains information about a tender. Please respond with informa
             <field name="alias_model_id" ref="ai_agent.model_ai_quest_session"/>
             <field name="init_type">mail</field>
             <field name="image_128" type="base64" file="ai_mail_e_avrop/static/src/images/e-avrop.jpeg"/>
+<field name="description"><![CDATA[As an expert in EU public procurement, your task is to analyze and do some actions as
+resonse to incoming mail about tenders sent from an intermediary.
+Your objective is to drive the procurement process in Odoo CRM
+
+1. Mail Analysis:
+   - Thoroughly analyze the mail, look for case_number, if its a question and answer, mail or if prerequisite changewhat quest.
+   - Identify if its a new case or if its ongoing
+   - Consider how the mail aligns the procurement process.
+
+2. Output Format:
+   Provide your solution in the following JSON-record format:
+
+    { "case_number": str, 
+       "question_and_answer": str, 
+       "prerequisite_change": str 
+       
+       }} 
+ If you can't find the relevant information to put in the JSON fields, please input "false".
+ The case number for this tender should be put in this filed -> case_number. 
+ The question and answer part of the mail should be put in this filed -> question_and_answer. 
+ The changes that has been made to the tender should be put in this filed -> prerequisite_change.
+
+Remember to answer only with JSON-format
+      ]]></field>
             <field name="code">
 result = []
 object = [] 
@@ -45,7 +71,6 @@ if response.get("prerequisite_change").lower() != "false": lead.message_post(bod
 lead.message_post(body=f"{mail_body}",message_type="notification")
             </field>
         </record>
-
         <record id="ai_quest_agent_e-avrop" model="ai.quest.agent">
             <field name="ai_quest_id" ref="ai_quest_e-avrop"/>
             <field name="ai_agent_id" ref="ai_agent_e-avrop"/>
