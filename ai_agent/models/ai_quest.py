@@ -270,7 +270,7 @@ class AIQuest(models.Model):
     @api.depends("session_line_ids")
     def compute_agent_count(self):
         for record in self:
-            record.agent_count = len(record.ai_agent_ids)
+            record.agent_count = len(set(record.session_line_ids.mapped('ai_agent_id')))
 
     @api.onchange('model_id')
     def _onchange_model_id(self):
@@ -619,11 +619,8 @@ class AIQuest(models.Model):
         session = local_dict.get('session',eval_context['session'])
         session.status = 'done'
         objects = local_dict.get('objects',[])
-        _logger.error(f"{objects=}")
-        _logger.error(f"{eval_context.get('records')=}")
         if eval_context.get('records') != None:
             objects.extend(eval_context.get('records'))
-        _logger.error(f"{objects=}")
         session.store_session_data(result=local_dict.get('result'),objects=objects)
 
         return local_dict
