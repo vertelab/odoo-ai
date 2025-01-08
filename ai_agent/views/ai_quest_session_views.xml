@@ -107,7 +107,7 @@
             </field>
         </record>
         <record id="action_ai_quest_session" model="ir.actions.act_window">
-            <field name="name">AI Quest Session</field>
+            <field name="name">AI Session</field>
             <field name="res_model">ai.quest.session</field>
             <field name="view_mode">tree,form,calendar</field>
         </record>

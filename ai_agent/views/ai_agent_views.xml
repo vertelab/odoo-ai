@@ -94,7 +94,7 @@
                              </group>
                         -->
                         <notebook>
-                            <page string="Template" id="template">
+                            <page string="Prompt Template" id="template">
                                 <field name="ai_prompt_template" widget="html" class="oe-bordered-editor" options="{'style-inline': true, 'codeview': true, 'dynamic_placeholder': true}" nolabel="1" />
                             </page>
                             <page string="Backstory" id="backstory">
