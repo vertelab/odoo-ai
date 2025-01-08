@@ -22,7 +22,7 @@
 # https://www.odoo.com/documentation/14.0/reference/module.html
 #
 {
-    'name': 'AI Chat',
+    'name': 'odoo-ai: AI Chat',
     'version': '1.0',
     'summary': """
         Short (1 phrase/line) summary of the module's purpose, used as
