@@ -32,7 +32,7 @@
     """,
     #'sequence': '1',
     'author': 'Vertel AB',
-    'website': 'https://vertel.se/apps/odoo-ai/chat_ai_bot_openai',
+    'website': 'https://vertel.se/apps/odoo-ai/chat_ai_bot_langchain',
     'images': ['static/description/banner.png'], # 560x280 px.
     'license': 'AGPL-3',
     'contributor': '',
