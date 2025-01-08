@@ -29,16 +29,25 @@ class MailChannel(models.Model):
         message = super(MailChannel, self).message_post(**kwargs)
 
         # Check if the message is from a user (not the bot itself)
-        _logger.warning(f"{message.author_id=} {message.parent_id=} {self.ai_quest_id=}")
-        if message.author_id != self.env.ref('base.partner_root'):
-            if self.ai_quest_id:
-                bot_response = self.ai_quest_id.chat(message)
+        # ~ _logger.warning(f"{message.author_id=} {message.parent_id=} {message.body=} {kwargs=} {self.ai_quest_id=} {self.name=} ")
+        # ~ _logger.warning(f"{self.is_chat=} {self.channel_member_ids=} {self.channel_partner_ids=} {self.channel_type=} {self.ai_quest_session_id=}")
+        ai_quest = None        
+        if self.is_chat:
+            ai_quest = self.env['res.users'].browse(self.channel_member_ids.mapped('partner_id.user_ids.id')).mapped('ai_quest_id')
+            user = ai_quest.chat_user_id
+        else: # channel
+            ai_quest = self.ai_quest_id
+            user = self.env.ref('base.user_root')
+
+        # ~ if message.author_id != self.env.ref('base.partner_root'):
+        if message.author_id != user.partner_id:
+            if ai_quest:    # use the AI as inlogged user
+                bot_response = ai_quest.with_user(self.env.user).chat(message)
                 _logger.error(f"{bot_response=}")
-                if bot_response:
-                    self.with_user(self.env.ref('base.user_root')).message_post(
-                        body=bot_response,
+                if bot_response: # Answer as the user the bot is
+                    self.with_user(user).message_post(
+                        body=bot_response['result'].content,
                         message_type='comment',
                         subtype_xmlid='mail.mt_comment',
                     )
         return message
-

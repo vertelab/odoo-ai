@@ -361,6 +361,8 @@ class AIQuest(models.Model):
         self.message_post(body=f"{body} | {self.last_run}", message_type="notification")
 
     def mail_test_wizard(self):
+        if self._check_quest_error():
+           raise UserError(self._check_quest_error())
         action = self.env.ref("ai_agent.action_ai_quest_test_mail_wizard").read()[0]
         action["context"] = {"default_ai_quest_id": self.id}
         return action
@@ -368,12 +370,36 @@ class AIQuest(models.Model):
     # ------------------------------------------------------------
     # Init type API
     # ------------------------------------------------------------
+    def _check_quest_error(self):
+        if len(self.ai_agent_ids) == 0:
+            raise UserError(_('You have to assign at least one agent to the quest'))
+        if len(self.ai_agent_ids.filtered(lambda a: a.ai_agent_id.status != 'active'))>0:
+            raise UserError(_('Check status on agents'))
+        if len(self.ai_agent_ids.filtered(lambda a: a.ai_agent_id.ai_agent_llm_id == False))>0:
+            raise UserError(_('Missing LLM on agent'))
+        if len(self.ai_agent_ids.filtered(lambda a: a.ai_agent_id.ai_agent_llm_id == False))>0:
+            raise UserError(_('Missing LLM on agent'))
+        if len(self.ai_agent_ids.filtered(lambda a: a.ai_agent_id.ai_agent_llm_id.status != 'confirmed'))>0:
+            raise UserError(_('Check status on LLMs'))
+        if len(self.ai_agent_ids.filtered(lambda a: a.ai_agent_id.ai_agent_llm_id.is_key_required and a.ai_agent_id.ai_agent_llm_id.ai_api_key == False))>0:
+            raise UserError(_('Missing API Key on LLMs'))
+        if self.status != 'active':
+            raise UserError(_('Wrong status on the quest'))
+        if self.code == DEFAULT_PYTHON_CODE:
+            raise UserError(_('Missing Python Code on the quest'))
+        if not self.description:
+            raise UserError(_('Missing Description on the quest'))
+        return False
+
+
 
     def _server_action_values(self, **kwarg):
         return kwarg
 
     def server_action(self, records):
-        if self.init_type == 'server-action' and self.server_action_id and self.status == 'active':
+        if self.init_type == 'server-action' and self.server_action_id:
+            if self._check_quest_error():
+                raise UserError(self._check_quest_error())
             vals = self._server_action_values(records=records)
             res = self.run(records=records)
             #session.store_session_data(self,result=result)
@@ -391,7 +417,9 @@ class AIQuest(models.Model):
 
     def cron(self, records):
         self.ensure_one()
-        if self.init_type == 'cron' and self.cron_id and self.status == 'active':
+        if self.init_type == 'cron' and self.cron_id:
+            if self._check_quest_error():
+                self.log_message(self._check_quest_error())
             if self.filter_domain:
                 domain = safe_eval.safe_eval(self_sudo.filter_domain, self._get_eval_context())
                 records = self.env[self.model_id.model].search(domain)
@@ -404,18 +432,26 @@ class AIQuest(models.Model):
         return kwarg
 
     def chat(self, message):
-        if self.init_type == 'chat' or "channel" and self.channel_id and self.status == 'active':
+        _logger.warning(f"chat {message=}")
+        if (self.init_type == 'chat' and self.chat_user_id) or (self.init_type == "channel" and self.channel_id):
+            if self._check_quest_error():
+                raise UserError(self._check_quest_error())
+
             session = message.parent_id.ai_quest_session_id if message.parent_id and message.parent_id.ai_quest_session_id else \
                 message.parent_id.ai_quest_session_id if message.ai_quest_session_id else \
                     self.env['ai.quest.session'].quest_init(self)
             vals = self._chat_values(session=session, message=message)
             res = self.run(**vals)
+            return res
+            raise UserError(f"{res}")
 
     def _mail_values(self, **kwarg):
         return kwarg
 
     def mail(self, mail, session):
-        if self.init_type == "mail" and self.status == 'active':
+        if self.init_type == "mail":
+            if self._check_quest_error():
+                self.log_message(self._check_quest_error())
             mail_body = html2plaintext(self.markdown2html(mail.body)).replace("<b>","").replace("</b>","").replace("<br>","").replace("<p>","").replace("</p>","").replace("\n","")
             vals = self._mail_values(mail=mail,mail_body=mail_body,session=session)
             res = self.run(**vals)
@@ -594,6 +630,7 @@ class AIQuest(models.Model):
 
             # helpers
             '_logger': _logger,
+            'html2plaintext': html2plaintext,
             **kw,
         }
         return eval_context

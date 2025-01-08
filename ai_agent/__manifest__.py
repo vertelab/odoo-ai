@@ -54,6 +54,8 @@
         "views/ai_quest_session_line_views.xml",
         "views/product_template_views.xml",
         "views/res_company_views.xml",
+        "views/res_users_views.xml",
+        "views/mail_channel_views.xml",
     ],
     "external_dependencies": {
         "python": [

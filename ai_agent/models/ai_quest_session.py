@@ -65,7 +65,7 @@ class AIQuestSession(models.Model):
     session_object_ids = fields.One2many(comodel_name="ai.session.object", inverse_name="ai_session_id")
     startdate = fields.Datetime(default=fields.Datetime.now())
     status = fields.Selection(selection=[("draft",_("Draft")),("active",_("Active")),("done",_("Done")),("error",_("Error"))], default="draft")
-    time_difference_ms = fields.Integer(string='Time Difference (ms)', compute='_compute_time_difference')
+    time_difference_ms = fields.Integer(string='Time Difference (ms)', compute='_compute_time_difference',store=True)
     type_of_output = fields.Text()
     user_id = fields.Many2one(comodel_name='res.users',string="User",help="")
     
