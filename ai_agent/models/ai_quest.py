@@ -555,7 +555,7 @@ class AIQuest(models.Model):
         :type action: browse record
         :returns: dict -- evaluation context given to (safe_)safe_eval """
 
-        records = kw.get('records', None)
+        records = kw.get('records', [])
 
         eval_context = {
             'action': action,            
@@ -602,6 +602,7 @@ class AIQuest(models.Model):
         local_dict = {}
         try:
             eval_context = self._get_eval_context(None, kwargs)
+            eval_context["session"].status = "active"
             if self.debug:
                 _logger.warning(f"{eval_context=}" + f"{self.code=}\n=======\n {local_dict=}")
             res = safe_eval(self.code,eval_context,local_dict,mode="exec",nocopy=True)
@@ -617,11 +618,14 @@ class AIQuest(models.Model):
                 self.log_message(f"{e=}\n\n=====\n{self.code=}\n=======\n {local_dict=}")
             return None
         session = local_dict.get('session',eval_context['session'])
-        session.status = 'done'
         objects = local_dict.get('objects',[])
-        if eval_context.get('records') != None:
+        if not eval_context.get('records'):
             objects.extend(eval_context.get('records'))
-        session.store_session_data(result=local_dict.get('result'),objects=objects)
+        _logger.error(f"{local_dict=}")
+        result = local_dict.get('result')
+        if type(result) != list:
+            result = [result]
+        session.store_session_data(result=result,objects=objects)
 
         return local_dict
         raise UserError(f"{result=}")

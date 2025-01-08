@@ -165,7 +165,7 @@ class AIQuestSession(models.Model):
     def _get_db_name(self):
         return self.env.cr.dbname
 
-    @api.depends('startdate', 'enddate')
+    @api.depends('enddate')
     def _compute_time_difference(self):
         for record in self:
             if record.startdate and record.enddate:
@@ -178,21 +178,23 @@ class AIQuestSession(models.Model):
 
     def store_session_data(self,result=None,objects=[],agent=None):
         if result is not None:            
-            _logger.warning(f"store session data before loop {objects=}")
-        for message in result:
-            if isinstance(message,AIMessage):
-                self.env['ai.quest.session.line'].new_line(session=self,aimessage=message,agent=agent, debug=self.debug)
-            if objects:
-                for o in objects:
-                    self.env['ai.session.object'].create({
-                        'ai_session_id': self.id,
-                        'object_id': (o._name,o.id),
-                    })
+            _logger.warning(f"store session data before loop {objects=} {result=}")
+            self.enddate = fields.Datetime.now()
             self.status = 'done'
+            for message in result:
+                if isinstance(message,AIMessage):
+                    self.env['ai.quest.session.line'].new_line(session=self,aimessage=message,agent=agent, debug=self.debug)
+                if objects:
+                    for o in objects:
+                        self.env['ai.session.object'].create({
+                            'ai_session_id': self.id,
+                            'object_id': (o._name,o.id),
+                        })
         else:
             self.status = 'error'
             if self.ai_quest_id.debug:
                 self.message_post(body=f'Missing {result=}')   
+        
 
     def log(self,obj,message):
         _logger.info(message)
