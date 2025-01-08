@@ -20,7 +20,7 @@
 ##############################################################################
 
 {
-    'name': 'Knowledge business intelligence AI',
+    'name': 'odoo-ai: Knowledge business intelligence AI',
     'version': '0.3',
     'summary': 'Business Intelligence',
     'category': 'Productivity / Discuss',
