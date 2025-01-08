@@ -417,7 +417,7 @@ class AIQuest(models.Model):
     def mail(self, mail, session):
         if self.init_type == "mail" and self.status == 'active':
             mail_body = html2plaintext(self.markdown2html(mail.body)).replace("<b>","").replace("</b>","").replace("<br>","").replace("<p>","").replace("</p>","").replace("\n","")
-            vals = self._mail_values(mail=mail,mail_body=mail_body,session=session, records=[session])
+            vals = self._mail_values(mail=mail,mail_body=mail_body,session=session)
             res = self.run(**vals)
             return res
 
@@ -618,8 +618,11 @@ class AIQuest(models.Model):
             return None
         session = local_dict.get('session',eval_context['session'])
         session.status = 'done'
-        local_dict.get('objects',[]).extend(eval_context.get('records',[]))
-        objects = eval_context.get('records',[])
+        objects = local_dict.get('objects',[])
+        _logger.error(f"{objects=}")
+        _logger.error(f"{eval_context.get('records')=}")
+        if eval_context.get('records') != None:
+            objects.extend(eval_context.get('records'))
         _logger.error(f"{objects=}")
         session.store_session_data(result=local_dict.get('result'),objects=objects)
 
