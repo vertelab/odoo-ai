@@ -144,15 +144,6 @@ Context and Guidelines:
         if debug:
             self.log_message(f"{system_message}")
 
-        # human = HumanMessage(content=self.ai_prompt_template.format_map(DefaultDict(kwargs)))
-        # try:            
-        #     # _logger.error(f"{system_message=}{self._create_ai_template_prompt(kwargs, test_prompt, parser)=}")
-        #     # response = eval(self.ai_agent_llm_id.get_llm()).invoke([system_message,human])
-        #     response = eval(self.ai_agent_llm_id.get_llm()).invoke(
-        #         [
-        #             self._create_ai_template_prompt(kwargs, test_prompt, parser)
-        #         ]
-        #     )
         human = HumanMessage(content=self.ai_prompt_template.format_map(DefaultDict(kwargs)))
         if debug:
             self.log_message(f"{human}")        
@@ -162,10 +153,6 @@ Context and Guidelines:
                 _logger.error(f"{system_message=}{self._create_ai_template_prompt(kwargs, test_prompt, parser)=}")
             response = eval(self.ai_agent_llm_id.get_llm()).invoke([system_message,human])
 
-            # ~ response = eval(self.ai_agent_llm_id.get_llm()).invoke([
-            # ~ system_message,
-            # ~ self._create_ai_template_prompt(kwargs, test_prompt, parser)]
-            # ~ )
             _logger.error(f"{response=}")
         except HTTPStatusError as e:
             self.ai_agent_llm_id.log_message(body=e, is_error=True)
@@ -184,7 +171,6 @@ Context and Guidelines:
 
         if response and session:
             session.ai_agent_llm_id = self.ai_agent_llm_id
-            # ~ session.store_session_data(response)
             return response
         return None
 

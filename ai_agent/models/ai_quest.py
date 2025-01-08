@@ -111,10 +111,6 @@ class AIQuest(models.Model):
     _inherit = ["mail.thread", "mail.activity.mixin", "mail.alias.mixin"]
     _description = 'AI Quest'
 
-    @api.model
-    def _generate_random_token(self):
-        return ''.join(choice('abcdefghijkmnopqrstuvwxyzABCDEFGHIJKLMNPQRSTUVWXYZ23456789') for _i in range(10))
-
     ai_agent_ids = fields.One2many(comodel_name='ai.quest.agent', inverse_name='ai_quest_id', string="",
                                    help="")  # domain|context|auto_join|limit
     agent_count = fields.Integer(compute="compute_agent_count")
@@ -274,7 +270,7 @@ class AIQuest(models.Model):
     @api.depends("session_line_ids")
     def compute_agent_count(self):
         for record in self:
-            record.agent_count = len(record.ai_agent_ids)
+            record.agent_count = len(set(record.session_line_ids.mapped('ai_agent_id')))
 
     @api.onchange('model_id')
     def _onchange_model_id(self):
@@ -366,7 +362,6 @@ class AIQuest(models.Model):
 
     def mail_test_wizard(self):
         action = self.env.ref("ai_agent.action_ai_quest_test_mail_wizard").read()[0]
-        # _logger.error(f"{action=}")
         action["context"] = {"default_ai_quest_id": self.id}
         return action
 
@@ -420,11 +415,9 @@ class AIQuest(models.Model):
         return kwarg
 
     def mail(self, mail, session):
-        # _logger.error(f"{session.session=}")
         if self.init_type == "mail" and self.status == 'active':
             mail_body = html2plaintext(self.markdown2html(mail.body)).replace("<b>","").replace("</b>","").replace("<br>","").replace("<p>","").replace("</p>","").replace("\n","")
-            # _logger.error(f"{mail_body=}")
-            vals = self._mail_values(mail=mail,mail_body=mail_body,session=session, records=[session])
+            vals = self._mail_values(mail=mail,mail_body=mail_body,session=session)
             res = self.run(**vals)
             return res
 
@@ -625,7 +618,9 @@ class AIQuest(models.Model):
             return None
         session = local_dict.get('session',eval_context['session'])
         session.status = 'done'
-        objects = local_dict.get('objects',[]).extend(eval_context.get('records',[]))
+        objects = local_dict.get('objects',[])
+        if eval_context.get('records') != None:
+            objects.extend(eval_context.get('records'))
         session.store_session_data(result=local_dict.get('result'),objects=objects)
 
         return local_dict
