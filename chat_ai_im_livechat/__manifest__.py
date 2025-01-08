@@ -19,8 +19,8 @@
 #
 ##############################################################################
 {
-    'name': 'Chat AI-Bot: IM LiveChat',
-    'version': '16.01.0.3',
+    'name': 'odoo-ai: Chat AI-Bot: IM LiveChat',
+    'version': '1.0.3',
     # Version ledger: 16.0 = Odoo version. 1 = Major. Non regressionable code. 2 = Minor. New features that are regressionable. 3 = Bug fixes
     'summary': 'AI Bot for LLM-servers compatible with OpenAI/using openai-ap',
     # Categories can be used to filter modules in modules listing
