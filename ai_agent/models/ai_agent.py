@@ -38,6 +38,10 @@ class AIAgent(models.Model):
     ai_goal = fields.Text(string="Goal")
     ai_prompt_template = fields.Html(string="Prompt Template")
     ai_role = fields.Char(string="Role")
+    ai_memory_ids = fields.One2many(comodel_name='ai.agent.memory', inverse_name='ai_agent_id', string="",help="")
+    ai_tool_ids = fields.One2many(comodel_name='ai.agent.tool', inverse_name='ai_agent_id', string="",help="")
+    
+    
     ai_temperature = fields.Float(string='Temperature', default=0.7,
                                   help="Temperature controls the randomness and creativity of the model's output, "
                                        "<1.0 more predictable and consistent >1.0 more diverse and creative responses")

@@ -1,6 +1,8 @@
 id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
 access_ai_agent,ai_agent.ai_agent,model_ai_agent,base.group_user,1,1,1,1
 access_ai_agent_llm,ai_agent.ai_agent_llm,model_ai_agent_llm,base.group_user,1,1,1,1
+access_ai_tool,ai_agent.ai_tool,model_ai_tool,base.group_user,1,1,1,1
+access_ai_agent_tool,ai_agent.ai_agent_tool,model_ai_agent_tool,base.group_user,1,1,1,1
 ai_agent.access_ai_agent_test_wizard,access_ai_agent_test_wizard,ai_agent.model_ai_agent_test_wizard,base.group_user,1,1,1,1
 ai_agent.access_ai_agent_data,access_ai_agent_data,ai_agent.model_ai_agent_data,base.group_user,1,1,1,1
 ai_agent.access_ai_quest,access_ai_quest,ai_agent.model_ai_quest,base.group_user,1,1,1,1
@@ -9,3 +11,5 @@ ai_agent.access_ai_quest_session_line,access_ai_quest_session_line,ai_agent.mode
 ai_agent.ai_quest_agent_access_rights,AI Quest Agent Access,model_ai_quest_agent,base.group_user,1,1,1,1
 ai_agent.access_ai_quest_test_mail_wizard,access_ai_quest_test_mail_wizard,ai_agent.model_ai_quest_test_mail_wizard,base.group_user,1,1,1,1
 ai_agent.access_ai_session_object,access_ai_session_object,ai_agent.model_ai_session_object,base.group_user,1,1,1,1
+access_ai_memory,ai_agent.ai_memory,model_ai_memory,base.group_user,1,1,1,1
+access_ai_agent_memory,ai_agent.ai_agent_memory,model_ai_agent_memory,base.group_user,1,1,1,1
