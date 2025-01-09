@@ -86,7 +86,14 @@ class AIQuestAgent(models.Model):
     ai_quest_id = fields.Many2one(comodel_name='ai.quest', string="", help="")
     sequence = fields.Integer(string='Sequence')
     ai_agent_id = fields.Many2one(comodel_name='ai.agent', string="Agent", help="")
-
+    ai_agent_status = fields.Selection(
+        selection=[("draft", _("Draft")), ("active", _("Active")), ("done", _("Done")), ("error", _("Error"))],
+        default="draft", related='ai_agent_id.status')
+    ai_agent_llm_id = fields.Many2one(comodel_name="ai.agent.llm", string="LLM", help="Choose Large Language Model",
+                                      domain="[('status','=','confirmed')]", related='ai_agent_id.ai_agent_llm_id')
+    ai_llm_status = fields.Selection(
+        selection=[("not_confirmed", "Not Confirmed"), ("confirmed", "Confirmed"), ("error", "Error")],
+        default="not_confirmed", related='ai_agent_id.ai_agent_llm_id.status')
 
 # https://readmedium.com/langgraph-made-easy-a-beginners-guide-part-2-196e8b179119
 
