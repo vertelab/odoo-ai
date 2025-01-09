@@ -10,3 +10,5 @@ langgraph
 langchain_community
 markdown
 transformers
+lxml_html_clean
+unidecode
