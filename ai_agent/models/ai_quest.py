@@ -742,6 +742,7 @@ class AIQuest(models.Model):
     # LangGraph 
     # ------------------------------------------------------------
     
+    # Inspired by https://github.com/menonpg/agentic_search_openai_langgraph/blob/main/agents.py
     def build_graph(self,agents):
         members = [a.name for a in agents[1:]]
         
