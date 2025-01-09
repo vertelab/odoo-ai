@@ -115,6 +115,9 @@
                                     <tree string="AI Quest Agents" editable="bottom">
                                         <field name="sequence" widget="handle" />
                                         <field name="ai_agent_id" />
+                                        <field name="ai_agent_status" />
+                                        <field name="ai_agent_llm_id" />
+                                        <field name="ai_llm_status" />
                                     </tree>
                                 </field>
                             </page>
