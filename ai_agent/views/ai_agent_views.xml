@@ -101,14 +101,14 @@
                                 <field name="ai_backstory" nolabel="1" />
                             </page>
                             
-                             <page string="Memory" id="memory">
+                             <!-- <page string="Memory" id="memory">
                                 <field name="ai_memory_ids">
                                     <tree string="AI Memory" editable="bottom">
                                         <field name="sequence" widget="handle" />
                                         <field name="ai_memory_id" />
                                     </tree>
                                 </field>
-                            </page>
+                            </page> -->
                             <page string="Tools" id="tool">
                                 <field name="ai_tool_ids">
                                     <tree string="AI Tools" editable="bottom">

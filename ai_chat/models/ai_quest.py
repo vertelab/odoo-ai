@@ -1,134 +1,98 @@
-import faiss, base64
+import faiss, base64, uuid
 from langchain_community.docstore.in_memory import InMemoryDocstore
 from langchain_community.vectorstores import FAISS
+from langchain_core.messages.ai import AIMessage
 from langchain_core.documents import Document
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import START, StateGraph
 from typing_extensions import List, TypedDict
-# from langchain_huggingface.embeddings import HuggingFaceEmbeddings
-from langchain_community.embeddings import HuggingFaceInferenceAPIEmbeddings
-
-
-
-
-
+from langchain_huggingface.embeddings import HuggingFaceEmbeddings
+#from langchain_community.embeddings import HuggingFaceInferenceAPIEmbeddings
+from langchain_openai import OpenAIEmbeddings
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from odoo import models, fields, api, _
 from odoo.exceptions import UserError, AccessError, ValidationError
+from odoo.tools.mail import html2plaintext
+
 import logging
 
 _logger = logging.getLogger(__name__)
 
+class AIQuestSession(models.Model):
+    _inherit = 'ai.quest.session'
+
 class State(TypedDict):
     message: str
+    session: AIQuestSession
+    vector_store: FAISS
     context: List[Document]
-    answer: str
+    answer: AIMessage
 
 class AIQuest(models.Model):
     _inherit = 'ai.quest'
 
     ai_type = fields.Selection(selection_add=[('chat_rag', 'Chat RAG')], ondelete={'chat_rag': 'cascade'})
+    llm_api_key = fields.Char(related="ai_agent_ids.ai_agent_id.ai_agent_llm_id.ai_api_key")
 
-    def retrieve(state: State, config: RunnableConfig):
-        retrieved_docs = configurable_retriever.invoke(state["message"])
+    def convertHtml2Text(self,text):
+        return html2plaintext(text)
+
+    def retrieve(self,state: State):
+        retrieved_docs = state["vector_store"].similarity_search(state["message"])
+        _logger.warning("in retriver")
         return {"context": retrieved_docs}
 
+    def generate(self,state: State):
+        _logger.warning("in generator")
+        docs_content = "\n\n".join(doc.page_content for doc in state["context"])
+        agent = self.env["ai.agent"].search([("ai_type", "=", "chat_rag")])
+        response = agent.prompt_agent(message=state["message"], context=docs_content, session=state["session"])
+        # _logger.error(f"{response=}")
+        return {"answer": response}
 
-    # def generate(state: State):
-    #     docs_content = "\n\n".join(doc.page_content for doc in state["context"])
-    #     messages = prompt.invoke({"question": state["question"], "context": docs_content})
-    #     response = llm.invoke(messages)
-    #     return {"answer": response.content}
-
-
-    def chat(self, message):
-        if self.ai_type == "chat_rag":
-            if self.init_type == 'chat' or "channel" and self.channel_id:
-                self.vectorstore(message,message.attachment_ids)
-                vals = self._chat_values(message)
-                graph_builder = StateGraph(State).add_sequence([self.retrieve, vals['agent'].prompt_agent])
-                graph_builder.add_edge(START, "retrieve")
-                graph = graph_builder.compile()
-                return graph.invoke(
-                                        {"message": message.description}, 
-                                        config={"configurable": {"search_kwargs": {"source": "attachment"}}}
-                                    )
-        else:
-            _logger.error(f"Det fungerar"*10)
-            return super(AIQuest,self).chat(message=message)
-
-
-
-    # def graph_response(self):
-    #     graph_builder = StateGraph(State).add_sequence([self.retrieve, vals['agent'].prompt_agent])
-    #     graph_builder.add_edge(START, "retrieve")
-    #     graph = graph_builder.compile()
-    #     return graph.invoke({
-    #                             "message": message.body}, 
-    #                             config={"configurable": {"search_kwargs": {"source": "attachment"}
-    #                         }})
-
-    # def chat(self,message):
-    #     session = super(AIQuestAgent,self).chat(message=message)
-    #     _logger.error(f"{message=} {session=}")
-    #     if self.init_type == 'chat' or "channel" and self.channel_id:
-    #         self.vectorstore(message,attachments)
-    #         vals = self._chat_values(message)
-    #         graph_builder = StateGraph(State).add_sequence([self.retrieve, vals['agent'].prompt_agent])
-    #         graph_builder.add_edge(START, "retrieve")
-    #         graph = graph_builder.compile()
-    #         return graph.invoke(
-    #                                 {"message": message.body}, 
-    #                                 config={"configurable": {"search_kwargs": {"source": "attachment"}}})
-                                
-            # response = vals['agent'].prompt_agent(message=message.body,session=vals['session'],attachment=attachment)'        
-
+    def _chat_values(self,**kwargs):
+        kwargs = super(AIQuest,self)._chat_values(**kwargs)
+        vector_store = self.vectorstore(kwargs["message"],kwargs["message"].attachment_ids)
+        kwargs["vector_store"] = vector_store
+        return kwargs
+        
+    def graph_prompt_agent(self,message,vector_store,session):
+        graph_builder = StateGraph(State).add_sequence([self.retrieve, self.generate])
+        graph_builder.add_edge(START, "retrieve")
+        graph = graph_builder.compile()
+        result = graph.invoke({"message": message, "vector_store": vector_store, "session": session})
+        _logger.error(f"{result=}")
+        return result["answer"]
 
     def vectorstore(self,message,attachments):
 
-        _logger.error(f"{message.description=} {attachments=} {self.embedding()}")
+        #hf_embedding = HuggingFaceInferenceAPIEmbeddings(model_name="sentence-transformers/all-MiniLM-l6-v2",api_key=self.ai_agent_ids[0].ai_agent_id.ai_agent_llm_id.ai_api_key)
+        #hf_embedding = HuggingFaceEmbeddings(model_name="sentence-transformers/all-mpnet-base-v2")
+        hf_embedding = OpenAIEmbeddings(model="text-embedding-3-large",api_key=self.ai_agent_ids[0].ai_agent_id.ai_agent_llm_id.ai_api_key)
 
-        index = faiss.IndexFlatL2(len(self.embedding().embed_query(message.description)))
-        
-        vector_store = FAISS(
-            embedding_function=self.embedding(),
-            index=index,
-            docstore=InMemoryDocstore(),
-            index_to_docstore_id={},
+        index = faiss.IndexFlatL2(len(hf_embedding.embed_query(self.convertHtml2Text(message.body))))
+
+        text_splitter = RecursiveCharacterTextSplitter(
+           # Set a really small chunk size, just to show.
+            chunk_size=100,
+            chunk_overlap=20,
+            length_function=len,
+            is_separator_regex=False,
         )
+
+        vector_store = FAISS(embedding_function=hf_embedding, index=index,docstore=InMemoryDocstore(),index_to_docstore_id={},)
 
         for attachment in attachments:
 
-            attachment_text = base64.b64decode(attachment.datas)
+            attachment_text = base64.b64decode(attachment.datas).decode('utf-8')
 
-            document = Document(
-                page_content=attachment_text,
-                metadata={"source": "attachment"},
-            )
+            docs = text_splitter.create_documents([attachment_text])
 
-            uuid = str(uuid4())
+            # document = Document(
+            #     page_content=texts,
+            #     metadata={"source": "attachment"},
+            # )
 
-            vector_store.add_documents(documents=document, ids=uuid)
+            vector_store.add_documents(documents=docs)
 
-
-    def configurable_retriever(self):
-        configurable_retriever = retriever.configurable_fields(
-         search_kwargs=ConfigurableField(
-            id="search_kwargs",
-            name="Search Kwargs",
-            description="The search kwargs to use",
-            )
-        )
-        return configurable_retriever
-
-    def embedding(self):
-        return HuggingFaceInferenceAPIEmbeddings(model_name="sentence-transformers/all-mpnet-base-v2",api_key=self.ai_agent_ids[0].ai_agent_id.ai_agent_llm_id.ai_api_key)
-
-# class MailChannel(models.Model):
-#     # _name="mail.channel"
-#     _inherit = 'mail.channel'
-
-#     @api.returns('mail.message', lambda value: value.id)
-#     def message_post(self, **kwargs):
-#         message = super(MailChannel, self).message_post(**kwargs)
-#         _logger.error(f"{message.attachment_ids=}")
-#         return message
+        return vector_store
