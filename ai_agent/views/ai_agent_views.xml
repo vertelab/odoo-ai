@@ -103,17 +103,17 @@
                             
                              <page string="Memory" id="memory">
                                 <field name="ai_memory_ids">
-                                    <tree string="AI Memory" editable="bottom">
+                                    <tree editable="bottom">
                                         <field name="sequence" widget="handle" />
-                                        <field name="ai_memory_id" />
+                                        <field name="ai_memory_id" nolabel="1" />
                                     </tree>
                                 </field>
                             </page>
                             <page string="Tools" id="tool">
                                 <field name="ai_tool_ids">
-                                    <tree string="AI Tools" editable="bottom">
+                                    <tree  editable="bottom">
                                         <field name="sequence" widget="handle" />
-                                        <field name="ai_tool_id" />
+                                        <field name="ai_tool_id" nolabel="1" />
                                     </tree>
                                 </field>
                             </page>

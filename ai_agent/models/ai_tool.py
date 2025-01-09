@@ -39,15 +39,16 @@ class AITool(models.Model):
     debug = fields.Boolean(string='Debug')
     is_favorite = fields.Boolean()
     last_run = fields.Datetime()
-    name = fields.Char(required=True)
+    name = fields.Charrequired=True)
     status = fields.Selection(
         selection=[("draft", _("Draft")), ("active", _("Active")), ("done", _("Done")), ("error", _("Error"))],
         default="draft")
     tag_ids = fields.Many2many(comodel_name='product.tag', string='Tags')
     image_128 = fields.Image("Image", max_width=128, max_height=128)
     base_image_128 = fields.Image("Base Image", max_width=128, max_height=128, compute='_compute_base_image_128')
-    tool = fields.Char(string='Tool', size=64, trim=True, )
-    tool_lib = fields.Char(string='Library', size=64, trim=True, )
+    tool = fields.Char(string='Tool', trim=True, )
+    tool_lib = fields.Char(string='Library', trim=True, )
+    tool_api_key = fields.Char(string='API-key', trim=True, )
     
     @api.depends('image_128')
     def _compute_base_image_128(self):

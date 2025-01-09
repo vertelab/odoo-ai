@@ -18,6 +18,7 @@
                         <group>
                             <field name="tool"/>
                             <field name="tool_lib"/>
+                            <field name="tool_api_key"/>
                             <field name="last_run"/>
                         </group>
                         <group>

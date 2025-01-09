@@ -379,23 +379,23 @@ class AIQuest(models.Model):
     # ------------------------------------------------------------
     def _check_quest_error(self):
         if len(self.ai_agent_ids) == 0:
-            raise UserError(_('You have to assign at least one agent to the quest'))
+            return _('You have to assign at least one agent to the quest'))
         if len(self.ai_agent_ids.filtered(lambda a: a.ai_agent_id.status != 'active'))>0:
-            raise UserError(_('Check status on agents'))
+            return _('Check status on agents'))
         if len(self.ai_agent_ids.filtered(lambda a: a.ai_agent_id.ai_agent_llm_id == False))>0:
-            raise UserError(_('Missing LLM on agent'))
+            return _('Missing LLM on agent'))
         if len(self.ai_agent_ids.filtered(lambda a: a.ai_agent_id.ai_agent_llm_id == False))>0:
-            raise UserError(_('Missing LLM on agent'))
+            return _('Missing LLM on agent'))
         if len(self.ai_agent_ids.filtered(lambda a: a.ai_agent_id.ai_agent_llm_id.status != 'confirmed'))>0:
-            raise UserError(_('Check status on LLMs'))
+            return _('Check status on LLMs'))
         if len(self.ai_agent_ids.filtered(lambda a: a.ai_agent_id.ai_agent_llm_id.is_key_required and a.ai_agent_id.ai_agent_llm_id.ai_api_key == False))>0:
-            raise UserError(_('Missing API Key on LLMs'))
+            return _('Missing API Key on LLMs'))
         if self.status != 'active':
-            raise UserError(_('Wrong status on the quest'))
+            return _('Wrong status on the quest'))
         if self.code == DEFAULT_PYTHON_CODE:
-            raise UserError(_('Missing Python Code on the quest'))
+            return _('Missing Python Code on the quest'))
         if not self.description:
-            raise UserError(_('Missing Description on the quest'))
+            return _('Missing Description on the quest'))
         return False
 
 
@@ -736,3 +736,35 @@ class AIQuest(models.Model):
             if quest.chat_user_id:
                 quest.chat_user_id.write({'name': quest.name, 'login': quest.name, 'ai_quest_id': quest.id, })
         return result
+
+
+    # ------------------------------------------------------------
+    # LangGraph 
+    # ------------------------------------------------------------
+    
+    def build_graph(self,agents):
+        members = [a.name for a in agents[1:]]
+        
+        graph_builder = StateGraph(AgentState)
+        graph_builder.add_node("Supervisor", agent[0].create_supervisor(quest=self,members=members))
+        for agent in agents[1:]:
+            graph_builder.add_node(agent.name, agent.create_node())
+        
+        for member in members:
+            graph_builder.add_edge(member, "Supervisor")
+
+        conditional_map = {k: k for k in members}
+        conditional_map["FINISH"] = END
+        graph_builder.add_conditional_edges("Supervisor", lambda x: x["next"], conditional_map)
+        graph_builder.set_entry_point("Supervisor")
+
+        graph = graph_builder.compile()
+
+        return graph
+
+
+    #  response = ai_quest.build_graph(agents).invoke({
+    #        "messages": [HumanMessage(content=input_message)]
+    #    })
+    #  content = response['messages'][1].content
+    
