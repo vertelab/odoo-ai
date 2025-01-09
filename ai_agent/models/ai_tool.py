@@ -39,7 +39,7 @@ class AITool(models.Model):
     debug = fields.Boolean(string='Debug')
     is_favorite = fields.Boolean()
     last_run = fields.Datetime()
-    name = fields.Charrequired=True)
+    name = fields.Char(required=True)
     status = fields.Selection(
         selection=[("draft", _("Draft")), ("active", _("Active")), ("done", _("Done")), ("error", _("Error"))],
         default="draft")
@@ -60,3 +60,6 @@ class AITool(models.Model):
             self.status = "error"
         self.last_run = fields.Datetime.now()
         self.message_post(body=f"{body} | {self.last_run}", message_type="notification")
+        
+        
+    

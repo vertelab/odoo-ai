@@ -216,7 +216,7 @@ Guidlines and instructions {session.ai_quest.description}
     # LangGraph 
     # ------------------------------------------------------------
     
-    def create_supervisor(self,quest=quest,members=members):
+    def create_supervisor(self,quest,members):
         members = quest.ai_agent_ids.with_context({'agent': agent}).filtered(lambda a: a.ai_agent_id != agent)
 
         members = get_members()
@@ -292,8 +292,32 @@ Guidlines and instructions {session.ai_quest.description}
         
 
     def _get_tools(self):
-        return []
-        
+        from langchain.tools import tool
+                
+        @tool("internet_search_DDGO", return_direct=False)
+        def internet_search_DDGO(query: str) -> str:
+
+            """Searches the internet using DuckDuckGo."""
+
+            from duckduckgo_search import DDGS
+            with DDGS() as ddgs:
+                results = [r for r in ddgs.text(query, max_results=5)]
+            return results if results else "No results found."
+
+        @tool("process_content", return_direct=False)
+        def process_content(url: str) -> str:
+
+            """Processes content from a webpage."""
+
+            from bs4 import BeautifulSoup                
+            import requests
+            
+            response = requests.get(url)
+            soup = BeautifulSoup(response.content, 'html.parser')
+            return soup.get_text()
+
+
+        return [internet_search_DDGO, process_content]  
         
         
         

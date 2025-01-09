@@ -24,6 +24,9 @@ from odoo.tools.safe_eval import safe_eval
 from random import randint
 from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
 
+
+from dateutil.relativedelta import relativedelta
+
 _logger = logging.getLogger(__name__)
 
 
@@ -35,6 +38,8 @@ class AIAgentMemory(models.Model):
 
     ai_agent_id = fields.Many2one(comodel_name='ai.agent', string="", help="")
     sequence = fields.Integer(string='Sequence')
+    nbr_days = fields.Integer(string='Number days this memory will live',related="ai_memory_id.nbr_days")
+    last_run = fields.Datetime(string='Last Run', related="ai_memory_id.last_run")
     ai_memory_id = fields.Many2one(comodel_name='ai.memory', string="Memory", help="")
 
 
@@ -56,6 +61,7 @@ class AIMemory(models.Model):
     base_image_128 = fields.Image("Base Image", max_width=128, max_height=128, compute='_compute_base_image_128')
     memory_type = fields.Selection(selection=[('faiss','FAISS'),('st','Short Term')],string='Memory type')
     memory_faiss = fields.Binary(string='FAISS Index', attachment=True)
+    nbr_days = fields.Integer(string='Number days this memory will live')
 
 
     @api.depends('image_128')
@@ -108,5 +114,10 @@ class AIMemory(models.Model):
     def log_message(self, body, is_error=False):
         if is_error:
             self.status = "error"
-        self.last_run = fields.Datetime.now()
         self.message_post(body=f"{body} | {self.last_run}", message_type="notification")
+
+    def run(self):
+        self.last_run = fields.Datetime.now()
+        
+    def cron(self):
+        self.env['ai.memory'].search([('last_run','<',fields.Datetime.now()-relativedelta(days=self.nbr_days))]).run()
