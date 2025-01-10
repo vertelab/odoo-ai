@@ -10,14 +10,13 @@ from httpx import HTTPStatusError
 from random import randint
 from langchain_core.output_parsers import StrOutputParser
 
-
 from odoo import models, fields, api, _
 from odoo.exceptions import UserError, AccessError, ValidationError
 from odoo.tools.safe_eval import safe_eval
 import logging
 
-
 _logger = logging.getLogger(__name__)
+
 
 class AIAgentTool(models.Model):
     _name = 'ai.agent.tool'
@@ -28,10 +27,9 @@ class AIAgentTool(models.Model):
     ai_tool_id = fields.Many2one(comodel_name='ai.tool', string="Tool", help="")
 
 
-
 class AITool(models.Model):
     _name = 'ai.tool'
-    _inherit = ["mail.thread", "mail.activity.mixin",]
+    _inherit = ["mail.thread", "mail.activity.mixin", ]
 
     _description = 'AI Tool'
 
@@ -49,7 +47,7 @@ class AITool(models.Model):
     tool = fields.Char(string='Tool', trim=True, )
     tool_lib = fields.Char(string='Library', trim=True, )
     tool_api_key = fields.Char(string='API-key', trim=True, )
-    
+
     @api.depends('image_128')
     def _compute_base_image_128(self):
         for record in self:
@@ -60,6 +58,3 @@ class AITool(models.Model):
             self.status = "error"
         self.last_run = fields.Datetime.now()
         self.message_post(body=f"{body} | {self.last_run}", message_type="notification")
-        
-        
-    
