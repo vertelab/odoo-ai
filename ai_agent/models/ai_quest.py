@@ -78,6 +78,15 @@ avatar_server_action = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 5
 <circle cx="345.04" cy="265.03" r="26.41" fill="#ffffff"/>
 </svg>'''
 
+from typing import Annotated, Sequence, TypedDict
+from langchain_core.messages import BaseMessage, HumanMessage
+import functools, operator
+
+
+class AgentState(TypedDict):
+    messages: Annotated[Sequence[BaseMessage], operator.add]
+    next: str
+
 
 class AIQuestAgent(models.Model):
     _name = 'ai.quest.agent'
@@ -94,6 +103,7 @@ class AIQuestAgent(models.Model):
     ai_llm_status = fields.Selection(
         selection=[("not_confirmed", "Not Confirmed"), ("confirmed", "Confirmed"), ("error", "Error")],
         default="not_confirmed", related='ai_agent_id.ai_agent_llm_id.status')
+
 
 # https://readmedium.com/langgraph-made-easy-a-beginners-guide-part-2-196e8b179119
 
@@ -170,8 +180,8 @@ class AIQuest(models.Model):
     partner_id = fields.Many2one(comodel_name='res.partner', string="Customer", help="")
     image_128 = fields.Image("Image", max_width=128, max_height=128)
     avatar_128 = fields.Image("Avatar", max_width=128, max_height=128, compute='_compute_avatar_128')
-    debug = fields.Boolean(string='Debug',help='More logging')
-    
+    debug = fields.Boolean(string='Debug', help='More logging')
+
     @api.model
     def _generate_random_token(self):
         return ''.join(choice('abcdefghijkmnopqrstuvwxyzABCDEFGHIJKLMNPQRSTUVWXYZ23456789') for _i in range(10))
@@ -252,9 +262,9 @@ class AIQuest(models.Model):
             'res_model': 'ai.session.object',
             'view_mode': 'tree,calendar',
             'target': 'current',
-            'context':{
+            'context': {
                 "expand": 1
-                },
+            },
             'domain': [("ai_quest_id", '=', self.id)]
         }
         return action
@@ -369,7 +379,7 @@ class AIQuest(models.Model):
 
     def mail_test_wizard(self):
         if self._check_quest_error():
-           raise UserError(self._check_quest_error())
+            raise UserError(self._check_quest_error())
         action = self.env.ref("ai_agent.action_ai_quest_test_mail_wizard").read()[0]
         action["context"] = {"default_ai_quest_id": self.id}
         return action
@@ -380,25 +390,24 @@ class AIQuest(models.Model):
     def _check_quest_error(self):
         if len(self.ai_agent_ids) == 0:
             return _('You have to assign at least one agent to the quest')
-        if len(self.ai_agent_ids.filtered(lambda a: a.ai_agent_id.status != 'active'))>0:
+        if len(self.ai_agent_ids.filtered(lambda a: a.ai_agent_id.status != 'active')) > 0:
             return _('Check status on agents')
-        if len(self.ai_agent_ids.filtered(lambda a: a.ai_agent_id.ai_agent_llm_id == False))>0:
+        if len(self.ai_agent_ids.filtered(lambda a: a.ai_agent_id.ai_agent_llm_id == False)) > 0:
             return _('Missing LLM on agent')
-        if len(self.ai_agent_ids.filtered(lambda a: a.ai_agent_id.ai_agent_llm_id == False))>0:
+        if len(self.ai_agent_ids.filtered(lambda a: a.ai_agent_id.ai_agent_llm_id == False)) > 0:
             return _('Missing LLM on agent')
-        if len(self.ai_agent_ids.filtered(lambda a: a.ai_agent_id.ai_agent_llm_id.status != 'confirmed'))>0:
+        if len(self.ai_agent_ids.filtered(lambda a: a.ai_agent_id.ai_agent_llm_id.status != 'confirmed')) > 0:
             return _('Check status on LLMs')
-        if len(self.ai_agent_ids.filtered(lambda a: a.ai_agent_id.ai_agent_llm_id.is_key_required and a.ai_agent_id.ai_agent_llm_id.ai_api_key == False))>0:
+        if len(self.ai_agent_ids.filtered(
+                lambda a: a.ai_agent_id.ai_agent_llm_id.is_key_required and a.ai_agent_id.ai_agent_llm_id.ai_api_key == False)) > 0:
             return _('Missing API Key on LLMs')
-        if self.status != 'active':
-            return _('Wrong status on the quest')
+        # if self.status != 'active':
+        #     return _('Wrong status on the quest')
         if self.code == DEFAULT_PYTHON_CODE:
             return _('Missing Python Code on the quest')
         if not self.description:
             return _('Missing Description on the quest')
         return False
-
-
 
     def _server_action_values(self, **kwarg):
         return kwarg
@@ -424,6 +433,7 @@ class AIQuest(models.Model):
 
     def cron(self, records):
         self.ensure_one()
+        self_sudo = self.sudo()
         if self.init_type == 'cron' and self.cron_id:
             if self._check_quest_error():
                 self.log_message(self._check_quest_error())
@@ -450,7 +460,7 @@ class AIQuest(models.Model):
             vals = self._chat_values(session=session, message=message)
             res = self.run(**vals)
             return res
-            raise UserError(f"{res}")
+            # raise UserError(f"{res}")
 
     def _mail_values(self, **kwarg):
         return kwarg
@@ -459,8 +469,9 @@ class AIQuest(models.Model):
         if self.init_type == "mail":
             if self._check_quest_error():
                 self.log_message(self._check_quest_error())
-            mail_body = html2plaintext(self.markdown2html(mail.body)).replace("<b>","").replace("</b>","").replace("<br>","").replace("<p>","").replace("</p>","").replace("\n","")
-            vals = self._mail_values(mail=mail,mail_body=mail_body,session=session)
+            mail_body = html2plaintext(self.markdown2html(mail.body)).replace("<b>", "").replace("</b>", "").replace(
+                "<br>", "").replace("<p>", "").replace("</p>", "").replace("\n", "")
+            vals = self._mail_values(mail=mail, mail_body=mail_body, session=session)
             res = self.run(**vals)
             return res
 
@@ -494,8 +505,8 @@ class AIQuest(models.Model):
     def markdown2html(self, text):
         return markdown.markdown(text)
 
-    def json2dict(self,text):
-        text = text.split('```')[1].replace("json","").replace("\n","")
+    def json2dict(self, text):
+        text = text.split('```')[1].replace("json", "").replace("\n", "")
         return json.loads(text)
 
     # ------------------------------------------------------------
@@ -553,29 +564,8 @@ class AIQuest(models.Model):
 
         return [getattr(self, f"{name}_tool") for name in tool_names]
 
-    # def get_tools(self, tool_name=None):
-    #     # Initialize DuckDuckGo wrapper with explicit parameters
-    #     search_wrapper = DuckDuckGoSearchAPIWrapper(
-    #         max_results=2,
-    #         time='d',  # last 24h
-    #         backend='api'
-    #     )
-    #     search = DuckDuckGoSearchRun(api_wrapper=search_wrapper)
-    #     wikipedia = WikipediaQueryRun(api_wrapper=WikipediaAPIWrapper())
-    #
-    #     community_tools = {
-    #         'search': search,
-    #         'wikipedia': wikipedia
-    #     }
-    #
-    #     if tool_name:
-    #         return [community_tools.get(tool_name)]
-    #     return list(community_tools.values())
-
     def call_model(self, state: MessagesState):
         messages = state['messages']
-
-        print("messages", messages)
 
         # Get tools for this instance
         x_tools = self.get_tools()
@@ -583,8 +573,6 @@ class AIQuest(models.Model):
         response = eval(
             self.ai_agent_ids[0].ai_agent_id.ai_agent_llm_id.get_llm()
         ).bind_tools(x_tools).invoke(messages)
-
-        print(response.content)
 
         _logger.info(f"{response.content=}")
 
@@ -601,7 +589,7 @@ class AIQuest(models.Model):
         records = kw.get('records', [])
 
         eval_context = {
-            'action': action,            
+            'action': action,
             'env': self.env,
             'self': self,
             'session': kw.get('session', self.env['ai.quest.session'].quest_init(self)),
@@ -614,12 +602,11 @@ class AIQuest(models.Model):
             'record': records[0] if records else None,
             'records': records,
             # context
-            # ~ 'llm_list': ' '.join([f"'name': {llm.name} 'provider': {llm.product_tmpl_id.name}" for llm in self.env['ai.agent.llm'].search([])]),
-            'agent_list': ' '.join([f"'name': {a.name}, 'role': {a.ai_role},'goal': {a.ai_goal},'template': {a.ai_prompt_template}" for a in self.env['ai.agent'].search([])]),
+            'agent_list': ' '.join(
+                [f"'name': {a.name}, 'role': {a.ai_role},'goal': {a.ai_goal},'template': {a.ai_prompt_template}" for a
+                 in self.env['ai.agent'].search([])]),
             'quest_list': ' ',
-            # ~ 'quest_list': ' '.join([f"'name': {q.name}, 'description': {q.description}, 'init_type': {q.init_type}" for q in self.env['ai.quest'].search([('status','in',['draft','active'])])]),
             'module_list': '',
-            # ~ 'module_list': ' '.join([f"{m['name']}: {m['description']}" for m in self.env['ir.module.module'].search_read([('application', '=', True)], ['name', 'description'])]),
             # langgraph
             'START': START,
             'END': END,
@@ -629,7 +616,6 @@ class AIQuest(models.Model):
             'HumanMessage': HumanMessage,
             'ChatOpenAI': ChatOpenAI,
             'MemorySaver': MemorySaver,
-            # 'DuckDuckGoSearchRun': DuckDuckGoSearchRun()
 
             # Exceptions
             'Warning': Warning,
@@ -646,10 +632,10 @@ class AIQuest(models.Model):
         local_dict = {}
         try:
             eval_context = self._get_eval_context(None, kwargs)
-            eval_context["session"].status = "active"
+            # eval_context["session"].status = "active"
             if self.debug:
                 _logger.warning(f"{eval_context=}" + f"{self.code=}\n=======\n {local_dict=}")
-            res = safe_eval(self.code,eval_context,local_dict,mode="exec",nocopy=True)
+            res = safe_eval(self.code, eval_context, local_dict, mode="exec", nocopy=True)
         except ValueError as e:
             self.log_message(f"ValueError {e=}", is_error=True)
             if self.debug:
@@ -661,18 +647,17 @@ class AIQuest(models.Model):
             if self.debug:
                 self.log_message(f"{e=}\n\n=====\n{self.code=}\n=======\n {local_dict=}")
             return None
-        session = local_dict.get('session',eval_context['session'])
-        objects = local_dict.get('objects',[])
+        session = local_dict.get('session', eval_context['session'])
+        objects = local_dict.get('objects', [])
         if not eval_context.get('records'):
             objects.extend(eval_context.get('records'))
         _logger.error(f"{local_dict=}")
         result = local_dict.get('result')
-        if type(result) != list:
+        if isinstance(result, list):
             result = [result]
-        session.store_session_data(result=result,objects=objects)
+        session.store_session_data(result=result, objects=objects)
 
         return local_dict
-        raise UserError(f"{result=}")
 
         #for department in records:
         #   _logger.warning(f{department})
@@ -682,26 +667,26 @@ class AIQuest(models.Model):
         #                                                      quest_instructions=quest.description)
         #markdown.markdown(result)
 
-        res = False
-        action = self.sudo()
-        eval_context = self._get_eval_context(action, kwargs)
-        records = self.env.context.get('records')
-        if records:
-            try:
-                records.check_access_rule('write')
-            except AccessError:
-                _logger.warning(
-                    "Forbidden server action %r executed while the user %s does not have access to %s.",
-                    action.name, self.env.user.login, records,
-                )
-                raise
-
-        _logger.warning(f"{eval_context=}")
-        run_self = action.with_context(eval_context['env'].context)
-        safe_eval(run_self.code.strip(), eval_context, mode="exec", nocopy=True, filename=str(self))
-        _logger.warning(f"{self.code=}  {eval_context=}")
-
-        return eval_context.get('result', None)
+        # res = False
+        # action = self.sudo()
+        # eval_context = self._get_eval_context(action, kwargs)
+        # records = self.env.context.get('records')
+        # if records:
+        #     try:
+        #         records.check_access_rule('write')
+        #     except AccessError:
+        #         _logger.warning(
+        #             "Forbidden server action %r executed while the user %s does not have access to %s.",
+        #             action.name, self.env.user.login, records,
+        #         )
+        #         raise
+        #
+        # _logger.warning(f"{eval_context=}")
+        # run_self = action.with_context(eval_context['env'].context)
+        # safe_eval(run_self.code.strip(), eval_context, mode="exec", nocopy=True, filename=str(self))
+        # _logger.warning(f"{self.code=}  {eval_context=}")
+        #
+        # return eval_context.get('result', None)
 
     # ------------------------------------------------------------
     # ORM
@@ -737,35 +722,64 @@ class AIQuest(models.Model):
                 quest.chat_user_id.write({'name': quest.name, 'login': quest.name, 'ai_quest_id': quest.id, })
         return result
 
-
     # ------------------------------------------------------------
     # LangGraph 
     # ------------------------------------------------------------
-    
+
     # Inspired by https://github.com/menonpg/agentic_search_openai_langgraph/blob/main/agents.py
-    def build_graph(self,agents):
+    def build_graph(self, agents):
+        """Build a multi-agent workflow graph."""
+        if not agents:
+            raise ValueError("No agents provided")
+
+        # Get member names
         members = [a.name for a in agents[1:]]
-        
-        graph_builder = StateGraph(AgentState)
-        graph_builder.add_node("Supervisor", agent[0].create_supervisor(self,members))
-        for agent in agents[1:]:
-            graph_builder.add_node(agent.name, agent.create_node())
-        
-        for member in members:
-            graph_builder.add_edge(member, "Supervisor")
+        _logger.info(f"Building graph with supervisor and {len(members)} workers: {members}")
 
-        conditional_map = {k: k for k in members}
-        conditional_map["FINISH"] = END
-        graph_builder.add_conditional_edges("Supervisor", lambda x: x["next"], conditional_map)
-        graph_builder.set_entry_point("Supervisor")
+        try:
+            # Create graph
+            graph_builder = StateGraph(AgentState)
 
-        graph = graph_builder.compile()
+            # Add supervisor
+            supervisor = agents[0]
+            _logger.info(f"Adding supervisor: {supervisor.name}")
+            graph_builder.add_node("Supervisor", supervisor.create_supervisor(self, members))
 
-        return graph
+            # Add worker nodes
+            for agent in agents[1:]:
+                _logger.info(f"Adding worker node: {agent.name}")
+                graph_builder.add_node(agent.name, agent.create_node())
 
+            # Add edges from workers to supervisor
+            for member in members:
+                _logger.info(f"Adding edge: {member} -> Supervisor")
+                graph_builder.add_edge(member, "Supervisor")
 
-    #  response = ai_quest.build_graph(agents).invoke({
-    #        "messages": [HumanMessage(content=input_message)]
-    #    })
-    #  result = response['messages'][1].content
-    
+            # Add conditional routing
+            conditional_map = {k: k for k in members}
+            conditional_map["FINISH"] = END
+
+            _logger.info("Adding conditional edges with routes: " +
+                         ", ".join([f"{k} -> {v}" for k, v in conditional_map.items()]))
+
+            graph_builder.add_conditional_edges(
+                "Supervisor",
+                lambda x: x["next"],
+                conditional_map
+            )
+
+            # Set entry point
+            graph_builder.set_entry_point("Supervisor")
+
+            # Compile and return
+            _logger.info("Compiling graph")
+            return graph_builder.compile()
+
+        except Exception as e:
+            _logger.error(f"Error building graph: {str(e)}")
+            raise
+
+    # response = ai_quest.build_graph(agents).invoke({
+    #       "messages": [HumanMessage(content=input_message)]
+    #   })
+    # result = response['messages'][1].content
