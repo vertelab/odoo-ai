@@ -32,6 +32,11 @@ from langgraph.graph import END, START, StateGraph, MessagesState
 from langgraph.prebuilt import ToolNode
 from odoo.addons.base.models.avatar_mixin import get_hsl_from_seed
 
+from langchain_community.chat_message_histories import ChatMessageHistory
+
+
+
+
 import markdown
 
 import logging
@@ -454,14 +459,50 @@ class AIQuest(models.Model):
         if (self.init_type == 'chat' and self.chat_user_id) or (self.init_type == "channel" and self.channel_id):
             if self._check_quest_error():
                 raise UserError(self._check_quest_error())
+            
+            
+            
+        if self.chat_user_id:
+            bot_user = self.chat_user_id
+            channel = bot_user and self.env.user
+            # ~ history = self.env['mail.message'].search([('model','=','mail.channel'),('res_id','=',self.channel_id.id)],order='create_date desc')
+        else:
+            bot_user = self.env.ref('base.user_root')
+            channel = self.channel_id
+        
+        chat_history = ChatMessageHistory()
 
-            session = message.parent_id.ai_quest_session_id if message.parent_id and message.parent_id.ai_quest_session_id else \
-                message.parent_id.ai_quest_session_id if message.ai_quest_session_id else \
-                    self.env['ai.quest.session'].quest_init(self)
-            vals = self._chat_values(session=session, message=message)
-            res = self.run(**vals)
-            return res
-            raise UserError(f"{res}")
+            # ~ raise UserError(self.env['mail.message'].search([('model','=','mail.channel'),('res_id','=',self.channel_id.id)],order='create_date desc').mapped('author_id','body'))
+            # ~ raise UserError(self.env['mail.message'].search([('model','=','mail.channel'),('res_id','=',self.channel_id.id)],order='create_date desc').mapped('body'))
+            # ~ for m in self.env['mail.message'].search([('model','=','mail.channel'),('res_id','=',self.channel_id.id),order=desc]):
+
+        question = ''
+        for m in self.env['mail.message'].search([('model','=','mail.channel'),('res_id','=',channel.id)],order='create_date desc'):
+            if m.author_id.id == bot_user:
+                # This is an AI message
+                if question:
+                    # Add the previous user message if exists
+                    chat_history.add_user_message(question)
+                    question = ""
+                chat_history.add_ai_message(m.body)
+            else:
+                # This is a user message
+                if question:
+                    question += "\n" + m.body
+                else:
+                    question = message.body
+
+        # Add the last user message if exists
+        if question:
+            chat_history.add_user_message(question)
+
+        session = message.parent_id.ai_quest_session_id if message.parent_id and message.parent_id.ai_quest_session_id else \
+            message.parent_id.ai_quest_session_id if message.ai_quest_session_id else \
+                self.env['ai.quest.session'].quest_init(self)
+        vals = self._chat_values(session=session, message=message)
+        res = self.run(**vals)
+        return res
+        raise UserError(f"{res}")
 
     def _mail_values(self, **kwarg):
         return kwarg

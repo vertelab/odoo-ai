@@ -40,15 +40,11 @@
     'repository': 'https://github.com/vertelab/odoo-ai',
     # Any module necessary for this one to work correctly
     'depends': [
-        'mail',
-        'base',
-        'sales_team',
-        'crm',
-        "ai_agent"
+        'ai_agent',
+        'helpdesk_mgmt',
     ],
     'data': [
         'data/ai_agent_data.xml',
-        'views/crm_lead_views.xml'
     ],
     'installable': True,
     'auto_install': False,
