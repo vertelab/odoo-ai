@@ -235,13 +235,17 @@ class AIQuest(models.Model):
         return action
 
     def action_get_agents(self):
+        ai_agent_ids=list(map(lambda session_id: session_id.ai_agent_ids.ids ,self.session_ids))
+        agent_ids = []
+        [agent_ids.extend(ai_agent_id) for ai_agent_id in ai_agent_ids]
+        agent_ids = list(set(agent_ids))
         action = {
             'name': 'AI Agents',
             'type': 'ir.actions.act_window',
             'res_model': 'ai.agent',
             'view_mode': 'kanban,tree,form',
             'target': 'current',
-            'domain': [("quest_ids", 'in', self.id)]
+            'domain': [("id", 'in', agent_ids)]
         }
         return action
 

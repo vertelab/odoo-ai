@@ -70,13 +70,15 @@ class AIAgent(models.Model):
             record.base_image_128 = record.image_128 or record.ai_agent_llm_id.image_128
 
     def action_get_quests(self):
+        ai_quest_session_ids = self.env["ai.quest.session"].search([("ai_agent_id", "=", self.id)])
+        ai_quest_ids = list(set(map(lambda ai_quest_session_id: ai_quest_session_id.ai_quest_id.id, ai_quest_session_ids)))
         action = {
             'name': 'AI Quests',
             'type': 'ir.actions.act_window',
             'res_model': 'ai.quest',
             'view_mode': 'kanban,tree,form,calendar',
             'target': 'current',
-            'domain': [("session_line_ids.ai_agent_id", '=', self.id)]
+            'domain': [("id", 'in', ai_quest_ids)]
         }
         return action
 
