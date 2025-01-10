@@ -747,7 +747,7 @@ class AIQuest(models.Model):
         members = [a.name for a in agents[1:]]
         
         graph_builder = StateGraph(AgentState)
-        graph_builder.add_node("Supervisor", agent[0].create_supervisor(qself,members))
+        graph_builder.add_node("Supervisor", agent[0].create_supervisor(self,members))
         for agent in agents[1:]:
             graph_builder.add_node(agent.name, agent.create_node())
         
@@ -767,5 +767,5 @@ class AIQuest(models.Model):
     #  response = ai_quest.build_graph(agents).invoke({
     #        "messages": [HumanMessage(content=input_message)]
     #    })
-    #  content = response['messages'][1].content
+    #  result = response['messages'][1].content
     
