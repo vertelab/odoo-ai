@@ -4,10 +4,10 @@
 
 import logging
 
+import markdown
 
 from odoo import api, fields, models, tools, _, Command
 from odoo.exceptions import ValidationError, UserError
-
 
 _logger = logging.getLogger(__name__)
 
@@ -31,22 +31,23 @@ class MailChannel(models.Model):
         # Check if the message is from a user (not the bot itself)
         # ~ _logger.warning(f"{message.author_id=} {message.parent_id=} {message.body=} {kwargs=} {self.ai_quest_id=} {self.name=} ")
         # ~ _logger.warning(f"{self.is_chat=} {self.channel_member_ids=} {self.channel_partner_ids=} {self.channel_type=} {self.ai_quest_session_id=}")
-        ai_quest = None        
+        ai_quest = None
         if self.is_chat:
-            ai_quest = self.env['res.users'].browse(self.channel_member_ids.mapped('partner_id.user_ids.id')).mapped('ai_quest_id')
+            ai_quest = self.env['res.users'].browse(self.channel_member_ids.mapped('partner_id.user_ids.id')).mapped(
+                'ai_quest_id')
             user = ai_quest.chat_user_id
-        else: # channel
+        else:  # channel
             ai_quest = self.ai_quest_id
             user = self.env.ref('base.user_root')
 
         # ~ if message.author_id != self.env.ref('base.partner_root'):
         if message.author_id != user.partner_id:
-            if ai_quest:    # use the AI as inlogged user
+            if ai_quest:  # use the AI as in logged user
                 bot_response = ai_quest.with_user(self.env.user).chat(message)
                 _logger.error(f"{bot_response=}")
-                if bot_response: # Answer as the user the bot is
+                if bot_response:  # Answer as the user the bot is
                     self.with_user(user).message_post(
-                        body=bot_response['result'].content,
+                        body=markdown.markdown(bot_response['result']),
                         message_type='comment',
                         subtype_xmlid='mail.mt_comment',
                     )

@@ -24,12 +24,9 @@ from odoo.tools.safe_eval import safe_eval
 from random import randint
 from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
 
-
 from dateutil.relativedelta import relativedelta
 
 _logger = logging.getLogger(__name__)
-
-
 
 
 class AIAgentMemory(models.Model):
@@ -38,14 +35,14 @@ class AIAgentMemory(models.Model):
 
     ai_agent_id = fields.Many2one(comodel_name='ai.agent', string="", help="")
     sequence = fields.Integer(string='Sequence')
-    nbr_days = fields.Integer(string='Number days this memory will live',related="ai_memory_id.nbr_days")
+    nbr_days = fields.Integer(string='Number days this memory will live', related="ai_memory_id.nbr_days")
     last_run = fields.Datetime(string='Last Run', related="ai_memory_id.last_run")
     ai_memory_id = fields.Many2one(comodel_name='ai.memory', string="Memory", help="")
 
 
 class AIMemory(models.Model):
     _name = 'ai.memory'
-    _inherit = ["mail.thread", "mail.activity.mixin",]
+    _inherit = ["mail.thread", "mail.activity.mixin", ]
 
     _description = 'AI Memory'
 
@@ -59,10 +56,9 @@ class AIMemory(models.Model):
     tag_ids = fields.Many2many(comodel_name='product.tag', string='Tags')
     image_128 = fields.Image("Image", max_width=128, max_height=128)
     base_image_128 = fields.Image("Base Image", max_width=128, max_height=128, compute='_compute_base_image_128')
-    memory_type = fields.Selection(selection=[('faiss','FAISS'),('st','Short Term')],string='Memory type')
+    memory_type = fields.Selection(selection=[('faiss', 'FAISS'), ('st', 'Short Term')], string='Memory type')
     memory_faiss = fields.Binary(string='FAISS Index', attachment=True)
     nbr_days = fields.Integer(string='Number days this memory will live')
-
 
     @api.depends('image_128')
     def _compute_base_image_128(self):
@@ -84,7 +80,7 @@ class AIMemory(models.Model):
         attachment = self.env['ir.attachment'].browse(attachment_id)
         if not attachment.exists():
             raise ValueError("Attachment not found")
-    
+
         file_content = BytesIO(base64.b64decode(attachment.datas))
         loader = TextLoader(file_content, encoding='utf-8')
         documents = loader.load()
@@ -96,7 +92,7 @@ class AIMemory(models.Model):
         self.save_faiss_index(db.index)
 
     def chat(self, query):
-        db = self.load_faiss_index()        
+        db = self.load_faiss_index()
         model_name = "AI-Sweden-Models/gpt-sw3-6.7b-v2"
         tokenizer = AutoTokenizer.from_pretrained(model_name)
         model = AutoModelForCausalLM.from_pretrained(model_name)
@@ -110,7 +106,6 @@ class AIMemory(models.Model):
         result = qa({"question": query})
         return result['answer']
 
-
     def log_message(self, body, is_error=False):
         if is_error:
             self.status = "error"
@@ -118,6 +113,7 @@ class AIMemory(models.Model):
 
     def run(self):
         self.last_run = fields.Datetime.now()
-        
+
     def cron(self):
-        self.env['ai.memory'].search([('last_run','<',fields.Datetime.now()-relativedelta(days=self.nbr_days))]).run()
+        self.env['ai.memory'].search(
+            [('last_run', '<', fields.Datetime.now() - relativedelta(days=self.nbr_days))]).run()
