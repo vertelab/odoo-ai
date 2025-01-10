@@ -151,7 +151,7 @@ Context and Guidelines:
 - Focus on achieving the defined goal
 - Use the backstory to inform your responses
 
-Guidlines and instructions {session.ai_quest.description}
+Guidlines and instructions {session.ai_quest_id.description}
 """)
         if debug:
             self.log_message(f"{system_message}")
