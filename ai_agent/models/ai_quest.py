@@ -449,6 +449,17 @@ class AIQuest(models.Model):
         return kwarg
 
     def chat(self, message):
+        """"
+            Implements chat with channel and bot
+            
+            code:
+            result = agents[0].prompt_agent(session=session,debug=quest.debug,
+                                   message=html2plaintext(message.body),UseLang=UseLang
+                                   )
+            
+        """
+        
+        
         _logger.warning(f"chat {message=}")
         if (self.init_type == 'chat' and self.chat_user_id) or (self.init_type == "channel" and self.channel_id):
             if self._check_quest_error():

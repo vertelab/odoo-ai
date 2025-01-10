@@ -154,7 +154,7 @@ Context and Guidelines:
 - Focus on achieving the defined goal
 - Use the backstory to inform your responses
 
-Guidelines and instructions {session.ai_quest_id.description}
+Guidlines and instructions {session.ai_quest.description}
 """)
         if debug:
             self.log_message(f"{system_message}")
@@ -369,6 +369,7 @@ Guidelines and instructions {session.ai_quest_id.description}
 
         @tool("internet_search_DDGO", return_direct=False)
         def internet_search_DDGO(query: str) -> str:
+
             """Searches the internet using DuckDuckGo."""
 
             from duckduckgo_search import DDGS

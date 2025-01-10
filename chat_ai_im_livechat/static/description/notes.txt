@@ -1,5 +1,5 @@
-odoo-ai / chat_ai_bot_common
-2024-01-08
+odoo-ai / chat_ai_im_livechat
+2025-01-08
 
 Be aware of these!
 [project]/[module]/static/description/banner.png
@@ -54,9 +54,11 @@ ls | wc -l
 grep -sR "'website':" */*__.py | tr "'" " "
 
 Find the latest project:
-grep -r "2024-01-*" odoo-*/*/static/description/notes.txt
-grep -r "2024-01-*" */static/description/notes.txt
+grep -r "2025-01-*" odoo-*/*/static/description/notes.txt
+grep -r "2025-01-*" */static/description/notes.txt
 
-
+Unexpected errors sometimes occurs, then set the correct permissions!
+sudo chmod 664 /usr/share/*/*/static/description/banner.png
+sudo chmod 664 /usr/share/*/*/static/description/icon.png
 
 
