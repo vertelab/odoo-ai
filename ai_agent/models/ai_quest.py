@@ -779,7 +779,7 @@ class AIQuest(models.Model):
             _logger.error(f"Error building graph: {str(e)}")
             raise
 
-    # response = ai_quest.build_graph(agents).invoke({
-    #       "messages": [HumanMessage(content=input_message)]
-    #   })
-    # result = response['messages'][1].content
+    # message = html2plaintext(message.body)
+    # response = self.build_graph(agents).invoke({"messages": [HumanMessage(content=message)]})
+    # result = response['messages'][-1].content
+
