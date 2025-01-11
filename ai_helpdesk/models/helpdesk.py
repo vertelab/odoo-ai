@@ -61,10 +61,11 @@ class HelpdeskTicket(models.Model):
                     'init_type': 'channel',
                     'status': 'active',
                     'code': """result = agents[0].prompt_agent(
-                    "    session=session,
-                    "    debug=quest.debug,
-                    "    message=html2plaintext(message.body),
-                    "    UseLang=UseLang
+                        session=session,
+                        debug=quest.debug,
+                        message=html2plaintext(message.body),
+                        channel=channel,
+                        bot_user=bot_user,
                     )"""
                 })
                 self.env['ai.quest.agent'].create({'ai_agent_id': self.env.ref('ai_helpdesk.ai_agent_helpdesk_chat').id,'ai_quest_id': ticket.ai_quest_id.id})

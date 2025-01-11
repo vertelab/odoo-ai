@@ -45,7 +45,7 @@
       <field name="code">for department in records:
     result = agents[0].prompt_agent(session=session,debug=quest.debug,department=department.name,
                                     company_information=f"{company_id.name=} {company_id.company_mission=} {company_id.company_values=}",
-                                    quest_instructions=f"{quest.description} {UseLang}",quest_list=[],
+                                    quest_instructions=f"{quest.description} ",quest_list=[],
                                     module_list=module_list,
                                     job_list=quest._get_jobs(department),
                                     )
@@ -109,6 +109,12 @@
     <field name="model_id" ref="model_hr_department"/>
     <field name="binding_model_id" ref="model_hr_department"/>
     <field name="state">code</field>
+
+
+    
+
+
+
 </record>    
     
     
@@ -147,7 +153,7 @@
 for department in records:
     result = agents[0].prompt_agent(session=session,debug=quest.debug,department=f"{department.name=} {department.goals_responsibilities=}",
                                     company_information=f"{company_id.name=} {company_id.company_mission=} {company_id.company_values=}",
-                                    quest_instructions=f"{quest.description} {UseLang}",
+                                    quest_instructions=f"{quest.description} ",
                                     #quest_list=quest._get_quest_list_department(department),
                                     quest_list='',
                                     job_list=quest._get_jobs(department),

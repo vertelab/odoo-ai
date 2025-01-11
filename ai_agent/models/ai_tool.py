@@ -13,6 +13,14 @@ from langchain_core.output_parsers import StrOutputParser
 from odoo import models, fields, api, _
 from odoo.exceptions import UserError, AccessError, ValidationError
 from odoo.tools.safe_eval import safe_eval
+from langchain_community.tools import DuckDuckGoSearchRun, DuckDuckGoSearchResults
+from langchain_community.tools.wikipedia.tool import WikipediaQueryRun
+from langchain_community.tools.yahoo_finance_news import YahooFinanceNewsTool
+from langchain_community.utilities.duckduckgo_search import DuckDuckGoSearchAPIWrapper
+from langchain_community.utilities.wikipedia import WikipediaAPIWrapper
+from langgraph.graph import END, START, StateGraph, MessagesState
+from typing import Annotated, Literal, TypedDict, Sequence
+
 import logging
 
 _logger = logging.getLogger(__name__)
@@ -58,3 +66,88 @@ class AITool(models.Model):
             self.status = "error"
         self.last_run = fields.Datetime.now()
         self.message_post(body=f"{body} | {self.last_run}", message_type="notification")
+
+
+    # ~ @tool
+    # ~ def weather_tool(query: str):
+        # ~ """Get weather information."""
+        # ~ if "sf" in query.lower() or "san francisco" in query.lower():
+            # ~ return "It's 60 degrees and foggy."
+        # ~ return "It's 90 degrees and sunny."
+
+    # ~ @tool
+    # ~ def search_tool(query: str):
+        # ~ """Search for information."""
+        # ~ return f"Found results for: {query}"
+
+    # ~ @tool
+    # ~ def search_duck_tool(query: str):
+        # ~ """Search for information on duckduck."""
+        # ~ search = DuckDuckGoSearchResults()
+        # ~ return search
+
+
+    # ~ def _get_alias_model_name(self):
+        # ~ return 'ai.quest'
+
+    # ~ @api.model
+    # ~ def _get_alias_values(self):
+        # ~ values = super(AIQuest, self)._get_alias_values()
+        # ~ values['alias_model_id'] = self.env['ir.model']._get('ai.quest').id
+        # ~ return values
+
+    # ~ def start(self):
+        # ~ self.run()
+
+    # ~ @tool
+    # ~ def weather_tool(query: str):
+        # ~ """Get weather information."""
+        # ~ if "sf" in query.lower() or "san francisco" in query.lower():
+            # ~ return "It's 60 degrees and foggy."
+        # ~ return "It's 90 degrees and sunny."
+
+    # ~ @tool
+    # ~ def search_tool(query: str):
+        # ~ """Search for information."""
+        # ~ return f"Found results for: {query}"
+
+    # ~ @tool
+    # ~ def search_duck_tool(query: str):
+        # ~ """Search for information on duckduck."""
+        # ~ search = DuckDuckGoSearchResults()
+        # ~ return search
+
+    def should_continue(self, state: MessagesState) -> Literal["tools", END]:
+        messages = state['messages']
+        last_message = messages[-1]
+        # If the LLM makes a tool call, then we route to the "tools" node
+        if last_message.tool_calls:
+            return "tools"
+        # Otherwise, we stop (reply to the user)
+        return END
+
+    def get_tools(self, tool_names=None):
+        # Get all methods ending with _tool
+        all_tools = [getattr(self, attr) for attr in dir(self) if attr.endswith('_tool')]
+
+        if not tool_names:
+            return all_tools
+
+        if isinstance(tool_names, str):
+            tool_names = [tool_names]
+
+        return [getattr(self, f"{name}_tool") for name in tool_names]
+
+    def call_model(self, state: MessagesState):
+        messages = state['messages']
+
+        # Get tools for this instance
+        x_tools = self.get_tools()
+        # Invoke model
+        response = eval(
+            self.ai_agent_ids[0].ai_agent_id.ai_agent_llm_id.get_llm()
+        ).bind_tools(x_tools).invoke(messages)
+
+        _logger.info(f"{response.content=}")
+
+        return {"messages": [response]}

@@ -124,6 +124,16 @@ Remember to prioritize efficiency, scalability, and alignment with the company's
       ]]></field>
     </record>
 
+    <record id="ai_quest_test" model="ai.quest">
+      <field name="name">Test LLM or Agent</field>
+      <field name="ai_type">ai-programmer</field>
+      <field name="init_type">cron</field>
+      <field name="code">
+
+      </field>
+      <field name="description">As an LLM Test Specialist, your task is to Test the agent or LLM</field>
+    </record>
+
 <record id="ai_quest_agent_creation_agent1" model="ai.quest.agent">
     <field name="ai_quest_id" ref="ai_quest_agent_creation"/>
     <field name="ai_agent_id" ref="ai_agent_ai_programmer"/>

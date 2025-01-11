@@ -1,39 +1,25 @@
-from random import randint
+import base64
+import functools, operator
+import json
 import re
 import unidecode
-import base64
-import json
-from pytz import timezone
+
 from functools import partial
+from langchain_anthropic import ChatAnthropic
+from langchain_core.messages import BaseMessage, HumanMessage
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.tools import tool
+from langgraph.graph import END, START, StateGraph, MessagesState
 from odoo import models, fields, api, _, tools, Command
-from secrets import choice
+from odoo.addons.base.models.avatar_mixin import get_hsl_from_seed
 from odoo.exceptions import UserError, AccessError, ValidationError, Warning
-from odoo.tools.safe_eval import safe_eval, test_python_expr
 from odoo.tools.float_utils import float_compare
 from odoo.tools.mail import html2plaintext
-
-from langchain_core.output_parsers import StrOutputParser
-from langchain_core.prompts import PromptTemplate
-
-from typing import Annotated, Literal, TypedDict
-
-from langchain_core.messages import HumanMessage
-from langchain_openai import ChatOpenAI
-from langchain_anthropic import ChatAnthropic
-from langchain_core.tools import tool
-from langchain_community.tools import DuckDuckGoSearchRun, DuckDuckGoSearchResults
-
-from langchain_community.utilities.duckduckgo_search import DuckDuckGoSearchAPIWrapper
-from langchain_community.tools.yahoo_finance_news import YahooFinanceNewsTool
-from langchain_community.utilities.wikipedia import WikipediaAPIWrapper
-from langchain_community.tools.wikipedia.tool import WikipediaQueryRun
-from langgraph.checkpoint.memory import MemorySaver
-from langgraph.graph import END, START, StateGraph, MessagesState
-from langgraph.prebuilt import ToolNode
-from odoo.addons.base.models.avatar_mixin import get_hsl_from_seed
-
-from langchain_community.chat_message_histories import ChatMessageHistory
-
+from odoo.tools.safe_eval import safe_eval, test_python_expr
+from pytz import timezone
+from random import randint
+from secrets import choice
+from typing import Annotated, Literal, TypedDict, Sequence
 
 
 
@@ -83,10 +69,6 @@ avatar_server_action = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 5
 <circle cx="345.04" cy="265.03" r="26.41" fill="#ffffff"/>
 </svg>'''
 
-from typing import Annotated, Sequence, TypedDict
-from langchain_core.messages import BaseMessage, HumanMessage
-import functools, operator
-
 
 class AgentState(TypedDict):
     messages: Annotated[Sequence[BaseMessage], operator.add]
@@ -126,6 +108,14 @@ DEFAULT_PYTHON_CODE = """# Available variables:
 
 
 # Python code
+INIT_TYPES=[
+        ('manual', 'Manual'), 
+        ('mail', 'Mail'), 
+        ('chat', 'Chat with User'), 
+        ('channel', 'Chat with Channel'),
+        ('cron', 'Scheduled Action'), 
+        ('server-action', 'Server Action')
+    ]
 
 
 class AIQuest(models.Model):
@@ -133,60 +123,46 @@ class AIQuest(models.Model):
     _inherit = ["mail.thread", "mail.activity.mixin", "mail.alias.mixin"]
     _description = 'AI Quest'
 
-    ai_agent_ids = fields.One2many(comodel_name='ai.quest.agent', inverse_name='ai_quest_id', string="",
-                                   help="")  # domain|context|auto_join|limit
+
     agent_count = fields.Integer(compute="compute_agent_count")
-    ai_type = fields.Selection(selection=[("default", "Default"), ('ai-programmer', 'AI Programmer')],
-                               default="default", required=True)
+    ai_agent_ids = fields.One2many(comodel_name='ai.quest.agent', inverse_name='ai_quest_id') 
+    ai_type = fields.Selection(selection=[("default", "Default"), ('ai-programmer', 'AI Programmer')],default="default", required=True)
+    alias_id = fields.Many2one(comodel_name='mail.alias', string='Alias', ondelete="restrict", required=True,help="The email address associated with this channel. New emails received will ""automatically create new leads assigned to the channel.")
+    alias_user_id = fields.Many2one(comodel_name='res.users', related='alias_id.alias_user_id', readonly=False,inherited=True, )
+    avatar_128 = fields.Image("Avatar", max_width=128, max_height=128, compute='_compute_avatar_128')
+    channel_id = fields.Many2one(comodel_name='mail.channel', string="Channel", help="")
+    chat_history_limit = fields.Integer(string='Chat History Limit', default=10, help='Limit the chat history to this njumber of messages')
+    chat_user_id = fields.Many2one(comodel_name='res.users', string="Chat User", help="")
+    code = fields.Text(string='Python Code', groups='base.group_system',default=DEFAULT_PYTHON_CODE,                       help="Write Python code that the action will execute. Some variables are ""available for use; help about python expression is given in the help tab.")
     color = fields.Integer(default=lambda self: randint(1, 11))
+    cron_id = fields.Many2one(comodel_name='ir.cron', string="Scheduled Action", help="", ondelete="cascade")
+    debug = fields.Boolean(string='Debug', help='More logging')
     description = fields.Text()
-    init_type = fields.Selection(
-        selection=[('manual', 'Manual'), ('mail', 'Mail'), ('chat', 'Chat with User'), ('channel', 'Chat with Channel'),
-                   ('cron', 'Scheduled Action'), ('server-action', 'Server Action')], string='Initiate',
-        help="How the Quest is initialized", required=True, default='manual')
+    filter_domain = fields.Char(        string='Filter Name',        related='model_id.model', readonly=False, related_sudo=True)
+    image_128 = fields.Image("Image", max_width=128, max_height=128)
+    init_type = fields.Selection(selection=INIT_TYPES, string='Initiate',help="How the Quest is initialized", required=True, default='manual')
     is_favorite = fields.Boolean()
     last_run = fields.Datetime()
     llm_count = fields.Integer(compute="compute_llm_count")
+    model_id = fields.Many2one(comodel_name='ir.model', string="Model", help="Bind this Quest to this model")
     name = fields.Char(required=True)
-    server_action_id = fields.Many2one('ir.actions.server', string='Server Action',
-                                       help="Server action to be executed when this quest is initialized",
-                                       ondelete="cascade")
+    partner_id = fields.Many2one(comodel_name='res.partner', string="Customer", help="")
+    server_action_id = fields.Many2one('ir.actions.server', string='Server Action',                                      help="Server action to be executed when this quest is initialized",ondelete="cascade")
     session_count = fields.Integer(compute="compute_session_count")
     session_ids = fields.One2many(comodel_name="ai.quest.session", inverse_name="ai_quest_id")
     session_line_count = fields.Integer(compute="compute_session_line_count")
-    session_object_count = fields.Integer(compute="compute_session_object_count")
     session_line_ids = fields.One2many(comodel_name="ai.quest.session.line", inverse_name="ai_quest_id")
+    session_object_count = fields.Integer(compute="compute_session_object_count")
     session_object_ids = fields.One2many(comodel_name="ai.session.object", inverse_name="ai_quest_id")
-    status = fields.Selection(
-        selection=[("draft", _("Draft")), ("active", _("Active")), ("done", _("Done")), ("error", _("Error"))],
-        default="draft")
-
-    alias_id = fields.Many2one(comodel_name='mail.alias', string='Alias', ondelete="restrict", required=True,
-                               help="The email address associated with this channel. New emails received will "
-                                    "automatically create new leads assigned to the channel.")
-    alias_user_id = fields.Many2one(comodel_name='res.users', related='alias_id.alias_user_id', readonly=False,
-                                    inherited=True, )
-
-    cron_id = fields.Many2one(comodel_name='ir.cron', string="Scheduled Action", help="", ondelete="cascade")
-    model_id = fields.Many2one(comodel_name='ir.model', string="Model", help="Bind this Quest to this model")
-
-    code = fields.Text(string='Python Code', groups='base.group_system',
-                       default=DEFAULT_PYTHON_CODE,
-                       help="Write Python code that the action will execute. Some variables are "
-                            "available for use; help about python expression is given in the help tab.")
-    channel_id = fields.Many2one(comodel_name='mail.channel', string="Channel", help="")
-    chat_user_id = fields.Many2one(comodel_name='res.users', string="Chat User", help="")
-
-    filter_domain = fields.Char(
-        string='Filter Name',
-        related='model_id.model', readonly=False, related_sudo=True)
+    status = fields.Selection(selection=[("draft", _("Draft")), ("active", _("Active")), ("done", _("Done")), ("error", _("Error"))],default="draft")
     tag_ids = fields.Many2many(comodel_name='product.tag', string='Tags')
+    use_chat_history = fields.Boolean(string='Use Chat History', default=True,help='Add chat history to the context')
+    use_company_info = fields.Boolean(string='Use Company Info', default=True,help='Add company mission and values to the context')
+    use_personal_info = fields.Boolean(string='Use Personal Info', default=True,help='Add personal name and other info to the context')
+    use_personal_lang = fields.Boolean(string='Use Personal Language', default=True,help='Set Personas language for the LLM')
+    use_time_context = fields.Boolean(string='Use Time Context', default=True,help='Inform the LLM of current time, date')
     user_id = fields.Many2one(comodel_name='res.users', string="Owner", help="")
-    partner_id = fields.Many2one(comodel_name='res.partner', string="Customer", help="")
-    image_128 = fields.Image("Image", max_width=128, max_height=128)
-    avatar_128 = fields.Image("Avatar", max_width=128, max_height=128, compute='_compute_avatar_128')
-    debug = fields.Boolean(string='Debug', help='More logging')
-
+    
     @api.model
     def _generate_random_token(self):
         return ''.join(choice('abcdefghijkmnopqrstuvwxyzABCDEFGHIJKLMNPQRSTUVWXYZ23456789') for _i in range(10))
@@ -418,6 +394,10 @@ class AIQuest(models.Model):
             return _('Missing Description on the quest')
         return False
 
+
+    def start(self):
+        pass
+
     def _server_action_values(self, **kwarg):
         return kwarg
 
@@ -462,46 +442,27 @@ class AIQuest(models.Model):
             Implements chat with channel and bot
             
             code:
-            result = agents[0].prompt_agent(session=session,debug=quest.debug,
-                                   message=html2plaintext(message.body),UseLang=UseLang
+            result = agents[0].prompt_agent(
+                            session=session,
+                            debug=quest.debug,
+                            message=html2plaintext(message.body),
+                            channel=channel,
+                            bot_user=bot_user
                                    )
             
         """
-        
-        
         _logger.warning(f"chat {message=}")
         if (self.init_type == 'chat' and self.chat_user_id) or (self.init_type == "channel" and self.channel_id):
             if self._check_quest_error():
                 raise UserError(self._check_quest_error())
 
-        chat_history = ChatMessageHistory()
-        question = ''
-        for m in self.env['mail.message'].search([('model','=','mail.channel'),('res_id','=',channel.id)],limit=10,order='create_date asc'):
-            if m.author_id.id == bot_user.id:
-                # This is an AI message
-                if question:
-                    # Add the previous user message if exists
-                    chat_history.add_user_message(question)
-                    question = ""
-                chat_history.add_ai_message(m.body)
-            else:
-                # This is a user message
-                if question:
-                    question += "\n" + m.body
-                else:
-                    question = m.body
-
-        # Add the last user message if exists
-        if question:
-            chat_history.add_user_message(question)
-
-        session = message.parent_id.ai_quest_session_id if message.parent_id and message.parent_id.ai_quest_session_id else \
-            message.parent_id.ai_quest_session_id if message.ai_quest_session_id else \
-                self.env['ai.quest.session'].quest_init(self)
-        vals = self._chat_values(session=session, message=message,chat_history=chat_history)
-        res = self.run(**vals)
-        return res
-        raise UserError(f"{res}")
+            session = message.parent_id.ai_quest_session_id if message.parent_id and message.parent_id.ai_quest_session_id else \
+                message.parent_id.ai_quest_session_id if message.ai_quest_session_id else \
+                    self.env['ai.quest.session'].quest_init(self)
+            vals = self._chat_values(session=session, message=message,channel=channel,bot_user=bot_user)
+            res = self.run(**vals)
+            return res
+            raise UserError(f"{res}")
 
 
     def _mail_values(self, **kwarg):
@@ -555,70 +516,6 @@ class AIQuest(models.Model):
     # Python CODE eval
     # ------------------------------------------------------------
 
-    def _get_alias_model_name(self):
-        return 'ai.quest'
-
-    @api.model
-    def _get_alias_values(self):
-        values = super(AIQuest, self)._get_alias_values()
-        values['alias_model_id'] = self.env['ir.model']._get('ai.quest').id
-        return values
-
-    def start(self):
-        self.run()
-
-    @tool
-    def weather_tool(query: str):
-        """Get weather information."""
-        if "sf" in query.lower() or "san francisco" in query.lower():
-            return "It's 60 degrees and foggy."
-        return "It's 90 degrees and sunny."
-
-    @tool
-    def search_tool(query: str):
-        """Search for information."""
-        return f"Found results for: {query}"
-
-    @tool
-    def search_duck_tool(query: str):
-        """Search for information on duckduck."""
-        search = DuckDuckGoSearchResults()
-        return search
-
-    def should_continue(self, state: MessagesState) -> Literal["tools", END]:
-        messages = state['messages']
-        last_message = messages[-1]
-        # If the LLM makes a tool call, then we route to the "tools" node
-        if last_message.tool_calls:
-            return "tools"
-        # Otherwise, we stop (reply to the user)
-        return END
-
-    def get_tools(self, tool_names=None):
-        # Get all methods ending with _tool
-        all_tools = [getattr(self, attr) for attr in dir(self) if attr.endswith('_tool')]
-
-        if not tool_names:
-            return all_tools
-
-        if isinstance(tool_names, str):
-            tool_names = [tool_names]
-
-        return [getattr(self, f"{name}_tool") for name in tool_names]
-
-    def call_model(self, state: MessagesState):
-        messages = state['messages']
-
-        # Get tools for this instance
-        x_tools = self.get_tools()
-        # Invoke model
-        response = eval(
-            self.ai_agent_ids[0].ai_agent_id.ai_agent_llm_id.get_llm()
-        ).bind_tools(x_tools).invoke(messages)
-
-        _logger.info(f"{response.content=}")
-
-        return {"messages": [response]}
 
     def _get_eval_context(self, action=None, kw=None):
         """ Prepare the context used when evaluating python code, like the
@@ -637,8 +534,6 @@ class AIQuest(models.Model):
             'session': kw.get('session', self.env['ai.quest.session'].quest_init(self)),
             'quest': self,
             'agents': [a.ai_agent_id for a in self.ai_agent_ids],
-            'PromptTemplate': PromptTemplate,
-            'UseLang': f"Use language {self.env.user.lang}",
             'company_id': self.env.user.company_id,
             'context': self.env.context,
             'record': records[0] if records else None,
@@ -649,15 +544,7 @@ class AIQuest(models.Model):
                  in self.env['ai.agent'].search([])]),
             'quest_list': ' ',
             'module_list': '',
-            # langgraph
-            'START': START,
-            'END': END,
-            'ToolNode': ToolNode,
-            'StateGraph': StateGraph,
-            'MessagesState': MessagesState,
-            'HumanMessage': HumanMessage,
-            'ChatOpenAI': ChatOpenAI,
-            'MemorySaver': MemorySaver,
+           
 
             # Exceptions
             'Warning': Warning,
