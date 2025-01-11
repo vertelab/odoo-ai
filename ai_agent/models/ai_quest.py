@@ -410,8 +410,8 @@ class AIQuest(models.Model):
         if len(self.ai_agent_ids.filtered(
                 lambda a: a.ai_agent_id.ai_agent_llm_id.is_key_required and a.ai_agent_id.ai_agent_llm_id.ai_api_key == False)) > 0:
             return _('Missing API Key on LLMs')
-        # if self.status != 'active':
-        #     return _('Wrong status on the quest')
+        if self.status != 'active':
+             return _('Wrong status on the quest')
         if self.code == DEFAULT_PYTHON_CODE:
             return _('Missing Python Code on the quest')
         if not self.description:
@@ -457,7 +457,7 @@ class AIQuest(models.Model):
     def _chat_values(self, **kwarg):
         return kwarg
 
-    def chat(self, message):
+    def chat(self, message,channel,bot_user):
         """"
             Implements chat with channel and bot
             
@@ -473,26 +473,11 @@ class AIQuest(models.Model):
         if (self.init_type == 'chat' and self.chat_user_id) or (self.init_type == "channel" and self.channel_id):
             if self._check_quest_error():
                 raise UserError(self._check_quest_error())
-            
-            
-            
-        if self.chat_user_id:
-            bot_user = self.chat_user_id
-            channel = bot_user and self.env.user
-            # ~ history = self.env['mail.message'].search([('model','=','mail.channel'),('res_id','=',self.channel_id.id)],order='create_date desc')
-        else:
-            bot_user = self.env.ref('base.user_root')
-            channel = self.channel_id
-        
+
         chat_history = ChatMessageHistory()
-
-            # ~ raise UserError(self.env['mail.message'].search([('model','=','mail.channel'),('res_id','=',self.channel_id.id)],order='create_date desc').mapped('author_id','body'))
-            # ~ raise UserError(self.env['mail.message'].search([('model','=','mail.channel'),('res_id','=',self.channel_id.id)],order='create_date desc').mapped('body'))
-            # ~ for m in self.env['mail.message'].search([('model','=','mail.channel'),('res_id','=',self.channel_id.id),order=desc]):
-
         question = ''
-        for m in self.env['mail.message'].search([('model','=','mail.channel'),('res_id','=',channel.id)],order='create_date desc'):
-            if m.author_id.id == bot_user:
+        for m in self.env['mail.message'].search([('model','=','mail.channel'),('res_id','=',channel.id)],limit=10,order='create_date asc'):
+            if m.author_id.id == bot_user.id:
                 # This is an AI message
                 if question:
                     # Add the previous user message if exists
@@ -504,7 +489,7 @@ class AIQuest(models.Model):
                 if question:
                     question += "\n" + m.body
                 else:
-                    question = message.body
+                    question = m.body
 
         # Add the last user message if exists
         if question:
@@ -513,7 +498,7 @@ class AIQuest(models.Model):
         session = message.parent_id.ai_quest_session_id if message.parent_id and message.parent_id.ai_quest_session_id else \
             message.parent_id.ai_quest_session_id if message.ai_quest_session_id else \
                 self.env['ai.quest.session'].quest_init(self)
-        vals = self._chat_values(session=session, message=message)
+        vals = self._chat_values(session=session, message=message,chat_history=chat_history)
         res = self.run(**vals)
         return res
         raise UserError(f"{res}")

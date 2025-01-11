@@ -1,31 +1,29 @@
-import os
-import json
-import re
 import functools, operator
-from typing import Annotated, Sequence, TypedDict
-from langchain_core.prompts import PromptTemplate
-from langchain.schema import SystemMessage, HumanMessage
-from langchain_openai import ChatOpenAI
-from langchain_mistralai import ChatMistralAI
-from langchain_groq import ChatGroq
-from langchain_anthropic import ChatAnthropic
+import json
+import logging
+import os
+import re
+
 from httpx import HTTPStatusError
-from random import randint
-from langchain_core.output_parsers import StrOutputParser
+from langchain.agents import AgentExecutor, create_openai_tools_agent
+from langchain.output_parsers.openai_functions import JsonOutputFunctionsParser
+from langchain.prompts import ChatPromptTemplate, HumanMessagePromptTemplate, SystemMessagePromptTemplate, MessagesPlaceholder
+from langchain.schema import SystemMessage, HumanMessage
+from langchain.tools import tool
+from langchain_anthropic import ChatAnthropic
 from langchain_community.tools import DuckDuckGoSearchResults
-
-
+from langchain_core.messages import BaseMessage, HumanMessage
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder, PromptTemplate
+from langchain_groq import ChatGroq
+from langchain_mistralai import ChatMistralAI
+from langchain_openai import ChatOpenAI
 from odoo import models, fields, api, _
 from odoo.exceptions import UserError, AccessError, ValidationError
 from odoo.tools.safe_eval import safe_eval
-import logging
-from langchain.tools import tool
+from random import randint
+from typing import Annotated, Sequence, TypedDict
 
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain.agents import AgentExecutor, create_openai_tools_agent
-from langchain_openai import ChatOpenAI
-from langchain_core.messages import BaseMessage, HumanMessage
-from langchain.output_parsers.openai_functions import JsonOutputFunctionsParser
 
 _logger = logging.getLogger(__name__)
 
@@ -131,7 +129,7 @@ class AIAgent(models.Model):
             record.quest_count = len(
                 set(record.session_line_ids.filtered(lambda x: x.ai_agent_id.id == record.id).mapped('ai_quest_id')))
 
-    def prompt_agent(self, test_prompt=False, parser=False, session=False, debug=False, **kwargs):
+    def prompt_agent(self, test_prompt=False, parser=False, session=False, debug=False, chat_history=[], **kwargs):
         if debug:
             _logger.error(f"{self=}{session=}{kwargs=}")
         self.last_run = fields.Datetime.now()
@@ -145,32 +143,47 @@ class AIAgent(models.Model):
 
         response = False
 
-        # Create system message with agent context
-        system_message = SystemMessage(content=f"""
-Role: {self.ai_role}
-Goal: {self.ai_goal}
-Backstory: {self.ai_backstory}
+        system_message_prompt = SystemMessagePromptTemplate.from_template("""
+        Role: {role}
+        Goal: {goal}
+        Backstory: {backstory}
 
-Context and Guidelines:
-- Always maintain the specified role
-- Focus on achieving the defined goal
-- Use the backstory to inform your responses
+        Context and Guidelines:
+        - Always maintain the specified role
+        - Focus on achieving the defined goal
+        - Use the backstory to inform your responses
 
-Guidlines and instructions {session.ai_quest.description}
-""")
+        Guidelines and instructions: {instructions}
+        """)
+
+        # Create human message prompt
+        human_message_prompt = HumanMessagePromptTemplate.from_template(self.ai_prompt_template)
+
+        # Combine into chat prompt
+        chat_prompt = ChatPromptTemplate.from_messages([
+            system_message_prompt,
+            MessagesPlaceholder(variable_name="chat_history"),
+            human_message_prompt
+        ])
+
+        # Use the chat prompt
+        formatted_prompt = chat_prompt.format_prompt(
+            role=self.ai_role,
+            goal=self.ai_goal,
+            backstory=self.ai_backstory,
+            instructions=session.ai_quest_id.description,
+            chat_history=chat_history.messages,
+            **kwargs
+        )
+
+        # If you need to log for debugging
         if debug:
-            self.log_message(f"{system_message}")
+            self.log_message(f"Formatted prompt: {formatted_prompt}")
 
-        human = HumanMessage(content=self.ai_prompt_template.format_map(DefaultDict(kwargs)))
-        if debug:
-            self.log_message(f"{human}")
         try:
+            response = eval(self.ai_agent_llm_id.get_llm()).invoke(formatted_prompt)
             if debug:
-                self.log_message(f"{system_message=}{self._create_ai_template_prompt(kwargs, test_prompt, parser)=}")
-                _logger.error(f"{system_message=}{self._create_ai_template_prompt(kwargs, test_prompt, parser)=}")
-            response = eval(self.ai_agent_llm_id.get_llm()).invoke([system_message, human])
-
-            _logger.error(f"{response=}")
+                _logger.error(f"{response=}")
         except HTTPStatusError as e:
             self.ai_agent_llm_id.log_message(body=e, is_error=True)
             _logger.error(f"HTTPStatusError {e=}")
@@ -194,8 +207,8 @@ Guidlines and instructions {session.ai_quest.description}
     def _create_ai_template_prompt(self, kwargs, test_prompt=False, parser=False, ):
         template = PromptTemplate(
             template=test_prompt or self.ai_prompt_template,
-            input_variables=kwargs.keys(),
-            partial_variables={"format_instructions": parser.get_format_instructions() if parser else False}
+            input_variables=list(kwargs.keys()) + ["chat_history"],
+            partial_variables={"format_instructions": parser.get_format_instructions() if parser else False},
         )
         message = template.format(**kwargs)
         return message
