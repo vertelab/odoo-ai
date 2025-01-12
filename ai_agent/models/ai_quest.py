@@ -141,6 +141,7 @@ class AIQuest(models.Model):
     filter_domain = fields.Char(        string='Filter Name',        related='model_id.model', readonly=False, related_sudo=True)
     image_128 = fields.Image("Image", max_width=128, max_height=128)
     init_type = fields.Selection(selection=INIT_TYPES, string='Initiate',help="How the Quest is initialized", required=True, default='manual')
+    init_type_str = fields.Html(string='',)
     is_favorite = fields.Boolean()
     last_run = fields.Datetime()
     llm_count = fields.Integer(compute="compute_llm_count")
@@ -293,9 +294,14 @@ class AIQuest(models.Model):
     @api.onchange('init_type')
     def _onchange_init_type(self):
         name = self.name
+        model = self.model_id.name
+        qtype = _('AI Staff') if self.ai_type == 'ai-staff' else _('Quest')
+        self.init_type_str=_(f'This {qtype} will begin work when you press START button')
+        
         # ~ if self.init_type != 'cron' and self.cron_id:
         # ~ self.cron_id.unlink()
         if self.init_type == 'cron':
+            self.init_type_str=_(f'This {qtype} will begin work at a schedule, \nfollow the schedule for updating')
             if not self.cron_id:
                 self.cron_id = self.cron_id.create({
                     'name': self.name,
@@ -307,10 +313,12 @@ class AIQuest(models.Model):
         # ~ self.server_action_id.unlink()
 
         if self.init_type == "mail":
+            self.init_type_str=_(f'This {qtype} will begin work when recieveing a mail at this\naddress')
             if not self.alias_name:
                 self.alias_name = self.name
 
         if self.init_type == 'server-action':
+            self.init_type_str=_(f'Visit {model} or use checkboxes to apply this \naction to the model.')
             if not self.server_action_id:
                 self.server_action_id = self.server_action_id.create({
                     'name': self.name,
@@ -322,6 +330,7 @@ class AIQuest(models.Model):
         # ~ self.channel_id.unlink()
 
         if self.init_type == 'channel':
+            self.init_type_str=_(f'Chat with this bot at the channel, the dialog is public for all members of this channel')
             if not self.channel_id:
                 self.channel_id = self.channel_id.create({
                     'name': self.name,
@@ -331,6 +340,7 @@ class AIQuest(models.Model):
         # ~ self.chat_user_id.unlink()
 
         if self.init_type == 'chat':
+            self.init_type_str=_(f'Chat with this bot, the dialog is private for you and the bot')
             if not self.chat_user_id:
                 self.chat_user_id = self.chat_user_id.create({
                     'name': self.name,

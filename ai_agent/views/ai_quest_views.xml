@@ -67,7 +67,7 @@
             <div class="oe_title">
               <label for="name" string="Name" />
               <h1>
-                <field name="name" class="oe_inline" default_focus="1" placeholder="e.g. support" readonly="0" />
+                <field name="name" class="oe_inline" default_focus="1" placeholder="e.g. support helper" readonly="0" />
               </h1>
             </div>
             <group>
@@ -78,7 +78,7 @@
                 <field name="tag_ids" widget="many2many_tags" />
               </group>
               <group>
-                <field name="init_type" />
+                <field name="init_type" /><newline/>
                 <field name="alias_name" on_change="1" attrs="{'invisible': [('init_type', '!=', 'mail')]}" />
                 <label for="alias_name" string="Email Alias" attrs="{'invisible': [('init_type', '!=', 'mail')]}" />
                 <div class="oe_inline" name="alias_def" attrs="{'invisible': [('init_type', '!=', 'mail')]}">
@@ -97,17 +97,40 @@
                 <field name="server_action_id" attrs="{'invisible': [('init_type', '!=', 'server-action')], 'required': [('init_type', '=', 'server-action')]}" />
                 <field name="cron_id" attrs="{'invisible': [('init_type', '!=', 'cron')], 'required': [('init_type', '=', 'cron')]}" />
                 <field name="filter_domain" widget="domain" options="{'model': 'res.partner'}" attrs="{'invisible': [('init_type', '!=', 'cron')]}" />
+                
                 <field name="channel_id" attrs="{'invisible': [('init_type', '!=', 'channel')], 'required': [('init_type', '=', 'channel')]}" />
                 <field name="chat_user_id" attrs="{'invisible': [('init_type', '!=', 'chat')], 'required': [('init_type', '=', 'chat')]}" />
-                <field name="use_chat_history" attrs="{'invisible': [('init_type', '!=', 'chat')], 'required': [('init_type', '=', 'chat')]}" />
-                <field name="chat_history_limit" attrs="{'invisible': [('init_type', '!=', 'chat'),('use_chat_history', '=', False)], 
-                                                         'required':  [('use_chat_history', '=', True)]}" />
-                <field name="use_company_info" />
-                <field name="use_personal_info" />
-                <field name="use_personal_lang" />
-                <field name="use_time_context" />
+               
+
+
+                <field name="use_chat_history" on_change="1" attrs="{'invisible': ['|',('init_type', 'not in', ['chat','channel']),('use_chat_history','=',True)]}"  class="oe_inline" />
+                <label for="use_chat_history" attrs="{'invisible': ['|',('init_type', 'not in', ['chat','channel']),('use_chat_history','=',False)]}"  class="oe_inline" />
+
+                <div>
+                <div class="oe_inline"  attrs="{'invisible': ['|',('init_type', 'not in', ['chat','channel']),('use_chat_history','=',False)]}" colspan="4">
+                <field name="use_chat_history" attrs="{'invisible': [('init_type', 'not in', ['chat','channel'])]}"  class="oe_inline" />
+       
+                  <field name="chat_history_limit"  attrs="{'invisible': ['|',('init_type', 'not in', ['chat','channel']),('use_chat_history','=',False)]}" class="oe_inline" />
+                  <span class="oe_inline"  attrs="{'invisible': [('init_type', 'not in', ['chat','channel'])]}">messages</span>
+                </div></div>
+                
+                </group>
+                <group>_</group>
+                <group>
+                <field name="init_type_str" nolabel="1" colspan="2" readonly="1" /></group>
+              </group>
+              <group string="Advanced Settings" col="2">
                 <field name="debug" />
               </group>
+              <group col="4" string="Context Settings">
+                <group col="2" colspan="2">
+                  <field name="use_company_info" />
+                  <field name="use_personal_info" />
+                </group>
+                <group col="2" colspan="2">
+                  <field name="use_personal_lang" />
+                  <field name="use_time_context" />
+                </group>
             </group>
             <notebook>
               <page string="Description" id="desc">
