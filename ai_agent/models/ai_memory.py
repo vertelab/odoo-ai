@@ -2,22 +2,15 @@ import json
 import logging
 import os
 import io
-from httpx import HTTPStatusError
 from langchain.chains import ConversationalRetrievalChain
-from langchain.chains import RetrievalQA
 from langchain.document_loaders import TextLoader
 from langchain.embeddings import HuggingFaceEmbeddings
 from langchain.llms import HuggingFacePipeline
 from langchain.memory import ConversationBufferMemory
 from langchain.schema import SystemMessage, HumanMessage
 # ~ from langchain_community.text_splitters import CharacterTextSplitter
-from langchain.vectorstores import FAISS
-from langchain_anthropic import ChatAnthropic
+# ~ from langchain.vectorstores import FAISS
 from langchain_core.output_parsers import StrOutputParser
-from langchain_core.prompts import PromptTemplate
-from langchain_groq import ChatGroq
-from langchain_mistralai import ChatMistralAI
-from langchain_openai import ChatOpenAI
 from odoo import models, fields, api, _
 from odoo.exceptions import UserError, AccessError, ValidationError
 from odoo.tools.safe_eval import safe_eval

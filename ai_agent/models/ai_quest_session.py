@@ -268,6 +268,7 @@ class AIQuestSession(models.Model):
             }
             _logger.warning(f"{r=}")
             session = self.env['ai.quest.session'].create({
+                'startdate': fields.Datetime.now(),
                 'status': 'active',
                 'ai_quest_id': quest.id,
                 'ai_agent_id': agents[0].id if agents else None,

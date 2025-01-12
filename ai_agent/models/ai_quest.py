@@ -461,7 +461,7 @@ class AIQuest(models.Model):
                                    )
             
         """
-        _logger.warning(f"chat {message=}")
+        _logger.warning(f"chat {message=} {message.body=}")
         if (self.init_type == 'chat' and self.chat_user_id) or (self.init_type == "channel" and self.channel_id):
             if self._check_quest_error():
                 raise UserError(self._check_quest_error())
@@ -470,10 +470,9 @@ class AIQuest(models.Model):
                 message.parent_id.ai_quest_session_id if message.ai_quest_session_id else \
                     self.env['ai.quest.session'].quest_init(self)
             vals = self._chat_values(session=session, message=message,channel=channel,bot_user=bot_user)
+            # ~ raise UserError(f"{vals=}")
             res = self.run(**vals)
             return res
-            raise UserError(f"{res}")
-
 
     def _mail_values(self, **kwarg):
         return kwarg

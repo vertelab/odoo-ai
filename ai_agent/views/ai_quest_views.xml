@@ -59,7 +59,7 @@
                 <field string="Tokens" name="session_line_count" widget="statinfo" />
               </button>
               <button name="action_get_session_objects" class="oe_stat_button" type="object" icon="fa-puzzle-piece">
-                <field string="Session Objects" name="session_object_count" widget="statinfo" />
+                <field string="Objects" name="session_object_count" widget="statinfo" />
               </button>
             </div>
             <field name="avatar_128" invisible="1" />
