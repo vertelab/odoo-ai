@@ -2,20 +2,29 @@ import json
 import logging
 import os
 import io
+import PyPDF2
+import base64
+import uuid
+import faiss
 from langchain.chains import ConversationalRetrievalChain
-from langchain.document_loaders import TextLoader
-from langchain.embeddings import HuggingFaceEmbeddings
-from langchain.llms import HuggingFacePipeline
+from langchain_community.document_loaders import TextLoader
+# from langchain.embeddings import HuggingFaceEmbeddings
+# from langchain.llms import HuggingFacePipeline
 from langchain.memory import ConversationBufferMemory
 from langchain.schema import SystemMessage, HumanMessage
-# ~ from langchain_community.text_splitters import CharacterTextSplitter
-# ~ from langchain.vectorstores import FAISS
 from langchain_core.output_parsers import StrOutputParser
 from odoo import models, fields, api, _
 from odoo.exceptions import UserError, AccessError, ValidationError
 from odoo.tools.safe_eval import safe_eval
 from random import randint
-from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
+# from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
+from langchain_community.document_loaders import PyPDFLoader
+from langchain_community.vectorstores import FAISS
+from langchain_core.documents.base import Document
+from langchain_text_splitters.character import RecursiveCharacterTextSplitter
+from langchain_openai import OpenAIEmbeddings
+
+
 
 from dateutil.relativedelta import relativedelta
 
@@ -52,37 +61,52 @@ class AIMemory(models.Model):
     memory_type = fields.Selection(selection=[('faiss', 'FAISS'), ('st', 'Short Term')], string='Memory type')
     memory_faiss = fields.Binary(string='FAISS Index', attachment=True)
     nbr_days = fields.Integer(string='Number days this memory will live')
+    split_chunk_size = fields.Integer(default=1000)
+    split_chunk_overlap = fields.Integer(default=200)
+    ai_agent_llm_id = fields.Many2one(string="Embedded LLM", comodel_name="ai.agent.llm", required=True, domain="[('status','=','confirmed')]")
 
     @api.depends('image_128')
     def _compute_base_image_128(self):
         for record in self:
             record.base_image_128 = record.image_128
 
-    def save_faiss_index(self, index):
-        buffer = io.BytesIO()
-        faiss.write_index(index, faiss.swig_ptr(buffer))
-        self.memory_faiss = buffer.getvalue()
+    def rag_attatchemts(self):
+        for ai_memory_id in self:
+            ir_attachments_ids = self.env["ir.attachment"].search([("res_model", "=", ai_memory_id._name), ("res_id", "=", ai_memory_id.id)])
+            if len(ir_attachments_ids) != 0:
+                documents = []
+                for ir_attachment_id in ir_attachments_ids:
+                    documents.append(self.create_document(ir_attachment_id))
+                all_splits = self.text_splitter().split_documents(documents)
+                self.create_faiss(documents)
+            else:
+                raise UserError(_("No attachments to RAG"))
+            
+    def load_faiss(self):
+        faiss_file = base64.b64decode(self.memory_faiss)
+        db = FAISS.deserialize_from_bytes(faiss_file,eval(self.ai_agent_llm_id.get_embedding()), allow_dangerous_deserialization=True)
+        return db
 
-    def load_faiss_index(self):
-        if not self.memory_faiss:
-            return None
-        buffer = io.BytesIO(self.memory_faiss)
-        return faiss.read_index(faiss.swig_ptr(buffer))
+    def text_splitter(self):
+        return RecursiveCharacterTextSplitter(
+        chunk_size=self.split_chunk_size,  # chunk size (characters)
+        chunk_overlap=self.split_chunk_overlap,  # chunk overlap (characters)
+        add_start_index=True,  # track index in original document
+    )
 
-    def add_document(self, attachment_id):
-        attachment = self.env['ir.attachment'].browse(attachment_id)
-        if not attachment.exists():
-            raise ValueError("Attachment not found")
+    def create_document(self, attachment_id):
+        content = base64.b64decode(attachment_id.datas).decode("utf-8")
+        if attachment_id.name.split(".")[-1] == "pdf":
+            reader = PyPDF2.PdfFileReader(file)
+            content = "\n".join(map(lambda page: page.extract_text(), reader.pages))
+        _logger.error(f"{content}")     
+        return Document(id=uuid.uuid4(), page_content=f"{content}", metadata={"name": attachment_id.name, "type": "attachment"})
+        
+    def create_faiss(self,documents):
+        db = FAISS.from_documents(documents, eval(self.ai_agent_llm_id.get_embedding()))
+        _logger.error(f"{db.serialize_to_bytes()=}")
+        self.memory_faiss = base64.b64encode(db.serialize_to_bytes())
 
-        file_content = BytesIO(base64.b64decode(attachment.datas))
-        loader = TextLoader(file_content, encoding='utf-8')
-        documents = loader.load()
-        # ~ text_splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=0)
-        # ~ docs = text_splitter.split_documents(documents)
-        docs = None
-        db = self.load_faiss_index() or self.create_faiss_index()
-        db.add_documents(docs)
-        self.save_faiss_index(db.index)
 
     def chat(self, query):
         db = self.load_faiss_index()

@@ -180,6 +180,11 @@ class AIAgentLLM(models.Model):
             f"verbose={verbose}," + \
             f"callbacks={callbacks})"
 
+    def get_embedding(self):
+        return f"{self.llm_type}(" + \
+            f"model='{self.model_id.name}'," + \
+            f"api_key='{self.ai_api_key or ''}')"
+
     def invoke(self, input, config=None,
                ai_quest_session_id=None, ai_quest_id=None, ai_agent_id=None, debug=False,
                ):
