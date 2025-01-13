@@ -1,18 +1,11 @@
 import json
 import logging
-import os
 import io
 from langchain.chains import ConversationalRetrievalChain
-from langchain.document_loaders import TextLoader
-from langchain.embeddings import HuggingFaceEmbeddings
-from langchain.llms import HuggingFacePipeline
+from langchain_community.document_loaders.text import TextLoader
+from langchain_community.llms import HuggingFacePipeline
 from langchain.memory import ConversationBufferMemory
-from langchain.schema import SystemMessage, HumanMessage
-# ~ from langchain_community.text_splitters import CharacterTextSplitter
-# ~ from langchain.vectorstores import FAISS
-from langchain_core.output_parsers import StrOutputParser
 from odoo import models, fields, api, _
-from odoo.exceptions import UserError, AccessError, ValidationError
 from odoo.tools.safe_eval import safe_eval
 from random import randint
 from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
