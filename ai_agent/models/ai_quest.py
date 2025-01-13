@@ -461,7 +461,7 @@ class AIQuest(models.Model):
                                    )
             
         """
-        _logger.warning(f"chat {message=} {message.body=}")
+        # ~ _logger.warning(f"chat {message=} {message.body=}")
         if (self.init_type == 'chat' and self.chat_user_id) or (self.init_type == "channel" and self.channel_id):
             if self._check_quest_error():
                 raise UserError(self._check_quest_error())

@@ -133,7 +133,6 @@ class AIAgent(models.Model):
 
     def _extra_context(self,quest):
         extra_context=''
-        _logger.error(f"_extra conent {self=}{quest=} ")
         if quest.use_company_info:
             extra_context += f'Company information: {self.env.user.company_id.company_mission=} {self.env.user.company_id.company_values=}\n'
         if quest.use_company_info:
@@ -141,7 +140,6 @@ class AIAgent(models.Model):
         if quest.use_time_context:
             now = datetime.now()
             extra_context += f'Current date {now.strftime("%Y-%m-%d")} Current time {now.strftime("%H:%M:%S")} Week Number {now.isocalendar()[1]}\n'            
-        _logger.error(f"_extra conent {extra_context=}")
         return extra_context
 
     def _chat_history(self,channel,bot_user,limit=10):
@@ -151,7 +149,6 @@ class AIAgent(models.Model):
             raise UserError("missing bot_user")
         chat_history = ChatMessageHistory()
         question = ''
-        _logger.error(f"_chat_hiostory {self=}{channel=} {bot_user=} ")
 
         for m in self.env['mail.message'].search([
                         ('model','=','mail.channel'),
@@ -174,7 +171,6 @@ class AIAgent(models.Model):
         # Add the last user message if exists
         if question:
             chat_history.add_user_message(question)
-        _logger.error(f"_chat_hiostory END {self=}{channel=} {bot_user=} ")
         return chat_history.messages
 
     def prompt_agent(self, test_prompt=False, parser=False, session=False, debug=False, channel=False, bot_user=False, **kwargs):
@@ -227,7 +223,6 @@ class AIAgent(models.Model):
             MessagesPlaceholder(variable_name="chat_history"),
             human_message_prompt
         ])
-        _logger.error(f"{self=} pre create prompt")
         # Use the chat prompt
         formatted_prompt = chat_prompt.format_prompt(
             role=self.ai_role,
@@ -239,7 +234,6 @@ class AIAgent(models.Model):
             chat_history=self._chat_history(channel,bot_user,quest.chat_history_limit) if quest.use_chat_history else False,
             **kwargs
         )
-        _logger.error(f"{formatted_prompt=} create prompt")
 
         # If you need to log for debugging
         if debug:
