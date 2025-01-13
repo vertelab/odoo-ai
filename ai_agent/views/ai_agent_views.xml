@@ -105,7 +105,14 @@
                                 <field name="ai_memory_ids">
                                     <tree editable="bottom">
                                         <field name="sequence" widget="handle" />
-                                        <field name="ai_memory_id" nolabel="1" />
+                                        <field name="ai_memory_id"  />
+                                        <field name="ai_memory_status"  />
+                                        <field name="ai_memory_llm_id"  />
+                                        <field name="ai_memory_llm_status"  />
+                                        <field name="ai_memory_url" optional='hide'  />
+                                        <field name="last_run" optional='hide'  />
+                                        <field name="nbr_days" optional='hide'  />
+                                        <button name="run" string="Run" type="object" icon=""/>
                                     </tree>
                                 </field>
                             </page> 

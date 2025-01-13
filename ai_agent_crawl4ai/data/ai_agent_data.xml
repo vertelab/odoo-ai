@@ -1,0 +1,31 @@
+<odoo>
+  <data noupdate="0">
+<!--
+    <record id="ai_agent_crawl4ai" model="ai.agent">
+      <field name="name">Webcrawler Agent</field>
+      <field name="ai_role">Webcrawling Specialist</field>
+      <field name="ai_goal">
+
+      </field>
+      <field name="ai_backstory">
+
+      </field>
+      <field name="ai_prompt_template">
+
+      </field>
+      <field name="ai_type">crawl4ai</field>
+    </record>
+-->
+
+    <record id="ai_memory_crawl4ai" model="ai.memory">
+      <field name="name">Webcrawler Vertel</field>
+      <field name="ai_type">crawl4ai</field>
+      <field name="url">http://vertel.se</field>
+    </record>
+    
+
+</record>    
+    
+    
+  </data>
+</odoo>
