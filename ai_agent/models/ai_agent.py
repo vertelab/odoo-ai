@@ -4,18 +4,20 @@ import re
 from datetime import datetime
 from random import randint
 
+
 from httpx import HTTPStatusError
 from langchain.agents import AgentExecutor, create_openai_tools_agent
+from langchain.embeddings import OpenAIEmbeddings
+from langchain.memory import ConversationTokenBufferMemory
+from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder, PromptTemplate
 from langchain.prompts import HumanMessagePromptTemplate, SystemMessagePromptTemplate
-from langchain.schema import SystemMessage
+from langchain.schema import AIMessage, HumanMessage, SystemMessage
 from langchain.tools import tool
-from langchain_community.chat_message_histories import ChatMessageHistory
-from langchain_core.messages import HumanMessage
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder, PromptTemplate
+
+from langchain_openai import ChatOpenAI
 from langchain_groq import ChatGroq
 from langchain_mistralai import ChatMistralAI
-from langchain_openai import ChatOpenAI
-from langchain_core.output_parsers import StrOutputParser
+
 
 from odoo.exceptions import UserError
 
@@ -358,7 +360,7 @@ class AIAgent(models.Model):
 
         return supervisor_chain
 
-    def create_node(self):
+    def XXXcreate_node(self):
         """Creates a node for the agent in the graph."""
 
         def agent_node(state):
@@ -460,3 +462,112 @@ class AIAgent(models.Model):
             return soup.get_text()
 
         return [internet_search_DDGO, process_content]
+        
+    def create_node(self):
+        """Creates a node for the agent in the graph."""
+
+        def agent_node(state):
+            """Process messages and generate a response."""
+            messages = state.get('messages', [])
+            _logger.info(f"Agent {self.name} received messages: {len(messages)}")
+            llm = eval(self.ai_agent_llm_id.get_llm())
+            history = ConversationTokenBufferMemory(llm=llm, max_token_limit=1000)
+            
+            try:
+                # Get the latest message
+                latest_message = messages[-1].content if messages else ""
+
+                # Perform RAG
+                context = ''
+                for memory in self.ai_memory_ids:
+                    if memory.memory_type == 'faiss':
+                        relevant_docs = memory.load_faiss().similarity_search(latest_message, k=3)
+                        context = "\n".join([doc.page_content for doc in relevant_docs])
+
+                # Create system prompt
+                system_prompt = f"""You are an agent with specific responsibilities.
+                Role: {self.ai_role}
+                Goal: {self.ai_goal}
+                Backstory: {self.ai_backstory}
+
+                Instructions:
+                - Provide thorough, complete responses
+                - Use available tools when needed
+                - Stay focused on your specific role
+                - Use the following context if relevant: {context}
+                """
+
+                # Create prompt template with required agent_scratchpad
+                prompt = ChatPromptTemplate.from_messages([
+                    ("system", system_prompt),
+                    MessagesPlaceholder(variable_name="history"),
+                    MessagesPlaceholder(variable_name="messages"),
+                    MessagesPlaceholder(variable_name="agent_scratchpad"),
+                ])
+
+                # Get LLM
+    
+                tools = self._get_tools()
+
+                # Create agent
+                agent = create_openai_tools_agent(llm, tools, prompt)
+
+                
+                # Create executor with limits
+                executor = AgentExecutor(
+                    agent=agent,
+                    tools=tools,
+                    verbose=True,
+                    max_iterations=2,  # Limit tool usage
+                    handle_parsing_errors=True,
+                    memory=history
+                )
+
+                # Execute agent
+                result = executor.invoke({
+                    "input": latest_message,
+                    "messages": messages,
+                    "history": history.chat_memory.messages
+                })
+
+                _logger.info(f"Agent {self.name} generated response")
+
+                # Update memory with the new messages
+                history.chat_memory.add_message(HumanMessage(content=latest_message))
+                history.chat_memory.add_message(AIMessage(content=result["output"]))
+
+                # Preserve complete message history
+                full_history = history.chat_memory.messages
+
+                # Extract usage metadata
+                usage_metadata = result.get("__run", {}).get("usage_metadata", {})
+
+                # Return response
+                return {
+                    "messages": [
+                        AIMessage(
+                            content=result["output"],
+                            additional_kwargs={
+                                "name": re.sub(r'[^a-zA-Z0-9_-]', '', self.name),
+                                "usage_metadata": usage_metadata
+                            }
+                        )
+                    ],
+                    "full_history": full_history
+                }
+
+            except Exception as e:
+                _logger.error(f"Error in agent {self.name}: {str(e)}")
+                return {
+                    "messages": [
+                        AIMessage(
+                            content=f"Error occurred: {str(e)}",
+                            additional_kwargs={"name": self.name}
+                        )
+                    ],
+                    "full_history": history.chat_memory.messages
+                }
+
+        return agent_node
+
+

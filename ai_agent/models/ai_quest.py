@@ -596,8 +596,8 @@ class AIQuest(models.Model):
             'records': eval_context.get('records')
         }
 
-        if not eval_context.get('records'):
-            objects.extend(eval_context.get('records'))
+        # ~ if not eval_context.get('records'):
+            # ~ objects.extend(eval_context.get('records'))
         _logger.error(f"{local_dict=}")
         result = local_dict.get('result')
         if isinstance(result, list):

@@ -21,7 +21,7 @@ from langchain_community.vectorstores import FAISS
 from langchain_core.documents.base import Document
 from langchain_text_splitters.character import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings
-
+from odoo.exceptions import UserError
 
 import asyncio
 from crawl4ai import AsyncWebCrawler
@@ -82,17 +82,15 @@ class AIMemory(models.Model):
             record.base_image_128 = record.image_128
 
     def rag_attatchemts(self):
-        for ai_memory_id in self:
-            ir_attachments_ids = self.env["ir.attachment"].search([("res_model", "=", ai_memory_id._name), ("res_id", "=", ai_memory_id.id)])
-            if len(ir_attachments_ids) != 0:
-                documents = []
-                for ir_attachment_id in ir_attachments_ids:
-                    documents.append(self.create_document(ir_attachment_id))
+        for memory in self:
+            documents = [self.create_document(attachment) for attachment in 
+                         self.env["ir.attachment"].search([("res_model", "=", memory._name), ("res_id", "=", memory.id)])]
+            if documents:
                 all_splits = self.text_splitter().split_documents(documents)
                 self.create_faiss(documents)
             else:
                 raise UserError(_("No attachments to RAG"))
-            
+        
     def load_faiss(self):
         faiss_file = base64.b64decode(self.memory_faiss)
         db = FAISS.deserialize_from_bytes(faiss_file,eval(self.ai_agent_llm_id.get_embedding()), allow_dangerous_deserialization=True)
