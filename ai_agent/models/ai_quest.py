@@ -1,31 +1,22 @@
 import base64
-import functools, operator
 import json
+import logging
+import operator
 import re
-import unidecode
-
-from functools import partial
-from langchain_anthropic import ChatAnthropic
-from langchain_core.messages import BaseMessage, HumanMessage
-from langchain_core.output_parsers import StrOutputParser
-from langchain_core.tools import tool
-from langgraph.graph import END, START, StateGraph, MessagesState
-from odoo import models, fields, api, _, tools, Command
-from odoo.addons.base.models.avatar_mixin import get_hsl_from_seed
-from odoo.exceptions import UserError, AccessError, ValidationError, Warning
-from odoo.tools.float_utils import float_compare
-from odoo.tools.mail import html2plaintext
-from odoo.tools.safe_eval import safe_eval, test_python_expr
-from pytz import timezone
 from random import randint
 from secrets import choice
-from typing import Annotated, Literal, TypedDict, Sequence
-
-
+from typing import Annotated, TypedDict, Sequence
 
 import markdown
+import unidecode
+from langchain_core.messages import BaseMessage, HumanMessage
+from langgraph.graph import END, StateGraph
+from odoo.addons.base.models.avatar_mixin import get_hsl_from_seed
+from odoo.exceptions import UserError, ValidationError, Warning
+from odoo.tools.mail import html2plaintext
+from odoo.tools.safe_eval import safe_eval
 
-import logging
+from odoo import models, fields, api, _
 
 _logger = logging.getLogger(__name__)
 
@@ -106,16 +97,15 @@ DEFAULT_PYTHON_CODE = """# Available variables:
 #  - Command: x2Many commands namespace
 # To return an action, assign: action = {...}\n\n\n\n"""
 
-
 # Python code
-INIT_TYPES=[
-        ('manual', 'Manual'), 
-        ('mail', 'Mail'), 
-        ('chat', 'Chat with User'), 
-        ('channel', 'Chat with Channel'),
-        ('cron', 'Scheduled Action'), 
-        ('server-action', 'Server Action')
-    ]
+INIT_TYPES = [
+    ('manual', 'Manual'),
+    ('mail', 'Mail'),
+    ('chat', 'Chat with User'),
+    ('channel', 'Chat with Channel'),
+    ('cron', 'Scheduled Action'),
+    ('server-action', 'Server Action')
+]
 
 
 class AIQuest(models.Model):
@@ -123,47 +113,61 @@ class AIQuest(models.Model):
     _inherit = ["mail.thread", "mail.activity.mixin", "mail.alias.mixin"]
     _description = 'AI Quest'
 
-
     agent_count = fields.Integer(compute="compute_agent_count")
-    ai_agent_ids = fields.One2many(comodel_name='ai.quest.agent', inverse_name='ai_quest_id') 
-    ai_type = fields.Selection(selection=[("default", "Default"), ('ai-programmer', 'AI Programmer')],default="default", required=True)
-    alias_id = fields.Many2one(comodel_name='mail.alias', string='Alias', ondelete="restrict", required=True,help="The email address associated with this channel. New emails received will ""automatically create new leads assigned to the channel.")
-    alias_user_id = fields.Many2one(comodel_name='res.users', related='alias_id.alias_user_id', readonly=False,inherited=True, )
+    ai_agent_ids = fields.One2many(comodel_name='ai.quest.agent', inverse_name='ai_quest_id')
+    ai_type = fields.Selection(selection=[("default", "Default"), ('ai-programmer', 'AI Programmer')],
+                               default="default", required=True)
+    alias_id = fields.Many2one(comodel_name='mail.alias', string='Alias', ondelete="restrict", required=True,
+                               help="The email address associated with this channel. New emails received will "
+                                    "automatically create new leads assigned to the channel.")
+    alias_user_id = fields.Many2one(comodel_name='res.users', related='alias_id.alias_user_id', readonly=False,
+                                    inherited=True, )
     avatar_128 = fields.Image("Avatar", max_width=128, max_height=128, compute='_compute_avatar_128')
     channel_id = fields.Many2one(comodel_name='mail.channel', string="Channel", help="")
-    chat_history_limit = fields.Integer(string='Chat History Limit', default=10, help='Limit the chat history to this njumber of messages')
+    chat_history_limit = fields.Integer(string='Chat History Limit', default=10,
+                                        help='Limit the chat history to this njumber of messages')
     chat_user_id = fields.Many2one(comodel_name='res.users', string="Chat User", help="")
-    code = fields.Text(string='Python Code', groups='base.group_system',default=DEFAULT_PYTHON_CODE,                       help="Write Python code that the action will execute. Some variables are ""available for use; help about python expression is given in the help tab.")
+    code = fields.Text(string='Python Code', groups='base.group_system', default=DEFAULT_PYTHON_CODE,
+                       help="Write Python code that the action will execute. Some variables are ""available for use; help about python expression is given in the help tab.")
     color = fields.Integer(default=lambda self: randint(1, 11))
     cron_id = fields.Many2one(comodel_name='ir.cron', string="Scheduled Action", help="", ondelete="cascade")
     debug = fields.Boolean(string='Debug', help='More logging')
     description = fields.Text()
-    filter_domain = fields.Char(        string='Filter Name',        related='model_id.model', readonly=False, related_sudo=True)
+    filter_domain = fields.Char(string='Filter Name', related='model_id.model', readonly=False, related_sudo=True)
     image_128 = fields.Image("Image", max_width=128, max_height=128)
-    init_type = fields.Selection(selection=INIT_TYPES, string='Initiate',help="How the Quest is initialized", required=True, default='manual')
-    init_type_str = fields.Html(string='',)
+    init_type = fields.Selection(selection=INIT_TYPES, string='Initiate', help="How the Quest is initialized",
+                                 required=True, default='manual')
+    init_type_str = fields.Html(string='', )
     is_favorite = fields.Boolean()
     last_run = fields.Datetime()
     llm_count = fields.Integer(compute="compute_llm_count")
     model_id = fields.Many2one(comodel_name='ir.model', string="Model", help="Bind this Quest to this model")
     name = fields.Char(required=True)
     partner_id = fields.Many2one(comodel_name='res.partner', string="Customer", help="")
-    server_action_id = fields.Many2one('ir.actions.server', string='Server Action',                                      help="Server action to be executed when this quest is initialized",ondelete="cascade")
+    server_action_id = fields.Many2one('ir.actions.server', string='Server Action',
+                                       help="Server action to be executed when this quest is initialized",
+                                       ondelete="cascade")
     session_count = fields.Integer(compute="compute_session_count")
     session_ids = fields.One2many(comodel_name="ai.quest.session", inverse_name="ai_quest_id")
     session_line_count = fields.Integer(compute="compute_session_line_count")
     session_line_ids = fields.One2many(comodel_name="ai.quest.session.line", inverse_name="ai_quest_id")
     session_object_count = fields.Integer(compute="compute_session_object_count")
     session_object_ids = fields.One2many(comodel_name="ai.session.object", inverse_name="ai_quest_id")
-    status = fields.Selection(selection=[("draft", _("Draft")), ("active", _("Active")), ("done", _("Done")), ("error", _("Error"))],default="draft")
+    status = fields.Selection(
+        selection=[("draft", _("Draft")), ("active", _("Active")), ("done", _("Done")), ("error", _("Error"))],
+        default="draft")
     tag_ids = fields.Many2many(comodel_name='product.tag', string='Tags')
-    use_chat_history = fields.Boolean(string='Use Chat History', default=True,help='Add chat history to the context')
-    use_company_info = fields.Boolean(string='Use Company Info', default=True,help='Add company mission and values to the context')
-    use_personal_info = fields.Boolean(string='Use Personal Info', default=True,help='Add personal name and other info to the context')
-    use_personal_lang = fields.Boolean(string='Use Personal Language', default=True,help='Set Personas language for the LLM')
-    use_time_context = fields.Boolean(string='Use Time Context', default=True,help='Inform the LLM of current time, date')
+    use_chat_history = fields.Boolean(string='Use Chat History', default=True, help='Add chat history to the context')
+    use_company_info = fields.Boolean(string='Use Company Info', default=True,
+                                      help='Add company mission and values to the context')
+    use_personal_info = fields.Boolean(string='Use Personal Info', default=True,
+                                       help='Add personal name and other info to the context')
+    use_personal_lang = fields.Boolean(string='Use Personal Language', default=True,
+                                       help='Set Personas language for the LLM')
+    use_time_context = fields.Boolean(string='Use Time Context', default=True,
+                                      help='Inform the LLM of current time, date')
     user_id = fields.Many2one(comodel_name='res.users', string="Owner", help="")
-    
+
     @api.model
     def _generate_random_token(self):
         return ''.join(choice('abcdefghijkmnopqrstuvwxyzABCDEFGHIJKLMNPQRSTUVWXYZ23456789') for _i in range(10))
@@ -227,7 +231,7 @@ class AIQuest(models.Model):
         return action
 
     def action_get_agents(self):
-        ai_agent_ids=list(map(lambda session_id: session_id.ai_agent_ids.ids ,self.session_ids))
+        ai_agent_ids = list(map(lambda session_id: session_id.ai_agent_ids.ids, self.session_ids))
         agent_ids = []
         [agent_ids.extend(ai_agent_id) for ai_agent_id in ai_agent_ids]
         agent_ids = list(set(agent_ids))
@@ -296,12 +300,12 @@ class AIQuest(models.Model):
         name = self.name
         model = self.model_id.name
         qtype = _('AI Staff') if self.ai_type == 'ai-staff' else _('Quest')
-        self.init_type_str=_(f'This {qtype} will begin work when you press START button')
-        
+        self.init_type_str = _(f'This {qtype} will begin work when you press START button')
+
         # ~ if self.init_type != 'cron' and self.cron_id:
         # ~ self.cron_id.unlink()
         if self.init_type == 'cron':
-            self.init_type_str=_(f'This {qtype} will begin work at a schedule, \nfollow the schedule for updating')
+            self.init_type_str = _(f'This {qtype} will begin work at a schedule, \nfollow the schedule for updating')
             if not self.cron_id:
                 self.cron_id = self.cron_id.create({
                     'name': self.name,
@@ -313,12 +317,12 @@ class AIQuest(models.Model):
         # ~ self.server_action_id.unlink()
 
         if self.init_type == "mail":
-            self.init_type_str=_(f'This {qtype} will begin work when recieveing a mail at this\naddress')
+            self.init_type_str = _(f'This {qtype} will begin work when receiving a mail at this\naddress')
             if not self.alias_name:
                 self.alias_name = self.name
 
         if self.init_type == 'server-action':
-            self.init_type_str=_(f'Visit {model} or use checkboxes to apply this \naction to the model.')
+            self.init_type_str = _(f'Visit {model} or use checkboxes to apply this \naction to the model.')
             if not self.server_action_id:
                 self.server_action_id = self.server_action_id.create({
                     'name': self.name,
@@ -330,7 +334,8 @@ class AIQuest(models.Model):
         # ~ self.channel_id.unlink()
 
         if self.init_type == 'channel':
-            self.init_type_str=_(f'Chat with this bot at the channel, the dialog is public for all members of this channel')
+            self.init_type_str = _(
+                f'Chat with this bot at the channel, the dialog is public for all members of this channel')
             if not self.channel_id:
                 self.channel_id = self.channel_id.create({
                     'name': self.name,
@@ -340,7 +345,7 @@ class AIQuest(models.Model):
         # ~ self.chat_user_id.unlink()
 
         if self.init_type == 'chat':
-            self.init_type_str=_(f'Chat with this bot, the dialog is private for you and the bot')
+            self.init_type_str = _(f'Chat with this bot, the dialog is private for you and the bot')
             if not self.chat_user_id:
                 self.chat_user_id = self.chat_user_id.create({
                     'name': self.name,
@@ -394,16 +399,16 @@ class AIQuest(models.Model):
         if len(self.ai_agent_ids.filtered(lambda a: a.ai_agent_id.ai_agent_llm_id.status != 'confirmed')) > 0:
             return _('Check status on LLMs')
         if len(self.ai_agent_ids.filtered(
-                lambda a: a.ai_agent_id.ai_agent_llm_id.is_key_required and a.ai_agent_id.ai_agent_llm_id.ai_api_key == False)) > 0:
+                lambda a: a.ai_agent_id.ai_agent_llm_id.is_key_required and not a.ai_agent_id.ai_agent_llm_id.ai_api_key
+        )) > 0:
             return _('Missing API Key on LLMs')
         if self.status != 'active':
-             return _('Wrong status on the quest')
+            return _('Wrong status on the quest')
         if self.code == DEFAULT_PYTHON_CODE:
             return _('Missing Python Code on the quest')
         if not self.description:
             return _('Missing Description on the quest')
         return False
-
 
     def start(self):
         pass
@@ -417,7 +422,6 @@ class AIQuest(models.Model):
                 raise UserError(self._check_quest_error())
             vals = self._server_action_values(records=records)
             res = self.run(records=records)
-            #session.store_session_data(self,result=result)
             self.log_message(f'server-action {res}')
 
             #     vals = self._server_action_values(records=records)
@@ -447,7 +451,7 @@ class AIQuest(models.Model):
     def _chat_values(self, **kwarg):
         return kwarg
 
-    def chat(self, message,channel,bot_user):
+    def chat(self, message, channel, bot_user):
         """"
             Implements chat with channel and bot
             
@@ -469,7 +473,7 @@ class AIQuest(models.Model):
             session = message.parent_id.ai_quest_session_id if message.parent_id and message.parent_id.ai_quest_session_id else \
                 message.parent_id.ai_quest_session_id if message.ai_quest_session_id else \
                     self.env['ai.quest.session'].quest_init(self)
-            vals = self._chat_values(session=session, message=message,channel=channel,bot_user=bot_user)
+            vals = self._chat_values(session=session, message=message, channel=channel, bot_user=bot_user)
             # ~ raise UserError(f"{vals=}")
             res = self.run(**vals)
             return res
@@ -525,7 +529,6 @@ class AIQuest(models.Model):
     # Python CODE eval
     # ------------------------------------------------------------
 
-
     def _get_eval_context(self, action=None, kw=None):
         """ Prepare the context used when evaluating python code, like the
         python formulas or code server actions.
@@ -553,7 +556,6 @@ class AIQuest(models.Model):
                  in self.env['ai.agent'].search([])]),
             'quest_list': ' ',
             'module_list': '',
-           
 
             # Exceptions
             'Warning': Warning,
@@ -562,6 +564,7 @@ class AIQuest(models.Model):
             # helpers
             '_logger': _logger,
             'html2plaintext': html2plaintext,
+            'HumanMessage': HumanMessage,
             **kw,
         }
         return eval_context
@@ -720,4 +723,3 @@ class AIQuest(models.Model):
     # message = html2plaintext(message.body)
     # response = self.build_graph(agents).invoke({"messages": [HumanMessage(content=message)]})
     # result = response['messages'][-1].content
-
