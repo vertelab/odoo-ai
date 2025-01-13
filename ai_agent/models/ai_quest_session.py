@@ -177,7 +177,9 @@ class AIQuestSession(models.Model):
             else:
                 record.time_difference_ms = 0
 
-    def store_session_data(self, result=None, objects=[], agent=None):
+    def store_session_data(self, result=None, objects=None, agent=None):
+        if objects is None:
+            objects = {}
         if result is not None:
             _logger.warning(f"store session data before loop {objects=} {result=}")
             self.enddate = fields.Datetime.now()
@@ -186,12 +188,18 @@ class AIQuestSession(models.Model):
                 if isinstance(message, AIMessage):
                     self.env['ai.quest.session.line'].new_line(session=self, aimessage=message, agent=agent,
                                                                debug=self.debug)
-                if objects:
-                    for o in objects:
-                        self.env['ai.session.object'].create({
-                            'ai_session_id': self.id,
-                            'object_id': (o._name, o.id),
-                        })
+            if objects:
+                for rec in objects.get('records'):
+                    self.env['ai.session.object'].create({
+                        'ai_session_id': objects.get('ai_session_id').id,
+                        'object_id': f"{rec._name}, {rec.id}",
+                    })
+
+                    # for o in objects:
+                    #     self.env['ai.session.object'].create({
+                    #         'ai_session_id': self.id,
+                    #         'object_id': (o._name, o.id),
+                    #     })
         else:
             self.status = 'error'
             if self.ai_quest_id.debug:

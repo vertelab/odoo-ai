@@ -12,6 +12,11 @@ from langchain.tools import tool
 from langchain_community.chat_message_histories import ChatMessageHistory
 from langchain_core.messages import HumanMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder, PromptTemplate
+from langchain_groq import ChatGroq
+from langchain_mistralai import ChatMistralAI
+from langchain_openai import ChatOpenAI
+from langchain_core.output_parsers import StrOutputParser
+
 from odoo.exceptions import UserError
 
 from odoo import models, fields, api, _
@@ -211,7 +216,7 @@ class AIAgent(models.Model):
         # Combine into chat prompt
         chat_prompt = ChatPromptTemplate.from_messages([
             system_message_prompt,
-            MessagesPlaceholder(variable_name="chat_history"),
+            # MessagesPlaceholder(variable_name="chat_history"),
             human_message_prompt
         ])
         # Use the chat prompt
@@ -222,8 +227,8 @@ class AIAgent(models.Model):
             instructions=quest.description,
             extra_context=self._extra_context(quest),
             use_lang=f"Use language {self.env.user.lang}" if quest.use_personal_lang else '',
-            chat_history=self._chat_history(channel, bot_user,
-                                            quest.chat_history_limit) if quest.use_chat_history else False,
+            # chat_history=self._chat_history(channel, bot_user,
+            #                                 quest.chat_history_limit) if quest.use_chat_history else False,
             **kwargs
         )
 

@@ -576,7 +576,7 @@ class AIQuest(models.Model):
             # eval_context["session"].status = "active"
             if self.debug:
                 _logger.warning(f"{eval_context=}" + f"{self.code=}\n=======\n {local_dict=}")
-            res = safe_eval(self.code, eval_context, local_dict, mode="exec", nocopy=True)
+            safe_eval(self.code, eval_context, local_dict, mode="exec", nocopy=True)
         except ValueError as e:
             self.log_message(f"ValueError {e=}", is_error=True)
             if self.debug:
@@ -589,13 +589,20 @@ class AIQuest(models.Model):
                 self.log_message(f"{e=}\n\n=====\n{self.code=}\n=======\n {local_dict=}")
             return None
         session = local_dict.get('session', eval_context['session'])
-        objects = local_dict.get('objects', [])
+        # objects = local_dict.get('objects', [])
+        objects = {
+            'ai_session_id': eval_context.get('session'),
+            'ai_quest_id': eval_context.get('self'),
+            'records': eval_context.get('records')
+        }
+
         if not eval_context.get('records'):
             objects.extend(eval_context.get('records'))
         _logger.error(f"{local_dict=}")
         result = local_dict.get('result')
         if isinstance(result, list):
             result = [result]
+
         session.store_session_data(result=result, objects=objects)
 
         return local_dict
