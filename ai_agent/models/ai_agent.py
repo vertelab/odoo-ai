@@ -1,30 +1,25 @@
-import functools, operator
-import json
 import logging
-import os
+import logging
 import re
+from datetime import datetime
+from random import randint
 
 from httpx import HTTPStatusError
-from langchain_community.chat_message_histories import ChatMessageHistory
 from langchain.agents import AgentExecutor, create_openai_tools_agent
-from langchain.output_parsers.openai_functions import JsonOutputFunctionsParser
-from langchain.prompts import ChatPromptTemplate, HumanMessagePromptTemplate, SystemMessagePromptTemplate, MessagesPlaceholder
-from langchain.schema import SystemMessage, HumanMessage
+from langchain.prompts import HumanMessagePromptTemplate, SystemMessagePromptTemplate
+from langchain.schema import SystemMessage
 from langchain.tools import tool
-from langchain_anthropic import ChatAnthropic
-from langchain_community.tools import DuckDuckGoSearchResults
-from langchain_core.messages import BaseMessage, HumanMessage
-from langchain_core.output_parsers import StrOutputParser
+from langchain_community.chat_message_histories import ChatMessageHistory
+from langchain_core.messages import HumanMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder, PromptTemplate
 from langchain_groq import ChatGroq
 from langchain_mistralai import ChatMistralAI
 from langchain_openai import ChatOpenAI
+from langchain_core.output_parsers import StrOutputParser
+
+from odoo.exceptions import UserError
+
 from odoo import models, fields, api, _
-from odoo.exceptions import UserError, AccessError, ValidationError
-from odoo.tools.safe_eval import safe_eval
-from random import randint
-from typing import Annotated, Sequence, TypedDict
-from datetime import datetime
 
 _logger = logging.getLogger(__name__)
 
@@ -47,7 +42,7 @@ class AIAgent(models.Model):
     ai_goal = fields.Text(string="Goal")
     ai_prompt_template = fields.Html(string="Prompt Template")
     ai_role = fields.Char(string="Role")
-    ai_memory_ids = fields.One2many(comodel_name='ai.agent.memory', inverse_name='ai_agent_id', string="",help="")
+    ai_memory_ids = fields.One2many(comodel_name='ai.agent.memory', inverse_name='ai_agent_id', string="", help="")
     ai_tool_ids = fields.One2many(comodel_name='ai.agent.tool', inverse_name='ai_agent_id', string="", help="")
 
     ai_temperature = fields.Float(string='Temperature', default=0.7,
@@ -79,7 +74,8 @@ class AIAgent(models.Model):
 
     def action_get_quests(self):
         ai_quest_session_ids = self.env["ai.quest.session"].search([("ai_agent_id", "=", self.id)])
-        ai_quest_ids = list(set(map(lambda ai_quest_session_id: ai_quest_session_id.ai_quest_id.id, ai_quest_session_ids)))
+        ai_quest_ids = list(
+            set(map(lambda ai_quest_session_id: ai_quest_session_id.ai_quest_id.id, ai_quest_session_ids)))
         action = {
             'name': 'AI Quests',
             'type': 'ir.actions.act_window',
@@ -130,19 +126,18 @@ class AIAgent(models.Model):
             record.quest_count = len(
                 set(record.session_line_ids.filtered(lambda x: x.ai_agent_id.id == record.id).mapped('ai_quest_id')))
 
-
-    def _extra_context(self,quest):
-        extra_context=''
+    def _extra_context(self, quest):
+        extra_context = ''
         if quest.use_company_info:
             extra_context += f'Company information: {self.env.user.company_id.company_mission=} {self.env.user.company_id.company_values=}\n'
         if quest.use_company_info:
             extra_context += f'User information: {self.env.user.name=} {self.env.user.function=} {self.env.user.city=}\n'
         if quest.use_time_context:
             now = datetime.now()
-            extra_context += f'Current date {now.strftime("%Y-%m-%d")} Current time {now.strftime("%H:%M:%S")} Week Number {now.isocalendar()[1]}\n'            
+            extra_context += f'Current date {now.strftime("%Y-%m-%d")} Current time {now.strftime("%H:%M:%S")} Week Number {now.isocalendar()[1]}\n'
         return extra_context
 
-    def _chat_history(self,channel,bot_user,limit=10):
+    def _chat_history(self, channel, bot_user, limit=10):
         if not channel:
             raise UserError("missing channel")
         if not bot_user:
@@ -151,9 +146,9 @@ class AIAgent(models.Model):
         question = ''
 
         for m in self.env['mail.message'].search([
-                        ('model','=','mail.channel'),
-                        ('res_id','=',channel.id)],
-                        limit=limit,order='create_date asc'):
+            ('model', '=', 'mail.channel'),
+            ('res_id', '=', channel.id)],
+                limit=limit, order='create_date asc'):
             if m.author_id.id == bot_user.id:
                 # This is an AI message
                 if question:
@@ -173,7 +168,8 @@ class AIAgent(models.Model):
             chat_history.add_user_message(question)
         return chat_history.messages
 
-    def prompt_agent(self, test_prompt=False, parser=False, session=False, debug=False, channel=False, bot_user=False, **kwargs):
+    def prompt_agent(self, test_prompt=False, parser=False, session=False, debug=False, channel=False, bot_user=False,
+                     **kwargs):
         """
           Single agent prompting from quest.code
           
@@ -184,7 +180,7 @@ class AIAgent(models.Model):
                    channel=channel,
                    bot_user=bot_user,
         """
-        self.last_run = fields.Datetime.now()      
+        self.last_run = fields.Datetime.now()
         if session:
             quest = session.ai_quest_id
         else:
@@ -220,7 +216,7 @@ class AIAgent(models.Model):
         # Combine into chat prompt
         chat_prompt = ChatPromptTemplate.from_messages([
             system_message_prompt,
-            MessagesPlaceholder(variable_name="chat_history"),
+            # MessagesPlaceholder(variable_name="chat_history"),
             human_message_prompt
         ])
         # Use the chat prompt
@@ -231,7 +227,8 @@ class AIAgent(models.Model):
             instructions=quest.description,
             extra_context=self._extra_context(quest),
             use_lang=f"Use language {self.env.user.lang}" if quest.use_personal_lang else '',
-            chat_history=self._chat_history(channel,bot_user,quest.chat_history_limit) if quest.use_chat_history else False,
+            # chat_history=self._chat_history(channel, bot_user,
+            #                                 quest.chat_history_limit) if quest.use_chat_history else False,
             **kwargs
         )
 
@@ -321,7 +318,8 @@ class AIAgent(models.Model):
                 prompt = f"Previous conversation:\n"
                 for msg in messages:
                     prompt += f"\n{msg.content}\n"
-                prompt += f"\nBased on this, who should act next? Choose from: {members} or say FINISH if we have a complete response."
+                prompt += (f"\nBased on this, who should act next? Choose from: {members} or say FINISH if we have a "
+                           f"complete response.")
 
                 # Get LLM response
                 llm = eval(self.ai_agent_llm_id.get_llm())
@@ -443,7 +441,6 @@ class AIAgent(models.Model):
 
         @tool("internet_search_DDGO", return_direct=False)
         def internet_search_DDGO(query: str) -> str:
-
             """Searches the internet using DuckDuckGo."""
 
             from duckduckgo_search import DDGS

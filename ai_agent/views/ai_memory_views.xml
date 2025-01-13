@@ -17,6 +17,7 @@
                         <group>
                             <field name="ai_type"/>
                             <field name="memory_type"/>
+                            <field name="url"/>
                             <field name="last_run"/>
                             <field name="ai_agent_llm_id"/>
                         </group>
@@ -31,6 +32,9 @@
                     <notebook>
                         <page string="FAISS Index" attrs="{'invisible': [('memory_type', '!=', 'faiss')]}">
                             <field name="memory_faiss"/>
+                        </page>
+                        <page string="Markdown">
+                            <field name="memory_markdown"/>
                         </page>
                     </notebook>
                 </sheet>
@@ -89,6 +93,7 @@
                 <field name="ai_type"/>
                 <field name="memory_type"/>
                 <field name="last_run"/>
+                <field name="url"/>
                 <field name="is_favorite"/>
                 <field name="color"/>
                 <templates>
@@ -119,6 +124,7 @@
                                 </div>
                                 <div>
                                     <field name="memory_type"/>
+                                    <field name="url"/>
                                 </div>
                                 <div>
                                     Last Run: <field name="last_run"/>
