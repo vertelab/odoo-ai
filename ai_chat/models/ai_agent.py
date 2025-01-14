@@ -12,6 +12,7 @@ import logging
 
 _logger = logging.getLogger(__name__)
 
+
 class AIAgent(models.Model):
     _inherit = "ai.agent"
 

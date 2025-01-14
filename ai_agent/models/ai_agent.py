@@ -8,7 +8,7 @@ from random import randint
 from httpx import HTTPStatusError
 from langchain.agents import AgentExecutor, create_openai_tools_agent
 from langchain.embeddings import OpenAIEmbeddings
-from langchain.memory import ConversationTokenBufferMemory
+from langchain.memory import ConversationTokenBufferMemory, ChatMessageHistory
 from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder, PromptTemplate
 from langchain.prompts import HumanMessagePromptTemplate, SystemMessagePromptTemplate
 from langchain.schema import AIMessage, HumanMessage, SystemMessage
