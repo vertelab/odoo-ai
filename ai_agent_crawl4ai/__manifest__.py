@@ -41,7 +41,7 @@
         'ai_agent',
     ],
     'data': [
-        'data/ai_agent_data.xml',
+        # ~ 'data/ai_agent_data.xml',
     ],
     'installable': True,
     'auto_install': False,

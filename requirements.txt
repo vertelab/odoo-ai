@@ -13,3 +13,5 @@ transformers
 lxml_html_clean
 unidecode
 crawl4ai
+scrapy
+markdownify

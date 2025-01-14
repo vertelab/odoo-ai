@@ -56,7 +56,7 @@ class AIMemory(models.Model):
 
     _description = 'AI Memory'
 
-    ai_type = fields.Selection(selection=[("default", "Default"), ('ai-programmer', 'AI Programmer')],default="default", required=True)
+    ai_type = fields.Selection(selection=[("default", "Default"),],default="default", required=True)
     base_image_128 = fields.Image("Base Image", max_width=128, max_height=128, compute='_compute_base_image_128')
     color = fields.Integer(default=lambda self: randint(1, 11))
     debug = fields.Boolean(string='Debug')
