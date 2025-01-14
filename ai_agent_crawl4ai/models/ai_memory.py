@@ -51,7 +51,12 @@ class AIMemory(models.Model):
  
     def run(self):
         _logger.warning(f'start scraping {self.ai_type=} {self.url=}')
-        if self.ai_type == 'crawl4ai':                
+        if self.ai_type == 'crawl4ai':
+            # sudo apt install libgstreamer-gl1.0-0 libgstreamer-plugins-base1.0-0 libflite1 libavif-dev libharfbuzz-icu0 libenchant-2-2 libsecret-1-0 libhyphen0 libmanette-0.2-0 libgles2
+            # sudo su odoo
+            # npx playwright install --with-deps
+            # playwright install
+            # npx playwright install-deps chromium
             self.last_run = fields.Datetime.now()
             async def run_crawler():
             # Create an instance of AsyncWebCrawler
@@ -61,18 +66,19 @@ class AIMemory(models.Model):
                     return result
             # Use asyncio.run() to execute the async function in a synchronous manner
             self.memory_markdown = asyncio.run(run_crawler())
-        if self.ai_type == 'spyder':
+        elif self.ai_type == 'spyder':
             _logger.warning(f'start scraping {self.url}')
             process = CrawlerProcess(settings={
                 'USER_AGENT': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36'
             })
             process.crawl(WebsiteCrawler, memory=self)
             process.start()
-        if self.ai_type == 'bs4':
+        elif self.ai_type == 'bs4':
             all_pages = self.scrape_website(self.url)
             _logger.warning(f"scrape ended {len(all_pages)=} -----------------------------------------")
             self.memory_markdown = self.scrape_website(self.url)
-            
+        else:
+            super(AIMemory,self).run()
     def scrape_website(self,website):
         self.ensure_one()
         global all_pages
