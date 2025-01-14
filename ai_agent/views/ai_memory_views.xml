@@ -8,7 +8,9 @@
         <field name="arch" type="xml">
             <form>
                 <header>
+                    <button name="run" type="object" string="Run" class="btn-primary"/>
                     <button name="action_test_rag" type="object" string="Test" />
+                    <field name="status" widget="statusbar" statusbar_visible="active,done" options="{'clickable': '1', 'fold_field': 'fold'}" />
                 </header>
                 <sheet>
                     <field name="image_128" widget="image" class="oe_avatar"/>
@@ -19,11 +21,13 @@
                     </div>
                     <group>
                         <group>
-                            <field name="ai_type"/>
+                            <field name="vector_type"/>
                             <field name="memory_type"/>
-                            <field name="url"/>
                             <field name="last_run"/>
                             <field name="ai_agent_llm_id"/>
+                            <field name="url"/>
+                            <field name="model_id"/>
+                            <field name="object_id"/>
                         </group>
                         <group>
                             <field name="debug"/>
@@ -34,11 +38,14 @@
                         </group>
                     </group>
                     <notebook>
-                        <page string="FAISS Index" attrs="{'invisible': [('memory_type', '!=', 'faiss')]}">
+                        <page string="FAISS Index" attrs="{'invisible': [('vector_type', '!=', 'faiss')]}">
                             <field name="memory_faiss"/>
                         </page>
                         <page string="Markdown">
                             <field name="memory_markdown"/>
+                        </page>
+                        <page string="Attachment">
+                            <field name="attachment_ids"/>
                         </page>
                     </notebook>
                 </sheet>
@@ -58,7 +65,7 @@
         <field name="arch" type="xml">
             <tree>
                 <field name="name"/>
-                <field name="ai_type"/>
+                <field name="vector_type"/>
                 <field name="memory_type"/>
                 <field name="last_run"/>
                 <field name="is_favorite"/>
@@ -73,13 +80,13 @@
         <field name="arch" type="xml">
             <search>
                 <field name="name"/>
-                <field name="ai_type"/>
+                <field name="vector_type"/>
                 <field name="memory_type"/>
                 <field name="tag_ids"/>
                 <filter string="Favorites" name="favorites" domain="[('is_favorite', '=', True)]"/>
                 <filter string="Debug Mode" name="debug" domain="[('debug', '=', True)]"/>
                 <group expand="0" string="Group By">
-                    <filter string="AI Type" name="group_by_ai_type" context="{'group_by': 'ai_type'}"/>
+                    <filter string="AI Type" name="group_by_vector_type" context="{'group_by': 'vector_type'}"/>
                     <filter string="Memory Type" name="group_by_memory_type" context="{'group_by': 'memory_type'}"/>
                 </group>
             </search>
@@ -94,7 +101,7 @@
             <kanban>
                 <field name="id"/>
                 <field name="name"/>
-                <field name="ai_type"/>
+                <field name="vector_type"/>
                 <field name="memory_type"/>
                 <field name="last_run"/>
                 <field name="url"/>
@@ -124,7 +131,7 @@
                                     </strong>
                                 </div>
                                 <div>
-                                    <field name="ai_type"/>
+                                    <field name="vector_type"/>
                                 </div>
                                 <div>
                                     <field name="memory_type"/>
@@ -154,9 +161,9 @@
         <field name="name">ai.memory.calendar</field>
         <field name="model">ai.memory</field>
         <field name="arch" type="xml">
-            <calendar string="AI Memory" date_start="last_run" color="ai_type">
+            <calendar string="AI Memory" date_start="last_run" color="vector_type">
                 <field name="name"/>
-                <field name="ai_type"/>
+                <field name="vector_type"/>
                 <field name="memory_type"/>
             </calendar>
         </field>
