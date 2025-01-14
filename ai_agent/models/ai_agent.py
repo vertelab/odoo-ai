@@ -1,23 +1,26 @@
 import logging
-import logging
+import functools
 import re
+import json
 from datetime import datetime
 from random import randint
-
+# from typing import List
+from typing_extensions import TypedDict, List
 
 from httpx import HTTPStatusError
 from langchain.agents import AgentExecutor, create_openai_tools_agent
 from langchain.embeddings import OpenAIEmbeddings
+# from langchain_core.messages import BaseMessage
 from langchain.memory import ConversationTokenBufferMemory, ChatMessageHistory
 from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder, PromptTemplate
 from langchain.prompts import HumanMessagePromptTemplate, SystemMessagePromptTemplate
-from langchain.schema import AIMessage, HumanMessage, SystemMessage
+from langchain.schema import AIMessage, HumanMessage, SystemMessage, BaseMessage
+from langchain.output_parsers.openai_functions import JsonOutputFunctionsParser
 from langchain.tools import tool
 
 from langchain_openai import ChatOpenAI
 from langchain_groq import ChatGroq
 from langchain_mistralai import ChatMistralAI
-
 
 from odoo.exceptions import UserError
 
@@ -290,6 +293,76 @@ class AIAgent(models.Model):
     # LangGraph 
     # ------------------------------------------------------------
 
+    # def create_supervisor(self, quest, members):
+    #     """Create a supervisor node that coordinates between different agents."""
+    #     system_prompt = f"""You are a supervisor coordinating between workers: {members}.
+    #     Based on the request, determine which worker should handle the next step.
+    #     Only choose FINISH when a complete response has been provided.
+    #
+    #     Role: {self.ai_role}
+    #     Goal: {self.ai_goal}
+    #     Backstory: {self.ai_backstory}
+    #     Guidelines: {quest.description}
+    #
+    #     Instructions:
+    #     1. Evaluate if we have a complete response
+    #     2. If not complete, choose the most appropriate worker
+    #     3. Send FINISH only when we have a satisfactory response
+    #     """
+    #
+    #     def supervisor_chain(state):
+    #         messages = state.get('messages', [])
+    #         _logger.info(f"Supervisor received messages: {len(messages)}")
+    #
+    #         if not messages:
+    #             _logger.info(f"No messages, starting with first worker: {members[0]}")
+    #             return {"next": members[0]} if members else {"next": "FINISH"}
+    #
+    #         try:
+    #             # Create full message list
+    #             prompt = f"Previous conversation:\n"
+    #             for msg in messages:
+    #                 prompt += f"\n{msg.content}\n"
+    #             prompt += (f"\nBased on this, who should act next? Choose from: {members} or say FINISH if we have a "
+    #                        f"complete response.")
+    #
+    #             # Get LLM response
+    #             llm = eval(self.ai_agent_llm_id.get_llm())
+    #             response = llm.invoke([
+    #                 SystemMessage(content=system_prompt),
+    #                 HumanMessage(content=prompt)
+    #             ])
+    #
+    #             # Parse response
+    #             content = response.content.upper()
+    #             _logger.info(f"Supervisor decision: {content}")
+    #
+    #             # Check for completion or next agent
+    #             if "FINISH" in content:
+    #                 _logger.info("Supervisor decided to FINISH")
+    #                 return {"next": "FINISH"}
+    #
+    #             # Find mentioned agent
+    #             for member in members:
+    #                 if member.upper() in content:
+    #                     _logger.info(f"Supervisor selected agent: {member}")
+    #                     return {"next": member}
+    #
+    #             # If no clear direction and we have previous responses, finish
+    #             if len(messages) > 1:
+    #                 _logger.info("No clear direction, finishing")
+    #                 return {"next": "FINISH"}
+    #
+    #             # Default to first member
+    #             _logger.info(f"Defaulting to first member: {members[0]}")
+    #             return {"next": members[0]}
+    #
+    #         except Exception as e:
+    #             _logger.error(f"Error in supervisor chain: {str(e)}")
+    #             return {"next": "FINISH"}
+    #
+    #     return supervisor_chain
+
     def create_supervisor(self, quest, members):
         """Create a supervisor node that coordinates between different agents."""
         system_prompt = f"""You are a supervisor coordinating between workers: {members}.
@@ -360,7 +433,7 @@ class AIAgent(models.Model):
 
         return supervisor_chain
 
-    def XXXcreate_node(self):
+    def create_node(self):
         """Creates a node for the agent in the graph."""
 
         def agent_node(state):
@@ -372,71 +445,183 @@ class AIAgent(models.Model):
                 # Get the latest message
                 latest_message = messages[-1].content if messages else ""
 
-                # Create system prompt
-                system_prompt = f"""You are an agent with specific responsibilities.
-                Role: {self.ai_role}
-                Goal: {self.ai_goal}
-                Backstory: {self.ai_backstory}
+                system_message = SystemMessage(
+                    content=f"""You are an agent with specific responsibilities.
+                    Role: {self.ai_role}
+                    Goal: {self.ai_goal}
+                    Backstory: {self.ai_backstory}
+    
+                    Instructions:
+                    - Provide thorough, complete responses
+                    - Use available tools when needed
+                    - Stay focused on your specific role
+                    """
+                )
 
-                Instructions:
-                - Provide thorough, complete responses
-                - Use available tools when needed
-                - Stay focused on your specific role
-                """
+                # Create system prompt
+                # system_prompt = f"""You are an agent with specific responsibilities.
+                # Role: {self.ai_role}
+                # Goal: {self.ai_goal}
+                # Backstory: {self.ai_backstory}
+                #
+                # Instructions:
+                # - Provide thorough, complete responses
+                # - Use available tools when needed
+                # - Stay focused on your specific role
+                # """
 
                 # Create prompt template with required agent_scratchpad
-                prompt = ChatPromptTemplate.from_messages([
-                    ("system", system_prompt),
-                    MessagesPlaceholder(variable_name="messages"),
-                    MessagesPlaceholder(variable_name="agent_scratchpad"),
-                ])
+                # prompt = ChatPromptTemplate.from_messages([
+                #     ("system", system_prompt),
+                #     MessagesPlaceholder(variable_name="messages"),
+                #     # MessagesPlaceholder(variable_name="agent_scratchpad"),
+                # ])
 
                 # Get LLM
                 llm = eval(self.ai_agent_llm_id.get_llm())
                 tools = self._get_tools()
 
                 # Create agent
-                agent = create_openai_tools_agent(llm, tools, prompt)
+                # agent = create_openai_tools_agent(llm, tools, prompt)
+                #
+                # # Create executor with limits
+                # executor = AgentExecutor(
+                #     agent=agent,
+                #     tools=tools,
+                #     verbose=True,
+                #     max_iterations=2,  # Limit tool usage
+                #     handle_parsing_errors=True,
+                #     return_intermediate_steps=True
+                # )
+                #
+                # # Execute agent
+                # result = executor.invoke({
+                #     "input": latest_message,
+                #     "messages": messages
+                # })
 
-                # Create executor with limits
-                executor = AgentExecutor(
-                    agent=agent,
-                    tools=tools,
-                    verbose=True,
-                    max_iterations=2,  # Limit tool usage
-                    handle_parsing_errors=True
-                )
+                from langgraph.prebuilt import create_react_agent
 
-                # Execute agent
-                result = executor.invoke({
+                langgraph_agent_executor = create_react_agent(llm, tools=tools)
+
+                # Prepare the input messages with system message first
+                input_messages = [system_message] + messages
+
+                result = langgraph_agent_executor.invoke({
                     "input": latest_message,
-                    "messages": messages
+                    "messages": input_messages
                 })
 
                 _logger.info(f"Agent {self.name} generated response")
 
                 # Return response
-                return {
-                    "messages": [
-                        HumanMessage(
-                            content=result["output"],
-                            name=re.sub(r'[^a-zA-Z0-9_-]', '', self.name)
-                        )
-                    ]
-                }
+                # return result
+
+                # Get the last AI message from the result
+                ai_messages = [m for m in result.get('messages', []) if isinstance(m, AIMessage)]
+                if ai_messages:
+                    return result
+                else:
+                    # If no AI messages found, create one from the result
+                    return {
+                        "messages": [
+                            AIMessage(
+                                content=str(result),
+                                name=self.name.replace(' ', '_').replace(',', '').replace('.', '')
+                            )
+                        ]
+                    }
 
             except Exception as e:
                 _logger.error(f"Error in agent {self.name}: {str(e)}")
                 return {
                     "messages": [
-                        HumanMessage(
+                        AIMessage(
                             content=f"Error occurred: {str(e)}",
-                            name=self.name
+                            name=self.name.replace(' ', '_').replace(',', '').replace('.', '')
                         )
                     ]
                 }
 
         return agent_node
+
+    # def create_node(self):
+    #     """Creates a node for the agent in the graph."""
+    #
+    #     def agent_node(state):
+    #         """Process messages and generate a response."""
+    #         messages = state.get('messages', [])
+    #         _logger.info(f"Agent {self.name} received messages: {len(messages)}")
+    #
+    #         try:
+    #             # Get the latest message
+    #             latest_message = messages[-1].content if messages else ""
+    #
+    #             # Create system prompt
+    #             system_prompt = f"""You are an agent with specific responsibilities.
+    #             Role: {self.ai_role}
+    #             Goal: {self.ai_goal}
+    #             Backstory: {self.ai_backstory}
+    #
+    #             Instructions:
+    #             - Provide thorough, complete responses
+    #             - Use available tools when needed
+    #             - Stay focused on your specific role
+    #             """
+    #
+    #             # Create prompt template with required agent_scratchpad
+    #             prompt = ChatPromptTemplate.from_messages([
+    #                 ("system", system_prompt),
+    #                 MessagesPlaceholder(variable_name="messages"),
+    #                 MessagesPlaceholder(variable_name="agent_scratchpad"),
+    #             ])
+    #
+    #             # Get LLM
+    #             llm = eval(self.ai_agent_llm_id.get_llm())
+    #             tools = self._get_tools()
+    #
+    #             # Create agent
+    #             agent = create_openai_tools_agent(llm, tools, prompt)
+    #
+    #             # Create executor with limits
+    #             executor = AgentExecutor(
+    #                 agent=agent,
+    #                 tools=tools,
+    #                 verbose=True,
+    #                 max_iterations=2,  # Limit tool usage
+    #                 handle_parsing_errors=True
+    #             )
+    #
+    #             # Execute agent
+    #             result = executor.invoke({
+    #                 "input": latest_message,
+    #                 "messages": messages
+    #             })
+    #
+    #             _logger.info(f"Agent {self.name} generated response")
+    #
+    #             # Return response
+    #             return {
+    #                 "messages": [
+    #                     HumanMessage(
+    #                         content=result["output"],
+    #                         name=re.sub(r'[^a-zA-Z0-9_-]', '', self.name)
+    #                     )
+    #                 ]
+    #             }
+    #
+    #         except Exception as e:
+    #             _logger.error(f"Error in agent {self.name}: {str(e)}")
+    #             return {
+    #                 "messages": [
+    #                     HumanMessage(
+    #                         content=f"Error occurred: {str(e)}",
+    #                         name=self.name
+    #                     )
+    #                 ]
+    #             }
+    #
+    #     return agent_node
 
     def _get_tools(self):
         """Get the available tools for this agent."""
@@ -462,112 +647,3 @@ class AIAgent(models.Model):
             return soup.get_text()
 
         return [internet_search_DDGO, process_content]
-        
-    def create_node(self):
-        """Creates a node for the agent in the graph."""
-
-        def agent_node(state):
-            """Process messages and generate a response."""
-            messages = state.get('messages', [])
-            _logger.info(f"Agent {self.name} received messages: {len(messages)}")
-            llm = eval(self.ai_agent_llm_id.get_llm())
-            history = ConversationTokenBufferMemory(llm=llm, max_token_limit=1000)
-            
-            try:
-                # Get the latest message
-                latest_message = messages[-1].content if messages else ""
-
-                # Perform RAG
-                context = ''
-                for memory in self.ai_memory_ids:
-                    if memory.memory_type == 'faiss':
-                        relevant_docs = memory.load_faiss().similarity_search(latest_message, k=3)
-                        context = "\n".join([doc.page_content for doc in relevant_docs])
-
-                # Create system prompt
-                system_prompt = f"""You are an agent with specific responsibilities.
-                Role: {self.ai_role}
-                Goal: {self.ai_goal}
-                Backstory: {self.ai_backstory}
-
-                Instructions:
-                - Provide thorough, complete responses
-                - Use available tools when needed
-                - Stay focused on your specific role
-                - Use the following context if relevant: {context}
-                """
-
-                # Create prompt template with required agent_scratchpad
-                prompt = ChatPromptTemplate.from_messages([
-                    ("system", system_prompt),
-                    MessagesPlaceholder(variable_name="history"),
-                    MessagesPlaceholder(variable_name="messages"),
-                    MessagesPlaceholder(variable_name="agent_scratchpad"),
-                ])
-
-                # Get LLM
-    
-                tools = self._get_tools()
-
-                # Create agent
-                agent = create_openai_tools_agent(llm, tools, prompt)
-
-                
-                # Create executor with limits
-                executor = AgentExecutor(
-                    agent=agent,
-                    tools=tools,
-                    verbose=True,
-                    max_iterations=2,  # Limit tool usage
-                    handle_parsing_errors=True,
-                    memory=history
-                )
-
-                # Execute agent
-                result = executor.invoke({
-                    "input": latest_message,
-                    "messages": messages,
-                    "history": history.chat_memory.messages
-                })
-
-                _logger.info(f"Agent {self.name} generated response")
-
-                # Update memory with the new messages
-                history.chat_memory.add_message(HumanMessage(content=latest_message))
-                history.chat_memory.add_message(AIMessage(content=result["output"]))
-
-                # Preserve complete message history
-                full_history = history.chat_memory.messages
-
-                # Extract usage metadata
-                usage_metadata = result.get("__run", {}).get("usage_metadata", {})
-
-                # Return response
-                return {
-                    "messages": [
-                        AIMessage(
-                            content=result["output"],
-                            additional_kwargs={
-                                "name": re.sub(r'[^a-zA-Z0-9_-]', '', self.name),
-                                "usage_metadata": usage_metadata
-                            }
-                        )
-                    ],
-                    "full_history": full_history
-                }
-
-            except Exception as e:
-                _logger.error(f"Error in agent {self.name}: {str(e)}")
-                return {
-                    "messages": [
-                        AIMessage(
-                            content=f"Error occurred: {str(e)}",
-                            additional_kwargs={"name": self.name}
-                        )
-                    ],
-                    "full_history": history.chat_memory.messages
-                }
-
-        return agent_node
-
-

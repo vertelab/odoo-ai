@@ -10,6 +10,7 @@ from typing import Annotated, TypedDict, Sequence
 import markdown
 import unidecode
 from langchain_core.messages import BaseMessage, HumanMessage
+from langchain_core.messages import AIMessage
 from langgraph.graph import END, StateGraph
 from odoo.addons.base.models.avatar_mixin import get_hsl_from_seed
 from odoo.exceptions import UserError, ValidationError, Warning
@@ -402,8 +403,8 @@ class AIQuest(models.Model):
                 lambda a: a.ai_agent_id.ai_agent_llm_id.is_key_required and not a.ai_agent_id.ai_agent_llm_id.ai_api_key
         )) > 0:
             return _('Missing API Key on LLMs')
-        if self.status != 'active':
-            return _('Wrong status on the quest')
+        # if self.status != 'active':
+        #     return _('Wrong status on the quest')
         if self.code == DEFAULT_PYTHON_CODE:
             return _('Missing Python Code on the quest')
         if not self.description:
@@ -589,6 +590,7 @@ class AIQuest(models.Model):
                 self.log_message(f"{e=}\n\n=====\n{self.code=}\n=======\n {local_dict=}")
             return None
         session = local_dict.get('session', eval_context['session'])
+
         # objects = local_dict.get('objects', [])
         objects = {
             'ai_session_id': eval_context.get('session'),
@@ -596,11 +598,20 @@ class AIQuest(models.Model):
             'records': eval_context.get('records')
         }
 
-        # ~ if not eval_context.get('records'):
-            # ~ objects.extend(eval_context.get('records'))
-        _logger.error(f"{local_dict=}")
-        result = local_dict.get('result')
-        if isinstance(result, list):
+        # if not eval_context.get('records'):
+        #     objects.extend(eval_context.get('records'))
+        # _logger.error(f"{local_dict=}")
+
+        if local_dict.get('result'):
+            messages = local_dict.get('result', {}).get('messages', [])
+            result = self._get_last_ai_message(messages)
+        elif local_dict.get('response'):
+            messages = local_dict.get('response', {}).get('messages', [])
+            result = self._get_last_ai_message(messages)
+        else:
+            return
+
+        if not isinstance(result, list):
             result = [result]
 
         session.store_session_data(result=result, objects=objects)
@@ -639,6 +650,11 @@ class AIQuest(models.Model):
     # ------------------------------------------------------------
     # ORM
     # ------------------------------------------------------------
+
+    def _get_last_ai_message(self, messages):
+        ai_messages = [m for m in messages if isinstance(m, AIMessage)]
+        result = ai_messages[-1] if ai_messages else None
+        return result
 
     def _alias_get_creation_values(self):
         values = super(AIQuest, self)._alias_get_creation_values()

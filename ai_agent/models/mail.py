@@ -44,13 +44,14 @@ class MailChannel(models.Model):
                 _logger.error(f"{bot_response=}")
                 if bot_response:  # Answer as the user the bot is
                     answer = _('no answer')
-                    if bot_response.get('messages'):
-                        answer = '<br/>'.join(m.content for m in bot_response['messages'][1:])
-                    elif bot_response.get('result'):
-                        if not isinstance(bot_response['result'], AIMessage):
-                            answer = '<br/>'.join(m.content for m in bot_response['result']['messages'][1:])
-                        else:
-                            answer = bot_response['result'].content
+
+                    messages = bot_response.get('response', {}).get('messages', [])
+                    ai_messages = [m for m in messages if isinstance(m, AIMessage)]
+                    last_ai_message = ai_messages[-1] if ai_messages else None
+
+                    if messages:
+                        answer = last_ai_message.content
+
                     self.with_user(user).message_post(
                         body=markdown.markdown(answer),
                         message_type='comment',
