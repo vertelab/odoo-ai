@@ -19,7 +19,7 @@
 
     <record id="ai_memory_crawl4ai" model="ai.memory">
       <field name="name">Webcrawler Vertel</field>
-      <field name="ai_type">crawl4ai</field>
+      <field name="ai_type">spyder</field>
       <field name="url">http://vertel.se</field>
     </record>
     

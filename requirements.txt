@@ -13,3 +13,9 @@ transformers
 lxml_html_clean
 unidecode
 crawl4ai
+scrapy
+markdownify
+lxml_html_clean
+faiss-cpu
+pyopenssl==22.0.0
+cryptography==37.0.0
