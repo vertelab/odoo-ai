@@ -118,12 +118,11 @@ class AIMemory(models.Model):
             return False
 
     def text_splitter(self,documents):
-        text_splitter = RecursiveCharacterTextSplitter(
+        return RecursiveCharacterTextSplitter(
         chunk_size=self.split_chunk_size,  # chunk size (characters)
         chunk_overlap=self.split_chunk_overlap,  # chunk overlap (characters)
         add_start_index=True,  # track index in original document
-    )
-        return text_splitter(documents)
+    ).split_documents(documents)
 
     def create_document(self,text):
         pass
