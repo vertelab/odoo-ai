@@ -11,8 +11,10 @@ class AIQuestSessionLine(models.Model):
 
     ai_agent_id = fields.Many2one(comodel_name="ai.agent")
     ai_llm_id = fields.Many2one(comodel_name="ai.agent.llm")
+    ai_memory_id = fields.Many2one(comodel_name="ai.memory")
     ai_quest_id = fields.Many2one(comodel_name="ai.quest")
     ai_quest_session_id = fields.Many2one(comodel_name="ai.quest.session")
+    ai_tool_id = fields.Many2one(comodel_name="ai.tool")
     api_type_id = fields.Many2one(comodel_name="product.attribute.value")
     commercial_partner_id = fields.Many2one(comodel_name='res.partner', string="Partner")
     data_type_id = fields.Many2one(comodel_name="product.attribute.value")
@@ -33,9 +35,9 @@ class AIQuestSessionLine(models.Model):
     token_sys = fields.Integer()
     token_type_id = fields.Many2one(comodel_name="product.attribute.value")
     user_id = fields.Many2one(comodel_name='res.users', string="User", help="")
-
+    
     @api.model
-    def new_line(self, session, aimessage, agent=None, debug=False):
+    def new_line(self, session, aimessage, agent=None, debug=False, memory=False, tool=False):
         if aimessage and aimessage.usage_metadata:
             token_types = {
                 'input_tokens': aimessage.usage_metadata.get('input_tokens', 0),
@@ -65,6 +67,8 @@ class AIQuestSessionLine(models.Model):
         for token_type, token in token_types.items():
             if token > 0:
                 record = {
+                    'ai_tool_id': tool.id if tool else False,
+                    'ai_memory_id': memory.id if memory else False,
                     "ai_agent_id": agent.id if agent else (
                         session.ai_agent_id.id if session and session.ai_agent_id else None),
                     "ai_llm_id": agent.ai_agent_llm_id.id if agent and agent.ai_agent_llm_id else (

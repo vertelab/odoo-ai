@@ -9,21 +9,15 @@ import asyncio
 import requests
 import markdownify
 from bs4 import BeautifulSoup
-from urllib.parse import urljoin, urlparse
-from langchain.chains import ConversationalRetrievalChain
-from langchain_community.document_loaders import TextLoader
-from langchain.memory import ConversationBufferMemory
-from langchain.schema import SystemMessage, HumanMessage
-from langchain_core.output_parsers import StrOutputParser
-from random import randint
+from dateutil.relativedelta import relativedelta
 from langchain_community.document_loaders import PyPDFLoader
+from langchain_community.document_loaders import TextLoader
 from langchain_community.vectorstores import FAISS
 from langchain_core.documents.base import Document
-from langchain_text_splitters.character import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings
-from crawl4ai import AsyncWebCrawler
-from dateutil.relativedelta import relativedelta
-
+from langchain_text_splitters.character import RecursiveCharacterTextSplitter
+from random import randint
+from urllib.parse import urljoin, urlparse
 from odoo import models, fields, api, _
 from odoo.tools.safe_eval import safe_eval
 from odoo.exceptions import UserError
@@ -41,8 +35,8 @@ class AIAgentMemory(models.Model):
     ai_memory_id = fields.Many2one(comodel_name='ai.memory', string="Memory", help="")
     ai_memory_status = fields.Selection(selection=[("draft", _("Draft")), ("active", _("Active")), ("done", _("Done")), ("error", _("Error"))],related="ai_memory_id.status")
     ai_memory_llm_is = fields.Many2one(comodel_name='',string="",help="") # domain|context|ondelete="'set null', 'restrict', 'cascade'"|auto_join|delegate  fields.Char(string='Url', related="ai_memory_id.url" )
-    ai_memory_llm_id = fields.Many2one(comodel_name="ai.agent.llm", string="LLM", related="ai_memory_id.llm_id")
-    ai_memory_llm_status = fields.Selection(selection=[("not_confirmed", "Not Confirmed"), ("confirmed", "Confirmed"), ("error", "Error")],related="ai_memory_id.llm_id.status")
+    ai_memory_llm_id = fields.Many2one(comodel_name="ai.agent.llm", string="LLM", related="ai_memory_id.ai_agent_llm_id")
+    ai_memory_llm_status = fields.Selection(selection=[("not_confirmed", "Not Confirmed"), ("confirmed", "Confirmed"), ("error", "Error")],related="ai_memory_id.ai_agent_llm_id.status")
     ai_memory_url = fields.Char(string='Url', related="ai_memory_id.url" )
 
     def run(self):
@@ -59,8 +53,8 @@ class AIquestMemory(models.Model):
     ai_memory_id = fields.Many2one(comodel_name='ai.memory', string="Memory", help="")
     ai_memory_status = fields.Selection(selection=[("draft", _("Draft")), ("active", _("Active")), ("done", _("Done")), ("error", _("Error"))],related="ai_memory_id.status")
     ai_memory_llm_is = fields.Many2one(comodel_name='',string="",help="") # domain|context|ondelete="'set null', 'restrict', 'cascade'"|auto_join|delegate  fields.Char(string='Url', related="ai_memory_id.url" )
-    ai_memory_llm_id = fields.Many2one(comodel_name="ai.agent.llm", string="LLM", related="ai_memory_id.llm_id")
-    ai_memory_llm_status = fields.Selection(selection=[("not_confirmed", "Not Confirmed"), ("confirmed", "Confirmed"), ("error", "Error")],related="ai_memory_id.llm_id.status")
+    ai_memory_llm_id = fields.Many2one(comodel_name="ai.agent.llm", string="LLM", related="ai_memory_id.ai_agent_llm_id")
+    ai_memory_llm_status = fields.Selection(selection=[("not_confirmed", "Not Confirmed"), ("confirmed", "Confirmed"), ("error", "Error")],related="ai_memory_id.ai_agent_llm_id.status")
     ai_memory_url = fields.Char(string='Url', related="ai_memory_id.url" )
 
     def run(self):
@@ -70,39 +64,119 @@ class AIquestMemory(models.Model):
 class AIMemory(models.Model):
     _name = 'ai.memory'
     _inherit = ["mail.thread", "mail.activity.mixin", ]
-
     _description = 'AI Memory'
 
-    memory_type = fields.Selection(selection=[("bs4", "Simple Webscraper"),("model","Model"),("module", "Module"),("local_attachment","Local Attachment"), ("object_attachment", "Object Attachment")],default="model", required=True, help="This is the source for memory")
-    vector_type = fields.Selection(selection=[('faiss', 'FAISS'), ('st', 'Short Term')], string='Vector type', help="The type of vector database")
+    ai_agent_count = fields.Integer(compute="compute_ai_agent_count")
+    ai_agent_ids = fields.One2many(comodel_name="ai.agent.memory", inverse_name="ai_memory_id")
+    ai_agent_llm_id = fields.Many2one(string="Embedded LLM", comodel_name="ai.agent.llm", required=True, domain="[('is_embedded','=',True),('status','=','confirmed')]")
+    attachment_ids = fields.Many2many(comodel_name="ir.attachment")
     base_image_128 = fields.Image("Base Image", max_width=128, max_height=128, compute='_compute_base_image_128')
     color = fields.Integer(default=lambda self: randint(1, 11))
     debug = fields.Boolean(string='Debug')
+    field_list = fields.Text(string='Field List',trim=True,default="['name']", readonly=False )
+    filter_domain = fields.Char(string='Record selection',)
     image_128 = fields.Image("Image", max_width=128, max_height=128)
     is_favorite = fields.Boolean()
     last_run = fields.Datetime()
-    llm_id = fields.Many2one(comodel_name="ai.agent.llm", string="LLM", help="Choose Embedded Large Language Model",domain="[('status','=','confirmed')]")
+    max_nbr_pages = fields.Integer(string="Max Number of Pages")
     memory_faiss = fields.Binary(string='FAISS Index', attachment=True)
     memory_markdown = fields.Binary(string='Markdown', attachment=True)
+    memory_type = fields.Selection(selection=[("bs4", "Simple Webscraper"),("model","Model"),("local_attachment","Local Attachment"), ("attachments", "Attachments")],default="model", required=True, help="This is the source for memory")
+    model_id = fields.Many2one(comodel_name='ir.model')
+    model_name = fields.Char(related='model_id.model', string='Model Name', readonly=True, store=True)
     name = fields.Char(required=True)
     nbr_days = fields.Integer(string='Number days this memory will live')
-    split_chunk_size = fields.Integer(default=1000)
+    object_id = fields.Reference(string='Object',selection=lambda m: [(model.model, model.name) for model in m.env['ir.model'].sudo().search([])])
+    quest_count = fields.Integer(compute="compute_quest_count")
+    session_count = fields.Integer(compute="compute_session_count")
+    session_line_count = fields.Integer(compute="compute_session_line_count")
+    session_line_ids = fields.One2many(comodel_name="ai.quest.session.line", inverse_name="ai_memory_id")   
     split_chunk_overlap = fields.Integer(default=200)
-    ai_agent_llm_id = fields.Many2one(string="Embedded LLM", comodel_name="ai.agent.llm", required=True, domain="[('status','=','confirmed')]")
+    split_chunk_size = fields.Integer(default=1000)
     status = fields.Selection(selection=[("draft", _("Draft")), ("active", _("Active")), ("done", _("Done")), ("error", _("Error"))],default="draft")
     tag_ids = fields.Many2many(comodel_name='product.tag', string='Tags')
-    attachment_ids = fields.Many2many(comodel_name="ir.attachment")
     url = fields.Char(string='Url', trim=True, )
-    model_id = fields.Many2one(comodel_name='ir.model')
-    object_id = fields.Reference(string='Object',
-                                selection=lambda m: [(model.model, model.name) for model in
-                                                      m.env['ir.model'].sudo().search([])])
+    vector_type = fields.Selection(selection=[('faiss', 'FAISS'), ('st', 'Short Term')], string='Vector type', help="The type of vector database")
+    
+    def action_get_quests(self):
+        action = {
+            'name': 'AI Quests',
+            'type': 'ir.actions.act_window',
+            'res_model': 'ai.quest',
+            'view_mode': 'kanban,tree,form',
+            'target': 'current',
+            'domain': [("session_line_ids.ai_memory_id", '=', self.id)]
+        }
+        return action
+
+    def action_get_agents(self):
+        action = {
+            'name': 'AI Agents',
+            'type': 'ir.actions.act_window',
+            'res_model': 'ai.agent',
+            'view_mode': 'kanban,tree,form',
+            'target': 'current',
+            'domain': [("session_line_ids.ai_memory_id", '=', self.id)]
+        }
+        return action
+
+    def action_get_session_lines(self):
+        action = {
+            'name': 'Session Lines',
+            'type': 'ir.actions.act_window',
+            'res_model': 'ai.quest.session.line',
+            'view_mode': 'tree,form,calendar,pivot',
+            'target': 'current',
+            'domain': [("ai_memory_id", '=', self.id)],
+        }
+        return action
+
+    def action_get_sessions(self):
+        action = {
+            'name': 'Sessions',
+            'type': 'ir.actions.act_window',
+            'res_model': 'ai.quest.session',
+            'view_mode': 'tree,form',
+            'target': 'current',
+            'domain': [("session_line_ids.ai_memory_id", '=', self.id)]
+        }
+        return action
+
+    @api.depends("session_line_ids")
+    def compute_session_line_count(self):
+        for record in self:
+            record.session_line_count = sum([l.token_sys or 0 for l in record.session_line_ids])
+
+    @api.depends("session_line_ids")
+    def compute_session_count(self):
+        for record in self:
+            record.session_count = len(
+                set(record.session_line_ids.filtered(lambda x: x.ai_memory_id.id == record.id).mapped(
+                    'ai_quest_session_id')))
+
+    @api.depends("session_line_ids")
+    def compute_quest_count(self):
+        for record in self:
+            record.quest_count = len(
+                set(record.session_line_ids.filtered(lambda x: x.ai_memory_id.id == record.id).mapped('ai_quest_id')))
+
+    @api.depends("ai_agent_ids")
+    def compute_ai_agent_count(self):
+        for record in self:
+            record.ai_agent_count = len(record.ai_agent_ids)
 
 
     @api.depends('image_128')
     def _compute_base_image_128(self):
         for record in self:
             record.base_image_128 = record.image_128
+
+    @api.onchange('model_id')
+    def _onchange_model_id(self):
+        if self.model_id:
+            self.field_list = "[" + ' ,'.join([f"'{f}'" for f in self.env['ir.model.fields'].search([('model','=',self.model_id.model)]).mapped('name') ]) + "]"
+        else:
+            self.field_list = "[]"
 
     def rag_attatchemts(self):
         for memory in self:
@@ -112,20 +186,6 @@ class AIMemory(models.Model):
                 self.create_faiss(raw_documents)
             else:
                 raise UserError(_("No attachments to RAG"))
-        
-    def rag_models(self):
-        for memory in self:
-            model_dicts = memory.env["ir.model"].search([]).read(["name", "model", "info","modules"])
-            if len(model_dicts) != 0: 
-                raw_documents = [self.create_document(text=json.dumps(model_dict),metadata=model_dict) for model_dict in model_dicts]
-                self.create_faiss(raw_documents)
-
-    def rag_modules(self):
-        for memory in self:
-            module_dicts = memory.env["ir.module.module"].search([]).read(["name", "shortdesc", "summary", "description", "author", "maintainer"])
-            if len(module_dicts) != 0: 
-                raw_documents = [self.create_document(text=json.dumps(module_dict),metadata=module_dict) for module_dict in module_dicts]
-                self.create_faiss(raw_documents)
 
     def action_test_rag(self):
         _logger.error("runs"*100)
@@ -140,6 +200,35 @@ class AIMemory(models.Model):
         _logger.error(f"{action}")
         return action
 
+    def run(self):
+        for memory in self:
+            if memory.status != "active":
+                raise UserError(_(f"Wrong state on memory ({self.name})"))          
+                
+            memory.last_run = fields.Datetime.now()
+            if memory.memory_type == 'bs4':
+                if not memory.url:
+                    raise UserError(_(f"Missing url on memory ({self.name})"))
+                all_pages = self.scrape_website(memory.url,memory.max_nbr_pages)
+                memory.memory_markdown = base64.b64encode(all_pages)
+                raw_documents = [memory.create_document(text=all_pages,metadata={})]
+                memory.create_faiss(raw_documents)
+            elif memory.memory_type == 'model':
+                f = eval(memory.field_list)
+                model_fields = {
+                    'ir.module.module': ["name", "shortdesc", "summary", "description", "author", "maintainer"],
+                    'ir.model' :        ["name", "model", "info","modules"],
+                    }
+                domain = safe_eval(memory.filter_domain) if memory.filter_domain else []
+                module_dicts = memory.model_id.search(domain).read(model_fields.get(memory.model_id.model,[]))
+                if len(module_dicts) != 0: 
+                    raw_documents = [memory.create_document(text=json.dumps(module_dict),metadata=module_dict) 
+                                          for module_dict in module_dicts]
+                    self.create_faiss(raw_documents)
+            elif memory.memory_type == 'attachments':
+                memory.rag_attatchemts()
+            elif memory.memory_type == 'local_attachment':
+                memory.rag_attatchemts()
 
     def load_faiss(self):
         if self.memory_faiss:
@@ -174,44 +263,12 @@ class AIMemory(models.Model):
         db = FAISS.from_documents(documents, eval(self.ai_agent_llm_id.get_embedding()))
         self.memory_faiss = base64.b64encode(db.serialize_to_bytes())
 
-
-    def chat(self, query):
-        db = self.load_faiss_index()
-        model_name = "AI-Sweden-Models/gpt-sw3-6.7b-v2"
-        tokenizer = AutoTokenizer.from_pretrained(model_name)
-        model = AutoModelForCausalLM.from_pretrained(model_name)
-        pipe = pipeline("text-generation", model=model, tokenizer=tokenizer, max_new_tokens=100)
-        llm = HuggingFacePipeline(pipeline=pipe)
-
-        memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
-        qa = ConversationalRetrievalChain.from_llm(llm, db.as_retriever(), memory=memory)
-
-        #self.qa_chain({"question": query, "chat_history": chat_history})
-        result = qa({"question": query})
-        return result['answer']
-
     def log_message(self, body, is_error=False):
         if is_error:
             self.status = "error"
         self.message_post(body=f"{body} | {self.last_run}", message_type="notification")
-
-    def run(self):
-        if self.status == "active":
-            self.last_run = fields.Datetime.now()
-            if self.memory_type == 'bs4' and self.url:
-                all_pages = self.scrape_website(self.url)
-                _logger.warning(f"scrape ended {len(all_pages)=} -----------------------------------------")
-                self.memory_markdown = base64.b64encode(self.scrape_website(self.url))
-            elif self.memory_type == 'model':
-                self.rag_models()
-            elif self.memory_type == "module":
-                self.rag_modules()
-            elif 'attachment' in self.memory_type:
-                self.rag_attatchemts()
-        else:
-            raise UserError(_(f"Wrong state on memory ({self.name})"))          
             
-    def scrape_website(self,website):
+    def scrape_website(self,website,max_nbr_pages):
         self.ensure_one()
         global all_pages
         all_pages = ""
@@ -223,6 +280,8 @@ class AIMemory(models.Model):
             _logger.warning(f'scraping {url=} {visited=} {len(all_pages)=}')
             if url in visited:
                 return
+            if max_nbr_pages > 0 and len(visited) > max_nbr_pages:
+                return
             visited.add(url)
             
             try:
@@ -231,7 +290,7 @@ class AIMemory(models.Model):
                 
                 # Save page content as attachment
                 content = soup.get_text()
-                all_pages += markdownify.markdownify(content)
+                all_pages += f"### URL({url})\n" + markdownify.markdownify(content)
                 
                 # Follow links
                 for link in soup.find_all('a', href=True):

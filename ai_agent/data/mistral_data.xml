@@ -5,6 +5,7 @@
       <field name="name">Mistral AI</field>
       <field name="is_llm">True</field>
       <field name="llm_type">ChatMistralAI</field>
+      <field name="llm_etype">MistralAIEmbeddings</field>
       <field name="image_1920" type="base64" file="ai_agent/static/img/mistral-ai-icon.png" />
     </record>
     <!-- Model -->

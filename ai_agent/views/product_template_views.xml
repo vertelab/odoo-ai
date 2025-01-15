@@ -29,6 +29,7 @@
                         </group>
                         <group >
                             <field name="llm_type"/>
+                            <field name="llm_etype"/>
                             <field name="ai_api_key"/>
                         </group>
                     </group>

@@ -49,28 +49,27 @@ class AIQuestSession(models.Model):
     ai_agent_llm_id = fields.Many2one(comodel_name="ai.agent.llm")
     ai_agent_llm_ids = fields.Many2many(comodel_name="ai.agent.llm")
     ai_llm_count = fields.Integer(compute='_compute_ai_llm_count')
+    ai_memory_id = fields.Many2one(comodel_name="ai.memory")
     ai_quest_id = fields.Many2one(comodel_name="ai.quest")
+    ai_tool_id = fields.Many2one(comodel_name="ai.tool")
     ai_type = fields.Selection(selection=[("default", "Default")], default="default")
     color = fields.Integer()
-    commercial_partner_id = fields.Many2one(comodel_name='res.partner', string="Partner",
-                                            related="user_id.partner_id.commercial_partner_id", help="", store=True)
+    commercial_partner_id = fields.Many2one(comodel_name='res.partner', string="Partner",related="user_id.partner_id.commercial_partner_id", help="", store=True)
     db_name = fields.Char(string='Database Name', default=lambda self: self._get_db_name())
     db_uuid = fields.Char(string='Database UUID', default=lambda self: self._get_db_uuid())
     debug = fields.Boolean(string='Debug', help="Logs interesting data")
     enddate = fields.Datetime()
     session = fields.Char(default=lambda self: str(uuid.uuid4()))
     session_line_count = fields.Integer(compute='_compute_session_line_count')
-    session_object_count = fields.Integer(compute='_compute_session_object_count')
     session_line_ids = fields.One2many(comodel_name="ai.quest.session.line", inverse_name="ai_quest_session_id")
+    session_object_count = fields.Integer(compute='_compute_session_object_count')
     session_object_ids = fields.One2many(comodel_name="ai.session.object", inverse_name="ai_session_id")
     startdate = fields.Datetime(default=fields.Datetime.now())
-    status = fields.Selection(
-        selection=[("draft", _("Draft")), ("active", _("Active")), ("done", _("Done")), ("error", _("Error"))],
-        default="draft")
+    status = fields.Selection(selection=[("draft", _("Draft")), ("active", _("Active")), ("done", _("Done")), ("error", _("Error"))],default="draft")
     time_difference_ms = fields.Integer(string='Time Difference (ms)', compute='_compute_time_difference', store=True)
     type_of_output = fields.Text()
     user_id = fields.Many2one(comodel_name='res.users', string="User", help="")
-
+    
     @api.depends('ai_agent_llm_ids')
     def _compute_ai_llm_count(self):
         for record in self:
@@ -177,7 +176,7 @@ class AIQuestSession(models.Model):
             else:
                 record.time_difference_ms = 0
 
-    def store_session_data(self, result=None, objects=None, agent=None):
+    def store_session_data(self, result=None, objects=None, agent=None, memory=False, tool=False):
         if objects is None:
             objects = {}
         if result is not None:
@@ -187,7 +186,7 @@ class AIQuestSession(models.Model):
             for message in result:
                 if isinstance(message, AIMessage):
                     self.env['ai.quest.session.line'].new_line(session=self, aimessage=message, agent=agent,
-                                                               debug=self.debug)
+                                                               debug=self.debug, memory=memory, tool=tool)
             if objects:
                 for rec in objects.get('records'):
                     self.env['ai.session.object'].create({

@@ -1,5 +1,5 @@
 from odoo import models, fields, api, _
-
+from odoo.addons.ai_agent.models.ai_agent_llm import LICENCES
 
 class ProductTemplate(models.Model):
     _inherit = 'product.template'
@@ -9,8 +9,8 @@ class ProductTemplate(models.Model):
                                            string="AI Tokens", help="")
     is_llm = fields.Boolean()
     llm_additional_rate = fields.Float(string="LLM Additional Rate")
-    llm_type = fields.Char(string='LLM Type', size=64, trim=True,
-                           help="Name of langchain class, eg ChatOpenAI or ChatMistralAI")
+    llm_type = fields.Char(string='LLM Type', size=64, trim=True, help="Name of langchain class, eg ChatOpenAI or ChatMistralAI")
+    llm_etype = fields.Char(string='Embedded Type', size=64, trim=True, help="Name of langchain class, eg OpenAIEmbeddings or MistralAIEmbeddings")
     token_sys = fields.Integer(string='System Tokens')
     session_line_count = fields.Integer(compute="compute_session_line_count")
 
@@ -43,3 +43,9 @@ class ProductTemplate(models.Model):
             'domain': [("product_tmpl_id", '=', self.id)],
         }
         return action
+
+class ProductAttributeValue(models.Model):
+    _inherit = 'product.attribute.value'
+
+    licence = fields.Selection(selection=LICENCES, string='Licence', default='commercial')
+    is_embedded = fields.Boolean(string='Is Embedded')

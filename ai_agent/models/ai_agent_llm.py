@@ -35,28 +35,25 @@ class AIAgentLLM(models.Model):
     ai_api_key = fields.Char(default=lambda self: self.product_tmpl_id.ai_api_key)
     color = fields.Integer(default=lambda self: randint(1, 11))
     endpoint = fields.Char()
+    image_128 = fields.Image("Image", max_width=128, max_height=128, related="product_tmpl_id.image_128")
+    is_embedded = fields.Boolean(related='model_id.product_attribute_value_id.is_embedded')
     is_favorite = fields.Boolean()
     is_key_required = fields.Boolean(default=True)
     last_run = fields.Datetime()
-    licence = fields.Selection(selection=LICENCES, string='Licence',
-                               related='model_id.product_attribute_value_id.licence')
+    licence = fields.Selection(selection=LICENCES, string='Licence',related='model_id.product_attribute_value_id.licence')
+    llm_etype = fields.Char(related="product_tmpl_id.llm_etype", required=True)
     llm_type = fields.Char(related="product_tmpl_id.llm_type", required=True)
-    model_id = fields.Many2one(comodel_name='product.template.attribute.value', string="Model",
-                               required=True, )
+    model_id = fields.Many2one(comodel_name='product.template.attribute.value', string="Model",required=True, )
     name = fields.Char(required=True)
-    product_tmpl_id = fields.Many2one(comodel_name='product.template', string="Provider",
-                                      domain="[('is_llm','=',True)]", required=True)
+    product_tmpl_id = fields.Many2one(comodel_name='product.template', string="Provider",domain="[('is_llm','=',True)]", required=True)
     quest_count = fields.Integer(compute="compute_quest_count")
     session_count = fields.Integer(compute="compute_session_count")
     session_line_count = fields.Integer(compute="compute_session_line_count")
     session_line_ids = fields.One2many(comodel_name="ai.quest.session.line", inverse_name="ai_llm_id")
-    status = fields.Selection(
-        selection=[("not_confirmed", "Not Confirmed"), ("confirmed", "Confirmed"), ("error", "Error")],
-        default="not_confirmed")
+    status = fields.Selection(selection=[("not_confirmed", "Not Confirmed"), ("confirmed", "Confirmed"), ("error", "Error")],default="not_confirmed")
     status_color = fields.Integer(compute="compute_status_color")
     tag_ids = fields.Many2many(comodel_name='product.tag', string='Tags')
-    image_128 = fields.Image("Image", max_width=128, max_height=128, related="product_tmpl_id.image_128")
-
+   
     def action_get_quests(self):
         action = {
             'name': 'AI Quests',
@@ -181,7 +178,7 @@ class AIAgentLLM(models.Model):
             f"callbacks={callbacks})"
 
     def get_embedding(self):
-        return f"{self.llm_type}(" + \
+        return f"{self.llm_etype}(" + \
             f"model='{self.model_id.name}'," + \
             f"api_key='{self.ai_api_key or ''}')"
 
@@ -339,7 +336,3 @@ class AIAgentLLM(models.Model):
 # ~ ],
 # ~ }
 # ~ )
-class ProductAttributeValue(models.Model):
-    _inherit = 'product.attribute.value'
-
-    licence = fields.Selection(selection=LICENCES, string='Licence', default='commercial')

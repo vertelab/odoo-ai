@@ -47,7 +47,7 @@ class AIMemory(models.Model):
     _inherit = 'ai.memory'
 
     url = fields.Char(string='Url', trim=True, )
-    ai_type = fields.Selection(selection_add=[('crawl4ai','Crawl4AI'),('spyder','Spyder'),('bs4','BS4')], ondelete={'crawl4ai': 'cascade','spyder': 'cascade','bs4': 'cascade'})
+    memory_type = fields.Selection(selection_add=[('crawl4ai','Crawl4AI'),('spyder','Spyder')], ondelete={'crawl4ai': 'cascade','spyder': 'cascade'})
  
     def run(self):
         _logger.warning(f'start scraping {self.ai_type=} {self.url=}')
@@ -112,20 +112,20 @@ class AIMemory(models.Model):
         scrape_page(website, visited_urls)
         return all_pages.encode('utf-8')
 
-class AIAgent(models.Model):
-    _inherit = "ai.agent"
+# ~ class AIAgent(models.Model):
+    # ~ _inherit = "ai.agent"
 
-    ai_type = fields.Selection(selection_add=[('crawl4ai','Crawl4AI'),('spyder','Spyder')], ondelete={'crawl4ai': 'cascade','spyder': 'cascade'})
+    # ~ ai_type = fields.Selection(selection_add=[('crawl4ai','Crawl4AI'),('spyder','Spyder')], ondelete={'crawl4ai': 'cascade','spyder': 'cascade'})
 
-class AIQuest(models.Model):
-    _inherit = "ai.quest"
+# ~ class AIQuest(models.Model):
+    # ~ _inherit = "ai.quest"
 
-    ai_type = fields.Selection(selection_add=[('crawl4ai','Crawl4AI'),('spyder','Spyder')], ondelete={'crawl4ai': 'cascade','spyder': 'cascade'})
+    # ~ ai_type = fields.Selection(selection_add=[('crawl4ai','Crawl4AI'),('spyder','Spyder')], ondelete={'crawl4ai': 'cascade','spyder': 'cascade'})
 
 
-class AISession(models.Model):
-    _inherit = "ai.quest.session"
+# ~ class AISession(models.Model):
+    # ~ _inherit = "ai.quest.session"
 
-    ai_type = fields.Selection(selection_add=[('crawl4ai','Crawl4AI'),('spyder','Spyder')], ondelete={'crawl4ai': 'cascade','spyder': 'cascade'})
+    # ~ ai_type = fields.Selection(selection_add=[('crawl4ai','Crawl4AI'),('spyder','Spyder')], ondelete={'crawl4ai': 'cascade','spyder': 'cascade'})
 
 

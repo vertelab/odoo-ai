@@ -9,7 +9,9 @@
                     <field name="product_tmpl_id" optional="hide" />
                     <field name="model_id" />
                     <field name="llm_type" optional="hide" />
+                    <field name="llm_etype" optional="hide" />
                     <field name="licence" />
+                    <field name="is_embedded" />
                     <field name="endpoint" optional="hide" />
                     <field name="is_key_required" />
                     <field name="last_run" />
@@ -32,23 +34,26 @@
             <field name="model">ai.agent.llm</field>
             <field name="arch" type="xml">
                 <search string="Search AI Agent LLM">
-                    <field name="name" />
-                    <field name="llm_type" />
                     <field name="endpoint" />
-                    <field name="product_tmpl_id" />
-                    <field name="model_id" />
+                    <field name="is_embedded" />
                     <field name="last_run" />
-                    <filter string="Key Required" name="key_required" domain="[('is_key_required', '=', True)]" />
-                    <filter string="Favorite" name="favorite" domain="[('is_favorite', '=', True)]" />
-                    <filter string="Not Confirmed" name="not_confirmed" domain="[('status', '=', 'not_confirmed')]" />
+                    <field name="llm_etype" />
+                    <field name="llm_type" />
+                    <field name="model_id" />
+                    <field name="name" />
+                    <field name="product_tmpl_id" />
                     <filter string="Confirmed" name="confirmed" domain="[('status', '=', 'confirmed')]" />
+                    <filter string="Embedded" name="embedded" domain="[('is_embedded', '=', True)]" />
                     <filter string="Error" name="error" domain="[('status', '=', 'error')]" />
+                    <filter string="Favorite" name="favorite" domain="[('is_favorite', '=', True)]" />
+                    <filter string="Key Required" name="key_required" domain="[('is_key_required', '=', True)]" />
+                    <filter string="Not Confirmed" name="not_confirmed" domain="[('status', '=', 'not_confirmed')]" />
                     <group expand="0" string="Group By">
                         <filter string="LLM Type" name="group_by_llm_type" context="{'group_by': 'llm_type'}" />
-                        <filter string="Status" name="group_by_status" context="{'group_by': 'status'}" />
-                        <filter string="Provider" name="group_by_product_tmpl" context="{'group_by': 'product_tmpl_id'}" />
-                        <filter string="Model" name="group_by_model" context="{'group_by': 'model_id'}" />
                         <filter string="Last Run" name="group_by_last_run" context="{'group_by': 'last_run'}" />
+                        <filter string="Model" name="group_by_model" context="{'group_by': 'model_id'}" />
+                        <filter string="Provider" name="group_by_product_tmpl" context="{'group_by': 'product_tmpl_id'}" />
+                        <filter string="Status" name="group_by_status" context="{'group_by': 'status'}" />
                     </group>
                 </search>
             </field>
@@ -90,9 +95,12 @@
                                 <field name="tag_ids" widget="many2many_tags" />
                                 <field name="is_key_required" widget="boolean_toggle" />
                                 <field name="ai_api_key" attrs="{'invisible': [('is_key_required', '=', False)]}" />
+                                <field name="licence"  />
+                                <field name="is_embedded"  />
                             </group>
                             <group>
-                                <field name="llm_type" />
+                                <field name="llm_type" attrs="{'invisible': [('is_embedded', '=', True)]}"/>
+                                <field name="llm_etype" attrs="{'invisible': [('is_embedded', '=', False)]}" />
                                 <field name="product_tmpl_id" />
                                 <field name="model_id" attrs="{'invisible': [('product_tmpl_id', '=', False)]}" domain="[('product_tmpl_id', '=', product_tmpl_id),('attribute_id','=', %(ai_agent.product_attribute_model)d)]" />
                             </group>
@@ -123,6 +131,7 @@
                     <field name="last_run" />
                     <field name="ai_agent_count" />
                     <field name="ai_agent_ids" />
+                    <field name="is_embedded" />
                     <field name="licence" />
                     <templates>
                         <t t-name="kanban-box">
@@ -175,6 +184,7 @@
                                                 </t>
                                             </div>
                                             <div class="oe_kanban_bottom_right">
+                                                <field name="is_embedded"/>
                                                 <span t-att-class="'o_status_bubble mx-0 o_color_bubble_' + record.status_color.value" t-att-title="record.status.value" />
                                             </div>
                                         </div>
@@ -197,6 +207,7 @@
                     <field name="product_tmpl_id" />
                     <field name="model_id" />
                     <field name="licence" />
+                    <field name="is_embedded" />
                     <field name="status" />
                 </calendar>
             </field>

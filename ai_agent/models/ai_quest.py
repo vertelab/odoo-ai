@@ -116,59 +116,45 @@ class AIQuest(models.Model):
 
     agent_count = fields.Integer(compute="compute_agent_count")
     ai_agent_ids = fields.One2many(comodel_name='ai.quest.agent', inverse_name='ai_quest_id')
-    ai_type = fields.Selection(selection=[("default", "Default"), ('ai-programmer', 'AI Programmer')],
-                               default="default", required=True)
-    alias_id = fields.Many2one(comodel_name='mail.alias', string='Alias', ondelete="restrict", required=True,
-                               help="The email address associated with this channel. New emails received will "
-                                    "automatically create new leads assigned to the channel.")
-    alias_user_id = fields.Many2one(comodel_name='res.users', related='alias_id.alias_user_id', readonly=False,
-                                    inherited=True, )
+    ai_type = fields.Selection(selection=[("default", "Default"), ('ai-programmer', 'AI Programmer')],  default="default", required=True)
+    alias_id = fields.Many2one(comodel_name='mail.alias', string='Alias', ondelete="restrict", required=True, help="The email address associated with this channel. New emails received will ""automatically create new leads assigned to the channel.")
+    alias_user_id = fields.Many2one(comodel_name='res.users', related='alias_id.alias_user_id', readonly=False,inherited=True, )
     avatar_128 = fields.Image("Avatar", max_width=128, max_height=128, compute='_compute_avatar_128')
     channel_id = fields.Many2one(comodel_name='mail.channel', string="Channel", help="")
-    chat_history_limit = fields.Integer(string='Chat History Limit', default=10,
-                                        help='Limit the chat history to this njumber of messages')
+    chat_history_limit = fields.Integer(string='Chat History Limit', default=10,help='Limit the chat history to this njumber of messages')
     chat_user_id = fields.Many2one(comodel_name='res.users', string="Chat User", help="")
-    code = fields.Text(string='Python Code', groups='base.group_system', default=DEFAULT_PYTHON_CODE,
-                       help="Write Python code that the action will execute. Some variables are ""available for use; help about python expression is given in the help tab.")
+    code = fields.Text(string='Python Code', groups='base.group_system', default=DEFAULT_PYTHON_CODE,help="Write Python code that the action will execute. Some variables are ""available for use; help about python expression is given in the help tab.")
     color = fields.Integer(default=lambda self: randint(1, 11))
     cron_id = fields.Many2one(comodel_name='ir.cron', string="Scheduled Action", help="", ondelete="cascade")
     debug = fields.Boolean(string='Debug', help='More logging')
     description = fields.Text()
-    filter_domain = fields.Char(string='Filter Name', related='model_id.model', readonly=False, related_sudo=True)
+    filter_domain = fields.Char(string='Record Selection',)
     image_128 = fields.Image("Image", max_width=128, max_height=128)
-    init_type = fields.Selection(selection=INIT_TYPES, string='Initiate', help="How the Quest is initialized",
-                                 required=True, default='manual')
+    init_type = fields.Selection(selection=INIT_TYPES, string='Initiate', help="How the Quest is initialized",required=True, default='manual')
     init_type_str = fields.Html(string='', )
     is_favorite = fields.Boolean()
     last_run = fields.Datetime()
     llm_count = fields.Integer(compute="compute_llm_count")
     model_id = fields.Many2one(comodel_name='ir.model', string="Model", help="Bind this Quest to this model")
+    model_name = fields.Char(related='model_id.model', string='Model Name', readonly=True, store=True)
     name = fields.Char(required=True)
     partner_id = fields.Many2one(comodel_name='res.partner', string="Customer", help="")
-    server_action_id = fields.Many2one('ir.actions.server', string='Server Action',
-                                       help="Server action to be executed when this quest is initialized",
-                                       ondelete="cascade")
+    server_action_id = fields.Many2one('ir.actions.server', string='Server Action',help="Server action to be executed when this quest is initialized",ondelete="cascade")
     session_count = fields.Integer(compute="compute_session_count")
     session_ids = fields.One2many(comodel_name="ai.quest.session", inverse_name="ai_quest_id")
     session_line_count = fields.Integer(compute="compute_session_line_count")
     session_line_ids = fields.One2many(comodel_name="ai.quest.session.line", inverse_name="ai_quest_id")
     session_object_count = fields.Integer(compute="compute_session_object_count")
     session_object_ids = fields.One2many(comodel_name="ai.session.object", inverse_name="ai_quest_id")
-    status = fields.Selection(
-        selection=[("draft", _("Draft")), ("active", _("Active")), ("done", _("Done")), ("error", _("Error"))],
-        default="draft")
+    status = fields.Selection(selection=[("draft", _("Draft")), ("active", _("Active")), ("done", _("Done")), ("error", _("Error"))],default="draft")
     tag_ids = fields.Many2many(comodel_name='product.tag', string='Tags')
     use_chat_history = fields.Boolean(string='Use Chat History', default=True, help='Add chat history to the context')
-    use_company_info = fields.Boolean(string='Use Company Info', default=True,
-                                      help='Add company mission and values to the context')
-    use_personal_info = fields.Boolean(string='Use Personal Info', default=True,
-                                       help='Add personal name and other info to the context')
-    use_personal_lang = fields.Boolean(string='Use Personal Language', default=True,
-                                       help='Set Personas language for the LLM')
-    use_time_context = fields.Boolean(string='Use Time Context', default=True,
-                                      help='Inform the LLM of current time, date')
+    use_company_info = fields.Boolean(string='Use Company Info', default=True,help='Add company mission and values to the context')
+    use_personal_info = fields.Boolean(string='Use Personal Info', default=True,help='Add personal name and other info to the context')
+    use_personal_lang = fields.Boolean(string='Use Personal Language', default=True,help='Set Personas language for the LLM')
+    use_time_context = fields.Boolean(string='Use Time Context', default=True,help='Inform the LLM of current time, date')
     user_id = fields.Many2one(comodel_name='res.users', string="Owner", help="")
-
+    
     @api.model
     def _generate_random_token(self):
         return ''.join(choice('abcdefghijkmnopqrstuvwxyzABCDEFGHIJKLMNPQRSTUVWXYZ23456789') for _i in range(10))
@@ -279,6 +265,13 @@ class AIQuest(models.Model):
     def compute_agent_count(self):
         for record in self:
             record.agent_count = len(set(record.session_line_ids.mapped('ai_agent_id')))
+
+    @api.depends('model_id')
+    def _compute_model_name(self):
+        for record in self:
+            record.model_name = record.model_id.model if record.model_id else False
+
+
 
     @api.onchange('model_id')
     def _onchange_model_id(self):
