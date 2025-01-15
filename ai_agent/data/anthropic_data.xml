@@ -6,6 +6,8 @@
     <record id="anthropic_product_template" model="product.template">
       <field name="name">Anthropic</field>
       <field name="is_llm">True</field>
+      <field name="llm_library">langchain_anthropic</field>
+      <field name="llm_etype">ChatAnthropic</field>
       <field name="llm_type">ChatAnthropic</field>
       <field name="image_1920" type="base64" file="ai_agent/static/img/anthropic_logo.png" />
     </record>

@@ -9,8 +9,10 @@ class ProductTemplate(models.Model):
                                            string="AI Tokens", help="")
     is_llm = fields.Boolean()
     llm_additional_rate = fields.Float(string="LLM Additional Rate")
-    llm_type = fields.Char(string='LLM Type', size=64, trim=True, help="Name of langchain class, eg ChatOpenAI or ChatMistralAI")
-    llm_etype = fields.Char(string='Embedded Type', size=64, trim=True, help="Name of langchain class, eg OpenAIEmbeddings or MistralAIEmbeddings")
+    llm_library = fields.Char(string='Library', size=64, trim=True, help="Name of langchain library eg langchain_openai, langchain_groq, langchain_mistralai")
+    llm_type = fields.Char(string='LLM Class', size=64, trim=True, help="Name of langchain class, eg ChatOpenAI or ChatMistralAI")
+    llm_etype = fields.Char(string='Embedded Class', size=64, trim=True, help="Name of langchain class, eg OpenAIEmbeddings or MistralAIEmbeddings")
+    llm_price_url = fields.Char(string='Pricelist', size=64, trim=True, help="Pricelist for tokens and llm")
     token_sys = fields.Integer(string='System Tokens')
     session_line_count = fields.Integer(compute="compute_session_line_count")
 

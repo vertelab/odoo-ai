@@ -4,7 +4,10 @@
     <record id="google_llm_product_template" model="product.template">
       <field name="name">Google LLM</field>
       <field name="is_llm">True</field>
+      <field name="llm_library">langchain_google_genai</field>
+      <field name="llm_etype">GoogleGenerativeAIEmbeddings</field>
       <field name="llm_type">ChatGoogleGenerativeAI</field>
+      <field name="llm_price_url">https://cloud.google.com/vertex-ai/generative-ai/pricing</field>
       <field name="image_1920" type="base64" file="ai_agent/static/img/google-ai-logo.png" />
     </record>
     <!-- Model -->

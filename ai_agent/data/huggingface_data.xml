@@ -4,6 +4,8 @@
     <record id="huggingface_product_template" model="product.template">
       <field name="name">HuggingFace</field>
       <field name="is_llm">True</field>
+      <field name="llm_library">langchain_huggingface</field>
+      <field name="llm_etype">HuggingFaceEmbedding</field>
       <field name="llm_type">HuggingFaceHub</field>
       <field name="image_1920" type="base64" file="ai_agent/static/img/huggingface_ai-logo.png" />
     </record>

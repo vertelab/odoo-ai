@@ -28,8 +28,10 @@
                             <field name="llm_additional_rate" />
                         </group>
                         <group >
+                            <field name="llm_library"/>
                             <field name="llm_type"/>
                             <field name="llm_etype"/>
+                            <field name="llm_price_url" widget="url" />
                             <field name="ai_api_key"/>
                         </group>
                     </group>

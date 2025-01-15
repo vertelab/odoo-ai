@@ -225,3 +225,6 @@ class AITool(models.Model):
         _logger.info(f"{response.content=}")
 
         return {"messages": [response]}
+        
+        
+    

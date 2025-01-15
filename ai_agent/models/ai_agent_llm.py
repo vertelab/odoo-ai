@@ -5,6 +5,8 @@ from langchain_mistralai import ChatMistralAI
 from langchain.agents import AgentExecutor, create_openai_tools_agent, create_json_chat_agent, create_react_agent
 
 from httpx import HTTPStatusError
+import importlib
+
 
 from odoo import models, fields, api, _
 from odoo.exceptions import UserError, AccessError, ValidationError
@@ -127,7 +129,21 @@ class AIAgentLLM(models.Model):
         self.last_run = fields.Datetime.now()
         self.message_post(body=f"{body} | {self.last_run}", message_type="notification")
 
-    def get_llm(self, verbose=False, temperature=0.7, callbacks=None):
+    def get_llm(self, verbose=False, temperature=0.7, callbacks=None,**kwarg):
+        try:
+            module = importlib.import_module(self.product_tmpl_id.llm_library)
+            LLM = getattr(module, self.product_tmpl_id.llm_type)
+            return LLM(verbose, temperature, callbacks,**kwarg)
+        except ImportError as e:
+            _logger.error(f"Error importing {lib_name}: {e}")
+            raise
+        except AttributeError as e:
+            _logger.error(f"Error: {class_name} not found in {lib_name}")
+            raise
+        except Exception as e:
+            _logger.error(f"An error occurred: {e}")
+            raise
+    
 
         # ~ Core Parameters
         # ~ model: Specifies the OpenAI model to use.

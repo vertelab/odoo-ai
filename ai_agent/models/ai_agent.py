@@ -238,7 +238,7 @@ class AIAgent(models.Model):
             self.log_message(f"Formatted prompt: {formatted_prompt}")
 
         try:
-            response = eval(self.ai_agent_llm_id.get_llm()).invoke(formatted_prompt)
+            response = self.ai_agent_llm_id.get_llm().invoke(formatted_prompt)
             if debug:
                 _logger.error(f"{response=}")
         except HTTPStatusError as e:
@@ -408,7 +408,7 @@ class AIAgent(models.Model):
                            f"complete response.")
 
                 # Get LLM response
-                llm = eval(self.ai_agent_llm_id.get_llm())
+                llm = self.ai_agent_llm_id.get_llm()
                 response = llm.invoke([
                     SystemMessage(content=system_prompt),
                     HumanMessage(content=prompt)
@@ -471,7 +471,7 @@ class AIAgent(models.Model):
                 )
 
                 # Get LLM
-                llm = eval(self.ai_agent_llm_id.get_llm())
+                llm = self.ai_agent_llm_id.get_llm()
                 tools = self._get_tools()
                 
                 langgraph_agent_executor = create_react_agent(llm, tools=tools)
