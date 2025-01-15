@@ -139,6 +139,8 @@ class AIQuest(models.Model):
     model_name = fields.Char(related='model_id.model', string='Model Name', readonly=True, store=True)
     name = fields.Char(required=True)
     partner_id = fields.Many2one(comodel_name='res.partner', string="Customer", help="")
+    real_channel_id = fields.Many2one(comodel_name='mail.channel', string="Channel", help="This is the channel chat-method get")
+    real_chat_user_id = fields.Many2one(comodel_name='res.users', string="Chat User", help="Chat user thet chat-method is using")
     server_action_id = fields.Many2one('ir.actions.server', string='Server Action',help="Server action to be executed when this quest is initialized",ondelete="cascade")
     session_count = fields.Integer(compute="compute_session_count")
     session_ids = fields.One2many(comodel_name="ai.quest.session", inverse_name="ai_quest_id")
@@ -458,12 +460,13 @@ class AIQuest(models.Model):
                             bot_user=bot_user
                                    )
             
-        """
+        """        
         # ~ _logger.warning(f"chat {message=} {message.body=}")
         if (self.init_type == 'chat' and self.chat_user_id) or (self.init_type == "channel" and self.channel_id):
             if self._check_quest_error():
                 raise UserError(self._check_quest_error())
 
+            self.write({'real_channel_id': channel.id,'real_chat_user_id': bot_user.id})
             session = message.parent_id.ai_quest_session_id if message.parent_id and message.parent_id.ai_quest_session_id else \
                 message.parent_id.ai_quest_session_id if message.ai_quest_session_id else \
                     self.env['ai.quest.session'].quest_init(self)
@@ -684,11 +687,14 @@ class AIQuest(models.Model):
     # ------------------------------------------------------------
 
     # Inspired by https://github.com/menonpg/agentic_search_openai_langgraph/blob/main/agents.py
-    def build_graph(self, agents):
+    def build_graph(self,**kwarg):
         """Build a multi-agent workflow graph."""
-        if not agents:
+    
+        if not self.ai_agent_ids:
             raise ValueError("No agents provided")
 
+        agents = [line.ai_agent_id for line in self.ai_agent_ids]
+        
         # Get member names
         members = [a.name for a in agents[1:]]
         _logger.info(f"Building graph with supervisor and {len(members)} workers: {members}")
@@ -700,7 +706,7 @@ class AIQuest(models.Model):
             # Add supervisor
             supervisor = agents[0]
             _logger.info(f"Adding supervisor: {supervisor.name}")
-            graph_builder.add_node("Supervisor", supervisor.create_supervisor(self, members))
+            graph_builder.add_node("Supervisor", supervisor.create_supervisor(self, members,**kwarg))
 
             # Add worker nodes
             for agent in agents[1:]:
@@ -733,6 +739,7 @@ class AIQuest(models.Model):
             return graph_builder.compile()
 
         except Exception as e:
+            self.log_message(f"Error building graph: {str(e)}",is_error=True)
             _logger.error(f"Error building graph: {str(e)}")
             raise
 
