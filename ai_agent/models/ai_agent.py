@@ -2,6 +2,7 @@ import logging
 import functools
 import re
 import json
+import traceback
 from datetime import datetime
 from random import randint
 # from typing import List
@@ -396,17 +397,20 @@ class AIAgent(models.Model):
                 _logger.info(f"No messages, starting with first worker: {members[0]}")
                 return {"next": members[0]} if members else {"next": "FINISH"}
 
+            _logger.error(f"{messages=}")
+
             # Get the latest message
             question = messages[-1].content if messages else ""
 
             try:
                 # Create full message list
+                _logger.error(f"Create full message list        ")
                 prompt = f"Previous conversation:\n"
                 for msg in messages:
                     prompt += f"\n{msg.content}\n"
                 prompt += (f"\nBased on this, who should act next? Choose from: {members} or say FINISH if we have a "
                            f"complete response.")
-
+    
                 # Get LLM response
                 llm = self.ai_agent_llm_id.get_llm()
                 response = llm.invoke([
@@ -435,11 +439,12 @@ class AIAgent(models.Model):
                     return {"next": "FINISH"}
 
                 # Default to first member
-                _logger.info(f"Defaulting to first member: {members[0]}")
-                return {"next": members[0]}
+                if len(members) != 0:
+                    _logger.info(f"Defaulting to first member: {members[0]}")
+                    return {"next": members[0]}
 
             except Exception as e:
-                _logger.error(f"Error in supervisor chain: {str(e)}")
+                _logger.error(f"Error in supervisor chain: {str(e)}",exc_info=True)
                 return {"next": "FINISH"}
 
         return supervisor_chain

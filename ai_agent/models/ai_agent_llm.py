@@ -133,7 +133,7 @@ class AIAgentLLM(models.Model):
         try:
             module = importlib.import_module(self.product_tmpl_id.llm_library)
             LLM = getattr(module, self.product_tmpl_id.llm_type)
-            return LLM(verbose, temperature, callbacks,**kwarg)
+            return LLM(verbose=verbose, temperature=temperature, callbacks=callbacks, api_key=self.ai_api_key, **kwarg)
         except ImportError as e:
             _logger.error(f"Error importing {lib_name}: {e}")
             raise
