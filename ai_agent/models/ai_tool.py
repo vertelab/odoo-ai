@@ -113,7 +113,7 @@ class AITool(models.Model):
             'type': 'ir.actions.act_window',
             'res_model': 'ai.tool.test.wizard',
             'view_mode': 'form',
-            'context': {'default_ai_memory': self.id},
+            'context': {'default_ai_tool_id': self.id},
             'target': 'new'
         }
         _logger.error(f"{action}")
