@@ -1,0 +1,33 @@
+<odoo>
+  <data noupdate="0">
+      
+    <record id="ai_tool_internet_search_DDGO" model="ai.tool">
+      <field name="name">Internet search using DDGO</field>
+      <field name="tool">internet_search_DDGO</field>
+      <field name="tool_lib">odoo.addons.ai_agent.tools</field>
+      <field name="image_128"></field>
+    </record>
+
+    <record id="ai_tool_process_content" model="ai.tool">
+      <field name="name">Process content from a web page</field>
+      <field name="tool">process_content</field>
+      <field name="tool_lib">odoo.addons.ai_agent.tools</field>
+      <field name="image_128"></field>
+    </record>
+
+    <record id="ai_tool_bing" model="ai.tool">
+      <field name="name">Search Internet using BING</field>
+      <field name="tool">BingSearchAPIWrapper</field>
+      <field name="tool_lib">langchain_community.utilities</field>
+      <field name="image_128"></field>
+    </record>
+
+  <record id="ai_tool_brave" model="ai.tool">
+      <field name="name">Search Internet using Brave</field>
+      <field name="tool">BraveSearch</field>
+      <field name="tool_lib">langchain_community.tools</field>
+      <field name="image_128"></field>
+    </record>
+
+  </data>
+</odoo>
