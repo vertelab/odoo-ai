@@ -45,6 +45,7 @@
         "data/google_data.xml",
         "data/huggingface_data.xml",
         "data/ai_agent_data.xml",
+        "data/ai_tool_data.xml",
         "wizard/ai_agent_test_wizard_views.xml",
         "wizard/ai_quest_test_mail_wizard_views.xml",
         "wizard/ai_memory_test_wizard_views.xml",

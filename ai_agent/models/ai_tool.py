@@ -104,6 +104,21 @@ class AITool(models.Model):
             'domain': [("session_line_ids.ai_tool_id", '=', self.id)]
         }
         return action
+        
+        
+        
+    def action_test_tool(self):
+        action = {
+            'name': 'Test Tool',
+            'type': 'ir.actions.act_window',
+            'res_model': 'ai.tool.test.wizard',
+            'view_mode': 'form',
+            'context': {'default_ai_memory': self.id},
+            'target': 'new'
+        }
+        _logger.error(f"{action}")
+        return action
+
 
     @api.depends("session_line_ids")
     def compute_session_line_count(self):
@@ -226,5 +241,35 @@ class AITool(models.Model):
 
         return {"messages": [response]}
         
+      
+class AIToolTestWizard(models.Model):
+    _name = 'ai.tool.test.wizard'
+    _description = 'A testing wizard for ai tool'
+
+    is_raise_error = fields.Boolean(default=True)
+    test_tool_input = fields.Char()
+    ai_tool_id = fields.Many2one(comodel_name="ai.tool")
+
+    def test_tool(self):
+        results=''
+        _logger.error(f"Importing {self.ai_tool_id.tool_lib=}")
+        module = importlib.import_module(self.ai_tool_id.tool_lib)
+        TOOL = getattr(module, self.ai_tool_id.tool)
+        results = list(TOOL.text(query, max_results=5))
+
+        try:
+            module = importlib.import_module(self.ai_tool_id.tool_lib)
+            TOOL = getattr(module, self.ai_tool_id.tool)
+            results = list(TOOL.text(query, max_results=5))
+        except ImportError as e:
+            _logger.error(f"Error importing {self.ai_tool_id.tool_lib}: {e}")
+        except AttributeError as e:
+            _logger.error(f"Error: {self.ai_tool_id.tool} not found in {self.ai_tool_id.tool_lib}")
+        except Exception as e:
+            _logger.error(f"An error occurred: {e}")
+
         
+        if self.is_raise_error:
+            raise UserError(f"{results=}")
+        _logger.info(f"{results=}")
     
