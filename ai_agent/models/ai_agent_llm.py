@@ -3,6 +3,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from langchain_mistralai import ChatMistralAI
 from langchain.agents import AgentExecutor, create_openai_tools_agent, create_json_chat_agent, create_react_agent
+from langchain_core.utils.utils import convert_to_secret_str
 
 from httpx import HTTPStatusError
 import importlib
@@ -133,12 +134,12 @@ class AIAgentLLM(models.Model):
         try:
             module = importlib.import_module(self.product_tmpl_id.llm_library)
             LLM = getattr(module, self.product_tmpl_id.llm_type)
-            return LLM(verbose=verbose, temperature=temperature, callbacks=callbacks, api_key=self.ai_api_key, **kwarg)
+            return LLM(verbose=verbose, temperature=temperature, callbacks=callbacks, api_key=self.ai_api_key, model=self.model_id.name, **kwarg)
         except ImportError as e:
-            _logger.error(f"Error importing {lib_name}: {e}")
+            _logger.error(f"Error importing {self.product_tmpl_id.llm_library}: {e}")
             raise
         except AttributeError as e:
-            _logger.error(f"Error: {class_name} not found in {lib_name}")
+            _logger.error(f"Error: {self.product_tmpl_id.llm_type} not found in {self.product_tmpl_id.llm_library}")
             raise
         except Exception as e:
             _logger.error(f"An error occurred: {e}")
@@ -186,17 +187,21 @@ class AIAgentLLM(models.Model):
         # ~ default_query: Optional[Mapping[str, object]] = None,
         # ~ http_client: Optional[Any] = None) -> Non
 
-        return f"{self.llm_type}(" + \
-            f"model='{self.model_id.name}'," + \
-            f"api_key='{self.ai_api_key or ''}'," + \
-            f"temperature={temperature}," + \
-            f"verbose={verbose}," + \
-            f"callbacks={callbacks})"
-
     def get_embedding(self):
-        return f"{self.llm_etype}(" + \
-            f"model='{self.model_id.name}'," + \
-            f"api_key='{self.ai_api_key or ''}')"
+
+        try:
+            module = importlib.import_module(self.product_tmpl_id.llm_library)
+            LLM = getattr(module, self.product_tmpl_id.llm_etype)
+            return LLM(api_key=self.ai_api_key, model=self.model_id.name)
+        except ImportError as e:
+            _logger.error(f"Error importing {self.product_tmpl_id.llm_library}: {e}")
+            raise
+        except AttributeError as e:
+            _logger.error(f"Error: {self.product_tmpl_id.llm_etype} not found in {self.product_tmpl_id.llm_library}")
+            raise
+        except Exception as e:
+            _logger.error(f"An error occurred: {e}")
+            raise
 
     def invoke(self, input, config=None,
                ai_quest_session_id=None, ai_quest_id=None, ai_agent_id=None, debug=False,
