@@ -182,8 +182,18 @@ class AIMemory(models.Model):
         else:
             self.field_list = "[]"
 
+    def rag_local_attatchemts(self):
+        for memory in self:
+            raw_documents = [self.create_document_from_file(attachment) for attachment in 
+                         self.env["ir.attachment"].search([("res_model", "=", memory._name), ("res_id", "=", memory.id)])]
+            if raw_documents:
+                self.create_faiss(raw_documents)
+            else:
+                raise UserError(_("No attachments to RAG"))
+    
     def rag_attatchemts(self):
         for memory in self:
+
             raw_documents = [self.create_document_from_file(attachment) for attachment in 
                          self.env["ir.attachment"].search([("res_model", "=", memory._name), ("res_id", "=", memory.id)])]
             if raw_documents:
@@ -220,20 +230,26 @@ class AIMemory(models.Model):
                 domain = safe_eval(memory.filter_domain) if memory.filter_domain else []
                 module_dicts = memory.env[memory.model_name].search(domain).read(model_fields)
                 _logger.error(f"{module_dicts=}")
-                if len(module_dicts) != 0: 
-                    raw_documents = [memory.create_document(text=json.dumps(module_dict),metadata=module_dict) 
-                                          for module_dict in module_dicts]
-                    
+                raw_documents = []
+                for module_dict in module_dicts:
+                    for key, item in module_dict.items():
+                        if isinstance(item, fields.datetime):
+                            module_dict[key] = item.isoformat()
+                        if isinstance(item, bytes):
+                            module_dict[key] = base64.b64encode(item).decode("utf-8")
+                    raw_documents.append(memory.create_document(text=json.dumps(module_dict),metadata=module_dict))
+                if len(raw_documents) != 0: 
                     self.create_faiss(raw_documents)
             elif memory.memory_type == 'attachments':
                 memory.rag_attatchemts()
             elif memory.memory_type == 'local_attachment':
-                memory.rag_attatchemts()
+                memory.rag_local_attatchemts()
 
     def load_faiss(self):
         if self.memory_faiss:
             faiss_file = base64.b64decode(self.memory_faiss)
-            db = FAISS.deserialize_from_bytes(faiss_file,eval(self.ai_agent_llm_id.get_embedding()), allow_dangerous_deserialization=True)
+            # db = FAISS.deserialize_from_bytes(faiss_file,eval(self.ai_agent_llm_id.get_embedding()), allow_dangerous_deserialization=True)
+            db = FAISS.deserialize_from_bytes(faiss_file,self.ai_agent_llm_id.get_embedding(), allow_dangerous_deserialization=True)
             return db
         else:
             return False
@@ -260,7 +276,7 @@ class AIMemory(models.Model):
         
     def create_faiss(self,raw_documents):
         documents = self.text_splitter(raw_documents)
-        db = FAISS.from_documents(documents, eval(self.ai_agent_llm_id.get_embedding()))
+        db = FAISS.from_documents(documents, self.ai_agent_llm_id.get_embedding())
         self.memory_faiss = base64.b64encode(db.serialize_to_bytes())
 
     def log_message(self, body, is_error=False):
