@@ -140,6 +140,12 @@ class AIMemory(models.Model):
         }
         return action
 
+    @api.depends("model_id")
+    def compute_model_id(self):
+        for record in self:
+            _logger.error(f"{record.model_id.model=}")
+            record.compute_model_id = record.model_id
+
     @api.depends("session_line_ids")
     def compute_session_line_count(self):
         for record in self:
@@ -186,7 +192,6 @@ class AIMemory(models.Model):
                 raise UserError(_("No attachments to RAG"))
 
     def action_test_rag(self):
-        _logger.error("runs"*100)
         action = {
             'name': 'Test Action',
             'type': 'ir.actions.act_window',
@@ -195,7 +200,6 @@ class AIMemory(models.Model):
             'context': {'default_ai_memory': self.id},
             'target': 'new'
         }
-        _logger.error(f"{action}")
         return action
 
     def run(self):
@@ -212,16 +216,14 @@ class AIMemory(models.Model):
                 raw_documents = [memory.create_document(text=all_pages,metadata={})]
                 memory.create_faiss(raw_documents)
             elif memory.memory_type == 'model':
-                f = eval(memory.field_list)
-                model_fields = {
-                    'ir.module.module': ["name", "shortdesc", "summary", "description", "author", "maintainer"],
-                    'ir.model' :        ["name", "model", "info","modules"],
-                    }
+                model_fields = eval(memory.field_list)
                 domain = safe_eval(memory.filter_domain) if memory.filter_domain else []
-                module_dicts = memory.model_id.search(domain).read(model_fields.get(memory.model_id.model,[]))
+                module_dicts = memory.env[memory.model_name].search(domain).read(model_fields)
+                _logger.error(f"{module_dicts=}")
                 if len(module_dicts) != 0: 
                     raw_documents = [memory.create_document(text=json.dumps(module_dict),metadata=module_dict) 
                                           for module_dict in module_dicts]
+                    
                     self.create_faiss(raw_documents)
             elif memory.memory_type == 'attachments':
                 memory.rag_attatchemts()

@@ -40,10 +40,7 @@
               <field name="max_nbr_pages" attrs="{'invisible': [('memory_type', '!=', 'bs4')]}" />
               <field name="model_id" attrs="{'invisible': [('memory_type', '!=', 'model')]}" />
               <field name="model_name" invisible="1" />
-<!--
-                <field name="filter_domain" widget="domain" options="{'model': model_name}"  attrs="{'invisible': [('memory_type', '!=', 'model')]}" />
--->
-                <field name="filter_domain" widget="domain" options="{'model': 'res.partner'}"  attrs="{'invisible': [('memory_type', '!=', 'model')]}" />
+              <field name="filter_domain" widget="domain" options="{'model': 'model_name'}"  attrs="{'invisible': [('memory_type', '!=', 'model')]}" />
 
               
             </group>
