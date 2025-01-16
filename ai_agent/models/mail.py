@@ -47,9 +47,10 @@ class MailChannel(models.Model):
 
                     messages = bot_response.get('response', {}).get('messages', [])
                     ai_messages = [m for m in messages if isinstance(m, AIMessage)]
-                    last_ai_message = ai_messages[-1] if ai_messages else None
+                    last_ai_message = ai_messages[-1] if len(ai_messages) != 0 else None
 
-                    if messages:
+                    if messages and last_ai_message:
+                        _logger.error(f"{last_ai_message=}")
                         answer = last_ai_message.content
 
                     self.with_user(user).message_post(
