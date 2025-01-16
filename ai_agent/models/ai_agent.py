@@ -482,7 +482,7 @@ class AIAgent(models.Model):
                 langgraph_agent_executor = create_react_agent(llm, tools=tools)
 
                 # Prepare the input messages with system message first
-                input_messages = [system_message] + messages
+                input_messages = [system_message] + [messages[-1]]
 
                 result = langgraph_agent_executor.invoke({
                     "input": latest_message,
