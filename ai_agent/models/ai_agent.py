@@ -10,9 +10,10 @@ from typing_extensions import TypedDict, List
 
 from httpx import HTTPStatusError
 from langchain.agents import AgentExecutor, create_openai_tools_agent
-from langchain.embeddings import OpenAIEmbeddings
+from langchain_community.embeddings import OpenAIEmbeddings
 # from langchain_core.messages import BaseMessage
-from langchain.memory import ConversationTokenBufferMemory, ChatMessageHistory
+from langchain.memory import ConversationTokenBufferMemory
+from langchain_community.chat_message_histories import ChatMessageHistory
 from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder, PromptTemplate
 from langchain.prompts import HumanMessagePromptTemplate, SystemMessagePromptTemplate
 from langchain.schema import AIMessage, HumanMessage, SystemMessage, BaseMessage
