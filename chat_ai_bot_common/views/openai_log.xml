@@ -5,8 +5,7 @@
         <record id="odoogpt_openai_log_view_list" model="ir.ui.view">
             <field name="name">openai.log.view.list</field>
             <field name="model">openai.log</field>
-            <field name="arch" type="xml">
-                <tree name="openai_model_tree" string="OpenAI Logs" create="0" edit="0">
+            <field name="arch" type="xml"> list<name="openai_model_tree" string="OpenAI Logs" create="0" edit="0">
                     <field name="date" />
                     <field name="thread" optional="hide" />
                     <field name="run" optional="hide" />
@@ -15,8 +14,7 @@
                     <field name="status_code" optional="hide" />
                     <field name="assistant" optional="hide" />
                     <field name="author_id" optional="hide" />
-                    <field name="message" optional="hide" />
-                </tree>
+                    <field name="message" optional="hide" /><list/
             </field>
         </record>
 
@@ -58,7 +56,7 @@
             <field name="name">Chat AI Bot Logs</field>
             <field name="type">ir.actions.act_window</field>
             <field name="res_model">openai.log</field>
-            <field name="view_mode">tree,form</field>
+            <field name="view_mode">list,form</field>
             <field name="target">current</field>
         </record>
     </data>

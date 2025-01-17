@@ -12,7 +12,7 @@
                     <sheet>
                         <group>
                             <group>
-                                <field name="name" modifiers="{&quot;required&quot;: true}"/>
+                                <field name="name" required="1"/>
                             </group>
                         </group>
                         <group>
@@ -36,16 +36,16 @@
             <field name="name">ai.agent.tree</field>
             <field name="model">ai.agent</field>
             <field name="arch" type="xml">
-                <tree >
-                    <field name="name" modifiers="{&quot;required&quot;: true}"/>
-                </tree>
+                <list>
+                    <field name="name" required="1"/>
+                </list>
             </field>
         </record>
 
         <record id="action_ai_agent" model="ir.actions.act_window">
             <field name="name">Agents</field>
             <field name="res_model">ai.agent</field>
-            <field name="view_mode">tree,form</field>
+            <field name="view_mode">list,form</field>
         </record>
 
         <menuitem id="ai_agent.menu_ai_agent_root" name="AI" action="action_ai_agent"/>

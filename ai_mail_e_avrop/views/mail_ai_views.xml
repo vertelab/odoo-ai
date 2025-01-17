@@ -50,13 +50,11 @@
     <record id="ai_model_tree_view_leads" model="ir.ui.view">
         <field name="name">mail.ai.tree.lead</field>
         <field name="model">mail.ai</field>
-        <field name="arch" type="xml">
-            <tree create="false" duplicate="false">
+        <field name="arch" type="xml"> list<create="false" duplicate="false">
                 <field name="company_id" invisible="1"/>
                 <field name="create_date" optional="hide"/>
                 <field name="name"/>
-                <field name="mail_channel_id"/>
-            </tree>
+                <field name="mail_channel_id"/><list/
         </field>
     </record>
 
@@ -76,7 +74,7 @@
     <record model="ir.actions.act_window" id="ai_mail_action">
         <field name="name">Mail AI</field>
         <field name="res_model">mail.ai</field>
-        <field name="view_mode">tree,form</field>
+        <field name="view_mode">list,form</field>
         <field name="search_view_id" ref="ai_mail.view_ai_mail_filter"/>
         <field name="help" type="html">
             <p class="o_view_nocontent_smiling_face">

@@ -4,15 +4,16 @@
       <field name="name">ai.agent.llm.tree</field>
       <field name="model">ai.agent.llm</field>
       <field name="arch" type="xml">
-        <tree>
-          <field name="name" modifiers="{&quot;required&quot;: true}" />
-          <field name="llm_type" optional="hide" />
-          <field name="status" optional="hide" />
-          <field name="product_tmpl_id" optional="show" />
-          <field name="model_id" optional="show" />
-        </tree>
+        <list>
+          <field name="name" required="1"/>
+          <field name="llm_type" optional="hide"/>
+          <field name="status" optional="hide"/>
+          <field name="product_tmpl_id" optional="show"/>
+          <field name="model_id" optional="show"/>
+        </list>
       </field>
     </record>
+
     <record id="ai_agent_llm_form" model="ir.ui.view">
       <field name="name">ai.agent.llm.form</field>
       <field name="model">ai.agent.llm</field>
@@ -21,20 +22,20 @@
           <sheet>
             <group>
               <group>
-                <field name="name" modifiers="{&quot;required&quot;: true}" />
-                <field name="is_key_required" widget="boolean_toggle" />
-                <field name="ai_api_key" attrs="{'invisible': [('is_key_required', '=', False)]}" />
+                <field name="name" required="1"/>
+                <field name="is_key_required" widget="boolean_toggle"/>
+                <field name="ai_api_key" invisible="not is_key_required"/>
               </group>
               <group>
-                <field name="llm_type" />
-                <field name="model" />
+                <field name="llm_type"/>
+                <field name="model"/>
               </group>
             </group>
             <group>
-              <separator />
+              <separator/>
             </group>
           </sheet>
-          <chatter reload_on_post="True" />
+          <chatter reload_on_post="True"/>
         </form>
       </field>
     </record>
@@ -47,19 +48,19 @@
             <t t-name="kanban-box">
               <div class="oe_kanban_global_click">
                 <strong>
-                  <field name="name" />
+                  <field name="name"/>
                 </strong>
                 <div>
-                  <field name="llm_type" />
+                  <field name="llm_type"/>
                 </div>
                 <div>
-                  <field name="status" />
+                  <field name="status"/>
                 </div>
                 <div>
-                  <field name="product_tmpl_id" />
+                  <field name="product_tmpl_id"/>
                 </div>
                 <div>
-                  <field name="model_id" />
+                  <field name="model_id"/>
                 </div>
               </div>
             </t>
@@ -72,19 +73,19 @@
       <field name="model">ai.agent.llm</field>
       <field name="arch" type="xml">
         <search>
-          <field name="name" string="Name" />
-          <field name="llm_type" string="LLM Type" />
-          <field name="status" string="Status" />
-          <field name="product_tmpl_id" string="Product Template" />
-          <field name="model_id" string="Model" />
+          <field name="name" string="Name"/>
+          <field name="llm_type" string="LLM Type"/>
+          <field name="status" string="Status"/>
+          <field name="product_tmpl_id" string="Product Template"/>
+          <field name="model_id" string="Model"/>
         </search>
       </field>
     </record>
     <record id="action_ai_agent_llm" model="ir.actions.act_window">
       <field name="name">Agent LLM</field>
       <field name="res_model">ai.agent.llm</field>
-      <field name="view_mode">tree,form,kanban</field>
+      <field name="view_mode">list,form,kanban</field>
     </record>
-    <menuitem id="ai_agent.menu_ai_agent_llm" name="LLMs" parent="ai_agent.menu_ai_agent_configuration" action="action_ai_agent_llm" />
+    <menuitem id="ai_agent.menu_ai_agent_llm" name="LLMs" parent="ai_agent.menu_ai_agent_configuration" action="action_ai_agent_llm"/>
   </data>
 </odoo>
