@@ -250,9 +250,7 @@ class AIToolTestWizard(models.Model):
     def test_tool(self):
         results = ''
         try:
-            print("---", self.ai_tool_id.tool_lib)
             module = importlib.import_module(self.ai_tool_id.tool_lib)
-            print("module", module)
             TOOL = getattr(module, self.ai_tool_id.tool)
             results = TOOL(self.test_tool_input)
         except ImportError as e:

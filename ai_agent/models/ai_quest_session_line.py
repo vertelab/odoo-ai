@@ -95,7 +95,7 @@ class AIQuestSessionLine(models.Model):
                 }
                 line = self.create(record)
                 if debug:
-                    session.log(llm, f"[session] line {line.name=} {record=}")
+                    session.log("llm", f"[session] line {line.name=} {record=}")
 
     @api.depends("model_id", "ai_quest_session_id.session")
     def compute_display_name(self):

@@ -38,11 +38,6 @@ class MailChannel(models.Model):
             ai_quest = self.ai_quest_id
             user = self.env.ref('base.user_root')
 
-        print(ai_quest, user)
-
-        print("--", message.author_id )
-        print("--", user.partner_id )
-
         if message.author_id != user.partner_id:
             if ai_quest:  # use the AI as in logged user
                 bot_response = ai_quest.with_user(self.env.user).chat(message, self, user)
