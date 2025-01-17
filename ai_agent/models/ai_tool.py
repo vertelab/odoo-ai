@@ -219,6 +219,8 @@ class AITool(models.Model):
         # Get all methods ending with _tool
         all_tools = [getattr(self, attr) for attr in dir(self) if attr.endswith('_tool')]
 
+        _logger.error(f"{all_tools=}")
+
         if not tool_names:
             return all_tools
 
@@ -252,15 +254,10 @@ class AIToolTestWizard(models.Model):
 
     def test_tool(self):
         results=''
-        _logger.error(f"Importing {self.ai_tool_id.tool_lib=}")
-        module = importlib.import_module(self.ai_tool_id.tool_lib)
-        TOOL = getattr(module, self.ai_tool_id.tool)
-        results = list(TOOL.text(query, max_results=5))
-
         try:
             module = importlib.import_module(self.ai_tool_id.tool_lib)
             TOOL = getattr(module, self.ai_tool_id.tool)
-            results = list(TOOL.text(query, max_results=5))
+            results = TOOL(self.test_tool_input)
         except ImportError as e:
             _logger.error(f"Error importing {self.ai_tool_id.tool_lib}: {e}")
         except AttributeError as e:

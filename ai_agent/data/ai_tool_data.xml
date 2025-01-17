@@ -4,14 +4,14 @@
     <record id="ai_tool_internet_search_DDGO" model="ai.tool">
       <field name="name">Internet search using DDGO</field>
       <field name="tool">internet_search_DDGO</field>
-      <field name="tool_lib">odoo.addons.ai_agent.tools</field>
+      <field name="tool_lib">odoo.addons.ai_agent.tools.duckduckgo</field>
       <field name="image_128"></field>
     </record>
 
     <record id="ai_tool_process_content" model="ai.tool">
       <field name="name">Process content from a web page</field>
       <field name="tool">process_content</field>
-      <field name="tool_lib">odoo.addons.ai_agent.tools</field>
+      <field name="tool_lib">odoo.addons.ai_agent.tools.duckduckgo</field>
       <field name="image_128"></field>
     </record>
 
