@@ -1,6 +1,5 @@
 yfinance
 openai
-open-interpreter 
 langchain-core
 langchain-openai
 langchain-mistralai
@@ -10,17 +9,15 @@ langgraph
 langchain_community
 markdown
 transformers
-lxml_html_clean
 unidecode
 crawl4ai
 scrapy
 markdownify
-lxml_html_clean
 faiss-cpu
 pymupdf
 requests
 markdownify
 beautifulsoup4
-urllib
-pyopenssl==22.0.0
-cryptography==37.0.0
+typing_extensions
+duckduckgo_search
+lxml_html_clean

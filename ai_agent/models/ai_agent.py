@@ -10,9 +10,10 @@ from typing_extensions import TypedDict, List
 
 from httpx import HTTPStatusError
 from langchain.agents import AgentExecutor, create_openai_tools_agent
-from langchain.embeddings import OpenAIEmbeddings
+from langchain_community.embeddings import OpenAIEmbeddings
 # from langchain_core.messages import BaseMessage
-from langchain.memory import ConversationTokenBufferMemory, ChatMessageHistory
+from langchain.memory import ConversationTokenBufferMemory
+from langchain_community.chat_message_histories import ChatMessageHistory
 from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder, PromptTemplate
 from langchain.prompts import HumanMessagePromptTemplate, SystemMessagePromptTemplate
 from langchain.schema import AIMessage, HumanMessage, SystemMessage, BaseMessage
@@ -145,7 +146,7 @@ class AIAgent(models.Model):
         return extra_context
 
     def _chat_history(self, quest):
-        if not (quest.init_type in ['chat','channel'] and quest.use_chat_history):
+        if not (quest.init_type in ['chat', 'channel'] and quest.use_chat_history):
             return False
         chat_history = ChatMessageHistory()
         question = ''
@@ -175,7 +176,7 @@ class AIAgent(models.Model):
                      **kwargs):
         """
           Single agent prompting from quest.code
-          
+
           result = agents[0].prompt_agent(
                    session=session,
                    debug=quest.debug,
@@ -202,7 +203,7 @@ class AIAgent(models.Model):
         Goal: {goal}
         Backstory: {backstory}
         {extra_context}
-        
+
         Context and Guidelines:
         - Always maintain the specified role
         - Focus on achieving the defined goal
@@ -287,10 +288,8 @@ class AIAgent(models.Model):
         self.message_post(body=f"{body} | {self.last_run}", message_type="notification")
 
     # ------------------------------------------------------------
-    # LangGraph 
+    # LangGraph
     # ------------------------------------------------------------
-
-
 
     # def create_supervisor(self, quest, members):
     #     """Create a supervisor node that coordinates between different agents."""
@@ -362,12 +361,12 @@ class AIAgent(models.Model):
     #
     #     return supervisor_chain
 
-    def create_supervisor(self, quest, members,**kwarg):
+    def create_supervisor(self, quest, members, **kwarg):
         """Create a supervisor node that coordinates between different agents."""
-        
-        use_lang=f"Use language {self.env.user.lang} for the answer to Human" if quest.use_personal_lang else ''
-        memory = self._get_memory(kwarg.get('message',''))
-        
+
+        use_lang = f"Use language {self.env.user.lang} for the answer to Human" if quest.use_personal_lang else ''
+        memory = self._get_memory(kwarg.get('message', ''))
+
         system_prompt = f"""You are a supervisor coordinating between workers: {members}.
         Based on the request, determine which worker should handle the next step.
         Only choose FINISH when a complete response has been provided.
@@ -378,7 +377,7 @@ class AIAgent(models.Model):
         Guidelines: {quest.description}
         {self._extra_context(quest)}
         Message history: {self._chat_history(quest)}
-        
+
         Memory: {memory}
 
         Instructions:
@@ -410,7 +409,7 @@ class AIAgent(models.Model):
                     prompt += f"\n{msg.content}\n"
                 prompt += (f"\nBased on this, who should act next? Choose from: {members} or say FINISH if we have a "
                            f"complete response.")
-    
+
                 # Get LLM response
                 llm = self.ai_agent_llm_id.get_llm()
                 response = llm.invoke([
@@ -444,7 +443,7 @@ class AIAgent(models.Model):
                     return {"next": members[0]}
 
             except Exception as e:
-                _logger.error(f"Error in supervisor chain: {str(e)}",exc_info=True)
+                _logger.error(f"Error in supervisor chain: {str(e)}", exc_info=True)
                 return {"next": "FINISH"}
 
         return supervisor_chain
@@ -460,14 +459,14 @@ class AIAgent(models.Model):
             try:
                 # Get the latest message
                 latest_message = messages[-1].content if messages else ""
-                
+
                 system_message = SystemMessage(
                     content=f"""You are an agent with specific responsibilities.
                     Role: {self.ai_role}
                     Goal: {self.ai_goal}
                     Backstory: {self.ai_backstory}
                     Memory: {self._get_memory(latest_message)}
-    
+
                     Instructions:
                     - Provide thorough, complete responses
                     - Use available tools and memory when needed
@@ -478,7 +477,7 @@ class AIAgent(models.Model):
                 # Get LLM
                 llm = self.ai_agent_llm_id.get_llm()
                 tools = self._get_tools()
-                
+
                 langgraph_agent_executor = create_react_agent(llm, tools=tools)
 
                 # Prepare the input messages with system message first
@@ -522,49 +521,78 @@ class AIAgent(models.Model):
 
         return agent_node
 
-    def _get_memory(self,question):
-        def get_rag(vs,question):
+    def _get_memory(self, question):
+        def get_rag(vs, question):
             return "\n".join([doc.page_content for doc in vs.similarity_search(question, k=3)])
-        return '\n'.join([get_rag(m.ai_memory_id.load_faiss(),question) for m in self.ai_memory_ids])
+
+        return '\n'.join([get_rag(m.ai_memory_id.load_faiss(), question) for m in self.ai_memory_ids])
 
     def _get_tools(self):
         """Get the available tools for this agent."""
 
-        @tool("internet_search_DDGO", return_direct=False)
-        def internet_search_DDGO(query: str) -> str:
-            """Searches the internet using DuckDuckGo."""
+        tools = []
+
+        for ai_agent_tool_id in self.ai_tool_ids:
+
+            ai_tool_id = ai_agent_tool_id.ai_tool_id
 
             import importlib
 
-            # Assuming 'lib_name' is stored in the database as 'duckduckgo_search'
+            # Assuming 'tool_lib' is stored in the database as 'duckduckgo_search'
             # and 'class_name' is stored as 'DDGS'
-            lib_name = 'duckduckgo_search'
-            class_name = 'DDGS'
+            tool_lib = ai_tool_id.tool_lib
+            class_name = ai_tool_id.tool
+            TOOL = None
 
             try:
-                module = importlib.import_module(lib_name)
-                DDGS = getattr(module, class_name)
-
-                with DDGS() as ddgs:
-                    results = list(ddgs.text(query, max_results=5))
+                module = importlib.import_module(tool_lib)
+                TOOL = getattr(module, class_name)
             except ImportError as e:
-                _logger.error(f"Error importing {lib_name}: {e}")
+                _logger.error(f"Error importing {tool_lib}: {e}")
             except AttributeError as e:
-                _logger.error(f"Error: {class_name} not found in {lib_name}")
+                _logger.error(f"Error: {class_name} not found in {tool_lib}")
             except Exception as e:
                 _logger.error(f"An error occurred: {e}")
 
-            return results if results else "No results found."
+            tools.append(TOOL)
 
-        @tool("process_content", return_direct=False)
-        def process_content(url: str) -> str:
-            """Processes content from a webpage."""
+        return tools
 
-            from bs4 import BeautifulSoup
-            import requests
+        # @tool("internet_search_DDGO", return_direct=False)
+        # def internet_search_DDGO(query: str) -> str:
+        #     """Searches the internet using DuckDuckGo."""
 
-            response = requests.get(url)
-            soup = BeautifulSoup(response.content, 'html.parser')
-            return soup.get_text()
+        #     import importlib
 
-        return [internet_search_DDGO, process_content]
+        #     # Assuming 'lib_name' is stored in the database as 'duckduckgo_search'
+        #     # and 'class_name' is stored as 'DDGS'
+        #     lib_name = 'duckduckgo_search'
+        #     class_name = 'DDGS'
+
+        #     try:
+        #         module = importlib.import_module(lib_name)
+        #         DDGS = getattr(module, class_name)
+
+        #         with DDGS() as ddgs:
+        #             results = list(ddgs.text(query, max_results=5))
+        #     except ImportError as e:
+        #         _logger.error(f"Error importing {lib_name}: {e}")
+        #     except AttributeError as e:
+        #         _logger.error(f"Error: {class_name} not found in {lib_name}")
+        #     except Exception as e:
+        #         _logger.error(f"An error occurred: {e}")
+
+        #     return results if results else "No results found."
+
+        # @tool("process_content", return_direct=False)
+        # def process_content(url: str) -> str:
+        #     """Processes content from a webpage."""
+
+        #     from bs4 import BeautifulSoup
+        #     import requests
+
+        #     response = requests.get(url)
+        #     soup = BeautifulSoup(response.content, 'html.parser')
+        #     return soup.get_text()
+
+        # return [internet_search_DDGO, process_content]

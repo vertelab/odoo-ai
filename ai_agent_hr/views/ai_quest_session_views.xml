@@ -1,47 +1,47 @@
 <odoo>
-  <data>
-    <record id="ai_quest_session_list" model="ir.ui.view">
-      <field name="name">ai.quest.session.list.department</field>
-      <field name="model">ai.quest.session</field>
-      <field name="inherit_id" ref="ai_agent.ai_quest_session_list" />
-      <field name="arch" type="xml">
-        <field name="ai_quest_id" position="after">
-          <field name="department_id" />
-        </field>
-      </field>
-    </record>
-    <record id="ai_quest_session_search" model="ir.ui.view">
-      <field name="name">ai.quest.session.search.department</field>
-      <field name="model">ai.quest.session</field>
-      <field name="inherit_id" ref="ai_agent.ai_quest_session_search" />
-      <field name="arch" type="xml">
-        <field name="ai_quest_id" position="after">
-          <field name="department_id" />
-        </field>
-        <filter name="group_by_ai_quest" position="after">
-          <filter string="Department" name="group_by_department" context="{'group_by': 'department_id'}" />
-        </filter>
-      </field>
-    </record>
-    <record id="ai_quest_session_form" model="ir.ui.view">
-      <field name="name">ai.quest.session.form.department</field>
-      <field name="model">ai.quest.session</field>
-      <field name="inherit_id" ref="ai_agent.ai_quest_session_form" />
-      <field name="arch" type="xml">
-        <field name="ai_quest_id" position="after">
-          <field name="department_id" />
-        </field>
-      </field>
-    </record>
-    <record id="view_ai_quest_session_calendar" model="ir.ui.view">
-      <field name="name">ai.quest.session.calendar.department</field>
-      <field name="model">ai.quest.session</field>
-      <field name="inherit_id" ref="ai_agent.view_ai_quest_session_calendar" />
-      <field name="arch" type="xml">
-        <field name="ai_quest_id" position="after">
-          <field name="department_id" />
-        </field>
-      </field>
-    </record>
-  </data>
+    <data>
+        <record id="ai_quest_session_list" model="ir.ui.view">
+            <field name="name">ai.quest.session.list.department</field>
+            <field name="model">ai.quest.session</field>
+            <field name="inherit_id" ref="ai_agent.ai_quest_session_list" />
+            <field name="arch" type="xml">
+                <field name="ai_quest_id" position="after">
+                    <field name="department_id" />
+                </field>
+            </field>
+        </record>
+        <record id="ai_quest_session_search" model="ir.ui.view">
+            <field name="name">ai.quest.session.search.department</field>
+            <field name="model">ai.quest.session</field>
+            <field name="inherit_id" ref="ai_agent.ai_quest_session_search" />
+            <field name="arch" type="xml">
+                <field name="ai_quest_id" position="after">
+                    <field name="department_id" />
+                </field>
+                <filter name="group_by_ai_quest" position="after">
+                    <filter string="Department" name="group_by_department" context="{'group_by': 'department_id'}" />
+                </filter>
+            </field>
+        </record>
+        <record id="ai_quest_session_form" model="ir.ui.view">
+            <field name="name">ai.quest.session.form.department</field>
+            <field name="model">ai.quest.session</field>
+            <field name="inherit_id" ref="ai_agent.ai_quest_session_form" />
+            <field name="arch" type="xml">
+                <field name="ai_quest_id" position="after">
+                    <field name="department_id" />
+                </field>
+            </field>
+        </record>
+        <record id="view_ai_quest_session_calendar" model="ir.ui.view">
+            <field name="name">ai.quest.session.calendar.department</field>
+            <field name="model">ai.quest.session</field>
+            <field name="inherit_id" ref="ai_agent.view_ai_quest_session_calendar" />
+            <field name="arch" type="xml">
+                <field name="ai_quest_id" position="after">
+                    <field name="department_id" />
+                </field>
+            </field>
+        </record>
+    </data>
 </odoo>
