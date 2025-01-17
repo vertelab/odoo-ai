@@ -531,41 +531,69 @@ class AIAgent(models.Model):
     def _get_tools(self):
         """Get the available tools for this agent."""
 
-        @tool("internet_search_DDGO", return_direct=False)
-        def internet_search_DDGO(query: str) -> str:
-            """Searches the internet using DuckDuckGo."""
+        tools = []
+
+        for ai_agent_tool_id in self.ai_tool_ids:
+            
+            ai_tool_id = ai_agent_tool_id.ai_tool_id
 
             import importlib
 
-            # Assuming 'lib_name' is stored in the database as 'duckduckgo_search'
+            # Assuming 'tool_lib' is stored in the database as 'duckduckgo_search'
             # and 'class_name' is stored as 'DDGS'
-            lib_name = 'duckduckgo_search'
-            class_name = 'DDGS'
+            tool_lib = ai_tool_id.tool_lib
+            class_name = ai_tool_id.tool
+            TOOL = None
 
             try:
-                module = importlib.import_module(lib_name)
-                DDGS = getattr(module, class_name)
-
-                with DDGS() as ddgs:
-                    results = list(ddgs.text(query, max_results=5))
+                module = importlib.import_module(tool_lib)
+                TOOL = getattr(module, class_name)
             except ImportError as e:
-                _logger.error(f"Error importing {lib_name}: {e}")
+                _logger.error(f"Error importing {tool_lib}: {e}")
             except AttributeError as e:
-                _logger.error(f"Error: {class_name} not found in {lib_name}")
+                _logger.error(f"Error: {class_name} not found in {tool_lib}")
             except Exception as e:
                 _logger.error(f"An error occurred: {e}")
 
-            return results if results else "No results found."
+            tools.append(TOOL)
 
-        @tool("process_content", return_direct=False)
-        def process_content(url: str) -> str:
-            """Processes content from a webpage."""
+        return tools
 
-            from bs4 import BeautifulSoup
-            import requests
+        # @tool("internet_search_DDGO", return_direct=False)
+        # def internet_search_DDGO(query: str) -> str:
+        #     """Searches the internet using DuckDuckGo."""
 
-            response = requests.get(url)
-            soup = BeautifulSoup(response.content, 'html.parser')
-            return soup.get_text()
+        #     import importlib
 
-        return [internet_search_DDGO, process_content]
+        #     # Assuming 'lib_name' is stored in the database as 'duckduckgo_search'
+        #     # and 'class_name' is stored as 'DDGS'
+        #     lib_name = 'duckduckgo_search'
+        #     class_name = 'DDGS'
+
+        #     try:
+        #         module = importlib.import_module(lib_name)
+        #         DDGS = getattr(module, class_name)
+
+        #         with DDGS() as ddgs:
+        #             results = list(ddgs.text(query, max_results=5))
+        #     except ImportError as e:
+        #         _logger.error(f"Error importing {lib_name}: {e}")
+        #     except AttributeError as e:
+        #         _logger.error(f"Error: {class_name} not found in {lib_name}")
+        #     except Exception as e:
+        #         _logger.error(f"An error occurred: {e}")
+
+        #     return results if results else "No results found."
+
+        # @tool("process_content", return_direct=False)
+        # def process_content(url: str) -> str:
+        #     """Processes content from a webpage."""
+
+        #     from bs4 import BeautifulSoup
+        #     import requests
+
+        #     response = requests.get(url)
+        #     soup = BeautifulSoup(response.content, 'html.parser')
+        #     return soup.get_text()
+
+        # return [internet_search_DDGO, process_content]
