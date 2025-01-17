@@ -21,6 +21,6 @@ pymupdf
 requests
 markdownify
 beautifulsoup4
-urllib
+urllib3
 pyopenssl==22.0.0
 cryptography==37.0.0
