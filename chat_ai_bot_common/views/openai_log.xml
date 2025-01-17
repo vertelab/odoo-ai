@@ -2,10 +2,11 @@
 <odoo>
     <data>
 
-        <record id="odoogpt_openai_log_view_list" model="ir.ui.view">
-            <field name="name">openai.log.view.list</field>
+        <record id="odoogpt_openai_log_view_tree" model="ir.ui.view">
+            <field name="name">openai.log.view.tree</field>
             <field name="model">openai.log</field>
-            <field name="arch" type="xml"> list<name="openai_model_tree" string="OpenAI Logs" create="0" edit="0">
+            <field name="arch" type="xml">
+                <list name="openai_model_tree" string="OpenAI Logs" create="0" edit="0">
                     <field name="date" />
                     <field name="thread" optional="hide" />
                     <field name="run" optional="hide" />
@@ -14,7 +15,8 @@
                     <field name="status_code" optional="hide" />
                     <field name="assistant" optional="hide" />
                     <field name="author_id" optional="hide" />
-                    <field name="message" optional="hide" /><list/
+                    <field name="message" optional="hide" />
+                </list>
             </field>
         </record>
 
@@ -24,28 +26,24 @@
             <field name="arch" type="xml">
                 <form name="openai_model_form" create="0" edit="0">
                     <sheet>
-                        <group colspan="2" >
+                        <group colspan="2">
                             <field name="date" />
-                    <field name="thread"  />
-                    <field name="run"  />
-                    <field name="role"  />
-                    <field name="channel_id"  />
-                    <field name="status_code"  />
-                    <field name="assistant"  />
-                    <field name="author_id"  />
+                            <field name="thread" />
+                            <field name="run" />
+                            <field name="role" />
+                            <field name="channel_id" />
+                            <field name="status_code" />
+                            <field name="assistant" />
+                            <field name="author_id" />
                         </group>
-
                         <group colspan="2" cols="1" string="Request/resp">
                             <div colspan="2">
                                 <div>
                                     <label for="message" />
                                 </div>
                                 <field name="message" nolabel="1" class="font-monospace" />
-    
                             </div>
                         </group>
-                        
-                        
                     </sheet>
                 </form>
             </field>

@@ -21,7 +21,7 @@ class ResUsers(models.Model):
             try:
                 env = api.Environment(cr, self.env.uid, self.env.context)
                 user_id = env['res.users'].browse(recipient.id)
-                channel_id = env['mail.channel'].browse(channel.id)
+                channel_id = env['discuss.channel'].browse(channel.id)
                 openai_client = env['openai.thread'].client_init(user_id)
                 thread = env['openai.thread'].sudo().thread_init(openai_client, channel_id, user_id, author)
                 thread.add_message(openai_client, message, user_id, role="user")

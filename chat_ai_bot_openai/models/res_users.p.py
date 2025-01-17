@@ -20,7 +20,7 @@ class ResUsers(models.Model):
                 # #if VERSION >= "17.0"
                 channel_id = env['discuss.channel'].browse(channel.id)
                 # #elif VERSION == "16.0"
-                channel_id = env['mail.channel'].browse(channel.id)
+                channel_id = env['discuss.channel'].browse(channel.id)
                 # #endif
                 openai_client = env['openai.thread'].openai_client_init(user_id)
 

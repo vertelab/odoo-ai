@@ -14,7 +14,7 @@ class OpenaiLog(models.Model):
     # #if VERSION >= "17.0"
     channel_id = fields.Many2one(comodel_name='discuss.channel', string='Channel')
     # #elif VERSION == "16.0"
-    channel_id = fields.Many2one(comodel_name='mail.channel', string='Channel')
+    channel_id = fields.Many2one(comodel_name='discuss.channel', string='Channel')
     # #endif
     assistant = fields.Char(required=False)
     role = fields.Char(required=False)

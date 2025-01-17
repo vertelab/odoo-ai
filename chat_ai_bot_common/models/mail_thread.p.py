@@ -31,7 +31,7 @@ class MailThread(models.AbstractModel):
         # #if VERSION >= "17.0"
         if msg_vals['model'] == 'discuss.channel':
         # #elif VERSION == "16.0"
-        if msg_vals['model'] == 'mail.channel':
+        if msg_vals['model'] == 'discuss.channel':
         # #endif
 
             obj = self.env[msg_vals['model']].browse(msg_vals['res_id'])
@@ -56,7 +56,7 @@ class MailThread(models.AbstractModel):
 # #if VERSION >= "17.0"
 #~ obj = self.env['discuss.channel'].browse(obj.id)
 # #elif VERSION == "16.0"
-#~ obj = self.env['mail.channel'].browse(obj.id)
+#~ obj = self.env['discuss.channel'].browse(obj.id)
 # #endif
 # ~ recipient = self.env['res.users'].browse(recipient.id)
 # ~ recipient.ai_send_message(

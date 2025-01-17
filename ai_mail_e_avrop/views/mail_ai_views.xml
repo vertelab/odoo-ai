@@ -20,7 +20,9 @@
                         </button>
                     </div>
                     <div class="oe_title">
-                        <h1><field class="text-break" name="name" placeholder="e.g. Subject"/></h1>
+                        <h1>
+                            <field class="text-break" name="name" placeholder="e.g. Subject"/>
+                        </h1>
                     </div>
                     <group>
                         <group>
@@ -37,11 +39,7 @@
                         </page>
                     </notebook>
                 </sheet>
-                <div class="oe_chatter">
-                    <field name="message_follower_ids"/>
-                    <field name="activity_ids"/>
-                    <field name="message_ids" options="{'post_refresh': 'recipients'}"/>
-                </div>
+                <chatter/>
             </form>
         </field>
     </record>
@@ -50,11 +48,14 @@
     <record id="ai_model_tree_view_leads" model="ir.ui.view">
         <field name="name">mail.ai.tree.lead</field>
         <field name="model">mail.ai</field>
-        <field name="arch" type="xml"> list<create="false" duplicate="false">
+        <field name="arch" type="xml">
+            <list>
+                <create="false" duplicate="false"/>
                 <field name="company_id" invisible="1"/>
                 <field name="create_date" optional="hide"/>
                 <field name="name"/>
-                <field name="mail_channel_id"/><list/
+                <field name="mail_channel_id"/>
+            </list>
         </field>
     </record>
 
@@ -79,7 +80,8 @@
         <field name="help" type="html">
             <p class="o_view_nocontent_smiling_face">
                 Create a Lead
-            </p><p>
+            </p>
+            <p>
                 Leads are the qualification step before the creation of an opportunity.
             </p>
         </field>

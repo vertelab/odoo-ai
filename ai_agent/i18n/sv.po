@@ -1,0 +1,2117 @@
+# Translation of Odoo Server.
+# This file contains the translation of the following modules:
+# 	* ai_agent
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: Odoo Server 16.0-20241230\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2025-01-07 10:42+0000\n"
+"PO-Revision-Date: 2025-01-07 16:30+0100\n"
+"Last-Translator: \n"
+"Language-Team: \n"
+"Language: sv\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+"X-Generator: Poedit 3.4.2\n"
+
+#. module: ai_agent
+#: model_terms:ir.ui.view,arch_db:ai_agent.view_ai_agent_kanban
+msgid "<i class=\"fa fa-clock-o\" title=\"Date\"/>"
+msgstr "<i class=\"fa fa-clock-o\" title=\"Datum\"/>"
+
+#. module: ai_agent
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_agent_llm_kanban
+msgid "<span class=\"fa fa-clock-o me-2\" title=\"Dates\"/>"
+msgstr "<span class=\"fa fa-clock-o me-2\" title=\"Datum\"/>"
+
+#. module: ai_agent
+#: model_terms:ir.ui.view,arch_db:ai_agent.view_ai_quest_kanban
+msgid "<span class=\"fa fa-ellipsis-v\" aria-label=\"Manage\" title=\"Manage\"/>"
+msgstr "<span class=\"fa fa-ellipsis-v\" aria-label=\"Hantera\" title=\"Hantera\"/>"
+
+#. module: ai_agent
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_agent_llm_kanban
+msgid "<span>&amp;nbsp;</span>"
+msgstr "<span>&amp;nbsp;</span>"
+
+#. module: ai_agent
+#: model_terms:ir.ui.view,arch_db:ai_agent.view_ai_quest_kanban
+msgid "<strong>Agents: </strong>"
+msgstr "<strong>Agenter: </strong> </strong>"
+
+#. module: ai_agent
+#: model_terms:ir.ui.view,arch_db:ai_agent.view_ai_quest_kanban
+msgid "<strong>Initiate: </strong>"
+msgstr "<strong>Initiera: </strong>"
+
+#. module: ai_agent
+#: model_terms:ir.ui.view,arch_db:ai_agent.view_ai_quest_kanban
+msgid "<strong>Sessions: </strong>"
+msgstr "<strong>Sessioner: </strong>"
+
+#. module: ai_agent
+#: model:ir.model.fields,help:ai_agent.field_ai_quest__alias_defaults
+msgid ""
+"A Python dictionary that will be evaluated to provide default values when "
+"creating new records for this alias."
+msgstr ""
+"En Python-ordlista som utvärderas för att ange standardvärden när nya poster "
+"skapas för detta alias."
+
+#. module: ai_agent
+#: model:ir.model,name:ai_agent.model_ai_agent
+#: model:ir.model,name:ai_agent.model_ai_agent_test_wizard
+#: model:ir.model,name:ai_agent.model_ai_quest_test_mail_wizard
+msgid "AI Agent"
+msgstr "AI-agent"
+
+#. module: ai_agent
+#: model:ir.model,name:ai_agent.model_ai_agent_data
+msgid "AI Agent Data"
+msgstr "AI Agent Data"
+
+#. module: ai_agent
+#: model:ir.model,name:ai_agent.model_ai_agent_llm
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_agent_search
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_session_search
+msgid "AI Agent LLM"
+msgstr "AI Agent LLM"
+
+#. module: ai_agent
+#: model_terms:ir.ui.view,arch_db:ai_agent.view_ai_agent_llm_tree
+msgid "AI Agent LLMs"
+msgstr "AI-agent LLM:er"
+
+#. module: ai_agent
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_agent_list
+#: model_terms:ir.ui.view,arch_db:ai_agent.view_ai_agent_calendar
+msgid "AI Agents"
+msgstr "AI-agenter"
+
+#. module: ai_agent
+#: model:ir.ui.menu,name:ai_agent.menu_ai_agent_root
+msgid "AI Orchestration"
+msgstr "AI-orkestrering"
+
+#. module: ai_agent
+#: model:ir.model.fields.selection,name:ai_agent.selection__ai_agent__ai_type__ai-programmer
+#: model:ir.model.fields.selection,name:ai_agent.selection__ai_quest__ai_type__ai-programmer
+msgid "AI Programmer"
+msgstr "AI-programmerare"
+
+#. module: ai_agent
+#: model:ir.actions.act_window,name:ai_agent.action_ai_quest
+#: model:ir.model,name:ai_agent.model_ai_quest
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_form
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_list
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_session_search
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_session_object_search
+msgid "AI Quest"
+msgstr "AI Quest"
+
+#. module: ai_agent
+#: model:ir.model,name:ai_agent.model_ai_quest_agent
+msgid "AI Quest AGent"
+msgstr "AI Quest AGent"
+
+#. module: ai_agent
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_form
+msgid "AI Quest Agents"
+msgstr "AI Quest-agenter"
+
+#. module: ai_agent
+#: model:ir.actions.act_window,name:ai_agent.action_ai_quest_session
+#: model:ir.model,name:ai_agent.model_ai_quest_session
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_session_form
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_session_line_search
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_session_list
+msgid "AI Quest Session"
+msgstr "AI Quest-session"
+
+#. module: ai_agent
+#: model:ir.model,name:ai_agent.model_ai_quest_session_line
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_session_line_form
+msgid "AI Quest Session Line"
+msgstr "AI Quest Session Line"
+
+#. module: ai_agent
+#: model_terms:ir.ui.view,arch_db:ai_agent.view_ai_quest_session_line_calendar
+msgid "AI Quest Session Lines"
+msgstr "AI Quest Sessionslinjer"
+
+#. module: ai_agent
+#: model_terms:ir.ui.view,arch_db:ai_agent.view_ai_quest_session_calendar
+msgid "AI Quest Sessions"
+msgstr "AI Quest-sessioner"
+
+#. module: ai_agent
+#: model_terms:ir.ui.view,arch_db:ai_agent.view_ai_quest_calendar
+msgid "AI Quests"
+msgstr "AI-uppdrag"
+
+#. module: ai_agent
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_session_object_search
+msgid "AI Session"
+msgstr "AI-session"
+
+#. module: ai_agent
+#: model:ir.actions.act_window,name:ai_agent.action_ai_session_object
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_session_object_form
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_session_object_list
+msgid "AI Session Object"
+msgstr "AI-sessionsobjekt"
+
+#. module: ai_agent
+#: model_terms:ir.ui.view,arch_db:ai_agent.view_ai_session_object_calendar
+msgid "AI Session Objects"
+msgstr "AI-sessionsobjekt"
+
+#. module: ai_agent
+#: model:ir.model,name:ai_agent.model_ai_session_object
+msgid "AI Sesson Object"
+msgstr "AI Sesson Objekt"
+
+#. module: ai_agent
+#: model:ir.model.fields.selection,name:ai_agent.selection__product_attribute_value__licence__ai-sweden-llm-ai-model
+msgid "AI Sweden's LLM AI Model License Agreement"
+msgstr "AI Swedens LLM AI Model Licensavtal"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_product_product__ai_session_lines_ids
+#: model:ir.model.fields,field_description:ai_agent.field_product_template__ai_session_lines_ids
+msgid "AI polletts"
+msgstr "AI-tokens"
+
+#. module: ai_agent
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_agent_search
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_search
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_session_search
+msgid "AI Type"
+msgstr "AI-typ"
+
+#. module: ai_agent
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_session_line_search
+msgid "API Type"
+msgstr "API-typ"
+
+#. module: ai_agent
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_form
+msgid "Accept Emails From"
+msgstr "Acceptera e-postmeddelanden från"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent__message_needaction
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_llm__message_needaction
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest__message_needaction
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session__message_needaction
+msgid "Action Needed"
+msgstr "Åtgärder krävs"
+
+#. module: ai_agent
+#. odoo-python
+#: code:addons/ai_agent/models/ai_agent.py:0
+#: code:addons/ai_agent/models/ai_quest.py:0
+#: code:addons/ai_agent/models/ai_quest_session.py:0
+#: model:ir.model.fields.selection,name:ai_agent.selection__ai_agent__status__active
+#: model:ir.model.fields.selection,name:ai_agent.selection__ai_quest__status__active
+#: model:ir.model.fields.selection,name:ai_agent.selection__ai_quest_session__status__active
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_search
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_session_search
+#, python-format
+msgid "Active"
+msgstr "Aktiv"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent__activity_ids
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_llm__activity_ids
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest__activity_ids
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session__activity_ids
+msgid "Activities"
+msgstr "Aktiviteter"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent__activity_exception_decoration
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_llm__activity_exception_decoration
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest__activity_exception_decoration
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session__activity_exception_decoration
+msgid "Activity Exception Decoration"
+msgstr "Aktivitet Undantag Dekoration"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent__activity_state
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_llm__activity_state
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest__activity_state
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session__activity_state
+msgid "Activity State"
+msgstr "Aktivitet Stat"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent__activity_type_icon
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_llm__activity_type_icon
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest__activity_type_icon
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session__activity_type_icon
+msgid "Activity Type Icon"
+msgstr "Aktivitetstyp Ikon"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session_line__llm_additional_rate
+msgid "Additional rate"
+msgstr "Ytterligare pris"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_data__agent_id
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_agent__ai_agent_id
+msgid "Agent"
+msgstr "Agent"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest__agent_count
+msgid "Agent Count"
+msgstr "Agenträkning"
+
+#. module: ai_agent
+#: model:ir.actions.act_window,name:ai_agent.action_ai_agent_llm
+msgid "Agent LLM"
+msgstr "LLM-agent"
+
+#. module: ai_agent
+#: model:ir.actions.act_window,name:ai_agent.action_ai_agent
+#: model:ir.ui.menu,name:ai_agent.menu_ai_agent_menu_menu
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_agent_llm_form
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_form
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_session_form
+msgid "Agents"
+msgstr "Agenter"
+
+#. module: ai_agent
+#: model:ir.ui.menu,name:ai_agent.menu_ai_agent_menu
+msgid "Agents and Quests"
+msgstr "Agenter och uppdrag"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_llm__ai_agent_ids
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_test_wizard__ai_agent_id
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest__ai_agent_ids
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session__ai_agent_id
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session__ai_agent_ids
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session_line__ai_agent_id
+msgid "Ai Agent"
+msgstr "Ai Agent"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_llm__ai_agent_count
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session__ai_agent_count
+msgid "Ai Agent Count"
+msgstr "Ai Agent Räkna"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent__ai_agent_data_ids
+msgid "Ai Agent Data"
+msgstr "Ai Agent Data"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_data__ai_agent_data_type
+msgid "Ai Agent Data Type"
+msgstr "Ai Agent Datatyp"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session__ai_agent_llm_id
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session__ai_agent_llm_ids
+msgid "Ai Agent Llm"
+msgstr "Ai Agent Llm"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_llm__ai_api_key
+#: model:ir.model.fields,field_description:ai_agent.field_product_product__ai_api_key
+#: model:ir.model.fields,field_description:ai_agent.field_product_template__ai_api_key
+msgid "Ai Api Key"
+msgstr "Ai Api Nyckel"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent__ai_discription
+msgid "Ai Discription"
+msgstr "Ai Beskrivning"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_test_wizard__ai_input
+msgid "Ai Input"
+msgstr "Ai Inmatning"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session_line__ai_llm_id
+msgid "Ai Llm"
+msgstr "Ai Llm"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session__ai_llm_count
+msgid "Ai Llm Count"
+msgstr "Ai Llm Räkning"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent__ai_prompt_template
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_test_wizard__ai_prompt_template
+msgid "Ai Prompt Template"
+msgstr "Mall för AI-Instruktion"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_agent__ai_quest_id
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session__ai_quest_id
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session_line__ai_quest_id
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_test_mail_wizard__ai_quest_id
+#: model:ir.model.fields,field_description:ai_agent.field_ai_session_object__ai_quest_id
+#: model:ir.ui.menu,name:ai_agent.menu_ai_quest
+msgid "Ai Quest"
+msgstr "Ai Quest"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session_line__ai_quest_session_id
+#: model:ir.ui.menu,name:ai_agent.menu_ai_quest_session
+msgid "Ai Quest Session"
+msgstr "Ai Quest Session"
+
+#. module: ai_agent
+#: model:ir.ui.menu,name:ai_agent.menu_ai_quest_session_line
+msgid "Ai Quest Session Lines"
+msgstr "Ai Quest Session Lines"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_session_object__ai_session_id
+msgid "Ai Session"
+msgstr "Ai Session"
+
+#. module: ai_agent
+#: model:ir.ui.menu,name:ai_agent.menu_ai_session_object
+msgid "Ai Session Object"
+msgstr "Ai Session Objekt"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent__ai_type
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest__ai_type
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session__ai_type
+msgid "Ai Type"
+msgstr "Ai Typ"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest__alias_id
+msgid "Alias"
+msgstr "Alias"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest__alias_contact
+msgid "Alias Contact Security"
+msgstr "Alias Kontakt Säkerhet"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest__alias_name
+msgid "Alias Name"
+msgstr "Alias-namn"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest__alias_domain
+msgid "Alias domain"
+msgstr "Alias domän"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest__alias_model_id
+msgid "Aliased Model"
+msgstr "Aliasmodell"
+
+#. module: ai_agent
+#: model:product.template,name:ai_agent.anthropic_product_template
+msgid "Anthropic"
+msgstr "Antropisk"
+
+#. module: ai_agent
+#: model:ir.model.fields.selection,name:ai_agent.selection__product_attribute_value__licence__apache-2_0
+msgid "Apache 2.0 License"
+msgstr "Apache 2.0-licens"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session_line__api_type_id
+msgid "Api Type"
+msgstr "Api-typ"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent__message_attachment_count
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_llm__message_attachment_count
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest__message_attachment_count
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session__message_attachment_count
+msgid "Attachment Count"
+msgstr "Antal bifogade filer"
+
+#. module: ai_agent
+#: model:ir.model,name:ai_agent.model_product_attribute_value
+msgid "Attribute Value"
+msgstr "Atributvärden"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest__avatar_128
+msgid "Avatar"
+msgstr "Avatar"
+
+#. module: ai_agent
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_session_search
+msgid "Average Time"
+msgstr "Genomsnittlig tid"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent__ai_backstory
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_agent_form
+msgid "Backstory"
+msgstr "Bakgrundshistoria"
+
+#. module: ai_agent
+#: model:ir.model.fields.selection,name:ai_agent.selection__product_attribute_value__licence__bigcode-open-rail-m-v1
+msgid "BigCode Open RAIL-M v1 License Agreement"
+msgstr "BigCode Open RAIL-M v1 Licensavtal"
+
+#. module: ai_agent
+#: model:ir.model.fields,help:ai_agent.field_ai_quest__model_id
+msgid "Bind this Quest to yhis model"
+msgstr "Bind detta uppdrag till denna modell"
+
+#. module: ai_agent
+#: model_terms:ir.ui.view,arch_db:ai_agent.test_mail_wizard_view
+#: model_terms:ir.ui.view,arch_db:ai_agent.test_wizard_view
+msgid "Cancel"
+msgstr "Avbryt"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest__channel_id
+msgid "Channel"
+msgstr "Kanal"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest__chat_user_id
+msgid "Chat User"
+msgstr "Chattanvändare"
+
+#. module: ai_agent
+#: model:ir.model.fields.selection,name:ai_agent.selection__ai_quest__init_type__channel
+msgid "Chat with Channel"
+msgstr "Chatta med kanal"
+
+#. module: ai_agent
+#: model:ir.model.fields.selection,name:ai_agent.selection__ai_quest__init_type__chat
+msgid "Chat with User"
+msgstr "Chatta med användare"
+
+#. module: ai_agent
+#: model:ir.model.fields,help:ai_agent.field_ai_agent__ai_agent_llm_id
+msgid "Choose Large Language Model"
+msgstr "Välj stor språkmodell"
+
+#. module: ai_agent
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_form
+msgid "Code"
+msgstr "Kod"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent__color
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_llm__color
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest__color
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session__color
+#: model:ir.model.fields,field_description:ai_agent.field_ai_session_object__color
+msgid "Color"
+msgstr "Färg"
+
+#. module: ai_agent
+#: model:ir.model.fields.selection,name:ai_agent.selection__product_attribute_value__licence__commercial
+msgid "Commercial License"
+msgstr "Kommersiell licens"
+
+#. module: ai_agent
+#: model:ir.model,name:ai_agent.model_res_company
+msgid "Companies"
+msgstr "Bolag"
+
+#. module: ai_agent
+#: model:ir.ui.menu,name:ai_agent.menu_ai_agent_configuration
+msgid "Configuration"
+msgstr "Konfiguration"
+
+#. module: ai_agent
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_form
+msgid "Configure a custom domain"
+msgstr "Konfigurera en anpassad domän"
+
+#. module: ai_agent
+#: model:ir.model.fields.selection,name:ai_agent.selection__ai_agent_llm__status__confirmed
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_agent_llm_search
+msgid "Confirmed"
+msgstr "Bekräftad"
+
+#. module: ai_agent
+#: model:ir.actions.server,name:ai_agent.ai_quest_agent_creation_server_agent
+msgid "Create Agents for Quest"
+msgstr "Skapa ombud för Quest"
+
+#. module: ai_agent
+#: model:ir.actions.server,name:ai_agent.create_llm
+msgid "Create LLM for each model"
+msgstr "Skapa LLM för varje modell"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent__create_uid
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_data__create_uid
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_llm__create_uid
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_test_wizard__create_uid
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest__create_uid
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_agent__create_uid
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session__create_uid
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session_line__create_uid
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_test_mail_wizard__create_uid
+#: model:ir.model.fields,field_description:ai_agent.field_ai_session_object__create_uid
+msgid "Created by"
+msgstr "Skapad av"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent__create_date
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_data__create_date
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_llm__create_date
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_test_wizard__create_date
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest__create_date
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_agent__create_date
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session__create_date
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session_line__create_date
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_test_mail_wizard__create_date
+#: model:ir.model.fields,field_description:ai_agent.field_ai_session_object__create_date
+msgid "Created on"
+msgstr "Skapad på"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session_line__token_currency
+msgid "Currency"
+msgstr "Valuta"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest__alias_bounced_content
+msgid "Custom Bounced Message"
+msgstr "Anpassat meddelande om studs"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest__partner_id
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_search
+msgid "Customer"
+msgstr "Kund"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_data__data
+msgid "Data"
+msgstr "Uppgifter"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session_line__data_type_id
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_session_line_search
+msgid "Data Type"
+msgstr "Typ av data"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_data__data_uuid
+msgid "Data Uuid"
+msgstr "Data Uuid"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session__db_name
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session_line__db_name
+msgid "Database Name"
+msgstr "Databasens namn"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session__db_uuid
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session_line__db_uuid
+msgid "Database UUID"
+msgstr "Databas UUID"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_session_object__datetime
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_session_object_search
+msgid "Date"
+msgstr "Datum"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session_line__datetime
+msgid "Datetime"
+msgstr "Datatid"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent__debug
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session__debug
+msgid "Debug"
+msgstr "Felsökning"
+
+#. module: ai_agent
+#: model:ir.model.fields.selection,name:ai_agent.selection__ai_agent__ai_type__default
+#: model:ir.model.fields.selection,name:ai_agent.selection__ai_agent_data__ai_agent_data_type__default
+#: model:ir.model.fields.selection,name:ai_agent.selection__ai_quest__ai_type__default
+#: model:ir.model.fields.selection,name:ai_agent.selection__ai_quest_session__ai_type__default
+msgid "Default"
+msgstr "Standard"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest__alias_defaults
+msgid "Default Values"
+msgstr "Standardvärden"
+
+#. module: ai_agent
+#: model_terms:ir.ui.view,arch_db:ai_agent.view_ai_agent_kanban
+#: model_terms:ir.ui.view,arch_db:ai_agent.view_ai_quest_kanban
+msgid "Delete"
+msgstr "Radera"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest__description
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_form
+msgid "Description"
+msgstr "Beskrivning"
+
+#. module: ai_agent
+#: model:ir.model,name:ai_agent.model_mail_channel
+msgid "Discussion Channel"
+msgstr "Kanal"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent__display_name
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_data__display_name
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_llm__display_name
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_test_wizard__display_name
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest__display_name
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_agent__display_name
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session__display_name
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session_line__display_name
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_test_mail_wizard__display_name
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_session_line_search
+msgid "Display Name"
+msgstr "Visningsnamn"
+
+#. module: ai_agent
+#. odoo-python
+#: code:addons/ai_agent/models/ai_agent.py:0
+#: code:addons/ai_agent/models/ai_quest.py:0
+#: code:addons/ai_agent/models/ai_quest_session.py:0
+#: model:ir.model.fields.selection,name:ai_agent.selection__ai_agent__status__done
+#: model:ir.model.fields.selection,name:ai_agent.selection__ai_quest__status__done
+#: model:ir.model.fields.selection,name:ai_agent.selection__ai_quest_session__status__done
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_search
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_session_search
+#, python-format
+msgid "Done"
+msgstr "Klar"
+
+#. module: ai_agent
+#. odoo-python
+#: code:addons/ai_agent/models/ai_agent.py:0
+#: code:addons/ai_agent/models/ai_quest.py:0
+#: code:addons/ai_agent/models/ai_quest_session.py:0
+#: model:ir.model.fields.selection,name:ai_agent.selection__ai_agent__status__draft
+#: model:ir.model.fields.selection,name:ai_agent.selection__ai_quest__status__draft
+#: model:ir.model.fields.selection,name:ai_agent.selection__ai_quest_session__status__draft
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_search
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_session_search
+#, python-format
+msgid "Draft"
+msgstr "Utkast"
+
+#. module: ai_agent
+#: model_terms:ir.ui.view,arch_db:ai_agent.view_ai_agent_kanban
+#: model_terms:ir.ui.view,arch_db:ai_agent.view_ai_quest_kanban
+msgid "Dropdown menu"
+msgstr "Rullgardinsmeny"
+
+#. module: ai_agent
+#: model_terms:ir.ui.view,arch_db:ai_agent.view_ai_agent_kanban
+#: model_terms:ir.ui.view,arch_db:ai_agent.view_ai_quest_kanban
+msgid "Edit"
+msgstr "Redigera"
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.gptj_product_attribute_value
+msgid "EleutherAI/gpt-j-6B"
+msgstr "EleutherAI/gpt-j-6B"
+
+#. module: ai_agent
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_form
+msgid "Email Alias"
+msgstr "Alias för e-post"
+
+#. module: ai_agent
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_session_search
+msgid "End Date"
+msgstr "Slutdatum"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session__enddate
+msgid "Enddate"
+msgstr "Slutdatum"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_llm__endpoint
+msgid "Endpoint"
+msgstr "Slutpunkt"
+
+#. module: ai_agent
+#. odoo-python
+#: code:addons/ai_agent/models/ai_agent.py:0
+#: code:addons/ai_agent/models/ai_quest.py:0
+#: code:addons/ai_agent/models/ai_quest_session.py:0
+#: model:ir.model.fields.selection,name:ai_agent.selection__ai_agent__status__error
+#: model:ir.model.fields.selection,name:ai_agent.selection__ai_agent_llm__status__error
+#: model:ir.model.fields.selection,name:ai_agent.selection__ai_quest__status__error
+#: model:ir.model.fields.selection,name:ai_agent.selection__ai_quest_session__status__error
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_agent_llm_search
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_search
+#, python-format
+msgid "Error"
+msgstr "Fel"
+
+#. module: ai_agent
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_agent_llm_search
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_agent_search
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_search
+msgid "Favorite"
+msgstr "Favorit"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest__filter_domain
+msgid "Filter Name"
+msgstr "Filtrets namn"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session_line__finish_reason
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_session_line_search
+msgid "Finish Reason"
+msgstr "Avsluta Orsak"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent__message_follower_ids
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_llm__message_follower_ids
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest__message_follower_ids
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session__message_follower_ids
+msgid "Followers"
+msgstr "Följare"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent__message_partner_ids
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_llm__message_partner_ids
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest__message_partner_ids
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session__message_partner_ids
+msgid "Followers (Partners)"
+msgstr "Följare (Partners)"
+
+#. module: ai_agent
+#: model:ir.model.fields,help:ai_agent.field_ai_agent__activity_type_icon
+#: model:ir.model.fields,help:ai_agent.field_ai_agent_llm__activity_type_icon
+#: model:ir.model.fields,help:ai_agent.field_ai_quest__activity_type_icon
+#: model:ir.model.fields,help:ai_agent.field_ai_quest_session__activity_type_icon
+msgid "Font awesome icon e.g. fa-tasks"
+msgstr "Font awesome-ikon, t.ex. fa-tasks"
+
+#. module: ai_agent
+#: model:ir.model.fields.selection,name:ai_agent.selection__product_attribute_value__licence__gemma-terms-of-use
+msgid "Gemma Terms of Use"
+msgstr "Gemma Användarvillkor"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent__ai_goal
+msgid "Goal"
+msgstr "Mål"
+
+#. module: ai_agent
+#: model:ir.model.fields.selection,name:ai_agent.selection__product_attribute_value__licence__google-ai-terms
+msgid "Google AI-terms"
+msgstr "Google AI-termer"
+
+#. module: ai_agent
+#: model:product.template,name:ai_agent.google_llm_product_template
+msgid "Google LLM"
+msgstr "Google LLM"
+
+#. module: ai_agent
+#: model:product.template,name:ai_agent.google_vertex_product_template
+msgid "Google Vertex AI"
+msgstr "Google Vertex AI"
+
+#. module: ai_agent
+#: model:product.template,name:ai_agent.groq_product_template
+msgid "Groq"
+msgstr "Groq"
+
+#. module: ai_agent
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_agent_llm_search
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_agent_search
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_search
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_session_line_search
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_session_search
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_session_object_search
+msgid "Group By"
+msgstr "Grupp av"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent__has_message
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_llm__has_message
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest__has_message
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session__has_message
+msgid "Has Message"
+msgstr "Har meddelande"
+
+#. module: ai_agent
+#: model:ir.model.fields,help:ai_agent.field_ai_quest__init_type
+msgid "How the Quest is initialized"
+msgstr "Hur uppdraget initsieras"
+
+#. module: ai_agent
+#: model:product.template,name:ai_agent.huggingface_product_template
+msgid "HuggingFace"
+msgstr "HuggingFace"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent__id
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_data__id
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_llm__id
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_test_wizard__id
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest__id
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_agent__id
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session__id
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session_line__id
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_test_mail_wizard__id
+#: model:ir.model.fields,field_description:ai_agent.field_ai_session_object__id
+msgid "ID"
+msgstr "ID"
+
+#. module: ai_agent
+#: model:ir.model.fields,help:ai_agent.field_ai_quest__alias_parent_thread_id
+msgid ""
+"ID of the parent record holding the alias (example: project holding the task "
+"creation alias)"
+msgstr ""
+"ID för den överordnade post som innehåller aliaset (exempel: projekt som "
+"innehåller aliaset för skapande av uppgift)"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent__activity_exception_icon
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_llm__activity_exception_icon
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest__activity_exception_icon
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session__activity_exception_icon
+msgid "Icon"
+msgstr "Ikon"
+
+#. module: ai_agent
+#: model:ir.model.fields,help:ai_agent.field_ai_agent__activity_exception_icon
+#: model:ir.model.fields,help:ai_agent.field_ai_agent_llm__activity_exception_icon
+#: model:ir.model.fields,help:ai_agent.field_ai_quest__activity_exception_icon
+#: model:ir.model.fields,help:ai_agent.field_ai_quest_session__activity_exception_icon
+msgid "Icon to indicate an exception activity."
+msgstr "Ikon för att indikera en undantagsaktivitet."
+
+#. module: ai_agent
+#: model:ir.model.fields,help:ai_agent.field_ai_agent__message_needaction
+#: model:ir.model.fields,help:ai_agent.field_ai_agent_llm__message_needaction
+#: model:ir.model.fields,help:ai_agent.field_ai_quest__message_needaction
+#: model:ir.model.fields,help:ai_agent.field_ai_quest_session__message_needaction
+msgid "If checked, new messages require your attention."
+msgstr "Om den är markerad kräver nya meddelanden din uppmärksamhet."
+
+#. module: ai_agent
+#: model:ir.model.fields,help:ai_agent.field_ai_agent__message_has_error
+#: model:ir.model.fields,help:ai_agent.field_ai_agent_llm__message_has_error
+#: model:ir.model.fields,help:ai_agent.field_ai_quest__message_has_error
+#: model:ir.model.fields,help:ai_agent.field_ai_quest_session__message_has_error
+msgid "If checked, some messages have a delivery error."
+msgstr "Om kryssrutan är markerad får vissa meddelanden ett leveransfel."
+
+#. module: ai_agent
+#: model:ir.model.fields,help:ai_agent.field_ai_quest__alias_bounced_content
+msgid ""
+"If set, this content will automatically be sent out to unauthorized users instead "
+"of the default message."
+msgstr ""
+"Om den är inställd kommer detta innehåll automatiskt att skickas ut till "
+"obehöriga användare i stället för standardmeddelandet."
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent__image_128
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_llm__image_128
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest__image_128
+msgid "Image"
+msgstr "Bild"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest__init_type
+msgid "Initiate"
+msgstr "Initiera"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent__is_favorite
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_llm__is_favorite
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest__is_favorite
+msgid "Is Favorite"
+msgstr "Är favorit"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent__message_is_follower
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_llm__message_is_follower
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest__message_is_follower
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session__message_is_follower
+msgid "Is Follower"
+msgstr "Är följare"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_llm__is_key_required
+msgid "Is Key Required"
+msgstr "Är nyckel nödvändig"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_product_product__is_llm
+#: model:ir.model.fields,field_description:ai_agent.field_product_template__is_llm
+msgid "Is Llm"
+msgstr "Is Llm"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_test_wizard__is_rise_error
+msgid "Is Rise Error"
+msgstr "Är stigningsfel"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_data__json
+msgid "Json"
+msgstr "Json"
+
+#. module: ai_agent
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_agent_llm_search
+msgid "Key Required"
+msgstr "Nyckel krävs"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent__ai_agent_llm_id
+#: model_terms:ir.ui.view,arch_db:ai_agent.view_product_template_product_form
+msgid "LLM"
+msgstr "Språkmodell"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_product_product__llm_additional_rate
+#: model:ir.model.fields,field_description:ai_agent.field_product_template__llm_additional_rate
+msgid "LLM Additional Rate"
+msgstr "Språkmodell tilläggsavgift"
+
+#. module: ai_agent
+#: model_terms:ir.ui.view,arch_db:ai_agent.view_ai_agent_llm_calendar
+msgid "LLM Calendar"
+msgstr "Språkmodellskalender"
+
+#. module: ai_agent
+#: model:ir.actions.act_window,name:ai_agent.action_product_template
+msgid "LLM Providors"
+msgstr "AI-leverantörer"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_llm__llm_type
+#: model:ir.model.fields,field_description:ai_agent.field_product_product__llm_type
+#: model:ir.model.fields,field_description:ai_agent.field_product_template__llm_type
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_agent_llm_search
+msgid "LLM Type"
+msgstr "Språkmodellstyp"
+
+#. module: ai_agent
+#: model:ir.ui.menu,name:ai_agent.menu_ai_agent_llm
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_form
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_session_form
+msgid "LLMs"
+msgstr "Språkmodeller"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent____last_update
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_data____last_update
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_llm____last_update
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_test_wizard____last_update
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest____last_update
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_agent____last_update
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session____last_update
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session_line____last_update
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_test_mail_wizard____last_update
+#: model:ir.model.fields,field_description:ai_agent.field_ai_session_object____last_update
+msgid "Last Modified on"
+msgstr "Senast ändrad den"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent__last_run
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_llm__last_run
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest__last_run
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_agent_llm_search
+msgid "Last Run"
+msgstr "Senaste körningen"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent__write_uid
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_data__write_uid
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_llm__write_uid
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_test_wizard__write_uid
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest__write_uid
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_agent__write_uid
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session__write_uid
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session_line__write_uid
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_test_mail_wizard__write_uid
+#: model:ir.model.fields,field_description:ai_agent.field_ai_session_object__write_uid
+msgid "Last Updated by"
+msgstr "Senast uppdaterad av"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent__write_date
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_data__write_date
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_llm__write_date
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_test_wizard__write_date
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest__write_date
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_agent__write_date
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session__write_date
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session_line__write_date
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_test_mail_wizard__write_date
+#: model:ir.model.fields,field_description:ai_agent.field_ai_session_object__write_date
+msgid "Last Updated on"
+msgstr "Senast uppdaterad den"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_llm__licence
+#: model:ir.model.fields,field_description:ai_agent.field_product_attribute_value__licence
+msgid "Licence"
+msgstr "Licens"
+
+#. module: ai_agent
+#: model:ir.model.fields.selection,name:ai_agent.selection__product_attribute_value__licence__llama-community
+msgid "Llama Community License"
+msgstr "Llama Community-licens"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest__llm_count
+msgid "Llm Count"
+msgstr "Llm-räkning"
+
+#. module: ai_agent
+#: model:ir.model.fields,help:ai_agent.field_ai_quest_session__debug
+msgid "Logs interesting data"
+msgstr "Loggar intressanta data"
+
+#. module: ai_agent
+#: model:ir.model.fields.selection,name:ai_agent.selection__product_attribute_value__licence__mit
+msgid "MIT License"
+msgstr "MIT-licens"
+
+#. module: ai_agent
+#: model:ir.model.fields.selection,name:ai_agent.selection__ai_quest__init_type__mail
+msgid "Mail"
+msgstr "E-post"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent__message_main_attachment_id
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_llm__message_main_attachment_id
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest__message_main_attachment_id
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session__message_main_attachment_id
+msgid "Main Attachment"
+msgstr "Huvudbilagan"
+
+#. module: ai_agent
+#: model:ir.model.fields.selection,name:ai_agent.selection__ai_quest__init_type__manual
+msgid "Manual"
+msgstr "Manuell"
+
+#. module: ai_agent
+#: model:ir.model,name:ai_agent.model_mail_message
+msgid "Message"
+msgstr "Meddelande"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent__message_has_error
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_llm__message_has_error
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest__message_has_error
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session__message_has_error
+msgid "Message Delivery error"
+msgstr "Fel vid leverans av meddelande"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent__message_ids
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_llm__message_ids
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest__message_ids
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session__message_ids
+msgid "Messages"
+msgstr "Meddelanden"
+
+#. module: ai_agent
+#: model:product.template,name:ai_agent.mistral_product_template
+msgid "Mistral AI"
+msgstr "Mistral AI"
+
+#. module: ai_agent
+#: model:ir.model.fields.selection,name:ai_agent.selection__product_attribute_value__licence__mistral-research
+msgid "Mistral Research License"
+msgstr "Mistral forskningslicens"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_llm__model_id
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest__model_id
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session_line__model_id
+#: model:ir.model.fields,field_description:ai_agent.field_ai_session_object__model_id
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_agent_llm_search
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_session_line_search
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_session_object_search
+msgid "Model"
+msgstr "Modell"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session_line__model_real
+msgid "Model Real"
+msgstr "Modell Real"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent__my_activity_date_deadline
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_llm__my_activity_date_deadline
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest__my_activity_date_deadline
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session__my_activity_date_deadline
+msgid "My Activity Deadline"
+msgstr "Min aktivitet Deadline"
+
+#. module: ai_agent
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_search
+msgid "My Quests"
+msgstr "Mina uppdrag"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent__name
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_llm__name
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest__name
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_agent_form
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_agent_llm_form
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_form
+msgid "Name"
+msgstr "Namn"
+
+#. module: ai_agent
+#: model:ir.model.fields,help:ai_agent.field_ai_agent_llm__llm_type
+#: model:ir.model.fields,help:ai_agent.field_product_product__llm_type
+#: model:ir.model.fields,help:ai_agent.field_product_template__llm_type
+msgid "Name of langchain class, eg ChatOpenAI or ChatMistralAI"
+msgstr "Namn på langchain-klass, t.ex. ChatOpenAI eller ChatMistralAI"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent__activity_date_deadline
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_llm__activity_date_deadline
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest__activity_date_deadline
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session__activity_date_deadline
+msgid "Next Activity Deadline"
+msgstr "Deadline för nästa aktivitet"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent__activity_summary
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_llm__activity_summary
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest__activity_summary
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session__activity_summary
+msgid "Next Activity Summary"
+msgstr "Nästa aktivitetsöversikt"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent__activity_type_id
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_llm__activity_type_id
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest__activity_type_id
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session__activity_type_id
+msgid "Next Activity Type"
+msgstr "Nästa aktivitetstyp"
+
+#. module: ai_agent
+#: model:ir.model.fields.selection,name:ai_agent.selection__ai_agent_llm__status__not_confirmed
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_agent_llm_search
+msgid "Not Confirmed"
+msgstr "Ej bekräftat"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent__message_needaction_counter
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_llm__message_needaction_counter
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest__message_needaction_counter
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session__message_needaction_counter
+msgid "Number of Actions"
+msgstr "Antal åtgärder"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent__message_has_error_counter
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_llm__message_has_error_counter
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest__message_has_error_counter
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session__message_has_error_counter
+msgid "Number of errors"
+msgstr "Antal fel"
+
+#. module: ai_agent
+#: model:ir.model.fields,help:ai_agent.field_ai_agent__message_needaction_counter
+#: model:ir.model.fields,help:ai_agent.field_ai_agent_llm__message_needaction_counter
+#: model:ir.model.fields,help:ai_agent.field_ai_quest__message_needaction_counter
+#: model:ir.model.fields,help:ai_agent.field_ai_quest_session__message_needaction_counter
+msgid "Number of messages requiring action"
+msgstr "Antal meddelanden som kräver åtgärder"
+
+#. module: ai_agent
+#: model:ir.model.fields,help:ai_agent.field_ai_agent__message_has_error_counter
+#: model:ir.model.fields,help:ai_agent.field_ai_agent_llm__message_has_error_counter
+#: model:ir.model.fields,help:ai_agent.field_ai_quest__message_has_error_counter
+#: model:ir.model.fields,help:ai_agent.field_ai_quest_session__message_has_error_counter
+msgid "Number of messages with delivery error"
+msgstr "Antal meddelanden med leveransfel"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_session_object__display_name
+#: model:ir.model.fields,field_description:ai_agent.field_ai_session_object__object_id
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_session_object_search
+msgid "Object"
+msgstr "Objekt"
+
+#. module: ai_agent
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_session_form
+msgid "Objects"
+msgstr "Föremål"
+
+#. module: ai_agent
+#: model:product.template,name:ai_agent.open_ai_product_template
+msgid "Open-AI"
+msgstr "Öppen AI"
+
+#. module: ai_agent
+#: model:ir.model.fields,help:ai_agent.field_ai_quest__alias_force_thread_id
+msgid ""
+"Optional ID of a thread (record) to which all incoming messages will be attached, "
+"even if they did not reply to it. If set, this will disable the creation of new "
+"records completely."
+msgstr ""
+"Valfritt ID för en tråd (record) som alla inkommande meddelanden kommer att "
+"kopplas till, även om de inte besvarades. Om detta anges inaktiveras skapandet av "
+"nya poster helt och hållet."
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_res_company__company_mission
+#: model_terms:ir.ui.view,arch_db:ai_agent.view_company_form
+msgid "Our Mission"
+msgstr "Vårt uppdrag"
+
+#. module: ai_agent
+#: model_terms:ir.ui.view,arch_db:ai_agent.view_company_form
+msgid "Our Values"
+msgstr "Våra värderingar"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_res_company__company_values
+msgid "Our values"
+msgstr "Våra värderingar"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest__alias_user_id
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest__user_id
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_search
+msgid "Owner"
+msgstr "Ägare"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest__alias_parent_model_id
+msgid "Parent Model"
+msgstr "Föräldramodell"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest__alias_parent_thread_id
+msgid "Parent Record Thread ID"
+msgstr "Parent Record Thread ID"
+
+#. module: ai_agent
+#: model:ir.model.fields,help:ai_agent.field_ai_quest__alias_parent_model_id
+msgid ""
+"Parent model holding the alias. The model holding the alias reference is not "
+"necessarily the model given by alias_model_id (example: project (parent_model) "
+"and task (model))"
+msgstr ""
+"Överordnad modell som håller i aliaset. Den modell som håller aliasreferensen är "
+"inte nödvändigtvis den modell som anges av alias_model_id (exempel: project "
+"(parent_model) och task (model))"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session__commercial_partner_id
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session_line__commercial_partner_id
+msgid "Partner"
+msgstr "Partner"
+
+#. module: ai_agent
+#: model:ir.model.fields,help:ai_agent.field_ai_quest__alias_contact
+msgid ""
+"Policy to post a message on the document using the mailgateway.\n"
+"- everyone: everyone can post\n"
+"- partners: only authenticated partners\n"
+"- followers: only followers of the related document or members of following "
+"channels\n"
+msgstr ""
+"Policy för att posta ett meddelande på dokumentet med hjälp av mailgateway.\n"
+"- alla: alla kan posta\n"
+"- partners: endast autentiserade partners\n"
+"- följare: endast följare av det relaterade dokumentet eller medlemmar av "
+"följande kanaler\n"
+
+#. module: ai_agent
+#: model:ir.model,name:ai_agent.model_product_template
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_session_line_search
+msgid "Product"
+msgstr "Produkt"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session_line__product_tmpl_id
+msgid "Product Tmpl"
+msgstr "Produkt Tmpl"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_llm__product_tmpl_id
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_agent_llm_search
+msgid "Provider"
+msgstr "Leverantör"
+
+#. module: ai_agent
+#: model:ir.ui.menu,name:ai_agent.menu_product_product
+msgid "Providers"
+msgstr "Leverantörer"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest__code
+msgid "Python Code"
+msgstr "Python-kod"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent__quest_ids
+#: model:ir.model.fields,field_description:ai_agent.field_mail_channel__ai_quest_id
+#: model:ir.model.fields,field_description:ai_agent.field_res_users__ai_quest_id
+msgid "Quest"
+msgstr "Uppdrag"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent__quest_count
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_llm__quest_count
+msgid "Quest Count"
+msgstr "Antal uppdrag"
+
+#. module: ai_agent
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_agent_form
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_agent_llm_form
+msgid "Quests"
+msgstr "Uppdrag"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest__alias_force_thread_id
+msgid "Record Thread ID"
+msgstr "Registrera tråd-ID"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent__activity_user_id
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_llm__activity_user_id
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest__activity_user_id
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session__activity_user_id
+msgid "Responsible User"
+msgstr "Ansvarig användare"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent__ai_role
+msgid "Role"
+msgstr "Roll"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session_line__run_id
+msgid "Run"
+msgstr "Kör"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest__cron_id
+#: model:ir.model.fields.selection,name:ai_agent.selection__ai_quest__init_type__cron
+msgid "Scheduled Action"
+msgstr "Schemalagd åtgärd"
+
+#. module: ai_agent
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_agent_llm_search
+msgid "Search AI Agent LLM"
+msgstr "Sök AI Agent LLM"
+
+#. module: ai_agent
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_agent_search
+msgid "Search AI Agents"
+msgstr "Sök AI-agenter"
+
+#. module: ai_agent
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_session_line_search
+msgid "Search AI Quest Session Lines"
+msgstr "Sök tokens"
+
+#. module: ai_agent
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_session_search
+msgid "Search AI Quest Sessions"
+msgstr "Sök sessioner"
+
+#. module: ai_agent
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_search
+msgid "Search AI Quests"
+msgstr "Sök AI-uppdrag"
+
+#. module: ai_agent
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_session_object_search
+msgid "Search AI Sessions Object"
+msgstr "Sök objekt"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_agent__sequence
+msgid "Sequence"
+msgstr "Sekvens"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest__server_action_id
+#: model:ir.model.fields.selection,name:ai_agent.selection__ai_quest__init_type__server-action
+msgid "Server Action"
+msgstr "Serveråtgärd"
+
+#. module: ai_agent
+#: model:ir.model.fields,help:ai_agent.field_ai_quest__server_action_id
+msgid "Server action to be executed when this quest is initialized"
+msgstr "Serveråtgärd som ska utföras när detta uppdrag initieras"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_data__session
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest__session_ids
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session__session
+#: model:ir.model.fields,field_description:ai_agent.field_mail_channel__ai_quest_session_id
+#: model:ir.model.fields,field_description:ai_agent.field_mail_mail__ai_quest_session_id
+#: model:ir.model.fields,field_description:ai_agent.field_mail_message__ai_quest_session_id
+#: model:ir.model.fields,field_description:ai_agent.field_res_users__ai_quest_session_id
+msgid "Session"
+msgstr "Session"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent__session_count
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_llm__session_count
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest__session_count
+msgid "Session Count"
+msgstr "Antal sessioner"
+
+#. module: ai_agent
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_session_search
+msgid "Session ID"
+msgstr "Sessions-ID"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent__session_line_ids
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_llm__session_line_ids
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest__session_line_ids
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session__session_line_ids
+msgid "Session Line"
+msgstr "Token"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent__session_line_count
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_llm__session_line_count
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest__session_line_count
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session__session_line_count
+#: model:ir.model.fields,field_description:ai_agent.field_product_product__session_line_count
+#: model:ir.model.fields,field_description:ai_agent.field_product_template__session_line_count
+msgid "Session Line Count"
+msgstr "Summa token"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest__session_object_ids
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session__session_object_ids
+msgid "Session Object"
+msgstr "Objekt för session"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest__session_object_count
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session__session_object_count
+msgid "Session Object Count"
+msgstr "Antal sessionsobjekt"
+
+#. module: ai_agent
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_form
+msgid "Session Objects"
+msgstr "Objekt för sessionen"
+
+#. module: ai_agent
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_agent_form
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_agent_llm_form
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_form
+msgid "Sessions"
+msgstr "Sessioner"
+
+#. module: ai_agent
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_form
+msgid "Start"
+msgstr "Start"
+
+#. module: ai_agent
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_session_search
+msgid "Start Date"
+msgstr "Startdatum"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session__startdate
+msgid "Startdate"
+msgstr "Startdatum"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent__status
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_llm__status
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest__status
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session__status
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_agent_llm_search
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_search
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_session_search
+msgid "Status"
+msgstr "Status"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_llm__status_color
+msgid "Status Color"
+msgstr "Statusfärg"
+
+#. module: ai_agent
+#: model:ir.model.fields,help:ai_agent.field_ai_agent__activity_state
+#: model:ir.model.fields,help:ai_agent.field_ai_agent_llm__activity_state
+#: model:ir.model.fields,help:ai_agent.field_ai_quest__activity_state
+#: model:ir.model.fields,help:ai_agent.field_ai_quest_session__activity_state
+msgid ""
+"Status based on activities\n"
+"Overdue: Due date is already passed\n"
+"Today: Activity date is today\n"
+"Planned: Future activities."
+msgstr ""
+"Status baserad på aktiviteter\n"
+"Försenad: Förfallodatumet har redan passerats\n"
+"Idag: Aktivitetsdatumet är idag\n"
+"Planerad: Framtida aktiviteter."
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session_line__system_fingerprint
+msgid "System Fingerprint"
+msgstr "Systemets fingeravtryck"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_product_product__token_sys
+#: model:ir.model.fields,field_description:ai_agent.field_product_template__token_sys
+msgid "System polletts"
+msgstr "Systemtoken"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent__tag_ids
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_llm__tag_ids
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest__tag_ids
+msgid "Tags"
+msgstr "Etiketter"
+
+#. module: ai_agent
+#: model:ir.model.fields,help:ai_agent.field_ai_agent__ai_temperature
+msgid ""
+"Temperature controls the randomness and creativity of the model's output, <1.0 "
+"more predictable and consistant >1.0 more diverse and creative responses"
+msgstr ""
+"Temperaturen styr slumpmässigheten och kreativiteten i modellens utdata, <1,0 mer "
+"förutsägbar och konsekvent >1,0 mer varierande och kreativa svar"
+
+#. module: ai_agent
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_agent_form
+msgid "Template"
+msgstr "Mall"
+
+#. module: ai_agent
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_agent_form
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_agent_llm_form
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_form
+#: model_terms:ir.ui.view,arch_db:ai_agent.test_mail_wizard_view
+#: model_terms:ir.ui.view,arch_db:ai_agent.test_wizard_view
+msgid "Test"
+msgstr "Test"
+
+#. module: ai_agent
+#: model:ir.actions.act_window,name:ai_agent.action_ai_agent_test_wizard
+msgid "Test AI"
+msgstr "Test AI"
+
+#. module: ai_agent
+#: model:ir.actions.act_window,name:ai_agent.action_ai_quest_test_mail_wizard
+msgid "Test Mail"
+msgstr "Test mail"
+
+#. module: ai_agent
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_agent_form
+msgid "Test2"
+msgstr "Test2"
+
+#. module: ai_agent
+#: model:ir.model.fields,help:ai_agent.field_ai_quest__alias_id
+msgid ""
+"The email address associated with this channel. New emails received will "
+"automatically create new leads assigned to the channel."
+msgstr ""
+"Den e-postadress som är kopplad till den här kanalen. Nya e-postmeddelanden som "
+"tas emot kommer automatiskt att skapa nya leads som tilldelas kanalen."
+
+#. module: ai_agent
+#: model:ir.model.fields,help:ai_agent.field_ai_quest__alias_model_id
+msgid ""
+"The model (Odoo Document Kind) to which this alias corresponds. Any incoming "
+"email that does not reply to an existing record will cause the creation of a new "
+"record of this model (e.g. a Project Task)"
+msgstr ""
+"Den modell (Odoo Document Kind) som detta alias motsvarar. Alla inkommande e-"
+"postmeddelanden som inte svarar på en befintlig post kommer att leda till att en "
+"ny post skapas av denna modell (t.ex. en projektuppgift)"
+
+#. module: ai_agent
+#: model:ir.model.fields,help:ai_agent.field_ai_quest__alias_name
+msgid ""
+"The name of the email alias, e.g. 'jobs' if you want to catch emails for "
+"<jobs@example.odoo.com>"
+msgstr ""
+"Namnet på e-postaliaset, t.ex. \"jobs\" om du vill fånga upp e-postmeddelanden "
+"för <jobs@example.odoo.com>"
+
+#. module: ai_agent
+#: model:ir.model.fields,help:ai_agent.field_ai_quest__alias_user_id
+msgid ""
+"The owner of records created upon receiving emails on this alias. If this field "
+"is not set the system will attempt to find the right owner based on the sender "
+"(From) address, or will use the Administrator account if no system user is found "
+"for that address."
+msgstr ""
+"Ägaren till poster som skapas när e-postmeddelanden tas emot på detta alias. Om "
+"det här fältet inte anges försöker systemet hitta rätt ägare baserat på "
+"avsändaradressen (From), eller använder administratörskontot om ingen "
+"systemanvändare hittas för den adressen."
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session__time_difference_ms
+msgid "Time Difference (ms)"
+msgstr "Tidsskillnad (ms)"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session_line__token
+msgid "Token"
+msgstr "Token"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session_line__token_monetary
+msgid "Token Monetary"
+msgstr "Token Monetär"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session_line__token_sys
+msgid "Token Sys"
+msgstr "Token Sys"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session_line__token_type_id
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_session_line_search
+msgid "Token Type"
+msgstr "Token-typ"
+
+#. module: ai_agent
+#: model:ir.actions.act_window,name:ai_agent.action_ai_quest_session_line
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_agent_form
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_agent_llm_form
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_form
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_session_form
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_session_line_list
+#: model_terms:ir.ui.view,arch_db:ai_agent.view_product_template_product_form
+msgid "Tokens"
+msgstr "Tokens"
+
+#. module: ai_agent
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_session_line_list
+msgid "Total System polletts"
+msgstr "Totalt antal systemtokens"
+
+#. module: ai_agent
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_session_line_list
+msgid "Total polletts"
+msgstr "Totalt antal polletter"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session__type_of_output
+msgid "Type Of Output"
+msgstr "Typ av utdata"
+
+#. module: ai_agent
+#: model:ir.model.fields,help:ai_agent.field_ai_agent__activity_exception_decoration
+#: model:ir.model.fields,help:ai_agent.field_ai_agent_llm__activity_exception_decoration
+#: model:ir.model.fields,help:ai_agent.field_ai_quest__activity_exception_decoration
+#: model:ir.model.fields,help:ai_agent.field_ai_quest_session__activity_exception_decoration
+msgid "Type of the exception activity on record."
+msgstr "Typ av undantagsaktivitet som registreras."
+
+#. module: ai_agent
+#: model:ir.actions.server,name:ai_agent.update_api__key
+msgid "Update API Key"
+msgstr "Uppdatera API-nyckel"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_test_mail_wizard__eml_file
+msgid "Upload Mail"
+msgstr "Ladda upp e-post"
+
+#. module: ai_agent
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_form
+msgid "Used Agents on sessions"
+msgstr "Använda agenter på sessioner"
+
+#. module: ai_agent
+#: model:ir.model,name:ai_agent.model_res_users
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session__user_id
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session_line__user_id
+msgid "User"
+msgstr "Användare"
+
+#. module: ai_agent
+#: model_terms:ir.ui.view,arch_db:ai_agent.test_wizard_view
+msgid "Warning"
+msgstr "Varning"
+
+#. module: ai_agent
+#: model:ir.model.fields,help:ai_agent.field_ai_quest__code
+msgid ""
+"Write Python code that the action will execute. Some variables are available for "
+"use; help about python expression is given in the help tab."
+msgstr ""
+"Skriv Python-kod som åtgärden ska utföra. Vissa variabler är tillgängliga för "
+"användning; hjälp om Python-uttryck finns i fliken Hjälp."
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.albert_product_attribute_value
+msgid "albert-base-v2"
+msgstr "albert-base-v2"
+
+#. module: ai_agent
+#: model:product.attribute,name:ai_agent.product_attribute_api_type
+msgid "api_type"
+msgstr "api_typ"
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.product_attribute_value_audio
+msgid "audio"
+msgstr "ljud"
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.open_ai_product_attribute_value_batch
+msgid "batch"
+msgstr "parti"
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.huggingface_product_attribute_value_bert
+msgid "bert-base-uncased"
+msgstr "bert-basen-avvecklad"
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.bloom_product_attribute_value
+msgid "bigscience/bloom"
+msgstr "bigscience/bloom"
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.google_llm_product_attribute_value_chat-bison-001
+msgid "chat-bison-001"
+msgstr "chat-bison-001"
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.anthropic_product_attribute_value_claude-3-5-haiku-latest
+msgid "claude-3-5-haiku-latest"
+msgstr "claude-3-5-haiku-latest"
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.anthropic_product_attribute_value_claude-3-5-sonnet-latest
+msgid "claude-3-5-sonnet-latest"
+msgstr "claude-3-5-sonnet-latest"
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.anthropic_product_attribute_value_claude-3-haiku-latest
+msgid "claude-3-haiku-latest"
+msgstr "claude-3-haiku-latest"
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.anthropic_product_attribute_value_claude-3-opus-latest
+msgid "claude-3-opus-latest"
+msgstr "claude-3-opus-latest"
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.anthropic_product_attribute_value_claude-3-sonnet-latest
+msgid "claude-3-sonnet-latest"
+msgstr "claude-3-sonnet-latest"
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.mistral_product_attribute_value_codestral-latest
+msgid "codestral-latest"
+msgstr "codestral-latest"
+
+#. module: ai_agent
+#: model:product.attribute,name:ai_agent.product_attribute_data_type
+msgid "data_type"
+msgstr "data_typ"
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.groq_product_attribute_value_distil-whisper-large-v3-en
+msgid "distil-whisper-large-v3-en"
+msgstr "distil-whisper-large-v3-en"
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.distilbert_product_attribute_value
+msgid "distilbert-base-uncased"
+msgstr "distilbert-base-uncased"
+
+#. module: ai_agent
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_agent_form
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_agent_llm_form
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_form
+msgid "e.g. support"
+msgstr "t.ex. stöd"
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.google_llm_product_attribute_value_embedding-gecko-001
+msgid "embedding-gecko-001"
+msgstr "embedding-gecko-001"
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.bart_product_attribute_value
+msgid "facebook/bart-base"
+msgstr "facebook/bart-base"
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.google_llm_product_attribute_value_gemini-pro
+msgid "gemini-pro"
+msgstr "gemini pro"
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.google_llm_product_attribute_value_gemini-pro-vision
+msgid "gemini-pro-vision"
+msgstr "gemini-pro-vision"
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.groq_product_attribute_value_gemma2-9b-it
+msgid "gemma2-9b-it"
+msgstr "gemma2-9b-it"
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.electra_product_attribute_value
+msgid "google/electra-base-discriminator"
+msgstr "google/electra-base-discriminator"
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.open_ai_product_attribute_value_gpt-4o
+msgid "gpt-4o"
+msgstr "gpt-4o"
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.open_ai_product_attribute_value_gpt-4o-audio-preview
+msgid "gpt-4o-audio-preview"
+msgstr "gpt-4o-audio-preview"
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.open_ai_product_attribute_value_gpt-4o-mini
+msgid "gpt-4o-mini"
+msgstr "gpt-4o-mini"
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.open_ai_product_attribute_value_gpt-4o-mini-audio-preview
+msgid "gpt-4o-mini-audio-preview"
+msgstr "gpt-4o-mini-audio-preview"
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.huggingface_product_attribute_value_gpt2
+msgid "gpt2"
+msgstr "gpt2"
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.product_attribute_value_image
+msgid "image"
+msgstr "bild"
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.product_attribute_value_input_cached
+msgid "input cached_tokens"
+msgstr "inmatning cached_tokens"
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.product_attribute_value_input_tokens
+msgid "input_tokens"
+msgstr "input_tokens"
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.product_attribute_value_input_tokens_audio
+msgid "input_tokens_audio"
+msgstr "inmatning_tokens_audio"
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.product_attribute_value_input_tokens_cache_read
+msgid "input_tokens_cache_read"
+msgstr "input_tokens_cache_read"
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.groq_product_attribute_value_llama-3-1-8b-instant
+msgid "llama-3.1-8b-instant"
+msgstr "lama-3.1-8b-instant"
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.groq_product_attribute_value_llama-3-3-70b-versatile
+msgid "llama-3.3-70b-versatile"
+msgstr "llama-3.3-70b-versatile"
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.groq_product_attribute_value_llama-guard-3-8b
+msgid "llama-guard-3-8b"
+msgstr "llama-guard-3-8b"
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.groq_product_attribute_value_llama3-70b-8192
+msgid "llama3-70b-8192"
+msgstr "llama3-70b-8192"
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.groq_product_attribute_value_llama3-8b-8192
+msgid "llama3-8b-8192"
+msgstr "llama3-8b-8192"
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.deberta_product_attribute_value
+msgid "microsoft/deberta-base"
+msgstr "microsoft/deberta-base"
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.mistral_product_attribute_value_ministral-3b-latest
+msgid "ministral-3b-latest"
+msgstr "ministral-3b-latest"
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.mistral_product_attribute_value_ministral-8b-latest
+msgid "ministral-8b-latest"
+msgstr "ministral-8b-latest"
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.mistral_product_attribute_value_mistral-large-latest
+msgid "mistral-large-latest"
+msgstr "mistral-large-latest"
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.mistral_product_attribute_value_mistral-moderation-latest
+msgid "mistral-moderation-latest"
+msgstr "mistral-moderation-latest"
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.mistral_product_attribute_value_mistral-small-latest
+msgid "mistral-small-latest"
+msgstr "mistral-small-latest"
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.groq_product_attribute_value_mixtral-8x7b-32768
+msgid "mixtral-8x7b-32768"
+msgstr "mixtral-8x7b-32768"
+
+#. module: ai_agent
+#: model:product.attribute,name:ai_agent.product_attribute_model
+msgid "model"
+msgstr "modell"
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.open_ai_product_attribute_value_o1
+msgid "o1"
+msgstr "o1"
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.open_ai_product_attribute_value_o1-mini
+msgid "o1-mini"
+msgstr "o1-mini"
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.mistral_product_attribute_value_open-codestral-mamba
+msgid "open-codestral-mamba"
+msgstr "open-codestral-mamba"
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.mistral_product_attribute_value_open-mistral-nemo
+msgid "open-mistral-nemo"
+msgstr "open-mistral-nemo"
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.product_attribute_value_output_tokens
+msgid "output_tokens"
+msgstr "output_tokens"
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.product_attribute_value_output_tokens_audio
+msgid "output_tokens_audio"
+msgstr "output_tokens_audio"
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.product_attribute_value_output_tokens_reasoning
+msgid "output_tokens_reasoning"
+msgstr "output_tokens_reasoning"
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.mistral_product_attribute_value_pixtral-12b-2409
+msgid "pixtral-12b-2409"
+msgstr "pixtral-12b-2409"
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.mistral_product_attribute_value_pixtral-large-latest
+msgid "pixtral-large-latest"
+msgstr "pixtral-large-latest"
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.roberta_product_attribute_value
+msgid "roberta-base"
+msgstr "roberta-base"
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.huggingface_product_attribute_value_mpnet
+msgid "sentence-transformers/all-mpnet-base-v2"
+msgstr "sentence-transformers/all-mpnet-base-v2"
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.open_ai_product_attribute_value_sync
+msgid "sync"
+msgstr "sync"
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.t5_product_attribute_value
+msgid "t5-base"
+msgstr "t5-base"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent__ai_temperature
+msgid "temperature"
+msgstr "Temperatur"
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.product_attribute_value_text
+msgid "text"
+msgstr "text"
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.google_llm_product_attribute_value_text-bison-001
+msgid "text-bison-001"
+msgstr "text-bison-001"
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.open_ai_product_attribute_value_text-embedding-3-large
+msgid "text-embedding-3-large"
+msgstr "text-embedding-3-large"
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.open_ai_product_attribute_value_text-embedding-3-small
+msgid "text-embedding-3-small"
+msgstr "text-embedding-3-small"
+
+#. module: ai_agent
+#: model:product.attribute,name:ai_agent.product_attribute_token_type
+msgid "token_type"
+msgstr "token_typ"
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.groq_product_attribute_value_whisper-large-v3
+msgid "whisper-large-v3"
+msgstr "whisper-large-v3"
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.groq_product_attribute_value_whisper-large-v3-turbo
+msgid "whisper-large-v3-turbo"
+msgstr "whisper-large-v3-turbo"
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.xlm_roberta_product_attribute_value
+msgid "xlm-roberta-base"
+msgstr "xlm-roberta-basen"

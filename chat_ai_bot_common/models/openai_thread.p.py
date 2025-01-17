@@ -14,7 +14,7 @@ class OpenAIThread(models.TransientModel):
     # #if VERSION >= "17.0"
     channel_id = fields.Many2one(comodel_name='discuss.channel', string="Channel", help="")  #
     # #elif VERSION == "16.0"
-    channel_id = fields.Many2one(comodel_name='mail.channel', string="Channel", help="")  #
+    channel_id = fields.Many2one(comodel_name='discuss.channel', string="Channel", help="")  #
     # #endif
     assistant = fields.Char(required=False)
     thread = fields.Char(required=False)

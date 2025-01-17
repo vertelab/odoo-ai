@@ -20,7 +20,7 @@ class ResUsers(models.Model):
                 env = api.Environment(cr, self.env.uid, self.env.context)
 
                 user_id = env['res.users'].browse(recipient.id)
-                channel_id = env['mail.channel'].browse(channel.id)
+                channel_id = env['discuss.channel'].browse(channel.id)
 
                 client = env['openai.thread'].open_interpreter_client_init(user_id)
 
