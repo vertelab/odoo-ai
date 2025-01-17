@@ -11,7 +11,7 @@ _logger = logging.getLogger(__name__)
 class OpenAIThread(models.TransientModel):
     _name = 'openai.thread'
     _description = 'OpenAI Thread'
-    channel_id = fields.Many2one(comodel_name='mail.channel', string="Channel", help="")  #
+    channel_id = fields.Many2one(comodel_name='discuss.channel', string="Channel", help="")  #
     assistant = fields.Char(required=False)
     thread = fields.Char(required=False)
     run = fields.Char(required=False)

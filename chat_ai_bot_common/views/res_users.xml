@@ -11,7 +11,7 @@
                 </field>
                 
                 <xpath expr="//form/sheet/notebook" position="inside">
-                    <page name="page_openai_settings" string="Ai_bot settings" groups="base.group_erp_manager" attrs="{'invisible': [('is_ai_bot', '=', False)]}">
+                    <page name="page_openai_settings" string="Ai_bot settings" groups="base.group_erp_manager" invisible = "is_ai_bot == False" >
                         <div>
                             <p class="text-muted">
                                 Change any Open AI settings

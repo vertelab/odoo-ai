@@ -1,8 +1,0 @@
-id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
-access_ai_agent,ai_agent.ai_agent,model_ai_agent,base.group_user,1,1,1,1
-access_ai_agent_llm,ai_agent.ai_agent_llm,model_ai_agent_llm,base.group_user,1,1,1,1
-ai_agent.access_ai_agent_test_wizard,access_ai_agent_test_wizard,ai_agent.model_ai_agent_test_wizard,base.group_user,1,1,1,1
-ai_agent.access_ai_agent_data,access_ai_agent_data,ai_agent.model_ai_agent_data,base.group_user,1,1,1,1
-ai_agent.access_ai_quest,access_ai_quest,ai_agent.model_ai_quest,base.group_user,1,1,1,1
-ai_agent.access_ai_quest_session,access_ai_quest_session,ai_agent.model_ai_quest_session,base.group_user,1,1,1,1
-ai_agent.access_ai_quest_session_line,access_ai_quest_session_line,ai_agent.model_ai_quest_session_line,base.group_user,1,1,1,1
