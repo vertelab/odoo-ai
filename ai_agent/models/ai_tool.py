@@ -254,8 +254,10 @@ class AIToolTestWizard(models.Model):
         results=''
         _logger.error(f"Importing {self.ai_tool_id.tool_lib=}")
         module = importlib.import_module(self.ai_tool_id.tool_lib)
+        _logger.error(f"{dir(module)=}")
         TOOL = getattr(module, self.ai_tool_id.tool)
-        results = list(TOOL.text(query, max_results=5))
+        _logger.error(f"{TOOL(self.test_tool_input)}")
+        results = TOOL(self.test_tool_input)
 
         try:
             module = importlib.import_module(self.ai_tool_id.tool_lib)
