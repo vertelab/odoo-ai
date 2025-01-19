@@ -63,6 +63,9 @@
                             <button name="action_get_session_objects" class="oe_stat_button" type="object" icon="fa-puzzle-piece">
                                 <field string="Objects" name="session_object_count" widget="statinfo" />
                             </button>
+                            <button name="action_get_session_messages" class="oe_stat_button" type="object" icon="fa-comments">
+                                <field string="Messages" name="session_message_count" widget="statinfo" />
+                            </button>
                         </div>
                         <group>
                             <group>

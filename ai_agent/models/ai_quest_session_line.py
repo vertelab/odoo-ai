@@ -8,6 +8,7 @@ _logger = logging.getLogger(__name__)
 class AIQuestSessionLine(models.Model):
     _name = 'ai.quest.session.line'
     _description = 'AI Quest Session Line'
+    _order = 'datetime desc'
 
     ai_agent_id = fields.Many2one(comodel_name="ai.agent")
     ai_llm_id = fields.Many2one(comodel_name="ai.agent.llm")
@@ -106,3 +107,29 @@ class AIQuestSessionLine(models.Model):
     def compute_token_sys(self):
         for record in self:
             record.token_sys = record.token * 12
+
+
+
+
+class AIQuestSessionMessage(models.Model):
+    _name = 'ai.quest.session.message'
+    _description = 'AI Quest Session Message'
+    _order = 'sequence asc'
+
+    sequence = fields.Integer()
+    ai_quest_session_id = fields.Many2one(comodel_name="ai.quest.session")
+    message_type = fields.Char(string='Message Type', size=64 )
+    message_content = fields.Text()
+    message_raw = fields.Text()
+    
+    @api.model
+    def save_messages(self, session, messages):
+    
+        for seq, message in enumerate(messages):
+            self.create = {
+                "sequence": seq,
+                "ai_quest_session_id": session.id,
+                "message_type": type(message).__name__,
+                "message_content": message.content,
+                "message_raw": f"{message}",
+            }

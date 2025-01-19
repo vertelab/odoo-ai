@@ -16,7 +16,7 @@ from odoo.addons.base.models.avatar_mixin import get_hsl_from_seed
 from odoo.exceptions import UserError, ValidationError, Warning
 from odoo.tools.mail import html2plaintext
 from odoo.tools.safe_eval import safe_eval
-
+from odoo.addons.ai_agent.models.ai_quest_session import AIQuestSession
 from odoo import models, fields, api, _
 
 _logger = logging.getLogger(__name__)
@@ -62,10 +62,11 @@ avatar_server_action = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 5
 </svg>'''
 
 
+
 class AgentState(TypedDict):
     messages: Annotated[Sequence[BaseMessage], operator.add]
+    session: AIQuestSession
     next: str
-
 
 class AIQuestAgent(models.Model):
     _name = 'ai.quest.agent'
@@ -698,6 +699,8 @@ class AIQuest(models.Model):
         # Get member names
         members = [a.name for a in agents[1:]]
         _logger.info(f"Building graph with supervisor and {len(members)} workers: {members}")
+        global session
+        session=kwarg.get('session',False)
 
         try:
             # Create graph
@@ -711,7 +714,7 @@ class AIQuest(models.Model):
             # Add worker nodes
             for agent in agents[1:]:
                 _logger.info(f"Adding worker node: {agent.name}")
-                graph_builder.add_node(agent.name, agent.create_node())
+                graph_builder.add_node(agent.name, agent.create_node(session=session))
 
             # Add edges from workers to supervisor
             for member in members:

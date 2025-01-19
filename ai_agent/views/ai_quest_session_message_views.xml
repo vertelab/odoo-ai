@@ -1,0 +1,64 @@
+<odoo>
+
+    <record id="ai_quest_session_message_list" model="ir.ui.view">
+        <field name="name">ai.quest.session.message.list</field>
+        <field name="model">ai.quest.session.message</field>
+        <field name="arch" type="xml">
+            <tree string="Messages">
+                <field name="sequence"/>
+                <field name="ai_quest_session_id"/>
+                <field name="message_type"/>
+                <field name="message_content"/>
+                <field name="message_raw" optional="hide"/>
+            </tree>
+        </field>
+    </record>
+
+    <record id="ai_quest_session_message_search" model="ir.ui.view">
+        <field name="name">ai.quest.session.message.search</field>
+        <field name="model">ai.quest.session.message</field>
+        <field name="arch" type="xml">
+            <search string="Search Message">
+                <field name="message_content" />
+                <field name="message_type"/>
+                <field name="message_raw"/>
+                <group expand="0" string="Group By">
+                    <filter string="Message Type" name="group_by_message_type" context="{'group_by': 'message_type'}"/>
+                </group>
+                <separator/>
+            </search>
+        </field>
+    </record>
+
+    <record id="ai_quest_session_message_form" model="ir.ui.view">
+        <field name="name">ai.quest.session.message.form</field>
+        <field name="model">ai.quest.session.message</field>
+        <field name="arch" type="xml">
+            <form>
+                <sheet string="Message">
+                    <group>
+                        <group>
+                            <field name="ai_quest_session_id"/>
+                            <field name="message_type"/>
+                            <field name="message_content"/>
+                            <field name="message_raw"/>
+                        </group>
+                        <group>
+                        </group>
+                    </group>
+                    <group>
+                        <separator/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+    <record id="action_ai_quest_session_message" model="ir.actions.act_window">
+        <field name="name">Messages</field>
+        <field name="res_model">ai.quest.session.message</field>
+        <field name="view_mode">tree,form</field>
+    </record>
+
+    <menuitem id="ai_agent.menu_ai_quest_session_message" name="Messages" parent="ai_agent.menu_ai_agent_configuration" action="action_ai_quest_session_message"/>
+
+</odoo>

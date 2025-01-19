@@ -369,6 +369,8 @@ class AIAgent(models.Model):
         use_lang=f"Use language {self.env.user.lang} for the answer to Human" if quest.use_personal_lang else ''
         memory = self._get_memory(kwarg.get('message',''))
         
+        session=kwarg.get('session',False)
+        
         system_prompt = f"""You are a supervisor coordinating between workers: {members}.
         Based on the request, determine which worker should handle the next step.
         Only choose FINISH when a complete response has been provided.
@@ -392,13 +394,14 @@ class AIAgent(models.Model):
 
         def supervisor_chain(state):
             messages = state.get('messages', [])
-            _logger.info(f"Supervisor received messages: {len(messages)}")
-
+            _logger.info(f"Supervisor received messages: {len(messages)} {session=}")
+            
             if not messages:
-                _logger.info(f"No messages, starting with first worker: {members[0]}")
-                return {"next": members[0]} if members else {"next": "FINISH"}
+                _logger.info(f"No messages, starting with first worker: {members[0] if members else 'no members'}")
+                session.add_message(f"No messages, starting with first worker: {members[0] if members else 'no members'}")
+                return {"next": members[0],'session':session} if members else {"next": "FINISH",'session':session}
 
-            _logger.error(f"{messages=}")
+            _logger.error(f"{messages=} {session=}")
 
             # Get the latest message
             question = messages[-1].content if messages else ""
@@ -422,41 +425,49 @@ class AIAgent(models.Model):
                 # Parse response
                 content = response.content.upper()
                 _logger.info(f"Supervisor decision: {content}")
+                session.add_message(f"Supervisor decision: {content}")
 
                 # Check for completion or next agent
                 if "FINISH" in content:
                     _logger.info("Supervisor decided to FINISH")
-                    return {"next": "FINISH"}
+                    session.add_message("Supervisor decided to FINISH")
+                    return {"next": "FINISH",'session': session}
 
                 # Find mentioned agent
                 for member in members:
                     if member.upper() in content:
                         _logger.info(f"Supervisor selected agent: {member}")
-                        return {"next": member}
+                        session.add_message(f"Supervisor selected agent: {member}")
+                        return {"next": member, 'session': session}
 
                 # If no clear direction and we have previous responses, finish
                 if len(messages) > 1:
                     _logger.info("No clear direction, finishing")
-                    return {"next": "FINISH"}
+                    session.add_message("No clear direction, finishing")
+                    return {"next": "FINISH", 'session': session}
 
                 # Default to first member
                 if len(members) != 0:
                     _logger.info(f"Defaulting to first member: {members[0]}")
-                    return {"next": members[0]}
+                    session.add_message(f"Defaulting to first member: {members[0]}")
+                    return {"next": members[0], 'session': session}
 
             except Exception as e:
                 _logger.error(f"Error in supervisor chain: {str(e)}",exc_info=True)
-                return {"next": "FINISH"}
+                session.add_message(f"Error in supervisor chain: {str(e)}",exc_info=True)
+                return {"next": "FINISH", 'session': session}
 
         return supervisor_chain
 
-    def create_node(self):
+    def create_node(self,**kwarg):
         """Creates a node for the agent in the graph."""
 
         def agent_node(state):
             """Process messages and generate a response."""
             messages = state.get('messages', [])
-            _logger.info(f"Agent {self.name} received messages: {len(messages)}")
+            _logger.info(f"Agent {self.name} received messages: {len(messages)} {state=}")
+            state['session'].add_message(f"Agent {self.name} received messages: {len(messages)} {state=}")
+            state['session'].session.save_messages(messages)
 
             try:
                 # Get the latest message
@@ -489,9 +500,10 @@ class AIAgent(models.Model):
                     "input": latest_message,
                     "messages": input_messages
                 })
+                
 
                 _logger.info(f"Agent {self.name} generated response")
-
+                state['session'].save_messages(result.get('messages',[]))
                 # Return response
                 # return result
 
@@ -501,6 +513,8 @@ class AIAgent(models.Model):
                     return result
                 else:
                     # If no AI messages found, create one from the result
+                    state['session'].add_message(f"No AImessages: {str(result)=}")
+                    
                     return {
                         "messages": [
                             AIMessage(
