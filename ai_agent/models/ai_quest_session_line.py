@@ -96,7 +96,7 @@ class AIQuestSessionLine(models.Model):
                 }
                 line = self.create(record)
                 if debug:
-                    session.log(llm, f"[session] line {line.name=} {record=}")
+                    session.log("llm", f"[session] line {line.name=} {record=}")
 
     @api.depends("model_id", "ai_quest_session_id.session")
     def compute_display_name(self):
@@ -109,9 +109,7 @@ class AIQuestSessionLine(models.Model):
             record.token_sys = record.token * 12
 
 
-
-
-class AIQuestSessionMessage(models.Model):
+classAIQuestSessionMessage(models.Model):
     _name = 'ai.quest.session.message'
     _description = 'AI Quest Session Message'
     _order = 'sequence asc'

@@ -65,7 +65,6 @@
     "external_dependencies": {
         "python": [
             "langchain-core",
-            "lxml_html_clean",
         ],
     },
     "demo": [],

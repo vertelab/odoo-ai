@@ -13,7 +13,7 @@ import unidecode
 from langchain_core.messages import BaseMessage, HumanMessage
 from langchain_core.messages import AIMessage
 from langgraph.graph import END, StateGraph
-##if VERSION >= 16.0
+##if VERSION >= '16.0'
 from odoo.addons.base.models.avatar_mixin import get_hsl_from_seed
 ##endif
 from odoo.exceptions import UserError, ValidationError, Warning
@@ -173,7 +173,7 @@ class AIQuest(models.Model):
     status = fields.Selection(
         selection=[("draft", _("Draft")), ("active", _("Active")), ("done", _("Done")), ("error", _("Error"))],
         default="draft")
-    ## if VERSION >= 16.0
+    ## if VERSION >= '16.0'
     tag_ids = fields.Many2many(comodel_name='product.tag', string='Tags')
     ## endif
     tag_ids = fields.Many2many(comodel_name='product.tag', string='Tags')
@@ -195,7 +195,7 @@ class AIQuest(models.Model):
     uuid = fields.Char('UUID', size=50, default=_generate_random_token, copy=False)
 
 
-    ## if VERSION >= 16.0
+    ## if VERSION >= '16.0'
     @api.depends('init_type', 'image_128', 'uuid')
     def _compute_avatar_128(self):
         for record in self:
