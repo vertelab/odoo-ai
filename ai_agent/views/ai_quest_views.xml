@@ -18,7 +18,6 @@
                 <search string="Search AI Quests">
                     <field name="name" />
                     <field name="description" />
-<!--                    <field name="tag_ids" />-->
                     <filter string="Draft" name="draft" domain="[('status', '=', 'draft')]" />
                     <filter string="Active" name="active" domain="[('status', '=', 'active')]" />
                     <filter string="Done" name="done" domain="[('status', '=', 'done')]" />
@@ -77,7 +76,6 @@
                                 <field name="ai_type" />
                                 <field name="user_id" widget="many2one_avatar_user" />
                                 <field name="partner_id" />
-<!--                                <field name="tag_ids" widget="many2many_tags" />-->
                             </group>
                             <group>
                                 <field name="init_type" /><newline/>
@@ -216,7 +214,6 @@
                                     <div class="oe_kanban_content flex-grow-1 flex-column">
                                         <div class="oe_kanban_details">
                                             <div class="oe_kanban_left">
-<!--                                                <field name="tag_ids" widget="many2many_tags" options="{'color_field': 'color'}" />-->
                                                 <field name="status" widget="label_selection" options="{'classes': {'draft': 'default', 'active': 'success', 'done': 'info', 'error': 'danger'}}" />
                                             </div>
                                         </div>

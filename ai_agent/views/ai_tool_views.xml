@@ -44,7 +44,6 @@
                         <group>
                             <field name="debug" />
                             <field name="is_favorite" />
-<!--                            <field name="tag_ids" widget="many2many_tags" />-->
                         </group>
                     </group>
                 </sheet>
@@ -82,7 +81,6 @@
                 <field name="name" />
                 <field name="tool" />
                 <field name="tool_lib" />
-<!--                <field name="tag_ids" />-->
                 <filter string="Favorites" name="favorites" domain="[('is_favorite', '=', True)]" />
                 <filter string="Debug Mode" name="debug" domain="[('debug', '=', True)]" />
                 <filter string="Active" name="active" domain="[('status', '=', 'active')]" />
@@ -149,7 +147,6 @@
                                 </div>
                                 <div class="o_kanban_record_bottom">
                                     <div class="oe_kanban_bottom_left">
-<!--                                        <field name="tag_ids" widget="many2many_tags" />-->
                                     </div>
                                     <div class="oe_kanban_bottom_right">
                                         <field name="is_favorite" widget="boolean_favorite" />
