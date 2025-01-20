@@ -77,6 +77,7 @@ class AIQuestAgent(models.Model):
     ai_quest_id = fields.Many2one(comodel_name='ai.quest', string="", help="")
     sequence = fields.Integer(string='Sequence')
     ai_agent_id = fields.Many2one(comodel_name='ai.agent', string="Agent", help="")
+    object_id = fields.Reference(string='Object',related="ai_agent_id.object_id",selection=lambda m: [(model.model, model.name) for model in m.env['ir.model'].sudo().search([])])
     ai_agent_status = fields.Selection(
         selection=[("draft", _("Draft")), ("active", _("Active")), ("done", _("Done")), ("error", _("Error"))],
         default="draft", related='ai_agent_id.status')

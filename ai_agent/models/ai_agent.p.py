@@ -446,38 +446,25 @@ class AIAgent(models.Model):
 
         return agent_node
 
-    def _get_memory(self, question):
+    def _get_memory(self, question, k=3, **kwarg):
         def get_rag(vs, question):
-            return "\n".join([doc.page_content for doc in vs.similarity_search(question, k=3)])
+            return "\n".join([doc.page_content for doc in vs.similarity_search(question, k=k)])
         return '\n'.join([get_rag(m.ai_memory_id.load_faiss(), question) for m in self.ai_memory_ids])
 
     def _get_tools(self):
         """Get the available tools for this agent."""
 
         tools = []
-
-        for ai_agent_tool_id in self.ai_tool_ids:
-           
-            ai_tool_id = ai_agent_tool_id.ai_tool_id
-
-            import importlib
-
-            # Assuming 'tool_lib' is stored in the database as 'duckduckgo_search'
-            # and 'class_name' is stored as 'DDGS'
-            tool_lib = ai_tool_id.tool_lib
-            class_name = ai_tool_id.tool
+        for ai_tool_id in self.ai_tool_ids.mapped('ai_tool_id'):
             TOOL = None
-
             try:
-                module = importlib.import_module(tool_lib)
-                TOOL = getattr(module, class_name)
+                module = importlib.import_module(ai_tool_id.tool_lib)
+                TOOL = getattr(module, ai_tool_id.tool)
             except ImportError as e:
-                _logger.error(f"Error importing {tool_lib}: {e}")
+                _logger.error(f"Error importing {ai_tool_id.tool_lib=}: {e}")
             except AttributeError as e:
-                _logger.error(f"Error: {class_name} not found in {tool_lib}")
+                _logger.error(f"Error: {ai_tool_id.tool=} not found in {ai_tool_id.tool_lib=}")
             except Exception as e:
                 _logger.error(f"An error occurred: {e}")
-
             tools.append(TOOL)
-
         return tools
