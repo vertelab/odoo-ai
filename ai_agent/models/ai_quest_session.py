@@ -232,6 +232,9 @@ class AIQuestSession(models.Model):
 
     def add_message(self, message,**kwarg):
         self.env['ai.quest.session.message'].add(self,message,**kwarg)
+    
+    def save_messages(self, message,**kwarg):
+        self.env['ai.quest.session.message'].save_messages(self,message,**kwarg)
 
     def log(self, obj, message):
         _logger.info(message)

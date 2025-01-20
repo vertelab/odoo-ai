@@ -441,7 +441,7 @@ class AIAgent(models.Model):
                         return {"next": member, 'session': session}
 
                 # If no clear direction and we have previous responses, finish
-                if len(messages) > 1:
+                if len(messages) > 1:   
                     _logger.info("No clear direction, finishing")
                     session.add_message("No clear direction, finishing")
                     return {"next": "FINISH", 'session': session}
@@ -454,7 +454,7 @@ class AIAgent(models.Model):
 
             except Exception as e:
                 _logger.error(f"Error in supervisor chain: {str(e)}",exc_info=True)
-                session.add_message(f"Error in supervisor chain: {str(e)}",exc_info=True)
+                session.add_message(f"Error in supervisor chain: {str(e)}")
                 return {"next": "FINISH", 'session': session}
 
         return supervisor_chain
@@ -467,7 +467,7 @@ class AIAgent(models.Model):
             messages = state.get('messages', [])
             _logger.info(f"Agent {self.name} received messages: {len(messages)} {state=}")
             state['session'].add_message(f"Agent {self.name} received messages: {len(messages)} {state=}")
-            state['session'].session.save_messages(messages)
+            # state['session'].save_messages(messages)
 
             try:
                 # Get the latest message
