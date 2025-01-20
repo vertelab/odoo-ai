@@ -1,0 +1,295 @@
+<odoo>
+  <data>
+    <record id="ai_quest_list" model="ir.ui.view">
+      <field name="name">ai.quest.list</field>
+      <field name="model">ai.quest</field>
+      <field name="arch" type="xml">
+        <tree string="AI Quest">
+          <field name="name" />
+          <field name="ai_type" />
+          <field name="status" />
+        </tree>
+      </field>
+    </record>
+    <record id="ai_quest_search" model="ir.ui.view">
+      <field name="name">ai.quest.search</field>
+      <field name="model">ai.quest</field>
+      <field name="arch" type="xml">
+        <search string="Search AI Quests">
+          <field name="name" />
+          <field name="description" />
+          <field name="tag_ids" />
+          <filter string="Draft" name="draft" domain="[('status', '=', 'draft')]" />
+          <filter string="Active" name="active" domain="[('status', '=', 'active')]" />
+          <filter string="Done" name="done" domain="[('status', '=', 'done')]" />
+          <filter string="Error" name="done" domain="[('status', '=', 'error')]" />
+          <filter string="Favorite" name="favorite" domain="[('is_favorite', '=', True)]" />
+          <filter string="My Quests" name="my_quest" domain="[('user_id', '=', uid)]" help="My Quests" />
+          <group expand="0" string="Group By">
+            <filter string="Status" name="group_by_status" context="{'group_by': 'status'}" />
+            <filter string="AI Type" name="group_by_ai_type" context="{'group_by': 'ai_type'}" />
+            <filter string="Owner" name="group_by_user" context="{'group_by': 'user_id'}" />
+            <filter string="Customer" name="group_by_partner" context="{'group_by': 'partner_id'}" />
+          </group>
+        </search>
+      </field>
+    </record>
+    <record id="ai_quest_form" model="ir.ui.view">
+      <field name="name">ai.quest.form</field>
+      <field name="model">ai.quest</field>
+      <field name="arch" type="xml">
+        <form>
+          <header>
+            <field name="status" widget="statusbar" statusbar_visible="active,done" options="{'clickable': '1', 'fold_field': 'fold'}" />
+            <button name="start" type="object" string="Start" class="btn-primary" />
+            <button name="mail_test_wizard" type="object" string="Mail Test" class="btn-primary" attrs="{'invisible': [('init_type', '!=', 'mail')]}" />
+          </header>
+          <sheet string="AI Quest">
+            <div name="button_box" id="button_box" class="oe_button_box">
+              <button name="action_get_llms" class="oe_stat_button " type="object" icon="fa-database">
+                <field string="LLMs" name="llm_count" widget="statinfo" />
+              </button>
+              <button name="action_get_agents" class="oe_stat_button " type="object" icon="fa-user-secret">
+                <field string="Agents" name="agent_count" widget="statinfo" help="Used Agents on sessions" />
+              </button>
+              <button name="action_get_sessions" class="oe_stat_button" type="object" icon="fa-flag-checkered">
+                <field string="Sessions" name="session_count" widget="statinfo" />
+              </button>
+              <button name="action_get_session_lines" class="oe_stat_button" type="object" icon="fa-money">
+                <field string="Tokens" name="session_line_count" widget="statinfo" />
+              </button>
+              <button name="action_get_session_objects" class="oe_stat_button" type="object" icon="fa-puzzle-piece">
+                <field string="Objects" name="session_object_count" widget="statinfo" />
+              </button>
+            </div>
+            <field name="avatar_128" invisible="1" />
+            <field name="image_128" widget="image" class="oe_avatar" options="{'size': [90, 90], 'preview_image':'avatar_128'}" />
+            <div class="oe_title">
+            <h1 class="d-flex flex-row">
+              <field name="is_favorite" nolabel="1" widget="boolean_favorite" class="me-2" />
+              <field name="name" class="o_text_overflow" placeholder="t.ex. Chatbot" modifiers="{&quot;required&quot;: true}" />
+            </h1>
+          </div>
+            ´
+            <group>
+              <group>
+                <field name="ai_type" />
+                <field name="user_id" widget="many2one_avatar_user" />
+                <field name="partner_id" />
+                <field name="tag_ids" widget="many2many_tags" />
+              </group>
+              <group>
+                <field name="init_type" /><newline/>
+                <field name="alias_name" on_change="1" attrs="{'invisible': [('init_type', '!=', 'mail')]}" />
+                <label for="alias_name" string="Email Alias" attrs="{'invisible': [('init_type', '!=', 'mail')]}" />
+                <div class="oe_inline" name="alias_def" attrs="{'invisible': [('init_type', '!=', 'mail')]}">
+                  <field name="alias_id" class="oe_read_only oe_inline" string="Email Alias" required="0" attrs="{'invisible': [('alias_domain', '=', False)]}" />
+                  <div class="oe_inline" name="edit_alias" style="display: inline;">
+                    <div class="oe_edit_only" attrs="{'invisible': [('alias_domain', '=', False)]}" dir="ltr">
+                      <field name="alias_name" class="oe_inline" />
+                      @
+                      <field name="alias_domain" class="oe_inline" readonly="1" />
+                    </div>
+                    <button icon="fa-arrow-right" type="action" name="%(base_setup.action_general_configuration)d" string="Configure a custom domain" class="p-0 btn-link" attrs="{'invisible': [('alias_domain', '!=', False)]}" />
+                  </div>
+                </div>
+                <field name="alias_contact" string="Accept Emails From" attrs="{'invisible': [('init_type', '!=', 'mail')], 'required': [('init_type', '=', 'cron')]}" />
+                <field name="server_action_id" attrs="{'invisible': [('init_type', '!=', 'server-action')], 'required': [('init_type', '=', 'server-action')]}" />
+                <field name="cron_id" attrs="{'invisible': [('init_type', '!=', 'cron')], 'required': [('init_type', '=', 'cron')]}" />
+                <field name="model_id" attrs="{'invisible': [('init_type', 'not in', ['server-action','cron'])], 'required': [('init_type', 'in', ['server-action','cron'])]}" />
+                <field name="model_name" invisible="1" />
+<!--
+                <field name="filter_domain" widget="domain" options="{'model': model_name}" attrs="{'invisible': [('init_type', '!=', 'cron')]}" />
+-->
+                <field name="filter_domain" widget="domain" options="{'model-field': 'res.partner'}" attrs="{'invisible': [('init_type', '!=', 'cron')]}" />
+                
+                <field name="channel_id" attrs="{'invisible': [('init_type', '!=', 'channel')], 'required': [('init_type', '=', 'channel')]}" />
+                <field name="chat_user_id" attrs="{'invisible': [('init_type', '!=', 'chat')], 'required': [('init_type', '=', 'chat')]}" />
+               
+
+
+                <field name="use_chat_history" on_change="1" attrs="{'invisible': ['|',('init_type', 'not in', ['chat','channel']),('use_chat_history','=',True)]}"  class="oe_inline" />
+                <label for="use_chat_history" attrs="{'invisible': ['|',('init_type', 'not in', ['chat','channel']),('use_chat_history','=',False)]}"  class="oe_inline" />
+
+                <div>
+                <div class="oe_inline"  attrs="{'invisible': ['|',('init_type', 'not in', ['chat','channel']),('use_chat_history','=',False)]}" colspan="4">
+                <field name="use_chat_history" attrs="{'invisible': [('init_type', 'not in', ['chat','channel'])]}"  class="oe_inline" />
+       
+                  <field name="chat_history_limit"  attrs="{'invisible': ['|',('init_type', 'not in', ['chat','channel']),('use_chat_history','=',False)]}" class="oe_inline" />
+                  <span class="oe_inline"  attrs="{'invisible': [('init_type', 'not in', ['chat','channel'])]}">messages</span>
+                </div></div>
+                
+                </group>
+                <group>_</group>
+                <group>
+                <field name="init_type_str" nolabel="1" colspan="2" readonly="1" /></group>
+              </group>
+              <group string="Advanced Settings" col="2">
+                <field name="debug"  widget="boolean_toggle" />
+              </group>
+              <group col="4" string="Context Settings">
+                <group col="2" colspan="2">
+                  <field name="use_company_info" />
+                  <field name="use_personal_info" />
+                </group>
+                <group col="2" colspan="2">
+                  <field name="use_personal_lang" />
+                  <field name="use_time_context" />
+                </group>
+            </group>
+            <notebook>
+              <page string="Description" id="desc">
+                <field name="description" />
+              </page>
+              <page string="Code" id="code">
+                <field name="code" />
+              </page>
+              <page string="Agents" id="agent">
+                <field name="ai_agent_ids">
+                  <tree string="AI Quest Agents" editable="bottom">
+                    <field name="sequence" widget="handle" />
+                    <field name="ai_agent_id" />
+                    <field name="ai_agent_status" />
+                    <field name="ai_agent_llm_id" />
+                    <field name="ai_llm_status" />
+                  </tree>
+                </field>
+              </page>
+            </notebook>
+          </sheet>
+          <div class="oe_chatter">
+            <field name="message_follower_ids" widget="mail_followers" />
+            <field name="activity_ids" widget="mail_activity" />
+            <field name="message_ids" widget="mail_thread" />
+          </div>
+        </form>
+      </field>
+    </record>
+    <record id="view_ai_quest_kanban" model="ir.ui.view">
+      <field name="name">ai.quest.kanban</field>
+      <field name="model">ai.quest</field>
+      <field name="arch" type="xml">
+        <kanban class="o_kanban_small_column" quick_create="false" records_draggable="false">
+          <field name="id" />
+          <field name="name" />
+          <field name="color" />
+          <field name="init_type" />
+          <field name="status" />
+          <field name="user_id" />
+          <field name="partner_id" />
+          <field name="is_favorite" />
+          <field name="agent_count" />
+          <field name="session_count" />
+          <field name="avatar_128" />
+          <field name="image_128" />
+          <templates>
+            <t t-name="kanban-box">
+              <div t-attf-class="oe_kanban_global_click o_ai_agent_kanban #{kanban_color(record.color.raw_value)}">
+                <div class="o_kanban_image me-1">
+                  <img t-att-src="kanban_image('ai.quest', 'avatar_128', record.id.raw_value)" alt="AI Quest" class="oe_module_icon" />
+                </div>
+                <div class="oe_kanban_details">
+                  <div class="o_kanban_record_top mb-0">
+                    <div class="o_kanban_record_headings">
+                      <span style="margin-right: 5px;">
+                        <field name="is_favorite" widget="boolean_favorite" nolabel="1" force_save="1" />
+                      </span>
+                      <strong class="o_kanban_record_title">
+                        <field name="name" />
+                      </strong>
+                    </div>
+                    <div class="o_dropdown_kanban dropdown">
+                      <a role="button" class="dropdown-toggle o-no-caret btn" data-toggle="dropdown" href="#" aria-label="Dropdown menu" title="Dropdown menu">
+                        <span class="fa fa-ellipsis-v" />
+                      </a>
+                      <div class="dropdown-menu" role="menu">
+                        <t t-if="widget.editable">
+                          <a role="menuitem" type="edit" class="dropdown-item">Edit</a>
+                        </t>
+                        <t t-if="widget.deletable">
+                          <a role="menuitem" type="delete" class="dropdown-item">Delete</a>
+                        </t>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="oe_kanban_content flex-grow-1 flex-column">
+                    <div class="oe_kanban_details">
+                      <div class="oe_kanban_left">
+                        <field name="tag_ids" widget="many2many_tags" options="{'color_field': 'color'}" />
+                        <field name="status" widget="label_selection" options="{'classes': {'draft': 'default', 'active': 'success', 'done': 'info', 'error': 'danger'}}" />
+                      </div>
+                    </div>
+                  </div>
+                  <div class="oe_kanban_footer mt-3">
+                    <div class="o_kanban_record_bottom">
+                      <div class="oe_kanban_bottom_left">
+                        <field name="init_type" />
+                      </div>
+                      <div class="oe_kanban_bottom_right">
+                        <!--                                                <field name="is_favorite" widget="boolean_favorite" nolabel="1" force_save="1" />-->
+                        <field name="user_id" widget="many2one_avatar_user" />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </t>
+          </templates>
+        </kanban>
+      </field>
+    </record>
+    <record id="ai_quest_kanban2" model="ir.ui.view">
+      <field name="name">ai.quest.kanban</field>
+      <field name="model">ai.quest</field>
+      <field name="arch" type="xml">
+        <kanban class="o_kanban_mobile" sample="1">
+          <field name="name" />
+          <field name="color" />
+          <templates>
+            <t t-name="kanban-box">
+              <div t-attf-class="#{kanban_color(record.color.raw_value)} oe_kanban_content oe_kanban_global_click o_kanban_get_form">
+                <div class="o_project_kanban_main ">
+                  <div class="o_kanban_card_content mw-100">
+                    <div class="o_kanban_primary_left">
+                      <div class="oe_kanban_details">
+                        <span>
+                          <field name="is_favorite" widget="boolean_favorite" nolabel="1" force_save="1" />
+                        </span>
+                        <span class="o_text_overflow" t-att-title="record.name.value">
+                          <t t-esc="record.name.value" />
+                        </span>
+                      </div>
+                      <field name="session_ids" widget="many2many_tags" options="{'color_field': 'color'}" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </t>
+          </templates>
+        </kanban>
+      </field>
+    </record>
+    <record id="view_ai_quest_calendar" model="ir.ui.view">
+      <field name="name">ai.quest.calendar</field>
+      <field name="model">ai.quest</field>
+      <field name="arch" type="xml">
+        <calendar string="AI Quests" date_start="last_run" color="color" mode="month">
+          <field name="name" />
+          <field name="ai_type" />
+          <field name="status" />
+          <field name="session_count" />
+          <field name="session_line_count" />
+          <field name="is_favorite" widget="boolean_favorite" />
+        </calendar>
+      </field>
+    </record>
+    <record id="action_ai_quest" model="ir.actions.act_window">
+      <field name="name">AI Quest</field>
+      <field name="res_model">ai.quest</field>
+      <field name="view_mode">kanban,tree,form,calendar</field>
+    </record>
+    <menuitem id="ai_agent.menu_ai_agent_root" name="AI Orchestration" action="action_ai_quest" />
+    <menuitem id="ai_agent.menu_ai_agent_menu" parent="ai_agent.menu_ai_agent_root" name="Agents and Quests" />
+    <menuitem id="ai_agent.menu_ai_quest" name="Ai Quest" parent="ai_agent.menu_ai_agent_menu" action="action_ai_quest" />
+  </data>
+</odoo>
