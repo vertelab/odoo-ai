@@ -63,7 +63,7 @@ class AIQuestSession(models.Model):
     enddate = fields.Datetime()
     session = fields.Char(default=lambda self: str(uuid.uuid4()))
     session_line_count = fields.Integer(compute='_compute_session_line_count')
-    session_line_ids = fields.One2many(   comodel_name="ai.quest.session.line",     inverse_name="ai_quest_session_id")
+    session_line_ids = fields.One2many(comodel_name="ai.quest.session.line", inverse_name="ai_quest_session_id")
     session_message_ids = fields.One2many(comodel_name="ai.quest.session.message", inverse_name="ai_quest_session_id")
     session_message_count = fields.Integer(compute='_compute_session_message_count')
     session_object_count = fields.Integer(compute='_compute_session_object_count')
@@ -132,8 +132,7 @@ class AIQuestSession(models.Model):
             'domain': [("ai_quest_session_id", '=', self.id)],
         }
         return action
-
-
+ 
     def action_get_sessions(self):
         action = {
             'name': 'Sessions',
@@ -165,9 +164,6 @@ class AIQuestSession(models.Model):
     def _compute_session_message_count(self):
         for record in self:
             record.session_message_count = len(record.session_message_ids)
-
-
-
 
     def _message_set_main_attachment_id(self, attachment_ids):
         thread_ids = super(AIQuestSession, self)._message_set_main_attachment_id(attachment_ids)
@@ -232,10 +228,10 @@ class AIQuestSession(models.Model):
 
     def add_message(self, message,**kwarg):
         self.env['ai.quest.session.message'].add(self,message,**kwarg)
-    
+   
     def save_messages(self, message,**kwarg):
         self.env['ai.quest.session.message'].save_messages(self,message,**kwarg)
-
+ 
     def log(self, obj, message):
         _logger.info(message)
         obj.message_post(body=message)

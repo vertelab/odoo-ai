@@ -21,13 +21,14 @@ class AIQuestSessionMessage(models.Model):
     def add(self, session, message, **kwarg):
         start = self.env['ai.quest.session.message'].search([('ai_quest_session_id',"=",session.id)],order="sequence desc",limit=1)
         start = start.sequence + 1 if start else 0
-        self.env['ai.quest.session.message'].create({
+        session_message_id = self.env['ai.quest.session.message'].create({
                 "sequence": start + 1,
                 "ai_quest_session_id": session.id,
                 "message_type": 'add',
                 "message_content": message,
                 "prompt": kwarg.get('prompt',''),
             })
+        return session_message_id
 
     
     @api.model

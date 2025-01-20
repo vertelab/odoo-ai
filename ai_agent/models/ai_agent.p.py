@@ -1,23 +1,41 @@
-import functools
-import importlib
-import json
 import logging
+import functools
 import re
+import json
 import traceback
-
 from datetime import datetime
-from httpx import HTTPStatusError
-from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder, PromptTemplate, HumanMessagePromptTemplate, SystemMessagePromptTemplate
-from langchain.schema import AIMessage, HumanMessage, SystemMessage, BaseMessage
-from langchain.tools import tool
-from langchain_community.chat_message_histories import ChatMessageHistory
-from langgraph.prebuilt import create_react_agent
-from odoo import models, fields, api, _
-from odoo.exceptions import UserError
 from random import randint
+# from typing import List
 from typing_extensions import TypedDict, List
 
+from httpx import HTTPStatusError
+from langchain.agents import AgentExecutor, create_openai_tools_agent
+from langchain_community.embeddings import OpenAIEmbeddings
+# from langchain_core.messages import BaseMessage
+from langchain.memory import ConversationTokenBufferMemory
+from langchain_community.chat_message_histories import ChatMessageHistory
+from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder, PromptTemplate
+from langchain.prompts import HumanMessagePromptTemplate, SystemMessagePromptTemplate
+from langchain.schema import AIMessage, HumanMessage, SystemMessage, BaseMessage
+from langchain.output_parsers.openai_functions import JsonOutputFunctionsParser
+from langgraph.prebuilt import create_react_agent
+from langchain.tools import tool
+
+from langchain_openai import ChatOpenAI
+from langchain_groq import ChatGroq
+from langchain_mistralai import ChatMistralAI
+
+from odoo.exceptions import UserError
+
+from odoo import models, fields, api, _
+
 _logger = logging.getLogger(__name__)
+
+
+class DefaultDict(dict):
+    def __missing__(self, key):
+        return f'{key}: missing'  # Return an empty string or any default value you prefer
+
 
 class AIAgent(models.Model):
     _name = 'ai.agent'
@@ -26,36 +44,36 @@ class AIAgent(models.Model):
 
     ai_agent_data_ids = fields.One2many(comodel_name="ai.agent.data", inverse_name="agent_id")
     ai_agent_llm_id = fields.Many2one(comodel_name="ai.agent.llm", string="LLM", help="Choose Large Language Model",
-                                          domain="[('status','=','confirmed')]")
+                                      domain="[('status','=','confirmed')]")
     ai_backstory = fields.Text(string="Backstory")
     ai_discription = fields.Text()
     ai_goal = fields.Text(string="Goal")
-    ai_memory_ids = fields.One2many(comodel_name='ai.agent.memory', inverse_name='ai_agent_id', string="", help="")
     ai_prompt_template = fields.Html(string="Prompt Template")
     ai_role = fields.Char(string="Role")
-    ai_temperature = fields.Float(string='Temperature', default=0.7,
-                                      help="Temperature controls the randomness and creativity of the model's output, "
-                                           "<1.0 more predictable and consistent >1.0 more diverse and creative responses")
+    ai_memory_ids = fields.One2many(comodel_name='ai.agent.memory', inverse_name='ai_agent_id', string="", help="")
     ai_tool_ids = fields.One2many(comodel_name='ai.agent.tool', inverse_name='ai_agent_id', string="", help="")
+
+    ai_temperature = fields.Float(string='Temperature', default=0.7,
+                                  help="Temperature controls the randomness and creativity of the model's output, "
+                                       "<1.0 more predictable and consistent >1.0 more diverse and creative responses")
     ai_type = fields.Selection(selection=[("default", "Default"), ('ai-programmer', 'AI Programmer')],
-                                   default="default", required=True)
-    base_image_128 = fields.Image("Base Image", max_width=128, max_height=128, 
-                                    compute='_compute_base_image_128')
+                               default="default", required=True)
     color = fields.Integer(default=lambda self: randint(1, 11))
     debug = fields.Boolean(string='Debug')
-    image_128 = fields.Image("Image", max_width=128, max_height=128)
     is_favorite = fields.Boolean()
     last_run = fields.Datetime()
     name = fields.Char(required=True)
-    object_id = fields.Reference(string='Object',selection=lambda m: [(model.model, model.name) for model in m.env['ir.model'].sudo().search([])])
     quest_count = fields.Integer(compute="compute_quest_count")
     quest_ids = fields.Many2many(comodel_name="ai.quest")
     session_count = fields.Integer(compute="compute_session_count")
     session_line_count = fields.Integer(compute="compute_session_line_count")
     session_line_ids = fields.One2many(comodel_name="ai.quest.session.line", inverse_name="ai_agent_id")
-    status = fields.Selection(selection=[("draft", _("Draft")), ("active", _("Active")), ("done", _("Done")), ("error", _("Error"))],
-            default="draft")
+    status = fields.Selection(
+        selection=[("draft", _("Draft")), ("active", _("Active")), ("done", _("Done")), ("error", _("Error"))],
+        default="draft")
     tag_ids = fields.Many2many(comodel_name='product.tag', string='Tags')
+    image_128 = fields.Image("Image", max_width=128, max_height=128)
+    base_image_128 = fields.Image("Base Image", max_width=128, max_height=128, compute='_compute_base_image_128')
 
     @api.depends('image_128')
     def _compute_base_image_128(self):
@@ -128,7 +146,7 @@ class AIAgent(models.Model):
         return extra_context
 
     def _chat_history(self, quest):
-        if not (quest.init_type in ['chat','channel'] and quest.use_chat_history):
+        if not (quest.init_type in ['chat', 'channel'] and quest.use_chat_history):
             return False
         chat_history = ChatMessageHistory()
         question = ''
@@ -158,7 +176,7 @@ class AIAgent(models.Model):
                      **kwargs):
         """
           Single agent prompting from quest.code
-          
+         
           result = agents[0].prompt_agent(
                    session=session,
                    debug=quest.debug,
@@ -185,7 +203,7 @@ class AIAgent(models.Model):
         Goal: {goal}
         Backstory: {backstory}
         {extra_context}
-        
+      
         Context and Guidelines:
         - Always maintain the specified role
         - Focus on achieving the defined goal
@@ -270,17 +288,17 @@ class AIAgent(models.Model):
         self.message_post(body=f"{body} | {self.last_run}", message_type="notification")
 
     # ------------------------------------------------------------
-    # LangGraph 
+    # LangGraph
     # ------------------------------------------------------------
 
-    def create_supervisor(self, quest, members,**kwarg):
+
+    def create_supervisor(self, quest, members, **kwarg):
         """Create a supervisor node that coordinates between different agents."""
-        
-        use_lang=f"Use language {self.env.user.lang} for the answer to Human" if quest.use_personal_lang else ''
-        memory = self._get_memory(kwarg.get('message',''))
-        
+        use_lang = f"Use language {self.env.user.lang} for the answer to Human" if quest.use_personal_lang else ''
+        memory = self._get_memory(kwarg.get('message', ''))
+            
         session=kwarg.get('session',False)
-        
+       
         system_prompt = f"""You are a supervisor coordinating between workers: {members}.
         Based on the request, determine which worker should handle the next step.
         Only choose FINISH when a complete response has been provided.
@@ -291,7 +309,7 @@ class AIAgent(models.Model):
         Guidelines: {quest.description}
         {self._extra_context(quest)}
         Message history: {self._chat_history(quest)}
-        
+       
         Memory: {memory}
 
         Instructions:
@@ -305,7 +323,7 @@ class AIAgent(models.Model):
         def supervisor_chain(state):
             messages = state.get('messages', [])
             _logger.info(f"Supervisor received messages: {len(messages)} {session=}")
-            
+           
             if not messages:
                 _logger.info(f"No messages, starting with first worker: {members[0] if members else 'no members'}")
                 session.add_message(f"No messages, starting with first worker: {members[0] if members else 'no members'}")
@@ -318,13 +336,13 @@ class AIAgent(models.Model):
 
             try:
                 # Create full message list
-                _logger.error(f"Create full message list        ")
+                _logger.error(f"Create full message list")
                 prompt = f"Previous conversation:\n"
                 for msg in messages:
                     prompt += f"\n{msg.content}\n"
                 prompt += (f"\nBased on this, who should act next? Choose from: {members} or say FINISH if we have a "
                            f"complete response.")
-    
+ 
                 # Get LLM response
                 llm = self.ai_agent_llm_id.get_llm()
                 response = llm.invoke([
@@ -369,7 +387,7 @@ class AIAgent(models.Model):
 
         return supervisor_chain
 
-    def create_node(self,**kwarg):
+    def create_node(self, **kwarg):
         """Creates a node for the agent in the graph."""
 
         def agent_node(state):
@@ -377,19 +395,18 @@ class AIAgent(models.Model):
             messages = state.get('messages', [])
             _logger.info(f"Agent {self.name} received messages: {len(messages)} {state=}")
             state['session'].add_message(f"Agent {self.name} received messages: {len(messages)} {state=}")
-            # state['session'].save_messages(messages)
 
             try:
                 # Get the latest message
                 latest_message = messages[-1].content if messages else ""
-                
+
                 system_message = SystemMessage(
                     content=f"""You are an agent with specific responsibilities.
                     Role: {self.ai_role}
                     Goal: {self.ai_goal}
                     Backstory: {self.ai_backstory}
                     Memory: {self._get_memory(latest_message)}
-    
+   
                     Instructions:
                     - Provide thorough, complete responses
                     - Use available tools and memory when needed
@@ -400,7 +417,7 @@ class AIAgent(models.Model):
                 # Get LLM
                 llm = self.ai_agent_llm_id.get_llm()
                 tools = self._get_tools()
-                
+               
                 langgraph_agent_executor = create_react_agent(llm, tools=tools)
 
                 # Prepare the input messages with system message first
@@ -410,7 +427,7 @@ class AIAgent(models.Model):
                     "input": latest_message,
                     "messages": input_messages
                 })
-                
+            
 
                 _logger.info(f"Agent {self.name} generated response")
                 state['session'].save_messages(result.get('messages',[]))
@@ -424,7 +441,7 @@ class AIAgent(models.Model):
                 else:
                     # If no AI messages found, create one from the result
                     state['session'].add_message(f"No AImessages: {str(result)=}")
-                    
+
                     return {
                         "messages": [
                             AIMessage(
@@ -447,10 +464,10 @@ class AIAgent(models.Model):
 
         return agent_node
 
-    def _get_memory(self,question):
-        def get_rag(vs,question):
+    def _get_memory(self, question):
+        def get_rag(vs, question):
             return "\n".join([doc.page_content for doc in vs.similarity_search(question, k=3)])
-        return '\n'.join([get_rag(m.ai_memory_id.load_faiss(),question) for m in self.ai_memory_ids])
+        return '\n'.join([get_rag(m.ai_memory_id.load_faiss(), question) for m in self.ai_memory_ids])
 
     def _get_tools(self):
         """Get the available tools for this agent."""
@@ -458,10 +475,10 @@ class AIAgent(models.Model):
         tools = []
 
         for ai_agent_tool_id in self.ai_tool_ids:
-            
+           
             ai_tool_id = ai_agent_tool_id.ai_tool_id
 
-            
+            import importlib
 
             # Assuming 'tool_lib' is stored in the database as 'duckduckgo_search'
             # and 'class_name' is stored as 'DDGS'
