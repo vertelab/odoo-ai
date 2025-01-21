@@ -219,6 +219,7 @@ class AIAgent(models.Model):
 
         # If you need to log for debugging
         if debug:
+            _logger.warning(f"Marcus {formatted_prompt=}")
             self.log_message(f"Formatted prompt: {formatted_prompt}")
 
         try:

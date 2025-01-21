@@ -4,31 +4,48 @@
     <record id="azure_product_template" model="product.template">
       <field name="name">Azure OpenAI</field>
       <field name="is_llm">True</field>
-      <field name="llm_library">langchain_mistralai</field>
-      <field name="llm_type">AzureOpenAIEmbeddings</field>
+      <field name="llm_library">langchain_openai</field>
+      <field name="llm_type">AzureOpenAI</field>
       <field name="llm_etype">AzureOpenAIEmbeddings</field>
       <field name="image_1920" type="base64" file="ai_agent/static/img/azure_openai-icon.png" />
     </record>
     <!-- Model -->
-    <record id="azure_product_attribute_value_mistral-large-latest" model="product.attribute.value">
-      <field name="name">azure-large-latest</field>
+    <!-- See link for different OpenAI Services used as a model. Region: "Sweden Central" + Currency: "SEK" -->
+    <!-- Source: https://azure.microsoft.com/en-us/pricing/details/cognitive-services/openai-service/ -->
+    <record id="azure_product_attribute_value_o1" model="product.attribute.value">
+      <field name="name">azure-o1</field>
        <field name="licence">azure-research</field>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
     </record>
-
+    <record id="azure_product_attribute_value_o1-mini" model="product.attribute.value">
+      <field name="name">azure-o1-mini</field>
+       <field name="licence">azure-research</field>
+      <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+    </record>
+    <record id="azure_product_attribute_value_GPT-4o" model="product.attribute.value">
+      <field name="name">azure-GPT-4o</field>
+       <field name="licence">azure-research</field>
+      <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+    </record>
+    <record id="azure_product_attribute_value_GPT-4o-mini" model="product.attribute.value">
+      <field name="name">azure-GPT-4o-mini</field>
+       <field name="licence">azure-research</field>
+      <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+    </record>
     <!-- Attribute Line -->
-    <record id="mistral_product_template_attribute_line_model" model="product.template.attribute.line">
-      <field name="product_tmpl_id" ref="mistral_product_template" />
+    <record id="azure_product_template_attribute_line_model" model="product.template.attribute.line">
+      <field name="product_tmpl_id" ref="azure_product_template" />
       <field name="attribute_id" ref="product_attribute_model" />
       <field name="value_ids" eval="[(6, 0, [
-                    ref('ai_agent.mistral_product_attribute_value_mistral-large-latest'),
-                    ref('mistral_product_attribute_value_pixtral-large-latest'),
-                    ref('mistral_product_attribute_value_mistral-moderation-latest'),
+                    ref('azure_product_attribute_value_o1'),
+                    ref('azure_product_attribute_value_o1-mini'),
+                    ref('azure_product_attribute_value_GPT-4o'),
+                    ref('azure_product_attribute_value_GPT-4o-mini'),
                     ])]" />
     </record>
     <!-- Token Type -->
-    <record id="mistral_product_template_attribute_line_token_type" model="product.template.attribute.line">
-      <field name="product_tmpl_id" ref="mistral_product_template" />
+    <record id="azure_product_template_attribute_line_token_type" model="product.template.attribute.line">
+      <field name="product_tmpl_id" ref="azure_product_template" />
       <field name="attribute_id" ref="product_attribute_token_type" />
       <field name="value_ids" eval="[(6, 0, [
          ref('product_attribute_value_input_tokens'),
