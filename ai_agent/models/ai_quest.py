@@ -2,23 +2,27 @@
 import base64
 import json
 import logging
+import markdown
 import operator
 import re
+import traceback
+import unidecode
+import warnings
+warnings.filterwarnings("ignore", category=DeprecationWarning, message="builtin type swigvarlink has no __module__ attribute")
+
+
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
+from langgraph.graph import END, StateGraph
+from odoo import models, fields, api, _
+from odoo.addons.ai_agent.models.ai_quest_session import AIQuestSession
+from odoo.exceptions import UserError, ValidationError, Warning
+from odoo.tools.mail import html2plaintext
+from odoo.tools.safe_eval import safe_eval
 from random import randint
 from secrets import choice
 from typing import Annotated, TypedDict, Sequence
 
-import markdown
-import unidecode
-from langchain_core.messages import BaseMessage, HumanMessage
-from langchain_core.messages import AIMessage
-from langgraph.graph import END, StateGraph
 from odoo.addons.base.models.avatar_mixin import get_hsl_from_seed
-from odoo.exceptions import UserError, ValidationError, Warning
-from odoo.tools.mail import html2plaintext
-from odoo.tools.safe_eval import safe_eval
-from odoo.addons.ai_agent.models.ai_quest_session import AIQuestSession
-from odoo import models, fields, api, _
 
 _logger = logging.getLogger(__name__)
 
@@ -88,17 +92,25 @@ class AIQuestAgent(models.Model):
 
 # https://readmedium.com/langgraph-made-easy-a-beginners-guide-part-2-196e8b179119
 
-DEFAULT_PYTHON_CODE = """# Available variables:
-#  - env: Odoo Environment on which the action is triggered
-#  - model: Odoo Model of the record on which the action is triggered; is a void recordset
+DEFAULT_PYTHON_CODE = """# Available variables:  
+#  - env, self: Odoo Environment on which the action is triggered
+#  - quest: The current Quest
+#  - agents: A list of agents for this Quest
+#  - company_id: The current Company
+#  - context: The current context
 #  - record: record on which the action is triggered; may be void
 #  - records: recordset of all records on which the action is triggered in multi-mode; may be void
-#  - time, datetime, dateutil, timezone: useful Python libraries
-#  - float_compare: Odoo function to compare floats based on specific precisions
-#  - log: log(message, level='info'): logging function to record debug information in ir.logging table
-#  - UserError: Warning Exception to use with raise
-# - Command: x2Many commands namespace
-# To return an action, assign: action = {...}\n\n\n\n"""
+#  - message: Human message record
+#  - message_body: Human message in a chat context
+#  - message_invoke: Invoke-parameter in a chat context
+#  - UserError: Raise UserError-condition 
+#  - _logger: Logger eg _logger.warning(f"My text")
+# To return a result assign result\n
+# Example:
+#
+# result = quest.build_graph(session=session,message=message_body).invoke(message_invoke)
+#\n\n\n
+"""
 
 # Python code
 INIT_TYPES = [
@@ -473,13 +485,9 @@ class AIQuest(models.Model):
             Implements chat with channel and bot
             
             code:
-            result = agents[0].prompt_agent(
-                            session=session,
-                            debug=quest.debug,
-                            message=html2plaintext(message.body),
-                            channel=channel,
-                            bot_user=bot_user
-                                   )
+            
+            result = quest.build_graph(session=session,message=message).invoke(message_invoke)
+            
             
         """
         # ~ _logger.warning(f"chat {message=} {message.body=}")
@@ -556,7 +564,8 @@ class AIQuest(models.Model):
         :returns: dict -- evaluation context given to (safe_)safe_eval """
 
         records = kw.get('records', [])
-
+        message = kw.get('message',False)
+        message_body = html2plaintext(message.body) if message else ''
         eval_context = {
             'action': action,
             'env': self.env,
@@ -569,16 +578,11 @@ class AIQuest(models.Model):
             'record': records[0] if records else None,
             'records': records,
             # context
-            'agent_list': ' '.join(
-                [f"'name': {a.name}, 'role': {a.ai_role},'goal': {a.ai_goal},'template': {a.ai_prompt_template}" for a
-                 in self.env['ai.agent'].search([])]),
-            'quest_list': ' ',
-            'module_list': '',
-
+             'message_body': message_body,
+             'message_invoke': {"messages": [HumanMessage(content=message_body)]},
             # Exceptions
             'Warning': Warning,
             'UserError': UserError,
-
             # helpers
             '_logger': _logger,
             'html2plaintext': html2plaintext,
@@ -587,22 +591,26 @@ class AIQuest(models.Model):
         }
         return eval_context
 
-    def run(self, **kwargs):
+    def run(self, **kwargs):            
+        if self.debug:
+            _logger.warning(f" RUN {kwargs=}")
         local_dict = {}
         try:
+            if self.debug:
+                _logger.warning(f" Före eval context -----------------------")
             eval_context = self._get_eval_context(None, kwargs)
             # eval_context["session"].status = "active"
             if self.debug:
-                _logger.warning(f"{eval_context=}" + f"{self.code=}\n=======\n {local_dict=}")
+                _logger.warning(f"Efter eval context {eval_context=}" + f"{self.code=}\n=======\n {local_dict=}")
             safe_eval(self.code, eval_context, local_dict, mode="exec", nocopy=True)
         except ValueError as e:
             self.log_message(f"ValueError {e=}", is_error=True)
             if self.debug:
-                self.log_message(f"{e=}\n\n=====\n{self.code=}\n=======\n {local_dict=}")
+                self.log_message(f"{e=}\n\n=====\n{self.code=}\n=======\n {local_dict=}\n{traceback.format_exc()}")
             return None
         except Exception as e:
             _logger.error(f"{e=}")
-            self.log_message(f" {e=}")
+            self.log_message(f" {e=}  {traceback.format_exc()}")
             if self.debug:
                 self.log_message(f"{e=}\n\n=====\n{self.code=}\n=======\n {local_dict=}")
             return None
