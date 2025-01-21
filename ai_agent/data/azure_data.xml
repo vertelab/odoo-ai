@@ -13,22 +13,22 @@
     <!-- See link for different OpenAI Services used as a model. Region: "Sweden Central" + Currency: "SEK" -->
     <!-- Source: https://azure.microsoft.com/en-us/pricing/details/cognitive-services/openai-service/ -->
     <record id="azure_product_attribute_value_o1" model="product.attribute.value">
-      <field name="name">azure-o1</field>
+      <field name="name">o1</field>
        <field name="licence">azure-research</field>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
     </record>
     <record id="azure_product_attribute_value_o1-mini" model="product.attribute.value">
-      <field name="name">azure-o1-mini</field>
+      <field name="name">o1-mini</field>
        <field name="licence">azure-research</field>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
     </record>
     <record id="azure_product_attribute_value_GPT-4o" model="product.attribute.value">
-      <field name="name">azure-GPT-4o</field>
+      <field name="name">GPT-4o</field>
        <field name="licence">azure-research</field>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
     </record>
     <record id="azure_product_attribute_value_GPT-4o-mini" model="product.attribute.value">
-      <field name="name">azure-GPT-4o-mini</field>
+      <field name="name">GPT-4o-mini</field>
        <field name="licence">azure-research</field>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
     </record>
