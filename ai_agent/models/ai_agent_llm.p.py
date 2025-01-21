@@ -205,7 +205,7 @@ class AIAgentLLM(models.Model):
                     'token': token,
                     'system_fingerprint': response.id,
                     'finish_reason': response_metadata.get('finish_reason'),
-                }
+                })
 
 
 

@@ -173,10 +173,9 @@ class AIQuest(models.Model):
     status = fields.Selection(
         selection=[("draft", _("Draft")), ("active", _("Active")), ("done", _("Done")), ("error", _("Error"))],
         default="draft")
-    ## if VERSION >= '16.0'
+    # #if VERSION >= '16.0' 
     tag_ids = fields.Many2many(comodel_name='product.tag', string='Tags')
-    ## endif
-    tag_ids = fields.Many2many(comodel_name='product.tag', string='Tags')
+    # #endif
     use_chat_history = fields.Boolean(string='Use Chat History', default=True, help='Add chat history to the context')
     use_company_info = fields.Boolean(string='Use Company Info', default=True,
                                       help='Add company mission and values to the context')
