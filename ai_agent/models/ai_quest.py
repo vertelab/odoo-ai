@@ -1,3 +1,4 @@
+
 import base64
 import json
 import logging
@@ -13,10 +14,10 @@ from langchain_core.messages import BaseMessage, HumanMessage
 from langchain_core.messages import AIMessage
 from langgraph.graph import END, StateGraph
 from odoo.addons.base.models.avatar_mixin import get_hsl_from_seed
-from odoo.exceptions import UserError, ValidationError
+from odoo.exceptions import UserError, ValidationError, Warning
 from odoo.tools.mail import html2plaintext
 from odoo.tools.safe_eval import safe_eval
-
+from odoo.addons.ai_agent.models.ai_quest_session import AIQuestSession
 from odoo import models, fields, api, _
 
 _logger = logging.getLogger(__name__)
@@ -64,8 +65,8 @@ avatar_server_action = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 5
 
 class AgentState(TypedDict):
     messages: Annotated[Sequence[BaseMessage], operator.add]
+    session: AIQuestSession
     next: str
-
 
 class AIQuestAgent(models.Model):
     _name = 'ai.quest.agent'
@@ -74,6 +75,7 @@ class AIQuestAgent(models.Model):
     ai_quest_id = fields.Many2one(comodel_name='ai.quest', string="", help="")
     sequence = fields.Integer(string='Sequence')
     ai_agent_id = fields.Many2one(comodel_name='ai.agent', string="Agent", help="")
+    object_id = fields.Reference(string='Object',related="ai_agent_id.object_id",selection=lambda m: [(model.model, model.name) for model in m.env['ir.model'].sudo().search([])])
     ai_agent_status = fields.Selection(
         selection=[("draft", _("Draft")), ("active", _("Active")), ("done", _("Done")), ("error", _("Error"))],
         default="draft", related='ai_agent_id.status')
@@ -95,7 +97,7 @@ DEFAULT_PYTHON_CODE = """# Available variables:
 #  - float_compare: Odoo function to compare floats based on specific precisions
 #  - log: log(message, level='info'): logging function to record debug information in ir.logging table
 #  - UserError: Warning Exception to use with raise
-#  - Command: x2Many commands namespace
+# - Command: x2Many commands namespace
 # To return an action, assign: action = {...}\n\n\n\n"""
 
 # Python code
@@ -116,21 +118,30 @@ class AIQuest(models.Model):
 
     agent_count = fields.Integer(compute="compute_agent_count")
     ai_agent_ids = fields.One2many(comodel_name='ai.quest.agent', inverse_name='ai_quest_id')
-    ai_type = fields.Selection(selection=[("default", "Default"), ('ai-programmer', 'AI Programmer')],  default="default", required=True)
-    alias_id = fields.Many2one(comodel_name='mail.alias', string='Alias', ondelete="restrict", required=True, help="The email address associated with this channel. New emails received will ""automatically create new leads assigned to the channel.")
-    # alias_user_id = fields.Many2one(comodel_name='res.users', related='alias_id.alias_user_id', readonly=False,inherited=True, )
+    ai_type = fields.Selection(selection=[("default", "Default"), ('ai-programmer', 'AI Programmer')],
+                               default="default", required=True)
+    alias_id = fields.Many2one(comodel_name='mail.alias', string='Alias', ondelete="restrict", required=True,
+                               help="The email address associated with this channel. New emails received will "
+                                    "automatically create new leads assigned to the channel.")
+    alias_user_id = fields.Many2one(comodel_name='res.users', related='alias_id.alias_user_id', readonly=False,
+                                    inherited=True, )
     avatar_128 = fields.Image("Avatar", max_width=128, max_height=128, compute='_compute_avatar_128')
-    channel_id = fields.Many2one(comodel_name='discuss.channel', string="Channel", help="")
-    chat_history_limit = fields.Integer(string='Chat History Limit', default=10,help='Limit the chat history to this njumber of messages')
+
+    channel_id = fields.Many2one(comodel_name='mail.channel', string="Channel", help="")
+    chat_history_limit = fields.Integer(string='Chat History Limit', default=10,
+                                        help='Limit the chat history to this number of messages')
     chat_user_id = fields.Many2one(comodel_name='res.users', string="Chat User", help="")
-    code = fields.Text(string='Python Code', groups='base.group_system', default=DEFAULT_PYTHON_CODE,help="Write Python code that the action will execute. Some variables are ""available for use; help about python expression is given in the help tab.")
+    code = fields.Text(string='Python Code', groups='base.group_system', default=DEFAULT_PYTHON_CODE,
+                       help="Write Python code that the action will execute. Some variables are available for use; "
+                            "help about python expression is given in the help tab.")
     color = fields.Integer(default=lambda self: randint(1, 11))
     cron_id = fields.Many2one(comodel_name='ir.cron', string="Scheduled Action", help="", ondelete="cascade")
     debug = fields.Boolean(string='Debug', help='More logging')
     description = fields.Text()
-    filter_domain = fields.Char(string='Record Selection',)
+    filter_domain = fields.Char(string='Record Selection', )
     image_128 = fields.Image("Image", max_width=128, max_height=128)
-    init_type = fields.Selection(selection=INIT_TYPES, string='Initiate', help="How the Quest is initialized",required=True, default='manual')
+    init_type = fields.Selection(selection=INIT_TYPES, string='Initiate', help="How the Quest is initialized",
+                                 required=True, default='manual')
     init_type_str = fields.Html(string='', )
     is_favorite = fields.Boolean()
     last_run = fields.Datetime()
@@ -139,29 +150,42 @@ class AIQuest(models.Model):
     model_name = fields.Char(related='model_id.model', string='Model Name', readonly=True, store=True)
     name = fields.Char(required=True)
     partner_id = fields.Many2one(comodel_name='res.partner', string="Customer", help="")
-    real_channel_id = fields.Many2one(comodel_name='discuss.channel', string="Channel", help="This is the channel chat-method get")
-    real_chat_user_id = fields.Many2one(comodel_name='res.users', string="Chat User", help="Chat user thet chat-method is using")
-    server_action_id = fields.Many2one('ir.actions.server', string='Server Action',help="Server action to be executed when this quest is initialized",ondelete="cascade")
+    real_channel_id = fields.Many2one(comodel_name='mail.channel', string="Channel",
+                                      help="This is the channel chat-method get")
+    real_chat_user_id = fields.Many2one(comodel_name='res.users', string="Chat User",
+                                        help="Chat user thet chat-method is using")
+    server_action_id = fields.Many2one('ir.actions.server', string='Server Action',
+                                       help="Server action to be executed when this quest is initialized",
+                                       ondelete="cascade")
+
     session_count = fields.Integer(compute="compute_session_count")
     session_ids = fields.One2many(comodel_name="ai.quest.session", inverse_name="ai_quest_id")
     session_line_count = fields.Integer(compute="compute_session_line_count")
     session_line_ids = fields.One2many(comodel_name="ai.quest.session.line", inverse_name="ai_quest_id")
     session_object_count = fields.Integer(compute="compute_session_object_count")
     session_object_ids = fields.One2many(comodel_name="ai.session.object", inverse_name="ai_quest_id")
-    status = fields.Selection(selection=[("draft", _("Draft")), ("active", _("Active")), ("done", _("Done")), ("error", _("Error"))],default="draft")
+    status = fields.Selection(
+        selection=[("draft", _("Draft")), ("active", _("Active")), ("done", _("Done")), ("error", _("Error"))],
+        default="draft")
+    tag_ids = fields.Many2many(comodel_name='product.tag', string='Tags')
     tag_ids = fields.Many2many(comodel_name='product.tag', string='Tags')
     use_chat_history = fields.Boolean(string='Use Chat History', default=True, help='Add chat history to the context')
-    use_company_info = fields.Boolean(string='Use Company Info', default=True,help='Add company mission and values to the context')
-    use_personal_info = fields.Boolean(string='Use Personal Info', default=True,help='Add personal name and other info to the context')
-    use_personal_lang = fields.Boolean(string='Use Personal Language', default=True,help='Set Personas language for the LLM')
-    use_time_context = fields.Boolean(string='Use Time Context', default=True,help='Inform the LLM of current time, date')
+    use_company_info = fields.Boolean(string='Use Company Info', default=True,
+                                      help='Add company mission and values to the context')
+    use_personal_info = fields.Boolean(string='Use Personal Info', default=True,
+                                       help='Add personal name and other info to the context')
+    use_personal_lang = fields.Boolean(string='Use Personal Language', default=True,
+                                       help='Set Personas language for the LLM')
+    use_time_context = fields.Boolean(string='Use Time Context', default=True,
+                                      help='Inform the LLM of current time, date')
     user_id = fields.Many2one(comodel_name='res.users', string="Owner", help="")
-    
+  
     @api.model
     def _generate_random_token(self):
         return ''.join(choice('abcdefghijkmnopqrstuvwxyzABCDEFGHIJKLMNPQRSTUVWXYZ23456789') for _i in range(10))
 
     uuid = fields.Char('UUID', size=50, default=_generate_random_token, copy=False)
+
 
     @api.depends('init_type', 'image_128', 'uuid')
     def _compute_avatar_128(self):
@@ -272,8 +296,6 @@ class AIQuest(models.Model):
     def _compute_model_name(self):
         for record in self:
             record.model_name = record.model_id.model if record.model_id else False
-
-
 
     @api.onchange('model_id')
     def _onchange_model_id(self):
@@ -460,13 +482,13 @@ class AIQuest(models.Model):
                             bot_user=bot_user
                                    )
             
-        """        
+        """
         # ~ _logger.warning(f"chat {message=} {message.body=}")
         if (self.init_type == 'chat' and self.chat_user_id) or (self.init_type == "channel" and self.channel_id):
             if self._check_quest_error():
                 raise UserError(self._check_quest_error())
 
-            self.write({'real_channel_id': channel.id,'real_chat_user_id': bot_user.id})
+            self.write({'real_channel_id': channel.id, 'real_chat_user_id': bot_user.id})
             session = message.parent_id.ai_quest_session_id if message.parent_id and message.parent_id.ai_quest_session_id else \
                 message.parent_id.ai_quest_session_id if message.ai_quest_session_id else \
                     self.env['ai.quest.session'].quest_init(self)
@@ -555,7 +577,7 @@ class AIQuest(models.Model):
             'module_list': '',
 
             # Exceptions
-            # 'Warning': Warning,
+            'Warning': Warning,
             'UserError': UserError,
 
             # helpers
@@ -687,17 +709,19 @@ class AIQuest(models.Model):
     # ------------------------------------------------------------
 
     # Inspired by https://github.com/menonpg/agentic_search_openai_langgraph/blob/main/agents.py
-    def build_graph(self,**kwarg):
+    def build_graph(self, **kwarg):
         """Build a multi-agent workflow graph."""
-    
+ 
         if not self.ai_agent_ids:
             raise ValueError("No agents provided")
 
         agents = [line.ai_agent_id for line in self.ai_agent_ids]
-        
+       
         # Get member names
         members = [a.name for a in agents[1:]]
         _logger.info(f"Building graph with supervisor and {len(members)} workers: {members}")
+        global session
+        session=kwarg.get('session',False)
 
         try:
             # Create graph
@@ -706,12 +730,12 @@ class AIQuest(models.Model):
             # Add supervisor
             supervisor = agents[0]
             _logger.info(f"Adding supervisor: {supervisor.name}")
-            graph_builder.add_node("Supervisor", supervisor.create_supervisor(self, members,**kwarg))
+            graph_builder.add_node("Supervisor", supervisor.create_supervisor(self, members, **kwarg))
 
             # Add worker nodes
             for agent in agents[1:]:
                 _logger.info(f"Adding worker node: {agent.name}")
-                graph_builder.add_node(agent.name, agent.create_node())
+                graph_builder.add_node(agent.name, agent.create_node(session=session))
 
             # Add edges from workers to supervisor
             for member in members:
@@ -739,7 +763,7 @@ class AIQuest(models.Model):
             return graph_builder.compile()
 
         except Exception as e:
-            self.log_message(f"Error building graph: {str(e)}",is_error=True)
+            self.log_message(f"Error building graph: {str(e)}", is_error=True)
             _logger.error(f"Error building graph: {str(e)}")
             raise
 

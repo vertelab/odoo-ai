@@ -54,6 +54,7 @@
         "views/ai_agent_llm_views.xml",
         "views/ai_quest_session_views.xml",
         "views/ai_quest_session_line_views.xml",
+        "views/ai_quest_session_message_views.xml",
         "views/ai_memory_views.xml",
         "views/ai_tool_views.xml",
         "views/product_template_views.xml",
@@ -64,7 +65,6 @@
     "external_dependencies": {
         "python": [
             "langchain-core",
-            "lxml_html_clean",
         ],
     },
     "demo": [],

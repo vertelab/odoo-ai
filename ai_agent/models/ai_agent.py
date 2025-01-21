@@ -1,40 +1,23 @@
-import logging
 import functools
-import re
+import importlib
 import json
+import logging
+import re
 import traceback
+
 from datetime import datetime
+from httpx import HTTPStatusError
+from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder, PromptTemplate, HumanMessagePromptTemplate, SystemMessagePromptTemplate
+from langchain.schema import AIMessage, HumanMessage, SystemMessage, BaseMessage
+from langchain.tools import tool
+from langchain_community.chat_message_histories import ChatMessageHistory
+from langgraph.prebuilt import create_react_agent
+from odoo import models, fields, api, _
+from odoo.exceptions import UserError
 from random import randint
-# from typing import List
 from typing_extensions import TypedDict, List
 
-from httpx import HTTPStatusError
-from langchain.agents import AgentExecutor, create_openai_tools_agent
-from langchain.embeddings import OpenAIEmbeddings
-# from langchain_core.messages import BaseMessage
-from langchain.memory import ConversationTokenBufferMemory, ChatMessageHistory
-from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder, PromptTemplate
-from langchain.prompts import HumanMessagePromptTemplate, SystemMessagePromptTemplate
-from langchain.schema import AIMessage, HumanMessage, SystemMessage, BaseMessage
-from langchain.output_parsers.openai_functions import JsonOutputFunctionsParser
-from langgraph.prebuilt import create_react_agent
-from langchain.tools import tool
-
-from langchain_openai import ChatOpenAI
-from langchain_groq import ChatGroq
-from langchain_mistralai import ChatMistralAI
-
-from odoo.exceptions import UserError
-
-from odoo import models, fields, api, _
-
 _logger = logging.getLogger(__name__)
-
-
-class DefaultDict(dict):
-    def __missing__(self, key):
-        return f'{key}: missing'  # Return an empty string or any default value you prefer
-
 
 class AIAgent(models.Model):
     _name = 'ai.agent'
@@ -43,36 +26,36 @@ class AIAgent(models.Model):
 
     ai_agent_data_ids = fields.One2many(comodel_name="ai.agent.data", inverse_name="agent_id")
     ai_agent_llm_id = fields.Many2one(comodel_name="ai.agent.llm", string="LLM", help="Choose Large Language Model",
-                                      domain="[('status','=','confirmed')]")
+                                          domain="[('status','=','confirmed')]")
     ai_backstory = fields.Text(string="Backstory")
     ai_discription = fields.Text()
     ai_goal = fields.Text(string="Goal")
+    ai_memory_ids = fields.One2many(comodel_name='ai.agent.memory', inverse_name='ai_agent_id', string="", help="")
     ai_prompt_template = fields.Html(string="Prompt Template")
     ai_role = fields.Char(string="Role")
-    ai_memory_ids = fields.One2many(comodel_name='ai.agent.memory', inverse_name='ai_agent_id', string="", help="")
-    ai_tool_ids = fields.One2many(comodel_name='ai.agent.tool', inverse_name='ai_agent_id', string="", help="")
-
     ai_temperature = fields.Float(string='Temperature', default=0.7,
-                                  help="Temperature controls the randomness and creativity of the model's output, "
-                                       "<1.0 more predictable and consistent >1.0 more diverse and creative responses")
+                                      help="Temperature controls the randomness and creativity of the model's output, "
+                                           "<1.0 more predictable and consistent >1.0 more diverse and creative responses")
+    ai_tool_ids = fields.One2many(comodel_name='ai.agent.tool', inverse_name='ai_agent_id', string="", help="")
     ai_type = fields.Selection(selection=[("default", "Default"), ('ai-programmer', 'AI Programmer')],
-                               default="default", required=True)
+                                   default="default", required=True)
+    base_image_128 = fields.Image("Base Image", max_width=128, max_height=128, 
+                                    compute='_compute_base_image_128')
     color = fields.Integer(default=lambda self: randint(1, 11))
     debug = fields.Boolean(string='Debug')
+    image_128 = fields.Image("Image", max_width=128, max_height=128)
     is_favorite = fields.Boolean()
     last_run = fields.Datetime()
     name = fields.Char(required=True)
+    object_id = fields.Reference(string='Object',selection=lambda m: [(model.model, model.name) for model in m.env['ir.model'].sudo().search([])])
     quest_count = fields.Integer(compute="compute_quest_count")
     quest_ids = fields.Many2many(comodel_name="ai.quest")
     session_count = fields.Integer(compute="compute_session_count")
     session_line_count = fields.Integer(compute="compute_session_line_count")
     session_line_ids = fields.One2many(comodel_name="ai.quest.session.line", inverse_name="ai_agent_id")
-    status = fields.Selection(
-        selection=[("draft", _("Draft")), ("active", _("Active")), ("done", _("Done")), ("error", _("Error"))],
-        default="draft")
+    status = fields.Selection(selection=[("draft", _("Draft")), ("active", _("Active")), ("done", _("Done")), ("error", _("Error"))],
+            default="draft")
     tag_ids = fields.Many2many(comodel_name='product.tag', string='Tags')
-    image_128 = fields.Image("Image", max_width=128, max_height=128)
-    base_image_128 = fields.Image("Base Image", max_width=128, max_height=128, compute='_compute_base_image_128')
 
     @api.depends('image_128')
     def _compute_base_image_128(self):
@@ -145,12 +128,12 @@ class AIAgent(models.Model):
         return extra_context
 
     def _chat_history(self, quest):
-        if not (quest.init_type in ['chat','channel'] and quest.use_chat_history):
+        if not (quest.init_type in ['chat', 'channel'] and quest.use_chat_history):
             return False
         chat_history = ChatMessageHistory()
         question = ''
         for m in self.env['mail.message'].search([
-            ('model', '=', 'discuss.channel'),
+            ('model', '=', 'mail.channel'),
             ('res_id', '=', quest.real_channel_id.id)],
                 limit=quest.chat_history_limit, order='create_date asc'):
             if m.author_id.id == quest.real_chat_user_id.id:
@@ -175,7 +158,7 @@ class AIAgent(models.Model):
                      **kwargs):
         """
           Single agent prompting from quest.code
-          
+         
           result = agents[0].prompt_agent(
                    session=session,
                    debug=quest.debug,
@@ -202,7 +185,7 @@ class AIAgent(models.Model):
         Goal: {goal}
         Backstory: {backstory}
         {extra_context}
-        
+      
         Context and Guidelines:
         - Always maintain the specified role
         - Focus on achieving the defined goal
@@ -287,87 +270,17 @@ class AIAgent(models.Model):
         self.message_post(body=f"{body} | {self.last_run}", message_type="notification")
 
     # ------------------------------------------------------------
-    # LangGraph 
+    # LangGraph
     # ------------------------------------------------------------
 
 
-
-    # def create_supervisor(self, quest, members):
-    #     """Create a supervisor node that coordinates between different agents."""
-    #     system_prompt = f"""You are a supervisor coordinating between workers: {members}.
-    #     Based on the request, determine which worker should handle the next step.
-    #     Only choose FINISH when a complete response has been provided.
-    #
-    #     Role: {self.ai_role}
-    #     Goal: {self.ai_goal}
-    #     Backstory: {self.ai_backstory}
-    #     Guidelines: {quest.description}
-    #
-    #     Instructions:
-    #     1. Evaluate if we have a complete response
-    #     2. If not complete, choose the most appropriate worker
-    #     3. Send FINISH only when we have a satisfactory response
-    #     """
-    #
-    #     def supervisor_chain(state):
-    #         messages = state.get('messages', [])
-    #         _logger.info(f"Supervisor received messages: {len(messages)}")
-    #
-    #         if not messages:
-    #             _logger.info(f"No messages, starting with first worker: {members[0]}")
-    #             return {"next": members[0]} if members else {"next": "FINISH"}
-    #
-    #         try:
-    #             # Create full message list
-    #             prompt = f"Previous conversation:\n"
-    #             for msg in messages:
-    #                 prompt += f"\n{msg.content}\n"
-    #             prompt += (f"\nBased on this, who should act next? Choose from: {members} or say FINISH if we have a "
-    #                        f"complete response.")
-    #
-    #             # Get LLM response
-    #             llm = eval(self.ai_agent_llm_id.get_llm())
-    #             response = llm.invoke([
-    #                 SystemMessage(content=system_prompt),
-    #                 HumanMessage(content=prompt)
-    #             ])
-    #
-    #             # Parse response
-    #             content = response.content.upper()
-    #             _logger.info(f"Supervisor decision: {content}")
-    #
-    #             # Check for completion or next agent
-    #             if "FINISH" in content:
-    #                 _logger.info("Supervisor decided to FINISH")
-    #                 return {"next": "FINISH"}
-    #
-    #             # Find mentioned agent
-    #             for member in members:
-    #                 if member.upper() in content:
-    #                     _logger.info(f"Supervisor selected agent: {member}")
-    #                     return {"next": member}
-    #
-    #             # If no clear direction and we have previous responses, finish
-    #             if len(messages) > 1:
-    #                 _logger.info("No clear direction, finishing")
-    #                 return {"next": "FINISH"}
-    #
-    #             # Default to first member
-    #             _logger.info(f"Defaulting to first member: {members[0]}")
-    #             return {"next": members[0]}
-    #
-    #         except Exception as e:
-    #             _logger.error(f"Error in supervisor chain: {str(e)}")
-    #             return {"next": "FINISH"}
-    #
-    #     return supervisor_chain
-
-    def create_supervisor(self, quest, members,**kwarg):
+    def create_supervisor(self, quest, members, **kwarg):
         """Create a supervisor node that coordinates between different agents."""
-        
-        use_lang=f"Use language {self.env.user.lang} for the answer to Human" if quest.use_personal_lang else ''
-        memory = self._get_memory(kwarg.get('message',''))
-        
+        use_lang = f"Use language {self.env.user.lang} for the answer to Human" if quest.use_personal_lang else ''
+        memory = self._get_memory(kwarg.get('message', ''))
+            
+        session=kwarg.get('session',False)
+       
         system_prompt = f"""You are a supervisor coordinating between workers: {members}.
         Based on the request, determine which worker should handle the next step.
         Only choose FINISH when a complete response has been provided.
@@ -378,7 +291,7 @@ class AIAgent(models.Model):
         Guidelines: {quest.description}
         {self._extra_context(quest)}
         Message history: {self._chat_history(quest)}
-        
+       
         Memory: {memory}
 
         Instructions:
@@ -391,26 +304,27 @@ class AIAgent(models.Model):
 
         def supervisor_chain(state):
             messages = state.get('messages', [])
-            _logger.info(f"Supervisor received messages: {len(messages)}")
-
+            _logger.info(f"Supervisor received messages: {len(messages)} {session=}")
+           
             if not messages:
-                _logger.info(f"No messages, starting with first worker: {members[0]}")
-                return {"next": members[0]} if members else {"next": "FINISH"}
+                _logger.info(f"No messages, starting with first worker: {members[0] if members else 'no members'}")
+                session.add_message(f"No messages, starting with first worker: {members[0] if members else 'no members'}")
+                return {"next": members[0],'session':session} if members else {"next": "FINISH",'session':session}
 
-            _logger.error(f"{messages=}")
+            _logger.error(f"{messages=} {session=}")
 
             # Get the latest message
             question = messages[-1].content if messages else ""
 
             try:
                 # Create full message list
-                _logger.error(f"Create full message list        ")
+                _logger.error(f"Create full message list")
                 prompt = f"Previous conversation:\n"
                 for msg in messages:
                     prompt += f"\n{msg.content}\n"
                 prompt += (f"\nBased on this, who should act next? Choose from: {members} or say FINISH if we have a "
                            f"complete response.")
-    
+ 
                 # Get LLM response
                 llm = self.ai_agent_llm_id.get_llm()
                 response = llm.invoke([
@@ -421,53 +335,60 @@ class AIAgent(models.Model):
                 # Parse response
                 content = response.content.upper()
                 _logger.info(f"Supervisor decision: {content}")
+                session.add_message(f"Supervisor decision: {content}")
 
                 # Check for completion or next agent
                 if "FINISH" in content:
                     _logger.info("Supervisor decided to FINISH")
-                    return {"next": "FINISH"}
+                    session.add_message("Supervisor decided to FINISH")
+                    return {"next": "FINISH",'session': session}
 
                 # Find mentioned agent
                 for member in members:
                     if member.upper() in content:
                         _logger.info(f"Supervisor selected agent: {member}")
-                        return {"next": member}
+                        session.add_message(f"Supervisor selected agent: {member}")
+                        return {"next": member, 'session': session}
 
                 # If no clear direction and we have previous responses, finish
-                if len(messages) > 1:
+                if len(messages) > 1:   
                     _logger.info("No clear direction, finishing")
-                    return {"next": "FINISH"}
+                    session.add_message("No clear direction, finishing")
+                    return {"next": "FINISH", 'session': session}
 
                 # Default to first member
                 if len(members) != 0:
                     _logger.info(f"Defaulting to first member: {members[0]}")
-                    return {"next": members[0]}
+                    session.add_message(f"Defaulting to first member: {members[0]}")
+                    return {"next": members[0], 'session': session}
 
             except Exception as e:
                 _logger.error(f"Error in supervisor chain: {str(e)}",exc_info=True)
-                return {"next": "FINISH"}
+                session.add_message(f"Error in supervisor chain: {str(e)}")
+                return {"next": "FINISH", 'session': session}
 
         return supervisor_chain
 
-    def create_node(self):
+    def create_node(self, **kwarg):
         """Creates a node for the agent in the graph."""
 
         def agent_node(state):
             """Process messages and generate a response."""
             messages = state.get('messages', [])
-            _logger.info(f"Agent {self.name} received messages: {len(messages)}")
+            _logger.info(f"Agent {self.name} received messages: {len(messages)} {state=}")
+            state['session'].add_message(f"Agent {self.name} received messages: {len(messages)} {state=}")
 
             try:
                 # Get the latest message
                 latest_message = messages[-1].content if messages else ""
-                
+
                 system_message = SystemMessage(
                     content=f"""You are an agent with specific responsibilities.
                     Role: {self.ai_role}
                     Goal: {self.ai_goal}
                     Backstory: {self.ai_backstory}
                     Memory: {self._get_memory(latest_message)}
-    
+   
                     Instructions:
                     - Provide thorough, complete responses
                     - Use available tools and memory when needed
@@ -478,7 +399,7 @@ class AIAgent(models.Model):
                 # Get LLM
                 llm = self.ai_agent_llm_id.get_llm()
                 tools = self._get_tools()
-                
+               
                 langgraph_agent_executor = create_react_agent(llm, tools=tools)
 
                 # Prepare the input messages with system message first
@@ -488,9 +409,10 @@ class AIAgent(models.Model):
                     "input": latest_message,
                     "messages": input_messages
                 })
+            
 
                 _logger.info(f"Agent {self.name} generated response")
-
+                state['session'].save_messages(result.get('messages',[]))
                 # Return response
                 # return result
 
@@ -500,6 +422,8 @@ class AIAgent(models.Model):
                     return result
                 else:
                     # If no AI messages found, create one from the result
+                    state['session'].add_message(f"No AImessages: {str(result)=}")
+
                     return {
                         "messages": [
                             AIMessage(
@@ -522,77 +446,25 @@ class AIAgent(models.Model):
 
         return agent_node
 
-    def _get_memory(self,question):
-        def get_rag(vs,question):
-            return "\n".join([doc.page_content for doc in vs.similarity_search(question, k=3)])
-        return '\n'.join([get_rag(m.ai_memory_id.load_faiss(),question) for m in self.ai_memory_ids])
+    def _get_memory(self, question, k=3, **kwarg):
+        def get_rag(vs, question):
+            return "\n".join([doc.page_content for doc in vs.similarity_search(question, k=k)])
+        return '\n'.join([get_rag(m.ai_memory_id.load_faiss(), question) for m in self.ai_memory_ids])
 
     def _get_tools(self):
         """Get the available tools for this agent."""
 
         tools = []
-
-        for ai_agent_tool_id in self.ai_tool_ids:
-            
-            ai_tool_id = ai_agent_tool_id.ai_tool_id
-
-            import importlib
-
-            # Assuming 'tool_lib' is stored in the database as 'duckduckgo_search'
-            # and 'class_name' is stored as 'DDGS'
-            tool_lib = ai_tool_id.tool_lib
-            class_name = ai_tool_id.tool
+        for ai_tool_id in self.ai_tool_ids.mapped('ai_tool_id'):
             TOOL = None
-
             try:
-                module = importlib.import_module(tool_lib)
-                TOOL = getattr(module, class_name)
+                module = importlib.import_module(ai_tool_id.tool_lib)
+                TOOL = getattr(module, ai_tool_id.tool)
             except ImportError as e:
-                _logger.error(f"Error importing {tool_lib}: {e}")
+                _logger.error(f"Error importing {ai_tool_id.tool_lib=}: {e}")
             except AttributeError as e:
-                _logger.error(f"Error: {class_name} not found in {tool_lib}")
+                _logger.error(f"Error: {ai_tool_id.tool=} not found in {ai_tool_id.tool_lib=}")
             except Exception as e:
                 _logger.error(f"An error occurred: {e}")
-
             tools.append(TOOL)
-
         return tools
-
-        # @tool("internet_search_DDGO", return_direct=False)
-        # def internet_search_DDGO(query: str) -> str:
-        #     """Searches the internet using DuckDuckGo."""
-
-        #     import importlib
-
-        #     # Assuming 'lib_name' is stored in the database as 'duckduckgo_search'
-        #     # and 'class_name' is stored as 'DDGS'
-        #     lib_name = 'duckduckgo_search'
-        #     class_name = 'DDGS'
-
-        #     try:
-        #         module = importlib.import_module(lib_name)
-        #         DDGS = getattr(module, class_name)
-
-        #         with DDGS() as ddgs:
-        #             results = list(ddgs.text(query, max_results=5))
-        #     except ImportError as e:
-        #         _logger.error(f"Error importing {lib_name}: {e}")
-        #     except AttributeError as e:
-        #         _logger.error(f"Error: {class_name} not found in {lib_name}")
-        #     except Exception as e:
-        #         _logger.error(f"An error occurred: {e}")
-
-        #     return results if results else "No results found."
-
-        # @tool("process_content", return_direct=False)
-        # def process_content(url: str) -> str:
-        #     """Processes content from a webpage."""
-
-        #     from bs4 import BeautifulSoup
-        #     import requests
-
-        #     response = requests.get(url)
-        #     soup = BeautifulSoup(response.content, 'html.parser')
-        #     return soup.get_text()
-
-        # return [internet_search_DDGO, process_content]

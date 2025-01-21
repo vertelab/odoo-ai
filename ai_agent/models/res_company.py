@@ -5,7 +5,7 @@
 import logging
 
 
-from odoo import api, fields, models, tools, _, Command
+from odoo import api, fields, models, tools, _
 from odoo.exceptions import ValidationError, UserError
 
 

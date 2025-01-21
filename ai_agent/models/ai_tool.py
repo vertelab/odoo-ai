@@ -55,7 +55,9 @@ class AITool(models.Model):
     session_count = fields.Integer(compute="compute_session_count")
     session_line_count = fields.Integer(compute="compute_session_line_count")
     session_line_ids = fields.One2many(comodel_name="ai.quest.session.line", inverse_name="ai_tool_id")
-    status = fields.Selection(selection=[("draft", _("Draft")), ("active", _("Active")), ("done", _("Done")), ("error", _("Error"))],default="draft")
+    status = fields.Selection(
+        selection=[("draft", _("Draft")), ("active", _("Active")), ("done", _("Done")), ("error", _("Error"))],
+        default="draft")
     tag_ids = fields.Many2many(comodel_name='product.tag', string='Tags')
     tool = fields.Char(string='Tool', trim=True, )
     tool_api_key = fields.Char(string='API-key', trim=True, )
@@ -104,9 +106,9 @@ class AITool(models.Model):
             'domain': [("session_line_ids.ai_tool_id", '=', self.id)]
         }
         return action
-        
-        
-        
+
+      
+       
     def action_test_tool(self):
         action = {
             'name': 'Test Tool',
@@ -118,7 +120,6 @@ class AITool(models.Model):
         }
         _logger.error(f"{action}")
         return action
-
 
     @api.depends("session_line_ids")
     def compute_session_line_count(self):
@@ -143,8 +144,6 @@ class AITool(models.Model):
         for record in self:
             record.ai_agent_count = len(record.ai_agent_ids)
 
-
-
     @api.depends('image_128')
     def _compute_base_image_128(self):
         for record in self:
@@ -156,55 +155,6 @@ class AITool(models.Model):
         self.last_run = fields.Datetime.now()
         self.message_post(body=f"{body} | {self.last_run}", message_type="notification")
 
-
-    # ~ @tool
-    # ~ def weather_tool(query: str):
-        # ~ """Get weather information."""
-        # ~ if "sf" in query.lower() or "san francisco" in query.lower():
-            # ~ return "It's 60 degrees and foggy."
-        # ~ return "It's 90 degrees and sunny."
-
-    # ~ @tool
-    # ~ def search_tool(query: str):
-        # ~ """Search for information."""
-        # ~ return f"Found results for: {query}"
-
-    # ~ @tool
-    # ~ def search_duck_tool(query: str):
-        # ~ """Search for information on duckduck."""
-        # ~ search = DuckDuckGoSearchResults()
-        # ~ return search
-
-
-    # ~ def _get_alias_model_name(self):
-        # ~ return 'ai.quest'
-
-    # ~ @api.model
-    # ~ def _get_alias_values(self):
-        # ~ values = super(AIQuest, self)._get_alias_values()
-        # ~ values['alias_model_id'] = self.env['ir.model']._get('ai.quest').id
-        # ~ return values
-
-    # ~ def start(self):
-        # ~ self.run()
-
-    # ~ @tool
-    # ~ def weather_tool(query: str):
-        # ~ """Get weather information."""
-        # ~ if "sf" in query.lower() or "san francisco" in query.lower():
-            # ~ return "It's 60 degrees and foggy."
-        # ~ return "It's 90 degrees and sunny."
-
-    # ~ @tool
-    # ~ def search_tool(query: str):
-        # ~ """Search for information."""
-        # ~ return f"Found results for: {query}"
-
-    # ~ @tool
-    # ~ def search_duck_tool(query: str):
-        # ~ """Search for information on duckduck."""
-        # ~ search = DuckDuckGoSearchResults()
-        # ~ return search
 
     def should_continue(self, state: MessagesState) -> Literal["tools", END]:
         messages = state['messages']
@@ -242,8 +192,8 @@ class AITool(models.Model):
         _logger.info(f"{response.content=}")
 
         return {"messages": [response]}
-        
-      
+       
+     
 class AIToolTestWizard(models.Model):
     _name = 'ai.tool.test.wizard'
     _description = 'A testing wizard for ai tool'
@@ -253,7 +203,7 @@ class AIToolTestWizard(models.Model):
     ai_tool_id = fields.Many2one(comodel_name="ai.tool")
 
     def test_tool(self):
-        results=''
+        results = ''
         try:
             module = importlib.import_module(self.ai_tool_id.tool_lib)
             TOOL = getattr(module, self.ai_tool_id.tool)
@@ -265,8 +215,8 @@ class AIToolTestWizard(models.Model):
         except Exception as e:
             _logger.error(f"An error occurred: {e}")
 
-        
+    
         if self.is_raise_error:
             raise UserError(f"{results=}")
         _logger.info(f"{results=}")
-    
+   

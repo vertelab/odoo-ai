@@ -58,7 +58,7 @@ class AIAgentLLM(models.Model):
         selection=[("not_confirmed", "Not Confirmed"), ("confirmed", "Confirmed"), ("error", "Error")],
         default="not_confirmed")
     status_color = fields.Integer(compute="compute_status_color")
-    ## if VERSION >= 16.0
+    ## if VERSION >= '16.0'
     tag_ids = fields.Many2many(comodel_name='product.tag', string='Tags')
     ##  endif
 

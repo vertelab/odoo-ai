@@ -11,6 +11,7 @@ ai_agent.access_ai_quest_session_line,access_ai_quest_session_line,ai_agent.mode
 ai_agent.ai_quest_agent_access_rights,AI Quest Agent Access,model_ai_quest_agent,base.group_user,1,1,1,1
 ai_agent.access_ai_quest_test_mail_wizard,access_ai_quest_test_mail_wizard,ai_agent.model_ai_quest_test_mail_wizard,base.group_user,1,1,1,1
 ai_agent.access_ai_session_object,access_ai_session_object,ai_agent.model_ai_session_object,base.group_user,1,1,1,1
+ai_agent.access_ai_quest_session_message,access_ai_quest_session_message,ai_agent.model_ai_quest_session_message,base.group_user,1,1,1,1
 access_ai_memory,ai_agent.ai_memory,model_ai_memory,base.group_user,1,1,1,1
 access_ai_agent_memory,ai_agent.ai_agent_memory,model_ai_agent_memory,base.group_user,1,1,1,1
 access_ai_quest_memory,ai_agent.ai_quest_memory,model_ai_quest_memory,base.group_user,1,1,1,1

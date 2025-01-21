@@ -1,17 +1,17 @@
 <odoo>
     <data>
-        <record id="ai_quest_session_tree" model="ir.ui.view">
-            <field name="name">ai.quest.sesion.tree</field>
+        <record id="ai_quest_session_list" model="ir.ui.view">
+            <field name="name">ai.quest.sesion.list</field>
             <field name="model">ai.quest.session</field>
             <field name="arch" type="xml">
-                <list string="AI Session">
+                <tree string="AI Session">
                     <field name="startdate" />
                     <field name="session" />
                     <field name="ai_type" />
                     <field name="ai_quest_id" />
                     <field name="enddate" optional="hide" />
                     <field name="time_difference_ms" optional="hide" />
-                </list>
+                </tree>
             </field>
         </record>
         <record id="ai_quest_session_search" model="ir.ui.view">
@@ -63,6 +63,9 @@
                             <button name="action_get_session_objects" class="oe_stat_button" type="object" icon="fa-puzzle-piece">
                                 <field string="Objects" name="session_object_count" widget="statinfo" />
                             </button>
+                            <button name="action_get_session_messages" class="oe_stat_button" type="object" icon="fa-comments">
+                                <field string="Messages" name="session_message_count" widget="statinfo" />
+                            </button>
                         </div>
                         <group>
                             <group>
@@ -85,7 +88,11 @@
                         </group>
                         <notebook />
                     </sheet>
-                    <chatter/>
+                    <div class="oe_chatter">
+                        <field name="message_follower_ids" widget="mail_followers" />
+                        <field name="activity_ids" widget="mail_activity" />
+                        <field name="message_ids" widget="mail_thread" />
+                    </div>
                 </form>
             </field>
         </record>
@@ -105,20 +112,20 @@
         <record id="action_ai_quest_session" model="ir.actions.act_window">
             <field name="name">AI Session</field>
             <field name="res_model">ai.quest.session</field>
-            <field name="view_mode">list,form,calendar</field>
+            <field name="view_mode">tree,form,calendar</field>
         </record>
         <menuitem id="ai_agent.menu_ai_quest_session" name="AI Session" parent="ai_agent.menu_ai_agent_configuration" action="action_ai_quest_session" />
         <!--  Session Object -->
-        <record id="ai_session_object_tree" model="ir.ui.view">
-            <field name="name">aisesion.object.tree</field>
+        <record id="ai_session_object_list" model="ir.ui.view">
+            <field name="name">aisesion.object.list</field>
             <field name="model">ai.session.object</field>
             <field name="arch" type="xml">
-                <list string="AI Session Object">
+                <tree string="AI Session Object">
                     <field name="datetime" />
                     <field name="ai_quest_id" />
                     <field name="ai_session_id" />
                     <field name="display_name" />
-                </list>
+                </tree>
             </field>
         </record>
         <record id="ai_session_object_search" model="ir.ui.view">
@@ -178,7 +185,7 @@
         <record id="action_ai_session_object" model="ir.actions.act_window">
             <field name="name">Object</field>
             <field name="res_model">ai.session.object</field>
-            <field name="view_mode">list,form,calendar</field>
+            <field name="view_mode">tree,form,calendar</field>
         </record>
         <menuitem id="ai_agent.menu_ai_session_object" name="Object" parent="ai_agent.menu_ai_agent_configuration" action="action_ai_session_object" />
     </data>

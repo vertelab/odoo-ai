@@ -7,7 +7,7 @@ import logging
 import markdown
 
 from langchain_core.messages import AIMessage
-from odoo import api, fields, models, tools, _, Command
+from odoo import api, fields, models, tools, _
 from odoo.exceptions import ValidationError, UserError
 
 _logger = logging.getLogger(__name__)
@@ -20,7 +20,7 @@ class MailMessage(models.Model):
 
 
 class MailChannel(models.Model):
-    _inherit = 'discuss.channel'
+    _inherit = 'mail.channel'
 
     ai_quest_id = fields.Many2one(comodel_name='ai.quest', string="Quest", help="")
     ai_quest_session_id = fields.Many2one(comodel_name='ai.quest.session', string="Session", help="")
