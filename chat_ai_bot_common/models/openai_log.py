@@ -11,6 +11,7 @@ class OpenaiLog(models.Model):
         required=True,
         default=fields.Datetime.now,
     )
+    channel_id = fields.Many2one(comodel_name='mail.channel', string='Channel')
     assistant = fields.Char(required=False)
     role = fields.Char(required=False)
     status_code = fields.Integer(required=False)

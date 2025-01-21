@@ -13,6 +13,7 @@ import unidecode
 from langchain_core.messages import BaseMessage, HumanMessage
 from langchain_core.messages import AIMessage
 from langgraph.graph import END, StateGraph
+from odoo.addons.base.models.avatar_mixin import get_hsl_from_seed
 from odoo.exceptions import UserError, ValidationError, Warning
 from odoo.tools.mail import html2plaintext
 from odoo.tools.safe_eval import safe_eval
@@ -166,6 +167,7 @@ class AIQuest(models.Model):
     status = fields.Selection(
         selection=[("draft", _("Draft")), ("active", _("Active")), ("done", _("Done")), ("error", _("Error"))],
         default="draft")
+    tag_ids = fields.Many2many(comodel_name='product.tag', string='Tags')
     use_chat_history = fields.Boolean(string='Use Chat History', default=True, help='Add chat history to the context')
     use_company_info = fields.Boolean(string='Use Company Info', default=True,
                                       help='Add company mission and values to the context')
@@ -184,6 +186,23 @@ class AIQuest(models.Model):
     uuid = fields.Char('UUID', size=50, default=_generate_random_token, copy=False)
 
 
+    @api.depends('init_type', 'image_128', 'uuid')
+    def _compute_avatar_128(self):
+        for record in self:
+            record.avatar_128 = record.image_128 or record._generate_avatar()
+
+    def _generate_avatar(self):
+        avatar = {
+            'manual': avatar_manual,
+            'mail': avatar_mail,
+            'chat': avatar_chat,
+            'channel': avatar_channel,
+            'cron': avatar_cron,
+            'server-action': avatar_cron,
+        }[self.init_type]
+        bgcolor = get_hsl_from_seed(self.uuid)
+        avatar = avatar.replace('fill="#875a7b"', f'fill="{bgcolor}"')
+        return base64.b64encode(avatar.encode())
 
     @api.depends('session_line_ids')
     def compute_llm_count(self):
