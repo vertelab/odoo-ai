@@ -176,7 +176,7 @@ class AIAgent(models.Model):
                      **kwargs):
         """
           Single agent prompting from quest.code
-
+         
           result = agents[0].prompt_agent(
                    session=session,
                    debug=quest.debug,
@@ -203,7 +203,7 @@ class AIAgent(models.Model):
         Goal: {goal}
         Backstory: {backstory}
         {extra_context}
-
+      
         Context and Guidelines:
         - Always maintain the specified role
         - Focus on achieving the defined goal
@@ -291,82 +291,14 @@ class AIAgent(models.Model):
     # LangGraph
     # ------------------------------------------------------------
 
-    # def create_supervisor(self, quest, members):
-    #     """Create a supervisor node that coordinates between different agents."""
-    #     system_prompt = f"""You are a supervisor coordinating between workers: {members}.
-    #     Based on the request, determine which worker should handle the next step.
-    #     Only choose FINISH when a complete response has been provided.
-    #
-    #     Role: {self.ai_role}
-    #     Goal: {self.ai_goal}
-    #     Backstory: {self.ai_backstory}
-    #     Guidelines: {quest.description}
-    #
-    #     Instructions:
-    #     1. Evaluate if we have a complete response
-    #     2. If not complete, choose the most appropriate worker
-    #     3. Send FINISH only when we have a satisfactory response
-    #     """
-    #
-    #     def supervisor_chain(state):
-    #         messages = state.get('messages', [])
-    #         _logger.info(f"Supervisor received messages: {len(messages)}")
-    #
-    #         if not messages:
-    #             _logger.info(f"No messages, starting with first worker: {members[0]}")
-    #             return {"next": members[0]} if members else {"next": "FINISH"}
-    #
-    #         try:
-    #             # Create full message list
-    #             prompt = f"Previous conversation:\n"
-    #             for msg in messages:
-    #                 prompt += f"\n{msg.content}\n"
-    #             prompt += (f"\nBased on this, who should act next? Choose from: {members} or say FINISH if we have a "
-    #                        f"complete response.")
-    #
-    #             # Get LLM response
-    #             llm = eval(self.ai_agent_llm_id.get_llm())
-    #             response = llm.invoke([
-    #                 SystemMessage(content=system_prompt),
-    #                 HumanMessage(content=prompt)
-    #             ])
-    #
-    #             # Parse response
-    #             content = response.content.upper()
-    #             _logger.info(f"Supervisor decision: {content}")
-    #
-    #             # Check for completion or next agent
-    #             if "FINISH" in content:
-    #                 _logger.info("Supervisor decided to FINISH")
-    #                 return {"next": "FINISH"}
-    #
-    #             # Find mentioned agent
-    #             for member in members:
-    #                 if member.upper() in content:
-    #                     _logger.info(f"Supervisor selected agent: {member}")
-    #                     return {"next": member}
-    #
-    #             # If no clear direction and we have previous responses, finish
-    #             if len(messages) > 1:
-    #                 _logger.info("No clear direction, finishing")
-    #                 return {"next": "FINISH"}
-    #
-    #             # Default to first member
-    #             _logger.info(f"Defaulting to first member: {members[0]}")
-    #             return {"next": members[0]}
-    #
-    #         except Exception as e:
-    #             _logger.error(f"Error in supervisor chain: {str(e)}")
-    #             return {"next": "FINISH"}
-    #
-    #     return supervisor_chain
 
     def create_supervisor(self, quest, members, **kwarg):
         """Create a supervisor node that coordinates between different agents."""
-
         use_lang = f"Use language {self.env.user.lang} for the answer to Human" if quest.use_personal_lang else ''
         memory = self._get_memory(kwarg.get('message', ''))
-
+            
+        session=kwarg.get('session',False)
+       
         system_prompt = f"""You are a supervisor coordinating between workers: {members}.
         Based on the request, determine which worker should handle the next step.
         Only choose FINISH when a complete response has been provided.
@@ -377,7 +309,7 @@ class AIAgent(models.Model):
         Guidelines: {quest.description}
         {self._extra_context(quest)}
         Message history: {self._chat_history(quest)}
-
+       
         Memory: {memory}
 
         Instructions:
@@ -390,26 +322,27 @@ class AIAgent(models.Model):
 
         def supervisor_chain(state):
             messages = state.get('messages', [])
-            _logger.info(f"Supervisor received messages: {len(messages)}")
-
+            _logger.info(f"Supervisor received messages: {len(messages)} {session=}")
+           
             if not messages:
-                _logger.info(f"No messages, starting with first worker: {members[0]}")
-                return {"next": members[0]} if members else {"next": "FINISH"}
+                _logger.info(f"No messages, starting with first worker: {members[0] if members else 'no members'}")
+                session.add_message(f"No messages, starting with first worker: {members[0] if members else 'no members'}")
+                return {"next": members[0],'session':session} if members else {"next": "FINISH",'session':session}
 
-            _logger.error(f"{messages=}")
+            _logger.error(f"{messages=} {session=}")
 
             # Get the latest message
             question = messages[-1].content if messages else ""
 
             try:
                 # Create full message list
-                _logger.error(f"Create full message list        ")
+                _logger.error(f"Create full message list")
                 prompt = f"Previous conversation:\n"
                 for msg in messages:
                     prompt += f"\n{msg.content}\n"
                 prompt += (f"\nBased on this, who should act next? Choose from: {members} or say FINISH if we have a "
                            f"complete response.")
-
+ 
                 # Get LLM response
                 llm = self.ai_agent_llm_id.get_llm()
                 response = llm.invoke([
@@ -420,41 +353,48 @@ class AIAgent(models.Model):
                 # Parse response
                 content = response.content.upper()
                 _logger.info(f"Supervisor decision: {content}")
+                session.add_message(f"Supervisor decision: {content}")
 
                 # Check for completion or next agent
                 if "FINISH" in content:
                     _logger.info("Supervisor decided to FINISH")
-                    return {"next": "FINISH"}
+                    session.add_message("Supervisor decided to FINISH")
+                    return {"next": "FINISH",'session': session}
 
                 # Find mentioned agent
                 for member in members:
                     if member.upper() in content:
                         _logger.info(f"Supervisor selected agent: {member}")
-                        return {"next": member}
+                        session.add_message(f"Supervisor selected agent: {member}")
+                        return {"next": member, 'session': session}
 
                 # If no clear direction and we have previous responses, finish
-                if len(messages) > 1:
+                if len(messages) > 1:   
                     _logger.info("No clear direction, finishing")
-                    return {"next": "FINISH"}
+                    session.add_message("No clear direction, finishing")
+                    return {"next": "FINISH", 'session': session}
 
                 # Default to first member
                 if len(members) != 0:
                     _logger.info(f"Defaulting to first member: {members[0]}")
-                    return {"next": members[0]}
+                    session.add_message(f"Defaulting to first member: {members[0]}")
+                    return {"next": members[0], 'session': session}
 
             except Exception as e:
-                _logger.error(f"Error in supervisor chain: {str(e)}", exc_info=True)
-                return {"next": "FINISH"}
+                _logger.error(f"Error in supervisor chain: {str(e)}",exc_info=True)
+                session.add_message(f"Error in supervisor chain: {str(e)}")
+                return {"next": "FINISH", 'session': session}
 
         return supervisor_chain
 
-    def create_node(self):
+    def create_node(self, **kwarg):
         """Creates a node for the agent in the graph."""
 
         def agent_node(state):
             """Process messages and generate a response."""
             messages = state.get('messages', [])
-            _logger.info(f"Agent {self.name} received messages: {len(messages)}")
+            _logger.info(f"Agent {self.name} received messages: {len(messages)} {state=}")
+            state['session'].add_message(f"Agent {self.name} received messages: {len(messages)} {state=}")
 
             try:
                 # Get the latest message
@@ -466,7 +406,7 @@ class AIAgent(models.Model):
                     Goal: {self.ai_goal}
                     Backstory: {self.ai_backstory}
                     Memory: {self._get_memory(latest_message)}
-
+   
                     Instructions:
                     - Provide thorough, complete responses
                     - Use available tools and memory when needed
@@ -477,7 +417,7 @@ class AIAgent(models.Model):
                 # Get LLM
                 llm = self.ai_agent_llm_id.get_llm()
                 tools = self._get_tools()
-
+               
                 langgraph_agent_executor = create_react_agent(llm, tools=tools)
 
                 # Prepare the input messages with system message first
@@ -487,9 +427,10 @@ class AIAgent(models.Model):
                     "input": latest_message,
                     "messages": input_messages
                 })
+            
 
                 _logger.info(f"Agent {self.name} generated response")
-
+                state['session'].save_messages(result.get('messages',[]))
                 # Return response
                 # return result
 
@@ -499,6 +440,8 @@ class AIAgent(models.Model):
                     return result
                 else:
                     # If no AI messages found, create one from the result
+                    state['session'].add_message(f"No AImessages: {str(result)=}")
+
                     return {
                         "messages": [
                             AIMessage(
@@ -524,7 +467,6 @@ class AIAgent(models.Model):
     def _get_memory(self, question):
         def get_rag(vs, question):
             return "\n".join([doc.page_content for doc in vs.similarity_search(question, k=3)])
-
         return '\n'.join([get_rag(m.ai_memory_id.load_faiss(), question) for m in self.ai_memory_ids])
 
     def _get_tools(self):
@@ -533,7 +475,7 @@ class AIAgent(models.Model):
         tools = []
 
         for ai_agent_tool_id in self.ai_tool_ids:
-
+           
             ai_tool_id = ai_agent_tool_id.ai_tool_id
 
             import importlib
@@ -557,42 +499,3 @@ class AIAgent(models.Model):
             tools.append(TOOL)
 
         return tools
-
-        # @tool("internet_search_DDGO", return_direct=False)
-        # def internet_search_DDGO(query: str) -> str:
-        #     """Searches the internet using DuckDuckGo."""
-
-        #     import importlib
-
-        #     # Assuming 'lib_name' is stored in the database as 'duckduckgo_search'
-        #     # and 'class_name' is stored as 'DDGS'
-        #     lib_name = 'duckduckgo_search'
-        #     class_name = 'DDGS'
-
-        #     try:
-        #         module = importlib.import_module(lib_name)
-        #         DDGS = getattr(module, class_name)
-
-        #         with DDGS() as ddgs:
-        #             results = list(ddgs.text(query, max_results=5))
-        #     except ImportError as e:
-        #         _logger.error(f"Error importing {lib_name}: {e}")
-        #     except AttributeError as e:
-        #         _logger.error(f"Error: {class_name} not found in {lib_name}")
-        #     except Exception as e:
-        #         _logger.error(f"An error occurred: {e}")
-
-        #     return results if results else "No results found."
-
-        # @tool("process_content", return_direct=False)
-        # def process_content(url: str) -> str:
-        #     """Processes content from a webpage."""
-
-        #     from bs4 import BeautifulSoup
-        #     import requests
-
-        #     response = requests.get(url)
-        #     soup = BeautifulSoup(response.content, 'html.parser')
-        #     return soup.get_text()
-
-        # return [internet_search_DDGO, process_content]

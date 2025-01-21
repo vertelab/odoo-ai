@@ -12,6 +12,7 @@ _logger = logging.getLogger(__name__)
 class AISessionObject(models.Model):
     _name = 'ai.session.object'
     _description = 'AI Session Object'
+    _order = 'datetime desc'
 
     @api.depends('object_id')
     def _get_model(self):
@@ -42,6 +43,7 @@ class AIQuestSession(models.Model):
     _description = 'AI Quest Session'
     _inherit = ["mail.thread", "mail.activity.mixin"]
     _rec_name = "session"
+    _order = 'startdate desc'
 
     ai_agent_count = fields.Integer(compute='_compute_ai_agent_count')
     ai_agent_id = fields.Many2one(comodel_name="ai.agent")
@@ -62,6 +64,8 @@ class AIQuestSession(models.Model):
     session = fields.Char(default=lambda self: str(uuid.uuid4()))
     session_line_count = fields.Integer(compute='_compute_session_line_count')
     session_line_ids = fields.One2many(comodel_name="ai.quest.session.line", inverse_name="ai_quest_session_id")
+    session_message_ids = fields.One2many(comodel_name="ai.quest.session.message", inverse_name="ai_quest_session_id")
+    session_message_count = fields.Integer(compute='_compute_session_message_count')
     session_object_count = fields.Integer(compute='_compute_session_object_count')
     session_object_ids = fields.One2many(comodel_name="ai.session.object", inverse_name="ai_session_id")
     startdate = fields.Datetime(default=fields.Datetime.now())
@@ -118,6 +122,17 @@ class AIQuestSession(models.Model):
         }
         return action
 
+    def action_get_session_messages(self):
+        action = {
+            'name': 'Messages',
+            'type': 'ir.actions.act_window',
+            'res_model': 'ai.quest.session.message',
+            'view_mode': 'tree,form',
+            'target': 'current',
+            'domain': [("ai_quest_session_id", '=', self.id)],
+        }
+        return action
+ 
     def action_get_sessions(self):
         action = {
             'name': 'Sessions',
@@ -144,6 +159,11 @@ class AIQuestSession(models.Model):
     def _compute_session_object_count(self):
         for record in self:
             record.session_object_count = len(record.session_object_ids)
+
+    @api.depends("session_message_ids")
+    def _compute_session_message_count(self):
+        for record in self:
+            record.session_message_count = len(record.session_message_ids)
 
     def _message_set_main_attachment_id(self, attachment_ids):
         thread_ids = super(AIQuestSession, self)._message_set_main_attachment_id(attachment_ids)
@@ -199,11 +219,19 @@ class AIQuestSession(models.Model):
                     #         'ai_session_id': self.id,
                     #         'object_id': (o._name, o.id),
                     #     })
+            self.env['ai.quest.session.message'].save_messages(self,result)
+            self.status = 'done'
         else:
             self.status = 'error'
             if self.ai_quest_id.debug:
                 self.message_post(body=f'Missing {result=}')
 
+    def add_message(self, message,**kwarg):
+        self.env['ai.quest.session.message'].add(self,message,**kwarg)
+   
+    def save_messages(self, message,**kwarg):
+        self.env['ai.quest.session.message'].save_messages(self,message,**kwarg)
+ 
     def log(self, obj, message):
         _logger.info(message)
         obj.message_post(body=message)

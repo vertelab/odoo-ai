@@ -74,7 +74,7 @@
                         <group>
                             <group>
                                 <field name="ai_type" />
-                                <!-- #if VERSION == 16.0 -->
+                                <!-- #if VERSION >= '16.0' -->
                                 <field name="tag_ids" widget="many2many_tags" />
                                 <!-- #endif -->
                             </group>

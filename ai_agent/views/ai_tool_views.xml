@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
+
 <odoo>
     <!-- Form View -->
     <record id="view_ai_tool_form" model="ir.ui.view">
@@ -7,10 +8,7 @@
         <field name="arch" type="xml">
             <form>
                 <header>
-
                     <button name="action_test_tool" type="object" string="Test" />
-
-
                     <field name="status" widget="statusbar" options="{'clickable': '1'}" />
                 </header>
                 <sheet>
@@ -55,7 +53,6 @@
             </form>
         </field>
     </record>
-
     <!-- List View -->
     <record id="view_ai_tool_tree" model="ir.ui.view">
         <field name="name">ai.tool.tree</field>
@@ -71,7 +68,6 @@
             </tree>
         </field>
     </record>
-
     <!-- Search View -->
     <record id="view_ai_tool_search" model="ir.ui.view">
         <field name="name">ai.tool.search</field>
@@ -91,7 +87,6 @@
             </search>
         </field>
     </record>
-
     <!-- Kanban View -->
     <record id="view_ai_tool_kanban" model="ir.ui.view">
         <field name="name">ai.tool.kanban</field>
@@ -159,7 +154,6 @@
             </kanban>
         </field>
     </record>
-
     <!-- Calendar View -->
     <record id="view_ai_tool_calendar" model="ir.ui.view">
         <field name="name">ai.tool.calendar</field>
@@ -172,7 +166,6 @@
             </calendar>
         </field>
     </record>
-
     <!-- Action -->
     <record id="action_ai_tool" model="ir.actions.act_window">
         <field name="name">AI Tools</field>
@@ -182,7 +175,6 @@
             <p class="o_view_nocontent_smiling_face">Create your first AI Tool!</p>
         </field>
     </record>
-
     <!-- Menu Item -->
     <menuitem id="menu_ai_tool" name="AI Tools" parent="ai_agent.menu_ai_agent_configuration" action="action_ai_tool" sequence="20" />
 
@@ -205,6 +197,4 @@
             </form>
         </field>
     </record>
-
-
 </odoo>
