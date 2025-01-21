@@ -1,41 +1,23 @@
-import logging
 import functools
-import re
+import importlib
 import json
+import logging
+import re
 import traceback
+
 from datetime import datetime
+from httpx import HTTPStatusError
+from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder, PromptTemplate, HumanMessagePromptTemplate, SystemMessagePromptTemplate
+from langchain.schema import AIMessage, HumanMessage, SystemMessage, BaseMessage
+from langchain.tools import tool
+from langchain_community.chat_message_histories import ChatMessageHistory
+from langgraph.prebuilt import create_react_agent
+from odoo import models, fields, api, _
+from odoo.exceptions import UserError
 from random import randint
-# from typing import List
 from typing_extensions import TypedDict, List
 
-from httpx import HTTPStatusError
-from langchain.agents import AgentExecutor, create_openai_tools_agent
-from langchain_community.embeddings import OpenAIEmbeddings
-# from langchain_core.messages import BaseMessage
-from langchain.memory import ConversationTokenBufferMemory
-from langchain_community.chat_message_histories import ChatMessageHistory
-from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder, PromptTemplate
-from langchain.prompts import HumanMessagePromptTemplate, SystemMessagePromptTemplate
-from langchain.schema import AIMessage, HumanMessage, SystemMessage, BaseMessage
-from langchain.output_parsers.openai_functions import JsonOutputFunctionsParser
-from langgraph.prebuilt import create_react_agent
-from langchain.tools import tool
-
-from langchain_openai import ChatOpenAI
-from langchain_groq import ChatGroq
-from langchain_mistralai import ChatMistralAI
-
-from odoo.exceptions import UserError
-
-from odoo import models, fields, api, _
-
 _logger = logging.getLogger(__name__)
-
-
-class DefaultDict(dict):
-    def __missing__(self, key):
-        return f'{key}: missing'  # Return an empty string or any default value you prefer
-
 
 class AIAgent(models.Model):
     _name = 'ai.agent'
@@ -44,36 +26,36 @@ class AIAgent(models.Model):
 
     ai_agent_data_ids = fields.One2many(comodel_name="ai.agent.data", inverse_name="agent_id")
     ai_agent_llm_id = fields.Many2one(comodel_name="ai.agent.llm", string="LLM", help="Choose Large Language Model",
-                                      domain="[('status','=','confirmed')]")
+                                          domain="[('status','=','confirmed')]")
     ai_backstory = fields.Text(string="Backstory")
     ai_discription = fields.Text()
     ai_goal = fields.Text(string="Goal")
+    ai_memory_ids = fields.One2many(comodel_name='ai.agent.memory', inverse_name='ai_agent_id', string="", help="")
     ai_prompt_template = fields.Html(string="Prompt Template")
     ai_role = fields.Char(string="Role")
-    ai_memory_ids = fields.One2many(comodel_name='ai.agent.memory', inverse_name='ai_agent_id', string="", help="")
-    ai_tool_ids = fields.One2many(comodel_name='ai.agent.tool', inverse_name='ai_agent_id', string="", help="")
-
     ai_temperature = fields.Float(string='Temperature', default=0.7,
-                                  help="Temperature controls the randomness and creativity of the model's output, "
-                                       "<1.0 more predictable and consistent >1.0 more diverse and creative responses")
+                                      help="Temperature controls the randomness and creativity of the model's output, "
+                                           "<1.0 more predictable and consistent >1.0 more diverse and creative responses")
+    ai_tool_ids = fields.One2many(comodel_name='ai.agent.tool', inverse_name='ai_agent_id', string="", help="")
     ai_type = fields.Selection(selection=[("default", "Default"), ('ai-programmer', 'AI Programmer')],
-                               default="default", required=True)
+                                   default="default", required=True)
+    base_image_128 = fields.Image("Base Image", max_width=128, max_height=128, 
+                                    compute='_compute_base_image_128')
     color = fields.Integer(default=lambda self: randint(1, 11))
     debug = fields.Boolean(string='Debug')
+    image_128 = fields.Image("Image", max_width=128, max_height=128)
     is_favorite = fields.Boolean()
     last_run = fields.Datetime()
     name = fields.Char(required=True)
+    object_id = fields.Reference(string='Object',selection=lambda m: [(model.model, model.name) for model in m.env['ir.model'].sudo().search([])])
     quest_count = fields.Integer(compute="compute_quest_count")
     quest_ids = fields.Many2many(comodel_name="ai.quest")
     session_count = fields.Integer(compute="compute_session_count")
     session_line_count = fields.Integer(compute="compute_session_line_count")
     session_line_ids = fields.One2many(comodel_name="ai.quest.session.line", inverse_name="ai_agent_id")
-    status = fields.Selection(
-        selection=[("draft", _("Draft")), ("active", _("Active")), ("done", _("Done")), ("error", _("Error"))],
-        default="draft")
+    status = fields.Selection(selection=[("draft", _("Draft")), ("active", _("Active")), ("done", _("Done")), ("error", _("Error"))],
+            default="draft")
     tag_ids = fields.Many2many(comodel_name='product.tag', string='Tags')
-    image_128 = fields.Image("Image", max_width=128, max_height=128)
-    base_image_128 = fields.Image("Base Image", max_width=128, max_height=128, compute='_compute_base_image_128')
 
     @api.depends('image_128')
     def _compute_base_image_128(self):
@@ -464,38 +446,25 @@ class AIAgent(models.Model):
 
         return agent_node
 
-    def _get_memory(self, question):
+    def _get_memory(self, question, k=3, **kwarg):
         def get_rag(vs, question):
-            return "\n".join([doc.page_content for doc in vs.similarity_search(question, k=3)])
+            return "\n".join([doc.page_content for doc in vs.similarity_search(question, k=k)])
         return '\n'.join([get_rag(m.ai_memory_id.load_faiss(), question) for m in self.ai_memory_ids])
 
     def _get_tools(self):
         """Get the available tools for this agent."""
 
         tools = []
-
-        for ai_agent_tool_id in self.ai_tool_ids:
-           
-            ai_tool_id = ai_agent_tool_id.ai_tool_id
-
-            import importlib
-
-            # Assuming 'tool_lib' is stored in the database as 'duckduckgo_search'
-            # and 'class_name' is stored as 'DDGS'
-            tool_lib = ai_tool_id.tool_lib
-            class_name = ai_tool_id.tool
+        for ai_tool_id in self.ai_tool_ids.mapped('ai_tool_id'):
             TOOL = None
-
             try:
-                module = importlib.import_module(tool_lib)
-                TOOL = getattr(module, class_name)
+                module = importlib.import_module(ai_tool_id.tool_lib)
+                TOOL = getattr(module, ai_tool_id.tool)
             except ImportError as e:
-                _logger.error(f"Error importing {tool_lib}: {e}")
+                _logger.error(f"Error importing {ai_tool_id.tool_lib=}: {e}")
             except AttributeError as e:
-                _logger.error(f"Error: {class_name} not found in {tool_lib}")
+                _logger.error(f"Error: {ai_tool_id.tool=} not found in {ai_tool_id.tool_lib=}")
             except Exception as e:
                 _logger.error(f"An error occurred: {e}")
-
             tools.append(TOOL)
-
         return tools

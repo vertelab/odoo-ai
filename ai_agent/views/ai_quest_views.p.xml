@@ -18,7 +18,7 @@
                 <search string="Search AI Quests">
                     <field name="name" />
                     <field name="description" />
-                    <!-- #if VERSION >= '16.0' -->
+                    <!-- #if VERSION == 16.0 -->
                     <field name="tag_ids" />
                     <!-- #endif -->
                     <filter string="Draft" name="draft" domain="[('status', '=', 'draft')]" />
@@ -78,7 +78,7 @@
                                 <field name="ai_type" />
                                 <field name="user_id" widget="many2one_avatar_user" />
                                 <field name="partner_id" />
-                                <!-- #if VERSION >= '16.0' -->
+                                <!-- #if VERSION == 16.0 -->
                                 <field name="tag_ids" widget="many2many_tags" />
                                 <!-- #endif -->
                             </group>
@@ -154,6 +154,7 @@
                                         <field name="sequence" widget="handle" />
                                         <field name="ai_agent_id" />
                                         <field name="ai_agent_status" />
+                                        <field name="object_id" />
                                         <field name="ai_agent_llm_id" />
                                         <field name="ai_llm_status" />
                                     </tree>
@@ -219,7 +220,7 @@
                                     <div class="oe_kanban_content flex-grow-1 flex-column">
                                         <div class="oe_kanban_details">
                                             <div class="oe_kanban_left">
-                                                <!-- #if VERSION >= '16.0' -->
+                                                <!-- #if VERSION == 16.0 -->
                                                 <field name="tag_ids" widget="many2many_tags" options="{'color_field': 'color'}" />
                                                 <!-- #endif -->
                                                 <field name="status" widget="label_selection" options="{'classes': {'draft': 'default', 'active': 'success', 'done': 'info', 'error': 'danger'}}" />

@@ -92,7 +92,7 @@
                         </div>
                         <group>
                             <group>
-                                <!-- #if VERSION >= '16.0' -->
+                                <!-- #if VERSION == 16.0 -->
                                 <field name="tag_ids" widget="many2many_tags" />
                                 <!-- #endif -->
                                 <field name="is_key_required" widget="boolean_toggle" />

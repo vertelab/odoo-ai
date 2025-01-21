@@ -42,7 +42,7 @@
                         <group>
                             <field name="debug" />
                             <field name="is_favorite" />
-                            <!-- #if VERSION >= '16.0' -->
+                            <!-- #if VERSION == 16.0 -->
                             <field name="tag_ids" widget="many2many_tags" />
                             <!-- #endif -->
                         </group>
@@ -80,7 +80,7 @@
                 <field name="name" />
                 <field name="tool" />
                 <field name="tool_lib" />
-                <!-- #if VERSION >= '16.0' -->
+                <!-- #if VERSION == 16.0 -->
                 <field name="tag_ids" />
                 <!-- #endif -->
                 <filter string="Favorites" name="favorites" domain="[('is_favorite', '=', True)]" />
@@ -148,7 +148,7 @@
                                 </div>
                                 <div class="o_kanban_record_bottom">
                                     <div class="oe_kanban_bottom_left">
-                                        <!-- #if VERSION >= '16.0' -->
+                                        <!-- #if VERSION == 16.0 -->
                                         <field name="tag_ids" widget="many2many_tags" />
                                         <!-- #endif -->
                                     </div>
