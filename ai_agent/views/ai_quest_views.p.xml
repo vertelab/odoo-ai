@@ -18,7 +18,7 @@
                 <search string="Search AI Quests">
                     <field name="name" />
                     <field name="description" />
-                    <!-- #if VERSION == 16.0 -->
+                    <!-- #if VERSION == "16.0" -->
                     <field name="tag_ids" />
                     <!-- #endif -->
                     <filter string="Draft" name="draft" domain="[('status', '=', 'draft')]" />
