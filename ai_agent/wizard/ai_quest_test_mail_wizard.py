@@ -27,6 +27,7 @@ class AIQuestTestMailWizard(models.TransientModel):
         byte_mail = base64.b64decode(self.eml_file)
         mail = email.message_from_bytes(byte_mail)
         is_mail = self.env["mail.message"].search([("message_id", "=", mail['Message-ID'])])
+        print("is", is_mail)
         if is_mail:
             is_mail.unlink()
         thread_id = mail_thread.message_process(model="ai.quest",message=base64.b64decode(self.eml_file))

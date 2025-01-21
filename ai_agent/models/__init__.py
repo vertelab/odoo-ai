@@ -10,3 +10,4 @@ from . import res_users
 from . import mail
 from . import ai_tool
 from . import ai_memory
+from . import ai_quest_session_message
