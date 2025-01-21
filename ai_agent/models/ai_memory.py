@@ -10,17 +10,15 @@ import requests
 import markdownify
 from bs4 import BeautifulSoup
 from dateutil.relativedelta import relativedelta
-from langchain_community.document_loaders import PyPDFLoader
-from langchain_community.document_loaders import TextLoader
+from langchain_community.document_loaders import PyPDFLoader, TextLoader
 from langchain_community.vectorstores import FAISS
 from langchain_core.documents.base import Document
-from langchain_openai import OpenAIEmbeddings
 from langchain_text_splitters.character import RecursiveCharacterTextSplitter
+from odoo import models, fields, api, _
+from odoo.exceptions import UserError
+from odoo.tools.safe_eval import safe_eval
 from random import randint
 from urllib.parse import urljoin, urlparse
-from odoo import models, fields, api, _
-from odoo.tools.safe_eval import safe_eval
-from odoo.exceptions import UserError
 
 _logger = logging.getLogger(__name__)
 
