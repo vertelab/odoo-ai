@@ -33,6 +33,7 @@
                 </search>
             </field>
         </record>
+
         <record id="ai_quest_form" model="ir.ui.view">
             <field name="name">ai.quest.form</field>
             <field name="model">ai.quest</field>
@@ -69,7 +70,7 @@
                                 <field name="name" class="o_text_overflow" placeholder="t.ex. Chatbot" modifiers="{&quot;required&quot;: true}" />
                             </h1>
                         </div>
-                        ´
+
                         <group>
                             <group>
                                 <field name="ai_type" />
@@ -118,9 +119,9 @@
                                     </div></div>
 
                             </group>
-                            <group>_</group>
                             <group>
-                                <field name="init_type_str" nolabel="1" colspan="2" readonly="1" /></group>
+                                <field name="init_type_str" nolabel="1" colspan="2" readonly="1" />
+                            </group>
                         </group>
                         <group string="Advanced Settings" col="2">
                             <field name="debug"  widget="boolean_toggle" />
@@ -223,6 +224,7 @@
                                                 <field name="init_type" />
                                             </div>
                                             <div class="oe_kanban_bottom_right">
+                                                <!--                                                <field name="is_favorite" widget="boolean_favorite" nolabel="1" force_save="1" />-->
                                                 <field name="user_id" widget="many2one_avatar_user" />
                                             </div>
                                         </div>

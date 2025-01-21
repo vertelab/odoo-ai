@@ -61,6 +61,7 @@
         "views/res_company_views.xml",
         "views/res_users_views.xml",
         "views/mail_channel_views.xml",
+        "views/ai_quest_session_message_views.xml",
     ],
     "external_dependencies": {
         "python": [
