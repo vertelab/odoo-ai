@@ -29,18 +29,18 @@ class MailThread(models.AbstractModel):
         using already-computed values instead of having to rebrowse things. """
         res = super(MailThread, self)._message_post_after_hook(message, msg_vals)
 
-            obj = self.env[msg_vals['model']].browse(msg_vals['res_id'])
+        obj = self.env[msg_vals['model']].browse(msg_vals['res_id'])
 
-            for recipient in self.env['res.users'].search(
-                    [('partner_id', 'in', (obj.channel_partner_ids - message.author_id).mapped('id'))]
-            ):
-                if recipient.is_ai_bot:
-                    ai_action = threading.Thread(
-                        target=recipient.run_ai_message_post,
-                        args=(recipient, obj, message.author_id, html2plaintext(message.body).strip())
-                    )
-                    ai_action.start()
-                    # return {'type': 'ir.actions.client', 'tag': 'reload'}
+        for recipient in self.env['res.users'].search(
+				[('partner_id', 'in', (obj.channel_partner_ids - message.author_id).mapped('id'))]
+		):
+            if recipient.is_ai_bot:
+                ai_action = threading.Thread(
+					target=recipient.run_ai_message_post,
+					args=(recipient, obj, message.author_id, html2plaintext(message.body).strip())
+				)
+                ai_action.start()
+				# return {'type': 'ir.actions.client', 'tag': 'reload'}
         return res
 
 # ~ https://www.linkedin.com/pulse/run-background-process-odoo-multi-threading-ahmed-rashad-mba-/

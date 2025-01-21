@@ -1,3 +1,4 @@
+
 import base64
 import json
 import logging
@@ -13,7 +14,6 @@ from langchain_core.messages import BaseMessage, HumanMessage
 from langchain_core.messages import AIMessage
 from langgraph.graph import END, StateGraph
 from odoo.exceptions import UserError, ValidationError, Warning
-from odoo.addons.base.models.avatar_mixin import get_hsl_from_seed
 from odoo.tools.mail import html2plaintext
 from odoo.tools.safe_eval import safe_eval
 from odoo.addons.ai_agent.models.ai_quest_session import AIQuestSession
@@ -67,7 +67,6 @@ class AgentState(TypedDict):
     session: AIQuestSession
     next: str
 
-
 class AIQuestAgent(models.Model):
     _name = 'ai.quest.agent'
     _description = 'AI Quest AGent'
@@ -75,9 +74,7 @@ class AIQuestAgent(models.Model):
     ai_quest_id = fields.Many2one(comodel_name='ai.quest', string="", help="")
     sequence = fields.Integer(string='Sequence')
     ai_agent_id = fields.Many2one(comodel_name='ai.agent', string="Agent", help="")
-    object_id = fields.Reference(string='Object', related="ai_agent_id.object_id",
-                                 selection=lambda m: [(model.model, model.name) for model in
-                                                      m.env['ir.model'].sudo().search([])])
+    object_id = fields.Reference(string='Object',related="ai_agent_id.object_id",selection=lambda m: [(model.model, model.name) for model in m.env['ir.model'].sudo().search([])])
     ai_agent_status = fields.Selection(
         selection=[("draft", _("Draft")), ("active", _("Active")), ("done", _("Done")), ("error", _("Error"))],
         default="draft", related='ai_agent_id.status')
@@ -180,30 +177,14 @@ class AIQuest(models.Model):
     use_time_context = fields.Boolean(string='Use Time Context', default=True,
                                       help='Inform the LLM of current time, date')
     user_id = fields.Many2one(comodel_name='res.users', string="Owner", help="")
-
+  
     @api.model
     def _generate_random_token(self):
         return ''.join(choice('abcdefghijkmnopqrstuvwxyzABCDEFGHIJKLMNPQRSTUVWXYZ23456789') for _i in range(10))
 
     uuid = fields.Char('UUID', size=50, default=_generate_random_token, copy=False)
 
-    @api.depends('init_type', 'image_128', 'uuid')
-    def _compute_avatar_128(self):
-        for record in self:
-            record.avatar_128 = record.image_128 or record._generate_avatar()
 
-    def _generate_avatar(self):
-        avatar = {
-            'manual': avatar_manual,
-            'mail': avatar_mail,
-            'chat': avatar_chat,
-            'channel': avatar_channel,
-            'cron': avatar_cron,
-            'server-action': avatar_cron,
-        }[self.init_type]
-        bgcolor = get_hsl_from_seed(self.uuid)
-        avatar = avatar.replace('fill="#875a7b"', f'fill="{bgcolor}"')
-        return base64.b64encode(avatar.encode())
 
     @api.depends('session_line_ids')
     def compute_llm_count(self):
@@ -711,17 +692,17 @@ class AIQuest(models.Model):
     # Inspired by https://github.com/menonpg/agentic_search_openai_langgraph/blob/main/agents.py
     def build_graph(self, **kwarg):
         """Build a multi-agent workflow graph."""
-
+ 
         if not self.ai_agent_ids:
             raise ValueError("No agents provided")
 
         agents = [line.ai_agent_id for line in self.ai_agent_ids]
-
+       
         # Get member names
         members = [a.name for a in agents[1:]]
         _logger.info(f"Building graph with supervisor and {len(members)} workers: {members}")
         global session
-        session = kwarg.get('session', False)
+        session=kwarg.get('session',False)
 
         try:
             # Create graph

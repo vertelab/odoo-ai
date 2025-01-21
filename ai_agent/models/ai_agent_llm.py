@@ -148,6 +148,7 @@ class AIAgentLLM(models.Model):
             _logger.error(f"An error occurred: {e}")
             raise
 
+
     def get_embedding(self):
 
         try:
@@ -201,7 +202,9 @@ class AIAgentLLM(models.Model):
                     'token': token,
                     'system_fingerprint': response.id,
                     'finish_reason': response_metadata.get('finish_reason'),
-                })
+                }
+
+
 
         if debug:
             self.log_message(body="%s" % response, is_error=False)
@@ -235,3 +238,5 @@ class AIAgentLLM(models.Model):
     def update_api_key(self):
         for llm in self:
             llm.ai_api_key = llm.product_tmpl_id.ai_api_key
+
+
