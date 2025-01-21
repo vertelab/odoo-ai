@@ -18,7 +18,6 @@
                 <search string="Search AI Quests">
                     <field name="name" />
                     <field name="description" />
-                    <field name="tag_ids" />
                     <filter string="Draft" name="draft" domain="[('status', '=', 'draft')]" />
                     <filter string="Active" name="active" domain="[('status', '=', 'active')]" />
                     <filter string="Done" name="done" domain="[('status', '=', 'done')]" />
@@ -70,7 +69,7 @@
                                 <field name="name" class="o_text_overflow" placeholder="t.ex. Chatbot" modifiers="{&quot;required&quot;: true}" />
                             </h1>
                         </div>
-                        
+                        ´
                         <group>
                             <group>
                                 <field name="ai_type" />

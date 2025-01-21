@@ -41,6 +41,7 @@
         "data/open_ai_data.xml",
         "data/mistral_data.xml",
         "data/anthropic_data.xml",
+        "data/azure_data.xml",
         "data/groq_data.xml",
         "data/google_data.xml",
         "data/huggingface_data.xml",
