@@ -722,6 +722,9 @@ class AIQuest(models.Model):
         global session
         session=kwarg.get('session',False)
 
+        if session == False:
+            raise UserError(_("No session added to build_graph method"))
+
         try:
             # Create graph
             graph_builder = StateGraph(AgentState)
