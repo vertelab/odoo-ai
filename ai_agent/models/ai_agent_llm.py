@@ -141,7 +141,6 @@ class AIAgentLLM(models.Model):
             if self.product_tmpl_id.llm_type == "AzureOpenAI":
                kwarg['api_version'] = self.model_id.name
                kwarg['azure_endpoint'] = self.azure_endpoint
-            _logger.info(f"{kwarg=}")
             return LLM(verbose=verbose, temperature=temperature, callbacks=callbacks, api_key=self.ai_api_key,
                        model=self.model_id.name, **kwarg)
         except ImportError as e:
