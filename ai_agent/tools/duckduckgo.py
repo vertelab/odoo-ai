@@ -3,6 +3,7 @@ import requests
 from langchain.tools import tool
 from bs4 import BeautifulSoup
 from duckduckgo_search import DDGS
+<<<<<<< HEAD
 from odoo.addons.ai_agent.models.ai_quest import AgentState
 from typing import Annotated
 
@@ -11,6 +12,9 @@ from pydantic import BaseModel, Field
 from langchain.tools import BaseTool, StructuredTool, tool
 
 
+=======
+from odoo.addons.ai_agent.models.ai_quest import AgentState as State
+>>>>>>> 11780eaa6029bba55feb67d200c4ebc61b72446d
 _logger = logging.getLogger(__name__)
 
 
@@ -26,11 +30,17 @@ class DDGOInputs(BaseModel):
 
 
 @tool("internet_search_DDGO", return_direct=False)
+<<<<<<< HEAD
 def internet_search_DDGO(args_schema=DDGOInputs) -> str:
 # ~ def internet_search_DDGO(query: str, state: State) -> str:
     """Searches the internet using DuckDuckGo."""
    
     _logger.error(f"{state=} -----------------------------------------------------------------------------")
+=======
+def internet_search_DDGO(query: str, state:State) -> str:
+    """Searches the internet using DuckDuckGo."""
+    _logger.warning(f"{state=}")
+>>>>>>> 11780eaa6029bba55feb67d200c4ebc61b72446d
     results = list(DDGS().text(query, max_results=5))
 
     return results if results else "No results found."

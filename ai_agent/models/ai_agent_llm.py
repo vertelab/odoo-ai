@@ -59,6 +59,7 @@ class AIAgentLLM(models.Model):
         default="not_confirmed")
     status_color = fields.Integer(compute="compute_status_color")
     tag_ids = fields.Many2many(comodel_name='product.tag', string='Tags')
+    azure_endpoint = fields.Char(string="Azure Endpoint")
 
     def action_get_quests(self):
         action = {
@@ -137,6 +138,9 @@ class AIAgentLLM(models.Model):
         try:
             module = importlib.import_module(self.product_tmpl_id.llm_library)
             LLM = getattr(module, self.product_tmpl_id.llm_type)
+            if self.product_tmpl_id.llm_type == "AzureOpenAI":
+               kwarg['api_version'] = self.model_id.name
+               kwarg['azure_endpoint'] = self.azure_endpoint
             return LLM(verbose=verbose, temperature=temperature, callbacks=callbacks, api_key=self.ai_api_key,
                        model=self.model_id.name, **kwarg)
         except ImportError as e:
@@ -148,7 +152,6 @@ class AIAgentLLM(models.Model):
         except Exception as e:
             _logger.error(f"An error occurred: {e}")
             raise
-
 
     def get_embedding(self):
 
@@ -205,8 +208,6 @@ class AIAgentLLM(models.Model):
                     'finish_reason': response_metadata.get('finish_reason'),
                 })
 
-
-
         if debug:
             self.log_message(body="%s" % response, is_error=False)
         return content
@@ -239,5 +240,3 @@ class AIAgentLLM(models.Model):
     def update_api_key(self):
         for llm in self:
             llm.ai_api_key = llm.product_tmpl_id.ai_api_key
-
-
