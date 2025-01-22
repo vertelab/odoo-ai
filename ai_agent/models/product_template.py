@@ -15,6 +15,7 @@ class ProductTemplate(models.Model):
     llm_price_url = fields.Char(string='Pricelist', size=64, trim=True, help="Pricelist for tokens and llm")
     token_sys = fields.Integer(string='System Tokens')
     session_line_count = fields.Integer(compute="compute_session_line_count")
+    azure_endpoint = fields.Char(string="Azure Endpoint")
 
     @api.depends("ai_session_lines_ids")
     def compute_session_line_count(self):

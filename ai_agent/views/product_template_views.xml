@@ -33,6 +33,7 @@
                             <field name="llm_etype"/>
                             <field name="llm_price_url" widget="url" />
                             <field name="ai_api_key"/>
+                            <field name="azure_endpoint" attrs="{'required': [('llm_type', '=', 'AzureOpenAI')], 'invisible': [('llm_type', '!=', 'AzureOpenAI')]}"/>
                         </group>
                     </group>
 

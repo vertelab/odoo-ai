@@ -59,6 +59,7 @@ class AIAgentLLM(models.Model):
         default="not_confirmed")
     status_color = fields.Integer(compute="compute_status_color")
     tag_ids = fields.Many2many(comodel_name='product.tag', string='Tags')
+    azure_endpoint = fields.Char(string="Azure Endpoint")
 
     def action_get_quests(self):
         action = {
@@ -137,6 +138,10 @@ class AIAgentLLM(models.Model):
         try:
             module = importlib.import_module(self.product_tmpl_id.llm_library)
             LLM = getattr(module, self.product_tmpl_id.llm_type)
+            if self.product_tmpl_id.llm_type == "AzureOpenAI":
+               kwarg['api_version'] = self.model_id.name
+               kwarg['azure_endpoint'] = self.azure_endpoint
+            _logger.info(f"{kwarg=}")
             return LLM(verbose=verbose, temperature=temperature, callbacks=callbacks, api_key=self.ai_api_key,
                        model=self.model_id.name, **kwarg)
         except ImportError as e:
