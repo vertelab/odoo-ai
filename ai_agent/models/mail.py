@@ -57,7 +57,8 @@ class MailChannel(models.Model):
                         answer = last_ai_message.content
 
                     self.with_user(user).message_post(
-                        body=markdown.markdown(answer),
+                        body=answer,
+                        # ~ body=markdown.markdown(answer),
                         message_type='comment',
                         subtype_xmlid='mail.mt_comment',
                     )

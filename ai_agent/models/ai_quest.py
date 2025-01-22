@@ -70,6 +70,7 @@ avatar_server_action = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 5
 class AgentState(TypedDict):
     messages: Annotated[Sequence[BaseMessage], operator.add]
     session: AIQuestSession
+    quest: AIQuest 
     next: str
 
 class AIQuestAgent(models.Model):
@@ -442,8 +443,8 @@ class AIQuest(models.Model):
     def start(self):
         pass
 
-    def _server_action_values(self, **kwarg):
-        return kwarg
+    def _server_action_values(self, **kwargs):
+        return kwargs
 
     def server_action(self, records):
         if self.init_type == 'server-action' and self.server_action_id:
@@ -460,8 +461,8 @@ class AIQuest(models.Model):
             #         return vals['agent'].prompt_agent('',session=vals['session'])
             #
 
-    def _cron_values(self, **kwarg):
-        return kwarg
+    def _cron_values(self, **kwargs):
+        return kwargs
 
     def cron(self, records):
         self.ensure_one()
@@ -477,8 +478,8 @@ class AIQuest(models.Model):
             vals = self._cron_values(records=records)
             result = self.run(**vals)
 
-    def _chat_values(self, **kwarg):
-        return kwarg
+    def _chat_values(self, **kwargs):
+        return kwargs
 
     def chat(self, message, channel, bot_user):
         """"
@@ -504,8 +505,8 @@ class AIQuest(models.Model):
             res = self.run(**vals)
             return res
 
-    def _mail_values(self, **kwarg):
-        return kwarg
+    def _mail_values(self, **kwargs):
+        return kwargs
 
     def mail(self, mail, session):
         if self.init_type == "mail":
@@ -716,7 +717,7 @@ class AIQuest(models.Model):
     # ------------------------------------------------------------
 
     # Inspired by https://github.com/menonpg/agentic_search_openai_langgraph/blob/main/agents.py
-    def build_graph(self, **kwarg):
+    def build_graph(self, **kwargs):
         """Build a multi-agent workflow graph."""
  
         if not self.ai_agent_ids:
@@ -728,7 +729,7 @@ class AIQuest(models.Model):
         members = [a.name for a in agents[1:]]
         _logger.info(f"Building graph with supervisor and {len(members)} workers: {members}")
         global session
-        session=kwarg.get('session',False)
+        session=kwargs.get('session',False)
 
         if session == False:
             raise UserError(_("No session added to build_graph method"))
@@ -740,7 +741,7 @@ class AIQuest(models.Model):
             # Add supervisor
             supervisor = agents[0]
             _logger.info(f"Adding supervisor: {supervisor.name}")
-            graph_builder.add_node("Supervisor", supervisor.create_supervisor(self, members, **kwarg))
+            graph_builder.add_node("Supervisor", supervisor.create_supervisor(self, members, **kwargs))
 
             # Add worker nodes
             for agent in agents[1:]:
