@@ -1,1 +1,1 @@
-from  . import duckduckgo
+from . import duckduckgo

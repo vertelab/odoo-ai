@@ -1,4 +1,3 @@
-
 import base64
 import json
 import logging
@@ -8,8 +7,9 @@ import re
 import traceback
 import unidecode
 import warnings
-warnings.filterwarnings("ignore", category=DeprecationWarning, message="builtin type swigvarlink has no __module__ attribute")
 
+warnings.filterwarnings("ignore", category=DeprecationWarning,
+                        message="builtin type swigvarlink has no __module__ attribute")
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langgraph.graph import END, StateGraph
@@ -20,7 +20,7 @@ from odoo.tools.mail import html2plaintext
 from odoo.tools.safe_eval import safe_eval
 from random import randint
 from secrets import choice
-from typing import Annotated, TypedDict, Sequence
+from typing_extensions import Annotated, TypedDict, Sequence
 
 from odoo.addons.base.models.avatar_mixin import get_hsl_from_seed
 
@@ -72,6 +72,7 @@ class AgentState(TypedDict):
     session: AIQuestSession
     next: str
 
+
 class AIQuestAgent(models.Model):
     _name = 'ai.quest.agent'
     _description = 'AI Quest AGent'
@@ -79,7 +80,9 @@ class AIQuestAgent(models.Model):
     ai_quest_id = fields.Many2one(comodel_name='ai.quest', string="", help="")
     sequence = fields.Integer(string='Sequence')
     ai_agent_id = fields.Many2one(comodel_name='ai.agent', string="Agent", help="")
-    object_id = fields.Reference(string='Object',related="ai_agent_id.object_id",selection=lambda m: [(model.model, model.name) for model in m.env['ir.model'].sudo().search([])])
+    object_id = fields.Reference(string='Object', related="ai_agent_id.object_id",
+                                 selection=lambda m: [(model.model, model.name) for model in
+                                                      m.env['ir.model'].sudo().search([])])
     ai_agent_status = fields.Selection(
         selection=[("draft", _("Draft")), ("active", _("Active")), ("done", _("Done")), ("error", _("Error"))],
         default="draft", related='ai_agent_id.status')
@@ -190,13 +193,12 @@ class AIQuest(models.Model):
     use_time_context = fields.Boolean(string='Use Time Context', default=True,
                                       help='Inform the LLM of current time, date')
     user_id = fields.Many2one(comodel_name='res.users', string="Owner", help="")
-  
+
     @api.model
     def _generate_random_token(self):
         return ''.join(choice('abcdefghijkmnopqrstuvwxyzABCDEFGHIJKLMNPQRSTUVWXYZ23456789') for _i in range(10))
 
     uuid = fields.Char('UUID', size=50, default=_generate_random_token, copy=False)
-
 
     @api.depends('init_type', 'image_128', 'uuid')
     def _compute_avatar_128(self):
@@ -513,9 +515,9 @@ class AIQuest(models.Model):
                 self.log_message(self._check_quest_error())
             mail_body = html2plaintext(self.markdown2html(mail.body)).replace("<b>", "").replace("</b>", "").replace(
                 "<br>", "").replace("<p>", "").replace("</p>", "").replace("\n", "")
-            vals = self._mail_values(mail=mail, mail_body=mail_body, session=session)
+            vals = self._mail_values(mail=mail, mail_body=mail_body, session=session, attachments=mail.attachment_ids)
             res = self.run(**vals)
-            return res
+            return res, mail.attachment_ids
 
     # ------------------------------------------------------------
     # Python code helpers
@@ -564,7 +566,7 @@ class AIQuest(models.Model):
         :returns: dict -- evaluation context given to (safe_)safe_eval """
 
         records = kw.get('records', [])
-        message = kw.get('message',False)
+        message = kw.get('message', False)
         message_body = html2plaintext(message.body) if message else ''
         eval_context = {
             'action': action,
@@ -578,8 +580,8 @@ class AIQuest(models.Model):
             'record': records[0] if records else None,
             'records': records,
             # context
-             'message_body': message_body,
-             'message_invoke': {"messages": [HumanMessage(content=message_body)]},
+            'message_body': message_body,
+            'message_invoke': {"messages": [HumanMessage(content=message_body)]},
             # Exceptions
             'Warning': Warning,
             'UserError': UserError,
@@ -591,7 +593,7 @@ class AIQuest(models.Model):
         }
         return eval_context
 
-    def run(self, **kwargs):            
+    def run(self, **kwargs):
         if self.debug:
             _logger.warning(f" RUN {kwargs=}")
         local_dict = {}
@@ -718,19 +720,19 @@ class AIQuest(models.Model):
     # Inspired by https://github.com/menonpg/agentic_search_openai_langgraph/blob/main/agents.py
     def build_graph(self, **kwarg):
         """Build a multi-agent workflow graph."""
- 
+
         if not self.ai_agent_ids:
             raise ValueError("No agents provided")
 
         agents = [line.ai_agent_id for line in self.ai_agent_ids]
-       
+
         # Get member names
         members = [a.name for a in agents[1:]]
         _logger.info(f"Building graph with supervisor and {len(members)} workers: {members}")
-        global session
-        session=kwarg.get('session',False)
+        # global session
+        session = kwarg.get('session', False)
 
-        if session == False:
+        if not session:
             raise UserError(_("No session added to build_graph method"))
 
         try:
