@@ -2,8 +2,6 @@ import functools
 import importlib
 import json
 import logging
-from functools import lru_cache
-
 import re
 import traceback
 
@@ -19,7 +17,6 @@ from odoo import models, fields, api, _
 from odoo.exceptions import UserError
 from random import randint
 from typing_extensions import TypedDict, List
-from langgraph.prebuilt import ToolNode
 
 _logger = logging.getLogger(__name__)
 
@@ -63,8 +60,6 @@ class AIAgent(models.Model):
         selection=[("draft", _("Draft")), ("active", _("Active")), ("done", _("Done")), ("error", _("Error"))],
         default="draft")
     tag_ids = fields.Many2many(comodel_name='product.tag', string='Tags')
-
-    # _cached_state = fields.Serialized(string='Cached State')
 
     @api.depends('image_128')
     def _compute_base_image_128(self):
@@ -312,8 +307,10 @@ class AIAgent(models.Model):
 
         def supervisor_chain(state):
             messages = state.get('messages', [])
-            _logger.info(f"Supervisor received messages: {len(messages)} {session=}")
+            state['session'] = session
 
+            _logger.info(f"Supervisor received messages: {len(messages)} {session=}")
+           
             if not messages:
                 _logger.info(f"No messages, starting with first worker: {members[0] if members else 'no members'}")
                 session.add_message(
@@ -416,7 +413,7 @@ class AIAgent(models.Model):
 
                 result = langgraph_agent_executor.invoke({
                     "input": latest_message,
-                    "messages": input_messages,
+                    "messages": input_messages
                 })
 
                 _logger.info(f"Agent {self.name} generated response")
@@ -469,11 +466,12 @@ class AIAgent(models.Model):
                 module = importlib.import_module(ai_tool_id.tool_lib)
                 TOOL = getattr(module, ai_tool_id.tool)(state)
             except ImportError as e:
-                _logger.error(f"Error importing {ai_tool_id.tool_lib=}: {e}")
+                _logger.error(f"Error importing {ai_tool_id.tool_lib=}: {e} {traceback.format_exc()}")
             except AttributeError as e:
-                _logger.error(f"Error: {ai_tool_id.tool=} not found in {ai_tool_id.tool_lib=}")
+                _logger.error(f"Error: {ai_tool_id.tool=} not found in {ai_tool_id.tool_lib=}  {traceback.format_exc()}")
             except Exception as e:
-                _logger.error(f"An error occurred: {e}")
+                _logger.error(f"An error occurred: {e}  {traceback.format_exc()}")
             if TOOL:
                 tools.append(TOOL)
+        _logger.warning(f"_get_tools{tools=}")
         return tools

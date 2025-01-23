@@ -304,6 +304,9 @@ class AIAgent(models.Model):
 
         def supervisor_chain(state):
             messages = state.get('messages', [])
+            state['session'] = session
+            state['quest'] = quest
+            
             _logger.info(f"Supervisor received messages: {len(messages)} {session=}")
            
             if not messages:
@@ -461,10 +464,12 @@ class AIAgent(models.Model):
                 module = importlib.import_module(ai_tool_id.tool_lib)
                 TOOL = getattr(module, ai_tool_id.tool)
             except ImportError as e:
-                _logger.error(f"Error importing {ai_tool_id.tool_lib=}: {e}")
+                _logger.error(f"Error importing {ai_tool_id.tool_lib=}: {e} {traceback.format_exc()}")
             except AttributeError as e:
-                _logger.error(f"Error: {ai_tool_id.tool=} not found in {ai_tool_id.tool_lib=}")
+                _logger.error(f"Error: {ai_tool_id.tool=} not found in {ai_tool_id.tool_lib=}  {traceback.format_exc()}")
             except Exception as e:
-                _logger.error(f"An error occurred: {e}")
-            tools.append(TOOL)
+                _logger.error(f"An error occurred: {e}  {traceback.format_exc()}")
+            if TOOL:
+                tools.append(TOOL)
+        _logger.warning(f"_get_tools{tools=}")
         return tools
