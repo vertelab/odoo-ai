@@ -22,6 +22,13 @@ from random import randint
 from secrets import choice
 from typing import Annotated, TypedDict, Sequence
 
+from langchain.agents import Tool, AgentExecutor, LLMSingleActionAgent, AgentOutputParser
+from langchain.agents import Tool, AgentExecutor, LLMSingleActionAgent
+from langgraph.graph import StateGraph
+from langgraph.checkpoint.memory import MemorySaver
+
+
+
 from odoo.addons.base.models.avatar_mixin import get_hsl_from_seed
 
 _logger = logging.getLogger(__name__)
@@ -67,11 +74,7 @@ avatar_server_action = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 5
 </svg>'''
 
 
-class AgentState(TypedDict):
-    messages: Annotated[Sequence[BaseMessage], operator.add]
-    session: AIQuestSession
-    quest: AIQuest 
-    next: str
+
 
 class AIQuestAgent(models.Model):
     _name = 'ai.quest.agent'
@@ -718,7 +721,7 @@ class AIQuest(models.Model):
 
     # Inspired by https://github.com/menonpg/agentic_search_openai_langgraph/blob/main/agents.py
     def build_graph(self, **kwargs):
-        """Build a multi-agent workflow graph."""
+        """Build a multi-agent workflow graph with supervisor."""
  
         if not self.ai_agent_ids:
             raise ValueError("No agents provided")
@@ -778,6 +781,112 @@ class AIQuest(models.Model):
             _logger.error(f"Error building graph: {str(e)}")
             raise
 
+
+    def supervisor(self, **kwargs):
+        """Build a multi-agent workflow graph with supervisor."""
+ 
+        if not self.ai_agent_ids:
+            raise ValueError("No agents provided")
+
+        agents = [line.ai_agent_id for line in self.ai_agent_ids]
+       
+        # Get member names
+        members = [a.name for a in agents[1:]]
+        _logger.info(f"Building graph with supervisor and {len(members)} workers: {members}")
+        
+        global session
+        session=kwargs.get('session',False)
+
+        if session == False:
+            raise UserError(_("No session added to build_graph method"))
+
+        try:
+            # Create graph
+            graph_builder = StateGraph(AgentState)
+
+            # Add supervisor
+            supervisor = agents[0]
+            _logger.info(f"Adding supervisor: {supervisor.name}")
+            graph_builder.add_node("Supervisor", supervisor.create_supervisor(self, members, **kwargs))
+
+            # Add worker nodes
+            for agent in agents[1:]:
+                _logger.info(f"Adding worker node: {agent.name}")
+                graph_builder.add_node(agent.name, agent.create_node(session=session))
+
+            # Add edges from workers to supervisor
+            for member in members:
+                _logger.info(f"Adding edge: {member} -> Supervisor")
+                graph_builder.add_edge(member, "Supervisor")
+
+            # Add conditional routing
+            conditional_map = {k: k for k in members}
+            conditional_map["FINISH"] = END
+
+            _logger.info("Adding conditional edges with routes: " +
+                         ", ".join([f"{k} -> {v}" for k, v in conditional_map.items()]))
+
+            graph_builder.add_conditional_edges(
+                "Supervisor",
+                lambda x: x["next"],
+                conditional_map
+            )
+
+            # Set entry point
+            graph_builder.set_entry_point("Supervisor")
+
+            # Compile and return
+            _logger.info("Compiling graph")
+            return graph_builder.compile()
+
+        except Exception as e:
+            self.log_message(f"Error building graph: {str(e)}", is_error=True)
+            _logger.error(f"Error building graph: {str(e)}")
+            raise
+
+
     # message = html2plaintext(message.body)
     # response = self.build_graph(agents).invoke({"messages": [HumanMessage(content=message)]})
     # result = response['messages'][-1].content
+    
+    # https://www.perplexity.ai/search/i-langgraph-vill-jag-komma-at-fCisIUB7RjaKwPovE_fyZg
+    
+    def build_chain(self, **kwargs):
+        """Build a multi-agent workflow chain."""
+ 
+        if not self.ai_agent_ids:
+            raise ValueError("No agents provided")
+
+        agents = [agent for agent in self.ai_agent_ids.mapped('ai_agent_id')]
+
+        try:
+            # Create graph
+            workflow = StateGraph(AgentState)
+
+            for i, agent in enumerate(agents):
+                workflow.add_node(f"agent_{i}", agent.create_sequence_agent(self))
+
+            for i, agent in enumerate(agents[1:]):
+                workflow.add_edge(f"agent_{i}", f"agent_{i+1}")
+
+            workflow.set_entry_point("agent_0")
+            workflow.set_finish_point(f"agent_{len(agents)-1}")
+            return workflow.compile()
+            result = app.invoke({"input": "Your initial input here"})
+            
+            return graph_builder.compile()
+
+        except Exception as e:
+            self.log_message(f"Error building chain: {str(e)}", is_error=True)
+            _logger.error(f"Error building chain: {str(e)}")
+            raise
+
+    # message = html2plaintext(message.body)
+    # response = self.build_graph(agents).invoke({"messages": [HumanMessage(content=message)]})
+    # result = response['messages'][-1].content
+
+class AgentState(TypedDict):
+    messages: Annotated[Sequence[BaseMessage], operator.add]
+    session: AIQuestSession
+    quest: AIQuest 
+    next: str

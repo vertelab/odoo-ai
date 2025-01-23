@@ -148,6 +148,11 @@
                             <page string="Code" id="code">
                                 <field name="code" />
                             </page>
+                            <page string="Supervisor" id="supervisor" attrs="{'invisible': [('is_supervisor', '=', False)]}"  >
+                                <field name="supervisor_llm" />
+                                <field name="supervisor_temperature" />
+                                <field name="supervisor_prompt" />
+                            </page>
                             <page string="Agents" id="agent">
                                 <field name="ai_agent_ids">
                                     <tree string="AI Quest Agents" editable="bottom">
@@ -183,6 +188,7 @@
                     <field name="user_id" />
                     <field name="partner_id" />
                     <field name="is_favorite" />
+                    <field name="is_supervisor" />
                     <field name="agent_count" />
                     <field name="session_count" />
                     <field name="avatar_128" />
@@ -220,9 +226,10 @@
                                     <div class="oe_kanban_content flex-grow-1 flex-column">
                                         <div class="oe_kanban_details">
                                             <div class="oe_kanban_left">
-                                                <!-- #if VERSION == 16.0 -->
+                                                <!-- #if VERSION >= 16.0 -->
                                                 <field name="tag_ids" widget="many2many_tags" options="{'color_field': 'color'}" />
                                                 <!-- #endif -->
+                                                <field name="is_supervisor"/>
                                                 <field name="status" widget="label_selection" options="{'classes': {'draft': 'default', 'active': 'success', 'done': 'info', 'error': 'danger'}}" />
                                             </div>
                                         </div>

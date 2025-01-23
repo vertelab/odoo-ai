@@ -7,6 +7,7 @@ import traceback
 
 from datetime import datetime
 from httpx import HTTPStatusError
+from langchain.agents import Tool, AgentExecutor, LLMSingleActionAgent, AgentOutputParser
 from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder, PromptTemplate, HumanMessagePromptTemplate, SystemMessagePromptTemplate
 from langchain.schema import AIMessage, HumanMessage, SystemMessage, BaseMessage
 from langchain.tools import tool
@@ -15,9 +16,16 @@ from langgraph.prebuilt import create_react_agent
 from odoo import models, fields, api, _
 from odoo.exceptions import UserError
 from random import randint
-from typing_extensions import TypedDict, List
+from typing_extensions import TypedDict, List, Union
+
 
 _logger = logging.getLogger(__name__)
+
+
+# Skapa en output-parser
+class SimpleOutputParser(AgentOutputParser):
+    def parse(self, llm_output: str) -> Union[AgentAction, AgentFinish]:
+        return AgentAction(tool="Simple Tool", tool_input=llm_output.strip(" ").strip('"'), log=llm_output)
 
 class AIAgent(models.Model):
     _name = 'ai.agent'
@@ -28,7 +36,7 @@ class AIAgent(models.Model):
     ai_agent_llm_id = fields.Many2one(comodel_name="ai.agent.llm", string="LLM", help="Choose Large Language Model",
                                           domain="[('status','=','confirmed')]")
     ai_backstory = fields.Text(string="Backstory")
-    ai_discription = fields.Text()
+    ai_description = fields.Text()
     ai_goal = fields.Text(string="Goal")
     ai_memory_ids = fields.One2many(comodel_name='ai.agent.memory', inverse_name='ai_agent_id', string="", help="")
     ai_prompt_template = fields.Html(string="Prompt Template")
@@ -153,6 +161,25 @@ class AIAgent(models.Model):
         if question:
             chat_history.add_user_message(question)
         return chat_history.messages
+
+    # ------------------------------------------------------------
+    # LangChain
+    # ------------------------------------------------------------
+
+
+
+
+        # https://www.perplexity.ai/search/i-langgraph-vill-jag-komma-at-fCisIUB7RjaKwPovE_fyZg#8
+
+    def create_sequence_agent(self, quest):
+        tools = self.get_tools()
+        agent = LLMSingleActionAgent(
+            llm_chain=self.get_llm(),
+            tools=tools,
+            output_parser=SimpleOutputParser,  # AgentOutputParser [Required]
+            stop=["\nObservation:"], # stop=List[str] [Required]
+        )
+        return AgentExecutor.from_agent_and_tools(agent=agent, tools=tools, verbose=quest.debug)
 
     def prompt_agent(self, test_prompt=False, parser=False, session=False, debug=False, channel=False, bot_user=False,
                      **kwargs):
