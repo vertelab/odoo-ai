@@ -23,11 +23,9 @@ from secrets import choice
 from typing import Annotated, TypedDict, Sequence
 
 from langchain.agents import Tool, AgentExecutor, LLMSingleActionAgent, AgentOutputParser
-from langchain.agents import Tool, AgentExecutor, LLMSingleActionAgent
-from langgraph.graph import StateGraph
+from langchain.schema import AgentAction, AgentFinish
 from langgraph.checkpoint.memory import MemorySaver
-
-
+from langgraph.graph import StateGraph
 
 ##if VERSION >= '16.0'
 from odoo.addons.base.models.avatar_mixin import get_hsl_from_seed
@@ -756,6 +754,15 @@ class AIQuest(models.Model):
     # LangGraph 
     # ------------------------------------------------------------
 
+    def build(self, **kwargs):
+        if self.is_supervisor:
+            _logger.info(f"Building graph with supervisor ")
+            return self.supervisor(**kwargs)
+        else:
+            _logger.info(f"Building chain ")
+            return self.build_chain(**kwargs)
+
+
     # Inspired by https://github.com/menonpg/agentic_search_openai_langgraph/blob/main/agents.py
     def build_graph(self, **kwargs):
         """Build a multi-agent workflow graph with supervisor."""
@@ -976,6 +983,7 @@ class AIQuest(models.Model):
     
     def build_chain(self, **kwargs):
         """Build a multi-agent workflow chain."""
+        _logger.error(f"building chain: {str(kwargs)}")
  
         if not self.ai_agent_ids:
             raise ValueError("No agents provided")

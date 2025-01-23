@@ -9,7 +9,7 @@ from datetime import datetime
 from httpx import HTTPStatusError
 from langchain.agents import Tool, AgentExecutor, LLMSingleActionAgent, AgentOutputParser
 from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder, PromptTemplate, HumanMessagePromptTemplate, SystemMessagePromptTemplate
-from langchain.schema import AIMessage, HumanMessage, SystemMessage, BaseMessage
+from langchain.schema import AIMessage, HumanMessage, SystemMessage, BaseMessage, AgentAction, AgentFinish
 from langchain.tools import tool
 from langchain_community.chat_message_histories import ChatMessageHistory
 from langgraph.prebuilt import create_react_agent
@@ -171,10 +171,10 @@ class AIAgent(models.Model):
 
         # https://www.perplexity.ai/search/i-langgraph-vill-jag-komma-at-fCisIUB7RjaKwPovE_fyZg#8
 
-    def create_sequence_agent(self, quest):
-        tools = self.get_tools()
+    def create_sequence_agent(self, quest, **kwargs):
+        tools = self._get_tools()
         agent = LLMSingleActionAgent(
-            llm_chain=self.get_llm(),
+            llm_chain=self.ai_agent_llm_id.get_llm(**kwargs),
             tools=tools,
             output_parser=SimpleOutputParser,  # AgentOutputParser [Required]
             stop=["\nObservation:"], # stop=List[str] [Required]

@@ -23,15 +23,30 @@ from secrets import choice
 from typing import Annotated, TypedDict, Sequence
 
 from langchain.agents import Tool, AgentExecutor, LLMSingleActionAgent, AgentOutputParser
-from langchain.agents import Tool, AgentExecutor, LLMSingleActionAgent
-from langgraph.graph import StateGraph
+from langchain.schema import AgentAction, AgentFinish
 from langgraph.checkpoint.memory import MemorySaver
-
-
+from langgraph.graph import StateGraph
 
 from odoo.addons.base.models.avatar_mixin import get_hsl_from_seed
 
 _logger = logging.getLogger(__name__)
+
+
+SUPERVISOR = """You are a supervisor coordinating between workers: {members}.
+Based on the request, determine which worker should handle the next step.
+Only choose FINISH when a complete response has been provided.
+
+Guidelines: {self.description}
+{self._extra_context(self)}
+
+Instructions:
+1. Evaluate if we have a complete response
+2. If not complete, choose the most appropriate worker
+3. Send FINISH only when we have a satisfactory response
+4. Do not mention that you have done tool calls, thats too technical 
+4. {use_lang}
+"""
+
 
 avatar_channel = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 530.06 530.06">
 <circle cx="265.03" cy="265.03" r="265.03" fill="#875a7b"/>
@@ -194,6 +209,16 @@ class AIQuest(models.Model):
     use_time_context = fields.Boolean(string='Use Time Context', default=True,
                                       help='Inform the LLM of current time, date')
     user_id = fields.Many2one(comodel_name='res.users', string="Owner", help="")
+    is_supervisor = fields.Boolean(string='Is Supervisor', help="This is a ReAct type of quest using a supervisor coordinating agents")
+    supervisor_prompt = fields.Text(string="Supervisor Prompt",default=SUPERVISOR)
+    supervisor_llm_id = fields.Many2one(comodel_name="ai.agent.llm", string="LLM", help="Choose Large Language Model for the supervisor",
+                                          domain="[('status','=','confirmed')]")
+    supervisor_temperature = fields.Float(string='Temperature', default=0.7,
+                                      help="Temperature controls the randomness and creativity of the model's output, "
+                                           "<1.0 more predictable and consistent >1.0 more diverse and creative responses")
+
+    
+    
   
     @api.model
     def _generate_random_token(self):
@@ -719,6 +744,15 @@ class AIQuest(models.Model):
     # LangGraph 
     # ------------------------------------------------------------
 
+    def build(self, **kwargs):
+        if self.is_supervisor:
+            _logger.info(f"Building graph with supervisor ")
+            return self.supervisor(**kwargs)
+        else:
+            _logger.info(f"Building chain ")
+            return self.build_chain(**kwargs)
+
+
     # Inspired by https://github.com/menonpg/agentic_search_openai_langgraph/blob/main/agents.py
     def build_graph(self, **kwargs):
         """Build a multi-agent workflow graph with supervisor."""
@@ -780,6 +814,92 @@ class AIQuest(models.Model):
             self.log_message(f"Error building graph: {str(e)}", is_error=True)
             _logger.error(f"Error building graph: {str(e)}")
             raise
+
+
+    def create_supervisor(self, members, **kwarg):
+        """Create a supervisor node that coordinates between different agents."""
+        use_lang = f"Use language {self.env.user.lang} for the answer to Human" if self.use_personal_lang else ''
+            
+        session=kwarg.get('session',False)
+
+
+       
+
+        def supervisor_chain(state):
+            messages = state.get('messages', [])
+            state['session'] = session
+            state['quest'] = quest
+            
+            _logger.info(f"Supervisor received messages: {len(messages)} {session=}")
+           
+            if not messages:
+                _logger.info(f"No messages, starting with first worker: {members[0] if members else 'no members'}")
+                session.add_message(f"No messages, starting with first worker: {members[0] if members else 'no members'}")
+                return {"next": members[0],'session':session} if members else {"next": "FINISH",'session':session}
+
+            _logger.error(f"{messages=} {session=}")
+
+            # Get the latest message
+            question = messages[-1].content if messages else ""
+
+            try:
+                # Create full message list
+                _logger.error(f"Create full message list")
+                prompt = f"Previous conversation:\n"
+                for msg in messages:
+                    prompt += f"\n{msg.content}\n"
+                prompt += (f"\nBased on this, who should act next? Choose from: {members} or say FINISH if we have a "
+                           f"complete response.")
+ 
+                # Get LLM response
+                llm = self.ai_agent_llm_id.get_llm()
+                response = llm.invoke([
+                    SystemMessage(content=system_prompt),
+                    HumanMessage(content=prompt)
+                ])
+
+                # Parse response
+                content = response.content.upper()
+                _logger.info(f"Supervisor decision: {content}")
+                session.add_message(f"Supervisor decision: {content}")
+
+                # Check for completion or next agent
+                if "FINISH" in content:
+                    _logger.info("Supervisor decided to FINISH")
+                    session.add_message("Supervisor decided to FINISH")
+                    return {"next": "FINISH",'session': session}
+
+                # Find mentioned agent
+                for member in members:
+                    if member.upper() in content:
+                        _logger.info(f"Supervisor selected agent: {member}")
+                        session.add_message(f"Supervisor selected agent: {member}")
+                        return {"next": member, 'session': session}
+
+                # If no clear direction and we have previous responses, finish
+                if len(messages) > 1:   
+                    _logger.info("No clear direction, finishing")
+                    session.add_message("No clear direction, finishing")
+                    return {"next": "FINISH", 'session': session}
+
+                # Default to first member
+                if len(members) != 0:
+                    _logger.info(f"Defaulting to first member: {members[0]}")
+                    session.add_message(f"Defaulting to first member: {members[0]}")
+                    return {"next": members[0], 'session': session}
+
+            except Exception as e:
+                _logger.error(f"Error in supervisor chain: {str(e)}",exc_info=True)
+                session.add_message(f"Error in supervisor chain: {str(e)}")
+                return {"next": "FINISH", 'session': session}
+
+        return supervisor_chain
+
+
+
+
+
+
 
 
     def supervisor(self, **kwargs):
@@ -853,6 +973,7 @@ class AIQuest(models.Model):
     
     def build_chain(self, **kwargs):
         """Build a multi-agent workflow chain."""
+        _logger.error(f"building chain: {str(kwargs)}")
  
         if not self.ai_agent_ids:
             raise ValueError("No agents provided")

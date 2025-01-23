@@ -256,7 +256,7 @@ class AIAgent(models.Model):
         @tool
         def search(query: str):
             """Call to surf the web."""
-            _logger.warning(f("tool search {self=}")
+            _logger.warning(f"tool search {self=}")
             # This is a placeholder, but don't tell the LLM that...
             if "sf" in query.lower() or "san francisco" in query.lower():
                 return "It's 60 degrees and foggy."
