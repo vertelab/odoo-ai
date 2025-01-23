@@ -20,7 +20,8 @@ from odoo.tools.mail import html2plaintext
 from odoo.tools.safe_eval import safe_eval
 from random import randint
 from secrets import choice
-from typing import Annotated, TypedDict, Sequence
+from typing import Annotated, TypedDict, Sequence, List, Union
+# ~ from typing_extensions import TypedDict, List, Union
 
 from langchain.agents import Tool, AgentExecutor, LLMSingleActionAgent, AgentOutputParser
 from langchain.schema import AgentAction, AgentFinish
@@ -744,14 +745,6 @@ class AIQuest(models.Model):
     # LangGraph 
     # ------------------------------------------------------------
 
-    def build(self, **kwargs):
-        if self.is_supervisor:
-            _logger.info(f"Building graph with supervisor ")
-            return self.supervisor(**kwargs)
-        else:
-            _logger.info(f"Building chain ")
-            return self.build_chain(**kwargs)
-
 
     # Inspired by https://github.com/menonpg/agentic_search_openai_langgraph/blob/main/agents.py
     def build_graph(self, **kwargs):
@@ -822,8 +815,7 @@ class AIQuest(models.Model):
             
         session=kwarg.get('session',False)
 
-
-       
+        system_prompt = self.supervisor_prompt
 
         def supervisor_chain(state):
             messages = state.get('messages', [])
@@ -852,8 +844,7 @@ class AIQuest(models.Model):
                            f"complete response.")
  
                 # Get LLM response
-                llm = self.ai_agent_llm_id.get_llm()
-                response = llm.invoke([
+                response = self.supervisor_llm_id.get_llm(temperature=self.supervisor_temperature).invoke([
                     SystemMessage(content=system_prompt),
                     HumanMessage(content=prompt)
                 ])
@@ -895,11 +886,13 @@ class AIQuest(models.Model):
 
         return supervisor_chain
 
-
-
-
-
-
+    def build(self, **kwargs):
+        if self.is_supervisor:
+            _logger.info(f"Building graph with supervisor ")
+            return self.supervisor(**kwargs)
+        else:
+            _logger.info(f"Building chain ")
+            return self.build_chain(**kwargs)
 
 
     def supervisor(self, **kwargs):
@@ -911,7 +904,7 @@ class AIQuest(models.Model):
         agents = [line.ai_agent_id for line in self.ai_agent_ids]
        
         # Get member names
-        members = [a.name for a in agents[1:]]
+        members = [a.name for a in agents]
         _logger.info(f"Building graph with supervisor and {len(members)} workers: {members}")
         
         global session
@@ -925,22 +918,21 @@ class AIQuest(models.Model):
             graph_builder = StateGraph(AgentState)
 
             # Add supervisor
-            supervisor = agents[0]
-            _logger.info(f"Adding supervisor: {supervisor.name}")
-            graph_builder.add_node("Supervisor", supervisor.create_supervisor(self, members, **kwargs))
+            _logger.info(f"Adding supervisor: with {members=}")
+            graph_builder.add_node("Supervisor", self.create_supervisor(members, **kwargs))
 
             # Add worker nodes
-            for agent in agents[1:]:
+            for agent in agents:
                 _logger.info(f"Adding worker node: {agent.name}")
                 graph_builder.add_node(agent.name, agent.create_node(session=session))
 
             # Add edges from workers to supervisor
-            for member in members:
+            for member in agents.mapper('name'):
                 _logger.info(f"Adding edge: {member} -> Supervisor")
                 graph_builder.add_edge(member, "Supervisor")
 
             # Add conditional routing
-            conditional_map = {k: k for k in members}
+            conditional_map = {k: k for k in agents.mapper('name')}
             conditional_map["FINISH"] = END
 
             _logger.info("Adding conditional edges with routes: " +
@@ -979,28 +971,29 @@ class AIQuest(models.Model):
             raise ValueError("No agents provided")
 
         agents = [agent for agent in self.ai_agent_ids.mapped('ai_agent_id')]
-
+        
         try:
             # Create graph
             workflow = StateGraph(AgentState)
 
             for i, agent in enumerate(agents):
-                workflow.add_node(f"agent_{i}", agent.create_sequence_agent(self))
-
+                workflow.add_node(f"agent_{i}", agent.create_sequence_node(**kwargs))
+    
+            # ~ import pdb; pdb.set_trace()
             for i, agent in enumerate(agents[1:]):
                 workflow.add_edge(f"agent_{i}", f"agent_{i+1}")
 
             workflow.set_entry_point("agent_0")
             workflow.set_finish_point(f"agent_{len(agents)-1}")
             return workflow.compile()
-            result = app.invoke({"input": "Your initial input here"})
-            
-            return graph_builder.compile()
-
+           
         except Exception as e:
             self.log_message(f"Error building chain: {str(e)}", is_error=True)
             _logger.error(f"Error building chain: {str(e)}")
             raise
+            
+
+
 
     # message = html2plaintext(message.body)
     # response = self.build_graph(agents).invoke({"messages": [HumanMessage(content=message)]})
@@ -1009,5 +1002,7 @@ class AIQuest(models.Model):
 class AgentState(TypedDict):
     messages: Annotated[Sequence[BaseMessage], operator.add]
     session: AIQuestSession
-    quest: AIQuest 
+    quest: AIQuest
+    topic: str
+    scratchpad: List[str] 
     next: str

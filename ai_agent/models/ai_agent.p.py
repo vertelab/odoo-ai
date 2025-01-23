@@ -17,6 +17,7 @@ from odoo import models, fields, api, _
 from odoo.exceptions import UserError
 from random import randint
 from typing_extensions import TypedDict, List, Union
+from odoo.addons.ai_agent.models.ai_quest import AgentState
 
 
 _logger = logging.getLogger(__name__)
@@ -167,19 +168,84 @@ class AIAgent(models.Model):
     # ------------------------------------------------------------
 
 
+    # ~ https://www.perplexity.ai/search/hur-debuggar-jag-odoo-E_QK9lp.RrqkS5flbGCXQQ
+
+    def create_sequence_node(self, **kwargs):
+        """Creates a node for the agent in the chain."""
+
+        topic = kwargs.get('topic',kwargs.get('message','')) 
+        session=kwargs.get('session',False)
+
+        def use_tool(tool_name: str, query: str):
+            for tool in tools:
+                if tool.name.lower() == tool_name.lower():
+                    return tool.func(query)
+            return "Verktyget kunde inte hittas."
+
+        def agent_snode(state: AgentState):
+            """Process messages and generate a response."""
+            
+            messages = state.get('messages', [])
+            import pdb; pdb.set_trace()
+            _logger.info(f"Agent {self.name} received messages: {len(messages)} {state=}")
+            # ~ state['session'] = session
+            # ~ state['topic'] = topic
+            
+            session.add_message(f"Agent {self.name} received messages: {len(messages)} {state=}")
+
+            try:
+                import pdb; pdb.set_trace()
+                # Get the latest message
+                latest_message = messages[-1].content if messages else ""
+                # ~ topic = state['topic']
+                tools = self._get_tools()
+                tool_message = f"You have tools: {' '.join([t.name.lower() for t in tools])}" if tools else ''
+
+                system_message = SystemMessage(
+                    content=f"""You are an agent with specific responsibilities.
+                    Role: {self.ai_role}
+                    Goal: {self.ai_goal}
+                    Backstory: {self.ai_backstory}
+                    Memory: {self._get_memory(latest_message)} {self._get_memory(topic)}
+                    {tool_message}
+   
+                    Instructions:
+                    - Provide thorough, complete responses
+                    - Use available tools and memory when needed
+                    - Stay focused on your specific role
+                    """
+                )
+                import pdb; pdb.set_trace()
+                # Prepare the input messages with system message first
+                input_messages = [system_message] + [messages[-1]]
+                messages = [{"role": "system", "content": system_message},
+                            {"role": "user", "content": topic}]
+                for entry in state["scratchpad"] + [message[-1]]:
+                    messages.append({"role": "assistant", "content": entry})
+                import pdb; pdb.set_trace()
+                response = self.ai_agent_llm_id.get_llm().invoke(messages)
+                import pdb; pdb.set_trace()
+                _logger.info(f"Agent {self.name} generated {response=}")
+                state['session'].save_messages(f"Agent {self.name} generated {response=}")
+                return response
+
+            except Exception as e:
+                _logger.error(f"Error in agent {self.name}: {str(e)}")
+                return {
+                    "messages": [
+                        AIMessage(
+                            content=f"Error occurred in agent {self.name}: {str(e)}",
+                            name=self.name.replace(' ', '_').replace(',', '').replace('.', '')
+                        )
+                    ]
+                }
+
+        return agent_snode
 
 
-        # https://www.perplexity.ai/search/i-langgraph-vill-jag-komma-at-fCisIUB7RjaKwPovE_fyZg#8
 
-    def create_sequence_agent(self, quest, **kwargs):
-        tools = self._get_tools()
-        agent = LLMSingleActionAgent(
-            llm_chain=self.ai_agent_llm_id.get_llm(**kwargs),
-            tools=tools,
-            output_parser=SimpleOutputParser,  # AgentOutputParser [Required]
-            stop=["\nObservation:"], # stop=List[str] [Required]
-        )
-        return AgentExecutor.from_agent_and_tools(agent=agent, tools=tools, verbose=quest.debug)
+
+
 
     def prompt_agent(self, test_prompt=False, parser=False, session=False, debug=False, channel=False, bot_user=False,
                      **kwargs):
@@ -475,6 +541,9 @@ class AIAgent(models.Model):
                 }
 
         return agent_node
+
+
+
 
     def _get_memory(self, question, k=3, **kwarg):
         def get_rag(vs, question):
