@@ -72,7 +72,6 @@ avatar_server_action = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 5
 class AgentState(TypedDict):
     messages: Annotated[Sequence[BaseMessage], operator.add]
     session: AIQuestSession
-    quest: AIQuest 
     next: str
 
 class AIQuestAgent(models.Model):
