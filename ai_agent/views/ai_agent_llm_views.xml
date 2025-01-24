@@ -102,8 +102,9 @@
                                 <field name="llm_etype" attrs="{'invisible': [('is_embedded', '=', False)]}" />
                                 <field name="product_tmpl_id" />
                                 <field name="model_id" attrs="{'invisible': [('product_tmpl_id', '=', False)]}" domain="[('product_tmpl_id', '=', product_tmpl_id),('attribute_id','=', %(ai_agent.product_attribute_model)d)]" />
-                                <field name="azure_endpoint" attrs="{'required': [('llm_type', '=', 'AzureOpenAI')], 'invisible': [('llm_type', '!=', 'AzureOpenAI')]}"/>
-                            </group>
+                                <field name="azure_endpoint" attrs="{'required': [('llm_type', '=', 'AzureChatOpenAI')], 'invisible': [('llm_type', '!=', 'AzureChatOpenAI')]}"/>
+                                <field name="api_version" attrs="{'required': [('llm_type', '=', 'AzureChatOpenAI')], 'invisible': [('llm_type', '!=', 'AzureChatOpenAI')]}"/>
+                             </group>
                         </group>
                         <group>
                             <separator />
