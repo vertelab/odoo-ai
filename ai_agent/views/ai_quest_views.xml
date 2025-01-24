@@ -70,7 +70,7 @@
                                 <field name="name" class="o_text_overflow" placeholder="t.ex. Chatbot" modifiers="{&quot;required&quot;: true}" />
                             </h1>
                         </div>
-                        ´
+                        
                         <group>
                             <group>
                                 <field name="ai_type" />
