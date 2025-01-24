@@ -201,13 +201,19 @@ class AIToolTestWizard(models.Model):
     is_raise_error = fields.Boolean(default=True)
     test_tool_input = fields.Char()
     ai_tool_id = fields.Many2one(comodel_name="ai.tool")
+    file = fields.Binary(attachment=True)
+    filename = fields.Char('Filename')
 
     def test_tool(self):
         results = ''
+        state = {}
+        if self.file:
+            state.update({"attachments": [self.file]})
+    
         try:
             module = importlib.import_module(self.ai_tool_id.tool_lib)
             TOOL = getattr(module, self.ai_tool_id.tool)
-            results = TOOL(self.test_tool_input)
+            results = TOOL(state).run(tool_input={"mail_body": self.test_tool_input})
         except ImportError as e:
             _logger.error(f"Error importing {self.ai_tool_id.tool_lib}: {e}")
         except AttributeError as e:
