@@ -11,8 +11,8 @@ import warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning, message="builtin type swigvarlink has no __module__ attribute")
 
 
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
-from langgraph.graph import END, StateGraph
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
+from langgraph.graph import START,END, StateGraph
 from odoo import models, fields, api, _
 from odoo.addons.ai_agent.models.ai_quest_session import AIQuestSession
 from odoo.exceptions import UserError, ValidationError, Warning
@@ -20,13 +20,13 @@ from odoo.tools.mail import html2plaintext
 from odoo.tools.safe_eval import safe_eval
 from random import randint
 from secrets import choice
-from typing import Annotated, TypedDict, Sequence, List, Union
-# ~ from typing_extensions import TypedDict, List, Union
-
+# ~ from typing import Annotated, TypedDict, Sequence, List, Union
+from typing_extensions import TypedDict, List, Union, Annotated, Sequence
 from langchain.agents import Tool, AgentExecutor, LLMSingleActionAgent, AgentOutputParser
 from langchain.schema import AgentAction, AgentFinish
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import StateGraph
+
 
 ##if VERSION >= '16.0'
 from odoo.addons.base.models.avatar_mixin import get_hsl_from_seed
@@ -602,7 +602,6 @@ class AIQuest(models.Model):
         :param action: the current server action
         :type action: browse record
         :returns: dict -- evaluation context given to (safe_)safe_eval """
-
         records = kw.get('records', [])
         message = kw.get('message',False)
         message_body = html2plaintext(message.body) if message else ''
@@ -830,7 +829,7 @@ class AIQuest(models.Model):
         def supervisor_chain(state):
             messages = state.get('messages', [])
             state['session'] = session
-            state['quest'] = quest
+            state['quest'] = self
             
             _logger.info(f"Supervisor received messages: {len(messages)} {session=}")
            
@@ -937,12 +936,12 @@ class AIQuest(models.Model):
                 graph_builder.add_node(agent.name, agent.create_node(session=session))
 
             # Add edges from workers to supervisor
-            for member in agents.mapper('name'):
+            for member in [a.name for a in agents]:
                 _logger.info(f"Adding edge: {member} -> Supervisor")
                 graph_builder.add_edge(member, "Supervisor")
 
             # Add conditional routing
-            conditional_map = {k: k for k in agents.mapper('name')}
+            conditional_map = {k: k for k in [a.name for a in agents]}
             conditional_map["FINISH"] = END
 
             _logger.info("Adding conditional edges with routes: " +
@@ -959,11 +958,27 @@ class AIQuest(models.Model):
 
             # Compile and return
             _logger.info("Compiling graph")
-            return graph_builder.compile()
+            
+            graph = graph_builder.compile()
+            
+            if self.debug:
+                self.log_message(f"{json.dumps(graph.get_graph().to_json(), indent=2)}\n----------------------\n{graph=}")
+                if hasattr(graph, 'model'):
+                    model_config = graph.model.config
+                    _logger.debug(f"Model {graph.model.config=}")
+                    self.log_message(f"Model {graph.model.config=}")
+                    if 'tools' in model_config:
+                        _logger.debug(f"Tools {graph.model.config['tools']=}")
+                        self.log_message(f"Tools {graph.model.config['tools']=}")
+            
+            
+            return graph
 
         except Exception as e:
             self.log_message(f"Error building graph: {str(e)}", is_error=True)
             _logger.error(f"Error building graph: {str(e)}")
+            
+            
             raise
 
 
@@ -975,7 +990,8 @@ class AIQuest(models.Model):
     
     def build_chain(self, **kwargs):
         """Build a multi-agent workflow chain."""
-        _logger.error(f"building chain: {str(kwargs)}")
+        if self.debug:
+            _logger.debug(f"building chain: {str(kwargs)}")
  
         if not self.ai_agent_ids:
             raise ValueError("No agents provided")
@@ -987,15 +1003,21 @@ class AIQuest(models.Model):
             workflow = StateGraph(AgentState)
 
             for i, agent in enumerate(agents):
-                workflow.add_node(f"agent_{i}", agent.create_sequence_node(**kwargs))
+                workflow.add_node(f"agent_{i}", agent.create_sequence_node(debug=self.debug,**kwargs))
     
             # ~ import pdb; pdb.set_trace()
             for i, agent in enumerate(agents[1:]):
                 workflow.add_edge(f"agent_{i}", f"agent_{i+1}")
 
+            workflow.set_entry_point(START)
             workflow.set_entry_point("agent_0")
             workflow.set_finish_point(f"agent_{len(agents)-1}")
-            return workflow.compile()
+            
+            graph = workflow.compile()
+            if self.debug:
+                self.log_message(f"{json.dumps(graph.get_graph().to_json(), indent=2)}")
+                _logger.debug(f"{json.dumps(graph.get_graph().to_json(), indent=2)}")
+            return graph
            
         except Exception as e:
             self.log_message(f"Error building chain: {str(e)}", is_error=True)

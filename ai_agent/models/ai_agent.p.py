@@ -175,26 +175,27 @@ class AIAgent(models.Model):
 
         topic = kwargs.get('topic',kwargs.get('message','')) 
         session=kwargs.get('session',False)
-
+        debug=kwargs.get('debug',False)
+        # ~ import pdb; pdb.set_trace()
         def use_tool(tool_name: str, query: str):
             for tool in tools:
                 if tool.name.lower() == tool_name.lower():
                     return tool.func(query)
             return "Verktyget kunde inte hittas."
 
-        def agent_snode(state: AgentState):
+        def agent_snode(state):
             """Process messages and generate a response."""
             
             messages = state.get('messages', [])
-            import pdb; pdb.set_trace()
+            # ~ import pdb; pdb.set_trace()
             _logger.info(f"Agent {self.name} received messages: {len(messages)} {state=}")
             # ~ state['session'] = session
             # ~ state['topic'] = topic
-            
+    
             session.add_message(f"Agent {self.name} received messages: {len(messages)} {state=}")
 
             try:
-                import pdb; pdb.set_trace()
+                # ~ import pdb; pdb.set_trace()
                 # Get the latest message
                 latest_message = messages[-1].content if messages else ""
                 # ~ topic = state['topic']
@@ -215,17 +216,24 @@ class AIAgent(models.Model):
                     - Stay focused on your specific role
                     """
                 )
-                import pdb; pdb.set_trace()
+                # ~ import pdb; pdb.set_trace()
                 # Prepare the input messages with system message first
-                input_messages = [system_message] + [messages[-1]]
-                messages = [{"role": "system", "content": system_message},
-                            {"role": "user", "content": topic}]
-                for entry in state["scratchpad"] + [message[-1]]:
-                    messages.append({"role": "assistant", "content": entry})
-                import pdb; pdb.set_trace()
-                response = self.ai_agent_llm_id.get_llm().invoke(messages)
-                import pdb; pdb.set_trace()
-                _logger.info(f"Agent {self.name} generated {response=}")
+                messages = [system_message,HumanMessage(content=topic)]
+                for entry in state.get("scratchpad",[]) + [messages[-1]]:
+                    messages.append(AIMessage(content=entry))
+                if debug:
+                    self.log_message(f"Agent {self.name} {messages=}")
+                    _logger.debug(f"Agent {self.name} {messages=}")   
+                    
+                # ~ import pdb; pdb.set_trace()
+                response = self.ai_agent_llm_id.get_llm().invoke({
+                    "input": topic,
+                    "messages": messages
+                })
+                # ~ import pdb; pdb.set_trace()
+                if debug:
+                    self.log_message(f"Agent {self.name} generated {response=}")
+                    _logger.debug(f"Agent {self.name} generated {response=}")
                 state['session'].save_messages(f"Agent {self.name} generated {response=}")
                 return response
 
