@@ -998,9 +998,22 @@ class AIQuest(models.Model):
 
         agents = [agent for agent in self.ai_agent_ids.mapped('ai_agent_id')]
         
+        def initial_node(state: AgentState) -> AgentState:
+            return {
+                "messages": [],
+                'quest': self,
+                'session': kwargs.get('session',False),
+                'topic': kwargs.get('topic',False),
+                'scratchpad':"",
+                'next': ""
+            }
+
+        
         try:
             # Create graph
             workflow = StateGraph(AgentState)
+            workflow.add_node("initial", initial_node)
+            workflow.add_edge(START, "initial")
 
             for i, agent in enumerate(agents):
                 workflow.add_node(f"agent_{i}", agent.create_sequence_node(debug=self.debug,**kwargs))
@@ -1009,15 +1022,21 @@ class AIQuest(models.Model):
             for i, agent in enumerate(agents[1:]):
                 workflow.add_edge(f"agent_{i}", f"agent_{i+1}")
 
-            workflow.set_entry_point(START)
-            workflow.set_entry_point("agent_0")
-            workflow.set_finish_point(f"agent_{len(agents)-1}")
-            
+            # Set the first agent as the entry point
+            if agents:
+                workflow.set_entry_point("agent_0")
+                workflow.add_edge(START, "agent_0")
+
+            # Set the last agent as the finish point
+            if len(agents) > 1:
+                workflow.set_finish_point(f"agent_{len(agents)-1}")
+                        
             graph = workflow.compile()
+            input_channels = graph.input_channels
             if self.debug:
-                self.log_message(f"{json.dumps(graph.get_graph().to_json(), indent=2)}")
-                _logger.debug(f"{json.dumps(graph.get_graph().to_json(), indent=2)}")
-            return graph
+                self.log_message(f"{json.dumps(graph.get_graph().to_json(), indent=2)}\n{input_channels=}")
+                _logger.debug(f"{json.dumps(graph.get_graph().to_json(), indent=2)}\n{input_channels=}")
+            return graph,input_channels
            
         except Exception as e:
             self.log_message(f"Error building chain: {str(e)}", is_error=True)

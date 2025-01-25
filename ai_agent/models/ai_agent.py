@@ -168,6 +168,10 @@ class AIAgent(models.Model):
     # ------------------------------------------------------------
 
 
+    def invoke(self,messages,**kwargs):
+        response = self.ai_agent_llm_id.invoke(messages,**kwargs)
+        return response
+
     # ~ https://www.perplexity.ai/search/hur-debuggar-jag-odoo-E_QK9lp.RrqkS5flbGCXQQ
 
     def create_sequence_node(self, **kwargs):
@@ -197,10 +201,15 @@ class AIAgent(models.Model):
             try:
                 # ~ import pdb; pdb.set_trace()
                 # Get the latest message
-                latest_message = messages[-1].content if messages else ""
+                if messages and hasattr(messages[-1], 'content'):
+                    latest_message = messages[-1].content
+                else:
+                    latest_message = messages[-1] if messages else ""
                 # ~ topic = state['topic']
                 tools = self._get_tools()
-                tool_message = f"You have tools: {' '.join([t.name.lower() for t in tools])}" if tools else ''
+                # ~ tool_message = f"You have tools: {' '.join([t.name.lower() for t in tools])}" if tools else ''
+                tool_message = ''
+
 
                 system_message = SystemMessage(
                     content=f"""You are an agent with specific responsibilities.
@@ -219,30 +228,34 @@ class AIAgent(models.Model):
                 # ~ import pdb; pdb.set_trace()
                 # Prepare the input messages with system message first
                 messages = [system_message,HumanMessage(content=topic)]
-                for entry in state.get("scratchpad",[]) + [messages[-1]]:
-                    messages.append(AIMessage(content=entry))
+                state["scratchpad"] = state.get("scratchpad", "") + messages[-1].content if hasattr(messages[-1], 'content') else messages[-1]
                 if debug:
                     self.log_message(f"Agent {self.name} {messages=}")
                     _logger.debug(f"Agent {self.name} {messages=}")   
                     
                 # ~ import pdb; pdb.set_trace()
-                response = self.ai_agent_llm_id.get_llm().invoke({
-                    "input": topic,
-                    "messages": messages
-                })
+                
+                response = self.invoke(messages)
+                # ~ response = self.ai_agent_llm_id.get_llm().invoke({
+                    # ~ "input": topic,
+                    # ~ "messages": messages,
+                    # ~ "scratchpad": state.get("scratchpad", "") + messages[-1].content if hasattr(messages[-1], 'content') else messages[-1],
+                # ~ })
                 # ~ import pdb; pdb.set_trace()
                 if debug:
                     self.log_message(f"Agent {self.name} generated {response=}")
                     _logger.debug(f"Agent {self.name} generated {response=}")
-                state['session'].save_messages(f"Agent {self.name} generated {response=}")
+                if response:
+                    state['session'].save_messages(response)
                 return response
 
             except Exception as e:
-                _logger.error(f"Error in agent {self.name}: {str(e)}")
+                _logger.error(f"Error in agent {self.name}: {str(e)}") 
+                self.log_message(f"Error in agent {self.name}: {str(e)}\n{traceback.format_exc()}")
                 return {
                     "messages": [
                         AIMessage(
-                            content=f"Error occurred in agent {self.name}: {str(e)}",
+                            content=f"Error occurred in agent {self.name}: {str(e)}\n{traceback.format_exc()}  ",
                             name=self.name.replace(' ', '_').replace(',', '').replace('.', '')
                         )
                     ]
@@ -323,7 +336,7 @@ class AIAgent(models.Model):
             self.log_message(f"Formatted prompt: {formatted_prompt}")
 
         try:
-            response = self.ai_agent_llm_id.get_llm().invoke(formatted_prompt)
+            response = self.invoke(formatted_prompt)
             if debug:
                 _logger.error(f"{response=}")
         except HTTPStatusError as e:
@@ -430,8 +443,7 @@ class AIAgent(models.Model):
                            f"complete response.")
  
                 # Get LLM response
-                llm = self.ai_agent_llm_id.get_llm()
-                response = llm.invoke([
+                response = self.invoke([
                     SystemMessage(content=system_prompt),
                     HumanMessage(content=prompt)
                 ])
