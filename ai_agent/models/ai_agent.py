@@ -5,8 +5,11 @@ import logging
 import re
 import traceback
 
+
+
 from datetime import datetime
 from httpx import HTTPStatusError
+from json.decoder import JSONDecodeError
 from langchain.agents import Tool, AgentExecutor, LLMSingleActionAgent, AgentOutputParser
 from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder, PromptTemplate, HumanMessagePromptTemplate, SystemMessagePromptTemplate
 from langchain.schema import AIMessage, HumanMessage, SystemMessage, BaseMessage, AgentAction, AgentFinish
@@ -14,11 +17,10 @@ from langchain.tools import tool
 from langchain_community.chat_message_histories import ChatMessageHistory
 from langgraph.prebuilt import create_react_agent
 from odoo import models, fields, api, _
+from odoo.addons.ai_agent.models.ai_quest import AgentState
 from odoo.exceptions import UserError
 from random import randint
 from typing_extensions import TypedDict, List, Union
-from odoo.addons.ai_agent.models.ai_quest import AgentState
-
 
 _logger = logging.getLogger(__name__)
 
@@ -181,14 +183,21 @@ class AIAgent(models.Model):
         session=kwargs.get('session',False)
         debug=kwargs.get('debug',False)
         # ~ import pdb; pdb.set_trace()
-        def use_tool(tool_name: str, query: str):
-            for tool in tools:
-                if tool.name.lower() == tool_name.lower():
-                    return tool.func(query)
-            return "Verktyget kunde inte hittas."
+        
 
         def agent_snode(state):
             """Process messages and generate a response."""
+
+
+            def use_tool(tool_name: str, query: str):
+                for tool in self._get_tools():
+                    if tool.name.lower() == tool_name.lower():
+                        return tool.func(query,state)
+                return None
+        
+        
+        
+        
             if debug:
                 session.add_message(f"Agent {self.name} Initial state: {state=}")
             messages = state.get('messages', [])
@@ -208,6 +217,8 @@ class AIAgent(models.Model):
 
             tools = self._get_tools()
             tool_message = f"You have tools: {' '.join([getattr(t, 'name', str(t)).lower() for t in tools])}" if tools else ''
+            tool_message += "To use them answer with a list of JSON {'tools': [{'tool': name, 'query': your query}]}" if tools else "" 
+            tool_message += "No text around just the JSON, start with {" if tools else ''               
 
             system_message = SystemMessage(
                 content=f"""You are an agent with specific responsibilities.
@@ -255,6 +266,8 @@ class AIAgent(models.Model):
             else:
                 new_item = response
 
+             
+
             # Append the new item if it's not None
             if new_item is not None:
                 state['scratchpad'].append(new_item)
@@ -262,6 +275,28 @@ class AIAgent(models.Model):
                 self.log_message(f"Agent {self.name} generated {response=} {state=}")
                 _logger.debug(f"Agent {self.name} generated {response=}")
                 session.add_message(f"Agent {self.name} generated {response=} {state=}")
+            
+            tools = None
+            try:
+                # Attempt to parse JSON string
+                tools = json.loads(new_item)
+            except JSONDecodeError as e:
+                session.add_message(f"Agent {self.name} not Found tools {e=} {new_item=}")
+            if tools:
+                session.add_message(f"Found tools {tools=}")
+                messages = []
+                for t in tools['tools']:
+                    session.add_message(f"Agent {self.name} use_tool({t['tool']=},{t['query']=})")
+                    try:
+                        messages.append(HumanMessage(content=use_tool(t['tool'],t['query'])))
+                        state['messages'] = messages
+                    except Exception as e:
+                        session.add_message(f"Agent {self.name} error in use_tool {e=}\n{traceback.format_exc()}")
+                session.add_message(f"Agent {self.name} use_tool -> messages {messages=} ")
+
+                return agent_snode(state)
+                    
+                    
                 
             return {
                 "messages": respons.get('messages',[]) if isinstance(response,dict) else [AIMessage(

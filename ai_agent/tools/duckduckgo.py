@@ -30,7 +30,7 @@ def internet_search_DDGO(args_schema=DDGOInputs) -> str:
 # ~ def internet_search_DDGO(query: str, state: State) -> str:
     """Searches the internet using DuckDuckGo."""
    
-    _logger.error(f"{state=} -----------------------------------------------------------------------------")
+    # ~ _logger.error(f"{state=} -----------------------------------------------------------------------------")
     results = list(DDGS().text(query, max_results=5))
 
     return results if results else "No results found."
