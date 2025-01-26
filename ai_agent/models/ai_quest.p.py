@@ -1013,10 +1013,10 @@ class AIQuest(models.Model):
         def initial_node(state: AgentState) -> AgentState:
             # ~ state = ConfigDict(arbitrary_types_allowed=True)
             return {
-                "messages": [],
+                "messages": [{"role": "user", "content": kwargs.get('topic',kwargs.get('message',''))}],
                 'quest': self,
                 'session': kwargs.get('session',False),
-                'topic': kwargs.get('topic',False),
+                'topic': kwargs.get('topic',''),
                 'scratchpad':[],
                 'next': ""
             }
@@ -1069,7 +1069,7 @@ class AgentState(TypedDict):
     session: NotRequired[AIQuestSession]
     quest: NotRequired[AIQuest]
     topic: str
-    scratchpad: List[str] 
+    scratchpad: Annotated[List[str], operator.add]
     next: str
     
-AgentState.model_config = ConfigDict(arbitrary_types_allowed=True)
+# ~ AgentState.model_config = ConfigDict(arbitrary_types_allowed=True)

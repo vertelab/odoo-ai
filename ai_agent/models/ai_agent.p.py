@@ -189,66 +189,50 @@ class AIAgent(models.Model):
 
         def agent_snode(state):
             """Process messages and generate a response."""
-            
+            if debug:
+                session.add_message(f"Agent {self.name} Initial state: {state=}")
             messages = state.get('messages', [])
+            if hasattr(messages[-1], 'content'):
+                latest_message = messages[-1].content
+            else:
+                latest_message = messages[-1]
             # ~ import pdb; pdb.set_trace()
-            _logger.info(f"Agent {self.name} received messages: {len(messages)} {state=}")
+            _logger.info(f"Agent {self.name} received messages: {len(messages)}  {state=}")
             # ~ state['session'] = session
             # ~ state['topic'] = topic
+            if isinstance(state.get('scratchpad',[]),str):
+                state['scratchpad']=[state.get('scratchpad','')]
     
-            session.add_message(f"Agent {self.name} received messages: {len(messages)} {state=}")
+            if debug:
+                session.add_message(f"Agent {self.name} received messages: {len(messages)} {messages=} {state=}")
 
+            tools = self._get_tools()
+            tool_message = f"You have tools: {' '.join([getattr(t, 'name', str(t)).lower() for t in tools])}" if tools else ''
+
+            system_message = SystemMessage(
+                content=f"""You are an agent with specific responsibilities.
+                Role: {self.ai_role}
+                Goal: {self.ai_goal}
+                Backstory: {self.ai_backstory}
+                Memory: {self._get_memory(latest_message)} {self._get_memory(topic)}
+                {tool_message}
+
+                Instructions:
+                - Provide thorough, complete responses
+                - Use available tools and memory when needed
+                - Stay focused on your specific role
+                """
+            )
+            messages = [system_message,HumanMessage(content=topic)]
+            
+
+            if debug:
+                self.log_message(f"Agent  {self.name} before invoke {messages=} {state=}")
+                _logger.debug(f"Agent {self.name} {messages=} {state=}")   
+
+        
             try:
-                # ~ import pdb; pdb.set_trace()
-                # Get the latest message
-                if messages and hasattr(messages[-1], 'content'):
-                    latest_message = messages[-1].content
-                else:
-                    latest_message = messages[-1] if messages else ""
-                # ~ topic = state['topic']
-                tools = self._get_tools()
-                # ~ tool_message = f"You have tools: {' '.join([t.name.lower() for t in tools])}" if tools else ''
-                tool_message = ''
-
-
-                system_message = SystemMessage(
-                    content=f"""You are an agent with specific responsibilities.
-                    Role: {self.ai_role}
-                    Goal: {self.ai_goal}
-                    Backstory: {self.ai_backstory}
-                    Memory: {self._get_memory(latest_message)} {self._get_memory(topic)}
-                    {tool_message}
-   
-                    Instructions:
-                    - Provide thorough, complete responses
-                    - Use available tools and memory when needed
-                    - Stay focused on your specific role
-                    """
-                )
-                # ~ import pdb; pdb.set_trace()
-                # Prepare the input messages with system message first
-                messages = [system_message,HumanMessage(content=topic)]
-                state["scratchpad"] = state.get("scratchpad", "") + messages[-1].content if hasattr(messages[-1], 'content') else messages[-1]
-                if debug:
-                    self.log_message(f"Agent {self.name} {messages=}")
-                    _logger.debug(f"Agent {self.name} {messages=}")   
-                    
-                # ~ import pdb; pdb.set_trace()
-                
                 response = self.invoke(messages)
-                # ~ response = self.ai_agent_llm_id.get_llm().invoke({
-                    # ~ "input": topic,
-                    # ~ "messages": messages,
-                    # ~ "scratchpad": state.get("scratchpad", "") + messages[-1].content if hasattr(messages[-1], 'content') else messages[-1],
-                # ~ })
-                # ~ import pdb; pdb.set_trace()
-                if debug:
-                    self.log_message(f"Agent {self.name} generated {response=}")
-                    _logger.debug(f"Agent {self.name} generated {response=}")
-                if response:
-                    state['session'].save_messages(response)
-                return response
-
             except Exception as e:
                 _logger.error(f"Error in agent {self.name}: {str(e)}") 
                 self.log_message(f"Error in agent {self.name}: {str(e)}\n{traceback.format_exc()}")
@@ -260,6 +244,31 @@ class AIAgent(models.Model):
                         )
                     ]
                 }
+                
+            # Initialize scratchpad if it's None or doesn't exist
+            if state.get('scratchpad') is None:
+                state['scratchpad'] = []
+
+            # Prepare the new item to append
+            if isinstance(response, dict):
+                new_item = response.get('messages', [])[-1] if response.get('messages') else None
+            else:
+                new_item = response
+
+            # Append the new item if it's not None
+            if new_item is not None:
+                state['scratchpad'].append(new_item)
+            if debug:
+                self.log_message(f"Agent {self.name} generated {response=} {state=}")
+                _logger.debug(f"Agent {self.name} generated {response=}")
+                session.add_message(f"Agent {self.name} generated {response=} {state=}")
+                
+            return {
+                "messages": respons.get('messages',[]) if isinstance(response,dict) else [AIMessage(
+                            content=response,)],
+                    
+                'scratchpad': state['scratchpad'],
+            }
 
         return agent_snode
 

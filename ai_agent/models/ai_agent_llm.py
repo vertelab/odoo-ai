@@ -190,20 +190,24 @@ class AIAgentLLM(models.Model):
         retry=retry_if_exception_type(httpx.HTTPStatusError)
     )
     def invoke(self, input, config=None, session=None, quest=None, agent=None, debug=False):
+        if input is None:
+            error_msg = f"Input cannot be None. Please provide a valid input. {input=} {config=} {session=} {quest=} {agent=}"
+            self.log_message(body=error_msg, is_error=True)
+            raise ValueError(error_msg)
         try:
             response = self.get_llm().invoke(input, config)
         except HTTPStatusError as e:
             if e.response.status_code == 429:
                 _logger.warning(f"Rate limit exceeded. Retrying in a moment...")
-                self.log_message(body=f"Rate limit exceeded. Retrying in a moment...\n{ai_quest_session_id=}{ai_quest_id=}{ai_agent_id=}", is_error=False)
+                self.log_message(body=f"Rate limit exceeded. Retrying in a moment...\n{input=} {config=} {session=} {quest=} {agent=}", is_error=False)
                 raise  # This will trigger a retry
             else:
                 _logger.warning(f"Other HTTP-error... {e=}")
-                self.log_message(body=f"Other HTTP-error...{e=}\n{ai_quest_session_id=}{ai_quest_id=}{ai_agent_id=}", is_error=True)            
+                self.log_message(body=f"Other HTTP-error...{e=}\n{input=} {config=} {session=} {quest=} {agent=}", is_error=True)            
                 raise  # For other HTTP errors, don't retry
             return None
         except Exception as e:
-            self.log_message(body=f"LLM {self.name} {e}\n{traceback.format_exc()}", is_error=True)
+            self.log_message(body=f"LLM {self.name} {e}\n\n{input=} {config=} {session=} {quest=} {agent=}\n{traceback.format_exc()}", is_error=True)
             _logger.error(f"LLM {self.name} {e}\n{traceback.format_exc()}")
             return None
 
