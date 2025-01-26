@@ -14,6 +14,9 @@ from langchain.tools import BaseTool, StructuredTool, tool
 _logger = logging.getLogger(__name__)
 
 
+
+
+
 class DDGOInputs(BaseModel):
     """Inputs to the internet_search_DDGO tool."""
 
@@ -24,6 +27,10 @@ class DDGOInputs(BaseModel):
         description="Graph State"
     )
     model_config = ConfigDict(arbitrary_types_allowed=True)
+
+#def internet_search_DDGO(*args, **kwargs):
+#    query = kwargs.get('query', args[0] if args else None)
+#    state = kwargs.get('state', None)
 
 @tool("internet_search_DDGO", return_direct=False)
 def internet_search_DDGO(args_schema=DDGOInputs) -> str:
