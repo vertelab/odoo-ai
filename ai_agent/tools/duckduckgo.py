@@ -7,7 +7,7 @@ from odoo.addons.ai_agent.models.ai_quest import AgentState
 from typing import Annotated
 
 # Import things that are needed generically
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from langchain.tools import BaseTool, StructuredTool, tool
 
 
@@ -23,7 +23,7 @@ class DDGOInputs(BaseModel):
     state: AgentState = Field(
         description="Graph State"
     )
-
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
 @tool("internet_search_DDGO", return_direct=False)
 def internet_search_DDGO(args_schema=DDGOInputs) -> str:

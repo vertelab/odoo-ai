@@ -10,22 +10,30 @@ import unidecode
 import warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning, message="builtin type swigvarlink has no __module__ attribute")
 
-
+# ~ from typing import Annotated, TypedDict, Sequence, List, Union
+from langchain.agents import Tool, AgentExecutor, LLMSingleActionAgent, AgentOutputParser
+from langchain.schema import AgentAction, AgentFinish
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
+from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import START,END, StateGraph
 from odoo import models, fields, api, _
 from odoo.addons.ai_agent.models.ai_quest_session import AIQuestSession
 from odoo.exceptions import UserError, ValidationError, Warning
 from odoo.tools.mail import html2plaintext
 from odoo.tools.safe_eval import safe_eval
+from pydantic import BaseModel, ConfigDict
+from pydantic import ConfigDict
 from random import randint
 from secrets import choice
-# ~ from typing import Annotated, TypedDict, Sequence, List, Union
-from typing_extensions import TypedDict, List, Union, Annotated, Sequence
-from langchain.agents import Tool, AgentExecutor, LLMSingleActionAgent, AgentOutputParser
-from langchain.schema import AgentAction, AgentFinish
-from langgraph.checkpoint.memory import MemorySaver
-from langgraph.graph import StateGraph
+
+from typing_extensions import NotRequired, TypedDict
+from typing import Annotated, List, Sequence, Union
+# Odoo 18 okt 2024  Ubuntu 24.04 Python 3.12 (NotRequired 3.11)
+# Odoo 17 2023 Ubuntu 22.04  Python 3.10
+# Odoo 16 2022 Ubuntu 22.04  Python 3.10
+# Odoo 14 2020 Ubuntu 20.04  Python 3.8 -> 3.10
+# The typing_extensions module is primarily used for backporting new features to older Python versions
+
 
 
 from odoo.addons.base.models.avatar_mixin import get_hsl_from_seed
@@ -989,18 +997,20 @@ class AIQuest(models.Model):
         agents = [agent for agent in self.ai_agent_ids.mapped('ai_agent_id')]
         
         def initial_node(state: AgentState) -> AgentState:
+            # ~ state = ConfigDict(arbitrary_types_allowed=True)
             return {
                 "messages": [],
                 'quest': self,
                 'session': kwargs.get('session',False),
                 'topic': kwargs.get('topic',False),
-                'scratchpad':"",
+                'scratchpad':[],
                 'next': ""
             }
 
         
         try:
             # Create graph
+            AgentState.model_config = ConfigDict(arbitrary_types_allowed=True)
             workflow = StateGraph(AgentState)
             workflow.add_node("initial", initial_node)
             workflow.add_edge(START, "initial")
@@ -1042,8 +1052,10 @@ class AIQuest(models.Model):
 
 class AgentState(TypedDict):
     messages: Annotated[Sequence[BaseMessage], operator.add]
-    session: AIQuestSession
-    quest: AIQuest
+    session: NotRequired[AIQuestSession]
+    quest: NotRequired[AIQuest]
     topic: str
     scratchpad: List[str] 
     next: str
+    
+AgentState.model_config = ConfigDict(arbitrary_types_allowed=True)
