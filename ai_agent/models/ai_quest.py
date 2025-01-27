@@ -76,7 +76,7 @@ class AgentState(TypedDict):
 
 class AIQuestAgent(models.Model):
     _name = 'ai.quest.agent'
-    _description = 'AI Quest AGent'
+    _description = 'AI Quest Agent'
 
     ai_quest_id = fields.Many2one(comodel_name='ai.quest', string="", help="")
     sequence = fields.Integer(string='Sequence')
