@@ -42,7 +42,6 @@ class AIQuestSession(models.Model):
     _name = 'ai.quest.session'
     _description = 'AI Quest Session'
     _inherit = ["mail.thread", "mail.activity.mixin"]
-    _rec_name = "session"
     _order = 'startdate desc'
 
     ai_agent_count = fields.Integer(compute='_compute_ai_agent_count')
@@ -62,6 +61,7 @@ class AIQuestSession(models.Model):
     debug = fields.Boolean(string='Debug', help="Logs interesting data")
     enddate = fields.Datetime()
     session = fields.Char(default=lambda self: str(uuid.uuid4()))
+    name = fields.Char(default=lambda self: self.session)
     session_line_count = fields.Integer(compute='_compute_session_line_count')
     session_line_ids = fields.One2many(comodel_name="ai.quest.session.line", inverse_name="ai_quest_session_id")
     session_message_ids = fields.One2many(comodel_name="ai.quest.session.message", inverse_name="ai_quest_session_id")
