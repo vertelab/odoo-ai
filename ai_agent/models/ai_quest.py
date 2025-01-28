@@ -21,13 +21,12 @@ from odoo.addons.ai_agent.models.ai_quest_session import AIQuestSession
 from odoo.exceptions import UserError, ValidationError, Warning
 from odoo.tools.mail import html2plaintext
 from odoo.tools.safe_eval import safe_eval
-from pydantic import BaseModel, ConfigDict
-from pydantic import ConfigDict
+from pydantic import BaseModel, ConfigDict, SkipValidation
 from random import randint
 from secrets import choice
 
 from typing_extensions import NotRequired, TypedDict
-from typing import Annotated, List, Sequence, Union
+from typing import Annotated, List, Sequence, Union, Any
 # Odoo 18 okt 2024  Ubuntu 24.04 Python 3.12 (NotRequired 3.11)
 # Odoo 17 2023 Ubuntu 22.04  Python 3.10
 # Odoo 16 2022 Ubuntu 22.04  Python 3.10
@@ -816,80 +815,98 @@ class AIQuest(models.Model):
             raise
 
 
-    def create_supervisor(self, members, **kwarg):
-        """Create a supervisor node that coordinates between different agents."""
-        use_lang = f"Use language {self.env.user.lang} for the answer to Human" if self.use_personal_lang else ''
-            
-        session=kwarg.get('session',False)
+    def extract_json(self,agent,session,message):
+        # Find JSON-like content within triple backticks
+        json_match = re.search(r'``````', message, re.DOTALL)
+        if json_match:
+            json_string = json_match.group(1)
+            try:
+                return json.loads(json_string)
+            except json.JSONDecodeError:
+                session.add_message(f"{agent}Error: Invalid JSON format with backtick {json_string=}")
+                return None
+        else:
+            try:
+                return json.loads(message)
+            except json.JSONDecodeError:
+                session.add_message(f"{agent} Error: Invalid JSON format {message=}")
+                return None
 
+
+    def create_supervisor(self, members, **kwargs):
+        """Create a supervisor node that coordinates between different agents."""
+        use_lang = f"Use language {self.env.user.lang} for the answer to Human" if self.use_personal_lang else ''            
+        topic = kwargs.get('topic',kwargs.get('message','')) 
+        session=kwargs.get('session',False)
         system_prompt = self.supervisor_prompt
 
         def supervisor_chain(state):
             messages = state.get('messages', [])
-            state['session'] = session
-            state['quest'] = self
-            
-            _logger.info(f"Supervisor received messages: {len(messages)} {session=}")
-           
-            if not messages:
-                _logger.info(f"No messages, starting with first worker: {members[0] if members else 'no members'}")
-                session.add_message(f"No messages, starting with first worker: {members[0] if members else 'no members'}")
-                return {"next": members[0],'session':session} if members else {"next": "FINISH",'session':session}
+            if hasattr(messages[-1], 'content'):
+                latest_message = messages[-1].content
+            else:
+                latest_message = messages[-1]            
 
-            _logger.error(f"{messages=} {session=}")
+            if self.debug:
+                session.add_message(f"SUPERVISOR Initial state: {members=} {state=}")
+ 
+            if isinstance(state.get('scratchpad',[]),str):
+                state['scratchpad']=[state.get('scratchpad','')]
 
-            # Get the latest message
-            question = messages[-1].content if messages else ""
-
+            question = messages[-1]['content'] if messages and isinstance(messages[-1], dict) and 'content' in messages[-1] else ""
             try:
                 # Create full message list
                 _logger.error(f"Create full message list")
-                prompt = f"Previous conversation:\n"
-                for msg in messages:
-                    prompt += f"\n{msg.content}\n"
-                prompt += (f"\nBased on this, who should act next? Choose from: {members} or say FINISH if we have a "
-                           f"complete response.")
- 
+                
+                
+                prompt = f"Previous conversation: {question}\n"
+                # ~ for msg in messages:
+                    # ~ prompt += f"\n{msg.content}\n" if msg and isinstance(msg, dict) and 'content' in msg else msg
+                prompt += (f"\nBased on this, what agent should act next? Choose from: {members} or say FINISH if we have a "
+                            "complete response. Use just JSON {'next': agent or FINISH}")
+                if self.debug:
+                    session.add_message(f"Supervisor {prompt=}")
                 # Get LLM response
                 response = self.supervisor_llm_id.get_llm(temperature=self.supervisor_temperature).invoke([
                     SystemMessage(content=system_prompt),
                     HumanMessage(content=prompt)
                 ])
 
-                # Parse response
-                content = response.content.upper()
-                _logger.info(f"Supervisor decision: {content}")
-                session.add_message(f"Supervisor decision: {content}")
-
-                # Check for completion or next agent
-                if "FINISH" in content:
-                    _logger.info("Supervisor decided to FINISH")
-                    session.add_message("Supervisor decided to FINISH")
-                    return {"next": "FINISH",'session': session}
-
-                # Find mentioned agent
-                for member in members:
-                    if member.upper() in content:
-                        _logger.info(f"Supervisor selected agent: {member}")
-                        session.add_message(f"Supervisor selected agent: {member}")
-                        return {"next": member, 'session': session}
-
-                # If no clear direction and we have previous responses, finish
-                if len(messages) > 1:   
-                    _logger.info("No clear direction, finishing")
-                    session.add_message("No clear direction, finishing")
-                    return {"next": "FINISH", 'session': session}
-
-                # Default to first member
-                if len(members) != 0:
-                    _logger.info(f"Defaulting to first member: {members[0]}")
-                    session.add_message(f"Defaulting to first member: {members[0]}")
-                    return {"next": members[0], 'session': session}
-
             except Exception as e:
                 _logger.error(f"Error in supervisor chain: {str(e)}",exc_info=True)
-                session.add_message(f"Error in supervisor chain: {str(e)}")
+                session.add_message(f"Error in supervisor chain: {str(e)}\n{traceback.format_exc()}")
                 return {"next": "FINISH", 'session': session}
+
+            # Parse response
+            content = response.content
+            _logger.info(f"Supervisor decision: {content}")
+            session.add_message(f"Supervisor decision: {content}")
+            json = self.extract_json("Supervisor",session,content)
+            if not json:
+                return {"next": "FINISH",'session': session}
+
+            # Check for completion or next agent
+            if json.get('next','FINISH') == "FINISH":
+                _logger.info("Supervisor decided to FINISH")
+                session.add_message("Supervisor decided to FINISH {json=}")
+                return {"next": "FINISH",'session': session}
+
+            # Find mentioned agent
+            session.add_message(f"Supervisor selected agent: {json['next']}")
+            return {"next": json['next'], 'session': session, 'topic': topic, 'messages': state.get('messasges')}
+
+            # If no clear direction and we have previous responses, finish
+            if len(messages) > 1:   
+                _logger.info("No clear direction, finishing")
+                session.add_message("No clear direction, finishing")
+                return {"next": "FINISH", 'session': session}
+
+            # Default to first member
+            if len(members) != 0:
+                _logger.info(f"Defaulting to first member: {members[0]}")
+                session.add_message(f"Defaulting to first member: {members[0]}")
+                return {"next": members[0], 'session': session}
+
 
         return supervisor_chain
 
@@ -958,19 +975,19 @@ class AIQuest(models.Model):
             _logger.info("Compiling graph")
             
             graph = graph_builder.compile()
-            
+            input_channels = graph.input_channels
             if self.debug:
-                self.log_message(f"{json.dumps(graph.get_graph().to_json(), indent=2)}\n----------------------\n{graph=}")
+                self.log_message(f"{json.dumps(graph.get_graph().to_json(), indent=2)}\n{input_channels=}")
+                _logger.debug(f"{json.dumps(graph.get_graph().to_json(), indent=2)}\n{input_channels=}")
                 if hasattr(graph, 'model'):
                     model_config = graph.model.config
                     _logger.debug(f"Model {graph.model.config=}")
                     self.log_message(f"Model {graph.model.config=}")
                     if 'tools' in model_config:
                         _logger.debug(f"Tools {graph.model.config['tools']=}")
-                        self.log_message(f"Tools {graph.model.config['tools']=}")
-            
-            
-            return graph
+                        self.log_message(f"Tools {graph.model.config['tools']=}")     
+                
+            return graph,input_channels 
 
         except Exception as e:
             self.log_message(f"Error building graph: {str(e)}", is_error=True)
@@ -1004,7 +1021,9 @@ class AIQuest(models.Model):
                 'session': kwargs.get('session',False),
                 'topic': kwargs.get('topic',''),
                 'scratchpad':[],
-                'next': ""
+                'next': "",
+                'count': 1,
+                    
             }
 
         
@@ -1032,6 +1051,7 @@ class AIQuest(models.Model):
                 workflow.set_finish_point(f"agent_{len(agents)-1}")
                         
             graph = workflow.compile()
+            # ~ graph.update_state({'count': 7})
             input_channels = graph.input_channels
             if self.debug:
                 self.log_message(f"{json.dumps(graph.get_graph().to_json(), indent=2)}\n{input_channels=}")
@@ -1050,12 +1070,13 @@ class AIQuest(models.Model):
     # response = self.build_graph(agents).invoke({"messages": [HumanMessage(content=message)]})
     # result = response['messages'][-1].content
 
+
 class AgentState(TypedDict):
     messages: Annotated[Sequence[BaseMessage], operator.add]
-    session: NotRequired[AIQuestSession]
-    quest: NotRequired[AIQuest]
+    session: SkipValidation[NotRequired[AIQuestSession]]
+    quest: SkipValidation[NotRequired[AIQuest]]
     topic: str
     scratchpad: Annotated[List[str], operator.add]
     next: str
-    
-AgentState.model_config = ConfigDict(arbitrary_types_allowed=True)
+    token: SkipValidation[NotRequired[int]]
+    count: SkipValidation[NotRequired[int]]
