@@ -319,6 +319,7 @@ class AIQuest(models.Model):
                     'name': self.name,
                     'model_id': self.model_id.id,
                     'binding_model_id': self.model_id.id if self.status == 'active' else None,
+                    "binding_view_types": "form,list",
                 })
         if self.init_type == 'cron':
             if self.cron_id:
@@ -359,6 +360,7 @@ class AIQuest(models.Model):
                 self.server_action_id = self.server_action_id.create({
                     'name': self.name,
                     'model_id': self.model_id.id if self.model_id else self.env.ref('base.model_res_partner').id,
+                    "binding_view_types": "form,list",
                     'state': 'code',
                     'code': f"action = env.ref('{self._get_eid()}').server_action(records)",
                 })
@@ -449,11 +451,13 @@ class AIQuest(models.Model):
         return kwargs
 
     def server_action(self, records):
+
+        _logger.error(f"{records=}")
         if self.init_type == 'server-action' and self.server_action_id:
             if self._check_quest_error():
                 raise UserError(self._check_quest_error())
             vals = self._server_action_values(records=records)
-            res = self.run(records=records)
+            res = self.run(**vals)
             self.log_message(f'server-action {res}')
 
             #     vals = self._server_action_values(records=records)
@@ -523,6 +527,20 @@ class AIQuest(models.Model):
     # ------------------------------------------------------------
     # Python code helpers
     # ------------------------------------------------------------
+    @api.model
+    def is_ai_message(self,var):
+        return isinstance(var, AIMessage)
+
+    @api.model
+    def get_last_ai_message_content(self,response):
+        if response.get('messages', False):
+            messages = response.get('messages', [])
+            ai_messages = [m for m in messages if self.is_ai_message(m)]
+            if ai_messages:
+                last_ai_message = ai_messages[-1] if len(ai_messages) != 0 else None
+                if messages and last_ai_message:
+                    _logger.error(f"{last_ai_message=}")
+                    return last_ai_message.content  
 
     @api.model
     def extract_dicts(self, text):
@@ -705,7 +723,7 @@ class AIQuest(models.Model):
             if quest.server_action_id:
                 quest.server_action_id.write(
                     {'name': quest.name, 'code': f"action = env.ref('{quest._get_eid()}').server_action(records)",
-                     'binding_model_id': self.model_id.id if self.status == 'active' else None})
+                     'binding_model_id': self.model_id.id if self.status == 'active' else None, "binding_view_types": "form,list"})
             if quest.cron_id:
                 quest.cron_id.write({'name': quest.name, 'code': f"action = env.ref('{quest._get_eid()}').cron()"})
             if quest.channel_id:
