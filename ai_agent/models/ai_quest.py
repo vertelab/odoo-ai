@@ -518,6 +518,7 @@ class AIQuest(models.Model):
                 "<br>", "").replace("<p>", "").replace("</p>", "").replace("\n", "")
             vals = self._mail_values(mail=mail, mail_body=mail_body, session=session, attachments=mail.attachment_ids)
             res = self.run(**vals)
+            print("res", res)
             return res
 
     # ------------------------------------------------------------
@@ -551,8 +552,11 @@ class AIQuest(models.Model):
         return markdown.markdown(text)
 
     def json2dict(self, text):
-        text = text.split('```')[1].replace("json", "").replace("\n", "")
-        return json.loads(text)
+        json_split = text.split('```')
+        if len(json_split) > 1:
+            text = text.split('```')[1].replace("json", "").replace("\n", "")
+            return json.loads(text)
+        return False
 
     # ------------------------------------------------------------
     # Python CODE eval

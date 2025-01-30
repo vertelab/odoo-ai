@@ -1,22 +1,21 @@
-import functools
 import importlib
-import json
+import importlib
 import logging
-import re
 import traceback
-
+import base64
+import eml_parser
 from datetime import datetime
+from random import randint
+
 from httpx import HTTPStatusError
-from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder, PromptTemplate, HumanMessagePromptTemplate, \
+from langchain.prompts import ChatPromptTemplate, PromptTemplate, HumanMessagePromptTemplate, \
     SystemMessagePromptTemplate
-from langchain.schema import AIMessage, HumanMessage, SystemMessage, BaseMessage
-from langchain.tools import tool
+from langchain.schema import AIMessage, HumanMessage, SystemMessage
 from langchain_community.chat_message_histories import ChatMessageHistory
 from langgraph.prebuilt import create_react_agent
-from odoo import models, fields, api, _
 from odoo.exceptions import UserError
-from random import randint
-from typing_extensions import TypedDict, List
+
+from odoo import models, fields, api, _
 
 _logger = logging.getLogger(__name__)
 
@@ -277,40 +276,45 @@ class AIAgent(models.Model):
     # LangGraph
     # ------------------------------------------------------------
 
+    def _supervisor_prompt(self, members, quest, memory, use_lang):
+        system_prompt = f"""
+            You are a supervisor coordinating between workers: {members}.
+            Based on the request, determine which worker should handle the next step and only run ONCE.
+            Only choose FINISH when a complete response has been provided.
+
+            Role: {self.ai_role}
+            Goal: {self.ai_goal}
+            Backstory: {self.ai_backstory}
+            Guidelines: {quest.description}
+            {self._extra_context(quest)}
+            Message history: {self._chat_history(quest)}
+
+            Memory: {memory}
+
+            Instructions:
+            1. Evaluate if we have a complete response
+            2. If not complete, choose the most appropriate worker
+            3. Send FINISH only when we have a satisfactory response
+            4. Do not mention that you have done tool calls, that's too technical
+            4. {use_lang}
+        """
+        return system_prompt
+
     def create_supervisor(self, quest, members, **kwarg):
-        """Create a supervisor node that coordinates between different agents."""
+        """a supervisor node that coordinates between different agents and manages their outputs."""
         use_lang = f"Use language {self.env.user.lang} for the answer to Human" if quest.use_personal_lang else ''
         memory = self._get_memory(kwarg.get('message', ''))
 
         session = kwarg.get('session', False)
 
-        system_prompt = f"""You are a supervisor coordinating between workers: {members}.
-        Based on the request, determine which worker should handle the next step.
-        Only choose FINISH when a complete response has been provided.
-
-        Role: {self.ai_role}
-        Goal: {self.ai_goal}
-        Backstory: {self.ai_backstory}
-        Guidelines: {quest.description}
-        {self._extra_context(quest)}
-        Message history: {self._chat_history(quest)}
-       
-        Memory: {memory}
-
-        Instructions:
-        1. Evaluate if we have a complete response
-        2. If not complete, choose the most appropriate worker
-        3. Send FINISH only when we have a satisfactory response
-        4. Do not mention that you have done tool calls, thats too technical 
-        4. {use_lang}
-        """
+        system_prompt = self._supervisor_prompt(members, quest, memory, use_lang)
 
         def supervisor_chain(state):
             messages = state.get('messages', [])
             state['session'] = session
 
             _logger.info(f"Supervisor received messages: {len(messages)} {session=}")
-           
+
             if not messages:
                 _logger.info(f"No messages, starting with first worker: {members[0] if members else 'no members'}")
                 session.add_message(
@@ -427,7 +431,7 @@ class AIAgent(models.Model):
                     return result
                 else:
                     # If no AI messages found, create one from the result
-                    state['session'].add_message(f"No AImessages: {str(result)=}")
+                    state['session'].add_message(f"No AIMessages: {str(result)=}")
 
                     return {
                         "messages": [
@@ -468,7 +472,8 @@ class AIAgent(models.Model):
             except ImportError as e:
                 _logger.error(f"Error importing {ai_tool_id.tool_lib=}: {e} {traceback.format_exc()}")
             except AttributeError as e:
-                _logger.error(f"Error: {ai_tool_id.tool=} not found in {ai_tool_id.tool_lib=}  {traceback.format_exc()}")
+                _logger.error(
+                    f"Error: {ai_tool_id.tool=} not found in {ai_tool_id.tool_lib=}  {traceback.format_exc()}")
             except Exception as e:
                 _logger.error(f"An error occurred: {e}  {traceback.format_exc()}")
             if TOOL:
