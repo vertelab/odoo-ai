@@ -11,13 +11,15 @@ import warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning, message="builtin type swigvarlink has no __module__ attribute")
 
 # ~ from typing import Annotated, TypedDict, Sequence, List, Union
+from IPython.display import Image, display
 from langchain import hub
 from langchain.agents import Tool, AgentExecutor, LLMSingleActionAgent, AgentOutputParser, create_tool_calling_agent, create_xml_agent,create_json_chat_agent
 from langchain.prompts import ChatPromptTemplate
 from langchain.schema import AgentAction, AgentFinish
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
+from langchain_core.runnables.graph import MermaidDrawMethod
 from langgraph.checkpoint.memory import MemorySaver
-from langgraph.graph import START,END, StateGraph
+from langgraph.graph import StateGraph, START, END
 from langgraph.prebuilt import create_react_agent
 from odoo import models, fields, api, _
 from odoo.addons.ai_agent.models.ai_quest_session import AIQuestSession
@@ -27,15 +29,14 @@ from odoo.tools.safe_eval import safe_eval
 from pydantic import BaseModel, ConfigDict, SkipValidation
 from random import randint
 from secrets import choice
-from langchain.graphs.state_graph import Step
-from IPython.display import Image, display
+
 
 
 ##if VERSION >= '18.0'
 from typing import Annotated, List, NotRequired, Sequence, TypedDict, Union, Any
 ##else
 from typing_extensions import NotRequired, TypedDict
-from typing import Annotated, List, Sequence, Union, Any
+from typing import Annotated, List, Dict, Sequence, Union, Any
 ##endif
 # Odoo 18 okt 2024  Ubuntu 24.04 Python 3.12 (NotRequired 3.11)
 # Odoo 17 2023 Ubuntu 22.04  Python 3.10
@@ -243,7 +244,7 @@ class AIQuest(models.Model):
                                       help="Temperature controls the randomness and creativity of the model's output, "
                                            "<1.0 more predictable and consistent >1.0 more diverse and creative responses")
 
-    
+    graph_image = fields.Image("Graph", max_width=300, max_height=300)
     
   
     @api.model
@@ -773,7 +774,7 @@ class AIQuest(models.Model):
 
 
     # Inspired by https://github.com/menonpg/agentic_search_openai_langgraph/blob/main/agents.py
-    def build_graph(self, **kwargs):
+    def Xbuild_graph(self, **kwargs):
         """Build a multi-agent workflow graph with supervisor."""
  
         if not self.ai_agent_ids:
@@ -1082,15 +1083,19 @@ class AIQuest(models.Model):
         
         def initial_node(state: AgentState) -> AgentState:
             # ~ state = ConfigDict(arbitrary_types_allowed=True)
+            # ~ if self.debug:
+            kwargs.get('session').add_message(f"Agent {self.name} Initial state: {state=}")
             return {
                 "messages": [{"role": "user", "content": kwargs.get('topic',kwargs.get('message',''))}],
                 'quest': self,
                 'session': kwargs.get('session',False),
                 'topic': kwargs.get('topic',''),
                 'scratchpad':[],
-                'next': "",
+                'next': "agent_1",
                 'count': 1,
-                    
+                'current_agent': 'initial_node',
+                'sequence_position': 0,
+                'last_position': len(agents),    
             }
 
         
@@ -1100,36 +1105,78 @@ class AIQuest(models.Model):
             workflow = StateGraph(AgentState)
             workflow.add_node("initial", initial_node)
             workflow.add_edge(START, "initial")
-
+            workflow.set_entry_point("initial")
+            
             for i, agent in enumerate(agents):
-                workflow.add_node(f"agent_{i}", agent.create_sequence_node(debug=self.debug,**kwargs))
+                kwargs.get('session').add_message(f"Add Node Agent agent_{i}")
+                workflow.add_node(f"agent_{i}", 
+                                 lambda state, agent=agent, i=i: {
+                                     **agent.create_sequence_node(
+                                         debug=self.debug,
+                                         current_agent=agent.name,
+                                         sequence_position=i,
+                                         **kwargs
+                                     )(state),
+                                     "next":  f"agent_{i+1}" if i < len(agents) else END,
+                                     "current_node": f"agent_{i}",
+                                     "sequence_position": i
+                                 })
+            # ~ workflow.add_sequence([
+                                    # ~ (f"agent_{i}", 
+                                     # ~ lambda state, agent=agent, i=i: {
+                                         # ~ **agent.create_sequence_node(
+                                             # ~ debug=self.debug,
+                                             # ~ current_agent=agent.name,
+                                             # ~ sequence_position=i,
+                                             # ~ **kwargs
+                                         # ~ )(state),
+                                         # ~ "next":  f"agent_{i+1}" if i < len(agents) else END,
+                                         # ~ "current_node": f"agent_{i}",
+                                         # ~ "sequence_position": i
+                                     # ~ })
+                                    # ~ for i, agent in enumerate(agents)
+                                # ~ ])
+
+
+            # ~ for i, agent in enumerate(agents):
+                # ~ workflow.add_node(f"agent_{i}", agent.create_sequence_node(debug=self.debug,**kwargs))
     
             # ~ import pdb; pdb.set_trace()
             for i, agent in enumerate(agents[1:]):
                 workflow.add_edge(f"agent_{i}", f"agent_{i+1}")
 
-            # Set the first agent as the entry point
-            if agents:
-                workflow.set_entry_point("agent_0")
-                workflow.add_edge(START, "agent_0")
+            # ~ # Set the first agent as the entry point
+            # ~ if agents:
+                # ~ workflow.set_entry_point("agent_0")
+                # ~ workflow.add_edge(START, "agent_0")
 
-            # Set the last agent as the finish point
-            if len(agents) > 1:
-                workflow.set_finish_point(f"agent_{len(agents)-1}")
+            # ~ # Set the last agent as the finish point
+            # ~ if len(agents) > 1:
+                # ~ workflow.set_finish_point(f"agent_{len(agents)}")
                         
             graph = workflow.compile()
             # ~ graph.update_state({'count': 7})
             input_channels = graph.input_channels
-            if self.debug:
-                self.log_message(f"{json.dumps(graph.get_graph().to_json(), indent=2)}\n{input_channels=}")
-                _logger.debug(f"{json.dumps(graph.get_graph().to_json(), indent=2)}\n{input_channels=}")
-            return graph,input_channels
+            # ~ if self.debug:
+                # ~ self.log_message(f"{json.dumps(graph.get_graph().to_json(), indent=2)}\n{input_channels=}")
+                # ~ _logger.debug(f"{json.dumps(graph.get_graph().to_json(), indent=2)}\n{input_channels=}")
+                # ~ image=display(Image(graph.get_graph().draw_mermaid_png()))
+                # ~ self.log_message(f"<<<<<<<<<<<<<<<<<<<<<<{image}>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>")
            
         except Exception as e:
             self.log_message(f"Error building chain: {str(e)}", is_error=True)
             _logger.error(f"Error building chain: {str(e)}")
             raise
             
+        if self.debug:
+            self.log_message(f"{json.dumps(graph.get_graph().to_json(), indent=2)}\n{input_channels=}")
+            self.log_message(f"get graph: {graph.get_graph()}\n")
+            _logger.debug(f"{json.dumps(graph.get_graph().to_json(), indent=2)}\n{input_channels=}")
+            _logger.error(f"Get_graph {graph.get_graph()}")
+        # ~ image=display(Image(graph.get_graph().draw_mermaid_png()))
+        # ~ _logger.error(graph.get_graph().to_mermaid())
+        graph_image = base64.b64encode(graph.get_graph().draw_png())
+        return graph
 
 
 
@@ -1146,4 +1193,7 @@ class AgentState(TypedDict):
     scratchpad: Annotated[List[str], operator.add]
     next: str
     token: SkipValidation[NotRequired[int]]
-    count: SkipValidation[NotRequired[Step(lambda count: count + 1)]]
+    # ~ count: SkipValidation[NotRequired[Step(lambda count: count + 1)]]
+    current_agent: str
+    sequence_position: int
+    last_position: int

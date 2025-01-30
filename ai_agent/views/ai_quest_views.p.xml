@@ -169,6 +169,9 @@
                   </tree>
                 </field>
               </page>
+               <page string="Graph" id="graph">
+                <field name="graph_image" widget="image" />
+              </page>
             </notebook>
           </sheet>
           <div class="oe_chatter">

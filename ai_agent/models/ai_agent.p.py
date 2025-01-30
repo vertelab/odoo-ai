@@ -34,6 +34,10 @@ from typing import Annotated, List, Sequence, Union, Any
 
 _logger = logging.getLogger(__name__)
 
+class SafeDict(dict):
+    def __missing__(self, key):
+        return '{' + key + '}'
+
 
 # Skapa en output-parser
 class SimpleOutputParser(AgentOutputParser):
@@ -137,17 +141,24 @@ class AIAgent(models.Model):
             record.quest_count = len(
                 set(record.session_line_ids.filtered(lambda x: x.ai_agent_id.id == record.id).mapped('ai_quest_id')))
 
-    def _extra_context(self, quest):
-        extra_context = ''
+
+    def extra_context(self, quest):
+        res = {}
         if quest.use_company_info:
-            extra_context += f'Company information: {self.env.user.company_id.company_mission=} {self.env.user.company_id.company_values=}\n'
+            res['company_info'] = f'Company information: {self.env.user.company_id.company_mission=} {self.env.user.company_id.company_values=}'
         if quest.use_company_info:
-            extra_context += f'User information: {self.env.user.name=} {self.env.user.function=} {self.env.user.city=}\n'
+            res ['user_info']   = f'User information: {self.env.user.name=} {self.env.user.function=} {self.env.user.city=}'
         if quest.use_time_context:
             now = datetime.now()
-            extra_context += f'Current date {now.strftime("%Y-%m-%d")} Current time {now.strftime("%H:%M:%S")} Week Number {now.isocalendar()[1]}\n'
-        return extra_context
-
+            res['time_context'] = f'Current date {now.strftime("%Y-%m-%d")} Current time {now.strftime("%H:%M:%S")} Week Number {now.isocalendar()[1]}\n'
+        return res
+        
+    def _extra_context(self, quest):
+        res = ''
+        for key, data in self.extra_context(quest).items():
+            res += data
+        return res
+                
     def _chat_history(self, quest):
         if not (quest.init_type in ['chat', 'channel'] and quest.use_chat_history):
             return False
@@ -191,11 +202,12 @@ class AIAgent(models.Model):
 
         topic = kwargs.get('topic',kwargs.get('message','')) 
         session=kwargs.get('session',False)
+        quest=kwargs.get('quest',False)
         debug=kwargs.get('debug',False)
         # ~ import pdb; pdb.set_trace()
         
 
-        def agent_snode(state):
+        def agent_snode(state: AgentState) -> AgentState:
             """Process messages and generate a response."""
             if state.get('count',1) > 50:
                 raise UserError(f"Count > 50 {state=}") 
@@ -236,7 +248,11 @@ class AIAgent(models.Model):
                 - Stay focused on your specific role
                 """
             )
-            messages = [system_message,HumanMessage(content=topic)]
+            
+            promtp = self.ai_prompt_template
+            promtp = prompt.format_map(SafeDict(self.extra_context(quest) | {'chat_history': self._chat_history(quest)}))
+            
+            messages = [system_message,HumanMessage(content=topic),HumanMessage(content=prompt)]
             
             if debug:
                 self.log_message(f"Agent  {self.name} before invoke {messages=} {state=}")
@@ -304,8 +320,7 @@ class AIAgent(models.Model):
                 # ~ return agent_snode(state)
                 
             return {
-                "messages": respons.get('messages',[]) if isinstance(response,dict) else [AIMessage(
-                            content=response,)],
+                "messages": [new_item],
                 'scratchpad': state['scratchpad'],
                 "count": Annotated[int, "count"],
             }
