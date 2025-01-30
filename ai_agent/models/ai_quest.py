@@ -1,4 +1,3 @@
-
 import base64
 import json
 import logging
@@ -522,18 +521,17 @@ class AIQuest(models.Model):
                 "<br>", "").replace("<p>", "").replace("</p>", "").replace("\n", "")
             vals = self._mail_values(mail=mail, mail_body=mail_body, session=session, attachments=mail.attachment_ids)
             res = self.run(**vals)
-            print("res", res)
             return res
 
     # ------------------------------------------------------------
     # Python code helpers
     # ------------------------------------------------------------
     @api.model
-    def is_ai_message(self,var):
+    def is_ai_message(self, var):
         return isinstance(var, AIMessage)
 
     @api.model
-    def get_last_ai_message_content(self,response):
+    def get_last_ai_message_content(self, response):
         if response.get('messages', False):
             messages = response.get('messages', [])
             ai_messages = [m for m in messages if self.is_ai_message(m)]
@@ -541,7 +539,7 @@ class AIQuest(models.Model):
                 last_ai_message = ai_messages[-1] if len(ai_messages) != 0 else None
                 if messages and last_ai_message:
                     _logger.error(f"{last_ai_message=}")
-                    return last_ai_message.content  
+                    return last_ai_message.content
 
     @api.model
     def extract_dicts(self, text):
@@ -727,7 +725,8 @@ class AIQuest(models.Model):
             if quest.server_action_id:
                 quest.server_action_id.write(
                     {'name': quest.name, 'code': f"action = env.ref('{quest._get_eid()}').server_action(records)",
-                     'binding_model_id': self.model_id.id if self.status == 'active' else None, "binding_view_types": "form,list"})
+                     'binding_model_id': self.model_id.id if self.status == 'active' else None,
+                     "binding_view_types": "form,list"})
             if quest.cron_id:
                 quest.cron_id.write({'name': quest.name, 'code': f"action = env.ref('{quest._get_eid()}').cron()"})
             if quest.channel_id:
