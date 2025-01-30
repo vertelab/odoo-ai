@@ -450,8 +450,6 @@ class AIQuest(models.Model):
         return kwargs
 
     def server_action(self, records):
-
-        _logger.error(f"{records=}")
         if self.init_type == 'server-action' and self.server_action_id:
             if self._check_quest_error():
                 raise UserError(self._check_quest_error())
@@ -496,7 +494,6 @@ class AIQuest(models.Model):
             
             
         """
-        # ~ _logger.warning(f"chat {message=} {message.body=}")
         if (self.init_type == 'chat' and self.chat_user_id) or (self.init_type == "channel" and self.channel_id):
             if self._check_quest_error():
                 raise UserError(self._check_quest_error())
@@ -506,7 +503,6 @@ class AIQuest(models.Model):
                 message.parent_id.ai_quest_session_id if message.ai_quest_session_id else \
                     self.env['ai.quest.session'].quest_init(self)
             vals = self._chat_values(session=session, message=message, channel=channel, bot_user=bot_user)
-            # ~ raise UserError(f"{vals=}")
             res = self.run(**vals)
             return res
 
@@ -526,20 +522,20 @@ class AIQuest(models.Model):
     # ------------------------------------------------------------
     # Python code helpers
     # ------------------------------------------------------------
-    @api.model
-    def is_ai_message(self, var):
-        return isinstance(var, AIMessage)
+    # @api.model
+    # def is_ai_message(self, var):
+    #     return isinstance(var, AIMessage)
 
-    @api.model
-    def get_last_ai_message_content(self, response):
-        if response.get('messages', False):
-            messages = response.get('messages', [])
-            ai_messages = [m for m in messages if self.is_ai_message(m)]
-            if ai_messages:
-                last_ai_message = ai_messages[-1] if len(ai_messages) != 0 else None
-                if messages and last_ai_message:
-                    _logger.error(f"{last_ai_message=}")
-                    return last_ai_message.content
+    # @api.model
+    # def get_last_ai_message_content(self, response):
+    #     if response.get('messages', False):
+    #         messages = response.get('messages', [])
+    #         ai_messages = [m for m in messages if self.is_ai_message(m)]
+    #         if ai_messages:
+    #             last_ai_message = ai_messages[-1] if len(ai_messages) != 0 else None
+    #             if messages and last_ai_message:
+    #                 _logger.error(f"{last_ai_message=}")
+    #                 return last_ai_message.content
 
     @api.model
     def extract_dicts(self, text):
