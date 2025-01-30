@@ -303,7 +303,7 @@ class AIAgent(models.Model):
                 "messages": respons.get('messages',[]) if isinstance(response,dict) else [AIMessage(
                             content=response,)],
                 'scratchpad': state['scratchpad'],
-                'count': state['count'] + 1,
+                "count": Annotated[int, "count"],
             }
 
         return agent_snode

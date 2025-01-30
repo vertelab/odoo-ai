@@ -11,11 +11,14 @@ import warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning, message="builtin type swigvarlink has no __module__ attribute")
 
 # ~ from typing import Annotated, TypedDict, Sequence, List, Union
-from langchain.agents import Tool, AgentExecutor, LLMSingleActionAgent, AgentOutputParser
+from langchain import hub
+from langchain.agents import Tool, AgentExecutor, LLMSingleActionAgent, AgentOutputParser, create_tool_calling_agent, create_xml_agent,create_json_chat_agent
+from langchain.prompts import ChatPromptTemplate
 from langchain.schema import AgentAction, AgentFinish
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import START,END, StateGraph
+from langgraph.prebuilt import create_react_agent
 from odoo import models, fields, api, _
 from odoo.addons.ai_agent.models.ai_quest_session import AIQuestSession
 from odoo.exceptions import UserError, ValidationError, Warning
@@ -24,6 +27,9 @@ from odoo.tools.safe_eval import safe_eval
 from pydantic import BaseModel, ConfigDict, SkipValidation
 from random import randint
 from secrets import choice
+from langchain.graphs.state_graph import Step
+from IPython.display import Image, display
+
 
 ##if VERSION >= '18.0'
 from typing import Annotated, List, NotRequired, Sequence, TypedDict, Union, Any
@@ -831,21 +837,25 @@ class AIQuest(models.Model):
 
     def extract_json(self,agent,session,message):
         # Find JSON-like content within triple backticks
+        message = message.replace('\n','')
         json_match = re.search(r'``````', message, re.DOTALL)
         if json_match:
             json_string = json_match.group(1)
             try:
                 return json.loads(json_string)
             except json.JSONDecodeError:
-                session.add_message(f"{agent}Error: Invalid JSON format with backtick {json_string=}")
+                session.add_message(f"{agent} Error: Invalid JSON format with backtick {json_string=}")
                 return None
         else:
             try:
                 return json.loads(message)
             except json.JSONDecodeError:
-                session.add_message(f"{agent} Error: Invalid JSON format {message=}")
-                return None
-
+                session.add_message(f"{agent} Error: Invalid JSON format\n{message}")
+            try:
+                return json.loads(f"json \n{message}\n")
+            except json.JSONDecodeError:
+                session.add_message(f"{agent} Error: Invalid JSON tried updated '''json {message}'''")
+            
 
     def create_supervisor(self, members, **kwargs):
         """Create a supervisor node that coordinates between different agents."""
@@ -868,20 +878,59 @@ class AIQuest(models.Model):
                 state['scratchpad']=[state.get('scratchpad','')]
 
             question = messages[-1]['content'] if messages and isinstance(messages[-1], dict) and 'content' in messages[-1] else ""
+
+            # Create full message list
+            _logger.error(f"Create full message list")
+            
+            input=question
+            prompt = f"Previous conversation: {question}\n{input=}"
+            # ~ for msg in messages:
+                # ~ prompt += f"\n{msg.content}\n" if msg and isinstance(msg, dict) and 'content' in msg else msg
+            prompt += ( "Input data {tools} {tool_names} {agent_scratchpad} {input}\n"
+                        
+                        f"\nBased on previous conversation, what agent should act next? Choose from: {members} or say FINISH if we have a "
+                        "Input data {tools} {tool_names} {agent_scratchpad} {input}\n"
+                        "complete response. Use just JSON {'next': agent or FINISH}"
+                        )
+            if self.debug:
+                session.add_message(f"Supervisor {prompt=}")
+            # Get LLM response
+            
+            
+            tools = []
+
+            # Get the prompt
+            prompt = hub.pull("hwchase17/react-chat-json")
+            
+
+
+            # Initialize the language model
+            llm = self.supervisor_llm_id.get_llm(temperature=self.supervisor_temperature)
+
+            # Create the JSON chat agent
+            # ~ agent = create_json_chat_agent(llm, tools, prompt)
+            agent = create_react_agent(llm, [])
+
+            # Create an agent executor
+            # ~ agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True, handle_parsing_errors=True)
+            agent_executor = AgentExecutor(agent=agent, verbose=self.debug, handle_parsing_errors=True)
+
+            # Invoke the agent
+
+            
+            # ~ agent = create_json_chat_agent(
+                                # ~ self.supervisor_llm_id.get_llm(temperature=self.supervisor_temperature),
+                                # ~ [],
+                                # ~ ChatPromptTemplate.from_messages([("human",prompt)])
+                    # ~ )
+            # ~ executor = AgentExecutor(agent=agent,tools=[], verbose=self.debug)
             try:
-                # Create full message list
-                _logger.error(f"Create full message list")
-                
-                
-                prompt = f"Previous conversation: {question}\n"
-                # ~ for msg in messages:
-                    # ~ prompt += f"\n{msg.content}\n" if msg and isinstance(msg, dict) and 'content' in msg else msg
-                prompt += (f"\nBased on this, what agent should act next? Choose from: {members} or say FINISH if we have a "
-                            "complete response. Use just JSON {'next': agent or FINISH}")
-                if self.debug:
-                    session.add_message(f"Supervisor {prompt=}")
-                # Get LLM response
-                response = self.supervisor_llm_id.get_llm(temperature=self.supervisor_temperature).invoke([
+                # ~ response = self.invoke(messages)
+                # ~ response = langgraph_agent_executor.invoke({
+                    # ~ "input": topic,
+                    # ~ "messages": messages,
+                # ~ })
+                response = agent_executor.invoke([
                     SystemMessage(content=system_prompt),
                     HumanMessage(content=prompt)
                 ])
@@ -993,6 +1042,10 @@ class AIQuest(models.Model):
             if self.debug:
                 self.log_message(f"{json.dumps(graph.get_graph().to_json(), indent=2)}\n{input_channels=}")
                 _logger.debug(f"{json.dumps(graph.get_graph().to_json(), indent=2)}\n{input_channels=}")
+                
+                image=display(Image(graph.get_graph().draw_mermaid_png()))
+                self.log_message(f"{image}")
+                
                 if hasattr(graph, 'model'):
                     model_config = graph.model.config
                     _logger.debug(f"Model {graph.model.config=}")
@@ -1093,4 +1146,4 @@ class AgentState(TypedDict):
     scratchpad: Annotated[List[str], operator.add]
     next: str
     token: SkipValidation[NotRequired[int]]
-    count: SkipValidation[NotRequired[int]]
+    count: SkipValidation[NotRequired[Step(lambda count: count + 1)]]
