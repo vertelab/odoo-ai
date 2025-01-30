@@ -277,6 +277,30 @@ class AIAgent(models.Model):
     # LangGraph
     # ------------------------------------------------------------
 
+    def _supervisor_prompt(self, members, quest, memory, use_lang):
+        system_prompt = f"""
+            You are a supervisor coordinating between workers: {members}.
+            Based on the request, determine which worker should handle the next step and only run ONCE.
+            Only choose FINISH when a complete response has been provided.
+
+            Role: {self.ai_role}
+            Goal: {self.ai_goal}
+            Backstory: {self.ai_backstory}
+            Guidelines: {quest.description}
+            {self._extra_context(quest)}
+            Message history: {self._chat_history(quest)}
+
+            Memory: {memory}
+
+            Instructions:
+            1. Evaluate if we have a complete response
+            2. If not complete, choose the most appropriate worker
+            3. Send FINISH only when we have a satisfactory response
+            4. Do not mention that you have done tool calls, that's too technical
+            4. {use_lang}
+        """
+        return system_prompt
+
     def create_supervisor(self, quest, members, **kwarg):
         """Create a supervisor node that coordinates between different agents."""
         use_lang = f"Use language {self.env.user.lang} for the answer to Human" if quest.use_personal_lang else ''
@@ -284,26 +308,7 @@ class AIAgent(models.Model):
 
         session = kwarg.get('session', False)
 
-        system_prompt = f"""You are a supervisor coordinating between workers: {members}.
-        Based on the request, determine which worker should handle the next step.
-        Only choose FINISH when a complete response has been provided.
-
-        Role: {self.ai_role}
-        Goal: {self.ai_goal}
-        Backstory: {self.ai_backstory}
-        Guidelines: {quest.description}
-        {self._extra_context(quest)}
-        Message history: {self._chat_history(quest)}
-       
-        Memory: {memory}
-
-        Instructions:
-        1. Evaluate if we have a complete response
-        2. If not complete, choose the most appropriate worker
-        3. Send FINISH only when we have a satisfactory response
-        4. Do not mention that you have done tool calls, thats too technical 
-        4. {use_lang}
-        """
+        system_prompt = self._supervisor_prompt(members, quest, memory, use_lang)
 
         def supervisor_chain(state):
             messages = state.get('messages', [])

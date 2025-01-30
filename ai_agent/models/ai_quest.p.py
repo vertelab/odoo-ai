@@ -500,7 +500,6 @@ class AIQuest(models.Model):
             
             
         """
-        # ~ _logger.warning(f"chat {message=} {message.body=}")
         if (self.init_type == 'chat' and self.chat_user_id) or (self.init_type == "channel" and self.channel_id):
             if self._check_quest_error():
                 raise UserError(self._check_quest_error())
@@ -510,7 +509,6 @@ class AIQuest(models.Model):
                 message.parent_id.ai_quest_session_id if message.ai_quest_session_id else \
                     self.env['ai.quest.session'].quest_init(self)
             vals = self._chat_values(session=session, message=message, channel=channel, bot_user=bot_user)
-            # ~ raise UserError(f"{vals=}")
             res = self.run(**vals)
             return res
 
@@ -558,8 +556,11 @@ class AIQuest(models.Model):
         return markdown.markdown(text)
 
     def json2dict(self, text):
-        text = text.split('```')[1].replace("json", "").replace("\n", "")
-        return json.loads(text)
+        json_split = text.split('```')
+        if len(json_split) > 1:
+            text = text.split('```')[1].replace("json", "").replace("\n", "")
+            return json.loads(text)
+        return False
 
     # ------------------------------------------------------------
     # Python CODE eval
@@ -737,7 +738,6 @@ class AIQuest(models.Model):
         # Get member names
         members = [a.name for a in agents[1:]]
         _logger.info(f"Building graph with supervisor and {len(members)} workers: {members}")
-        global session
         session=kwargs.get('session',False)
 
         if session == False:
