@@ -304,8 +304,10 @@ class AIQuest(models.Model):
     @api.depends("session_line_ids")
     def compute_agent_count(self):
         for record in self:
-            record.agent_count = len(set(record.session_line_ids.mapped('ai_agent_id')))
-
+            ai_agent_ids = list(map(lambda session_id: session_id.ai_agent_ids.ids, self.session_ids))
+            agent_ids = []
+            [agent_ids.extend(ai_agent_id) for ai_agent_id in ai_agent_ids]
+            record.agent_count = len(set(agent_ids))
     @api.depends('model_id')
     def _compute_model_name(self):
         for record in self:
@@ -731,6 +733,23 @@ class AIQuest(models.Model):
             if quest.chat_user_id:
                 quest.chat_user_id.write({'name': quest.name, 'login': quest.name, 'ai_quest_id': quest.id, })
         return result
+
+    def create(self, vals_list):
+        _logger.error(f"{vals_list=}")
+        new_server_action = False
+        for record in vals_list:
+            if record["model_id"]:
+                new_server_action = self.server_action_id = self.server_action_id.create({
+                        'name': record["name"],
+                        'model_id': record["model_id"],
+                        "binding_view_types": "form,list",
+                        'state': 'code',
+                        'code': "",
+                    })
+        res = super(AIQuest, self).create(vals_list)
+        new_server_action.write({"code": f"action = env.ref('{res._get_eid()}').server_action(records)"})
+        res.write({"server_action_id": new_server_action.id})
+        return res
 
     # ------------------------------------------------------------
     # LangGraph 
