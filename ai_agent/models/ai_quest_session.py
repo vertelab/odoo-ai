@@ -35,7 +35,10 @@ class AISessionObject(models.Model):
     @api.depends('object_id')
     def _compute_display_name(self):
         for record in self:
-            record.display_name = f"[{record.model_id.name}] {record.object_id.display_name} "
+            if record.model_id:
+                record.display_name = f"[{record.model_id.name}] {record.object_id.display_name}"
+            else:
+                record.display_name = f"{record.object_id.display_name}"
 
 
 class AIQuestSession(models.Model):
@@ -55,7 +58,8 @@ class AIQuestSession(models.Model):
     ai_tool_id = fields.Many2one(comodel_name="ai.tool")
     ai_type = fields.Selection(selection=[("default", "Default")], default="default")
     color = fields.Integer()
-    commercial_partner_id = fields.Many2one(comodel_name='res.partner', string="Partner",related="user_id.partner_id.commercial_partner_id", help="", store=True)
+    commercial_partner_id = fields.Many2one(comodel_name='res.partner', string="Partner",
+                                            related="user_id.partner_id.commercial_partner_id", help="", store=True)
     db_name = fields.Char(string='Database Name', default=lambda self: self._get_db_name())
     db_uuid = fields.Char(string='Database UUID', default=lambda self: self._get_db_uuid())
     debug = fields.Boolean(string='Debug', help="Logs interesting data")
@@ -68,12 +72,14 @@ class AIQuestSession(models.Model):
     session_message_count = fields.Integer(compute='_compute_session_message_count')
     session_object_count = fields.Integer(compute='_compute_session_object_count')
     session_object_ids = fields.One2many(comodel_name="ai.session.object", inverse_name="ai_session_id")
-    startdate = fields.Datetime(default=fields.Datetime.now())
-    status = fields.Selection(selection=[("draft", _("Draft")), ("active", _("Active")), ("done", _("Done")), ("error", _("Error"))],default="draft")
+    startdate = fields.Datetime(default=lambda self: fields.Datetime.now())
+    status = fields.Selection(
+        selection=[("draft", _("Draft")), ("active", _("Active")), ("done", _("Done")), ("error", _("Error"))],
+        default="draft")
     time_difference_ms = fields.Integer(string='Time Difference (ms)', compute='_compute_time_difference', store=True)
     type_of_output = fields.Text()
     user_id = fields.Many2one(comodel_name='res.users', string="User", help="")
-    
+
     @api.depends('ai_agent_llm_ids')
     def _compute_ai_llm_count(self):
         for record in self:
@@ -132,7 +138,7 @@ class AIQuestSession(models.Model):
             'domain': [("ai_quest_session_id", '=', self.id)],
         }
         return action
- 
+
     def action_get_sessions(self):
         action = {
             'name': 'Sessions',
@@ -219,19 +225,19 @@ class AIQuestSession(models.Model):
                     #         'ai_session_id': self.id,
                     #         'object_id': (o._name, o.id),
                     #     })
-            self.env['ai.quest.session.message'].save_messages(self,result)
+            self.env['ai.quest.session.message'].save_messages(self, result)
             self.status = 'done'
         else:
             self.status = 'error'
             if self.ai_quest_id.debug:
                 self.message_post(body=f'Missing {result=}')
 
-    def add_message(self, message,**kwarg):
-        self.env['ai.quest.session.message'].add(self,message,**kwarg)
-   
-    def save_messages(self, message,**kwarg):
-        self.env['ai.quest.session.message'].save_messages(self,message,**kwarg)
- 
+    def add_message(self, message, **kwarg):
+        self.env['ai.quest.session.message'].add(self, message, **kwarg)
+
+    def save_messages(self, message, **kwarg):
+        self.env['ai.quest.session.message'].save_messages(self, message, **kwarg)
+
     def log(self, obj, message):
         _logger.info(message)
         obj.message_post(body=message)
@@ -253,6 +259,7 @@ class AIQuestSession(models.Model):
                 'ai_agent_llm_ids': [(6, 0, [llm.id])] if llm else None,
                 'debug': debug,
             })
+            print("session llm_init", session)
             if session.debug:
                 session.log(llm, f"[session] init {session.name=} {llm.name=}")
         return session
@@ -279,20 +286,21 @@ class AIQuestSession(models.Model):
                 # Corrected syntax
                 'debug': debug,
             })
+            print("agent_init session", session)
             if self.debug:
                 session.log(agent, f"[session] init {session.name=} {agent.name=}")
         return session
 
     @api.model
-    def quest_init(self, quest, debug=False):
+    def quest_init(self, quest, debug=True):
         _logger.warning(f"{quest.id=}")
         quest.last_run = fields.Datetime.now()
         session_ids = self.env['ai.quest.session'].search([
             ('ai_quest_id', '=', quest.id), ('status', '=', 'active')], limit=1)
         if len(session_ids) >= 1:
             session = session_ids[0]
-            if session.debug:
-                session.log(agent, f"[session] revisit {session.name=}")
+            # if session.debug:
+            #     session.log(agent, f"[session] revisit {session.name=}")
         else:
             agents = [a.ai_agent_id for a in quest.ai_agent_ids]
             r = {
@@ -309,13 +317,12 @@ class AIQuestSession(models.Model):
                 'ai_agent_id': agents[0].id if agents else None,
                 'ai_agent_llm_id': agents[0].ai_agent_llm_id.id if agents else None,
             })
+            print("session", session)
             if agents:
                 session.write({
                     'ai_agent_ids': [(4, agent.id) for agent in agents],
                     'ai_agent_llm_ids': [(4, agent.ai_agent_llm_id.id) for agent in agents if agent.ai_agent_llm_id],
                 })
-            if session.debug:
-                session.log(agent, f"[session] init {session.name=}")
+            # if session.debug:
+            #     session.log(agent, f"[session] init {session.name=}")
         return session
-
-        # ~ session = self.env['ai.quest.session'].create({'ai_quest_id': self.id,'status': 'active'})

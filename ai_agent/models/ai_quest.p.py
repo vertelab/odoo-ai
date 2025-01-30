@@ -581,6 +581,7 @@ class AIQuest(models.Model):
             'env': self.env,
             'self': self,
             'session': kw.get('session', self.env['ai.quest.session'].quest_init(self)),
+            # 'session': kw.get('session'),
             'quest': self,
             'agents': [a.ai_agent_id for a in self.ai_agent_ids],
             'company_id': self.env.user.company_id,

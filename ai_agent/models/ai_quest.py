@@ -594,6 +594,7 @@ class AIQuest(models.Model):
             'env': self.env,
             'self': self,
             'session': kw.get('session', self.env['ai.quest.session'].quest_init(self)),
+            # 'session': kw.get('session'),
             'quest': self,
             'agents': [a.ai_agent_id for a in self.ai_agent_ids],
             'company_id': self.env.user.company_id,
@@ -639,7 +640,6 @@ class AIQuest(models.Model):
             return None
         session = local_dict.get('session', eval_context['session'])
 
-        # objects = local_dict.get('objects', [])
         objects = {
             'ai_session_id': eval_context.get('session'),
             'ai_quest_id': eval_context.get('self'),
@@ -663,7 +663,6 @@ class AIQuest(models.Model):
             result = [result]
 
         session.store_session_data(result=result, objects=objects)
-
         return local_dict
 
         #for department in records:
@@ -710,6 +709,7 @@ class AIQuest(models.Model):
         if self.id:
             values['alias_defaults'] = defaults = {}
             defaults['ai_quest_id'] = self.id
+            defaults['status'] = 'active'
         return values
 
     def write(self, vals):
