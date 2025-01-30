@@ -47,6 +47,8 @@ class AIQuestSession(models.Model):
     _inherit = ["mail.thread", "mail.activity.mixin"]
     _order = 'startdate desc'
 
+    session = fields.Char(default=lambda self: str(uuid.uuid4()))
+    name = fields.Char(default=lambda self: self.session)
     ai_agent_count = fields.Integer(compute='_compute_ai_agent_count')
     ai_agent_id = fields.Many2one(comodel_name="ai.agent")
     ai_agent_ids = fields.Many2many(comodel_name="ai.agent")
@@ -64,8 +66,6 @@ class AIQuestSession(models.Model):
     db_uuid = fields.Char(string='Database UUID', default=lambda self: self._get_db_uuid())
     debug = fields.Boolean(string='Debug', help="Logs interesting data")
     enddate = fields.Datetime()
-    session = fields.Char(default=lambda self: str(uuid.uuid4()))
-    name = fields.Char(default=lambda self: self.session)
     session_line_count = fields.Integer(compute='_compute_session_line_count')
     session_line_ids = fields.One2many(comodel_name="ai.quest.session.line", inverse_name="ai_quest_session_id")
     session_message_ids = fields.One2many(comodel_name="ai.quest.session.message", inverse_name="ai_quest_session_id")
@@ -79,6 +79,12 @@ class AIQuestSession(models.Model):
     time_difference_ms = fields.Integer(string='Time Difference (ms)', compute='_compute_time_difference', store=True)
     type_of_output = fields.Text()
     user_id = fields.Many2one(comodel_name='res.users', string="User", help="")
+    display_name = fields.Char(compute='_compute_display_name')
+
+    @api.depends("name")
+    def _compute_display_name(self):
+        for record in self:
+            record.display_name = record.name
 
     @api.depends('ai_agent_llm_ids')
     def _compute_ai_llm_count(self):
@@ -259,7 +265,6 @@ class AIQuestSession(models.Model):
                 'ai_agent_llm_ids': [(6, 0, [llm.id])] if llm else None,
                 'debug': debug,
             })
-            print("session llm_init", session)
             if session.debug:
                 session.log(llm, f"[session] init {session.name=} {llm.name=}")
         return session
@@ -286,13 +291,12 @@ class AIQuestSession(models.Model):
                 # Corrected syntax
                 'debug': debug,
             })
-            print("agent_init session", session)
             if self.debug:
                 session.log(agent, f"[session] init {session.name=} {agent.name=}")
         return session
 
     @api.model
-    def quest_init(self, quest, debug=True):
+    def quest_init(self, quest, debug=False):
         _logger.warning(f"{quest.id=}")
         quest.last_run = fields.Datetime.now()
         session_ids = self.env['ai.quest.session'].search([

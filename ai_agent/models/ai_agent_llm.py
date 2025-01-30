@@ -44,7 +44,7 @@ class AIAgentLLM(models.Model):
     last_run = fields.Datetime()
     licence = fields.Selection(selection=LICENCES, string='Licence',
                                related='model_id.product_attribute_value_id.licence')
-    llm_etype = fields.Char(related="product_tmpl_id.llm_etype", required=True)
+    llm_etype = fields.Char(related="product_tmpl_id.llm_etype")
     llm_type = fields.Char(related="product_tmpl_id.llm_type", required=True)
     model_id = fields.Many2one(comodel_name='product.template.attribute.value', string="Model", required=True, )
     name = fields.Char(required=True)

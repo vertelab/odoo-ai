@@ -303,8 +303,10 @@ class AIQuest(models.Model):
     @api.depends("session_line_ids")
     def compute_agent_count(self):
         for record in self:
-            record.agent_count = len(set(record.session_line_ids.mapped('ai_agent_id')))
-
+            ai_agent_ids = list(map(lambda session_id: session_id.ai_agent_ids.ids, self.session_ids))
+            agent_ids = []
+            [agent_ids.extend(ai_agent_id) for ai_agent_id in ai_agent_ids]
+            record.agent_count = len(set(agent_ids))
     @api.depends('model_id')
     def _compute_model_name(self):
         for record in self:
@@ -450,8 +452,6 @@ class AIQuest(models.Model):
         return kwargs
 
     def server_action(self, records):
-
-        _logger.error(f"{records=}")
         if self.init_type == 'server-action' and self.server_action_id:
             if self._check_quest_error():
                 raise UserError(self._check_quest_error())
@@ -496,7 +496,6 @@ class AIQuest(models.Model):
             
             
         """
-        # ~ _logger.warning(f"chat {message=} {message.body=}")
         if (self.init_type == 'chat' and self.chat_user_id) or (self.init_type == "channel" and self.channel_id):
             if self._check_quest_error():
                 raise UserError(self._check_quest_error())
@@ -506,7 +505,6 @@ class AIQuest(models.Model):
                 message.parent_id.ai_quest_session_id if message.ai_quest_session_id else \
                     self.env['ai.quest.session'].quest_init(self)
             vals = self._chat_values(session=session, message=message, channel=channel, bot_user=bot_user)
-            # ~ raise UserError(f"{vals=}")
             res = self.run(**vals)
             return res
 
@@ -526,20 +524,20 @@ class AIQuest(models.Model):
     # ------------------------------------------------------------
     # Python code helpers
     # ------------------------------------------------------------
-    @api.model
-    def is_ai_message(self, var):
-        return isinstance(var, AIMessage)
+    # @api.model
+    # def is_ai_message(self, var):
+    #     return isinstance(var, AIMessage)
 
-    @api.model
-    def get_last_ai_message_content(self, response):
-        if response.get('messages', False):
-            messages = response.get('messages', [])
-            ai_messages = [m for m in messages if self.is_ai_message(m)]
-            if ai_messages:
-                last_ai_message = ai_messages[-1] if len(ai_messages) != 0 else None
-                if messages and last_ai_message:
-                    _logger.error(f"{last_ai_message=}")
-                    return last_ai_message.content
+    # @api.model
+    # def get_last_ai_message_content(self, response):
+    #     if response.get('messages', False):
+    #         messages = response.get('messages', [])
+    #         ai_messages = [m for m in messages if self.is_ai_message(m)]
+    #         if ai_messages:
+    #             last_ai_message = ai_messages[-1] if len(ai_messages) != 0 else None
+    #             if messages and last_ai_message:
+    #                 _logger.error(f"{last_ai_message=}")
+    #                 return last_ai_message.content
 
     @api.model
     def extract_dicts(self, text):
@@ -734,6 +732,23 @@ class AIQuest(models.Model):
             if quest.chat_user_id:
                 quest.chat_user_id.write({'name': quest.name, 'login': quest.name, 'ai_quest_id': quest.id, })
         return result
+
+    def create(self, vals_list):
+        _logger.error(f"{vals_list=}")
+        new_server_action = False
+        for record in vals_list:
+            if record["model_id"]:
+                new_server_action = self.server_action_id = self.server_action_id.create({
+                        'name': record["name"],
+                        'model_id': record["model_id"],
+                        "binding_view_types": "form,list",
+                        'state': 'code',
+                        'code': "",
+                    })
+        res = super(AIQuest, self).create(vals_list)
+        new_server_action.write({"code": f"action = env.ref('{res._get_eid()}').server_action(records)"})
+        res.write({"server_action_id": new_server_action.id})
+        return res
 
     # ------------------------------------------------------------
     # LangGraph 
