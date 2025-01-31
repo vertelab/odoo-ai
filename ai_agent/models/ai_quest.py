@@ -1,4 +1,3 @@
-
 import base64
 import json
 import logging
@@ -89,9 +88,9 @@ class AIQuestAgent(models.Model):
     ai_agent_llm_id = fields.Many2one(comodel_name="ai.agent.llm", string="LLM", help="Choose Large Language Model",
                                       domain="[('status','=','confirmed')]", related='ai_agent_id.ai_agent_llm_id')
     ai_llm_status = fields.Selection(
-        selection=[("not_confirmed", "Not Confirmed"), ("confirmed", "Confirmed"), ("error", "Error")],
-        default="not_confirmed", related='ai_agent_id.ai_agent_llm_id.status')
-    object_id = fields.Reference(string='Object', related="ai_agent_id.object_id")
+    selection=[("not_confirmed", "Not Confirmed"), ("confirmed", "Confirmed"), ("error", "Error")],
+    default="not_confirmed", related='ai_agent_id.ai_agent_llm_id.status')
+    object_id = fields.Reference(string='Object',related="ai_agent_id.object_id")
     sequence = fields.Integer(string='Sequence')
 
 
