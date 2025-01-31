@@ -125,26 +125,6 @@ INIT_TYPES = [
     ('server-action', 'Server Action')
 ]
 
-class State(TypedDict):
-    # The operator.add reducer fn makes this append-only
-    aggregate: Annotated[list, operator.add]
-
-
-def node_a(state):
-    return {"aggregate": ["I'm A"]}
-
-
-def node_b(state):
-    return {"aggregate": ["I'm B"]}
-
-
-def node_c(state):
-    return {"aggregate": ["I'm C"]}
-
-
-def node_d(state):
-    return {"aggregate": ["I'm A"]}
-
 
 class AIQuest(models.Model):
     _name = 'ai.quest'
@@ -223,7 +203,6 @@ class AIQuest(models.Model):
                     image_object = graph.get_graph().draw_mermaid_png()
                     base64_encoded = base64.b64encode(image_object).decode('utf-8')
                     rec.graph_image = base64_encoded
-                    # rec.graph_image = False
                 except Exception as e:
                     rec.log_message(f"Error building chain: {str(e)}", is_error=True)
                     raise UserError(f"Error building chain: {str(e)}")
@@ -345,6 +324,7 @@ class AIQuest(models.Model):
             agent_ids = []
             [agent_ids.extend(ai_agent_id) for ai_agent_id in ai_agent_ids]
             record.agent_count = len(set(agent_ids))
+
     @api.depends('model_id')
     def _compute_model_name(self):
         for record in self:
@@ -779,12 +759,12 @@ class AIQuest(models.Model):
             print(record)
             if record.get("model_id", False):
                 new_server_action = self.server_action_id = self.server_action_id.create({
-                        'name': record["name"],
-                        'model_id': record["model_id"],
-                        "binding_view_types": "form,list",
-                        'state': 'code',
-                        'code': "",
-                    })
+                    'name': record["name"],
+                    'model_id': record["model_id"],
+                    "binding_view_types": "form,list",
+                    'state': 'code',
+                    'code': "",
+                })
         res = super(AIQuest, self).create(vals_list)
         new_server_action.write({"code": f"action = env.ref('{res._get_eid()}').server_action(records)"})
         res.write({"server_action_id": new_server_action.id})
