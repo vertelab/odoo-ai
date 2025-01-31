@@ -67,7 +67,8 @@ class AIAgent(models.Model):
             record.base_image_128 = record.image_128 or record.ai_agent_llm_id.image_128
 
     def action_get_quests(self):
-        ai_quest_session_ids = self.env["ai.quest.session"].search([("ai_agent_id", "=", self.id)])
+        ai_quest_ids = list(set(map(lambda session_line_id: session_line_id.ai_quest_id.id, self.session_line_ids)))
+        _logger.error(f"{ai_quest_ids=}")
         ai_quest_ids = list(
             set(map(lambda ai_quest_session_id: ai_quest_session_id.ai_quest_id.id, ai_quest_session_ids)))
         action = {
@@ -278,10 +279,30 @@ class AIAgent(models.Model):
     # ------------------------------------------------------------
 
     def _supervisor_prompt(self, members, quest, memory, use_lang):
+        # system_prompt = f"""
+        #     You are a supervisor coordinating between workers: {members}.
+        #     Based on the request, determine which worker should handle the next step and only run ONCE.
+        #     Only choose FINISH when a complete response has been provided.
+
+        #     Role: {self.ai_role}
+        #     Goal: {self.ai_goal}
+        #     Backstory: {self.ai_backstory}
+        #     Guidelines: {quest.description}
+        #     {self._extra_context(quest)}
+        #     Message history: {self._chat_history(quest)}
+
+        #     Memory: {memory}
+
+        #     Instructions:
+        #     1. Evaluate if we have a complete response
+        #     2. If not complete, choose the most appropriate worker
+        #     3. Send FINISH only when we have a satisfactory response
+        #     4. Do not mention that you have done tool calls, that's too technical
+        #     4. {use_lang}
+        # """
         system_prompt = f"""
             You are a supervisor coordinating between workers: {members}.
             Based on the request, determine which worker should handle the next step and only run ONCE.
-            Only choose FINISH when a complete response has been provided.
 
             Role: {self.ai_role}
             Goal: {self.ai_goal}
@@ -293,11 +314,9 @@ class AIAgent(models.Model):
             Memory: {memory}
 
             Instructions:
-            1. Evaluate if we have a complete response
-            2. If not complete, choose the most appropriate worker
-            3. Send FINISH only when we have a satisfactory response
-            4. Do not mention that you have done tool calls, that's too technical
-            4. {use_lang}
+            1. If not complete, choose the most appropriate worker
+            2. Do not mention that you have done tool calls, that's too technical
+            3. {use_lang}
         """
         return system_prompt
 
@@ -393,6 +412,20 @@ class AIAgent(models.Model):
                 # Get the latest message
                 latest_message = messages[-1].content if messages else ""
 
+                # system_message = SystemMessage(
+                #     content=f"""You are an agent with specific responsibilities.
+                #     Role: {self.ai_role}
+                #     Goal: {self.ai_goal}
+                #     Backstory: {self.ai_backstory}
+                #     Memory: {self._get_memory(latest_message)}
+   
+                #     Instructions:
+                #     - Provide thorough, complete responses
+                #     - Use available tools and memory when needed
+                #     - Stay focused on your specific role
+                #     """
+                # )
+
                 system_message = SystemMessage(
                     content=f"""You are an agent with specific responsibilities.
                     Role: {self.ai_role}
@@ -401,7 +434,6 @@ class AIAgent(models.Model):
                     Memory: {self._get_memory(latest_message)}
    
                     Instructions:
-                    - Provide thorough, complete responses
                     - Use available tools and memory when needed
                     - Stay focused on your specific role
                     """
@@ -475,7 +507,8 @@ class AIAgent(models.Model):
             except AttributeError as e:
                 _logger.error(f"Error: {ai_tool_id.tool=} not found in {ai_tool_id.tool_lib=}  {traceback.format_exc()}")
             except Exception as e:
-                _logger.error(f"An error occurred: {e}  {traceback.format_exc()}")
+                _logger.error(
+                    f"An error occurred: {e}  {traceback.format_exc()}")
             if TOOL:
                 tools.append(TOOL)
         _logger.warning(f"_get_tools{tools=}")

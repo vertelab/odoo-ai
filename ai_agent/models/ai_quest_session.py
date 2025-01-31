@@ -41,6 +41,7 @@ class AISessionObject(models.Model):
                 record.display_name = f"{record.object_id.display_name}"
 
 
+
 class AIQuestSession(models.Model):
     _name = 'ai.quest.session'
     _description = 'AI Quest Session'
@@ -79,12 +80,14 @@ class AIQuestSession(models.Model):
     time_difference_ms = fields.Integer(string='Time Difference (ms)', compute='_compute_time_difference', store=True)
     type_of_output = fields.Text()
     user_id = fields.Many2one(comodel_name='res.users', string="User", help="")
+    
     display_name = fields.Char(compute='_compute_display_name')
-
+ 
     @api.depends("name")
     def _compute_display_name(self):
         for record in self:
             record.display_name = record.name
+
 
     @api.depends('ai_agent_llm_ids')
     def _compute_ai_llm_count(self):
@@ -144,7 +147,7 @@ class AIQuestSession(models.Model):
             'domain': [("ai_quest_session_id", '=', self.id)],
         }
         return action
-
+ 
     def action_get_sessions(self):
         action = {
             'name': 'Sessions',
@@ -238,12 +241,12 @@ class AIQuestSession(models.Model):
             if self.ai_quest_id.debug:
                 self.message_post(body=f'Missing {result=}')
 
-    def add_message(self, message, **kwarg):
+    def add_message(self, message,**kwarg):
         self.env['ai.quest.session.message'].add(self, message, **kwarg)
-
-    def save_messages(self, message, **kwarg):
+   
+    def save_messages(self, message,**kwarg):
         self.env['ai.quest.session.message'].save_messages(self, message, **kwarg)
-
+ 
     def log(self, obj, message):
         _logger.info(message)
         obj.message_post(body=message)
@@ -303,8 +306,8 @@ class AIQuestSession(models.Model):
             ('ai_quest_id', '=', quest.id), ('status', '=', 'active')], limit=1)
         if len(session_ids) >= 1:
             session = session_ids[0]
-            # if session.debug:
-            #     session.log(agent, f"[session] revisit {session.name=}")
+            if session.debug:
+                session.log(agent, f"[session] revisit {session.name=}")
         else:
             agents = [a.ai_agent_id for a in quest.ai_agent_ids]
             r = {
@@ -321,12 +324,13 @@ class AIQuestSession(models.Model):
                 'ai_agent_id': agents[0].id if agents else None,
                 'ai_agent_llm_id': agents[0].ai_agent_llm_id.id if agents else None,
             })
-            print("session", session)
             if agents:
                 session.write({
                     'ai_agent_ids': [(4, agent.id) for agent in agents],
                     'ai_agent_llm_ids': [(4, agent.ai_agent_llm_id.id) for agent in agents if agent.ai_agent_llm_id],
                 })
-            # if session.debug:
-            #     session.log(agent, f"[session] init {session.name=}")
+            if session.debug:
+                session.log(agent, f"[session] init {session.name=}")
         return session
+
+        # ~ session = self.env['ai.quest.session'].create({'ai_quest_id': self.id,'status': 'active'})
