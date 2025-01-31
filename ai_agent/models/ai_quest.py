@@ -1,3 +1,4 @@
+
 import base64
 import json
 import logging
@@ -12,7 +13,7 @@ warnings.filterwarnings("ignore", category=DeprecationWarning,
                         message="builtin type swigvarlink has no __module__ attribute")
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
-from langgraph.graph import END, StateGraph, START
+from langgraph.graph import END, StateGraph
 from odoo import models, fields, api, _
 from odoo.addons.ai_agent.models.ai_quest_session import AIQuestSession
 from odoo.exceptions import UserError, ValidationError, Warning
@@ -205,18 +206,19 @@ class AIQuest(models.Model):
                     base64_encoded = base64.b64encode(image_object).decode('utf-8')
                     rec.graph_image = base64_encoded
                 except Exception as e:
-                    rec.log_message(f"Error building chain: {str(e)}", is_error=True)
+                    # rec.log_message(f"Error building chain: {str(e)}", is_error=True)
                     raise UserError(f"Error building chain: {str(e)}")
             else:
                 rec.graph_image = False
 
     graph_image = fields.Image("Graph", readonly=True)
-
+  
     @api.model
     def _generate_random_token(self):
         return ''.join(choice('abcdefghijkmnopqrstuvwxyzABCDEFGHIJKLMNPQRSTUVWXYZ23456789') for _i in range(10))
 
     uuid = fields.Char('UUID', size=50, default=_generate_random_token, copy=False)
+
 
     @api.depends('init_type', 'image_128', 'uuid')
     def _compute_avatar_128(self):
@@ -478,12 +480,6 @@ class AIQuest(models.Model):
             res = self.run(**vals)
             self.log_message(f'server-action {res}')
 
-            #     vals = self._server_action_values(records=records)
-            #     if self.code:
-            #         return self.with_context({'records': records, 'session': vals['session']}).run()
-            #     else:
-            #         return vals['agent'].prompt_agent('',session=vals['session'])
-            #
 
     def _cron_values(self, **kwargs):
         return kwargs
@@ -547,7 +543,7 @@ class AIQuest(models.Model):
     @api.model
     def is_ai_message(self, var):
         return isinstance(var, AIMessage)
-
+ 
     @api.model
     def get_last_ai_message_content(self, response):
         if response.get('messages', False):
@@ -664,9 +660,6 @@ class AIQuest(models.Model):
             'records': eval_context.get('records')
         }
 
-        # if not eval_context.get('records'):
-        #     objects.extend(eval_context.get('records'))
-        # _logger.error(f"{local_dict=}")
 
         if local_dict.get('result'):
             messages = local_dict.get('result', {}).get('messages', [])
@@ -681,36 +674,9 @@ class AIQuest(models.Model):
             result = [result]
 
         session.store_session_data(result=result, objects=objects)
+
         return local_dict
 
-        #for department in records:
-        #   _logger.warning(f{department})
-        # ~ result = agent[0].prompt_agent(session=session,department=record.name)
-        #                                                       #company_information=company_id.company_mission+company_id.company_values,
-        #                                                       department=department.name,
-        #                                                      quest_instructions=quest.description)
-        #markdown.markdown(result)
-
-        # res = False
-        # action = self.sudo()
-        # eval_context = self._get_eval_context(action, kwargs)
-        # records = self.env.context.get('records')
-        # if records:
-        #     try:
-        #         records.check_access_rule('write')
-        #     except AccessError:
-        #         _logger.warning(
-        #             "Forbidden server action %r executed while the user %s does not have access to %s.",
-        #             action.name, self.env.user.login, records,
-        #         )
-        #         raise
-        #
-        # _logger.warning(f"{eval_context=}")
-        # run_self = action.with_context(eval_context['env'].context)
-        # safe_eval(run_self.code.strip(), eval_context, mode="exec", nocopy=True, filename=str(self))
-        # _logger.warning(f"{self.code=}  {eval_context=}")
-        #
-        # return eval_context.get('result', None)
 
     # ------------------------------------------------------------
     # ORM
@@ -770,6 +736,7 @@ class AIQuest(models.Model):
         new_server_action.write({"code": f"action = env.ref('{res._get_eid()}').server_action(records)"})
         res.write({"server_action_id": new_server_action.id})
         return res
+
 
     # ------------------------------------------------------------
     # LangGraph 
@@ -838,51 +805,6 @@ class AIQuest(models.Model):
             raise UserError(_("No session added to build_graph method"))
 
         return self._build_graph(session=session, kwargs=kwargs)
-
-        # try:
-        #     # Create graph
-        #     graph_builder = StateGraph(AgentState)
-        #
-        #     # Add supervisor
-        #     supervisor = agents[0]
-        #     _logger.info(f"Adding supervisor: {supervisor.name}")
-        #     graph_builder.add_node("Supervisor", supervisor.create_supervisor(self, members, **kwargs))
-        #
-        #     # Add worker nodes
-        #     for agent in agents[1:]:
-        #         _logger.info(f"Adding worker node: {agent.name}")
-        #         graph_builder.add_node(agent.name, agent.create_node(session=session))
-        #
-        #     # Add edges from workers to supervisor
-        #     for member in members:
-        #         _logger.info(f"Adding edge: {member} -> Supervisor")
-        #         graph_builder.add_edge(member, "Supervisor")
-        #
-        #     # Add conditional routing
-        #     conditional_map = {k: k for k in members}
-        #     conditional_map["FINISH"] = END
-        #
-        #     _logger.info("Adding conditional edges with routes: " +
-        #                  ", ".join([f"{k} -> {v}" for k, v in conditional_map.items()]))
-        #
-        #     graph_builder.add_conditional_edges(
-        #         "Supervisor",
-        #         lambda x: x["next"],
-        #         conditional_map
-        #     )
-        #
-        #     # Set entry point
-        #     graph_builder.set_entry_point("Supervisor")
-        #
-        #     # Compile and return
-        #     _logger.info("Compiling graph")
-        #     graph = graph_builder.compile()
-        #     return graph
-        #
-        # except Exception as e:
-        #     self.log_message(f"Error building graph: {str(e)}", is_error=True)
-        #     _logger.error(f"Error building graph: {str(e)}")
-        #     raise
 
     # message = html2plaintext(message.body)
     # response = self.build_graph(agents).invoke({"messages": [HumanMessage(content=message)]})

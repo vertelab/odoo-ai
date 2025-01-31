@@ -464,7 +464,7 @@ class AIAgent(models.Model):
                     return result
                 else:
                     # If no AI messages found, create one from the result
-                    state['session'].add_message(f"No AIMessages: {str(result)=}")
+                    state['session'].add_message(f"No AImessages: {str(result)=}")
 
                     return {
                         "messages": [

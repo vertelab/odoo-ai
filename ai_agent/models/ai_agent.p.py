@@ -59,7 +59,9 @@ class AIAgent(models.Model):
     status = fields.Selection(
         selection=[("draft", _("Draft")), ("active", _("Active")), ("done", _("Done")), ("error", _("Error"))],
         default="draft")
+    # #if VERSION >= '16.0'  
     tag_ids = fields.Many2many(comodel_name='product.tag', string='Tags')
+    # #endif
 
     @api.depends('image_128')
     def _compute_base_image_128(self):
