@@ -49,8 +49,7 @@ class AIAgent(models.Model):
     is_favorite = fields.Boolean()
     last_run = fields.Datetime()
     name = fields.Char(required=True)
-    object_id = fields.Reference(string='Object', selection=lambda m: [(model.model, model.name) for model in
-                                                                       m.env['ir.model'].sudo().search([])])
+    object_id = fields.Reference(string='Object', selection=lambda m: [(model.model, model.name) for model in m.env['ir.model'].sudo().search([])])
     quest_count = fields.Integer(compute="compute_quest_count")
     quest_ids = fields.Many2many(comodel_name="ai.quest")
     session_count = fields.Integer(compute="compute_session_count")
@@ -67,19 +66,21 @@ class AIAgent(models.Model):
             record.base_image_128 = record.image_128 or record.ai_agent_llm_id.image_128
 
     def action_get_quests(self):
-        ai_quest_ids = list(set(map(lambda session_line_id: session_line_id.ai_quest_id.id, self.session_line_ids)))
-        _logger.error(f"{ai_quest_ids=}")
-        ai_quest_ids = list(
-            set(map(lambda ai_quest_session_id: ai_quest_session_id.ai_quest_id.id, ai_quest_session_ids)))
-        action = {
-            'name': 'AI Quests',
-            'type': 'ir.actions.act_window',
-            'res_model': 'ai.quest',
-            'view_mode': 'kanban,tree,form,calendar',
-            'target': 'current',
-            'domain': [("id", 'in', ai_quest_ids)]
-        }
-        return action
+        if self.session_line_ids:
+            ai_quest_ids = list(set(map(lambda session_line_id: session_line_id.ai_quest_id.id, self.session_line_ids)))
+            _logger.error(f"{ai_quest_ids=}")
+            ai_quest_ids = list(
+                set(map(lambda ai_quest_session_id: ai_quest_session_id.ai_quest_id.id, ai_quest_session_ids)))
+            action = {
+                'name': 'AI Quests',
+                'type': 'ir.actions.act_window',
+                'res_model': 'ai.quest',
+                'view_mode': 'kanban,tree,form,calendar',
+                'target': 'current',
+                'domain': [("id", 'in', ai_quest_ids)]
+            }
+            return action
+        raise UserError("No quests conected to agent...")
 
     def action_get_session_lines(self):
         action = {
@@ -407,7 +408,8 @@ class AIAgent(models.Model):
             messages = state.get('messages', [])
             _logger.info(f"Agent {self.name} received messages: {len(messages)} {state=}")
             state['session'].add_message(f"Agent {self.name} received messages: {len(messages)} {state=}")
-
+            
+            
             try:
                 # Get the latest message
                 latest_message = messages[-1].content if messages else ""

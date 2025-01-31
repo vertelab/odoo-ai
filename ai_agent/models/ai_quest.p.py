@@ -81,17 +81,16 @@ class AIQuestAgent(models.Model):
 
     ai_quest_id = fields.Many2one(comodel_name='ai.quest', string="", help="")
     ai_agent_id = fields.Many2one(comodel_name='ai.agent', string="Agent", help="")
-                                 selection=lambda m: [(model.model, model.name) for model in 
-                                                      m.env['ir.model'].sudo().search([])])
+    selection=lambda m: [(model.model, model.name) for model in m.env['ir.model'].sudo().search([])]
     ai_agent_status = fields.Selection(
-        selection=[("draft", _("Draft")), ("active", _("Active")), ("done", _("Done")), ("error", _("Error"))],
-        default="draft", related='ai_agent_id.status')
+    selection=[("draft", _("Draft")), ("active", _("Active")), ("done", _("Done")), ("error", _("Error"))],
+    default="draft", related='ai_agent_id.status')
     ai_agent_llm_id = fields.Many2one(comodel_name="ai.agent.llm", string="LLM", help="Choose Large Language Model",
                                       domain="[('status','=','confirmed')]", related='ai_agent_id.ai_agent_llm_id')
     ai_llm_status = fields.Selection(
-        selection=[("not_confirmed", "Not Confirmed"), ("confirmed", "Confirmed"), ("error", "Error")],
-        default="not_confirmed", related='ai_agent_id.ai_agent_llm_id.status')
-    object_id = fields.Reference(string='Object',related="ai_agent_id.object_id",
+    selection=[("not_confirmed", "Not Confirmed"), ("confirmed", "Confirmed"), ("error", "Error")],
+    default="not_confirmed", related='ai_agent_id.ai_agent_llm_id.status')
+    object_id = fields.Reference(string='Object',related="ai_agent_id.object_id")
     sequence = fields.Integer(string='Sequence')
 
 
@@ -209,7 +208,7 @@ class AIQuest(models.Model):
     uuid = fields.Char('UUID', size=50, default=_generate_random_token, copy=False)
 
 
-    ## if VERSION >= '16.0'
+    # #if VERSION >= '16.0'
     @api.depends('init_type', 'image_128', 'uuid')
     def _compute_avatar_128(self):
         for record in self:
@@ -227,7 +226,7 @@ class AIQuest(models.Model):
         bgcolor = get_hsl_from_seed(self.uuid)
         avatar = avatar.replace('fill="#875a7b"', f'fill="{bgcolor}"')
         return base64.b64encode(avatar.encode())
-    ##endif
+    # #endif
 
     @api.depends('session_line_ids')
     def compute_llm_count(self):
@@ -235,13 +234,15 @@ class AIQuest(models.Model):
             record.llm_count = len(set(record.session_line_ids.mapped('ai_llm_id')))
 
     def action_get_llms(self):
+        llm_ids = []
+        [llm_ids.extend(session_id.ai_agent_llm_ids.ids) for session_id in self.session_ids]
         action = {
             'name': 'LLMs',
             'type': 'ir.actions.act_window',
             'res_model': 'ai.agent.llm',
             'view_mode': 'kanban,tree,form,calendar',
             'target': 'current',
-            'domain': [("session_line_ids.ai_quest_id", '=', self.id)]
+            'domain': [("id", '=', llm_ids)]
         }
         return action
 
@@ -748,22 +749,22 @@ class AIQuest(models.Model):
                 quest.chat_user_id.write({'name': quest.name, 'login': quest.name, 'ai_quest_id': quest.id, })
         return result
 
-    def create(self, vals_list):
-          _logger.error(f"{vals_list=}")
-          new_server_action = False
-          for record in vals_list:
-             if record["model_id"]:
-                 new_server_action = self.server_action_id = self.server_action_id.create({
-                         'name': record["name"],
-                        'model_id': record["model_id"],
-                         "binding_view_types": "form,list",
-                         'state': 'code',
-                         'code': "",
-                     })
-         res = super(AIQuest, self).create(vals_list)
-         new_server_action.write({"code": f"action = env.ref('{res._get_eid()}').server_action(records)"})
-         res.write({"server_action_id": new_server_action.id}) 
-         return res
+        def create(self, vals_list):
+                _logger.error(f"{vals_list=}")
+                new_server_action = False
+                for record in vals_list:
+                        if record["model_id"]:
+                                new_server_action = self.server_action_id = self.server_action_id.create({
+                                        'name': record["name"],
+                                        'model_id': record["model_id"],
+                                        "binding_view_types": "form,list",
+                                        'state': 'code',
+                                        'code': "",
+                })
+                res = super(AIQuest, self).create(vals_list)
+                new_server_action.write({"code": f"action = env.ref('{res._get_eid()}').server_action(records)"})
+                res.write({"server_action_id": new_server_action.id}) 
+                return res
 
 
     # ------------------------------------------------------------

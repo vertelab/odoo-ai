@@ -111,7 +111,7 @@ class AIQuestSession(models.Model):
             'res_model': 'ai.agent.llm',
             'view_mode': 'kanban,tree,form,calendar',
             'target': 'current',
-            'domain': [("session_line_ids.ai_quest_session_id", '=', self.id)]
+            'domain': [("id", 'in', self.ai_agent_llm_ids.ids)]
         }
         return action
 
@@ -122,7 +122,7 @@ class AIQuestSession(models.Model):
             'res_model': 'ai.agent',
             'view_mode': 'kanban,tree,form',
             'target': 'current',
-            'domain': [("session_line_ids.ai_quest_session_id", '=', self.id)]
+            'domain': [("id", 'in', self.ai_agent_ids.ids)]
         }
         return action
 
@@ -229,11 +229,6 @@ class AIQuestSession(models.Model):
                         'object_id': f"{rec._name}, {rec.id}",
                     })
 
-                    # for o in objects:
-                    #     self.env['ai.session.object'].create({
-                    #         'ai_session_id': self.id,
-                    #         'object_id': (o._name, o.id),
-                    #     })
             self.env['ai.quest.session.message'].save_messages(self, result)
             self.status = 'done'
         else:
