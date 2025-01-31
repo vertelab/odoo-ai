@@ -315,7 +315,6 @@ class AIAgent(models.Model):
                 # ~ session.add_message(f"Agent {self.name} use_tool -> messages {messages=} ")
 
                 # ~ return agent_snode(state)
-            session.add_message(f"Agent {self.name} ersponse {response=} ")
             return {
                 "messages": [new_item],
                 'scratchpad': state['scratchpad'],

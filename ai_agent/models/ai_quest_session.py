@@ -219,6 +219,7 @@ class AIQuestSession(models.Model):
                     #         'ai_session_id': self.id,
                     #         'object_id': (o._name, o.id),
                     #     })
+            
             self.env['ai.quest.session.message'].save_messages(self,result)
             self.status = 'done'
         else:
