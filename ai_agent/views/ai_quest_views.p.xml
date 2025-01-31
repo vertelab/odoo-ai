@@ -147,6 +147,7 @@
                             </page>
                             <page string="Code" id="code">
                                 <field name="code" />
+                                <field name="graph_image" widget="image"/>
                             </page>
                             <page string="Agents" id="agent">
                                 <field name="ai_agent_ids">

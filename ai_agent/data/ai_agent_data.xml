@@ -1,5 +1,5 @@
 <odoo>
-  <data noupdate="0">
+  <data noupdate="1">
     <record id="ai_agent_ai_programmer" model="ai.agent">
       <field name="name">Questra, the Quest Architect AI</field>
       <field name="ai_role">AI Agent Programmer specialist</field>
