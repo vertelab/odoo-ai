@@ -8,7 +8,8 @@ import re
 import traceback
 import unidecode
 import warnings
-warnings.filterwarnings("ignore", category=DeprecationWarning, message="builtin type swigvarlink has no __module__ attribute")
+warnings.filterwarnings("ignore", category=DeprecationWarning,
+                        message="builtin type swigvarlink has no __module__ attribute")
 
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
@@ -20,7 +21,7 @@ from odoo.tools.mail import html2plaintext
 from odoo.tools.safe_eval import safe_eval
 from random import randint
 from secrets import choice
-from typing import Annotated, TypedDict, Sequence
+from typing_extensions import Annotated, TypedDict, Sequence
 
 ##if VERSION >= '16.0'
 from odoo.addons.base.models.avatar_mixin import get_hsl_from_seed
@@ -79,9 +80,9 @@ class AIQuestAgent(models.Model):
     _description = 'AI Quest Agent'
 
     ai_quest_id = fields.Many2one(comodel_name='ai.quest', string="", help="")
-    sequence = fields.Integer(string='Sequence')
     ai_agent_id = fields.Many2one(comodel_name='ai.agent', string="Agent", help="")
-    object_id = fields.Reference(string='Object',related="ai_agent_id.object_id",selection=lambda m: [(model.model, model.name) for model in m.env['ir.model'].sudo().search([])])
+                                 selection=lambda m: [(model.model, model.name) for model in 
+                                                      m.env['ir.model'].sudo().search([])])
     ai_agent_status = fields.Selection(
         selection=[("draft", _("Draft")), ("active", _("Active")), ("done", _("Done")), ("error", _("Error"))],
         default="draft", related='ai_agent_id.status')
@@ -90,6 +91,8 @@ class AIQuestAgent(models.Model):
     ai_llm_status = fields.Selection(
         selection=[("not_confirmed", "Not Confirmed"), ("confirmed", "Confirmed"), ("error", "Error")],
         default="not_confirmed", related='ai_agent_id.ai_agent_llm_id.status')
+    object_id = fields.Reference(string='Object',related="ai_agent_id.object_id",
+    sequence = fields.Integer(string='Sequence')
 
 
 # https://readmedium.com/langgraph-made-easy-a-beginners-guide-part-2-196e8b179119
@@ -311,7 +314,10 @@ class AIQuest(models.Model):
     @api.depends("session_line_ids")
     def compute_agent_count(self):
         for record in self:
-            record.agent_count = len(set(record.session_line_ids.mapped('ai_agent_id')))
+            ai_agent_ids = list(map(lambda session_id: session_id.ai_agent_ids.ids, self.session_ids))
+            agent_ids = []
+            [agent_ids.extend(ai_agent_id) for ai_agent_id in ai_agent_ids]
+            record.agent_count = len(set(agent_ids))
 
     @api.depends('model_id')
     def _compute_model_name(self):
@@ -326,6 +332,7 @@ class AIQuest(models.Model):
                     'name': self.name,
                     'model_id': self.model_id.id,
                     'binding_model_id': self.model_id.id if self.status == 'active' else None,
+                    "binding_view_types": "form,list",
                 })
         if self.init_type == 'cron':
             if self.cron_id:
@@ -366,6 +373,7 @@ class AIQuest(models.Model):
                 self.server_action_id = self.server_action_id.create({
                     'name': self.name,
                     'model_id': self.model_id.id if self.model_id else self.env.ref('base.model_res_partner').id,
+                    "binding_view_types": "form,list",
                     'state': 'code',
                     'code': f"action = env.ref('{self._get_eid()}').server_action(records)",
                 })
@@ -460,7 +468,7 @@ class AIQuest(models.Model):
             if self._check_quest_error():
                 raise UserError(self._check_quest_error())
             vals = self._server_action_values(records=records)
-            res = self.run(records=records)
+            res = self.run(**vals)
             self.log_message(f'server-action {res}')
 
             #     vals = self._server_action_values(records=records)
@@ -521,13 +529,28 @@ class AIQuest(models.Model):
                 self.log_message(self._check_quest_error())
             mail_body = html2plaintext(self.markdown2html(mail.body)).replace("<b>", "").replace("</b>", "").replace(
                 "<br>", "").replace("<p>", "").replace("</p>", "").replace("\n", "")
-            vals = self._mail_values(mail=mail, mail_body=mail_body, session=session)
+            vals = self._mail_values(mail=mail, mail_body=mail_body, session=session, attachments=mail.attachment_ids)
             res = self.run(**vals)
             return res
 
     # ------------------------------------------------------------
     # Python code helpers
     # ------------------------------------------------------------
+
+    @api.model
+    def is_ai_message(self, var):
+        return isinstance(var, AIMessage)
+ 
+    @api.model
+    def get_last_ai_message_content(self, response):
+        if response.get('messages', False):
+            messages = response.get('messages', [])
+            ai_messages = [m for m in messages if self.is_ai_message(m)]
+            if ai_messages:
+                last_ai_message = ai_messages[-1] if len(ai_messages) != 0 else None
+                if messages and last_ai_message:
+                    _logger.error(f"{last_ai_message=}")
+                    return last_ai_message.content
 
     @api.model
     def extract_dicts(self, text):
@@ -575,7 +598,7 @@ class AIQuest(models.Model):
         :returns: dict -- evaluation context given to (safe_)safe_eval """
 
         records = kw.get('records', [])
-        message = kw.get('message',False)
+        message = kw.get('message', False)
         message_body = html2plaintext(message.body) if message else ''
         eval_context = {
             'action': action,
@@ -590,8 +613,8 @@ class AIQuest(models.Model):
             'record': records[0] if records else None,
             'records': records,
             # context
-             'message_body': message_body,
-             'message_invoke': {"messages": [HumanMessage(content=message_body)]},
+            'message_body': message_body,
+            'message_invoke': {"messages": [HumanMessage(content=message_body)]},
             # Exceptions
             'Warning': Warning,
             'UserError': UserError,
@@ -603,7 +626,7 @@ class AIQuest(models.Model):
         }
         return eval_context
 
-    def run(self, **kwargs):            
+    def run(self, **kwargs):
         if self.debug:
             _logger.warning(f" RUN {kwargs=}")
         local_dict = {}
@@ -699,6 +722,7 @@ class AIQuest(models.Model):
         if self.id:
             values['alias_defaults'] = defaults = {}
             defaults['ai_quest_id'] = self.id
+            defaults['status'] = 'active'
         return values
 
     def write(self, vals):
@@ -714,6 +738,7 @@ class AIQuest(models.Model):
             if quest.server_action_id:
                 quest.server_action_id.write(
                     {'name': quest.name, 'code': f"action = env.ref('{quest._get_eid()}').server_action(records)",
+                     "binding_view_types": "form,list",
                      'binding_model_id': self.model_id.id if self.status == 'active' else None})
             if quest.cron_id:
                 quest.cron_id.write({'name': quest.name, 'code': f"action = env.ref('{quest._get_eid()}').cron()"})
@@ -722,6 +747,24 @@ class AIQuest(models.Model):
             if quest.chat_user_id:
                 quest.chat_user_id.write({'name': quest.name, 'login': quest.name, 'ai_quest_id': quest.id, })
         return result
+
+    def create(self, vals_list):
+          _logger.error(f"{vals_list=}")
+          new_server_action = False
+          for record in vals_list:
+             if record["model_id"]:
+                 new_server_action = self.server_action_id = self.server_action_id.create({
+                         'name': record["name"],
+                        'model_id': record["model_id"],
+                         "binding_view_types": "form,list",
+                         'state': 'code',
+                         'code': "",
+                     })
+         res = super(AIQuest, self).create(vals_list)
+         new_server_action.write({"code": f"action = env.ref('{res._get_eid()}').server_action(records)"})
+         res.write({"server_action_id": new_server_action.id}) 
+         return res
+
 
     # ------------------------------------------------------------
     # LangGraph 
@@ -739,9 +782,9 @@ class AIQuest(models.Model):
         # Get member names
         members = [a.name for a in agents[1:]]
         _logger.info(f"Building graph with supervisor and {len(members)} workers: {members}")
-        session=kwargs.get('session',False)
+        session = kwargs.get('session', False)
 
-        if session == False:
+        if not session:
             raise UserError(_("No session added to build_graph method"))
 
         try:

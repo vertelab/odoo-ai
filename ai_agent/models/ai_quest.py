@@ -78,11 +78,10 @@ class AIQuestAgent(models.Model):
     _description = 'AI Quest Agent'
 
     ai_quest_id = fields.Many2one(comodel_name='ai.quest', string="", help="")
-    sequence = fields.Integer(string='Sequence')
-    ai_agent_id = fields.Many2one(comodel_name='ai.agent', string="Agent", help="")
-    object_id = fields.Reference(string='Object', related="ai_agent_id.object_id",
-                                 selection=lambda m: [(model.model, model.name) for model in
-                                                      m.env['ir.model'].sudo().search([])])
+    ai_agent_id = fields.Many2one(
+        comodel_name='ai.agent', string="Agent", help="",
+        selection=lambda m: [(model.model, model.name) for model in m.env['ir.model'].sudo().search([])]
+    )
     ai_agent_status = fields.Selection(
         selection=[("draft", _("Draft")), ("active", _("Active")), ("done", _("Done")), ("error", _("Error"))],
         default="draft", related='ai_agent_id.status')
@@ -91,6 +90,8 @@ class AIQuestAgent(models.Model):
     ai_llm_status = fields.Selection(
         selection=[("not_confirmed", "Not Confirmed"), ("confirmed", "Confirmed"), ("error", "Error")],
         default="not_confirmed", related='ai_agent_id.ai_agent_llm_id.status')
+    object_id = fields.Reference(string='Object', related="ai_agent_id.object_id")
+    sequence = fields.Integer(string='Sequence')
 
 
 # https://readmedium.com/langgraph-made-easy-a-beginners-guide-part-2-196e8b179119
@@ -542,20 +543,21 @@ class AIQuest(models.Model):
     # ------------------------------------------------------------
     # Python code helpers
     # ------------------------------------------------------------
-    # @api.model
-    # def is_ai_message(self, var):
-    #     return isinstance(var, AIMessage)
 
-    # @api.model
-    # def get_last_ai_message_content(self, response):
-    #     if response.get('messages', False):
-    #         messages = response.get('messages', [])
-    #         ai_messages = [m for m in messages if self.is_ai_message(m)]
-    #         if ai_messages:
-    #             last_ai_message = ai_messages[-1] if len(ai_messages) != 0 else None
-    #             if messages and last_ai_message:
-    #                 _logger.error(f"{last_ai_message=}")
-    #                 return last_ai_message.content
+    @api.model
+    def is_ai_message(self, var):
+        return isinstance(var, AIMessage)
+
+    @api.model
+    def get_last_ai_message_content(self, response):
+        if response.get('messages', False):
+            messages = response.get('messages', [])
+            ai_messages = [m for m in messages if self.is_ai_message(m)]
+            if ai_messages:
+                last_ai_message = ai_messages[-1] if len(ai_messages) != 0 else None
+                if messages and last_ai_message:
+                    _logger.error(f"{last_ai_message=}")
+                    return last_ai_message.content
 
     @api.model
     def extract_dicts(self, text):
@@ -741,8 +743,8 @@ class AIQuest(models.Model):
             if quest.server_action_id:
                 quest.server_action_id.write(
                     {'name': quest.name, 'code': f"action = env.ref('{quest._get_eid()}').server_action(records)",
-                     'binding_model_id': self.model_id.id if self.status == 'active' else None,
-                     "binding_view_types": "form,list"})
+                     "binding_view_types": "form,list",
+                     'binding_model_id': self.model_id.id if self.status == 'active' else None})
             if quest.cron_id:
                 quest.cron_id.write({'name': quest.name, 'code': f"action = env.ref('{quest._get_eid()}').cron()"})
             if quest.channel_id:
@@ -756,7 +758,6 @@ class AIQuest(models.Model):
         _logger.error(f"{vals_list=}")
         new_server_action = False
         for record in vals_list:
-            print(record)
             if record.get("model_id", False):
                 new_server_action = self.server_action_id = self.server_action_id.create({
                     'name': record["name"],
@@ -779,7 +780,6 @@ class AIQuest(models.Model):
             kwargs = {}
         try:
             agents = [line.ai_agent_id for line in self.ai_agent_ids if line.ai_agent_id]
-            print(agents)
             members = [a.name for a in agents[1:] if a]
             _logger.info(f"Building graph with supervisor and {len(members)} workers: {members}")
 
@@ -793,9 +793,8 @@ class AIQuest(models.Model):
 
             # Add worker nodes
             for agent in agents[1:]:
-                if agent:
-                    _logger.info(f"Adding worker node: {agent.name}")
-                    graph_builder.add_node(agent.name, agent.create_node(session=session))
+                _logger.info(f"Adding worker node: {agent.name}")
+                graph_builder.add_node(agent.name, agent.create_node(session=session))
 
             # Add edges from workers to supervisor
             for member in members:

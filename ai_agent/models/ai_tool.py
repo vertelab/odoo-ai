@@ -194,6 +194,7 @@ class AITool(models.Model):
         _logger.info(f"{response.content=}")
 
         return {"messages": [response]}
+       
      
 class AIToolTestWizard(models.Model):
     _name = 'ai.tool.test.wizard'
@@ -241,4 +242,3 @@ class AIToolTestWizard(models.Model):
         if self.is_raise_error:
             raise UserError(f"{results=}")
         _logger.info(f"{results=}")
-   

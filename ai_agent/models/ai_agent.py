@@ -1,21 +1,22 @@
+import functools
 import importlib
-import importlib
+import json
 import logging
+import re
 import traceback
-import base64
-import eml_parser
-from datetime import datetime
-from random import randint
 
+from datetime import datetime
 from httpx import HTTPStatusError
-from langchain.prompts import ChatPromptTemplate, PromptTemplate, HumanMessagePromptTemplate, \
+from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder, PromptTemplate, HumanMessagePromptTemplate, \
     SystemMessagePromptTemplate
-from langchain.schema import AIMessage, HumanMessage, SystemMessage
+from langchain.schema import AIMessage, HumanMessage, SystemMessage, BaseMessage
+from langchain.tools import tool
 from langchain_community.chat_message_histories import ChatMessageHistory
 from langgraph.prebuilt import create_react_agent
-from odoo.exceptions import UserError
-
 from odoo import models, fields, api, _
+from odoo.exceptions import UserError
+from random import randint
+from typing_extensions import TypedDict, List
 
 _logger = logging.getLogger(__name__)
 
@@ -68,6 +69,8 @@ class AIAgent(models.Model):
     def action_get_quests(self):
         ai_quest_ids = list(set(map(lambda session_line_id: session_line_id.ai_quest_id.id, self.session_line_ids)))
         _logger.error(f"{ai_quest_ids=}")
+        ai_quest_ids = list(
+            set(map(lambda ai_quest_session_id: ai_quest_session_id.ai_quest_id.id, ai_quest_session_ids)))
         action = {
             'name': 'AI Quests',
             'type': 'ir.actions.act_window',
@@ -275,36 +278,31 @@ class AIAgent(models.Model):
     # LangGraph
     # ------------------------------------------------------------
 
-    def create_supervisor(self, quest, members, **kwarg):
-        """Create a supervisor node that coordinates between different agents."""
-        use_lang = f"Use language {self.env.user.lang} for the answer to Human" if quest.use_personal_lang else ''
-        memory = self._get_memory(kwarg.get('message', ''))
+    def _supervisor_prompt(self, members, quest, memory, use_lang):
+        # system_prompt = f"""
+        #     You are a supervisor coordinating between workers: {members}.
+        #     Based on the request, determine which worker should handle the next step and only run ONCE.
+        #     Only choose FINISH when a complete response has been provided.
 
-        session = kwarg.get('session', False)
+        #     Role: {self.ai_role}
+        #     Goal: {self.ai_goal}
+        #     Backstory: {self.ai_backstory}
+        #     Guidelines: {quest.description}
+        #     {self._extra_context(quest)}
+        #     Message history: {self._chat_history(quest)}
 
-        # system_prompt = f"""You are a supervisor coordinating between workers: {members}.
-        # Based on the request, determine which worker should handle the next step.
-        # Only choose FINISH when a complete response has been provided.
+        #     Memory: {memory}
 
-        # Role: {self.ai_role}
-        # Goal: {self.ai_goal}
-        # Backstory: {self.ai_backstory}
-        # Guidelines: {quest.description}
-        # {self._extra_context(quest)}
-        # Message history: {self._chat_history(quest)}
-       
-        # Memory: {memory}
-
-        # Instructions:
-        # 1. Evaluate if we have a complete response
-        # 2. If not complete, choose the most appropriate worker
-        # 3. Send FINISH only when we have a satisfactory response
-        # 4. Do not mention that you have done tool calls, thats too technical 
-        # 4. {use_lang}
+        #     Instructions:
+        #     1. Evaluate if we have a complete response
+        #     2. If not complete, choose the most appropriate worker
+        #     3. Send FINISH only when we have a satisfactory response
+        #     4. Do not mention that you have done tool calls, that's too technical
+        #     4. {use_lang}
         # """
-
-        system_prompt = f"""You are a supervisor coordinating between workers: {members}.
-        Based on the request, determine which worker should handle the next step.
+        system_prompt = f"""
+            You are a supervisor coordinating between workers: {members}.
+            Based on the request, determine which worker should handle the next step and only run ONCE.
 
             Role: {self.ai_role}
             Goal: {self.ai_goal}
@@ -315,12 +313,15 @@ class AIAgent(models.Model):
 
             Memory: {memory}
 
-        Users Language: {use_lang}
+            Instructions:
+            1. If not complete, choose the most appropriate worker
+            2. Do not mention that you have done tool calls, that's too technical
+            3. {use_lang}
         """
         return system_prompt
 
     def create_supervisor(self, quest, members, **kwarg):
-        """a supervisor node that coordinates between different agents and manages their outputs."""
+        """Create a supervisor node that coordinates between different agents."""
         use_lang = f"Use language {self.env.user.lang} for the answer to Human" if quest.use_personal_lang else ''
         memory = self._get_memory(kwarg.get('message', ''))
 
@@ -333,7 +334,7 @@ class AIAgent(models.Model):
             state['session'] = session
 
             _logger.info(f"Supervisor received messages: {len(messages)} {session=}")
-
+           
             if not messages:
                 _logger.info(f"No messages, starting with first worker: {members[0] if members else 'no members'}")
                 session.add_message(
@@ -358,7 +359,7 @@ class AIAgent(models.Model):
                 llm = self.ai_agent_llm_id.get_llm()
                 response = llm.invoke([
                     SystemMessage(content=system_prompt),
-                    HumanMessage(content=prompt),
+                    HumanMessage(content=prompt)
                 ])
 
                 # Parse response
@@ -438,7 +439,6 @@ class AIAgent(models.Model):
                     """
                 )
 
-
                 # Get LLM
                 llm = self.ai_agent_llm_id.get_llm()
                 tools = self._get_tools(state)
@@ -505,10 +505,10 @@ class AIAgent(models.Model):
             except ImportError as e:
                 _logger.error(f"Error importing {ai_tool_id.tool_lib=}: {e} {traceback.format_exc()}")
             except AttributeError as e:
-                _logger.error(
-                    f"Error: {ai_tool_id.tool=} not found in {ai_tool_id.tool_lib=}  {traceback.format_exc()}")
+                _logger.error(f"Error: {ai_tool_id.tool=} not found in {ai_tool_id.tool_lib=}  {traceback.format_exc()}")
             except Exception as e:
-                _logger.error(f"An error occurred: {e}  {traceback.format_exc()}")
+                _logger.error(
+                    f"An error occurred: {e}  {traceback.format_exc()}")
             if TOOL:
                 tools.append(TOOL)
         _logger.warning(f"_get_tools{tools=}")
