@@ -142,7 +142,7 @@ class AIAgent(models.Model):
         res = {}
         if quest.use_company_info:
             res['company_info'] = f'Company information: {self.env.user.company_id.company_mission=} {self.env.user.company_id.company_values=}'
-        if quest.use_company_info:
+        if quest.use_user_info:
             res ['user_info']   = f'User information: {self.env.user.name=} {self.env.user.function=} {self.env.user.city=}'
         if quest.use_time_context:
             now = datetime.now()
@@ -245,20 +245,21 @@ class AIAgent(models.Model):
                 """
             )
             
-            promtp = self.ai_prompt_template
-            promtp = prompt.format_map(SafeDict(self.extra_context(quest) | {'chat_history': self._chat_history(quest)}))
+            prompt = self.ai_prompt_template
+            # ~ prompt = prompt.format_map(SafeDict(self.extra_context(quest) | {'chat_history': self._chat_history(quest)}))
             
             messages = [system_message,HumanMessage(content=topic),HumanMessage(content=prompt)]
             
             if debug:
-                self.log_message(f"Agent  {self.name} before invoke {messages=} {state=}")
+                self.log_message(f"Agent  {self.name} agent_snode before invoke {messages=} {state=}")
                 _logger.debug(f"Agent {self.name} {messages=} {state=}")   
             # ~ agent = create_tool_calling_agent(self.ai_agent_llm_id.get_llm(),tools=self._get_tools(),messages)
             # ~ executor = AgentExecutor(agent=agent, tools=self._get_tools(), verbose=True)
             # ~ langgraph_agent_executor = create_react_agent(self.ai_agent_llm_id.get_llm(),tools=[])        
             # ~ langgraph_agent_executor = create_react_agent(self.ai_agent_llm_id.get_llm(), tools=self._get_tools())        
             try:
-                response = self.invoke(messages)
+                response = self.ai_agent_llm_id.invoke(messages,session=session, quest=quest, agent=self, debug=debug)
+                # ~ response = self.invoke(messages,)
                 # ~ response = langgraph_agent_executor.invoke({
                     # ~ "input": topic,
                     # ~ "messages": messages,
@@ -314,7 +315,7 @@ class AIAgent(models.Model):
                 # ~ session.add_message(f"Agent {self.name} use_tool -> messages {messages=} ")
 
                 # ~ return agent_snode(state)
-                
+            session.add_message(f"Agent {self.name} ersponse {response=} ")
             return {
                 "messages": [new_item],
                 'scratchpad': state['scratchpad'],
@@ -503,13 +504,18 @@ class AIAgent(models.Model):
                            f"complete response.")
  
                 # Get LLM response
-                response = self.invoke([
+                llm = self.ai_agent_llm_id.get_llm(temperature=self.ai_temperature)
+                response = self.ai_agent_llm_id.invoke([
                     SystemMessage(content=system_prompt),
                     HumanMessage(content=prompt)
-                ])
-
+                ],session=session, quest=quest, agent=self, debug=quest.debug)
+  
+                if isinstance(response,str):
+                    content = response.upper()
+                elif hasattr(response, 'content'):
+                    content = response.content.upper()
+                
                 # Parse response
-                content = response.content.upper()
                 _logger.info(f"Supervisor decision: {content}")
                 session.add_message(f"Supervisor decision: {content}")
 
@@ -540,7 +546,7 @@ class AIAgent(models.Model):
 
             except Exception as e:
                 _logger.error(f"Error in supervisor chain: {str(e)}",exc_info=True)
-                session.add_message(f"Error in supervisor chain: {str(e)}")
+                session.add_message(f"Error in supervisor chain: {str(e)}\n{traceback.format_exc()}")
                 return {"next": "FINISH", 'session': session}
 
         return supervisor_chain
@@ -558,7 +564,7 @@ class AIAgent(models.Model):
             """Process messages and generate a response."""
   
             if debug:
-                session.add_message(f"Agent {self.name} Initial state: {state=}")
+                session.add_message(f"Agent {self.name} agent_node Initial state: {state=}")
             messages = state.get('messages', [])
             if isinstance(messages, list) and hasattr(messages[-1], 'content'):
                 latest_message = messages[-1].content

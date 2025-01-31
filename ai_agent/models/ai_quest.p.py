@@ -774,7 +774,7 @@ class AIQuest(models.Model):
 
 
     # Inspired by https://github.com/menonpg/agentic_search_openai_langgraph/blob/main/agents.py
-    def Xbuild_graph(self, **kwargs):
+    def build_graph(self, **kwargs):
         """Build a multi-agent workflow graph with supervisor."""
  
         if not self.ai_agent_ids:
@@ -831,7 +831,7 @@ class AIQuest(models.Model):
             return graph_builder.compile()
 
         except Exception as e:
-            self.log_message(f"Error building graph: {str(e)}", is_error=True)
+            self.log_message(f"Error building graph: {str(e)}\n{traceback.format_exc()}", is_error=True)
             _logger.error(f"Error building graph: {str(e)}")
             raise
 
@@ -1080,18 +1080,19 @@ class AIQuest(models.Model):
             raise ValueError("No agents provided")
 
         agents = [agent for agent in self.ai_agent_ids.mapped('ai_agent_id')]
-        
+        session = kwargs.get('session',False)
+
         def initial_node(state: AgentState) -> AgentState:
             # ~ state = ConfigDict(arbitrary_types_allowed=True)
             # ~ if self.debug:
-            kwargs.get('session').add_message(f"Agent {self.name} Initial state: {state=}")
+            session.add_message(f"Agent INITIAL Initial state: {state=}")
             return {
                 "messages": [{"role": "user", "content": kwargs.get('topic',kwargs.get('message',''))}],
                 'quest': self,
                 'session': kwargs.get('session',False),
                 'topic': kwargs.get('topic',''),
                 'scratchpad':[],
-                'next': "agent_1",
+                'next': "agent_0",
                 'count': 1,
                 'current_agent': 'initial_node',
                 'sequence_position': 0,
@@ -1104,64 +1105,46 @@ class AIQuest(models.Model):
             AgentState.model_config = ConfigDict(arbitrary_types_allowed=True)
             workflow = StateGraph(AgentState)
             workflow.add_node("initial", initial_node)
+            session.add_message(f"Add Node Agent initial")
             workflow.add_edge(START, "initial")
+            session.add_message(f"Edge Agent START initial")
             workflow.set_entry_point("initial")
             
             for i, agent in enumerate(agents):
-                kwargs.get('session').add_message(f"Add Node Agent agent_{i}")
-                workflow.add_node(f"agent_{i}", 
-                                 lambda state, agent=agent, i=i: {
-                                     **agent.create_sequence_node(
-                                         debug=self.debug,
-                                         current_agent=agent.name,
-                                         sequence_position=i,
-                                         **kwargs
-                                     )(state),
-                                     "next":  f"agent_{i+1}" if i < len(agents) else END,
-                                     "current_node": f"agent_{i}",
-                                     "sequence_position": i
-                                 })
-            # ~ workflow.add_sequence([
-                                    # ~ (f"agent_{i}", 
-                                     # ~ lambda state, agent=agent, i=i: {
-                                         # ~ **agent.create_sequence_node(
-                                             # ~ debug=self.debug,
-                                             # ~ current_agent=agent.name,
-                                             # ~ sequence_position=i,
-                                             # ~ **kwargs
-                                         # ~ )(state),
-                                         # ~ "next":  f"agent_{i+1}" if i < len(agents) else END,
-                                         # ~ "current_node": f"agent_{i}",
-                                         # ~ "sequence_position": i
-                                     # ~ })
-                                    # ~ for i, agent in enumerate(agents)
-                                # ~ ])
-
-
-            # ~ for i, agent in enumerate(agents):
-                # ~ workflow.add_node(f"agent_{i}", agent.create_sequence_node(debug=self.debug,**kwargs))
+                session.add_message(f"Add Node Agent agent_{i}")
+                # ~ workflow.add_node(f"agent_{i}", 
+                                 # ~ lambda state, agent=agent, i=i: {
+                                     # ~ **agent.create_sequence_node(
+                                         # ~ debug=self.debug,
+                                         # ~ current_agent=agent.name,
+                                         # ~ sequence_position=i,
+                                         # ~ **kwargs
+                                     # ~ )(state),
+                                     # ~ "next":  f"agent_{i+1}" if i < len(agents) else END,
+                                     # ~ "current_node": f"agent_{i}",
+                                     # ~ "sequence_position": i
+                                 # ~ })
+                workflow.add_node(f"agent_{i}", agent.create_sequence_node(
+                                                            debug=self.debug,
+                                                            current_agent=agent.name,
+                                                            sequence_position=i,
+                                                            **kwargs))
+            
+                # ~ workflow.add_node(f"agent_{i}", agent.create_node(
+                                                            # ~ debug=self.debug,
+                                                            # ~ current_agent=agent.name,
+                                                            # ~ sequence_position=i,
+                                                            # ~ **kwargs))
+            
     
             # ~ import pdb; pdb.set_trace()
+            workflow.add_edge(f"initial", f"agent_0")
             for i, agent in enumerate(agents[1:]):
+                session.add_message(f"Edge Node Agent agent_{i} agent_{i+1}")
                 workflow.add_edge(f"agent_{i}", f"agent_{i+1}")
 
-            # ~ # Set the first agent as the entry point
-            # ~ if agents:
-                # ~ workflow.set_entry_point("agent_0")
-                # ~ workflow.add_edge(START, "agent_0")
-
-            # ~ # Set the last agent as the finish point
-            # ~ if len(agents) > 1:
-                # ~ workflow.set_finish_point(f"agent_{len(agents)}")
-                        
             graph = workflow.compile()
-            # ~ graph.update_state({'count': 7})
             input_channels = graph.input_channels
-            # ~ if self.debug:
-                # ~ self.log_message(f"{json.dumps(graph.get_graph().to_json(), indent=2)}\n{input_channels=}")
-                # ~ _logger.debug(f"{json.dumps(graph.get_graph().to_json(), indent=2)}\n{input_channels=}")
-                # ~ image=display(Image(graph.get_graph().draw_mermaid_png()))
-                # ~ self.log_message(f"<<<<<<<<<<<<<<<<<<<<<<{image}>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>")
            
         except Exception as e:
             self.log_message(f"Error building chain: {str(e)}", is_error=True)
@@ -1173,12 +1156,8 @@ class AIQuest(models.Model):
             self.log_message(f"get graph: {graph.get_graph()}\n")
             _logger.debug(f"{json.dumps(graph.get_graph().to_json(), indent=2)}\n{input_channels=}")
             _logger.error(f"Get_graph {graph.get_graph()}")
-        # ~ image=display(Image(graph.get_graph().draw_mermaid_png()))
-        # ~ _logger.error(graph.get_graph().to_mermaid())
-        graph_image = base64.b64encode(graph.get_graph().draw_png())
+
         return graph
-
-
 
     # message = html2plaintext(message.body)
     # response = self.build_graph(agents).invoke({"messages": [HumanMessage(content=message)]})

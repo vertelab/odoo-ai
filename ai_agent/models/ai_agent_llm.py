@@ -216,7 +216,7 @@ class AIAgentLLM(models.Model):
             session.save_messages(response)
         if debug:
             self.log_message(body=f"LLM {self.name} {response=}", is_error=False)
-        return content
+        return response
 
     @api.depends("status")
     def compute_status_color(self):

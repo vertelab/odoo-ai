@@ -28,6 +28,9 @@
     'category': "Productivity",
     'description': """
         Long description of module's purpose
+        
+        sudo apt-get install graphviz graphviz-dev
+
     """,
     'author': "Vertel AB",
     'website': "https://vertel.se/apps/odoo-ai/ai_agent",
