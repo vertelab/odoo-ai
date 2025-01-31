@@ -12,7 +12,7 @@ warnings.filterwarnings("ignore", category=DeprecationWarning,
                         message="builtin type swigvarlink has no __module__ attribute")
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
-from langgraph.graph import END, StateGraph
+from langgraph.graph import END, StateGraph, START
 from odoo import models, fields, api, _
 from odoo.addons.ai_agent.models.ai_quest_session import AIQuestSession
 from odoo.exceptions import UserError, ValidationError, Warning
@@ -125,6 +125,26 @@ INIT_TYPES = [
     ('server-action', 'Server Action')
 ]
 
+class State(TypedDict):
+    # The operator.add reducer fn makes this append-only
+    aggregate: Annotated[list, operator.add]
+
+
+def node_a(state):
+    return {"aggregate": ["I'm A"]}
+
+
+def node_b(state):
+    return {"aggregate": ["I'm B"]}
+
+
+def node_c(state):
+    return {"aggregate": ["I'm C"]}
+
+
+def node_d(state):
+    return {"aggregate": ["I'm A"]}
+
 
 class AIQuest(models.Model):
     _name = 'ai.quest'
@@ -193,6 +213,24 @@ class AIQuest(models.Model):
     use_time_context = fields.Boolean(string='Use Time Context', default=True,
                                       help='Inform the LLM of current time, date')
     user_id = fields.Many2one(comodel_name='res.users', string="Owner", help="")
+
+    @api.onchange('ai_agent_ids')
+    def compute_agent_graph(self):
+        for rec in self:
+            if rec.ai_agent_ids:
+                try:
+                    graph = rec._build_graph()
+                    image_object = graph.get_graph().draw_mermaid_png()
+                    base64_encoded = base64.b64encode(image_object).decode('utf-8')
+                    rec.graph_image = base64_encoded
+                    # rec.graph_image = False
+                except Exception as e:
+                    rec.log_message(f"Error building chain: {str(e)}", is_error=True)
+                    raise UserError(f"Error building chain: {str(e)}")
+            else:
+                rec.graph_image = False
+
+    graph_image = fields.Image("Graph", readonly=True)
 
     @api.model
     def _generate_random_token(self):
@@ -733,11 +771,13 @@ class AIQuest(models.Model):
                 quest.chat_user_id.write({'name': quest.name, 'login': quest.name, 'ai_quest_id': quest.id, })
         return result
 
+    @api.model_create_multi
     def create(self, vals_list):
         _logger.error(f"{vals_list=}")
         new_server_action = False
         for record in vals_list:
-            if record["model_id"]:
+            print(record)
+            if record.get("model_id", False):
                 new_server_action = self.server_action_id = self.server_action_id.create({
                         'name': record["name"],
                         'model_id': record["model_id"],
@@ -754,24 +794,15 @@ class AIQuest(models.Model):
     # LangGraph 
     # ------------------------------------------------------------
 
-    # Inspired by https://github.com/menonpg/agentic_search_openai_langgraph/blob/main/agents.py
-    def build_graph(self, **kwargs):
-        """Build a multi-agent workflow graph."""
-
-        if not self.ai_agent_ids:
-            raise ValueError("No agents provided")
-
-        agents = [line.ai_agent_id for line in self.ai_agent_ids]
-
-        # Get member names
-        members = [a.name for a in agents[1:]]
-        _logger.info(f"Building graph with supervisor and {len(members)} workers: {members}")
-        session = kwargs.get('session', False)
-
-        if not session:
-            raise UserError(_("No session added to build_graph method"))
-
+    def _build_graph(self, session=None, kwargs=None):
+        if not kwargs:
+            kwargs = {}
         try:
+            agents = [line.ai_agent_id for line in self.ai_agent_ids if line.ai_agent_id]
+            print(agents)
+            members = [a.name for a in agents[1:] if a]
+            _logger.info(f"Building graph with supervisor and {len(members)} workers: {members}")
+
             # Create graph
             graph_builder = StateGraph(AgentState)
 
@@ -782,11 +813,13 @@ class AIQuest(models.Model):
 
             # Add worker nodes
             for agent in agents[1:]:
-                _logger.info(f"Adding worker node: {agent.name}")
-                graph_builder.add_node(agent.name, agent.create_node(session=session))
+                if agent:
+                    _logger.info(f"Adding worker node: {agent.name}")
+                    graph_builder.add_node(agent.name, agent.create_node(session=session))
 
             # Add edges from workers to supervisor
             for member in members:
+                # if member:
                 _logger.info(f"Adding edge: {member} -> Supervisor")
                 graph_builder.add_edge(member, "Supervisor")
 
@@ -797,23 +830,80 @@ class AIQuest(models.Model):
             _logger.info("Adding conditional edges with routes: " +
                          ", ".join([f"{k} -> {v}" for k, v in conditional_map.items()]))
 
-            graph_builder.add_conditional_edges(
-                "Supervisor",
-                lambda x: x["next"],
-                conditional_map
-            )
+            graph_builder.add_conditional_edges("Supervisor", lambda x: x["next"], conditional_map)
 
             # Set entry point
             graph_builder.set_entry_point("Supervisor")
 
             # Compile and return
             _logger.info("Compiling graph")
-            return graph_builder.compile()
+            graph = graph_builder.compile()
+
+            return graph
 
         except Exception as e:
             self.log_message(f"Error building graph: {str(e)}", is_error=True)
             _logger.error(f"Error building graph: {str(e)}")
             raise
+
+    # Inspired by https://github.com/menonpg/agentic_search_openai_langgraph/blob/main/agents.py
+    def build_graph(self, **kwargs):
+        """Build a multi-agent workflow graph."""
+
+        if not self.ai_agent_ids:
+            raise ValueError("No agents provided")
+
+        session = kwargs.get('session', False)
+
+        if not session:
+            raise UserError(_("No session added to build_graph method"))
+
+        return self._build_graph(session=session, kwargs=kwargs)
+
+        # try:
+        #     # Create graph
+        #     graph_builder = StateGraph(AgentState)
+        #
+        #     # Add supervisor
+        #     supervisor = agents[0]
+        #     _logger.info(f"Adding supervisor: {supervisor.name}")
+        #     graph_builder.add_node("Supervisor", supervisor.create_supervisor(self, members, **kwargs))
+        #
+        #     # Add worker nodes
+        #     for agent in agents[1:]:
+        #         _logger.info(f"Adding worker node: {agent.name}")
+        #         graph_builder.add_node(agent.name, agent.create_node(session=session))
+        #
+        #     # Add edges from workers to supervisor
+        #     for member in members:
+        #         _logger.info(f"Adding edge: {member} -> Supervisor")
+        #         graph_builder.add_edge(member, "Supervisor")
+        #
+        #     # Add conditional routing
+        #     conditional_map = {k: k for k in members}
+        #     conditional_map["FINISH"] = END
+        #
+        #     _logger.info("Adding conditional edges with routes: " +
+        #                  ", ".join([f"{k} -> {v}" for k, v in conditional_map.items()]))
+        #
+        #     graph_builder.add_conditional_edges(
+        #         "Supervisor",
+        #         lambda x: x["next"],
+        #         conditional_map
+        #     )
+        #
+        #     # Set entry point
+        #     graph_builder.set_entry_point("Supervisor")
+        #
+        #     # Compile and return
+        #     _logger.info("Compiling graph")
+        #     graph = graph_builder.compile()
+        #     return graph
+        #
+        # except Exception as e:
+        #     self.log_message(f"Error building graph: {str(e)}", is_error=True)
+        #     _logger.error(f"Error building graph: {str(e)}")
+        #     raise
 
     # message = html2plaintext(message.body)
     # response = self.build_graph(agents).invoke({"messages": [HumanMessage(content=message)]})
