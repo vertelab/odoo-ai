@@ -27,9 +27,7 @@ from typing import Annotated, List, Sequence, Union, Any
 
 # https://python.langchain.com/api_reference/langchain/agents.html
 
-
 _logger = logging.getLogger(__name__)
-
 
 class SafeDict(dict):
     def __missing__(self, key):
@@ -331,114 +329,125 @@ class AIAgent(models.Model):
 
 
 
+    def create_supervisor(self, quest,members, **kwargs):
+        """Create a supervisor node that coordinates between different agents."""
+        use_lang = f"Use language {self.env.user.lang} for the answer to Human" if quest.use_personal_lang else ''            
+        topic = kwargs.get('topic',kwargs.get('message','')) 
+        session=kwargs.get('session',False)
+        system_prompt = quest.supervisor_prompt
+
+        def supervisor_chain(state):
+            messages = state.get('messages', [])
+            if hasattr(messages[-1], 'content'):
+                latest_message = messages[-1].content
+            else:
+                latest_message = messages[-1]            
+
+            if self.debug:
+                session.add_message(f"SUPERVISOR Initial state: {members=} {state=}")
+ 
+            if isinstance(state.get('scratchpad',[]),str):
+                state['scratchpad']=[state.get('scratchpad','')]
+
+            question = messages[-1]['content'] if messages and isinstance(messages[-1], dict) and 'content' in messages[-1] else ""
+
+            # Create full message list
+            _logger.error(f"Create full message list")
+            
+            input=question
+            prompt = f"Previous conversation: {question}\n{input=}"
+            # ~ for msg in messages:
+                # ~ prompt += f"\n{msg.content}\n" if msg and isinstance(msg, dict) and 'content' in msg else msg
+            prompt += ( "Input data {tools} {tool_names} {agent_scratchpad} {input}\n"
+                        
+                        f"\nBased on previous conversation, what agent should act next? Choose from: {members} or say FINISH if we have a "
+                        "Input data {tools} {tool_names} {agent_scratchpad} {input}\n"
+                        "complete response. Use just JSON {'next': agent or FINISH}"
+                        )
+            if self.debug:
+                session.add_message(f"Supervisor {prompt=}")
+            # Get LLM response
+            
+            
+            tools = []
+
+            # Get the prompt
+            prompt = hub.pull("hwchase17/react-chat-json")
+            
 
 
+            # Initialize the language model
+            llm = quest.supervisor_llm_id.get_llm(temperature=quest.supervisor_temperature)
 
-    def prompt_agent(self, test_prompt=False, parser=False, session=False, debug=False, channel=False, bot_user=False,
-                     **kwargs):
-        """
-          Single agent prompting from quest.code
-         
-          result = agents[0].prompt_agent(
-                   session=session,
-                   debug=quest.debug,
-                   message=html2plaintext(message.body),
+            # Create the JSON chat agent
+            # ~ agent = create_json_chat_agent(llm, tools, prompt)
+            agent = create_react_agent(llm, [])
 
-        """
-        self.last_run = fields.Datetime.now()
-        if session:
-            quest = session.ai_quest_id
-        else:
-            quest = self.env.ref('ai_agent.ai_quest_test')
-        if debug:
-            _logger.error(f"{self=}{session=} {quest=} {self.last_run} {kwargs=}")
+            # Create an agent executor
+            # ~ agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True, handle_parsing_errors=True)
+            agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=self.debug, handle_parsing_errors=True)
 
-        if not self.ai_agent_llm_id:
-            if debug:
-                self.log_message("No LLM")
-            raise UserError("No LLM")
+            # Invoke the agent
 
-        response = False
+            
+            # ~ agent = create_json_chat_agent(
+                                # ~ self.supervisor_llm_id.get_llm(temperature=self.supervisor_temperature),
+                                # ~ [],
+                                # ~ ChatPromptTemplate.from_messages([("human",prompt)])
+                    # ~ )
+            # ~ executor = AgentExecutor(agent=agent,tools=[], verbose=self.debug)
+            try:
+                # ~ response = self.invoke(messages)
+                # ~ response = langgraph_agent_executor.invoke({
+                    # ~ "input": topic,
+                    # ~ "messages": messages,
+                # ~ })
+                response = agent_executor.invoke([
+                    SystemMessage(content=system_prompt),
+                    HumanMessage(content=prompt)
+                ])
 
-        system_message_prompt = SystemMessagePromptTemplate.from_template("""
-        Role: {role}
-        Goal: {goal}
-        Backstory: {backstory}
-        {extra_context}
-      
-        Context and Guidelines:
-        - Always maintain the specified role
-        - Focus on achieving the defined goal
-        - Use the backstory to inform your responses
+            except Exception as e:
+                _logger.error(f"Error in supervisor chain: {str(e)}",exc_info=True)
+                session.add_message(f"Error in supervisor chain: {str(e)}\n{traceback.format_exc()}")
+                return {"next": "FINISH", 'session': session}
 
-        Guidelines and instructions: {instructions}
-        {use_lang}
-        """)
+            # Parse response
+            content = response.content
+            _logger.info(f"Supervisor decision: {content}")
+            session.add_message(f"Supervisor decision: {content}")
+            json = self.extract_json("Supervisor",session,content)
+            if not json:
+                return {"next": "FINISH",'session': session}
 
-        # Create human message prompt
-        human_message_prompt = HumanMessagePromptTemplate.from_template(self.ai_prompt_template)
+            # Check for completion or next agent
+            if json.get('next','FINISH') == "FINISH":
+                _logger.info("Supervisor decided to FINISH")
+                session.add_message("Supervisor decided to FINISH {json=}")
+                return {"next": "FINISH",'session': session}
 
-        # Combine into chat prompt
-        chat_prompt = ChatPromptTemplate.from_messages([
-            system_message_prompt,
-            # MessagesPlaceholder(variable_name="chat_history"),
-            human_message_prompt
-        ])
-        # Use the chat prompt
-        formatted_prompt = chat_prompt.format_prompt(
-            role=self.ai_role,
-            goal=self.ai_goal,
-            backstory=self.ai_backstory,
-            instructions=quest.description,
-            extra_context=self._extra_context(quest),
-            use_lang=f"Use language {self.env.user.lang}" if quest.use_personal_lang else '',
-            # chat_history=self._chat_history(channel, bot_user,
-            #                                 quest.chat_history_limit) if quest.use_chat_history else False,
-            **kwargs
-        )
+            # Find mentioned agent
+            session.add_message(f"Supervisor selected agent: {json['next']}")
+            return {"next": json['next'], 'session': session, 'topic': topic, 'messages': state.get('messasges')}
 
-        # If you need to log for debugging
-        if debug:
-            self.log_message(f"Formatted prompt: {formatted_prompt}")
-
-        try:
-            response = self.invoke(formatted_prompt)
-            if debug:
-                _logger.error(f"{response=}")
-        except HTTPStatusError as e:
-            self.ai_agent_llm_id.log_message(body=e, is_error=True)
-            _logger.error(f"HTTPStatusError {e=}")
-            self.ai_agent_llm_id.log_message(body=f"HTTPStatusError {e=}")
-            self.status = self.ai_agent_llm_id.status = 'error'
-            self.log_message(body=f"HTTPStatusError {e=}")
-
-        except Exception as e:
-            _logger.error(f"{e=}")
-            self.ai_agent_llm_id.log_message(body=f" {e=}")
-            self.log_message(body=f" {e=}")
-
-        _logger.error(f"{response=}")
-        self.ai_agent_llm_id.log_message(body="Success!!!")
-
-        if response and session:
-            session.ai_agent_llm_id = self.ai_agent_llm_id
-            return response
-        return None
-
-    def _create_ai_template_prompt(self, kwargs, test_prompt=False, parser=False, ):
-        template = PromptTemplate(
-            template=test_prompt or self.ai_prompt_template,
-            input_variables=list(kwargs.keys()) + ["chat_history"],
-            partial_variables={"format_instructions": parser.get_format_instructions() if parser else False},
-        )
-        message = template.format(**kwargs)
-        return message
+        return supervisor_chain
 
     def get_test_wizard(self):
         action = self.env.ref("ai_agent.action_ai_agent_test_wizard").read()[0]
         _logger.error(f"{action=}")
         action["context"] = {"default_ai_agent_id": self.id}
         return action
+        
+    def get_agent_name(self,i,**kwargs):
+        if kwargs.get('mermaid'):
+            name = "**" + re.sub(r'[()\[\]\{\}:]',' ',self.name).strip() + "**"
+            tools = "fa&colon;fa-tools<small>" + re.sub(r'[()\[\]{}:]',' ',','.join([t.ai_tool_id.name for t in self.ai_tool_ids])) + "</small>\n" if self.ai_tool_ids else ''
+            memories =  "fa&colon;fa-book<small>" + re.sub(r'[()\[\]{}:]',' ',','.join([m.ai_memory_id.name for t in self.ai_memory_ids])) + "</small>\n" if self.ai_memory_ids else ''
+            llm = "fa&colon;fa-cog<small>" + re.sub(r'[()\[\]{}:]',' ',self.ai_agent_llm_id.name) + "</small>"
+            return f"{name}\n{tools}{memories}{llm}"
+        else:
+            name = re.sub(r'[()\[\]\{\}:]',' ',self.name).strip()
+            return f"{name}"
 
     def test(self):
         self.last_run = fields.Datetime.now()
@@ -448,137 +457,6 @@ class AIAgent(models.Model):
             self.status = "error"
         self.last_run = fields.Datetime.now()
         self.message_post(body=f"{body} | {self.last_run}", message_type="notification")
-
-    # ------------------------------------------------------------
-    # LangGraph
-    # ------------------------------------------------------------
-
-    def _supervisor_prompt(self, members, quest, memory, use_lang):
-        # system_prompt = f"""
-        #     You are a supervisor coordinating between workers: {members}.
-        #     Based on the request, determine which worker should handle the next step and only run ONCE.
-        #     Only choose FINISH when a complete response has been provided.
-
-        #     Role: {self.ai_role}
-        #     Goal: {self.ai_goal}
-        #     Backstory: {self.ai_backstory}
-        #     Guidelines: {quest.description}
-        #     {self._extra_context(quest)}
-        #     Message history: {self._chat_history(quest)}
-
-        #     Memory: {memory}
-
-        #     Instructions:
-        #     1. Evaluate if we have a complete response
-        #     2. If not complete, choose the most appropriate worker
-        #     3. Send FINISH only when we have a satisfactory response
-        #     4. Do not mention that you have done tool calls, that's too technical
-        #     4. {use_lang}
-        # """
-        system_prompt = f"""
-            You are a supervisor coordinating between workers: {members}.
-            Based on the request, determine which worker should handle the next step and only run ONCE.
-
-            Role: {self.ai_role}
-            Goal: {self.ai_goal}
-            Backstory: {self.ai_backstory}
-            Guidelines: {quest.description}
-            {self._extra_context(quest)}
-            Message history: {self._chat_history(quest)}
-
-            Memory: {memory}
-
-            Instructions:
-            1. If not complete, choose the most appropriate worker
-            2. Do not mention that you have done tool calls, that's too technical
-            3. {use_lang}
-        """
-        return system_prompt
-
-    def create_supervisor(self, quest, members, **kwarg):
-        """Create a supervisor node that coordinates between different agents."""
-        use_lang = f"Use language {self.env.user.lang} for the answer to Human" if quest.use_personal_lang else ''
-        memory = self._get_memory(kwarg.get('message', ''))
-
-        session = kwarg.get('session', False)
-
-        system_prompt = self._supervisor_prompt(members, quest, memory, use_lang)
-
-        def supervisor_chain(state):
-            messages = state.get('messages', [])
-            state['session'] = session
-
-            _logger.info(f"Supervisor received messages: {len(messages)} {session=}")
-           
-            if not messages:
-                _logger.info(f"No messages, starting with first worker: {members[0] if members else 'no members'}")
-                session.add_message(
-                    f"No messages, starting with first worker: {members[0] if members else 'no members'}")
-                return {"next": members[0], 'session': session} if members else {"next": "FINISH", 'session': session}
-
-            _logger.error(f"{messages=} {session=}")
-
-            # Get the latest message
-            question = messages[-1].content if messages else ""
-
-            try:
-                # Create full message list
-                _logger.error(f"Create full message list")
-                prompt = f"Previous conversation:\n"
-                for msg in messages:
-                    prompt += f"\n{msg.content}\n"
-                prompt += (f"\nBased on this, who should act next? Choose from: {members} or say FINISH if we have a "
-                           f"complete response.")
-
-                # Get LLM response
-                llm = self.ai_agent_llm_id.get_llm(temperature=self.ai_temperature)
-                response = self.ai_agent_llm_id.invoke([
-                    SystemMessage(content=system_prompt),
-                    HumanMessage(content=prompt)
-                ],session=session, quest=quest, agent=self, debug=quest.debug)
-  
-                if isinstance(response,str):
-                    content = response.upper()
-                elif hasattr(response, 'content'):
-                    content = response.content.upper()
-                
-                # Parse response
-                _logger.info(f"Supervisor decision: {content}")
-                session.add_message(f"Supervisor decision: {content}")
-
-                # Check for completion or next agent
-                if "FINISH" in content:
-                    _logger.info("Supervisor decided to FINISH")
-                    session.add_message("Supervisor decided to FINISH")
-                    return {"next": "FINISH", 'session': session}
-
-                # Find mentioned agent
-                for member in members:
-                    if member.upper() in content:
-                        _logger.info(f"Supervisor selected agent: {member}")
-                        session.add_message(f"Supervisor selected agent: {member}")
-                        return {"next": member, 'session': session}
-
-                # If no clear direction and we have previous responses, finish
-                if len(messages) > 1:
-                    _logger.info("No clear direction, finishing")
-                    session.add_message("No clear direction, finishing")
-                    return {"next": "FINISH", 'session': session}
-
-                # Default to first member
-                if len(members) != 0:
-                    _logger.info(f"Defaulting to first member: {members[0]}")
-                    session.add_message(f"Defaulting to first member: {members[0]}")
-                    return {"next": members[0], 'session': session}
-
-            except Exception as e:
-
-                _logger.error(f"Error in supervisor chain: {str(e)}",exc_info=True)
-                session.add_message(f"Error in supervisor chain: {str(e)}\n{traceback.format_exc()}")
-
-                return {"next": "FINISH", 'session': session}
-
-        return supervisor_chain
 
     def create_node(self, **kwargs):
         """Creates a node for the agent in the graph."""
@@ -629,9 +507,6 @@ class AIAgent(models.Model):
                 self.log_message(f"Agent  {self.name} before invoke {messages=} {state=}")
                 _logger.debug(f"Agent {self.name} {messages=} {state=}")   
 
-
-
-
             # Get LLM
             llm = self.ai_agent_llm_id.get_llm()
             tools = self._get_tools()
@@ -643,7 +518,6 @@ class AIAgent(models.Model):
                     "input": latest_message,
                     "messages": messages
                 })
-
 
             except Exception as e:
                 _logger.error(f"Error in agent {self.name}: {str(e)}")
@@ -683,9 +557,6 @@ class AIAgent(models.Model):
 
 
         return agent_node
-
-
-
 
     def _get_memory(self, question, k=3, **kwarg):
         def get_rag(vs, question):

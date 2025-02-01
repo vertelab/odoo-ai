@@ -217,7 +217,6 @@ class AIAgentLLM(models.Model):
         content = response.content
         if response and session:
             session.save_messages(response)
-
         if debug:
             self.log_message(body=f"LLM {self.name} {response=}", is_error=False)
         return response
