@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field, ConfigDict
 from langchain.tools import BaseTool, StructuredTool, tool
 
 
+
 ##if VERSION >= '18.0'
 from typing import Annotated, List, NotRequired, Sequence, TypedDict, Union
 ##else
@@ -39,10 +40,10 @@ class DDGOInputs(BaseModel):
 @tool("internet_search_DDGO", return_direct=False)
 def internet_search_DDGO(query: str, state: Optional[AgentState] = None) -> str:
 # ~ def internet_search_DDGO(args_schema=DDGOInputs) -> str:
+
 # ~ def internet_search_DDGO(query: str, state: State) -> str:
     """Searches the internet using DuckDuckGo."""
    
-    _logger.error(f"{state=} -----------------------------------------------------------------------------")
     results = list(DDGS().text(query, max_results=5))
 
     return results if results else "No results found."

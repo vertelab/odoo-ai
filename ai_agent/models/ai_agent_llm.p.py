@@ -43,7 +43,7 @@ class AIAgentLLM(models.Model):
     last_run = fields.Datetime()
     licence = fields.Selection(selection=LICENCES, string='Licence',
                                related='model_id.product_attribute_value_id.licence')
-    llm_etype = fields.Char(related="product_tmpl_id.llm_etype", required=True)
+    llm_etype = fields.Char(related="product_tmpl_id.llm_etype")
     llm_type = fields.Char(related="product_tmpl_id.llm_type", required=True)
     model_id = fields.Many2one(comodel_name='product.template.attribute.value', string="Model", required=True, )
     name = fields.Char(required=True)
@@ -61,7 +61,7 @@ class AIAgentLLM(models.Model):
     tag_ids = fields.Many2many(comodel_name='product.tag', string='Tags')
     ##  endif
     azure_endpoint = fields.Char(string="Azure Endpoint")
-
+    api_version = fields.Char(string="API version")
     def action_get_quests(self):
         action = {
             'name': 'AI Quests',
@@ -139,9 +139,12 @@ class AIAgentLLM(models.Model):
         try:
             module = importlib.import_module(self.product_tmpl_id.llm_library)
             LLM = getattr(module, self.product_tmpl_id.llm_type)
-            if self.product_tmpl_id.llm_type == "AzureOpenAI":
-               kwarg['api_version'] = self.model_id.name
+            #_logger.warning(f"{LLM=}")
+            if self.product_tmpl_id.llm_type == "AzureChatOpenAI":
+               kwarg['api_version'] = self.api_version
                kwarg['azure_endpoint'] = self.azure_endpoint
+               #LLM(verbose=verbose, temperature=temperature, callbacks=callbacks, api_key=self.ai_api_key,
+               #        model='gpt-4o-mini',**kwarg)
             return LLM(verbose=verbose, temperature=temperature, callbacks=callbacks, api_key=self.ai_api_key,
                        model=self.model_id.name, **kwarg)
         except ImportError as e:

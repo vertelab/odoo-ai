@@ -1,4 +1,3 @@
-
 import base64
 import json
 import logging
@@ -8,7 +7,7 @@ import re
 import traceback
 import unidecode
 import warnings
-warnings.filterwarnings("ignore", category=DeprecationWarning, message="builtin type swigvarlink has no __module__ attribute")
+
 
 # ~ from typing import Annotated, TypedDict, Sequence, List, Union
 from IPython.display import Image, display
@@ -21,6 +20,7 @@ from langchain_core.runnables.graph import MermaidDrawMethod
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import StateGraph, START, END
 from langgraph.prebuilt import create_react_agent
+
 from odoo import models, fields, api, _
 from odoo.addons.ai_agent.models.ai_quest_session import AIQuestSession
 from odoo.exceptions import UserError, ValidationError, Warning
@@ -32,6 +32,7 @@ from secrets import choice
 
 
 
+
 from typing_extensions import NotRequired, TypedDict
 from typing import Annotated, List, Dict, Sequence, Union, Any
 # Odoo 18 okt 2024  Ubuntu 24.04 Python 3.12 (NotRequired 3.11)
@@ -39,6 +40,7 @@ from typing import Annotated, List, Dict, Sequence, Union, Any
 # Odoo 16 2022 Ubuntu 22.04  Python 3.10
 # Odoo 14 2020 Ubuntu 20.04  Python 3.8 -> 3.10
 # The typing_extensions module is primarily used for backporting new features to older Python versions
+
 
 
 
@@ -108,20 +110,23 @@ avatar_server_action = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 5
 
 class AIQuestAgent(models.Model):
     _name = 'ai.quest.agent'
-    _description = 'AI Quest AGent'
+    _description = 'AI Quest Agent'
 
     ai_quest_id = fields.Many2one(comodel_name='ai.quest', string="", help="")
-    sequence = fields.Integer(string='Sequence')
-    ai_agent_id = fields.Many2one(comodel_name='ai.agent', string="Agent", help="")
-    object_id = fields.Reference(string='Object',related="ai_agent_id.object_id",selection=lambda m: [(model.model, model.name) for model in m.env['ir.model'].sudo().search([])])
+    ai_agent_id = fields.Many2one(
+        comodel_name='ai.agent', string="Agent", help="",
+        selection=lambda m: [(model.model, model.name) for model in m.env['ir.model'].sudo().search([])]
+    )
     ai_agent_status = fields.Selection(
-        selection=[("draft", _("Draft")), ("active", _("Active")), ("done", _("Done")), ("error", _("Error"))],
-        default="draft", related='ai_agent_id.status')
+    selection=[("draft", _("Draft")), ("active", _("Active")), ("done", _("Done")), ("error", _("Error"))],
+    default="draft", related='ai_agent_id.status')
     ai_agent_llm_id = fields.Many2one(comodel_name="ai.agent.llm", string="LLM", help="Choose Large Language Model",
                                       domain="[('status','=','confirmed')]", related='ai_agent_id.ai_agent_llm_id')
     ai_llm_status = fields.Selection(
-        selection=[("not_confirmed", "Not Confirmed"), ("confirmed", "Confirmed"), ("error", "Error")],
-        default="not_confirmed", related='ai_agent_id.ai_agent_llm_id.status')
+    selection=[("not_confirmed", "Not Confirmed"), ("confirmed", "Confirmed"), ("error", "Error")],
+    default="not_confirmed", related='ai_agent_id.ai_agent_llm_id.status')
+    object_id = fields.Reference(string='Object',related="ai_agent_id.object_id")
+    sequence = fields.Integer(string='Sequence')
 
 
 # https://readmedium.com/langgraph-made-easy-a-beginners-guide-part-2-196e8b179119
@@ -232,8 +237,25 @@ class AIQuest(models.Model):
                                       help="Temperature controls the randomness and creativity of the model's output, "
                                            "<1.0 more predictable and consistent >1.0 more diverse and creative responses")
 
-    graph_image = fields.Image("Graph", max_width=300, max_height=300)
     
+
+    @api.onchange('ai_agent_ids')
+    def compute_agent_graph(self):
+        for rec in self:
+            if rec.ai_agent_ids:
+                try:
+                    graph = rec._build_graph()
+                    image_object = graph.get_graph().draw_mermaid_png()
+                    base64_encoded = base64.b64encode(image_object).decode('utf-8')
+                    rec.graph_image = base64_encoded
+                except Exception as e:
+                    # rec.log_message(f"Error building chain: {str(e)}", is_error=True)
+                    raise UserError(f"Error building chain: {str(e)}")
+            else:
+                rec.graph_image = False
+
+    graph_image = fields.Image("Graph", readonly=True)
+
   
     @api.model
     def _generate_random_token(self):
@@ -266,13 +288,15 @@ class AIQuest(models.Model):
             record.llm_count = len(set(record.session_line_ids.mapped('ai_llm_id')))
 
     def action_get_llms(self):
+        llm_ids = []
+        [llm_ids.extend(session_id.ai_agent_llm_ids.ids) for session_id in self.session_ids]
         action = {
             'name': 'LLMs',
             'type': 'ir.actions.act_window',
             'res_model': 'ai.agent.llm',
             'view_mode': 'kanban,tree,form,calendar',
             'target': 'current',
-            'domain': [("session_line_ids.ai_quest_id", '=', self.id)]
+            'domain': [("id", '=', llm_ids)]
         }
         return action
 
@@ -345,7 +369,10 @@ class AIQuest(models.Model):
     @api.depends("session_line_ids")
     def compute_agent_count(self):
         for record in self:
-            record.agent_count = len(set(record.session_line_ids.mapped('ai_agent_id')))
+            ai_agent_ids = list(map(lambda session_id: session_id.ai_agent_ids.ids, self.session_ids))
+            agent_ids = []
+            [agent_ids.extend(ai_agent_id) for ai_agent_id in ai_agent_ids]
+            record.agent_count = len(set(agent_ids))
 
     @api.depends('model_id')
     def _compute_model_name(self):
@@ -360,6 +387,7 @@ class AIQuest(models.Model):
                     'name': self.name,
                     'model_id': self.model_id.id,
                     'binding_model_id': self.model_id.id if self.status == 'active' else None,
+                    "binding_view_types": "form,list",
                 })
         if self.init_type == 'cron':
             if self.cron_id:
@@ -400,6 +428,7 @@ class AIQuest(models.Model):
                 self.server_action_id = self.server_action_id.create({
                     'name': self.name,
                     'model_id': self.model_id.id if self.model_id else self.env.ref('base.model_res_partner').id,
+                    "binding_view_types": "form,list",
                     'state': 'code',
                     'code': f"action = env.ref('{self._get_eid()}').server_action(records)",
                 })
@@ -494,15 +523,9 @@ class AIQuest(models.Model):
             if self._check_quest_error():
                 raise UserError(self._check_quest_error())
             vals = self._server_action_values(records=records)
-            res = self.run(records=records)
+            res = self.run(**vals)
             self.log_message(f'server-action {res}')
 
-            #     vals = self._server_action_values(records=records)
-            #     if self.code:
-            #         return self.with_context({'records': records, 'session': vals['session']}).run()
-            #     else:
-            #         return vals['agent'].prompt_agent('',session=vals['session'])
-            #
 
     def _cron_values(self, **kwargs):
         return kwargs
@@ -534,7 +557,6 @@ class AIQuest(models.Model):
             
             
         """
-        # ~ _logger.warning(f"chat {message=} {message.body=}")
         if (self.init_type == 'chat' and self.chat_user_id) or (self.init_type == "channel" and self.channel_id):
             if self._check_quest_error():
                 raise UserError(self._check_quest_error())
@@ -544,7 +566,6 @@ class AIQuest(models.Model):
                 message.parent_id.ai_quest_session_id if message.ai_quest_session_id else \
                     self.env['ai.quest.session'].quest_init(self)
             vals = self._chat_values(session=session, message=message, channel=channel, bot_user=bot_user)
-            # ~ raise UserError(f"{vals=}")
             res = self.run(**vals)
             return res
 
@@ -557,13 +578,28 @@ class AIQuest(models.Model):
                 self.log_message(self._check_quest_error())
             mail_body = html2plaintext(self.markdown2html(mail.body)).replace("<b>", "").replace("</b>", "").replace(
                 "<br>", "").replace("<p>", "").replace("</p>", "").replace("\n", "")
-            vals = self._mail_values(mail=mail, mail_body=mail_body, session=session)
+            vals = self._mail_values(mail=mail, mail_body=mail_body, session=session, attachments=mail.attachment_ids)
             res = self.run(**vals)
             return res
 
     # ------------------------------------------------------------
     # Python code helpers
     # ------------------------------------------------------------
+
+    @api.model
+    def is_ai_message(self, var):
+        return isinstance(var, AIMessage)
+ 
+    @api.model
+    def get_last_ai_message_content(self, response):
+        if response.get('messages', False):
+            messages = response.get('messages', [])
+            ai_messages = [m for m in messages if self.is_ai_message(m)]
+            if ai_messages:
+                last_ai_message = ai_messages[-1] if len(ai_messages) != 0 else None
+                if messages and last_ai_message:
+                    _logger.error(f"{last_ai_message=}")
+                    return last_ai_message.content
 
     @api.model
     def extract_dicts(self, text):
@@ -592,8 +628,11 @@ class AIQuest(models.Model):
         return markdown.markdown(text)
 
     def json2dict(self, text):
-        text = text.split('```')[1].replace("json", "").replace("\n", "")
-        return json.loads(text)
+        json_split = text.split('```')
+        if len(json_split) > 1:
+            text = text.split('```')[1].replace("json", "").replace("\n", "")
+            return json.loads(text)
+        return False
 
     # ------------------------------------------------------------
     # Python CODE eval
@@ -607,13 +646,14 @@ class AIQuest(models.Model):
         :type action: browse record
         :returns: dict -- evaluation context given to (safe_)safe_eval """
         records = kw.get('records', [])
-        message = kw.get('message',False)
+        message = kw.get('message', False)
         message_body = html2plaintext(message.body) if message else ''
         eval_context = {
             'action': action,
             'env': self.env,
             'self': self,
             'session': kw.get('session', self.env['ai.quest.session'].quest_init(self)),
+            # 'session': kw.get('session'),
             'quest': self,
             'agents': [a.ai_agent_id for a in self.ai_agent_ids],
             'company_id': self.env.user.company_id,
@@ -621,8 +661,8 @@ class AIQuest(models.Model):
             'record': records[0] if records else None,
             'records': records,
             # context
-             'message_body': message_body,
-             'message_invoke': {"messages": [HumanMessage(content=message_body)]},
+            'message_body': message_body,
+            'message_invoke': {"messages": [HumanMessage(content=message_body)]},
             # Exceptions
             'Warning': Warning,
             'UserError': UserError,
@@ -634,7 +674,7 @@ class AIQuest(models.Model):
         }
         return eval_context
 
-    def run(self, **kwargs):            
+    def run(self, **kwargs):
         if self.debug:
             _logger.warning(f" RUN {kwargs=}")
         local_dict = {}
@@ -659,16 +699,12 @@ class AIQuest(models.Model):
             return None
         session = local_dict.get('session', eval_context['session'])
 
-        # objects = local_dict.get('objects', [])
         objects = {
             'ai_session_id': eval_context.get('session'),
             'ai_quest_id': eval_context.get('self'),
             'records': eval_context.get('records')
         }
 
-        # if not eval_context.get('records'):
-        #     objects.extend(eval_context.get('records'))
-        # _logger.error(f"{local_dict=}")
 
         if local_dict.get('result'):
             messages = local_dict.get('result', {}).get('messages', [])
@@ -686,34 +722,6 @@ class AIQuest(models.Model):
 
         return local_dict
 
-        #for department in records:
-        #   _logger.warning(f{department})
-        # ~ result = agent[0].prompt_agent(session=session,department=record.name)
-        #                                                       #company_information=company_id.company_mission+company_id.company_values,
-        #                                                       department=department.name,
-        #                                                      quest_instructions=quest.description)
-        #markdown.markdown(result)
-
-        # res = False
-        # action = self.sudo()
-        # eval_context = self._get_eval_context(action, kwargs)
-        # records = self.env.context.get('records')
-        # if records:
-        #     try:
-        #         records.check_access_rule('write')
-        #     except AccessError:
-        #         _logger.warning(
-        #             "Forbidden server action %r executed while the user %s does not have access to %s.",
-        #             action.name, self.env.user.login, records,
-        #         )
-        #         raise
-        #
-        # _logger.warning(f"{eval_context=}")
-        # run_self = action.with_context(eval_context['env'].context)
-        # safe_eval(run_self.code.strip(), eval_context, mode="exec", nocopy=True, filename=str(self))
-        # _logger.warning(f"{self.code=}  {eval_context=}")
-        #
-        # return eval_context.get('result', None)
 
     # ------------------------------------------------------------
     # ORM
@@ -730,6 +738,7 @@ class AIQuest(models.Model):
         if self.id:
             values['alias_defaults'] = defaults = {}
             defaults['ai_quest_id'] = self.id
+            defaults['status'] = 'active'
         return values
 
     def write(self, vals):
@@ -745,6 +754,7 @@ class AIQuest(models.Model):
             if quest.server_action_id:
                 quest.server_action_id.write(
                     {'name': quest.name, 'code': f"action = env.ref('{quest._get_eid()}').server_action(records)",
+                     "binding_view_types": "form,list",
                      'binding_model_id': self.model_id.id if self.status == 'active' else None})
             if quest.cron_id:
                 quest.cron_id.write({'name': quest.name, 'code': f"action = env.ref('{quest._get_eid()}').cron()"})
@@ -754,10 +764,28 @@ class AIQuest(models.Model):
                 quest.chat_user_id.write({'name': quest.name, 'login': quest.name, 'ai_quest_id': quest.id, })
         return result
 
+    @api.model_create_multi
+    def create(self, vals_list):
+        _logger.error(f"{vals_list=}")
+        new_server_action = False
+        for record in vals_list:
+            if record.get("model_id", False):
+                new_server_action = self.server_action_id = self.server_action_id.create({
+                    'name': record["name"],
+                    'model_id': record["model_id"],
+                    "binding_view_types": "form,list",
+                    'state': 'code',
+                    'code': "",
+                })
+        res = super(AIQuest, self).create(vals_list)
+        new_server_action.write({"code": f"action = env.ref('{res._get_eid()}').server_action(records)"})
+        res.write({"server_action_id": new_server_action.id})
+        return res
+
+
     # ------------------------------------------------------------
     # LangGraph 
     # ------------------------------------------------------------
-
 
     # Inspired by https://github.com/menonpg/agentic_search_openai_langgraph/blob/main/agents.py
     def build_graph(self, **kwargs):
@@ -777,7 +805,12 @@ class AIQuest(models.Model):
         if session == False:
             raise UserError(_("No session added to build_graph method"))
 
+
         try:
+            agents = [line.ai_agent_id for line in self.ai_agent_ids if line.ai_agent_id]
+            members = [a.name for a in agents[1:] if a]
+            _logger.info(f"Building graph with supervisor and {len(members)} workers: {members}")
+
             # Create graph
             graph_builder = StateGraph(AgentState)
 
@@ -793,6 +826,7 @@ class AIQuest(models.Model):
 
             # Add edges from workers to supervisor
             for member in members:
+                # if member:
                 _logger.info(f"Adding edge: {member} -> Supervisor")
                 graph_builder.add_edge(member, "Supervisor")
 
@@ -803,18 +837,16 @@ class AIQuest(models.Model):
             _logger.info("Adding conditional edges with routes: " +
                          ", ".join([f"{k} -> {v}" for k, v in conditional_map.items()]))
 
-            graph_builder.add_conditional_edges(
-                "Supervisor",
-                lambda x: x["next"],
-                conditional_map
-            )
+            graph_builder.add_conditional_edges("Supervisor", lambda x: x["next"], conditional_map)
 
             # Set entry point
             graph_builder.set_entry_point("Supervisor")
 
             # Compile and return
             _logger.info("Compiling graph")
-            return graph_builder.compile()
+            graph = graph_builder.compile()
+
+            return graph
 
         except Exception as e:
             self.log_message(f"Error building graph: {str(e)}\n{traceback.format_exc()}", is_error=True)
@@ -1049,6 +1081,7 @@ class AIQuest(models.Model):
             
             
             raise
+
 
 
     # message = html2plaintext(message.body)

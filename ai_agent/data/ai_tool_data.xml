@@ -1,5 +1,5 @@
 <odoo>
-    <data noupdate="0">
+    <data noupdate="1">
         <record id="ai_tool_internet_search_DDGO" model="ai.tool">
             <field name="name">Internet search using DDGO</field>
             <field name="tool">internet_search_DDGO</field>

@@ -16,7 +16,7 @@ class ProductTemplate(models.Model):
     token_sys = fields.Integer(string='System Tokens')
     session_line_count = fields.Integer(compute="compute_session_line_count")
     azure_endpoint = fields.Char(string="Azure Endpoint")
-
+    api_version = fields.Char(string="API version")
     @api.depends("ai_session_lines_ids")
     def compute_session_line_count(self):
         for record in self:

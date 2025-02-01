@@ -29,7 +29,7 @@ class AIQuestTestMailWizard(models.TransientModel):
         is_mail = self.env["mail.message"].search([("message_id", "=", mail['Message-ID'])])
         if is_mail:
             is_mail.unlink()
-        thread_id = mail_thread.message_process(model="ai.quest",message=base64.b64decode(self.eml_file))
+        thread_id = mail_thread.message_process(model="ai.quest",message=base64.b64decode(self.eml_file),save_original=True)
 
 
 
