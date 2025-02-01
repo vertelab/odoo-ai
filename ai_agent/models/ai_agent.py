@@ -5,20 +5,41 @@ import logging
 import re
 import traceback
 
+
+
 from datetime import datetime
 from httpx import HTTPStatusError
-from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder, PromptTemplate, HumanMessagePromptTemplate, \
-    SystemMessagePromptTemplate
-from langchain.schema import AIMessage, HumanMessage, SystemMessage, BaseMessage
+from json.decoder import JSONDecodeError
+from langchain.agents import Tool, AgentExecutor, LLMSingleActionAgent, AgentOutputParser, create_tool_calling_agent, create_xml_agent,create_json_chat_agent
+from langchain.agents.agent_toolkits import create_conversational_retrieval_agent
+from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder, PromptTemplate, HumanMessagePromptTemplate, SystemMessagePromptTemplate
+from langchain.schema import AIMessage, HumanMessage, SystemMessage, BaseMessage, AgentAction, AgentFinish
 from langchain.tools import tool
 from langchain_community.chat_message_histories import ChatMessageHistory
 from langgraph.prebuilt import create_react_agent
 from odoo import models, fields, api, _
+from odoo.addons.ai_agent.models.ai_quest import AgentState
 from odoo.exceptions import UserError
 from random import randint
-from typing_extensions import TypedDict, List
+
+from typing_extensions import NotRequired, TypedDict
+from typing import Annotated, List, Sequence, Union, Any
+
+# https://python.langchain.com/api_reference/langchain/agents.html
+
 
 _logger = logging.getLogger(__name__)
+
+
+class SafeDict(dict):
+    def __missing__(self, key):
+        return '{' + key + '}'
+
+
+# Skapa en output-parser
+class SimpleOutputParser(AgentOutputParser):
+    def parse(self, llm_output: str) -> Union[AgentAction, AgentFinish]:
+        return AgentAction(tool="Simple Tool", tool_input=llm_output.strip(" ").strip('"'), log=llm_output)
 
 
 class AIAgent(models.Model):
@@ -30,7 +51,7 @@ class AIAgent(models.Model):
     ai_agent_llm_id = fields.Many2one(comodel_name="ai.agent.llm", string="LLM", help="Choose Large Language Model",
                                       domain="[('status','=','confirmed')]")
     ai_backstory = fields.Text(string="Backstory")
-    ai_discription = fields.Text()
+    ai_description = fields.Text()
     ai_goal = fields.Text(string="Goal")
     ai_memory_ids = fields.One2many(comodel_name='ai.agent.memory', inverse_name='ai_agent_id', string="", help="")
     ai_prompt_template = fields.Html(string="Prompt Template")
@@ -122,17 +143,24 @@ class AIAgent(models.Model):
             record.quest_count = len(
                 set(record.session_line_ids.filtered(lambda x: x.ai_agent_id.id == record.id).mapped('ai_quest_id')))
 
-    def _extra_context(self, quest):
-        extra_context = ''
+
+    def extra_context(self, quest):
+        res = {}
         if quest.use_company_info:
-            extra_context += f'Company information: {self.env.user.company_id.company_mission=} {self.env.user.company_id.company_values=}\n'
-        if quest.use_company_info:
-            extra_context += f'User information: {self.env.user.name=} {self.env.user.function=} {self.env.user.city=}\n'
+            res['company_info'] = f'Company information: {self.env.user.company_id.company_mission=} {self.env.user.company_id.company_values=}'
+        if quest.use_user_info:
+            res ['user_info']   = f'User information: {self.env.user.name=} {self.env.user.function=} {self.env.user.city=}'
         if quest.use_time_context:
             now = datetime.now()
-            extra_context += f'Current date {now.strftime("%Y-%m-%d")} Current time {now.strftime("%H:%M:%S")} Week Number {now.isocalendar()[1]}\n'
-        return extra_context
-
+            res['time_context'] = f'Current date {now.strftime("%Y-%m-%d")} Current time {now.strftime("%H:%M:%S")} Week Number {now.isocalendar()[1]}\n'
+        return res
+        
+    def _extra_context(self, quest):
+        res = ''
+        for key, data in self.extra_context(quest).items():
+            res += data
+        return res
+                
     def _chat_history(self, quest):
         if not (quest.init_type in ['chat', 'channel'] and quest.use_chat_history):
             return False
@@ -159,6 +187,152 @@ class AIAgent(models.Model):
         if question:
             chat_history.add_user_message(question)
         return chat_history.messages
+
+    # ------------------------------------------------------------
+    # LangChain
+    # ------------------------------------------------------------
+
+
+    def invoke(self,messages,**kwargs):
+        response = self.ai_agent_llm_id.invoke(messages,**kwargs)
+        return response
+
+    # ~ https://www.perplexity.ai/search/hur-debuggar-jag-odoo-E_QK9lp.RrqkS5flbGCXQQ
+
+    def create_sequence_node(self, **kwargs):
+        """Creates a node for the agent in the chain."""
+
+        topic = kwargs.get('topic',kwargs.get('message','')) 
+        session=kwargs.get('session',False)
+        quest=kwargs.get('quest',False)
+        debug=kwargs.get('debug',False)
+        # ~ import pdb; pdb.set_trace()
+        
+
+        def agent_snode(state: AgentState) -> AgentState:
+            """Process messages and generate a response."""
+            if state.get('count',1) > 50:
+                raise UserError(f"Count > 50 {state=}") 
+
+            # ~ def use_tool(tool_name: str, query: str):
+                # ~ for tool in self._get_tools():
+                    # ~ if tool.name.lower() == tool_name.lower():
+                        # ~ return tool.func(query,state=state)
+                # ~ return None
+  
+            if debug:
+                session.add_message(f"Agent {self.name} Initial state: {state=}")
+            messages = state.get('messages', [])
+            if hasattr(messages[-1], 'content'):
+                latest_message = messages[-1].content
+            else:
+                latest_message = messages[-1]
+            # ~ import pdb; pdb.set_trace()
+            _logger.info(f"Agent {self.name} received messages: {len(messages)}  {state=}")
+            # ~ state['session'] = session
+            # ~ state['topic'] = topic
+            if isinstance(state.get('scratchpad',[]),str):
+                state['scratchpad']=[state.get('scratchpad','')]
+    
+            if debug:
+                session.add_message(f"Agent {self.name} received messages: {len(messages)} {messages=} {state=}")
+             
+            system_message = SystemMessage(
+                content=f"""You are an agent with specific responsibilities.
+                Role: {self.ai_role}
+                Goal: {self.ai_goal}
+                Backstory: {self.ai_backstory}
+                Memory: {self._get_memory(latest_message)} {self._get_memory(topic)}
+
+                Instructions:
+                - Provide thorough, complete responses
+                - Use available tools and memory when needed
+                - Stay focused on your specific role
+                """
+            )
+            
+            prompt = self.ai_prompt_template
+            # ~ prompt = prompt.format_map(SafeDict(self.extra_context(quest) | {'chat_history': self._chat_history(quest)}))
+            
+            messages = [system_message,HumanMessage(content=topic),HumanMessage(content=prompt)]
+            
+            if debug:
+                self.log_message(f"Agent  {self.name} agent_snode before invoke {messages=} {state=}")
+                _logger.debug(f"Agent {self.name} {messages=} {state=}")   
+            # ~ agent = create_tool_calling_agent(self.ai_agent_llm_id.get_llm(),tools=self._get_tools(),messages)
+            # ~ executor = AgentExecutor(agent=agent, tools=self._get_tools(), verbose=True)
+            # ~ langgraph_agent_executor = create_react_agent(self.ai_agent_llm_id.get_llm(),tools=[])        
+            # ~ langgraph_agent_executor = create_react_agent(self.ai_agent_llm_id.get_llm(), tools=self._get_tools())        
+            try:
+                response = self.ai_agent_llm_id.invoke(messages,session=session, quest=quest, agent=self, debug=debug)
+                # ~ response = self.invoke(messages,)
+                # ~ response = langgraph_agent_executor.invoke({
+                    # ~ "input": topic,
+                    # ~ "messages": messages,
+                # ~ })
+            except Exception as e:
+                _logger.error(f"Error in agent {self.name}: {str(e)}") 
+                self.log_message(f"Error in agent {self.name}: {str(e)}\n{traceback.format_exc()}")
+                return {
+                    "messages": [
+                        AIMessage(
+                            content=f"Error occurred in agent {self.name}: {str(e)}\n{traceback.format_exc()}  ",
+                            name=self.name.replace(' ', '_').replace(',', '').replace('.', '')
+                        )
+                    ]
+                }
+                
+            # Initialize scratchpad if it's None or doesn't exist
+            if state.get('scratchpad') is None:
+                state['scratchpad'] = []
+
+            # Prepare the new item to append
+            if isinstance(response, dict):
+                new_item = response.get('messages', [])[-1] if response.get('messages') else None
+            else:
+                new_item = response
+
+             
+
+            # Append the new item if it's not None
+            if new_item is not None:
+                state['scratchpad'].append(new_item)
+            if debug:
+                self.log_message(f"Agent {self.name} generated {response=} {state=}")
+                _logger.debug(f"Agent {self.name} generated {response=}")
+                session.add_message(f"Agent {self.name} generated {response=} {state=}")
+            
+            # ~ tools = None
+            # ~ try:
+                # ~ # Attempt to parse JSON string
+                # ~ tools = json.loads(new_item)
+            # ~ except JSONDecodeError as e:
+                # ~ session.add_message(f"Agent {self.name} not Found tools {e=} {new_item=}")
+            # ~ if tools:
+                # ~ session.add_message(f"Found tools {tools=}")
+                # ~ messages = []
+                # ~ for t in tools['tools']:
+                    # ~ session.add_message(f"Agent {self.name} use_tool({t['tool']=},{t['query']=})")
+                    # ~ try:
+                        # ~ messages.append(HumanMessage(content=use_tool(t['tool'],t['query'])))
+                        # ~ state['messages'] = messages
+                    # ~ except Exception as e:
+                        # ~ session.add_message(f"Agent {self.name} error in use_tool {e=}\n{traceback.format_exc()}")
+                # ~ session.add_message(f"Agent {self.name} use_tool -> messages {messages=} ")
+
+                # ~ return agent_snode(state)
+            return {
+                "messages": [new_item],
+                'scratchpad': state['scratchpad'],
+                "count": Annotated[int, "count"],
+            }
+
+        return agent_snode
+
+
+
+
+
 
     def prompt_agent(self, test_prompt=False, parser=False, session=False, debug=False, channel=False, bot_user=False,
                      **kwargs):
@@ -228,7 +402,7 @@ class AIAgent(models.Model):
             self.log_message(f"Formatted prompt: {formatted_prompt}")
 
         try:
-            response = self.ai_agent_llm_id.get_llm().invoke(formatted_prompt)
+            response = self.invoke(formatted_prompt)
             if debug:
                 _logger.error(f"{response=}")
         except HTTPStatusError as e:
@@ -357,14 +531,18 @@ class AIAgent(models.Model):
                            f"complete response.")
 
                 # Get LLM response
-                llm = self.ai_agent_llm_id.get_llm()
-                response = llm.invoke([
+                llm = self.ai_agent_llm_id.get_llm(temperature=self.ai_temperature)
+                response = self.ai_agent_llm_id.invoke([
                     SystemMessage(content=system_prompt),
                     HumanMessage(content=prompt)
-                ])
-
+                ],session=session, quest=quest, agent=self, debug=quest.debug)
+  
+                if isinstance(response,str):
+                    content = response.upper()
+                elif hasattr(response, 'content'):
+                    content = response.content.upper()
+                
                 # Parse response
-                content = response.content.upper()
                 _logger.info(f"Supervisor decision: {content}")
                 session.add_message(f"Supervisor decision: {content}")
 
@@ -394,101 +572,120 @@ class AIAgent(models.Model):
                     return {"next": members[0], 'session': session}
 
             except Exception as e:
-                _logger.error(f"Error in supervisor chain: {str(e)}", exc_info=True)
-                session.add_message(f"Error in supervisor chain: {str(e)}")
+
+                _logger.error(f"Error in supervisor chain: {str(e)}",exc_info=True)
+                session.add_message(f"Error in supervisor chain: {str(e)}\n{traceback.format_exc()}")
+
                 return {"next": "FINISH", 'session': session}
 
         return supervisor_chain
 
-    def create_node(self, **kwarg):
+    def create_node(self, **kwargs):
         """Creates a node for the agent in the graph."""
+
+        topic = kwargs.get('topic',kwargs.get('message','')) 
+        session=kwargs.get('session',False)
+        debug=kwargs.get('debug',False)
+        # ~ import pdb; pdb.set_trace()
+        
 
         def agent_node(state):
             """Process messages and generate a response."""
+  
+            if debug:
+                session.add_message(f"Agent {self.name} agent_node Initial state: {state=}")
             messages = state.get('messages', [])
-            _logger.info(f"Agent {self.name} received messages: {len(messages)} {state=}")
-            state['session'].add_message(f"Agent {self.name} received messages: {len(messages)} {state=}")
+            if isinstance(messages, list) and hasattr(messages[-1], 'content'):
+                latest_message = messages[-1].content
+            else:
+                latest_message = messages[-1]
+
+            # ~ import pdb; pdb.set_trace()
+            _logger.info(f"Agent {self.name} received messages: {len(messages)}  {state=}")
+            # ~ state['session'] = session
+            # ~ state['topic'] = topic
+            if isinstance(state.get('scratchpad',[]),str):
+                state['scratchpad']=[state.get('scratchpad','')]
+    
+            if debug:
+                session.add_message(f"Agent {self.name} received messages: {len(messages)} {messages=} {state=}")
+             
+            system_message = SystemMessage(
+                content=f"""You are an agent with specific responsibilities.
+                Role: {self.ai_role}
+                Goal: {self.ai_goal}
+                Backstory: {self.ai_backstory}
+                Memory: {self._get_memory(latest_message)} {self._get_memory(topic)}
+
+                Instructions:
+                - Provide thorough, complete responses
+                - Use available tools and memory when needed
+                - Stay focused on your specific role
+                """
+            )
+            messages = [system_message,HumanMessage(content=topic)]
             
-            
+            if debug:
+                self.log_message(f"Agent  {self.name} before invoke {messages=} {state=}")
+                _logger.debug(f"Agent {self.name} {messages=} {state=}")   
+
+
+
+
+            # Get LLM
+            llm = self.ai_agent_llm_id.get_llm()
+            tools = self._get_tools()
+           
+            langgraph_agent_executor = create_react_agent(llm, tools=tools)
+
             try:
-                # Get the latest message
-                latest_message = messages[-1].content if messages else ""
-
-                # system_message = SystemMessage(
-                #     content=f"""You are an agent with specific responsibilities.
-                #     Role: {self.ai_role}
-                #     Goal: {self.ai_goal}
-                #     Backstory: {self.ai_backstory}
-                #     Memory: {self._get_memory(latest_message)}
-   
-                #     Instructions:
-                #     - Provide thorough, complete responses
-                #     - Use available tools and memory when needed
-                #     - Stay focused on your specific role
-                #     """
-                # )
-
-                system_message = SystemMessage(
-                    content=f"""You are an agent with specific responsibilities.
-                    Role: {self.ai_role}
-                    Goal: {self.ai_goal}
-                    Backstory: {self.ai_backstory}
-                    Memory: {self._get_memory(latest_message)}
-   
-                    Instructions:
-                    - Use available tools and memory when needed
-                    - Stay focused on your specific role
-                    """
-                )
-
-                # Get LLM
-                llm = self.ai_agent_llm_id.get_llm()
-                tools = self._get_tools(state)
-
-                langgraph_agent_executor = create_react_agent(llm, tools=tools)
-
-                # Prepare the input messages with system message first
-                input_messages = [system_message] + [messages[-1]]
-
                 result = langgraph_agent_executor.invoke({
                     "input": latest_message,
-                    "messages": input_messages
+                    "messages": messages
                 })
 
-                _logger.info(f"Agent {self.name} generated response")
-                state['session'].save_messages(result.get('messages', []))
-                # Return response
-                # return result
-
-                # Get the last AI message from the result
-                ai_messages = [m for m in result.get('messages', []) if isinstance(m, AIMessage)]
-                if ai_messages:
-                    return result
-                else:
-                    # If no AI messages found, create one from the result
-                    state['session'].add_message(f"No AImessages: {str(result)=}")
-
-                    return {
-                        "messages": [
-                            AIMessage(
-                                content=str(result),
-                                name=self.name.replace(' ', '_').replace(',', '').replace('.', '')
-                            )
-                        ]
-                    }
 
             except Exception as e:
                 _logger.error(f"Error in agent {self.name}: {str(e)}")
+                session.add_message(f"Agent {self.name} error: {str(e)}\n{traceback.format_exc()}")
                 return {
                     "messages": [
                         AIMessage(
-                            content=f"Error occurred: {str(e)}",
+                            content=f"Agent {self.name} error: {str(e)}\n{traceback.format_exc()}",
                             name=self.name.replace(' ', '_').replace(',', '').replace('.', '')
                         )
                     ]
                 }
 
+
+
+            _logger.info(f"Agent {self.name} generated response")
+            state['session'].save_messages(result.get('messages',[]))
+            # Return response
+            # return result
+
+            # Get the last AI message from the result
+            ai_messages = [m for m in result.get('messages', []) if isinstance(m, AIMessage)]
+            if ai_messages:
+                return result
+            else:
+                # If no AI messages found, create one from the result
+                state['session'].add_message(f"No AImessages: {str(result)=}")
+
+                return {
+                    "messages": [
+                        AIMessage(
+                            content=str(result),
+                            name=self.name.replace(' ', '_').replace(',', '').replace('.', '')
+                        )
+                    ]
+                }
+
+
         return agent_node
+
+
+
 
     def _get_memory(self, question, k=3, **kwarg):
         def get_rag(vs, question):

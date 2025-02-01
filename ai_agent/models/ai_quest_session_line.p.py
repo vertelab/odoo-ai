@@ -122,7 +122,8 @@ class AIQuestSessionMessage(models.Model):
     
     @api.model
     def save_messages(self, session, messages):
-    
+        if isinstance(message, AIMessage):
+            messages=[messages]
         for seq, message in enumerate(messages):
             self.create = {
                 "sequence": seq,

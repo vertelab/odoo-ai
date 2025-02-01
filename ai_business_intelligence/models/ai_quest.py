@@ -18,7 +18,7 @@ class jsonResponse(BaseModel):
 class AIQuest(models.Model):
     _inherit = 'ai.quest'
 
-    ai_type = fields.Selection(selection_add=[('business-intelligence', 'Business Intelligence')])
+    ai_type = fields.Selection(selection_add=[('business-intelligence', 'Business Intelligence')],ondelete={'business-intelligence': 'cascade'})
     user_id = fields.Char()
 
     def create(self,val_list):
