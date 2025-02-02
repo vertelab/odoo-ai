@@ -105,9 +105,7 @@ class AIQuestAgent(models.Model):
 
     ai_quest_id = fields.Many2one(comodel_name='ai.quest', string="", help="")
     ai_agent_id = fields.Many2one(
-        comodel_name='ai.agent', string="Agent", help="",
-        selection=lambda m: [(model.model, model.name) for model in m.env['ir.model'].sudo().search([])]
-    )
+        comodel_name='ai.agent', string="Agent", help="")
     ai_agent_status = fields.Selection(
     selection=[("draft", _("Draft")), ("active", _("Active")), ("done", _("Done")), ("error", _("Error"))],
     default="draft", related='ai_agent_id.status')
@@ -228,24 +226,21 @@ class AIQuest(models.Model):
                                       help="Temperature controls the randomness and creativity of the model's output, "
                                            "<1.0 more predictable and consistent >1.0 more diverse and creative responses")
 
-    @api.onchange('ai_agent_ids','is_supervisor')
-    def compute_agent_graph(self):
+    @api.depends('ai_agent_ids','is_supervisor')
+    def compute_graph_image(self):
         for rec in self:
             if rec.ai_agent_ids:
                 try:
                     graph = rec.build(session=self.env['ai.quest.session'].quest_init(self),mermaid=True)
                     image_object = graph.get_graph().draw_mermaid_png()
-                    base64_encoded = base64.b64encode(image_object).decode('utf-8')
-                    rec.graph_image = base64_encoded
+                    rec.graph_image = base64.b64encode(image_object).decode('utf-8')
                 except Exception as e:
                     # rec.log_message(f"Error building chain: {str(e)}", is_error=True)
-                    
-                    raise UserError(f"Error building chain: {graph.get_graph().draw_mermaid_png()=}\n{traceback.format_exc()}")
                     raise UserError(f"Error building chain: {str(e)}\n{traceback.format_exc()}")
             else:
                 rec.graph_image = False
 
-    graph_image = fields.Image("Graph", readonly=True)
+    graph_image = fields.Image("Graph", compute=compute_graph_image, store=True)
 
   
     @api.model
@@ -920,9 +915,7 @@ class AIQuest(models.Model):
             AgentState.model_config = ConfigDict(arbitrary_types_allowed=True)
             workflow = StateGraph(AgentState)
             workflow.add_node("initial", initial_node)
-            session.add_message(f"Add Node Agent initial")
             workflow.add_edge(START, "initial")
-            session.add_message(f"Edge Agent START initial")
             workflow.set_entry_point("initial")
             
             for i, agent in enumerate(agents):
@@ -952,12 +945,10 @@ class AIQuest(models.Model):
                                                             # ~ **kwargs))
             
     
-            # ~ import pdb; pdb.set_trace()
             workflow.add_edge(f"initial", agents[0].get_agent_name(0,**kwargs))
-            for i, agent in enumerate(agents[1:]):
-                session.add_message(f"Edge Node Agent agent_{i} {agent.get_agent_name(i,**kwargs)=} {agents[i+1].get_agent_name(i+1,**kwargs)} agent_{i+1}")
-                workflow.add_edge(agent.get_agent_name(i,**kwargs), agents[i+1].get_agent_name(i+1,**kwargs))
-
+            for i, agent in enumerate(agents[:-1]):
+                workflow.add_edge(agents[i].get_agent_name(i,**kwargs), agents[i+1].get_agent_name(i+1,**kwargs))            
+            workflow.add_edge(agents[-1].get_agent_name(len(agents),**kwargs),END)
             graph = workflow.compile()
             input_channels = graph.input_channels
            
@@ -1001,8 +992,8 @@ class AIQuest(models.Model):
                 session.add_message(f"{agent} Error: Invalid JSON tried updated '''json {message}'''")
                 
     def get_agent_name(self,**kwargs):
-        if kwargs.get('mermaid'):
-            return "**Supervisor**"
+        if kwargs.get('Xmermaid'):
+            return "**Supervisor**\n{self.supervisor_llm_id.name}"
         else:
             return "Supervisor"
 

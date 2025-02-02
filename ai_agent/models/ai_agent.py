@@ -358,10 +358,7 @@ class AIAgent(models.Model):
             prompt = f"Previous conversation: {question}\n{input=}"
             # ~ for msg in messages:
                 # ~ prompt += f"\n{msg.content}\n" if msg and isinstance(msg, dict) and 'content' in msg else msg
-            prompt += ( "Input data {tools} {tool_names} {agent_scratchpad} {input}\n"
-                        
-                        f"\nBased on previous conversation, what agent should act next? Choose from: {members} or say FINISH if we have a "
-                        "Input data {tools} {tool_names} {agent_scratchpad} {input}\n"
+            prompt += ( f"\nBased on previous conversation, what agent should act next? Choose from: {members} or say FINISH if we have a "
                         "complete response. Use just JSON {'next': agent or FINISH}"
                         )
             if self.debug:
@@ -372,10 +369,7 @@ class AIAgent(models.Model):
             tools = []
 
             # Get the prompt
-            prompt = hub.pull("hwchase17/react-chat-json")
-            
-
-
+            # ~ prompt = hub.pull("hwchase17/react-chat-json")
             # Initialize the language model
             llm = quest.supervisor_llm_id.get_llm(temperature=quest.supervisor_temperature)
 
@@ -439,11 +433,12 @@ class AIAgent(models.Model):
         return action
         
     def get_agent_name(self,i,**kwargs):
+        # ~ return f"agent_{i}"
         if kwargs.get('mermaid'):
             name = "**" + re.sub(r'[()\[\]\{\}:]',' ',self.name).strip() + "**"
-            tools = "fa&colon;fa-tools<small>" + re.sub(r'[()\[\]{}:]',' ',','.join([t.ai_tool_id.name for t in self.ai_tool_ids])) + "</small>\n" if self.ai_tool_ids else ''
-            memories =  "fa&colon;fa-book<small>" + re.sub(r'[()\[\]{}:]',' ',','.join([m.ai_memory_id.name for t in self.ai_memory_ids])) + "</small>\n" if self.ai_memory_ids else ''
-            llm = "fa&colon;fa-cog<small>" + re.sub(r'[()\[\]{}:]',' ',self.ai_agent_llm_id.name) + "</small>"
+            tools = "fa&colon;fa-tools <small>" + re.sub(r'[()\[\]{}:]',' ',','.join([t.ai_tool_id.name for t in self.ai_tool_ids])) + "</small>\n" if self.ai_tool_ids else ''
+            memories =  "fa&colon;fa-book <small>" + re.sub(r'[()\[\]{}:]',' ',','.join([m.ai_memory_id.name for t in self.ai_memory_ids])) + "</small>\n" if self.ai_memory_ids else ''
+            llm = "fa&colon;fa-cog <small>" + re.sub(r'[()\[\]{}:]',' ',self.ai_agent_llm_id.name) + "</small>"
             return f"{name}\n{tools}{memories}{llm}"
         else:
             name = re.sub(r'[()\[\]\{\}:]',' ',self.name).strip()
