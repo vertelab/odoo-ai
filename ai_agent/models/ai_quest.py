@@ -20,7 +20,6 @@ from langchain_core.runnables.graph import MermaidDrawMethod
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import StateGraph, START, END
 from langgraph.prebuilt import create_react_agent
-
 from odoo import models, fields, api, _
 from odoo.addons.ai_agent.models.ai_quest_session import AIQuestSession
 from odoo.exceptions import UserError, ValidationError, Warning
@@ -30,9 +29,6 @@ from pydantic import BaseModel, ConfigDict, SkipValidation
 from random import randint
 from secrets import choice
 
-
-
-
 from typing_extensions import NotRequired, TypedDict
 from typing import Annotated, List, Dict, Sequence, Union, Any
 # Odoo 18 okt 2024  Ubuntu 24.04 Python 3.12 (NotRequired 3.11)
@@ -40,8 +36,6 @@ from typing import Annotated, List, Dict, Sequence, Union, Any
 # Odoo 16 2022 Ubuntu 22.04  Python 3.10
 # Odoo 14 2020 Ubuntu 20.04  Python 3.8 -> 3.10
 # The typing_extensions module is primarily used for backporting new features to older Python versions
-
-
 
 
 from odoo.addons.base.models.avatar_mixin import get_hsl_from_seed
@@ -105,18 +99,13 @@ avatar_server_action = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 5
 <circle cx="345.04" cy="265.03" r="26.41" fill="#ffffff"/>
 </svg>'''
 
-
-
-
 class AIQuestAgent(models.Model):
     _name = 'ai.quest.agent'
     _description = 'AI Quest Agent'
 
     ai_quest_id = fields.Many2one(comodel_name='ai.quest', string="", help="")
     ai_agent_id = fields.Many2one(
-        comodel_name='ai.agent', string="Agent", help="",
-        selection=lambda m: [(model.model, model.name) for model in m.env['ir.model'].sudo().search([])]
-    )
+        comodel_name='ai.agent', string="Agent", help="")
     ai_agent_status = fields.Selection(
     selection=[("draft", _("Draft")), ("active", _("Active")), ("done", _("Done")), ("error", _("Error"))],
     default="draft", related='ai_agent_id.status')
@@ -237,24 +226,21 @@ class AIQuest(models.Model):
                                       help="Temperature controls the randomness and creativity of the model's output, "
                                            "<1.0 more predictable and consistent >1.0 more diverse and creative responses")
 
-    
-
-    @api.onchange('ai_agent_ids')
-    def compute_agent_graph(self):
+    @api.depends('ai_agent_ids','is_supervisor')
+    def compute_graph_image(self):
         for rec in self:
             if rec.ai_agent_ids:
                 try:
-                    graph = rec._build_graph()
+                    graph = rec.build(session=self.env['ai.quest.session'].quest_init(self),mermaid=True)
                     image_object = graph.get_graph().draw_mermaid_png()
-                    base64_encoded = base64.b64encode(image_object).decode('utf-8')
-                    rec.graph_image = base64_encoded
+                    rec.graph_image = base64.b64encode(image_object).decode('utf-8')
                 except Exception as e:
                     # rec.log_message(f"Error building chain: {str(e)}", is_error=True)
-                    raise UserError(f"Error building chain: {str(e)}")
+                    raise UserError(f"Error building chain: {str(e)}\n{traceback.format_exc()}")
             else:
                 rec.graph_image = False
 
-    graph_image = fields.Image("Graph", readonly=True)
+    graph_image = fields.Image("Graph", compute=compute_graph_image, store=True)
 
   
     @api.model
@@ -473,11 +459,25 @@ class AIQuest(models.Model):
                 })
         return eid
 
+    def Xlog_message(self, body, is_error=False):
+        for q in self:
+            if is_error:
+                q.status = "error"
+            q.last_run = fields.Datetime.now()
+            q.sudo().message_post(body=f"{body} | {self.last_run}", message_type="notification")
+            
+            
     def log_message(self, body, is_error=False):
-        if is_error:
-            self.status = "error"
-        self.last_run = fields.Datetime.now()
-        self.message_post(body=f"{body} | {self.last_run}", message_type="notification")
+        self.env['mail.thread'].sudo().message_notify(
+            body=f"{body} | {self.last_run}",
+            subject="Log Message" if not is_error else "Error Log",
+            partner_ids=[self.env.user.partner_id.id],
+            model=self._name,
+            res_id=self.id,
+            message_type='notification'
+        )
+
+            
 
     def mail_test_wizard(self):
         if self._check_quest_error():
@@ -787,221 +787,15 @@ class AIQuest(models.Model):
     # LangGraph 
     # ------------------------------------------------------------
 
-    # Inspired by https://github.com/menonpg/agentic_search_openai_langgraph/blob/main/agents.py
-    def build_graph(self, **kwargs):
-        """Build a multi-agent workflow graph with supervisor."""
- 
-        if not self.ai_agent_ids:
-            raise ValueError("No agents provided")
-
-        agents = [line.ai_agent_id for line in self.ai_agent_ids]
-       
-        # Get member names
-        members = [a.name for a in agents[1:]]
-        _logger.info(f"Building graph with supervisor and {len(members)} workers: {members}")
-        global session
-        session=kwargs.get('session',False)
-
-        if session == False:
-            raise UserError(_("No session added to build_graph method"))
-
-
-        try:
-            agents = [line.ai_agent_id for line in self.ai_agent_ids if line.ai_agent_id]
-            members = [a.name for a in agents[1:] if a]
-            _logger.info(f"Building graph with supervisor and {len(members)} workers: {members}")
-
-            # Create graph
-            graph_builder = StateGraph(AgentState)
-
-            # Add supervisor
-            supervisor = agents[0]
-            _logger.info(f"Adding supervisor: {supervisor.name}")
-            graph_builder.add_node("Supervisor", supervisor.create_supervisor(self, members, **kwargs))
-
-            # Add worker nodes
-            for agent in agents[1:]:
-                _logger.info(f"Adding worker node: {agent.name}")
-                graph_builder.add_node(agent.name, agent.create_node(session=session))
-
-            # Add edges from workers to supervisor
-            for member in members:
-                # if member:
-                _logger.info(f"Adding edge: {member} -> Supervisor")
-                graph_builder.add_edge(member, "Supervisor")
-
-            # Add conditional routing
-            conditional_map = {k: k for k in members}
-            conditional_map["FINISH"] = END
-
-            _logger.info("Adding conditional edges with routes: " +
-                         ", ".join([f"{k} -> {v}" for k, v in conditional_map.items()]))
-
-            graph_builder.add_conditional_edges("Supervisor", lambda x: x["next"], conditional_map)
-
-            # Set entry point
-            graph_builder.set_entry_point("Supervisor")
-
-            # Compile and return
-            _logger.info("Compiling graph")
-            graph = graph_builder.compile()
-
-            return graph
-
-        except Exception as e:
-            self.log_message(f"Error building graph: {str(e)}\n{traceback.format_exc()}", is_error=True)
-            _logger.error(f"Error building graph: {str(e)}")
-            raise
-
-
-    def extract_json(self,agent,session,message):
-        # Find JSON-like content within triple backticks
-        message = message.replace('\n','')
-        json_match = re.search(r'``````', message, re.DOTALL)
-        if json_match:
-            json_string = json_match.group(1)
-            try:
-                return json.loads(json_string)
-            except json.JSONDecodeError:
-                session.add_message(f"{agent} Error: Invalid JSON format with backtick {json_string=}")
-                return None
-        else:
-            try:
-                return json.loads(message)
-            except json.JSONDecodeError:
-                session.add_message(f"{agent} Error: Invalid JSON format\n{message}")
-            try:
-                return json.loads(f"json \n{message}\n")
-            except json.JSONDecodeError:
-                session.add_message(f"{agent} Error: Invalid JSON tried updated '''json {message}'''")
-            
-
-    def create_supervisor(self, members, **kwargs):
-        """Create a supervisor node that coordinates between different agents."""
-        use_lang = f"Use language {self.env.user.lang} for the answer to Human" if self.use_personal_lang else ''            
-        topic = kwargs.get('topic',kwargs.get('message','')) 
-        session=kwargs.get('session',False)
-        system_prompt = self.supervisor_prompt
-
-        def supervisor_chain(state):
-            messages = state.get('messages', [])
-            if hasattr(messages[-1], 'content'):
-                latest_message = messages[-1].content
-            else:
-                latest_message = messages[-1]            
-
-            if self.debug:
-                session.add_message(f"SUPERVISOR Initial state: {members=} {state=}")
- 
-            if isinstance(state.get('scratchpad',[]),str):
-                state['scratchpad']=[state.get('scratchpad','')]
-
-            question = messages[-1]['content'] if messages and isinstance(messages[-1], dict) and 'content' in messages[-1] else ""
-
-            # Create full message list
-            _logger.error(f"Create full message list")
-            
-            input=question
-            prompt = f"Previous conversation: {question}\n{input=}"
-            # ~ for msg in messages:
-                # ~ prompt += f"\n{msg.content}\n" if msg and isinstance(msg, dict) and 'content' in msg else msg
-            prompt += ( "Input data {tools} {tool_names} {agent_scratchpad} {input}\n"
-                        
-                        f"\nBased on previous conversation, what agent should act next? Choose from: {members} or say FINISH if we have a "
-                        "Input data {tools} {tool_names} {agent_scratchpad} {input}\n"
-                        "complete response. Use just JSON {'next': agent or FINISH}"
-                        )
-            if self.debug:
-                session.add_message(f"Supervisor {prompt=}")
-            # Get LLM response
-            
-            
-            tools = []
-
-            # Get the prompt
-            prompt = hub.pull("hwchase17/react-chat-json")
-            
-
-
-            # Initialize the language model
-            llm = self.supervisor_llm_id.get_llm(temperature=self.supervisor_temperature)
-
-            # Create the JSON chat agent
-            # ~ agent = create_json_chat_agent(llm, tools, prompt)
-            agent = create_react_agent(llm, [])
-
-            # Create an agent executor
-            # ~ agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True, handle_parsing_errors=True)
-            agent_executor = AgentExecutor(agent=agent, verbose=self.debug, handle_parsing_errors=True)
-
-            # Invoke the agent
-
-            
-            # ~ agent = create_json_chat_agent(
-                                # ~ self.supervisor_llm_id.get_llm(temperature=self.supervisor_temperature),
-                                # ~ [],
-                                # ~ ChatPromptTemplate.from_messages([("human",prompt)])
-                    # ~ )
-            # ~ executor = AgentExecutor(agent=agent,tools=[], verbose=self.debug)
-            try:
-                # ~ response = self.invoke(messages)
-                # ~ response = langgraph_agent_executor.invoke({
-                    # ~ "input": topic,
-                    # ~ "messages": messages,
-                # ~ })
-                response = agent_executor.invoke([
-                    SystemMessage(content=system_prompt),
-                    HumanMessage(content=prompt)
-                ])
-
-            except Exception as e:
-                _logger.error(f"Error in supervisor chain: {str(e)}",exc_info=True)
-                session.add_message(f"Error in supervisor chain: {str(e)}\n{traceback.format_exc()}")
-                return {"next": "FINISH", 'session': session}
-
-            # Parse response
-            content = response.content
-            _logger.info(f"Supervisor decision: {content}")
-            session.add_message(f"Supervisor decision: {content}")
-            json = self.extract_json("Supervisor",session,content)
-            if not json:
-                return {"next": "FINISH",'session': session}
-
-            # Check for completion or next agent
-            if json.get('next','FINISH') == "FINISH":
-                _logger.info("Supervisor decided to FINISH")
-                session.add_message("Supervisor decided to FINISH {json=}")
-                return {"next": "FINISH",'session': session}
-
-            # Find mentioned agent
-            session.add_message(f"Supervisor selected agent: {json['next']}")
-            return {"next": json['next'], 'session': session, 'topic': topic, 'messages': state.get('messasges')}
-
-            # If no clear direction and we have previous responses, finish
-            if len(messages) > 1:   
-                _logger.info("No clear direction, finishing")
-                session.add_message("No clear direction, finishing")
-                return {"next": "FINISH", 'session': session}
-
-            # Default to first member
-            if len(members) != 0:
-                _logger.info(f"Defaulting to first member: {members[0]}")
-                session.add_message(f"Defaulting to first member: {members[0]}")
-                return {"next": members[0], 'session': session}
-
-
-        return supervisor_chain
-
     def build(self, **kwargs):
         if self.is_supervisor:
             _logger.info(f"Building graph with supervisor ")
-            return self.supervisor(**kwargs)
+            return self.build_supervisor(**kwargs)
         else:
             _logger.info(f"Building chain ")
             return self.build_chain(**kwargs)
 
-
-    def supervisor(self, **kwargs):
+    def build_supervisor(self, **kwargs):
         """Build a multi-agent workflow graph with supervisor."""
  
         if not self.ai_agent_ids:
@@ -1025,33 +819,36 @@ class AIQuest(models.Model):
 
             # Add supervisor
             _logger.info(f"Adding supervisor: with {members=}")
-            graph_builder.add_node("Supervisor", self.create_supervisor(members, **kwargs))
+            llm = "fa&colon;fa-cog<small>" + re.sub(r'[()\[\]{}:]',' ',self.supervisor_llm_id.name) + "</small>"
+            graph_builder.add_node(self.get_agent_name(**kwargs), self.env['ai.agent'].create_supervisor(self,members, **kwargs))
 
             # Add worker nodes
-            for agent in agents:
-                _logger.info(f"Adding worker node: {agent.name}")
-                graph_builder.add_node(agent.name, agent.create_node(session=session))
+            for i, agent in enumerate(agents):
+                # ~ graph_builder.add_node(agent.name, agent.create_node(session=session))
+                graph_builder.add_node(agent.get_agent_name(i,**kwargs), agent.create_node(session=session))
 
             # Add edges from workers to supervisor
-            for member in [a.name for a in agents]:
+            # ~ for member in [a.name for a in agents]:
+            for member in [a.get_agent_name(i,**kwargs) for i,a in enumerate(agents)]:
                 _logger.info(f"Adding edge: {member} -> Supervisor")
-                graph_builder.add_edge(member, "Supervisor")
+                graph_builder.add_edge(member,self.get_agent_name(**kwargs))
 
             # Add conditional routing
-            conditional_map = {k: k for k in [a.name for a in agents]}
+            # ~ conditional_map = {k: k for k in [a.name for a in agents]}
+            conditional_map = {k: k for k in [a.get_agent_name(i,**kwargs) for i,a in enumerate(agents)]}
             conditional_map["FINISH"] = END
 
             _logger.info("Adding conditional edges with routes: " +
                          ", ".join([f"{k} -> {v}" for k, v in conditional_map.items()]))
 
             graph_builder.add_conditional_edges(
-                "Supervisor",
+                self.get_agent_name(**kwargs),
                 lambda x: x["next"],
                 conditional_map
             )
 
             # Set entry point
-            graph_builder.set_entry_point("Supervisor")
+            graph_builder.set_entry_point(self.get_agent_name(**kwargs))
 
             # Compile and return
             _logger.info("Compiling graph")
@@ -1061,10 +858,6 @@ class AIQuest(models.Model):
             if self.debug:
                 self.log_message(f"{json.dumps(graph.get_graph().to_json(), indent=2)}\n{input_channels=}")
                 _logger.debug(f"{json.dumps(graph.get_graph().to_json(), indent=2)}\n{input_channels=}")
-                
-                image=display(Image(graph.get_graph().draw_mermaid_png()))
-                self.log_message(f"{image}")
-                
                 if hasattr(graph, 'model'):
                     model_config = graph.model.config
                     _logger.debug(f"Model {graph.model.config=}")
@@ -1073,7 +866,7 @@ class AIQuest(models.Model):
                         _logger.debug(f"Tools {graph.model.config['tools']=}")
                         self.log_message(f"Tools {graph.model.config['tools']=}")     
                 
-            return graph,input_channels 
+            return graph
 
         except Exception as e:
             self.log_message(f"Error building graph: {str(e)}", is_error=True)
@@ -1081,9 +874,7 @@ class AIQuest(models.Model):
             
             
             raise
-
-
-
+            
     # message = html2plaintext(message.body)
     # response = self.build_graph(agents).invoke({"messages": [HumanMessage(content=message)]})
     # result = response['messages'][-1].content
@@ -1124,9 +915,7 @@ class AIQuest(models.Model):
             AgentState.model_config = ConfigDict(arbitrary_types_allowed=True)
             workflow = StateGraph(AgentState)
             workflow.add_node("initial", initial_node)
-            session.add_message(f"Add Node Agent initial")
             workflow.add_edge(START, "initial")
-            session.add_message(f"Edge Agent START initial")
             workflow.set_entry_point("initial")
             
             for i, agent in enumerate(agents):
@@ -1143,7 +932,7 @@ class AIQuest(models.Model):
                                      # ~ "current_node": f"agent_{i}",
                                      # ~ "sequence_position": i
                                  # ~ })
-                workflow.add_node(f"agent_{i}", agent.create_sequence_node(
+                workflow.add_node(agent.get_agent_name(i,**kwargs), agent.create_sequence_node(
                                                             debug=self.debug,
                                                             current_agent=agent.name,
                                                             sequence_position=i,
@@ -1156,32 +945,60 @@ class AIQuest(models.Model):
                                                             # ~ **kwargs))
             
     
-            # ~ import pdb; pdb.set_trace()
-            workflow.add_edge(f"initial", f"agent_0")
-            for i, agent in enumerate(agents[1:]):
-                session.add_message(f"Edge Node Agent agent_{i} agent_{i+1}")
-                workflow.add_edge(f"agent_{i}", f"agent_{i+1}")
-
+            workflow.add_edge(f"initial", agents[0].get_agent_name(0,**kwargs))
+            for i, agent in enumerate(agents[:-1]):
+                workflow.add_edge(agents[i].get_agent_name(i,**kwargs), agents[i+1].get_agent_name(i+1,**kwargs))            
+            workflow.add_edge(agents[-1].get_agent_name(len(agents),**kwargs),END)
             graph = workflow.compile()
             input_channels = graph.input_channels
            
         except Exception as e:
-            self.log_message(f"Error building chain: {str(e)}", is_error=True)
-            _logger.error(f"Error building chain: {str(e)}")
+            self.log_message(f"Error building chain: {str(e)}\n{traceback.format_exc()}", is_error=True)
+            _logger.error(f"Error building chain: {str(e)}\n{traceback.format_exc()}")
             raise
             
         if self.debug:
-            self.log_message(f"{json.dumps(graph.get_graph().to_json(), indent=2)}\n{input_channels=}")
-            self.log_message(f"get graph: {graph.get_graph()}\n")
+            # ~ self.log_message(f"{json.dumps(graph.get_graph().to_json(), indent=2)}\n{input_channels=}")
+            # ~ self.log_message(f"get graph: {graph.get_graph()}\n")
             _logger.debug(f"{json.dumps(graph.get_graph().to_json(), indent=2)}\n{input_channels=}")
             _logger.error(f"Get_graph {graph.get_graph()}")
 
         return graph
 
-    # message = html2plaintext(message.body)
-    # response = self.build_graph(agents).invoke({"messages": [HumanMessage(content=message)]})
-    # result = response['messages'][-1].content
+    # Inspired by https://github.com/menonpg/agentic_search_openai_langgraph/blob/main/agents.py
+    def build_graph(self, **kwargs):
+        """Build a multi-agent workflow graph with supervisor."""
+        raise UserError(('quest.build_graph() is outdated, use quest.build() instead'))
 
+    def extract_json(self,agent,session,message):
+        # Find JSON-like content within triple backticks
+        message = message.replace('\n','')
+        json_match = re.search(r'``````', message, re.DOTALL)
+        if json_match:
+            json_string = json_match.group(1)
+            try:
+                return json.loads(json_string)
+            except json.JSONDecodeError:
+                session.add_message(f"{agent} Error: Invalid JSON format with backtick {json_string=}")
+                return None
+        else:
+            try:
+                return json.loads(message)
+            except json.JSONDecodeError:
+                session.add_message(f"{agent} Error: Invalid JSON format\n{message}")
+            try:
+                return json.loads(f"json \n{message}\n")
+            except json.JSONDecodeError:
+                session.add_message(f"{agent} Error: Invalid JSON tried updated '''json {message}'''")
+                
+    def get_agent_name(self,**kwargs):
+        if kwargs.get('mermaid'):
+            llm = re.sub(r'[\'()\[\]{}:]','_',self.supervisor_llm_id.name).replace(' ','')
+            supervisor=f"Supervisor\n<small>fa&colon;fa-cog {llm}</small>"
+            # ~ _logger.info(f"SUpervisor ------------------>{supervisor}")            
+            return supervisor
+        else:
+            return "Supervisor"
 
 class AgentState(TypedDict):
     messages: Annotated[Sequence[BaseMessage], operator.add]
