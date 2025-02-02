@@ -442,9 +442,9 @@ class AIAgent(models.Model):
         # ~ return f"agent_{i}"
         if kwargs.get('mermaid'):
             name = "**" + re.sub(r'[()\[\]\{\}:]',' ',self.name).strip() + "**"
-            tools = "fa&colon;fa-tools <small>" + re.sub(r'[()\[\]{}:]',' ',','.join([t.ai_tool_id.name for t in self.ai_tool_ids])) + "</small>\n" if self.ai_tool_ids else ''
-            memories =  "fa&colon;fa-book <small>" + re.sub(r'[()\[\]{}:]',' ',','.join([m.ai_memory_id.name for t in self.ai_memory_ids])) + "</small>\n" if self.ai_memory_ids else ''
-            llm = "fa&colon;fa-cog <small>" + re.sub(r'[()\[\]{}:]',' ',self.ai_agent_llm_id.name) + "</small>"
+            tools = "<small>fa&colon;fa-tools " + re.sub(r'[()\[\]{}:]',' ',','.join([t.ai_tool_id.name for t in self.ai_tool_ids])) + "</small>\n" if self.ai_tool_ids else ''
+            memories =  "<small>fa&colon;fa-book " + re.sub(r'[()\[\]{}:]',' ',','.join([m.ai_memory_id.name for t in self.ai_memory_ids])) + "</small>\n" if self.ai_memory_ids else ''
+            llm = "<small>fa&colon;fa-cog " + re.sub(r'[()\[\]{}:]',' ',self.ai_agent_llm_id.name) + "</small>"
             return f"{name}\n{tools}{memories}{llm}"
         else:
             name = re.sub(r'[()\[\]\{\}:]',' ',self.name).strip()

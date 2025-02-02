@@ -992,8 +992,11 @@ class AIQuest(models.Model):
                 session.add_message(f"{agent} Error: Invalid JSON tried updated '''json {message}'''")
                 
     def get_agent_name(self,**kwargs):
-        if kwargs.get('Xmermaid'):
-            return "**Supervisor**\n{self.supervisor_llm_id.name}"
+        if kwargs.get('mermaid'):
+            llm = re.sub(r'[\'()\[\]{}:]','_',self.supervisor_llm_id.name).replace(' ','')
+            supervisor=f"Supervisor\n<small>fa&colon;fa-cog {llm}</small>"
+            # ~ _logger.info(f"SUpervisor ------------------>{supervisor}")            
+            return supervisor
         else:
             return "Supervisor"
 
