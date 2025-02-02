@@ -64,6 +64,14 @@
   <field name="name">EleutherAI/gpt-j-6B</field>
   <field name="attribute_id" ref="ai_agent.product_attribute_model" />
 </record>
+<record id="deepseek-ai_deepseek-r1_product_attribute_value" model="product.attribute.value">
+  <field name="name">deepseek-ai/DeepSeek-R1</field>
+  <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+</record>
+<record id="ai-sweden-models_gpt-sw3-40b_product_attribute_value" model="product.attribute.value">
+  <field name="name">AI-Sweden-Models/gpt-sw3-40b</field>
+  <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+</record>
 
     <!-- Attribute Line -->
     <record id="huggingface_product_template_attribute_line_model" model="product.template.attribute.line">
@@ -82,6 +90,8 @@
                     ref('bloom_product_attribute_value'),
                     ref('albert_product_attribute_value'),
                     ref('electra_product_attribute_value'),
+                    ref('deepseek-ai_deepseek-r1_product_attribute_value'),
+                    ref('ai-sweden-models_gpt-sw3-40b_product_attribute_value'),
                     ])]" />
     </record>
     <!-- Token Type -->

@@ -102,13 +102,15 @@ avatar_server_action = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 5
 class AIQuestAgent(models.Model):
     _name = 'ai.quest.agent'
     _description = 'AI Quest Agent'
+    _order="sequence asc"
 
     ai_quest_id = fields.Many2one(comodel_name='ai.quest', string="", help="")
     ai_agent_id = fields.Many2one(
-        comodel_name='ai.agent', string="Agent", help="")
-    ai_agent_status = fields.Selection(
-    selection=[("draft", _("Draft")), ("active", _("Active")), ("done", _("Done")), ("error", _("Error"))],
-    default="draft", related='ai_agent_id.status')
+        comodel_name='ai.agent', string="Agent", help="",required=False)
+    ai_agent_status = fields.Selection(selection=[
+                                ("draft", _("Draft")), 
+                                ("active", _("Active")), ("done", _("Done")), 
+                                ("error", _("Error"))], default="draft", related='ai_agent_id.status')
     ai_agent_llm_id = fields.Many2one(comodel_name="ai.agent.llm", string="LLM", help="Choose Large Language Model",
                                       domain="[('status','=','confirmed')]", related='ai_agent_id.ai_agent_llm_id')
     ai_llm_status = fields.Selection(
@@ -116,6 +118,29 @@ class AIQuestAgent(models.Model):
     default="not_confirmed", related='ai_agent_id.ai_agent_llm_id.status')
     object_id = fields.Reference(string='Object',related="ai_agent_id.object_id")
     sequence = fields.Integer(string='Sequence')
+
+    @api.model
+    def create(self, vals):
+        res = super(AIQuestAgent, self).create(vals)
+        if res.ai_quest_id:
+            res.ai_quest_id._compute_graph_image()
+        return res
+
+    def write(self, vals):
+        res = super(AIQuestAgent, self).write(vals)
+        for record in self:
+            if record.ai_quest_id:
+                record.ai_quest_id._compute_graph_image()
+        return res
+
+    def unlink(self):
+        quests = self.mapped('ai_quest_id')
+        res = super(AIQuestAgent, self).unlink()
+        for quest in quests:
+            quest._compute_graph_image()
+        return res
+
+
 
 
 # https://readmedium.com/langgraph-made-easy-a-beginners-guide-part-2-196e8b179119
@@ -226,12 +251,16 @@ class AIQuest(models.Model):
                                       help="Temperature controls the randomness and creativity of the model's output, "
                                            "<1.0 more predictable and consistent >1.0 more diverse and creative responses")
 
-    @api.depends('ai_agent_ids','is_supervisor')
-    def compute_graph_image(self):
+    @api.depends('is_supervisor','ai_agent_ids.sequence',
+                 'ai_agent_ids.ai_agent_id',
+                 'ai_agent_ids.ai_agent_id.ai_agent_llm_id',
+                 'ai_agent_ids.ai_agent_id.ai_tool_ids.ai_tool_id',
+                 'ai_agent_ids.ai_agent_id.ai_memory_ids.ai_memory_id')
+    def _compute_graph_image(self):
         for rec in self:
             if rec.ai_agent_ids:
                 try:
-                    graph = rec.build(session=self.env['ai.quest.session'].quest_init(self),mermaid=True)
+                    graph = rec.build(session=self.env['ai.quest.session'].quest_init(rec),mermaid=True)
                     image_object = graph.get_graph().draw_mermaid_png()
                     rec.graph_image = base64.b64encode(image_object).decode('utf-8')
                 except Exception as e:
@@ -240,7 +269,7 @@ class AIQuest(models.Model):
             else:
                 rec.graph_image = False
 
-    graph_image = fields.Image("Graph", compute=compute_graph_image, store=True)
+    graph_image = fields.Image("Graph", compute=_compute_graph_image, compute_sudo=True,store=True)
 
   
     @api.model
@@ -778,8 +807,9 @@ class AIQuest(models.Model):
                     'code': "",
                 })
         res = super(AIQuest, self).create(vals_list)
-        new_server_action.write({"code": f"action = env.ref('{res._get_eid()}').server_action(records)"})
-        res.write({"server_action_id": new_server_action.id})
+        if new_server_action:
+            new_server_action.write({"code": f"action = env.ref('{res._get_eid()}').server_action(records)"})
+            res.write({"server_action_id": new_server_action.id})
         return res
 
 
@@ -819,7 +849,6 @@ class AIQuest(models.Model):
 
             # Add supervisor
             _logger.info(f"Adding supervisor: with {members=}")
-            llm = "fa&colon;fa-cog<small>" + re.sub(r'[()\[\]{}:]',' ',self.supervisor_llm_id.name) + "</small>"
             graph_builder.add_node(self.get_agent_name(**kwargs), self.env['ai.agent'].create_supervisor(self,members, **kwargs))
 
             # Add worker nodes
@@ -889,7 +918,7 @@ class AIQuest(models.Model):
         if not self.ai_agent_ids:
             raise ValueError("No agents provided")
 
-        agents = [agent for agent in self.ai_agent_ids.mapped('ai_agent_id')]
+        agents = [agent for agent in self.ai_agent_ids.sorted(key=lambda s: s.sequence).mapped('ai_agent_id') if agent]
         session = kwargs.get('session',False)
 
         def initial_node(state: AgentState) -> AgentState:
@@ -993,7 +1022,7 @@ class AIQuest(models.Model):
                 
     def get_agent_name(self,**kwargs):
         if kwargs.get('mermaid'):
-            llm = re.sub(r'[\'()\[\]{}:]','_',self.supervisor_llm_id.name).replace(' ','')
+            llm = re.sub(r'[\'()\[\]{}:]','_',self.supervisor_llm_id.name).replace(' ','') if self.supervisor_llm_id else ''
             supervisor=f"Supervisor\n<small>fa&colon;fa-cog {llm}</small>"
             # ~ _logger.info(f"SUpervisor ------------------>{supervisor}")            
             return supervisor

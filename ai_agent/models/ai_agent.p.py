@@ -444,7 +444,7 @@ class AIAgent(models.Model):
             name = "**" + re.sub(r'[()\[\]\{\}:]',' ',self.name).strip() + "**"
             tools = "<small>fa&colon;fa-tools " + re.sub(r'[()\[\]{}:]',' ',','.join([t.ai_tool_id.name for t in self.ai_tool_ids])) + "</small>\n" if self.ai_tool_ids else ''
             memories =  "<small>fa&colon;fa-book " + re.sub(r'[()\[\]{}:]',' ',','.join([m.ai_memory_id.name for t in self.ai_memory_ids])) + "</small>\n" if self.ai_memory_ids else ''
-            llm = "<small>fa&colon;fa-cog " + re.sub(r'[()\[\]{}:]',' ',self.ai_agent_llm_id.name) + "</small>"
+            llm = "<small>fa&colon;fa-cog " + re.sub(r'[()\[\]{}:]',' ',self.ai_agent_llm_id.name) + "</small>" if self.ai_agent_llm_id else ''
             return f"{name}\n{tools}{memories}{llm}"
         else:
             name = re.sub(r'[()\[\]\{\}:]',' ',self.name).strip()

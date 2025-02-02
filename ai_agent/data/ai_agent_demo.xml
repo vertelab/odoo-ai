@@ -81,7 +81,7 @@
     <record id="ai_quest_aria" model="ai.quest">
       <field name="name">ARIA (Adaptive Resource Intelligence Assistant, chatbot)</field>
       <field name="init_type">chat</field>
-      <field name="code">result = quest.build_graph(session=session,message=message).invoke(message_invoke)</field>
+      <field name="code">result = quest.build(session=session,message=message_body).invoke(message_invoke)</field>
       <field name="description">
         You are a Chat Bot ahd help the Human tp analyze complex systems, identify inefficiencies, 
         and implement data-driven solutions that maximize 

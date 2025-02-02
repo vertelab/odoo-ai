@@ -331,7 +331,7 @@ class AIQuestSession(models.Model):
             })
             if agents:
                 session.write({
-                    'ai_agent_ids': [(4, agent.id) for agent in agents],
+                    'ai_agent_ids': [(4, agent.id) for agent in agents if agent.id],
                     'ai_agent_llm_ids': [(4, agent.ai_agent_llm_id.id) for agent in agents if agent.ai_agent_llm_id],
                 })
             if session.debug:
