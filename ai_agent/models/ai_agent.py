@@ -195,7 +195,88 @@ class AIAgent(models.Model):
         response = self.ai_agent_llm_id.invoke(messages,**kwargs)
         return response
 
+
+    def prompt(self, session=False, debug=False, **kwargs):
+        """
+          Single agent prompting from quest.code
+         
+          result = agents[0].prompt(
+                   session=session,
+                   debug=quest.debug,
+                   message=html2plaintext(message.body),
+
+        """
+        
+        
+        self.last_run = fields.Datetime.now()
+        
+        
+        topic = kwargs.get('topic',kwargs.get('message','')) 
+        if session:
+            quest = session.ai_quest_id
+        else:
+            quest = self.env.ref('ai_agent.ai_quest_test')
+        debug=kwargs.get('debug',quest.debug)
+        if debug:
+            _logger.error(f"{self=}{session=} {quest=} {self.last_run} {kwargs=}")
+            session.add_message(f"Agent {self.name} {topic=}")
+
+        if not self.ai_agent_llm_id:
+            if debug:
+                self.log_message("No LLM")
+            raise UserError("No LLM")
+
+        response = False
+
+        use_lang=f"Use language {self.env.user.lang}" if quest.use_personal_lang else ''
+        chat_history="Chat history: " + self._chat_history(channel, bot_user,quest.chat_history_limit) if quest.use_chat_history else False,
+        system_message = SystemMessage(
+                content=f"""You are an agent with specific responsibilities.
+                Role: {self.ai_role}
+                Goal: {self.ai_goal}
+                Backstory: {self.ai_backstory}
+                Memory: {self._get_memory(latest_message)} {self._get_memory(topic)}
+                {chat_history}
+                
+                {self._extra_context(quest)}
+                
+                Instructions:
+                - Provide thorough, complete responses
+                - Use available tools and memory when needed
+                - Stay focused on your specific role
+                - Guidelines and instructions: {quest.description}
+        {use_lang}
+                """
+            )
+        prompt = self.ai_prompt_template
+        prompt = prompt.format_map(SafeDict(self.extra_context(quest)))
+        messages = [system_message,HumanMessage(content=topic),HumanMessage(content=prompt)]
+        
+        if debug:
+            self.log_message(f"Agent  {self.name} prompt {messages=}")
+            _logger.debug(f"Agent {self.name} {messages=}")   
+        try:
+                response = self.ai_agent_llm_id.invoke(messages,session=session, quest=quest, agent=self, debug=debug)
+        except Exception as e:
+            _logger.error(f"Error in agent {self.name}: {str(e)}") 
+            self.log_message(f"Error in agent {self.name}: {str(e)}\n{traceback.format_exc()}")
+            return {
+                "messages": [
+                    AIMessage(
+                        content=f"Error occurred in agent {self.name}: {str(e)}\n{traceback.format_exc()}  ",
+                        name=self.name.replace(' ', '_').replace(',', '').replace('.', '')
+                    )
+                ]
+            }
+        session.save_message(response)
+        return response
+
+
     # ~ https://www.perplexity.ai/search/hur-debuggar-jag-odoo-E_QK9lp.RrqkS5flbGCXQQ
+
+    # ------------------------------------------------------------
+    # LangGraph
+    # ------------------------------------------------------------
 
     def create_sequence_node(self, **kwargs):
         """Creates a node for the agent in the chain."""
