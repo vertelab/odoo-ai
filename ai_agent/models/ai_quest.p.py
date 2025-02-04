@@ -1,28 +1,69 @@
-
 import base64
 import json
 import logging
+import markdown
 import operator
 import re
-from random import randint
-from secrets import choice
-from typing import Annotated, TypedDict, Sequence
-
-import markdown
+import traceback
 import unidecode
-from langchain_core.messages import BaseMessage, HumanMessage
-from langchain_core.messages import AIMessage
-from langgraph.graph import END, StateGraph
-##if VERSION >= '16.0'
-from odoo.addons.base.models.avatar_mixin import get_hsl_from_seed
-##endif
+import warnings
+
+
+# ~ from typing import Annotated, TypedDict, Sequence, List, Union
+from IPython.display import Image, display
+from langchain import hub
+from langchain.agents import Tool, AgentExecutor, LLMSingleActionAgent, AgentOutputParser, create_tool_calling_agent, create_xml_agent,create_json_chat_agent
+from langchain.prompts import ChatPromptTemplate
+from langchain.schema import AgentAction, AgentFinish
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
+from langchain_core.runnables.graph import MermaidDrawMethod
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.graph import StateGraph, START, END
+from langgraph.prebuilt import create_react_agent
+from odoo import models, fields, api, _
+from odoo.addons.ai_agent.models.ai_quest_session import AIQuestSession
 from odoo.exceptions import UserError, ValidationError, Warning
 from odoo.tools.mail import html2plaintext
 from odoo.tools.safe_eval import safe_eval
-from odoo.addons.ai_agent.models.ai_quest_session import AIQuestSession
-from odoo import models, fields, api, _
+from pydantic import BaseModel, ConfigDict, SkipValidation
+from random import randint
+from secrets import choice
+
+##if VERSION >= '18.0'
+from typing import Annotated, List, NotRequired, Sequence, TypedDict, Union, Any
+##else
+from typing_extensions import NotRequired, TypedDict
+from typing import Annotated, List, Dict, Sequence, Union, Any
+##endif
+# Odoo 18 okt 2024  Ubuntu 24.04 Python 3.12 (NotRequired 3.11)
+# Odoo 17 2023 Ubuntu 22.04  Python 3.10
+# Odoo 16 2022 Ubuntu 22.04  Python 3.10
+# Odoo 14 2020 Ubuntu 20.04  Python 3.8 -> 3.10
+# The typing_extensions module is primarily used for backporting new features to older Python versions
+
+
+##if VERSION >= '16.0'
+from odoo.addons.base.models.avatar_mixin import get_hsl_from_seed
+##endif
 
 _logger = logging.getLogger(__name__)
+
+
+SUPERVISOR = """You are a supervisor coordinating between workers: {members}.
+Based on the request, determine which worker should handle the next step.
+Only choose FINISH when a complete response has been provided.
+
+Guidelines: {self.description}
+{self._extra_context(self)}
+
+Instructions:
+1. Evaluate if we have a complete response
+2. If not complete, choose the most appropriate worker
+3. Send FINISH only when we have a satisfactory response
+4. Do not mention that you have done tool calls, thats too technical 
+4. {use_lang}
+"""
+
 
 avatar_channel = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 530.06 530.06">
 <circle cx="265.03" cy="265.03" r="265.03" fill="#875a7b"/>
@@ -64,43 +105,71 @@ avatar_server_action = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 5
 <circle cx="345.04" cy="265.03" r="26.41" fill="#ffffff"/>
 </svg>'''
 
-
-class AgentState(TypedDict):
-    messages: Annotated[Sequence[BaseMessage], operator.add]
-    session: AIQuestSession
-    next: str
-
 class AIQuestAgent(models.Model):
     _name = 'ai.quest.agent'
-    _description = 'AI Quest AGent'
+    _description = 'AI Quest Agent'
+    _order="sequence asc"
 
     ai_quest_id = fields.Many2one(comodel_name='ai.quest', string="", help="")
-    sequence = fields.Integer(string='Sequence')
-    ai_agent_id = fields.Many2one(comodel_name='ai.agent', string="Agent", help="")
-    object_id = fields.Reference(string='Object',related="ai_agent_id.object_id",selection=lambda m: [(model.model, model.name) for model in m.env['ir.model'].sudo().search([])])
-    ai_agent_status = fields.Selection(
-        selection=[("draft", _("Draft")), ("active", _("Active")), ("done", _("Done")), ("error", _("Error"))],
-        default="draft", related='ai_agent_id.status')
+    ai_agent_id = fields.Many2one(
+        comodel_name='ai.agent', string="Agent", help="",required=False)
+    ai_agent_status = fields.Selection(selection=[
+                                ("draft", _("Draft")), 
+                                ("active", _("Active")), ("done", _("Done")), 
+                                ("error", _("Error"))], default="draft", related='ai_agent_id.status')
     ai_agent_llm_id = fields.Many2one(comodel_name="ai.agent.llm", string="LLM", help="Choose Large Language Model",
                                       domain="[('status','=','confirmed')]", related='ai_agent_id.ai_agent_llm_id')
     ai_llm_status = fields.Selection(
-        selection=[("not_confirmed", "Not Confirmed"), ("confirmed", "Confirmed"), ("error", "Error")],
-        default="not_confirmed", related='ai_agent_id.ai_agent_llm_id.status')
+    selection=[("not_confirmed", "Not Confirmed"), ("confirmed", "Confirmed"), ("error", "Error")],
+    default="not_confirmed", related='ai_agent_id.ai_agent_llm_id.status')
+    object_id = fields.Reference(string='Object',related="ai_agent_id.object_id")
+    sequence = fields.Integer(string='Sequence')
+
+    @api.model
+    def create(self, vals):
+        res = super(AIQuestAgent, self).create(vals)
+        if res.ai_quest_id:
+            res.ai_quest_id._compute_graph_image()
+        return res
+
+    def write(self, vals):
+        res = super(AIQuestAgent, self).write(vals)
+        for record in self:
+            if record.ai_quest_id:
+                record.ai_quest_id._compute_graph_image()
+        return res
+
+    def unlink(self):
+        quests = self.mapped('ai_quest_id')
+        res = super(AIQuestAgent, self).unlink()
+        for quest in quests:
+            quest._compute_graph_image()
+        return res
+
+
 
 
 # https://readmedium.com/langgraph-made-easy-a-beginners-guide-part-2-196e8b179119
 
-DEFAULT_PYTHON_CODE = """# Available variables:
-#  - env: Odoo Environment on which the action is triggered
-#  - model: Odoo Model of the record on which the action is triggered; is a void recordset
+DEFAULT_PYTHON_CODE = """# Available variables:  
+#  - env, self: Odoo Environment on which the action is triggered
+#  - quest: The current Quest
+#  - agents: A list of agents for this Quest
+#  - company_id: The current Company
+#  - context: The current context
 #  - record: record on which the action is triggered; may be void
 #  - records: recordset of all records on which the action is triggered in multi-mode; may be void
-#  - time, datetime, dateutil, timezone: useful Python libraries
-#  - float_compare: Odoo function to compare floats based on specific precisions
-#  - log: log(message, level='info'): logging function to record debug information in ir.logging table
-#  - UserError: Warning Exception to use with raise
-# - Command: x2Many commands namespace
-# To return an action, assign: action = {...}\n\n\n\n"""
+#  - message: Human message record
+#  - message_body: Human message in a chat context
+#  - message_invoke: Invoke-parameter in a chat context
+#  - UserError: Raise UserError-condition 
+#  - _logger: Logger eg _logger.warning(f"My text")
+# To return a result assign result\n
+# Example:
+#
+# result = quest.build_graph(session=session,message=message_body).invoke(message_invoke)
+#\n\n\n
+"""
 
 # Python code
 INIT_TYPES = [
@@ -173,10 +242,9 @@ class AIQuest(models.Model):
     status = fields.Selection(
         selection=[("draft", _("Draft")), ("active", _("Active")), ("done", _("Done")), ("error", _("Error"))],
         default="draft")
-    ## if VERSION >= '16.0'
+    # #if VERSION >= '16.0' 
     tag_ids = fields.Many2many(comodel_name='product.tag', string='Tags')
-    ## endif
-    tag_ids = fields.Many2many(comodel_name='product.tag', string='Tags')
+    # #endif
     use_chat_history = fields.Boolean(string='Use Chat History', default=True, help='Add chat history to the context')
     use_company_info = fields.Boolean(string='Use Company Info', default=True,
                                       help='Add company mission and values to the context')
@@ -187,6 +255,35 @@ class AIQuest(models.Model):
     use_time_context = fields.Boolean(string='Use Time Context', default=True,
                                       help='Inform the LLM of current time, date')
     user_id = fields.Many2one(comodel_name='res.users', string="Owner", help="")
+    is_supervisor = fields.Boolean(string='Is Supervisor', help="This is a ReAct type of quest using a supervisor coordinating agents")
+    supervisor_prompt = fields.Text(string="Supervisor Prompt",default=SUPERVISOR)
+    supervisor_llm_id = fields.Many2one(comodel_name="ai.agent.llm", string="LLM", help="Choose Large Language Model for the supervisor",
+                                          domain="[('status','=','confirmed')]")
+    supervisor_temperature = fields.Float(string='Temperature', default=0.7,
+                                      help="Temperature controls the randomness and creativity of the model's output, "
+                                           "<1.0 more predictable and consistent >1.0 more diverse and creative responses")
+
+    @api.depends('is_supervisor',
+                 'ai_agent_ids.sequence',
+                 'ai_agent_ids.ai_agent_id',
+                 'ai_agent_ids.ai_agent_id.ai_agent_llm_id',
+                 'ai_agent_ids.ai_agent_id.ai_tool_ids.ai_tool_id',
+                 'ai_agent_ids.ai_agent_id.ai_memory_ids.ai_memory_id')
+    def _compute_graph_image(self):
+        for rec in self:
+            if rec.ai_agent_ids:
+                try:
+                    graph = rec.build(session=self.env['ai.quest.session'].quest_init(rec),mermaid=True)
+                    image_object = graph.get_graph().draw_mermaid_png()
+                    rec.graph_image = base64.b64encode(image_object).decode('utf-8')
+                except Exception as e:
+                    # rec.log_message(f"Error building chain: {str(e)}", is_error=True)
+                    raise UserError(f"Error building chain: {str(e)}\n{traceback.format_exc()}")
+            else:
+                rec.graph_image = False
+
+    graph_image = fields.Image("Graph", compute=_compute_graph_image, compute_sudo=True,store=True)
+
   
     @api.model
     def _generate_random_token(self):
@@ -195,7 +292,7 @@ class AIQuest(models.Model):
     uuid = fields.Char('UUID', size=50, default=_generate_random_token, copy=False)
 
 
-    ## if VERSION >= '16.0'
+    # #if VERSION >= '16.0'
     @api.depends('init_type', 'image_128', 'uuid')
     def _compute_avatar_128(self):
         for record in self:
@@ -213,7 +310,7 @@ class AIQuest(models.Model):
         bgcolor = get_hsl_from_seed(self.uuid)
         avatar = avatar.replace('fill="#875a7b"', f'fill="{bgcolor}"')
         return base64.b64encode(avatar.encode())
-    ##endif
+    # #endif
 
     @api.depends('session_line_ids')
     def compute_llm_count(self):
@@ -221,13 +318,15 @@ class AIQuest(models.Model):
             record.llm_count = len(set(record.session_line_ids.mapped('ai_llm_id')))
 
     def action_get_llms(self):
+        llm_ids = []
+        [llm_ids.extend(session_id.ai_agent_llm_ids.ids) for session_id in self.session_ids]
         action = {
             'name': 'LLMs',
             'type': 'ir.actions.act_window',
             'res_model': 'ai.agent.llm',
             'view_mode': 'kanban,tree,form,calendar',
             'target': 'current',
-            'domain': [("session_line_ids.ai_quest_id", '=', self.id)]
+            'domain': [("id", '=', llm_ids)]
         }
         return action
 
@@ -300,7 +399,10 @@ class AIQuest(models.Model):
     @api.depends("session_line_ids")
     def compute_agent_count(self):
         for record in self:
-            record.agent_count = len(set(record.session_line_ids.mapped('ai_agent_id')))
+            ai_agent_ids = list(map(lambda session_id: session_id.ai_agent_ids.ids, self.session_ids))
+            agent_ids = []
+            [agent_ids.extend(ai_agent_id) for ai_agent_id in ai_agent_ids]
+            record.agent_count = len(set(agent_ids))
 
     @api.depends('model_id')
     def _compute_model_name(self):
@@ -315,6 +417,7 @@ class AIQuest(models.Model):
                     'name': self.name,
                     'model_id': self.model_id.id,
                     'binding_model_id': self.model_id.id if self.status == 'active' else None,
+                    "binding_view_types": "form,list",
                 })
         if self.init_type == 'cron':
             if self.cron_id:
@@ -355,6 +458,7 @@ class AIQuest(models.Model):
                 self.server_action_id = self.server_action_id.create({
                     'name': self.name,
                     'model_id': self.model_id.id if self.model_id else self.env.ref('base.model_res_partner').id,
+                    "binding_view_types": "form,list",
                     'state': 'code',
                     'code': f"action = env.ref('{self._get_eid()}').server_action(records)",
                 })
@@ -399,11 +503,25 @@ class AIQuest(models.Model):
                 })
         return eid
 
+    def Xlog_message(self, body, is_error=False):
+        for q in self:
+            if is_error:
+                q.status = "error"
+            q.last_run = fields.Datetime.now()
+            q.sudo().message_post(body=f"{body} | {self.last_run}", message_type="notification")
+            
+            
     def log_message(self, body, is_error=False):
-        if is_error:
-            self.status = "error"
-        self.last_run = fields.Datetime.now()
-        self.message_post(body=f"{body} | {self.last_run}", message_type="notification")
+        self.env['mail.thread'].sudo().message_notify(
+            body=f"{body} | {self.last_run}",
+            subject="Log Message" if not is_error else "Error Log",
+            partner_ids=[self.env.user.partner_id.id],
+            model=self._name,
+            res_id=self.id,
+            message_type='notification'
+        )
+
+            
 
     def mail_test_wizard(self):
         if self._check_quest_error():
@@ -441,26 +559,20 @@ class AIQuest(models.Model):
     def start(self):
         pass
 
-    def _server_action_values(self, **kwarg):
-        return kwarg
+    def _server_action_values(self, **kwargs):
+        return kwargs
 
     def server_action(self, records):
         if self.init_type == 'server-action' and self.server_action_id:
             if self._check_quest_error():
                 raise UserError(self._check_quest_error())
             vals = self._server_action_values(records=records)
-            res = self.run(records=records)
+            res = self.run(**vals)
             self.log_message(f'server-action {res}')
 
-            #     vals = self._server_action_values(records=records)
-            #     if self.code:
-            #         return self.with_context({'records': records, 'session': vals['session']}).run()
-            #     else:
-            #         return vals['agent'].prompt_agent('',session=vals['session'])
-            #
 
-    def _cron_values(self, **kwarg):
-        return kwarg
+    def _cron_values(self, **kwargs):
+        return kwargs
 
     def cron(self, records):
         self.ensure_one()
@@ -476,24 +588,19 @@ class AIQuest(models.Model):
             vals = self._cron_values(records=records)
             result = self.run(**vals)
 
-    def _chat_values(self, **kwarg):
-        return kwarg
+    def _chat_values(self, **kwargs):
+        return kwargs
 
     def chat(self, message, channel, bot_user):
         """"
             Implements chat with channel and bot
             
             code:
-            result = agents[0].prompt_agent(
-                            session=session,
-                            debug=quest.debug,
-                            message=html2plaintext(message.body),
-                            channel=channel,
-                            bot_user=bot_user
-                                   )
+            
+            result = quest.build_graph(session=session,message=message).invoke(message_invoke)
+            
             
         """
-        # ~ _logger.warning(f"chat {message=} {message.body=}")
         if (self.init_type == 'chat' and self.chat_user_id) or (self.init_type == "channel" and self.channel_id):
             if self._check_quest_error():
                 raise UserError(self._check_quest_error())
@@ -503,12 +610,11 @@ class AIQuest(models.Model):
                 message.parent_id.ai_quest_session_id if message.ai_quest_session_id else \
                     self.env['ai.quest.session'].quest_init(self)
             vals = self._chat_values(session=session, message=message, channel=channel, bot_user=bot_user)
-            # ~ raise UserError(f"{vals=}")
             res = self.run(**vals)
             return res
 
-    def _mail_values(self, **kwarg):
-        return kwarg
+    def _mail_values(self, **kwargs):
+        return kwargs
 
     def mail(self, mail, session):
         if self.init_type == "mail":
@@ -516,13 +622,28 @@ class AIQuest(models.Model):
                 self.log_message(self._check_quest_error())
             mail_body = html2plaintext(self.markdown2html(mail.body)).replace("<b>", "").replace("</b>", "").replace(
                 "<br>", "").replace("<p>", "").replace("</p>", "").replace("\n", "")
-            vals = self._mail_values(mail=mail, mail_body=mail_body, session=session)
+            vals = self._mail_values(mail=mail, mail_body=mail_body, session=session, attachments=mail.attachment_ids)
             res = self.run(**vals)
             return res
 
     # ------------------------------------------------------------
     # Python code helpers
     # ------------------------------------------------------------
+
+    @api.model
+    def is_ai_message(self, var):
+        return isinstance(var, AIMessage)
+ 
+    @api.model
+    def get_last_ai_message_content(self, response):
+        if response.get('messages', False):
+            messages = response.get('messages', [])
+            ai_messages = [m for m in messages if self.is_ai_message(m)]
+            if ai_messages:
+                last_ai_message = ai_messages[-1] if len(ai_messages) != 0 else None
+                if messages and last_ai_message:
+                    _logger.error(f"{last_ai_message=}")
+                    return last_ai_message.content
 
     @api.model
     def extract_dicts(self, text):
@@ -551,8 +672,11 @@ class AIQuest(models.Model):
         return markdown.markdown(text)
 
     def json2dict(self, text):
-        text = text.split('```')[1].replace("json", "").replace("\n", "")
-        return json.loads(text)
+        json_split = text.split('```')
+        if len(json_split) > 1:
+            text = text.split('```')[1].replace("json", "").replace("\n", "")
+            return json.loads(text)
+        return False
 
     # ------------------------------------------------------------
     # Python CODE eval
@@ -565,14 +689,15 @@ class AIQuest(models.Model):
         :param action: the current server action
         :type action: browse record
         :returns: dict -- evaluation context given to (safe_)safe_eval """
-
         records = kw.get('records', [])
-
+        message = kw.get('message', False)
+        message_body = html2plaintext(message.body) if message else ''
         eval_context = {
             'action': action,
             'env': self.env,
             'self': self,
             'session': kw.get('session', self.env['ai.quest.session'].quest_init(self)),
+            # 'session': kw.get('session'),
             'quest': self,
             'agents': [a.ai_agent_id for a in self.ai_agent_ids],
             'company_id': self.env.user.company_id,
@@ -580,16 +705,11 @@ class AIQuest(models.Model):
             'record': records[0] if records else None,
             'records': records,
             # context
-            'agent_list': ' '.join(
-                [f"'name': {a.name}, 'role': {a.ai_role},'goal': {a.ai_goal},'template': {a.ai_prompt_template}" for a
-                 in self.env['ai.agent'].search([])]),
-            'quest_list': ' ',
-            'module_list': '',
-
+            'message_body': message_body,
+            'message_invoke': {"messages": [HumanMessage(content=message_body)]},
             # Exceptions
             'Warning': Warning,
             'UserError': UserError,
-
             # helpers
             '_logger': _logger,
             'html2plaintext': html2plaintext,
@@ -599,36 +719,36 @@ class AIQuest(models.Model):
         return eval_context
 
     def run(self, **kwargs):
+        if self.debug:
+            _logger.warning(f" RUN {kwargs=}")
         local_dict = {}
         try:
+            if self.debug:
+                _logger.warning(f" Före eval context -----------------------")
             eval_context = self._get_eval_context(None, kwargs)
             # eval_context["session"].status = "active"
             if self.debug:
-                _logger.warning(f"{eval_context=}" + f"{self.code=}\n=======\n {local_dict=}")
+                _logger.warning(f"Efter eval context {eval_context=}" + f"{self.code=}\n=======\n {local_dict=}")
             safe_eval(self.code, eval_context, local_dict, mode="exec", nocopy=True)
         except ValueError as e:
             self.log_message(f"ValueError {e=}", is_error=True)
             if self.debug:
-                self.log_message(f"{e=}\n\n=====\n{self.code=}\n=======\n {local_dict=}")
+                self.log_message(f"{e=}\n\n=====\n{self.code=}\n=======\n {local_dict=}\n{traceback.format_exc()}")
             return None
         except Exception as e:
             _logger.error(f"{e=}")
-            self.log_message(f" {e=}")
+            self.log_message(f" {e=}  {traceback.format_exc()}")
             if self.debug:
                 self.log_message(f"{e=}\n\n=====\n{self.code=}\n=======\n {local_dict=}")
             return None
         session = local_dict.get('session', eval_context['session'])
 
-        # objects = local_dict.get('objects', [])
         objects = {
             'ai_session_id': eval_context.get('session'),
             'ai_quest_id': eval_context.get('self'),
             'records': eval_context.get('records')
         }
 
-        # if not eval_context.get('records'):
-        #     objects.extend(eval_context.get('records'))
-        # _logger.error(f"{local_dict=}")
 
         if local_dict.get('result'):
             messages = local_dict.get('result', {}).get('messages', [])
@@ -646,34 +766,6 @@ class AIQuest(models.Model):
 
         return local_dict
 
-        #for department in records:
-        #   _logger.warning(f{department})
-        # ~ result = agent[0].prompt_agent(session=session,department=record.name)
-        #                                                       #company_information=company_id.company_mission+company_id.company_values,
-        #                                                       department=department.name,
-        #                                                      quest_instructions=quest.description)
-        #markdown.markdown(result)
-
-        # res = False
-        # action = self.sudo()
-        # eval_context = self._get_eval_context(action, kwargs)
-        # records = self.env.context.get('records')
-        # if records:
-        #     try:
-        #         records.check_access_rule('write')
-        #     except AccessError:
-        #         _logger.warning(
-        #             "Forbidden server action %r executed while the user %s does not have access to %s.",
-        #             action.name, self.env.user.login, records,
-        #         )
-        #         raise
-        #
-        # _logger.warning(f"{eval_context=}")
-        # run_self = action.with_context(eval_context['env'].context)
-        # safe_eval(run_self.code.strip(), eval_context, mode="exec", nocopy=True, filename=str(self))
-        # _logger.warning(f"{self.code=}  {eval_context=}")
-        #
-        # return eval_context.get('result', None)
 
     # ------------------------------------------------------------
     # ORM
@@ -690,6 +782,7 @@ class AIQuest(models.Model):
         if self.id:
             values['alias_defaults'] = defaults = {}
             defaults['ai_quest_id'] = self.id
+            defaults['status'] = 'active'
         return values
 
     def write(self, vals):
@@ -705,6 +798,7 @@ class AIQuest(models.Model):
             if quest.server_action_id:
                 quest.server_action_id.write(
                     {'name': quest.name, 'code': f"action = env.ref('{quest._get_eid()}').server_action(records)",
+                     "binding_view_types": "form,list",
                      'binding_model_id': self.model_id.id if self.status == 'active' else None})
             if quest.cron_id:
                 quest.cron_id.write({'name': quest.name, 'code': f"action = env.ref('{quest._get_eid()}').cron()"})
@@ -714,13 +808,40 @@ class AIQuest(models.Model):
                 quest.chat_user_id.write({'name': quest.name, 'login': quest.name, 'ai_quest_id': quest.id, })
         return result
 
+    @api.model_create_multi
+    def create(self, vals_list):
+        _logger.error(f"{vals_list=}")
+        new_server_action = False
+        for record in vals_list:
+            if record.get("model_id", False):
+                new_server_action = self.server_action_id = self.server_action_id.create({
+                    'name': record["name"],
+                    'model_id': record["model_id"],
+                    "binding_view_types": "form,list",
+                    'state': 'code',
+                    'code': "",
+                })
+        res = super(AIQuest, self).create(vals_list)
+        if new_server_action:
+            new_server_action.write({"code": f"action = env.ref('{res._get_eid()}').server_action(records)"})
+            res.write({"server_action_id": new_server_action.id})
+        return res
+
+
     # ------------------------------------------------------------
     # LangGraph 
     # ------------------------------------------------------------
 
-    # Inspired by https://github.com/menonpg/agentic_search_openai_langgraph/blob/main/agents.py
-    def build_graph(self, **kwarg):
-        """Build a multi-agent workflow graph."""
+    def build(self, **kwargs):
+        if self.is_supervisor:
+            _logger.info(f"Building graph with supervisor ")
+            return self.build_supervisor(**kwargs)
+        else:
+            _logger.info(f"Building chain ")
+            return self.build_chain(**kwargs)
+
+    def build_supervisor(self, **kwargs):
+        """Build a multi-agent workflow graph with supervisor."""
  
         if not self.ai_agent_ids:
             raise ValueError("No agents provided")
@@ -728,55 +849,210 @@ class AIQuest(models.Model):
         agents = [line.ai_agent_id for line in self.ai_agent_ids]
        
         # Get member names
-        members = [a.name for a in agents[1:]]
+        members = [a.name for a in agents]
         _logger.info(f"Building graph with supervisor and {len(members)} workers: {members}")
+        
         global session
-        session=kwarg.get('session',False)
+        session=kwargs.get('session',False)
+
+        if session == False:
+            raise UserError(_("No session added to build_graph method"))
 
         try:
             # Create graph
             graph_builder = StateGraph(AgentState)
 
             # Add supervisor
-            supervisor = agents[0]
-            _logger.info(f"Adding supervisor: {supervisor.name}")
-            graph_builder.add_node("Supervisor", supervisor.create_supervisor(self, members, **kwarg))
+            _logger.info(f"Adding supervisor: with {members=}")
+            graph_builder.add_node(self.get_agent_name(**kwargs), self.env['ai.agent'].create_supervisor(self,members, **kwargs))
 
             # Add worker nodes
-            for agent in agents[1:]:
-                _logger.info(f"Adding worker node: {agent.name}")
-                graph_builder.add_node(agent.name, agent.create_node(session=session))
+            for i, agent in enumerate(agents):
+                # ~ graph_builder.add_node(agent.name, agent.create_node(session=session))
+                graph_builder.add_node(agent.get_agent_name(i,**kwargs), agent.create_node(session=session))
 
             # Add edges from workers to supervisor
-            for member in members:
+            # ~ for member in [a.name for a in agents]:
+            for member in [a.get_agent_name(i,**kwargs) for i,a in enumerate(agents)]:
                 _logger.info(f"Adding edge: {member} -> Supervisor")
-                graph_builder.add_edge(member, "Supervisor")
+                graph_builder.add_edge(member,self.get_agent_name(**kwargs))
 
             # Add conditional routing
-            conditional_map = {k: k for k in members}
+            # ~ conditional_map = {k: k for k in [a.name for a in agents]}
+            conditional_map = {k: k for k in [a.get_agent_name(i,**kwargs) for i,a in enumerate(agents)]}
             conditional_map["FINISH"] = END
 
             _logger.info("Adding conditional edges with routes: " +
                          ", ".join([f"{k} -> {v}" for k, v in conditional_map.items()]))
 
             graph_builder.add_conditional_edges(
-                "Supervisor",
+                self.get_agent_name(**kwargs),
                 lambda x: x["next"],
                 conditional_map
             )
 
             # Set entry point
-            graph_builder.set_entry_point("Supervisor")
+            graph_builder.set_entry_point(self.get_agent_name(**kwargs))
 
             # Compile and return
             _logger.info("Compiling graph")
-            return graph_builder.compile()
+            
+            graph = graph_builder.compile()
+            input_channels = graph.input_channels
+            if self.debug:
+                self.log_message(f"{json.dumps(graph.get_graph().to_json(), indent=2)}\n{input_channels=}")
+                _logger.debug(f"{json.dumps(graph.get_graph().to_json(), indent=2)}\n{input_channels=}")
+                if hasattr(graph, 'model'):
+                    model_config = graph.model.config
+                    _logger.debug(f"Model {graph.model.config=}")
+                    self.log_message(f"Model {graph.model.config=}")
+                    if 'tools' in model_config:
+                        _logger.debug(f"Tools {graph.model.config['tools']=}")
+                        self.log_message(f"Tools {graph.model.config['tools']=}")     
+                
+            return graph
 
         except Exception as e:
             self.log_message(f"Error building graph: {str(e)}", is_error=True)
             _logger.error(f"Error building graph: {str(e)}")
+            
+            
             raise
-
+            
     # message = html2plaintext(message.body)
     # response = self.build_graph(agents).invoke({"messages": [HumanMessage(content=message)]})
     # result = response['messages'][-1].content
+    
+    # https://www.perplexity.ai/search/i-langgraph-vill-jag-komma-at-fCisIUB7RjaKwPovE_fyZg
+    
+    def build_chain(self, **kwargs):
+        """Build a multi-agent workflow chain."""
+        if self.debug:
+            _logger.debug(f"building chain: {str(kwargs)}")
+ 
+        if not self.ai_agent_ids:
+            raise ValueError("No agents provided")
+
+        agents = [agent for agent in self.ai_agent_ids.sorted(key=lambda s: s.sequence).mapped('ai_agent_id') if agent]
+        session = kwargs.get('session',False)
+
+        def initial_node(state: AgentState) -> AgentState:
+            # ~ state = ConfigDict(arbitrary_types_allowed=True)
+            # ~ if self.debug:
+            session.add_message(f"Agent INITIAL Initial state: {state=}")
+            return {
+                "messages": [{"role": "user", "content": kwargs.get('topic',kwargs.get('message',''))}],
+                'quest': self,
+                'session': kwargs.get('session',False),
+                'topic': kwargs.get('topic',''),
+                'scratchpad':[],
+                'next': "agent_0",
+                'count': 1,
+                'current_agent': 'initial_node',
+                'sequence_position': 0,
+                'last_position': len(agents),    
+            }
+
+        
+        try:
+            # Create graph
+            AgentState.model_config = ConfigDict(arbitrary_types_allowed=True)
+            workflow = StateGraph(AgentState)
+            workflow.add_node("initial", initial_node)
+            workflow.add_edge(START, "initial")
+            workflow.set_entry_point("initial")
+            
+            for i, agent in enumerate(agents):
+                session.add_message(f"Add Node Agent agent_{i}")
+                # ~ workflow.add_node(f"agent_{i}", 
+                                 # ~ lambda state, agent=agent, i=i: {
+                                     # ~ **agent.create_sequence_node(
+                                         # ~ debug=self.debug,
+                                         # ~ current_agent=agent.name,
+                                         # ~ sequence_position=i,
+                                         # ~ **kwargs
+                                     # ~ )(state),
+                                     # ~ "next":  f"agent_{i+1}" if i < len(agents) else END,
+                                     # ~ "current_node": f"agent_{i}",
+                                     # ~ "sequence_position": i
+                                 # ~ })
+                workflow.add_node(agent.get_agent_name(i,**kwargs), agent.create_sequence_node(
+                                                            debug=self.debug,
+                                                            current_agent=agent.name,
+                                                            sequence_position=i,
+                                                            **kwargs))
+            
+                # ~ workflow.add_node(f"agent_{i}", agent.create_node(
+                                                            # ~ debug=self.debug,
+                                                            # ~ current_agent=agent.name,
+                                                            # ~ sequence_position=i,
+                                                            # ~ **kwargs))
+            
+    
+            workflow.add_edge(f"initial", agents[0].get_agent_name(0,**kwargs))
+            for i, agent in enumerate(agents[:-1]):
+                workflow.add_edge(agents[i].get_agent_name(i,**kwargs), agents[i+1].get_agent_name(i+1,**kwargs))            
+            workflow.add_edge(agents[-1].get_agent_name(len(agents),**kwargs),END)
+            graph = workflow.compile()
+            input_channels = graph.input_channels
+           
+        except Exception as e:
+            self.log_message(f"Error building chain: {str(e)}\n{traceback.format_exc()}", is_error=True)
+            _logger.error(f"Error building chain: {str(e)}\n{traceback.format_exc()}")
+            raise
+            
+        if self.debug:
+            # ~ self.log_message(f"{json.dumps(graph.get_graph().to_json(), indent=2)}\n{input_channels=}")
+            # ~ self.log_message(f"get graph: {graph.get_graph()}\n")
+            _logger.debug(f"{json.dumps(graph.get_graph().to_json(), indent=2)}\n{input_channels=}")
+            _logger.error(f"Get_graph {graph.get_graph()}")
+
+        return graph
+
+    # Inspired by https://github.com/menonpg/agentic_search_openai_langgraph/blob/main/agents.py
+    def build_graph(self, **kwargs):
+        """Build a multi-agent workflow graph with supervisor."""
+        raise UserError(('quest.build_graph() is outdated, use quest.build() instead'))
+
+    def extract_json(self,agent,session,message):
+        # Find JSON-like content within triple backticks
+        message = message.replace('\n','')
+        json_match = re.search(r'``````', message, re.DOTALL)
+        if json_match:
+            json_string = json_match.group(1)
+            try:
+                return json.loads(json_string)
+            except json.JSONDecodeError:
+                session.add_message(f"{agent} Error: Invalid JSON format with backtick {json_string=}")
+                return None
+        else:
+            try:
+                return json.loads(message)
+            except json.JSONDecodeError:
+                session.add_message(f"{agent} Error: Invalid JSON format\n{message}")
+            try:
+                return json.loads(f"json \n{message}\n")
+            except json.JSONDecodeError:
+                session.add_message(f"{agent} Error: Invalid JSON tried updated '''json {message}'''")
+                
+    def get_agent_name(self,**kwargs):
+        if kwargs.get('mermaid'):
+            llm = re.sub(r'[\'()\[\]{}:]','_',self.supervisor_llm_id.name).replace(' ','') if self.supervisor_llm_id else ''
+            supervisor=f"Supervisor\n<small>fa&colon;fa-cog {llm}</small>"
+            # ~ _logger.info(f"SUpervisor ------------------>{supervisor}")            
+            return supervisor
+        else:
+            return "Supervisor"
+
+class AgentState(TypedDict):
+    messages: Annotated[Sequence[BaseMessage], operator.add]
+    session: SkipValidation[NotRequired[AIQuestSession]]
+    quest: SkipValidation[NotRequired[AIQuest]]
+    topic: str
+    scratchpad: Annotated[List[str], operator.add]
+    next: str
+    token: SkipValidation[NotRequired[int]]
+    # ~ count: SkipValidation[NotRequired[Step(lambda count: count + 1)]]
+    current_agent: str
+    sequence_position: int
+    last_position: int
