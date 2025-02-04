@@ -70,6 +70,18 @@
     "external_dependencies": {
         "python": [
             "langchain-core",
+            "markdown",
+            "unidecode",
+            "IPython",
+            "langchain",
+            "langgraph",
+            "langchain_community",
+            "langchain_openai",
+            "langchain_mistralai",
+            "langchain_groq",
+            "langchain_anthropic",
+            "pymupdf",
+            "faiss-cpu",
         ],
     },
     "demo": [],
