@@ -251,7 +251,8 @@ class AIQuest(models.Model):
                                       help="Temperature controls the randomness and creativity of the model's output, "
                                            "<1.0 more predictable and consistent >1.0 more diverse and creative responses")
 
-    @api.depends('is_supervisor','ai_agent_ids.sequence',
+    @api.depends('is_supervisor',
+                 'ai_agent_ids.sequence',
                  'ai_agent_ids.ai_agent_id',
                  'ai_agent_ids.ai_agent_id.ai_agent_llm_id',
                  'ai_agent_ids.ai_agent_id.ai_tool_ids.ai_tool_id',
