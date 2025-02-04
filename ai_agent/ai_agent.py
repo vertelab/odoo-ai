@@ -5,8 +5,6 @@ import logging
 import re
 import traceback
 
-
-
 from datetime import datetime
 from httpx import HTTPStatusError
 from json.decoder import JSONDecodeError
@@ -164,7 +162,7 @@ class AIAgent(models.Model):
         chat_history = ChatMessageHistory()
         question = ''
         for m in self.env['mail.message'].search([
-            ('model', '=', 'discuss.channel'),
+            ('model', '=', '<chatter/>'),
             ('res_id', '=', quest.real_channel_id.id)],
                 limit=quest.chat_history_limit, order='create_date asc'):
             if m.author_id.id == quest.real_chat_user_id.id:
@@ -652,7 +650,8 @@ class AIAgent(models.Model):
             except AttributeError as e:
                 _logger.error(f"Error: {ai_tool_id.tool=} not found in {ai_tool_id.tool_lib=}  {traceback.format_exc()}")
             except Exception as e:
-                _logger.error(f"An error occurred: {e}  {traceback.format_exc()}")
+                _logger.error(
+                    f"An error occurred: {e}  {traceback.format_exc()}")
             if TOOL:
                 tools.append(TOOL)
         _logger.warning(f"_get_tools{tools=}")

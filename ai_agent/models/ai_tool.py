@@ -70,7 +70,7 @@ class AITool(models.Model):
             'name': 'AI Quests',
             'type': 'ir.actions.act_window',
             'res_model': 'ai.quest',
-            'view_mode': 'kanban,tree,form',
+            'view_mode': 'kanban,list,form',
             'target': 'current',
             'domain': [("session_line_ids.ai_tool_id", '=', self.id)]
         }
@@ -81,7 +81,7 @@ class AITool(models.Model):
             'name': 'AI Agents',
             'type': 'ir.actions.act_window',
             'res_model': 'ai.agent',
-            'view_mode': 'kanban,tree,form',
+            'view_mode': 'kanban,list,form',
             'target': 'current',
             'domain': [("session_line_ids.ai_tool_id", '=', self.id)]
         }
@@ -92,7 +92,7 @@ class AITool(models.Model):
             'name': 'Session Lines',
             'type': 'ir.actions.act_window',
             'res_model': 'ai.quest.session.line',
-            'view_mode': 'tree,form,calendar,pivot',
+            'view_mode': 'list,form,calendar,pivot',
             'target': 'current',
             'domain': [("ai_tool_id", '=', self.id)],
         }
@@ -103,13 +103,11 @@ class AITool(models.Model):
             'name': 'Sessions',
             'type': 'ir.actions.act_window',
             'res_model': 'ai.quest.session',
-            'view_mode': 'tree,form',
+            'view_mode': 'list,form',
             'target': 'current',
             'domain': [("session_line_ids.ai_tool_id", '=', self.id)]
         }
         return action
-
-      
        
     def action_test_tool(self):
         action = {

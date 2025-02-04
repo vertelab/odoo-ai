@@ -109,7 +109,7 @@ class AIQuestSession(models.Model):
             'name': 'LLMs',
             'type': 'ir.actions.act_window',
             'res_model': 'ai.agent.llm',
-            'view_mode': 'kanban,tree,form,calendar',
+            'view_mode': 'kanban,list,form,calendar',
             'target': 'current',
             'domain': [("id", 'in', self.ai_agent_llm_ids.ids)]
         }
@@ -120,7 +120,7 @@ class AIQuestSession(models.Model):
             'name': 'AI Agents',
             'type': 'ir.actions.act_window',
             'res_model': 'ai.agent',
-            'view_mode': 'kanban,tree,form',
+            'view_mode': 'kanban,list,form',
             'target': 'current',
             'domain': [("id", 'in', self.ai_agent_ids.ids)]
         }
@@ -131,7 +131,7 @@ class AIQuestSession(models.Model):
             'name': 'Session Lines',
             'type': 'ir.actions.act_window',
             'res_model': 'ai.quest.session.line',
-            'view_mode': 'tree,form,calendar,pivot',
+            'view_mode': 'list,form,calendar,pivot',
             'target': 'current',
             'domain': [("ai_quest_session_id", '=', self.id)],
         }
@@ -142,7 +142,7 @@ class AIQuestSession(models.Model):
             'name': 'Messages',
             'type': 'ir.actions.act_window',
             'res_model': 'ai.quest.session.message',
-            'view_mode': 'tree,form',
+            'view_mode': 'list,form',
             'target': 'current',
             'domain': [("ai_quest_session_id", '=', self.id)],
         }
@@ -153,7 +153,7 @@ class AIQuestSession(models.Model):
             'name': 'Sessions',
             'type': 'ir.actions.act_window',
             'res_model': 'ai.quest.session',
-            'view_mode': 'tree,form,calendar',
+            'view_mode': 'list,form,calendar',
             'target': 'current',
             'domain': [("ai_quest_id", '=', self.id)]
         }
@@ -164,7 +164,7 @@ class AIQuestSession(models.Model):
             'name': 'Objetcs',
             'type': 'ir.actions.act_window',
             'res_model': 'ai.session.object',
-            'view_mode': 'tree,calendar',
+            'view_mode': 'list,calendar',
             'target': 'current',
             'domain': [("ai_session_id", '=', self.id)]
         }
