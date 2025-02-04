@@ -22,12 +22,12 @@ from odoo.addons.ai_agent.models.ai_quest import AgentState
 from odoo.exceptions import UserError
 from random import randint
 
-##if VERSION >= '18.0'
+# #if VERSION >= "18.0"
 from typing import Annotated, List, NotRequired, Sequence, TypedDict, Union, Any
-##else
+# #elif VERSION <= "17.0"
 from typing_extensions import NotRequired, TypedDict
 from typing import Annotated, List, Sequence, Union, Any
-##endif
+# #endif
 
 # https://python.langchain.com/api_reference/langchain/agents.html
 
@@ -100,7 +100,11 @@ class AIAgent(models.Model):
                 'name': 'AI Quests',
                 'type': 'ir.actions.act_window',
                 'res_model': 'ai.quest',
+                # #if VERSION >= "18.0"
+                'view_mode': 'kanban,list,form,calendar',
+                # #elif VERSION <= "17.0"
                 'view_mode': 'kanban,tree,form,calendar',
+                # #endif
                 'target': 'current',
                 'domain': [("id", 'in', ai_quest_ids)]
             }
@@ -112,7 +116,11 @@ class AIAgent(models.Model):
             'name': 'Session Lines',
             'type': 'ir.actions.act_window',
             'res_model': 'ai.quest.session.line',
+            # #if VERSION >= "18.0"
+            'view_mode': 'list,form,calendar,pivot',
+            # #elif VERSION <= "17.0"
             'view_mode': 'tree,form,calendar,pivot',
+            # #endif
             'target': 'current',
             'domain': [("ai_agent_id", '=', self.id)],
         }
@@ -123,7 +131,11 @@ class AIAgent(models.Model):
             'name': 'Sessions',
             'type': 'ir.actions.act_window',
             'res_model': 'ai.quest.session',
+            # #if VERSION >= "18.0"
+            'view_mode': 'list,form,calendar',
+            # #elif VERSION <= "17.0"
             'view_mode': 'tree,form,calendar',
+            # #endif
             'target': 'current',
             'domain': [("session_line_ids.ai_agent_id", '=', self.id)]
         }
@@ -171,7 +183,11 @@ class AIAgent(models.Model):
         chat_history = ChatMessageHistory()
         question = ''
         for m in self.env['mail.message'].search([
+            # #if VERSION >= "17.0"
+            ('model', '=', 'discuss.channel'),
+            # #elif VERSION <= "16.0"
             ('model', '=', 'mail.channel'),
+            # #endif
             ('res_id', '=', quest.real_channel_id.id)],
                 limit=quest.chat_history_limit, order='create_date asc'):
             if m.author_id.id == quest.real_chat_user_id.id:
@@ -659,8 +675,7 @@ class AIAgent(models.Model):
             except AttributeError as e:
                 _logger.error(f"Error: {ai_tool_id.tool=} not found in {ai_tool_id.tool_lib=}  {traceback.format_exc()}")
             except Exception as e:
-                _logger.error(
-                    f"An error occurred: {e}  {traceback.format_exc()}")
+                _logger.error(f"An error occurred: {e}  {traceback.format_exc()}")
             if TOOL:
                 tools.append(TOOL)
         _logger.warning(f"_get_tools{tools=}")

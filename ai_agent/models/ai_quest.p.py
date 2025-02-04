@@ -8,8 +8,6 @@ import traceback
 import unidecode
 import warnings
 
-
-# ~ from typing import Annotated, TypedDict, Sequence, List, Union
 from IPython.display import Image, display
 from langchain import hub
 from langchain.agents import Tool, AgentExecutor, LLMSingleActionAgent, AgentOutputParser, create_tool_calling_agent, create_xml_agent,create_json_chat_agent
@@ -22,7 +20,10 @@ from langgraph.graph import StateGraph, START, END
 from langgraph.prebuilt import create_react_agent
 from odoo import models, fields, api, _
 from odoo.addons.ai_agent.models.ai_quest_session import AIQuestSession
-from odoo.exceptions import UserError, ValidationError, Warning
+from odoo.exceptions import UserError, ValidationError
+# #if VERSION <= "16.0"
+from odoo.exceptions import Warning
+# #endif
 from odoo.tools.mail import html2plaintext
 from odoo.tools.safe_eval import safe_eval
 from pydantic import BaseModel, ConfigDict, SkipValidation
@@ -194,15 +195,26 @@ class AIQuest(models.Model):
     alias_id = fields.Many2one(comodel_name='mail.alias', string='Alias', ondelete="restrict", required=True,
                                help="The email address associated with this channel. New emails received will "
                                     "automatically create new leads assigned to the channel.")
-    alias_user_id = fields.Many2one(comodel_name='res.users', related='alias_id.alias_user_id', readonly=False,
-                                    inherited=True, )
+    # #if VERSION <= "17.0"
+    alias_user_id = fields.Many2one(comodel_name='res.users', related='alias_id.alias_user_id', readonly=False, inherited=True)
+    # #endif
+
     ## if VERSION == 14.0
     avatar_128 = fields.Image("Avatar", max_width=128, max_height=128)
     ## else
     avatar_128 = fields.Image("Avatar", max_width=128, max_height=128, compute='_compute_avatar_128')
     ## endif
 
+    # #if VERSION >= "17.0"
+    channel_id = fields.Many2one(comodel_name='discuss.channel', string="Channel", help="")
+    real_channel_id = fields.Many2one(comodel_name='discuss.channel', string="Channel",
+                                    help="This is the channel chat-method get")
+    # #elif VERSION <= "16.0"
     channel_id = fields.Many2one(comodel_name='mail.channel', string="Channel", help="")
+    real_channel_id = fields.Many2one(comodel_name='mail.channel', string="Channel",
+                                    help="This is the channel chat-method get")
+    # #endif
+
     chat_history_limit = fields.Integer(string='Chat History Limit', default=10,
                                         help='Limit the chat history to this number of messages')
     chat_user_id = fields.Many2one(comodel_name='res.users', string="Chat User", help="")
@@ -225,8 +237,6 @@ class AIQuest(models.Model):
     model_name = fields.Char(related='model_id.model', string='Model Name', readonly=True, store=True)
     name = fields.Char(required=True)
     partner_id = fields.Many2one(comodel_name='res.partner', string="Customer", help="")
-    real_channel_id = fields.Many2one(comodel_name='mail.channel', string="Channel",
-                                      help="This is the channel chat-method get")
     real_chat_user_id = fields.Many2one(comodel_name='res.users', string="Chat User",
                                         help="Chat user thet chat-method is using")
     server_action_id = fields.Many2one('ir.actions.server', string='Server Action',
@@ -324,7 +334,11 @@ class AIQuest(models.Model):
             'name': 'LLMs',
             'type': 'ir.actions.act_window',
             'res_model': 'ai.agent.llm',
+            # #if VERSION >= "18.0"
+            'view_mode': 'kanban,list,form,calendar',
+            # #elif VERSION <= "17.0"
             'view_mode': 'kanban,tree,form,calendar',
+            # #endif
             'target': 'current',
             'domain': [("id", '=', llm_ids)]
         }
@@ -335,7 +349,11 @@ class AIQuest(models.Model):
             'name': 'Session Lines',
             'type': 'ir.actions.act_window',
             'res_model': 'ai.quest.session.line',
+            # #if VERSION >= "18.0"
+            'view_mode': 'list,form',
+            # #elif VERSION <= "17.0"
             'view_mode': 'tree,form',
+            # #endif
             'target': 'current',
             'domain': [("ai_quest_id", '=', self.id)]
         }
@@ -346,7 +364,11 @@ class AIQuest(models.Model):
             'name': 'Sessions',
             'type': 'ir.actions.act_window',
             'res_model': 'ai.quest.session',
+            # #if VERSION >= "18.0"
+            'view_mode': 'list,form',
+            # #elif VERSION <= "17.0"
             'view_mode': 'tree,form',
+            # #endif
             'target': 'current',
             'domain': [("ai_quest_id", '=', self.id)]
         }
@@ -361,7 +383,11 @@ class AIQuest(models.Model):
             'name': 'AI Agents',
             'type': 'ir.actions.act_window',
             'res_model': 'ai.agent',
+            # #if VERSION >= "18.0"
+            'view_mode': 'kanban,list,form',
+            # #elif VERSION <= "17.0"
             'view_mode': 'kanban,tree,form',
+            # #endif
             'target': 'current',
             'domain': [("id", 'in', agent_ids)]
         }
@@ -372,7 +398,11 @@ class AIQuest(models.Model):
             'name': 'Objetcs',
             'type': 'ir.actions.act_window',
             'res_model': 'ai.session.object',
+            # #if VERSION >= "18.0"
+            'view_mode': 'list,calendar',
+            # #elif VERSION <= "17.0"
             'view_mode': 'tree,calendar',
+            # #endif
             'target': 'current',
             'context': {
                 "expand": 1
@@ -708,7 +738,9 @@ class AIQuest(models.Model):
             'message_body': message_body,
             'message_invoke': {"messages": [HumanMessage(content=message_body)]},
             # Exceptions
+            # #if VERSION <= "16.0"
             'Warning': Warning,
+            # #endif
             'UserError': UserError,
             # helpers
             '_logger': _logger,

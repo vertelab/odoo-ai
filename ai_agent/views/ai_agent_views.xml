@@ -96,37 +96,37 @@
                              </group>
                         -->
                         <notebook>
-                                     <page string="Description" id="description">
+                            <page string="Description" id="description">
                                 <field name="ai_description" nolabel="1" />
-                            </page>     
-                            
+                            </page>
+
                             <page string="Prompt Template" id="template">
                                 <field name="ai_prompt_template" widget="html" class="oe-bordered-editor" options="{'style-inline': true, 'codeview': true, 'dynamic_placeholder': true}" nolabel="1" />
                             </page>
                             <page string="Backstory" id="backstory">
                                 <field name="ai_backstory" nolabel="1" />
                             </page>
-                       
-                   
 
-                              <page string="Memory" id="memory">
+
+
+                            <page string="Memory" id="memory">
                                 <field name="ai_memory_ids">
                                     <tree editable="bottom">
                                         <field name="sequence" widget="handle" />
-                                        <field name="ai_memory_id"  />
-                                        <field name="ai_memory_status"  />
-                                        <field name="ai_memory_llm_id"  />
-                                        <field name="ai_memory_llm_status"  />
+                                        <field name="ai_memory_id" />
+                                        <field name="ai_memory_status" />
+                                        <field name="ai_memory_llm_id" />
+                                        <field name="ai_memory_llm_status" />
                                         <field name="ai_memory_url" optional='hide'  />
                                         <field name="last_run" optional='hide'  />
                                         <field name="nbr_days" optional='hide'  />
                                         <button name="run" string="Run" type="object" icon=""/>
                                     </tree>
                                 </field>
-                            </page> 
+                            </page>
                             <page string="Tools" id="tool">
                                 <field name="ai_tool_ids">
-                                    <tree  editable="bottom">
+                                    <tree editable="bottom">
                                         <field name="sequence" widget="handle" />
                                         <field name="ai_tool_id" nolabel="1" />
                                     </tree>
@@ -199,7 +199,7 @@
                                     </div>
 
                                     <div class="oe_kanban_footer mt-3">
-                                         <div class="o_kanban_record_bottom">
+                                        <div class="o_kanban_record_bottom">
                                             <div class="oe_kanban_bottom_left"/>
 
                                             <div class="oe_kanban_bottom_right">
@@ -234,7 +234,6 @@
         <record id="action_ai_agent" model="ir.actions.act_window">
             <field name="name">Agents</field>
             <field name="res_model">ai.agent</field>
-            <field name="view_mode">kanban,tree,form,calendar</field>
         </record>
         <menuitem id="ai_agent.menu_ai_agent_menu_menu" parent="ai_agent.menu_ai_agent_menu" name="Agents" action="action_ai_agent" />
         <menuitem id="ai_agent.menu_ai_agent_configuration" parent="ai_agent.menu_ai_agent_root" name="Configuration" sequence="99" />

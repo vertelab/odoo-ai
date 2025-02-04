@@ -17,7 +17,11 @@ class MailMessage(models.Model):
 
 
 class MailChannel(models.Model):
+    # #if VERSION >= "17.0"
+    _inherit = 'discuss.channel'
+    # #elif VERSION <= "16.0"
     _inherit = 'mail.channel'
+    # #endif
 
     ai_quest_id = fields.Many2one(comodel_name='ai.quest', string="Quest", help="")
     ai_quest_session_id = fields.Many2one(comodel_name='ai.quest.session', string="Session", help="")

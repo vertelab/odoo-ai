@@ -70,7 +70,11 @@ class AITool(models.Model):
             'name': 'AI Quests',
             'type': 'ir.actions.act_window',
             'res_model': 'ai.quest',
+            # #if VERSION >= "18.0"
+            'view_mode': 'kanban,list,form',
+            # #elif VERSION <= "17.0"
             'view_mode': 'kanban,tree,form',
+            # #endif
             'target': 'current',
             'domain': [("session_line_ids.ai_tool_id", '=', self.id)]
         }
@@ -81,7 +85,11 @@ class AITool(models.Model):
             'name': 'AI Agents',
             'type': 'ir.actions.act_window',
             'res_model': 'ai.agent',
+            # #if VERSION >= "18.0"
+            'view_mode': 'kanban,list,form',
+            # #elif VERSION <= "17.0"
             'view_mode': 'kanban,tree,form',
+            # #endif
             'target': 'current',
             'domain': [("session_line_ids.ai_tool_id", '=', self.id)]
         }
@@ -92,7 +100,11 @@ class AITool(models.Model):
             'name': 'Session Lines',
             'type': 'ir.actions.act_window',
             'res_model': 'ai.quest.session.line',
+            # #if VERSION >= "18.0"
+            'view_mode': 'list,form,calendar,pivot',
+            # #elif VERSION <= "17.0"
             'view_mode': 'tree,form,calendar,pivot',
+            # #endif
             'target': 'current',
             'domain': [("ai_tool_id", '=', self.id)],
         }
@@ -103,13 +115,15 @@ class AITool(models.Model):
             'name': 'Sessions',
             'type': 'ir.actions.act_window',
             'res_model': 'ai.quest.session',
+            # #if VERSION >= "18.0"
+            'view_mode': 'list,form',
+            # #elif VERSION <= "17.0"
             'view_mode': 'tree,form',
+            # #endif
             'target': 'current',
             'domain': [("session_line_ids.ai_tool_id", '=', self.id)]
         }
         return action
-
-      
        
     def action_test_tool(self):
         action = {

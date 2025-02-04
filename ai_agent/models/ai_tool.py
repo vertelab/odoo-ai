@@ -108,8 +108,6 @@ class AITool(models.Model):
             'domain': [("session_line_ids.ai_tool_id", '=', self.id)]
         }
         return action
-
-      
        
     def action_test_tool(self):
         action = {
