@@ -6,7 +6,11 @@
         <field name="arch" type="xml">
             <form string="Warning">
                 <group>
+                    <!-- #if VERSION >= "17.0" -->
+                    <field name="ai_agent_id" invisible="ai_agent_id" modifiers="{'required': true}"/>
+                    <!-- #elif VERSION <= "16.0" -->
                     <field name="ai_agent_id" attrs="{'invisible': [('ai_agent_id', '!=', False)]}" modifiers="{'required': true}" />
+                    <!-- #endif -->
                     <field name="ai_prompt_template" widget="html" class="oe-bordered-editor" options="{'style-inline': true, 'codeview': true, 'dynamic_placeholder': true}"/>
                     <field name="ai_input"/>
                 </group>
