@@ -82,6 +82,7 @@
             "langchain_anthropic",
             "pymupdf",
             "faiss-cpu",
+            "markdownify",
         ],
     },
     "demo": [],
