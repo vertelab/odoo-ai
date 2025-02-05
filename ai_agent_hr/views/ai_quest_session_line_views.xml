@@ -1,45 +1,45 @@
 <odoo>
-    <record id="ai_quest_session_line_list" model="ir.ui.view">
-        <field name="name">ai.quest.session.line.list.department</field>
-        <field name="model">ai.quest.session.line</field>
-        <field name="inherit_id" ref="ai_agent.ai_quest_session_line_list" />
-        <field name="arch" type="xml">
-            <field name="ai_quest_id" position="after">
-                <field name="department_id" />
-            </field>
-        </field>
-    </record>
-    <record id="ai_quest_session_line_search" model="ir.ui.view">
-        <field name="name">ai.quest.session.line.search.department</field>
-        <field name="model">ai.quest.session.line</field>
-        <field name="inherit_id" ref="ai_agent.ai_quest_session_line_search" />
-        <field name="arch" type="xml">
-            <field name="finish_reason" position="after">
-                <field name="department_id" />
-            </field>
-            <filter name="group_by_finish_reason" position="after">
-                <filter string="Department" name="group_by_department" context="{'group_by': 'department_id'}" />
-            </filter>
-        </field>
-    </record>
-    <record id="ai_quest_session_line_form" model="ir.ui.view">
-        <field name="name">ai.quest.session.line.form.department</field>
-        <field name="model">ai.quest.session.line</field>
-        <field name="inherit_id" ref="ai_agent.ai_quest_session_line_form" />
-        <field name="arch" type="xml">
-            <field name="model_id" position="after">
-                <field name="department_id" />
-            </field>
-        </field>
-    </record>
-    <record id="view_ai_quest_session_line_calendar" model="ir.ui.view">
-        <field name="name">ai.quest.session.line.calendar.department</field>
-        <field name="model">ai.quest.session.line</field>
-        <field name="inherit_id" ref="ai_agent.view_ai_quest_session_line_calendar" />
-        <field name="arch" type="xml">
-            <field name="model_id" position="after">
-                <field name="department_id" />
-            </field>
-        </field>
-    </record>
+  <record id="ai_quest_session_line_list" model="ir.ui.view">
+    <field name="name">ai.quest.session.line.list.department</field>
+    <field name="model">ai.quest.session.line</field>
+    <field name="inherit_id" ref="ai_agent.ai_quest_session_line_list" />
+    <field name="arch" type="xml">
+      <field name="ai_quest_id" position="after">
+        <field name="department_id" />
+      </field>
+    </field>
+  </record>
+  <record id="ai_quest_session_line_search" model="ir.ui.view">
+    <field name="name">ai.quest.session.line.search.department</field>
+    <field name="model">ai.quest.session.line</field>
+    <field name="inherit_id" ref="ai_agent.ai_quest_session_line_search" />
+    <field name="arch" type="xml">
+      <field name="finish_reason" position="after">
+        <field name="department_id" />
+      </field>
+      <filter name="group_by_finish_reason" position="after">
+        <filter string="Department" name="group_by_department" context="{'group_by': 'department_id'}" />
+      </filter>
+    </field>
+  </record>
+  <record id="ai_quest_session_line_form" model="ir.ui.view">
+    <field name="name">ai.quest.session.line.form.department</field>
+    <field name="model">ai.quest.session.line</field>
+    <field name="inherit_id" ref="ai_agent.ai_quest_session_line_form" />
+    <field name="arch" type="xml">
+      <field name="model_id" position="after">
+        <field name="department_id" />
+      </field>
+    </field>
+  </record>
+  <record id="view_ai_quest_session_line_calendar" model="ir.ui.view">
+    <field name="name">ai.quest.session.line.calendar.department</field>
+    <field name="model">ai.quest.session.line</field>
+    <field name="inherit_id" ref="ai_agent.view_ai_quest_session_line_calendar" />
+    <field name="arch" type="xml">
+      <field name="model_id" position="after">
+        <field name="department_id" />
+      </field>
+    </field>
+  </record>
 </odoo>

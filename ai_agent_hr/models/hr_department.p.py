@@ -17,7 +17,11 @@ class Department(models.Model):
     goals_responsibilities = fields.Html(string='Goals and responsibilities')
 
     def _compute_total_ai_staff(self):
+		# #if VERSION >= "18.0"
+        emp_data = self.env['ai.quest'].read_group([('department_id', 'in', self.ids)], ['department_id'], ['department_id'])
+		# #elif VERSION <= "17.0"
         emp_data = self.env['ai.quest']._read_group([('department_id', 'in', self.ids)], ['department_id'], ['department_id'])
+		# #endif
         result = dict((data['department_id'][0], data['department_id_count']) for data in emp_data)
         for department in self:
             department.total_ai_staff = result.get(department.id, 0)
@@ -27,7 +31,11 @@ class Department(models.Model):
             'name': 'AI Staff',
             'type': 'ir.actions.act_window',
             'res_model': 'ai.quest',
+            # #if VERSION >= "18.0"
+            'view_mode': 'kanban,list,form,calendar',
+			# #elif VERSION <= "17.0"
             'view_mode': 'kanban,tree,form,calendar',
+			# #endif
             'target': 'current',
             'domain': [("department_id", '=', self.id)]
         }
@@ -38,7 +46,11 @@ class Department(models.Model):
             'name': 'Tokens',
             'type': 'ir.actions.act_window',
             'res_model': 'ai.quest.session.line',
+            # #if VERSION >= "18.0"
+            'view_mode': 'list,form,calendar,pivot',
+			# #elif VERSION <= "17.0"
             'view_mode': 'tree,form,calendar,pivot',
+			# #endif
             'target': 'current',
             'domain': [("department_id", '=', self.id)],
         }
@@ -49,7 +61,11 @@ class Department(models.Model):
             'name': 'Sessions',
             'type': 'ir.actions.act_window',
             'res_model': 'ai.quest.session',
+            # #if VERSION >= "18.0"
+            'view_mode': 'list,form,calendar',
+			# #elif VERSION <= "17.0"
             'view_mode': 'tree,form,calendar',
+			# #endif
             'target': 'current',
             'domain': [("ai_quest_id.department_id", '=', self.id)]
         }
