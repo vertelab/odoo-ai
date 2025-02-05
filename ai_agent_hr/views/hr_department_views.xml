@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
   <data>
-	  
+   
     <record id="act_ai_staff_from_department" model="ir.actions.act_window">
       <field name="name">AI Staff</field>
       <field name="res_model">ai.quest</field>
@@ -85,7 +85,7 @@
         <kanban position="inside">
           <field name="ai_quest_ids" />
           <field name="total_ai_staff" />
-        </kanban>
+		</kanban>
         <div name="kanban_primary_right" class="col-6" position="inside">
           <!-- Right Column for AI Staff Button -->
           <div class="col-6 d-flex justify-content-end">
@@ -99,4 +99,4 @@
     </record>
     
   </data>
-</odoo>
+ </odoo>
