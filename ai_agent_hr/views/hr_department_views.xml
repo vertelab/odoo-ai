@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
   <data>
+   
     <record id="act_ai_staff_from_department" model="ir.actions.act_window">
       <field name="name">AI Staff</field>
       <field name="res_model">ai.quest</field>
@@ -26,6 +27,7 @@
         </p>
       </field>
     </record>
+    
     <record id="view_department_form" model="ir.ui.view">
       <field name="name">hr.department.form</field>
       <field name="model">hr.department</field>
@@ -51,6 +53,7 @@
         </sheet>
       </field>
     </record>
+    
     <record id="view_department_tree" model="ir.ui.view">
       <field name="name">hr.department.tree</field>
       <field name="model">hr.department</field>
@@ -61,6 +64,7 @@
         </field>
       </field>
     </record>
+    
     <record id="view_department_filter" model="ir.ui.view">
       <field name="name">hr.department.search</field>
       <field name="model">hr.department</field>
@@ -72,6 +76,7 @@
         </field>
       </field>
     </record>
+    
     <record id="hr_department_view_kanban" model="ir.ui.view">
       <field name="name">hr.department.kanban</field>
       <field name="model">hr.department</field>
@@ -80,7 +85,7 @@
         <kanban position="inside">
           <field name="ai_quest_ids" />
           <field name="total_ai_staff" />
-        </kanban>
+		</kanban>
         <div class="col-6 o_kanban_primary_right" position="inside">
           <!-- Right Column for AI Staff Button -->
           <div class="col-6 d-flex justify-content-end">
@@ -92,5 +97,6 @@
         </div>
       </field>
     </record>
+    
   </data>
-</odoo>
+ </odoo>
