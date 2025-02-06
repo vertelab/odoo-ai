@@ -39,7 +39,7 @@ class AIAgentLLM(models.Model):
     image_128 = fields.Image("Image", max_width=128, max_height=128, related="product_tmpl_id.image_128")
     is_embedded = fields.Boolean(related='model_id.product_attribute_value_id.is_embedded')
     is_favorite = fields.Boolean()
-    is_key_required = fields.Boolean(compute="_compute_is_key_required")
+    is_key_required = fields.Boolean(default=True)
     last_run = fields.Datetime()
     licence = fields.Selection(selection=LICENCES, string='Licence',
                                related='model_id.product_attribute_value_id.licence')
@@ -104,14 +104,6 @@ class AIAgentLLM(models.Model):
         }
         return action
 
-    @api.depends("product_tmpl_id.fallback_api_key_name")
-    def _compute_is_key_required(self):
-        for record in self:
-            if tools.config.get(self.product_tmpl_id.fallback_api_key_name, False):
-                record.is_key_required = False
-            else:
-                record.is_key_required = True
-
     @api.depends("session_line_ids")
     def compute_session_line_count(self):
         for record in self:
@@ -153,7 +145,7 @@ class AIAgentLLM(models.Model):
             if not api_key:
                 api_key = tools.config.get(self.product_tmpl_id.fallback_api_key_name, False)
                 _logger.error(f"{api_key=}")
-            return LLM(verbose=verbose, temperature=temperature, callbacks=callbacks, api_key=api_key,
+            return LLM(verbose=verbose, temperature=temperature, callbacks=callbacks, api_key=self.ai_api_key,
                        model=self.model_id.name, **kwarg)
         except ImportError as e:
             _logger.error(f"Error importing {self.product_tmpl_id.llm_library}: {e}")

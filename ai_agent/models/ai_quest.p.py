@@ -199,11 +199,11 @@ class AIQuest(models.Model):
     alias_user_id = fields.Many2one(comodel_name='res.users', related='alias_id.alias_user_id', readonly=False, inherited=True)
     # #endif
 
-    ## if VERSION == 14.0
+    # #if VERSION == "14.0"
     avatar_128 = fields.Image("Avatar", max_width=128, max_height=128)
-    ## else
+    # #elif VERSION >= "15.0"
     avatar_128 = fields.Image("Avatar", max_width=128, max_height=128, compute='_compute_avatar_128')
-    ## endif
+    # #endif
 
     # #if VERSION >= "17.0"
     channel_id = fields.Many2one(comodel_name='discuss.channel', string="Channel", help="")
@@ -577,7 +577,8 @@ class AIQuest(models.Model):
         if len(self.ai_agent_ids.filtered(
                 lambda a: a.ai_agent_id.ai_agent_llm_id.is_key_required and not a.ai_agent_id.ai_agent_llm_id.ai_api_key
         )) > 0:
-            return _('Missing API Key on LLMs')
+            pass
+            # return _('Missing API Key on LLMs')
         # if self.status != 'active':
         #     return _('Wrong status on the quest')
         if self.code == DEFAULT_PYTHON_CODE:
