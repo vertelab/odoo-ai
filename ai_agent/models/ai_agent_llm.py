@@ -6,7 +6,7 @@ import traceback
 
 from httpx import HTTPStatusError
 from langchain.agents import AgentExecutor, create_openai_tools_agent, create_json_chat_agent, create_react_agent
-from odoo import models, fields, api, _
+from odoo import models, fields, api, tools, _
 from odoo.exceptions import UserError, AccessError, ValidationError
 from random import randint
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
@@ -140,8 +140,10 @@ class AIAgentLLM(models.Model):
             if self.product_tmpl_id.llm_type == "AzureChatOpenAI":
                kwarg['api_version'] = self.api_version
                kwarg['azure_endpoint'] = self.azure_endpoint
-               #LLM(verbose=verbose, temperature=temperature, callbacks=callbacks, api_key=self.ai_api_key,
-               #        model='gpt-4o-mini',**kwarg)
+            api_key = self.ai_api_key
+            if not api_key:
+                api_key = tools.config.get(self.product_tmpl_id.fallback_api_key_name, False)
+                _logger.error(f"{api_key=}")
             return LLM(verbose=verbose, temperature=temperature, callbacks=callbacks, api_key=self.ai_api_key,
                        model=self.model_id.name, **kwarg)
         except ImportError as e:

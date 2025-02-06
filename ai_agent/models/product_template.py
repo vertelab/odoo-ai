@@ -5,6 +5,7 @@ class ProductTemplate(models.Model):
     _inherit = 'product.template'
 
     ai_api_key = fields.Char()
+    fallback_api_key_name = fields.Char()
     ai_session_lines_ids = fields.One2many(comodel_name='ai.quest.session.line', inverse_name='product_tmpl_id',
                                            string="AI Tokens", help="")
     is_llm = fields.Boolean()
@@ -17,6 +18,7 @@ class ProductTemplate(models.Model):
     session_line_count = fields.Integer(compute="compute_session_line_count")
     azure_endpoint = fields.Char(string="Azure Endpoint")
     api_version = fields.Char(string="API version")
+    
     @api.depends("ai_session_lines_ids")
     def compute_session_line_count(self):
         for record in self:

@@ -286,7 +286,7 @@
             <field name="res_model">ai.agent</field>
             <!-- #if VERSION >= "18.0" -->
             <field name="view_mode">kanban,list,form,calendar</field>
-            <!-- #elif VERSION >= "17.0" -->
+            <!-- #elif VERSION <= "17.0" -->
             <field name="view_mode">kanban,tree,form,calendar</field>
             <!-- #endif -->
         </record>
