@@ -165,7 +165,6 @@
                 </div>
               </group>
               <!-- #endif -->
-              <group>_</group>
               <group>
                 <field name="init_type_str" nolabel="1" colspan="2" readonly="1" />
               </group>
