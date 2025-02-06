@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+  <data>
+    <record id="mistral_product_template" model="product.template">
+      <field name="name">Mistral AI</field>
+      <field name="is_llm">True</field>
+      <field name="llm_library">langchain_mistralai</field>
+      <field name="llm_type">ChatMistralAI</field>
+      <field name="llm_etype">MistralAIEmbeddings</field>
+	  <field name="fallback_api_key_name">mistral_api_key</field>
+      <field name="image_1920" type="base64" file="ai_agent/static/img/mistral-ai-icon.png" />
+    </record>
+    <!-- Model -->
+    <record id="mistral_product_attribute_value_mistral-large-latest" model="product.attribute.value">
+      <field name="name">mistral-large-latest</field>
+       <field name="licence">mistral-research</field>
+      <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+    </record>
+    <record id="mistral_product_attribute_value_pixtral-large-latest" model="product.attribute.value">
+      <field name="name">pixtral-large-latest</field>
+       <field name="licence">mistral-research</field>
+      <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+    </record>
+    <record id="mistral_product_attribute_value_mistral-moderation-latest" model="product.attribute.value">
+      <field name="name">mistral-moderation-latest</field>
+             <field name="licence">mistral-research</field>
+      <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+    </record>
+    <record id="mistral_product_attribute_value_ministral-3b-latest" model="product.attribute.value">
+      <field name="name">ministral-3b-latest</field>
+             <field name="licence">mistral-research</field>
+      <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+    </record>
+    <record id="mistral_product_attribute_value_ministral-8b-latest" model="product.attribute.value">
+      <field name="name">ministral-8b-latest</field>
+             <field name="licence">mistral-research</field>
+      <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+    </record>
+    <record id="mistral_product_attribute_value_open-mistral-nemo" model="product.attribute.value">
+      <field name="name">open-mistral-nemo</field>
+             <field name="licence">apache-2.0</field>
+      <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+    </record>
+    <record id="mistral_product_attribute_value_mistral-small-latest" model="product.attribute.value">
+      <field name="name">mistral-small-latest</field>
+             <field name="licence">mistral-research</field>     
+      <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+    </record>
+    <record id="mistral_product_attribute_value_codestral-latest" model="product.attribute.value">
+      <field name="name">codestral-latest</field>
+                  <field name="licence">mistral-research</field>
+      <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+    </record>
+    <record id="mistral_product_attribute_value_pixtral-12b-2409" model="product.attribute.value">
+      <field name="name">pixtral-12b-2409</field>
+                  <field name="licence">mistral-research</field>
+      <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+    </record>
+    <record id="mistral_product_attribute_value_open-codestral-mamba" model="product.attribute.value">
+      <field name="name">open-codestral-mamba</field>
+      <field name="licence">apache-2.0</field>
+      <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+    </record>
+    <!-- Attribute Line -->
+    <record id="mistral_product_template_attribute_line_model" model="product.template.attribute.line">
+      <field name="product_tmpl_id" ref="mistral_product_template" />
+      <field name="attribute_id" ref="product_attribute_model" />
+      <field name="value_ids" eval="[(6, 0, [
+                    ref('ai_agent.mistral_product_attribute_value_mistral-large-latest'),
+                    ref('mistral_product_attribute_value_pixtral-large-latest'),
+                    ref('mistral_product_attribute_value_mistral-moderation-latest'),
+                    ref('mistral_product_attribute_value_ministral-3b-latest'),
+                    ref('mistral_product_attribute_value_ministral-8b-latest'),
+                    ref('mistral_product_attribute_value_open-mistral-nemo'),
+                    ref('mistral_product_attribute_value_mistral-small-latest'),
+                    ref('mistral_product_attribute_value_codestral-latest'),
+                    ref('mistral_product_attribute_value_pixtral-12b-2409'),
+                    ref('mistral_product_attribute_value_open-codestral-mamba')
+                    ])]" />
+    </record>
+    <!-- Token Type -->
+    <record id="mistral_product_template_attribute_line_token_type" model="product.template.attribute.line">
+      <field name="product_tmpl_id" ref="mistral_product_template" />
+      <field name="attribute_id" ref="product_attribute_token_type" />
+      <field name="value_ids" eval="[(6, 0, [
+         ref('product_attribute_value_input_tokens'),
+         ref('product_attribute_value_input_tokens_audio'),
+         ref('product_attribute_value_input_tokens_cache_read'),
+         ref('product_attribute_value_input_cached'),
+         ref('product_attribute_value_output_tokens'),
+         ref('product_attribute_value_output_tokens_audio'),
+         ref('product_attribute_value_output_tokens_reasoning'),
+         ])]" />
+    </record>
+    <!-- Data Type -->
+    <!--
+         <record id="mistral_product_template_attribute_line_data_type" model="product.template.attribute.line">
+         <field name="product_tmpl_id" ref="mistral_product_template" />
+         <field name="attribute_id" ref="product_attribute_data_type" />
+         <field name="value_ids" eval="[(6, 0, [ref('product_attribute_value_text'), ref('product_attribute_value_image')])]" />
+         </record>
+    -->
+  </data>
+</odoo>

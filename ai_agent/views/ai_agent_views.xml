@@ -234,6 +234,7 @@
         <record id="action_ai_agent" model="ir.actions.act_window">
             <field name="name">Agents</field>
             <field name="res_model">ai.agent</field>
+            <field name="view_mode">kanban,tree,form,calendar</field>
         </record>
         <menuitem id="ai_agent.menu_ai_agent_menu_menu" parent="ai_agent.menu_ai_agent_menu" name="Agents" action="action_ai_agent" />
         <menuitem id="ai_agent.menu_ai_agent_configuration" parent="ai_agent.menu_ai_agent_root" name="Configuration" sequence="99" />
