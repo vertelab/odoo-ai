@@ -20,4 +20,6 @@ markdownify
 beautifulsoup4
 typing_extensions
 duckduckgo_search
+IPython
 lxml_html_clean
+lxml==4.8.0

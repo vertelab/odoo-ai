@@ -34,7 +34,6 @@
                     <field name="ai_description" />
                     <field name="ai_goal" />
                     <field name="ai_backstory" />
-                    <field name="tag_ids" />
                     <field name="object_id" />
                     <filter string="Favorite" name="favorite" domain="[('is_favorite', '=', True)]" />
                     <group expand="0" string="Group By">

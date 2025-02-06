@@ -199,11 +199,11 @@ class AIQuest(models.Model):
     alias_user_id = fields.Many2one(comodel_name='res.users', related='alias_id.alias_user_id', readonly=False, inherited=True)
     # #endif
 
-    ## if VERSION == 14.0
+    # #if VERSION == "14.0"
     avatar_128 = fields.Image("Avatar", max_width=128, max_height=128)
-    ## else
+    # #elif VERSION >= "15.0"
     avatar_128 = fields.Image("Avatar", max_width=128, max_height=128, compute='_compute_avatar_128')
-    ## endif
+    # #endif
 
     # #if VERSION >= "17.0"
     channel_id = fields.Many2one(comodel_name='discuss.channel', string="Channel", help="")

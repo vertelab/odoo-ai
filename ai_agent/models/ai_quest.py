@@ -188,7 +188,7 @@ class AIQuest(models.Model):
                                     "automatically create new leads assigned to the channel.")
     alias_user_id = fields.Many2one(comodel_name='res.users', related='alias_id.alias_user_id', readonly=False, inherited=True)
 
-    avatar_128 = fields.Image("Avatar", max_width=128, max_height=128, compute='_compute_avatar_128')
+    avatar_128 = fields.Image("Avatar", max_width=128, max_height=128)
 
     channel_id = fields.Many2one(comodel_name='mail.channel', string="Channel", help="")
     real_channel_id = fields.Many2one(comodel_name='mail.channel', string="Channel",
