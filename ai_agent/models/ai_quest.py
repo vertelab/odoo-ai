@@ -533,8 +533,7 @@ class AIQuest(models.Model):
         if len(self.ai_agent_ids.filtered(
                 lambda a: a.ai_agent_id.ai_agent_llm_id.is_key_required and not a.ai_agent_id.ai_agent_llm_id.ai_api_key
         )) > 0:
-            pass
-            # return _('Missing API Key on LLMs')
+            return _('Missing API Key on LLMs')
         # if self.status != 'active':
         #     return _('Wrong status on the quest')
         if self.code == DEFAULT_PYTHON_CODE:
