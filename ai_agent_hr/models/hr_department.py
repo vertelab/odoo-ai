@@ -17,7 +17,7 @@ class Department(models.Model):
     goals_responsibilities = fields.Html(string='Goals and responsibilities')
 
     def _compute_total_ai_staff(self):
-        emp_data = self.env['ai.quest']._read_group([('department_id', 'in', self.ids)], ['department_id'], ['department_id'])
+        emp_data = self.env['ai.quest'].read_group([('department_id', 'in', self.ids)], ['department_id'], ['department_id'])
         result = dict((data['department_id'][0], data['department_id_count']) for data in emp_data)
         for department in self:
             department.total_ai_staff = result.get(department.id, 0)
