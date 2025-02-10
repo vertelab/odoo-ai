@@ -12,6 +12,7 @@ _logger = logging.getLogger(__name__)
 class AISessionObject(models.Model):
     _name = 'ai.session.object'
     _description = 'AI Session Object'
+    _order = 'datetime desc'
 
     @api.depends('object_id')
     def _get_model(self):
@@ -34,15 +35,21 @@ class AISessionObject(models.Model):
     @api.depends('object_id')
     def _compute_display_name(self):
         for record in self:
-            record.display_name = f"[{record.model_id.name}] {record.object_id.display_name} "
+            if record.model_id:
+                record.display_name = f"[{record.model_id.name}] {record.object_id.display_name}"
+            else:
+                record.display_name = f"{record.object_id.display_name}"
+
 
 
 class AIQuestSession(models.Model):
     _name = 'ai.quest.session'
     _description = 'AI Quest Session'
     _inherit = ["mail.thread", "mail.activity.mixin"]
-    _rec_name = "session"
+    _order = 'startdate desc'
 
+    session = fields.Char(default=lambda self: str(uuid.uuid4()))
+    name = fields.Char(default=lambda self: self.session)
     ai_agent_count = fields.Integer(compute='_compute_ai_agent_count')
     ai_agent_id = fields.Many2one(comodel_name="ai.agent")
     ai_agent_ids = fields.Many2many(comodel_name="ai.agent")
@@ -54,22 +61,34 @@ class AIQuestSession(models.Model):
     ai_tool_id = fields.Many2one(comodel_name="ai.tool")
     ai_type = fields.Selection(selection=[("default", "Default")], default="default")
     color = fields.Integer()
-    commercial_partner_id = fields.Many2one(comodel_name='res.partner', string="Partner",related="user_id.partner_id.commercial_partner_id", help="", store=True)
+    commercial_partner_id = fields.Many2one(comodel_name='res.partner', string="Partner",
+                                            related="user_id.partner_id.commercial_partner_id", help="", store=True)
     db_name = fields.Char(string='Database Name', default=lambda self: self._get_db_name())
     db_uuid = fields.Char(string='Database UUID', default=lambda self: self._get_db_uuid())
     debug = fields.Boolean(string='Debug', help="Logs interesting data")
     enddate = fields.Datetime()
-    session = fields.Char(default=lambda self: str(uuid.uuid4()))
     session_line_count = fields.Integer(compute='_compute_session_line_count')
     session_line_ids = fields.One2many(comodel_name="ai.quest.session.line", inverse_name="ai_quest_session_id")
+    session_message_ids = fields.One2many(comodel_name="ai.quest.session.message", inverse_name="ai_quest_session_id")
+    session_message_count = fields.Integer(compute='_compute_session_message_count')
     session_object_count = fields.Integer(compute='_compute_session_object_count')
     session_object_ids = fields.One2many(comodel_name="ai.session.object", inverse_name="ai_session_id")
-    startdate = fields.Datetime(default=fields.Datetime.now())
-    status = fields.Selection(selection=[("draft", _("Draft")), ("active", _("Active")), ("done", _("Done")), ("error", _("Error"))],default="draft")
+    startdate = fields.Datetime(default=lambda self: fields.Datetime.now())
+    status = fields.Selection(
+        selection=[("draft", _("Draft")), ("active", _("Active")), ("done", _("Done")), ("error", _("Error"))],
+        default="draft")
     time_difference_ms = fields.Integer(string='Time Difference (ms)', compute='_compute_time_difference', store=True)
     type_of_output = fields.Text()
     user_id = fields.Many2one(comodel_name='res.users', string="User", help="")
     
+    display_name = fields.Char(compute='_compute_display_name')
+ 
+    @api.depends("name")
+    def _compute_display_name(self):
+        for record in self:
+            record.display_name = record.name
+
+
     @api.depends('ai_agent_llm_ids')
     def _compute_ai_llm_count(self):
         for record in self:
@@ -90,9 +109,9 @@ class AIQuestSession(models.Model):
             'name': 'LLMs',
             'type': 'ir.actions.act_window',
             'res_model': 'ai.agent.llm',
-            'view_mode': 'kanban,tree,form,calendar',
+            'view_mode': 'kanban,list,form,calendar',
             'target': 'current',
-            'domain': [("session_line_ids.ai_quest_session_id", '=', self.id)]
+            'domain': [("id", 'in', self.ai_agent_llm_ids.ids)]
         }
         return action
 
@@ -101,9 +120,9 @@ class AIQuestSession(models.Model):
             'name': 'AI Agents',
             'type': 'ir.actions.act_window',
             'res_model': 'ai.agent',
-            'view_mode': 'kanban,tree,form',
+            'view_mode': 'kanban,list,form',
             'target': 'current',
-            'domain': [("session_line_ids.ai_quest_session_id", '=', self.id)]
+            'domain': [("id", 'in', self.ai_agent_ids.ids)]
         }
         return action
 
@@ -112,18 +131,29 @@ class AIQuestSession(models.Model):
             'name': 'Session Lines',
             'type': 'ir.actions.act_window',
             'res_model': 'ai.quest.session.line',
-            'view_mode': 'tree,form,calendar,pivot',
+            'view_mode': 'list,form,calendar,pivot',
             'target': 'current',
             'domain': [("ai_quest_session_id", '=', self.id)],
         }
         return action
 
+    def action_get_session_messages(self):
+        action = {
+            'name': 'Messages',
+            'type': 'ir.actions.act_window',
+            'res_model': 'ai.quest.session.message',
+            'view_mode': 'list,form',
+            'target': 'current',
+            'domain': [("ai_quest_session_id", '=', self.id)],
+        }
+        return action
+ 
     def action_get_sessions(self):
         action = {
             'name': 'Sessions',
             'type': 'ir.actions.act_window',
             'res_model': 'ai.quest.session',
-            'view_mode': 'tree,form,calendar',
+            'view_mode': 'list,form,calendar',
             'target': 'current',
             'domain': [("ai_quest_id", '=', self.id)]
         }
@@ -134,7 +164,7 @@ class AIQuestSession(models.Model):
             'name': 'Objetcs',
             'type': 'ir.actions.act_window',
             'res_model': 'ai.session.object',
-            'view_mode': 'tree,calendar',
+            'view_mode': 'list,calendar',
             'target': 'current',
             'domain': [("ai_session_id", '=', self.id)]
         }
@@ -144,6 +174,11 @@ class AIQuestSession(models.Model):
     def _compute_session_object_count(self):
         for record in self:
             record.session_object_count = len(record.session_object_ids)
+
+    @api.depends("session_message_ids")
+    def _compute_session_message_count(self):
+        for record in self:
+            record.session_message_count = len(record.session_message_ids)
 
     def _message_set_main_attachment_id(self, attachment_ids):
         thread_ids = super(AIQuestSession, self)._message_set_main_attachment_id(attachment_ids)
@@ -199,11 +234,24 @@ class AIQuestSession(models.Model):
                     #         'ai_session_id': self.id,
                     #         'object_id': (o._name, o.id),
                     #     })
+            
+            self.env['ai.quest.session.message'].save_messages(self,result)
+
+            self.status = 'done'
         else:
             self.status = 'error'
             if self.ai_quest_id.debug:
                 self.message_post(body=f'Missing {result=}')
 
+    def add_message(self, message,**kwarg):
+        self.env['ai.quest.session.message'].add(self, message, **kwarg)
+   
+    def save_messages(self, message,**kwarg):
+        # ~ if isinstance(response, dict):
+        self.message_post(body=f"save_message<br>{message=}<br><br>{type(message)=}<br>{isinstance(message, dict)=}<br>{isinstance(message, list)=}<br>{isinstance(message, AIMessage)=}")
+        self.env['ai.quest.session.message'].save_messages(self,message,**kwarg)
+
+ 
     def log(self, obj, message):
         _logger.info(message)
         obj.message_post(body=message)
@@ -283,7 +331,7 @@ class AIQuestSession(models.Model):
             })
             if agents:
                 session.write({
-                    'ai_agent_ids': [(4, agent.id) for agent in agents],
+                    'ai_agent_ids': [(4, agent.id) for agent in agents if agent.id],
                     'ai_agent_llm_ids': [(4, agent.ai_agent_llm_id.id) for agent in agents if agent.ai_agent_llm_id],
                 })
             if session.debug:

@@ -1,17 +1,15 @@
-from random import randint
-from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_openai import ChatOpenAI
-from langchain_mistralai import ChatMistralAI
-from langchain.agents import AgentExecutor, create_openai_tools_agent, create_json_chat_agent, create_react_agent
-from langchain_core.utils.utils import convert_to_secret_str
+import httpx
+import importlib
+import logging
+import time
+import traceback
 
 from httpx import HTTPStatusError
-import importlib
-
-
-from odoo import models, fields, api, _
+from langchain.agents import AgentExecutor, create_openai_tools_agent, create_json_chat_agent, create_react_agent
+from odoo import models, fields, api, tools, _
 from odoo.exceptions import UserError, AccessError, ValidationError
-import logging
+from random import randint
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 _logger = logging.getLogger(__name__)
 
@@ -43,26 +41,31 @@ class AIAgentLLM(models.Model):
     is_favorite = fields.Boolean()
     is_key_required = fields.Boolean(default=True)
     last_run = fields.Datetime()
-    licence = fields.Selection(selection=LICENCES, string='Licence',related='model_id.product_attribute_value_id.licence')
-    llm_etype = fields.Char(related="product_tmpl_id.llm_etype", required=True)
+    licence = fields.Selection(selection=LICENCES, string='Licence',
+                               related='model_id.product_attribute_value_id.licence')
+    llm_etype = fields.Char(related="product_tmpl_id.llm_etype")
     llm_type = fields.Char(related="product_tmpl_id.llm_type", required=True)
-    model_id = fields.Many2one(comodel_name='product.template.attribute.value', string="Model",required=True, )
+    model_id = fields.Many2one(comodel_name='product.template.attribute.value', string="Model", required=True, )
     name = fields.Char(required=True)
-    product_tmpl_id = fields.Many2one(comodel_name='product.template', string="Provider",domain="[('is_llm','=',True)]", required=True)
+    product_tmpl_id = fields.Many2one(comodel_name='product.template', string="Provider",
+                                      domain="[('is_llm','=',True)]", required=True)
     quest_count = fields.Integer(compute="compute_quest_count")
     session_count = fields.Integer(compute="compute_session_count")
     session_line_count = fields.Integer(compute="compute_session_line_count")
     session_line_ids = fields.One2many(comodel_name="ai.quest.session.line", inverse_name="ai_llm_id")
-    status = fields.Selection(selection=[("not_confirmed", "Not Confirmed"), ("confirmed", "Confirmed"), ("error", "Error")],default="not_confirmed")
+    status = fields.Selection(
+        selection=[("not_confirmed", "Not Confirmed"), ("confirmed", "Confirmed"), ("error", "Error")],
+        default="not_confirmed")
     status_color = fields.Integer(compute="compute_status_color")
     tag_ids = fields.Many2many(comodel_name='product.tag', string='Tags')
-   
+    azure_endpoint = fields.Char(string="Azure Endpoint")
+    api_version = fields.Char(string="API version")
     def action_get_quests(self):
         action = {
             'name': 'AI Quests',
             'type': 'ir.actions.act_window',
             'res_model': 'ai.quest',
-            'view_mode': 'kanban,tree,form',
+            'view_mode': 'kanban,list,form',
             'target': 'current',
             'domain': [("session_line_ids.ai_llm_id", '=', self.id)]
         }
@@ -73,7 +76,7 @@ class AIAgentLLM(models.Model):
             'name': 'AI Agents',
             'type': 'ir.actions.act_window',
             'res_model': 'ai.agent',
-            'view_mode': 'kanban,tree,form',
+            'view_mode': 'kanban,list,form',
             'target': 'current',
             'domain': [("session_line_ids.ai_llm_id", '=', self.id)]
         }
@@ -84,7 +87,7 @@ class AIAgentLLM(models.Model):
             'name': 'Session Lines',
             'type': 'ir.actions.act_window',
             'res_model': 'ai.quest.session.line',
-            'view_mode': 'tree,form,calendar,pivot',
+            'view_mode': 'list,form,calendar,pivot',
             'target': 'current',
             'domain': [("ai_llm_id", '=', self.id)],
         }
@@ -95,7 +98,7 @@ class AIAgentLLM(models.Model):
             'name': 'Sessions',
             'type': 'ir.actions.act_window',
             'res_model': 'ai.quest.session',
-            'view_mode': 'tree,form',
+            'view_mode': 'list,form',
             'target': 'current',
             'domain': [("session_line_ids.ai_llm_id", '=', self.id)]
         }
@@ -130,11 +133,20 @@ class AIAgentLLM(models.Model):
         self.last_run = fields.Datetime.now()
         self.message_post(body=f"{body} | {self.last_run}", message_type="notification")
 
-    def get_llm(self, verbose=False, temperature=0.7, callbacks=None,**kwarg):
+    def get_llm(self, verbose=False, temperature=0.7, callbacks=None, **kwarg):
         try:
             module = importlib.import_module(self.product_tmpl_id.llm_library)
             LLM = getattr(module, self.product_tmpl_id.llm_type)
-            return LLM(verbose=verbose, temperature=temperature, callbacks=callbacks, api_key=self.ai_api_key, model=self.model_id.name, **kwarg)
+            #_logger.warning(f"{LLM=}")
+            if self.product_tmpl_id.llm_type == "AzureChatOpenAI":
+               kwarg['api_version'] = self.api_version
+               kwarg['azure_endpoint'] = self.azure_endpoint
+            api_key = self.ai_api_key
+            if not api_key:
+                api_key = tools.config.get(self.product_tmpl_id.fallback_api_key_name, False)
+                _logger.error(f"{api_key=}")
+            return LLM(verbose=verbose, temperature=temperature, callbacks=callbacks, api_key=self.ai_api_key,
+                       model=self.model_id.name, **kwarg)
         except ImportError as e:
             _logger.error(f"Error importing {self.product_tmpl_id.llm_library}: {e}")
             raise
@@ -144,48 +156,7 @@ class AIAgentLLM(models.Model):
         except Exception as e:
             _logger.error(f"An error occurred: {e}")
             raise
-    
 
-        # ~ Core Parameters
-        # ~ model: Specifies the OpenAI model to use.
-        # ~ Example: ChatOpenAI(model="gpt-4")
-        # ~ temperature: Controls the randomness of the output. Higher values (e.g., 0.8) produce more creative responses, while lower values (e.g., 0.2) generate more focused and deterministic outputs1
-        # ~ 2
-        # ~ .
-        # ~ Example: ChatOpenAI(temperature=0.5)
-        # ~ max_tokens: Limits the length of the generated response.
-        # ~ Example: ChatOpenAI(max_tokens=100)
-        # ~ API Configuration
-        # ~ api_key: Your OpenAI API key.
-        # ~ Example: ChatOpenAI(api_key="your-api-key-here")
-        # ~ base_url: Custom API endpoint URL.
-        # ~ Example: ChatOpenAI(base_url="https://custom-openai-endpoint.com")
-        # ~ organization: Your OpenAI organization ID.
-        # ~ Example: ChatOpenAI(organization="org-123456")
-        # ~ Request Handling
-        # ~ timeout: Maximum time (in seconds) to wait for a response.
-        # ~ Example: ChatOpenAI(timeout=30)
-        # ~ max_retries: Number of retry attempts for failed requests.
-        # ~ Example: ChatOpenAI(max_retries=3)
-        # ~ streaming: Enables streaming of partial results as they're generated.
-        # ~ Example: ChatOpenAI(streaming=True)
-        # ~ Advanced Options
-        # ~ n: Number of chat completions to generate for each prompt2.
-        # ~ Example: ChatOpenAI(n=2)
-        # ~ model_kwargs: Additional parameters to pass to the API call.
-        # ~ Example: ChatOpenAI(model_kwargs={"presence_penalty": 0.6})
-        # ~ callbacks: Custom callback handlers for monitoring the generation process.
-        # ~ Example: ChatOpenAI(callbacks=[MyCustomCallback()])
-        # ~ Caching and Performance
-        # ~ cache: Enables caching of responses.
-        # ~ Example: ChatOpenAI(cache=True)
-        # ~ rate_limiter: Custom rate limiter for API calls.
-        # ~ Example: ChatOpenAI(rate_limiter=MyRateLimiter())
-
-        # ~ tiktoken_model_name: Optional[str] = None,
-        # ~ default_headers: Optional[Mapping[str, str]] = None,
-        # ~ default_query: Optional[Mapping[str, object]] = None,
-        # ~ http_client: Optional[Any] = None) -> Non
 
     def get_embedding(self):
 
@@ -203,55 +174,54 @@ class AIAgentLLM(models.Model):
             _logger.error(f"An error occurred: {e}")
             raise
 
-    def invoke(self, input, config=None,
-               ai_quest_session_id=None, ai_quest_id=None, ai_agent_id=None, debug=False,
-               ):
-
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=4, max=10),
+        retry=retry_if_exception_type(httpx.HTTPStatusError)
+    )
+    def invoke_llm_with_retry(llm, messages):
         try:
-            response = eval(self.get_llm()).invoke(input, config)
+            return llm.invoke(messages)
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 429:
+                _logger.warning(f"Rate limit exceeded. Retrying in a moment...")
+                raise  # This will trigger a retry
+            else:
+                raise  # For other HTTP errors, don't retry
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=4, max=10),
+        retry=retry_if_exception_type(httpx.HTTPStatusError)
+    )
+    def invoke(self, input, config=None, session=None, quest=None, agent=None, debug=False):
+        if input is None:
+            error_msg = f"Input cannot be None. Please provide a valid input. {input=} {config=} {session=} {quest=} {agent=}"
+            self.log_message(body=error_msg, is_error=True)
+            raise ValueError(error_msg)
+        try:
+            response = self.get_llm().invoke(input, config)
         except HTTPStatusError as e:
-            self.log_message(body=e, is_error=True)
-            _logger.error(f"{e=}")
+            if e.response.status_code == 429:
+                _logger.warning(f"Rate limit exceeded. Retrying in a moment...")
+                self.log_message(body=f"Rate limit exceeded. Retrying in a moment...\n{input=} {config=} {session=} {quest=} {agent=}", is_error=False)
+                raise  # This will trigger a retry
+            else:
+                _logger.warning(f"Other HTTP-error... {e=}")
+                self.log_message(body=f"Other HTTP-error...{e=}\n{input=} {config=} {session=} {quest=} {agent=}", is_error=True)            
+                raise  # For other HTTP errors, don't retry
             return None
         except Exception as e:
-            self.log_message(body=e, is_error=True)
-            _logger.error(f"{e=}")
+            self.log_message(body=f"LLM {self.name} {e}\n\n{input=} {config=} {session=} {quest=} {agent=}\n{traceback.format_exc()}", is_error=True)
+            _logger.error(f"LLM {self.name} {e}\n{traceback.format_exc()}")
             return None
 
         content = response.content
-        additional_kwargs = response.additional_kwargs
-        response_metadata = response.response_metadata
-        usage_metadata = dict(response_metadata.get('usage_metadata', {}))
-        # ~ raise UserError(f"{response.usage_metadata=} {response.usage_metadata['input_tokens']=} ")
-
-        for token_type, token in response.usage_metadata.items():
-            _logger.error(f"{token_type=} {token=}")
-            if token_type == 'total_tokens':
-                next
-            token_type_id = self.env['product.attribute.value'].search([('name', '=', token_type)])
-            # ~ if not token_type_id:
-            # ~ pass
-            self.env['ai.quest.session.line'].new_line(values=
-            {
-                'ai_quest_session_id': ai_quest_session_id,
-                'ai_quest_id': ai_quest_id,
-                'ai_agent_id': ai_agent_id,
-                'ai_llm_id': self.id,
-                'product_tmpl_id': self.product_tmpl_id.id,
-                'model_id': self.model_id.id,
-                'model_real': response_metadata.get('model'),
-                'api_type_id': None,
-                'data_type_id': None,
-                'token_type_id': token_type_id.id if token_type_id else None,
-                'token': token,
-                'system_fingerprint': response.id,
-                'finish_reason': response_metadata.get('finish_reason'),
-            }
-            )
-
+        if response and session:
+            session.save_messages(response)
         if debug:
-            self.log_message(body="%s" % response, is_error=False)
-        return content
+            self.log_message(body=f"LLM {self.name} {response=}", is_error=False)
+        return response
 
     @api.depends("status")
     def compute_status_color(self):
@@ -266,75 +236,10 @@ class AIAgentLLM(models.Model):
 
     def test_llm(self):
         session = self.env['ai.quest.session'].llm_init(self)
-
-        def call_model(state: MessagesState):
-            try:
-                messages = state['messages']
-                _logger.warning(f"call_model {state=}")
-
-                response = model.invoke(messages)
-
-                return {"messages": [response]}
-
-            except Exception as e:
-                _logger.error(f"Error in call_model: {str(e)}")
-                self.log_message(f"Error in call_model: {str(e)}", is_error=True)
-                # Create an error message
-                error_message = AIMessage(content=f"An error occurred: {str(e)}")
-
-                # You might want to add a system message to indicate the error as well
-                system_error_message = SystemMessage(
-                    content="The model encountered an error. Please try again or contact support if the issue persists.")
-
-                # Return both the error message and the system message
-                return {"messages": [system_error_message, error_message]}
-
-        final_state = app.invoke(
-            {"messages": [HumanMessage(content="what is the weather in sf, answer in swedish and celsius")]},
-            config={"configurable": {"thread_id": 42},
-                    #"callbacks":[callback_handler]
-                    }
-        )
-        _logger.info(f"{final_state['messages'][-1].content}")
-        if self.debug == True:
-            _logger.warning(f"{final_state=}")
-        for message in final_state['messages']:
-            if isinstance(message, AIMessage):
-                # ~ 'model_name': 'gpt-4o-2024-08-06',
-                # ~ 'system_fingerprint': 'fp_e161c81bbd',
-                # ~ 'finish_reason': 'stop', 'logprobs': None},
-                # ~ id='run-c3a803af-f425-45f3-b13b-12ab2e9fd7e4-0',
-                session.store_session_data(message)
-
-                _logger.warning(f"final_stage: {message.id=} {message.usage_metadata=} ")
-
-        # ~ _logger.warning(f"{final_state['totalt_tokens']}")
-
-        session = self.env['ai.quest.session'].llm_init(self)
-        try:
-            response = eval(self.get_llm()).invoke(
-                """
-                {"question": "what is the meaning of life the universe and everything?", "answer": 42}
-                """
-                , debug=True)
-        except HTTPStatusError as e:
-            self.log_message(body=e, is_error=True)
-            _logger.error(f"{e=}")
-            return None
-        except Exception as e:
-            self.log_message(body=e, is_error=True)
-            _logger.error(f"{e=}")
-            return None
-
-        for message in response['messages']:
-            if isinstance(message, AIMessage):
-                session.store_session_data(message)
-                _logger.warning(f"final_stage: {message.id=} {message.usage_metadata=} ")
         session.state = 'done'
         self.status = "confirmed"
 
     def get_agent_executor(self, prompt, tools, temperature=1.0, verbose=False, callbacks=None):
-        # ~ raise UserError(self.get_llm(temperature=temperature,verbose=verbose))
         return AgentExecutor(
             agent=create_openai_tools_agent(eval(self.get_llm(temperature=temperature, verbose=verbose)), tools,
                                             prompt),
@@ -348,12 +253,3 @@ class AIAgentLLM(models.Model):
             llm.ai_api_key = llm.product_tmpl_id.ai_api_key
 
 
-# ~ agent_executor.invoke(
-# ~ {
-# ~ "input": "what's my name?",
-# ~ "chat_history": [
-# ~ HumanMessage(content="hi! my name is bob"),
-# ~ AIMessage(content="Hello Bob! How can I assist you today?"),
-# ~ ],
-# ~ }
-# ~ )
