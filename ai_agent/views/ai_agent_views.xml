@@ -10,6 +10,7 @@
                     <field name="ai_agent_llm_id" />
                     <field name="ai_role" optional="show" />
                     <field name="ai_temperature" optional="hide" />
+                    <field name="object_id" optional="hide" />
                     <field name="session_count" optional="hide" />
                     <field name="session_line_count" optional="hide" />
                     <field name="quest_count" optional="hide" />
@@ -30,10 +31,10 @@
                     <field name="ai_temperature" />
                     <field name="ai_role" />
                     <field name="ai_type" />
-                    <field name="ai_discription" />
+                    <field name="ai_description" />
                     <field name="ai_goal" />
                     <field name="ai_backstory" />
-                    <field name="tag_ids" />
+                    <field name="object_id" />
                     <filter string="Favorite" name="favorite" domain="[('is_favorite', '=', True)]" />
                     <group expand="0" string="Group By">
                         <filter string="AI Agent LLM" name="group_by_llm" context="{'group_by': 'ai_agent_llm_id'}" />
@@ -74,6 +75,7 @@
                         <group>
                             <group>
                                 <field name="ai_type" />
+                                <field name="object_id" />
                             </group>
                             <group>
                                 <field name="ai_agent_llm_id" attrs="{'required': [('status', '!=', 'draft')]}" />
@@ -93,31 +95,37 @@
                              </group>
                         -->
                         <notebook>
+                            <page string="Description" id="description">
+                                <field name="ai_description" nolabel="1" />
+                            </page>
+
                             <page string="Prompt Template" id="template">
                                 <field name="ai_prompt_template" widget="html" class="oe-bordered-editor" options="{'style-inline': true, 'codeview': true, 'dynamic_placeholder': true}" nolabel="1" />
                             </page>
                             <page string="Backstory" id="backstory">
                                 <field name="ai_backstory" nolabel="1" />
                             </page>
-                            
-                              <page string="Memory" id="memory">
+
+
+
+                            <page string="Memory" id="memory">
                                 <field name="ai_memory_ids">
                                     <tree editable="bottom">
                                         <field name="sequence" widget="handle" />
-                                        <field name="ai_memory_id"  />
-                                        <field name="ai_memory_status"  />
-                                        <field name="ai_memory_llm_id"  />
-                                        <field name="ai_memory_llm_status"  />
+                                        <field name="ai_memory_id" />
+                                        <field name="ai_memory_status" />
+                                        <field name="ai_memory_llm_id" />
+                                        <field name="ai_memory_llm_status" />
                                         <field name="ai_memory_url" optional='hide'  />
                                         <field name="last_run" optional='hide'  />
                                         <field name="nbr_days" optional='hide'  />
                                         <button name="run" string="Run" type="object" icon=""/>
                                     </tree>
                                 </field>
-                            </page> 
+                            </page>
                             <page string="Tools" id="tool">
                                 <field name="ai_tool_ids">
-                                    <tree  editable="bottom">
+                                    <tree editable="bottom">
                                         <field name="sequence" widget="handle" />
                                         <field name="ai_tool_id" nolabel="1" />
                                     </tree>
@@ -149,6 +157,7 @@
                     <field name="ai_type" />
                     <field name="ai_role" />
                     <field name="last_run" />
+                    <field name="object_id" />
                     <templates>
                         <t t-name="kanban-box">
                             <div t-attf-class="oe_kanban_global_click o_ai_agent_kanban #{kanban_color(record.color.raw_value)}">
@@ -189,7 +198,7 @@
                                     </div>
 
                                     <div class="oe_kanban_footer mt-3">
-                                         <div class="o_kanban_record_bottom">
+                                        <div class="o_kanban_record_bottom">
                                             <div class="oe_kanban_bottom_left"/>
 
                                             <div class="oe_kanban_bottom_right">

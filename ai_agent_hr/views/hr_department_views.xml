@@ -1,100 +1,102 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <data>
-        <record id="act_ai_staff_from_department" model="ir.actions.act_window">
-            <field name="name">AI Staff</field>
-            <field name="res_model">ai.quest</field>
-            <field name="view_mode">kanban,tree,form,calendar</field>
-            <!--
-                 <field name="search_view_id" ref="view_employee_filter"/>
-            -->
-            <field name="context">
-                {
-                "searchpanel_default_department_id": active_id,
-                "default_department_id": active_id,
-                "search_default_group_department": 1,
-                "search_default_department_id": active_id,
-                "expand": 1}
-            </field>
-            <field name="domain">[("department_id", '=', active_id)]</field>
-            <field name="help" type="html">
-                <p class="o_view_nocontent_smiling_face">Add a new Ai Staff (AI Quest)</p>
-                <p>
-                    With just a quick glance on the Odoo AI Staff screen, you
-                    can easily find all the information you need for each virtual person;
-                    capabilities, responsibillities etc.
-                </p>
-            </field>
-        </record>
-
-        <record id="view_department_form" model="ir.ui.view">
-            <field name="name">hr.department.form</field>
-            <field name="model">hr.department</field>
-            <field name="inherit_id" ref="hr.view_department_form" />
-            <field name="arch" type="xml">
-                <sheet position="inside">
-                    <div name="button_box">
-                        <button name="action_get_quests" class="oe_stat_button " type="object" icon="fa-rocket">
-                            <field string="AI Staff" name="total_ai_staff" widget="statinfo" />
-                        </button>
-                        <button name="action_get_sessions" class="oe_stat_button" type="object" icon="fa-flag-checkered">
-                            <field string="Sessions" name="session_count" widget="statinfo" />
-                        </button>
-                        <button name="action_get_session_lines" class="oe_stat_button" type="object" icon="fa-money">
-                            <field string="Tokens" name="session_line_count" widget="statinfo" />
-                        </button>
-                    </div>
-                    <notebook>
-                        <page string="Goals and responsibilities" id="ai">
-                            <field name="goals_responsibilities" nolabel="1" />
-                        </page>
-                    </notebook>
-                </sheet>
-            </field>
-        </record>
-
-        <record id="view_department_tree" model="ir.ui.view">
-            <field name="name">hr.department.tree</field>
-            <field name="model">hr.department</field>
-            <field name="inherit_id" ref="hr.view_department_tree" />
-            <field name="arch" type="xml">
-                <field name="manager_id" position="after">
-                    <field name="total_ai_staff" string="AI Staff" />
-                </field>
-            </field>
-        </record>
-
-        <record id="view_department_filter" model="ir.ui.view">
-            <field name="name">hr.department.search</field>
-            <field name="model">hr.department</field>
-            <field name="inherit_id" ref="hr.view_department_filter" />
-            <field name="arch" type="xml">
-                <field name="name" position="after">
-                    <field name="ai_quest_ids" />
-                    <field name="total_ai_staff" />
-                </field>
-            </field>
-        </record>
-
-        <record id="hr_department_view_kanban" model="ir.ui.view">
-            <field name="name">hr.department.kanban</field>
-            <field name="model">hr.department</field>
-            <field name="inherit_id" ref="hr.hr_department_view_kanban" />
-            <field name="arch" type="xml">
-                <xpath expr="//kanban/field[last()]" position="after">
-                    <field name="ai_quest_ids" />
-                    <field name="total_ai_staff" />
-                </xpath>
-
-                <xpath expr="//kanban/templates/t[@t-name='kanban-box']/div[1]/div[@t-if='!selection_mode']/div[hasclass('o_kanban_card_upper_content')]/div[hasclass('o_kanban_primary_right')]" position="inside">
-                        <button class="btn btn-primary" name="%(act_ai_staff_from_department)d" type="action">
-                            <t t-out="record.total_ai_staff.raw_value" />
-                            AI Staff
-                        </button>
-                </xpath>
-
-
-            </field>
-        </record>
-    </data>
-</odoo>
+  <data>
+   
+    <record id="act_ai_staff_from_department" model="ir.actions.act_window">
+      <field name="name">AI Staff</field>
+      <field name="res_model">ai.quest</field>
+      <field name="view_mode">kanban,tree,form,calendar</field>
+      <!--
+           <field name="search_view_id" ref="view_employee_filter"/>
+      -->
+      <field name="context">
+        {
+        "searchpanel_default_department_id": active_id,
+        "default_department_id": active_id,
+        "search_default_group_department": 1,
+        "search_default_department_id": active_id,
+        "expand": 1}
+      </field>
+      <field name="domain">[("department_id", '=', active_id)]</field>
+      <field name="help" type="html">
+        <p class="o_view_nocontent_smiling_face">Add a new Ai Staff (AI Quest)</p>
+        <p>
+          With just a quick glance on the Odoo AI Staff screen, you
+          can easily find all the information you need for each virtual person;
+          capabilities, responsibillities etc.
+        </p>
+      </field>
+    </record>
+    
+    <record id="view_department_form" model="ir.ui.view">
+      <field name="name">hr.department.form</field>
+      <field name="model">hr.department</field>
+      <field name="inherit_id" ref="hr.view_department_form" />
+      <field name="arch" type="xml">
+        <div name="button_box" position="inside">
+          <button name="action_get_quests" class="oe_stat_button " type="object" icon="fa-rocket">
+            <field string="AI Staff" name="total_ai_staff" widget="statinfo" />
+          </button>
+          <button name="action_get_sessions" class="oe_stat_button" type="object" icon="fa-flag-checkered">
+            <field string="Sessions" name="session_count" widget="statinfo" />
+          </button>
+          <button name="action_get_session_lines" class="oe_stat_button" type="object" icon="fa-money">
+            <field string="Tokens" name="session_line_count" widget="statinfo" />
+          </button>
+        </div>
+        <sheet position="inside">
+          <notebook>
+            <page string="Goals and responsibilities" id="ai">
+              <field name="goals_responsibilities" nolabel="1" />
+            </page>
+          </notebook>
+        </sheet>
+      </field>
+    </record>
+    
+    <record id="view_department_tree" model="ir.ui.view">
+      <field name="name">hr.department.tree</field>
+      <field name="model">hr.department</field>
+      <field name="inherit_id" ref="hr.view_department_tree" />
+      <field name="arch" type="xml">
+        <field name="total_employee" position="after">
+          <field name="total_ai_staff" string="AI Staff" />
+        </field>
+      </field>
+    </record>
+    
+    <record id="view_department_filter" model="ir.ui.view">
+      <field name="name">hr.department.search</field>
+      <field name="model">hr.department</field>
+      <field name="inherit_id" ref="hr.view_department_filter" />
+      <field name="arch" type="xml">
+        <field name="name" position="after">
+          <field name="ai_quest_ids" />
+          <field name="total_ai_staff" />
+        </field>
+      </field>
+    </record>
+    
+    <record id="hr_department_view_kanban" model="ir.ui.view">
+      <field name="name">hr.department.kanban</field>
+      <field name="model">hr.department</field>
+      <field name="inherit_id" ref="hr.hr_department_view_kanban" />
+      <field name="arch" type="xml">
+        <kanban position="inside">
+          <field name="ai_quest_ids" />
+          <field name="total_ai_staff" />
+		</kanban>
+        <div class="col-6 o_kanban_primary_right" position="inside">
+          <!-- Right Column for AI Staff Button -->
+          <div class="col-6 d-flex justify-content-end">
+            <button class="btn btn-primary" name="%(act_ai_staff_from_department)d" type="action">
+              <t t-out="record.total_ai_staff.raw_value" />
+              AI Staff
+            </button>
+          </div>
+        </div>
+      </field>
+    </record>
+    
+  </data>
+ </odoo>

@@ -42,17 +42,21 @@
                         <group>
                             <field name="debug" />
                             <field name="is_favorite" />
-                            <!-- #if VERSION >= '16.0' -->
+                            <!-- #if VERSION == 16.0 -->
                             <field name="tag_ids" widget="many2many_tags" />
                             <!-- #endif -->
                         </group>
                     </group>
                 </sheet>
+                <!-- #if VERSION >= "18.0" -->
+                <chatter/>
+                <!-- #elif VERSION <= "17.0" -->
                 <div class="oe_chatter">
-                    <field name="message_follower_ids" />
-                    <field name="activity_ids" />
-                    <field name="message_ids" />
+                    <field name="message_follower_ids" widget="mail_followers" />
+                    <field name="activity_ids" widget="mail_activity" />
+                    <field name="message_ids" widget="mail_thread" />
                 </div>
+                <!-- #endif -->
             </form>
         </field>
     </record>
@@ -61,6 +65,16 @@
         <field name="name">ai.tool.tree</field>
         <field name="model">ai.tool</field>
         <field name="arch" type="xml">
+            <!-- #if VERSION >= "18.0" -->
+            <list>
+                <field name="name" />
+                <field name="tool" />
+                <field name="tool_lib" />
+                <field name="status" />
+                <field name="last_run" />
+                <field name="is_favorite" />
+            </list>
+            <!-- #elif VERSION <= "17.0" -->
             <tree>
                 <field name="name" />
                 <field name="tool" />
@@ -69,6 +83,7 @@
                 <field name="last_run" />
                 <field name="is_favorite" />
             </tree>
+            <!-- #endif -->
         </field>
     </record>
     <!-- Search View -->
@@ -80,7 +95,7 @@
                 <field name="name" />
                 <field name="tool" />
                 <field name="tool_lib" />
-                <!-- #if VERSION >= '16.0' -->
+                <!-- #if VERSION == 16.0 -->
                 <field name="tag_ids" />
                 <!-- #endif -->
                 <filter string="Favorites" name="favorites" domain="[('is_favorite', '=', True)]" />
@@ -148,7 +163,7 @@
                                 </div>
                                 <div class="o_kanban_record_bottom">
                                     <div class="oe_kanban_bottom_left">
-                                        <!-- #if VERSION >= '16.0' -->
+                                        <!-- #if VERSION == 16.0 -->
                                         <field name="tag_ids" widget="many2many_tags" />
                                         <!-- #endif -->
                                     </div>
@@ -179,7 +194,11 @@
     <record id="action_ai_tool" model="ir.actions.act_window">
         <field name="name">AI Tools</field>
         <field name="res_model">ai.tool</field>
+        <!-- #if VERSION >= "18.0" -->
+        <field name="view_mode">kanban,list,form,calendar</field>
+        <!-- #elif VERSION <= "17.0" -->
         <field name="view_mode">kanban,tree,form,calendar</field>
+        <!-- #endif -->
         <field name="help" type="html">
             <p class="o_view_nocontent_smiling_face">Create your first AI Tool!</p>
         </field>
@@ -198,6 +217,10 @@
                 </group>
                 <group>
                     <field name="is_raise_error"/>
+                    <field name="filename" invisible="1"/>
+                    <field name="file" filename="filename"/>
+                    <field name="object_name"/>
+                    <field name="object_id"/>
                 </group>
                 <footer>
                     <button name="test_tool" string="Search" type="object" class="oe_highlight"/>

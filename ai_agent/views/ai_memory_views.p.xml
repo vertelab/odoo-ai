@@ -35,12 +35,21 @@
                     </div>
                     <group>
                         <group>
+                            <!-- #if VERSION >= "17.0" -->
+                            <field name="memory_type" />
+                            <field name="url" invisible="memory_type != 'bs4'" />
+                            <field name="max_nbr_pages" invisible="memory_type != 'bs4'" />
+                            <field name="model_id" invisible="memory_type != 'model'" />
+                            <field name="model_name" invisible="1" />
+                            <field name="filter_domain" widget="domain" options="{'model': 'model_name'}" invisible="memory_type != 'model'" />
+                            <!-- #elif VERSION <= "16.0" -->
                             <field name="memory_type" />
                             <field name="url" attrs="{'invisible': [('memory_type', '!=', 'bs4')]}" />
                             <field name="max_nbr_pages" attrs="{'invisible': [('memory_type', '!=', 'bs4')]}" />
                             <field name="model_id" attrs="{'invisible': [('memory_type', '!=', 'model')]}" />
                             <field name="model_name" invisible="1" />
-                            <field name="filter_domain" widget="domain" options="{'model': 'model_name'}"  attrs="{'invisible': [('memory_type', '!=', 'model')]}" />-
+                            <field name="filter_domain" widget="domain" options="{'model': 'model_name'}" attrs="{'invisible': [('memory_type', '!=', 'model')]}" />
+                            <!-- #endif -->
                         </group>
                         <group>
                             <field name="vector_type" />
@@ -55,6 +64,20 @@
                         </group>
                     </group>
                     <notebook>
+                        <!-- #if VERSION >= "17.0" -->
+                        <page string="FAISS Index" invisible="vector_type != 'faiss'">
+                            <field name="memory_faiss" />
+                        </page>
+                        <page string="Markdown" invisible="memory_type != 'bs4'">
+                            <field name="memory_markdown" />
+                        </page>
+                        <page string="Attachment" invisible="memory_type != 'attachments'">
+                            <field name="attachment_ids" />
+                        </page>
+                        <page string="Field List" invisible="memory_type != 'model'">
+                            <field name="field_list" nolabel="1" />
+                        </page>
+                        <!-- #elif VERSION <= "16.0" -->
                         <page string="FAISS Index" attrs="{'invisible': [('vector_type', '!=', 'faiss')]}">
                             <field name="memory_faiss" />
                         </page>
@@ -67,13 +90,18 @@
                         <page string="Field List" attrs="{'invisible': [('memory_type', '!=', 'model')]}">
                             <field name="field_list" nolabel="1" />
                         </page>
+                        <!-- #endif -->
                     </notebook>
                 </sheet>
+                <!-- #if VERSION >= "18.0" -->
+                <chatter/>
+                <!-- #elif VERSION <= "17.0" -->
                 <div class="oe_chatter">
-                    <field name="message_follower_ids" />
-                    <field name="activity_ids" />
-                    <field name="message_ids" />
+                    <field name="message_follower_ids" widget="mail_followers" />
+                    <field name="activity_ids" widget="mail_activity" />
+                    <field name="message_ids" widget="mail_thread" />
                 </div>
+                <!-- #endif -->
             </form>
         </field>
     </record>
@@ -83,6 +111,15 @@
         <field name="name">ai.memory.tree</field>
         <field name="model">ai.memory</field>
         <field name="arch" type="xml">
+            <!-- #if VERSION >= "18.0" -->
+            <list>
+                <field name="name" />
+                <field name="vector_type" />
+                <field name="memory_type" />
+                <field name="last_run" />
+                <field name="is_favorite" />
+            </list>
+            <!-- #elif VERSION <= "17.0" -->
             <tree>
                 <field name="name" />
                 <field name="vector_type" />
@@ -90,6 +127,7 @@
                 <field name="last_run" />
                 <field name="is_favorite" />
             </tree>
+            <!-- #endif -->
         </field>
     </record>
 
@@ -130,7 +168,7 @@
                 <templates>
                     <t t-name="kanban-box">
                         <div t-attf-class="oe_kanban_color_#{kanban_getcolor(record.color.raw_value)} oe_kanban_card oe_kanban_global_click">
-                           <div class="o_dropdown_kanban dropdown">
+                            <div class="o_dropdown_kanban dropdown">
                                 <a class="dropdown-toggle o-no-caret btn" role="button" data-toggle="dropdown" href="#" aria-label="Dropdown menu" title="Dropdown menu">
                                     <span class="fa fa-ellipsis-v" />
                                 </a>
@@ -163,7 +201,7 @@
                                 </div>
                                 <div class="o_kanban_record_bottom">
                                     <div class="oe_kanban_bottom_left">
-                                        <!-- #if VERSION >= '16.0' -->
+                                        <!-- #if VERSION == 16.0 -->
                                         <field name="tag_ids" widget="many2many_tags" />
                                         <!-- #endif -->
                                     </div>
@@ -196,12 +234,16 @@
     <record id="action_ai_memory" model="ir.actions.act_window">
         <field name="name">AI Memory</field>
         <field name="res_model">ai.memory</field>
+        <!-- #if VERSION >= "18.0" -->
+        <field name="view_mode">kanban,list,form,calendar</field>
+        <!-- #elif VERSION <= "17.0" -->
         <field name="view_mode">kanban,tree,form,calendar</field>
+        <!-- #endif -->
         <field name="help" type="html">
             <p class="o_view_nocontent_smiling_face">Create your first AI Memory!</p>
         </field>
     </record>
- 
+
     <!-- Menu Item -->
     <menuitem id="menu_ai_memory" name="AI Memory" parent="ai_agent.menu_ai_agent_configuration" action="action_ai_memory" sequence="10" />
 

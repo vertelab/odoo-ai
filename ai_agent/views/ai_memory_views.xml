@@ -40,7 +40,7 @@
                             <field name="max_nbr_pages" attrs="{'invisible': [('memory_type', '!=', 'bs4')]}" />
                             <field name="model_id" attrs="{'invisible': [('memory_type', '!=', 'model')]}" />
                             <field name="model_name" invisible="1" />
-                            <field name="filter_domain" widget="domain" options="{'model': 'model_name'}"  attrs="{'invisible': [('memory_type', '!=', 'model')]}" />-
+                            <field name="filter_domain" widget="domain" options="{'model': 'model_name'}" attrs="{'invisible': [('memory_type', '!=', 'model')]}" />
                         </group>
                         <group>
                             <field name="vector_type" />
@@ -70,9 +70,9 @@
                     </notebook>
                 </sheet>
                 <div class="oe_chatter">
-                    <field name="message_follower_ids" />
-                    <field name="activity_ids" />
-                    <field name="message_ids" />
+                    <field name="message_follower_ids" widget="mail_followers" />
+                    <field name="activity_ids" widget="mail_activity" />
+                    <field name="message_ids" widget="mail_thread" />
                 </div>
             </form>
         </field>
@@ -130,7 +130,7 @@
                 <templates>
                     <t t-name="kanban-box">
                         <div t-attf-class="oe_kanban_color_#{kanban_getcolor(record.color.raw_value)} oe_kanban_card oe_kanban_global_click">
-                           <div class="o_dropdown_kanban dropdown">
+                            <div class="o_dropdown_kanban dropdown">
                                 <a class="dropdown-toggle o-no-caret btn" role="button" data-toggle="dropdown" href="#" aria-label="Dropdown menu" title="Dropdown menu">
                                     <span class="fa fa-ellipsis-v" />
                                 </a>
@@ -198,7 +198,7 @@
             <p class="o_view_nocontent_smiling_face">Create your first AI Memory!</p>
         </field>
     </record>
- 
+
     <!-- Menu Item -->
     <menuitem id="menu_ai_memory" name="AI Memory" parent="ai_agent.menu_ai_agent_configuration" action="action_ai_memory" sequence="10" />
 

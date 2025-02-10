@@ -1,7 +1,7 @@
 import json
 import logging
 import io
-# import pymupdf
+import pymupdf
 import base64
 import uuid
 import faiss
@@ -266,11 +266,11 @@ class AIMemory(models.Model):
 
     def create_document_from_file(self, attachment_id):
         file = base64.b64decode(attachment_id.datas)
-        # if attachment_id.name.split(".")[-1] == "pdf":
-        #     pages = pymupdf.open(stream=file)
-        #     content = "\n".join([page.get_text() for page in pages])
-        # else:
-        content = file.decode("utf-8")
+        if attachment_id.name.split(".")[-1] == "pdf":
+            pages = pymupdf.open(stream=file)
+            content = "\n".join([page.get_text() for page in pages])
+        else:
+            content = file.decode("utf-8")
         _logger.error(f"{content}")
         return Document(id=uuid.uuid4(), page_content=f"{content}", metadata={"name": attachment_id.name, "type": "attachment"})
         

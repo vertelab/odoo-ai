@@ -109,7 +109,7 @@ class AIQuestSessionLine(models.Model):
             record.token_sys = record.token * 12
 
 
-classAIQuestSessionMessage(models.Model):
+class AIQuestSessionMessage(models.Model):
     _name = 'ai.quest.session.message'
     _description = 'AI Quest Session Message'
     _order = 'sequence asc'
@@ -122,7 +122,8 @@ classAIQuestSessionMessage(models.Model):
     
     @api.model
     def save_messages(self, session, messages):
-    
+        if isinstance(message, AIMessage):
+            messages=[messages]
         for seq, message in enumerate(messages):
             self.create = {
                 "sequence": seq,

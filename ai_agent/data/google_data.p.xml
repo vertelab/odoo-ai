@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+  <data>
+    <record id="google_llm_product_template" model="product.template">
+      <field name="name">Google LLM</field>
+      <field name="is_llm">True</field>
+      <field name="llm_library">langchain_google_genai</field>
+      <field name="llm_etype">GoogleGenerativeAIEmbeddings</field>
+      <field name="llm_type">ChatGoogleGenerativeAI</field>
+	  <field name="fallback_api_key_name">google_api_key</field>
+      <field name="llm_price_url">https://cloud.google.com/vertex-ai/generative-ai/pricing</field>
+      <field name="image_1920" type="base64" file="ai_agent/static/img/google-ai-logo.png" />
+    </record>
+    <!-- Model -->
+    <record id="google_llm_product_attribute_value_gemini-pro" model="product.attribute.value">
+      <field name="name">gemini-pro</field>
+      <field name="licence">google-ai-terms</field>
+      <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+    </record>
+    <record id="google_llm_product_attribute_value_gemini-pro-vision" model="product.attribute.value">
+      <field name="name">gemini-pro-vision</field>
+      <field name="licence">google-ai-terms</field>
+      <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+    </record>
+    <record id="google_llm_product_attribute_value_chat-bison-001" model="product.attribute.value">
+      <field name="name">chat-bison-001</field>
+      <field name="licence">google-ai-terms</field>
+      <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+    </record>
+    <record id="google_llm_product_attribute_value_text-bison-001" model="product.attribute.value">
+      <field name="name">text-bison-001</field>
+      <field name="licence">google-ai-terms</field>
+      <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+    </record>
+    <record id="google_llm_product_attribute_value_embedding-gecko-001" model="product.attribute.value">
+      <field name="name">embedding-gecko-001</field>
+      <field name="licence">google-ai-terms</field>
+      <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+    </record>
+    <!-- Attribute Line -->
+    <record id="google_llm_product_template_attribute_line_model" model="product.template.attribute.line">
+      <field name="product_tmpl_id" ref="google_llm_product_template" />
+      <field name="attribute_id" ref="product_attribute_model" />
+      <field name="value_ids" eval="[(6, 0, [
+                        ref('google_llm_product_attribute_value_gemini-pro'),
+                        ref('google_llm_product_attribute_value_gemini-pro-vision'),
+                        ref('google_llm_product_attribute_value_chat-bison-001'),
+                        ref('google_llm_product_attribute_value_text-bison-001'),
+                        ref('google_llm_product_attribute_value_embedding-gecko-001'),
+                ])]" />
+    </record>
+    <record id="google_llm_product_template_attribute_line_token_type" model="product.template.attribute.line">
+      <field name="product_tmpl_id" ref="google_llm_product_template" />
+      <field name="attribute_id" ref="product_attribute_token_type" />
+      <field name="value_ids" eval="[(6, 0, [
+     ref('product_attribute_value_input_tokens'),
+     ref('product_attribute_value_input_tokens_audio'),
+     ref('product_attribute_value_input_tokens_cache_read'),
+     ref('product_attribute_value_input_cached'),
+     ref('product_attribute_value_output_tokens'),
+     ref('product_attribute_value_output_tokens_audio'),
+     ref('product_attribute_value_output_tokens_reasoning'),
+     ])]" />
+    </record>
+    <!-- Vertex AI -->
+    <record id="google_vertex_product_template" model="product.template">
+      <field name="name">Google Vertex AI</field>
+      <field name="is_llm">True</field>
+      <field name="llm_type">ChatVertexAI</field>
+    </record>
+    <record id="google_vertex_product_template_attribute_line_model" model="product.template.attribute.line">
+      <field name="product_tmpl_id" ref="google_vertex_product_template" />
+      <field name="attribute_id" ref="product_attribute_model" />
+      <field name="value_ids" eval="[(6, 0, [
+                        ref('google_llm_product_attribute_value_gemini-pro'),
+                        ref('google_llm_product_attribute_value_gemini-pro-vision'),
+                        ref('google_llm_product_attribute_value_chat-bison-001'),
+                        ref('google_llm_product_attribute_value_text-bison-001'),
+                        ref('google_llm_product_attribute_value_embedding-gecko-001'),
+                ])]" />
+    </record>
+    <record id="google_vertex_product_template_attribute_line_token_type" model="product.template.attribute.line">
+      <field name="product_tmpl_id" ref="google_vertex_product_template" />
+      <field name="attribute_id" ref="product_attribute_token_type" />
+      <field name="value_ids" eval="[(6, 0, [
+     ref('product_attribute_value_input_tokens'),
+     ref('product_attribute_value_input_tokens_audio'),
+     ref('product_attribute_value_input_tokens_cache_read'),
+     ref('product_attribute_value_input_cached'),
+     ref('product_attribute_value_output_tokens'),
+     ref('product_attribute_value_output_tokens_audio'),
+     ref('product_attribute_value_output_tokens_reasoning'),
+     ])]" />
+    </record>
+  </data>
+</odoo>

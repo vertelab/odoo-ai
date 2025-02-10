@@ -4,6 +4,30 @@
             <field name="name">ai.agent.llm.tree</field>
             <field name="model">ai.agent.llm</field>
             <field name="arch" type="xml">
+                <!-- #if VERSION >= "18.0" -->
+                <list string="AI Agent LLMs" decoration-info="status=='not_confirmed'" decoration-success="status=='confirmed'" decoration-danger="status=='error'" multi_edit="1">
+                    <field name="name" />
+                    <field name="product_tmpl_id" optional="hide" />
+                    <field name="model_id" />
+                    <field name="llm_type" optional="hide" />
+                    <field name="llm_etype" optional="hide" />
+                    <field name="licence" />
+                    <field name="is_embedded" />
+                    <field name="endpoint" optional="hide" />
+                    <field name="is_key_required" />
+                    <field name="last_run" />
+                    <field name="ai_agent_count" optional="hide" />
+                    <field name="quest_count" optional="hide" />
+                    <field name="session_count" optional="hide" />
+                    <field name="session_line_count" optional="hide" />
+                    <field name="status" widget="badge" />
+                    <field name="is_favorite" widget="boolean_favorite" nolabel="1" />
+                    <!--
+                         <button name="action_confirm" string="Confirm" type="object" icon="fa-check" attrs="{'invisible': [('status', '!=', 'not_confirmed')]}"/>
+                         <button name="action_reset" string="Reset" type="object" icon="fa-undo" attrs="{'invisible': [('status', '=', 'not_confirmed')]}"/>
+                    -->
+                </list>
+                <!-- #elif VERSION <= "17.0" -->
                 <tree string="AI Agent LLMs" decoration-info="status=='not_confirmed'" decoration-success="status=='confirmed'" decoration-danger="status=='error'" multi_edit="1">
                     <field name="name" />
                     <field name="product_tmpl_id" optional="hide" />
@@ -26,6 +50,7 @@
                          <button name="action_reset" string="Reset" type="object" icon="fa-undo" attrs="{'invisible': [('status', '=', 'not_confirmed')]}"/>
                     -->
                 </tree>
+                <!-- #endif -->
             </field>
         </record>
 
@@ -92,30 +117,49 @@
                         </div>
                         <group>
                             <group>
-                                <!-- #if VERSION >= '16.0' -->
+                                <!-- #if VERSION == 16.0 -->
                                 <field name="tag_ids" widget="many2many_tags" />
                                 <!-- #endif -->
                                 <field name="is_key_required" widget="boolean_toggle" />
+                                <!-- #if VERSION >= "18.0" -->
+                                <field name="ai_api_key" invisible="is_key_required == False" />
+                                <!-- #elif VERSION <= "17.0" -->
                                 <field name="ai_api_key" attrs="{'invisible': [('is_key_required', '=', False)]}" />
-                                <field name="licence"  />
-                                <field name="is_embedded"  />
+                                <!-- #endif -->
+                                <field name="licence" />
+                                <field name="is_embedded" />
                             </group>
                             <group>
+                                <!-- #if VERSION >= "18.0" -->
+                                <field name="llm_type" invisible="is_embedded == True"/>
+                                <field name="llm_etype" invisible="is_embedded == False" />
+                                <field name="product_tmpl_id" />
+                                <field name="model_id" invisible="product_tmpl_id == False" domain="[('product_tmpl_id', '=', product_tmpl_id),('attribute_id','=', %(ai_agent.product_attribute_model)d)]" />
+                                <field name="azure_endpoint" required="llm_type == 'AzureChatOpenAI'" invisible="llm_type != 'AzureChatOpenAI'"/>
+                                <field name="api_version" required="llm_type == 'AzureChatOpenAI'" invisible="llm_type != 'AzureChatOpenAI'"/>
+                                <!-- #elif VERSION <= "17.0" -->
                                 <field name="llm_type" attrs="{'invisible': [('is_embedded', '=', True)]}"/>
                                 <field name="llm_etype" attrs="{'invisible': [('is_embedded', '=', False)]}" />
                                 <field name="product_tmpl_id" />
                                 <field name="model_id" attrs="{'invisible': [('product_tmpl_id', '=', False)]}" domain="[('product_tmpl_id', '=', product_tmpl_id),('attribute_id','=', %(ai_agent.product_attribute_model)d)]" />
+                                <field name="azure_endpoint" attrs="{'required': [('llm_type', '=', 'AzureChatOpenAI')], 'invisible': [('llm_type', '!=', 'AzureChatOpenAI')]}"/>
+                                <field name="api_version" attrs="{'required': [('llm_type', '=', 'AzureChatOpenAI')], 'invisible': [('llm_type', '!=', 'AzureChatOpenAI')]}"/>
+                                <!-- #endif -->
                             </group>
                         </group>
                         <group>
                             <separator />
                         </group>
                     </sheet>
-                    <div class="oe_chatter">
-                        <field name="message_follower_ids" widget="mail_followers" />
-                        <field name="activity_ids" widget="mail_activity" />
-                        <field name="message_ids" widget="mail_thread" />
-                    </div>
+<!-- #if VERSION >= "18.0" -->
+<chatter/>
+<!-- #elif VERSION <= "17.0" -->
+<div class="oe_chatter">
+    <field name="message_follower_ids" widget="mail_followers" />
+    <field name="activity_ids" widget="mail_activity" />
+    <field name="message_ids" widget="mail_thread" />
+</div>
+<!-- #endif -->              
                 </form>
             </field>
         </record>
@@ -217,7 +261,11 @@
         <record id="action_ai_agent_llm" model="ir.actions.act_window">
             <field name="name">Agent LLM</field>
             <field name="res_model">ai.agent.llm</field>
+            <!-- #if VERSION >= "18.0" -->
+            <field name="view_mode">kanban,list,form,calendar</field>
+            <!-- #elif VERSION <= "17.0" -->
             <field name="view_mode">kanban,tree,form,calendar</field>
+            <!-- #endif -->
         </record>
         <menuitem id="ai_agent.menu_ai_agent_llm" name="LLMs" parent="ai_agent.menu_ai_agent_configuration" action="action_ai_agent_llm" />
     </data>
