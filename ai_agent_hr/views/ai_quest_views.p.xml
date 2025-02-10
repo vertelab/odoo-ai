@@ -15,7 +15,7 @@
             <field name="model">ai.quest</field>
             <field name="inherit_id" ref="ai_agent.ai_quest_search" />
             <field name="arch" type="xml">
-                <field name="tag_ids" position="after">
+                <field name="description" position="after">
                     <field name="department_id" />
                 </field>
                 <filter name="group_by_partner" position="after">
