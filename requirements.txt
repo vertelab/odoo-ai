@@ -22,5 +22,6 @@ requests
 markdownify
 beautifulsoup4
 urllib3
+IPython
 pyopenssl==22.0.0
 cryptography==37.0.0
