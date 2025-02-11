@@ -20,7 +20,7 @@ class Department(models.Model):
 		# #if VERSION >= "18.0"
         emp_data = self.env['ai.quest'].read_group([('department_id', 'in', self.ids)], ['department_id'], ['department_id'])
 		# #elif VERSION <= "17.0"
-        emp_data = self.env['ai.quest']._read_group([('department_id', 'in', self.ids)], ['department_id'], ['department_id'])
+        emp_data = self.env['ai.quest'].read_group([('department_id', 'in', self.ids)], ['department_id'], ['department_id'])
 		# #endif
         result = dict((data['department_id'][0], data['department_id_count']) for data in emp_data)
         for department in self:
