@@ -82,6 +82,7 @@ class AIQuestSession(models.Model):
     user_id = fields.Many2one(comodel_name='res.users', string="User", help="")
     
     display_name = fields.Char(compute='_compute_display_name')
+    company_id = fields.Many2one('res.company', required=True, related="ai_quest_id.company_id")
  
     @api.depends("name")
     def _compute_display_name(self):

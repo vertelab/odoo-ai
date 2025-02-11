@@ -10,6 +10,7 @@
                     <field name="ai_type" />
                     <field name="ai_quest_id" />
                     <field name="status" />
+                    <field name="company_id" />
                     <field name="enddate" optional="hide" />
                     <field name="time_difference_ms" optional="hide" />
                 </list>
@@ -72,6 +73,7 @@
                             <group>
                                 <field name="ai_type" />
                                 <field name="session" />
+                                <field name="company_id" />
                             </group>
                             <group>
                                 <field name="ai_quest_id" can_create="true" can_write="true" />

@@ -272,6 +272,7 @@ class AIQuest(models.Model):
     supervisor_temperature = fields.Float(string='Temperature', default=0.7,
                                       help="Temperature controls the randomness and creativity of the model's output, "
                                            "<1.0 more predictable and consistent >1.0 more diverse and creative responses")
+    company_id = fields.Many2one('res.company', required=True, default=lambda self: self.env.company)
 
     @api.depends('is_supervisor',
                  'ai_agent_ids.sequence',
