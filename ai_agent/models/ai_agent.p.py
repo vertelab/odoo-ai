@@ -5,17 +5,16 @@ import logging
 import re
 import traceback
 
-
-
 from datetime import datetime
 from httpx import HTTPStatusError
 from json.decoder import JSONDecodeError
-from langchain.agents import Tool, AgentExecutor, LLMSingleActionAgent, AgentOutputParser, create_tool_calling_agent, create_xml_agent,create_json_chat_agent
+from langchain.agents import initialize_agent, AgentType, Tool, AgentExecutor, LLMSingleActionAgent, AgentOutputParser, create_tool_calling_agent, create_xml_agent,create_json_chat_agent
 from langchain.agents.agent_toolkits import create_conversational_retrieval_agent
 from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder, PromptTemplate, HumanMessagePromptTemplate, SystemMessagePromptTemplate
 from langchain.schema import AIMessage, HumanMessage, SystemMessage, BaseMessage, AgentAction, AgentFinish
 from langchain.tools import tool
 from langchain_community.chat_message_histories import ChatMessageHistory
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langgraph.prebuilt import create_react_agent
 from odoo import models, fields, api, _
 from odoo.addons.ai_agent.models.ai_quest import AgentState
@@ -476,33 +475,16 @@ class AIAgent(models.Model):
             # Initialize the language model
             llm = quest.supervisor_llm_id.get_llm(temperature=quest.supervisor_temperature)
 
-            # Create the JSON chat agent
-            # ~ agent = create_json_chat_agent(llm, tools, prompt)
-            agent = create_react_agent(llm, [])
 
-            # Create an agent executor
-            # ~ agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True, handle_parsing_errors=True)
-            agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=self.debug, handle_parsing_errors=True)
+            messages = [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=prompt)
+            ]
 
-            # Invoke the agent
 
-            
-            # ~ agent = create_json_chat_agent(
-                                # ~ self.supervisor_llm_id.get_llm(temperature=self.supervisor_temperature),
-                                # ~ [],
-                                # ~ ChatPromptTemplate.from_messages([("human",prompt)])
-                    # ~ )
-            # ~ executor = AgentExecutor(agent=agent,tools=[], verbose=self.debug)
             try:
-                # ~ response = self.invoke(messages)
-                # ~ response = langgraph_agent_executor.invoke({
-                    # ~ "input": topic,
-                    # ~ "messages": messages,
-                # ~ })
-                response = agent_executor.invoke([
-                    SystemMessage(content=system_prompt),
-                    HumanMessage(content=prompt)
-                ])
+
+                response = llm.invoke(messages)
 
             except Exception as e:
                 _logger.error(f"Error in supervisor chain: {str(e)}",exc_info=True)
@@ -513,7 +495,7 @@ class AIAgent(models.Model):
             content = response.content
             _logger.info(f"Supervisor decision: {content}")
             session.add_message(f"Supervisor decision: {content}")
-            json = self.extract_json("Supervisor",session,content)
+            json = quest.extract_json("Supervisor",session,content)
             if not json:
                 return {"next": "FINISH",'session': session}
 

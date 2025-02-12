@@ -1,6 +1,4 @@
-yfinance
 openai
-open-interpreter 
 langchain-core
 langchain-openai
 langchain-mistralai
@@ -19,7 +17,6 @@ lxml_html_clean
 faiss-cpu
 pymupdf
 requests
-markdownify
 beautifulsoup4
 urllib3
 IPython
