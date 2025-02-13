@@ -9,6 +9,10 @@
           <field name="name" />
           <field name="ai_type" />
           <field name="status" />
+<<<<<<< HEAD
+=======
+          <field name="company_id" />
+>>>>>>> a3737dd3ca324bc1be5c13403650f36cfae27e6d
         </tree>
       </field>
     </record>
@@ -77,6 +81,10 @@
                 <field name="ai_type" />
                 <field name="user_id" widget="many2one_avatar_user" />
                 <field name="partner_id" />
+<<<<<<< HEAD
+=======
+                <field name="company_id" />
+>>>>>>> a3737dd3ca324bc1be5c13403650f36cfae27e6d
               </group>
               <group>
                 <field name="init_type" />
