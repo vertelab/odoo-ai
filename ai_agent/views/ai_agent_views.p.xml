@@ -134,6 +134,8 @@
                                 <field name="ai_backstory" nolabel="1" />
                             </page>
 
+
+
                             <page string="Memory" id="memory">
                                 <field name="ai_memory_ids">
                                     <!-- #if VERSION >= "18.0" -->

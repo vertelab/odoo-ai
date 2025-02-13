@@ -1,15 +1,15 @@
-from httpx import HTTPStatusError
-from langchain.agents import AgentExecutor, create_openai_tools_agent, create_json_chat_agent, create_react_agent
-from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_core.utils.utils import convert_to_secret_str
-from odoo import models, fields, api, tools, _
-from odoo.exceptions import UserError, AccessError, ValidationError
-from random import randint
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+import httpx
 import importlib
 import logging
 import time
 import traceback
+
+from httpx import HTTPStatusError
+from langchain.agents import AgentExecutor, create_openai_tools_agent, create_json_chat_agent, create_react_agent
+from odoo import models, fields, api, tools, _
+from odoo.exceptions import UserError, AccessError, ValidationError
+from random import randint
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 _logger = logging.getLogger(__name__)
 
@@ -195,12 +195,12 @@ class AIAgentLLM(models.Model):
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=4, max=10),
-        retry=retry_if_exception_type(HTTPStatusError)
+        retry=retry_if_exception_type(httpx.HTTPStatusError)
     )
     def invoke_llm_with_retry(llm, messages):
         try:
             return llm.invoke(messages)
-        except HTTPStatusError as e:
+        except httpx.HTTPStatusError as e:
             if e.response.status_code == 429:
                 _logger.warning(f"Rate limit exceeded. Retrying in a moment...")
                 raise  # This will trigger a retry
@@ -210,7 +210,7 @@ class AIAgentLLM(models.Model):
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=4, max=10),
-        retry=retry_if_exception_type(HTTPStatusError)
+        retry=retry_if_exception_type(httpx.HTTPStatusError)
     )
     def invoke(self, input, config=None, session=None, quest=None, agent=None, debug=False):
         if input is None:

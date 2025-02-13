@@ -5,17 +5,16 @@ import logging
 import re
 import traceback
 
-
-
 from datetime import datetime
 from httpx import HTTPStatusError
 from json.decoder import JSONDecodeError
-from langchain.agents import Tool, AgentExecutor, LLMSingleActionAgent, AgentOutputParser, create_tool_calling_agent, create_xml_agent,create_json_chat_agent
+from langchain.agents import initialize_agent, AgentType, Tool, AgentExecutor, LLMSingleActionAgent, AgentOutputParser, create_tool_calling_agent, create_xml_agent,create_json_chat_agent
 from langchain.agents.agent_toolkits import create_conversational_retrieval_agent
 from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder, PromptTemplate, HumanMessagePromptTemplate, SystemMessagePromptTemplate
 from langchain.schema import AIMessage, HumanMessage, SystemMessage, BaseMessage, AgentAction, AgentFinish
 from langchain.tools import tool
 from langchain_community.chat_message_histories import ChatMessageHistory
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langgraph.prebuilt import create_react_agent
 from odoo import models, fields, api, _
 from odoo.addons.ai_agent.models.ai_quest import AgentState
@@ -30,6 +29,7 @@ from typing import Annotated, List, Sequence, Union, Any
 # #endif
 
 # https://python.langchain.com/api_reference/langchain/agents.html
+
 _logger = logging.getLogger(__name__)
 
 class SafeDict(dict):
@@ -90,19 +90,6 @@ class AIAgent(models.Model):
             record.base_image_128 = record.image_128 or record.ai_agent_llm_id.image_128
 
     def action_get_quests(self):
-        ai_quest_session_ids = self.env["ai.quest.session"].search([("ai_agent_id", "=", self.id)])
-        ai_quest_ids = list(
-            set(map(lambda ai_quest_session_id: ai_quest_session_id.ai_quest_id.id, ai_quest_session_ids)))
-        action = {
-            'name': 'AI Quests',
-            'type': 'ir.actions.act_window',
-            'res_model': 'ai.quest',
-            'view_mode': 'kanban,tree,form,calendar',
-            'target': 'current',
-            'domain': [("id", 'in', ai_quest_ids)]
-        }
-        return action
-
         if self.session_line_ids:
             ai_quest_ids = list(set(map(lambda session_line_id: session_line_id.ai_quest_id.id, self.session_line_ids)))
             _logger.error(f"{ai_quest_ids=}")
@@ -176,7 +163,7 @@ class AIAgent(models.Model):
         res = {}
         if quest.use_company_info:
             res['company_info'] = f'Company information: {self.env.user.company_id.company_mission=} {self.env.user.company_id.company_values=}'
-        if quest.use_user_info:
+        if quest.use_personal_info:
             res ['user_info']   = f'User information: {self.env.user.name=} {self.env.user.function=} {self.env.user.city=}'
         if quest.use_time_context:
             now = datetime.now()
@@ -488,33 +475,16 @@ class AIAgent(models.Model):
             # Initialize the language model
             llm = quest.supervisor_llm_id.get_llm(temperature=quest.supervisor_temperature)
 
-            # Create the JSON chat agent
-            # ~ agent = create_json_chat_agent(llm, tools, prompt)
-            agent = create_react_agent(llm, [])
 
-            # Create an agent executor
-            # ~ agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=True, handle_parsing_errors=True)
-            agent_executor = AgentExecutor(agent=agent, tools=tools, verbose=self.debug, handle_parsing_errors=True)
+            messages = [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=prompt)
+            ]
 
-            # Invoke the agent
 
-            
-            # ~ agent = create_json_chat_agent(
-                                # ~ self.supervisor_llm_id.get_llm(temperature=self.supervisor_temperature),
-                                # ~ [],
-                                # ~ ChatPromptTemplate.from_messages([("human",prompt)])
-                    # ~ )
-            # ~ executor = AgentExecutor(agent=agent,tools=[], verbose=self.debug)
             try:
-                # ~ response = self.invoke(messages)
-                # ~ response = langgraph_agent_executor.invoke({
-                    # ~ "input": topic,
-                    # ~ "messages": messages,
-                # ~ })
-                response = agent_executor.invoke([
-                    SystemMessage(content=system_prompt),
-                    HumanMessage(content=prompt)
-                ])
+
+                response = llm.invoke(messages)
 
             except Exception as e:
                 _logger.error(f"Error in supervisor chain: {str(e)}",exc_info=True)
@@ -525,7 +495,7 @@ class AIAgent(models.Model):
             content = response.content
             _logger.info(f"Supervisor decision: {content}")
             session.add_message(f"Supervisor decision: {content}")
-            json = self.extract_json("Supervisor",session,content)
+            json = quest.extract_json("Supervisor",session,content)
             if not json:
                 return {"next": "FINISH",'session': session}
 
@@ -550,13 +520,13 @@ class AIAgent(models.Model):
     def get_agent_name(self,i,**kwargs):
         # ~ return f"agent_{i}"
         if kwargs.get('mermaid'):
-            name = "**" + re.sub(r'[()\[\]\{\}:]',' ',self.name).strip() + "**"
+            name = "**" + re.sub(r'[()\[\]\{\}:]',' ',self.name).strip() + "**" if self and self.name else ""
             tools = "<small>fa&colon;fa-tools " + re.sub(r'[()\[\]{}:]',' ',','.join([t.ai_tool_id.name for t in self.ai_tool_ids])) + "</small>\n" if self.ai_tool_ids else ''
             memories =  "<small>fa&colon;fa-book " + re.sub(r'[()\[\]{}:]',' ',','.join([m.ai_memory_id.name for t in self.ai_memory_ids])) + "</small>\n" if self.ai_memory_ids else ''
-            llm = "<small>fa&colon;fa-cog " + re.sub(r'[()\[\]{}:]',' ',self.ai_agent_llm_id.name) + "</small>" if self.ai_agent_llm_id else ''
+            llm = "<small>fa&colon;fa-cog " + re.sub(r'[()\[\]{}:]',' ',self.ai_agent_llm_id.name) + "</small>" if self.ai_agent_llm_id and self.ai_agent_llm_id.name else ''
             return f"{name}\n{tools}{memories}{llm}"
         else:
-            name = re.sub(r'[()\[\]\{\}:]',' ',self.name).strip()
+            name = re.sub(r'[()\[\]\{\}:]',' ',self.name).strip() if self and self.name else ""
             return f"{name}"
 
     def test(self):

@@ -31,10 +31,10 @@ from random import randint
 from secrets import choice
 
 ##if VERSION >= '18.0'
-from typing import Annotated, List, NotRequired, Sequence, TypedDict, Union, Any
+from typing import Optional, Annotated, List, NotRequired, Sequence, TypedDict, Union, Any
 ##else
 from typing_extensions import NotRequired, TypedDict
-from typing import Annotated, List, Dict, Sequence, Union, Any
+from typing import Optional, Annotated, List, Dict, Sequence, Union, Any
 ##endif
 # Odoo 18 okt 2024  Ubuntu 24.04 Python 3.12 (NotRequired 3.11)
 # Odoo 17 2023 Ubuntu 22.04  Python 3.10
@@ -534,25 +534,22 @@ class AIQuest(models.Model):
                 })
         return eid
 
-    def Xlog_message(self, body, is_error=False):
-        for q in self:
-            if is_error:
-                q.status = "error"
-            q.last_run = fields.Datetime.now()
-            q.sudo().message_post(body=f"{body} | {self.last_run}", message_type="notification")
-            
-            
     def log_message(self, body, is_error=False):
-        self.env['mail.thread'].sudo().message_notify(
-            body=f"{body} | {self.last_run}",
-            subject="Log Message" if not is_error else "Error Log",
-            partner_ids=[self.env.user.partner_id.id],
-            model=self._name,
-            res_id=self.id,
-            message_type='notification'
-        )
+        if self.id:  # Ensure the record exists and has an ID
+            self.message_post(
+                body=body,
+                subtype_xmlid='mail.mt_note',  # Log note subtype
+                message_type='comment',
+            )
+        else:
+            # Use message_notify for transient models or notifications
+            self.env['mail.thread'].sudo().message_notify(
+                partner_ids=[self.env.user.partner_id.id],
+                subject="Log Message" if not is_error else "Error Log",
+                body=body,
+                message_type='notification',
+            )
 
-            
 
     def mail_test_wizard(self):
         if self._check_quest_error():
@@ -1050,7 +1047,7 @@ class AIQuest(models.Model):
 
     def extract_json(self,agent,session,message):
         # Find JSON-like content within triple backticks
-        message = message.replace('\n','')
+        message = message.replace('\n','').replace("'",'"')
         json_match = re.search(r'``````', message, re.DOTALL)
         if json_match:
             json_string = json_match.group(1)
@@ -1065,13 +1062,13 @@ class AIQuest(models.Model):
             except json.JSONDecodeError:
                 session.add_message(f"{agent} Error: Invalid JSON format\n{message}")
             try:
-                return json.loads(f"json \n{message}\n")
+                return json.loads(message)
             except json.JSONDecodeError:
                 session.add_message(f"{agent} Error: Invalid JSON tried updated '''json {message}'''")
                 
     def get_agent_name(self,**kwargs):
         if kwargs.get('mermaid'):
-            llm = re.sub(r'[\'()\[\]{}:]','_',self.supervisor_llm_id.name).replace(' ','') if self.supervisor_llm_id else ''
+            llm = re.sub(r'[\'()\[\]{}:]','_',self.supervisor_llm_id.name).replace(' ','') if self.supervisor_llm_id and self.supervisor_llm_id.name else ''
             supervisor=f"Supervisor\n<small>fa&colon;fa-cog {llm}</small>"
             # ~ _logger.info(f"SUpervisor ------------------>{supervisor}")            
             return supervisor
@@ -1080,12 +1077,12 @@ class AIQuest(models.Model):
 
 class AgentState(TypedDict):
     messages: Annotated[Sequence[BaseMessage], operator.add]
-    session: SkipValidation[NotRequired[AIQuestSession]]
-    quest: SkipValidation[NotRequired[AIQuest]]
+    session: Optional[SkipValidation[AIQuestSession]] = None
+    quest: Optional[SkipValidation[AIQuest]] = None
     topic: str
     scratchpad: Annotated[List[str], operator.add]
     next: str
-    token: SkipValidation[NotRequired[int]]
+    token: Optional[int] = None
     # ~ count: SkipValidation[NotRequired[Step(lambda count: count + 1)]]
     current_agent: str
     sequence_position: int
