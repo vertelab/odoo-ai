@@ -163,7 +163,7 @@ class AIAgent(models.Model):
         res = {}
         if quest.use_company_info:
             res['company_info'] = f'Company information: {self.env.user.company_id.company_mission=} {self.env.user.company_id.company_values=}'
-        if quest.use_user_info:
+        if quest.use_personal_info:
             res ['user_info']   = f'User information: {self.env.user.name=} {self.env.user.function=} {self.env.user.city=}'
         if quest.use_time_context:
             now = datetime.now()
@@ -520,13 +520,13 @@ class AIAgent(models.Model):
     def get_agent_name(self,i,**kwargs):
         # ~ return f"agent_{i}"
         if kwargs.get('mermaid'):
-            name = "**" + re.sub(r'[()\[\]\{\}:]',' ',self.name).strip() + "**"
+            name = "**" + re.sub(r'[()\[\]\{\}:]',' ',self.name).strip() + "**" if self and self.name else ""
             tools = "<small>fa&colon;fa-tools " + re.sub(r'[()\[\]{}:]',' ',','.join([t.ai_tool_id.name for t in self.ai_tool_ids])) + "</small>\n" if self.ai_tool_ids else ''
             memories =  "<small>fa&colon;fa-book " + re.sub(r'[()\[\]{}:]',' ',','.join([m.ai_memory_id.name for t in self.ai_memory_ids])) + "</small>\n" if self.ai_memory_ids else ''
-            llm = "<small>fa&colon;fa-cog " + re.sub(r'[()\[\]{}:]',' ',self.ai_agent_llm_id.name) + "</small>" if self.ai_agent_llm_id else ''
+            llm = "<small>fa&colon;fa-cog " + re.sub(r'[()\[\]{}:]',' ',self.ai_agent_llm_id.name) + "</small>" if self.ai_agent_llm_id and self.ai_agent_llm_id.name else ''
             return f"{name}\n{tools}{memories}{llm}"
         else:
-            name = re.sub(r'[()\[\]\{\}:]',' ',self.name).strip()
+            name = re.sub(r'[()\[\]\{\}:]',' ',self.name).strip() if self and self.name else ""
             return f"{name}"
 
     def test(self):

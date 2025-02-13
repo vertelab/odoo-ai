@@ -31,7 +31,7 @@
                     <field name="ai_temperature" />
                     <field name="ai_role" />
                     <field name="ai_type" />
-                    <field name="ai_discription" />
+                    <field name="ai_description" />
                     <field name="ai_goal" />
                     <field name="ai_backstory" />
                     <field name="object_id" />
@@ -98,13 +98,17 @@
                             <page string="Description" id="description">
                                 <field name="ai_description" nolabel="1" />
                             </page>
+
                             <page string="Prompt Template" id="template">
                                 <field name="ai_prompt_template" widget="html" class="oe-bordered-editor" options="{'style-inline': true, 'codeview': true, 'dynamic_placeholder': true}" nolabel="1" />
                             </page>
                             <page string="Backstory" id="backstory">
                                 <field name="ai_backstory" nolabel="1" />
                             </page>
-                              <page string="Memory" id="memory">
+
+
+
+                            <page string="Memory" id="memory">
                                 <field name="ai_memory_ids">
                                     <tree editable="bottom">
                                         <field name="sequence" widget="handle" />
