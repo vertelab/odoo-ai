@@ -504,14 +504,6 @@ class AIQuest(models.Model):
             )
 
 
-    def log_message(self, body, is_error=False):
-        self.sudo().message_post(
-            body=f"{body} | {self.last_run}",
-            subject="Log Message" if not is_error else "Error Log",
-            message_type='notification',
-            subtype_xmlid='mail.mt_note',
-        )
-
     def mail_test_wizard(self):
         if self._check_quest_error():
             raise UserError(self._check_quest_error())
@@ -1026,7 +1018,7 @@ class AIQuest(models.Model):
                 
     def get_agent_name(self,**kwargs):
         if kwargs.get('mermaid'):
-            llm = re.sub(r'[\'()\[\]{}:]','_',self.supervisor_llm_id.name).replace(' ','') if self.supervisor_llm_id else ''
+            llm = re.sub(r'[\'()\[\]{}:]','_',self.supervisor_llm_id.name).replace(' ','') if self.supervisor_llm_id and self.supervisor_llm_id.name else ''
             supervisor=f"Supervisor\n<small>fa&colon;fa-cog {llm}</small>"
             # ~ _logger.info(f"SUpervisor ------------------>{supervisor}")            
             return supervisor
