@@ -10,11 +10,30 @@ from typing import Annotated, TypedDict, Sequence
 
 import markdown
 import unidecode
+<<<<<<< HEAD
 from langchain_core.messages import BaseMessage, HumanMessage
 from langchain_core.messages import AIMessage
 from langgraph.graph import END, StateGraph
 from odoo.addons.base.models.avatar_mixin import get_hsl_from_seed
 from odoo.exceptions import UserError, ValidationError, Warning
+=======
+import warnings
+
+from IPython.display import Image, display
+from langchain import hub
+from langchain.agents import Tool, AgentExecutor, LLMSingleActionAgent, AgentOutputParser, create_tool_calling_agent, create_xml_agent,create_json_chat_agent
+from langchain.prompts import ChatPromptTemplate
+from langchain.schema import AgentAction, AgentFinish
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
+from langchain_core.runnables.graph import MermaidDrawMethod
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.graph import StateGraph, START, END
+from langgraph.prebuilt import create_react_agent
+from odoo import models, fields, api, _
+from odoo.addons.ai_agent.models.ai_quest_session import AIQuestSession
+from odoo.exceptions import UserError, ValidationError
+from odoo.exceptions import Warning
+>>>>>>> f94c23399f0d0e2f0cbeec53cef2ef51d0229451
 from odoo.tools.mail import html2plaintext
 from odoo.tools.safe_eval import safe_eval
 from odoo.addons.ai_agent.models.ai_quest_session import AIQuestSession
@@ -123,11 +142,14 @@ class AIQuest(models.Model):
     alias_id = fields.Many2one(comodel_name='mail.alias', string='Alias', ondelete="restrict", required=True,
                                help="The email address associated with this channel. New emails received will "
                                     "automatically create new leads assigned to the channel.")
-    alias_user_id = fields.Many2one(comodel_name='res.users', related='alias_id.alias_user_id', readonly=False,
-                                    inherited=True, )
+    alias_user_id = fields.Many2one(comodel_name='res.users', related='alias_id.alias_user_id', readonly=False, inherited=True)
+
     avatar_128 = fields.Image("Avatar", max_width=128, max_height=128, compute='_compute_avatar_128')
 
     channel_id = fields.Many2one(comodel_name='mail.channel', string="Channel", help="")
+    real_channel_id = fields.Many2one(comodel_name='mail.channel', string="Channel",
+                                    help="This is the channel chat-method get")
+
     chat_history_limit = fields.Integer(string='Chat History Limit', default=10,
                                         help='Limit the chat history to this number of messages')
     chat_user_id = fields.Many2one(comodel_name='res.users', string="Chat User", help="")
@@ -150,8 +172,6 @@ class AIQuest(models.Model):
     model_name = fields.Char(related='model_id.model', string='Model Name', readonly=True, store=True)
     name = fields.Char(required=True)
     partner_id = fields.Many2one(comodel_name='res.partner', string="Customer", help="")
-    real_channel_id = fields.Many2one(comodel_name='mail.channel', string="Channel",
-                                      help="This is the channel chat-method get")
     real_chat_user_id = fields.Many2one(comodel_name='res.users', string="Chat User",
                                         help="Chat user thet chat-method is using")
     server_action_id = fields.Many2one('ir.actions.server', string='Server Action',
@@ -179,6 +199,38 @@ class AIQuest(models.Model):
     use_time_context = fields.Boolean(string='Use Time Context', default=True,
                                       help='Inform the LLM of current time, date')
     user_id = fields.Many2one(comodel_name='res.users', string="Owner", help="")
+<<<<<<< HEAD
+=======
+    is_supervisor = fields.Boolean(string='Is Supervisor', help="This is a ReAct type of quest using a supervisor coordinating agents")
+    supervisor_prompt = fields.Text(string="Supervisor Prompt",default=SUPERVISOR)
+    supervisor_llm_id = fields.Many2one(comodel_name="ai.agent.llm", string="LLM", help="Choose Large Language Model for the supervisor",
+                                          domain="[('status','=','confirmed')]")
+    supervisor_temperature = fields.Float(string='Temperature', default=0.7,
+                                      help="Temperature controls the randomness and creativity of the model's output, "
+                                           "<1.0 more predictable and consistent >1.0 more diverse and creative responses")
+
+    @api.depends('is_supervisor',
+                 'ai_agent_ids.sequence',
+                 'ai_agent_ids.ai_agent_id',
+                 'ai_agent_ids.ai_agent_id.ai_agent_llm_id',
+                 'ai_agent_ids.ai_agent_id.ai_tool_ids.ai_tool_id',
+                 'ai_agent_ids.ai_agent_id.ai_memory_ids.ai_memory_id')
+    def _compute_graph_image(self):
+        for rec in self:
+            if rec.ai_agent_ids:
+                try:
+                    graph = rec.build(session=self.env['ai.quest.session'].quest_init(rec),mermaid=True)
+                    image_object = graph.get_graph().draw_mermaid_png()
+                    rec.graph_image = base64.b64encode(image_object).decode('utf-8')
+                except Exception as e:
+                    # rec.log_message(f"Error building chain: {str(e)}", is_error=True)
+                    raise UserError(f"Error building chain: {str(e)}\n{traceback.format_exc()}")
+            else:
+                rec.graph_image = False
+
+    graph_image = fields.Image("Graph", compute=_compute_graph_image, compute_sudo=True,store=True)
+
+>>>>>>> f94c23399f0d0e2f0cbeec53cef2ef51d0229451
   
     @api.model
     def _generate_random_token(self):
@@ -419,7 +471,8 @@ class AIQuest(models.Model):
         if len(self.ai_agent_ids.filtered(
                 lambda a: a.ai_agent_id.ai_agent_llm_id.is_key_required and not a.ai_agent_id.ai_agent_llm_id.ai_api_key
         )) > 0:
-            return _('Missing API Key on LLMs')
+            pass
+            # return _('Missing API Key on LLMs')
         # if self.status != 'active':
         #     return _('Wrong status on the quest')
         if self.code == DEFAULT_PYTHON_CODE:

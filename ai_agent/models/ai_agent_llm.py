@@ -6,9 +6,14 @@ from langchain.agents import AgentExecutor, create_openai_tools_agent, create_js
 from langchain_core.utils.utils import convert_to_secret_str
 
 from httpx import HTTPStatusError
+<<<<<<< HEAD
 import importlib
 
 from odoo import models, fields, api, _
+=======
+from langchain.agents import AgentExecutor, create_openai_tools_agent, create_json_chat_agent, create_react_agent
+from odoo import models, fields, api, tools, _
+>>>>>>> f94c23399f0d0e2f0cbeec53cef2ef51d0229451
 from odoo.exceptions import UserError, AccessError, ValidationError
 import logging
 
@@ -137,6 +142,17 @@ class AIAgentLLM(models.Model):
         try:
             module = importlib.import_module(self.product_tmpl_id.llm_library)
             LLM = getattr(module, self.product_tmpl_id.llm_type)
+<<<<<<< HEAD
+=======
+            #_logger.warning(f"{LLM=}")
+            if self.product_tmpl_id.llm_type == "AzureChatOpenAI":
+               kwarg['api_version'] = self.api_version
+               kwarg['azure_endpoint'] = self.azure_endpoint
+            api_key = self.ai_api_key
+            if not api_key:
+                api_key = tools.config.get(self.product_tmpl_id.fallback_api_key_name, False)
+                _logger.error(f"{api_key=}")
+>>>>>>> f94c23399f0d0e2f0cbeec53cef2ef51d0229451
             return LLM(verbose=verbose, temperature=temperature, callbacks=callbacks, api_key=self.ai_api_key,
                        model=self.model_id.name, **kwarg)
         except ImportError as e:

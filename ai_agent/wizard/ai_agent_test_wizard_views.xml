@@ -8,7 +8,7 @@
                 <group>
                     <field name="ai_agent_id" attrs="{'invisible': [('ai_agent_id', '!=', False)]}" modifiers="{'required': true}" />
                     <field name="ai_prompt_template" widget="html" class="oe-bordered-editor" options="{'style-inline': true, 'codeview': true, 'dynamic_placeholder': true}"/>
-                    <field name="ai_input" />
+                    <field name="ai_input"/>
                 </group>
                 <group>
                     <field name="is_rise_error"/>
@@ -25,7 +25,8 @@
         <field name="name">Test AI</field>
         <field name="res_model">ai.agent.test.wizard</field>
         <field name="view_mode">form</field>
-        <field name='target'>new</field>
+        <field name="target">new</field>
     </record>
 
 </odoo>
+

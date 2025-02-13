@@ -465,6 +465,13 @@ class AIAgent(models.Model):
             except AttributeError as e:
                 _logger.error(f"Error: {ai_tool_id.tool=} not found in {ai_tool_id.tool_lib=}")
             except Exception as e:
+<<<<<<< HEAD
                 _logger.error(f"An error occurred: {e}")
             tools.append(TOOL)
+=======
+                _logger.error(f"An error occurred: {e}  {traceback.format_exc()}")
+            if TOOL:
+                tools.append(TOOL)
+        _logger.warning(f"_get_tools{tools=}")
+>>>>>>> f94c23399f0d0e2f0cbeec53cef2ef51d0229451
         return tools
