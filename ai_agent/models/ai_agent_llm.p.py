@@ -1,16 +1,15 @@
-from random import randint
-from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_openai import ChatOpenAI
-from langchain_mistralai import ChatMistralAI
-from langchain.agents import AgentExecutor, create_openai_tools_agent, create_json_chat_agent, create_react_agent
-from langchain_core.utils.utils import convert_to_secret_str
-
 from httpx import HTTPStatusError
-import importlib
-
-from odoo import models, fields, api, _
+from langchain.agents import AgentExecutor, create_openai_tools_agent, create_json_chat_agent, create_react_agent
+from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.utils.utils import convert_to_secret_str
+from langchain_mistralai import ChatMistralAI
+from langchain_openai import ChatOpenAI
+from odoo import models, fields, api, tools, _
 from odoo.exceptions import UserError, AccessError, ValidationError
+from random import randint
+import importlib
 import logging
+
 
 _logger = logging.getLogger(__name__)
 
@@ -67,7 +66,11 @@ class AIAgentLLM(models.Model):
             'name': 'AI Quests',
             'type': 'ir.actions.act_window',
             'res_model': 'ai.quest',
+            # #if VERSION >= "18.0"
+            'view_mode': 'kanban,list,form',
+            # #elif VERSION <= "17.0"
             'view_mode': 'kanban,tree,form',
+            # #endif
             'target': 'current',
             'domain': [("session_line_ids.ai_llm_id", '=', self.id)]
         }
@@ -78,7 +81,11 @@ class AIAgentLLM(models.Model):
             'name': 'AI Agents',
             'type': 'ir.actions.act_window',
             'res_model': 'ai.agent',
+            # #if VERSION >= "18.0"
+            'view_mode': 'kanban,list,form',
+            # #elif VERSION <= "17.0"
             'view_mode': 'kanban,tree,form',
+            # #endif            
             'target': 'current',
             'domain': [("session_line_ids.ai_llm_id", '=', self.id)]
         }
@@ -89,7 +96,11 @@ class AIAgentLLM(models.Model):
             'name': 'Session Lines',
             'type': 'ir.actions.act_window',
             'res_model': 'ai.quest.session.line',
+            # #if VERSION >= "18.0"
+            'view_mode': 'list,form,calendar,pivot',
+            # #elif VERSION <= "17.0"
             'view_mode': 'tree,form,calendar,pivot',
+            # #endif    
             'target': 'current',
             'domain': [("ai_llm_id", '=', self.id)],
         }
@@ -100,7 +111,11 @@ class AIAgentLLM(models.Model):
             'name': 'Sessions',
             'type': 'ir.actions.act_window',
             'res_model': 'ai.quest.session',
+            # #if VERSION >= "18.0"
+            'view_mode': 'list,form',
+            # #elif VERSION <= "17.0"
             'view_mode': 'tree,form',
+            # #endif    
             'target': 'current',
             'domain': [("session_line_ids.ai_llm_id", '=', self.id)]
         }
@@ -139,6 +154,14 @@ class AIAgentLLM(models.Model):
         try:
             module = importlib.import_module(self.product_tmpl_id.llm_library)
             LLM = getattr(module, self.product_tmpl_id.llm_type)
+            #_logger.warning(f"{LLM=}")
+            if self.product_tmpl_id.llm_type == "AzureChatOpenAI":
+               kwarg['api_version'] = self.api_version
+               kwarg['azure_endpoint'] = self.azure_endpoint
+            api_key = self.ai_api_key
+            if not api_key:
+                api_key = tools.config.get(self.product_tmpl_id.fallback_api_key_name, False)
+                _logger.error(f"{api_key=}")
             return LLM(verbose=verbose, temperature=temperature, callbacks=callbacks, api_key=self.ai_api_key,
                        model=self.model_id.name, **kwarg)
         except ImportError as e:

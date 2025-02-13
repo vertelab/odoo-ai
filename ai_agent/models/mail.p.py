@@ -20,7 +20,11 @@ class MailMessage(models.Model):
 
 
 class MailChannel(models.Model):
+    # #if VERSION >= "17.0"
+    _inherit = 'discuss.channel'
+    # #elif VERSION <= "16.0"
     _inherit = 'mail.channel'
+    # #endif
 
     ai_quest_id = fields.Many2one(comodel_name='ai.quest', string="Quest", help="")
     ai_quest_session_id = fields.Many2one(comodel_name='ai.quest.session', string="Session", help="")
@@ -30,7 +34,7 @@ class MailChannel(models.Model):
         message = super(MailChannel, self).message_post(**kwargs)
 
         ai_quest = None
-        if self.is_chat:
+        if self.channel_type == "chat":
             ai_quest = self.env['res.users'].browse(self.channel_member_ids.mapped('partner_id.user_ids.id')).mapped(
                 'ai_quest_id')
             user = ai_quest.chat_user_id

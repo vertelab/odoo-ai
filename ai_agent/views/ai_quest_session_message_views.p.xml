@@ -4,6 +4,15 @@
         <field name="name">ai.quest.session.message.list</field>
         <field name="model">ai.quest.session.message</field>
         <field name="arch" type="xml">
+            <!-- #if VERSION >= "18.0" -->
+            <list string="Messages">
+                <field name="sequence"/>
+                <field name="ai_quest_session_id"/>
+                <field name="message_type"/>
+                <field name="message_content"/>
+                <field name="message_raw" optional="hide"/>
+            </list>
+            <!-- #elif VERSION <= "17.0" -->
             <tree string="Messages">
                 <field name="sequence"/>
                 <field name="ai_quest_session_id"/>
@@ -11,6 +20,7 @@
                 <field name="message_content"/>
                 <field name="message_raw" optional="hide"/>
             </tree>
+            <!-- #endif -->
         </field>
     </record>
 
@@ -56,7 +66,11 @@
     <record id="action_ai_quest_session_message" model="ir.actions.act_window">
         <field name="name">Messages</field>
         <field name="res_model">ai.quest.session.message</field>
+        <!-- #if VERSION >= "18.0" -->
+        <field name="view_mode">list,form</field>
+        <!-- #elif VERSION <= "17.0" -->
         <field name="view_mode">tree,form</field>
+        <!-- #endif -->
     </record>
 
     <menuitem id="ai_agent.menu_ai_quest_session_message" name="Messages" parent="ai_agent.menu_ai_agent_configuration" action="action_ai_quest_session_message"/>

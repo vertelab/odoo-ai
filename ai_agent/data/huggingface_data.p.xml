@@ -1,0 +1,114 @@
+<odoo>
+  <data>
+    <!-- HuggingFace -->
+    <record id="huggingface_product_template" model="product.template">
+      <field name="name">HuggingFace</field>
+      <field name="is_llm">True</field>
+      <field name="llm_library">langchain_huggingface</field>
+      <field name="llm_etype">HuggingFaceEmbedding</field>
+      <field name="llm_type">HuggingFaceHub</field>
+	  <field name="fallback_api_key_name">huggingface_api_key</field>
+      <field name="image_1920" type="base64" file="ai_agent/static/img/huggingface_ai-logo.png" />
+    </record>
+    <record id="huggingface_product_attribute_value_gpt2" model="product.attribute.value">
+      <field name="name">gpt2</field>
+      <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+    </record>
+    <record id="huggingface_product_attribute_value_bert" model="product.attribute.value">
+      <field name="name">bert-base-uncased</field>
+      <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+    </record>
+    <record id="huggingface_product_attribute_value_mpnet" model="product.attribute.value">
+      <field name="name">sentence-transformers/all-mpnet-base-v2</field>
+      <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+    </record>
+    <record id="bart_product_attribute_value" model="product.attribute.value">
+  <field name="name">facebook/bart-base</field>
+  <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+</record>
+    
+    <record id="electra_product_attribute_value" model="product.attribute.value">
+  <field name="name">google/electra-base-discriminator</field>
+  <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+</record>
+
+   <record id="albert_product_attribute_value" model="product.attribute.value">
+  <field name="name">albert-base-v2</field>
+  <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+</record>
+<record id="bloom_product_attribute_value" model="product.attribute.value">
+  <field name="name">bigscience/bloom</field>
+  <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+</record>
+<record id="roberta_product_attribute_value" model="product.attribute.value">
+  <field name="name">roberta-base</field>
+  <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+</record>
+
+<record id="distilbert_product_attribute_value" model="product.attribute.value">
+  <field name="name">distilbert-base-uncased</field>
+  <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+</record>
+ <record id="xlm_roberta_product_attribute_value" model="product.attribute.value">
+  <field name="name">xlm-roberta-base</field>
+  <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+</record>
+<record id="t5_product_attribute_value" model="product.attribute.value">
+  <field name="name">t5-base</field>
+  <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+</record>
+    <record id="deberta_product_attribute_value" model="product.attribute.value">
+  <field name="name">microsoft/deberta-base</field>
+  <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+</record>
+<record id="gptj_product_attribute_value" model="product.attribute.value">
+  <field name="name">EleutherAI/gpt-j-6B</field>
+  <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+</record>
+ <record id="deepseek-ai_deepseek-r1_product_attribute_value" model="product.attribute.value">
+  <field name="name">deepseek-ai/DeepSeek-R1</field>
+  <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+ </record>
+ <record id="ai-sweden-models_gpt-sw3-40b_product_attribute_value" model="product.attribute.value">
+  <field name="name">AI-Sweden-Models/gpt-sw3-40b</field>
+  <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+ </record>
+
+    <!-- Attribute Line -->
+    <record id="huggingface_product_template_attribute_line_model" model="product.template.attribute.line">
+      <field name="product_tmpl_id" ref="huggingface_product_template" />
+      <field name="attribute_id" ref="product_attribute_model" />
+      <field name="value_ids" eval="[(6, 0, [
+                    ref('huggingface_product_attribute_value_gpt2'),
+                    ref('huggingface_product_attribute_value_bert'),
+                    ref('huggingface_product_attribute_value_mpnet'),
+                    ref('gptj_product_attribute_value'),
+                    ref('deberta_product_attribute_value'),
+                    ref('t5_product_attribute_value'),
+                    ref('xlm_roberta_product_attribute_value'),
+                    ref('distilbert_product_attribute_value'),
+                    ref('roberta_product_attribute_value'),
+                    ref('bloom_product_attribute_value'),
+                    ref('albert_product_attribute_value'),
+                    ref('electra_product_attribute_value'),
+                    ref('deepseek-ai_deepseek-r1_product_attribute_value'),
+                    ref('ai-sweden-models_gpt-sw3-40b_product_attribute_value'),
+                    ])]" />
+    </record>
+    <!-- Token Type -->
+    <record id="huggingface_product_template_attribute_line_token_type" model="product.template.attribute.line">
+      <field name="product_tmpl_id" ref="mistral_product_template" />
+      <field name="attribute_id" ref="product_attribute_token_type" />
+      <field name="value_ids" eval="[(6, 0, [
+         ref('product_attribute_value_input_tokens'),
+         ref('product_attribute_value_input_tokens_audio'),
+         ref('product_attribute_value_input_tokens_cache_read'),
+         ref('product_attribute_value_input_cached'),
+         ref('product_attribute_value_output_tokens'),
+         ref('product_attribute_value_output_tokens_audio'),
+         ref('product_attribute_value_output_tokens_reasoning'),
+         ])]" />
+    </record>
+ 
+  </data>
+</odoo>

@@ -15,7 +15,19 @@ from langgraph.prebuilt import create_react_agent
 from odoo import models, fields, api, _
 from odoo.exceptions import UserError
 from random import randint
+<<<<<<< HEAD
 from typing_extensions import TypedDict, List
+=======
+
+# #if VERSION >= "18.0"
+from typing import Annotated, List, NotRequired, Sequence, TypedDict, Union, Any
+# #elif VERSION <= "17.0"
+from typing_extensions import NotRequired, TypedDict
+from typing import Annotated, List, Sequence, Union, Any
+# #endif
+
+# https://python.langchain.com/api_reference/langchain/agents.html
+>>>>>>> f94c23399f0d0e2f0cbeec53cef2ef51d0229451
 
 _logger = logging.getLogger(__name__)
 
@@ -63,6 +75,7 @@ class AIAgent(models.Model):
             record.base_image_128 = record.image_128 or record.ai_agent_llm_id.image_128
 
     def action_get_quests(self):
+<<<<<<< HEAD
         ai_quest_session_ids = self.env["ai.quest.session"].search([("ai_agent_id", "=", self.id)])
         ai_quest_ids = list(
             set(map(lambda ai_quest_session_id: ai_quest_session_id.ai_quest_id.id, ai_quest_session_ids)))
@@ -75,13 +88,38 @@ class AIAgent(models.Model):
             'domain': [("id", 'in', ai_quest_ids)]
         }
         return action
+=======
+        if self.session_line_ids:
+            ai_quest_ids = list(set(map(lambda session_line_id: session_line_id.ai_quest_id.id, self.session_line_ids)))
+            _logger.error(f"{ai_quest_ids=}")
+            ai_quest_ids = list(
+                set(map(lambda ai_quest_session_id: ai_quest_session_id.ai_quest_id.id, ai_quest_session_ids)))
+            action = {
+                'name': 'AI Quests',
+                'type': 'ir.actions.act_window',
+                'res_model': 'ai.quest',
+                # #if VERSION >= "18.0"
+                'view_mode': 'kanban,list,form,calendar',
+                # #elif VERSION <= "17.0"
+                'view_mode': 'kanban,tree,form,calendar',
+                # #endif
+                'target': 'current',
+                'domain': [("id", 'in', ai_quest_ids)]
+            }
+            return action
+        raise UserError("No quests conected to agent...")
+>>>>>>> f94c23399f0d0e2f0cbeec53cef2ef51d0229451
 
     def action_get_session_lines(self):
         action = {
             'name': 'Session Lines',
             'type': 'ir.actions.act_window',
             'res_model': 'ai.quest.session.line',
+            # #if VERSION >= "18.0"
+            'view_mode': 'list,form,calendar,pivot',
+            # #elif VERSION <= "17.0"
             'view_mode': 'tree,form,calendar,pivot',
+            # #endif
             'target': 'current',
             'domain': [("ai_agent_id", '=', self.id)],
         }
@@ -92,7 +130,11 @@ class AIAgent(models.Model):
             'name': 'Sessions',
             'type': 'ir.actions.act_window',
             'res_model': 'ai.quest.session',
+            # #if VERSION >= "18.0"
+            'view_mode': 'list,form,calendar',
+            # #elif VERSION <= "17.0"
             'view_mode': 'tree,form,calendar',
+            # #endif
             'target': 'current',
             'domain': [("session_line_ids.ai_agent_id", '=', self.id)]
         }
@@ -133,7 +175,11 @@ class AIAgent(models.Model):
         chat_history = ChatMessageHistory()
         question = ''
         for m in self.env['mail.message'].search([
+            # #if VERSION >= "17.0"
+            ('model', '=', 'discuss.channel'),
+            # #elif VERSION <= "16.0"
             ('model', '=', 'mail.channel'),
+            # #endif
             ('res_id', '=', quest.real_channel_id.id)],
                 limit=quest.chat_history_limit, order='create_date asc'):
             if m.author_id.id == quest.real_chat_user_id.id:
@@ -465,6 +511,13 @@ class AIAgent(models.Model):
             except AttributeError as e:
                 _logger.error(f"Error: {ai_tool_id.tool=} not found in {ai_tool_id.tool_lib=}")
             except Exception as e:
+<<<<<<< HEAD
                 _logger.error(f"An error occurred: {e}")
             tools.append(TOOL)
+=======
+                _logger.error(f"An error occurred: {e}  {traceback.format_exc()}")
+            if TOOL:
+                tools.append(TOOL)
+        _logger.warning(f"_get_tools{tools=}")
+>>>>>>> f94c23399f0d0e2f0cbeec53cef2ef51d0229451
         return tools

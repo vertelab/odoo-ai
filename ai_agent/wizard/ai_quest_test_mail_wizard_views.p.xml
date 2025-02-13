@@ -6,7 +6,11 @@
         <field name="arch" type="xml">
             <form>
                 <group>
+                    <!-- #if VERSION >= "17.0" -->
+                    <field name="ai_quest_id" invisible="ai_quest_id"/>
+                    <!-- #elif VERSION <= "16.0" -->
                     <field name="ai_quest_id" attrs="{'invisible': [('ai_quest_id', '!=', False)]}" />
+                    <!-- #endif -->
                 </group>
                 <group>
                     <field name="eml_file"/>
