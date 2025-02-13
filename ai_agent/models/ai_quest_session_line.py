@@ -109,7 +109,7 @@ class AIQuestSessionLine(models.Model):
             record.token_sys = record.token * 12
 
 
-classAIQuestSessionMessage(models.Model):
+class AIQuestSessionMessage(models.Model):
     _name = 'ai.quest.session.message'
     _description = 'AI Quest Session Message'
     _order = 'sequence asc'
