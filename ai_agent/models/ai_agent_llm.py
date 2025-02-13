@@ -57,7 +57,6 @@ class AIAgentLLM(models.Model):
         selection=[("not_confirmed", "Not Confirmed"), ("confirmed", "Confirmed"), ("error", "Error")],
         default="not_confirmed")
     status_color = fields.Integer(compute="compute_status_color")
-    tag_ids = fields.Many2many(comodel_name='product.tag', string='Tags')
     azure_endpoint = fields.Char(string="Azure Endpoint")
     api_version = fields.Char(string="API version")
     def action_get_quests(self):

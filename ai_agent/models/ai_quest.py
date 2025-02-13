@@ -37,7 +37,6 @@ from typing import Annotated, List, Dict, Sequence, Union, Any
 # The typing_extensions module is primarily used for backporting new features to older Python versions
 
 
-from odoo.addons.base.models.avatar_mixin import get_hsl_from_seed
 
 _logger = logging.getLogger(__name__)
 
@@ -189,7 +188,7 @@ class AIQuest(models.Model):
                                     "automatically create new leads assigned to the channel.")
     alias_user_id = fields.Many2one(comodel_name='res.users', related='alias_id.alias_user_id', readonly=False, inherited=True)
 
-    avatar_128 = fields.Image("Avatar", max_width=128, max_height=128, compute='_compute_avatar_128')
+    avatar_128 = fields.Image("Avatar", max_width=128, max_height=128)
 
     channel_id = fields.Many2one(comodel_name='mail.channel', string="Channel", help="")
     real_channel_id = fields.Many2one(comodel_name='mail.channel', string="Channel",
@@ -232,7 +231,6 @@ class AIQuest(models.Model):
     status = fields.Selection(
         selection=[("draft", _("Draft")), ("active", _("Active")), ("done", _("Done")), ("error", _("Error"))],
         default="draft")
-    tag_ids = fields.Many2many(comodel_name='product.tag', string='Tags')
     use_chat_history = fields.Boolean(string='Use Chat History', default=True, help='Add chat history to the context')
     use_company_info = fields.Boolean(string='Use Company Info', default=True,
                                       help='Add company mission and values to the context')
@@ -281,23 +279,6 @@ class AIQuest(models.Model):
     uuid = fields.Char('UUID', size=50, default=_generate_random_token, copy=False)
 
 
-    @api.depends('init_type', 'image_128', 'uuid')
-    def _compute_avatar_128(self):
-        for record in self:
-            record.avatar_128 = record.image_128 or record._generate_avatar()
-
-    def _generate_avatar(self):
-        avatar = {
-            'manual': avatar_manual,
-            'mail': avatar_mail,
-            'chat': avatar_chat,
-            'channel': avatar_channel,
-            'cron': avatar_cron,
-            'server-action': avatar_cron,
-        }[self.init_type]
-        bgcolor = get_hsl_from_seed(self.uuid)
-        avatar = avatar.replace('fill="#875a7b"', f'fill="{bgcolor}"')
-        return base64.b64encode(avatar.encode())
 
     @api.depends('session_line_ids')
     def compute_llm_count(self):
