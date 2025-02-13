@@ -1,11 +1,14 @@
 # -*- coding: utf-8 -*-
 # Part of Odoo. See LICENSE file for full copyright and licensing details.
 
+
+import logging
+
+import markdown
+
 from langchain_core.messages import AIMessage
 from odoo import api, fields, models, tools, _
 from odoo.exceptions import ValidationError, UserError
-import logging
-import markdown
 
 _logger = logging.getLogger(__name__)
 
@@ -46,20 +49,16 @@ class MailChannel(models.Model):
                 if bot_response:  # Answer as the user the bot is
                     answer = _('no answer')
 
-                    if bot_response.get('response', False):
-                        messages = bot_response.get('response', {}).get('messages', [])
-                    else:
-                        messages = bot_response.get('result', {}).get('messages', [])
+                    messages = bot_response.get('response', {}).get('messages', [])
                     ai_messages = [m for m in messages if isinstance(m, AIMessage)]
                     last_ai_message = ai_messages[-1] if len(ai_messages) != 0 else None
 
                     if messages and last_ai_message:
                         _logger.error(f"{last_ai_message=}")
-                        answer = markdown.markdown(last_ai_message.content)
+                        answer = last_ai_message.content
 
                     self.with_user(user).message_post(
-                        body=answer,
-                        # ~ body=markdown.markdown(answer),
+                        body=markdown.markdown(answer),
                         message_type='comment',
                         subtype_xmlid='mail.mt_comment',
                     )
