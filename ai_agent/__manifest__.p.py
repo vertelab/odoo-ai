@@ -28,6 +28,9 @@
     'category': "Productivity",
     'description': """
         Long description of module's purpose
+        
+        sudo apt-get install graphviz graphviz-dev
+
     """,
     'author': "Vertel AB",
     'website': "https://vertel.se/apps/odoo-ai/ai_agent",
@@ -41,6 +44,7 @@
         "data/open_ai_data.xml",
         "data/mistral_data.xml",
         "data/anthropic_data.xml",
+        "data/azure_data.xml",
         "data/groq_data.xml",
         "data/google_data.xml",
         "data/huggingface_data.xml",
