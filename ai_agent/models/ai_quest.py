@@ -4,19 +4,10 @@ import json
 import logging
 import operator
 import re
-from random import randint
-from secrets import choice
-from typing import Annotated, TypedDict, Sequence
-
-import markdown
-import unidecode
 <<<<<<< HEAD
-from langchain_core.messages import BaseMessage, HumanMessage
-from langchain_core.messages import AIMessage
-from langgraph.graph import END, StateGraph
-from odoo.addons.base.models.avatar_mixin import get_hsl_from_seed
-from odoo.exceptions import UserError, ValidationError, Warning
 =======
+import traceback
+import unidecode
 import warnings
 
 from IPython.display import Image, display
@@ -33,7 +24,21 @@ from odoo import models, fields, api, _
 from odoo.addons.ai_agent.models.ai_quest_session import AIQuestSession
 from odoo.exceptions import UserError, ValidationError
 from odoo.exceptions import Warning
+from odoo.tools.mail import html2plaintext
+from odoo.tools.safe_eval import safe_eval
+from pydantic import BaseModel, ConfigDict, SkipValidation
 >>>>>>> f94c23399f0d0e2f0cbeec53cef2ef51d0229451
+from random import randint
+from secrets import choice
+from typing import Annotated, TypedDict, Sequence
+
+import markdown
+import unidecode
+from langchain_core.messages import BaseMessage, HumanMessage
+from langchain_core.messages import AIMessage
+from langgraph.graph import END, StateGraph
+from odoo.addons.base.models.avatar_mixin import get_hsl_from_seed
+from odoo.exceptions import UserError, ValidationError, Warning
 from odoo.tools.mail import html2plaintext
 from odoo.tools.safe_eval import safe_eval
 from odoo.addons.ai_agent.models.ai_quest_session import AIQuestSession
@@ -199,38 +204,6 @@ class AIQuest(models.Model):
     use_time_context = fields.Boolean(string='Use Time Context', default=True,
                                       help='Inform the LLM of current time, date')
     user_id = fields.Many2one(comodel_name='res.users', string="Owner", help="")
-<<<<<<< HEAD
-=======
-    is_supervisor = fields.Boolean(string='Is Supervisor', help="This is a ReAct type of quest using a supervisor coordinating agents")
-    supervisor_prompt = fields.Text(string="Supervisor Prompt",default=SUPERVISOR)
-    supervisor_llm_id = fields.Many2one(comodel_name="ai.agent.llm", string="LLM", help="Choose Large Language Model for the supervisor",
-                                          domain="[('status','=','confirmed')]")
-    supervisor_temperature = fields.Float(string='Temperature', default=0.7,
-                                      help="Temperature controls the randomness and creativity of the model's output, "
-                                           "<1.0 more predictable and consistent >1.0 more diverse and creative responses")
-
-    @api.depends('is_supervisor',
-                 'ai_agent_ids.sequence',
-                 'ai_agent_ids.ai_agent_id',
-                 'ai_agent_ids.ai_agent_id.ai_agent_llm_id',
-                 'ai_agent_ids.ai_agent_id.ai_tool_ids.ai_tool_id',
-                 'ai_agent_ids.ai_agent_id.ai_memory_ids.ai_memory_id')
-    def _compute_graph_image(self):
-        for rec in self:
-            if rec.ai_agent_ids:
-                try:
-                    graph = rec.build(session=self.env['ai.quest.session'].quest_init(rec),mermaid=True)
-                    image_object = graph.get_graph().draw_mermaid_png()
-                    rec.graph_image = base64.b64encode(image_object).decode('utf-8')
-                except Exception as e:
-                    # rec.log_message(f"Error building chain: {str(e)}", is_error=True)
-                    raise UserError(f"Error building chain: {str(e)}\n{traceback.format_exc()}")
-            else:
-                rec.graph_image = False
-
-    graph_image = fields.Image("Graph", compute=_compute_graph_image, compute_sudo=True,store=True)
-
->>>>>>> f94c23399f0d0e2f0cbeec53cef2ef51d0229451
   
     @api.model
     def _generate_random_token(self):
