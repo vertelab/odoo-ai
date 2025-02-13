@@ -10,20 +10,14 @@
           <field name="name" />
           <field name="ai_type" />
           <field name="status" />
-<<<<<<< HEAD
-=======
           <field name="company_id" />
->>>>>>> a3737dd3ca324bc1be5c13403650f36cfae27e6d
         </list>
         <!-- #elif VERSION <= "17.0" -->
         <tree string="AI Quest">
           <field name="name" />
           <field name="ai_type" />
           <field name="status" />
-<<<<<<< HEAD
-=======
           <field name="company_id" />
->>>>>>> a3737dd3ca324bc1be5c13403650f36cfae27e6d
         </tree>
         <!-- #endif -->
       </field>
@@ -100,10 +94,7 @@
                 <field name="ai_type" />
                 <field name="user_id" widget="many2one_avatar_user" />
                 <field name="partner_id" />
-<<<<<<< HEAD
-=======
                 <field name="company_id" />
->>>>>>> a3737dd3ca324bc1be5c13403650f36cfae27e6d
                 <!-- #if VERSION >= '16.0' -->
                 <field name="tag_ids" widget="many2many_tags" />
                 <!-- #endif -->

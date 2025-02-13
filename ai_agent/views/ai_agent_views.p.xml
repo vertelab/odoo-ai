@@ -126,24 +126,15 @@
                             <page string="Description" id="description">
                                 <field name="ai_description" nolabel="1" />
                             </page>
-<<<<<<< HEAD
-=======
 
->>>>>>> a3737dd3ca324bc1be5c13403650f36cfae27e6d
                             <page string="Prompt Template" id="template">
                                 <field name="ai_prompt_template" widget="html" class="oe-bordered-editor" options="{'style-inline': true, 'codeview': true, 'dynamic_placeholder': true}" nolabel="1" />
                             </page>
                             <page string="Backstory" id="backstory">
                                 <field name="ai_backstory" nolabel="1" />
                             </page>
-<<<<<<< HEAD
-                              <page string="Memory" id="memory">
-=======
-
-
 
                             <page string="Memory" id="memory">
->>>>>>> a3737dd3ca324bc1be5c13403650f36cfae27e6d
                                 <field name="ai_memory_ids">
                                     <!-- #if VERSION >= "18.0" -->
                                     <list editable="bottom">

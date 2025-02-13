@@ -4,11 +4,6 @@ import logging
 import markdown
 import operator
 import re
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
-=======
->>>>>>> a3737dd3ca324bc1be5c13403650f36cfae27e6d
 import traceback
 import unidecode
 import warnings
@@ -32,10 +27,6 @@ from odoo.exceptions import Warning
 from odoo.tools.mail import html2plaintext
 from odoo.tools.safe_eval import safe_eval
 from pydantic import BaseModel, ConfigDict, SkipValidation
-<<<<<<< HEAD
->>>>>>> f94c23399f0d0e2f0cbeec53cef2ef51d0229451
-=======
->>>>>>> a3737dd3ca324bc1be5c13403650f36cfae27e6d
 from random import randint
 from secrets import choice
 

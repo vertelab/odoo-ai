@@ -4,39 +4,7 @@ import logging
 import markdown
 import operator
 import re
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
 import traceback
-import unidecode
-import warnings
-
-from IPython.display import Image, display
-from langchain import hub
-from langchain.agents import Tool, AgentExecutor, LLMSingleActionAgent, AgentOutputParser, create_tool_calling_agent, create_xml_agent,create_json_chat_agent
-from langchain.prompts import ChatPromptTemplate
-from langchain.schema import AgentAction, AgentFinish
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
-from langchain_core.runnables.graph import MermaidDrawMethod
-from langgraph.checkpoint.memory import MemorySaver
-from langgraph.graph import StateGraph, START, END
-from langgraph.prebuilt import create_react_agent
-from odoo import models, fields, api, _
-from odoo.addons.ai_agent.models.ai_quest_session import AIQuestSession
-from odoo.exceptions import UserError, ValidationError
-from odoo.exceptions import Warning
-from odoo.tools.mail import html2plaintext
-from odoo.tools.safe_eval import safe_eval
-from pydantic import BaseModel, ConfigDict, SkipValidation
->>>>>>> f94c23399f0d0e2f0cbeec53cef2ef51d0229451
-from random import randint
-from secrets import choice
-from typing import Annotated, TypedDict, Sequence
-
-import markdown
-=======
-import traceback
->>>>>>> a3737dd3ca324bc1be5c13403650f36cfae27e6d
 import unidecode
 import warnings
 
@@ -69,6 +37,7 @@ from typing import Annotated, List, Dict, Sequence, Union, Any
 # The typing_extensions module is primarily used for backporting new features to older Python versions
 
 
+from odoo.addons.base.models.avatar_mixin import get_hsl_from_seed
 
 _logger = logging.getLogger(__name__)
 
@@ -220,7 +189,7 @@ class AIQuest(models.Model):
                                     "automatically create new leads assigned to the channel.")
     alias_user_id = fields.Many2one(comodel_name='res.users', related='alias_id.alias_user_id', readonly=False, inherited=True)
 
-    avatar_128 = fields.Image("Avatar", max_width=128, max_height=128)
+    avatar_128 = fields.Image("Avatar", max_width=128, max_height=128, compute='_compute_avatar_128')
 
     channel_id = fields.Many2one(comodel_name='mail.channel', string="Channel", help="")
     real_channel_id = fields.Many2one(comodel_name='mail.channel', string="Channel",
@@ -263,6 +232,7 @@ class AIQuest(models.Model):
     status = fields.Selection(
         selection=[("draft", _("Draft")), ("active", _("Active")), ("done", _("Done")), ("error", _("Error"))],
         default="draft")
+    tag_ids = fields.Many2many(comodel_name='product.tag', string='Tags')
     use_chat_history = fields.Boolean(string='Use Chat History', default=True, help='Add chat history to the context')
     use_company_info = fields.Boolean(string='Use Company Info', default=True,
                                       help='Add company mission and values to the context')
@@ -311,6 +281,23 @@ class AIQuest(models.Model):
     uuid = fields.Char('UUID', size=50, default=_generate_random_token, copy=False)
 
 
+    @api.depends('init_type', 'image_128', 'uuid')
+    def _compute_avatar_128(self):
+        for record in self:
+            record.avatar_128 = record.image_128 or record._generate_avatar()
+
+    def _generate_avatar(self):
+        avatar = {
+            'manual': avatar_manual,
+            'mail': avatar_mail,
+            'chat': avatar_chat,
+            'channel': avatar_channel,
+            'cron': avatar_cron,
+            'server-action': avatar_cron,
+        }[self.init_type]
+        bgcolor = get_hsl_from_seed(self.uuid)
+        avatar = avatar.replace('fill="#875a7b"', f'fill="{bgcolor}"')
+        return base64.b64encode(avatar.encode())
 
     @api.depends('session_line_ids')
     def compute_llm_count(self):
