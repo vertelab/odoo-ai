@@ -118,7 +118,7 @@
                 <field name="alias_contact" string="Accept Emails From" invisible="init_type != 'mail'" required="init_type == 'cron'" />
                 <field name="server_action_id" invisible="init_type != 'server-action'" required="init_type == 'server-action'" />
                 <field name="cron_id" invisible="init_type != 'cron'" required="init_type == 'cron'" />
-                <field name="model_id" invisible="init_type not in ['server-action','cron']" required="init_type in ['server-action','cron']" />
+                <field name="model_id" invisible="init_type not in ['server-action','cron','powerbox']" required="init_type in ['server-action','cron','powerbox']" />
                 <field name="model_name" invisible="1" />
                 <field name="filter_domain" widget="domain" options="{'model-field': 'res.partner'}" invisible="init_type != 'cron'" />
                 <field name="channel_id" invisible="init_type != 'channel'" required="init_type == 'channel'" />
@@ -152,7 +152,7 @@
                 <field name="alias_contact" string="Accept Emails From" attrs="{'invisible': [('init_type', '!=', 'mail')], 'required': [('init_type', '=', 'cron')]}" />
                 <field name="server_action_id" attrs="{'invisible': [('init_type', '!=', 'server-action')], 'required': [('init_type', '=', 'server-action')]}" />
                 <field name="cron_id" attrs="{'invisible': [('init_type', '!=', 'cron')], 'required': [('init_type', '=', 'cron')]}" />
-                <field name="model_id" attrs="{'invisible': [('init_type', 'not in', ['server-action','cron'])], 'required': [('init_type', 'in', ['server-action','cron'])]}" />
+                <field name="model_id" attrs="{'invisible': [('init_type', 'not in', ['server-action','cron', 'powerbox'])], 'required': [('init_type', 'in', ['server-action','cron'])]}" />
                 <field name="model_name" invisible="1" />
                 <field name="filter_domain" widget="domain" options="{'model-field': 'res.partner'}" attrs="{'invisible': [('init_type', '!=', 'cron')]}" />
                 <field name="channel_id" attrs="{'invisible': [('init_type', '!=', 'channel')], 'required': [('init_type', '=', 'channel')]}" />

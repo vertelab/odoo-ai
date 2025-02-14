@@ -98,6 +98,13 @@ avatar_server_action = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 5
 <circle cx="345.04" cy="265.03" r="26.41" fill="#ffffff"/>
 </svg>'''
 
+powerbox = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 530.06 530.06">
+<circle cx="265.03" cy="265.03" r="265.03" fill="#875a7b"/>
+<path d="M371.04 159.02H159.02c-14.58 0-26.41 11.83-26.41 26.41v159.02c0 14.58 11.83 26.41 26.41 26.41h212.02c14.58 0 26.41-11.83 26.41-26.41V185.43c0-14.58-11.83-26.41-26.41-26.41zm0 185.43H159.02V185.43h212.02v159.02z" fill="#ffffff"/>
+<path d="M212.02 238.43h105.62v26.41H212.02zM212.02 291.44h105.62v26.41H212.02z" fill="#ffffff"/>
+<circle cx="345.04" cy="265.03" r="26.41" fill="#ffffff"/>
+</svg>'''
+
 
 class AIQuestAgent(models.Model):
     _name = 'ai.quest.agent'
@@ -170,7 +177,8 @@ INIT_TYPES = [
     ('chat', 'Chat with User'),
     ('channel', 'Chat with Channel'),
     ('cron', 'Scheduled Action'),
-    ('server-action', 'Server Action')
+    ('server-action', 'Server Action'),
+    ('powerbox', 'Powerbox'),
 ]
 
 
@@ -218,7 +226,7 @@ class AIQuest(models.Model):
     name = fields.Char(required=True)
     partner_id = fields.Many2one(comodel_name='res.partner', string="Customer", help="")
     real_chat_user_id = fields.Many2one(comodel_name='res.users', string="Chat User",
-                                        help="Chat user thet chat-method is using")
+                                        help="Chat user that chat-method is using")
     server_action_id = fields.Many2one('ir.actions.server', string='Server Action',
                                        help="Server action to be executed when this quest is initialized",
                                        ondelete="cascade")
@@ -295,6 +303,7 @@ class AIQuest(models.Model):
             'channel': avatar_channel,
             'cron': avatar_cron,
             'server-action': avatar_cron,
+            'powerbox': powerbox,
         }[self.init_type]
         bgcolor = get_hsl_from_seed(self.uuid)
         avatar = avatar.replace('fill="#875a7b"', f'fill="{bgcolor}"')
@@ -472,6 +481,9 @@ class AIQuest(models.Model):
                     'name': self.name,
                     'login': self.name,
                 })
+
+        if self.init_type == 'powerbox':
+            pass
         self.name = name
 
     def _get_eid(self):

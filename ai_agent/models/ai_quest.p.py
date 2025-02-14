@@ -178,7 +178,8 @@ INIT_TYPES = [
     ('chat', 'Chat with User'),
     ('channel', 'Chat with Channel'),
     ('cron', 'Scheduled Action'),
-    ('server-action', 'Server Action')
+    ('server-action', 'Server Action'),
+    ('powerbox', 'Powerbox'),
 ]
 
 

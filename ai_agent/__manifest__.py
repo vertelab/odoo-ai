@@ -85,9 +85,16 @@
             "markdownify",
         ],
     },
+    'assets': {
+        'web_editor.assets_wysiwyg': [
+            'ai_agent/static/src/js/wysiwyg/wysiwyg.js',
+
+            # widgets
+            'ai_agent/static/src/js/wysiwyg/widgets/**/*',
+        ],
+    },
     "demo": [],
     "application": True,
     "installable": True,
     "auto_install": False,
-    # "post_init_hook": "post_init_hook",
 }
