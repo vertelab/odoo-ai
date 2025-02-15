@@ -36,11 +36,11 @@
                     <group>
                         <group>
                             <field name="memory_type" />
-                            <field name="url" attrs="{'invisible': [('memory_type', '!=', 'bs4')]}" />
-                            <field name="max_nbr_pages" attrs="{'invisible': [('memory_type', '!=', 'bs4')]}" />
-                            <field name="model_id" attrs="{'invisible': [('memory_type', '!=', 'model')]}" />
+                            <field name="url" invisible="memory_type != 'bs4'" />
+                            <field name="max_nbr_pages" invisible="memory_type != 'bs4'" />
+                            <field name="model_id" invisible="memory_type != 'model'" />
                             <field name="model_name" invisible="1" />
-                            <field name="filter_domain" widget="domain" options="{'model': 'model_name'}"  attrs="{'invisible': [('memory_type', '!=', 'model')]}" />-
+                            <field name="filter_domain" widget="domain" options="{'model': 'model_name'}" invisible="memory_type != 'model'" />
                         </group>
                         <group>
                             <field name="vector_type" />
@@ -55,25 +55,21 @@
                         </group>
                     </group>
                     <notebook>
-                        <page string="FAISS Index" attrs="{'invisible': [('vector_type', '!=', 'faiss')]}">
+                        <page string="FAISS Index" invisible="vector_type != 'faiss'">
                             <field name="memory_faiss" />
                         </page>
-                        <page string="Markdown" attrs="{'invisible': [('memory_type', '!=', 'bs4')]}">
+                        <page string="Markdown" invisible="memory_type != 'bs4'">
                             <field name="memory_markdown" />
                         </page>
-                        <page string="Attachment" attrs="{'invisible': [('memory_type', '!=', 'attachments')]}">
+                        <page string="Attachment" invisible="memory_type != 'attachments'">
                             <field name="attachment_ids" />
                         </page>
-                        <page string="Field List" attrs="{'invisible': [('memory_type', '!=', 'model')]}">
+                        <page string="Field List" invisible="memory_type != 'model'">
                             <field name="field_list" nolabel="1" />
                         </page>
                     </notebook>
                 </sheet>
-                <div class="oe_chatter">
-                    <field name="message_follower_ids" />
-                    <field name="activity_ids" />
-                    <field name="message_ids" />
-                </div>
+                <chatter/>
             </form>
         </field>
     </record>
@@ -83,13 +79,13 @@
         <field name="name">ai.memory.tree</field>
         <field name="model">ai.memory</field>
         <field name="arch" type="xml">
-            <tree>
+            <list>
                 <field name="name" />
                 <field name="vector_type" />
                 <field name="memory_type" />
                 <field name="last_run" />
                 <field name="is_favorite" />
-            </tree>
+            </list>
         </field>
     </record>
 
@@ -130,7 +126,7 @@
                 <templates>
                     <t t-name="kanban-box">
                         <div t-attf-class="oe_kanban_color_#{kanban_getcolor(record.color.raw_value)} oe_kanban_card oe_kanban_global_click">
-                           <div class="o_dropdown_kanban dropdown">
+                            <div class="o_dropdown_kanban dropdown">
                                 <a class="dropdown-toggle o-no-caret btn" role="button" data-toggle="dropdown" href="#" aria-label="Dropdown menu" title="Dropdown menu">
                                     <span class="fa fa-ellipsis-v" />
                                 </a>
@@ -193,12 +189,12 @@
     <record id="action_ai_memory" model="ir.actions.act_window">
         <field name="name">AI Memory</field>
         <field name="res_model">ai.memory</field>
-        <field name="view_mode">kanban,tree,form,calendar</field>
+        <field name="view_mode">kanban,list,form,calendar</field>
         <field name="help" type="html">
             <p class="o_view_nocontent_smiling_face">Create your first AI Memory!</p>
         </field>
     </record>
- 
+
     <!-- Menu Item -->
     <menuitem id="menu_ai_memory" name="AI Memory" parent="ai_agent.menu_ai_agent_configuration" action="action_ai_memory" sequence="10" />
 

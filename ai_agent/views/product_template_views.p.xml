@@ -21,7 +21,11 @@
 
 
             <page name="inventory" position="after">
+                <!-- #if VERSION >= "17.0" -->
                 <page name="llm" string="LLM" invisible="not is_llm">
+                <!-- #elif VERSION <= "16.0" -->
+                <page name="llm" string="LLM" attrs="{'invisible':[('is_llm', '=', False)]}">
+                <!-- #endif -->
                     <group>
                         <group>
                             <field name="token_sys"/>
@@ -33,8 +37,13 @@
                             <field name="llm_etype"/>
                             <field name="llm_price_url" widget="url"/>
                             <field name="ai_api_key"/>
+                            <!-- #if VERSION >= "17.0" -->
                             <field name="azure_endpoint" required="llm_type == 'AzureChatOpenAI'" invisible="llm_type != 'AzureChatOpenAI'"/>
                             <field name="api_version" required="llm_type == 'AzureChatOpenAI'" invisible="llm_type != 'AzureChatOpenAI'"/>
+                            <!-- #elif VERSION <= "16.0" -->
+                            <field name="azure_endpoint" attrs="{'required': [('llm_type', '=', 'AzureChatOpenAI')], 'invisible': [('llm_type', '!=', 'AzureChatOpenAI')]}"/>
+                            <field name="api_version" attrs="{'required': [('llm_type', '=', 'AzureChatOpenAI')], 'invisible': [('llm_type', '!=', 'AzureChatOpenAI')]}"/>
+                            <!-- #endif -->
                         </group>
                     </group>
 
@@ -46,7 +55,11 @@
     <record id="action_product_template" model="ir.actions.act_window">
         <field name="name">AI Providers</field>
         <field name="res_model">product.template</field>
+        <!-- #if VERSION >= "18.0" -->
         <field name="view_mode">list,form</field>
+        <!-- #elif VERSION <= "17.0" -->
+        <field name="view_mode">tree,form</field>
+        <!-- #endif -->
         <field name="target">current</field>
         <field name="domain">[("is_llm", '=', True)]</field>
     </record>

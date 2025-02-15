@@ -1,9 +1,42 @@
 <odoo>
 
+    <!-- #if VERSION <= "17.0" -->
+    <record id="ai_quest_session_line_tree" model="ir.ui.view">
+        <field name="name">ai.quest.session.line.tree</field>
+    <!-- #elif VERSION >= "18.0" -->
     <record id="ai_quest_session_line_list" model="ir.ui.view">
         <field name="name">ai.quest.session.line.list</field>
+    <!-- #endif -->
         <field name="model">ai.quest.session.line</field>
         <field name="arch" type="xml">
+            <!-- #if VERSION <= "17.0" -->
+            <tree string="AI Tokens">
+                <field name="datetime"/>
+                <field name="display_name"/>
+                <field name="ai_quest_session_id"/>
+                <field name="ai_quest_id"/>
+                <field name="ai_agent_id"/>
+                <field name="model_id"/>
+                <field name="finish_reason"/>
+                <field name="commercial_partner_id" optional="hide"/>
+                <field name="user_id" optional="hide"/>
+                <field name="product_tmpl_id" optional="hide"/>
+                <field name="token" optional="show"  sum="Total Tokens" />
+                <field name="token_sys" optional="show" sum="Total System Tokens"/>
+                <field name="token_monetary" optional="hide"/>
+                <field name="token_currency" optional="hide"/>
+                <field name="system_fingerprint" optional="hide"/>
+                <field name="run_id" optional="hide"/>
+                <field name="model_real" optional="hide"/>
+                <field name="api_type_id" optional="hide"/>
+                <field name="data_type_id" optional="hide"/>
+                <field name="token_type_id" optional="hide"/>
+                <field name="db_name" optional="hide"/>
+                <field name="db_uuid" optional="hide"/>
+                <field name="ai_llm_id" optional="hide"/>
+                <field name="llm_additional_rate" optional="hide"/>
+            </tree>
+            <!-- #elif VERSION >= "18.0" -->
             <list string="AI Tokens">
                 <field name="datetime"/>
                 <field name="display_name"/>
@@ -30,6 +63,7 @@
                 <field name="ai_llm_id" optional="hide"/>
                 <field name="llm_additional_rate" optional="hide"/>
             </list>
+            <!-- #endif -->
         </field>
     </record>
 
@@ -115,7 +149,11 @@
     <record id="action_ai_quest_session_line" model="ir.actions.act_window">
         <field name="name">AI Tokens</field>
         <field name="res_model">ai.quest.session.line</field>
+        <!-- #if VERSION >= "18.0" -->
         <field name="view_mode">list,form,calendar,pivot</field>
+        <!-- #elif VERSION <= "17.0" -->
+        <field name="view_mode">tree,form,calendar,pivot</field>
+        <!-- #endif -->
     </record>
 
     <menuitem id="ai_agent.menu_ai_quest_session_line" name="AI Tokens" parent="ai_agent.menu_ai_agent_configuration" action="action_ai_quest_session_line"/>

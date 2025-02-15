@@ -43,7 +43,11 @@ class ProductTemplate(models.Model):
             'name': 'Tokens',
             'type': 'ir.actions.act_window',
             'res_model': 'ai.quest.session.line',
+            # #if VERSION >= "18.0"
             'view_mode': 'list,form',
+            # #elif VERSION <= "17.0"
+            'view_mode': 'tree,form',
+            # #endif
             'target': 'current',
             'domain': [("product_tmpl_id", '=', self.id)],
         }

@@ -1,16 +1,15 @@
-from random import randint
-from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_openai import ChatOpenAI
-from langchain_mistralai import ChatMistralAI
-from langchain.agents import AgentExecutor, create_openai_tools_agent, create_json_chat_agent, create_react_agent
-from langchain_core.utils.utils import convert_to_secret_str
+import httpx
+import importlib
+import logging
+import time
+import traceback
 
 from httpx import HTTPStatusError
-import importlib
-
-from odoo import models, fields, api, _
+from langchain.agents import AgentExecutor, create_openai_tools_agent, create_json_chat_agent, create_react_agent
+from odoo import models, fields, api, tools, _
 from odoo.exceptions import UserError, AccessError, ValidationError
-import logging
+from random import randint
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 _logger = logging.getLogger(__name__)
 
@@ -44,7 +43,7 @@ class AIAgentLLM(models.Model):
     last_run = fields.Datetime()
     licence = fields.Selection(selection=LICENCES, string='Licence',
                                related='model_id.product_attribute_value_id.licence')
-    llm_etype = fields.Char(related="product_tmpl_id.llm_etype", required=True)
+    llm_etype = fields.Char(related="product_tmpl_id.llm_etype")
     llm_type = fields.Char(related="product_tmpl_id.llm_type", required=True)
     model_id = fields.Many2one(comodel_name='product.template.attribute.value', string="Model", required=True, )
     name = fields.Char(required=True)
@@ -61,13 +60,18 @@ class AIAgentLLM(models.Model):
     ## if VERSION >= '16.0'
     tag_ids = fields.Many2many(comodel_name='product.tag', string='Tags')
     ##  endif
-
+    azure_endpoint = fields.Char(string="Azure Endpoint")
+    api_version = fields.Char(string="API version")
     def action_get_quests(self):
         action = {
             'name': 'AI Quests',
             'type': 'ir.actions.act_window',
             'res_model': 'ai.quest',
+            # #if VERSION >= "18.0"
+            'view_mode': 'kanban,list,form',
+            # #elif VERSION <= "17.0"
             'view_mode': 'kanban,tree,form',
+            # #endif
             'target': 'current',
             'domain': [("session_line_ids.ai_llm_id", '=', self.id)]
         }
@@ -78,7 +82,11 @@ class AIAgentLLM(models.Model):
             'name': 'AI Agents',
             'type': 'ir.actions.act_window',
             'res_model': 'ai.agent',
+            # #if VERSION >= "18.0"
+            'view_mode': 'kanban,list,form',
+            # #elif VERSION <= "17.0"
             'view_mode': 'kanban,tree,form',
+            # #endif            
             'target': 'current',
             'domain': [("session_line_ids.ai_llm_id", '=', self.id)]
         }
@@ -89,7 +97,11 @@ class AIAgentLLM(models.Model):
             'name': 'Session Lines',
             'type': 'ir.actions.act_window',
             'res_model': 'ai.quest.session.line',
+            # #if VERSION >= "18.0"
+            'view_mode': 'list,form,calendar,pivot',
+            # #elif VERSION <= "17.0"
             'view_mode': 'tree,form,calendar,pivot',
+            # #endif    
             'target': 'current',
             'domain': [("ai_llm_id", '=', self.id)],
         }
@@ -100,7 +112,11 @@ class AIAgentLLM(models.Model):
             'name': 'Sessions',
             'type': 'ir.actions.act_window',
             'res_model': 'ai.quest.session',
+            # #if VERSION >= "18.0"
+            'view_mode': 'list,form',
+            # #elif VERSION <= "17.0"
             'view_mode': 'tree,form',
+            # #endif    
             'target': 'current',
             'domain': [("session_line_ids.ai_llm_id", '=', self.id)]
         }
@@ -139,6 +155,14 @@ class AIAgentLLM(models.Model):
         try:
             module = importlib.import_module(self.product_tmpl_id.llm_library)
             LLM = getattr(module, self.product_tmpl_id.llm_type)
+            #_logger.warning(f"{LLM=}")
+            if self.product_tmpl_id.llm_type == "AzureChatOpenAI":
+               kwarg['api_version'] = self.api_version
+               kwarg['azure_endpoint'] = self.azure_endpoint
+            api_key = self.ai_api_key
+            if not api_key:
+                api_key = tools.config.get(self.product_tmpl_id.fallback_api_key_name, False)
+                _logger.error(f"{api_key=}")
             return LLM(verbose=verbose, temperature=temperature, callbacks=callbacks, api_key=self.ai_api_key,
                        model=self.model_id.name, **kwarg)
         except ImportError as e:
@@ -168,50 +192,54 @@ class AIAgentLLM(models.Model):
             _logger.error(f"An error occurred: {e}")
             raise
 
-    def invoke(self, input, config=None, ai_quest_session_id=None, ai_quest_id=None, ai_agent_id=None, debug=False):
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=4, max=10),
+        retry=retry_if_exception_type(httpx.HTTPStatusError)
+    )
+    def invoke_llm_with_retry(llm, messages):
         try:
-            response = eval(self.get_llm()).invoke(input, config)
+            return llm.invoke(messages)
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 429:
+                _logger.warning(f"Rate limit exceeded. Retrying in a moment...")
+                raise  # This will trigger a retry
+            else:
+                raise  # For other HTTP errors, don't retry
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=4, max=10),
+        retry=retry_if_exception_type(httpx.HTTPStatusError)
+    )
+    def invoke(self, input, config=None, session=None, quest=None, agent=None, debug=False):
+        if input is None:
+            error_msg = f"Input cannot be None. Please provide a valid input. {input=} {config=} {session=} {quest=} {agent=}"
+            self.log_message(body=error_msg, is_error=True)
+            raise ValueError(error_msg)
+        try:
+            response = self.get_llm().invoke(input, config)
         except HTTPStatusError as e:
-            self.log_message(body=e, is_error=True)
-            _logger.error(f"{e=}")
+            if e.response.status_code == 429:
+                _logger.warning(f"Rate limit exceeded. Retrying in a moment...")
+                self.log_message(body=f"Rate limit exceeded. Retrying in a moment...\n{input=} {config=} {session=} {quest=} {agent=}", is_error=False)
+                raise  # This will trigger a retry
+            else:
+                _logger.warning(f"Other HTTP-error... {e=}")
+                self.log_message(body=f"Other HTTP-error...{e=}\n{input=} {config=} {session=} {quest=} {agent=}", is_error=True)            
+                raise  # For other HTTP errors, don't retry
             return None
         except Exception as e:
-            self.log_message(body=e, is_error=True)
-            _logger.error(f"{e=}")
+            self.log_message(body=f"LLM {self.name} {e}\n\n{input=} {config=} {session=} {quest=} {agent=}\n{traceback.format_exc()}", is_error=True)
+            _logger.error(f"LLM {self.name} {e}\n{traceback.format_exc()}")
             return None
 
         content = response.content
-        additional_kwargs = response.additional_kwargs
-        response_metadata = response.response_metadata
-        usage_metadata = dict(response_metadata.get('usage_metadata', {}))
-
-        for token_type, token in response.usage_metadata.items():
-            _logger.error(f"{token_type=} {token=}")
-            if token_type == 'total_tokens':
-                next
-            token_type_id = self.env['product.attribute.value'].search([('name', '=', token_type)])
-            self.env['ai.quest.session.line'].new_line(
-                values={
-                    'ai_quest_session_id': ai_quest_session_id,
-                    'ai_quest_id': ai_quest_id,
-                    'ai_agent_id': ai_agent_id,
-                    'ai_llm_id': self.id,
-                    'product_tmpl_id': self.product_tmpl_id.id,
-                    'model_id': self.model_id.id,
-                    'model_real': response_metadata.get('model'),
-                    'api_type_id': None,
-                    'data_type_id': None,
-                    'token_type_id': token_type_id.id if token_type_id else None,
-                    'token': token,
-                    'system_fingerprint': response.id,
-                    'finish_reason': response_metadata.get('finish_reason'),
-                }
-
-
-
+        if response and session:
+            session.save_messages(response)
         if debug:
-            self.log_message(body="%s" % response, is_error=False)
-        return content
+            self.log_message(body=f"LLM {self.name} {response=}", is_error=False)
+        return response
 
     @api.depends("status")
     def compute_status_color(self):
