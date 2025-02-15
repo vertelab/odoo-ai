@@ -169,7 +169,7 @@ class AIAgent(models.Model):
         chat_history = ChatMessageHistory()
         question = ''
         for m in self.env['mail.message'].search([
-            ('model', '=', 'mail.channel'),
+            ('model', '=', 'discuss.channel'),
             ('res_id', '=', quest.real_channel_id.id)],
                 limit=quest.chat_history_limit, order='create_date asc'):
             if m.author_id.id == quest.real_chat_user_id.id:
@@ -498,7 +498,7 @@ class AIAgent(models.Model):
             tools = "<small>fa&colon;fa-tools " + re.sub(r'[()\[\]{}:]', ' ', ','.join(
                 [t.ai_tool_id.name for t in self.ai_tool_ids])) + "</small>\n" if self.ai_tool_ids else ''
             memories = "<small>fa&colon;fa-book " + re.sub(r'[()\[\]{}:]', ' ', ','.join(
-                [m.ai_memory_id.name for t in self.ai_memory_ids])) + "</small>\n" if self.ai_memory_ids else ''
+                [m.ai_memory_id.name for m in self.ai_memory_ids])) + "</small>\n" if self.ai_memory_ids else ''
             llm = "<small>fa&colon;fa-cog " + re.sub(r'[()\[\]{}:]', ' ',
                                                      self.ai_agent_llm_id.name) + "</small>" if self.ai_agent_llm_id and self.ai_agent_llm_id.name else ''
             return f"{name}\n{tools}{memories}{llm}"

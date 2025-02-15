@@ -197,7 +197,7 @@ class AIMemory(models.Model):
             raw_documents = [self.create_document_from_file(attachment) for attachment in 
                          self.env["ir.attachment"].search([("res_model", "=", memory._name), ("res_id", "=", memory.id)])]
             if raw_documents:
-                self.create_faiss(raw_documents)
+                self.create_vector(raw_documents)
             else:
                 raise UserError(_("No attachments to RAG"))
 
@@ -273,11 +273,12 @@ class AIMemory(models.Model):
             content = file.decode("utf-8")
         _logger.error(f"{content}")
         return Document(id=uuid.uuid4(), page_content=f"{content}", metadata={"name": attachment_id.name, "type": "attachment"})
-        
-    def create_faiss(self,raw_documents):
-        documents = self.text_splitter(raw_documents)
-        db = FAISS.from_documents(documents, self.ai_agent_llm_id.get_embedding())
-        self.memory_faiss = base64.b64encode(db.serialize_to_bytes())
+    
+    def create_vector(self,raw_documents):
+        if self.vector_type == 'FAISS':
+            documents = self.text_splitter(raw_documents)
+            db = FAISS.from_documents(documents, self.ai_agent_llm_id.get_embedding())
+            self.memory_faiss = base64.b64encode(db.serialize_to_bytes())
 
     def log_message(self, body, is_error=False):
         if is_error:
