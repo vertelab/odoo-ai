@@ -20,32 +20,35 @@
 ##############################################################################
 
 {
-    'name': 'Helpdesk: chat with cases',
+    'name': 'ai_agent: pg_vector-connector',
     'version': '1.0.3',
-    'summary': 'Mailbox for AI',
+    'summary': 'Ao Orchestration and memory using pg_vector',
     # Categories can be used to filter modules in modules listing
     # Check https://github.com/odoo/odoo/blob/14.0/odoo/addons/base/data/ir_module_category_data.xml
     # for the full list
-    'category': 'helpdesk',
+    'category': 'other',
     'description': """
-        Mailbox for AI
+        Mempry Pg_vector
+        
+        pip install  langchain_postgres
+        
+        sudo apt install postgresql-1[4567]-pgvector  (psql --version)
+        sudo -u postgres psql
+        CREATE EXTENSION vector;
+        SELECT * FROM pg_extension WHERE extname = 'vector';
     """,
     #'sequence': '1',
     'author': 'Vertel AB',
-    'website': 'https://vertel.se/apps/odoo-ai/ai_mail_e_avrop',
+    'website': 'https://vertel.se/apps/odoo-ai/ai_agent_pgvector',
     'images': ['static/description/banner.png'],  # 560x280 px.
     'license': 'AGPL-3',
     'contributor': '',
     'maintainer': 'Vertel AB',
-    'repository': 'https://github.com/vertelab/odoo-ai',
     # Any module necessary for this one to work correctly
     'depends': [
         'ai_agent',
-        'helpdesk_mgmt',
     ],
-    'data': [
-        'data/ai_agent_data.xml',
-    ],
+    'data': [],
     'installable': True,
     'auto_install': False,
     'application': False,

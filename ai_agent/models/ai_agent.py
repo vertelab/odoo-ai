@@ -169,7 +169,7 @@ class AIAgent(models.Model):
         chat_history = ChatMessageHistory()
         question = ''
         for m in self.env['mail.message'].search([
-            ('model', '=', 'discuss.channel'),
+            ('model', '=', 'mail.channel'),
             ('res_id', '=', quest.real_channel_id.id)],
                 limit=quest.chat_history_limit, order='create_date asc'):
             if m.author_id.id == quest.real_chat_user_id.id:
