@@ -2,10 +2,13 @@
 # Part of Odoo. See LICENSE file for full copyright and licensing details.
 
 from langchain_core.messages import AIMessage
+from markupsafe import Markup
 from odoo import api, fields, models, tools, _
 from odoo.exceptions import ValidationError, UserError
 import logging
 import markdown
+import re
+
 
 _logger = logging.getLogger(__name__)
 
@@ -55,12 +58,16 @@ class MailChannel(models.Model):
 
                     if messages and last_ai_message:
                         _logger.error(f"{last_ai_message=}")
-                        answer = markdown.markdown(last_ai_message.content)
+                        cleaned_text = last_ai_message.content
+                        if not ai_quest.debug: # Think is from some reson models eg DeepSeek
+                            cleaned_text = re.sub(r'<think>.*?</think>', '', cleaned_text, flags=re.DOTALL)
+                        # Ta bort tomma <p>-taggar som kan ha blivit kvar
+                        cleaned_text = re.sub(r'<p>\s*</p>', '', cleaned_text)
+                        answer = markdown.markdown(cleaned_text)
 
                     self.with_user(user).message_post(
-                        body=answer,
-                        # ~ body=markdown.markdown(answer),
+                        body=Markup(answer),
                         message_type='comment',
-                        subtype_xmlid='mail.mt_comment',
+                        subtype_xmlid='mail.mt_comment',  # Ev problem i Odoo 14
                     )
         return message
