@@ -79,8 +79,6 @@
   <field name="attribute_id" ref="ai_agent.product_attribute_model" />
  </record>
   
- KBLab/sentence-bert-swedish-cased
-
     <!-- Attribute Line -->
     <record id="huggingface_product_template_attribute_line_model" model="product.template.attribute.line">
       <field name="product_tmpl_id" ref="huggingface_product_template" />
