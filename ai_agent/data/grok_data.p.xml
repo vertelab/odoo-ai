@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+  <data>
+    <record id="grok_product_template" model="product.template">
+      <field name="name">Grok</field>
+      <field name="is_llm">True</field>
+      <field name="llm_library">langchain_grok</field>
+      <field name="llm_type">ChatGrok</field>
+      <field name="fallback_api_key_name">grok_api_key</field>
+      <field name="image_1920" type="base64" file="ai_agent/static/img/grok-logo.jpg" />
+    </record>
+    <!-- Model -->
+    <record id="grok_product_attribute_value_grok-1" model="product.attribute.value">
+      <field name="name">grok-1</field>
+      <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+    </record>
+    <!-- Attribute Line -->
+    <record id="grok_ai_product_template_attribute_line_model" model="product.template.attribute.line">
+      <field name="product_tmpl_id" ref="grok_product_template" />
+      <field name="attribute_id" ref="product_attribute_model" />
+      <field name="value_ids" eval="[(6, 0, [
+                            ref('grok_product_attribute_value_grok-1'),
+                    ])]" />
+    </record>
+    <record id="grok_product_template_attribute_line_token_type" model="product.template.attribute.line">
+      <field name="product_tmpl_id" ref="grok_product_template" />
+      <field name="attribute_id" ref="product_attribute_token_type" />
+      <field name="value_ids" eval="[(6, 0, [
+         ref('product_attribute_value_input_tokens'),
+         ref('product_attribute_value_output_tokens'),
+         ])]" />
+    </record>
+  </data>
+</odoo>
