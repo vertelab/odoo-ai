@@ -105,6 +105,12 @@ avatar_server_action = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 5
 <path d="M212.02 238.43h105.62v26.41H212.02zM212.02 291.44h105.62v26.41H212.02z" fill="#ffffff"/>
 <circle cx="345.04" cy="265.03" r="26.41" fill="#ffffff"/>
 </svg>'''
+powerbox = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 530.06 530.06">
+<circle cx="265.03" cy="265.03" r="265.03" fill="#875a7b"/>
+<path d="M371.04 159.02H159.02c-14.58 0-26.41 11.83-26.41 26.41v159.02c0 14.58 11.83 26.41 26.41 26.41h212.02c14.58 0 26.41-11.83 26.41-26.41V185.43c0-14.58-11.83-26.41-26.41-26.41zm0 185.43H159.02V185.43h212.02v159.02z" fill="#ffffff"/>
+<path d="M212.02 238.43h105.62v26.41H212.02zM212.02 291.44h105.62v26.41H212.02z" fill="#ffffff"/>
+<circle cx="345.04" cy="265.03" r="26.41" fill="#ffffff"/>
+</svg>'''
 
 
 class AIQuestAgent(models.Model):
@@ -171,7 +177,8 @@ INIT_TYPES = [
     ('chat', 'Chat with User'),
     ('channel', 'Chat with Channel'),
     ('cron', 'Scheduled Action'),
-    ('server-action', 'Server Action')
+    ('server-action', 'Server Action'),
+    ('powerbox', 'Powerbox'),
 ]
 
 
@@ -312,6 +319,7 @@ class AIQuest(models.Model):
             'channel': avatar_channel,
             'cron': avatar_cron,
             'server-action': avatar_cron,
+            'powerbox': powerbox,
         }[self.init_type]
         bgcolor = get_hsl_from_seed(self.uuid)
         avatar = avatar.replace('fill="#875a7b"', f'fill="{bgcolor}"')
@@ -1070,6 +1078,25 @@ class AIQuest(models.Model):
             return supervisor
         else:
             return "Supervisor"
+            
+    def get_powerbox_quest(self, prompt, res_model=None):
+        ai_quest = self.env['ai.quest'].search([
+            ('model_id.model', '=', res_model), ('init_type', '=', 'powerbox'), ('status', '=', 'active')
+        ], limit=1)
+        if not ai_quest:
+            ai_quest = self.env['ai.quest'].search([
+                ('model_id', '=', False), ('init_type', '=', 'powerbox'), ('status', '=', 'active')
+            ], limit=1)
+        if not ai_quest:
+            raise UserError("No Quest for Powerbox. Kindly setup a quest for powerbox")
+        result = ai_quest.run(prompt=prompt)
+        if result:
+            ai_messages = self._get_last_ai_message(result.get('result', {}).get('messages'))
+            if not ai_messages:
+                raise UserError("OBS: An error occurred, you should contact administrator to look into the quest")
+            response = ai_messages.content
+            return response
+        raise UserError("OBS: An error occurred, you should contact administrator to look into the quest")
 
 
 class AgentState(TypedDict):
