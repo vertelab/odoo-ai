@@ -137,6 +137,16 @@ and cost-effective AI systems that drive innovation and efficiency across their 
             "markdownify",
         ],
     },
+    ## if VERSION >= '16.0'
+    'assets': {
+        'web_editor.assets_wysiwyg': [
+            'ai_agent/static/src/js/wysiwyg/wysiwyg.js',
+
+            # widgets
+            'ai_agent/static/src/js/wysiwyg/widgets/**/*',
+        ],
+    },
+    ## endif
     "demo": [],
     "application": True,
     "installable": True,
