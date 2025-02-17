@@ -426,8 +426,7 @@ class AIAgent(models.Model):
             if isinstance(state.get('scratchpad', []), str):
                 state['scratchpad'] = [state.get('scratchpad', '')]
 
-            question = messages[-1]['content'] if messages and isinstance(messages[-1], dict) and 'content' in messages[
-                -1] else ""
+            question = messages[-1]['content'] if messages and isinstance(messages[-1], dict) and 'content' in messages[-1] else ""
 
             # Create full message list
             _logger.error(f"Create full message list")
@@ -481,7 +480,7 @@ class AIAgent(models.Model):
 
             # Find mentioned agent
             session.add_message(f"Supervisor selected agent: {json['next']}")
-            return {"next": json['next'], 'session': session, 'topic': topic, 'messages': state.get('messasges')}
+            return {"next": json['next'], 'session': session, 'topic': topic, 'messages': state.get('messages')}
 
         return supervisor_chain
 
