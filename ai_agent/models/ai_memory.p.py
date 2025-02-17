@@ -1,13 +1,5 @@
-import json
-import logging
-import io
-import pymupdf
-import base64
-import uuid
-import faiss
-import asyncio
-import requests
-import markdownify
+
+
 from bs4 import BeautifulSoup
 from dateutil.relativedelta import relativedelta
 from langchain_community.document_loaders import PyPDFLoader
@@ -16,11 +8,23 @@ from langchain_community.vectorstores import FAISS
 from langchain_core.documents.base import Document
 from langchain_openai import OpenAIEmbeddings
 from langchain_text_splitters.character import RecursiveCharacterTextSplitter
-from random import randint
-from urllib.parse import urljoin, urlparse
 from odoo import models, fields, api, _
-from odoo.tools.safe_eval import safe_eval
 from odoo.exceptions import UserError
+from odoo.tools.safe_eval import safe_eval
+from random import randint
+from tenacity import retry, stop_after_attempt, wait_exponential
+from urllib.parse import urljoin, urlparse
+import asyncio
+import base64
+import faiss
+import io
+import json
+import logging
+import markdownify
+import pymupdf
+import requests
+import time
+import uuid
 
 _logger = logging.getLogger(__name__)
 
@@ -289,12 +293,27 @@ class AIMemory(models.Model):
             content = file.decode("utf-8")
         _logger.error(f"{content}")
         return Document(id=uuid.uuid4(), page_content=f"{content}", metadata={"name": attachment_id.name, "type": "attachment"})
-    
-    def create_vector(self,raw_documents):
-        if self.vector_type == 'FAISS':
-            documents = self.text_splitter(raw_documents)
+
+    @retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1, min=4, max=10))
+    def create_faiss_with_retry(self, documents):
+        try:
             db = FAISS.from_documents(documents, self.ai_agent_llm_id.get_embedding())
-            self.memory_faiss = base64.b64encode(db.serialize_to_bytes())
+            return db
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 429:
+                _logger.warning("Rate limit reached. Retrying after delay.")
+                time.sleep(5)  # Lägg till en extra fördröjning vid 429-fel
+            raise  # Höj felet igen för att låta retry-dekoratorn hantera det
+
+    def create_vector(self, raw_documents):
+        if self.vector_type == 'faiss':
+            documents = self.text_splitter(raw_documents)
+            try:
+                db = self.create_faiss_with_retry(documents)
+                self.memory_faiss = base64.b64encode(db.serialize_to_bytes())
+            except Exception as e:
+                self.log_message(f"Failed to create vector after multiple attempts: {e}",is_error=True)
+                _logger.error(f"Failed to create vector after multiple attempts: {e}")
 
     def log_message(self, body, is_error=False):
         if is_error:

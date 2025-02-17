@@ -30,7 +30,6 @@ _logger = logging.getLogger(__name__)
 class AIMemory(models.Model):
     _inherit = 'ai.memory'
 
-    memory_faiss = fields.Binary(string='FAISS Index', attachment=True)
     vector_type = fields.Selection(selection_add=[("pg_vector", "Postgres Vector")],ondelete={'pg_vector': 'cascade'})
     
     def create_vector(self,raw_documents):
@@ -47,6 +46,7 @@ class AIMemoryPgVector(models.Model):
     
     memory_id = fields.Many2one(comodel_name="ai.memory")
     embedding = fields.Vector(string='Embedding', size=1000)
+    content = fields.Text()
     # Add metadata
     # Add info about document, document.name page, images
     
