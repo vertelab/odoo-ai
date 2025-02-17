@@ -203,7 +203,7 @@ class AIMemory(models.Model):
             raw_documents = [self.create_document_from_file(attachment) for attachment in 
                          self.env["ir.attachment"].search([("res_model", "=", memory._name), ("res_id", "=", memory.id)])]
             if raw_documents:
-                self.create_faiss(raw_documents)
+                self.create_vector(raw_documents)
             else:
                 raise UserError(_("No attachments to RAG"))
     
@@ -213,7 +213,7 @@ class AIMemory(models.Model):
             raw_documents = [self.create_document_from_file(attachment) for attachment in 
                          self.env["ir.attachment"].search([("res_model", "=", memory._name), ("res_id", "=", memory.id)])]
             if raw_documents:
-                self.create_faiss(raw_documents)
+                self.create_vector(raw_documents)
             else:
                 raise UserError(_("No attachments to RAG"))
 
@@ -240,7 +240,7 @@ class AIMemory(models.Model):
                 all_pages = self.scrape_website(memory.url,memory.max_nbr_pages)
                 memory.memory_markdown = base64.b64encode(all_pages)
                 raw_documents = [memory.create_document(text=all_pages,metadata={})]
-                memory.create_faiss(raw_documents)
+                memory.create_vector(raw_documents)
             elif memory.memory_type == 'model':
                 model_fields = eval(memory.field_list)
                 domain = safe_eval(memory.filter_domain) if memory.filter_domain else []
@@ -255,7 +255,7 @@ class AIMemory(models.Model):
                             module_dict[key] = base64.b64encode(item).decode("utf-8")
                     raw_documents.append(memory.create_document(text=json.dumps(module_dict),metadata=module_dict))
                 if len(raw_documents) != 0: 
-                    self.create_faiss(raw_documents)
+                    self.create_vector(raw_documents)
             elif memory.memory_type == 'attachments':
                 memory.rag_attatchemts()
             elif memory.memory_type == 'local_attachment':
@@ -289,11 +289,12 @@ class AIMemory(models.Model):
             content = file.decode("utf-8")
         _logger.error(f"{content}")
         return Document(id=uuid.uuid4(), page_content=f"{content}", metadata={"name": attachment_id.name, "type": "attachment"})
-        
-    def create_faiss(self,raw_documents):
-        documents = self.text_splitter(raw_documents)
-        db = FAISS.from_documents(documents, self.ai_agent_llm_id.get_embedding())
-        self.memory_faiss = base64.b64encode(db.serialize_to_bytes())
+    
+    def create_vector(self,raw_documents):
+        if self.vector_type == 'FAISS':
+            documents = self.text_splitter(raw_documents)
+            db = FAISS.from_documents(documents, self.ai_agent_llm_id.get_embedding())
+            self.memory_faiss = base64.b64encode(db.serialize_to_bytes())
 
     def log_message(self, body, is_error=False):
         if is_error:
