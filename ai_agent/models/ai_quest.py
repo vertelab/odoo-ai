@@ -536,9 +536,6 @@ class AIQuest(models.Model):
             return _('Missing Description on the quest')
         return False
 
-    def start(self):
-        pass
-
     def _server_action_values(self, **kwargs):
         return kwargs
 
@@ -740,6 +737,8 @@ class AIQuest(models.Model):
         if not isinstance(result, list):
             result = [result]
 
+        _logger.error(f"{result=}")
+
         session.store_session_data(result=result, objects=objects)
 
         return local_dict
@@ -808,7 +807,8 @@ class AIQuest(models.Model):
     # LangGraph 
     # ------------------------------------------------------------
 
-    def build(self, **kwargs):
+    def build(self, mermaid=True,**kwargs):
+        kwargs.update({"mermaid": mermaid})
         if self.is_supervisor:
             _logger.info(f"Building graph with supervisor ")
             return self.build_supervisor(**kwargs)
@@ -827,6 +827,8 @@ class AIQuest(models.Model):
         # Get member names
         members = [a.get_agent_name(i,**kwargs) for i, a in enumerate(agents)]
         _logger.info(f"Building graph with supervisor and {len(members)} workers: {members}")
+
+        _logger.error(f"{kwargs.get('mermaid')=}")
 
         global session
         session = kwargs.get('session', False)
