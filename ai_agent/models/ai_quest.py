@@ -119,17 +119,10 @@ class AIQuestAgent(models.Model):
     object_id = fields.Reference(string='Object', related="ai_agent_id.object_id")
     sequence = fields.Integer(string='Sequence')
 
-    @api.model
-    def create(self, vals):
-        res = super(AIQuestAgent, self).create(vals)
-        if res.ai_quest_id:
-            res.ai_quest_id._compute_graph_image()
-        return res
-
     def write(self, vals):
         res = super(AIQuestAgent, self).write(vals)
         for record in self:
-            if record.ai_quest_id:
+            if record.ai_agent_id and record.ai_quest_id:
                 record.ai_quest_id._compute_graph_image()
         return res
 
@@ -264,7 +257,8 @@ class AIQuest(models.Model):
                  'ai_agent_ids.ai_agent_id.ai_memory_ids.ai_memory_id')
     def _compute_graph_image(self):
         for rec in self:
-            if rec.ai_agent_ids:
+            real_ai_agent_ids = list(set(filter(lambda ai_agent_id: ai_agent_id.ai_agent_id.id, rec.ai_agent_ids)))
+            if real_ai_agent_ids:
                 try:
                     graph = rec.build(session=self.env['ai.quest.session'].quest_init(rec), mermaid=True)
                     image_object = graph.get_graph().draw_mermaid_png()
@@ -831,7 +825,7 @@ class AIQuest(models.Model):
         agents = [line.ai_agent_id for line in self.ai_agent_ids]
 
         # Get member names
-        members = [a.name for a in agents]
+        members = [a.get_agent_name(i,**kwargs) for i, a in enumerate(agents)]
         _logger.info(f"Building graph with supervisor and {len(members)} workers: {members}")
 
         global session
