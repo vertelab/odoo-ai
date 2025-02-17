@@ -73,6 +73,13 @@
   <field name="name">AI-Sweden-Models/gpt-sw3-40b</field>
   <field name="attribute_id" ref="ai_agent.product_attribute_model" />
  </record>
+ <record id="KBLab_sentence-bert-swedish-cased_product_attribute_value" model="product.attribute.value">
+  <field name="name">KBLab/sentence-bert-swedish-cased</field>
+        <field name="is_embedded" eval="True"/>
+  <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+ </record>
+  
+ KBLab/sentence-bert-swedish-cased
 
     <!-- Attribute Line -->
     <record id="huggingface_product_template_attribute_line_model" model="product.template.attribute.line">
@@ -93,6 +100,7 @@
                     ref('electra_product_attribute_value'),
                     ref('deepseek-ai_deepseek-r1_product_attribute_value'),
                     ref('ai-sweden-models_gpt-sw3-40b_product_attribute_value'),
+                    ref('KBLab_sentence-bert-swedish-cased_product_attribute_value'),
                     ])]" />
     </record>
     <!-- Token Type -->

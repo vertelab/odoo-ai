@@ -61,6 +61,11 @@
       <field name="licence">apache-2.0</field>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
     </record>
+    <record id="mistral_product_attribute_value_mistral_embed" model="product.attribute.value">
+      <field name="name">mistral-embed</field>
+      <field name="is_embedded" eval="True"/>
+      <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+    </record>
     <!-- Attribute Line -->
     <record id="mistral_product_template_attribute_line_model" model="product.template.attribute.line">
       <field name="product_tmpl_id" ref="mistral_product_template" />
@@ -75,7 +80,8 @@
                     ref('mistral_product_attribute_value_mistral-small-latest'),
                     ref('mistral_product_attribute_value_codestral-latest'),
                     ref('mistral_product_attribute_value_pixtral-12b-2409'),
-                    ref('mistral_product_attribute_value_open-codestral-mamba')
+                    ref('mistral_product_attribute_value_open-codestral-mamba'),
+                    ref('mistral_product_attribute_value_mistral_embed'),
                     ])]" />
     </record>
     <!-- Token Type -->
