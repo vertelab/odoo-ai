@@ -610,10 +610,7 @@ class AIAgent(models.Model):
 
         return agent_node
 
-    def _get_memory(self, question, k=3, **kwargs):
-        _logger.error(f"_get_memory {question=}: {isinstance(question, dict)=}")
-        question = question.get('content','') if isinstance(question, dict) else question
-        _logger.error(f"_get_memory {question=}: {kwargs=}")
+    def _get_memory(self, question, k=3, **kwarg):
         def get_rag(vs, question):
             return "\n".join([doc.page_content for doc in vs.similarity_search(question, k=k)])
 

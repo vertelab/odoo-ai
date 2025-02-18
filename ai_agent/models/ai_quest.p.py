@@ -539,22 +539,21 @@ class AIQuest(models.Model):
         return eid
 
     def log_message(self, body, is_error=False):
-        subject = f"{'Error ' if is_error else ''}Log Message"
         if self.id:  # Ensure the record exists and has an ID
             self.message_post(
                 body=body,
-                subject=subject,
                 subtype_xmlid='mail.mt_note',  # Log note subtype
-                #~ message_type='comment' if not is_error else 'notification',
+                message_type='comment',
             )
         else:
             # Use message_notify for transient models or notifications
             self.env['mail.thread'].sudo().message_notify(
                 partner_ids=[self.env.user.partner_id.id],
-                subject=subject,
+                subject="Log Message" if not is_error else "Error Log",
                 body=body,
+                message_type='notification',
             )
-            
+
     def mail_test_wizard(self):
         if self._check_quest_error():
             raise UserError(self._check_quest_error())
@@ -931,26 +930,24 @@ class AIQuest(models.Model):
 
             graph = graph_builder.compile()
             input_channels = graph.input_channels
-            
+            if self.debug:
+                self.log_message(f"{json.dumps(graph.get_graph().to_json(), indent=2)}\n{input_channels=}")
+                _logger.debug(f"{json.dumps(graph.get_graph().to_json(), indent=2)}\n{input_channels=}")
+                if hasattr(graph, 'model'):
+                    model_config = graph.model.config
+                    _logger.debug(f"Model {graph.model.config=}")
+                    self.log_message(f"Model {graph.model.config=}")
+                    if 'tools' in model_config:
+                        _logger.debug(f"Tools {graph.model.config['tools']=}")
+                        self.log_message(f"Tools {graph.model.config['tools']=}")
+
+            return graph
+
         except Exception as e:
             self.log_message(f"Error building graph: {str(e)}", is_error=True)
             _logger.error(f"Error building graph: {str(e)}")
 
             raise
-
-        if self.debug:
-            self.log_message(f"{json.dumps(graph.get_graph().to_json(), indent=2)}\n{input_channels=}")
-            _logger.debug(f"{json.dumps(graph.get_graph().to_json(), indent=2)}\n{input_channels=}")
-            if hasattr(graph, 'model'):
-                model_config = graph.model.config
-                _logger.debug(f"Model {graph.model.config=}")
-                self.log_message(f"Model {graph.model.config=}")
-                if 'tools' in model_config:
-                    _logger.debug(f"Tools {graph.model.config['tools']=}")
-                    self.log_message(f"Tools {graph.model.config['tools']=}")
-
-        return graph
-
 
     # message = html2plaintext(message.body)
     # response = self.build_graph(agents).invoke({"messages": [HumanMessage(content=message)]})
