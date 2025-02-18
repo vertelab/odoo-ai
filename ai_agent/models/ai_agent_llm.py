@@ -1,4 +1,3 @@
-import httpx
 import importlib
 import logging
 import time
@@ -177,12 +176,12 @@ class AIAgentLLM(models.Model):
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=4, max=10),
-        retry=retry_if_exception_type(httpx.HTTPStatusError)
+        retry=retry_if_exception_type(HTTPStatusError)
     )
     def invoke_llm_with_retry(llm, messages):
         try:
             return llm.invoke(messages)
-        except httpx.HTTPStatusError as e:
+        except HTTPStatusError as e:
             if e.response.status_code == 429:
                 _logger.warning(f"Rate limit exceeded. Retrying in a moment...")
                 raise  # This will trigger a retry
@@ -192,7 +191,7 @@ class AIAgentLLM(models.Model):
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=4, max=10),
-        retry=retry_if_exception_type(httpx.HTTPStatusError)
+        retry=retry_if_exception_type(HTTPStatusError)
     )
     def invoke(self, input, config=None, session=None, quest=None, agent=None, debug=False):
         if input is None:
