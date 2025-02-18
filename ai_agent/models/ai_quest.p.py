@@ -105,6 +105,12 @@ avatar_server_action = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 5
 <path d="M212.02 238.43h105.62v26.41H212.02zM212.02 291.44h105.62v26.41H212.02z" fill="#ffffff"/>
 <circle cx="345.04" cy="265.03" r="26.41" fill="#ffffff"/>
 </svg>'''
+powerbox = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 530.06 530.06">
+<circle cx="265.03" cy="265.03" r="265.03" fill="#875a7b"/>
+<path d="M371.04 159.02H159.02c-14.58 0-26.41 11.83-26.41 26.41v159.02c0 14.58 11.83 26.41 26.41 26.41h212.02c14.58 0 26.41-11.83 26.41-26.41V185.43c0-14.58-11.83-26.41-26.41-26.41zm0 185.43H159.02V185.43h212.02v159.02z" fill="#ffffff"/>
+<path d="M212.02 238.43h105.62v26.41H212.02zM212.02 291.44h105.62v26.41H212.02z" fill="#ffffff"/>
+<circle cx="345.04" cy="265.03" r="26.41" fill="#ffffff"/>
+</svg>'''
 
 
 class AIQuestAgent(models.Model):
@@ -127,17 +133,10 @@ class AIQuestAgent(models.Model):
     object_id = fields.Reference(string='Object', related="ai_agent_id.object_id")
     sequence = fields.Integer(string='Sequence')
 
-    @api.model
-    def create(self, vals):
-        res = super(AIQuestAgent, self).create(vals)
-        if res.ai_quest_id:
-            res.ai_quest_id._compute_graph_image()
-        return res
-
     def write(self, vals):
         res = super(AIQuestAgent, self).write(vals)
         for record in self:
-            if record.ai_quest_id:
+            if record.ai_agent_id and record.ai_quest_id:
                 record.ai_quest_id._compute_graph_image()
         return res
 
@@ -178,7 +177,8 @@ INIT_TYPES = [
     ('chat', 'Chat with User'),
     ('channel', 'Chat with Channel'),
     ('cron', 'Scheduled Action'),
-    ('server-action', 'Server Action')
+    ('server-action', 'Server Action'),
+    ('powerbox', 'Powerbox'),
 ]
 
 
@@ -286,7 +286,8 @@ class AIQuest(models.Model):
                  'ai_agent_ids.ai_agent_id.ai_memory_ids.ai_memory_id')
     def _compute_graph_image(self):
         for rec in self:
-            if rec.ai_agent_ids:
+            real_ai_agent_ids = list(set(filter(lambda ai_agent_id: ai_agent_id.ai_agent_id.id, rec.ai_agent_ids)))
+            if real_ai_agent_ids:
                 try:
                     graph = rec.build(session=self.env['ai.quest.session'].quest_init(rec), mermaid=True)
                     image_object = graph.get_graph().draw_mermaid_png()
@@ -318,6 +319,7 @@ class AIQuest(models.Model):
             'channel': avatar_channel,
             'cron': avatar_cron,
             'server-action': avatar_cron,
+            'powerbox': powerbox,
         }[self.init_type]
         bgcolor = get_hsl_from_seed(self.uuid)
         avatar = avatar.replace('fill="#875a7b"', f'fill="{bgcolor}"')
@@ -537,22 +539,21 @@ class AIQuest(models.Model):
         return eid
 
     def log_message(self, body, is_error=False):
-        subject = f"{'Error ' if is_error else ''}Log Message"
         if self.id:  # Ensure the record exists and has an ID
             self.message_post(
                 body=body,
-                subject=subject,
                 subtype_xmlid='mail.mt_note',  # Log note subtype
-                #~ message_type='comment' if not is_error else 'notification',
+                message_type='comment',
             )
         else:
             # Use message_notify for transient models or notifications
             self.env['mail.thread'].sudo().message_notify(
                 partner_ids=[self.env.user.partner_id.id],
-                subject=subject,
+                subject="Log Message" if not is_error else "Error Log",
                 body=body,
+                message_type='notification',
             )
-            
+
     def mail_test_wizard(self):
         if self._check_quest_error():
             raise UserError(self._check_quest_error())
@@ -878,7 +879,7 @@ class AIQuest(models.Model):
         agents = [line.ai_agent_id for line in self.ai_agent_ids]
 
         # Get member names
-        members = [a.name for a in agents]
+        members = [a.get_agent_name(i,**kwargs) for i, a in enumerate(agents)]
         _logger.info(f"Building graph with supervisor and {len(members)} workers: {members}")
 
         global session
@@ -929,26 +930,24 @@ class AIQuest(models.Model):
 
             graph = graph_builder.compile()
             input_channels = graph.input_channels
-            
+            if self.debug:
+                self.log_message(f"{json.dumps(graph.get_graph().to_json(), indent=2)}\n{input_channels=}")
+                _logger.debug(f"{json.dumps(graph.get_graph().to_json(), indent=2)}\n{input_channels=}")
+                if hasattr(graph, 'model'):
+                    model_config = graph.model.config
+                    _logger.debug(f"Model {graph.model.config=}")
+                    self.log_message(f"Model {graph.model.config=}")
+                    if 'tools' in model_config:
+                        _logger.debug(f"Tools {graph.model.config['tools']=}")
+                        self.log_message(f"Tools {graph.model.config['tools']=}")
+
+            return graph
+
         except Exception as e:
             self.log_message(f"Error building graph: {str(e)}", is_error=True)
             _logger.error(f"Error building graph: {str(e)}")
 
             raise
-
-        if self.debug:
-            self.log_message(f"{json.dumps(graph.get_graph().to_json(), indent=2)}\n{input_channels=}")
-            _logger.debug(f"{json.dumps(graph.get_graph().to_json(), indent=2)}\n{input_channels=}")
-            if hasattr(graph, 'model'):
-                model_config = graph.model.config
-                _logger.debug(f"Model {graph.model.config=}")
-                self.log_message(f"Model {graph.model.config=}")
-                if 'tools' in model_config:
-                    _logger.debug(f"Tools {graph.model.config['tools']=}")
-                    self.log_message(f"Tools {graph.model.config['tools']=}")
-
-        return graph
-
 
     # message = html2plaintext(message.body)
     # response = self.build_graph(agents).invoke({"messages": [HumanMessage(content=message)]})
@@ -1077,6 +1076,25 @@ class AIQuest(models.Model):
             return supervisor
         else:
             return "Supervisor"
+            
+    def get_powerbox_quest(self, prompt, res_model=None):
+        ai_quest = self.env['ai.quest'].search([
+            ('model_id.model', '=', res_model), ('init_type', '=', 'powerbox'), ('status', '=', 'active')
+        ], limit=1)
+        if not ai_quest:
+            ai_quest = self.env['ai.quest'].search([
+                ('model_id', '=', False), ('init_type', '=', 'powerbox'), ('status', '=', 'active')
+            ], limit=1)
+        if not ai_quest:
+            raise UserError("No Quest for Powerbox. Kindly setup a quest for powerbox")
+        result = ai_quest.run(prompt=prompt)
+        if result:
+            ai_messages = self._get_last_ai_message(result.get('result', {}).get('messages'))
+            if not ai_messages:
+                raise UserError("OBS: An error occurred, you should contact administrator to look into the quest")
+            response = ai_messages.content
+            return response
+        raise UserError("OBS: An error occurred, you should contact administrator to look into the quest")
 
 
 class AgentState(TypedDict):

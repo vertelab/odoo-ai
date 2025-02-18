@@ -82,7 +82,6 @@
                     ref('mistral_product_attribute_value_pixtral-12b-2409'),
                     ref('mistral_product_attribute_value_open-codestral-mamba'),
                     ref('mistral_product_attribute_value_mistral_embed'),
-                    ref('mistral_product_attribute_value_open-codestral-mamba')
                     ])]" />
     </record>
     <!-- Token Type -->
