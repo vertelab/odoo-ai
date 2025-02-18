@@ -1,10 +1,12 @@
 import importlib
 import logging
+import os
 import time
 import traceback
 
 from httpx import HTTPStatusError
 from langchain.agents import AgentExecutor, create_openai_tools_agent, create_json_chat_agent, create_react_agent
+from langchain_huggingface import HuggingFaceEmbeddings
 from odoo import models, fields, api, tools, _
 from odoo.exceptions import UserError, AccessError, ValidationError
 from random import randint
@@ -178,9 +180,22 @@ class AIAgentLLM(models.Model):
     def get_embedding(self):
 
         try:
-            module = importlib.import_module(self.product_tmpl_id.llm_library)
-            LLM = getattr(module, self.product_tmpl_id.llm_etype)
-            return LLM(api_key=self.ai_api_key, model=self.model_id.name)
+            if self.product_tmpl_id.name == "HuggingFace":
+                _logger.error(f"Hardcoded Huggonface")
+                model_name=self.model_id.name
+                model_kwargs = {'device': 'cpu'}
+                encode_kwargs = {'normalize_embeddings': False}   
+                os.environ["HUGGINGFACEHUB_API_TOKEN"] = self.ai_api_key
+                return HuggingFaceEmbeddings(
+                            model_name=model_name,
+                            model_kwargs=model_kwargs,
+                            encode_kwargs=encode_kwargs,
+                            )
+                return LLM(model_name=model_name,model_kwargs=model_kwargs,encode_kwargs=encode_kwargs)
+            else:
+                module = importlib.import_module(self.product_tmpl_id.llm_library)
+                LLM = getattr(module, self.product_tmpl_id.llm_etype)
+                return LLM(api_key=self.ai_api_key, model=self.model_id.name)
         except ImportError as e:
             _logger.error(f"Error importing {self.product_tmpl_id.llm_library}: {e}")
             raise
