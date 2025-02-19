@@ -560,6 +560,9 @@ class AIQuest(models.Model):
         action = self.env.ref("ai_agent.action_ai_quest_test_mail_wizard").read()[0]
         action["context"] = {"default_ai_quest_id": self.id}
         return action
+        
+    def start(self):
+        pass
 
     # ------------------------------------------------------------
     # Init type API
