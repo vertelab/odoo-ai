@@ -10,6 +10,8 @@ from odoo import models, fields, api, tools, _
 from odoo.exceptions import UserError, AccessError, ValidationError
 from random import randint
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+from langchain_huggingface import HuggingFaceEmbeddings
+from pydantic import SecretStr
 
 _logger = logging.getLogger(__name__)
 
@@ -162,7 +164,18 @@ class AIAgentLLM(models.Model):
         try:
             module = importlib.import_module(self.product_tmpl_id.llm_library)
             LLM = getattr(module, self.product_tmpl_id.llm_etype)
-            return LLM(api_key=self.ai_api_key, model=self.model_id.name)
+            api_key = self.ai_api_key
+            if not api_key:
+                api_key = tools.config.get(self.product_tmpl_id.fallback_api_key_name, False)
+                _logger.error(f"{self.product_tmpl_id.fallback_api_key_name=}")
+                #api_key = tools.config.get("huggingface_inference_api_key", False)
+                _logger.error(f"{api_key=}")
+            if "HuggingFace" in self.product_tmpl_id.llm_etype:
+                return LLM(api_key=SecretStr(api_key), model_name=self.model_id.name)
+            elif api_key:
+                return LLM(api_key=api_key, model=self.model_id.name)
+            else:
+                return LLM(model=self.model_id.name)
         except ImportError as e:
             _logger.error(f"Error importing {self.product_tmpl_id.llm_library}: {e}")
             raise
