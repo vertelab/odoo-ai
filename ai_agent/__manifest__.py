@@ -87,7 +87,7 @@ and cost-effective AI systems that drive innovation and efficiency across their 
     'website': "https://vertel.se/apps/odoo-ai/ai_agent",
     'images': ["static/description/banner.png"],  # 560x280
     "license": "AGPL-3",
-    "depends": ["mail", "product", "crm"],
+    "depends": ["mail", "product", "crm", "html_editor"],
     "data": [
         "security/ir.model.access.csv",
         "data/server_action.xml",
@@ -138,13 +138,20 @@ and cost-effective AI systems that drive innovation and efficiency across their 
         ],
     },
     'assets': {
+        'web.assets_backend': [
+            'ai_agent/static/src/main/quest/quest_plugin.js',
+
+            'ai_agent/static/src/components/quest_prompt_dialog.js',
+            'ai_agent/static/src/components/quest_dialog.js',
+            'ai_agent/static/src/components/quest_prompt_dialog.xml',
+        ],
         'web_editor.assets_wysiwyg': [
             'ai_agent/static/src/js/wysiwyg/wysiwyg.js',
 
             # widgets
-            'ai_agent/static/src/js/wysiwyg/widgets/quest_dialog.js',
-            'ai_agent/static/src/js/wysiwyg/widgets/quest_prompt_dialog.js',
-            'ai_agent/static/src/js/wysiwyg/widgets/quest_prompt_dialog.xml',
+            # 'ai_agent/static/src/js/wysiwyg/widgets/quest_dialog.js',
+            # 'ai_agent/static/src/js/wysiwyg/widgets/quest_prompt_dialog.js',
+            # 'ai_agent/static/src/js/wysiwyg/widgets/quest_prompt_dialog.xml',
         ],
     },
     "demo": [],

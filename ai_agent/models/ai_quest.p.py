@@ -122,9 +122,7 @@ class AIQuestAgent(models.Model):
     ai_agent_id = fields.Many2one(
         comodel_name='ai.agent', string="Agent", help="", required=False)
     ai_agent_status = fields.Selection(selection=[
-        ("draft", _("Draft")),
-        ("active", _("Active")), ("done", _("Done")),
-        ("error", _("Error"))], default="draft", related='ai_agent_id.status')
+        ("draft", "Draft"), ("active", "Active"), ("done", "Done"), ("error", "Error")], default="draft", related='ai_agent_id.status')
     ai_agent_llm_id = fields.Many2one(comodel_name="ai.agent.llm", string="LLM", help="Choose Large Language Model",
                                       domain="[('status','=','confirmed')]", related='ai_agent_id.ai_agent_llm_id')
     ai_llm_status = fields.Selection(
@@ -250,7 +248,7 @@ class AIQuest(models.Model):
     session_object_count = fields.Integer(compute="compute_session_object_count")
     session_object_ids = fields.One2many(comodel_name="ai.session.object", inverse_name="ai_quest_id")
     status = fields.Selection(
-        selection=[("draft", _("Draft")), ("active", _("Active")), ("done", _("Done")), ("error", _("Error"))],
+        selection=[("draft", "Draft"), ("active", "Active"), ("done", "Done"), ("error", "Error")],
         default="draft")
     # #if VERSION >= '16.0' 
     tag_ids = fields.Many2many(comodel_name='product.tag', string='Tags')
