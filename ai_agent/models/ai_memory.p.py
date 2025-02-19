@@ -21,6 +21,7 @@ from urllib.parse import urljoin, urlparse
 from odoo import models, fields, api, _
 from odoo.tools.safe_eval import safe_eval
 from odoo.exceptions import UserError
+from langchain_huggingface import HuggingFaceEmbeddings
 
 _logger = logging.getLogger(__name__)
 
@@ -287,15 +288,26 @@ class AIMemory(models.Model):
             content = "\n".join([page.get_text() for page in pages])
         else:
             content = file.decode("utf-8")
-        _logger.error(f"{content}")
         return Document(id=uuid.uuid4(), page_content=f"{content}", metadata={"name": attachment_id.name, "type": "attachment"})
     
     def create_vector(self,raw_documents):
-        if self.vector_type == 'FAISS':
+        if self.vector_type == 'faiss':
             documents = self.text_splitter(raw_documents)
-            db = FAISS.from_documents(documents, self.ai_agent_llm_id.get_embedding())
+            embeddings = self.ai_agent_llm_id.get_embedding()
+            self.test_embedd(embeddings)
+            db = FAISS.from_documents(documents, embeddings)
             self.memory_faiss = base64.b64encode(db.serialize_to_bytes())
 
+    def test_embedd(self,embeddings):
+        try:
+            embeddings.embed_query("test")
+        except KeyError as e:
+            _logger.error(f"{e=}")
+            raise UserError("The embedding is not working. Please make sure you have the correct API key.")
+        except Exception as e:
+            _logger.error(f"{e=}")
+            raise UserError(f"The embedding is not working and gave this error {e}")
+            
     def log_message(self, body, is_error=False):
         if is_error:
             self.status = "error"

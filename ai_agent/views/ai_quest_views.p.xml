@@ -30,7 +30,6 @@
         <search string="Search AI Quests">
           <field name="name" />
           <field name="description" />
-          <field name="sub_description" />
           <!-- #if VERSION >= "16.0" -->
           <field name="tag_ids" />
           <!-- #endif -->
@@ -57,7 +56,7 @@
         <form>
           <header>
             <field name="status" widget="statusbar" statusbar_visible="active,done" options="{'clickable': '1', 'fold_field': 'fold'}" />
-            <button name="start" type="object" string="Start" class="btn-primary" />
+            <!-- <button name="start" type="object" string="Start" class="btn-primary" /> -->
             <!-- #if VERSION >= "17.0" -->
             <button name="mail_test_wizard" type="object" string="Mail Test" class="btn-primary" invisible="init_type != 'mail'" />
             <!-- #elif VERSION <= "16.0" -->
@@ -89,8 +88,6 @@
                 <field name="is_favorite" nolabel="1" widget="boolean_favorite" class="me-2" />
                 <field name="name" class="o_text_overflow" placeholder="t.ex. Chatbot" modifiers="{&quot;required&quot;: true}" />
               </h1>
-                <field name="sub_description" class="o_text_overflow" placeholder="t.ex. Chatbot for special cases" modifiers="{&quot;required&quot;: true}" />
-              
             </div>
             <group>
               <group>

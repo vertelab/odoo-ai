@@ -1,16 +1,17 @@
+import httpx
 import importlib
 import logging
-import os
 import time
 import traceback
 
 from httpx import HTTPStatusError
 from langchain.agents import AgentExecutor, create_openai_tools_agent, create_json_chat_agent, create_react_agent
-from langchain_huggingface import HuggingFaceEmbeddings
 from odoo import models, fields, api, tools, _
 from odoo.exceptions import UserError, AccessError, ValidationError
 from random import randint
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+from langchain_huggingface import HuggingFaceEmbeddings
+from pydantic import SecretStr
 
 _logger = logging.getLogger(__name__)
 
@@ -162,22 +163,20 @@ class AIAgentLLM(models.Model):
     def get_embedding(self):
 
         try:
-            if self.product_tmpl_id.name == "HuggingFace":
-                _logger.error(f"Hardcoded Huggonface")
-                model_name=self.model_id.name
-                model_kwargs = {'device': 'cpu'}
-                encode_kwargs = {'normalize_embeddings': False}   
-                os.environ["HUGGINGFACEHUB_API_TOKEN"] = self.ai_api_key
-                return HuggingFaceEmbeddings(
-                            model_name=model_name,
-                            model_kwargs=model_kwargs,
-                            encode_kwargs=encode_kwargs,
-                            )
-                return LLM(model_name=model_name,model_kwargs=model_kwargs,encode_kwargs=encode_kwargs)
+            module = importlib.import_module(self.product_tmpl_id.llm_library)
+            LLM = getattr(module, self.product_tmpl_id.llm_etype)
+            api_key = self.ai_api_key
+            if not api_key:
+                api_key = tools.config.get(self.product_tmpl_id.fallback_api_key_name, False)
+                _logger.error(f"{self.product_tmpl_id.fallback_api_key_name=}")
+                #api_key = tools.config.get("huggingface_inference_api_key", False)
+                _logger.error(f"{api_key=}")
+            if "HuggingFace" in self.product_tmpl_id.llm_etype:
+                return LLM(api_key=SecretStr(api_key), model_name=self.model_id.name)
+            elif api_key:
+                return LLM(api_key=api_key, model=self.model_id.name)
             else:
-                module = importlib.import_module(self.product_tmpl_id.llm_library)
-                LLM = getattr(module, self.product_tmpl_id.llm_etype)
-                return LLM(api_key=self.ai_api_key, model=self.model_id.name)
+                return LLM(model=self.model_id.name)
         except ImportError as e:
             _logger.error(f"Error importing {self.product_tmpl_id.llm_library}: {e}")
             raise
@@ -191,12 +190,12 @@ class AIAgentLLM(models.Model):
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=4, max=10),
-        retry=retry_if_exception_type(HTTPStatusError)
+        retry=retry_if_exception_type(httpx.HTTPStatusError)
     )
     def invoke_llm_with_retry(llm, messages):
         try:
             return llm.invoke(messages)
-        except HTTPStatusError as e:
+        except httpx.HTTPStatusError as e:
             if e.response.status_code == 429:
                 _logger.warning(f"Rate limit exceeded. Retrying in a moment...")
                 raise  # This will trigger a retry
@@ -206,7 +205,7 @@ class AIAgentLLM(models.Model):
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=4, max=10),
-        retry=retry_if_exception_type(HTTPStatusError)
+        retry=retry_if_exception_type(httpx.HTTPStatusError)
     )
     def invoke(self, input, config=None, session=None, quest=None, agent=None, debug=False):
         if input is None:
