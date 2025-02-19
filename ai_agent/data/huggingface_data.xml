@@ -1,5 +1,5 @@
 <odoo>
-  <data>
+  <data noupdate="1">
     <!-- HuggingFace -->
     <record id="huggingface_product_template" model="product.template">
       <field name="name">HuggingFace</field>
@@ -21,6 +21,7 @@
     <record id="huggingface_product_attribute_value_mpnet" model="product.attribute.value">
       <field name="name">sentence-transformers/all-mpnet-base-v2</field>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+      <field name="is_embedded" eval="True"/>
     </record>
     <record id="bart_product_attribute_value" model="product.attribute.value">
   <field name="name">facebook/bart-base</field>
@@ -32,7 +33,7 @@
   <field name="attribute_id" ref="ai_agent.product_attribute_model" />
 </record>
 
-   <record id="albert_product_attribute_value" model="product.attribute.value">
+<record id="albert_product_attribute_value" model="product.attribute.value">
   <field name="name">albert-base-v2</field>
   <field name="attribute_id" ref="ai_agent.product_attribute_model" />
 </record>
@@ -49,7 +50,7 @@
   <field name="name">distilbert-base-uncased</field>
   <field name="attribute_id" ref="ai_agent.product_attribute_model" />
 </record>
- <record id="xlm_roberta_product_attribute_value" model="product.attribute.value">
+<record id="xlm_roberta_product_attribute_value" model="product.attribute.value">
   <field name="name">xlm-roberta-base</field>
   <field name="attribute_id" ref="ai_agent.product_attribute_model" />
 </record>
@@ -57,7 +58,7 @@
   <field name="name">t5-base</field>
   <field name="attribute_id" ref="ai_agent.product_attribute_model" />
 </record>
-    <record id="deberta_product_attribute_value" model="product.attribute.value">
+<record id="deberta_product_attribute_value" model="product.attribute.value">
   <field name="name">microsoft/deberta-base</field>
   <field name="attribute_id" ref="ai_agent.product_attribute_model" />
 </record>
@@ -75,12 +76,15 @@
  </record>
  <record id="KBLab_sentence-bert-swedish-cased_product_attribute_value" model="product.attribute.value">
   <field name="name">KBLab/sentence-bert-swedish-cased</field>
-        <field name="is_embedded" eval="True"/>
+  <field name="is_embedded" eval="True"/>
+  <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+ </record>
+  <record id="sentence_transformers_all_MiniLM_l6_v2d_product_attribute_value" model="product.attribute.value">
+  <field name="name">sentence-transformers/all-MiniLM-l6-v2</field>
+  <field name="is_embedded" eval="True"/>
   <field name="attribute_id" ref="ai_agent.product_attribute_model" />
  </record>
   
- KBLab/sentence-bert-swedish-cased
-
     <!-- Attribute Line -->
     <record id="huggingface_product_template_attribute_line_model" model="product.template.attribute.line">
       <field name="product_tmpl_id" ref="huggingface_product_template" />
@@ -117,6 +121,46 @@
          ref('product_attribute_value_output_tokens_reasoning'),
          ])]" />
     </record>
+    
+    
+      <!-- HuggingFaceInferenceAPI -->
+    <record id="huggingface_inference_api_product_template" model="product.template">
+      <field name="name">HuggingFaceInferenceAPI</field>
+      <field name="is_llm">True</field>
+      <field name="llm_library">langchain_community.embeddings</field>
+      <field name="llm_etype">HuggingFaceInferenceAPIEmbeddings</field>
+      <field name="llm_type">HuggingFaceHub</field>
+	  <field name="fallback_api_key_name">huggingface_inference_api_key</field>
+      <field name="image_1920" type="base64" file="ai_agent/static/img/huggingface_ai-logo.png" />
+    </record>
+    
+    <record id="huggingface_product_attribute_value_mpnet" model="product.attribute.value">
+      <field name="name">sentence-transformers/all-mpnet-base-v2</field>
+      <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+      <field name="is_embedded" eval="True"/>
+    </record>
+    <record id="KBLab_sentence-bert-swedish-cased_product_attribute_value" model="product.attribute.value">
+        <field name="name">KBLab/sentence-bert-swedish-cased</field>
+        <field name="is_embedded" eval="True"/>
+        <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+    </record>
+    <record id="sentence_transformers_all_MiniLM_l6_v2d_product_attribute_value" model="product.attribute.value">
+        <field name="name">sentence-transformers/all-MiniLM-l6-v2</field>
+        <field name="is_embedded" eval="True"/>
+        <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+    </record>
+  
+    <!-- Attribute Line -->
+    <record id="huggingface_inference_api_product_template_attribute_line_model" model="product.template.attribute.line">
+      <field name="product_tmpl_id" ref="huggingface_inference_api_product_template" />
+      <field name="attribute_id" ref="product_attribute_model" />
+      <field name="value_ids" eval="[(6, 0, [
+                    ref('huggingface_product_attribute_value_mpnet'),
+                    ref('KBLab_sentence-bert-swedish-cased_product_attribute_value'),
+                    ref('sentence_transformers_all_MiniLM_l6_v2d_product_attribute_value'),
+                    ])]" />
+    </record>
+
  
   </data>
 </odoo>
