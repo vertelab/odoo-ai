@@ -1,12 +1,7 @@
 import { _t } from "@web/core/l10n/translation";
 import { Plugin } from "@html_editor/plugin";
 import { closestElement } from "@html_editor/utils/dom_traversal";
-//import { QuestPromptDialog } from './widgets/quest_prompt_dialog';
-import { QuestPromptDialog } from '@ai_agent/components/quest_prompt_dialog';
-//import { ChatGPTPromptDialog } from "./chatgpt_prompt_dialog";
-//import { ChatGPTAlternativesDialog } from "./chatgpt_alternatives_dialog";
-//import { ChatGPTTranslateDialog } from "./chatgpt_translate_dialog";
-//import { LanguageSelector } from "./language_selector";
+import { QuestPromptDialog } from '@ai_agent/js/components/quest_prompt_dialog';
 import { withSequence } from "@html_editor/utils/resource";
 import { user } from "@web/core/user";
 import { MAIN_PLUGINS } from "@html_editor/plugin_sets";
@@ -35,9 +30,6 @@ export class QuestPlugin extends Plugin {
     };
 
     openDialog(params = {}) {
-        console.log("this QuestPlugin", this)
-        console.log("this getRecordInfo", this.config.getRecordInfo?.() || {})
-        console.log("openDialog function")
         const {resModel, resId } = this.config.getRecordInfo?.() || {}
 
         const recordInfo = {
