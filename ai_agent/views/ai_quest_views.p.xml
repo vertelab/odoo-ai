@@ -30,6 +30,7 @@
         <search string="Search AI Quests">
           <field name="name" />
           <field name="description" />
+          <field name="sub_description" />
           <!-- #if VERSION >= "16.0" -->
           <field name="tag_ids" />
           <!-- #endif -->
@@ -88,6 +89,8 @@
                 <field name="is_favorite" nolabel="1" widget="boolean_favorite" class="me-2" />
                 <field name="name" class="o_text_overflow" placeholder="t.ex. Chatbot" modifiers="{&quot;required&quot;: true}" />
               </h1>
+                <field name="sub_description" class="o_text_overflow" placeholder="t.ex. Chatbot for special cases" modifiers="{&quot;required&quot;: true}" />
+              
             </div>
             <group>
               <group>
