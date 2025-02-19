@@ -72,8 +72,7 @@ Wysiwyg.include({
         const {commands, categories} = options;
 
         const extra_options = {
-            fieldId: this.options.fieldId,
-            recordInfo: this.options.recordInfo
+            ...this.options.recordInfo
         }
 
         commands.push({

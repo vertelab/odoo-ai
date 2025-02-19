@@ -142,9 +142,9 @@ and cost-effective AI systems that drive innovation and efficiency across their 
             'ai_agent/static/src/js/wysiwyg/wysiwyg.js',
 
             # widgets
-            'ai_agent/static/src/js/wysiwyg/widgets/quest_dialog.js',
-            'ai_agent/static/src/js/wysiwyg/widgets/quest_prompt_dialog.js',
-            'ai_agent/static/src/js/wysiwyg/widgets/quest_prompt_dialog.xml',
+            'ai_agent/static/src/js/components/quest_dialog.js',
+            'ai_agent/static/src/js/components/quest_prompt_dialog.js',
+            'ai_agent/static/src/js/components/quest_prompt_dialog.xml',
         ],
     },
     "demo": [],
