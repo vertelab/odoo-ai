@@ -83,7 +83,7 @@ class AIAgent(models.Model):
     session_line_count = fields.Integer(compute="compute_session_line_count")
     session_line_ids = fields.One2many(comodel_name="ai.quest.session.line", inverse_name="ai_agent_id")
     status = fields.Selection(
-        selection=[("draft", _("Draft")), ("active", _("Active")), ("done", _("Done")), ("error", _("Error"))],
+        selection=[("draft", "Draft"), ("active", "Active"), ("done", "Done"), ("error", "Error")],
         default="draft")
     # #if VERSION >= '16.0'  
     tag_ids = fields.Many2many(comodel_name='product.tag', string='Tags')
@@ -448,8 +448,7 @@ class AIAgent(models.Model):
             if isinstance(state.get('scratchpad', []), str):
                 state['scratchpad'] = [state.get('scratchpad', '')]
 
-            question = messages[-1]['content'] if messages and isinstance(messages[-1], dict) and 'content' in messages[
-                -1] else ""
+            question = messages[-1]['content'] if messages and isinstance(messages[-1], dict) and 'content' in messages[-1] else ""
 
             # Create full message list
             _logger.error(f"Create full message list")
@@ -503,7 +502,7 @@ class AIAgent(models.Model):
 
             # Find mentioned agent
             session.add_message(f"Supervisor selected agent: {json['next']}")
-            return {"next": json['next'], 'session': session, 'topic': topic, 'messages': state.get('messasges')}
+            return {"next": json['next'], 'session': session, 'topic': topic, 'messages': state.get('messages')}
 
         return supervisor_chain
 
@@ -520,7 +519,7 @@ class AIAgent(models.Model):
             tools = "<small>fa&colon;fa-tools " + re.sub(r'[()\[\]{}:]', ' ', ','.join(
                 [t.ai_tool_id.name for t in self.ai_tool_ids])) + "</small>\n" if self.ai_tool_ids else ''
             memories = "<small>fa&colon;fa-book " + re.sub(r'[()\[\]{}:]', ' ', ','.join(
-                [m.ai_memory_id.name for t in self.ai_memory_ids])) + "</small>\n" if self.ai_memory_ids else ''
+                [m.ai_memory_id.name for m in self.ai_memory_ids])) + "</small>\n" if self.ai_memory_ids else ''
             llm = "<small>fa&colon;fa-cog " + re.sub(r'[()\[\]{}:]', ' ',
                                                      self.ai_agent_llm_id.name) + "</small>" if self.ai_agent_llm_id and self.ai_agent_llm_id.name else ''
             return f"{name}\n{tools}{memories}{llm}"
