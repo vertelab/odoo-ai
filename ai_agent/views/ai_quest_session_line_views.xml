@@ -1,0 +1,123 @@
+<odoo>
+
+    <record id="ai_quest_session_line_tree" model="ir.ui.view">
+        <field name="name">ai.quest.session.line.tree</field>
+        <field name="model">ai.quest.session.line</field>
+        <field name="arch" type="xml">
+            <tree string="AI Tokens">
+                <field name="datetime"/>
+                <field name="display_name"/>
+                <field name="ai_quest_session_id"/>
+                <field name="ai_quest_id"/>
+                <field name="ai_agent_id"/>
+                <field name="model_id"/>
+                <field name="finish_reason"/>
+                <field name="commercial_partner_id" optional="hide"/>
+                <field name="user_id" optional="hide"/>
+                <field name="product_tmpl_id" optional="hide"/>
+                <field name="token" optional="show"  sum="Total Tokens" />
+                <field name="token_sys" optional="show" sum="Total System Tokens"/>
+                <field name="token_monetary" optional="hide"/>
+                <field name="token_currency" optional="hide"/>
+                <field name="system_fingerprint" optional="hide"/>
+                <field name="run_id" optional="hide"/>
+                <field name="model_real" optional="hide"/>
+                <field name="api_type_id" optional="hide"/>
+                <field name="data_type_id" optional="hide"/>
+                <field name="token_type_id" optional="hide"/>
+                <field name="db_name" optional="hide"/>
+                <field name="db_uuid" optional="hide"/>
+                <field name="ai_llm_id" optional="hide"/>
+                <field name="llm_additional_rate" optional="hide"/>
+            </tree>
+        </field>
+    </record>
+
+    <record id="ai_quest_session_line_search" model="ir.ui.view">
+        <field name="name">ai.quest.session.line.search</field>
+        <field name="model">ai.quest.session.line</field>
+        <field name="arch" type="xml">
+            <search string="Search AI Tokens">
+                <field name="display_name" string="Display Name"/>
+                <field name="ai_quest_session_id"/>
+                <field name="system_fingerprint"/>
+                <field name="finish_reason"/>
+                <group expand="0" string="Group By">
+                    <filter string="AI Quest Session" name="group_by_session" context="{'group_by': 'ai_quest_session_id'}"/>
+                    <filter string="Token Type" name="group_by_token_type" context="{'group_by': 'token_type_id'}"/>
+                    <filter string="Data Type" name="group_by_data_type" context="{'group_by': 'data_type_id'}"/>
+                    <filter string="API Type" name="group_by_api_type" context="{'group_by': 'api_type_id'}"/>
+                    <filter string="Model" name="group_by_model" context="{'group_by': 'model_id'}"/>
+                    <filter string="Product" name="group_by_product" context="{'group_by': 'product_tmpl_id'}"/>
+                    <filter string="Finish Reason" name="group_by_finish_reason" context="{'group_by': 'finish_reason'}"/>
+                </group>
+                <separator/>
+            </search>
+        </field>
+    </record>
+
+    <record id="ai_quest_session_line_form" model="ir.ui.view">
+        <field name="name">ai.quest.session.line.form</field>
+        <field name="model">ai.quest.session.line</field>
+        <field name="arch" type="xml">
+            <form>
+                <sheet string="AI Tokens">
+                    <group>
+                        <group>
+                            <field name="ai_quest_id"/>
+                            <field name="ai_agent_id"/>
+                            <field name="model_id"/>
+                            <field name="system_fingerprint"/>
+                        </group>
+                        <group>
+                            <field name="datetime"/>
+                            <field name="ai_quest_session_id" can_create="true" can_write="true"/>
+                            <field name="product_tmpl_id"/>
+                        </group>
+                    </group>
+                    <group>
+                        <separator/>
+                    </group>
+                    <group>
+                        <group>
+
+                            <field name="token_type_id"/>
+                            <field name="token"/>
+                            <field name="token_monetary"/>
+                            <field name="token_currency"/>
+                            <field name="token_sys"/>
+                        </group>
+                        <group>
+                            <field name="api_type_id"/>
+                            <field name="data_type_id"/>
+                            <field name="finish_reason"/>
+                        </group>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+    <record id="view_ai_quest_session_line_calendar" model="ir.ui.view">
+        <field name="name">ai.quest.session.line.calendar</field>
+        <field name="model">ai.quest.session.line</field>
+        <field name="arch" type="xml">
+            <calendar string="AI Tokens" date_start="datetime" color="ai_agent_id" mode="month">
+                <field name="ai_quest_id"/>
+                <field name="ai_agent_id"/>
+                <field name="ai_llm_id"/>
+                <field name="model_id"/>
+                <field name="token"/>
+                <field name="token_monetary"/>
+                <field name="user_id"/>
+            </calendar>
+        </field>
+    </record>
+    <record id="action_ai_quest_session_line" model="ir.actions.act_window">
+        <field name="name">AI Tokens</field>
+        <field name="res_model">ai.quest.session.line</field>
+        <field name="view_mode">tree,form,calendar,pivot</field>
+    </record>
+
+    <menuitem id="ai_agent.menu_ai_quest_session_line" name="AI Tokens" parent="ai_agent.menu_ai_agent_configuration" action="action_ai_quest_session_line"/>
+
+</odoo>

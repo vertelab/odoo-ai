@@ -1,0 +1,36 @@
+<odoo>
+
+    <record id="test_wizard_view" model="ir.ui.view">
+        <field name="name">ai.agent.test.wizard.form</field>
+        <field name="model">ai.agent.test.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Warning">
+                <group>
+                    <!-- #if VERSION >= "17.0" -->
+                    <field name="ai_agent_id" invisible="ai_agent_id" modifiers="{'required': true}"/>
+                    <!-- #elif VERSION <= "16.0" -->
+                    <field name="ai_agent_id" attrs="{'invisible': [('ai_agent_id', '!=', False)]}" modifiers="{'required': true}" />
+                    <!-- #endif -->
+                    <field name="ai_prompt_template" widget="html" class="oe-bordered-editor" options="{'style-inline': true, 'codeview': true, 'dynamic_placeholder': true}"/>
+                    <field name="ai_input"/>
+                </group>
+                <group>
+                    <field name="is_rise_error"/>
+                </group>
+                <footer>
+                    <button name="test" string="Test" type="object" class="oe_highlight"/>
+                    <button name="cancel" string="Cancel" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_ai_agent_test_wizard" model="ir.actions.act_window">
+        <field name="name">Test AI</field>
+        <field name="res_model">ai.agent.test.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+
+</odoo>
+

@@ -1,0 +1,194 @@
+<odoo>
+    <data>
+        <record id="ai_quest_session_list" model="ir.ui.view">
+            <field name="name">ai.quest.sesion.list</field>
+            <field name="model">ai.quest.session</field>
+            <field name="arch" type="xml">
+                <tree string="AI Session">
+                    <field name="startdate" />
+                    <field name="session" />
+                    <field name="ai_type" />
+                    <field name="ai_quest_id" />
+                    <field name="status" />
+                    <field name="enddate" optional="hide" />
+                    <field name="time_difference_ms" optional="hide" />
+                </tree>
+            </field>
+        </record>
+        <record id="ai_quest_session_search" model="ir.ui.view">
+            <field name="name">ai.quest.session.search</field>
+            <field name="model">ai.quest.session</field>
+            <field name="arch" type="xml">
+                <search string="Search AI Sessions">
+                    <field name="session" string="Session ID" />
+                    <field name="ai_quest_id" />
+                    <field name="ai_agent_ids" />
+                    <field name="ai_agent_llm_id" />
+                    <field name="startdate" />
+                    <field name="enddate" />
+                    <field name="time_difference_ms" avg="Average Time" />
+                    <field name="type_of_output" />
+                    <filter string="Draft" name="draft" domain="[('status', '=', 'draft')]" />
+                    <filter string="Active" name="active" domain="[('status', '=', 'active')]" />
+                    <filter string="Done" name="done" domain="[('status', '=', 'done')]" />
+                    <group expand="0" string="Group By">
+                        <filter string="AI Quest" name="group_by_ai_quest" context="{'group_by': 'ai_quest_id'}" />
+                        <filter string="Status" name="group_by_status" context="{'group_by': 'status'}" />
+                        <filter string="AI Type" name="group_by_ai_type" context="{'group_by': 'ai_type'}" />
+                        <filter string="AI Agent LLM" name="group_by_ai_agent_llm" context="{'group_by': 'ai_agent_llm_id'}" />
+                        <filter string="Start Date" name="group_by_startdate" context="{'group_by': 'startdate'}" />
+                        <filter string="End Date" name="group_by_enddate" context="{'group_by': 'enddate'}" />
+                    </group>
+                </search>
+            </field>
+        </record>
+        <record id="ai_quest_session_form" model="ir.ui.view">
+            <field name="name">ai.quest.sesion.form</field>
+            <field name="model">ai.quest.session</field>
+            <field name="arch" type="xml">
+                <form>
+                    <header>
+                        <field name="status" widget="statusbar" statusbar_visible="active,done" options="{'clickable': '1','fold_field': 'fold'}" />
+                    </header>
+                    <sheet string="AI Session">
+                        <div name="button_box" id="button_box" class="oe_button_box">
+                            <button name="action_get_llms" class="oe_stat_button " type="object" icon="fa-database">
+                                <field string="LLMs" name="ai_llm_count" widget="statinfo" />
+                            </button>
+                            <button name="action_get_agents" class="oe_stat_button " type="object" icon="fa-user-secret">
+                                <field string="Agents" name="ai_agent_count" widget="statinfo" />
+                            </button>
+                            <button name="action_get_session_lines" class="oe_stat_button" type="object" icon="fa-money">
+                                <field string="Tokens" name="session_line_count" widget="statinfo" />
+                            </button>
+                            <button name="action_get_session_objects" class="oe_stat_button" type="object" icon="fa-puzzle-piece">
+                                <field string="Objects" name="session_object_count" widget="statinfo" />
+                            </button>
+                            <button name="action_get_session_messages" class="oe_stat_button" type="object" icon="fa-comments">
+                                <field string="Messages" name="session_message_count" widget="statinfo" />
+                            </button>
+                        </div>
+                        <group>
+                            <group>
+                                <field name="ai_type" />
+                                <field name="session" />
+                                <field name="company_id" />
+                            </group>
+                            <group>
+                                <field name="ai_quest_id" can_create="true" can_write="true" />
+                                <field name="startdate" />
+                                <field name="enddate" />
+                                <field name="time_difference_ms" />
+                            </group>
+                        </group>
+                        <group>
+                            <field name="type_of_output" />
+                        </group>
+                        <group />
+                        <group>
+                            <separator />
+                        </group>
+                        <notebook />
+                    </sheet>
+                    <div class="oe_chatter">
+                        <field name="message_follower_ids" widget="mail_followers" />
+                        <field name="activity_ids" widget="mail_activity" />
+                        <field name="message_ids" widget="mail_thread" />
+                    </div>
+                </form>
+            </field>
+        </record>
+        <record id="view_ai_quest_session_calendar" model="ir.ui.view">
+            <field name="name">ai.quest.session.calendar</field>
+            <field name="model">ai.quest.session</field>
+            <field name="arch" type="xml">
+                <calendar string="AI Sessions" date_start="startdate" date_stop="enddate" color="color" mode="month">
+                    <field name="session" />
+                    <field name="ai_agent_id" />
+                    <field name="ai_quest_id" />
+                    <field name="status" />
+                    <field name="user_id" />
+                </calendar>
+            </field>
+        </record>
+        <record id="action_ai_quest_session" model="ir.actions.act_window">
+            <field name="name">AI Session</field>
+            <field name="res_model">ai.quest.session</field>
+            <field name="view_mode">tree,form,calendar</field>
+        </record>
+        <menuitem id="ai_agent.menu_ai_quest_session" name="AI Session" parent="ai_agent.menu_ai_agent_configuration" action="action_ai_quest_session" />
+        <!--  Session Object -->
+        <record id="ai_session_object_list" model="ir.ui.view">
+            <field name="name">aisesion.object.list</field>
+            <field name="model">ai.session.object</field>
+            <field name="arch" type="xml">
+                <tree string="AI Session Object">
+                    <field name="datetime" />
+                    <field name="ai_quest_id" />
+                    <field name="ai_session_id" />
+                    <field name="display_name" />
+                </tree>
+            </field>
+        </record>
+        <record id="ai_session_object_search" model="ir.ui.view">
+            <field name="name">ai.session.object.search</field>
+            <field name="model">ai.session.object</field>
+            <field name="arch" type="xml">
+                <search string="Search Object">
+                    <field name="ai_quest_id" />
+                    <field name="ai_session_id" />
+                    <field name="model_id" />
+                    <field name="object_id" />
+                    <field name="datetime" />
+                    <group expand="0" string="Group By">
+                        <filter string="AI Quest" name="group_by_ai_quest" context="{'group_by': 'ai_quest_id'}" />
+                        <filter string="AI Session" name="group_by_ai_session" context="{'group_by': 'ai_session_id'}" />
+                        <filter string="Model" name="group_by_model" context="{'group_by': 'model_id'}" />
+                        <filter string="Object" name="group_by_object" context="{'group_by': 'object_id'}" />
+                        <filter string="Date" name="group_by_date" context="{'group_by': 'datetime'}" />
+                    </group>
+                </search>
+            </field>
+        </record>
+        <record id="ai_session_object_form" model="ir.ui.view">
+            <field name="name">ai.session.object.form</field>
+            <field name="model">ai.session.object</field>
+            <field name="arch" type="xml">
+                <form>
+                    <header />
+                    <sheet string="Object">
+                        <div name="button_box" id="button_box" class="oe_button_box" />
+                        <group>
+                            <group>
+                                <field name="datetime" />
+                                <field name="ai_quest_id" />
+                                <field name="ai_session_id" />
+                                <field name="model_id" invisible="1" />
+                                <field name="object_id" />
+                            </group>
+                        </group>
+                        <notebook />
+                    </sheet>
+                </form>
+            </field>
+        </record>
+        <record id="view_ai_session_object_calendar" model="ir.ui.view">
+            <field name="name">ai.session.object.calendar</field>
+            <field name="model">ai.session.object</field>
+            <field name="arch" type="xml">
+                <calendar string="Objects" date_start="datetime" color="color" mode="month">
+                    <field name="ai_quest_id" />
+                    <field name="ai_session_id" />
+                    <field name="model_id" invisible="1" />
+                    <field name="object_id" />
+                </calendar>
+            </field>
+        </record>
+        <record id="action_ai_session_object" model="ir.actions.act_window">
+            <field name="name">Object</field>
+            <field name="res_model">ai.session.object</field>
+            <field name="view_mode">tree,form,calendar</field>
+        </record>
+        <menuitem id="ai_agent.menu_ai_session_object" name="Object" parent="ai_agent.menu_ai_agent_configuration" action="action_ai_session_object" />
+    </data>
+</odoo>

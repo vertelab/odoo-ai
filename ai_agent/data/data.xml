@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+
+      
+
+        <!-- Model -->
+        <record id="product_attribute_model" model="product.attribute">
+            <field name="name">model</field>
+            <field name="create_variant">always</field>
+        </record>
+
+
+
+        <!-- Api Type -->
+        <record id="product_attribute_api_type" model="product.attribute">
+            <field name="name">api_type</field>
+            <field name="create_variant">always</field>
+        </record>
+
+      
+
+
+
+        <!-- Token Type -->
+        <record id="product_attribute_token_type" model="product.attribute">
+            <field name="name">token_type</field>
+            <field name="create_variant">always</field>
+        </record>
+
+        <record id="product_attribute_value_input_tokens" model="product.attribute.value">
+            <field name="name">input_tokens</field>
+            <field name="attribute_id" ref="ai_agent.product_attribute_token_type"/>
+        </record>
+        <record id="product_attribute_value_input_tokens_audio" model="product.attribute.value">
+            <field name="name">input_tokens_audio</field>
+            <field name="attribute_id" ref="ai_agent.product_attribute_token_type"/>
+        </record>
+        <record id="product_attribute_value_input_tokens_cache_read" model="product.attribute.value">
+            <field name="name">input_tokens_cache_read</field>
+            <field name="attribute_id" ref="ai_agent.product_attribute_token_type"/>
+        </record>
+        <record id="product_attribute_value_input_cached" model="product.attribute.value">
+            <field name="name">input cached_tokens</field>
+            <field name="attribute_id" ref="ai_agent.product_attribute_token_type"/>
+        </record>
+        <record id="product_attribute_value_output_tokens" model="product.attribute.value">
+            <field name="name">output_tokens</field>
+            <field name="attribute_id" ref="ai_agent.product_attribute_token_type"/>
+        </record>
+                <record id="product_attribute_value_output_tokens_audio" model="product.attribute.value">
+            <field name="name">output_tokens_audio</field>
+            <field name="attribute_id" ref="ai_agent.product_attribute_token_type"/>
+        </record>
+        <record id="product_attribute_value_output_tokens_reasoning" model="product.attribute.value">
+            <field name="name">output_tokens_reasoning</field>
+            <field name="attribute_id" ref="ai_agent.product_attribute_token_type"/>
+        </record>
+<!--
+        This is to be mapped with the pricelist
+       usage_metadata={'input_tokens': 56, 'output_tokens': 16, 'total_tokens': 72, 
+                'input_token_details': {'audio': 0, 'cache_read': 0}, 
+                'output_token_details': {'audio': 0, 'reasoning': 0}}), 
+
+-->
+        <!-- Data Type -->
+
+        <record id="product_attribute_data_type" model="product.attribute">
+            <field name="name">data_type</field>
+            <field name="create_variant">always</field>
+        </record>
+
+        <record id="product_attribute_value_text" model="product.attribute.value">
+            <field name="name">text</field>
+            <field name="attribute_id" ref="ai_agent.product_attribute_data_type"/>
+        </record>
+        <record id="product_attribute_value_audio" model="product.attribute.value">
+            <field name="name">audio</field>
+            <field name="attribute_id" ref="ai_agent.product_attribute_data_type"/>
+        </record>
+        <record id="product_attribute_value_image" model="product.attribute.value">
+            <field name="name">image</field>
+            <field name="attribute_id" ref="ai_agent.product_attribute_data_type"/>
+        </record>
+
+    </data>
+</odoo>
