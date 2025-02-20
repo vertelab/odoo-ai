@@ -3,31 +3,79 @@ import { Plugin } from "@html_editor/plugin";
 import { closestElement } from "@html_editor/utils/dom_traversal";
 import { QuestPromptDialog } from '@ai_agent/js/components/quest_prompt_dialog';
 import { withSequence } from "@html_editor/utils/resource";
-import { user } from "@web/core/user";
 import { MAIN_PLUGINS } from "@html_editor/plugin_sets";
-
+import { rpc } from "@web/core/network/rpc";
 
 export class QuestPlugin extends Plugin {
     static id = "quest";
     static dependencies = ["selection", "history", "dom", "sanitize", "dialog"];
+
     resources = {
         user_commands: [
             {
                 id: "openQuestDialog",
                 title: _t("AI Quest"),
-                description: _t("Generate or transform content with AI."),
+                description: _t("Generate or transform content with AI Quest."),
                 icon: "fa-magic",
                 run: this.openDialog.bind(this),
             },
         ],
-
-        powerbox_categories: withSequence(80, { id: "ai_quest", name: _t("AI Quest") }),
-        powerbox_items: {
-            keywords: [_t("AI Quest")],
-            categoryId: "ai_quest",
-            commandId: "openQuestDialog",
-        },
+        powerbox_categories: withSequence(80, { id: "ai_quest", name: _t('AI Quest') }),
+        powerbox_items: [
+            {
+                title: _t("Generic Quest"),
+                description: _t("Generic quest to perform operations"),
+                categoryId: "ai_quest",
+                commandId: "openQuestDialog",
+            },
+        ]
     };
+
+
+    async setup() {
+        await super.setup();
+        // Initialize powerbox items
+        const powerbox_items = await this.powerboxQuests();
+        if (powerbox_items.length > 0) {
+            // Update both resources and notify the component
+            this.resources.powerbox_items = powerbox_items;
+//            this._resources.powerbox_items.push(...powerbox_items);
+            // Trigger a resources update
+//            this.updateResources();
+        }
+        console.log("powerbox_items", this.resources.powerbox_items)
+        console.log("state", this)
+    }
+
+    async powerboxQuests() {
+        try {
+            const { resModel, resId } = this.config.getRecordInfo?.() || {};
+
+            const powerbox_quests = await rpc('/web/dataset/call_kw', {
+                model: 'ai.quest',
+                method: 'search_read',
+                args: [[['init_type', '=', 'powerbox']]],
+                kwargs: {
+                    fields: ['id', 'name', 'sub_description']
+                },
+            }, { shadow: true });
+
+            if (!Array.isArray(powerbox_quests)) {
+                console.error('Unexpected response format:', powerbox_quests);
+                return [];
+            }
+
+            return powerbox_quests.map(powerbox_quest => ({
+                title: _t(powerbox_quest.name),
+                description: powerbox_quest.sub_description,
+                categoryId: "ai_quest",
+                commandId: "openQuestDialog",
+            }));
+        } catch (error) {
+            console.error('Error fetching powerboxes:', error);
+            return [];
+        }
+    }
 
     openDialog(params = {}) {
         const {resModel, resId } = this.config.getRecordInfo?.() || {}
@@ -36,6 +84,7 @@ export class QuestPlugin extends Plugin {
             'res_model': resModel,
             'res_id': resId
         }
+
 
         const selection = this.dependencies.selection.getEditableSelection();
         const dialogParams = {
@@ -84,13 +133,7 @@ export class QuestPlugin extends Plugin {
         // collapse to end
         const sanitize = this.dependencies.sanitize.sanitize;
         if (selection.isCollapsed) {
-            this.dependencies.dialog.addDialog(QuestPromptDialog, { ...dialogParams, sanitize });
-        } else {
-            const originalText = selection.textContent() || "";
-            this.dependencies.dialog.addDialog(
-                params.language ? ChatGPTTranslateDialog : ChatGPTAlternativesDialog,
-                { ...dialogParams, originalText, sanitize }
-            );
+            this.dependencies.dialog.addDialog(QuestPromptDialog, { ...dialogParams });
         }
         if (this.services.ui.isSmall) {
             // TODO: Find a better way and avoid modifying range
@@ -106,6 +149,7 @@ export class QuestPlugin extends Plugin {
             });
         }
     }
+
 }
 
-MAIN_PLUGINS.push(QuestPlugin)
+MAIN_PLUGINS.push(QuestPlugin);
