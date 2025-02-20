@@ -87,7 +87,7 @@ and cost-effective AI systems that drive innovation and efficiency across their 
     'website': "https://vertel.se/apps/odoo-ai/ai_agent",
     'images': ["static/description/banner.png"],  # 560x280
     "license": "AGPL-3",
-    "depends": ["mail", "product", "crm"],
+    "depends": ["mail", "product", "crm", "html_editor"],
     "data": [
         "security/ir.model.access.csv",
         "data/server_action.xml",
@@ -132,7 +132,7 @@ and cost-effective AI systems that drive innovation and efficiency across their 
             "langchain_mistralai",
             "langchain_groq",
             "langchain_anthropic",
-	    "langchain_huggingface",
+            "langchain_huggingface",
             "pymupdf",
             "faiss-cpu",
             "markdownify",
@@ -141,6 +141,8 @@ and cost-effective AI systems that drive innovation and efficiency across their 
     'assets': {
         'web.assets_backend': [
             'ai_agent/static/src/js/quest_plugin.js',
+            # 'ai_agent/static/src/js/core/user_command_plugin.js',
+            # ('after', 'html_editor/static/src/core/user_command_plugin.js', 'ai_agent/static/src/js/core/user_command_plugin.js'),
 
             'ai_agent/static/src/js/components/quest_dialog.js',
             'ai_agent/static/src/js/components/quest_prompt_dialog.js',
