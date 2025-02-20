@@ -49,7 +49,7 @@ class AIAgentMemory(models.Model):
         self.ai_memory_id.run()
 
 
-class AIQuestMemory(models.Model):
+class AIquestMemory(models.Model):
     _name = 'ai.quest.memory'
     _description = 'AI Quest Memory'
 
@@ -79,8 +79,9 @@ class AIMemory(models.Model):
 
     ai_agent_count = fields.Integer(compute="compute_ai_agent_count")
     ai_agent_ids = fields.One2many(comodel_name="ai.agent.memory", inverse_name="ai_memory_id")
-    ai_agent_llm_id = fields.Many2one(string="Embedded LLM", comodel_name="ai.agent.llm", required=True,
-                                      domain="[('is_embedded','=',True),('status','=','confirmed')]")
+    ai_agent_llm_id = fields.Many2one(
+        string="Embedded LLM", comodel_name="ai.agent.llm", required=True,
+        domain="[('is_embedded','=',True),('status','=','confirmed')]")
     attachment_ids = fields.Many2many(comodel_name="ir.attachment")
     base_image_128 = fields.Image("Base Image", max_width=128, max_height=128, compute='_compute_base_image_128')
     color = fields.Integer(default=lambda self: randint(1, 11))
@@ -113,8 +114,8 @@ class AIMemory(models.Model):
         selection=[("draft", "Draft"), ("active", "Active"), ("done", "Done"), ("error", "Error")], default="draft")
     tag_ids = fields.Many2many(comodel_name='product.tag', string='Tags')
     url = fields.Char(string='Url', trim=True, )
-    vector_type = fields.Selection(
-        selection=[('faiss', 'FAISS'), ('st', 'Short Term')], string='Vector type', help="The type of vector database")
+    vector_type = fields.Selection(selection=[('faiss', 'FAISS'), ('st', 'Short Term')], string='Vector type',
+                                   help="The type of vector database")
 
     def action_get_quests(self):
         action = {
@@ -294,7 +295,6 @@ class AIMemory(models.Model):
             content = "\n".join([page.get_text() for page in pages])
         else:
             content = file.decode("utf-8")
-        _logger.error(f"{content}")
         return Document(id=uuid.uuid4(), page_content=f"{content}",
                         metadata={"name": attachment_id.name, "type": "attachment"})
 

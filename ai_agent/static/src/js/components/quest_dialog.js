@@ -8,7 +8,6 @@ import { _t } from "@web/core/l10n/translation";
 import { browser } from '@web/core/browser/browser';
 import { rpc } from "@web/core/network/rpc";
 
-
 /**
  * General component for common logic between different dialogs.
  */
@@ -112,9 +111,9 @@ export class QuestDialog extends Component {
             }
         }
 
-        const { res_id, res_model } = this.props.options
+        const { res_id, res_model } = this.props.options.recordInfo
 
-        this.pendingRpcPromise = rpc('/web/dataset/call_kw', {
+        this.pendingRpcPromise = this.rpc('/web/dataset/call_kw', {
             model: 'ai.quest',
             method: 'get_powerbox_quest',
             args: [[prompt, res_model]],
