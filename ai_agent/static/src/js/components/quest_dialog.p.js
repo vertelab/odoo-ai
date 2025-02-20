@@ -116,13 +116,9 @@ export class QuestDialog extends Component {
             }
         }
 
-        const { res_id, res_model } = this.props.options
-        
-        // #if VERSION == '16.0'
+        const { res_id, res_model } = this.props.options.recordInfo
+
         this.pendingRpcPromise = this.rpc('/web/dataset/call_kw', {
-        // #elif VERSION >= '18.0'
-        this.pendingRpcPromise = rpc('/web/dataset/call_kw', {
-        // #endif
             model: 'ai.quest',
             method: 'get_powerbox_quest',
             args: [[prompt, res_model]],

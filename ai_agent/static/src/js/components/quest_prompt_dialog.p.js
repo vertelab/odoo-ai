@@ -27,7 +27,7 @@ export class QuestPromptDialog extends QuestDialog {
         // #if VERSION >= '16.0'
         this.userAvatarUrl = `${
             browser.location.origin}/web/image?model=res.users&field=avatar_128&id=${encodeURIComponent(session.uid)}`;
-        // #elif VERSION >= '18.0'
+        // #elseif VERSION >= '18.0'
         this.userAvatarUrl = `${
             browser.location.origin
         }/web/image?model=res.users&field=avatar_128&id=${encodeURIComponent(user.userId)}`;
