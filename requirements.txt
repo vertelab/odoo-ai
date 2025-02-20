@@ -4,6 +4,7 @@ langchain-openai
 langchain-mistralai
 langchain-groq
 langchain_anthropic
+langchain_huggingface
 langgraph
 langchain_community
 markdown

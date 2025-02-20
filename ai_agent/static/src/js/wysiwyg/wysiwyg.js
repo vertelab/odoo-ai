@@ -6,7 +6,7 @@ import { _t } from "@web/core/l10n/translation";
 import Wysiwyg from 'web_editor.wysiwyg';
 import {descendants, preserveCursor} from "@web_editor/js/editor/odoo-editor/src/utils/utils";
 import * as OdooEditorLib from "@web_editor/js/editor/odoo-editor/src/OdooEditor";
-import { QuestPromptDialog } from './widgets/quest_prompt_dialog';
+import { QuestPromptDialog } from '@ai_agent/js/components/quest_prompt_dialog';
 import { useService } from "@web/core/utils/hooks";
 import { Component } from "@odoo/owl";
 import { browser } from '@web/core/browser/browser';

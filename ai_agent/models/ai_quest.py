@@ -223,8 +223,6 @@ class AIQuest(models.Model):
     session_line_ids = fields.One2many(comodel_name="ai.quest.session.line", inverse_name="ai_quest_id")
     session_object_count = fields.Integer(compute="compute_session_object_count")
     session_object_ids = fields.One2many(comodel_name="ai.session.object", inverse_name="ai_quest_id")
-    sub_description = fields.Char(string="Sub Description")
-
     status = fields.Selection(
         selection=[("draft", "Draft"), ("active", "Active"), ("done", "Done"), ("error", "Error")],
         default="draft")
@@ -512,6 +510,9 @@ class AIQuest(models.Model):
         action = self.env.ref("ai_agent.action_ai_quest_test_mail_wizard").read()[0]
         action["context"] = {"default_ai_quest_id": self.id}
         return action
+        
+    def start(self):
+        pass
 
     # ------------------------------------------------------------
     # Init type API
@@ -539,9 +540,6 @@ class AIQuest(models.Model):
         if not self.description:
             return _('Missing Description on the quest')
         return False
-
-    def start(self):
-        pass
 
     def _server_action_values(self, **kwargs):
         return kwargs
@@ -743,6 +741,8 @@ class AIQuest(models.Model):
         if not isinstance(result, list):
             result = [result]
 
+        _logger.error(f"{result=}")
+
         session.store_session_data(result=result, objects=objects)
 
         return local_dict
@@ -811,7 +811,8 @@ class AIQuest(models.Model):
     # LangGraph 
     # ------------------------------------------------------------
 
-    def build(self, **kwargs):
+    def build(self, mermaid=True,**kwargs):
+        kwargs.update({"mermaid": mermaid})
         if self.is_supervisor:
             _logger.info(f"Building graph with supervisor ")
             return self.build_supervisor(**kwargs)
@@ -830,6 +831,8 @@ class AIQuest(models.Model):
         # Get member names
         members = [a.get_agent_name(i,**kwargs) for i, a in enumerate(agents)]
         _logger.info(f"Building graph with supervisor and {len(members)} workers: {members}")
+
+        _logger.error(f"{kwargs.get('mermaid')=}")
 
         global session
         session = kwargs.get('session', False)
