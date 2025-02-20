@@ -132,6 +132,7 @@ and cost-effective AI systems that drive innovation and efficiency across their 
             "langchain_mistralai",
             "langchain_groq",
             "langchain_anthropic",
+	    "langchain_huggingface",
             "pymupdf",
             "faiss-cpu",
             "markdownify",
