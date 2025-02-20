@@ -1,5 +1,4 @@
 /** @odoo-module **/
-
 import { QuestDialog } from './quest_dialog';
 
 import { useState, useEffect, useRef } from "@odoo/owl";
@@ -7,7 +6,7 @@ import { useAutofocus, useChildRef } from "@web/core/utils/hooks";
 import { session } from "@web/session";
 import { browser } from "@web/core/browser/browser";
 import { scrollTo } from "@web/core/utils/scrolling";
-
+import { user } from "@web/core/user";
 
 export class QuestPromptDialog extends QuestDialog {
     static template = 'ai_agent.QuestPromptDialog';
@@ -22,7 +21,9 @@ export class QuestPromptDialog extends QuestDialog {
     setup() {
         super.setup();
         this.assistantAvatarUrl = `${browser.location.origin}/ai_agent/static/img/odoobot_transparent.png`;
-        this.userAvatarUrl = `${browser.location.origin}/web/image?model=res.users&field=avatar_128&id=${encodeURIComponent(session.uid)}`;
+        this.userAvatarUrl = `${
+            browser.location.origin
+        }/web/image?model=res.users&field=avatar_128&id=${encodeURIComponent(user.userId)}`;
         this.state = useState({
             ...this.state,
             prompt: this.props.initialPrompt,

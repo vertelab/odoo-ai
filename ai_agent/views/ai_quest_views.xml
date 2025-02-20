@@ -21,6 +21,7 @@
         <search string="Search AI Quests">
           <field name="name" />
           <field name="description" />
+          <field name="sub_description" />
           <field name="tag_ids" />
           <filter string="Draft" name="draft" domain="[('status', '=', 'draft')]" />
           <filter string="Active" name="active" domain="[('status', '=', 'active')]" />
@@ -73,6 +74,7 @@
                 <field name="is_favorite" nolabel="1" widget="boolean_favorite" class="me-2" />
                 <field name="name" class="o_text_overflow" placeholder="t.ex. Chatbot" modifiers="{&quot;required&quot;: true}" />
               </h1>
+              <field name="sub_description" class="o_text_overflow" placeholder="t.ex. Chatbot for special cases" modifiers="{&quot;required&quot;: true}" />
             </div>
             <group>
               <group>

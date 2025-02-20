@@ -68,11 +68,11 @@
                             name="promptInput" t-on-keydown="onTextareaKeydown"
                             class="form-control bg-view px-3 border-0 overflow-auto"
                             placeholder="Send a message" autocomplete="off"
-                            t-model="state.prompt" required="required"></textarea>
+                            t-model="state.prompt" required="required"/>
                     </div>
                     <div class="border-start-0 rounded-0 rounded-end-3 align-self-center ms-2 me-3">
                         <button class="btn" t-att-class="state.prompt.trim().length ? 'btn-success' : 'disabled'" t-on-click="submitPrompt">
-                            <i class="fa fa-paper-plane"></i>
+                            <i class="fa fa-paper-plane"/>
                         </button>
                     </div>
                 </div>

@@ -1,7 +1,8 @@
 /** @odoo-module **/
 
-import { ComponentWrapper } from 'web.OwlCompatibility';
-import { qweb as QWeb, _t } from 'web.core';
+//import { ComponentWrapper } from 'web.OwlCompatibility';
+//import { qweb as QWeb, _t } from 'web.core';
+import { _t } from "@web/core/l10n/translation";
 import Wysiwyg from 'web_editor.wysiwyg';
 import {descendants, preserveCursor} from "@web_editor/js/editor/odoo-editor/src/utils/utils";
 import * as OdooEditorLib from "@web_editor/js/editor/odoo-editor/src/OdooEditor";
