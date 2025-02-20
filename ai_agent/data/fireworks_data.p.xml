@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+  <data noupdate="1">
+    <!-- Source: https://python.langchain.com/v0.1/docs/integrations/llms/fireworks/ -->
+    <!-- Source: https://docs.fireworks.ai/guides/querying-embeddings-models -->
+    <record id="fireworks_ai_product_template" model="product.template">
+      <field name="name">Fireworks-AI</field>
+      <field name="is_llm">True</field>
+      <field name="llm_type">ChatGroq_XXXXXXXXXXXX_NOT_CORRECT!</field>
+    </record>
+    <!-- Model -->
+    <record id="anthropic_product_attribute_value_" model="product.attribute.value">
+      <field name="name"></field>
+      <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+    </record>
+    <!-- Attribute Line -->
+    <record id="fireworks_ai_product_template_attribute_line_model" model="product.template.attribute.line">
+      <field name="product_tmpl_id" ref="fireworks_ai_product_template" />
+      <field name="attribute_id" ref="product_attribute_model" />
+      <field name="value_ids" eval="[(6, 0, [
+                            ref(''),
+                            ref(''),
+                            ref(''),
+                            ref(''),
+                            ref(''),
+                    ])]" />
+    </record>
+  </data>
+</odoo>

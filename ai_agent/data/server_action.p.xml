@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+
+    <record model="ir.actions.server" id="create_llm">
+        <field name="name">Create LLM for each model</field>
+        <field name="model_id" ref="model_product_template" />
+        <field name="binding_model_id" ref="model_product_template" />
+        <field name="binding_type">action</field>
+        <field name="state">code</field>
+        <field name="code">
+            records.create_llm()
+        </field>
+    </record>
+
+    <record model="ir.actions.server" id="update_api__key">
+        <field name="name">Update API Key</field>
+        <field name="model_id" ref="model_ai_agent_llm" />
+        <field name="binding_model_id" ref="model_ai_agent_llm" />
+        <field name="binding_type">action</field>
+        <field name="state">code</field>
+        <field name="code">
+            records.update_api_key()
+        </field>
+    </record>
+
+  <record id="action_rag_attachments" model="ir.actions.server">
+    <field name="name">RAG Attachments</field>
+    <field name="model_id" ref="ai_agent.model_ai_memory" />
+    <field name="binding_model_id" ref="ai_agent.model_ai_memory" />
+    <field name="state">code</field>
+    <field name="code">
+# Your Python code here
+records.rag_attatchemts()
+    </field>
+  </record>
+  <record id="action_rag_models" model="ir.actions.server">
+    <field name="name">RAG Models</field>
+    <field name="model_id" ref="ai_agent.model_ai_memory" />
+    <field name="binding_model_id" ref="ai_agent.model_ai_memory" />
+    <field name="state">code</field>
+    <field name="code">
+# Your Python code here
+records.rag_models()
+    </field>
+  </record>
+
+
+    </data>
+</odoo>
