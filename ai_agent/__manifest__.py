@@ -132,10 +132,29 @@ and cost-effective AI systems that drive innovation and efficiency across their 
             "langchain_mistralai",
             "langchain_groq",
             "langchain_anthropic",
+            "langchain_huggingface",
             "pymupdf",
             "faiss-cpu",
             "markdownify",
         ],
+    },
+    'assets': {
+        'web_editor.assets_wysiwyg': [
+            'ai_agent/static/src/js/wysiwyg/wysiwyg.js',
+
+            # widgets
+            'ai_agent/static/src/js/components/quest_dialog.js',
+            'ai_agent/static/src/js/components/quest_prompt_dialog.js',
+            'ai_agent/static/src/js/components/quest_prompt_dialog.xml',
+        ],
+        ## elseif VERSION == '18.0'
+        'web.assets_backend': [
+            'ai_agent/static/src/main/quest/quest_plugin.js',
+
+            'ai_agent/static/src/components/quest_dialog.js',
+            'ai_agent/static/src/components/quest_prompt_dialog.js',
+            'ai_agent/static/src/components/quest_prompt_dialog.xml',
+        ]
     },
     "demo": [],
     "application": True,

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-  <data>
+  <data noupdate="1">
     <!-- Source: https://python.langchain.com/v0.1/docs/integrations/llms/anthropic/ -->
     <!-- Source: https://docs.anthropic.com/en/docs/about-claude/models -->
     <record id="anthropic_product_template" model="product.template">

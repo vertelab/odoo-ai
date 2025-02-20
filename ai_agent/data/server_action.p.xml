@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <data>
+    <data noupdate="1">
 
     <record model="ir.actions.server" id="create_llm">
         <field name="name">Create LLM for each model</field>
