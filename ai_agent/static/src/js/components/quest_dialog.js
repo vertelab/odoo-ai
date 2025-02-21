@@ -118,7 +118,7 @@ export class QuestDialog extends Component {
 
         const { quest } = this.props
 
-        this.pendingRpcPromise = this.rpc('/web/dataset/call_kw', {
+        this.pendingRpcPromise = rpc('/web/dataset/call_kw', {
             model: 'ai.quest',
             method: 'run_powerbox_quest',
             args: [[quest, prompt]],
