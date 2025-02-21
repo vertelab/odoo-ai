@@ -141,12 +141,13 @@ and cost-effective AI systems that drive innovation and efficiency across their 
     'assets': {
         'web.assets_backend': [
             'ai_agent/static/src/js/quest_plugin.js',
-            # 'ai_agent/static/src/js/core/user_command_plugin.js',
-            # ('after', 'html_editor/static/src/core/user_command_plugin.js', 'ai_agent/static/src/js/core/user_command_plugin.js'),
 
             'ai_agent/static/src/js/components/quest_dialog.js',
             'ai_agent/static/src/js/components/quest_prompt_dialog.js',
             'ai_agent/static/src/js/components/quest_prompt_dialog.xml',
+
+            'ai_agent/static/src/js/components/quest_selector_dialog.xml',
+            'ai_agent/static/src/js/components/quest_selector_dialog.js',
         ],
     },
     "demo": [],

@@ -17,7 +17,8 @@ export class QuestDialog extends Component {
     static props = {
         close: Function,
         insert: Function,
-        options: {}
+        res_model: false,
+        quest: false
     };
 
     setup() {
@@ -32,10 +33,12 @@ export class QuestDialog extends Component {
     selectMessage(ev) {
         this.state.selectedMessageId = +ev.currentTarget.getAttribute('data-message-id');
     }
+
     insertMessage(ev) {
         this.selectMessage(ev);
         this._confirm();
     }
+
     formatContent(content) {
         return markup([...this._postprocessGeneratedContent(content).childNodes].map(child => {
             // Escape all text.
@@ -90,9 +93,11 @@ export class QuestDialog extends Component {
         [parentUl, parentOl].forEach(list => list && fragment.appendChild(list));
         return fragment;
     }
+
     _cancel() {
         this.props.close();
     }
+
     _confirm() {
         try {
             this.props.close();
@@ -112,13 +117,13 @@ export class QuestDialog extends Component {
             }
         }
 
-        const { res_id, res_model } = this.props.options
+        const { quest } = this.props
 
         this.pendingRpcPromise = rpc('/web/dataset/call_kw', {
             model: 'ai.quest',
-            method: 'get_powerbox_quest',
-            args: [[prompt, res_model]],
-            kwargs: { prompt, res_model }
+            method: 'run_powerbox_quest',
+            args: [[quest, prompt]],
+            kwargs: { quest, prompt },
         }, { shadow: true });
 
         return this.pendingRpcPromise

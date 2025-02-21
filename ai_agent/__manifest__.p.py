@@ -148,6 +148,9 @@ and cost-effective AI systems that drive innovation and efficiency across their 
             'ai_agent/static/src/js/components/quest_dialog.js',
             'ai_agent/static/src/js/components/quest_prompt_dialog.js',
             'ai_agent/static/src/js/components/quest_prompt_dialog.xml',
+
+            'ai_agent/static/src/js/components/quest_selector_dialog.xml',
+            'ai_agent/static/src/js/components/quest_selector_dialog.js',
         ],
         ## elseif VERSION == '18.0'
         'web.assets_backend': [

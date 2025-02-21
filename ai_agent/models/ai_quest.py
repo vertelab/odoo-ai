@@ -1029,17 +1029,11 @@ class AIQuest(models.Model):
             return supervisor
         else:
             return "Supervisor"
-            
-    def get_powerbox_quest(self, prompt, res_model=None):
-        ai_quest = self.env['ai.quest'].search([
-            ('model_id.model', '=', res_model), ('init_type', '=', 'powerbox'), ('status', '=', 'active')
-        ], limit=1)
+
+    def run_powerbox_quest(self, quest, prompt):
+        ai_quest = self.env['ai.quest'].browse(quest.get('id')).exists()
         if not ai_quest:
-            ai_quest = self.env['ai.quest'].search([
-                ('model_id', '=', False), ('init_type', '=', 'powerbox'), ('status', '=', 'active')
-            ], limit=1)
-        if not ai_quest:
-            raise UserError("No Quest for Powerbox. Kindly setup a quest for powerbox")
+            raise UserError("OBS: Quest does not exist, you should contact administrator to look into the quest")
         result = ai_quest.run(prompt=prompt)
         if result:
             ai_messages = self._get_last_ai_message(result.get('result', {}).get('messages'))

@@ -27,7 +27,7 @@
                                                 'border-info bg-info-light': message.author === 'assistant' and message.isError !== true,
                                                 'border-danger bg-danger': message.isError,
                                             }"/>
-                                        <div class="position-relative text-break mb-0 py-2 px-3 align-self-start rounded-end-3 rounded-bottom-3 o-chatgpt-message">
+                                        <div class="position-relative text-break mb-0 py-2 px-3 align-self-start rounded-end-3 rounded-bottom-3 o-quest-message">
                                             <!-- INSERT BUTTON -->
                                             <button t-if="message.author === 'assistant' and 'text' in message and message.isError !== true"
                                                 t-att-data-message-id="message.id"
