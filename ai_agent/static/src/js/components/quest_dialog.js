@@ -8,7 +8,6 @@ import { _t } from "@web/core/l10n/translation";
 import { browser } from '@web/core/browser/browser';
 import { rpc } from "@web/core/network/rpc";
 
-
 /**
  * General component for common logic between different dialogs.
  */
@@ -119,7 +118,7 @@ export class QuestDialog extends Component {
 
         const { quest } = this.props
 
-        this.pendingRpcPromise = rpc('/web/dataset/call_kw', {
+        this.pendingRpcPromise = this.rpc('/web/dataset/call_kw', {
             model: 'ai.quest',
             method: 'run_powerbox_quest',
             args: [[quest, prompt]],
