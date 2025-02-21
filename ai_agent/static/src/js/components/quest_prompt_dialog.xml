@@ -2,7 +2,7 @@
 <templates id="template" xml:space="preserve">
 
     <t t-name="ai_agent.QuestPromptDialog" owl="1">
-        <Dialog size="'lg'" title="'Generate Text with Quest'" modalRef="modalRef">
+        <Dialog size="'lg'" title="props.quest.name" modalRef="modalRef">
             <div t-foreach="state.messages" t-as="message" t-key="message_index"
                 class="position-relative py-1 px-3"
                 t-att-class="message_index ? 'mt-2' : 'mt-0'">
