@@ -23,10 +23,6 @@ export class QuestPromptDialog extends QuestDialog {
         this.assistantAvatarUrl = `${browser.location.origin}/ai_agent/static/img/odoobot_transparent.png`;
         this.userAvatarUrl = `${
             browser.location.origin}/web/image?model=res.users&field=avatar_128&id=${encodeURIComponent(session.uid)}`;
-        // #elseif VERSION >= '18.0'
-        this.userAvatarUrl = `${
-            browser.location.origin
-        }/web/image?model=res.users&field=avatar_128&id=${encodeURIComponent(user.userId)}`;
         this.state = useState({
             ...this.state,
             prompt: this.props.initialPrompt,
@@ -43,11 +39,13 @@ export class QuestPromptDialog extends QuestDialog {
         this.promptInputRef = useRef('promptInput');
         this.modalRef = useChildRef();
         useAutofocus({ refName: 'promptInput' });
+
         useEffect(() => {
             // Resize the textarea to fit its content.
             this.promptInputRef.el.style.height = 0;
             this.promptInputRef.el.style.height = this.promptInputRef.el.scrollHeight + 'px';
         }, () => [this.state.prompt]);
+
         useEffect(() => {
             // Scroll to the latest message whenever new message
             // is inserted.
