@@ -63,7 +63,10 @@ export class QuestPlugin extends Plugin {
 
     async openQuestSelector() {
         const quests = await this.powerboxQuests();
-        if (quests && quests.length == 1) {
+
+        if (quests && quests.length == 0) {
+            return alert("No Powerbox Quest Found");
+        } else if (quests && quests.length == 1) {
             this.openChatDialog(quests[0])
         } else {
             this.openQuestSelectorDialog(quests)
