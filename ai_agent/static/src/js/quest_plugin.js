@@ -2,6 +2,7 @@ import { _t } from "@web/core/l10n/translation";
 import { Plugin } from "@html_editor/plugin";
 import { closestElement } from "@html_editor/utils/dom_traversal";
 import { QuestPromptDialog } from '@ai_agent/js/components/quest_prompt_dialog';
+import { QuestSelectorDialog } from '@ai_agent/js/components/quest_selector_dialog';
 import { withSequence } from "@html_editor/utils/resource";
 import { MAIN_PLUGINS } from "@html_editor/plugin_sets";
 import { rpc } from "@web/core/network/rpc";
@@ -10,51 +11,38 @@ export class QuestPlugin extends Plugin {
     static id = "quest";
     static dependencies = ["selection", "history", "dom", "sanitize", "dialog"];
 
+    powerbox_items = [
+        {
+            title: _t("AI Quest"),
+            description: _t("AI quest to perform operations"),
+            categoryId: "ai_quest",
+            commandId: "OpenQuest",
+        }
+    ];
+
     resources = {
         user_commands: [
             {
-                id: "openQuestDialog",
-                title: _t("AI Quest"),
-                description: _t("Generate or transform content with AI Quest."),
-                icon: "fa-magic",
-                run: this.openDialog.bind(this),
-            },
+                id: "OpenQuest",
+                title: _t("Select Quest"),
+                description: _t("Pick a quest to perform operations"),
+                icon: "fa-superpowers",
+                run: this.openQuestSelector.bind(this),
+
+            }
         ],
         powerbox_categories: withSequence(80, { id: "ai_quest", name: _t('AI Quest') }),
-        powerbox_items: [
-            {
-                title: _t("Generic Quest"),
-                description: _t("Generic quest to perform operations"),
-                categoryId: "ai_quest",
-                commandId: "openQuestDialog",
-            },
-        ]
+        powerbox_items: this.powerbox_items
     };
 
-
-    async setup() {
-        await super.setup();
-        // Initialize powerbox items
-        const powerbox_items = await this.powerboxQuests();
-        if (powerbox_items.length > 0) {
-            // Update both resources and notify the component
-            this.resources.powerbox_items = powerbox_items;
-//            this._resources.powerbox_items.push(...powerbox_items);
-            // Trigger a resources update
-//            this.updateResources();
-        }
-        console.log("powerbox_items", this.resources.powerbox_items)
-        console.log("state", this)
-    }
-
     async powerboxQuests() {
-        try {
-            const { resModel, resId } = this.config.getRecordInfo?.() || {};
+        const {resModel, resId } = this.config.getRecordInfo?.() || {}
 
+        try {
             const powerbox_quests = await rpc('/web/dataset/call_kw', {
                 model: 'ai.quest',
                 method: 'search_read',
-                args: [[['init_type', '=', 'powerbox']]],
+                args: [['|', ['model_id.model', '=', resModel], ['model_id', '=', false], ['init_type', '=', 'powerbox'], ['status', '=', 'active']]],
                 kwargs: {
                     fields: ['id', 'name', 'sub_description']
                 },
@@ -65,26 +53,53 @@ export class QuestPlugin extends Plugin {
                 return [];
             }
 
-            return powerbox_quests.map(powerbox_quest => ({
-                title: _t(powerbox_quest.name),
-                description: powerbox_quest.sub_description,
-                categoryId: "ai_quest",
-                commandId: "openQuestDialog",
-            }));
+            return powerbox_quests;
+
         } catch (error) {
-            console.error('Error fetching powerboxes:', error);
+            console.error('Error fetching powerbox_items:', error);
             return [];
         }
     }
 
-    openDialog(params = {}) {
+    async openQuestSelector() {
+        const quests = await this.powerboxQuests();
+        if (quests && quests.length == 1) {
+            this.openChatDialog(quests[0])
+        } else {
+            this.openQuestSelectorDialog(quests)
+        }
+    }
+
+    async openQuestSelectorDialog(quests) {
         const {resModel, resId } = this.config.getRecordInfo?.() || {}
 
-        const recordInfo = {
-            'res_model': resModel,
-            'res_id': resId
-        }
+        const selection = this.dependencies.selection.getEditableSelection();
+        let restoreSelection = () => {
+            this.dependencies.selection.setSelection(selection);
+        };
 
+        const dialogParams = {
+            saveLink: (href) => {
+                const templateBlock = renderToElement(
+                    "ai_agent.QuestSelectorDialogBlueprint",
+                    {
+                        embeddedProps: JSON.stringify({ source: href }),
+                    }
+                );
+                this.dependencies.dom.insert(templateBlock);
+                this.dependencies.history.addStep();
+
+                restoreSelection = () => {};
+            },
+            close: () => restoreSelection(),
+            quests,
+            pluginDependencies: this
+        };
+        this.services.dialog.add(QuestSelectorDialog, { ...dialogParams })
+    }
+
+    openChatDialog(quest, params = {}) {
+        const {resModel, resId } = this.config.getRecordInfo?.() || {}
 
         const selection = this.dependencies.selection.getEditableSelection();
         const dialogParams = {
@@ -115,7 +130,7 @@ export class QuestPlugin extends Plugin {
                         endParent = endParent.offsetParent;
                     }
                     const div = document.createElement("div");
-                    div.classList.add("o-chatgpt-content");
+                    div.classList.add("o-quest-content");
                     const FRAME_PADDING = 3;
                     div.style.left = `${left - FRAME_PADDING}px`;
                     div.style.top = `${top - FRAME_PADDING}px`;
@@ -127,7 +142,8 @@ export class QuestPlugin extends Plugin {
                     setTimeout(() => div.remove(), 2000);
                 }
             },
-            options: recordInfo,
+            res_model: resModel,
+            quest,
             ...params,
         };
         // collapse to end
