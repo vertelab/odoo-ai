@@ -37,11 +37,13 @@ export class QuestPromptDialog extends QuestDialog {
         this.promptInputRef = useRef('promptInput');
         this.modalRef = useChildRef();
         useAutofocus({ refName: 'promptInput' });
+
         useEffect(() => {
             // Resize the textarea to fit its content.
             this.promptInputRef.el.style.height = 0;
             this.promptInputRef.el.style.height = this.promptInputRef.el.scrollHeight + 'px';
         }, () => [this.state.prompt]);
+
         useEffect(() => {
             // Scroll to the latest message whenever new message
             // is inserted.
