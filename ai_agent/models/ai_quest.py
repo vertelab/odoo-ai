@@ -8,6 +8,7 @@ import traceback
 import unidecode
 import warnings
 
+from datetime import date, timedelta
 from IPython.display import Image, display
 from langchain import hub
 from langchain.agents import Tool, AgentExecutor, LLMSingleActionAgent, AgentOutputParser, create_tool_calling_agent, \
@@ -27,6 +28,7 @@ from odoo.tools.safe_eval import safe_eval
 from pydantic import BaseModel, ConfigDict, SkipValidation
 from random import randint
 from secrets import choice
+
 
 from typing import Optional, Annotated, List, NotRequired, Sequence, TypedDict, Union, Any
 # Odoo 18 okt 2024  Ubuntu 24.04 Python 3.12 (NotRequired 3.11)
@@ -375,7 +377,10 @@ class AIQuest(models.Model):
     @api.depends("session_line_ids")
     def compute_session_line_count(self):
         for record in self:
-            record.session_line_count = sum([l.token_sys or 0 for l in record.session_line_ids])
+            start_date = date.today() - timedelta(days=date.today().day - 1)
+            end_date = date(year=date.today().year, month=date.today().month + 1, day=1) - timedelta(days=1)
+            filterd_line_ids = list(filter(lambda session_line_id: session_line_id.datetime.date() >= start_date and session_line_id.datetime.date() <= end_date, record.session_line_ids))
+            record.session_line_count = sum([f.token_sys or 0 for f in filterd_line_ids])
 
     @api.depends("session_ids")
     def compute_session_count(self):
