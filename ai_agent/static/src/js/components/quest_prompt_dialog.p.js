@@ -27,7 +27,7 @@ export class QuestPromptDialog extends QuestDialog {
         // #if VERSION >= '16.0'
         this.userAvatarUrl = `${
             browser.location.origin}/web/image?model=res.users&field=avatar_128&id=${encodeURIComponent(session.uid)}`;
-        // #elseif VERSION >= '18.0'
+        // #elif VERSION >= '18.0'
         this.userAvatarUrl = `${
             browser.location.origin
         }/web/image?model=res.users&field=avatar_128&id=${encodeURIComponent(user.userId)}`;
@@ -48,11 +48,13 @@ export class QuestPromptDialog extends QuestDialog {
         this.promptInputRef = useRef('promptInput');
         this.modalRef = useChildRef();
         useAutofocus({ refName: 'promptInput' });
+
         useEffect(() => {
             // Resize the textarea to fit its content.
             this.promptInputRef.el.style.height = 0;
             this.promptInputRef.el.style.height = this.promptInputRef.el.scrollHeight + 'px';
         }, () => [this.state.prompt]);
+
         useEffect(() => {
             // Scroll to the latest message whenever new message
             // is inserted.

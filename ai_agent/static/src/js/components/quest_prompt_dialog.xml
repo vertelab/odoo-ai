@@ -2,7 +2,7 @@
 <templates id="template" xml:space="preserve">
 
     <t t-name="ai_agent.QuestPromptDialog" owl="1">
-        <Dialog size="'lg'" title="'Generate Text with Quest'" modalRef="modalRef">
+        <Dialog size="'lg'" title="props.quest.name" modalRef="modalRef">
             <div t-foreach="state.messages" t-as="message" t-key="message_index"
                 class="position-relative py-1 px-3"
                 t-att-class="message_index ? 'mt-2' : 'mt-0'">
@@ -27,7 +27,7 @@
                                                 'border-info bg-info-light': message.author === 'assistant' and message.isError !== true,
                                                 'border-danger bg-danger': message.isError,
                                             }"/>
-                                        <div class="position-relative text-break mb-0 py-2 px-3 align-self-start rounded-end-3 rounded-bottom-3 o-chatgpt-message">
+                                        <div class="position-relative text-break mb-0 py-2 px-3 align-self-start rounded-end-3 rounded-bottom-3 o-quest-message">
                                             <!-- INSERT BUTTON -->
                                             <button t-if="message.author === 'assistant' and 'text' in message and message.isError !== true"
                                                 t-att-data-message-id="message.id"
