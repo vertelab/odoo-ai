@@ -8,6 +8,7 @@ import traceback
 import unidecode
 import warnings
 
+from datetime import date, timedelta
 from IPython.display import Image, display
 from langchain import hub
 from langchain.agents import Tool, AgentExecutor, LLMSingleActionAgent, AgentOutputParser, create_tool_calling_agent, \
@@ -379,7 +380,11 @@ class AIQuest(models.Model):
     @api.depends("session_line_ids")
     def compute_session_line_count(self):
         for record in self:
-            record.session_line_count = sum([l.token_sys or 0 for l in record.session_line_ids])
+            #record.session_line_count = sum([l.token_sys or 0 for l in record.session_line_ids])
+            start_date = date.today() - timedelta(days=date.today().day - 1)
+            end_date = date(year=date.today().year, month=date.today().month + 1, day=1) - timedelta(days=1)
+            filterd_line_ids = list(filter(lambda session_line_id: session_line_id.datetime.date() >= start_date and session_line_id.datetime.date() <= end_date, record.session_line_ids))
+            record.session_line_count = sum([f.token_sys or 0 for f in filterd_line_ids])
 
     @api.depends("session_ids")
     def compute_session_count(self):
@@ -611,6 +616,19 @@ class AIQuest(models.Model):
             vals = self._mail_values(mail=mail, mail_body=mail_body, session=session, attachments=mail.attachment_ids)
             res = self.run(**vals)
             return res
+
+    def run_powerbox_quest(self, quest, prompt):
+         ai_quest = self.env['ai.quest'].browse(quest.get('id')).exists()
+         if not ai_quest:
+             raise UserError("OBS: Quest does not exist, you should contact administrator to look into the quest")
+         result = ai_quest.run(prompt=prompt)
+         if result:
+             ai_messages = self._get_last_ai_message(result.get('result', {}).get('messages'))
+             if not ai_messages:
+                 raise UserError("OBS: An error occurred, you should contact administrator to look into the quest")
+             response = ai_messages.content
+             return response
+         raise UserError("OBS: An error occurred, you should contact administrator to look into the quest")
 
     # ------------------------------------------------------------
     # Python code helpers
@@ -1034,25 +1052,7 @@ class AIQuest(models.Model):
             return supervisor
         else:
             return "Supervisor"
-            
-    def get_powerbox_quest(self, prompt, res_model=None):
-        ai_quest = self.env['ai.quest'].search([
-            ('model_id.model', '=', res_model), ('init_type', '=', 'powerbox'), ('status', '=', 'active')
-        ], limit=1)
-        if not ai_quest:
-            ai_quest = self.env['ai.quest'].search([
-                ('model_id', '=', False), ('init_type', '=', 'powerbox'), ('status', '=', 'active')
-            ], limit=1)
-        if not ai_quest:
-            raise UserError("No Quest for Powerbox. Kindly setup a quest for powerbox")
-        result = ai_quest.run(prompt=prompt)
-        if result:
-            ai_messages = self._get_last_ai_message(result.get('result', {}).get('messages'))
-            if not ai_messages:
-                raise UserError("OBS: An error occurred, you should contact administrator to look into the quest")
-            response = ai_messages.content
-            return response
-        raise UserError("OBS: An error occurred, you should contact administrator to look into the quest")
+
 
 
 class AgentState(TypedDict):
