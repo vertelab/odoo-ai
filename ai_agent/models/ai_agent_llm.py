@@ -168,6 +168,8 @@ class AIAgentLLM(models.Model):
             api_key = self.ai_api_key
             if not api_key:
                 api_key = tools.config.get(self.product_tmpl_id.fallback_api_key_name, False)
+                #_logger.error(f"{self.product_tmpl_id.fallback_api_key_name=}")
+                #api_key = tools.config.get("huggingface_inference_api_key", False)
                 _logger.error(f"{api_key=}")
             if "HuggingFace" in self.product_tmpl_id.llm_etype:
                 return LLM(api_key=SecretStr(api_key), model_name=self.model_id.name)
