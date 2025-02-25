@@ -146,7 +146,7 @@ class AIAgentLLM(models.Model):
             if not api_key:
                 api_key = tools.config.get(self.product_tmpl_id.fallback_api_key_name, False)
                 _logger.error(f"{api_key=}")
-            return LLM(verbose=verbose, temperature=temperature, callbacks=callbacks, api_key=self.ai_api_key,
+            return LLM(verbose=verbose, temperature=temperature, callbacks=callbacks, api_key=api_key,
                        model=self.model_id.name, **kwarg)
         except ImportError as e:
             _logger.error(f"Error importing {self.product_tmpl_id.llm_library}: {e}")
@@ -167,7 +167,7 @@ class AIAgentLLM(models.Model):
             api_key = self.ai_api_key
             if not api_key:
                 api_key = tools.config.get(self.product_tmpl_id.fallback_api_key_name, False)
-                _logger.error(f"{self.product_tmpl_id.fallback_api_key_name=}")
+                #_logger.error(f"{self.product_tmpl_id.fallback_api_key_name=}")
                 #api_key = tools.config.get("huggingface_inference_api_key", False)
                 _logger.error(f"{api_key=}")
             if "HuggingFace" in self.product_tmpl_id.llm_etype:
