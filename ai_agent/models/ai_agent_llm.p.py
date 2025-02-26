@@ -6,10 +6,12 @@ import traceback
 
 from httpx import HTTPStatusError
 from langchain.agents import AgentExecutor, create_openai_tools_agent, create_json_chat_agent, create_react_agent
-from odoo import models, fields, api, _
+from odoo import models, fields, api, tools, _
 from odoo.exceptions import UserError, AccessError, ValidationError
 from random import randint
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+from langchain_huggingface import HuggingFaceEmbeddings
+from pydantic import SecretStr
 
 _logger = logging.getLogger(__name__)
 
@@ -67,7 +69,11 @@ class AIAgentLLM(models.Model):
             'name': 'AI Quests',
             'type': 'ir.actions.act_window',
             'res_model': 'ai.quest',
+            # #if VERSION >= "18.0"
+            'view_mode': 'kanban,list,form',
+            # #elif VERSION <= "17.0"
             'view_mode': 'kanban,tree,form',
+            # #endif
             'target': 'current',
             'domain': [("session_line_ids.ai_llm_id", '=', self.id)]
         }
@@ -78,7 +84,11 @@ class AIAgentLLM(models.Model):
             'name': 'AI Agents',
             'type': 'ir.actions.act_window',
             'res_model': 'ai.agent',
+            # #if VERSION >= "18.0"
+            'view_mode': 'kanban,list,form',
+            # #elif VERSION <= "17.0"
             'view_mode': 'kanban,tree,form',
+            # #endif            
             'target': 'current',
             'domain': [("session_line_ids.ai_llm_id", '=', self.id)]
         }
@@ -89,7 +99,11 @@ class AIAgentLLM(models.Model):
             'name': 'Session Lines',
             'type': 'ir.actions.act_window',
             'res_model': 'ai.quest.session.line',
+            # #if VERSION >= "18.0"
+            'view_mode': 'list,form,calendar,pivot',
+            # #elif VERSION <= "17.0"
             'view_mode': 'tree,form,calendar,pivot',
+            # #endif    
             'target': 'current',
             'domain': [("ai_llm_id", '=', self.id)],
         }
@@ -100,7 +114,11 @@ class AIAgentLLM(models.Model):
             'name': 'Sessions',
             'type': 'ir.actions.act_window',
             'res_model': 'ai.quest.session',
+            # #if VERSION >= "18.0"
+            'view_mode': 'list,form',
+            # #elif VERSION <= "17.0"
             'view_mode': 'tree,form',
+            # #endif    
             'target': 'current',
             'domain': [("session_line_ids.ai_llm_id", '=', self.id)]
         }
@@ -143,9 +161,11 @@ class AIAgentLLM(models.Model):
             if self.product_tmpl_id.llm_type == "AzureChatOpenAI":
                kwarg['api_version'] = self.api_version
                kwarg['azure_endpoint'] = self.azure_endpoint
-               #LLM(verbose=verbose, temperature=temperature, callbacks=callbacks, api_key=self.ai_api_key,
-               #        model='gpt-4o-mini',**kwarg)
-            return LLM(verbose=verbose, temperature=temperature, callbacks=callbacks, api_key=self.ai_api_key,
+            api_key = self.ai_api_key
+            if not api_key:
+                api_key = tools.config.get(self.product_tmpl_id.fallback_api_key_name, False)
+                _logger.error(f"{api_key=}")
+            return LLM(verbose=verbose, temperature=temperature, callbacks=callbacks, api_key=api_key,
                        model=self.model_id.name, **kwarg)
         except ImportError as e:
             _logger.error(f"Error importing {self.product_tmpl_id.llm_library}: {e}")
@@ -163,7 +183,18 @@ class AIAgentLLM(models.Model):
         try:
             module = importlib.import_module(self.product_tmpl_id.llm_library)
             LLM = getattr(module, self.product_tmpl_id.llm_etype)
-            return LLM(api_key=self.ai_api_key, model=self.model_id.name)
+            api_key = self.ai_api_key
+            if not api_key:
+                api_key = tools.config.get(self.product_tmpl_id.fallback_api_key_name, False)
+                #_logger.error(f"{self.product_tmpl_id.fallback_api_key_name=}")
+                #api_key = tools.config.get("huggingface_inference_api_key", False)
+                _logger.error(f"{api_key=}")
+            if "HuggingFace" in self.product_tmpl_id.llm_etype:
+                return LLM(api_key=SecretStr(api_key), model_name=self.model_id.name)
+            elif api_key:
+                return LLM(api_key=api_key, model=self.model_id.name)
+            else:
+                return LLM(model=self.model_id.name)
         except ImportError as e:
             _logger.error(f"Error importing {self.product_tmpl_id.llm_library}: {e}")
             raise

@@ -58,7 +58,7 @@ class AITool(models.Model):
     session_line_count = fields.Integer(compute="compute_session_line_count")
     session_line_ids = fields.One2many(comodel_name="ai.quest.session.line", inverse_name="ai_tool_id")
     status = fields.Selection(
-        selection=[("draft", _("Draft")), ("active", _("Active")), ("done", _("Done")), ("error", _("Error"))],
+        selection=[("draft", "Draft"), ("active", "Active"), ("done", "Done"), ("error", "Error")],
         default="draft")
     tag_ids = fields.Many2many(comodel_name='product.tag', string='Tags')
     tool = fields.Char(string='Tool', trim=True, )
@@ -108,8 +108,6 @@ class AITool(models.Model):
             'domain': [("session_line_ids.ai_tool_id", '=', self.id)]
         }
         return action
-
-      
        
     def action_test_tool(self):
         action = {

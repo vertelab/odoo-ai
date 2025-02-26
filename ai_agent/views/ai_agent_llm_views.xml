@@ -94,8 +94,8 @@
                             <group>
                                 <field name="is_key_required" widget="boolean_toggle" />
                                 <field name="ai_api_key" attrs="{'invisible': [('is_key_required', '=', False)]}" />
-                                <field name="licence"  />
-                                <field name="is_embedded"  />
+                                <field name="licence" />
+                                <field name="is_embedded" />
                             </group>
                             <group>
                                 <field name="llm_type" attrs="{'invisible': [('is_embedded', '=', True)]}"/>
@@ -104,17 +104,17 @@
                                 <field name="model_id" attrs="{'invisible': [('product_tmpl_id', '=', False)]}" domain="[('product_tmpl_id', '=', product_tmpl_id),('attribute_id','=', %(ai_agent.product_attribute_model)d)]" />
                                 <field name="azure_endpoint" attrs="{'required': [('llm_type', '=', 'AzureChatOpenAI')], 'invisible': [('llm_type', '!=', 'AzureChatOpenAI')]}"/>
                                 <field name="api_version" attrs="{'required': [('llm_type', '=', 'AzureChatOpenAI')], 'invisible': [('llm_type', '!=', 'AzureChatOpenAI')]}"/>
-                             </group>
+                            </group>
                         </group>
                         <group>
                             <separator />
                         </group>
                     </sheet>
-                    <div class="oe_chatter">
-                        <field name="message_follower_ids" widget="mail_followers" />
-                        <field name="activity_ids" widget="mail_activity" />
-                        <field name="message_ids" widget="mail_thread" />
-                    </div>
+<div class="oe_chatter">
+    <field name="message_follower_ids" widget="mail_followers" />
+    <field name="activity_ids" widget="mail_activity" />
+    <field name="message_ids" widget="mail_thread" />
+</div>
                 </form>
             </field>
         </record>

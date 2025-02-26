@@ -4,6 +4,23 @@
             <field name="name">ai.agent.list</field>
             <field name="model">ai.agent</field>
             <field name="arch" type="xml">
+                <!-- #if VERSION >= "18.0" -->
+                <list string="AI Agents" decoration-info="status=='draft'" decoration-success="status=='active'" decoration-muted="status=='done'" decoration-danger="status=='error'" multi_edit="1">
+                    <field name="name" />
+                    <field name="ai_type" />
+                    <field name="ai_agent_llm_id" />
+                    <field name="ai_role" optional="show" />
+                    <field name="ai_temperature" optional="hide" />
+                    <field name="object_id" optional="hide" />
+                    <field name="session_count" optional="hide" />
+                    <field name="session_line_count" optional="hide" />
+                    <field name="quest_count" optional="hide" />
+                    <field name="last_run" optional="show" />
+                    <field name="status" widget="badge" decoration-info="status == 'draft'" decoration-success="status == 'active'" decoration-muted="status == 'done'" decoration-danger="status == 'error'" />
+                    <field name="is_favorite" widget="boolean_favorite" optional="hide" />
+                    <field name="debug" optional="hide" />
+                </list>
+                <!-- #elif VERSION <= "17.0" -->
                 <tree string="AI Agents" decoration-info="status=='draft'" decoration-success="status=='active'" decoration-muted="status=='done'" decoration-danger="status=='error'" multi_edit="1">
                     <field name="name" />
                     <field name="ai_type" />
@@ -19,6 +36,7 @@
                     <field name="is_favorite" widget="boolean_favorite" optional="hide" />
                     <field name="debug" optional="hide" />
                 </tree>
+                <!-- #endif -->
             </field>
         </record>
         <record id="ai_agent_search" model="ir.ui.view">
@@ -34,7 +52,9 @@
                     <field name="ai_description" />
                     <field name="ai_goal" />
                     <field name="ai_backstory" />
-                    <field name="tag_ids" />
+                    <!-- #if VERSION >= "16.0" -->
+					<field name="tag_ids" />
+					<!-- #endif -->
                     <field name="object_id" />
                     <filter string="Favorite" name="favorite" domain="[('is_favorite', '=', True)]" />
                     <group expand="0" string="Group By">
@@ -82,7 +102,11 @@
                                 <!-- #endif -->
                             </group>
                             <group>
+                                <!-- #if VERSION >= "17.0" -->
+                                <field name="ai_agent_llm_id" required="status != 'draft'" />
+                                <!-- #elif VERSION <= "16.0" -->
                                 <field name="ai_agent_llm_id" attrs="{'required': [('status', '!=', 'draft')]}" />
+                                <!-- #endif -->
                                 <field name="ai_temperature" />
                                 <field name="last_run" />
                             </group>
@@ -99,50 +123,75 @@
                              </group>
                         -->
                         <notebook>
-                                     <page string="Description" id="description">
+                            <page string="Description" id="description">
                                 <field name="ai_description" nolabel="1" />
-                            </page>     
-                            
+                            </page>
+
                             <page string="Prompt Template" id="template">
                                 <field name="ai_prompt_template" widget="html" class="oe-bordered-editor" options="{'style-inline': true, 'codeview': true, 'dynamic_placeholder': true}" nolabel="1" />
                             </page>
                             <page string="Backstory" id="backstory">
                                 <field name="ai_backstory" nolabel="1" />
                             </page>
-                       
-                   
 
-                              <page string="Memory" id="memory">
+
+
+                            <page string="Memory" id="memory">
                                 <field name="ai_memory_ids">
+                                    <!-- #if VERSION >= "18.0" -->
+                                    <list editable="bottom">
+                                        <field name="sequence" widget="handle" />
+                                        <field name="ai_memory_id" />
+                                        <field name="ai_memory_status" />
+                                        <field name="ai_memory_llm_id" />
+                                        <field name="ai_memory_llm_status" />
+                                        <field name="ai_memory_url" optional='hide'  />
+                                        <field name="last_run" optional='hide'  />
+                                        <field name="nbr_days" optional='hide'  />
+                                        <button name="run" string="Run" type="object" icon=""/>
+                                    </list>
+                                    <!-- #elif VERSION <= "17.0" -->
                                     <tree editable="bottom">
                                         <field name="sequence" widget="handle" />
-                                        <field name="ai_memory_id"  />
-                                        <field name="ai_memory_status"  />
-                                        <field name="ai_memory_llm_id"  />
-                                        <field name="ai_memory_llm_status"  />
+                                        <field name="ai_memory_id" />
+                                        <field name="ai_memory_status" />
+                                        <field name="ai_memory_llm_id" />
+                                        <field name="ai_memory_llm_status" />
                                         <field name="ai_memory_url" optional='hide'  />
                                         <field name="last_run" optional='hide'  />
                                         <field name="nbr_days" optional='hide'  />
                                         <button name="run" string="Run" type="object" icon=""/>
                                     </tree>
+                                    <!-- #endif -->
                                 </field>
-                            </page> 
+                            </page>
                             <page string="Tools" id="tool">
                                 <field name="ai_tool_ids">
-                                    <tree  editable="bottom">
+                                    <!-- #if VERSION >= "18.0" -->
+                                    <list editable="bottom">
+                                        <field name="sequence" widget="handle" />
+                                        <field name="ai_tool_id" nolabel="1" />
+                                    </list>
+                                    <!-- #elif VERSION <= "17.0" -->
+                                    <tree editable="bottom">
                                         <field name="sequence" widget="handle" />
                                         <field name="ai_tool_id" nolabel="1" />
                                     </tree>
+                                    <!-- #endif -->
                                 </field>
                             </page>
 
                         </notebook>
                     </sheet>
+                    <!-- #if VERSION >= "18.0" -->
+                    <chatter/>
+                    <!-- #elif VERSION <= "17.0" -->
                     <div class="oe_chatter">
                         <field name="message_follower_ids" widget="mail_followers" />
                         <field name="activity_ids" widget="mail_activity" />
                         <field name="message_ids" widget="mail_thread" />
                     </div>
+                    <!-- #endif -->
                 </form>
             </field>
         </record>
@@ -202,7 +251,7 @@
                                     </div>
 
                                     <div class="oe_kanban_footer mt-3">
-                                         <div class="o_kanban_record_bottom">
+                                        <div class="o_kanban_record_bottom">
                                             <div class="oe_kanban_bottom_left"/>
 
                                             <div class="oe_kanban_bottom_right">
@@ -237,7 +286,11 @@
         <record id="action_ai_agent" model="ir.actions.act_window">
             <field name="name">Agents</field>
             <field name="res_model">ai.agent</field>
+            <!-- #if VERSION >= "18.0" -->
+            <field name="view_mode">kanban,list,form,calendar</field>
+            <!-- #elif VERSION <= "17.0" -->
             <field name="view_mode">kanban,tree,form,calendar</field>
+            <!-- #endif -->
         </record>
         <menuitem id="ai_agent.menu_ai_agent_menu_menu" parent="ai_agent.menu_ai_agent_menu" name="Agents" action="action_ai_agent" />
         <menuitem id="ai_agent.menu_ai_agent_configuration" parent="ai_agent.menu_ai_agent_root" name="Configuration" sequence="99" />

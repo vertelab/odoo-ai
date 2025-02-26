@@ -1,0 +1,33 @@
+<odoo>
+
+    <record id="test_mail_wizard_view" model="ir.ui.view">
+        <field name="name">ai.quest.test.mail.wizard.form</field>
+        <field name="model">ai.quest.test.mail.wizard</field>
+        <field name="arch" type="xml">
+            <form>
+                <group>
+                    <!-- #if VERSION >= "17.0" -->
+                    <field name="ai_quest_id" invisible="ai_quest_id"/>
+                    <!-- #elif VERSION <= "16.0" -->
+                    <field name="ai_quest_id" attrs="{'invisible': [('ai_quest_id', '!=', False)]}" />
+                    <!-- #endif -->
+                </group>
+                <group>
+                    <field name="eml_file"/>
+                </group>
+                <footer>
+                    <button name="test_mail" string="Test" type="object" class="oe_highlight"/>
+                    <button name="cancel" string="Cancel" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_ai_quest_test_mail_wizard" model="ir.actions.act_window">
+        <field name="name">Test Mail</field>
+        <field name="res_model">ai.quest.test.mail.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+
+</odoo>

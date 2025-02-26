@@ -1,7 +1,7 @@
 <odoo>
 
-    <record id="ai_quest_session_line_list" model="ir.ui.view">
-        <field name="name">ai.quest.session.line.list</field>
+    <record id="ai_quest_session_line_tree" model="ir.ui.view">
+        <field name="name">ai.quest.session.line.tree</field>
         <field name="model">ai.quest.session.line</field>
         <field name="arch" type="xml">
             <tree string="AI Tokens">

@@ -75,13 +75,14 @@ class AIQuestSession(models.Model):
     session_object_ids = fields.One2many(comodel_name="ai.session.object", inverse_name="ai_session_id")
     startdate = fields.Datetime(default=lambda self: fields.Datetime.now())
     status = fields.Selection(
-        selection=[("draft", _("Draft")), ("active", _("Active")), ("done", _("Done")), ("error", _("Error"))],
+        selection=[("draft", "Draft"), ("active", "Active"), ("done", "Done"), ("error", "Error")],
         default="draft")
     time_difference_ms = fields.Integer(string='Time Difference (ms)', compute='_compute_time_difference', store=True)
     type_of_output = fields.Text()
     user_id = fields.Many2one(comodel_name='res.users', string="User", help="")
     
     display_name = fields.Char(compute='_compute_display_name')
+    company_id = fields.Many2one('res.company', required=True, related="ai_quest_id.company_id")
  
     @api.depends("name")
     def _compute_display_name(self):
@@ -109,7 +110,11 @@ class AIQuestSession(models.Model):
             'name': 'LLMs',
             'type': 'ir.actions.act_window',
             'res_model': 'ai.agent.llm',
+            # #if VERSION >= "18.0"
+            'view_mode': 'kanban,list,form,calendar',
+            # #elif VERSION <= "17.0"
             'view_mode': 'kanban,tree,form,calendar',
+            # #endif
             'target': 'current',
             'domain': [("id", 'in', self.ai_agent_llm_ids.ids)]
         }
@@ -120,7 +125,11 @@ class AIQuestSession(models.Model):
             'name': 'AI Agents',
             'type': 'ir.actions.act_window',
             'res_model': 'ai.agent',
+            # #if VERSION >= "18.0"
+            'view_mode': 'kanban,list,form',
+            # #elif VERSION <= "17.0"
             'view_mode': 'kanban,tree,form',
+            # #endif
             'target': 'current',
             'domain': [("id", 'in', self.ai_agent_ids.ids)]
         }
@@ -131,7 +140,11 @@ class AIQuestSession(models.Model):
             'name': 'Session Lines',
             'type': 'ir.actions.act_window',
             'res_model': 'ai.quest.session.line',
+            # #if VERSION >= "18.0"
+            'view_mode': 'list,form,calendar,pivot',
+            # #elif VERSION <= "17.0"
             'view_mode': 'tree,form,calendar,pivot',
+            # #endif
             'target': 'current',
             'domain': [("ai_quest_session_id", '=', self.id)],
         }
@@ -142,7 +155,11 @@ class AIQuestSession(models.Model):
             'name': 'Messages',
             'type': 'ir.actions.act_window',
             'res_model': 'ai.quest.session.message',
+            # #if VERSION >= "18.0"
+            'view_mode': 'list,form',
+            # #elif VERSION <= "17.0"
             'view_mode': 'tree,form',
+            # #endif
             'target': 'current',
             'domain': [("ai_quest_session_id", '=', self.id)],
         }
@@ -153,7 +170,11 @@ class AIQuestSession(models.Model):
             'name': 'Sessions',
             'type': 'ir.actions.act_window',
             'res_model': 'ai.quest.session',
+            # #if VERSION >= "18.0"
+            'view_mode': 'list,form,calendar',
+            # #elif VERSION <= "17.0"
             'view_mode': 'tree,form,calendar',
+            # #endif
             'target': 'current',
             'domain': [("ai_quest_id", '=', self.id)]
         }
@@ -164,7 +185,11 @@ class AIQuestSession(models.Model):
             'name': 'Objetcs',
             'type': 'ir.actions.act_window',
             'res_model': 'ai.session.object',
+            # #if VERSION >= "18.0"
+            'view_mode': 'list,calendar',
+            # #elif VERSION <= "17.0"
             'view_mode': 'tree,calendar',
+            # #endif
             'target': 'current',
             'domain': [("ai_session_id", '=', self.id)]
         }
