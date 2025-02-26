@@ -32,7 +32,6 @@ from pydantic import BaseModel, ConfigDict, SkipValidation
 from random import randint
 from secrets import choice
 
-
 ##if VERSION >= '18.0'
 from typing import Optional, Annotated, List, NotRequired, Sequence, TypedDict, Union, Any
 ##else
@@ -425,6 +424,7 @@ class AIQuest(models.Model):
     @api.depends("session_line_ids")
     def compute_session_line_count(self):
         for record in self:
+            #record.session_line_count = sum([l.token_sys or 0 for l in record.session_line_ids])
             start_date = date.today() - timedelta(days=date.today().day - 1)
             end_date = date(year=date.today().year, month=date.today().month + 1, day=1) - timedelta(days=1)
             filterd_line_ids = list(filter(lambda session_line_id: session_line_id.datetime.date() >= start_date and session_line_id.datetime.date() <= end_date, record.session_line_ids))
@@ -660,7 +660,7 @@ class AIQuest(models.Model):
             vals = self._mail_values(mail=mail, mail_body=mail_body, session=session, attachments=mail.attachment_ids)
             res = self.run(**vals)
             return res
-            
+
     def run_powerbox_quest(self, quest, prompt):
         ai_quest = self.env['ai.quest'].browse(quest.get('id')).exists()
         if not ai_quest:
@@ -1108,6 +1108,8 @@ class AIQuest(models.Model):
             return supervisor
         else:
             return "Supervisor"
+
+
 
 class AgentState(TypedDict):
     messages: Annotated[Sequence[BaseMessage], operator.add]
