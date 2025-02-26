@@ -409,11 +409,7 @@ class AIAgent(models.Model):
         use_lang = f"Use language {self.env.user.lang} for the answer to Human" if quest.use_personal_lang else ''
         topic = kwargs.get('topic', kwargs.get('message', ''))
         session = kwargs.get('session', False)
-        if kwargs.get('record'): # Populate with data from record if there is a record
-            data = record.read()
-            system_prompt = quest.supervisor_prompt.format(**{k: f"{{{data[k]}}}" for k in data.keys()})
-        else:
-            system_prompt = quest.supervisor_prompt
+        system_prompt = quest.supervisor_prompt
 
         def supervisor_chain(state):
             messages = state.get('messages', [])
