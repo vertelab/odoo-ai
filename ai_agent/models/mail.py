@@ -30,7 +30,7 @@ class MailChannel(models.Model):
         if self.channel_type == "chat":
             ai_quest = self.env['res.users'].browse(self.channel_member_ids.mapped('partner_id.user_ids.id')).mapped(
                 'ai_quest_id')
-           user = ai_quest.chat_user_id
+            user = ai_quest.chat_user_id
         else:  # channel
             ai_quest = self.ai_quest_id
             user = self.env.ref('base.user_root')
