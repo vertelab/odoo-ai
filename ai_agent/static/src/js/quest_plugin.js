@@ -146,6 +146,7 @@ export class QuestPlugin extends Plugin {
                 }
             },
             res_model: resModel,
+            res_id: resId,
             quest,
             ...params,
         };
