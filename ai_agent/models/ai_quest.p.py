@@ -674,6 +674,7 @@ class AIQuest(models.Model):
             return res
 
     def run_powerbox_quest(self, quest, prompt):
+<<<<<<< HEAD
         ai_quest = self.env['ai.quest'].browse(quest.get('id')).exists()
         if not ai_quest:
             _logger.error(f"OBS: Quest does not exist: not ai_quest {self=} {quest=} {prompt=}")
@@ -695,6 +696,19 @@ class AIQuest(models.Model):
             return answer
         _logger.error(f"OBS: Quest does not exist: no result {self=} {ai_quest=} {quest=} {prompt=} {result=}")
         raise UserError(_("OBS: An error occurred, you should contact administrator to look into the quest"))
+=======
+         ai_quest = self.env['ai.quest'].browse(quest.get('id')).exists()
+         if not ai_quest:
+             raise UserError("OBS: Quest does not exist, you should contact administrator to look into the quest")
+         result = ai_quest.run(prompt=prompt)
+         if result:
+             ai_messages = self._get_last_ai_message(result.get('result', {}).get('messages'))
+             if not ai_messages:
+                 raise UserError("OBS: An error occurred, you should contact administrator to look into the quest")
+             response = ai_messages.content
+             return response
+         raise UserError("OBS: An error occurred, you should contact administrator to look into the quest")
+>>>>>>> 3d58f2575e300e2333ef4795f130305b8a906d35
 
     # ------------------------------------------------------------
     # Python code helpers
