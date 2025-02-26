@@ -622,6 +622,14 @@ class AIQuest(models.Model):
             ai_messages = self._get_last_ai_message(result.get('result', {}).get('messages'))
             if not ai_messages:
                 raise UserError(_("OBS: An error occurred, you should contact administrator to look into the quest"))
+            if messages and last_ai_message:
+                if ai_quest.debug:
+                    _logger.error(f"{last_ai_message=}")
+                    answer = re.sub(r'<think>.*?</think>', '', markdown.markdown(last_ai_message.content), flags=re.DOTALL)
+                else:
+                    answer = markdown.markdown(last_ai_message.content)
+    
+            
             response =self.markdown2html(ai_messages.content)
             return response
         raise UserError(_("OBS: An error occurred, you should contact administrator to look into the quest"))

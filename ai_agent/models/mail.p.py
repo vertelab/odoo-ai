@@ -6,9 +6,9 @@ from odoo import api, fields, models, tools, _
 from odoo.exceptions import ValidationError, UserError
 import logging
 import markdown
+import re
 
 _logger = logging.getLogger(__name__)
-
 
 class MailMessage(models.Model):
     _inherit = 'mail.message'
@@ -54,8 +54,11 @@ class MailChannel(models.Model):
                     last_ai_message = ai_messages[-1] if len(ai_messages) != 0 else None
 
                     if messages and last_ai_message:
-                        _logger.error(f"{last_ai_message=}")
-                        answer = markdown.markdown(last_ai_message.content)
+                        if ai_quest.debug:
+                            _logger.error(f"{last_ai_message=}")
+                            answer = re.sub(r'<think>.*?</think>', '', markdown.markdown(last_ai_message.content), flags=re.DOTALL)
+                        else:
+                            answer = markdown.markdown(last_ai_message.content)
 
                     self.with_user(user).message_post(
                         body=answer,
