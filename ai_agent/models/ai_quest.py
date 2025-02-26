@@ -7,6 +7,7 @@ import re
 import traceback
 import unidecode
 import warnings
+import math
 
 from datetime import date, timedelta
 from IPython.display import Image, display
@@ -255,6 +256,17 @@ class AIQuest(models.Model):
     )
     company_id = fields.Many2one('res.company', required=True, default=lambda self: self.env.company)
 
+    @api.model
+    def get_xmlrpc_quests(self):
+        quests = 0
+        quest_ids = self.search([])
+        quests += len(quest_ids)
+        for quest_id in quest_ids:
+            if math.floor(quest_id.session_line_count / 1000000):
+                quests += 1
+        _logger.error(f"{quests=}")
+        return quests
+            
     @api.depends('is_supervisor',
                  'ai_agent_ids.sequence',
                  'ai_agent_ids.ai_agent_id',
@@ -617,17 +629,27 @@ class AIQuest(models.Model):
             return res
 
     def run_powerbox_quest(self, quest, prompt):
-         ai_quest = self.env['ai.quest'].browse(quest.get('id')).exists()
-         if not ai_quest:
-             raise UserError("OBS: Quest does not exist, you should contact administrator to look into the quest")
-         result = ai_quest.run(prompt=prompt)
-         if result:
-             ai_messages = self._get_last_ai_message(result.get('result', {}).get('messages'))
-             if not ai_messages:
-                 raise UserError("OBS: An error occurred, you should contact administrator to look into the quest")
-             response = ai_messages.content
-             return response
-         raise UserError("OBS: An error occurred, you should contact administrator to look into the quest")
+        ai_quest = self.env['ai.quest'].browse(quest.get('id')).exists()
+        if not ai_quest:
+            _logger.error(f"OBS: Quest does not exist: not ai_quest {self=} {quest=} {prompt=}")
+            raise UserError(_("OBS: Quest does not exist, you should contact administrator to look into the quest"))
+        record = False # Instansiate record here
+        result = ai_quest.run(prompt=prompt,record=record)
+        if result:
+            answer = ''
+            ai_messages = self._get_last_ai_message(result.get('result', {}).get('messages', False))
+            if not ai_messages:
+                _logger.error(f"OBS: Quest does not exist: not ai_messages {self=} {quest=} {prompt=} {result=}")
+                raise UserError(_("OBS: An error occurred, you should contact administrator to look into the quest"))
+            if messages and last_ai_message:
+                if ai_quest.debug:
+                    _logger.error(f"{last_ai_message=}")
+                    answer = re.sub(r'<think>.*?</think>', '', markdown.markdown(last_ai_message.content), flags=re.DOTALL)
+                else:
+                    answer = markdown.markdown(last_ai_message.content)
+            return answer
+        _logger.error(f"OBS: Quest does not exist: no result {self=} {ai_quest=} {quest=} {prompt=} {result=}")
+        raise UserError(_("OBS: An error occurred, you should contact administrator to look into the quest"))
 
     # ------------------------------------------------------------
     # Python code helpers
