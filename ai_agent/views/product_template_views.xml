@@ -13,7 +13,7 @@
 
             <div name="button_box" position="inside">
                 <button name="action_get_session_lines" class="oe_stat_button" type="object" icon="fa-money">
-                    <field string="Tokens" name="session_line_count" widget="statinfo" />
+                    <field string="Tokens" name="session_line_count" widget="statinfo"/>
                 </button>
             </div>
 
@@ -25,14 +25,16 @@
                     <group>
                         <group>
                             <field name="token_sys"/>
-                            <field name="llm_additional_rate" />
+                            <field name="llm_additional_rate"/>
                         </group>
-                        <group >
+                        <group>
                             <field name="llm_library"/>
                             <field name="llm_type"/>
                             <field name="llm_etype"/>
-                            <field name="llm_price_url" widget="url" />
+                            <field name="llm_price_url" widget="url"/>
                             <field name="ai_api_key"/>
+                            <field name="azure_endpoint" attrs="{'required': [('llm_type', '=', 'AzureChatOpenAI')], 'invisible': [('llm_type', '!=', 'AzureChatOpenAI')]}"/>
+                            <field name="api_version" attrs="{'required': [('llm_type', '=', 'AzureChatOpenAI')], 'invisible': [('llm_type', '!=', 'AzureChatOpenAI')]}"/>
                         </group>
                     </group>
 
@@ -45,12 +47,10 @@
         <field name="name">AI Providers</field>
         <field name="res_model">product.template</field>
         <field name="view_mode">tree,form</field>
-        <field name='target'>current</field>
+        <field name="target">current</field>
         <field name="domain">[("is_llm", '=', True)]</field>
     </record>
 
-    <menuitem id="ai_agent.menu_product_product" name="Providers" parent="ai_agent.menu_ai_agent_configuration" action="action_product_template"  sequence="1"/>
+    <menuitem id="ai_agent.menu_product_product" name="Providers" parent="ai_agent.menu_ai_agent_configuration" action="action_product_template" sequence="1"/>
 
-
-
-</odoo>
+ </odoo>

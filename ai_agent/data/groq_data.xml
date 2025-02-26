@@ -1,12 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-  <data>
+  <data noupdate="1">
     <record id="groq_product_template" model="product.template">
       <field name="name">Groq</field>
       <field name="is_llm">True</field>
       <field name="llm_library">langchain_groq</field>
       <field name="llm_type">ChatGroq</field>
       <field name="llm_type">ChatGroq</field>
+	  <field name="fallback_api_key_name">groq_api_key</field>
       <field name="image_1920" type="base64" file="ai_agent/static/img/groq-ai-logo.png" />
     </record>
     <!-- Model -->
@@ -60,6 +61,11 @@
             <field name="licence">mit</field>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
     </record>
+    <record id="groq_product_attribute_value_deepseek-r1-distill-llama-70b" model="product.attribute.value">
+      <field name="name">DeepSeek-R1-Distill-Llama-70b</field>
+            <field name="licence">llama-community</field>
+      <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+    </record>
     <!-- Attribute Line -->
     <record id="groq_ai_product_template_attribute_line_model" model="product.template.attribute.line">
       <field name="product_tmpl_id" ref="groq_product_template" />
@@ -75,6 +81,7 @@
                             ref('groq_product_attribute_value_mixtral-8x7b-32768'),
                             ref('groq_product_attribute_value_whisper-large-v3'),
                             ref('groq_product_attribute_value_whisper-large-v3-turbo'),
+                            ref('groq_product_attribute_value_deepseek-r1-distill-llama-70b'),
                     ])]" />
     </record>
     <record id="groq_product_template_attribute_line_token_type" model="product.template.attribute.line">

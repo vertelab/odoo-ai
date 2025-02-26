@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-  <data>
+  <data noupdate="1">
     <!-- Source: https://python.langchain.com/v0.1/docs/integrations/llms/anthropic/ -->
     <!-- Source: https://docs.anthropic.com/en/docs/about-claude/models -->
     <record id="anthropic_product_template" model="product.template">
@@ -9,6 +9,7 @@
       <field name="llm_library">langchain_anthropic</field>
       <field name="llm_etype">ChatAnthropic</field>
       <field name="llm_type">ChatAnthropic</field>
+      <field name="fallback_api_key_name">anthropic_api_key</field>
       <field name="image_1920" type="base64" file="ai_agent/static/img/anthropic_logo.png" />
     </record>
     <record id="anthropic_res_partner" model="res.partner">

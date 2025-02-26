@@ -1,12 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-  <data>
+  <data noupdate="1">
     <record id="mistral_product_template" model="product.template">
       <field name="name">Mistral AI</field>
       <field name="is_llm">True</field>
       <field name="llm_library">langchain_mistralai</field>
       <field name="llm_type">ChatMistralAI</field>
       <field name="llm_etype">MistralAIEmbeddings</field>
+	  <field name="fallback_api_key_name">mistral_api_key</field>
       <field name="image_1920" type="base64" file="ai_agent/static/img/mistral-ai-icon.png" />
     </record>
     <!-- Model -->
@@ -60,6 +61,11 @@
       <field name="licence">apache-2.0</field>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
     </record>
+    <record id="mistral_product_attribute_value_mistral_embed" model="product.attribute.value">
+      <field name="name">mistral-embed</field>
+      <field name="is_embedded" eval="True"/>
+      <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+    </record>
     <!-- Attribute Line -->
     <record id="mistral_product_template_attribute_line_model" model="product.template.attribute.line">
       <field name="product_tmpl_id" ref="mistral_product_template" />
@@ -74,7 +80,8 @@
                     ref('mistral_product_attribute_value_mistral-small-latest'),
                     ref('mistral_product_attribute_value_codestral-latest'),
                     ref('mistral_product_attribute_value_pixtral-12b-2409'),
-                    ref('mistral_product_attribute_value_open-codestral-mamba')
+                    ref('mistral_product_attribute_value_open-codestral-mamba'),
+                    ref('mistral_product_attribute_value_mistral_embed'),
                     ])]" />
     </record>
     <!-- Token Type -->

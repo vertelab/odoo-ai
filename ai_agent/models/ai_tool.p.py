@@ -1,18 +1,15 @@
 import os
 import json
+import importlib
+import inspect 
+import traceback
 from langchain_core.prompts import PromptTemplate
+from langchain_core.output_parsers import StrOutputParser
 from langchain.schema import SystemMessage, HumanMessage
 from langchain_openai import ChatOpenAI
 from langchain_mistralai import ChatMistralAI
 from langchain_groq import ChatGroq
 from langchain_anthropic import ChatAnthropic
-from httpx import HTTPStatusError
-from random import randint
-from langchain_core.output_parsers import StrOutputParser
-
-from odoo import models, fields, api, _
-from odoo.exceptions import UserError, AccessError, ValidationError
-from odoo.tools.safe_eval import safe_eval
 from langchain_community.tools import DuckDuckGoSearchRun, DuckDuckGoSearchResults
 from langchain_community.tools.wikipedia.tool import WikipediaQueryRun
 from langchain_community.tools.yahoo_finance_news import YahooFinanceNewsTool
@@ -20,7 +17,12 @@ from langchain_community.utilities.duckduckgo_search import DuckDuckGoSearchAPIW
 from langchain_community.utilities.wikipedia import WikipediaAPIWrapper
 from langgraph.graph import END, START, StateGraph, MessagesState
 from typing import Annotated, Literal, TypedDict, Sequence
-import importlib
+from httpx import HTTPStatusError
+from random import randint
+
+from odoo import models, fields, api, _
+from odoo.exceptions import UserError, AccessError, ValidationError
+from odoo.tools.safe_eval import safe_eval
 
 import logging
 
@@ -56,7 +58,7 @@ class AITool(models.Model):
     session_line_count = fields.Integer(compute="compute_session_line_count")
     session_line_ids = fields.One2many(comodel_name="ai.quest.session.line", inverse_name="ai_tool_id")
     status = fields.Selection(
-        selection=[("draft", _("Draft")), ("active", _("Active")), ("done", _("Done")), ("error", _("Error"))],
+        selection=[("draft", "Draft"), ("active", "Active"), ("done", "Done"), ("error", "Error")],
         default="draft")
     tag_ids = fields.Many2many(comodel_name='product.tag', string='Tags')
     tool = fields.Char(string='Tool', trim=True, )
@@ -68,7 +70,11 @@ class AITool(models.Model):
             'name': 'AI Quests',
             'type': 'ir.actions.act_window',
             'res_model': 'ai.quest',
+            # #if VERSION >= "18.0"
+            'view_mode': 'kanban,list,form',
+            # #elif VERSION <= "17.0"
             'view_mode': 'kanban,tree,form',
+            # #endif
             'target': 'current',
             'domain': [("session_line_ids.ai_tool_id", '=', self.id)]
         }
@@ -79,7 +85,11 @@ class AITool(models.Model):
             'name': 'AI Agents',
             'type': 'ir.actions.act_window',
             'res_model': 'ai.agent',
+            # #if VERSION >= "18.0"
+            'view_mode': 'kanban,list,form',
+            # #elif VERSION <= "17.0"
             'view_mode': 'kanban,tree,form',
+            # #endif
             'target': 'current',
             'domain': [("session_line_ids.ai_tool_id", '=', self.id)]
         }
@@ -90,7 +100,11 @@ class AITool(models.Model):
             'name': 'Session Lines',
             'type': 'ir.actions.act_window',
             'res_model': 'ai.quest.session.line',
+            # #if VERSION >= "18.0"
+            'view_mode': 'list,form,calendar,pivot',
+            # #elif VERSION <= "17.0"
             'view_mode': 'tree,form,calendar,pivot',
+            # #endif
             'target': 'current',
             'domain': [("ai_tool_id", '=', self.id)],
         }
@@ -101,13 +115,15 @@ class AITool(models.Model):
             'name': 'Sessions',
             'type': 'ir.actions.act_window',
             'res_model': 'ai.quest.session',
+            # #if VERSION >= "18.0"
+            'view_mode': 'list,form',
+            # #elif VERSION <= "17.0"
             'view_mode': 'tree,form',
+            # #endif
             'target': 'current',
             'domain': [("session_line_ids.ai_tool_id", '=', self.id)]
         }
         return action
-
-      
        
     def action_test_tool(self):
         action = {
@@ -201,22 +217,42 @@ class AIToolTestWizard(models.Model):
     is_raise_error = fields.Boolean(default=True)
     test_tool_input = fields.Char()
     ai_tool_id = fields.Many2one(comodel_name="ai.tool")
-
+    file = fields.Binary(attachment=True)
+    filename = fields.Char('Filename')
+    object_name = fields.Char("Object Name", help="The name that this object will have in state")
+    object_id = fields.Reference(string='Object', selection=lambda m: [(model.model, model.name) for model in
+                                                                       m.env['ir.model'].sudo().search([])])
     def test_tool(self):
+        
+        def create_args_dict(func):
+            func_sig = inspect.signature(func)
+            list_args = list(func_sig.parameters.keys())
+            args_dict = {}
+            for arg in list_args:
+                args_dict.update({arg: self.test_tool_input})
+            return args_dict
+        
         results = ''
+        state = {}
+        if self.file:
+            state.update({"attachments": [self.file]})
+        if self.object_name:
+            state.update({self.object_name: self.object_id})
+
         try:
             module = importlib.import_module(self.ai_tool_id.tool_lib)
             TOOL = getattr(module, self.ai_tool_id.tool)
-            results = TOOL(self.test_tool_input)
+            get_tool = TOOL(state)
+            func = get_tool.func
+            results = get_tool.run(create_args_dict(func))
         except ImportError as e:
             _logger.error(f"Error importing {self.ai_tool_id.tool_lib}: {e}")
         except AttributeError as e:
+            _logger.error(f"Error: {e} {traceback.format_exc()}")
             _logger.error(f"Error: {self.ai_tool_id.tool} not found in {self.ai_tool_id.tool_lib}")
         except Exception as e:
-            _logger.error(f"An error occurred: {e}")
-
+            _logger.error(f"An error occurred: {e} {traceback.format_exc()}")
     
         if self.is_raise_error:
             raise UserError(f"{results=}")
         _logger.info(f"{results=}")
-   
