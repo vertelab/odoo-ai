@@ -263,8 +263,8 @@ class AIQuest(models.Model):
         quest_ids = self.search([])
         quests += len(quest_ids)
         for quest_id in quest_ids:
-            if math.floor(quest_id.session_line_count / 1000000):
-                quests += 1
+            if add := math.floor(quest_id.session_line_count / 1000000):
+                quests += add
         _logger.error(f"{quests=}")
         return quests
             
