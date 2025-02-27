@@ -24,7 +24,7 @@ export class QuestPromptDialog extends QuestDialog {
     setup() {
         super.setup();
         this.assistantAvatarUrl = `${browser.location.origin}/ai_agent/static/img/odoobot_transparent.png`;
-        // #if VERSION <= '16.0'
+        // #if VERSION >= '16.0'
         this.userAvatarUrl = `${
             browser.location.origin}/web/image?model=res.users&field=avatar_128&id=${encodeURIComponent(session.uid)}`;
         // #elif VERSION >= '18.0'
