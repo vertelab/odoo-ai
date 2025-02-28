@@ -259,8 +259,8 @@ class AIQuest(models.Model):
         quest_ids = self.search([])
         quests += len(quest_ids)
         for quest_id in quest_ids:
-            if math.floor(quest_id.session_line_count / 1000000):
-                quests += 1
+            if add := math.floor(quest_id.session_line_count / 1000000):
+                quests += add
         _logger.error(f"{quests=}")
         return quests
             
@@ -625,29 +625,25 @@ class AIQuest(models.Model):
             res = self.run(**vals)
             return res
 
-    def run_powerbox_quest(self, quest, prompt, res_model, res_id):
-        from .html2plaintext import ai_html2plaintext
+    def run_powerbox_quest(self, quest, prompt):
         ai_quest = self.env['ai.quest'].browse(quest.get('id')).exists()
         if not ai_quest:
             _logger.error(f"OBS: Quest does not exist: not ai_quest {self=} {quest=} {prompt=}")
             raise UserError(_("OBS: Quest does not exist, you should contact administrator to look into the quest"))
-        if res_model and res_id:
-            record = self.env[res_model].browse(int(res_id)).exists()  # Instantiate record here
-        else:
-            record = False
-        result = ai_quest.run(prompt=prompt, record=record)
+        record = False # Instansiate record here
+        result = ai_quest.run(prompt=prompt,record=record)
         if result:
+            answer = ''
             ai_messages = self._get_last_ai_message(result.get('result', {}).get('messages', False))
             if not ai_messages:
                 _logger.error(f"OBS: Quest does not exist: not ai_messages {self=} {quest=} {prompt=} {result=}")
                 raise UserError(_("OBS: An error occurred, you should contact administrator to look into the quest"))
-
-            if ai_quest.debug:
-                answer = markdown.markdown(ai_messages.content)
-            else:
-                answer = ai_html2plaintext(
-                    re.sub(r'<think>.*?</think>', '', markdown.markdown(ai_messages.content), flags=re.DOTALL)
-                )
+            if messages and last_ai_message:
+                if ai_quest.debug:
+                    _logger.error(f"{last_ai_message=}")
+                    answer = re.sub(r'<think>.*?</think>', '', markdown.markdown(last_ai_message.content), flags=re.DOTALL)
+                else:
+                    answer = markdown.markdown(last_ai_message.content)
             return answer
         _logger.error(f"OBS: Quest does not exist: no result {self=} {ai_quest=} {quest=} {prompt=} {result=}")
         raise UserError(_("OBS: An error occurred, you should contact administrator to look into the quest"))
