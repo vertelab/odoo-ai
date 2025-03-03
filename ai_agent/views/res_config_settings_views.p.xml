@@ -1,0 +1,23 @@
+<odoo>
+  <data>
+      
+    <record id="res_config_settings_view_form" model="ir.ui.view">
+      <field name="name">res.config.settings.view.form.quests</field>
+      <field name="model">res.config.settings</field>
+      <field name="inherit_id" ref="base.res_config_settings_view_form" />
+      <field name="arch" type="xml">
+        <setting id="active_user_setting" position="after">
+          <setting id="quests_setting">
+            <span class="fa fa-lg fa-android" aria-label="Number of quests" />
+            <field name="quests" class="w-auto ps-3 fw-bold" />
+            <span class="o_form_label" invisible="quests &gt; 1"> Quest</span>
+            <span class="o_form_label" invisible="quests &lt;= 1"> Quests</span>
+            <br/>
+            <button name="%(ai_agent.action_ai_quest)d" icon="oi-arrow-right" type="action" string="Manage Quests" class="btn-link o_web_settings_access_rights"/>
+          </setting>
+        </setting>
+      </field>
+    </record>
+    
+  </data>
+</odoo>

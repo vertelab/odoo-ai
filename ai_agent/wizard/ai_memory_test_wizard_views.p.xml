@@ -1,0 +1,23 @@
+<odoo>
+
+    <!-- Action form View -->
+    <record id="test_rag_view" model="ir.ui.view">
+        <field name="name">ai.memory.test.wizard</field>
+        <field name="model">ai.memory.test.wizard</field>
+        <field name="arch" type="xml">
+            <form>
+                <group>
+                    <field name="test_rag_input" string="Search" />
+                </group>
+                <group>
+                    <field name="is_raise_error"/>
+                </group>
+                <footer>
+                    <button name="test_rag" string="Search" type="object" class="oe_highlight"/>
+                    <button name="cancel" string="Cancel" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+</odoo>
