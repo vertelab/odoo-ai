@@ -6,13 +6,13 @@ import traceback
 
 from httpx import HTTPStatusError
 from langchain.agents import AgentExecutor, create_openai_tools_agent, create_json_chat_agent, create_react_agent
+from langchain_core.messages import AIMessage
+from langchain_huggingface import HuggingFaceEmbeddings
 from odoo import models, fields, api, tools, _
 from odoo.exceptions import UserError, AccessError, ValidationError
+from pydantic import SecretStr
 from random import randint
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
-from langchain_huggingface import HuggingFaceEmbeddings
-from pydantic import SecretStr
-
 _logger = logging.getLogger(__name__)
 
 LICENCES = [
@@ -267,8 +267,23 @@ class AIAgentLLM(models.Model):
 
     def test_llm(self):
         session = self.env['ai.quest.session'].llm_init(self)
-        session.state = 'done'
-        self.status = "confirmed"
+        try:
+            response = self.invoke("What is 1+1, answer with a single digit")
+        except Exception as e:
+            session.add_message(f"Could not confirm llm: {str(e)}\n{traceback.format_exc()}")
+            self.message_post(body=_(f"Could not confirm llm: {str(e)}"), message_type="notification")
+            session.status = 'done'
+            return False
+        session.status = 'done'
+        if isinstance(response, AIMessage):
+            content = response.content.strip()
+            if content == "2":
+            # ~ raise UserError(content)
+                self.message_post(body=_(f"Llm confirmed: 1+1={content}"), message_type="notification")
+                self.status = "confirmed"
+                return 
+        self.message_post(body=_(f"Could not confirm llm: {response=}"), message_type="notification")
+            
 
     def get_agent_executor(self, prompt, tools, temperature=1.0, verbose=False, callbacks=None):
         return AgentExecutor(
