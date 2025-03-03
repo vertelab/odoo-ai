@@ -118,6 +118,7 @@ and cost-effective AI systems that drive innovation and efficiency across their 
         "views/res_company_views.xml",
         "views/res_users_views.xml",
         "views/mail_channel_views.xml",
+        "views/res_config_settings_views.xml"
     ],
     "external_dependencies": {
         "python": [

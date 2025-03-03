@@ -7,6 +7,7 @@ import re
 import traceback
 import unidecode
 import warnings
+import math
 
 from datetime import date, timedelta
 from IPython.display import Image, display
@@ -278,6 +279,17 @@ class AIQuest(models.Model):
     )
     company_id = fields.Many2one('res.company', required=True, default=lambda self: self.env.company)
 
+    @api.model
+    def get_xmlrpc_quests(self):
+        quests = 0
+        quest_ids = self.search([])
+        quests += len(quest_ids)
+        for quest_id in quest_ids:
+            if add := math.floor(quest_id.session_line_count / 1000000):
+                quests += add
+        _logger.error(f"{quests=}")
+        return quests
+            
     @api.depends('is_supervisor',
                  'ai_agent_ids.sequence',
                  'ai_agent_ids.ai_agent_id',
