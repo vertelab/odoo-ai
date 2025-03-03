@@ -146,10 +146,7 @@ export class QuestPlugin extends Plugin {
                 }
             },
             res_model: resModel,
-<<<<<<< HEAD
             res_id: resId,
-=======
->>>>>>> bbd3ebfb6dd0fc237294af2c7c5204ba2953c777
             quest,
             ...params,
         };
@@ -175,8 +172,4 @@ export class QuestPlugin extends Plugin {
 
 }
 
-<<<<<<< HEAD
 MAIN_PLUGINS.push(QuestPlugin);
-=======
-MAIN_PLUGINS.push(QuestPlugin);
->>>>>>> bbd3ebfb6dd0fc237294af2c7c5204ba2953c777

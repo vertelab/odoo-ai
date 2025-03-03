@@ -560,6 +560,7 @@ class AIAgent(models.Model):
         self.message_post(body=_(f"Could not confirm agent: {response=}"), message_type="notification")
 
         
+
     def log_message(self, body, is_error=False):
         if is_error:
             self.status = "error"

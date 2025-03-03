@@ -19,10 +19,7 @@ export class QuestDialog extends Component {
         close: Function,
         insert: Function,
         res_model: false,
-<<<<<<< HEAD
         res_id: false,
-=======
->>>>>>> bbd3ebfb6dd0fc237294af2c7c5204ba2953c777
         quest: false
     };
 

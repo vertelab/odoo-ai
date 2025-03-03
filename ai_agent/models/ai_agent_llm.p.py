@@ -13,7 +13,6 @@ from odoo.exceptions import UserError, AccessError, ValidationError
 from pydantic import SecretStr
 from random import randint
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
-
 _logger = logging.getLogger(__name__)
 
 LICENCES = [
@@ -285,6 +284,7 @@ class AIAgentLLM(models.Model):
                 return 
         self.message_post(body=_(f"Could not confirm llm: {response=}"), message_type="notification")
             
+
     def get_agent_executor(self, prompt, tools, temperature=1.0, verbose=False, callbacks=None):
         return AgentExecutor(
             agent=create_openai_tools_agent(eval(self.get_llm(temperature=temperature, verbose=verbose)), tools,

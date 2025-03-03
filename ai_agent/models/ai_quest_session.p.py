@@ -43,6 +43,7 @@ class AISessionObject(models.Model):
                 record.display_name = False
 
 
+
 class AIQuestSession(models.Model):
     _name = 'ai.quest.session'
     _description = 'AI Quest Session'
