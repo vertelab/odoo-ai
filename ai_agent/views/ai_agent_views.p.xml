@@ -292,7 +292,7 @@
             <field name="view_mode">kanban,tree,form,calendar</field>
             <!-- #endif -->
         </record>
-        <menuitem id="ai_agent.menu_ai_agent_menu_menu" parent="ai_agent.menu_ai_agent_menu" name="Agents" action="action_ai_agent" />
-        <menuitem id="ai_agent.menu_ai_agent_configuration" parent="ai_agent.menu_ai_agent_root" name="Configuration" sequence="99" />
+        <menuitem id="ai_agent.menu_ai_agent_menu_menu" parent="ai_agent.menu_ai_agent_menu" groups="ai_agent.group_ai_agent_manager" name="Agents" action="action_ai_agent" />
+        <menuitem id="ai_agent.menu_ai_agent_configuration" parent="ai_agent.menu_ai_agent_root" name="Configuration" groups="group_ai_agent_supervisor" sequence="99" />
     </data>
 </odoo>

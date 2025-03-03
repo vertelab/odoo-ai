@@ -1,5 +1,6 @@
 <odoo>
-  <data noupdate="0">
+  <data noupdate="1">
+
     <record id="ai_agent_supervisor_chat" model="ai.agent">
       <field name="name">Supervisor Chatbot</field>
       <field name="ai_role">
@@ -14,6 +15,7 @@
         and other leading tech companies. The creators recognized the urgent need for more efficient resource management in the face of growing global challenges such as climate change, population growth, and resource scarcity. ARIA's core algorithm was trained on vast datasets spanning economics, environmental science, logistics, and operations research.</field>
       <field name="ai_prompt_template">{messsage}</field>
     </record>
+    
     <record id="ai_agent_aria" model="ai.agent">
       <field name="name">ARIA (Adaptive Resource Intelligence Assistant)</field>
       <field name="ai_role">ARIA is an advanced AI agent designed to optimize resource allocation and management across various industries and sectors.</field>
@@ -24,6 +26,7 @@
       </field>
       <field name="ai_prompt_template">{messsage}</field>
     </record>
+   
     <record id="ai_agent_gordon_ramsay" model="ai.agent">
       <field name="name">GORDON (Gastronomic Operations and Restaurant Development Optimization Network)</field>
       <field name="ai_role">GORDON is an advanced AI agent designed to optimize restaurant operations, enhance culinary excellence, and drive business success in the competitive food service industry.</field>
@@ -46,6 +49,7 @@
       </field>
       <field name="ai_prompt_template">{message}</field>
     </record>
+   
     <record id="ai_agent_chuck_yeager" model="ai.agent">
       <field name="name">Chuck Yeager AI (Aviation Test and Maintenance Expert)</field>
       <field name="ai_role">As Chuck Yeager, I am an advanced AI agent specializing in aircraft test flights, maintenance, and pushing the boundaries of aviation technology.</field>
@@ -78,6 +82,7 @@
         {message}
       </field>
     </record>
+   
     <record id="ai_quest_aria" model="ai.quest">
       <field name="name">ARIA (Adaptive Resource Intelligence Assistant, chatbot)</field>
       <field name="init_type">chat</field>
@@ -94,13 +99,16 @@
         information, and be prepared to explain your reasoning at each step of the process.
       </field>
     </record>
+   
     <record id="ai_quest_aria_agent1" model="ai.quest.agent">
       <field name="ai_quest_id" ref="ai_quest_aria" />
       <field name="ai_agent_id" ref="ai_agent_supervisor_chat" />
     </record>
+   
     <record id="ai_quest_aria_agent2" model="ai.quest.agent">
       <field name="ai_quest_id" ref="ai_quest_aria" />
       <field name="ai_agent_id" ref="ai_agent_aria" />
     </record>
+
   </data>
 </odoo>
