@@ -689,7 +689,6 @@ class AIQuest(models.Model):
             if not ai_messages:
                 _logger.error(f"OBS: Quest does not exist: not ai_messages {self=} {quest=} {prompt=} {result=}")
                 raise UserError(_("OBS: An error occurred, you should contact administrator to look into the quest"))
-
             if ai_quest.debug:
                 answer = markdown.markdown(ai_messages.content)
             else:

@@ -7,10 +7,13 @@ import re
 import traceback
 import unidecode
 import warnings
+import math
 
+from datetime import date, timedelta
 from IPython.display import Image, display
 from langchain import hub
-from langchain.agents import Tool, AgentExecutor, LLMSingleActionAgent, AgentOutputParser, create_tool_calling_agent, create_xml_agent,create_json_chat_agent
+from langchain.agents import Tool, AgentExecutor, LLMSingleActionAgent, AgentOutputParser, create_tool_calling_agent, \
+    create_xml_agent, create_json_chat_agent
 from langchain.prompts import ChatPromptTemplate
 from langchain.schema import AgentAction, AgentFinish
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
@@ -29,7 +32,7 @@ from random import randint
 from secrets import choice
 
 from typing_extensions import NotRequired, TypedDict
-from typing import Annotated, List, Dict, Sequence, Union, Any
+from typing import Optional, Annotated, List, Dict, Sequence, Union, Any
 # Odoo 18 okt 2024  Ubuntu 24.04 Python 3.12 (NotRequired 3.11)
 # Odoo 17 2023 Ubuntu 22.04  Python 3.10
 # Odoo 16 2022 Ubuntu 22.04  Python 3.10
@@ -39,8 +42,8 @@ from typing import Annotated, List, Dict, Sequence, Union, Any
 
 from odoo.addons.base.models.avatar_mixin import get_hsl_from_seed
 
-_logger = logging.getLogger(__name__)
 
+_logger = logging.getLogger(__name__)
 
 SUPERVISOR = """You are a supervisor coordinating between workers: {members}.
 Based on the request, determine which worker should handle the next step.
@@ -56,7 +59,6 @@ Instructions:
 4. Do not mention that you have done tool calls, thats too technical 
 4. {use_lang}
 """
-
 
 avatar_channel = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 530.06 530.06">
 <circle cx="265.03" cy="265.03" r="265.03" fill="#875a7b"/>
@@ -97,38 +99,36 @@ avatar_server_action = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 5
 <path d="M212.02 238.43h105.62v26.41H212.02zM212.02 291.44h105.62v26.41H212.02z" fill="#ffffff"/>
 <circle cx="345.04" cy="265.03" r="26.41" fill="#ffffff"/>
 </svg>'''
+powerbox = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 530.06 530.06">
+<circle cx="265.03" cy="265.03" r="265.03" fill="#875a7b"/>
+<path d="M371.04 159.02H159.02c-14.58 0-26.41 11.83-26.41 26.41v159.02c0 14.58 11.83 26.41 26.41 26.41h212.02c14.58 0 26.41-11.83 26.41-26.41V185.43c0-14.58-11.83-26.41-26.41-26.41zm0 185.43H159.02V185.43h212.02v159.02z" fill="#ffffff"/>
+<path d="M212.02 238.43h105.62v26.41H212.02zM212.02 291.44h105.62v26.41H212.02z" fill="#ffffff"/>
+<circle cx="345.04" cy="265.03" r="26.41" fill="#ffffff"/>
+</svg>'''
+
 
 class AIQuestAgent(models.Model):
     _name = 'ai.quest.agent'
     _description = 'AI Quest Agent'
-    _order="sequence asc"
+    _order = "sequence asc"
 
     ai_quest_id = fields.Many2one(comodel_name='ai.quest', string="", help="")
     ai_agent_id = fields.Many2one(
-        comodel_name='ai.agent', string="Agent", help="",required=False)
+        comodel_name='ai.agent', string="Agent", help="", required=False)
     ai_agent_status = fields.Selection(selection=[
-                                ("draft", _("Draft")), 
-                                ("active", _("Active")), ("done", _("Done")), 
-                                ("error", _("Error"))], default="draft", related='ai_agent_id.status')
+        ("draft", "Draft"), ("active", "Active"), ("done", "Done"), ("error", "Error")], default="draft", related='ai_agent_id.status')
     ai_agent_llm_id = fields.Many2one(comodel_name="ai.agent.llm", string="LLM", help="Choose Large Language Model",
                                       domain="[('status','=','confirmed')]", related='ai_agent_id.ai_agent_llm_id')
     ai_llm_status = fields.Selection(
-    selection=[("not_confirmed", "Not Confirmed"), ("confirmed", "Confirmed"), ("error", "Error")],
-    default="not_confirmed", related='ai_agent_id.ai_agent_llm_id.status')
-    object_id = fields.Reference(string='Object',related="ai_agent_id.object_id")
+        selection=[("not_confirmed", "Not Confirmed"), ("confirmed", "Confirmed"), ("error", "Error")],
+        default="not_confirmed", related='ai_agent_id.ai_agent_llm_id.status')
+    object_id = fields.Reference(string='Object', related="ai_agent_id.object_id")
     sequence = fields.Integer(string='Sequence')
-
-    @api.model
-    def create(self, vals):
-        res = super(AIQuestAgent, self).create(vals)
-        if res.ai_quest_id:
-            res.ai_quest_id._compute_graph_image()
-        return res
 
     def write(self, vals):
         res = super(AIQuestAgent, self).write(vals)
         for record in self:
-            if record.ai_quest_id:
+            if record.ai_agent_id and record.ai_quest_id:
                 record.ai_quest_id._compute_graph_image()
         return res
 
@@ -138,8 +138,6 @@ class AIQuestAgent(models.Model):
         for quest in quests:
             quest._compute_graph_image()
         return res
-
-
 
 
 # https://readmedium.com/langgraph-made-easy-a-beginners-guide-part-2-196e8b179119
@@ -171,7 +169,8 @@ INIT_TYPES = [
     ('chat', 'Chat with User'),
     ('channel', 'Chat with Channel'),
     ('cron', 'Scheduled Action'),
-    ('server-action', 'Server Action')
+    ('server-action', 'Server Action'),
+    ('powerbox', 'Powerbox'),
 ]
 
 
@@ -187,13 +186,14 @@ class AIQuest(models.Model):
     alias_id = fields.Many2one(comodel_name='mail.alias', string='Alias', ondelete="restrict", required=True,
                                help="The email address associated with this channel. New emails received will "
                                     "automatically create new leads assigned to the channel.")
-    alias_user_id = fields.Many2one(comodel_name='res.users', related='alias_id.alias_user_id', readonly=False, inherited=True)
+    alias_user_id = fields.Many2one(comodel_name='res.users', related='alias_id.alias_user_id', readonly=False,
+                                    inherited=True)
 
     avatar_128 = fields.Image("Avatar", max_width=128, max_height=128, compute='_compute_avatar_128')
 
     channel_id = fields.Many2one(comodel_name='mail.channel', string="Channel", help="")
     real_channel_id = fields.Many2one(comodel_name='mail.channel', string="Channel",
-                                    help="This is the channel chat-method get")
+                                      help="This is the channel chat-method get")
 
     chat_history_limit = fields.Integer(string='Chat History Limit', default=10,
                                         help='Limit the chat history to this number of messages')
@@ -229,8 +229,9 @@ class AIQuest(models.Model):
     session_line_ids = fields.One2many(comodel_name="ai.quest.session.line", inverse_name="ai_quest_id")
     session_object_count = fields.Integer(compute="compute_session_object_count")
     session_object_ids = fields.One2many(comodel_name="ai.session.object", inverse_name="ai_quest_id")
+    sub_description = fields.Char(string="Sub Description")
     status = fields.Selection(
-        selection=[("draft", _("Draft")), ("active", _("Active")), ("done", _("Done")), ("error", _("Error"))],
+        selection=[("draft", "Draft"), ("active", "Active"), ("done", "Done"), ("error", "Error")],
         default="draft")
     tag_ids = fields.Many2many(comodel_name='product.tag', string='Tags')
     use_chat_history = fields.Boolean(string='Use Chat History', default=True, help='Add chat history to the context')
@@ -243,14 +244,30 @@ class AIQuest(models.Model):
     use_time_context = fields.Boolean(string='Use Time Context', default=True,
                                       help='Inform the LLM of current time, date')
     user_id = fields.Many2one(comodel_name='res.users', string="Owner", help="")
-    is_supervisor = fields.Boolean(string='Is Supervisor', help="This is a ReAct type of quest using a supervisor coordinating agents")
-    supervisor_prompt = fields.Text(string="Supervisor Prompt",default=SUPERVISOR)
-    supervisor_llm_id = fields.Many2one(comodel_name="ai.agent.llm", string="LLM", help="Choose Large Language Model for the supervisor",
-                                          domain="[('status','=','confirmed')]")
-    supervisor_temperature = fields.Float(string='Temperature', default=0.7,
-                                      help="Temperature controls the randomness and creativity of the model's output, "
-                                           "<1.0 more predictable and consistent >1.0 more diverse and creative responses")
+    is_supervisor = fields.Boolean(string='Is Supervisor',
+                                   help="This is a ReAct type of quest using a supervisor coordinating agents")
+    supervisor_prompt = fields.Text(string="Supervisor Prompt", default=SUPERVISOR)
+    supervisor_llm_id = fields.Many2one(comodel_name="ai.agent.llm", string="LLM",
+                                        help="Choose Large Language Model for the supervisor",
+                                        domain="[('status','=','confirmed')]")
+    supervisor_temperature = fields.Float(
+        string='Temperature', default=0.7,
+        help="Temperature controls the randomness and creativity of the model's output, "
+             "<1.0 more predictable and consistent >1.0 more diverse and creative responses"
+    )
+    company_id = fields.Many2one('res.company', required=True, default=lambda self: self.env.company)
 
+    @api.model
+    def get_xmlrpc_quests(self):
+        quests = 0
+        quest_ids = self.search([])
+        quests += len(quest_ids)
+        for quest_id in quest_ids:
+            if add := math.floor(quest_id.session_line_count / 1000000):
+                quests += add
+        _logger.error(f"{quests=}")
+        return quests
+            
     @api.depends('is_supervisor',
                  'ai_agent_ids.sequence',
                  'ai_agent_ids.ai_agent_id',
@@ -259,26 +276,24 @@ class AIQuest(models.Model):
                  'ai_agent_ids.ai_agent_id.ai_memory_ids.ai_memory_id')
     def _compute_graph_image(self):
         for rec in self:
-            if rec.ai_agent_ids:
+            real_ai_agent_ids = list(set(filter(lambda ai_agent_id: ai_agent_id.ai_agent_id.id, rec.ai_agent_ids)))
+            if real_ai_agent_ids:
                 try:
-                    graph = rec.build(session=self.env['ai.quest.session'].quest_init(rec),mermaid=True)
+                    graph = rec.build(session=self.env['ai.quest.session'].quest_init(rec), mermaid=True)
                     image_object = graph.get_graph().draw_mermaid_png()
                     rec.graph_image = base64.b64encode(image_object).decode('utf-8')
                 except Exception as e:
-                    # rec.log_message(f"Error building chain: {str(e)}", is_error=True)
                     raise UserError(f"Error building chain: {str(e)}\n{traceback.format_exc()}")
             else:
                 rec.graph_image = False
 
-    graph_image = fields.Image("Graph", compute=_compute_graph_image, compute_sudo=True,store=True)
+    graph_image = fields.Image("Graph", compute=_compute_graph_image, compute_sudo=True, store=True)
 
-  
     @api.model
     def _generate_random_token(self):
         return ''.join(choice('abcdefghijkmnopqrstuvwxyzABCDEFGHIJKLMNPQRSTUVWXYZ23456789') for _i in range(10))
 
     uuid = fields.Char('UUID', size=50, default=_generate_random_token, copy=False)
-
 
     @api.depends('init_type', 'image_128', 'uuid')
     def _compute_avatar_128(self):
@@ -293,10 +308,12 @@ class AIQuest(models.Model):
             'channel': avatar_channel,
             'cron': avatar_cron,
             'server-action': avatar_cron,
+            'powerbox': powerbox,
         }[self.init_type]
         bgcolor = get_hsl_from_seed(self.uuid)
         avatar = avatar.replace('fill="#875a7b"', f'fill="{bgcolor}"')
         return base64.b64encode(avatar.encode())
+
 
     @api.depends('session_line_ids')
     def compute_llm_count(self):
@@ -375,7 +392,11 @@ class AIQuest(models.Model):
     @api.depends("session_line_ids")
     def compute_session_line_count(self):
         for record in self:
-            record.session_line_count = sum([l.token_sys or 0 for l in record.session_line_ids])
+            #record.session_line_count = sum([l.token_sys or 0 for l in record.session_line_ids])
+            start_date = date.today() - timedelta(days=date.today().day - 1)
+            end_date = date(year=date.today().year, month=date.today().month + 1, day=1) - timedelta(days=1)
+            filterd_line_ids = list(filter(lambda session_line_id: session_line_id.datetime.date() >= start_date and session_line_id.datetime.date() <= end_date, record.session_line_ids))
+            record.session_line_count = sum([f.token_sys or 0 for f in filterd_line_ids])
 
     @api.depends("session_ids")
     def compute_session_count(self):
@@ -489,25 +510,21 @@ class AIQuest(models.Model):
                 })
         return eid
 
-    def Xlog_message(self, body, is_error=False):
-        for q in self:
-            if is_error:
-                q.status = "error"
-            q.last_run = fields.Datetime.now()
-            q.sudo().message_post(body=f"{body} | {self.last_run}", message_type="notification")
-            
-            
     def log_message(self, body, is_error=False):
-        self.env['mail.thread'].sudo().message_notify(
-            body=f"{body} | {self.last_run}",
-            subject="Log Message" if not is_error else "Error Log",
-            partner_ids=[self.env.user.partner_id.id],
-            model=self._name,
-            res_id=self.id,
-            message_type='notification'
-        )
-
-            
+        if self.id:  # Ensure the record exists and has an ID
+            self.message_post(
+                body=body,
+                subtype_xmlid='mail.mt_note',  # Log note subtype
+                message_type='comment',
+            )
+        else:
+            # Use message_notify for transient models or notifications
+            self.env['mail.thread'].sudo().message_notify(
+                partner_ids=[self.env.user.partner_id.id],
+                subject="Log Message" if not is_error else "Error Log",
+                body=body,
+                message_type='notification',
+            )
 
     def mail_test_wizard(self):
         if self._check_quest_error():
@@ -515,6 +532,9 @@ class AIQuest(models.Model):
         action = self.env.ref("ai_agent.action_ai_quest_test_mail_wizard").read()[0]
         action["context"] = {"default_ai_quest_id": self.id}
         return action
+        
+    def start(self):
+        pass
 
     # ------------------------------------------------------------
     # Init type API
@@ -543,9 +563,6 @@ class AIQuest(models.Model):
             return _('Missing Description on the quest')
         return False
 
-    def start(self):
-        pass
-
     def _server_action_values(self, **kwargs):
         return kwargs
 
@@ -556,7 +573,6 @@ class AIQuest(models.Model):
             vals = self._server_action_values(records=records)
             res = self.run(**vals)
             self.log_message(f'server-action {res}')
-
 
     def _cron_values(self, **kwargs):
         return kwargs
@@ -613,6 +629,29 @@ class AIQuest(models.Model):
             res = self.run(**vals)
             return res
 
+    def run_powerbox_quest(self, quest, prompt):
+        ai_quest = self.env['ai.quest'].browse(quest.get('id')).exists()
+        if not ai_quest:
+            _logger.error(f"OBS: Quest does not exist: not ai_quest {self=} {quest=} {prompt=}")
+            raise UserError(_("OBS: Quest does not exist, you should contact administrator to look into the quest"))
+        record = False # Instansiate record here
+        result = ai_quest.run(prompt=prompt,record=record)
+        if result:
+            answer = ''
+            ai_messages = self._get_last_ai_message(result.get('result', {}).get('messages', False))
+            if not ai_messages:
+                _logger.error(f"OBS: Quest does not exist: not ai_messages {self=} {quest=} {prompt=} {result=}")
+                raise UserError(_("OBS: An error occurred, you should contact administrator to look into the quest"))
+            if messages and last_ai_message:
+                if ai_quest.debug:
+                    _logger.error(f"{last_ai_message=}")
+                    answer = re.sub(r'<think>.*?</think>', '', markdown.markdown(last_ai_message.content), flags=re.DOTALL)
+                else:
+                    answer = markdown.markdown(last_ai_message.content)
+            return answer
+        _logger.error(f"OBS: Quest does not exist: no result {self=} {ai_quest=} {quest=} {prompt=} {result=}")
+        raise UserError(_("OBS: An error occurred, you should contact administrator to look into the quest"))
+
     # ------------------------------------------------------------
     # Python code helpers
     # ------------------------------------------------------------
@@ -620,7 +659,7 @@ class AIQuest(models.Model):
     @api.model
     def is_ai_message(self, var):
         return isinstance(var, AIMessage)
- 
+
     @api.model
     def get_last_ai_message_content(self, response):
         if response.get('messages', False):
@@ -736,7 +775,6 @@ class AIQuest(models.Model):
             'records': eval_context.get('records')
         }
 
-
         if local_dict.get('result'):
             messages = local_dict.get('result', {}).get('messages', [])
             result = self._get_last_ai_message(messages)
@@ -749,10 +787,11 @@ class AIQuest(models.Model):
         if not isinstance(result, list):
             result = [result]
 
+        _logger.error(f"{result=}")
+
         session.store_session_data(result=result, objects=objects)
 
         return local_dict
-
 
     # ------------------------------------------------------------
     # ORM
@@ -814,12 +853,12 @@ class AIQuest(models.Model):
             res.write({"server_action_id": new_server_action.id})
         return res
 
-
     # ------------------------------------------------------------
     # LangGraph 
     # ------------------------------------------------------------
 
-    def build(self, **kwargs):
+    def build(self, mermaid=True,**kwargs):
+        kwargs.update({"mermaid": mermaid})
         if self.is_supervisor:
             _logger.info(f"Building graph with supervisor ")
             return self.build_supervisor(**kwargs)
@@ -829,18 +868,20 @@ class AIQuest(models.Model):
 
     def build_supervisor(self, **kwargs):
         """Build a multi-agent workflow graph with supervisor."""
- 
+
         if not self.ai_agent_ids:
             raise ValueError("No agents provided")
 
         agents = [line.ai_agent_id for line in self.ai_agent_ids]
-       
+
         # Get member names
-        members = [a.name for a in agents]
+        members = [a.get_agent_name(i,**kwargs) for i, a in enumerate(agents)]
         _logger.info(f"Building graph with supervisor and {len(members)} workers: {members}")
-        
+
+        _logger.error(f"{kwargs.get('mermaid')=}")
+
         global session
-        session=kwargs.get('session',False)
+        session = kwargs.get('session', False)
 
         if session == False:
             raise UserError(_("No session added to build_graph method"))
@@ -851,22 +892,23 @@ class AIQuest(models.Model):
 
             # Add supervisor
             _logger.info(f"Adding supervisor: with {members=}")
-            graph_builder.add_node(self.get_agent_name(**kwargs), self.env['ai.agent'].create_supervisor(self,members, **kwargs))
+            graph_builder.add_node(self.get_agent_name(**kwargs),
+                                   self.env['ai.agent'].create_supervisor(self, members, **kwargs))
 
             # Add worker nodes
             for i, agent in enumerate(agents):
                 # ~ graph_builder.add_node(agent.name, agent.create_node(session=session))
-                graph_builder.add_node(agent.get_agent_name(i,**kwargs), agent.create_node(session=session))
+                graph_builder.add_node(agent.get_agent_name(i, **kwargs), agent.create_node(session=session))
 
             # Add edges from workers to supervisor
             # ~ for member in [a.name for a in agents]:
-            for member in [a.get_agent_name(i,**kwargs) for i,a in enumerate(agents)]:
+            for member in [a.get_agent_name(i, **kwargs) for i, a in enumerate(agents)]:
                 _logger.info(f"Adding edge: {member} -> Supervisor")
-                graph_builder.add_edge(member,self.get_agent_name(**kwargs))
+                graph_builder.add_edge(member, self.get_agent_name(**kwargs))
 
             # Add conditional routing
             # ~ conditional_map = {k: k for k in [a.name for a in agents]}
-            conditional_map = {k: k for k in [a.get_agent_name(i,**kwargs) for i,a in enumerate(agents)]}
+            conditional_map = {k: k for k in [a.get_agent_name(i, **kwargs) for i, a in enumerate(agents)]}
             conditional_map["FINISH"] = END
 
             _logger.info("Adding conditional edges with routes: " +
@@ -883,7 +925,7 @@ class AIQuest(models.Model):
 
             # Compile and return
             _logger.info("Compiling graph")
-            
+
             graph = graph_builder.compile()
             input_channels = graph.input_channels
             if self.debug:
@@ -895,52 +937,50 @@ class AIQuest(models.Model):
                     self.log_message(f"Model {graph.model.config=}")
                     if 'tools' in model_config:
                         _logger.debug(f"Tools {graph.model.config['tools']=}")
-                        self.log_message(f"Tools {graph.model.config['tools']=}")     
-                
+                        self.log_message(f"Tools {graph.model.config['tools']=}")
+
             return graph
 
         except Exception as e:
             self.log_message(f"Error building graph: {str(e)}", is_error=True)
             _logger.error(f"Error building graph: {str(e)}")
-            
-            
+
             raise
-            
+
     # message = html2plaintext(message.body)
     # response = self.build_graph(agents).invoke({"messages": [HumanMessage(content=message)]})
     # result = response['messages'][-1].content
-    
+
     # https://www.perplexity.ai/search/i-langgraph-vill-jag-komma-at-fCisIUB7RjaKwPovE_fyZg
-    
+
     def build_chain(self, **kwargs):
         """Build a multi-agent workflow chain."""
         if self.debug:
             _logger.debug(f"building chain: {str(kwargs)}")
- 
+
         if not self.ai_agent_ids:
             raise ValueError("No agents provided")
 
         agents = [agent for agent in self.ai_agent_ids.sorted(key=lambda s: s.sequence).mapped('ai_agent_id') if agent]
-        session = kwargs.get('session',False)
+        session = kwargs.get('session', False)
 
         def initial_node(state: AgentState) -> AgentState:
             # ~ state = ConfigDict(arbitrary_types_allowed=True)
             # ~ if self.debug:
             session.add_message(f"Agent INITIAL Initial state: {state=}")
             return {
-                "messages": [{"role": "user", "content": kwargs.get('topic',kwargs.get('message',''))}],
+                "messages": [{"role": "user", "content": kwargs.get('topic', kwargs.get('message', ''))}],
                 'quest': self,
-                'session': kwargs.get('session',False),
-                'topic': kwargs.get('topic',''),
-                'scratchpad':[],
+                'session': kwargs.get('session', False),
+                'topic': kwargs.get('topic', ''),
+                'scratchpad': [],
                 'next': "agent_0",
                 'count': 1,
                 'current_agent': 'initial_node',
                 'sequence_position': 0,
-                'last_position': len(agents),    
+                'last_position': len(agents),
             }
 
-        
         try:
             # Create graph
             AgentState.model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -948,46 +988,45 @@ class AIQuest(models.Model):
             workflow.add_node("initial", initial_node)
             workflow.add_edge(START, "initial")
             workflow.set_entry_point("initial")
-            
+
             for i, agent in enumerate(agents):
                 session.add_message(f"Add Node Agent agent_{i}")
                 # ~ workflow.add_node(f"agent_{i}", 
-                                 # ~ lambda state, agent=agent, i=i: {
-                                     # ~ **agent.create_sequence_node(
-                                         # ~ debug=self.debug,
-                                         # ~ current_agent=agent.name,
-                                         # ~ sequence_position=i,
-                                         # ~ **kwargs
-                                     # ~ )(state),
-                                     # ~ "next":  f"agent_{i+1}" if i < len(agents) else END,
-                                     # ~ "current_node": f"agent_{i}",
-                                     # ~ "sequence_position": i
-                                 # ~ })
-                workflow.add_node(agent.get_agent_name(i,**kwargs), agent.create_sequence_node(
-                                                            debug=self.debug,
-                                                            current_agent=agent.name,
-                                                            sequence_position=i,
-                                                            **kwargs))
-            
+                # ~ lambda state, agent=agent, i=i: {
+                # ~ **agent.create_sequence_node(
+                # ~ debug=self.debug,
+                # ~ current_agent=agent.name,
+                # ~ sequence_position=i,
+                # ~ **kwargs
+                # ~ )(state),
+                # ~ "next":  f"agent_{i+1}" if i < len(agents) else END,
+                # ~ "current_node": f"agent_{i}",
+                # ~ "sequence_position": i
+                # ~ })
+                workflow.add_node(agent.get_agent_name(i, **kwargs), agent.create_sequence_node(
+                    debug=self.debug,
+                    current_agent=agent.name,
+                    sequence_position=i,
+                    **kwargs))
+
                 # ~ workflow.add_node(f"agent_{i}", agent.create_node(
-                                                            # ~ debug=self.debug,
-                                                            # ~ current_agent=agent.name,
-                                                            # ~ sequence_position=i,
-                                                            # ~ **kwargs))
-            
-    
-            workflow.add_edge(f"initial", agents[0].get_agent_name(0,**kwargs))
+                # ~ debug=self.debug,
+                # ~ current_agent=agent.name,
+                # ~ sequence_position=i,
+                # ~ **kwargs))
+
+            workflow.add_edge(f"initial", agents[0].get_agent_name(0, **kwargs))
             for i, agent in enumerate(agents[:-1]):
-                workflow.add_edge(agents[i].get_agent_name(i,**kwargs), agents[i+1].get_agent_name(i+1,**kwargs))            
-            workflow.add_edge(agents[-1].get_agent_name(len(agents),**kwargs),END)
+                workflow.add_edge(agents[i].get_agent_name(i, **kwargs), agents[i + 1].get_agent_name(i + 1, **kwargs))
+            workflow.add_edge(agents[-1].get_agent_name(len(agents), **kwargs), END)
             graph = workflow.compile()
             input_channels = graph.input_channels
-           
+
         except Exception as e:
             self.log_message(f"Error building chain: {str(e)}\n{traceback.format_exc()}", is_error=True)
             _logger.error(f"Error building chain: {str(e)}\n{traceback.format_exc()}")
             raise
-            
+
         if self.debug:
             # ~ self.log_message(f"{json.dumps(graph.get_graph().to_json(), indent=2)}\n{input_channels=}")
             # ~ self.log_message(f"get graph: {graph.get_graph()}\n")
@@ -1001,9 +1040,9 @@ class AIQuest(models.Model):
         """Build a multi-agent workflow graph with supervisor."""
         raise UserError(('quest.build_graph() is outdated, use quest.build() instead'))
 
-    def extract_json(self,agent,session,message):
+    def extract_json(self, agent, session, message):
         # Find JSON-like content within triple backticks
-        message = message.replace('\n','')
+        message = message.replace('\n', '').replace("'", '"')
         json_match = re.search(r'``````', message, re.DOTALL)
         if json_match:
             json_string = json_match.group(1)
@@ -1018,27 +1057,34 @@ class AIQuest(models.Model):
             except json.JSONDecodeError:
                 session.add_message(f"{agent} Error: Invalid JSON format\n{message}")
             try:
-                return json.loads(f"json \n{message}\n")
+                return json.loads(message)
             except json.JSONDecodeError:
                 session.add_message(f"{agent} Error: Invalid JSON tried updated '''json {message}'''")
-                
-    def get_agent_name(self,**kwargs):
+
+    def get_agent_name(self, **kwargs):
         if kwargs.get('mermaid'):
-            llm = re.sub(r'[\'()\[\]{}:]','_',self.supervisor_llm_id.name).replace(' ','') if self.supervisor_llm_id else ''
-            supervisor=f"Supervisor\n<small>fa&colon;fa-cog {llm}</small>"
-            # ~ _logger.info(f"SUpervisor ------------------>{supervisor}")            
+            llm = re.sub(
+                r'[\'()\[\]{}:]', '_', self.supervisor_llm_id.name
+            ).replace(
+                ' ',
+                ''
+            ) if self.supervisor_llm_id and self.supervisor_llm_id.name else ''
+            supervisor = f"Supervisor\n<small>fa&colon;fa-cog {llm}</small>"
+            # ~ _logger.info(f"Supervisor ------------------>{supervisor}")
             return supervisor
         else:
             return "Supervisor"
 
+
+
 class AgentState(TypedDict):
     messages: Annotated[Sequence[BaseMessage], operator.add]
-    session: SkipValidation[NotRequired[AIQuestSession]]
-    quest: SkipValidation[NotRequired[AIQuest]]
+    session: Optional[SkipValidation[AIQuestSession]] = None
+    quest: Optional[SkipValidation[AIQuest]] = None
     topic: str
     scratchpad: Annotated[List[str], operator.add]
     next: str
-    token: SkipValidation[NotRequired[int]]
+    token: Optional[int] = None
     # ~ count: SkipValidation[NotRequired[Step(lambda count: count + 1)]]
     current_agent: str
     sequence_position: int

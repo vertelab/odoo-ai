@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-  <data>
+  <data noupdate="1">
     <record id="groq_product_template" model="product.template">
       <field name="name">Groq</field>
       <field name="is_llm">True</field>
