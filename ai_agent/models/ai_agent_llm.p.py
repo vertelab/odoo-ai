@@ -13,9 +13,6 @@ from odoo.exceptions import UserError, AccessError, ValidationError
 from pydantic import SecretStr
 from random import randint
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
-from langchain_huggingface import HuggingFaceEmbeddings
-from pydantic import SecretStr
-
 _logger = logging.getLogger(__name__)
 
 LICENCES = [
