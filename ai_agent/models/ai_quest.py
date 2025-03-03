@@ -194,7 +194,7 @@ class AIQuest(models.Model):
     chat_history_limit = fields.Integer(string='Chat History Limit', default=10,
                                         help='Limit the chat history to this number of messages')
     chat_user_id = fields.Many2one(comodel_name='res.users', string="Chat User", help="")
-    code = fields.Text(string='Python Code', groups='base.group_system', default=DEFAULT_PYTHON_CODE,
+    code = fields.Text(string='Python Code', default=DEFAULT_PYTHON_CODE,
                        help="Write Python code that the action will execute. Some variables are available for use; "
                             "help about python expression is given in the help tab.")
     color = fields.Integer(default=lambda self: randint(1, 11))
@@ -240,6 +240,7 @@ class AIQuest(models.Model):
     use_time_context = fields.Boolean(string='Use Time Context', default=True,
                                       help='Inform the LLM of current time, date')
     user_id = fields.Many2one(comodel_name='res.users', string="Owner", help="")
+    user_in_group = fields.Boolean(compute='_compute_user_in_group')
     is_supervisor = fields.Boolean(string='Is Supervisor',
                                    help="This is a ReAct type of quest using a supervisor coordinating agents")
     supervisor_prompt = fields.Text(string="Supervisor Prompt", default=SUPERVISOR)
@@ -310,6 +311,10 @@ class AIQuest(models.Model):
         avatar = avatar.replace('fill="#875a7b"', f'fill="{bgcolor}"')
         return base64.b64encode(avatar.encode())
 
+
+    def _compute_user_in_group(self):
+        for record in self:
+            record.user_in_group = self.env.user.has_group('ai_agent.group_ai_agent_manager')
 
     @api.depends('session_line_ids')
     def compute_llm_count(self):
@@ -838,6 +843,8 @@ class AIQuest(models.Model):
         _logger.error(f"{vals_list=}")
         new_server_action = False
         for record in vals_list:
+            if not record.get("user_id"):
+                record.update({"user_id": self.env.user.id})
             if record.get("model_id", False):
                 new_server_action = self.server_action_id = self.server_action_id.create({
                     'name': record["name"],
