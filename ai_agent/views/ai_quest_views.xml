@@ -5,21 +5,12 @@
       <field name="name">ai.quest.list</field>
       <field name="model">ai.quest</field>
       <field name="arch" type="xml">
-        <!-- #if VERSION >= "18.0" -->
-        <list string="AI Quest">
-          <field name="name" />
-          <field name="ai_type" />
-          <field name="status" />
-          <field name="company_id" />
-        </list>
-        <!-- #elif VERSION <= "17.0" -->
         <tree string="AI Quest">
           <field name="name" />
           <field name="ai_type" />
           <field name="status" />
           <field name="company_id" />
         </tree>
-        <!-- #endif -->
       </field>
     </record>
 
@@ -31,9 +22,7 @@
           <field name="name" />
           <field name="description" />
           <field name="sub_description" />
-          <!-- #if VERSION >= "16.0" -->
           <field name="tag_ids" />
-          <!-- #endif -->
           <filter string="Draft" name="draft" domain="[('status', '=', 'draft')]" />
           <filter string="Active" name="active" domain="[('status', '=', 'active')]" />
           <filter string="Done" name="done" domain="[('status', '=', 'done')]" />
@@ -58,27 +47,16 @@
           <header>
             <field name="status" widget="statusbar" statusbar_visible="active,done" options="{'clickable': '1', 'fold_field': 'fold'}" />
             <!-- <button name="start" type="object" string="Start" class="btn-primary" /> -->
-            <!-- #if VERSION >= "17.0" -->
             <button name="mail_test_wizard" type="object" string="Mail Test" class="btn-primary" invisible="init_type != 'mail'" />
-            <!-- #elif VERSION <= "16.0" -->
-            <button name="mail_test_wizard" type="object" string="Mail Test" class="btn-primary" attrs="{'invisible': [('init_type', '!=', 'mail')]}" />
-            <!-- #endif -->
           </header>
           <sheet string="AI Quest">
             <div name="button_box" id="button_box" class="oe_button_box">
-              <field name="user_in_group" invisible="1"/>
-              <button name="action_get_llms" class="oe_stat_button" type="object" icon="fa-database">
+              <button name="action_get_llms" class="oe_stat_button " type="object" icon="fa-database">
                 <field string="LLMs" name="llm_count" widget="statinfo" />
               </button>
-              <!-- #if VERSION >= "17.0" -->
-              <button name="action_get_agents" class="oe_stat_button" groups="ai_agent.group_ai_agent_manager" type="object" icon="fa-user-secret">
+              <button name="action_get_agents" class="oe_stat_button " type="object" icon="fa-user-secret">
                 <field string="Agents" name="agent_count" widget="statinfo" help="Used Agents on sessions" />
               </button>
-              <!-- #elif VERSION <= "16.0" -->
-              <button name="action_get_agents" class="oe_stat_button" attrs="{'invisible': [('user_in_group', '=', False)]}" type="object" icon="fa-user-secret">
-                <field string="Agents" name="agent_count" widget="statinfo" help="Used Agents on sessions" />
-              </button>
-              <!-- #endif -->
               <button name="action_get_sessions" class="oe_stat_button" type="object" icon="fa-flag-checkered">
                 <field string="Sessions" name="session_count" widget="statinfo" />
               </button>
@@ -104,11 +82,8 @@
                 <field name="user_id" widget="many2one_avatar_user" />
                 <field name="partner_id" />
                 <field name="company_id" />
-                <!-- #if VERSION >= '16.0' -->
                 <field name="tag_ids" widget="many2many_tags" />
-                <!-- #endif -->
               </group>
-              <!-- #if VERSION >= "17.0" -->
               <group>
                 <field name="init_type" />
                 <newline />
@@ -142,41 +117,6 @@
                   </div>
                 </div>
               </group>
-              <!-- #elif VERSION <= "16.0" -->
-              <group>
-                <field name="init_type" />
-                <newline />
-                <field name="alias_name" on_change="1" attrs="{'invisible': [('init_type', '!=', 'mail')]}" />
-                <label for="alias_name" string="Email Alias" attrs="{'invisible': [('init_type', '!=', 'mail')]}" />
-                <div class="oe_inline" name="alias_def" attrs="{'invisible': [('init_type', '!=', 'mail')]}">
-                  <field name="alias_id" class="oe_read_only oe_inline" string="Email Alias" required="0" attrs="{'invisible': [('alias_domain', '=', False)]}" />
-                  <div class="oe_inline" name="edit_alias" style="display: inline;">
-                    <div class="oe_edit_only" attrs="{'invisible': [('alias_domain', '=', False)]}" dir="ltr">
-                      <field name="alias_name" class="oe_inline" />
-                      <field name="alias_domain" class="oe_inline" readonly="1" />
-                    </div>
-                    <button icon="fa-arrow-right" type="action" name="%(base_setup.action_general_configuration)d" string="Configure a custom domain" class="p-0 btn-link" attrs="{'invisible': [('alias_domain', '!=', False)]}" />
-                  </div>
-                </div>
-                <field name="alias_contact" string="Accept Emails From" attrs="{'invisible': [('init_type', '!=', 'mail')], 'required': [('init_type', '=', 'cron')]}" />
-                <field name="server_action_id" attrs="{'invisible': [('init_type', '!=', 'server-action')], 'required': [('init_type', '=', 'server-action')]}" />
-                <field name="cron_id" attrs="{'invisible': [('init_type', '!=', 'cron')], 'required': [('init_type', '=', 'cron')]}" />
-                <field name="model_id" attrs="{'invisible': [('init_type', 'not in', ['server-action','cron', 'powerbox'])], 'required': [('init_type', 'in', ['server-action','cron'])]}" />
-                <field name="model_name" invisible="1" />
-                <field name="filter_domain" widget="domain" options="{'model-field': 'res.partner'}" attrs="{'invisible': [('init_type', '!=', 'cron')]}" />
-                <field name="channel_id" attrs="{'invisible': [('init_type', '!=', 'channel')], 'required': [('init_type', '=', 'channel')]}" />
-                <field name="chat_user_id" attrs="{'invisible': [('init_type', '!=', 'chat')], 'required': [('init_type', '=', 'chat')]}" />
-                <field name="use_chat_history" on_change="1" attrs="{'invisible': ['|',('init_type', 'not in', ['chat','channel']),('use_chat_history','=',True)]}" class="oe_inline" />
-                <label for="use_chat_history" attrs="{'invisible': ['|',('init_type', 'not in', ['chat','channel']),('use_chat_history','=',False)]}" class="oe_inline" />
-                <div>
-                  <div class="oe_inline" attrs="{'invisible': ['|',('init_type', 'not in', ['chat','channel']),('use_chat_history','=',False)]}" colspan="4">
-                    <field name="use_chat_history" attrs="{'invisible': [('init_type', 'not in', ['chat','channel'])]}" class="oe_inline" />
-                    <field name="chat_history_limit" attrs="{'invisible': ['|',('init_type', 'not in', ['chat','channel']),('use_chat_history','=',False)]}" class="oe_inline" />
-                    <span class="oe_inline" attrs="{'invisible': [('init_type', 'not in', ['chat','channel'])]}">messages</span>
-                  </div>
-                </div>
-              </group>
-              <!-- #endif -->
               <group>
                 <field name="init_type_str" nolabel="1" colspan="2" readonly="1" />
               </group>
@@ -202,11 +142,7 @@
               <page string="Code" id="code">
                 <field name="code" />
               </page>
-              <!-- #if VERSION >= "17.0" -->
               <page string="Supervisor" id="supervisor" invisible="is_supervisor == False">
-                <!-- #elif VERSION <= "16.0" -->
-                <page string="Supervisor" id="supervisor" attrs="{'invisible': [('is_supervisor', '=', False)]}">
-                  <!-- #endif -->
                   <group>
                     <group cols="2">
                       <field name="supervisor_llm_id" />
@@ -219,16 +155,6 @@
                 </page>
                 <page string="Agents" id="agent">
                   <field name="ai_agent_ids">
-                    <!-- #if VERSION >= "18.0" -->
-                    <list string="AI Quest Agents" editable="bottom">
-                      <field name="sequence" widget="handle" />
-                      <field name="ai_agent_id" />
-                      <field name="ai_agent_status" />
-                      <field name="object_id" />
-                      <field name="ai_agent_llm_id" />
-                      <field name="ai_llm_status" />
-                    </list>
-                    <!-- #elif VERSION <= "17.0" -->
                     <tree string="AI Quest Agents" editable="bottom">
                       <field name="sequence" widget="handle" />
                       <field name="ai_agent_id" />
@@ -237,7 +163,6 @@
                       <field name="ai_agent_llm_id" />
                       <field name="ai_llm_status" />
                     </tree>
-                    <!-- #endif -->
                   </field>
                 </page>
                 <page string="Graph" id="graph">
@@ -245,15 +170,11 @@
                 </page>
               </notebook>
             </sheet>
-            <!-- #if VERSION >= "18.0" -->
-            <chatter/>
-            <!-- #elif VERSION <= "17.0" -->
             <div class="oe_chatter">
               <field name="message_follower_ids" widget="mail_followers" />
               <field name="activity_ids" widget="mail_activity" />
               <field name="message_ids" widget="mail_thread" />
             </div>
-            <!-- #endif -->
           </form>
         </field>
       </record>
@@ -308,9 +229,7 @@
                     <div class="oe_kanban_content flex-grow-1 flex-column">
                       <div class="oe_kanban_details">
                         <div class="oe_kanban_left">
-                          <!-- #if VERSION >= '16.0' -->
                           <field name="tag_ids" widget="many2many_tags" options="{'color_field': 'color'}" />
-                          <!-- #endif -->
                           <field name="is_supervisor" />
                           <field name="status" widget="label_selection" options="{'classes': {'draft': 'default', 'active': 'success', 'done': 'info', 'error': 'danger'}}" />
                         </div>
@@ -382,14 +301,10 @@
       <record id="action_ai_quest" model="ir.actions.act_window">
         <field name="name">AI Quest</field>
         <field name="res_model">ai.quest</field>
-        <!-- #if VERSION >= "18.0" -->
-        <field name="view_mode">kanban,list,form,calendar</field>
-        <!-- #elif VERSION <= "17.0" -->
         <field name="view_mode">kanban,tree,form,calendar</field>
-        <!-- #endif -->
       </record>
 
-      <menuitem id="ai_agent.menu_ai_agent_root" name="AI Orchestration" groups="ai_agent.group_ai_agent_developer,ai_agent.group_ai_agent_manager" action="action_ai_quest" />
+      <menuitem id="ai_agent.menu_ai_agent_root" name="AI Orchestration" action="action_ai_quest" />
       <menuitem id="ai_agent.menu_ai_agent_menu" parent="ai_agent.menu_ai_agent_root" name="Agents and Quests" />
       <menuitem id="ai_agent.menu_ai_quest" name="Ai Quest" parent="ai_agent.menu_ai_agent_menu" action="action_ai_quest" />
 

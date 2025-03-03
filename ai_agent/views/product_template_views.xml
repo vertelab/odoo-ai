@@ -1,0 +1,56 @@
+<odoo>
+    <record id="view_product_template_product_form" model="ir.ui.view">
+        <field name="name">product.template.product.form</field>
+        <field name="model">product.template</field>
+        <field name="inherit_id" ref="product.product_template_only_form_view"/>
+        <field name="arch" type="xml">
+            <div name="options" position="inside">
+                <span class="d-inline-block">
+                    <field name="is_llm"/>
+                    <label for="is_llm"/>
+                </span>
+            </div>
+
+            <div name="button_box" position="inside">
+                <button name="action_get_session_lines" class="oe_stat_button" type="object" icon="fa-money">
+                    <field string="Tokens" name="session_line_count" widget="statinfo"/>
+                </button>
+            </div>
+
+
+
+
+            <page name="inventory" position="after">
+                <page name="llm" string="LLM" invisible="not is_llm">
+                    <group>
+                        <group>
+                            <field name="token_sys"/>
+                            <field name="llm_additional_rate"/>
+                        </group>
+                        <group>
+                            <field name="llm_library"/>
+                            <field name="llm_type"/>
+                            <field name="llm_etype"/>
+                            <field name="llm_price_url" widget="url"/>
+                            <field name="ai_api_key"/>
+                            <field name="azure_endpoint" required="llm_type == 'AzureChatOpenAI'" invisible="llm_type != 'AzureChatOpenAI'"/>
+                            <field name="api_version" required="llm_type == 'AzureChatOpenAI'" invisible="llm_type != 'AzureChatOpenAI'"/>
+                        </group>
+                    </group>
+
+                </page>
+            </page>
+        </field>
+    </record>
+
+    <record id="action_product_template" model="ir.actions.act_window">
+        <field name="name">AI Providers</field>
+        <field name="res_model">product.template</field>
+        <field name="view_mode">tree,form</field>
+        <field name="target">current</field>
+        <field name="domain">[("is_llm", '=', True)]</field>
+    </record>
+
+    <menuitem id="ai_agent.menu_product_product" name="Providers" parent="ai_agent.menu_ai_agent_configuration" action="action_product_template" sequence="1"/>
+
+ </odoo>

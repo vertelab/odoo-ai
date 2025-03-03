@@ -6,9 +6,6 @@ import { Dialog } from "@web/core/dialog/dialog";
 import { escape } from "@web/core/utils/strings";
 import { _t } from "@web/core/l10n/translation";
 import { browser } from '@web/core/browser/browser';
-// #if VERSION >= '18.0'
-import { rpc } from "@web/core/network/rpc";
-// #endif
 
 /**
  * General component for common logic between different dialogs.
@@ -19,17 +16,10 @@ export class QuestDialog extends Component {
         close: Function,
         insert: Function,
         res_model: false,
-<<<<<<< HEAD
-        res_id: false,
-=======
->>>>>>> bbd3ebfb6dd0fc237294af2c7c5204ba2953c777
         quest: false
     };
 
     setup() {
-        // #if VERSION == '16.0'
-        this.rpc = useService('rpc');
-        // #endif
         this.state = useState({ selectedMessageId: null });
         onWillDestroy(() => this.pendingRpcPromise?.abort());
     }
@@ -125,13 +115,13 @@ export class QuestDialog extends Component {
             }
         }
 
-        const { quest, res_model,res_id } = this.props
+        const { quest } = this.props
 
         this.pendingRpcPromise = rpc('/web/dataset/call_kw', {
             model: 'ai.quest',
             method: 'run_powerbox_quest',
-            args: [[quest, prompt, res_model, res_id]],
-            kwargs: { quest, prompt, res_model, res_id },
+            args: [[quest, prompt]],
+            kwargs: { quest, prompt },
         }, { shadow: true });
 
         return this.pendingRpcPromise

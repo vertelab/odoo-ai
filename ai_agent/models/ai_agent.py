@@ -23,13 +23,9 @@ from odoo.addons.ai_agent.models.ai_quest import AgentState
 from odoo.exceptions import UserError
 from random import randint
 
-# #if VERSION >= "18.0"
-from typing import Annotated, List, NotRequired, Sequence, TypedDict, Union, Any
-# #elif VERSION <= "17.0"
 from typing_extensions import NotRequired, TypedDict
 from typing import Annotated, List, Sequence, Union, Any
 
-# #endif
 
 # https://python.langchain.com/api_reference/langchain/agents.html
 
@@ -85,10 +81,8 @@ class AIAgent(models.Model):
     status = fields.Selection(
         selection=[("draft", "Draft"), ("active", "Active"), ("done", "Done"), ("error", "Error")],
         default="draft")
-    # #if VERSION >= '16.0'  
     tag_ids = fields.Many2many(comodel_name='product.tag', string='Tags')
 
-    # #endif
 
     @api.depends('image_128')
     def _compute_base_image_128(self):
@@ -105,11 +99,7 @@ class AIAgent(models.Model):
                 'name': 'AI Quests',
                 'type': 'ir.actions.act_window',
                 'res_model': 'ai.quest',
-                # #if VERSION >= "18.0"
-                'view_mode': 'kanban,list,form,calendar',
-                # #elif VERSION <= "17.0"
                 'view_mode': 'kanban,tree,form,calendar',
-                # #endif
                 'target': 'current',
                 'domain': [("id", 'in', ai_quest_ids)]
             }
@@ -121,11 +111,7 @@ class AIAgent(models.Model):
             'name': 'Session Lines',
             'type': 'ir.actions.act_window',
             'res_model': 'ai.quest.session.line',
-            # #if VERSION >= "18.0"
-            'view_mode': 'list,form,calendar,pivot',
-            # #elif VERSION <= "17.0"
             'view_mode': 'tree,form,calendar,pivot',
-            # #endif
             'target': 'current',
             'domain': [("ai_agent_id", '=', self.id)],
         }
@@ -136,11 +122,7 @@ class AIAgent(models.Model):
             'name': 'Sessions',
             'type': 'ir.actions.act_window',
             'res_model': 'ai.quest.session',
-            # #if VERSION >= "18.0"
-            'view_mode': 'list,form,calendar',
-            # #elif VERSION <= "17.0"
             'view_mode': 'tree,form,calendar',
-            # #endif
             'target': 'current',
             'domain': [("session_line_ids.ai_agent_id", '=', self.id)]
         }
@@ -187,11 +169,7 @@ class AIAgent(models.Model):
         chat_history = ChatMessageHistory()
         question = ''
         for m in self.env['mail.message'].search([
-            # #if VERSION >= "17.0"
             ('model', '=', 'discuss.channel'),
-            # #elif VERSION <= "16.0"
-            ('model', '=', 'mail.channel'),
-            # #endif
             ('res_id', '=', quest.real_channel_id.id)],
                 limit=quest.chat_history_limit, order='create_date asc'):
             if m.author_id.id == quest.real_chat_user_id.id:
@@ -305,14 +283,9 @@ class AIAgent(models.Model):
 
         topic = kwargs.get('topic', kwargs.get('message', ''))
         session = kwargs.get('session', False)
-        quest = kwargs.get('quest', session.ai_quest_id)
+        quest = kwargs.get('quest', False)
         debug = kwargs.get('debug', False)
-        quest_description = quest.description  
-        if kwargs.get('record'): # Populate with data from record if there is a record
-            data = kwargs.get('record').read()[0]            
-            quest_description = quest_description.format(**{k: data[k] for k in data.keys()})
-        use_lang = f"Use language {self.env.user.lang}" if quest.use_personal_lang else ''
-        
+
         # ~ import pdb; pdb.set_trace()
 
         def agent_snode(state: AgentState) -> AgentState:
@@ -354,8 +327,6 @@ class AIAgent(models.Model):
                 - Provide thorough, complete responses
                 - Use available tools and memory when needed
                 - Stay focused on your specific role
-                - Guidelines and instructions: {quest_description}
-                {use_lang}
                 """
             )
 
@@ -440,12 +411,11 @@ class AIAgent(models.Model):
         use_lang = f"Use language {self.env.user.lang} for the answer to Human" if quest.use_personal_lang else ''
         topic = kwargs.get('topic', kwargs.get('message', ''))
         session = kwargs.get('session', False)
-        quest_description = quest.description  
         if kwargs.get('record'): # Populate with data from record if there is a record
-            data = kwargs.get('record').read()[0]            
-            quest_description = quest_description.format(**{k: data[k] for k in data.keys()})
-        use_lang = f"Use language {self.env.user.lang}" if quest.use_personal_lang else ''
-        system_prompt = quest.supervisor_prompt + f"\n- Guidelines and instructions: {quest_description}\n{use_lang}"
+            data = record.read()
+            system_prompt = quest.supervisor_prompt.format(**{k: f"{{{data[k]}}}" for k in data.keys()})
+        else:
+            system_prompt = quest.supervisor_prompt
 
         def supervisor_chain(state):
             messages = state.get('messages', [])
@@ -540,26 +510,8 @@ class AIAgent(models.Model):
             return f"{name}"
 
     def test(self):
-        self.last_run = fields.Datetime.now()        
-        session = self.env['ai.quest.session'].agent_init(self)
-        try:
-            response = self.invoke("What is 1+1, answer with a single digit")
-        except Exception as e:
-            session.add_message(f"Could not confirm agent: {str(e)}\n{traceback.format_exc()}")
-            self.message_post(body=_(f"Could not confirm agent: {str(e)}"), message_type="notification")
-            session.status = 'done'
-            return False
-        session.status = 'done'
-        if isinstance(response, AIMessage):
-            content = response.content.strip()
-            if content == "2":
-            # ~ raise UserError(content)
-                self.message_post(body=_(f"Llm confirmed: 1+1={content}"), message_type="notification")
-                self.status = "active"
-                return 
-        self.message_post(body=_(f"Could not confirm agent: {response=}"), message_type="notification")
+        self.last_run = fields.Datetime.now()
 
-        
     def log_message(self, body, is_error=False):
         if is_error:
             self.status = "error"

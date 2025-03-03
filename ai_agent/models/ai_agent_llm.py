@@ -6,13 +6,12 @@ import traceback
 
 from httpx import HTTPStatusError
 from langchain.agents import AgentExecutor, create_openai_tools_agent, create_json_chat_agent, create_react_agent
-from langchain_core.messages import AIMessage
-from langchain_huggingface import HuggingFaceEmbeddings
 from odoo import models, fields, api, tools, _
 from odoo.exceptions import UserError, AccessError, ValidationError
-from pydantic import SecretStr
 from random import randint
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+from langchain_huggingface import HuggingFaceEmbeddings
+from pydantic import SecretStr
 
 _logger = logging.getLogger(__name__)
 
@@ -60,9 +59,7 @@ class AIAgentLLM(models.Model):
         selection=[("not_confirmed", "Not Confirmed"), ("confirmed", "Confirmed"), ("error", "Error")],
         default="not_confirmed")
     status_color = fields.Integer(compute="compute_status_color")
-    ## if VERSION >= '16.0'
     tag_ids = fields.Many2many(comodel_name='product.tag', string='Tags')
-    ##  endif
     azure_endpoint = fields.Char(string="Azure Endpoint")
     api_version = fields.Char(string="API version")
     def action_get_quests(self):
@@ -70,11 +67,7 @@ class AIAgentLLM(models.Model):
             'name': 'AI Quests',
             'type': 'ir.actions.act_window',
             'res_model': 'ai.quest',
-            # #if VERSION >= "18.0"
-            'view_mode': 'kanban,list,form',
-            # #elif VERSION <= "17.0"
             'view_mode': 'kanban,tree,form',
-            # #endif
             'target': 'current',
             'domain': [("session_line_ids.ai_llm_id", '=', self.id)]
         }
@@ -85,11 +78,7 @@ class AIAgentLLM(models.Model):
             'name': 'AI Agents',
             'type': 'ir.actions.act_window',
             'res_model': 'ai.agent',
-            # #if VERSION >= "18.0"
-            'view_mode': 'kanban,list,form',
-            # #elif VERSION <= "17.0"
             'view_mode': 'kanban,tree,form',
-            # #endif            
             'target': 'current',
             'domain': [("session_line_ids.ai_llm_id", '=', self.id)]
         }
@@ -100,11 +89,7 @@ class AIAgentLLM(models.Model):
             'name': 'Session Lines',
             'type': 'ir.actions.act_window',
             'res_model': 'ai.quest.session.line',
-            # #if VERSION >= "18.0"
-            'view_mode': 'list,form,calendar,pivot',
-            # #elif VERSION <= "17.0"
             'view_mode': 'tree,form,calendar,pivot',
-            # #endif    
             'target': 'current',
             'domain': [("ai_llm_id", '=', self.id)],
         }
@@ -115,11 +100,7 @@ class AIAgentLLM(models.Model):
             'name': 'Sessions',
             'type': 'ir.actions.act_window',
             'res_model': 'ai.quest.session',
-            # #if VERSION >= "18.0"
-            'view_mode': 'list,form',
-            # #elif VERSION <= "17.0"
             'view_mode': 'tree,form',
-            # #endif    
             'target': 'current',
             'domain': [("session_line_ids.ai_llm_id", '=', self.id)]
         }
@@ -268,23 +249,9 @@ class AIAgentLLM(models.Model):
 
     def test_llm(self):
         session = self.env['ai.quest.session'].llm_init(self)
-        try:
-            response = self.invoke("What is 1+1, answer with a single digit")
-        except Exception as e:
-            session.add_message(f"Could not confirm llm: {str(e)}\n{traceback.format_exc()}")
-            self.message_post(body=_(f"Could not confirm llm: {str(e)}"), message_type="notification")
-            session.status = 'done'
-            return False
-        session.status = 'done'
-        if isinstance(response, AIMessage):
-            content = response.content.strip()
-            if content == "2":
-            # ~ raise UserError(content)
-                self.message_post(body=_(f"Llm confirmed: 1+1={content}"), message_type="notification")
-                self.status = "confirmed"
-                return 
-        self.message_post(body=_(f"Could not confirm llm: {response=}"), message_type="notification")
-            
+        session.state = 'done'
+        self.status = "confirmed"
+
     def get_agent_executor(self, prompt, tools, temperature=1.0, verbose=False, callbacks=None):
         return AgentExecutor(
             agent=create_openai_tools_agent(eval(self.get_llm(temperature=temperature, verbose=verbose)), tools,

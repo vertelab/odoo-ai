@@ -4,18 +4,6 @@
             <field name="name">ai.quest.sesion.list</field>
             <field name="model">ai.quest.session</field>
             <field name="arch" type="xml">
-                <!-- #if VERSION >= "18.0" -->
-                <list string="AI Session">
-                    <field name="startdate" />
-                    <field name="session" />
-                    <field name="ai_type" />
-                    <field name="ai_quest_id" />
-                    <field name="status" />
-                    <field name="company_id" />
-                    <field name="enddate" optional="hide" />
-                    <field name="time_difference_ms" optional="hide" />
-                </list>
-                <!-- #elif VERSION <= "17.0" -->
                 <tree string="AI Session">
                     <field name="startdate" />
                     <field name="session" />
@@ -25,7 +13,6 @@
                     <field name="enddate" optional="hide" />
                     <field name="time_difference_ms" optional="hide" />
                 </tree>
-                <!-- #endif -->
             </field>
         </record>
         <record id="ai_quest_session_search" model="ir.ui.view">
@@ -65,10 +52,10 @@
                     </header>
                     <sheet string="AI Session">
                         <div name="button_box" id="button_box" class="oe_button_box">
-                            <button name="action_get_llms" class="oe_stat_button" type="object" icon="fa-database">
+                            <button name="action_get_llms" class="oe_stat_button " type="object" icon="fa-database">
                                 <field string="LLMs" name="ai_llm_count" widget="statinfo" />
                             </button>
-                            <button name="action_get_agents" class="oe_stat_button" groups="ai_agent.group_ai_agent_manager" type="object" icon="fa-user-secret">
+                            <button name="action_get_agents" class="oe_stat_button " type="object" icon="fa-user-secret">
                                 <field string="Agents" name="ai_agent_count" widget="statinfo" />
                             </button>
                             <button name="action_get_session_lines" class="oe_stat_button" type="object" icon="fa-money">
@@ -103,15 +90,11 @@
                         </group>
                         <notebook />
                     </sheet>
-                    <!-- #if VERSION >= "18.0" -->
-                    <chatter/>
-                    <!-- #elif VERSION <= "17.0" -->
                     <div class="oe_chatter">
                         <field name="message_follower_ids" widget="mail_followers" />
                         <field name="activity_ids" widget="mail_activity" />
                         <field name="message_ids" widget="mail_thread" />
                     </div>
-                    <!-- #endif -->
                 </form>
             </field>
         </record>
@@ -131,11 +114,7 @@
         <record id="action_ai_quest_session" model="ir.actions.act_window">
             <field name="name">AI Session</field>
             <field name="res_model">ai.quest.session</field>
-            <!-- #if VERSION >= "18.0" -->
-            <field name="view_mode">list,form,calendar</field>
-            <!-- #elif VERSION <= "17.0" -->
             <field name="view_mode">tree,form,calendar</field>
-            <!-- #endif -->
         </record>
         <menuitem id="ai_agent.menu_ai_quest_session" name="AI Session" parent="ai_agent.menu_ai_agent_configuration" action="action_ai_quest_session" />
         <!--  Session Object -->
@@ -143,21 +122,12 @@
             <field name="name">aisesion.object.list</field>
             <field name="model">ai.session.object</field>
             <field name="arch" type="xml">
-                <!-- #if VERSION >= "18.0" -->
-                <list string="AI Session Object">
-                    <field name="datetime" />
-                    <field name="ai_quest_id" />
-                    <field name="ai_session_id" />
-                    <field name="display_name" />
-                </list>
-                <!-- #elif VERSION <= "17.0" -->
                 <tree string="AI Session Object">
                     <field name="datetime" />
                     <field name="ai_quest_id" />
                     <field name="ai_session_id" />
                     <field name="display_name" />
                 </tree>
-                <!-- #endif -->
             </field>
         </record>
         <record id="ai_session_object_search" model="ir.ui.view">
@@ -217,11 +187,7 @@
         <record id="action_ai_session_object" model="ir.actions.act_window">
             <field name="name">Object</field>
             <field name="res_model">ai.session.object</field>
-            <!-- #if VERSION >= "18.0" -->
-            <field name="view_mode">list,form,calendar</field>
-            <!-- #elif VERSION <= "17.0" -->
             <field name="view_mode">tree,form,calendar</field>
-            <!-- #endif -->
         </record>
         <menuitem id="ai_agent.menu_ai_session_object" name="Object" parent="ai_agent.menu_ai_agent_configuration" action="action_ai_session_object" />
     </data>

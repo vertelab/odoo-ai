@@ -1,0 +1,204 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<odoo>
+    <!-- Form View -->
+    <record id="view_ai_tool_form" model="ir.ui.view">
+        <field name="name">ai.tool.form</field>
+        <field name="model">ai.tool</field>
+        <field name="arch" type="xml">
+            <form>
+                <header>
+                    <button name="action_test_tool" type="object" string="Test" />
+                    <field name="status" widget="statusbar" options="{'clickable': '1'}" />
+                </header>
+                <sheet>
+                    <div name="button_box" id="button_box" class="oe_button_box">
+                        <button name="action_get_agents" class="oe_stat_button " type="object" icon="fa-user-secret">
+                            <field string="Agents" name="ai_agent_count" widget="statinfo" />
+                        </button>
+                        <button name="action_get_quests" class="oe_stat_button " type="object" icon="fa-rocket">
+                            <field string="Quests" name="quest_count" widget="statinfo" />
+                        </button>
+                        <button name="action_get_sessions" class="oe_stat_button" type="object" icon="fa-flag-checkered">
+                            <field string="Sessions" name="session_count" widget="statinfo" />
+                        </button>
+                        <button name="action_get_session_lines" class="oe_stat_button" type="object" icon="fa-money">
+                            <field string="Tokens" name="session_line_count" widget="statinfo" />
+                        </button>
+                    </div>
+                    <field name="image_128" widget="image" class="oe_avatar" />
+                    <div class="oe_title">
+                        <h1>
+                            <field name="name" placeholder="Name" />
+                        </h1>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="tool" />
+                            <field name="tool_lib" />
+                            <field name="tool_api_key" />
+                            <field name="last_run" />
+                        </group>
+                        <group>
+                            <field name="debug" />
+                            <field name="is_favorite" />
+                        </group>
+                    </group>
+                </sheet>
+                <div class="oe_chatter">
+                    <field name="message_follower_ids" widget="mail_followers" />
+                    <field name="activity_ids" widget="mail_activity" />
+                    <field name="message_ids" widget="mail_thread" />
+                </div>
+            </form>
+        </field>
+    </record>
+    <!-- List View -->
+    <record id="view_ai_tool_tree" model="ir.ui.view">
+        <field name="name">ai.tool.tree</field>
+        <field name="model">ai.tool</field>
+        <field name="arch" type="xml">
+            <tree>
+                <field name="name" />
+                <field name="tool" />
+                <field name="tool_lib" />
+                <field name="status" />
+                <field name="last_run" />
+                <field name="is_favorite" />
+            </tree>
+        </field>
+    </record>
+    <!-- Search View -->
+    <record id="view_ai_tool_search" model="ir.ui.view">
+        <field name="name">ai.tool.search</field>
+        <field name="model">ai.tool</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="name" />
+                <field name="tool" />
+                <field name="tool_lib" />
+                <filter string="Favorites" name="favorites" domain="[('is_favorite', '=', True)]" />
+                <filter string="Debug Mode" name="debug" domain="[('debug', '=', True)]" />
+                <filter string="Active" name="active" domain="[('status', '=', 'active')]" />
+                <group expand="0" string="Group By">
+                    <filter string="Status" name="group_by_status" context="{'group_by': 'status'}" />
+                    <filter string="Tool" name="group_by_tool" context="{'group_by': 'tool'}" />
+                </group>
+            </search>
+        </field>
+    </record>
+    <!-- Kanban View -->
+    <record id="view_ai_tool_kanban" model="ir.ui.view">
+        <field name="name">ai.tool.kanban</field>
+        <field name="model">ai.tool</field>
+        <field name="arch" type="xml">
+            <kanban>
+                <field name="id" />
+                <field name="name" />
+                <field name="tool" />
+                <field name="tool_lib" />
+                <field name="status" />
+                <field name="last_run" />
+                <field name="is_favorite" />
+                <field name="color" />
+                <templates>
+                    <t t-name="kanban-box">
+                        <div t-attf-class="oe_kanban_color_#{kanban_getcolor(record.color.raw_value)} oe_kanban_card oe_kanban_global_click">
+                            <div class="o_dropdown_kanban dropdown">
+                                <a class="dropdown-toggle o-no-caret btn" role="button" data-toggle="dropdown" href="#" aria-label="Dropdown menu" title="Dropdown menu">
+                                    <span class="fa fa-ellipsis-v" />
+                                </a>
+                                <div class="dropdown-menu" role="menu">
+                                    <t t-if="widget.editable">
+                                        <a type="edit" class="dropdown-item">Edit</a>
+                                    </t>
+                                    <t t-if="widget.deletable">
+                                        <a type="delete" class="dropdown-item">Delete</a>
+                                    </t>
+                                    <ul class="oe_kanban_colorpicker" data-field="color" />
+                                </div>
+                            </div>
+                            <div class="oe_kanban_content">
+                                <div>
+                                    <strong class="o_kanban_record_title">
+                                        <field name="name" />
+                                    </strong>
+                                </div>
+                                <div>
+                                    Tool:
+                                    <field name="tool" />
+                                </div>
+                                <div>
+                                    Library:
+                                    <field name="tool_lib" />
+                                </div>
+                                <div>
+                                    Status:
+                                    <field name="status" />
+                                </div>
+                                <div>
+                                    Last Run:
+                                    <field name="last_run" />
+                                </div>
+                                <div class="o_kanban_record_bottom">
+                                    <div class="oe_kanban_bottom_left">
+                                    </div>
+                                    <div class="oe_kanban_bottom_right">
+                                        <field name="is_favorite" widget="boolean_favorite" />
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </t>
+                </templates>
+            </kanban>
+        </field>
+    </record>
+    <!-- Calendar View -->
+    <record id="view_ai_tool_calendar" model="ir.ui.view">
+        <field name="name">ai.tool.calendar</field>
+        <field name="model">ai.tool</field>
+        <field name="arch" type="xml">
+            <calendar string="AI Tool" date_start="last_run" color="status">
+                <field name="name" />
+                <field name="tool" />
+                <field name="status" />
+            </calendar>
+        </field>
+    </record>
+    <!-- Action -->
+    <record id="action_ai_tool" model="ir.actions.act_window">
+        <field name="name">AI Tools</field>
+        <field name="res_model">ai.tool</field>
+        <field name="view_mode">kanban,tree,form,calendar</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">Create your first AI Tool!</p>
+        </field>
+    </record>
+    <!-- Menu Item -->
+    <menuitem id="menu_ai_tool" name="AI Tools" parent="ai_agent.menu_ai_agent_configuration" action="action_ai_tool" sequence="20" />
+
+
+    <record id="test_tool_view" model="ir.ui.view">
+        <field name="name">ai.tool.test.wizard</field>
+        <field name="model">ai.tool.test.wizard</field>
+        <field name="arch" type="xml">
+            <form>
+                <group>
+                    <field name="test_tool_input" string="Search" />
+                </group>
+                <group>
+                    <field name="is_raise_error"/>
+                    <field name="filename" invisible="1"/>
+                    <field name="file" filename="filename"/>
+                    <field name="object_name"/>
+                    <field name="object_id"/>
+                </group>
+                <footer>
+                    <button name="test_tool" string="Search" type="object" class="oe_highlight"/>
+                    <button name="cancel" string="Cancel" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+</odoo>

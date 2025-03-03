@@ -1,5 +1,5 @@
 <odoo>
-  <data noupdate="1">
+  <data noupdate="0">
     <record id="ai_agent_supervisor_chat" model="ai.agent">
       <field name="name">Supervisor Chatbot</field>
       <field name="ai_role">
