@@ -196,7 +196,7 @@ class AIQuest(models.Model):
     chat_history_limit = fields.Integer(string='Chat History Limit', default=10,
                                         help='Limit the chat history to this number of messages')
     chat_user_id = fields.Many2one(comodel_name='res.users', string="Chat User", help="")
-    code = fields.Text(string='Python Code', groups='base.group_system', default=DEFAULT_PYTHON_CODE,
+    code = fields.Text(string='Python Code', default=DEFAULT_PYTHON_CODE,
                        help="Write Python code that the action will execute. Some variables are available for use; "
                             "help about python expression is given in the help tab.")
     color = fields.Integer(default=lambda self: randint(1, 11))
@@ -241,6 +241,7 @@ class AIQuest(models.Model):
     use_time_context = fields.Boolean(string='Use Time Context', default=True,
                                       help='Inform the LLM of current time, date')
     user_id = fields.Many2one(comodel_name='res.users', string="Owner", help="")
+    user_in_group = fields.Boolean(compute='_compute_user_in_group')
     is_supervisor = fields.Boolean(string='Is Supervisor',
                                    help="This is a ReAct type of quest using a supervisor coordinating agents")
     supervisor_prompt = fields.Text(string="Supervisor Prompt", default=SUPERVISOR)
@@ -260,8 +261,8 @@ class AIQuest(models.Model):
         quest_ids = self.search([])
         quests += len(quest_ids)
         for quest_id in quest_ids:
-            if math.floor(quest_id.session_line_count / 1000000):
-                quests += 1
+            if add := math.floor(quest_id.session_line_count / 1000000):
+                quests += add
         _logger.error(f"{quests=}")
         return quests
             
@@ -292,6 +293,10 @@ class AIQuest(models.Model):
 
     uuid = fields.Char('UUID', size=50, default=_generate_random_token, copy=False)
 
+
+    def _compute_user_in_group(self):
+        for record in self:
+            record.user_in_group = self.env.user.has_group('ai_agent.group_ai_agent_manager')
 
     @api.depends('session_line_ids')
     def compute_llm_count(self):
@@ -607,25 +612,29 @@ class AIQuest(models.Model):
             res = self.run(**vals)
             return res
 
-    def run_powerbox_quest(self, quest, prompt):
+    def run_powerbox_quest(self, quest, prompt, res_model, res_id):
+        from .html2plaintext import ai_html2plaintext
         ai_quest = self.env['ai.quest'].browse(quest.get('id')).exists()
         if not ai_quest:
             _logger.error(f"OBS: Quest does not exist: not ai_quest {self=} {quest=} {prompt=}")
             raise UserError(_("OBS: Quest does not exist, you should contact administrator to look into the quest"))
-        record = False # Instansiate record here
-        result = ai_quest.run(prompt=prompt,record=record)
+        if res_model and res_id:
+            record = self.env[res_model].browse(int(res_id)).exists()  # Instantiate record here
+        else:
+            record = False
+        result = ai_quest.run(prompt=prompt, record=record)
         if result:
-            answer = ''
             ai_messages = self._get_last_ai_message(result.get('result', {}).get('messages', False))
             if not ai_messages:
                 _logger.error(f"OBS: Quest does not exist: not ai_messages {self=} {quest=} {prompt=} {result=}")
                 raise UserError(_("OBS: An error occurred, you should contact administrator to look into the quest"))
-            if messages and last_ai_message:
-                if ai_quest.debug:
-                    _logger.error(f"{last_ai_message=}")
-                    answer = re.sub(r'<think>.*?</think>', '', markdown.markdown(last_ai_message.content), flags=re.DOTALL)
-                else:
-                    answer = markdown.markdown(last_ai_message.content)
+
+            if ai_quest.debug:
+                answer = markdown.markdown(ai_messages.content)
+            else:
+                answer = ai_html2plaintext(
+                    re.sub(r'<think>.*?</think>', '', markdown.markdown(ai_messages.content), flags=re.DOTALL)
+                )
             return answer
         _logger.error(f"OBS: Quest does not exist: no result {self=} {ai_quest=} {quest=} {prompt=} {result=}")
         raise UserError(_("OBS: An error occurred, you should contact administrator to look into the quest"))
@@ -817,6 +826,8 @@ class AIQuest(models.Model):
         _logger.error(f"{vals_list=}")
         new_server_action = False
         for record in vals_list:
+            if not record.get("user_id"):
+                record.update({"user_id": self.env.user.id})
             if record.get("model_id", False):
                 new_server_action = self.server_action_id = self.server_action_id.create({
                     'name': record["name"],

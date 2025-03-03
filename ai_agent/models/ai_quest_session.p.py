@@ -37,8 +37,10 @@ class AISessionObject(models.Model):
         for record in self:
             if record.model_id:
                 record.display_name = f"[{record.model_id.name}] {record.object_id.display_name}"
-            else:
+            elif not record.model_id:
                 record.display_name = f"{record.object_id.display_name}"
+            else:
+                record.display_name = False
 
 
 
