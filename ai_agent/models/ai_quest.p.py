@@ -795,6 +795,7 @@ class AIQuest(models.Model):
             '_logger': _logger,
             'html2plaintext': html2plaintext,
             'HumanMessage': HumanMessage,
+            'markdown2html': markdown.markdown,
             **kw,
         }
         return eval_context
