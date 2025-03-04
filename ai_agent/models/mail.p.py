@@ -6,9 +6,9 @@ from odoo import api, fields, models, tools, _
 from odoo.exceptions import ValidationError, UserError
 import logging
 import markdown
+import re
 
 _logger = logging.getLogger(__name__)
-
 
 class MailMessage(models.Model):
     _inherit = 'mail.message'
@@ -32,8 +32,13 @@ class MailChannel(models.Model):
 
         ai_quest = None
         if self.channel_type == "chat":
+            # #if VERSION >= "15.0"
             ai_quest = self.env['res.users'].browse(self.channel_member_ids.mapped('partner_id.user_ids.id')).mapped(
                 'ai_quest_id')
+            # #elif VERSION <= "14.0"
+            ai_quest = self.env['res.users'].browse(self.message_partner_ids.mapped('partner_id.user_ids.id')).mapped(
+                'ai_quest_id')
+            # #endif
             user = ai_quest.chat_user_id
         else:  # channel
             ai_quest = self.ai_quest_id
@@ -54,8 +59,11 @@ class MailChannel(models.Model):
                     last_ai_message = ai_messages[-1] if len(ai_messages) != 0 else None
 
                     if messages and last_ai_message:
-                        _logger.error(f"{last_ai_message=}")
-                        answer = markdown.markdown(last_ai_message.content)
+                        if ai_quest.debug:
+                            _logger.error(f"{last_ai_message=}")
+                            answer = re.sub(r'<think>.*?</think>', '', markdown.markdown(last_ai_message.content), flags=re.DOTALL)
+                        else:
+                            answer = markdown.markdown(last_ai_message.content)
 
                     self.with_user(user).message_post(
                         body=answer,
