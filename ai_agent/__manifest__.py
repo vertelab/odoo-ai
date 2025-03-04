@@ -25,7 +25,7 @@
     'name': "odoo-ai: AI Agent",
     'version': "1.0",
     'summary': "AI Agent orchestration",
-    'category': "Productivity",
+    'category': "AI Orchestration",
     'description': """
         
 AI Agent Orchestration is the process of managing and coordinating multiple specialized AI agents to achieve complex tasks and shared objectives. 
@@ -89,6 +89,7 @@ and cost-effective AI systems that drive innovation and efficiency across their 
     "license": "AGPL-3",
     "depends": ["mail", "product", "crm"],
     "data": [
+        "security/ai_agent_security.xml",
         "security/ir.model.access.csv",
         "data/server_action.xml",
         "data/data.xml",
@@ -118,6 +119,8 @@ and cost-effective AI systems that drive innovation and efficiency across their 
         "views/res_company_views.xml",
         "views/res_users_views.xml",
         "views/mail_channel_views.xml",
+        "views/res_config_settings_views.xml",
+        "security/ai_quest_record_rule.xml",
     ],
     "external_dependencies": {
         "python": [

@@ -21,8 +21,6 @@ export class QuestPromptDialog extends QuestDialog {
     setup() {
         super.setup();
         this.assistantAvatarUrl = `${browser.location.origin}/ai_agent/static/img/odoobot_transparent.png`;
-        this.userAvatarUrl = `${
-            browser.location.origin}/web/image?model=res.users&field=avatar_128&id=${encodeURIComponent(session.uid)}`;
         this.state = useState({
             ...this.state,
             prompt: this.props.initialPrompt,
