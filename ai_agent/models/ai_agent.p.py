@@ -305,9 +305,14 @@ class AIAgent(models.Model):
 
         topic = kwargs.get('topic', kwargs.get('message', ''))
         session = kwargs.get('session', False)
-        quest = kwargs.get('quest', False)
+        quest = kwargs.get('quest', session.ai_quest_id)
         debug = kwargs.get('debug', False)
-
+        quest_description = quest.description  
+        if kwargs.get('record'): # Populate with data from record if there is a record
+            data = kwargs.get('record').read()[0]            
+            quest_description = quest_description.format(**{k: data[k] for k in data.keys()})
+        use_lang = f"Use language {self.env.user.lang}" if quest.use_personal_lang else ''
+        
         # ~ import pdb; pdb.set_trace()
 
         def agent_snode(state: AgentState) -> AgentState:
@@ -349,6 +354,8 @@ class AIAgent(models.Model):
                 - Provide thorough, complete responses
                 - Use available tools and memory when needed
                 - Stay focused on your specific role
+                - Guidelines and instructions: {quest_description}
+                {use_lang}
                 """
             )
 
@@ -433,11 +440,12 @@ class AIAgent(models.Model):
         use_lang = f"Use language {self.env.user.lang} for the answer to Human" if quest.use_personal_lang else ''
         topic = kwargs.get('topic', kwargs.get('message', ''))
         session = kwargs.get('session', False)
+        quest_description = quest.description  
         if kwargs.get('record'): # Populate with data from record if there is a record
-            data = record.read()
-            system_prompt = quest.supervisor_prompt.format(**{k: f"{{{data[k]}}}" for k in data.keys()})
-        else:
-            system_prompt = quest.supervisor_prompt
+            data = kwargs.get('record').read()[0]            
+            quest_description = quest_description.format(**{k: data[k] for k in data.keys()})
+        use_lang = f"Use language {self.env.user.lang}" if quest.use_personal_lang else ''
+        system_prompt = quest.supervisor_prompt + f"\n- Guidelines and instructions: {quest_description}\n{use_lang}"
 
         def supervisor_chain(state):
             messages = state.get('messages', [])

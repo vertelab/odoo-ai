@@ -53,10 +53,10 @@
                     </header>
                     <sheet string="AI Session">
                         <div name="button_box" id="button_box" class="oe_button_box">
-                            <button name="action_get_llms" class="oe_stat_button " type="object" icon="fa-database">
+                            <button name="action_get_llms" class="oe_stat_button" type="object" icon="fa-database">
                                 <field string="LLMs" name="ai_llm_count" widget="statinfo" />
                             </button>
-                            <button name="action_get_agents" class="oe_stat_button " type="object" icon="fa-user-secret">
+                            <button name="action_get_agents" class="oe_stat_button" groups="ai_agent.group_ai_agent_manager" type="object" icon="fa-user-secret">
                                 <field string="Agents" name="ai_agent_count" widget="statinfo" />
                             </button>
                             <button name="action_get_session_lines" class="oe_stat_button" type="object" icon="fa-money">
