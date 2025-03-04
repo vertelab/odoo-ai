@@ -270,15 +270,16 @@ class AIAgentLLM(models.Model):
         try:
             response = self.invoke("What is 1+1, answer with a single digit")
         except Exception as e:
+            _logger.error(f"{e=}")
             session.add_message(f"Could not confirm llm: {str(e)}\n{traceback.format_exc()}")
             self.message_post(body=_(f"Could not confirm llm: {str(e)}"), message_type="notification")
+            self.status = "error"
             session.status = 'done'
             return False
         session.status = 'done'
         if isinstance(response, AIMessage):
             content = response.content.strip()
             if content == "2":
-            # ~ raise UserError(content)
                 self.message_post(body=_(f"Llm confirmed: 1+1={content}"), message_type="notification")
                 self.status = "confirmed"
                 return 

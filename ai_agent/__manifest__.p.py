@@ -89,8 +89,8 @@ and cost-effective AI systems that drive innovation and efficiency across their 
     "license": "AGPL-3",
     "depends": ["mail", "product", "crm"],
     "data": [
-        "security/ir.model.access.csv",
         "security/ai_agent_security.xml",
+        "security/ir.model.access.csv",
         "data/server_action.xml",
         "data/data.xml",
         "data/open_ai_data.xml",

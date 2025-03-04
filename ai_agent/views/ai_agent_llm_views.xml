@@ -209,11 +209,25 @@
                 </calendar>
             </field>
         </record>
+
+        <record id="action_test_llms" model="ir.actions.server">
+            <field name="name">Test LLMs</field>
+            <field name="model_id" ref="ai_agent.model_ai_agent_llm"/>
+            <field name="binding_model_id" ref="ai_agent.model_ai_agent_llm" />
+            <field name="state">code</field>
+            <field name="code">
+for record in records:
+    record.test_llm()
+            </field>
+        </record>
+
         <record id="action_ai_agent_llm" model="ir.actions.act_window">
             <field name="name">Agent LLM</field>
             <field name="res_model">ai.agent.llm</field>
             <field name="view_mode">kanban,list,form,calendar</field>
         </record>
+
         <menuitem id="ai_agent.menu_ai_agent_llm" name="LLMs" parent="ai_agent.menu_ai_agent_configuration" action="action_ai_agent_llm" />
+
     </data>
 </odoo>
