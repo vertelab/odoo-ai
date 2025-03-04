@@ -305,9 +305,14 @@ class AIAgent(models.Model):
 
         topic = kwargs.get('topic', kwargs.get('message', ''))
         session = kwargs.get('session', False)
-        quest = kwargs.get('quest', False)
+        quest = kwargs.get('quest', session.ai_quest_id)
         debug = kwargs.get('debug', False)
-
+        quest_description = quest.description  
+        if kwargs.get('record'): # Populate with data from record if there is a record
+            data = kwargs.get('record').read()[0]            
+            quest_description = quest_description.format(**{k: data[k] for k in data.keys()})
+        use_lang = f"Use language {self.env.user.lang}" if quest.use_personal_lang else ''
+        
         # ~ import pdb; pdb.set_trace()
 
         def agent_snode(state: AgentState) -> AgentState:
@@ -349,6 +354,8 @@ class AIAgent(models.Model):
                 - Provide thorough, complete responses
                 - Use available tools and memory when needed
                 - Stay focused on your specific role
+                - Guidelines and instructions: {quest_description}
+                {use_lang}
                 """
             )
 
@@ -433,7 +440,12 @@ class AIAgent(models.Model):
         use_lang = f"Use language {self.env.user.lang} for the answer to Human" if quest.use_personal_lang else ''
         topic = kwargs.get('topic', kwargs.get('message', ''))
         session = kwargs.get('session', False)
-        system_prompt = quest.supervisor_prompt
+        quest_description = quest.description  
+        if kwargs.get('record'): # Populate with data from record if there is a record
+            data = kwargs.get('record').read()[0]            
+            quest_description = quest_description.format(**{k: data[k] for k in data.keys()})
+        use_lang = f"Use language {self.env.user.lang}" if quest.use_personal_lang else ''
+        system_prompt = quest.supervisor_prompt + f"\n- Guidelines and instructions: {quest_description}\n{use_lang}"
 
         def supervisor_chain(state):
             messages = state.get('messages', [])
@@ -528,7 +540,26 @@ class AIAgent(models.Model):
             return f"{name}"
 
     def test(self):
-        self.last_run = fields.Datetime.now()
+        self.last_run = fields.Datetime.now()        
+        session = self.env['ai.quest.session'].agent_init(self)
+        try:
+            response = self.invoke("What is 1+1, answer with a single digit")
+        except Exception as e:
+            session.add_message(f"Could not confirm agent: {str(e)}\n{traceback.format_exc()}")
+            self.message_post(body=_(f"Could not confirm agent: {str(e)}"), message_type="notification")
+            session.status = 'done'
+            return False
+        session.status = 'done'
+        if isinstance(response, AIMessage):
+            content = response.content.strip()
+            if content == "2":
+            # ~ raise UserError(content)
+                self.message_post(body=_(f"Llm confirmed: 1+1={content}"), message_type="notification")
+                self.status = "active"
+                return 
+        self.message_post(body=_(f"Could not confirm agent: {response=}"), message_type="notification")
+
+        
 
     def log_message(self, body, is_error=False):
         if is_error:
