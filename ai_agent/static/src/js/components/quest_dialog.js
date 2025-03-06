@@ -35,21 +35,32 @@ export class QuestDialog extends Component {
     }
 
     insertMessage(ev) {
-        this.selectMessage(ev);
-        this._confirm();
+        try {
+            // Get the message ID from the clicked button
+            const messageId = ev.currentTarget.getAttribute('data-message-id');
+
+            // Find the message content
+            const message = this.state.messages.find(msg => msg.id === Number(messageId));
+
+            if (!message || !message.text) {
+                console.error("Message not found or has no text content");
+                return;
+            }
+
+            // Close the dialog
+            this.props.close();
+
+            // Pass the raw text directly to the insert function
+            // This ensures the content isn't processed further
+            this.props.insert(message.text);
+        } catch (e) {
+            console.error("Error inserting message:", e);
+            this.props.close();
+        }
     }
 
     formatContent(content) {
-        return markup([...this._postprocessGeneratedContent(content).childNodes].map(child => {
-            // Escape all text.
-            const nodes = new Set([...child.querySelectorAll('*')].flatMap(node => node.childNodes));
-            nodes.forEach(node => {
-                if (node.nodeType === Node.TEXT_NODE) {
-                    node.textContent = escape(node.textContent);
-                }
-            });
-            return child.outerHTML;
-        }).join(''));
+        return markup(content);
     }
 
     //--------------------------------------------------------------------------
@@ -57,40 +68,16 @@ export class QuestDialog extends Component {
     //--------------------------------------------------------------------------
 
     _postprocessGeneratedContent(content) {
-        const lines = content.split('\n').filter(line => line.trim().length);
+        // Don't process the content at all, just return it as is
+        // This preserves all formatting including markdown
         const fragment = document.createDocumentFragment();
-        let parentUl, parentOl;
-        let lineIndex = 0;
-        for (const line of lines) {
-            if (line.trim().startsWith('- ')) {
-                // Create or continue an unordered list.
-                parentUl = parentUl || document.createElement('ul');
-                const li = document.createElement('li');
-                li.innerText = line.trim().slice(2);
-                parentUl.appendChild(li);
-            } else if (
-                (parentOl && line.startsWith(`${parentOl.children.length + 1}. `)) ||
-                (!parentOl && line.startsWith('1. ') && lines[lineIndex + 1]?.startsWith('2. '))
-            ) {
-                // Create or continue an ordered list (only if the line starts
-                // with the next number in the current ordered list (or 1 if no
-                // ordered list was in progress and it's followed by a 2).
-                parentOl = parentOl || document.createElement('ol');
-                const li = document.createElement('li');
-                li.innerText = line.slice(line.indexOf('.') + 2);
-                parentOl.appendChild(li);
-            } else {
-                // Insert any list in progress, and a new block for the current
-                // line.
-                [parentUl, parentOl].forEach(list => list && fragment.appendChild(list));
-                parentUl = parentOl = undefined;
-                const block = document.createElement(line.startsWith('Title: ') ? 'h2' : 'p');
-                block.innerText = line;
-                fragment.appendChild(block);
-            }
-            lineIndex += 1;
+        const div = document.createElement('div');
+        div.innerHTML = content;
+
+        // Append all child nodes from the div to the fragment
+        while (div.firstChild) {
+            fragment.appendChild(div.firstChild);
         }
-        [parentUl, parentOl].forEach(list => list && fragment.appendChild(list));
         return fragment;
     }
 
@@ -102,7 +89,9 @@ export class QuestDialog extends Component {
         try {
             this.props.close();
             const text = this.state.messages.find(message => message.id === this.state.selectedMessageId)?.text;
-            this.props.insert(this._postprocessGeneratedContent(text || ''));
+
+            // Just pass the raw text without processing
+            this.props.insert(text || '');
         } catch (e) {
             this.props.close();
             throw e;

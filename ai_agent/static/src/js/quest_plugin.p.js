@@ -107,14 +107,36 @@ export class QuestPlugin extends Plugin {
         const selection = this.dependencies.selection.getEditableSelection();
         const dialogParams = {
             insert: (content) => {
-                const insertedNodes = this.dependencies.dom.insert(content);
+                // First, check if the content is already HTML
+                let htmlContent = content;
+
+                // If it's not HTML (doesn't have HTML tags), convert it to HTML
+                if (!content.includes('</p>') && !content.includes('</h') && !content.includes('</div>')) {
+                    // Process markdown-style content
+                    htmlContent = this._markdownToHtml(content);
+                }
+
+                // Create a temporary div to hold the HTML content
+                const tempDiv = document.createElement('div');
+                tempDiv.innerHTML = htmlContent;
+
+                // Insert each child node individually
+                const insertedNodes = [];
+                tempDiv.childNodes.forEach(node => {
+                    // Need to use insert for each node
+                    const nodes = this.dependencies.dom.insert(node.cloneNode(true));
+                    if (nodes && nodes.length) {
+                        insertedNodes.push(...nodes);
+                    }
+                });
+
                 this.dependencies.history.addStep();
-                // Add a frame around the inserted content to highlight it for 2
-                // seconds.
+
+                // Add a frame around the inserted content to highlight it for 2 seconds.
                 const start = insertedNodes?.length && closestElement(insertedNodes[0]);
-                const end =
-                    insertedNodes?.length &&
+                const end = insertedNodes?.length &&
                     closestElement(insertedNodes[insertedNodes.length - 1]);
+
                 if (start && end) {
                     const divContainer = this.editable.parentElement;
                     let [parent, left, top] = [
@@ -156,18 +178,92 @@ export class QuestPlugin extends Plugin {
             this.dependencies.dialog.addDialog(QuestPromptDialog, { ...dialogParams });
         }
         if (this.services.ui.isSmall) {
-            // TODO: Find a better way and avoid modifying range
-            // HACK: In the case of opening through dropdown:
-            // - when dropdown open, it keep the element focused before the open
-            // - when opening the dialog through the dropdown, the dropdown closes
-            // - upon close, the generic code of the dropdown sets focus on the kept element (in our case, the editable)
-            // - we need to remove the range after the generic code of the dropdown is triggered so we hack it by removing the range in the next tick
             Promise.resolve().then(() => {
-                // If the dialog is opened on a small screen, remove all selection
-                // because the selection can be seen through the dialog on some devices.
                 this.document.getSelection()?.removeAllRanges();
             });
         }
+    }
+
+    // Add this helper method to convert markdown to HTML
+    _markdownToHtml(markdown) {
+        if (!markdown) return '';
+
+        // Simple markdown conversion for common elements
+        let html = markdown
+            // Headers (must come before bold/italic)
+            .replace(/^### (.*$)/gim, '<h3>$1</h3>')
+            .replace(/^## (.*$)/gim, '<h2>$1</h2>')
+            .replace(/^# (.*$)/gim, '<h1>$1</h1>')
+
+            // Bold and italic
+            .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+            .replace(/\*([^*]+)\*/g, '<em>$1</em>')
+
+            // Code blocks
+            .replace(/```([\s\S]*?)```/g, function(match, code) {
+                return '<pre><code>' + code.trim().replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</code></pre>';
+            })
+
+            // Inline code
+            .replace(/`([^`]+)`/g, function(match, code) {
+                return '<code>' + code.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</code>';
+            });
+
+        // Handle lists (bullet points)
+        const bulletListPattern = /^(\s*)\* (.*?)$/gm;
+        const bulletMatches = [...html.matchAll(bulletListPattern)];
+
+        if (bulletMatches.length > 0) {
+            // Collect all bullet points with their indentation levels
+            const bulletItems = bulletMatches.map(match => ({
+                indent: match[1].length,
+                content: match[2],
+                original: match[0]
+            }));
+
+            // Replace bullet points with HTML
+            for (const item of bulletItems) {
+                html = html.replace(item.original, `<li>${item.content}</li>`);
+            }
+
+            // Wrap in UL tags
+            html = html.replace(/(<li>.*?<\/li>)+/gs, '<ul>$&</ul>');
+        }
+
+        // Handle numbered lists
+        const numberedListPattern = /^(\s*)\d+\. (.*?)$/gm;
+        const numberedMatches = [...html.matchAll(numberedListPattern)];
+
+        if (numberedMatches.length > 0) {
+            // Collect all numbered items with their indentation levels
+            const numberedItems = numberedMatches.map(match => ({
+                indent: match[1].length,
+                content: match[2],
+                original: match[0]
+            }));
+
+            // Replace numbered items with HTML
+            for (const item of numberedItems) {
+                html = html.replace(item.original, `<li>${item.content}</li>`);
+            }
+
+            // Wrap in OL tags
+            html = html.replace(/(<li>.*?<\/li>)+/gs, '<ol>$&</ol>');
+        }
+
+        // Convert paragraphs (lines with content not already in HTML tags)
+        // Split by double newlines to find paragraphs
+        const paragraphs = html.split(/\n\s*\n/);
+        html = paragraphs.map(p => {
+            const trimmedP = p.trim();
+            if (trimmedP && !trimmedP.startsWith('<')) {
+                // Replace newlines with <br> tags within paragraphs
+                return `<p>${trimmedP.replace(/\n/g, '<br>')}</p>`;
+            }
+            return trimmedP;
+        }).join('\n');
+
+        return html;
     }
 
 }
