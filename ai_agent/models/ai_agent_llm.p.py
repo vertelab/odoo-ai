@@ -186,15 +186,14 @@ class AIAgentLLM(models.Model):
             api_key = self.ai_api_key
             if not api_key:
                 api_key = tools.config.get(self.product_tmpl_id.fallback_api_key_name, False)
-                #_logger.error(f"{self.product_tmpl_id.fallback_api_key_name=}")
-                #api_key = tools.config.get("huggingface_inference_api_key", False)
                 _logger.error(f"{api_key=}")
-            if "HuggingFace" in self.product_tmpl_id.llm_etype:
+            if "HuggingFaceInferenceAPIEmbeddings" == self.product_tmpl_id.llm_etype:
                 return LLM(api_key=SecretStr(api_key), model_name=self.model_id.name)
+            elif "HuggingFaceEmbeddings" == self.product_tmpl_id.llm_etype:
+                 return LLM(model_name=self.model_id.name)
             elif api_key:
                 return LLM(api_key=api_key, model=self.model_id.name)
-            else:
-                return LLM(model=self.model_id.name)
+               
         except ImportError as e:
             _logger.error(f"Error importing {self.product_tmpl_id.llm_library}: {e}")
             raise
@@ -270,15 +269,16 @@ class AIAgentLLM(models.Model):
         try:
             response = self.invoke("What is 1+1, answer with a single digit")
         except Exception as e:
+            _logger.error(f"{e=}")
             session.add_message(f"Could not confirm llm: {str(e)}\n{traceback.format_exc()}")
             self.message_post(body=_(f"Could not confirm llm: {str(e)}"), message_type="notification")
+            self.status = "error"
             session.status = 'done'
             return False
         session.status = 'done'
         if isinstance(response, AIMessage):
             content = response.content.strip()
             if content == "2":
-            # ~ raise UserError(content)
                 self.message_post(body=_(f"Llm confirmed: 1+1={content}"), message_type="notification")
                 self.status = "confirmed"
                 return 
