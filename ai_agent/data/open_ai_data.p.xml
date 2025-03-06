@@ -12,20 +12,16 @@
       <field name="image_1920" type="base64" file="ai_agent/static/img/open-ai-logo.jpg" />
     </record>
     <!-- Model -->
-    <record id="open_ai_product_attribute_value_o1" model="product.attribute.value">
-      <field name="name">o1</field>
-      <field name="attribute_id" ref="ai_agent.product_attribute_model" />
-    </record>
     <record id="open_ai_product_attribute_value_o3-mini" model="product.attribute.value">
       <field name="name">o3-mini</field>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
     </record>
-    <record id="open_ai_product_attribute_value_gpt-4." model="product.attribute.value">
-      <field name="name">gpt-4o.5/field>
+    <record id="open_ai_product_attribute_value_gpt-4.5" model="product.attribute.value">
+      <field name="name">gpt-4.5</field>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
-    </record>	  
+    </record>
 	  
-     <record id="open_ai_product_attribute_value_gpt-4o" model="product.attribute.value">
+    <record id="open_ai_product_attribute_value_gpt-4o" model="product.attribute.value">
       <field name="name">gpt-4o</field>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
     </record>
@@ -41,7 +37,10 @@
       <field name="name">gpt-4o-mini-audio-preview</field>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
     </record>
-
+    <record id="open_ai_product_attribute_value_o1" model="product.attribute.value">
+      <field name="name">o1</field>
+      <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+    </record>
     <record id="open_ai_product_attribute_value_o1-mini" model="product.attribute.value">
       <field name="name">o1-mini</field>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
@@ -61,13 +60,13 @@
       <field name="product_tmpl_id" ref="open_ai_product_template" />
       <field name="attribute_id" ref="product_attribute_model" />
       <field name="value_ids" eval="[(6, 0, [
-                            ref('open_ai_product_attribute_value_o1'),
                             ref('open_ai_product_attribute_value_o3-mini'),
                             ref('open_ai_product_attribute_value_gpt-4.5'),
                             ref('open_ai_product_attribute_value_gpt-4o'),
                             ref('open_ai_product_attribute_value_gpt-4o-audio-preview'),
                             ref('open_ai_product_attribute_value_gpt-4o-mini'),
                             ref('open_ai_product_attribute_value_gpt-4o-mini-audio-preview'),
+                            ref('open_ai_product_attribute_value_o1'),
                             ref('open_ai_product_attribute_value_o1-mini'),
                             ref('open_ai_product_attribute_value_text-embedding-3-small'),
                             ref('open_ai_product_attribute_value_text-embedding-3-large'),
