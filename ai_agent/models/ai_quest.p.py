@@ -679,30 +679,27 @@ class AIQuest(models.Model):
             return res
 
     def run_powerbox_quest(self, quest, prompt, res_model, res_id):
-        from .html2plaintext import ai_html2plaintext
         ai_quest = self.env['ai.quest'].browse(quest.get('id')).exists()
         if not ai_quest:
-            _logger.error(f"OBS: Quest does not exist: not ai_quest {self=} {quest=} {prompt=}")
             raise UserError(_("OBS: Quest does not exist, you should contact administrator to look into the quest"))
         if res_model and res_id:
             record = self.env[res_model].browse(int(res_id)).exists()  # Instantiate record here
         else:
             record = False
         result = ai_quest.run(prompt=prompt, record=record)
+
         if result:
             ai_messages = self._get_last_ai_message(result.get('result', {}).get('messages', False))
             if not ai_messages:
-                _logger.error(f"OBS: Quest does not exist: not ai_messages {self=} {quest=} {prompt=} {result=}")
                 raise UserError(_("OBS: An error occurred, you should contact administrator to look into the quest"))
 
             if ai_quest.debug:
                 answer = markdown.markdown(ai_messages.content)
             else:
-                answer = ai_html2plaintext(
-                    re.sub(r'<think>.*?</think>', '', markdown.markdown(ai_messages.content), flags=re.DOTALL)
-                )
+                answer = re.sub(
+                    r'<think>.*?</think>', '', markdown.markdown(ai_messages.content), flags=re.DOTALL)
+
             return answer
-        _logger.error(f"OBS: Quest does not exist: no result {self=} {ai_quest=} {quest=} {prompt=} {result=}")
         raise UserError(_("OBS: An error occurred, you should contact administrator to look into the quest"))
 
     # ------------------------------------------------------------
@@ -795,6 +792,7 @@ class AIQuest(models.Model):
             '_logger': _logger,
             'html2plaintext': html2plaintext,
             'HumanMessage': HumanMessage,
+            'markdown2html': markdown.markdown,
             **kw,
         }
         return eval_context
@@ -925,22 +923,18 @@ class AIQuest(models.Model):
 
     def build_supervisor(self, **kwargs):
         """Build a multi-agent workflow graph with supervisor."""
-
         if not self.ai_agent_ids:
             raise ValueError("No agents provided")
 
         agents = [line.ai_agent_id for line in self.ai_agent_ids]
 
         # Get member names
-        members = [a.get_agent_name(i,**kwargs) for i, a in enumerate(agents)]
+        members = [a.get_agent_name(i, **kwargs) for i, a in enumerate(agents)]
         _logger.info(f"Building graph with supervisor and {len(members)} workers: {members}")
 
-        _logger.error(f"{kwargs.get('mermaid')=}")
-
-        global session
-        session = kwargs.get('session', False)
-
-        if session == False:
+        # Get session from kwargs
+        session = kwargs.get('session')
+        if not session:
             raise UserError(_("No session added to build_graph method"))
 
         try:
@@ -948,23 +942,22 @@ class AIQuest(models.Model):
             graph_builder = StateGraph(AgentState)
 
             # Add supervisor
-            _logger.info(f"Adding supervisor: with {members=}")
-            graph_builder.add_node(self.get_agent_name(**kwargs),
-                                   self.env['ai.agent'].create_supervisor(self, members, **kwargs))
+            _logger.info(f"Adding supervisor with {members=}")
+            graph_builder.add_node(
+                self.get_agent_name(**kwargs),
+                self.create_supervisor_node(members, **kwargs)
+            )
 
             # Add worker nodes
             for i, agent in enumerate(agents):
-                # ~ graph_builder.add_node(agent.name, agent.create_node(session=session))
-                graph_builder.add_node(agent.get_agent_name(i, **kwargs), agent.create_node(session=session))
+                graph_builder.add_node(agent.get_agent_name(i, **kwargs), agent.create_node(**kwargs))
 
             # Add edges from workers to supervisor
-            # ~ for member in [a.name for a in agents]:
             for member in [a.get_agent_name(i, **kwargs) for i, a in enumerate(agents)]:
                 _logger.info(f"Adding edge: {member} -> Supervisor")
                 graph_builder.add_edge(member, self.get_agent_name(**kwargs))
 
             # Add conditional routing
-            # ~ conditional_map = {k: k for k in [a.name for a in agents]}
             conditional_map = {k: k for k in [a.get_agent_name(i, **kwargs) for i, a in enumerate(agents)]}
             conditional_map["FINISH"] = END
 
@@ -984,118 +977,407 @@ class AIQuest(models.Model):
             _logger.info("Compiling graph")
 
             graph = graph_builder.compile()
-            input_channels = graph.input_channels
-            if self.debug:
-                self.log_message(f"{json.dumps(graph.get_graph().to_json(), indent=2)}\n{input_channels=}")
-                _logger.debug(f"{json.dumps(graph.get_graph().to_json(), indent=2)}\n{input_channels=}")
-                if hasattr(graph, 'model'):
-                    model_config = graph.model.config
-                    _logger.debug(f"Model {graph.model.config=}")
-                    self.log_message(f"Model {graph.model.config=}")
-                    if 'tools' in model_config:
-                        _logger.debug(f"Tools {graph.model.config['tools']=}")
-                        self.log_message(f"Tools {graph.model.config['tools']=}")
+
+            # if self.debug:
+            #     self.log_message(f"Graph structure: {json.dumps(graph.get_graph().to_json(), indent=2)}")
+            #     _logger.debug(f"Graph structure: {json.dumps(graph.get_graph().to_json(), indent=2)}")
 
             return graph
 
         except Exception as e:
             self.log_message(f"Error building graph: {str(e)}", is_error=True)
-            _logger.error(f"Error building graph: {str(e)}")
-
+            _logger.error(f"Error building graph: {str(e)}\n{traceback.format_exc()}")
             raise
 
-    # message = html2plaintext(message.body)
-    # response = self.build_graph(agents).invoke({"messages": [HumanMessage(content=message)]})
-    # result = response['messages'][-1].content
+    def create_supervisor_node(self, members, **kwargs):
+        """Create a supervisor node that coordinates between different agents."""
+        # Get session from kwargs
+        session = kwargs.get('session')
+        if not session:
+            raise UserError(_("No session provided to supervisor node"))
+
+        use_lang = f"Use language {self.env.user.lang} for the answer to Human" if self.use_personal_lang else ''
+        topic = kwargs.get('topic', kwargs.get('message', ''))
+        quest_description = self.description
+
+        if kwargs.get('record'):  # Populate with data from record if there is a record
+            try:
+                data = kwargs.get('record').read()[0]
+                quest_description = quest_description.format(**{k: data[k] for k in data.keys()})
+            except Exception as e:
+                _logger.warning(f"Error formatting quest description with record data: {e}")
+
+        # Format the supervisor prompt with required parameters
+        system_prompt = """You are a supervisor coordinating between workers: {members}.
+    Based on the request, determine which worker should handle the next step.
+    Choose FINISH ONLY when a complete response has been provided.
+
+    Guidelines: {guidelines}
+
+    Instructions:
+    1. Carefully review all previous messages and the current state
+    2. If the response is NOT complete, choose the most appropriate worker
+    3. Choose FINISH ONLY when we have a satisfactory, complete response
+    4. Be explicit in your decision - name the exact worker or say FINISH
+    5. If no worker is making progress after multiple attempts, choose a different worker
+    6. {use_lang}
+
+    IMPORTANT: Never decide FINISH on the first round unless the request is trivially simple.
+    """
+
+        system_prompt = system_prompt.format(
+            members=", ".join(members),
+            guidelines=quest_description,
+            use_lang=use_lang
+        )
+
+        system_prompt += f"\n\n{self._extra_context()}"
+
+        def supervisor_chain(state):
+            """Process state and decide which agent should act next."""
+            try:
+                messages = state.get('messages', [])
+                latest_message = ""
+
+                # Track cycles to prevent infinite loops
+                if 'cycle_count' not in state:
+                    state['cycle_count'] = 0
+                else:
+                    state['cycle_count'] += 1
+
+                # Force FINISH if we're cycling too much
+                if state['cycle_count'] > 5:  # Adjust threshold as needed
+                    session.add_message(f"Forcing FINISH after {state['cycle_count']} cycles")
+                    return {"next": "FINISH", 'session': session}
+
+                # Handle different message formats
+                if messages:
+                    if isinstance(messages[-1], dict) and 'content' in messages[-1]:
+                        latest_message = messages[-1]['content']
+                    elif hasattr(messages[-1], 'content'):
+                        latest_message = messages[-1].content
+                    elif isinstance(messages[-1], str):
+                        latest_message = messages[-1]
+                    else:
+                        # Try to convert to string
+                        latest_message = str(messages[-1])
+
+                if self.debug:
+                    session.add_message(f"SUPERVISOR state with members: {members}")
+                    session.add_message(f"Latest message: {latest_message[:100]}...")
+
+                # Initialize scratchpad if needed
+                if 'scratchpad' not in state or state['scratchpad'] is None:
+                    state['scratchpad'] = []
+                elif isinstance(state['scratchpad'], str):
+                    state['scratchpad'] = [state['scratchpad']]
+
+                # If this is the very first message and no previous interaction
+                if state['cycle_count'] == 0 and len(messages) == 1:
+                    first_worker = members[0] if members else "FINISH"
+                    session.add_message(f"Initial request, starting with: {first_worker}")
+                    return {
+                        "next": first_worker,
+                        'session': session,
+                        'messages': messages
+                    }
+
+                # Prepare prompt for the supervisor
+                prompt = f"Previous input: {latest_message}\n\n"
+                prompt += f"Based on the previous input, which agent should act next? Choose from: {members} or say FINISH if we have a complete response."
+                prompt += (f"\n\nImportant: You must choose EXACTLY one of these agents by name or say FINISH. Do not "
+                           f"modify the agent names.")
+
+                if self.debug:
+                    session.add_message(f"Supervisor prompt: {prompt}")
+
+                # Get LLM for supervisor
+                llm = self.supervisor_llm_id.get_llm(temperature=self.supervisor_temperature)
+
+                messages_to_llm = [
+                    SystemMessage(content=system_prompt),
+                    HumanMessage(content=prompt)
+                ]
+
+                # Get supervisor decision
+                response = llm.invoke(messages_to_llm)
+                content = response.content
+
+                if self.debug:
+                    session.add_message(f"Supervisor raw response: {content}")
+
+                # Extract the decision from the response
+                decision = self.extract_supervisor_decision(content, session=session, members=members)
+
+                if decision == "FINISH":
+                    _logger.info("Supervisor decided to FINISH")
+                    session.add_message("Supervisor decided to FINISH")
+
+                    # Ensure we return an AI message as the final result
+                    if 'messages' in state and state['messages'] and isinstance(state['messages'][-1], AIMessage):
+                        final_message = state['messages'][-1]
+                    else:
+                        final_message = AIMessage(content="Task complete. " + (latest_message or ""))
+                        if 'messages' not in state:
+                            state['messages'] = [final_message]
+                        else:
+                            state['messages'].append(final_message)
+
+                    return {
+                        "next": "FINISH",
+                        'session': session,
+                        'messages': state['messages']
+                    }
+
+                # Verify the decision is a valid agent name
+                if decision not in members:
+                    # Try to find the closest match
+                    closest_match = None
+                    for member in members:
+                        if decision.lower() in member.lower() or member.lower() in decision.lower():
+                            closest_match = member
+                            break
+
+                    if closest_match:
+                        decision = closest_match
+                        session.add_message(f"Matched '{decision}' to agent: {closest_match}")
+                    elif len(members) > 0:
+                        # Default to first agent if no match
+                        decision = members[0]
+                        session.add_message(f"No match for '{decision}', defaulting to: {members[0]}")
+                    else:
+                        session.add_message(f"No valid agents found, finishing")
+                        return {"next": "FINISH", 'session': session}
+
+                session.add_message(f"Supervisor selected: {decision}")
+                return {
+                    "next": decision,
+                    'session': session,
+                    'messages': state.get('messages')
+                }
+
+            except Exception as e:
+                _logger.error(f"Error in supervisor chain: {str(e)}", exc_info=True)
+                session.add_message(f"Error in supervisor chain: {str(e)}\n{traceback.format_exc()}")
+                return {"next": "FINISH", 'session': session}
+
+        return supervisor_chain
+
+    def extract_supervisor_decision(self, content, **kwargs):
+        """Extract the agent decision from the supervisor's response."""
+        session = kwargs.get('session')
+        members = kwargs.get('members', [])
+
+        # First, check for JSON format
+        try:
+            json_match = re.search(r'\{.*?"next"\s*:\s*"([^"]+)".*?}', content, re.DOTALL)
+            if json_match:
+                decision = json_match.group(1)
+                return self._match_agent_name(decision, members)
+        except Exception as e:
+            _logger.warning(f"Error extracting JSON with regex: {e}")
+
+        # Check for explicit FINISH
+        if re.search(r'\bFINISH\b', content, re.IGNORECASE):
+            return "FINISH"
+
+        # Look for agent mentioned with specific patterns
+        intent_patterns = [
+            r'(?:next agent should be|choose|select|I choose|I select|I recommend)\s*[":]*\s*([A-Za-z0-9_\s\-\.,]+)',
+            r'([A-Za-z0-9_\s\-\.,]+)(?:\s+for the next step|\s+should handle|\s+is best|\s+would be appropriate)',
+            r'I think\s+([A-Za-z0-9_\s\-\.,]+)\s+should',
+        ]
+
+        for pattern in intent_patterns:
+            match = re.search(pattern, content, re.IGNORECASE)
+            if match:
+                decision = match.group(1).strip()
+                return self._match_agent_name(decision, members)
+
+        # If no clear decision was found, check if any agent name is mentioned
+        for member in members:
+            if re.search(r'\b' + re.escape(member.split('\n')[0]) + r'\b', content, re.IGNORECASE):
+                return member
+
+        # Check for completion indicators
+        completion_patterns = [
+            r'task\s+complete', r'complete\s+response', r'answer\s+is\s+complete',
+            r'no\s+further\s+action', r'satisfactory\s+response', r'response\s+is\s+complete'
+        ]
+        if any(re.search(pattern, content, re.IGNORECASE) for pattern in completion_patterns):
+            return "FINISH"
+
+        # Default to first agent if we can't determine
+        if len(members) > 0:
+            return members[0]
+        return "FINISH"
+
+    def _match_agent_name(self, decision, members):
+        """Match a decision string to the closest agent name."""
+        # Direct match
+        if decision in members:
+            return decision
+
+        if decision.upper() == "FINISH":
+            return "FINISH"
+
+        # Clean the decision (remove formatting, newlines)
+        decision = decision.strip().split('\n')[0]
+
+        # Case-insensitive match
+        for member in members:
+            member_name = member.split('\n')[0] if '\n' in member else member
+            if decision.lower() == member_name.lower():
+                return member
+
+        # Partial match - check if decision contains a member name
+        for member in members:
+            member_name = member.split('\n')[0] if '\n' in member else member
+            if member_name.lower() in decision.lower():
+                return member
+
+        # Check if any member name contains the decision
+        for member in members:
+            member_name = member.split('\n')[0] if '\n' in member else member
+            if decision.lower() in member_name.lower():
+                return member
+
+        # If all else fails, return first member or FINISH
+        if members:
+            return members[0]
+        return "FINISH"
+
+    # Helper method to safely get text from messages
+    def _get_message_content(self, message):
+        """Safely extract content from different message formats"""
+        if message is None:
+            return ""
+        if isinstance(message, dict) and 'content' in message:
+            return message['content']
+        elif hasattr(message, 'content'):
+            return message.content
+        elif isinstance(message, str):
+            return message
+        return str(message)  # Try to convert to string
+
+    def extra_context(self):
+        from datetime import datetime
+        res = {}
+        if self.use_company_info:
+            res[
+                'company_info'] = f'Company information: {self.env.user.company_id.company_mission=} {self.env.user.company_id.company_values=}'
+        if self.use_personal_info:
+            res[
+                'user_info'] = f'User information: {self.env.user.name=} {self.env.user.function=} {self.env.user.city=}'
+        if self.use_time_context:
+            now = datetime.now()
+            res[
+                'time_context'] = f'Current date {now.strftime("%Y-%m-%d")} Current time {now.strftime("%H:%M:%S")} Week Number {now.isocalendar()[1]}\n'
+        return res
+
+    def _extra_context(self):
+        res = ''
+        for key, data in self.extra_context().items():
+            res += data
+        return res
 
     # https://www.perplexity.ai/search/i-langgraph-vill-jag-komma-at-fCisIUB7RjaKwPovE_fyZg
 
     def build_chain(self, **kwargs):
-        """Build a multi-agent workflow chain."""
-        if self.debug:
-            _logger.debug(f"building chain: {str(kwargs)}")
-
+        """Build a sequential chain of agents."""
         if not self.ai_agent_ids:
             raise ValueError("No agents provided")
 
+        # Get agents sorted by sequence
         agents = [agent for agent in self.ai_agent_ids.sorted(key=lambda s: s.sequence).mapped('ai_agent_id') if agent]
-        session = kwargs.get('session', False)
 
-        def initial_node(state: AgentState) -> AgentState:
-            # ~ state = ConfigDict(arbitrary_types_allowed=True)
-            # ~ if self.debug:
-            session.add_message(f"Agent INITIAL Initial state: {state=}")
+        # Get session
+        session = kwargs.get('session', False)
+        if not session:
+            raise UserError(_("No session provided to build_chain"))
+
+        # Set debug mode
+        debug = kwargs.get('debug', self.debug)
+
+        if debug:
+            session.add_message(f"Building chain with {len(agents)} agents")
+
+        def initial_node(state):
+            """Initialize the state for the chain."""
+            # Get the initial message/topic
+            initial_message = kwargs.get('topic', kwargs.get('message', ''))
+
+            if debug:
+                session.add_message(f"Initializing chain with message: {initial_message[:100]}...")
+
+            # Create a proper HumanMessage
+            human_message = HumanMessage(content=initial_message)
+
             return {
-                "messages": [{"role": "user", "content": kwargs.get('topic', kwargs.get('message', ''))}],
+                "messages": [human_message],
                 'quest': self,
-                'session': kwargs.get('session', False),
-                'topic': kwargs.get('topic', ''),
+                'session': session,
+                'topic': initial_message,
                 'scratchpad': [],
-                'next': "agent_0",
-                'count': 1,
+                'cycle_count': 0,
                 'current_agent': 'initial_node',
                 'sequence_position': 0,
                 'last_position': len(agents),
             }
 
         try:
-            # Create graph
-            AgentState.model_config = ConfigDict(arbitrary_types_allowed=True)
-            workflow = StateGraph(AgentState)
-            workflow.add_node("initial", initial_node)
-            workflow.add_edge(START, "initial")
-            workflow.set_entry_point("initial")
+            # Create the graph
+            graph = StateGraph(AgentState)
 
+            # Add initial node
+            graph.add_node("initial", initial_node)
+            graph.add_edge(START, "initial")
+
+            # Add agent nodes and edges between them
             for i, agent in enumerate(agents):
-                session.add_message(f"Add Node Agent agent_{i}")
-                # ~ workflow.add_node(f"agent_{i}", 
-                # ~ lambda state, agent=agent, i=i: {
-                # ~ **agent.create_sequence_node(
-                # ~ debug=self.debug,
-                # ~ current_agent=agent.name,
-                # ~ sequence_position=i,
-                # ~ **kwargs
-                # ~ )(state),
-                # ~ "next":  f"agent_{i+1}" if i < len(agents) else END,
-                # ~ "current_node": f"agent_{i}",
-                # ~ "sequence_position": i
-                # ~ })
-                workflow.add_node(agent.get_agent_name(i, **kwargs), agent.create_sequence_node(
-                    debug=self.debug,
+                node_name = agent.get_agent_name(i, **kwargs)
+
+                if debug:
+                    session.add_message(f"Adding agent node: {node_name}")
+
+                # Add the node
+                graph.add_node(node_name, agent.create_node(
+                    debug=debug,
                     current_agent=agent.name,
-                    sequence_position=i,
-                    **kwargs))
+                    quest=self,
+                    **kwargs
+                ))
 
-                # ~ workflow.add_node(f"agent_{i}", agent.create_node(
-                # ~ debug=self.debug,
-                # ~ current_agent=agent.name,
-                # ~ sequence_position=i,
-                # ~ **kwargs))
+                # Connect nodes
+                if i == 0:
+                    # Connect initial node to first agent
+                    graph.add_edge("initial", node_name)
+                else:
+                    # Connect previous agent to current agent
+                    prev_node = agents[i - 1].get_agent_name(i - 1, **kwargs)
+                    graph.add_edge(prev_node, node_name)
 
-            workflow.add_edge(f"initial", agents[0].get_agent_name(0, **kwargs))
-            for i, agent in enumerate(agents[:-1]):
-                workflow.add_edge(agents[i].get_agent_name(i, **kwargs), agents[i + 1].get_agent_name(i + 1, **kwargs))
-            workflow.add_edge(agents[-1].get_agent_name(len(agents), **kwargs), END)
-            graph = workflow.compile()
-            input_channels = graph.input_channels
+            # Connect last agent to END
+            graph.add_edge(agents[-1].get_agent_name(len(agents) - 1, **kwargs), END)
+
+            # Set entry point
+            graph.set_entry_point("initial")
+
+            # Compile the graph
+            compiled_graph = graph.compile()
+
+            return compiled_graph
 
         except Exception as e:
-            self.log_message(f"Error building chain: {str(e)}\n{traceback.format_exc()}", is_error=True)
-            _logger.error(f"Error building chain: {str(e)}\n{traceback.format_exc()}")
+            error_msg = f"Error building chain: {str(e)}\n{traceback.format_exc()}"
+            _logger.error(error_msg)
+            session.add_message(error_msg)
             raise
-
-        if self.debug:
-            # ~ self.log_message(f"{json.dumps(graph.get_graph().to_json(), indent=2)}\n{input_channels=}")
-            # ~ self.log_message(f"get graph: {graph.get_graph()}\n")
-            _logger.debug(f"{json.dumps(graph.get_graph().to_json(), indent=2)}\n{input_channels=}")
-            _logger.error(f"Get_graph {graph.get_graph()}")
-
-        return graph
 
     # Inspired by https://github.com/menonpg/agentic_search_openai_langgraph/blob/main/agents.py
     def build_graph(self, **kwargs):
         """Build a multi-agent workflow graph with supervisor."""
-        raise UserError(('quest.build_graph() is outdated, use quest.build() instead'))
+        raise UserError('quest.build_graph() is outdated, use quest.build() instead')
 
     def extract_json(self, agent, session, message):
         # Find JSON-like content within triple backticks
@@ -1142,7 +1424,6 @@ class AgentState(TypedDict):
     scratchpad: Annotated[List[str], operator.add]
     next: str
     token: Optional[int] = None
-    # ~ count: SkipValidation[NotRequired[Step(lambda count: count + 1)]]
     current_agent: str
     sequence_position: int
     last_position: int

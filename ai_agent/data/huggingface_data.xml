@@ -4,7 +4,7 @@
     <record id="huggingface_product_template" model="product.template">
       <field name="name">HuggingFace</field>
       <field name="is_llm">True</field>
-      <field name="llm_library">langchain_huggingface</field>
+      <field name="llm_library">langchain_huggingface.embeddings</field>
       <field name="llm_etype">HuggingFaceEmbeddings</field>
       <field name="llm_type">HuggingFaceHub</field>
 	  <field name="fallback_api_key_name">huggingface_api_key</field>
