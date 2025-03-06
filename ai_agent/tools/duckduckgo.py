@@ -10,6 +10,8 @@ from odoo.addons.ai_agent.models.ai_quest import AgentState
 from pydantic import BaseModel, Field, ConfigDict
 from langchain.tools import BaseTool, StructuredTool, tool
 
+
+
 if sys.version_info >= (3, 12):
     from typing import Optional
 else:
@@ -31,6 +33,7 @@ class DDGOInputs(BaseModel):
         description="Graph State"
     )
     model_config = ConfigDict(arbitrary_types_allowed=True)
+
 
 def internet_search(state):
     @tool("internet_search_DDGO", return_direct=False)

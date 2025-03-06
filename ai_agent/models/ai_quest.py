@@ -3,7 +3,6 @@ import json
 import logging
 import markdown
 import operator
-import sys
 import re
 import traceback
 import unidecode
@@ -31,18 +30,16 @@ from pydantic import BaseModel, ConfigDict, SkipValidation
 from random import randint
 from secrets import choice
 
-if sys.version_info >= (3, 12):
-    from typing import Optional, Annotated, List, NotRequired, Sequence, TypedDict, Union, Any
-else:
-    from typing_extensions import Optional, Annotated, List, NotRequired, Sequence, TypedDict, Union, Any
-
+from typing import Optional, Annotated, List, NotRequired, Sequence, TypedDict, Union, Any
 # Odoo 18 okt 2024  Ubuntu 24.04 Python 3.12 (NotRequired 3.11)
 # Odoo 17 2023 Ubuntu 22.04  Python 3.10
 # Odoo 16 2022 Ubuntu 22.04  Python 3.10
 # Odoo 14 2020 Ubuntu 20.04  Python 3.8 -> 3.10
 # The typing_extensions module is primarily used for backporting new features to older Python versions
 
+
 from odoo.addons.base.models.avatar_mixin import get_hsl_from_seed
+
 
 _logger = logging.getLogger(__name__)
 
@@ -51,6 +48,7 @@ Based on the request, determine which worker should handle the next step.
 Only choose FINISH when a complete response has been provided.
 
 Guidelines: {self.description}
+{self._extra_context(self)}
 
 Instructions:
 1. Evaluate if we have a complete response
@@ -116,8 +114,7 @@ class AIQuestAgent(models.Model):
     ai_agent_id = fields.Many2one(
         comodel_name='ai.agent', string="Agent", help="", required=False)
     ai_agent_status = fields.Selection(selection=[
-        ("draft", "Draft"), ("active", "Active"), ("done", "Done"), ("error", "Error")], default="draft",
-        related='ai_agent_id.status')
+        ("draft", "Draft"), ("active", "Active"), ("done", "Done"), ("error", "Error")], default="draft", related='ai_agent_id.status')
     ai_agent_llm_id = fields.Many2one(comodel_name="ai.agent.llm", string="LLM", help="Choose Large Language Model",
                                       domain="[('status','=','confirmed')]", related='ai_agent_id.ai_agent_llm_id')
     ai_llm_status = fields.Selection(
@@ -267,7 +264,7 @@ class AIQuest(models.Model):
                 quests += add
         _logger.error(f"{quests=}")
         return quests
-
+            
     @api.depends('is_supervisor',
                  'ai_agent_ids.sequence',
                  'ai_agent_ids.ai_agent_id',
@@ -283,8 +280,7 @@ class AIQuest(models.Model):
                     image_object = graph.get_graph().draw_mermaid_png()
                     rec.graph_image = base64.b64encode(image_object).decode('utf-8')
                 except Exception as e:
-                    _logger.error(f"Error building chain: {str(e)}\n{traceback.format_exc()}")
-                    # raise UserError(f"Error building chain: {str(e)}\n{traceback.format_exc()}")
+                    raise UserError(f"Error building chain: {str(e)}\n{traceback.format_exc()}")
             else:
                 rec.graph_image = False
 
@@ -314,6 +310,7 @@ class AIQuest(models.Model):
         bgcolor = get_hsl_from_seed(self.uuid)
         avatar = avatar.replace('fill="#875a7b"', f'fill="{bgcolor}"')
         return base64.b64encode(avatar.encode())
+
 
     def _compute_user_in_group(self):
         for record in self:
@@ -399,9 +396,7 @@ class AIQuest(models.Model):
             #record.session_line_count = sum([l.token_sys or 0 for l in record.session_line_ids])
             start_date = date.today() - timedelta(days=date.today().day - 1)
             end_date = date(year=date.today().year, month=date.today().month + 1, day=1) - timedelta(days=1)
-            filterd_line_ids = list(filter(lambda
-                                               session_line_id: session_line_id.datetime.date() >= start_date and session_line_id.datetime.date() <= end_date,
-                                           record.session_line_ids))
+            filterd_line_ids = list(filter(lambda session_line_id: session_line_id.datetime.date() >= start_date and session_line_id.datetime.date() <= end_date, record.session_line_ids))
             record.session_line_count = sum([f.token_sys or 0 for f in filterd_line_ids])
 
     @api.depends("session_ids")
@@ -446,6 +441,8 @@ class AIQuest(models.Model):
         qtype = _('AI Staff') if self.ai_type == 'ai-staff' else _('Quest')
         self.init_type_str = _(f'This {qtype} will begin work when you press START button')
 
+        # ~ if self.init_type != 'cron' and self.cron_id:
+        # ~ self.cron_id.unlink()
         if self.init_type == 'cron':
             self.init_type_str = _(f'This {qtype} will begin work at a schedule, \nfollow the schedule for updating')
             if not self.cron_id:
@@ -455,6 +452,8 @@ class AIQuest(models.Model):
                     'state': 'code',
                     'code': f"action = env.ref('{self._get_eid()}').cron()",
                 })
+        # ~ if self.init_type != 'server-action' and self.server_action_id:
+        # ~ self.server_action_id.unlink()
 
         if self.init_type == "mail":
             self.init_type_str = _(f'This {qtype} will begin work when receiving a mail at this\naddress')
@@ -471,6 +470,8 @@ class AIQuest(models.Model):
                     'state': 'code',
                     'code': f"action = env.ref('{self._get_eid()}').server_action(records)",
                 })
+        # ~ if self.init_type != 'channel' and self.channel_id:
+        # ~ self.channel_id.unlink()
 
         if self.init_type == 'channel':
             self.init_type_str = _(
@@ -480,6 +481,8 @@ class AIQuest(models.Model):
                     'name': self.name,
                     'ai_quest_id': self.id,
                 })
+        # ~ if self.init_type != 'chat' and self.chat_user_id:
+        # ~ self.chat_user_id.unlink()
 
         if self.init_type == 'chat':
             self.init_type_str = _(f'Chat with this bot, the dialog is private for you and the bot')
@@ -530,7 +533,7 @@ class AIQuest(models.Model):
         action = self.env.ref("ai_agent.action_ai_quest_test_mail_wizard").read()[0]
         action["context"] = {"default_ai_quest_id": self.id}
         return action
-
+        
     def start(self):
         pass
 
@@ -858,7 +861,7 @@ class AIQuest(models.Model):
     # LangGraph 
     # ------------------------------------------------------------
 
-    def build(self, mermaid=True, **kwargs):
+    def build(self, mermaid=True,**kwargs):
         kwargs.update({"mermaid": mermaid})
         if self.is_supervisor:
             _logger.info(f"Building graph with supervisor ")
@@ -866,8 +869,6 @@ class AIQuest(models.Model):
         else:
             _logger.info(f"Building chain ")
             return self.build_chain(**kwargs)
-
-    # Methods to add to the AIQuest class
 
     def build_supervisor(self, **kwargs):
         """Build a multi-agent workflow graph with supervisor."""
@@ -1357,9 +1358,11 @@ class AIQuest(models.Model):
                 ''
             ) if self.supervisor_llm_id and self.supervisor_llm_id.name else ''
             supervisor = f"Supervisor\n<small>fa&colon;fa-cog {llm}</small>"
+            # ~ _logger.info(f"Supervisor ------------------>{supervisor}")
             return supervisor
         else:
             return "Supervisor"
+
 
 
 class AgentState(TypedDict):

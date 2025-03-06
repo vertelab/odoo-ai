@@ -1,7 +1,7 @@
 import functools
 import importlib
-import sys
 import json
+import sys
 import logging
 import re
 import traceback
@@ -24,10 +24,7 @@ from odoo.addons.ai_agent.models.ai_quest import AgentState
 from odoo.exceptions import UserError
 from random import randint
 
-if sys.version_info >= (3, 12):
-    from typing import Annotated, List, NotRequired, Sequence, TypedDict, Union, Any
-else:
-    from typing_extensions import Annotated, List, NotRequired, Sequence, TypedDict, Union, Any
+from typing import Annotated, List, NotRequired, Sequence, TypedDict, Union, Any
 
 # https://python.langchain.com/api_reference/langchain/agents.html
 
@@ -539,7 +536,6 @@ class AIAgent(models.Model):
                 return 
         self.message_post(body=_(f"Could not confirm agent: {response=}"), message_type="notification")
 
-        
 
     def log_message(self, body, is_error=False):
         if is_error:
