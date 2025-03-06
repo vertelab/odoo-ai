@@ -1,6 +1,7 @@
 import functools
 import importlib
 import json
+import sys
 import logging
 import re
 import traceback
@@ -24,7 +25,11 @@ from odoo.exceptions import UserError
 from random import randint
 
 from typing_extensions import NotRequired, TypedDict
-from typing import Annotated, List, Sequence, Union, Any
+
+if sys.version_info >= (3, 12):
+    from typing import Annotated, List, NotRequired, Sequence, TypedDict, Union, Any
+else:
+    from typing_extensions import Annotated, List, NotRequired, Sequence, TypedDict, Union, Any
 
 
 # https://python.langchain.com/api_reference/langchain/agents.html
@@ -198,79 +203,79 @@ class AIAgent(models.Model):
         response = self.ai_agent_llm_id.invoke(messages, **kwargs)
         return response
 
-    def prompt(self, session=False, debug=False, **kwargs):
-        """
-          Single agent prompting from quest.code
-         
-          result = agents[0].prompt(
-                   session=session,
-                   debug=quest.debug,
-                   message=html2plaintext(message.body),
-
-        """
-
-        self.last_run = fields.Datetime.now()
-
-        topic = kwargs.get('topic', kwargs.get('message', ''))
-        if session:
-            quest = session.ai_quest_id
-        else:
-            quest = self.env.ref('ai_agent.ai_quest_test')
-        debug = kwargs.get('debug', quest.debug)
-        if debug:
-            _logger.error(f"{self=}{session=} {quest=} {self.last_run} {kwargs=}")
-            session.add_message(f"Agent {self.name} {topic=}")
-
-        if not self.ai_agent_llm_id:
-            if debug:
-                self.log_message("No LLM")
-            raise UserError("No LLM")
-
-        response = False
-
-        use_lang = f"Use language {self.env.user.lang}" if quest.use_personal_lang else ''
-        chat_history = "Chat history: " + self._chat_history(channel, bot_user,
-                                                             quest.chat_history_limit) if quest.use_chat_history else False,
-        system_message = SystemMessage(
-            content=f"""You are an agent with specific responsibilities.
-                Role: {self.ai_role}
-                Goal: {self.ai_goal}
-                Backstory: {self.ai_backstory}
-                Memory: {self._get_memory(latest_message)} {self._get_memory(topic)}
-                {chat_history}
-                
-                {self._extra_context(quest)}
-                
-                Instructions:
-                - Provide thorough, complete responses
-                - Use available tools and memory when needed
-                - Stay focused on your specific role
-                - Guidelines and instructions: {quest.description}
-        {use_lang}
-                """
-        )
-        prompt = self.ai_prompt_template
-        prompt = prompt.format_map(SafeDict(self.extra_context(quest)))
-        messages = [system_message, HumanMessage(content=topic), HumanMessage(content=prompt)]
-
-        if debug:
-            self.log_message(f"Agent  {self.name} prompt {messages=}")
-            _logger.debug(f"Agent {self.name} {messages=}")
-        try:
-            response = self.ai_agent_llm_id.invoke(messages, session=session, quest=quest, agent=self, debug=debug)
-        except Exception as e:
-            _logger.error(f"Error in agent {self.name}: {str(e)}")
-            self.log_message(f"Error in agent {self.name}: {str(e)}\n{traceback.format_exc()}")
-            return {
-                "messages": [
-                    AIMessage(
-                        content=f"Error occurred in agent {self.name}: {str(e)}\n{traceback.format_exc()}  ",
-                        name=self.name.replace(' ', '_').replace(',', '').replace('.', '')
-                    )
-                ]
-            }
-        session.save_message(response)
-        return response
+    # def prompt(self, session=False, debug=False, **kwargs):
+    #     """
+    #       Single agent prompting from quest.code
+    #
+    #       result = agents[0].prompt(
+    #                session=session,
+    #                debug=quest.debug,
+    #                message=html2plaintext(message.body),
+    #
+    #     """
+    #
+    #     self.last_run = fields.Datetime.now()
+    #
+    #     topic = kwargs.get('topic', kwargs.get('message', ''))
+    #     if session:
+    #         quest = session.ai_quest_id
+    #     else:
+    #         quest = self.env.ref('ai_agent.ai_quest_test')
+    #     debug = kwargs.get('debug', quest.debug)
+    #     if debug:
+    #         _logger.error(f"{self=}{session=} {quest=} {self.last_run} {kwargs=}")
+    #         session.add_message(f"Agent {self.name} {topic=}")
+    #
+    #     if not self.ai_agent_llm_id:
+    #         if debug:
+    #             self.log_message("No LLM")
+    #         raise UserError("No LLM")
+    #
+    #     response = False
+    #
+    #     use_lang = f"Use language {self.env.user.lang}" if quest.use_personal_lang else ''
+    #     chat_history = "Chat history: " + self._chat_history(channel, bot_user,
+    #                                                          quest.chat_history_limit) if quest.use_chat_history else False,
+    #     system_message = SystemMessage(
+    #         content=f"""You are an agent with specific responsibilities.
+    #             Role: {self.ai_role}
+    #             Goal: {self.ai_goal}
+    #             Backstory: {self.ai_backstory}
+    #             Memory: {self._get_memory(latest_message)} {self._get_memory(topic)}
+    #             {chat_history}
+    #
+    #             {self._extra_context(quest)}
+    #
+    #             Instructions:
+    #             - Provide thorough, complete responses
+    #             - Use available tools and memory when needed
+    #             - Stay focused on your specific role
+    #             - Guidelines and instructions: {quest.description}
+    #     {use_lang}
+    #             """
+    #     )
+    #     prompt = self.ai_prompt_template
+    #     prompt = prompt.format_map(SafeDict(self.extra_context(quest)))
+    #     messages = [system_message, HumanMessage(content=topic), HumanMessage(content=prompt)]
+    #
+    #     if debug:
+    #         self.log_message(f"Agent  {self.name} prompt {messages=}")
+    #         _logger.debug(f"Agent {self.name} {messages=}")
+    #     try:
+    #         response = self.ai_agent_llm_id.invoke(messages, session=session, quest=quest, agent=self, debug=debug)
+    #     except Exception as e:
+    #         _logger.error(f"Error in agent {self.name}: {str(e)}")
+    #         self.log_message(f"Error in agent {self.name}: {str(e)}\n{traceback.format_exc()}")
+    #         return {
+    #             "messages": [
+    #                 AIMessage(
+    #                     content=f"Error occurred in agent {self.name}: {str(e)}\n{traceback.format_exc()}  ",
+    #                     name=self.name.replace(' ', '_').replace(',', '').replace('.', '')
+    #                 )
+    #             ]
+    #         }
+    #     session.save_message(response)
+    #     return response
 
     # ~ https://www.perplexity.ai/search/hur-debuggar-jag-odoo-E_QK9lp.RrqkS5flbGCXQQ
 
@@ -278,223 +283,223 @@ class AIAgent(models.Model):
     # LangGraph
     # ------------------------------------------------------------
 
-    def create_sequence_node(self, **kwargs):
-        """Creates a node for the agent in the chain."""
+    # def create_sequence_node(self, **kwargs):
+    #     """Creates a node for the agent in the chain."""
+    #
+    #     topic = kwargs.get('topic', kwargs.get('message', ''))
+    #     session = kwargs.get('session', False)
+    #     quest = kwargs.get('quest', session.ai_quest_id)
+    #     debug = kwargs.get('debug', False)
+    #     quest_description = quest.description
+    #     if kwargs.get('record'): # Populate with data from record if there is a record
+    #         data = kwargs.get('record').read()[0]
+    #         quest_description = quest_description.format(**{k: data[k] for k in data.keys()})
+    #     use_lang = f"Use language {self.env.user.lang}" if quest.use_personal_lang else ''
+    #
+    #     # ~ import pdb; pdb.set_trace()
+    #
+    #     def agent_snode(state: AgentState) -> AgentState:
+    #         """Process messages and generate a response."""
+    #         if state.get('count', 1) > 50:
+    #             raise UserError(f"Count > 50 {state=}")
+    #
+    #             # ~ def use_tool(tool_name: str, query: str):
+    #             # ~ for tool in self._get_tools():
+    #             # ~ if tool.name.lower() == tool_name.lower():
+    #             # ~ return tool.func(query,state=state)
+    #             # ~ return None
+    #
+    #         if debug:
+    #             session.add_message(f"Agent {self.name} Initial state: {state=}")
+    #         messages = state.get('messages', [])
+    #         if hasattr(messages[-1], 'content'):
+    #             latest_message = messages[-1].content
+    #         else:
+    #             latest_message = messages[-1]
+    #         # ~ import pdb; pdb.set_trace()
+    #         _logger.info(f"Agent {self.name} received messages: {len(messages)}  {state=}")
+    #         # ~ state['session'] = session
+    #         # ~ state['topic'] = topic
+    #         if isinstance(state.get('scratchpad', []), str):
+    #             state['scratchpad'] = [state.get('scratchpad', '')]
+    #
+    #         if debug:
+    #             session.add_message(f"Agent {self.name} received messages: {len(messages)} {messages=} {state=}")
+    #
+    #         system_message = SystemMessage(
+    #             content=f"""You are an agent with specific responsibilities.
+    #             Role: {self.ai_role}
+    #             Goal: {self.ai_goal}
+    #             Backstory: {self.ai_backstory}
+    #             Memory: {self._get_memory(latest_message)} {self._get_memory(topic)}
+    #
+    #             Instructions:
+    #             - Provide thorough, complete responses
+    #             - Use available tools and memory when needed
+    #             - Stay focused on your specific role
+    #             - Guidelines and instructions: {quest_description}
+    #             {use_lang}
+    #             """
+    #         )
+    #
+    #         prompt = self.ai_prompt_template
+    #         # ~ prompt = prompt.format_map(SafeDict(self.extra_context(quest) | {'chat_history': self._chat_history(quest)}))
+    #
+    #         messages = [system_message, HumanMessage(content=topic), HumanMessage(content=prompt)]
+    #
+    #         if debug:
+    #             self.log_message(f"Agent  {self.name} agent_snode before invoke {messages=} {state=}")
+    #             _logger.debug(f"Agent {self.name} {messages=} {state=}")
+    #             # ~ agent = create_tool_calling_agent(self.ai_agent_llm_id.get_llm(),tools=self._get_tools(),messages)
+    #         # ~ executor = AgentExecutor(agent=agent, tools=self._get_tools(), verbose=True)
+    #         # ~ langgraph_agent_executor = create_react_agent(self.ai_agent_llm_id.get_llm(),tools=[])
+    #         # ~ langgraph_agent_executor = create_react_agent(self.ai_agent_llm_id.get_llm(), tools=self._get_tools())
+    #         try:
+    #             response = self.ai_agent_llm_id.invoke(messages, session=session, quest=quest, agent=self, debug=debug)
+    #             # ~ response = self.invoke(messages,)
+    #             # ~ response = langgraph_agent_executor.invoke({
+    #             # ~ "input": topic,
+    #             # ~ "messages": messages,
+    #             # ~ })
+    #         except Exception as e:
+    #             _logger.error(f"Error in agent {self.name}: {str(e)}")
+    #             self.log_message(f"Error in agent {self.name}: {str(e)}\n{traceback.format_exc()}")
+    #             return {
+    #                 "messages": [
+    #                     AIMessage(
+    #                         content=f"Error occurred in agent {self.name}: {str(e)}\n{traceback.format_exc()}  ",
+    #                         name=self.name.replace(' ', '_').replace(',', '').replace('.', '')
+    #                     )
+    #                 ]
+    #             }
+    #
+    #         # Initialize scratchpad if it's None or doesn't exist
+    #         if state.get('scratchpad') is None:
+    #             state['scratchpad'] = []
+    #
+    #         # Prepare the new item to append
+    #         if isinstance(response, dict):
+    #             new_item = response.get('messages', [])[-1] if response.get('messages') else None
+    #         else:
+    #             new_item = response
+    #
+    #         # Append the new item if it's not None
+    #         if new_item is not None:
+    #             state['scratchpad'].append(new_item)
+    #         if debug:
+    #             self.log_message(f"Agent {self.name} generated {response=} {state=}")
+    #             _logger.debug(f"Agent {self.name} generated {response=}")
+    #             session.add_message(f"Agent {self.name} generated {response=} {state=}")
+    #
+    #         # ~ tools = None
+    #         # ~ try:
+    #         # ~ # Attempt to parse JSON string
+    #         # ~ tools = json.loads(new_item)
+    #         # ~ except JSONDecodeError as e:
+    #         # ~ session.add_message(f"Agent {self.name} not Found tools {e=} {new_item=}")
+    #         # ~ if tools:
+    #         # ~ session.add_message(f"Found tools {tools=}")
+    #         # ~ messages = []
+    #         # ~ for t in tools['tools']:
+    #         # ~ session.add_message(f"Agent {self.name} use_tool({t['tool']=},{t['query']=})")
+    #         # ~ try:
+    #         # ~ messages.append(HumanMessage(content=use_tool(t['tool'],t['query'])))
+    #         # ~ state['messages'] = messages
+    #         # ~ except Exception as e:
+    #         # ~ session.add_message(f"Agent {self.name} error in use_tool {e=}\n{traceback.format_exc()}")
+    #         # ~ session.add_message(f"Agent {self.name} use_tool -> messages {messages=} ")
+    #
+    #         # ~ return agent_snode(state)
+    #         return {
+    #             "messages": [new_item],
+    #             'scratchpad': state['scratchpad'],
+    #             "count": Annotated[int, "count"],
+    #         }
+    #
+    #     return agent_snode
 
-        topic = kwargs.get('topic', kwargs.get('message', ''))
-        session = kwargs.get('session', False)
-        quest = kwargs.get('quest', session.ai_quest_id)
-        debug = kwargs.get('debug', False)
-        quest_description = quest.description  
-        if kwargs.get('record'): # Populate with data from record if there is a record
-            data = kwargs.get('record').read()[0]            
-            quest_description = quest_description.format(**{k: data[k] for k in data.keys()})
-        use_lang = f"Use language {self.env.user.lang}" if quest.use_personal_lang else ''
-        
-        # ~ import pdb; pdb.set_trace()
-
-        def agent_snode(state: AgentState) -> AgentState:
-            """Process messages and generate a response."""
-            if state.get('count', 1) > 50:
-                raise UserError(f"Count > 50 {state=}")
-
-                # ~ def use_tool(tool_name: str, query: str):
-                # ~ for tool in self._get_tools():
-                # ~ if tool.name.lower() == tool_name.lower():
-                # ~ return tool.func(query,state=state)
-                # ~ return None
-
-            if debug:
-                session.add_message(f"Agent {self.name} Initial state: {state=}")
-            messages = state.get('messages', [])
-            if hasattr(messages[-1], 'content'):
-                latest_message = messages[-1].content
-            else:
-                latest_message = messages[-1]
-            # ~ import pdb; pdb.set_trace()
-            _logger.info(f"Agent {self.name} received messages: {len(messages)}  {state=}")
-            # ~ state['session'] = session
-            # ~ state['topic'] = topic
-            if isinstance(state.get('scratchpad', []), str):
-                state['scratchpad'] = [state.get('scratchpad', '')]
-
-            if debug:
-                session.add_message(f"Agent {self.name} received messages: {len(messages)} {messages=} {state=}")
-
-            system_message = SystemMessage(
-                content=f"""You are an agent with specific responsibilities.
-                Role: {self.ai_role}
-                Goal: {self.ai_goal}
-                Backstory: {self.ai_backstory}
-                Memory: {self._get_memory(latest_message)} {self._get_memory(topic)}
-
-                Instructions:
-                - Provide thorough, complete responses
-                - Use available tools and memory when needed
-                - Stay focused on your specific role
-                - Guidelines and instructions: {quest_description}
-                {use_lang}
-                """
-            )
-
-            prompt = self.ai_prompt_template
-            # ~ prompt = prompt.format_map(SafeDict(self.extra_context(quest) | {'chat_history': self._chat_history(quest)}))
-
-            messages = [system_message, HumanMessage(content=topic), HumanMessage(content=prompt)]
-
-            if debug:
-                self.log_message(f"Agent  {self.name} agent_snode before invoke {messages=} {state=}")
-                _logger.debug(f"Agent {self.name} {messages=} {state=}")
-                # ~ agent = create_tool_calling_agent(self.ai_agent_llm_id.get_llm(),tools=self._get_tools(),messages)
-            # ~ executor = AgentExecutor(agent=agent, tools=self._get_tools(), verbose=True)
-            # ~ langgraph_agent_executor = create_react_agent(self.ai_agent_llm_id.get_llm(),tools=[])        
-            # ~ langgraph_agent_executor = create_react_agent(self.ai_agent_llm_id.get_llm(), tools=self._get_tools())        
-            try:
-                response = self.ai_agent_llm_id.invoke(messages, session=session, quest=quest, agent=self, debug=debug)
-                # ~ response = self.invoke(messages,)
-                # ~ response = langgraph_agent_executor.invoke({
-                # ~ "input": topic,
-                # ~ "messages": messages,
-                # ~ })
-            except Exception as e:
-                _logger.error(f"Error in agent {self.name}: {str(e)}")
-                self.log_message(f"Error in agent {self.name}: {str(e)}\n{traceback.format_exc()}")
-                return {
-                    "messages": [
-                        AIMessage(
-                            content=f"Error occurred in agent {self.name}: {str(e)}\n{traceback.format_exc()}  ",
-                            name=self.name.replace(' ', '_').replace(',', '').replace('.', '')
-                        )
-                    ]
-                }
-
-            # Initialize scratchpad if it's None or doesn't exist
-            if state.get('scratchpad') is None:
-                state['scratchpad'] = []
-
-            # Prepare the new item to append
-            if isinstance(response, dict):
-                new_item = response.get('messages', [])[-1] if response.get('messages') else None
-            else:
-                new_item = response
-
-            # Append the new item if it's not None
-            if new_item is not None:
-                state['scratchpad'].append(new_item)
-            if debug:
-                self.log_message(f"Agent {self.name} generated {response=} {state=}")
-                _logger.debug(f"Agent {self.name} generated {response=}")
-                session.add_message(f"Agent {self.name} generated {response=} {state=}")
-
-            # ~ tools = None
-            # ~ try:
-            # ~ # Attempt to parse JSON string
-            # ~ tools = json.loads(new_item)
-            # ~ except JSONDecodeError as e:
-            # ~ session.add_message(f"Agent {self.name} not Found tools {e=} {new_item=}")
-            # ~ if tools:
-            # ~ session.add_message(f"Found tools {tools=}")
-            # ~ messages = []
-            # ~ for t in tools['tools']:
-            # ~ session.add_message(f"Agent {self.name} use_tool({t['tool']=},{t['query']=})")
-            # ~ try:
-            # ~ messages.append(HumanMessage(content=use_tool(t['tool'],t['query'])))
-            # ~ state['messages'] = messages
-            # ~ except Exception as e:
-            # ~ session.add_message(f"Agent {self.name} error in use_tool {e=}\n{traceback.format_exc()}")
-            # ~ session.add_message(f"Agent {self.name} use_tool -> messages {messages=} ")
-
-            # ~ return agent_snode(state)
-            return {
-                "messages": [new_item],
-                'scratchpad': state['scratchpad'],
-                "count": Annotated[int, "count"],
-            }
-
-        return agent_snode
-
-    def create_supervisor(self, quest, members, **kwargs):
-        """Create a supervisor node that coordinates between different agents."""
-        use_lang = f"Use language {self.env.user.lang} for the answer to Human" if quest.use_personal_lang else ''
-        topic = kwargs.get('topic', kwargs.get('message', ''))
-        session = kwargs.get('session', False)
-        quest_description = quest.description  
-        if kwargs.get('record'): # Populate with data from record if there is a record
-            data = kwargs.get('record').read()[0]            
-            quest_description = quest_description.format(**{k: data[k] for k in data.keys()})
-        use_lang = f"Use language {self.env.user.lang}" if quest.use_personal_lang else ''
-        system_prompt = quest.supervisor_prompt + f"\n- Guidelines and instructions: {quest_description}\n{use_lang}"
-
-        def supervisor_chain(state):
-            messages = state.get('messages', [])
-            if hasattr(messages[-1], 'content'):
-                latest_message = messages[-1].content
-            else:
-                latest_message = messages[-1]
-
-            if self.debug:
-                session.add_message(f"SUPERVISOR Initial state: {members=} {state=}")
-
-            if isinstance(state.get('scratchpad', []), str):
-                state['scratchpad'] = [state.get('scratchpad', '')]
-
-            question = messages[-1]['content'] if messages and isinstance(messages[-1], dict) and 'content' in messages[-1] else ""
-
-            # Create full message list
-            _logger.error(f"Create full message list")
-
-            input = question
-            prompt = f"Previous conversation: {question}\n{input=}"
-            # ~ for msg in messages:
-            # ~ prompt += f"\n{msg.content}\n" if msg and isinstance(msg, dict) and 'content' in msg else msg
-            prompt += (
-                f"\nBased on previous conversation, what agent should act next? Choose from: {members} or say FINISH if we have a "
-                "complete response. Use just JSON {'next': agent or FINISH}"
-                )
-            if self.debug:
-                session.add_message(f"Supervisor {prompt=}")
-            # Get LLM response
-
-            tools = []
-
-            # Get the prompt
-            # ~ prompt = hub.pull("hwchase17/react-chat-json")
-            # Initialize the language model
-            llm = quest.supervisor_llm_id.get_llm(temperature=quest.supervisor_temperature)
-
-            messages = [
-                SystemMessage(content=system_prompt),
-                HumanMessage(content=prompt)
-            ]
-
-            try:
-
-                response = llm.invoke(messages)
-
-            except Exception as e:
-                _logger.error(f"Error in supervisor chain: {str(e)}", exc_info=True)
-                session.add_message(f"Error in supervisor chain: {str(e)}\n{traceback.format_exc()}")
-                return {"next": "FINISH", 'session': session}
-
-            # Parse response
-            content = response.content
-            _logger.info(f"Supervisor decision: {content}")
-            session.add_message(f"Supervisor decision: {content}")
-            json = quest.extract_json("Supervisor", session, content)
-            if not json:
-                return {"next": "FINISH", 'session': session}
-
-            # Check for completion or next agent
-            if json.get('next', 'FINISH') == "FINISH":
-                _logger.info("Supervisor decided to FINISH")
-                session.add_message("Supervisor decided to FINISH {json=}")
-                return {"next": "FINISH", 'session': session}
-
-            # Find mentioned agent
-            session.add_message(f"Supervisor selected agent: {json['next']}")
-            return {"next": json['next'], 'session': session, 'topic': topic, 'messages': state.get('messages')}
-
-        return supervisor_chain
+    # def create_supervisor(self, quest, members, **kwargs):
+    #     """Create a supervisor node that coordinates between different agents."""
+    #     use_lang = f"Use language {self.env.user.lang} for the answer to Human" if quest.use_personal_lang else ''
+    #     topic = kwargs.get('topic', kwargs.get('message', ''))
+    #     session = kwargs.get('session', False)
+    #     quest_description = quest.description
+    #     if kwargs.get('record'): # Populate with data from record if there is a record
+    #         data = kwargs.get('record').read()[0]
+    #         quest_description = quest_description.format(**{k: data[k] for k in data.keys()})
+    #     use_lang = f"Use language {self.env.user.lang}" if quest.use_personal_lang else ''
+    #     system_prompt = quest.supervisor_prompt + f"\n- Guidelines and instructions: {quest_description}\n{use_lang}"
+    #
+    #     def supervisor_chain(state):
+    #         messages = state.get('messages', [])
+    #         if hasattr(messages[-1], 'content'):
+    #             latest_message = messages[-1].content
+    #         else:
+    #             latest_message = messages[-1]
+    #
+    #         if self.debug:
+    #             session.add_message(f"SUPERVISOR Initial state: {members=} {state=}")
+    #
+    #         if isinstance(state.get('scratchpad', []), str):
+    #             state['scratchpad'] = [state.get('scratchpad', '')]
+    #
+    #         question = messages[-1]['content'] if messages and isinstance(messages[-1], dict) and 'content' in messages[-1] else ""
+    #
+    #         # Create full message list
+    #         _logger.error(f"Create full message list")
+    #
+    #         input = question
+    #         prompt = f"Previous conversation: {question}\n{input=}"
+    #         # ~ for msg in messages:
+    #         # ~ prompt += f"\n{msg.content}\n" if msg and isinstance(msg, dict) and 'content' in msg else msg
+    #         prompt += (
+    #             f"\nBased on previous conversation, what agent should act next? Choose from: {members} or say FINISH if we have a "
+    #             "complete response. Use just JSON {'next': agent or FINISH}"
+    #             )
+    #         if self.debug:
+    #             session.add_message(f"Supervisor {prompt=}")
+    #         # Get LLM response
+    #
+    #         tools = []
+    #
+    #         # Get the prompt
+    #         # ~ prompt = hub.pull("hwchase17/react-chat-json")
+    #         # Initialize the language model
+    #         llm = quest.supervisor_llm_id.get_llm(temperature=quest.supervisor_temperature)
+    #
+    #         messages = [
+    #             SystemMessage(content=system_prompt),
+    #             HumanMessage(content=prompt)
+    #         ]
+    #
+    #         try:
+    #
+    #             response = llm.invoke(messages)
+    #
+    #         except Exception as e:
+    #             _logger.error(f"Error in supervisor chain: {str(e)}", exc_info=True)
+    #             session.add_message(f"Error in supervisor chain: {str(e)}\n{traceback.format_exc()}")
+    #             return {"next": "FINISH", 'session': session}
+    #
+    #         # Parse response
+    #         content = response.content
+    #         _logger.info(f"Supervisor decision: {content}")
+    #         session.add_message(f"Supervisor decision: {content}")
+    #         json = quest.extract_json("Supervisor", session, content)
+    #         if not json:
+    #             return {"next": "FINISH", 'session': session}
+    #
+    #         # Check for completion or next agent
+    #         if json.get('next', 'FINISH') == "FINISH":
+    #             _logger.info("Supervisor decided to FINISH")
+    #             session.add_message("Supervisor decided to FINISH {json=}")
+    #             return {"next": "FINISH", 'session': session}
+    #
+    #         # Find mentioned agent
+    #         session.add_message(f"Supervisor selected agent: {json['next']}")
+    #         return {"next": json['next'], 'session': session, 'topic': topic, 'messages': state.get('messages')}
+    #
+    #     return supervisor_chain
 
     def get_test_wizard(self):
         action = self.env.ref("ai_agent.action_ai_agent_test_wizard").read()[0]
@@ -537,7 +542,6 @@ class AIAgent(models.Model):
                 return 
         self.message_post(body=_(f"Could not confirm agent: {response=}"), message_type="notification")
 
-        
 
     def log_message(self, body, is_error=False):
         if is_error:
@@ -552,7 +556,6 @@ class AIAgent(models.Model):
         session = kwargs.get('session', False)
         debug = kwargs.get('debug', False)
 
-        # ~ import pdb; pdb.set_trace()
 
         def agent_node(state):
             """Process messages and generate a response."""
@@ -565,10 +568,8 @@ class AIAgent(models.Model):
             else:
                 latest_message = messages[-1]
 
-            # ~ import pdb; pdb.set_trace()
             _logger.info(f"Agent {self.name} received messages: {len(messages)}  {state=}")
-            # ~ state['session'] = session
-            # ~ state['topic'] = topic
+
             if isinstance(state.get('scratchpad', []), str):
                 state['scratchpad'] = [state.get('scratchpad', '')]
 
@@ -588,6 +589,7 @@ class AIAgent(models.Model):
                 - Stay focused on your specific role
                 """
             )
+
             messages = [system_message, HumanMessage(content=topic)]
 
             if debug:
@@ -596,7 +598,7 @@ class AIAgent(models.Model):
 
                 # Get LLM
             llm = self.ai_agent_llm_id.get_llm()
-            tools = self._get_tools()
+            tools = self._get_tools(state)
 
             langgraph_agent_executor = create_react_agent(llm, tools=tools)
 
@@ -629,7 +631,7 @@ class AIAgent(models.Model):
                 return result
             else:
                 # If no AI messages found, create one from the result
-                state['session'].add_message(f"No AImessages: {str(result)=}")
+                state['session'].add_message(f"No AI Messages: {str(result)=}")
 
                 return {
                     "messages": [
