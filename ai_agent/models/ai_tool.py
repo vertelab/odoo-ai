@@ -1,7 +1,8 @@
 import os
 import json
 import importlib
-import inspect 
+import inspect
+import sys
 import traceback
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
@@ -16,7 +17,10 @@ from langchain_community.tools.yahoo_finance_news import YahooFinanceNewsTool
 from langchain_community.utilities.duckduckgo_search import DuckDuckGoSearchAPIWrapper
 from langchain_community.utilities.wikipedia import WikipediaAPIWrapper
 from langgraph.graph import END, START, StateGraph, MessagesState
-from typing import Annotated, Literal, TypedDict, Sequence
+if sys.version_info >= (3, 12):
+    from typing import Annotated, Literal, TypedDict, Sequence
+else:
+    from typing_extensions import Annotated, Literal, TypedDict, Sequence
 from httpx import HTTPStatusError
 from random import randint
 
