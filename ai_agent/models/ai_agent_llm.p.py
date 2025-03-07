@@ -179,7 +179,6 @@ class AIAgentLLM(models.Model):
 
 
     def get_embedding(self):
-
         try:
             module = importlib.import_module(self.product_tmpl_id.llm_library)
             LLM = getattr(module, self.product_tmpl_id.llm_etype)
@@ -191,9 +190,11 @@ class AIAgentLLM(models.Model):
                 return LLM(api_key=SecretStr(api_key), model_name=self.model_id.name)
             elif "HuggingFaceEmbeddings" == self.product_tmpl_id.llm_etype:
                  return LLM(model_name=self.model_id.name)
+            elif "OllamaEmbeddings" == self.product_tmpl_id.llm_etype:
+                return LLM(model=self.model_id.name, base_url="http://192.168.1.83:11434")
             elif api_key:
                 return LLM(api_key=api_key, model=self.model_id.name)
-               
+
         except ImportError as e:
             _logger.error(f"Error importing {self.product_tmpl_id.llm_library}: {e}")
             raise
