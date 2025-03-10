@@ -571,12 +571,20 @@ class AIAgent(models.Model):
         self.last_run = fields.Datetime.now()
         self.message_post(body=f"{body} | {self.last_run}", message_type="notification")
 
+    def agent_extra_context(self, quest=None):
+        return {}
+
     def create_node(self, **kwargs):
         """Creates a node for the agent in the graph."""
 
         topic = kwargs.get('topic', kwargs.get('message', ''))
         session = kwargs.get('session', False)
         debug = kwargs.get('debug', False)
+
+        quest = session.ai_quest_id
+
+        quest_description = quest.description
+        use_lang = f"Use language {self.env.user.lang}" if quest.use_personal_lang else ''
 
 
         def agent_node(state):
@@ -609,6 +617,9 @@ class AIAgent(models.Model):
                 - Provide thorough, complete responses
                 - Use available tools and memory when needed
                 - Stay focused on your specific role
+                
+                Knowledge :
+                    {self.agent_extra_context(quest)}
                 """
             )
 
