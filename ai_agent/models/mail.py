@@ -49,17 +49,12 @@ class MailChannel(models.Model):
                     ai_messages = [m for m in messages if isinstance(m, AIMessage)]
                     last_ai_message = ai_messages[-1] if len(ai_messages) != 0 else None
 
-                    import markdownify
-
                     if messages and last_ai_message:
                         if ai_quest.debug:
                             _logger.error(f"{last_ai_message=}")
-                            answer = markdown.markdown(last_ai_message.content)
+                            answer = re.sub(r'<think>.*?</think>', '', markdown.markdown(last_ai_message.content), flags=re.DOTALL)
                         else:
-                            answer = re.sub(
-                                r'<think>.*?</think>', '', markdownify.markdownify(last_ai_message.content),
-                                flags=re.DOTALL
-                            )
+                            answer = markdown.markdown(last_ai_message.content)
 
                     self.with_user(user).message_post(
                         body=answer,
