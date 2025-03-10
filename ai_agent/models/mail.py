@@ -6,6 +6,7 @@ from odoo import api, fields, models, tools, _
 from odoo.exceptions import ValidationError, UserError
 import logging
 import markdown
+import markdownify
 import re
 
 _logger = logging.getLogger(__name__)
@@ -52,9 +53,12 @@ class MailChannel(models.Model):
                     if messages and last_ai_message:
                         if ai_quest.debug:
                             _logger.error(f"{last_ai_message=}")
-                            answer = re.sub(r'<think>.*?</think>', '', markdown.markdown(last_ai_message.content), flags=re.DOTALL)
-                        else:
                             answer = markdown.markdown(last_ai_message.content)
+                        else:
+                            answer = re.sub(
+                                r'<think>.*?</think>', '', markdownify.markdownify(last_ai_message.content),
+                                flags=re.DOTALL
+                            )
 
                     self.with_user(user).message_post(
                         body=answer,
