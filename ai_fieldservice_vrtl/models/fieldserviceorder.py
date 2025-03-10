@@ -46,12 +46,8 @@ class FieldServiceOrder(models.Model):
                 'ai_type': 'fieldservice-order',
                 'init_type': 'channel',
                 'status': 'active',
-                'code': """result = agents[0].prompt_agent(
-                    session=session,
-                    debug=quest.debug,
-                    message=html2plaintext(message.body),
-                    channel=channel,
-                    bot_user=bot_user,
+                'description':'A quest to help a service tech in the field.',
+                'code': """result = quest.build(session=session,message=message_body).invoke(message_invoke)
                 )"""
             })
             self.env['ai.quest.agent'].create({'ai_agent_id': self.env.ref('ai_fieldservice_vrtl.ai_agent_helpdesk_chat').id,'ai_quest_id': field_service_order_id.ai_quest_id.id})
@@ -60,7 +56,13 @@ class FieldServiceOrder(models.Model):
                 'ai_quest_id': field_service_order_id.ai_quest_id.id,
                 'description': _('Chat with fieldserviceorders'),
             })
+            self.set_member_of_quest_chat()
 
+    def set_member_of_quest_chat(self):
+        for record in self:
+            if record.ai_quest_id and record.ai_quest_id.channel_id:
+               members = record.order_line_ids.fieldservice_order_line_employee_ids
+               members.set_member_of_quest_chat()
 
     def write(self,vals):
           res = super(FieldServiceOrder, self).write(vals)

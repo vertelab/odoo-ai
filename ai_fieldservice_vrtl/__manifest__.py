@@ -42,6 +42,7 @@
     'depends': [
         'ai_agent',
         'fieldservice_vrtl',
+        'fieldservice_hr',
     ],
     'data': [
         'data/ai_agent_data.xml',

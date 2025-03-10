@@ -8,13 +8,13 @@ from dateutil.relativedelta import relativedelta
 class FieldServiceOrderLineEmployee(models.Model):
     _inherit = 'fieldservice.order.line.employee'
     
-    def set_member_of_chat(self):
+    def set_member_of_quest_chat(self):
         for line_employee in self:
             channel_id = False
             if line_employee.fieldservice_order_line_id and line_employee.fieldservice_order_line_id.order_id and line_employee.fieldservice_order_line_id.order_id.ai_quest_id:
                quest_id = line_employee.fieldservice_order_line_id.order_id.ai_quest_id
-            if quest_id:
-               channel_id = quest_id.channel_id
+               if quest_id:
+                  channel_id = quest_id.channel_id
             if line_employee.employee_id and line_employee.employee_id.user_id and channel_id:
                partner_id = line_employee.employee_id.user_id.partner_id
                already_partner = False
@@ -29,13 +29,11 @@ class FieldServiceOrderLineEmployee(models.Model):
     def create(self, vals):
         line_employee = super(FieldServiceOrderLineEmployee, self).create(vals)
         if line_employee.fieldservice_order_line_id and line_employee.fieldservice_order_line_id.order_id and line_employee.fieldservice_order_line_id.order_id.ai_quest_id:
-           quest_id = line_employee.fieldservice_order_line_id.order_id.ai_quest_id
-           if quest_id.channel_id:
-              line_employee.set_member_of_chat(quest_id.channel_id)
+           line_employee.set_member_of_quest_chat()
         return line_employee
 
 
     def write(self, vals):
         line_employee = super(FieldServiceOrderLineEmployee, self).write(vals)
         if employee_id in vals:
-           self.set_member_of_chat()
+           self.set_member_of_quest_chat()
