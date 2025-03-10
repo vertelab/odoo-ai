@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 import logging
 _logger = logging.getLogger(__name__)
 
+
 class FieldServiceStage(models.Model):
     _inherit = 'fieldservice.stage'
 

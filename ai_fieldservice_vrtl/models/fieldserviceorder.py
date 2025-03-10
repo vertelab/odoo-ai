@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 import logging
 _logger = logging.getLogger(__name__)
 
+
 class FieldServiceOrder(models.Model):
     _inherit = 'fieldservice.order'
 
@@ -40,23 +41,25 @@ class FieldServiceOrder(models.Model):
 
     def start_quest(self):
         for field_service_order_id in self:
-          if not field_service_order_id.ai_quest_id:
-            field_service_order_id.ai_quest_id = self.env['ai.quest'].create({
-                'name': f"{field_service_order_id.name}",
-                'ai_type': 'fieldservice-order',
-                'init_type': 'channel',
-                'status': 'active',
-                'description':'A quest to help a service tech in the field.',
-                'code': """result = quest.build(session=session,message=message_body).invoke(message_invoke)
-                )"""
-            })
-            self.env['ai.quest.agent'].create({'ai_agent_id': self.env.ref('ai_fieldservice_vrtl.ai_agent_helpdesk_chat').id,'ai_quest_id': field_service_order_id.ai_quest_id.id})
-            field_service_order_id.ai_quest_id.channel_id = self.env['discuss.channel'].create({
-                'name': f"[{field_service_order_id.name}",
-                'ai_quest_id': field_service_order_id.ai_quest_id.id,
-                'description': _('Chat with fieldserviceorders'),
-            })
-            self.set_member_of_quest_chat()
+            if not field_service_order_id.ai_quest_id:
+                field_service_order_id.ai_quest_id = self.env['ai.quest'].create({
+                    'name': f"{field_service_order_id.name}",
+                    'ai_type': 'fieldservice-order',
+                    'init_type': 'channel',
+                    'status': 'active',
+                    'description':'A quest to help a service tech in the field.',
+                    'code': """result = quest.build(session=session,message=message_body).invoke(message_invoke)"""
+                })
+                self.env['ai.quest.agent'].create({
+                    'ai_agent_id': self.env.ref('ai_fieldservice_vrtl.ai_agent_helpdesk_chat').id,
+                    'ai_quest_id': field_service_order_id.ai_quest_id.id
+                })
+                field_service_order_id.ai_quest_id.channel_id = self.env['discuss.channel'].create({
+                    'name': f"[{field_service_order_id.name}",
+                    'ai_quest_id': field_service_order_id.ai_quest_id.id,
+                    'description': _('Chat with fieldserviceorders'),
+                })
+                self.set_member_of_quest_chat()
 
     def set_member_of_quest_chat(self):
         for record in self:

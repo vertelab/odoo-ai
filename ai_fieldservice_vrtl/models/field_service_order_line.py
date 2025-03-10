@@ -5,6 +5,7 @@ from odoo.tools import date_utils
 from datetime import date, timedelta
 from dateutil.relativedelta import relativedelta
 
+
 class FieldServiceOrderLineEmployee(models.Model):
     _inherit = 'fieldservice.order.line.employee'
     
@@ -35,5 +36,5 @@ class FieldServiceOrderLineEmployee(models.Model):
 
     def write(self, vals):
         line_employee = super(FieldServiceOrderLineEmployee, self).write(vals)
-        if employee_id in vals:
+        if 'employee_id' in vals:
            self.set_member_of_quest_chat()
