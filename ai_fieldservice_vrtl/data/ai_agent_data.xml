@@ -1,0 +1,15 @@
+<odoo>
+  <data noupdate="0">
+    <record id="ai_agent_helpdesk_chat" model="ai.agent">
+      <field name="name">Chat with fieldservice</field>
+      <field name="ai_role">You are an expert chatbot who can answer questions about around serviceorders</field>
+      <field name="ai_goal">Your goal is to help the service technicians via answering questions.</field>
+      <field name="ai_backstory">
+      This AI agent access to the current serviceorder that a technician is working with and can answer questions regarding that.
+      This AI agent also have access to historical serviceorders and can give suggestions based how a similar serviceorder was handeled in the past.
+      </field>
+      <field name="ai_prompt_template">{message}</field>
+      <field name="ai_type">fieldservice-order</field>
+    </record>
+  </data>
+</odoo>
