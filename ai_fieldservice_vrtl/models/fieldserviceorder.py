@@ -12,7 +12,7 @@ class FieldServiceOrder(models.Model):
     @api.depends("stage_id")
     def _onchange_stage_id(self):
         _logger.warning("_onchange_stage_id"*100)
-        if self.stage_id.quest_start:
+        if self.stage_id.start_quest:
            self.start_quest()
         elif not self.stage_id.is_closed:
             if self.ai_quest_id:
@@ -31,7 +31,6 @@ class FieldServiceOrder(models.Model):
                 self.ai_quest_id.channel_id.write({'name': f"{self.name}"})
 
 
-
     @api.model
     def create(self, vals):
         field_service_order_id = super(FieldServiceOrder, self).create(vals)
@@ -43,7 +42,7 @@ class FieldServiceOrder(models.Model):
         for field_service_order_id in self:
           if not field_service_order_id.ai_quest_id:
             field_service_order_id.ai_quest_id = self.env['ai.quest'].create({
-                'name': f"[{field_service_order_id.name}",
+                'name': f"{field_service_order_id.name}",
                 'ai_type': 'fieldservice-order',
                 'init_type': 'channel',
                 'status': 'active',
