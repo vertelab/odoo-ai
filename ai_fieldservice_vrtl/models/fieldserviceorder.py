@@ -32,7 +32,7 @@ class FieldServiceOrder(models.Model):
                 self.ai_quest_id.channel_id.write({'name': f"{self.name}"})
 
 
-    @api.model
+    @api.model_create_multi
     def create(self, vals):
         field_service_order_id = super(FieldServiceOrder, self).create(vals)
         if field_service_order_id.stage_id.start_quest:

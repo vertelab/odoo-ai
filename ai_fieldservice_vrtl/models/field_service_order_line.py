@@ -26,7 +26,7 @@ class FieldServiceOrderLineEmployee(models.Model):
                if not already_partner:
                   line_employee.env['discuss.channel.member'].create({'channel_id':channel_id.id,'partner_id':partner_id.id})
 
-    @api.model
+    @api.model_create_multi
     def create(self, vals):
         line_employee = super(FieldServiceOrderLineEmployee, self).create(vals)
         if line_employee.fieldservice_order_line_id and line_employee.fieldservice_order_line_id.order_id and line_employee.fieldservice_order_line_id.order_id.ai_quest_id:
