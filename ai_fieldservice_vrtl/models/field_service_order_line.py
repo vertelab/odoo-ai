@@ -34,6 +34,20 @@ class FieldServiceOrderLineEmployee(models.Model):
         return line_employee
 
 
+    @api.model_create_multi
+    def create(self, vals_list):
+        # Create records in batch
+        line_employees = super(FieldServiceOrderLineEmployee, self).create(vals_list)
+        
+        # Process each created record
+        for line_employee in line_employees:
+            if (line_employee.fieldservice_order_line_id and 
+                line_employee.fieldservice_order_line_id.order_id and 
+                line_employee.fieldservice_order_line_id.order_id.ai_quest_id):
+                line_employee.set_member_of_quest_chat()
+        
+        return line_employees
+
     def write(self, vals):
         line_employee = super(FieldServiceOrderLineEmployee, self).write(vals)
         if 'employee_id' in vals:
