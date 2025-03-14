@@ -26,11 +26,6 @@
                     ])]" />
         </record>
 
-        <record id="ollama_product_attribute_value_sync" model="product.attribute.value">
-            <field name="name">sync</field>
-            <field name="attribute_id" ref="ai_agent.product_attribute_api_type" />
-        </record>
-
         <record id="ollama_product_template_attribute_line_data_type" model="product.template.attribute.line">
             <field name="product_tmpl_id" ref="ollama_product_template" />
             <field name="attribute_id" ref="product_attribute_data_type" />
