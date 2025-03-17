@@ -8,6 +8,7 @@ export class QuestSelectorDialog extends Component {
     static template = "ai_agent.QuestSelectorDialog";
     static props = {
         close: Function,
+        saveLink: Function,
         quests: false,
         pluginDependencies: false
     };
@@ -22,4 +23,5 @@ export class QuestSelectorDialog extends Component {
         this.props.close()
         pluginDependencies.openChatDialog(quest)
     }
+
 }

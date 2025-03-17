@@ -60,9 +60,6 @@ Wysiwyg.include({
     },
 
     openQuestSelector: async function () {
-        // Save the cursor position ONCE at the beginning of the flow
-        this._savedRestore = preserveCursor(this.odooEditor.document);
-
         const quests = await this.powerboxQuests();
 
         if (quests && quests.length == 0) {
@@ -77,62 +74,48 @@ Wysiwyg.include({
     openQuestSelectorDialog: async function(quests) {
         const {res_model: resModel, res_id: resId } = this.options.recordInfo || {}
 
+        let restoreSelection = () => {
+//            this.dependencies.selection.setSelection(selection);
+            console.log("restoreSelection")
+        };
+
         const dialogParams = {
-            close: () => {
-                // If dialog is closed without selection, restore cursor
-                if (this._savedRestore) {
-                    this._savedRestore();
-                    this._savedRestore = null;
-                }
+            saveLink: (href) => {
+                const templateBlock = renderToElement(
+                    "ai_agent.QuestSelectorDialogBlueprint",
+                    {
+                        embeddedProps: JSON.stringify({ source: href }),
+                    }
+                );
+                this.dependencies.dom.insert(templateBlock);
+                this.dependencies.history.addStep();
+
+                restoreSelection = () => {};
             },
+            close: () => restoreSelection(),
             quests,
             pluginDependencies: this
         };
-
-        this.odooEditor.document.getSelection().collapseToEnd();
         Component.env.services.dialog.add(QuestSelectorDialog, { ...dialogParams });
     },
 
     openChatDialog: function(quest, params = {}) {
-        // Use the saved restore if it exists, otherwise create a new one
-        const restore = this._savedRestore || preserveCursor(this.odooEditor.document);
-        // Clear the saved reference
-        this._savedRestore = null;
-
         const {res_model: resModel, res_id: resId } = this.options.recordInfo || {}
 
         const dialogParams = {
-            insert: content => {
-                // First, check if the content needs markdown processing
-                let processedContent = content;
-
-                // If it doesn't already contain HTML formatting, convert markdown to HTML
-                if (!content.includes('</p>') && !content.includes('</h') && !content.includes('</div>')) {
-                    processedContent = this._markdownToHtml(content);
-                }
-
+            insert: (content) => {
                 this.odooEditor.historyPauseSteps();
-
-                // Create a temporary div to hold the HTML content
-                const tempDiv = document.createElement('div');
-                tempDiv.innerHTML = processedContent;
-
-                // Insert the content as a document fragment instead of raw HTML
-                const fragment = document.createDocumentFragment();
-                while (tempDiv.firstChild) {
-                    fragment.appendChild(tempDiv.firstChild);
-                }
-
-                // Use the execCommand to insert the fragment
-                const insertedNodes = this.odooEditor.execCommand('insert', fragment);
-
+                const insertedNodes = this.odooEditor.execCommand('insert', content);
                 this.odooEditor.historyUnpauseSteps();
+//                this.notification.add(_t('Your content was successfully generated.'), {
+//                    title: _t('Content generated'),
+//                    type: 'success',
+//                });
                 this.odooEditor.historyStep();
-
-                // Add a frame around the inserted content to highlight it for 2 seconds
+                // Add a frame around the inserted content to highlight it for 2
+                // seconds.
                 const start = insertedNodes?.length && closestElement(insertedNodes[0]);
                 const end = insertedNodes?.length && closestElement(insertedNodes[insertedNodes.length - 1]);
-
                 if (start && end) {
                     const divContainer = this.odooEditor.editable.parentElement;
                     let [parent, left, top] = [start.offsetParent, start.offsetLeft, start.offsetTop - start.scrollTop];
@@ -162,16 +145,10 @@ Wysiwyg.include({
             quest,
             ...params,
         };
-
-        this.odooEditor.document.getSelection().collapseToEnd();
-        Component.env.services.dialog.add(
-            QuestPromptDialog,
-            dialogParams,
-            { onClose: restore },
-        );
+        Component.env.services.dialog.add(QuestPromptDialog, { ...dialogParams });
     },
 
-    // Add the markdown to HTML conversion helper method
+    // Add this helper method to convert markdown to HTML
     _markdownToHtml: function(markdown) {
         if (!markdown) return '';
 
@@ -253,3 +230,4 @@ Wysiwyg.include({
         return html;
     }
 })
+
