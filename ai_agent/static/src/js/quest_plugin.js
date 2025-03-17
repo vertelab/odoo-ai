@@ -82,18 +82,6 @@ export class QuestPlugin extends Plugin {
         };
 
         const dialogParams = {
-            saveLink: (href) => {
-                const templateBlock = renderToElement(
-                    "ai_agent.QuestSelectorDialogBlueprint",
-                    {
-                        embeddedProps: JSON.stringify({ source: href }),
-                    }
-                );
-                this.dependencies.dom.insert(templateBlock);
-                this.dependencies.history.addStep();
-
-                restoreSelection = () => {};
-            },
             close: () => restoreSelection(),
             quests,
             pluginDependencies: this
