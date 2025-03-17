@@ -6,6 +6,7 @@ import Wysiwyg from 'web_editor.wysiwyg';
 import {descendants, preserveCursor} from "@web_editor/js/editor/odoo-editor/src/utils/utils";
 import * as OdooEditorLib from "@web_editor/js/editor/odoo-editor/src/OdooEditor";
 import { QuestPromptDialog } from '@ai_agent/js/components/quest_prompt_dialog';
+import { QuestSelectorDialog } from '@ai_agent/js/components/quest_selector_dialog';
 import { useService } from "@web/core/utils/hooks";
 import { Component } from "@odoo/owl";
 import { browser } from '@web/core/browser/browser';
@@ -16,11 +17,93 @@ const OdooEditor = OdooEditorLib.OdooEditor;
 
 Wysiwyg.include({
 
-    openQuestDialog: function (extra_options) {
-        const restore = preserveCursor(this.odooEditor.document);
+    _getPowerboxOptions: function () {
+        const options = this._super();
+        const {commands, categories} = options;
 
-        const params = {
-            insert: content => {
+        commands.push({
+            category: 'AI Tools',
+            title: _t("AI Quest"),
+            priority: 10,
+            description: _t("Pick a quest to perform operations"),
+            fontawesome: 'fa-superpowers',
+            callback: async () => this.openQuestSelector(this)
+        });
+
+        return {...options, commands, categories};
+    },
+
+    powerboxQuests: async function() {
+        const {res_model: resModel, res_id: resId } = this.options.recordInfo || {}
+
+        try {
+            const powerbox_quests = await this._rpc({
+                model: 'ai.quest',
+                method: 'search_read',
+                args: [['|', ['model_id.model', '=', resModel], ['model_id', '=', false], ['init_type', '=', 'powerbox'], ['status', '=', 'active']]],
+                kwargs: {
+                    fields: ['id', 'name', 'sub_description']
+                },
+            }, { shadow: true });
+
+            if (!Array.isArray(powerbox_quests)) {
+                console.error('Unexpected response format:', powerbox_quests);
+                return [];
+            }
+
+            return powerbox_quests;
+
+        } catch (error) {
+            console.error('Error fetching powerbox_items:', error);
+            return [];
+        }
+    },
+
+    openQuestSelector: async function () {
+        const quests = await this.powerboxQuests();
+
+        if (quests && quests.length == 0) {
+            return alert("No Powerbox Quest Found");
+        } else if (quests && quests.length == 1) {
+            this.openChatDialog(quests[0])
+        } else {
+            this.openQuestSelectorDialog(quests)
+        }
+    },
+
+    openQuestSelectorDialog: async function(quests) {
+        const {res_model: resModel, res_id: resId } = this.options.recordInfo || {}
+
+        let restoreSelection = () => {
+//            this.dependencies.selection.setSelection(selection);
+            console.log("restoreSelection")
+        };
+
+        const dialogParams = {
+            saveLink: (href) => {
+                const templateBlock = renderToElement(
+                    "ai_agent.QuestSelectorDialogBlueprint",
+                    {
+                        embeddedProps: JSON.stringify({ source: href }),
+                    }
+                );
+                this.dependencies.dom.insert(templateBlock);
+                this.dependencies.history.addStep();
+
+                restoreSelection = () => {};
+            },
+            close: () => restoreSelection(),
+            quests,
+            pluginDependencies: this
+        };
+        Component.env.services.dialog.add(QuestSelectorDialog, { ...dialogParams });
+    },
+
+    openChatDialog: function(quest, params = {}) {
+        const {res_model: resModel, res_id: resId } = this.options.recordInfo || {}
+
+        const dialogParams = {
+            insert: (content) => {
                 this.odooEditor.historyPauseSteps();
                 const insertedNodes = this.odooEditor.execCommand('insert', content);
                 this.odooEditor.historyUnpauseSteps();
@@ -57,34 +140,94 @@ Wysiwyg.include({
                     setTimeout(() => div.remove(), 2000);
                 }
             },
-            options: extra_options
+            res_model: resModel,
+            res_id: resId,
+            quest,
+            ...params,
         };
-
-        Component.env.services.dialog.add(
-            QuestPromptDialog,
-            params,
-            { onClose: restore },
-        );
+        Component.env.services.dialog.add(QuestPromptDialog, { ...dialogParams });
     },
 
-    _getPowerboxOptions: function () {
-        const options = this._super();
-        const {commands, categories} = options;
+    // Add this helper method to convert markdown to HTML
+    _markdownToHtml: function(markdown) {
+        if (!markdown) return '';
 
-        const extra_options = {
-            ...this.options.recordInfo
+        // Simple markdown conversion for common elements
+        let html = markdown
+            // Headers (must come before bold/italic)
+            .replace(/^### (.*$)/gim, '<h3>$1</h3>')
+            .replace(/^## (.*$)/gim, '<h2>$1</h2>')
+            .replace(/^# (.*$)/gim, '<h1>$1</h1>')
+
+            // Bold and italic
+            .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+            .replace(/\*([^*]+)\*/g, '<em>$1</em>')
+
+            // Code blocks
+            .replace(/```([\s\S]*?)```/g, function(match, code) {
+                return '<pre><code>' + code.trim().replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</code></pre>';
+            })
+
+            // Inline code
+            .replace(/`([^`]+)`/g, function(match, code) {
+                return '<code>' + code.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</code>';
+            });
+
+        // Handle lists (bullet points)
+        const bulletListPattern = /^(\s*)\* (.*?)$/gm;
+        const bulletMatches = [...html.matchAll(bulletListPattern)];
+
+        if (bulletMatches.length > 0) {
+            // Collect all bullet points with their indentation levels
+            const bulletItems = bulletMatches.map(match => ({
+                indent: match[1].length,
+                content: match[2],
+                original: match[0]
+            }));
+
+            // Replace bullet points with HTML
+            for (const item of bulletItems) {
+                html = html.replace(item.original, `<li>${item.content}</li>`);
+            }
+
+            // Wrap in UL tags
+            html = html.replace(/(<li>.*?<\/li>)+/gs, '<ul>$&</ul>');
         }
 
-        commands.push({
-            category: 'AI Tools',
-            name: _t('Quest'),
-            priority: 10,
-            description: _t('Generate or transform content with AI Quest.'),
-            fontawesome: 'fa-robot',
-            callback: async () => this.openQuestDialog(extra_options)
-        });
+        // Handle numbered lists
+        const numberedListPattern = /^(\s*)\d+\. (.*?)$/gm;
+        const numberedMatches = [...html.matchAll(numberedListPattern)];
 
-        return {...options, commands, categories};
-    },
+        if (numberedMatches.length > 0) {
+            // Collect all numbered items with their indentation levels
+            const numberedItems = numberedMatches.map(match => ({
+                indent: match[1].length,
+                content: match[2],
+                original: match[0]
+            }));
+
+            // Replace numbered items with HTML
+            for (const item of numberedItems) {
+                html = html.replace(item.original, `<li>${item.content}</li>`);
+            }
+
+            // Wrap in OL tags
+            html = html.replace(/(<li>.*?<\/li>)+/gs, '<ol>$&</ol>');
+        }
+
+        // Convert paragraphs (lines with content not already in HTML tags)
+        // Split by double newlines to find paragraphs
+        const paragraphs = html.split(/\n\s*\n/);
+        html = paragraphs.map(p => {
+            const trimmedP = p.trim();
+            if (trimmedP && !trimmedP.startsWith('<')) {
+                // Replace newlines with <br> tags within paragraphs
+                return `<p>${trimmedP.replace(/\n/g, '<br>')}</p>`;
+            }
+            return trimmedP;
+        }).join('\n');
+
+        return html;
+    }
 })
 
