@@ -1,12 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<templates>
+<templates id="template" xml:space="preserve">
 
-    <t t-name="ai_agent.QuestSelectorDialogBlueprint">
-        <div data-oe-protected="true" t-att-data-embedded-props="embeddedProps"
-            data-embedded="draw" contenteditable="false"/>
+    <t t-name="ai_agent.QuestSelectorDialogBlueprint" owl="1">
+        <div data-oe-protected="true" t-att-data-embedded-props="embeddedProps" data-embedded="draw" contenteditable="false"/>
     </t>
 
-    <div t-name="ai_agent.QuestSelectorDialog">
+    <div t-name="ai_agent.QuestSelectorDialog" owl="1">
         <t t-set="title">Select a Quest</t>
         <Dialog title="title" size="'lg'">
             <div class="row g-3">
