@@ -76,24 +76,13 @@ export class QuestPlugin extends Plugin {
     async openQuestSelectorDialog(quests) {
         const {resModel, resId } = this.config.getRecordInfo?.() || {}
 
-        const selection = this.dependencies.selection.getEditableSelection();
+//        const selection = this.dependencies.selection.getEditableSelection();
         let restoreSelection = () => {
-            this.dependencies.selection.setSelection(selection);
+            console.log("restoreSelection")
+//            this.dependencies.selection.setSelection(selection);
         };
 
         const dialogParams = {
-            saveLink: (href) => {
-                const templateBlock = renderToElement(
-                    "ai_agent.QuestSelectorDialogBlueprint",
-                    {
-                        embeddedProps: JSON.stringify({ source: href }),
-                    }
-                );
-                this.dependencies.dom.insert(templateBlock);
-                this.dependencies.history.addStep();
-
-                restoreSelection = () => {};
-            },
             close: () => restoreSelection(),
             quests,
             pluginDependencies: this
@@ -136,6 +125,9 @@ export class QuestPlugin extends Plugin {
                 const start = insertedNodes?.length && closestElement(insertedNodes[0]);
                 const end = insertedNodes?.length &&
                     closestElement(insertedNodes[insertedNodes.length - 1]);
+
+                console.log("start", start)
+                console.log("end", end)
 
                 if (start && end) {
                     const divContainer = this.editable.parentElement;
