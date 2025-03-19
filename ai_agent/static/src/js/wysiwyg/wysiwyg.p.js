@@ -23,7 +23,7 @@ Wysiwyg.include({
 
         commands.push({
             category: 'AI Tools',
-            title: _t("AI Quest"),
+            name: _t("AI Quest"),
             priority: 10,
             description: _t("Pick a quest to perform operations"),
             fontawesome: 'fa-superpowers',
