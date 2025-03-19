@@ -1239,6 +1239,8 @@ class AIQuest(models.Model):
             # Get the initial message/topic
             initial_message = kwargs.get('topic', kwargs.get('message', ''))
 
+            #TODO Fixa extra context T/0463
+
             if debug:
                 session.add_message(f"Initializing chain with message: {initial_message[:100]}...")
 
