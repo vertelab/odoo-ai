@@ -21,7 +21,7 @@ from random import randint
 from urllib.parse import urljoin, urlparse
 from odoo import models, fields, api, _
 from odoo.tools.safe_eval import safe_eval
-from odoo.exceptions import UserError
+from odoo.exceptions import UserError, ValidationError
 from langchain_huggingface import HuggingFaceEmbeddings
 
 _logger = logging.getLogger(__name__)
@@ -88,7 +88,7 @@ class AIMemory(models.Model):
     color = fields.Integer(default=lambda self: randint(1, 11))
     debug = fields.Boolean(string='Debug')
     field_list = fields.Text(string='Field List', default="['name']", readonly=False)
-    filter_domain = fields.Char(string='Record selection', )
+    filter_domain = fields.Char(string='Record selection')
     image_128 = fields.Image("Image", max_width=128, max_height=128)
     is_favorite = fields.Boolean()
     last_run = fields.Datetime()
@@ -117,6 +117,18 @@ class AIMemory(models.Model):
     url = fields.Char(string='Url', trim=True, )
     vector_type = fields.Selection(selection=[('faiss', 'FAISS'), ('st', 'Short Term')], string='Vector type',
                                    help="The type of vector database")
+    record_limit = fields.Integer(string="Record Limit", default=1)
+
+    @api.constrains('record_limit')
+    def _check_record_limit(self):
+        for record in self:
+            domain = safe_eval(record.filter_domain) if record.filter_domain else []
+            domain_count = self.env[record.model_name].search_count(domain)
+            if record.record_limit < 1:
+                raise ValidationError(_("The record limit can't be less than one."))
+            if record.record_limit > domain_count:
+                raise ValidationError(_("The record limit can't be bigger than the amount of records."))
+
 
     def action_get_quests(self):
         action = {
@@ -274,7 +286,6 @@ class AIMemory(models.Model):
                 module_dicts = memory.env[memory.model_name].search(domain).read(model_fields)
                 _logger.error(f"{module_dicts=}")
                 raw_documents = []
-                count_letters = 0
                 is_first = True
                 runs = 0
                 for module_dict in module_dicts:
@@ -283,15 +294,15 @@ class AIMemory(models.Model):
                             module_dict[key] = item.isoformat()
                         if isinstance(item, bytes):
                             module_dict[key] = base64.b64encode(item).decode("utf-8")
-                    raw_documents.append(memory.create_document(text=json_dump, metadata=module_dict))
+                    raw_documents.append(memory.create_document(text=json.dumps(module_dict), metadata=module_dict))
                 if len(raw_documents) != 0:
-                    runs = math.ceil(len(raw_documents) / 5000)
+                    runs = math.ceil(len(raw_documents) / record_limit)
                     for run in range(runs):
                         if is_first:
-                            self.create_vector(raw_documents[run*5000:(run + 1)*5000])
+                            self.create_vector(raw_documents[run*record_limit:(run + 1)*record_limit])
                             is_first = False
                         elif self.memory_faiss:
-                            self.add_to_vector(raw_documents[run*5000:(run + 1)*5000])
+                            self.add_to_vector(raw_documents[run*record_limit:(run + 1)*record_limit])
 
 
             elif memory.memory_type == 'attachments':

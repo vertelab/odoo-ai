@@ -50,6 +50,7 @@
                             <field name="model_name" invisible="1" />
                             <field name="filter_domain" widget="domain" options="{'model': 'model_name'}" attrs="{'invisible': [('memory_type', '!=', 'model')]}" />
                             <!-- #endif -->
+                            <field name="record_limit"/>
                         </group>
                         <group>
                             <field name="vector_type" />
