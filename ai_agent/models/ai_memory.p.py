@@ -286,12 +286,12 @@ class AIMemory(models.Model):
                     raw_documents.append(memory.create_document(text=json_dump, metadata=module_dict))
                 if len(raw_documents) != 0:
                     runs = math.ceil(len(raw_documents) / 5000)
-                    for run in runs:
-                        if self.is_first:
-                            self.create_vector(raw_documents[(run - 1)*5000:run*5000])
+                    for run in range(runs):
+                        if is_first:
+                            self.create_vector(raw_documents[run*5000:(run + 1)*5000])
                             is_first = False
                         elif self.memory_faiss:
-                            self.add_to_vector(raw_documents[(run - 1)*5000:run*5000])
+                            self.add_to_vector(raw_documents[run*5000:(run + 1)*5000])
 
 
             elif memory.memory_type == 'attachments':
@@ -340,7 +340,7 @@ class AIMemory(models.Model):
     def add_to_vector(self,raw_documents):
         documents = self.text_splitter(raw_documents)
         db = self.load_faiss()
-        uuids = [str(uuid4()) for _ in range(len(documents))]
+        uuids = [str(uuid.uuid4()) for _ in range(len(documents))]
         db.add_documents(documents=documents, ids=uuids)
         self.memory_faiss = base64.b64encode(db.serialize_to_bytes())
 

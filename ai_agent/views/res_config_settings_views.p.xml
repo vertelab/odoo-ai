@@ -1,6 +1,7 @@
 <odoo>
   <data>
-      
+
+    <!-- #if VERSION >= "17.0" -->
     <record id="res_config_settings_view_form" model="ir.ui.view">
       <field name="name">res.config.settings.view.form.quests</field>
       <field name="model">res.config.settings</field>
@@ -10,7 +11,7 @@
           <setting id="quests_setting">
             <span class="fa fa-lg fa-android" aria-label="Number of quests" />
             <field name="quests" class="w-auto ps-3 fw-bold" />
-            <span class="o_form_label" invisible="quests &gt; 1"> Quest</span>
+            <span class="o_form_label" invisible="quests &gt; 1"> Quests</span>
             <span class="o_form_label" invisible="quests &lt;= 1"> Quests</span>
             <br/>
             <button name="%(ai_agent.action_ai_quest)d" icon="oi-arrow-right" type="action" string="Manage Quests" class="btn-link o_web_settings_access_rights"/>
@@ -18,6 +19,35 @@
         </setting>
       </field>
     </record>
-    
+
+    <!-- #elif VERSION <= "16.0" -->
+
+    <record id="res_config_settings_view_form" model="ir.ui.view">
+      <field name="name">res.config.settings.view.form.quests</field>
+      <field name="model">res.config.settings</field>
+      <field name="inherit_id" ref="base.res_config_settings_view_form" />
+      <field name="arch" type="xml">
+
+        <div class="col-12 col-lg-6 o_setting_box" id="active_user_setting" position="after">
+          <div class="col-12 col-lg-6 o_setting_box" id="quests_setting">
+            <div class="o_setting_right_pane">
+              <span class="fa fa-lg fa-android" aria-label="Number of quests"/>
+              <field name="quests" class="w-auto ps-3 fw-bold"/>
+              <span class="o_form_label" attrs="{'invisible':[('active_user_count', '&gt;', '1')]}">
+                                            Quests
+              </span>
+              <span class="o_form_label" attrs="{'invisible':[('active_user_count', '&lt;=', '1')]}">
+                                            Quests
+              </span>
+              <br/>
+              <button name="%(ai_agent.action_ai_quest)d" icon="fa-arrow-right" type="action" string="Manage Quests" class="btn-link o_web_settings_access_rights"/>
+            </div>
+          </div>
+        </div>
+
+      </field>
+    </record>
+    <!-- #endif -->
+
   </data>
 </odoo>
