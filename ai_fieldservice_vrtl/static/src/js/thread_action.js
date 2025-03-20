@@ -41,13 +41,19 @@ const _get_related_field_service = async(ai_quest_id) => {
 threadActionsRegistry
     .add("view_field_service", {
         async condition(component) {
-            const channel_rec = await _get_discuss_channel_vals(component.thread?.id)
-            return channel_rec.length > 0;
+            return (
+                component.thread?.model === "discuss.channel" &&
+                (!component.props.chatWindow || component.props.chatWindow.isOpen)
+            );
         },
         icon: "fa fa-fw fa-eye",
         iconLarge: "fa fa-fw fa-lg fa-eye",
         name: _t("View Field Service"),
         async open(component) {
+            if (component.thread?.model != "discuss.channel") {
+                return alert("This is not a discuss channel")
+            }
+
             const channel_rec = await _get_discuss_channel_vals(component.thread?.id)
 
             if (channel_rec && channel_rec.length == 0) {
@@ -75,5 +81,6 @@ threadActionsRegistry
         sequenceQuick: 50,
         setup() {
             const component = useComponent();
+            component.rtc = useState(useService("discuss.rtc"));
         },
     })
