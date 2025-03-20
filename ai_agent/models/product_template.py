@@ -54,3 +54,4 @@ class ProductAttributeValue(models.Model):
 
     licence = fields.Selection(selection=LICENCES, string='Licence', default='commercial')
     is_embedded = fields.Boolean(string='Is Embedded')
+    has_endpoint = fields.Boolean(string="Has Endpoint")

@@ -8,6 +8,7 @@ import faiss
 import asyncio
 import requests
 import markdownify
+import math
 from bs4 import BeautifulSoup
 from dateutil.relativedelta import relativedelta
 from langchain_community.document_loaders import PyPDFLoader
@@ -252,6 +253,9 @@ class AIMemory(models.Model):
         return action
 
     def run(self):
+        self.with_delay().real_run()
+
+    def real_run(self):
         for memory in self:
             if memory.status != "active":
                 raise UserError(_(f"Wrong state on memory ({self.name})"))
@@ -270,15 +274,26 @@ class AIMemory(models.Model):
                 module_dicts = memory.env[memory.model_name].search(domain).read(model_fields)
                 _logger.error(f"{module_dicts=}")
                 raw_documents = []
+                count_letters = 0
+                is_first = True
+                runs = 0
                 for module_dict in module_dicts:
                     for key, item in module_dict.items():
                         if isinstance(item, fields.datetime):
                             module_dict[key] = item.isoformat()
                         if isinstance(item, bytes):
                             module_dict[key] = base64.b64encode(item).decode("utf-8")
-                    raw_documents.append(memory.create_document(text=json.dumps(module_dict), metadata=module_dict))
+                    raw_documents.append(memory.create_document(text=json_dump, metadata=module_dict))
                 if len(raw_documents) != 0:
-                    self.create_vector(raw_documents)
+                    runs = math.ceil(len(raw_documents) / 5000)
+                    for run in runs:
+                        if self.is_first:
+                            self.create_vector(raw_documents[(run - 1)*5000:run*5000])
+                            is_first = False
+                        elif self.memory_faiss:
+                            self.add_to_vector(raw_documents[(run - 1)*5000:run*5000])
+
+
             elif memory.memory_type == 'attachments':
                 memory.rag_attatchemts()
             elif memory.memory_type == 'local_attachment':
@@ -321,6 +336,13 @@ class AIMemory(models.Model):
             self.test_embedd(embeddings)
             db = FAISS.from_documents(documents, embeddings)
             self.memory_faiss = base64.b64encode(db.serialize_to_bytes())
+
+    def add_to_vector(self,raw_documents):
+        documents = self.text_splitter(raw_documents)
+        db = self.load_faiss()
+        uuids = [str(uuid4()) for _ in range(len(documents))]
+        db.add_documents(documents=documents, ids=uuids)
+        self.memory_faiss = base64.b64encode(db.serialize_to_bytes())
 
     def test_embedd(self, embeddings):
         try:

@@ -40,6 +40,7 @@ class AIAgentLLM(models.Model):
     endpoint = fields.Char()
     image_128 = fields.Image("Image", max_width=128, max_height=128, related="product_tmpl_id.image_128")
     is_embedded = fields.Boolean(related='model_id.product_attribute_value_id.is_embedded')
+    has_endpoint = fields.Boolean(related='model_id.product_attribute_value_id.has_endpoint')
     is_favorite = fields.Boolean()
     is_key_required = fields.Boolean(default=True)
     last_run = fields.Datetime()
@@ -185,13 +186,12 @@ class AIAgentLLM(models.Model):
             api_key = self.ai_api_key
             if not api_key:
                 api_key = tools.config.get(self.product_tmpl_id.fallback_api_key_name, False)
-                _logger.error(f"{api_key=}")
             if "HuggingFaceInferenceAPIEmbeddings" == self.product_tmpl_id.llm_etype:
                 return LLM(api_key=SecretStr(api_key), model_name=self.model_id.name)
             elif "HuggingFaceEmbeddings" == self.product_tmpl_id.llm_etype:
                  return LLM(model_name=self.model_id.name)
             elif "OllamaEmbeddings" == self.product_tmpl_id.llm_etype:
-                return LLM(model=self.model_id.name, base_url="http://192.168.1.83:11434")
+                return LLM(model=self.model_id.name, base_url=self.endpoint)
             elif api_key:
                 return LLM(api_key=api_key, model=self.model_id.name)
 
