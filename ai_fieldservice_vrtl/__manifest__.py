@@ -47,6 +47,11 @@
     'data': [
         'data/ai_agent_data.xml',
     ],
+    'assets': {
+        'web.assets_backend': [
+            'ai_fieldservice_vrtl/static/src/js/thread_action.js',
+        ]
+    },
     'installable': True,
     'auto_install': False,
     'application': False,
