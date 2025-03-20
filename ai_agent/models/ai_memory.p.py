@@ -274,6 +274,7 @@ class AIMemory(models.Model):
                 module_dicts = memory.env[memory.model_name].search(domain).read(model_fields)
                 _logger.error(f"{module_dicts=}")
                 raw_documents = []
+                count_letters = 0
                 is_first = True
                 runs = 0
                 for module_dict in module_dicts:
@@ -282,7 +283,7 @@ class AIMemory(models.Model):
                             module_dict[key] = item.isoformat()
                         if isinstance(item, bytes):
                             module_dict[key] = base64.b64encode(item).decode("utf-8")
-                    raw_documents.append(memory.create_document(text=json.dumps(module_dict), metadata=module_dict))
+                    raw_documents.append(memory.create_document(text=json_dump, metadata=module_dict))
                 if len(raw_documents) != 0:
                     runs = math.ceil(len(raw_documents) / 5000)
                     for run in range(runs):

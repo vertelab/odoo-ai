@@ -16,6 +16,14 @@
             <field name="name">nomic-embed-text</field>
             <field name="attribute_id" ref="ai_agent.product_attribute_model" />
             <field name="is_embedded" eval="True"/>
+            <field name="has_endpoint" eval="True"/>
+        </record>
+
+        <record id="ollama_product_attribute_value_snowflake-arctic-embed" model="product.attribute.value">
+            <field name="name">snowflake-arctic-embed</field>
+            <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+            <field name="is_embedded" eval="True"/>
+            <field name="has_endpoint" eval="True"/>
         </record>
 
         <record id="ollama_product_template_attribute_line_model" model="product.template.attribute.line">
@@ -23,6 +31,7 @@
             <field name="attribute_id" ref="product_attribute_model" />
             <field name="value_ids" eval="[(6, 0, [
                             ref('ollama_product_attribute_value_nomic-embed-text'),
+                            ref('ollama_product_attribute_value_snowflake-arctic-embed'),
                     ])]" />
         </record>
 

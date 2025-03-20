@@ -95,13 +95,15 @@
                                 <field name="is_key_required" widget="boolean_toggle" />
                                 <field name="ai_api_key" attrs="{'invisible': [('is_key_required', '=', False)]}" />
                                 <field name="licence" />
-                                <field name="is_embedded" />
+                                <field name="is_embedded" invisible="1"/>
+                                <field name="has_endpoint" invisible="1"/>
                             </group>
                             <group>
                                 <field name="llm_type" attrs="{'invisible': [('is_embedded', '=', True)]}"/>
                                 <field name="llm_etype" attrs="{'invisible': [('is_embedded', '=', False)]}" />
                                 <field name="product_tmpl_id" />
                                 <field name="model_id" attrs="{'invisible': [('product_tmpl_id', '=', False)]}" domain="[('product_tmpl_id', '=', product_tmpl_id),('attribute_id','=', %(ai_agent.product_attribute_model)d)]" />
+                                <field name="endpoint" attrs="{'invisible': [('has_endpoint', '=', False)]}" />
                                 <field name="azure_endpoint" attrs="{'required': [('llm_type', '=', 'AzureChatOpenAI')], 'invisible': [('llm_type', '!=', 'AzureChatOpenAI')]}"/>
                                 <field name="api_version" attrs="{'required': [('llm_type', '=', 'AzureChatOpenAI')], 'invisible': [('llm_type', '!=', 'AzureChatOpenAI')]}"/>
                             </group>
@@ -213,11 +215,25 @@
                 </calendar>
             </field>
         </record>
+
+        <record id="action_test_llms" model="ir.actions.server">
+            <field name="name">Test LLMs</field>
+            <field name="model_id" ref="ai_agent.model_ai_agent_llm"/>
+            <field name="binding_model_id" ref="ai_agent.model_ai_agent_llm" />
+            <field name="state">code</field>
+            <field name="code">
+for record in records:
+    record.test_llm()
+            </field>
+        </record>
+
         <record id="action_ai_agent_llm" model="ir.actions.act_window">
             <field name="name">Agent LLM</field>
             <field name="res_model">ai.agent.llm</field>
             <field name="view_mode">kanban,tree,form,calendar</field>
         </record>
+
         <menuitem id="ai_agent.menu_ai_agent_llm" name="LLMs" parent="ai_agent.menu_ai_agent_configuration" action="action_ai_agent_llm" />
+
     </data>
 </odoo>
