@@ -1315,6 +1315,8 @@ class AIQuest(models.Model):
             # Create a proper HumanMessage
             human_message = HumanMessage(content=initial_message)
 
+            _logger.error(f"{human_message=}")
+
             return {
                 "messages": [human_message],
                 'quest': self,
