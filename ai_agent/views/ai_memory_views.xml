@@ -41,6 +41,7 @@
                             <field name="model_id" invisible="memory_type != 'model'" />
                             <field name="model_name" invisible="1" />
                             <field name="filter_domain" widget="domain" options="{'model': 'model_name'}" invisible="memory_type != 'model'" />
+                            <field name="record_limit"/>
                         </group>
                         <group>
                             <field name="vector_type" />
