@@ -127,7 +127,8 @@
                                 <field name="ai_api_key" attrs="{'invisible': [('is_key_required', '=', False)]}" />
                                 <!-- #endif -->
                                 <field name="licence" />
-                                <field name="is_embedded" />
+                                <field name="is_embedded" invisible="1"/>
+                                <field name="has_endpoint" invisible="1"/>
                             </group>
                             <group>
                                 <!-- #if VERSION >= "18.0" -->
@@ -135,6 +136,7 @@
                                 <field name="llm_etype" invisible="is_embedded == False" />
                                 <field name="product_tmpl_id" />
                                 <field name="model_id" invisible="product_tmpl_id == False" domain="[('product_tmpl_id', '=', product_tmpl_id),('attribute_id','=', %(ai_agent.product_attribute_model)d)]" />
+                                <field name="endpoint" invisible="has_endpoint == False"/>
                                 <field name="azure_endpoint" required="llm_type == 'AzureChatOpenAI'" invisible="llm_type != 'AzureChatOpenAI'"/>
                                 <field name="api_version" required="llm_type == 'AzureChatOpenAI'" invisible="llm_type != 'AzureChatOpenAI'"/>
                                 <!-- #elif VERSION <= "17.0" -->
@@ -142,6 +144,7 @@
                                 <field name="llm_etype" attrs="{'invisible': [('is_embedded', '=', False)]}" />
                                 <field name="product_tmpl_id" />
                                 <field name="model_id" attrs="{'invisible': [('product_tmpl_id', '=', False)]}" domain="[('product_tmpl_id', '=', product_tmpl_id),('attribute_id','=', %(ai_agent.product_attribute_model)d)]" />
+                                <field name="endpoint" attrs="{'invisible': [('has_endpoint', '=', False)]}" />
                                 <field name="azure_endpoint" attrs="{'required': [('llm_type', '=', 'AzureChatOpenAI')], 'invisible': [('llm_type', '!=', 'AzureChatOpenAI')]}"/>
                                 <field name="api_version" attrs="{'required': [('llm_type', '=', 'AzureChatOpenAI')], 'invisible': [('llm_type', '!=', 'AzureChatOpenAI')]}"/>
                                 <!-- #endif -->
