@@ -280,13 +280,13 @@ class AIMemory(models.Model):
                             module_dict[key] = base64.b64encode(item).decode("utf-8")
                     raw_documents.append(memory.create_document(text=json.dumps(module_dict), metadata=module_dict))
                 if len(raw_documents) != 0:
-                    runs = math.ceil(len(raw_documents) / record_limit)
+                    runs = math.ceil(len(raw_documents) / memory.record_limit)
                     for run in range(runs):
                         if is_first:
-                            self.create_vector(raw_documents[run*record_limit:(run + 1)*record_limit])
+                            self.create_vector(raw_documents[run*memory.record_limit:(run + 1)*memory.record_limit])
                             is_first = False
                         elif self.memory_faiss:
-                            self.add_to_vector(raw_documents[run*record_limit:(run + 1)*record_limit])
+                            self.add_to_vector(raw_documents[run*memory.record_limit:(run + 1)*memory.record_limit])
 
 
             elif memory.memory_type == 'attachments':
