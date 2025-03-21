@@ -93,7 +93,7 @@ class AIMemory(models.Model):
     is_favorite = fields.Boolean()
     last_run = fields.Datetime()
     max_nbr_pages = fields.Integer(string="Max Number of Pages")
-    memory_faiss = fields.Binary(string='FAISS Index', attachment=True)
+    memory_faiss = fields.Binary(string='FAISS Index', attachment=True, copy=False)
     memory_markdown = fields.Binary(string='Markdown', attachment=True)
     memory_type = fields.Selection(
         selection=[("bs4", "Simple Webscraper"), ("model", "Model"), ("local_attachment", "Local Attachment"),
