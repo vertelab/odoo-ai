@@ -541,16 +541,6 @@ class AIAgent(models.Model):
         self.last_run = fields.Datetime.now()
         self.message_post(body=f"{body} | {self.last_run}", message_type="notification")
 
-    def _extract_placeholders(self, template):
-        # Regular expression to find {placeholder} and {{placeholder}}
-        pattern = r'\{\{(.*?)\}\}|\{(.*?)\}'
-        # Find all matches
-        matches = re.findall(pattern, template)
-        # Extract only non-empty values from the matches
-        placeholders = [match[0] or match[1] for match in matches]
-
-        return placeholders
-
     def agent_extra_context(self, quest=None, record=None):
         if record:
             record_data = record.read()[0]
@@ -578,8 +568,6 @@ class AIAgent(models.Model):
         topic = kwargs.get('topic', kwargs.get('message', ''))
         session = kwargs.get('session', False)
         debug = kwargs.get('debug', False)
-
-        print("kwargs", kwargs.get('record'))
 
         quest = session.ai_quest_id
 
@@ -622,8 +610,6 @@ class AIAgent(models.Model):
                     {self.agent_extra_context(quest=quest, record=kwargs.get('record'))}
                 """
             )
-
-            print("system_message", system_message)
 
             messages = [system_message, HumanMessage(content=topic)]
 
