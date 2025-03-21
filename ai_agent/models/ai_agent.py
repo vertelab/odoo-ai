@@ -508,7 +508,6 @@ class AIAgent(models.Model):
         return action
 
     def get_agent_name(self, i, **kwargs):
-        # ~ return f"agent_{i}"
         if kwargs.get('mermaid'):
             name = "**" + re.sub(r'[()\[\]\{\}:]', ' ', self.name).strip() + "**" if self and self.name else ""
             tools = "<small>fa&colon;fa-tools " + re.sub(r'[()\[\]{}:]', ' ', ','.join(
@@ -536,7 +535,6 @@ class AIAgent(models.Model):
         if isinstance(response, AIMessage):
             content = response.content.strip()
             if content == "2":
-            # ~ raise UserError(content)
                 self.message_post(body=_(f"Llm confirmed: 1+1={content}"), message_type="notification")
                 self.status = "active"
                 return 
@@ -549,7 +547,25 @@ class AIAgent(models.Model):
         self.last_run = fields.Datetime.now()
         self.message_post(body=f"{body} | {self.last_run}", message_type="notification")
 
-    def agent_extra_context(self, quest=None):
+    def agent_extra_context(self, quest=None, record=None):
+        if record:
+            record_data = record.read()[0]
+
+            # Extract placeholders from ai_prompt_template
+            placeholders = self._extract_placeholders(self.ai_prompt_template)
+
+            # Process the fields
+            processed_data = {}
+            for field, value in record_data.items():
+                # If the value is a tuple with an ID and name, extract the name
+                if isinstance(value, tuple) and len(value) == 2:
+                    processed_data[field] = value[1]
+                else:
+                    processed_data[field] = value  # Keep other field values as they are
+
+            # Filter processed_data to only include fields in placeholders
+            filtered_data = {key: processed_data[key] for key in placeholders if key in processed_data}
+            return filtered_data
         return {}
 
     def create_node(self, **kwargs):
@@ -597,7 +613,7 @@ class AIAgent(models.Model):
                 - Stay focused on your specific role
                 
                 Knowledge :
-                    {self.agent_extra_context(quest)}
+                    {self.agent_extra_context(quest=quest, record=kwargs.get('record'))}
                 """
             )
 
