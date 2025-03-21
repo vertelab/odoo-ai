@@ -22,8 +22,8 @@ class AIAgent(models.Model):
         selection_add=[('fieldservice-order', 'Chat with serviceorder')], ondelete={'fieldservice-order': 'cascade'})
 
 
-    def agent_extra_context(self, quest):
-        res = super().agent_extra_context(quest=quest)
+    def agent_extra_context(self, quest, record=None):
+        res = super().agent_extra_context(quest=quest, record=record)
         if self.ai_type == "fieldservice-order":
             service_order = self.env['fieldservice.order'].search([('ai_quest_id', '=', quest.id)], limit=1)
             if service_order:
