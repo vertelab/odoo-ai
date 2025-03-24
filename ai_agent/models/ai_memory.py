@@ -287,8 +287,6 @@ class AIMemory(models.Model):
                             is_first = False
                         elif self.memory_faiss:
                             self.add_to_vector(raw_documents[run*memory.record_limit:(run + 1)*memory.record_limit])
-
-
             elif memory.memory_type == 'attachments':
                 memory.rag_attatchemts()
             elif memory.memory_type == 'local_attachment':
