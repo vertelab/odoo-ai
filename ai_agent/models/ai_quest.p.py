@@ -300,7 +300,7 @@ class AIQuest(models.Model):
     def _compute_graph_image(self):
         for rec in self:
             real_ai_agent_ids = list(set(filter(lambda ai_agent_id: ai_agent_id.ai_agent_id.id, rec.ai_agent_ids)))
-            if real_ai_agent_ids:
+            if real_ai_agent_ids and False:
                 try:
                     graph = rec.build(session=self.env['ai.quest.session'].quest_init(rec), mermaid=True)
                     image_object = graph.get_graph().draw_mermaid_png()
@@ -874,7 +874,7 @@ class AIQuest(models.Model):
                     'alias_defaults': alias_vals.get('alias_defaults'),
                 })
         for quest in self:
-            if quest.server_action_id:
+            if quest.server_action_id and quest.init_type == "server-action":
                 quest.server_action_id.write(
                     {'name': quest.name, 'code': f"action = env.ref('{quest._get_eid()}').server_action(records)",
                      "binding_view_types": "form,list",
