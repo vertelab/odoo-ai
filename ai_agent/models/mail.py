@@ -4,7 +4,6 @@
 from langchain_core.messages import AIMessage
 from odoo import api, fields, models, tools, _
 from odoo.exceptions import ValidationError, UserError
-from odoo.tools import html2plaintext, is_html_empty
 import logging
 import markdown
 from markupsafe import Markup
@@ -65,6 +64,6 @@ class MailChannel(models.Model):
                     self.with_user(user).message_post(
                         body=Markup(answer),
                         message_type='comment',
-                        subtype_xmlid='mail.mt_note',
+                        subtype_xmlid='mail.mt_comment',
                     )
         return message
