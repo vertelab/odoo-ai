@@ -11,12 +11,12 @@ from odoo import models, fields, api, _
 from odoo.tools.safe_eval import safe_eval
 from odoo.exceptions import UserError
 
-//~ from pgvector.sqlalchemy import Vector
+#from pgvector.sqlalchemy import Vector
 from odoo import fields, models
-from odoo.addons.ai_agent_pgvector.fields import Vector
+#from odoo.addons.ai_agent_pgvector.fields import Vector
 class ProductTemplate(models.Model):
     _inherit = 'product.template'
-    point = fields.CustomField(string="Field name")
+    # point = fields.CustomField(string="Field name")
 
 
 from langchain_postgres import PGVector
@@ -30,7 +30,6 @@ _logger = logging.getLogger(__name__)
 class AIMemory(models.Model):
     _inherit = 'ai.memory'
 
-    memory_faiss = fields.Binary(string='FAISS Index', attachment=True)
     vector_type = fields.Selection(selection_add=[("pg_vector", "Postgres Vector")],ondelete={'pg_vector': 'cascade'})
     
     def create_vector(self,raw_documents):
@@ -47,6 +46,7 @@ class AIMemoryPgVector(models.Model):
     
     memory_id = fields.Many2one(comodel_name="ai.memory")
     embedding = fields.Vector(string='Embedding', size=1000)
+    content = fields.Text()
     # Add metadata
     # Add info about document, document.name page, images
     
