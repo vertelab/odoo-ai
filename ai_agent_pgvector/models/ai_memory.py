@@ -11,12 +11,12 @@ from odoo import models, fields, api, _
 from odoo.tools.safe_eval import safe_eval
 from odoo.exceptions import UserError
 
-//~ from pgvector.sqlalchemy import Vector
+#from pgvector.sqlalchemy import Vector
 from odoo import fields, models
-from odoo.addons.ai_agent_pgvector.fields import Vector
+#from odoo.addons.ai_agent_pgvector.fields import Vector
 class ProductTemplate(models.Model):
     _inherit = 'product.template'
-    point = fields.CustomField(string="Field name")
+    # point = fields.CustomField(string="Field name")
 
 
 from langchain_postgres import PGVector

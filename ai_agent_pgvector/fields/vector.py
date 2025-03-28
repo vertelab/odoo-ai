@@ -1,9 +1,7 @@
 from odoo.fields import Field
+from operator import attrgetter
 class Vector(Field):
-   """Encapsulates a vector content (e.g. a token vector).
-
-
-    """
+    """Encapsulates a vector content (e.g. a token vector)."""
     
     type = 'vector'
 

@@ -115,7 +115,7 @@ class AIMemory(models.Model):
         selection=[("draft", "Draft"), ("active", "Active"), ("done", "Done"), ("error", "Error")], default="draft")
     tag_ids = fields.Many2many(comodel_name='product.tag', string='Tags')
     url = fields.Char(string='Url', trim=True, )
-    vector_type = fields.Selection(selection=[('faiss', 'FAISS'), ('st', 'Short Term')], string='Vector type',
+    vector_type = fields.Selection(selection=[('faiss', 'FAISS'), ('st', 'Short Term'), ("pg_vector", "PostGres Vector Store")], string='Vector type',
                                    help="The type of vector database")
     record_limit = fields.Integer(string="Record Limit", default=1)
 
@@ -249,7 +249,8 @@ class AIMemory(models.Model):
         return action
 
     def run(self):
-        self.with_delay().real_run()
+        self.real_run()
+        #self.with_delay().real_run()
 
     def real_run(self):
         for memory in self:
@@ -258,35 +259,9 @@ class AIMemory(models.Model):
 
             memory.last_run = fields.Datetime.now()
             if memory.memory_type == 'bs4':
-                if not memory.url:
-                    raise UserError(_(f"Missing url on memory ({self.name})"))
-                all_pages = self.scrape_website(memory.url, memory.max_nbr_pages)
-                memory.memory_markdown = base64.b64encode(all_pages)
-                raw_documents = [memory.create_document(text=all_pages, metadata={})]
-                memory.create_vector(raw_documents)
+                memory.setup_db_for_bs4(memory)
             elif memory.memory_type == 'model':
-                model_fields = eval(memory.field_list)
-                domain = safe_eval(memory.filter_domain) if memory.filter_domain else []
-                module_dicts = memory.env[memory.model_name].search(domain).read(model_fields)
-                _logger.error(f"{module_dicts=}")
-                raw_documents = []
-                is_first = True
-                runs = 0
-                for module_dict in module_dicts:
-                    for key, item in module_dict.items():
-                        if isinstance(item, fields.datetime):
-                            module_dict[key] = item.isoformat()
-                        if isinstance(item, bytes):
-                            module_dict[key] = base64.b64encode(item).decode("utf-8")
-                    raw_documents.append(memory.create_document(text=json.dumps(module_dict), metadata=module_dict))
-                if len(raw_documents) != 0:
-                    runs = math.ceil(len(raw_documents) / memory.record_limit)
-                    for run in range(runs):
-                        if is_first:
-                            self.create_vector(raw_documents[run*memory.record_limit:(run + 1)*memory.record_limit])
-                            is_first = False
-                        elif self.memory_faiss:
-                            self.add_to_vector(raw_documents[run*memory.record_limit:(run + 1)*memory.record_limit])
+                memory.setup_db_for_model(memory)
             elif memory.memory_type == 'attachments':
                 memory.rag_attatchemts()
             elif memory.memory_type == 'local_attachment':
@@ -322,13 +297,51 @@ class AIMemory(models.Model):
         return Document(id=uuid.uuid4(), page_content=f"{content}",
                         metadata={"name": attachment_id.name, "type": "attachment"})
 
-    def create_vector(self, raw_documents):
+    def setup_db_for_bs4(self,memory):
+        if not memory.url:
+            raise UserError(_(f"Missing url on memory ({self.name})"))
+        all_pages = self.scrape_website(memory.url, memory.max_nbr_pages)
+        memory.memory_markdown = base64.b64encode(all_pages)
+        raw_documents = [memory.create_document(text=all_pages, metadata={})]
+        memory.create_vector(raw_documents)
+
+    def setup_db_for_model(self,memory):
+        model_fields = eval(memory.field_list)
+        domain = safe_eval(memory.filter_domain) if memory.filter_domain else []
+        module_dicts = memory.env[memory.model_name].search(domain).read(model_fields)
+        _logger.error(f"{module_dicts=}")
+        raw_documents = []
+        is_first = True
+        runs = 0
+        for module_dict in module_dicts:
+            for key, item in module_dict.items():
+                if isinstance(item, fields.datetime):
+                    module_dict[key] = item.isoformat()
+                if isinstance(item, bytes):
+                    module_dict[key] = base64.b64encode(item).decode("utf-8")
+            raw_documents.append(memory.create_document(text=json.dumps(module_dict), metadata=module_dict))
+        if len(raw_documents) != 0:
+            runs = math.ceil(len(raw_documents) / memory.record_limit)
+            for run in range(runs):
+                if is_first:
+                    self.create_vector(raw_documents[run*memory.record_limit:(run + 1)*memory.record_limit],memory)
+                    is_first = False
+                elif self.memory_faiss:
+                    self.add_to_vector(raw_documents[run*memory.record_limit:(run + 1)*memory.record_limit])
+
+    def create_vector(self, raw_documents,memory):
+        documents = self.text_splitter(raw_documents)
+        embeddings = self.ai_agent_llm_id.get_embedding()
+        self.test_embedd(embeddings)
         if self.vector_type == 'faiss':
-            documents = self.text_splitter(raw_documents)
-            embeddings = self.ai_agent_llm_id.get_embedding()
-            self.test_embedd(embeddings)
             db = FAISS.from_documents(documents, embeddings)
             self.memory_faiss = base64.b64encode(db.serialize_to_bytes())
+        elif self.vector_type == "pg_vector":
+            self.setup_pg_vector()
+            if memory.memory_type == "model" and memory.model_id:
+                self.pg_vector_create_column(documents, embeddings, memory)
+            else:
+                self.pg_vector_create_table(documents, embeddings)
 
     def add_to_vector(self,raw_documents):
         documents = self.text_splitter(raw_documents)
@@ -392,3 +405,96 @@ class AIMemory(models.Model):
     def cron(self):
         self.env['ai.memory'].search(
             [('last_run', '<', fields.Datetime.now() - relativedelta(days=self.nbr_days))]).run()
+    
+    def create_text_embeddings(self,documents,embeddings):
+        text_embeddings = [embeddings.embed_query(document.page_content) for document in documents]
+        return text_embeddings
+    
+    def setup_pg_vector(self):
+        sql_check_for_pg_vector_extension = "SELECT * FROM pg_available_extensions where name='vector';"
+        self.env.cr.execute(sql_check_for_pg_vector_extension)
+        sql_response = self.env.cr.fetchall()
+        _logger.error(f"{sql_response=}")
+        if sql_response:
+            try:
+                sql_add_pg_vector_extension = "CREATE EXTENSION IF NOT EXISTS vector;"
+                self.env.cr.execute(sql_add_pg_vector_extension)
+                self.env.cr.commit()
+            except:
+                raise UserError("Could not add pg_vector extension. Might need to set Odoo as a superuser in Postgres.")
+        else:
+            raise UserError("The Postgres extension vector is not installd")
+    
+    def check_if_column_exsists(self,db_model_name):
+        sql_check_if_column_exsists = f"SELECT EXISTS(SELECT 'vector' FROM information_schema.columns WHERE table_name='{db_model_name}' and column_name='embedding');"
+        self.env.cr.execute(sql_check_if_column_exsists)
+        sql_response = self.env.cr.fetchall()
+        return sql_response[0][0]
+    
+    def pg_vector_get_column(self,ids=[]):
+        db_model_name = memory.model_name.replace(".","_")
+        if self.check_if_column_exsists(db_model_name) == False:
+            raise UserError("Ther is no embedding column on this model")
+        sql_select_embedding = f"SELECT embedding FROM {db_model_name};" 
+        self.env.cr.execute(sql_add_column)
+        sql_response = self.env.cr.fetchall()
+        return sql_response
+    
+    def pg_vector_create_column(self,documents,embeddings,memory):
+        db_model_name = memory.model_name.replace(".","_")
+        text_embeddings = self.create_text_embeddings(documents,embeddings)
+        
+        if self.check_if_column_exsists(db_model_name) == False:
+            sql_add_column = f"ALTER TABLE {db_model_name} ADD embedding vector(768);"
+            self.env.cr.execute(sql_add_column)
+            self.env.cr.commit()
+        
+        for text_embedding, document in zip(text_embeddings,documents):
+            _logger.error(f"{text_embedding=}")
+            sql_insert_values = f"UPDATE {db_model_name} SET embedding = '{text_embedding}' WHERE id = {document.metadata.get('id')};"
+            self.env.cr.execute(sql_insert_values)
+        self.env.cr.commit()
+    
+    def pg_vector_create_table(self,documents,embeddings):
+        text_embeddings = self.create_text_embeddings(documents,embeddings)
+        
+        sql_check_if_table_exsists = "SELECT EXISTS (SELECT FROM pg_tables WHERE  schemaname = 'public' AND tablename  = 'documents');"
+        self.sudo().env.cr.execute(sql_check_if_table_exsists)
+        sql_response = self.env.cr.fetchall()
+        _logger.error(f"{sql_response[0][0]=}")
+        
+        if sql_response == False:
+    
+            sql_create_table = f"""CREATE TABLE documents (
+                        id SERIAL PRIMARY KEY,
+                        content TEXT NOT NULL,
+                        embedding vector    (768),  -- Match your embedding model's dimensions
+                        metadata JSONB           -- Optional metadata (e.g., source, author)
+                        );"""
+            sql_setup_index_for_table = "CREATE INDEX ON documents USING hnsw (embedding vector_l2_ops);"
+            self.env.cr.execute(sql_create_table)
+            self.env.cr.execute(sql_setup_index_for_table)
+            self.env.cr.commit()
+        
+        for text_embedding, document in zip(text_embeddings, documents):
+            jsonb = json.dumps(document.metadata)
+            _logger.error(f"{type(document.metadata)=}")
+            sql_insert_values = f"INSERT INTO documents (content, embedding, metadata) VALUES ('{document.page_content}', '{text_embedding}', '{jsonb}');"
+            self.env.cr.execute(sql_insert_values)
+        self.env.cr.commit()
+            
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+
+        

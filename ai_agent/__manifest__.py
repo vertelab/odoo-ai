@@ -124,6 +124,7 @@ and cost-effective AI systems that drive innovation and efficiency across their 
         "security/ai_quest_record_rule.xml",
     ],
     "external_dependencies": {
+        #"bin": ["postgresql-16-pgvector"], 
         "python": [
             "langchain-core",
             "markdown",
