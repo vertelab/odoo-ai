@@ -82,6 +82,13 @@ and cost-effective AI systems that drive innovation and efficiency across their 
 
         sudo apt-get install graphviz graphviz-dev
 
+        pip install "good to have"
+            langchain_openai
+            langchain_mistralai
+            langchain_groq
+            langchain_anthropic
+            langchain_huggingface
+
     """,
     'author': "Vertel AB",
     'website': "https://vertel.se/apps/odoo-ai/ai_agent",
