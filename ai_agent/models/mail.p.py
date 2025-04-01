@@ -69,7 +69,6 @@ class MailChannel(models.Model):
                                 r'<think>.*?</think>', '', markdown.markdown(last_ai_message.content),
                                 flags=re.DOTALL
                             )
-
                     self.with_user(user).message_post(
                         body=Markup(answer),
                         message_type='comment',
