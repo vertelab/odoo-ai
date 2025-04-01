@@ -658,7 +658,6 @@ class AIAgent(models.Model):
 
             # Get the last AI message from the result
             ai_messages = [m for m in result.get('messages', []) if isinstance(m, AIMessage)]
-            print("ai_messages", ai_messages)
             if ai_messages:
                 return result
             else:

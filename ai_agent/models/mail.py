@@ -37,13 +37,10 @@ class MailChannel(models.Model):
             ai_quest = self.ai_quest_id
             user = self.env.ref('base.user_root')
 
-        print("ai_quest", ai_quest)
-
         if message.author_id != user.partner_id:
             if ai_quest:  # use the AI as in logged user
                 bot_response = ai_quest.with_user(self.env.user).chat(message, self, user)
                 _logger.error(f"{bot_response=}")
-                print("bot_response", bot_response)
                 if bot_response:  # Answer as the user the bot is
                     answer = _('no answer')
 
@@ -63,7 +60,6 @@ class MailChannel(models.Model):
                                 r'<think>.*?</think>', '', markdown.markdown(last_ai_message.content),
                                 flags=re.DOTALL
                             )
-
                     self.with_user(user).message_post(
                         body=Markup(answer),
                         message_type='comment',
