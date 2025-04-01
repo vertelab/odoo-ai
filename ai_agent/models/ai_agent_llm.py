@@ -62,6 +62,7 @@ class AIAgentLLM(models.Model):
     status_color = fields.Integer(compute="compute_status_color")
     azure_endpoint = fields.Char(string="Azure Endpoint")
     api_version = fields.Char(string="API version")
+
     def action_get_quests(self):
         action = {
             'name': 'AI Quests',
