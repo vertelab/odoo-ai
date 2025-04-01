@@ -51,11 +51,11 @@ Guidelines: {self.description}
 {self._extra_context(self)}
 
 Instructions:
-1. Evaluate if we have a complete response
-2. If not complete, choose the most appropriate worker
+1. Choose the most appropriate worker first
+2. Evaluate if we have a complete response
 3. Send FINISH only when we have a satisfactory response
-4. Do not mention that you have done tool calls, thats too technical 
-4. {use_lang}
+4. Do not mention that you have done tool calls, that's too technical 
+5. {use_lang}
 """
 
 avatar_channel = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 530.06 530.06">
@@ -614,6 +614,7 @@ class AIQuest(models.Model):
                 message.parent_id.ai_quest_session_id if message.ai_quest_session_id else \
                     self.env['ai.quest.session'].quest_init(self)
             vals = self._chat_values(session=session, message=message, channel=channel, bot_user=bot_user)
+            print("vals", vals)
             res = self.run(**vals)
             return res
 
@@ -759,11 +760,13 @@ class AIQuest(models.Model):
                 _logger.warning(f"Efter eval context {eval_context=}" + f"{self.code=}\n=======\n {local_dict=}")
             safe_eval(self.code, eval_context, local_dict, mode="exec", nocopy=True)
         except ValueError as e:
+            print("error ====", e)
             self.log_message(f"ValueError {e=}", is_error=True)
             if self.debug:
                 self.log_message(f"{e=}\n\n=====\n{self.code=}\n=======\n {local_dict=}\n{traceback.format_exc()}")
             return None
         except Exception as e:
+            print("error Exception ====", e)
             _logger.error(f"{e=}")
             self.log_message(f" {e=}  {traceback.format_exc()}")
             if self.debug:
@@ -777,6 +780,8 @@ class AIQuest(models.Model):
             'records': eval_context.get('records')
         }
 
+        print("===", local_dict.get('result'))
+
         if local_dict.get('result'):
             messages = local_dict.get('result', {}).get('messages', [])
             result = self._get_last_ai_message(messages)
@@ -785,6 +790,9 @@ class AIQuest(models.Model):
             result = self._get_last_ai_message(messages)
         else:
             return
+
+        print("messages", messages)
+        print("result", result)
 
         if not isinstance(result, list):
             result = [result]
@@ -901,11 +909,6 @@ class AIQuest(models.Model):
             for i, agent in enumerate(agents):
                 graph_builder.add_node(agent.get_agent_name(i, **kwargs), agent.create_node(**kwargs))
 
-            # Add edges from workers to supervisor
-            for member in [a.get_agent_name(i, **kwargs) for i, a in enumerate(agents)]:
-                _logger.info(f"Adding edge: {member} -> Supervisor")
-                graph_builder.add_edge(member, self.get_agent_name(**kwargs))
-
             # Add conditional routing
             conditional_map = {k: k for k in [a.get_agent_name(i, **kwargs) for i, a in enumerate(agents)]}
             conditional_map["FINISH"] = END
@@ -919,18 +922,17 @@ class AIQuest(models.Model):
                 conditional_map
             )
 
+            # Add edges from workers to supervisor
+            for member in [a.get_agent_name(i, **kwargs) for i, a in enumerate(agents)]:
+                _logger.info(f"Adding edge: {member} -> Supervisor")
+                graph_builder.add_edge(member, self.get_agent_name(**kwargs))
+
             # Set entry point
             graph_builder.set_entry_point(self.get_agent_name(**kwargs))
 
             # Compile and return
             _logger.info("Compiling graph")
-
             graph = graph_builder.compile()
-
-            # if self.debug:
-            #     self.log_message(f"Graph structure: {json.dumps(graph.get_graph().to_json(), indent=2)}")
-            #     _logger.debug(f"Graph structure: {json.dumps(graph.get_graph().to_json(), indent=2)}")
-
             return graph
 
         except Exception as e:
@@ -964,12 +966,11 @@ class AIQuest(models.Model):
     Guidelines: {guidelines}
 
     Instructions:
-    1. Carefully review all previous messages and the current state
-    2. If the response is NOT complete, choose the most appropriate worker
-    3. Choose FINISH ONLY when we have a satisfactory, complete response
-    4. Be explicit in your decision - name the exact worker or say FINISH
-    5. If no worker is making progress after multiple attempts, choose a different worker
-    6. {use_lang}
+    1. Choose the most appropriate worker first
+    2. Evaluate if we have a complete response
+    3. Send FINISH only when we have a satisfactory response
+    4. Do not mention that you have done tool calls, that's too technical 
+    5. {use_lang}
 
     IMPORTANT: Never decide FINISH on the first round unless the request is trivially simple.
     """
@@ -1117,49 +1118,90 @@ class AIQuest(models.Model):
         session = kwargs.get('session')
         members = kwargs.get('members', [])
 
-        # First, check for JSON format
+        # First, let's create a mapping between clean names and full formatted names
+        clean_to_full = {}
+        for member in members:
+            # Extract just the plain name from the formatted name
+            clean_name = re.sub(r'\*\*|\<small\>.*?<\/small\>', '', member).strip()
+            clean_to_full[clean_name] = member
+
+        # Now check for FINISH first (this is simple)
+        if re.search(r'\bFINISH\b', content, re.IGNORECASE):
+            return "FINISH"
+
+        # Look for any of the clean names in the content
+        for clean_name, full_name in clean_to_full.items():
+            if re.search(r'\b' + re.escape(clean_name) + r'\b', content, re.IGNORECASE):
+                session.add_message(f"Found agent reference: '{clean_name}', matching to: {full_name}")
+                return full_name
+
+        # If we're still here, try JSON parsing
         try:
             json_match = re.search(r'\{.*?"next"\s*:\s*"([^"]+)".*?}', content, re.DOTALL)
             if json_match:
                 decision = json_match.group(1)
-                return self._match_agent_name(decision, members)
+                # Look for partial matches in cleaned names
+                for clean_name, full_name in clean_to_full.items():
+                    if clean_name.lower() in decision.lower() or decision.lower() in clean_name.lower():
+                        session.add_message(f"JSON match: '{decision}' to agent: {full_name}")
+                        return full_name
         except Exception as e:
-            _logger.warning(f"Error extracting JSON with regex: {e}")
+            session.add_message(f"JSON parsing error: {e}")
 
-        # Check for explicit FINISH
-        if re.search(r'\bFINISH\b', content, re.IGNORECASE):
-            return "FINISH"
-
-        # Look for agent mentioned with specific patterns
-        intent_patterns = [
-            r'(?:next agent should be|choose|select|I choose|I select|I recommend)\s*[":]*\s*([A-Za-z0-9_\s\-\.,]+)',
-            r'([A-Za-z0-9_\s\-\.,]+)(?:\s+for the next step|\s+should handle|\s+is best|\s+would be appropriate)',
-            r'I think\s+([A-Za-z0-9_\s\-\.,]+)\s+should',
-        ]
-
-        for pattern in intent_patterns:
-            match = re.search(pattern, content, re.IGNORECASE)
-            if match:
-                decision = match.group(1).strip()
-                return self._match_agent_name(decision, members)
-
-        # If no clear decision was found, check if any agent name is mentioned
-        for member in members:
-            if re.search(r'\b' + re.escape(member.split('\n')[0]) + r'\b', content, re.IGNORECASE):
-                return member
-
-        # Check for completion indicators
-        completion_patterns = [
-            r'task\s+complete', r'complete\s+response', r'answer\s+is\s+complete',
-            r'no\s+further\s+action', r'satisfactory\s+response', r'response\s+is\s+complete'
-        ]
-        if any(re.search(pattern, content, re.IGNORECASE) for pattern in completion_patterns):
-            return "FINISH"
-
-        # Default to first agent if we can't determine
-        if len(members) > 0:
+        # Default to first agent if no match found
+        if members:
+            session.add_message(f"No clear agent match in: '{content[:100]}...', defaulting to first agent")
             return members[0]
         return "FINISH"
+
+    # def extract_supervisor_decision(self, content, **kwargs):
+    #     """Extract the agent decision from the supervisor's response."""
+    #     session = kwargs.get('session')
+    #     members = kwargs.get('members', [])
+    #
+    #     # First, check for JSON format
+    #     try:
+    #         json_match = re.search(r'\{.*?"next"\s*:\s*"([^"]+)".*?}', content, re.DOTALL)
+    #         if json_match:
+    #             decision = json_match.group(1)
+    #             return self._match_agent_name(decision, members)
+    #     except Exception as e:
+    #         _logger.warning(f"Error extracting JSON with regex: {e}")
+    #
+    #     # Check for explicit FINISH with more thorough pattern matching
+    #     if re.search(r'\bFINISH\b', content, re.IGNORECASE):
+    #         return "FINISH"
+    #
+    #     # Look for agent mentioned with specific patterns
+    #     intent_patterns = [
+    #         r'(?:next agent should be|choose|select|I choose|I select|I recommend)\s*[":]*\s*([A-Za-z0-9_\s\-\.,]+)',
+    #         r'([A-Za-z0-9_\s\-\.,]+)(?:\s+for the next step|\s+should handle|\s+is best|\s+would be appropriate)',
+    #         r'I think\s+([A-Za-z0-9_\s\-\.,]+)\s+should',
+    #     ]
+    #
+    #     for pattern in intent_patterns:
+    #         match = re.search(pattern, content, re.IGNORECASE)
+    #         if match:
+    #             decision = match.group(1).strip()
+    #             return self._match_agent_name(decision, members)
+    #
+    #     # If no clear decision was found, check if any agent name is mentioned
+    #     for member in members:
+    #         if re.search(r'\b' + re.escape(member.split('\n')[0]) + r'\b', content, re.IGNORECASE):
+    #             return member
+    #
+    #     # Check for completion indicators
+    #     completion_patterns = [
+    #         r'task\s+complete', r'complete\s+response', r'answer\s+is\s+complete',
+    #         r'no\s+further\s+action', r'satisfactory\s+response', r'response\s+is\s+complete'
+    #     ]
+    #     if any(re.search(pattern, content, re.IGNORECASE) for pattern in completion_patterns):
+    #         return "FINISH"
+    #
+    #     # Default to first agent if we can't determine
+    #     if len(members) > 0:
+    #         return members[0]
+    #     return "FINISH"
 
     def _match_agent_name(self, decision, members):
         """Match a decision string to the closest agent name."""
@@ -1353,19 +1395,29 @@ class AIQuest(models.Model):
             except json.JSONDecodeError:
                 session.add_message(f"{agent} Error: Invalid JSON tried updated '''json {message}'''")
 
-    def get_agent_name(self, **kwargs):
+    def get_agent_name(self, i, **kwargs):
+        name = re.sub(r'[()\[\]\{\}:]', ' ', self.name).strip() if self and self.name else ""
+        print("kwargs", kwargs)
+
         if kwargs.get('mermaid'):
-            llm = re.sub(
-                r'[\'()\[\]{}:]', '_', self.supervisor_llm_id.name
-            ).replace(
-                ' ',
-                ''
-            ) if self.supervisor_llm_id and self.supervisor_llm_id.name else ''
-            supervisor = f"Supervisor\n<small>fa&colon;fa-cog {llm}</small>"
-            # ~ _logger.info(f"Supervisor ------------------>{supervisor}")
-            return supervisor
+            # For visual display (keep your existing code for Mermaid formatting)
+            tools = "<small>fa&colon;fa-tools " + re.sub(r'[()\[\]{}:]', ' ', ','.join(
+                [t.ai_tool_id.name for t in self.ai_tool_ids])) + "</small>\n" if self.ai_tool_ids else ''
+            memories = "<small>fa&colon;fa-book " + re.sub(r'[()\[\]{}:]', ' ', ','.join(
+                [m.ai_memory_id.name for m in self.ai_memory_ids])) + "</small>\n" if self.ai_memory_ids else ''
+            llm = "<small>fa&colon;fa-cog " + re.sub(r'[()\[\]{}:]', ' ',
+                                                     self.ai_agent_llm_id.name) + "</small>" if self.ai_agent_llm_id and self.ai_agent_llm_id.name else ''
+            display_name = f"**{name}**\n{tools}{memories}{llm}"
+
+            # Store the plain name for reference
+            if 'agent_names_map' not in kwargs:
+                kwargs['agent_names_map'] = {}
+            kwargs['agent_names_map'][name] = display_name
+
+            return display_name
         else:
-            return "Supervisor"
+            # For actual reference in code
+            return name
 
 
 
