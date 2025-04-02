@@ -1,7 +1,7 @@
 import json
 import logging
 import io
-import pymupdf
+import fitz
 import base64
 import uuid
 import faiss
