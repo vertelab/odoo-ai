@@ -6,6 +6,7 @@ from odoo import api, fields, models, tools, _
 from odoo.exceptions import ValidationError, UserError
 import logging
 import markdown
+from markupsafe import Markup
 import markdownify
 import re
 
@@ -65,13 +66,11 @@ class MailChannel(models.Model):
                             answer = markdown.markdown(last_ai_message.content)
                         else:
                             answer = re.sub(
-                                r'<think>.*?</think>', '', markdownify.markdownify(last_ai_message.content),
+                                r'<think>.*?</think>', '', markdown.markdown(last_ai_message.content),
                                 flags=re.DOTALL
                             )
-
                     self.with_user(user).message_post(
-                        body=answer,
-                        # ~ body=markdown.markdown(answer),
+                        body=Markup(answer),
                         message_type='comment',
                         subtype_xmlid='mail.mt_comment',
                     )
