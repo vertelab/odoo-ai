@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    
+    <record id="view_ai_memory_form" model="ir.ui.view">
+        <field name="name">ai.memory.form.add.rag</field>
+        <field name="model">ai.memory</field>
+        <field name="inherit_id" ref="ai_agent.view_ai_memory_form"/>
+        <field name="arch" type="xml">
+            <page name="field_list" position="after">
+                <!-- #if VERSION >= "17.0" -->
+                <page string="RAGs" invisible="vector_type != 'pg_vector'">
+                    <field name="ai_memory_rag_ids">
+                        <list>
+                            <field name="original_text"/>
+                            <field name="metadata"/>
+                        </list>
+                    </field>
+                </page>
+                <!-- #elif VERSION <= "16.0" -->
+                <page string="RAGs" attrs="{'invisible': [('vector_type', '!=', 'pg_vector')]}">
+                    <field name="ai_memory_rag_ids">
+                        <tree>
+                            <field name="original_text"/>
+                            <field name="metadata"/>
+                        </tree>
+                    </field>
+                </page>
+                <!-- #endif -->
+            </page>
+        </field>
+    </record>
+
+</odoo>
