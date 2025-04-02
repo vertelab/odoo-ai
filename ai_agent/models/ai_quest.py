@@ -51,11 +51,11 @@ Guidelines: {self.description}
 {self._extra_context(self)}
 
 Instructions:
-1. Evaluate if we have a complete response
-2. If not complete, choose the most appropriate worker
+1. Choose the most appropriate worker first
+2. Evaluate if we have a complete response
 3. Send FINISH only when we have a satisfactory response
-4. Do not mention that you have done tool calls, thats too technical 
-4. {use_lang}
+4. Do not mention that you have done tool calls, that's too technical 
+5. {use_lang}
 """
 
 avatar_channel = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 530.06 530.06">
