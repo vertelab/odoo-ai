@@ -63,6 +63,7 @@ class AIAgentLLM(models.Model):
     tag_ids = fields.Many2many(comodel_name='product.tag', string='Tags')
     azure_endpoint = fields.Char(string="Azure Endpoint")
     api_version = fields.Char(string="API version")
+
     def action_get_quests(self):
         action = {
             'name': 'AI Quests',
