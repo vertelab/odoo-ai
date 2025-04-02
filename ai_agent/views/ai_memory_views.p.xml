@@ -66,29 +66,29 @@
                     </group>
                     <notebook>
                         <!-- #if VERSION >= "17.0" -->
-                        <page string="FAISS Index" invisible="vector_type != 'faiss'">
+                        <page name="faiss_index" string="FAISS Index" invisible="vector_type != 'faiss'">
                             <field name="memory_faiss" />
                         </page>
-                        <page string="Markdown" invisible="memory_type != 'bs4'">
+                        <page name="markdown" string="Markdown" invisible="memory_type != 'bs4'">
                             <field name="memory_markdown" />
                         </page>
-                        <page string="Attachment" invisible="memory_type != 'attachments'">
+                        <page name="attachment" string="Attachment" invisible="memory_type != 'attachments'">
                             <field name="attachment_ids" />
                         </page>
-                        <page string="Field List" invisible="memory_type != 'model'">
+                        <page name="field_list" string="Field List" invisible="memory_type != 'model'">
                             <field name="field_list" nolabel="1" />
                         </page>
                         <!-- #elif VERSION <= "16.0" -->
-                        <page string="FAISS Index" attrs="{'invisible': [('vector_type', '!=', 'faiss')]}">
+                        <page name="faiss_index" string="FAISS Index" attrs="{'invisible': [('vector_type', '!=', 'faiss')]}">
                             <field name="memory_faiss" />
                         </page>
-                        <page string="Markdown" attrs="{'invisible': [('memory_type', '!=', 'bs4')]}">
+                        <page name="markdown" string="Markdown" attrs="{'invisible': [('memory_type', '!=', 'bs4')]}">
                             <field name="memory_markdown" />
                         </page>
-                        <page string="Attachment" attrs="{'invisible': [('memory_type', '!=', 'attachments')]}">
+                        <page name="attachment" string="Attachment" attrs="{'invisible': [('memory_type', '!=', 'attachments')]}">
                             <field name="attachment_ids" />
                         </page>
-                        <page string="Field List" attrs="{'invisible': [('memory_type', '!=', 'model')]}">
+                        <page name="field_list" string="Field List" attrs="{'invisible': [('memory_type', '!=', 'model')]}">
                             <field name="field_list" nolabel="1" />
                         </page>
                         <!-- #endif -->
