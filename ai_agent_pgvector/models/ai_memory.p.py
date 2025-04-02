@@ -11,108 +11,103 @@ from odoo import models, fields, api, _
 from odoo.tools.safe_eval import safe_eval
 from odoo.exceptions import UserError
 
-#from pgvector.sqlalchemy import Vector
-from odoo import fields, models
-#from odoo.addons.ai_agent_pgvector.fields import Vector
-class ProductTemplate(models.Model):
-    _inherit = 'product.template'
-    # point = fields.CustomField(string="Field name")
-
-
-from langchain_postgres import PGVector
-from langchain_postgres.vectorstores import PGVector
-#https://python.langchain.com/api_reference/postgres/vectorstores/langchain_postgres.vectorstores.PGVector.html#langchain_postgres.vectorstores.PGVector
-
-
 _logger = logging.getLogger(__name__)
-
 
 class AIMemory(models.Model):
     _inherit = 'ai.memory'
 
     vector_type = fields.Selection(selection_add=[("pg_vector", "Postgres Vector")],ondelete={'pg_vector': 'cascade'})
+    ai_memory_rag_ids = fields.One2many(comodel_name="ai.memory.rag",inverse_name="ai_memory_id") 
+
+    def create_vector(self,raw_documents,memory):
+        documents, embeddings = super(AIMemory,self).create_vector(raw_documents,memory)
+        if self.vector_type == "pg_vector":
+            self.setup_pg_vector()
+            self.store_in_pg_vector(documents,embeddings)
+            # if memory.memory_type == "model" and memory.model_id:
+            #     self.pg_vector_create_column(documents, embeddings, memory)
+            # else:
+            #     self.pg_vector_create_table(documents, embeddings)
+
+    def create_text_embeddings(self,documents,embeddings):
+        text_embeddings = [embeddings.embed_query(document.page_content) for document in documents]
+        return text_embeddings
+
+    def store_in_pg_vector(self,documents,embeddings):
+        text_embeddings = self.create_text_embeddings(documents,embeddings)
+        for embedding,document in zip(text_embeddings,documents):
+            self.env["ai.memory.rag"].sudo().create({"ai_memory_id":self.id, "original_text":document.page_content, "embedding":embedding ,"metadata":document.metadata})
+
+    def setup_pg_vector(self):
+        sql_check_for_pg_vector_extension = "SELECT * FROM pg_available_extensions where name='vector';"
+        self.env.cr.execute(sql_check_for_pg_vector_extension)
+        sql_response = self.env.cr.fetchall()
+        _logger.error(f"{sql_response=}")
+        if sql_response:
+            try:
+                sql_add_pg_vector_extension = "CREATE EXTENSION IF NOT EXISTS vector;"
+                self.env.cr.execute(sql_add_pg_vector_extension)
+                self.env.cr.commit()
+            except:
+                raise UserError("Could not add pg_vector extension. Might need to set Odoo as a superuser in Postgres.")
+        else:
+            raise UserError("The Postgres extension vector is not installd")
     
-    def create_vector(self,raw_documents):
-        super(AIMemory,self).create_vector(raw_documents)
-        if self.vector_type == 'pg_vector':
-            documents = self.text_splitter(raw_documents)
-            db = FAISS.from_documents(documents, self.ai_agent_llm_id.get_embedding())
-            self.memory_faiss = base64.b64encode(db.serialize_to_bytes())
-
-
-
-class AIMemoryPgVector(models.Model):
-    _name="ai.memory.pg_vector"
+    def check_if_column_exsists(self,db_model_name):
+        sql_check_if_column_exsists = f"SELECT EXISTS(SELECT 'vector' FROM information_schema.columns WHERE table_name='{db_model_name}' and column_name='embedding');"
+        self.env.cr.execute(sql_check_if_column_exsists)
+        sql_response = self.env.cr.fetchall()
+        return sql_response[0][0]
     
-    memory_id = fields.Many2one(comodel_name="ai.memory")
-    embedding = fields.Vector(string='Embedding', size=1000)
-    content = fields.Text()
-    # Add metadata
-    # Add info about document, document.name page, images
+    def pg_vector_get_column(self,ids=[]):
+        db_model_name = memory.model_name.replace(".","_")
+        if self.check_if_column_exsists(db_model_name) == False:
+            raise UserError("Ther is no embedding column on this model")
+        sql_select_embedding = f"SELECT embedding FROM {db_model_name};" 
+        self.env.cr.execute(sql_select_embedding)
+        sql_response = self.env.cr.fetchall()
+        return sql_response
     
+    def pg_vector_create_column(self,documents,embeddings,memory):
+        db_model_name = memory.model_name.replace(".","_")
+        text_embeddings = self.create_text_embeddings(documents,embeddings)
+        
+        if self.check_if_column_exsists(db_model_name) == False:
+            sql_add_column = f"ALTER TABLE {db_model_name} ADD embedding vector(768);"
+            self.env.cr.execute(sql_add_column)
+            self.env.cr.commit()
+        
+        for text_embedding, document in zip(text_embeddings,documents):
+            _logger.error(f"{text_embedding=}")
+            sql_insert_values = f"UPDATE {db_model_name} SET embedding = '{text_embedding}' WHERE id = {document.metadata.get('id')};"
+            self.env.cr.execute(sql_insert_values)
+        self.env.cr.commit()
     
+    def pg_vector_create_table(self,documents,embeddings):
+        text_embeddings = self.create_text_embeddings(documents,embeddings)
+        
+        sql_check_if_table_exsists = "SELECT EXISTS (SELECT FROM pg_tables WHERE  schemaname = 'public' AND tablename  = 'documents');"
+        self.sudo().env.cr.execute(sql_check_if_table_exsists)
+        sql_response = self.env.cr.fetchall()
+        _logger.error(f"{sql_response[0][0]=}")
+        
+        if sql_response == False:
     
-    
-    @api.model
-    def find_similar(self, query_embedding, limit=5):
-        self.env.cr.execute("""
-            SELECT id, memorty_id,  
-                   embedding <=> %s AS distance
-            FROM ai_memory_pg_vector
-            ORDER BY distance
-            LIMIT %s
-        """, (query_embedding, limit))
-        return self.env.cr.dictfetchall()
-
-    @api.model
-    def create(self, vals):
-        # Antag att vi har en funktion som genererar embedding
-        embedding = self._generate_embedding(vals['name'], vals['description'])
-        vals['embedding'] = embedding
-        return super(ProductEmbedding, self).create(vals)
-
-    def _generate_embedding(self, name, description):
-        # Här skulle du implementera din logik för att generera embedding
-        # Detta är bara en platshållare
-        return [0.1] * 512
-    
-#~ https://github.com/pgvector/pgvector-python/blob/master/examples/openai/example.py
-
-# 1536 kommer från modellen text-embedding-3-small
-#~ conn.execute('DROP TABLE IF EXISTS documents')
-#~ conn.execute('CREATE TABLE documents (id bigserial PRIMARY KEY, content text, embedding vector(1536))')
-
-
-
-#input = [
-#    'The dog is barking',
-#    'The cat is purring',
-#    'The bear is growling'
-#]
-
-# Hur många input per batch? 8K data?
-#response = client.embeddings.create(input=input, model='text-embedding-3-small')
-#embeddings = [v.embedding for v in response.data]
-
-#for content, embedding in zip(input, embeddings):
-#    conn.execute('INSERT INTO documents (content, embedding) VALUES (%s, %s)', (content, embedding))
-
-# query_embedding = client.embeddings.create(input=QUERY, model='text-embedding-3-small').data[0].embedding
-#neighbors = conn.execute('SELECT content FROM documents ORDER BY embedding <=> query_embedding LIMIT 5')
-# (<->) L2 distance, inner product (<#>), cosine distance (<=>), and L1 distance (<+>)
-
-#neighbors = conn.execute('SELECT content FROM documents WHERE True ORDER BY embedding <=> (SELECT embedding FROM documents WHERE id = %(id)s) LIMIT 5', {'id': document_id}).fetchall()
-
-#https://github.com/pgvector/pgvector
-
-
- #   <-> - L2 distance
- #   <#> - (negative) inner product
- #   <=> - cosine distance
- #   <+> - L1 distance (added in 0.7.0)
- #   <~> - Hamming distance (binary vectors, added in 0.7.0)
- #   <%> - Jaccard distance (binary vectors, added in 0.7.0)
-
-#SELECT AVG(embedding) FROM items;
-#SELECT category_id, AVG(embedding) FROM items GROUP BY category_id;
-
+            sql_create_table = f"""CREATE TABLE documents (
+                        id SERIAL PRIMARY KEY,
+                        content TEXT NOT NULL,
+                        embedding vector    (768),  -- Match your embedding model's dimensions
+                        metadata JSONB           -- Optional metadata (e.g., source, author)
+                        );"""
+            sql_setup_index_for_table = "CREATE INDEX ON documents USING hnsw (embedding vector_l2_ops);"
+            self.env.cr.execute(sql_create_table)
+            self.env.cr.execute(sql_setup_index_for_table)
+            self.env.cr.commit()
+        
+        for text_embedding, document in zip(text_embeddings, documents):
+            jsonb = json.dumps(document.metadata)
+            _logger.error(f"{type(document.metadata)=}")
+            sql_insert_values = f"INSERT INTO documents (content, embedding, metadata) VALUES ('{document.page_content}', '{text_embedding}', '{jsonb}');"
+            self.env.cr.execute(sql_insert_values)
+        self.env.cr.commit()
+            

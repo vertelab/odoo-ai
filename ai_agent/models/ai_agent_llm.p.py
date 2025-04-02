@@ -267,24 +267,49 @@ class AIAgentLLM(models.Model):
 
     def test_llm(self):
         session = self.env['ai.quest.session'].llm_init(self)
+        if self.is_embedded:
+            return self.test_embedd(session)          
+        else:
+            try:
+                response = self.invoke("What is 1+1, answer with a single digit")
+            except Exception as e:
+                _logger.error(f"{e=}")
+                session.add_message(f"Could not confirm llm: {str(e)}\n{traceback.format_exc()}")
+                self.message_post(body=_(f"Could not confirm llm: {str(e)}"), message_type="notification")
+                self.status = "error"
+                session.status = 'done'
+                return False
+            session.status = 'done'
+            if isinstance(response, AIMessage):
+                content = response.content.strip()
+                if content == "2":
+                    self.message_post(body=_(f"Llm confirmed: 1+1={content}"), message_type="notification")
+                    self.status = "confirmed"
+                    return 
+        session.status = 'done'
+        self.message_post(body=_(f"Could not confirm llm: {response=}"), message_type="notification")
+
+    def test_embedd(self,session=False):
         try:
-            response = self.invoke("What is 1+1, answer with a single digit")
+            self.get_embedding().embed_query("test")
+        except KeyError as e:
+            _logger.error(f"{e=}")
+            session.add_message(f"Could not embedd: {str(e)}\n{traceback.format_exc()}")
+            self.message_post(body=_(f"Could not embedd: {str(e)}"), message_type="notification")
+            self.status = "error"
+            if session:
+                session.status = 'done'
+            return False
         except Exception as e:
             _logger.error(f"{e=}")
-            session.add_message(f"Could not confirm llm: {str(e)}\n{traceback.format_exc()}")
-            self.message_post(body=_(f"Could not confirm llm: {str(e)}"), message_type="notification")
             self.status = "error"
-            session.status = 'done'
+            if session:
+                session.status = 'done'
             return False
-        session.status = 'done'
-        if isinstance(response, AIMessage):
-            content = response.content.strip()
-            if content == "2":
-                self.message_post(body=_(f"Llm confirmed: 1+1={content}"), message_type="notification")
-                self.status = "confirmed"
-                return 
-        self.message_post(body=_(f"Could not confirm llm: {response=}"), message_type="notification")
-            
+        self.message_post(body=_(f"Embedding is working"), message_type="notification")
+        self.status = "confirmed"
+        return 
+
 
     def get_agent_executor(self, prompt, tools, temperature=1.0, verbose=False, callbacks=None):
         return AgentExecutor(
