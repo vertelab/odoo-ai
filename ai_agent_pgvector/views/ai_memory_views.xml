@@ -6,7 +6,7 @@
         <field name="model">ai.memory</field>
         <field name="inherit_id" ref="ai_agent.view_ai_memory_form"/>
         <field name="arch" type="xml">
-            <page name="field_list" position="after">
+            <page name="field_list_page" position="after">
                 <page string="RAGs" attrs="{'invisible': [('vector_type', '!=', 'pg_vector')]}">
                     <field name="ai_memory_rag_ids">
                         <tree>

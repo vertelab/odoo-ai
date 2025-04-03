@@ -317,7 +317,7 @@ class AIMemory(models.Model):
         runs = 0
         for module_dict in module_dicts:
             for key, item in module_dict.items():
-                if isinstance(item, fields.datetime):
+                if isinstance(item, fields.datetime) or isinstance(item, fields.date):
                     module_dict[key] = item.isoformat()
                 if isinstance(item, bytes):
                     module_dict[key] = base64.b64encode(item).decode("utf-8")
