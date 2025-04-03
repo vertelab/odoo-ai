@@ -1,11 +1,16 @@
 import logging
 
 from psycopg2.errors import UndefinedObject
+from odoo.exceptions import UserError, ValidationError
 
 _logger = logging.getLogger(__name__)
 
-
+# # if VERSION >= "18.0"
+def pre_init_hook(env):
+    cr = env.cr
+# # elif VERSION <= "17.0"
 def pre_init_hook(cr):
+# # endif
     """
     Initialize pgvector extension in PostgreSQL before module installation
     """
@@ -28,9 +33,9 @@ def pre_init_hook(cr):
                 _logger.error(
                     "See: https://github.com/pgvector/pgvector for installation instructions"
                 )
-                raise Exception(
-                    "Failed to install pgvector extension. "
-                    "Is the pgvector extension installed on your PostgreSQL server? "
+                raise UserError(
+                    "Failed to install pgvector extension on this database. "
+                    "Please install it manually."
                     "See https://github.com/pgvector/pgvector for installation."
                 ) from e
         else:
@@ -45,20 +50,20 @@ def pre_init_hook(cr):
             _logger.error(
                 "Vector type not available even though extension is installed"
             )
-            raise Exception(
+            raise UserError(
                 "Vector type not available. Something is wrong with the pgvector installation."
             ) from e
 
     except Exception as e:
         if not isinstance(e, UndefinedObject):
             _logger.error("Unexpected error checking pgvector: %s", str(e))
-            raise Exception(f"Unexpected error checking pgvector: {str(e)}") from e
+            raise UserError(f"Unexpected error checking pgvector: {str(e)}") from e
         else:
             _logger.error("Vector extension is not available in the database")
             _logger.error(
                 "Please install pgvector: https://github.com/pgvector/pgvector"
             )
-            raise Exception(
+            raise UserError(
                 "Vector extension is not available. Please ensure pgvector is installed "
                 "on your PostgreSQL server before installing this module."
             ) from e

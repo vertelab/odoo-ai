@@ -28,6 +28,7 @@ class AIMemory(models.Model):
             #     self.pg_vector_create_column(documents, embeddings, memory)
             # else:
             #     self.pg_vector_create_table(documents, embeddings)
+        return documents, embeddings
 
     def create_text_embeddings(self,documents,embeddings):
         text_embeddings = [embeddings.embed_query(document.page_content) for document in documents]
@@ -37,6 +38,7 @@ class AIMemory(models.Model):
         text_embeddings = self.create_text_embeddings(documents,embeddings)
         for embedding,document in zip(text_embeddings,documents):
             self.env["ai.memory.rag"].sudo().create({"ai_memory_id":self.id, "original_text":document.page_content, "embedding":embedding ,"metadata":document.metadata})
+        return text_embeddings
 
     def setup_pg_vector(self):
         sql_check_for_pg_vector_extension = "SELECT * FROM pg_available_extensions where name='vector';"
