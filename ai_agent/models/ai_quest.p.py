@@ -32,6 +32,7 @@ from odoo.tools.safe_eval import safe_eval
 from pydantic import BaseModel, ConfigDict, SkipValidation
 from random import randint
 from secrets import choice
+from .utils import graph_to_mermaid
 
 ##if VERSION >= '18.0'
 from typing import Optional, Annotated, List, NotRequired, Sequence, TypedDict, Union, Any
@@ -132,20 +133,6 @@ class AIQuestAgent(models.Model):
         default="not_confirmed", related='ai_agent_id.ai_agent_llm_id.status')
     object_id = fields.Reference(string='Object', related="ai_agent_id.object_id")
     sequence = fields.Integer(string='Sequence')
-
-    def write(self, vals):
-        res = super(AIQuestAgent, self).write(vals)
-        for record in self:
-            if record.ai_agent_id and record.ai_quest_id:
-                record.ai_quest_id._compute_graph_image()
-        return res
-
-    def unlink(self):
-        quests = self.mapped('ai_quest_id')
-        res = super(AIQuestAgent, self).unlink()
-        for quest in quests:
-            quest._compute_graph_image()
-        return res
 
 
 # https://readmedium.com/langgraph-made-easy-a-beginners-guide-part-2-196e8b179119
@@ -279,6 +266,8 @@ class AIQuest(models.Model):
              "<1.0 more predictable and consistent >1.0 more diverse and creative responses"
     )
     company_id = fields.Many2one('res.company', required=True, default=lambda self: self.env.company)
+    allow_trigger_words = fields.Boolean(string="Allow Trigger")
+    chat_trigger_words = fields.Text(string="Trigger Word", help="Separate words using commas")
 
     @api.model
     def get_xmlrpc_quests(self):
@@ -303,14 +292,13 @@ class AIQuest(models.Model):
             if real_ai_agent_ids and False:
                 try:
                     graph = rec.build(session=self.env['ai.quest.session'].quest_init(rec), mermaid=True)
-                    image_object = graph.get_graph().draw_mermaid_png()
-                    rec.graph_image = base64.b64encode(image_object).decode('utf-8')
+                    rec.mermaid_graph = graph_to_mermaid(graph.get_graph())
                 except Exception as e:
                     raise UserError(f"Error building chain: {str(e)}\n{traceback.format_exc()}")
             else:
-                rec.graph_image = False
+                rec.mermaid_graph = False
 
-    graph_image = fields.Image("Graph", compute=_compute_graph_image, compute_sudo=True, store=True)
+    mermaid_graph = fields.Text("Graph Text", compute=_compute_graph_image, compute_sudo=True, store=False)
 
     @api.model
     def _generate_random_token(self):
