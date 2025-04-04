@@ -46,7 +46,7 @@ class MailChannel(models.Model):
                 if bot_response:
                     answer = _('no answer')
 
-                    message_content, _props = self._process_message_post(message, bot_response)
+                    message_content, _props = self._process_message_post(bot_response)
                     if message_content:
                         if ai_quest.debug:
                             answer = markdown.markdown(message_content)
@@ -76,7 +76,7 @@ class MailChannel(models.Model):
             return True
         return False
 
-    def _process_message_post(self, message, bot_response):
+    def _process_message_post(self, bot_response):
         message_content = _('no answer')
 
         if bot_response.get('response', False):
