@@ -266,7 +266,7 @@ class AIQuest(models.Model):
     def _compute_graph_image(self):
         for rec in self:
             real_ai_agent_ids = list(set(filter(lambda ai_agent_id: ai_agent_id.ai_agent_id.id, rec.ai_agent_ids)))
-            if real_ai_agent_ids and False:
+            if real_ai_agent_ids:
                 try:
                     graph = rec.build(session=self.env['ai.quest.session'].quest_init(rec), mermaid=True)
                     rec.mermaid_graph = graph_to_mermaid(graph.get_graph())

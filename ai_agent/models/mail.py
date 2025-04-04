@@ -1,15 +1,15 @@
 # -*- coding: utf-8 -*-
 # Part of Odoo. See LICENSE file for full copyright and licensing details.
-
-from langchain_core.messages import AIMessage
-from odoo import api, fields, models, tools, _
-from odoo.exceptions import ValidationError, UserError
-import logging
-from odoo.tools.mail import html2plaintext
+import re
 import markdown
 from markupsafe import Markup
 import markdownify
-import re
+import logging
+from langchain_core.messages import AIMessage
+from odoo import api, fields, models, tools, _
+from odoo.exceptions import ValidationError, UserError
+from odoo.tools.mail import html2plaintext
+
 
 _logger = logging.getLogger(__name__)
 
@@ -46,7 +46,7 @@ class MailChannel(models.Model):
                 if bot_response:
                     answer = _('no answer')
 
-                    message_content, _props = self._process_message_post(message, bot_response)
+                    message_content, _props = self._process_message_post(bot_response)
                     if message_content:
                         if ai_quest.debug:
                             answer = markdown.markdown(message_content)
@@ -76,7 +76,7 @@ class MailChannel(models.Model):
             return True
         return False
 
-    def _process_message_post(self, message, bot_response):
+    def _process_message_post(self, bot_response):
         message_content = _('no answer')
 
         if bot_response.get('response', False):
