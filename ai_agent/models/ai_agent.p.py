@@ -712,7 +712,7 @@ class AIAgent(models.Model):
                 db = ai_memory_id.load_faiss()
                 if db:
                     docs = db.similarity_search(question, k=k)
-                    for doc in docs
+                    for doc in docs:
                         if doc and doc.page_content:
                            rags.append(doc.page_content)
         return "\n".join(rags)
