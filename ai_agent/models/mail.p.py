@@ -39,7 +39,7 @@ class MailChannel(models.Model):
             ai_quest = self.env['res.users'].browse(self.channel_member_ids.mapped('partner_id.user_ids.id')).mapped(
                 'ai_quest_id')
             # #elif VERSION <= "14.0"
-            ai_quest = self.env['res.users'].browse(self.message_partner_ids.mapped('partner_id.user_ids.id')).mapped(
+            ai_quest = self.env['res.users'].browse(self.channel_last_seen_partner_ids.mapped('partner_id.user_ids.id')).mapped(
                 'ai_quest_id')
             # #endif
             user = ai_quest.chat_user_id

@@ -48,9 +48,13 @@
     'depends': [
         'ai_agent',
     ],
-    'data': [],
+    'data': ["security/ir.model.access.csv" ,"views/ai_memory_views.xml"],
     'installable': True,
     'auto_install': False,
     'application': False,
+    "external_dependencies": {
+        "python": ["pgvector", "numpy"],
+    },
+    "pre_init_hook": "pre_init_hook",
 }
 # vim:expandtab:smartindent:tabstop=4:softtabstop=4:shiftwidth=4:
