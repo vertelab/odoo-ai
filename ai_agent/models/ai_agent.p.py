@@ -711,9 +711,10 @@ class AIAgent(models.Model):
                 ai_memory_id = ai_quest_memory_id.ai_memory_id
                 db = ai_memory_id.load_faiss()
                 if db:
-                    doc = db.similarity_search(question, k=k)
-                    if doc and doc.page_content:
-                        rags.append(doc.page_content)
+                    docs = db.similarity_search(question, k=k)
+                    for doc in docs:
+                        if doc and doc.page_content:
+                           rags.append(doc.page_content)
         return "\n".join(rags)
 
     def _get_tools(self, state=None):
@@ -723,6 +724,7 @@ class AIAgent(models.Model):
             TOOL = None
             try:
                 module = importlib.import_module(ai_tool_id.tool_lib)
+                _logger.error(f"{module=}")
                 TOOL = getattr(module, ai_tool_id.tool)(state)
             except ImportError as e:
                 _logger.error(f"Error importing {ai_tool_id.tool_lib=}: {e} {traceback.format_exc()}")
@@ -733,5 +735,5 @@ class AIAgent(models.Model):
                 _logger.error(f"An error occurred: {e}  {traceback.format_exc()}")
             if TOOL:
                 tools.append(TOOL)
-        _logger.warning(f"_get_tools{tools=}")
+        _logger.warning(f"{tools=}")
         return tools
