@@ -1,15 +1,15 @@
 # -*- coding: utf-8 -*-
 # Part of Odoo. See LICENSE file for full copyright and licensing details.
-
-from langchain_core.messages import AIMessage
-from odoo import api, fields, models, tools, _
-from odoo.exceptions import ValidationError, UserError
-import logging
-from odoo.tools.mail import html2plaintext
+import re
 import markdown
 from markupsafe import Markup
 import markdownify
-import re
+import logging
+from langchain_core.messages import AIMessage
+from odoo import api, fields, models, tools, _
+from odoo.exceptions import ValidationError, UserError
+from odoo.tools.mail import html2plaintext
+
 
 _logger = logging.getLogger(__name__)
 
