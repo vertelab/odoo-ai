@@ -705,10 +705,16 @@ class AIAgent(models.Model):
         return agent_node
 
     def _get_memory(self, question, k=3, **kwarg):
-        def get_rag(vs, question):
-            return "\n".join([doc.page_content for doc in vs.similarity_search(question, k=k)])
-
-        return '\n'.join([get_rag(m.ai_memory_id.load_faiss(), question) for m in self.ai_memory_ids])
+        rags = []
+        for ai_quest_memory_id in self.ai_memory_ids:
+            if ai_quest_memory_id.ai_memory_id.vector_type == "faiss":
+                ai_memory_id = ai_quest_memory_id.ai_memory_id
+                db = ai_memory_id.load_faiss()
+                if db:
+                    doc = db.similarity_search(question, k=k)
+                    if doc and doc.page_content:
+                        rags.append(doc.page_content)
+        return "\n".join(rags)
 
     def _get_tools(self, state=None):
         """Get the available tools for this agent."""
