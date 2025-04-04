@@ -124,20 +124,6 @@ class AIQuestAgent(models.Model):
     object_id = fields.Reference(string='Object', related="ai_agent_id.object_id")
     sequence = fields.Integer(string='Sequence')
 
-    # def write(self, vals):
-    #     res = super(AIQuestAgent, self).write(vals)
-    #     for record in self:
-    #         if record.ai_agent_id and record.ai_quest_id:
-    #             record.ai_quest_id._compute_graph_image()
-    #     return res
-    #
-    # def unlink(self):
-    #     quests = self.mapped('ai_quest_id')
-    #     res = super(AIQuestAgent, self).unlink()
-    #     for quest in quests:
-    #         quest._compute_graph_image()
-    #     return res
-
 
 # https://readmedium.com/langgraph-made-easy-a-beginners-guide-part-2-196e8b179119
 
@@ -277,7 +263,7 @@ class AIQuest(models.Model):
     def _compute_graph_image(self):
         for rec in self:
             real_ai_agent_ids = list(set(filter(lambda ai_agent_id: ai_agent_id.ai_agent_id.id, rec.ai_agent_ids)))
-            if real_ai_agent_ids:
+            if real_ai_agent_ids and False:
                 try:
                     graph = rec.build(session=self.env['ai.quest.session'].quest_init(rec), mermaid=True)
                     rec.mermaid_graph = graph_to_mermaid(graph.get_graph())
@@ -287,7 +273,6 @@ class AIQuest(models.Model):
                 rec.mermaid_graph = False
 
     mermaid_graph = fields.Text("Graph Text", compute=_compute_graph_image, compute_sudo=True, store=False)
-    # graph_image = fields.Image("Graph", compute=_compute_graph_image, compute_sudo=True, store=False)
 
     @api.model
     def _generate_random_token(self):
