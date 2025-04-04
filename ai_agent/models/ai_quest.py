@@ -254,6 +254,8 @@ class AIQuest(models.Model):
              "<1.0 more predictable and consistent >1.0 more diverse and creative responses"
     )
     company_id = fields.Many2one('res.company', required=True, default=lambda self: self.env.company)
+    allow_trigger_words = fields.Boolean(string="Allow Trigger")
+    chat_trigger_words = fields.Text(string="Trigger Word", help="Separate words using commas")
 
     @api.model
     def get_xmlrpc_quests(self):

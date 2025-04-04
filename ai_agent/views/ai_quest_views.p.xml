@@ -141,6 +141,8 @@
                                         <span class="oe_inline" invisible="init_type not in ['chat','channel']">messages</span>
                                     </div>
                                 </div>
+                                <field name="allow_trigger_words" invisible="init_type not in ['chat','channel']" class="oe_inline" />
+                                <field name="chat_trigger_words" invisible="not allow_trigger_words or init_type not in ['chat','channel']" class="oe_inline" />
                             </group>
                             <!-- #elif VERSION <= "16.0" -->
                             <group>
@@ -175,6 +177,8 @@
                                         <span class="oe_inline" attrs="{'invisible': [('init_type', 'not in', ['chat','channel'])]}">messages</span>
                                     </div>
                                 </div>
+                                <field name="allow_trigger_words" attrs="{'invisible': [('init_type', 'not in', ['chat','channel'])]}" class="oe_inline" />
+                                <field name="chat_trigger_words" attrs="{'invisible': ['|', ('init_type', 'not in', ['chat','channel']), ('allow_trigger_words','=',False)]}" class="oe_inline" />
                             </group>
                             <!-- #endif -->
                             <group>

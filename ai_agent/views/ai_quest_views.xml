@@ -117,6 +117,8 @@
                                         <span class="oe_inline" invisible="init_type not in ['chat','channel']">messages</span>
                                     </div>
                                 </div>
+                                <field name="allow_trigger_words" invisible="init_type not in ['chat','channel']" class="oe_inline" />
+                                <field name="chat_trigger_words" invisible="not allow_trigger_words or init_type not in ['chat','channel']" class="oe_inline" />
                             </group>
                             <group>
                                 <field name="init_type_str" nolabel="1" colspan="2" readonly="1" />
