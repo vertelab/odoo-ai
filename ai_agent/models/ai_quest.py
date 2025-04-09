@@ -254,26 +254,7 @@ class AIQuest(models.Model):
                 quests += add
         _logger.error(f"{quests=}")
         return quests
-            
-    @api.depends('is_supervisor',
-                 'ai_agent_ids.sequence',
-                 'ai_agent_ids.ai_agent_id',
-                 'ai_agent_ids.ai_agent_id.ai_agent_llm_id',
-                 'ai_agent_ids.ai_agent_id.ai_tool_ids.ai_tool_id',
-                 'ai_agent_ids.ai_agent_id.ai_memory_ids.ai_memory_id')
-    def _compute_graph_image(self):
-        for rec in self:
-            real_ai_agent_ids = list(set(filter(lambda ai_agent_id: ai_agent_id.ai_agent_id.id, rec.ai_agent_ids)))
-            if real_ai_agent_ids:
-                try:
-                    graph = rec.build(session=self.env['ai.quest.session'].quest_init(rec), mermaid=True)
-                    rec.mermaid_graph = graph_to_mermaid(graph.get_graph())
-                except Exception as e:
-                    raise UserError(f"Error building chain: {str(e)}\n{traceback.format_exc()}")
-            else:
-                rec.mermaid_graph = False
 
-    mermaid_graph = fields.Text("Graph Text", compute=_compute_graph_image, compute_sudo=True, store=False)
 
     @api.model
     def _generate_random_token(self):
