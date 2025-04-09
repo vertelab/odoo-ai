@@ -256,7 +256,7 @@ class AIQuest(models.Model):
                 quests += add
         _logger.error(f"{quests=}")
         return quests
-            
+
     @api.depends('is_supervisor',
                  'ai_agent_ids.sequence',
                  'ai_agent_ids.ai_agent_id',

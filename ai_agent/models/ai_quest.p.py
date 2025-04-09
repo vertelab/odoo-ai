@@ -279,7 +279,8 @@ class AIQuest(models.Model):
                 quests += add
         _logger.error(f"{quests=}")
         return quests
-            
+
+    # #if VERSION >= '16.0'
     @api.depends('is_supervisor',
                  'ai_agent_ids.sequence',
                  'ai_agent_ids.ai_agent_id',
@@ -299,6 +300,7 @@ class AIQuest(models.Model):
                 rec.mermaid_graph = False
 
     mermaid_graph = fields.Text("Graph Text", compute=_compute_graph_image, compute_sudo=True, store=False)
+    ## endif
 
     @api.model
     def _generate_random_token(self):

@@ -94,7 +94,15 @@ and cost-effective AI systems that drive innovation and efficiency across their 
     'website': "https://vertel.se/apps/odoo-ai/ai_agent",
     'images': ["static/description/banner.png"],  # 560x280
     "license": "AGPL-3",
-    "depends": ["mail", "product", "crm", "queue_job", "web_widget_mermaid_field"],
+    "depends": [
+        "mail",
+        "product",
+        "crm",
+        "queue_job",
+        ##if VERSION >= '16.0'
+        "web_widget_mermaid_field"
+        ##endif
+    ],
     "data": [
         "security/ai_agent_security.xml",
         "security/ir.model.access.csv",
@@ -111,7 +119,6 @@ and cost-effective AI systems that drive innovation and efficiency across their 
         "data/ai_agent_data.xml",
         "data/ai_tool_data.xml",
         "data/ollama_data.xml",
-        "demo/ai_agent_demo.xml",
         "wizard/ai_agent_test_wizard_views.xml",
         "wizard/ai_quest_test_mail_wizard_views.xml",
         "wizard/ai_memory_test_wizard_views.xml",
@@ -185,7 +192,9 @@ and cost-effective AI systems that drive innovation and efficiency across their 
         ## endif
     },
     ## endif
-    "demo": [],
+    "demo": [
+        "demo/ai_agent_demo.xml",
+    ],
     "application": True,
     "installable": True,
     "auto_install": False,
