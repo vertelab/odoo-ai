@@ -668,7 +668,7 @@ class AIQuest(models.Model):
             res = self.run(**vals)
             return res
 
-    def run_powerbox_quest(self, quest, prompt, res_model, res_id):
+    def powerbox(self, quest, prompt, res_model, res_id):
         ai_quest = self.env['ai.quest'].browse(quest.get('id')).exists()
         if not ai_quest:
             raise UserError(_("OBS: Quest does not exist, you should contact administrator to look into the quest"))
@@ -757,7 +757,9 @@ class AIQuest(models.Model):
         :returns: dict -- evaluation context given to (safe_)safe_eval """
         records = kw.get('records', [])
         message = kw.get('message', False)
-        message_body = html2plaintext(message.body) if message else ''
+        prompt = kw.get('prompt', '')
+        message_body = html2plaintext(message.body) if message else prompt
+        
         eval_context = {
             'action': action,
             'env': self.env,
