@@ -614,7 +614,7 @@ class AIAgent(models.Model):
                 - Provide thorough, complete responses
                 - Use available tools and memory when needed
                 - Stay focused on your specific role
-                - {use_lang} {self.extra_context(quest)}
+                - {use_lang} 
                 - {quest.description}
                 
                 Knowledge :
