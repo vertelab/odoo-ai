@@ -587,6 +587,7 @@ class AIAgent(models.Model):
 
         quest_description = quest.description
         use_lang = f"Use language {self.env.user.lang}" if quest.use_personal_lang else ''
+        
 
 
         def agent_node(state):
@@ -619,6 +620,7 @@ class AIAgent(models.Model):
                 - Provide thorough, complete responses
                 - Use available tools and memory when needed
                 - Stay focused on your specific role
+                - {use_lang} 
                 - {quest.description}
                 
                 Knowledge :
