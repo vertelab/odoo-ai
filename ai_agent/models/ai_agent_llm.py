@@ -7,7 +7,6 @@ import traceback
 from httpx import HTTPStatusError
 from langchain.agents import AgentExecutor, create_openai_tools_agent, create_json_chat_agent, create_react_agent
 from langchain_core.messages import AIMessage
-from langchain_huggingface import HuggingFaceEmbeddings
 from odoo import models, fields, api, tools, _
 from odoo.exceptions import UserError, AccessError, ValidationError
 from pydantic import SecretStr
