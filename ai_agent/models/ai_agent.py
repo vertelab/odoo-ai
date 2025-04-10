@@ -615,6 +615,7 @@ class AIAgent(models.Model):
                 - Provide thorough, complete responses
                 - Use available tools and memory when needed
                 - Stay focused on your specific role
+                - {quest.description}
                 
                 Knowledge :
                     {self.agent_extra_context(quest=quest, record=kwargs.get('record'))}
@@ -676,10 +677,17 @@ class AIAgent(models.Model):
         return agent_node
 
     def _get_memory(self, question, k=3, **kwarg):
-        def get_rag(vs, question):
-            return "\n".join([doc.page_content for doc in vs.similarity_search(question, k=k)])
-
-        return '\n'.join([get_rag(m.ai_memory_id.load_faiss(), question) for m in self.ai_memory_ids])
+        rags = []
+        for ai_quest_memory_id in self.ai_memory_ids:
+            if ai_quest_memory_id.ai_memory_id.vector_type == "faiss":
+                ai_memory_id = ai_quest_memory_id.ai_memory_id
+                db = ai_memory_id.load_faiss()
+                if db:
+                    docs = db.similarity_search(question, k=k)
+                    for doc in docs:
+                        if doc and doc.page_content:
+                           rags.append(doc.page_content)
+        return "\n".join(rags)
 
     def _get_tools(self, state=None):
         """Get the available tools for this agent."""
@@ -688,6 +696,7 @@ class AIAgent(models.Model):
             TOOL = None
             try:
                 module = importlib.import_module(ai_tool_id.tool_lib)
+                _logger.error(f"{module=}")
                 TOOL = getattr(module, ai_tool_id.tool)(state)
             except ImportError as e:
                 _logger.error(f"Error importing {ai_tool_id.tool_lib=}: {e} {traceback.format_exc()}")
@@ -698,5 +707,5 @@ class AIAgent(models.Model):
                 _logger.error(f"An error occurred: {e}  {traceback.format_exc()}")
             if TOOL:
                 tools.append(TOOL)
-        _logger.warning(f"_get_tools{tools=}")
+        _logger.warning(f"{tools=}")
         return tools
