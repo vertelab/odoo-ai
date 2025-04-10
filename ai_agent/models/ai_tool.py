@@ -1,32 +1,16 @@
-import os
 import json
 import importlib
 import inspect
 import sys
 import traceback
-from langchain_core.prompts import PromptTemplate
-from langchain_core.output_parsers import StrOutputParser
-from langchain.schema import SystemMessage, HumanMessage
-from langchain_openai import ChatOpenAI
-from langchain_mistralai import ChatMistralAI
-from langchain_groq import ChatGroq
-from langchain_anthropic import ChatAnthropic
-from langchain_community.tools import DuckDuckGoSearchRun, DuckDuckGoSearchResults
-from langchain_community.tools.wikipedia.tool import WikipediaQueryRun
-from langchain_community.tools.yahoo_finance_news import YahooFinanceNewsTool
-from langchain_community.utilities.duckduckgo_search import DuckDuckGoSearchAPIWrapper
-from langchain_community.utilities.wikipedia import WikipediaAPIWrapper
 from langgraph.graph import END, START, StateGraph, MessagesState
 if sys.version_info >= (3, 12):
     from typing import Annotated, Literal, TypedDict, Sequence
 else:
     from typing_extensions import Annotated, Literal, TypedDict, Sequence
-from httpx import HTTPStatusError
-from random import randint
 
 from odoo import models, fields, api, _
 from odoo.exceptions import UserError, AccessError, ValidationError
-from odoo.tools.safe_eval import safe_eval
 
 import logging
 
