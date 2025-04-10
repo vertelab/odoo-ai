@@ -1,4 +1,3 @@
-import functools
 import importlib
 import json
 import sys
@@ -7,7 +6,6 @@ import re
 import traceback
 
 from datetime import datetime
-from httpx import HTTPStatusError
 from json.decoder import JSONDecodeError
 from langchain.agents import initialize_agent, AgentType, Tool, AgentExecutor, LLMSingleActionAgent, AgentOutputParser, \
     create_tool_calling_agent, create_xml_agent, create_json_chat_agent
@@ -583,6 +581,7 @@ class AIAgent(models.Model):
 
         quest_description = quest.description
         use_lang = f"Use language {self.env.user.lang}" if quest.use_personal_lang else ''
+        
 
 
         def agent_node(state):
@@ -615,6 +614,7 @@ class AIAgent(models.Model):
                 - Provide thorough, complete responses
                 - Use available tools and memory when needed
                 - Stay focused on your specific role
+                - {use_lang} {self.extra_context(quest)}
                 - {quest.description}
                 
                 Knowledge :
