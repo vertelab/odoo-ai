@@ -41,6 +41,7 @@
                             <field name="model_id" invisible="memory_type != 'model'" />
                             <field name="model_name" invisible="1" />
                             <field name="filter_domain" widget="domain" options="{'model': 'model_name'}" invisible="memory_type != 'model'" />
+                            <field name="shell_cmd" invisible="memory_type != 'datastream'" />
                             <field name="record_limit"/>
                         </group>
                         <group>
@@ -56,7 +57,7 @@
                         </group>
                     </group>
                     <notebook>
-                        <page name="faiss_index" string="FAISS Index" invisible="vector_type != 'faiss'">
+                        <page name="faiss_index" string="FAISS Index" invisible="vector_type != 'faiss'"  groups="base.group_no_one">
                             <field name="memory_faiss" />
                         </page>
                         <page name="markdown" string="Markdown" invisible="memory_type != 'bs4'">
