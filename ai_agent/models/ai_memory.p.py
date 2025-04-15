@@ -94,7 +94,7 @@ class AIMemory(models.Model):
     memory_markdown = fields.Binary(string='Markdown', attachment=True)
     memory_type = fields.Selection(
         selection=[("bs4", "Simple Webscraper"), ("model", "Model"), ("local_attachment", "Local Attachment"),
-                   ("attachments", "Attachments")], default="model", required=True,
+                   ("attachments", "Attachments"),("datastream", "Datastream")], default="model", required=True,
         help="This is the source for memory")
     model_id = fields.Many2one(comodel_name='ir.model')
     model_name = fields.Char(related='model_id.model', string='Model Name', readonly=True, store=True)
@@ -106,6 +106,7 @@ class AIMemory(models.Model):
     session_count = fields.Integer(compute="compute_session_count")
     session_line_count = fields.Integer(compute="compute_session_line_count")
     session_line_ids = fields.One2many(comodel_name="ai.quest.session.line", inverse_name="ai_memory_id")
+    shell_cmd  = fields.Text(string="Command",help="Shell command to obtain the datastream ge cat filename")
     split_chunk_overlap = fields.Integer(default=200)
     split_chunk_size = fields.Integer(default=1000)
     status = fields.Selection(

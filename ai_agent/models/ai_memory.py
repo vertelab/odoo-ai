@@ -236,6 +236,18 @@ class AIMemory(models.Model):
             else:
                 raise UserError(_("No attachments to RAG"))
 
+    def rag_datastream(self):
+        for memory in self:
+            raw_documents = [self.create_document_from_file(attachment) for attachment in
+                             self.env["ir.attachment"].search(
+                                 [("res_model", "=", memory._name), ("res_id", "=", memory.id)])]
+            if raw_documents:
+                self.create_vector(raw_documents,memory=memory)
+            else:
+                raise UserError(_("No attachments to RAG"))
+
+
+
     def action_test_rag(self):
         action = {
             'name': 'Test Action',
