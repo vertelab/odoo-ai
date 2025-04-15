@@ -1,24 +1,26 @@
-import json
-import logging
-import io
-import fitz
-import base64
-import uuid
-import faiss
-import requests
-import markdownify
-import math
 from bs4 import BeautifulSoup
 from dateutil.relativedelta import relativedelta
-from langchain_community.document_loaders import PyPDFLoader
-from langchain_community.document_loaders import TextLoader
+from langchain_community.document_loaders import PyPDFLoader, TextLoader
 from langchain_community.vectorstores import FAISS
 from langchain_core.documents.base import Document
 from langchain_text_splitters.character import RecursiveCharacterTextSplitter
-from urllib.parse import urljoin, urlparse
 from odoo import models, fields, api, _
-from odoo.tools.safe_eval import safe_eval
 from odoo.exceptions import UserError, ValidationError
+from odoo.tools.safe_eval import safe_eval
+from random import randint
+from typing import Generator
+from urllib.parse import urljoin, urlparse
+import base64
+import faiss
+import fitz
+import io
+import json
+import logging
+import markdownify
+import math
+import requests
+import subprocess
+import uuid
 
 _logger = logging.getLogger(__name__)
 
@@ -130,6 +132,249 @@ class AIMemory(models.Model):
                     raise ValidationError(_("The record limit can't be bigger than the amount of records."))
 
 
+
+    @api.onchange('model_id')
+    def _onchange_model_id(self):
+        if self.model_id:
+            self.field_list = "[" + ' ,'.join([f"'{f}'" for f in self.env['ir.model.fields'].search(
+                [('model', '=', self.model_id.model)]).mapped('name')]) + "]"
+        else:
+            self.field_list = "[]"
+
+    # ------------------------------------------------------------
+    # RAG
+    # ------------------------------------------------------------
+
+    def rag_local_attatchemts(self):
+        for memory in self:
+            raw_documents = [self.create_document_from_file(attachment) for attachment in
+                             self.env["ir.attachment"].search(
+                                 [("res_model", "=", memory._name), ("res_id", "=", memory.id)])]
+            if raw_documents:
+                self.create_vector(raw_documents,memory=memory)
+            else:
+                raise UserError(_("No attachments to RAG"))
+
+    def rag_attatchemts(self):
+        for memory in self:
+
+            raw_documents = [self.create_document_from_file(attachment) for attachment in
+                             self.env["ir.attachment"].search(
+                                 [("res_model", "=", memory._name), ("res_id", "=", memory.id)])]
+            if raw_documents:
+                self.create_vector(raw_documents,memory=memory)
+            else:
+                raise UserError(_("No attachments to RAG"))
+
+
+    def read_stream_chunked(self,command: str, chunk_size: int = 1024) -> Generator[str, None, None]:
+        """
+            Read datastream from Unix-command in chunks as a generator
+        """
+        process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, text=True)
+        while True:
+            chunk = process.stdout.read(chunk_size)
+            if not chunk:
+                break
+            yield chunk
+
+    def rag_datastream(self,chunk: str):
+            return Document(id=uuid.uuid4(), page_content=f"{chunk}",
+                        metadata={"name": self.name, "type": "datastream"})
+
+
+
+
+            raw_documents = [self.create_document_from_file(attachment) for attachment in
+                             self.env["ir.attachment"].search(
+                                 [("res_model", "=", memory._name), ("res_id", "=", memory.id)])]
+            if raw_documents:
+                self.create_vector(raw_documents,memory=memory)
+            else:
+                raise UserError(_("No attachments to RAG"))
+
+
+
+    def action_test_rag(self):
+        action = {
+            'name': 'Test Action',
+            'type': 'ir.actions.act_window',
+            'res_model': 'ai.memory.test.wizard',
+            'view_mode': 'form',
+            'context': {'default_ai_memory': self.id},
+            'target': 'new'
+        }
+        return action
+
+
+
+    def text_splitter(self, documents):
+        return RecursiveCharacterTextSplitter(
+            chunk_size=self.split_chunk_size,  # chunk size (characters)
+            chunk_overlap=self.split_chunk_overlap,  # chunk overlap (characters)
+            add_start_index=True,  # track index in original document
+        ).split_documents(documents)
+
+    def create_document(self, text, metadata):
+        return Document(id=uuid.uuid4(), page_content=text, metadata=metadata)
+
+    def create_document_from_file(self, attachment_id):
+        file = base64.b64decode(attachment_id.datas)
+        if attachment_id.name.split(".")[-1] == "pdf":
+            pages = pymupdf.open(stream=file)
+            content = "\n".join([page.get_text() for page in pages])
+        else:
+            content = file.decode("utf-8")
+        return Document(id=uuid.uuid4(), page_content=f"{content}",
+                        metadata={"name": attachment_id.name, "type": "attachment"})
+
+    def setup_db_for_bs4(self,memory):
+        if not memory.url:
+            raise UserError(_(f"Missing url on memory ({self.name})"))
+        all_pages = self.scrape_website(memory.url, memory.max_nbr_pages)
+        memory.memory_markdown = base64.b64encode(all_pages)
+        raw_documents = [memory.create_document(text=all_pages, metadata={})]
+        memory.create_vector(raw_documents)
+
+    def setup_db_for_model(self,memory):
+        model_fields = eval(memory.field_list)
+        domain = safe_eval(memory.filter_domain) if memory.filter_domain else []
+        module_dicts = memory.env[memory.model_name].search(domain).read(model_fields)
+        _logger.error(f"{module_dicts=}")
+        raw_documents = []
+        is_first = True
+        runs = 0
+        for module_dict in module_dicts:
+            for key, item in module_dict.items():
+                if isinstance(item, fields.datetime) or isinstance(item, fields.date):
+                    module_dict[key] = item.isoformat()
+                if isinstance(item, bytes):
+                    module_dict[key] = base64.b64encode(item).decode("utf-8")
+            raw_documents.append(memory.create_document(text=json.dumps(module_dict), metadata=module_dict))
+        if len(raw_documents) != 0:
+            runs = math.ceil(len(raw_documents) / memory.record_limit)
+            for run in range(runs):
+                if is_first or memory.vector_type != "faiss":
+                    self.create_vector(raw_documents[run*memory.record_limit:(run + 1)*memory.record_limit],memory)
+                    is_first = False
+                elif self.memory_faiss:
+                    self.add_to_memory_faiss(raw_documents[run*memory.record_limit:(run + 1)*memory.record_limit])
+
+    # ------------------------------------------------------------
+    # Create Vector Hook
+    # ------------------------------------------------------------
+
+    def create_vector(self,raw_documents,memory):
+        documents = self.text_splitter(raw_documents)
+        embeddings = self.ai_agent_llm_id.get_embedding()
+        if self.vector_type == 'faiss':
+            db = FAISS.from_documents(documents, embeddings)
+            self.memory_faiss = base64.b64encode(db.serialize_to_bytes())
+        return documents, embeddings
+
+    # ------------------------------------------------------------
+    # FAISS
+    # ------------------------------------------------------------
+
+    def add_to_memory_faiss(self,raw_documents):
+        documents = self.text_splitter(raw_documents)
+        db = self.load_faiss()
+        uuids = [str(uuid.uuid4()) for _ in range(len(documents))]
+        db.add_documents(documents=documents, ids=uuids)
+        self.memory_faiss = base64.b64encode(db.serialize_to_bytes())
+
+    def load_faiss(self):
+        if self.memory_faiss:
+            faiss_file = base64.b64decode(self.memory_faiss)
+            db = FAISS.deserialize_from_bytes(faiss_file, self.ai_agent_llm_id.get_embedding(),
+                                              allow_dangerous_deserialization=True)
+            return db
+        else:
+            return False
+
+
+    # ------------------------------------------------------------
+    # Scrape Website
+    # ------------------------------------------------------------
+
+    def scrape_website(self, website, max_nbr_pages):
+        self.ensure_one()
+        global all_pages
+        all_pages = ""
+
+        def is_same_domain(url, domain):
+            return urlparse(url).netloc == urlparse(domain).netloc
+
+        def scrape_page(url, visited):
+            global all_pages
+            _logger.warning(f'scraping {url=} {visited=} {len(all_pages)=}')
+            if url in visited:
+                return
+            if max_nbr_pages > 0 and len(visited) > max_nbr_pages:
+                return
+            visited.add(url)
+
+            try:
+                response = requests.get(url)
+                soup = BeautifulSoup(response.content, 'html.parser')
+
+                # Save page content as attachment
+                content = soup.get_text()
+                all_pages += f"### URL({url})\n" + markdownify.markdownify(content)
+
+                # Follow links
+                for link in soup.find_all('a', href=True):
+                    next_url = urljoin(url, link['href'])
+                    if is_same_domain(next_url, website):
+                        scrape_page(next_url, visited)
+            except Exception as e:
+                _logger.error(f"Error scraping {url}: {str(e)}")
+
+        visited_urls = set()
+        scrape_page(website, visited_urls)
+        return all_pages.encode('utf-8')
+
+
+    # ------------------------------------------------------------
+    # Model/CRUD
+    # ------------------------------------------------------------
+
+    def run(self):
+        self.real_run()
+        #self.with_delay().real_run()
+
+    def real_run(self):
+        for memory in self:
+            if memory.status != "active":
+                raise UserError(_(f"Wrong state on memory ({self.name})"))
+
+            memory.last_run = fields.Datetime.now()
+            if memory.memory_type == 'bs4':
+                memory.setup_db_for_bs4(memory)
+            elif memory.memory_type == 'model':
+                memory.setup_db_for_model(memory)
+            elif memory.memory_type == 'attachments':
+                memory.rag_attatchemts()
+            elif memory.memory_type == 'local_attachment':
+                memory.rag_local_attatchemts()
+            elif memory.memory_type == 'datastream':
+                raw_documents = []
+                for no_chunks, chunk in enumerate(self.read_stream_chunked(self.shell_cmd, self.split_chunk_size)):
+                    raw_documents.append(Document(id=str(uuid.uuid4()), page_content=chunk,
+                        metadata={"name": self.name, "type": "datastream", 'chunk_number': no_chunks + 1}))
+                    if no_chunks >= self.record_limit:
+                        break
+                memory.create_vector(raw_documents,memory)
+
+    def cron(self):
+        self.env['ai.memory'].search(
+            [('last_run', '<', fields.Datetime.now() - relativedelta(days=self.nbr_days))]).run()
+    
+    def log_message(self, body, is_error=False):
+        if is_error:
+            self.status = "error"
+        self.message_post(body=f"{body} | {self.last_run}", message_type="notification")
+
     def action_get_quests(self):
         action = {
             'name': 'AI Quests',
@@ -223,202 +468,4 @@ class AIMemory(models.Model):
     def _compute_base_image_128(self):
         for record in self:
             record.base_image_128 = record.image_128
-
-    @api.onchange('model_id')
-    def _onchange_model_id(self):
-        if self.model_id:
-            self.field_list = "[" + ' ,'.join([f"'{f}'" for f in self.env['ir.model.fields'].search(
-                [('model', '=', self.model_id.model)]).mapped('name')]) + "]"
-        else:
-            self.field_list = "[]"
-
-    def rag_local_attatchemts(self):
-        for memory in self:
-            raw_documents = [self.create_document_from_file(attachment) for attachment in
-                             self.env["ir.attachment"].search(
-                                 [("res_model", "=", memory._name), ("res_id", "=", memory.id)])]
-            if raw_documents:
-                self.create_vector(raw_documents,memory=memory)
-            else:
-                raise UserError(_("No attachments to RAG"))
-
-    def rag_attatchemts(self):
-        for memory in self:
-
-            raw_documents = [self.create_document_from_file(attachment) for attachment in
-                             self.env["ir.attachment"].search(
-                                 [("res_model", "=", memory._name), ("res_id", "=", memory.id)])]
-            if raw_documents:
-                self.create_vector(raw_documents,memory=memory)
-            else:
-                raise UserError(_("No attachments to RAG"))
-
-    def action_test_rag(self):
-        action = {
-            'name': 'Test Action',
-            'type': 'ir.actions.act_window',
-            'res_model': 'ai.memory.test.wizard',
-            'view_mode': 'form',
-            'context': {'default_ai_memory': self.id},
-            'target': 'new'
-        }
-        return action
-
-    def run(self):
-        self.real_run()
-        #self.with_delay().real_run()
-
-    def real_run(self):
-        for memory in self:
-            if memory.status != "active":
-                raise UserError(_(f"Wrong state on memory ({self.name})"))
-
-            memory.last_run = fields.Datetime.now()
-            if memory.memory_type == 'bs4':
-                memory.setup_db_for_bs4(memory)
-            elif memory.memory_type == 'model':
-                memory.setup_db_for_model(memory)
-            elif memory.memory_type == 'attachments':
-                memory.rag_attatchemts()
-            elif memory.memory_type == 'local_attachment':
-                memory.rag_local_attatchemts()
-
-    def load_faiss(self):
-        if self.memory_faiss:
-            faiss_file = base64.b64decode(self.memory_faiss)
-            db = FAISS.deserialize_from_bytes(faiss_file, self.ai_agent_llm_id.get_embedding(),
-                                              allow_dangerous_deserialization=True)
-            return db
-        else:
-            return False
-
-    def text_splitter(self, documents):
-        return RecursiveCharacterTextSplitter(
-            chunk_size=self.split_chunk_size,  # chunk size (characters)
-            chunk_overlap=self.split_chunk_overlap,  # chunk overlap (characters)
-            add_start_index=True,  # track index in original document
-        ).split_documents(documents)
-
-    def create_document(self, text, metadata):
-        return Document(id=uuid.uuid4(), page_content=text, metadata=metadata)
-
-    def create_document_from_file(self, attachment_id):
-        file = base64.b64decode(attachment_id.datas)
-        if attachment_id.name.split(".")[-1] == "pdf":
-            pages = pymupdf.open(stream=file)
-            content = "\n".join([page.get_text() for page in pages])
-        else:
-            content = file.decode("utf-8")
-        return Document(id=uuid.uuid4(), page_content=f"{content}",
-                        metadata={"name": attachment_id.name, "type": "attachment"})
-
-    def setup_db_for_bs4(self,memory):
-        if not memory.url:
-            raise UserError(_(f"Missing url on memory ({self.name})"))
-        all_pages = self.scrape_website(memory.url, memory.max_nbr_pages)
-        memory.memory_markdown = base64.b64encode(all_pages)
-        raw_documents = [memory.create_document(text=all_pages, metadata={})]
-        memory.create_vector(raw_documents)
-
-    def setup_db_for_model(self,memory):
-        model_fields = eval(memory.field_list)
-        domain = safe_eval(memory.filter_domain) if memory.filter_domain else []
-        module_dicts = memory.env[memory.model_name].search(domain).read(model_fields)
-        _logger.error(f"{module_dicts=}")
-        raw_documents = []
-        is_first = True
-        runs = 0
-        for module_dict in module_dicts:
-            for key, item in module_dict.items():
-                if isinstance(item, fields.datetime) or isinstance(item, fields.date):
-                    module_dict[key] = item.isoformat()
-                if isinstance(item, bytes):
-                    module_dict[key] = base64.b64encode(item).decode("utf-8")
-            raw_documents.append(memory.create_document(text=json.dumps(module_dict), metadata=module_dict))
-        if len(raw_documents) != 0:
-            runs = math.ceil(len(raw_documents) / memory.record_limit)
-            for run in range(runs):
-                if is_first or memory.vector_type != "faiss":
-                    self.create_vector(raw_documents[run*memory.record_limit:(run + 1)*memory.record_limit],memory)
-                    is_first = False
-                elif self.memory_faiss:
-                    self.add_to_vector(raw_documents[run*memory.record_limit:(run + 1)*memory.record_limit])
-
-    def create_vector(self,raw_documents,memory):
-        documents = self.text_splitter(raw_documents)
-        embeddings = self.ai_agent_llm_id.get_embedding()
-        if self.vector_type == 'faiss':
-            db = FAISS.from_documents(documents, embeddings)
-            self.memory_faiss = base64.b64encode(db.serialize_to_bytes())
-        return documents, embeddings
-
-
-    def add_to_vector(self,raw_documents):
-        documents = self.text_splitter(raw_documents)
-        db = self.load_faiss()
-        uuids = [str(uuid.uuid4()) for _ in range(len(documents))]
-        db.add_documents(documents=documents, ids=uuids)
-        self.memory_faiss = base64.b64encode(db.serialize_to_bytes())
-
-    def log_message(self, body, is_error=False):
-        if is_error:
-            self.status = "error"
-        self.message_post(body=f"{body} | {self.last_run}", message_type="notification")
-
-    def scrape_website(self, website, max_nbr_pages):
-        self.ensure_one()
-        global all_pages
-        all_pages = ""
-
-        def is_same_domain(url, domain):
-            return urlparse(url).netloc == urlparse(domain).netloc
-
-        def scrape_page(url, visited):
-            global all_pages
-            _logger.warning(f'scraping {url=} {visited=} {len(all_pages)=}')
-            if url in visited:
-                return
-            if max_nbr_pages > 0 and len(visited) > max_nbr_pages:
-                return
-            visited.add(url)
-
-            try:
-                response = requests.get(url)
-                soup = BeautifulSoup(response.content, 'html.parser')
-
-                # Save page content as attachment
-                content = soup.get_text()
-                all_pages += f"### URL({url})\n" + markdownify.markdownify(content)
-
-                # Follow links
-                for link in soup.find_all('a', href=True):
-                    next_url = urljoin(url, link['href'])
-                    if is_same_domain(next_url, website):
-                        scrape_page(next_url, visited)
-            except Exception as e:
-                _logger.error(f"Error scraping {url}: {str(e)}")
-
-        visited_urls = set()
-        scrape_page(website, visited_urls)
-        return all_pages.encode('utf-8')
-
-    def cron(self):
-        self.env['ai.memory'].search(
-            [('last_run', '<', fields.Datetime.now() - relativedelta(days=self.nbr_days))]).run()
-    
-   
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-
         
