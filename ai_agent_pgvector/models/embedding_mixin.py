@@ -66,9 +66,8 @@ class EmbeddingMixin(models.AbstractModel):
         params = [min_similarity, limit]
 
         if domain:
-            # Correctly calculate the WHERE clause using the model itself
+            # Correctly calculate the WHERE clause using the model itself    
             query_obj = self.env[self._name].sudo()._where_calc(domain).select()
-            # tables, where_clause, where_params = query_obj.get_sql()
             where_clause = query_obj.code.split(" WHERE ")[1]
             where_params = query_obj.params
 
