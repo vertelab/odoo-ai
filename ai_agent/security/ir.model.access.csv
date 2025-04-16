@@ -41,3 +41,4 @@ access_ai_quest_agent,AI Quest Agent Access,model_ai_quest_agent,base.group_user
 access_ai_quest,access_ai_quest,ai_agent.model_ai_quest,base.group_user,1,0,0,0
 access_ai_agent,ai_agent.ai_agent,model_ai_agent,base.group_user,1,0,0,0
 access_ir_model,base.ir_model,base.model_ir_model,base.group_user,1,0,0,0
+group_user_session,group_user_session,ai_agent.model_ai_quest_session_line,base.group_user,1,0,0,0
