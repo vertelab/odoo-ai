@@ -6,6 +6,7 @@ import traceback
 
 from httpx import HTTPStatusError
 from langchain.agents import AgentExecutor, create_openai_tools_agent, create_json_chat_agent, create_react_agent
+from langchain.schema import HumanMessage
 from langchain_core.messages import AIMessage
 from odoo import models, fields, api, tools, _
 from odoo.exceptions import UserError, AccessError, ValidationError
@@ -147,8 +148,12 @@ class AIAgentLLM(models.Model):
             api_key = self.ai_api_key
             if not api_key:
                 api_key = tools.config.get(self.product_tmpl_id.fallback_api_key_name, False)
-                _logger.error(f"{api_key=}")
-            return LLM(verbose=verbose, temperature=temperature, callbacks=callbacks, api_key=api_key,
+                _logger.error(f"{"API Key Found" if api_key else "No API Key found"}")
+            if self.product_tmpl_id.llm_type == "ChatOllama":
+                return LLM(verbose=verbose, temperature=temperature, callbacks=callbacks, base_url=self.endpoint, disable_streaming=True,
+                       model=self.model_id.name, **kwarg)
+            else:
+                return LLM(verbose=verbose, temperature=temperature, callbacks=callbacks, api_key=api_key,
                        model=self.model_id.name, **kwarg)
         except ImportError as e:
             _logger.error(f"Error importing {self.product_tmpl_id.llm_library}: {e}")
@@ -213,6 +218,10 @@ class AIAgentLLM(models.Model):
             self.log_message(body=error_msg, is_error=True)
             raise ValueError(error_msg)
         try:
+            # if self.product_tmpl_id.llm_type == "ChatOllama":
+            #     messages = [config, HumanMessage(content=input)]
+            #     response = self.get_llm().invoke(messages)
+            # else:
             response = self.get_llm().invoke(input, config)
         except HTTPStatusError as e:
             if e.response.status_code == 429:
