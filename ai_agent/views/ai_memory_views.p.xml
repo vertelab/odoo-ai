@@ -42,6 +42,7 @@
                             <field name="model_id" invisible="memory_type != 'model'" />
                             <field name="model_name" invisible="1" />
                             <field name="filter_domain" widget="domain" options="{'model': 'model_name'}" invisible="memory_type != 'model'" />
+                            <field name="shell_cmd" invisible="memory_type != 'datastream'" />
                             <!-- #elif VERSION <= "16.0" -->
                             <field name="memory_type" />
                             <field name="url" attrs="{'invisible': [('memory_type', '!=', 'bs4')]}" />
@@ -49,6 +50,7 @@
                             <field name="model_id" attrs="{'invisible': [('memory_type', '!=', 'model')]}" />
                             <field name="model_name" invisible="1" />
                             <field name="filter_domain" widget="domain" options="{'model': 'model_name'}" attrs="{'invisible': [('memory_type', '!=', 'model')]}" />
+                            <field name="shell_cmd" attrs="{'invisible': [('memory_type', '!=', 'datastream')]}" />
                             <!-- #endif -->
                             <field name="record_limit"/>
                         </group>
@@ -66,7 +68,7 @@
                     </group>
                     <notebook>
                         <!-- #if VERSION >= "17.0" -->
-                        <page name="faiss_index" string="FAISS Index" invisible="vector_type != 'faiss'">
+                        <page name="faiss_index" string="FAISS Index" invisible="vector_type != 'faiss'"  groups="base.group_no_one">
                             <field name="memory_faiss" />
                         </page>
                         <page name="markdown" string="Markdown" invisible="memory_type != 'bs4'">
@@ -79,7 +81,7 @@
                             <field name="field_list" nolabel="1" />
                         </page>
                         <!-- #elif VERSION <= "16.0" -->
-                        <page name="faiss_index" string="FAISS Index" attrs="{'invisible': [('vector_type', '!=', 'faiss')]}">
+                        <page name="faiss_index" string="FAISS Index" attrs="{'invisible': [('vector_type', '!=', 'faiss')]}"  groups="base.group_no_one">
                             <field name="memory_faiss" />
                         </page>
                         <page name="markdown" string="Markdown" attrs="{'invisible': [('memory_type', '!=', 'bs4')]}">

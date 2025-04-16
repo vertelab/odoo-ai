@@ -17,6 +17,9 @@ from langchain.tools import tool
 from langchain_community.chat_message_histories import ChatMessageHistory
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langgraph.prebuilt import create_react_agent
+from langchain.chains.summarize import load_summarize_chain
+from langchain.text_splitter import CharacterTextSplitter
+from langchain.docstore.document import Document
 from odoo import models, fields, api, _
 from odoo.addons.ai_agent.models.ai_quest import AgentState
 from odoo.exceptions import UserError
@@ -516,6 +519,32 @@ class AIAgent(models.Model):
         else:
             name = re.sub(r'[()\[\]\{\}:]', ' ', self.name).strip() if self and self.name else ""
             return f"{name}"
+
+    def generate_summary(self,text):
+        # Initialize the language model
+        llm = self.ai_agent_llm_id.get_llm()
+        
+        text_splitter = CharacterTextSplitter()
+        texts = text_splitter.split_text(text)
+        
+        # Create Document objects
+        docs = [Document(page_content=t) for t in texts]
+                
+        # Load the summarization chain
+        chain = load_summarize_chain(llm, chain_type="map_reduce",verbose=True)
+        
+        # Generate the summary
+        summary = chain.invoke(docs)
+        
+        _logger.error(f"{summary=}")
+
+        response={}
+        whole_text = ""
+        for page in summary["input_documents"]:
+            whole_text += page.page_content + "\n\n" 
+        response["messages"] = [AIMessage(content=whole_text)]
+        return response
+        
 
     def test(self):
         self.last_run = fields.Datetime.now()        
