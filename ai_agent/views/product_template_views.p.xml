@@ -5,14 +5,14 @@
         <field name="inherit_id" ref="product.product_template_only_form_view"/>
         <field name="arch" type="xml">
             <div name="options" position="inside">
-                <span class="d-inline-block">
+                <span groups="ai_agent.group_ai_agent_developer,ai_agent.group_ai_agent_manager,ai_agent.group_ai_agent_supervisor" class="d-inline-block">
                     <field name="is_llm"/>
                     <label for="is_llm"/>
                 </span>
             </div>
 
             <div name="button_box" position="inside">
-                <button name="action_get_session_lines" class="oe_stat_button" type="object" icon="fa-money">
+                <button groups="ai_agent.group_ai_agent_developer,ai_agent.group_ai_agent_manager,ai_agent.group_ai_agent_supervisor" name="action_get_session_lines" class="oe_stat_button" type="object" icon="fa-money">
                     <field string="Tokens" name="session_line_count" widget="statinfo"/>
                 </button>
             </div>
@@ -22,11 +22,11 @@
 
             <page name="inventory" position="after">
                 <!-- #if VERSION >= "17.0" -->
-                <page name="llm" string="LLM" invisible="not is_llm">
+                <page groups="ai_agent.group_ai_agent_developer,ai_agent.group_ai_agent_manager,ai_agent.group_ai_agent_supervisor" name="llm" string="LLM" invisible="not is_llm">
                 <!-- #elif VERSION <= "16.0" -->
-                <page name="llm" string="LLM" attrs="{'invisible':[('is_llm', '=', False)]}">
+                <page groups="ai_agent.group_ai_agent_developer,ai_agent.group_ai_agent_manager,ai_agent.group_ai_agent_supervisor" name="llm" string="LLM" attrs="{'invisible':[('is_llm', '=', False)]}">
                 <!-- #endif -->
-                    <group>
+                    <group groups="ai_agent.group_ai_agent_developer,ai_agent.group_ai_agent_manager,ai_agent.group_ai_agent_supervisor">
                         <group>
                             <field name="token_sys"/>
                             <field name="llm_additional_rate"/>
