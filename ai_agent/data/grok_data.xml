@@ -11,23 +11,23 @@
     </record>
     <!-- Model -->
     <!-- https://docs.x.ai/docs/models#models-and-pricing -->
-    <!-- grok-3-latest -->
+    <!-- grok-3-latest / beta -->
     <record id="grok_product_attribute_value_grok-3-latest" model="product.attribute.value">
       <field name="name">grok-3-latest</field>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
     </record>
     <!-- grok-3-fast-beta -->
-    <record id="grok_product_attribute_value_grok-3-fast-beta" model="product.attribute.value">
+    <record id="grok_product_attribute_value_grok-3-fast-latest" model="product.attribute.value">
       <field name="name">grok-3-fast-beta</field>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
     </record>
     <!-- grok-3-mini-beta -->
-    <record id="grok_product_attribute_value_grok-3-mini-beta" model="product.attribute.value">
+    <record id="grok_product_attribute_value_grok-3-mini-latest" model="product.attribute.value">
       <field name="name">grok-3-mini-beta</field>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
     </record>
     <!-- grok-3-mini-fast-beta -->
-    <record id="grok_product_attribute_value_grok-3-mini-fast-beta" model="product.attribute.value">
+    <record id="grok_product_attribute_value_grok-3-mini-fast-latest" model="product.attribute.value">
       <field name="name">grok-3-mini-mini-beta</field>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
     </record>
@@ -41,17 +41,23 @@
       <field name="name">grok-2-image-latest</field>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
     </record>
+    <!-- grok-2-1212 -->
+    <record id="grok_product_attribute_value_grok-2-latest" model="product.attribute.value">
+      <field name="name">grok-2-latest</field>
+      <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+    </record>
     <!-- Attribute Line -->
     <record id="grok_ai_product_template_attribute_line_model" model="product.template.attribute.line">
       <field name="product_tmpl_id" ref="grok_product_template" />
       <field name="attribute_id" ref="product_attribute_model" />
       <field name="value_ids" eval="[(6, 0, [
                             ref('grok_product_attribute_value_grok-3-latest'),
-                            ref('grok_product_attribute_value_grok-3-fast-beta'),
-                            ref('grok_product_attribute_value_grok-3-mini-beta'),
-                            ref('grok_product_attribute_value_grok-3-mini-fast-beta'),
+                            ref('grok_product_attribute_value_grok-3-fast-latest'),
+                            ref('grok_product_attribute_value_grok-3-mini-latest'),
+                            ref('grok_product_attribute_value_grok-3-mini-fast-latest'),
                             ref('grok_product_attribute_value_grok-2-vision-latest'),
                             ref('grok_product_attribute_value_grok-2-image-latest'),
+                            ref('grok_product_attribute_value_grok-2-latest'),
                     ])]" />
     </record>
     <record id="grok_product_template_attribute_line_token_type" model="product.template.attribute.line">
