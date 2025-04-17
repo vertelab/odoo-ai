@@ -20,24 +20,39 @@
       <field name="image_1920" type="base64" file="ai_agent/static/img/anthropic_logo.png" />
     </record>
     <!-- Model -->
+    <!-- Claude 3.7 Sonnet -->
     <record id="anthropic_product_attribute_value_claude-3-5-sonnet-latest" model="product.attribute.value">
-      <field name="name">claude-3-5-sonnet-latest</field>
+      <field name="name">claude-3-7-sonnet-latest</field>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
     </record>
+    <!-- Claude 3.5 Haiku -->
     <record id="anthropic_product_attribute_value_claude-3-5-haiku-latest" model="product.attribute.value">
       <field name="name">claude-3-5-haiku-latest</field>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
     </record>
+    <!-- Claude 3.5 Sonnet v2 -->
+    <record id="anthropic_product_attribute_value_claude-3-5-sonnet-latest" model="product.attribute.value">
+      <field name="name">claude-3-5-sonnet-latest</field>
+      <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+    </record>
+    <!-- Claude 3.5 Sonnet -->
+    <record id="anthropic_product_attribute_value_claude-3-5-sonnet-20240620" model="product.attribute.value">
+      <field name="name">claude-3-5-sonnet-20240620</field>
+      <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+    </record>
+    <!-- Claude 3 Opus -->
     <record id="anthropic_product_attribute_value_claude-3-opus-latest" model="product.attribute.value">
       <field name="name">claude-3-opus-latest</field>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
     </record>
-    <record id="anthropic_product_attribute_value_claude-3-sonnet-latest" model="product.attribute.value">
-      <field name="name">claude-3-sonnet-latest</field>
+    <!-- Claude 3 Sonnet -->
+    <record id="anthropic_product_attribute_value_claude-3-sonnet-20240229" model="product.attribute.value">
+      <field name="name">claude-3-sonnet-20240229</field>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
     </record>
-    <record id="anthropic_product_attribute_value_claude-3-haiku-latest" model="product.attribute.value">
-      <field name="name">claude-3-haiku-latest</field>
+    <!-- Claude 3 Haiku -->
+    <record id="anthropic_product_attribute_value_claude-3-haiku-20240307" model="product.attribute.value">
+      <field name="name">claude-3-haiku-20240307</field>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
     </record>
     <!-- Attribute Line -->
@@ -45,11 +60,12 @@
       <field name="product_tmpl_id" ref="anthropic_product_template" />
       <field name="attribute_id" ref="product_attribute_model" />
       <field name="value_ids" eval="[(6, 0, [
-                            ref('anthropic_product_attribute_value_claude-3-5-sonnet-latest'),
+                            ref('anthropic_product_attribute_value_claude-3-7-sonnet-latest'),
                             ref('anthropic_product_attribute_value_claude-3-5-haiku-latest'),
+                            ref('anthropic_product_attribute_value_claude-3-5-sonnet-20240620'),
                             ref('anthropic_product_attribute_value_claude-3-opus-latest'),
-                            ref('anthropic_product_attribute_value_claude-3-sonnet-latest'),
-                            ref('anthropic_product_attribute_value_claude-3-haiku-latest'),
+                            ref('anthropic_product_attribute_value_claude-3-sonnet-20240229'),
+                            ref('anthropic_product_attribute_value_claude-3-haiku-20240307'),
                     ])]" />
     </record>
 <!--
