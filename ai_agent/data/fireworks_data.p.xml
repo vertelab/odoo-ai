@@ -7,7 +7,8 @@
     <record id="fireworks_ai_product_template" model="product.template">
       <field name="name">Fireworks-AI</field>
       <field name="is_llm">True</field>
-      <field name="llm_type">ChatGroq_XXXXXXXXXXXX_NOT_CORRECT!</field>
+      <field name="llm_library">langchain_fireworks</field>
+      <field name="llm_type">Fireworks</field>
     </record>
     <!-- Model -->
     <record id="anthropic_product_attribute_value_" model="product.attribute.value">
@@ -19,7 +20,7 @@
       <field name="product_tmpl_id" ref="fireworks_ai_product_template" />
       <field name="attribute_id" ref="product_attribute_model" />
       <field name="value_ids" eval="[(6, 0, [
-                            ref(''),
+                            ref('groq_product_attribute_value_llama3-70b-8192'),
                             ref(''),
                             ref(''),
                             ref(''),
