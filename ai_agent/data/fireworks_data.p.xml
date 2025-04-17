@@ -11,8 +11,11 @@
       <field name="llm_type">Fireworks</field>
     </record>
     <!-- Model -->
-    <record id="anthropic_product_attribute_value_" model="product.attribute.value">
-      <field name="name"></field>
+    <!-- source: https://python.langchain.com/docs/integrations/llms/fireworks/ -->
+    <!-- Source: https://docs.fireworks.ai/guides/querying-embeddings-models -->
+    <!-- The names...: "List of available models" -->
+    <record id="mixtral_8x7b_instruct_nomic-embed-text-v1-5" model="product.attribute.value">
+      <field name="name">Fireworks nomic-embed-text-v1.5</field>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
     </record>
     <!-- Attribute Line -->
@@ -20,11 +23,11 @@
       <field name="product_tmpl_id" ref="fireworks_ai_product_template" />
       <field name="attribute_id" ref="product_attribute_model" />
       <field name="value_ids" eval="[(6, 0, [
-                            ref('groq_product_attribute_value_llama3-70b-8192'),
-                            ref(''),
-                            ref(''),
-                            ref(''),
-                            ref(''),
+                            ref('fireworks_product_attribute_value_nomic-embed-text-v1-5'),
+                            ref('fireworks_product_attribute_value_nomic-embed-text-v1'),
+                            ref('fireworks_product_attribute_value_nomic-UAE-Large-V1'),
+                            ref('fireworks_product_attribute_value_nomic-gte-large'),
+                            ref('fireworks_product_attribute_value_nomic-gte-base'),
                     ])]" />
     </record>
   </data>
