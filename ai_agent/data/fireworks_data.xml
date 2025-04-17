@@ -10,13 +10,33 @@
       <field name="llm_library">langchain_fireworks</field>
       <field name="llm_type">Fireworks</field>
     </record>
-    <!-- Model -->
     <!-- source: https://python.langchain.com/docs/integrations/llms/fireworks/ -->
     <!-- Source: https://docs.fireworks.ai/guides/querying-embeddings-models#list-of-available-models -->
     <!-- The names...: "List of available models" -->
+    <!-- Model: nomic-ai/nomic-embed-text-v1.5 -->
     <record id="fireworks_product_attribute_value_nomic-embed-text-v1-5" model="product.attribute.value">
       <field name="name">Fireworks nomic-embed-text-v1.5</field>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+    </record>
+    <!-- Model: nomic-ai/nomic-embed-text-v1 -->
+    <record id="fireworks_product_attribute_value_nomic-embed-text-v1" model="product.attribute.value">
+      <field name="name">Fireworks nomic-embed-text-v1</field>
+      <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+    </record>
+    <!-- Model: WhereIsAI/UAE-Large-V1 -->
+    <record id="fireworks_product_attribute_value_nomic-UAE-Large-V1" model="product.attribute.value">
+      <field name="name">Fireworks nomic-UAE-Large-V1</field>
+      <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+    </record>
+    <!-- Model: thenlper/gte-large -->
+    <record id="fireworks_product_attribute_value_nomic-text-v1-5" model="product.attribute.value">
+      <field name="name">Fireworks nomic-embed-gte-large</field>
+      <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+    <!-- Model: thenlper/gte-base -->
+    <record id="fireworks_product_attribute_value_nomic-gte-base" model="product.attribute.value">
+      <field name="name">Fireworks nomic-embed-gte-base</field>
+      <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+    </record>
     </record>
     <!-- Attribute Line -->
     <record id="fireworks_ai_product_template_attribute_line_model" model="product.template.attribute.line">
