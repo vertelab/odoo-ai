@@ -97,8 +97,6 @@
                                 <field name="licence" />
                                 <field name="is_embedded" invisible="1"/>
                                 <field name="has_endpoint" invisible="1"/>
-                                <field name="tpm"/>
-                                <field name="rpm"/>
                             </group>
                             <group>
                                 <field name="llm_type" invisible="is_embedded == True"/>
@@ -108,21 +106,13 @@
                                 <field name="endpoint" invisible="has_endpoint == False"/>
                                 <field name="azure_endpoint" required="llm_type == 'AzureChatOpenAI'" invisible="llm_type != 'AzureChatOpenAI'"/>
                                 <field name="api_version" required="llm_type == 'AzureChatOpenAI'" invisible="llm_type != 'AzureChatOpenAI'"/>
-
-                                <div class="o_row py-2">
-                                    <label for="sleep_duration"/>
-                                    <field name="sleep_duration" nolabel="1" class="oe_inline o_input_5ch o_field_highlight"/>
-                                    <span>secs when threshold is reaching</span>
-                                    <field name="threshold" nolabel="1" class="oe_inline o_input_10ch o_field_highlight"/>
-                                    <span>%</span>
-                                </div>
                             </group>
                         </group>
                         <group>
                             <separator />
                         </group>
                     </sheet>
-                    <chatter/>
+<chatter/>
                 </form>
             </field>
         </record>

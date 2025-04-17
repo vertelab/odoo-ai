@@ -53,16 +53,4 @@
 
     <menuitem id="ai_agent.menu_product_product" name="Providers" parent="ai_agent.menu_ai_agent_configuration" action="action_product_template" sequence="1"/>
 
-    <record id="product_template_attribute_value_view_form" model="ir.ui.view">
-        <field name="name">product.template.attribute.value.form</field>
-        <field name="model">product.template.attribute.value</field>
-        <field name="inherit_id" ref="product.product_template_attribute_value_view_form"/>
-        <field name="arch" type="xml">
-            <field name="price_extra" position="after">
-                <field name="tpm"/>
-                <field name="rpm"/>
-            </field>
-        </field>
-    </record>
-
  </odoo>

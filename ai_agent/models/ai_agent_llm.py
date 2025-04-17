@@ -3,8 +3,6 @@ import importlib
 import logging
 import time
 import traceback
-import tiktoken
-import datetime
 
 from httpx import HTTPStatusError
 from langchain.agents import AgentExecutor, create_openai_tools_agent, create_json_chat_agent, create_react_agent
@@ -15,7 +13,6 @@ from odoo.exceptions import UserError, AccessError, ValidationError
 from pydantic import SecretStr
 from random import randint
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
-
 _logger = logging.getLogger(__name__)
 
 LICENCES = [
@@ -67,13 +64,10 @@ class AIAgentLLM(models.Model):
     azure_endpoint = fields.Char(string="Azure Endpoint")
     api_version = fields.Char(string="API version")
 
-    # token_limits = fields.Integer(string="Token Limit")
     tpm = fields.Integer(string="Token Per Minute", related="model_id.tpm")
     rpm = fields.Integer(string="Request Per Minute", related="model_id.rpm")
-
     threshold = fields.Float(string="Threshold", default=80)
     sleep_duration = fields.Integer(string="Sleep For", default=15)
-
 
     def action_get_quests(self):
         action = {
@@ -242,9 +236,8 @@ class AIAgentLLM(models.Model):
                 raise  # This will trigger a retry
             else:
                 _logger.warning(f"Other HTTP-error... {e=}")
-                self.log_message(body=f"Other HTTP-error...{e=}\n{input=} {config=} {session=} {quest=} {agent=}", is_error=True)
+                self.log_message(body=f"Other HTTP-error...{e=}\n{input=} {config=} {session=} {quest=} {agent=}", is_error=True)            
                 raise  # For other HTTP errors, don't retry
-            return None
         except Exception as e:
             self.log_message(body=f"LLM {self.name} {e}\n\n{input=} {config=} {session=} {quest=} {agent=}\n{traceback.format_exc()}", is_error=True)
             _logger.error(f"LLM {self.name} {e}\n{traceback.format_exc()}")
@@ -316,8 +309,11 @@ class AIAgentLLM(models.Model):
 
     def get_agent_executor(self, prompt, tools, temperature=1.0, verbose=False, callbacks=None):
         return AgentExecutor(
-            agent=create_openai_tools_agent(eval(self.get_llm(temperature=temperature, verbose=verbose)), tools,
-                                            prompt),
+            agent=create_openai_tools_agent(
+                eval(
+                    self.get_llm(temperature=temperature, verbose=verbose)
+                ), tools, prompt
+            ),
             tools=tools,
             verbose=verbose,
             callbacks=callbacks,
@@ -326,4 +322,5 @@ class AIAgentLLM(models.Model):
     def update_api_key(self):
         for llm in self:
             llm.ai_api_key = llm.product_tmpl_id.ai_api_key
+
 

@@ -1,5 +1,4 @@
 import datetime
-
 import tiktoken
 import pymupdf
 import time
@@ -316,6 +315,7 @@ class AIMemory(models.Model):
         token_sum = sum(self.env['ai.quest.session.line'].search(domain).mapped('token'))
         return token_sum
 
+
     # ------------------------------------------------------------
     # Create Vector Hook
     # ------------------------------------------------------------
@@ -342,7 +342,8 @@ class AIMemory(models.Model):
                 time.sleep(seconds_to_next_minute)
 
             elif current_usage > (self.ai_agent_llm_id.tpm * self.ai_agent_llm_id.threshold / 100):
-                _logger.warning(f"TPM threshold reached: {current_usage}/{self.ai_agent_llm_id.tpm} tokens used this minute")
+                _logger.warning(
+                    f"TPM threshold reached: {current_usage}/{self.ai_agent_llm_id.tpm} tokens used this minute")
                 time.sleep(self.ai_agent_llm_id.sleep_duration)  # Sleep for the configured duration (default 15 sec)
 
             db = FAISS.from_documents(documents, embeddings)
