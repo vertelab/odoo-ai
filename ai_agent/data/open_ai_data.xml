@@ -1,95 +1,84 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <data noupdate="0">
-        <record id="open_ai_product_template" model="product.template">
-            <field name="name">Open-AI</field>
-            <field name="is_llm">True</field>
-            <field name="llm_library">langchain_openai</field>
-            <field name="llm_type">ChatOpenAI</field>
-            <field name="llm_etype">OpenAIEmbeddings</field>
-            <field name="fallback_api_key_name">openai_api_key</field>
-            <field name="llm_price_url">https://openai.com/api/pricing/</field>
-            <field name="image_1920" type="base64" file="ai_agent/static/img/open-ai-logo.jpg" />
-        </record>
-
-        <!-- Model -->
-        <record id="open_ai_product_attribute_value_o3-mini" model="product.attribute.value">
-            <field name="name">o3-mini</field>
-            <field name="attribute_id" ref="ai_agent.product_attribute_model" />
-            <field name="tpm">10,000,000</field>
-            <field name="rpm">10,000</field>
-        </record>
-
-        <record id="open_ai_product_attribute_value_gpt-4-5" model="product.attribute.value">
-            <field name="name">gpt-4.5</field>
-            <field name="attribute_id" ref="ai_agent.product_attribute_model" />
-            <field name="tpm">1,000,000</field>
-            <field name="rpm">10,000</field>
-        </record>
-
-        <record id="open_ai_product_attribute_value_gpt-4o" model="product.attribute.value">
-            <field name="name">gpt-4o</field>
-            <field name="attribute_id" ref="ai_agent.product_attribute_model" />
-            <field name="tpm">2,000,000</field>
-            <field name="rpm">10,000</field>
-        </record>
-
-        <record id="open_ai_product_attribute_value_gpt-4o-audio-preview" model="product.attribute.value">
-            <field name="name">gpt-4o-audio-preview</field>
-            <field name="attribute_id" ref="ai_agent.product_attribute_model" />
-            <field name="tpm">2,000,000</field>
-            <field name="rpm">10,000</field>
-        </record>
-
-        <record id="open_ai_product_attribute_value_gpt-4o-mini" model="product.attribute.value">
-            <field name="name">gpt-4o-mini</field>
-            <field name="attribute_id" ref="ai_agent.product_attribute_model" />
-            <field name="tpm">10,000,000</field>
-            <field name="rpm">10,000</field>
-        </record>
-
-        <record id="open_ai_product_attribute_value_gpt-4o-mini-audio-preview" model="product.attribute.value">
-            <field name="name">gpt-4o-mini-audio-preview</field>
-            <field name="attribute_id" ref="ai_agent.product_attribute_model" />
-            <field name="tpm">10,000,000</field>
-            <field name="rpm">10,000</field>
-        </record>
-
-        <record id="open_ai_product_attribute_value_o1" model="product.attribute.value">
-            <field name="name">o1</field>
-            <field name="attribute_id" ref="ai_agent.product_attribute_model" />
-            <field name="tpm">2,000,000</field>
-            <field name="rpm">10,000</field>
-        </record>
-
-        <record id="open_ai_product_attribute_value_o1-mini" model="product.attribute.value">
-            <field name="name">o1-mini</field>
-            <field name="attribute_id" ref="ai_agent.product_attribute_model" />
-            <field name="tpm">10,000,000</field>
-            <field name="rpm">10,000</field>
-        </record>
-
-        <record id="open_ai_product_attribute_value_text-embedding-3-small" model="product.attribute.value">
-            <field name="name">text-embedding-3-small</field>
-            <field name="is_embedded" eval="True"/>
-            <field name="attribute_id" ref="ai_agent.product_attribute_model" />
-            <field name="tpm">5,000,000</field>
-            <field name="rpm">10,000</field>
-        </record>
-
-        <record id="open_ai_product_attribute_value_text-embedding-3-large" model="product.attribute.value">
-            <field name="name">text-embedding-3-large</field>
-            <field name="is_embedded" eval="True"/>
-            <field name="attribute_id" ref="ai_agent.product_attribute_model" />
-            <field name="tpm">5,000,000</field>
-            <field name="rpm">10,000</field>
-        </record>
-
-        <!-- Attribute Line -->
-        <record id="open_ai_product_template_attribute_line_model" model="product.template.attribute.line">
-            <field name="product_tmpl_id" ref="open_ai_product_template" />
-            <field name="attribute_id" ref="product_attribute_model" />
-            <field name="value_ids" eval="[(6, 0, [
+  <data noupdate="0">
+    <record id="open_ai_product_template" model="product.template">
+      <field name="name">Open-AI</field>
+      <field name="is_llm">True</field>
+      <field name="llm_library">langchain_openai</field>
+      <field name="llm_type">ChatOpenAI</field>
+      <field name="llm_etype">OpenAIEmbeddings</field>
+      <field name="fallback_api_key_name">openai_api_key</field>
+      <field name="llm_price_url">https://openai.com/api/pricing/</field>
+      <field name="image_1920" type="base64" file="ai_agent/static/img/open-ai-logo.jpg" />
+    </record>
+    <!-- Model -->
+    <record id="open_ai_product_attribute_value_o3-mini" model="product.attribute.value">
+      <field name="name">o3-mini</field>
+      <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+      <field name="tpm">10000000</field>
+      <field name="rpm">10000</field>
+    </record>
+    <record id="open_ai_product_attribute_value_gpt-4-5" model="product.attribute.value">
+      <field name="name">gpt-4.5</field>
+      <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+      <field name="tpm">1000000</field>
+      <field name="rpm">10000</field>
+    </record>
+    <record id="open_ai_product_attribute_value_gpt-4o" model="product.attribute.value">
+      <field name="name">gpt-4o</field>
+      <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+      <field name="tpm">2000000</field>
+      <field name="rpm">10000</field>
+    </record>
+    <record id="open_ai_product_attribute_value_gpt-4o-audio-preview" model="product.attribute.value">
+      <field name="name">gpt-4o-audio-preview</field>
+      <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+      <field name="tpm">2000000</field>
+      <field name="rpm">10000</field>
+    </record>
+    <record id="open_ai_product_attribute_value_gpt-4o-mini" model="product.attribute.value">
+      <field name="name">gpt-4o-mini</field>
+      <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+      <field name="tpm">10000000</field>
+      <field name="rpm">10000</field>
+    </record>
+    <record id="open_ai_product_attribute_value_gpt-4o-mini-audio-preview" model="product.attribute.value">
+      <field name="name">gpt-4o-mini-audio-preview</field>
+      <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+      <field name="tpm">10000000</field>
+      <field name="rpm">10000</field>
+    </record>
+    <record id="open_ai_product_attribute_value_o1" model="product.attribute.value">
+      <field name="name">o1</field>
+      <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+      <field name="tpm">2000000</field>
+      <field name="rpm">10000</field>
+    </record>
+    <record id="open_ai_product_attribute_value_o1-mini" model="product.attribute.value">
+      <field name="name">o1-mini</field>
+      <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+      <field name="tpm">10000000</field>
+      <field name="rpm">10000</field>
+    </record>
+    <record id="open_ai_product_attribute_value_text-embedding-3-small" model="product.attribute.value">
+      <field name="name">text-embedding-3-small</field>
+      <field name="is_embedded" eval="True" />
+      <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+      <field name="tpm">5000000</field>
+      <field name="rpm">10000</field>
+    </record>
+    <record id="open_ai_product_attribute_value_text-embedding-3-large" model="product.attribute.value">
+      <field name="name">text-embedding-3-large</field>
+      <field name="is_embedded" eval="True" />
+      <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+      <field name="tpm">5000000</field>
+      <field name="rpm">10000</field>
+    </record>
+    <!-- Attribute Line -->
+    <record id="open_ai_product_template_attribute_line_model" model="product.template.attribute.line">
+      <field name="product_tmpl_id" ref="open_ai_product_template" />
+      <field name="attribute_id" ref="product_attribute_model" />
+      <field name="value_ids" eval="[(6, 0, [
                             ref('open_ai_product_attribute_value_o3-mini'),
                             ref('open_ai_product_attribute_value_gpt-4-5'),
                             ref('open_ai_product_attribute_value_gpt-4o'),
@@ -101,26 +90,26 @@
                             ref('open_ai_product_attribute_value_text-embedding-3-small'),
                             ref('open_ai_product_attribute_value_text-embedding-3-large'),
                     ])]" />
-        </record>
-        <!-- Api Type -->
-        <record id="open_ai_product_attribute_value_sync" model="product.attribute.value">
-            <field name="name">sync</field>
-            <field name="attribute_id" ref="ai_agent.product_attribute_api_type" />
-        </record>
-        <record id="open_ai_product_attribute_value_batch" model="product.attribute.value">
-            <field name="name">batch</field>
-            <field name="attribute_id" ref="ai_agent.product_attribute_api_type" />
-        </record>
-        <record id="open_ai_product_template_attribute_line_api_typ" model="product.template.attribute.line">
-            <field name="product_tmpl_id" ref="open_ai_product_template" />
-            <field name="attribute_id" ref="product_attribute_api_type" />
-            <field name="value_ids" eval="[(6, 0, [ref('open_ai_product_attribute_value_sync'), ref('open_ai_product_attribute_value_batch')])]" />
-        </record>
-        <!-- Token Type -->
-        <record id="open_ai_product_template_attribute_line_token_type" model="product.template.attribute.line">
-            <field name="product_tmpl_id" ref="open_ai_product_template" />
-            <field name="attribute_id" ref="product_attribute_token_type" />
-            <field name="value_ids" eval="[(6, 0, [
+    </record>
+    <!-- Api Type -->
+    <record id="open_ai_product_attribute_value_sync" model="product.attribute.value">
+      <field name="name">sync</field>
+      <field name="attribute_id" ref="ai_agent.product_attribute_api_type" />
+    </record>
+    <record id="open_ai_product_attribute_value_batch" model="product.attribute.value">
+      <field name="name">batch</field>
+      <field name="attribute_id" ref="ai_agent.product_attribute_api_type" />
+    </record>
+    <record id="open_ai_product_template_attribute_line_api_typ" model="product.template.attribute.line">
+      <field name="product_tmpl_id" ref="open_ai_product_template" />
+      <field name="attribute_id" ref="product_attribute_api_type" />
+      <field name="value_ids" eval="[(6, 0, [ref('open_ai_product_attribute_value_sync'), ref('open_ai_product_attribute_value_batch')])]" />
+    </record>
+    <!-- Token Type -->
+    <record id="open_ai_product_template_attribute_line_token_type" model="product.template.attribute.line">
+      <field name="product_tmpl_id" ref="open_ai_product_template" />
+      <field name="attribute_id" ref="product_attribute_token_type" />
+      <field name="value_ids" eval="[(6, 0, [
                         ref('product_attribute_value_input_tokens'),
                         ref('product_attribute_value_input_tokens_audio'),
                         ref('product_attribute_value_input_tokens_cache_read'),
@@ -129,12 +118,12 @@
                         ref('product_attribute_value_output_tokens_audio'),
                         ref('product_attribute_value_output_tokens_reasoning'),
                 ])]" />
-        </record>
-        <!-- Data Type -->
-        <record id="open_ai_product_template_attribute_line_data_type" model="product.template.attribute.line">
-            <field name="product_tmpl_id" ref="open_ai_product_template" />
-            <field name="attribute_id" ref="product_attribute_data_type" />
-            <field name="value_ids" eval="[(6, 0, [ref('product_attribute_value_text'), ref('product_attribute_value_audio')])]" />
-        </record>
-    </data>
+    </record>
+    <!-- Data Type -->
+    <record id="open_ai_product_template_attribute_line_data_type" model="product.template.attribute.line">
+      <field name="product_tmpl_id" ref="open_ai_product_template" />
+      <field name="attribute_id" ref="product_attribute_data_type" />
+      <field name="value_ids" eval="[(6, 0, [ref('product_attribute_value_text'), ref('product_attribute_value_audio')])]" />
+    </record>
+  </data>
 </odoo>
