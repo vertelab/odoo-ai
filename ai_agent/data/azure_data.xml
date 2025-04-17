@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
     <data noupdate="1">
+	    <!-- Source: https://azure.microsoft.com/en-us/pricing/details/machine-learning/#pricing --!>
         <record id="azure_product_template" model="product.template">
             <field name="name">Azure OpenAI</field>
             <field name="is_llm">True</field>
