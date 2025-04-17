@@ -6,7 +6,6 @@
       <field name="is_llm">True</field>
       <field name="llm_library">langchain_groq</field>
       <field name="llm_type">ChatGroq</field>
-      <field name="llm_type">ChatGroq</field>
 	  <field name="fallback_api_key_name">groq_api_key</field>
       <field name="image_1920" type="base64" file="ai_agent/static/img/groq-ai-logo.png" />
     </record>
