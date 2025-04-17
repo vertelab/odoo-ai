@@ -18,19 +18,3 @@ class AIAgentMemoryRAG(models.Model):
     original_text = fields.Text()
     embedding = PgVector(dimension=768)
     metadata = fields.Text()
-
-  
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-
-        

@@ -236,10 +236,6 @@ class AIAgentLLM(models.Model):
             self.log_message(body=error_msg, is_error=True)
             raise ValueError(error_msg)
         try:
-            # if self.product_tmpl_id.llm_type == "ChatOllama":
-            #     messages = [config, HumanMessage(content=input)]
-            #     response = self.get_llm().invoke(messages)
-            # else:
             response = self.get_llm().invoke(input, config)
         except HTTPStatusError as e:
             if e.response.status_code == 429:

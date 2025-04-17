@@ -100,10 +100,10 @@
       </field>
     </record>
    
-    <record id="ai_quest_aria_agent1" model="ai.quest.agent">
+    <!-- <record id="ai_quest_aria_agent1" model="ai.quest.agent">
       <field name="ai_quest_id" ref="ai_quest_aria" />
       <field name="ai_agent_id" ref="ai_agent_supervisor_chat" />
-    </record>
+    </record> -->
    
     <record id="ai_quest_aria_agent2" model="ai.quest.agent">
       <field name="ai_quest_id" ref="ai_quest_aria" />

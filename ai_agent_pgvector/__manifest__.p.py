@@ -48,7 +48,7 @@
     'depends': [
         'ai_agent',
     ],
-    'data': ["security/ir.model.access.csv" ,"views/ai_memory_views.xml"],
+    'data': ["security/ir.model.access.csv" ,"views/ai_memory_views.xml", "views/ai_quest_views.xml"],
     'installable': True,
     'auto_install': False,
     'application': False,
