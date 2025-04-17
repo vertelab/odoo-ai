@@ -3,6 +3,7 @@
   <data noupdate="1">
     <!-- Source: https://python.langchain.com/v0.1/docs/integrations/llms/fireworks/ -->
     <!-- Source: https://docs.fireworks.ai/guides/querying-embeddings-models -->
+    <!-- PRICING: https://fireworks.ai/pricing#overview -->
     <record id="fireworks_ai_product_template" model="product.template">
       <field name="name">Fireworks-AI</field>
       <field name="is_llm">True</field>
