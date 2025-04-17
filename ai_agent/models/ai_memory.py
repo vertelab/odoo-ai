@@ -255,6 +255,8 @@ class AIMemory(models.Model):
                     module_dict[key] = item.isoformat()
                 if isinstance(item, bytes):
                     module_dict[key] = base64.b64encode(item).decode("utf-8")
+                if isinstance(item, fields.Html):
+                    module_dict[key]=BeautifulSoup(response.content, 'html.parser').get_text()
             raw_documents.append(memory.create_document(text=json.dumps(module_dict), metadata=module_dict))
         if len(raw_documents) != 0:
             runs = math.ceil(len(raw_documents) / memory.record_limit)
