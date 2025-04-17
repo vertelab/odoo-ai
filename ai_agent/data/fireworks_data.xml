@@ -12,9 +12,9 @@
     </record>
     <!-- Model -->
     <!-- source: https://python.langchain.com/docs/integrations/llms/fireworks/ -->
-    <!-- Source: https://docs.fireworks.ai/guides/querying-embeddings-models -->
+    <!-- Source: https://docs.fireworks.ai/guides/querying-embeddings-models#list-of-available-models -->
     <!-- The names...: "List of available models" -->
-    <record id="mixtral_8x7b_instruct_nomic-embed-text-v1-5" model="product.attribute.value">
+    <record id="fireworks_product_attribute_value_nomic-embed-text-v1-5" model="product.attribute.value">
       <field name="name">Fireworks nomic-embed-text-v1.5</field>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
     </record>
