@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+4<?xml version="1.0" encoding="utf-8"?>
 <odoo>
   <data noupdate="1">
     <record id="google_llm_product_template" model="product.template">
@@ -13,26 +13,31 @@
     </record>
     <!-- PRICING: https://ai.google.dev/gemini-api/docs/pricing -->
     <!-- Model -->
+    <!-- Gemini Pro  -->
     <record id="google_llm_product_attribute_value_gemini-pro" model="product.attribute.value">
       <field name="name">gemini-pro</field>
       <field name="licence">google-ai-terms</field>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
     </record>
+    <!-- Gemini Pro Vision -->
     <record id="google_llm_product_attribute_value_gemini-pro-vision" model="product.attribute.value">
       <field name="name">gemini-pro-vision</field>
       <field name="licence">google-ai-terms</field>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
     </record>
+    <!-- Chat Bison 001 -->
     <record id="google_llm_product_attribute_value_chat-bison-001" model="product.attribute.value">
       <field name="name">chat-bison-001</field>
       <field name="licence">google-ai-terms</field>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
     </record>
+    <!-- Text Bison 001 -->
     <record id="google_llm_product_attribute_value_text-bison-001" model="product.attribute.value">
       <field name="name">text-bison-001</field>
       <field name="licence">google-ai-terms</field>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
     </record>
+    <!-- Embeddeding Gecko 001 -->
     <record id="google_llm_product_attribute_value_embedding-gecko-001" model="product.attribute.value">
       <field name="name">embedding-gecko-001</field>
       <field name="licence">google-ai-terms</field>
