@@ -1,3 +1,7 @@
+import datetime
+import tiktoken
+import pymupdf
+import time
 from bs4 import BeautifulSoup
 from dateutil.relativedelta import relativedelta
 from langchain_community.document_loaders import PyPDFLoader, TextLoader
@@ -272,14 +276,76 @@ class AIMemory(models.Model):
                 elif self.memory_faiss:
                     self.add_to_memory_faiss(raw_documents[run*memory.record_limit:(run + 1)*memory.record_limit])
 
+    def _compute_tokens(self, text):
+        """Count tokens accurately using tiktoken for OpenAI models."""
+        try:
+
+            # Convert to string if needed
+            if not isinstance(text, str):
+                if hasattr(text, 'content'):
+                    text = text.content
+                else:
+                    text = str(text)
+
+            enc = tiktoken.encoding_for_model(self.ai_agent_llm_id.model_id.name)
+
+            token_count = len(enc.encode(text))
+            return token_count
+        except Exception as e:
+            _logger.warning(f"Error using tiktoken: {e}. Using character-based token estimation.")
+            return len(text) // 4 if text else 0
+
+
+    def _get_current_minute_usage(self):
+        """Calculate current minute token usage from session lines"""
+        # Get current minute timestamp (rounded down)
+        current_minute = int(time.time()) // 60
+
+        minute_start = datetime.datetime.fromtimestamp(current_minute * 60)
+        minute_end = datetime.datetime.fromtimestamp((current_minute + 1) * 60)
+
+        # Find session lines for this LLM in the current minute
+        domain = [
+            ('ai_llm_id', '=', self.id),
+            ('datetime', '>=', minute_start),
+            ('datetime', '<', minute_end)
+        ]
+
+        # Sum the tokens
+        token_sum = sum(self.env['ai.quest.session.line'].search(domain).mapped('token'))
+        return token_sum
+
+
     # ------------------------------------------------------------
     # Create Vector Hook
     # ------------------------------------------------------------
 
-    def create_vector(self,raw_documents,memory):
+    def create_vector(self, raw_documents, memory):
         documents = self.text_splitter(raw_documents)
         embeddings = self.ai_agent_llm_id.get_embedding()
+        if not embeddings:
+            raise UserError("No Embedding found")
         if self.vector_type == 'faiss':
+
+            input_tokens = self._compute_tokens(documents)
+
+            # Check current minute usage from session lines
+            current_usage = self._get_current_minute_usage()
+
+            if current_usage + input_tokens > self.ai_agent_llm_id.tpm:
+                message = f"TPM limit would be exceeded: {current_usage + input_tokens} > {self.ai_agent_llm_id.tpm}"
+                _logger.warning(message)
+
+                # Sleep until next minute
+                seconds_to_next_minute = 60 - (int(time.time()) % 60)
+                _logger.info(f"Sleeping for {seconds_to_next_minute} seconds until next minute")
+                time.sleep(seconds_to_next_minute)
+
+            elif current_usage > (self.ai_agent_llm_id.tpm * self.ai_agent_llm_id.threshold / 100):
+                _logger.warning(
+                    f"TPM threshold reached: {current_usage}/{self.ai_agent_llm_id.tpm} tokens used this minute")
+                time.sleep(self.ai_agent_llm_id.sleep_duration)  # Sleep for the configured duration (default 15 sec)
+
             db = FAISS.from_documents(documents, embeddings)
             self.memory_faiss = base64.b64encode(db.serialize_to_bytes())
         return documents, embeddings
