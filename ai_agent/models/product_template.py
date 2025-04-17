@@ -55,3 +55,6 @@ class ProductAttributeValue(models.Model):
     licence = fields.Selection(selection=LICENCES, string='Licence', default='commercial')
     is_embedded = fields.Boolean(string='Is Embedded')
     has_endpoint = fields.Boolean(string="Has Endpoint")
+
+    tpm = fields.Integer(string="Token Per Minute", related="product_attribute_value_id.tpm")
+    rpm = fields.Integer(string="Request Per Minute", related="product_attribute_value_id.rpm")
