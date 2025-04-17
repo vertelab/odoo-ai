@@ -4,6 +4,7 @@ from langchain_community.document_loaders import PyPDFLoader, TextLoader
 from langchain_community.vectorstores import FAISS
 from langchain_core.documents.base import Document
 from langchain_text_splitters.character import RecursiveCharacterTextSplitter
+from markupsafe import Markup
 from odoo import models, fields, api, _
 from odoo.exceptions import UserError, ValidationError
 from odoo.tools.safe_eval import safe_eval
@@ -21,6 +22,7 @@ import math
 import requests
 import subprocess
 import uuid
+
 
 _logger = logging.getLogger(__name__)
 
@@ -240,7 +242,6 @@ class AIMemory(models.Model):
         model_fields = eval(memory.field_list)
         domain = safe_eval(memory.filter_domain) if memory.filter_domain else []
         module_dicts = memory.env[memory.model_name].search(domain).read(model_fields)
-        _logger.error(f"{module_dicts=}")
         raw_documents = []
         is_first = True
         runs = 0
@@ -250,8 +251,17 @@ class AIMemory(models.Model):
                     module_dict[key] = item.isoformat()
                 if isinstance(item, bytes):
                     module_dict[key] = base64.b64encode(item).decode("utf-8")
-                if isinstance(item, fields.html):
-                    module_dict[key]=BeautifulSoup(response.content, 'html.parser').get_text()
+                if isinstance(item, fields.Html):                    
+                    module_dict[key]=BeautifulSoup(item.encode('utf-8').decode('unicode_escape'), 'html.parser').get_text()
+                if isinstance(item, Markup):
+                    decoded = str(item).encode('utf-8').decode('unicode_escape')
+                    # Step 3: Remove HTML
+                    clean_text = BeautifulSoup(item, 'html.parser').get_text()
+                    # ~ module_dict[key] = str(clean_text.encode('utf-8'))
+                    module_dict[key] = str(clean_text)
+                    
+                    _logger.warning(f"{clean_text}=  {repr(item)}=")
+
             raw_documents.append(memory.create_document(text=json.dumps(module_dict), metadata=module_dict))
         if len(raw_documents) != 0:
             runs = math.ceil(len(raw_documents) / memory.record_limit)
