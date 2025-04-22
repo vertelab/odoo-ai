@@ -56,7 +56,9 @@
                         </group>
                         <group>
                             <field name="vector_type" />
+                            <!-- #if VERSION >= 16.0 -->
                             <field name="tag_ids" widget="many2many_tags" />
+                            <!-- #endif -->
                             <field name="ai_agent_llm_id" />
                             <field name="split_chunk_size" />
                             <field name="split_chunk_overlap" />
@@ -143,7 +145,9 @@
                 <field name="name" />
                 <field name="vector_type" />
                 <field name="memory_type" />
-                <field name="tag_ids" />
+                <!-- #if VERSION >= 16.0 -->
+                <field name="tag_ids" widget="many2many_tags" />
+                <!-- #endif -->
                 <filter string="Favorites" name="favorites" domain="[('is_favorite', '=', True)]" />
                 <filter string="Debug Mode" name="debug" domain="[('debug', '=', True)]" />
                 <group expand="0" string="Group By">
