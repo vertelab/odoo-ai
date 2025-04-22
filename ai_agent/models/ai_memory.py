@@ -335,11 +335,12 @@ class AIMemory(models.Model):
             if current_usage + input_tokens > self.ai_agent_llm_id.tpm:
                 message = f"TPM limit would be exceeded: {current_usage + input_tokens} > {self.ai_agent_llm_id.tpm}"
                 _logger.warning(message)
+                raise UserError(message)
 
                 # Sleep until next minute
-                seconds_to_next_minute = 60 - (int(time.time()) % 60)
-                _logger.info(f"Sleeping for {seconds_to_next_minute} seconds until next minute")
-                time.sleep(seconds_to_next_minute)
+                # seconds_to_next_minute = 60 - (int(time.time()) % 60)
+                # _logger.info(f"Sleeping for {seconds_to_next_minute} seconds until next minute")
+                # time.sleep(seconds_to_next_minute)
 
             elif current_usage > (self.ai_agent_llm_id.tpm * self.ai_agent_llm_id.threshold / 100):
                 _logger.warning(
