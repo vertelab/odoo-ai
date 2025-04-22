@@ -152,7 +152,7 @@ class AIAgentLLM(models.Model):
             api_key = self.ai_api_key
             if not api_key:
                 api_key = tools.config.get(self.product_tmpl_id.fallback_api_key_name, False)
-                _logger.error(f"{"API Key Found" if api_key else "No API Key found"}")
+                _logger.error(f"{'API Key Found' if api_key else 'No API Key found'}")
             if self.product_tmpl_id.llm_type == "ChatOllama":
                 return LLM(verbose=verbose, temperature=temperature, callbacks=callbacks, base_url=self.endpoint, disable_streaming=True,
                        model=self.model_id.name, **kwarg)
