@@ -119,7 +119,6 @@ class AIMemory(models.Model):
     split_chunk_size = fields.Integer(default=1000)
     status = fields.Selection(
         selection=[("draft", "Draft"), ("active", "Active"), ("done", "Done"), ("error", "Error")], default="draft")
-    tag_ids = fields.Many2many(comodel_name='product.tag', string='Tags')
     url = fields.Char(string='Url', trim=True, )
     vector_type = fields.Selection(selection=[('faiss', 'FAISS'), ('st', 'Short Term')], string='Vector type',
                                    help="The type of vector database")
@@ -131,6 +130,8 @@ class AIMemory(models.Model):
         for record in self:
             if record.memory_type == "model":
                 domain = safe_eval(record.filter_domain) if record.filter_domain else []
+                if not record.model_name:
+                    raise UserError("You have not selected a model for the memory type")
                 domain_count = self.env[record.model_name].search_count(domain)
                 if record.record_limit < 1:
                     raise ValidationError(_("The record limit can't be less than one."))
@@ -188,16 +189,14 @@ class AIMemory(models.Model):
             return Document(id=uuid.uuid4(), page_content=f"{chunk}",
                         metadata={"name": self.name, "type": "datastream"})
 
-
-
-
-            raw_documents = [self.create_document_from_file(attachment) for attachment in
-                             self.env["ir.attachment"].search(
-                                 [("res_model", "=", memory._name), ("res_id", "=", memory.id)])]
-            if raw_documents:
-                self.create_vector(raw_documents,memory=memory)
-            else:
-                raise UserError(_("No attachments to RAG"))
+            # ir_attachments = self.env["ir.attachment"].search(
+            #     [("res_model", "=", memory._name), ("res_id", "=", memory.id)])
+            #
+            # raw_documents = [self.create_document_from_file(attachment) for attachment in ir_attachments]
+            # if raw_documents:
+            #     self.create_vector(raw_documents,memory=memory)
+            # else:
+            #     raise UserError(_("No attachments to RAG"))
 
 
 
@@ -255,7 +254,7 @@ class AIMemory(models.Model):
                     module_dict[key] = item.isoformat()
                 if isinstance(item, bytes):
                     module_dict[key] = base64.b64encode(item).decode("utf-8")
-                if isinstance(item, fields.Html):                    
+                if isinstance(item, fields.Html):
                     module_dict[key]=BeautifulSoup(item.encode('utf-8').decode('unicode_escape'), 'html.parser').get_text()
                 if isinstance(item, Markup):
                     decoded = str(item).encode('utf-8').decode('unicode_escape')
@@ -263,7 +262,7 @@ class AIMemory(models.Model):
                     clean_text = BeautifulSoup(item, 'html.parser').get_text()
                     # ~ module_dict[key] = str(clean_text.encode('utf-8'))
                     module_dict[key] = str(clean_text)
-                    
+
                     _logger.warning(f"{clean_text}=  {repr(item)}=")
 
             raw_documents.append(memory.create_document(text=json.dumps(module_dict), metadata=module_dict))
@@ -448,7 +447,7 @@ class AIMemory(models.Model):
     def cron(self):
         self.env['ai.memory'].search(
             [('last_run', '<', fields.Datetime.now() - relativedelta(days=self.nbr_days))]).run()
-    
+
     def log_message(self, body, is_error=False):
         if is_error:
             self.status = "error"

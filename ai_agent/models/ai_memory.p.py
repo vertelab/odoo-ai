@@ -119,7 +119,9 @@ class AIMemory(models.Model):
     split_chunk_size = fields.Integer(default=1000)
     status = fields.Selection(
         selection=[("draft", "Draft"), ("active", "Active"), ("done", "Done"), ("error", "Error")], default="draft")
+    # #if VERSION >= '16.0'
     tag_ids = fields.Many2many(comodel_name='product.tag', string='Tags')
+    # #endif
     url = fields.Char(string='Url', trim=True, )
     vector_type = fields.Selection(selection=[('faiss', 'FAISS'), ('st', 'Short Term')], string='Vector type',
                                    help="The type of vector database")
@@ -131,6 +133,8 @@ class AIMemory(models.Model):
         for record in self:
             if record.memory_type == "model":
                 domain = safe_eval(record.filter_domain) if record.filter_domain else []
+                if not record.model_name:
+                    raise UserError("You have not selected a model for the memory type")
                 domain_count = self.env[record.model_name].search_count(domain)
                 if record.record_limit < 1:
                     raise ValidationError(_("The record limit can't be less than one."))
@@ -184,20 +188,18 @@ class AIMemory(models.Model):
                 break
             yield chunk
 
-    def rag_datastream(self,chunk: str):
-            return Document(id=uuid.uuid4(), page_content=f"{chunk}",
+    def rag_datastream(self, chunk: str):
+        return Document(id=uuid.uuid4(), page_content=f"{chunk}",
                         metadata={"name": self.name, "type": "datastream"})
 
-
-
-
-            raw_documents = [self.create_document_from_file(attachment) for attachment in
-                             self.env["ir.attachment"].search(
-                                 [("res_model", "=", memory._name), ("res_id", "=", memory.id)])]
-            if raw_documents:
-                self.create_vector(raw_documents,memory=memory)
-            else:
-                raise UserError(_("No attachments to RAG"))
+        # ir_attachments = self.env["ir.attachment"].search(
+        #     [("res_model", "=", memory._name), ("res_id", "=", memory.id)])
+        #
+        # raw_documents = [self.create_document_from_file(attachment) for attachment in ir_attachments]
+        # if raw_documents:
+        #     self.create_vector(raw_documents,memory=memory)
+        # else:
+        #     raise UserError(_("No attachments to RAG"))
 
 
 
