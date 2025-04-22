@@ -1,65 +1,65 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-  <data noupdate="1">
-    <!-- Source: https://python.langchain.com/v0.1/docs/integrations/llms/anthropic/ -->
-    <!-- Source: https://docs.anthropic.com/en/docs/about-claude/models -->
-    <record id="anthropic_product_template" model="product.template">
-      <field name="name">Anthropic</field>
-      <field name="is_llm">True</field>
-      <field name="llm_library">langchain_anthropic</field>
-      <field name="llm_etype">ChatAnthropic</field>
-      <field name="llm_type">ChatAnthropic</field>
-      <field name="fallback_api_key_name">anthropic_api_key</field>
-      <field name="image_1920" type="base64" file="ai_agent/static/img/anthropic_logo.png" />
-    </record>
-    <record id="anthropic_res_partner" model="res.partner">
-      <field name="name">Anthropic PBC</field>
-      <field name="is_company">1</field>
-      <field name="country_id" ref="base.us" />
-      <field name="website">https://www.anthropic.com/</field>
-      <field name="image_1920" type="base64" file="ai_agent/static/img/anthropic_logo.png" />
-    </record>
-    <!-- Model -->
-    <!-- Claude 3.7 Sonnet -->
-    <record id="anthropic_product_attribute_value_claude-3-5-sonnet-latest" model="product.attribute.value">
-      <field name="name">claude-3-7-sonnet-latest</field>
-      <field name="attribute_id" ref="ai_agent.product_attribute_model" />
-    </record>
-    <!-- Claude 3.5 Haiku -->
-    <record id="anthropic_product_attribute_value_claude-3-5-haiku-latest" model="product.attribute.value">
-      <field name="name">claude-3-5-haiku-latest</field>
-      <field name="attribute_id" ref="ai_agent.product_attribute_model" />
-    </record>
-    <!-- Claude 3.5 Sonnet v2 -->
-    <record id="anthropic_product_attribute_value_claude-3-5-sonnet-latest" model="product.attribute.value">
-      <field name="name">claude-3-5-sonnet-latest</field>
-      <field name="attribute_id" ref="ai_agent.product_attribute_model" />
-    </record>
-    <!-- Claude 3.5 Sonnet -->
-    <record id="anthropic_product_attribute_value_claude-3-5-sonnet-20240620" model="product.attribute.value">
-      <field name="name">claude-3-5-sonnet-20240620</field>
-      <field name="attribute_id" ref="ai_agent.product_attribute_model" />
-    </record>
-    <!-- Claude 3 Opus -->
-    <record id="anthropic_product_attribute_value_claude-3-opus-latest" model="product.attribute.value">
-      <field name="name">claude-3-opus-latest</field>
-      <field name="attribute_id" ref="ai_agent.product_attribute_model" />
-    </record>
-    <!-- Claude 3 Sonnet -->
-    <record id="anthropic_product_attribute_value_claude-3-sonnet-20240229" model="product.attribute.value">
-      <field name="name">claude-3-sonnet-20240229</field>
-      <field name="attribute_id" ref="ai_agent.product_attribute_model" />
-    </record>
-    <!-- Claude 3 Haiku -->
-    <record id="anthropic_product_attribute_value_claude-3-haiku-20240307" model="product.attribute.value">
-      <field name="name">claude-3-haiku-20240307</field>
-      <field name="attribute_id" ref="ai_agent.product_attribute_model" />
-    </record>
-    <!-- Attribute Line -->
-    <record id="anthropic_product_template_attribute_line_model" model="product.template.attribute.line">
-      <field name="product_tmpl_id" ref="anthropic_product_template" />
-      <field name="attribute_id" ref="product_attribute_model" />
-      <field name="value_ids" eval="[(6, 0, [
+    <data noupdate="1">
+        <!-- Source: https://python.langchain.com/v0.1/docs/integrations/llms/anthropic/ -->
+        <!-- Source: https://docs.anthropic.com/en/docs/about-claude/models -->
+        <record id="anthropic_product_template" model="product.template">
+            <field name="name">Anthropic</field>
+            <field name="is_llm">True</field>
+            <field name="llm_library">langchain_anthropic</field>
+            <field name="llm_etype">ChatAnthropic</field>
+            <field name="llm_type">ChatAnthropic</field>
+            <field name="fallback_api_key_name">anthropic_api_key</field>
+            <field name="image_1920" type="base64" file="ai_agent/static/img/anthropic_logo.png" />
+        </record>
+        <record id="anthropic_res_partner" model="res.partner">
+            <field name="name">Anthropic PBC</field>
+            <field name="is_company">1</field>
+            <field name="country_id" ref="base.us" />
+            <field name="website">https://www.anthropic.com/</field>
+            <field name="image_1920" type="base64" file="ai_agent/static/img/anthropic_logo.png" />
+        </record>
+        <!-- Model -->
+        <!-- Claude 3.7 Sonnet -->
+        <record id="anthropic_product_attribute_value_claude-3-7-sonnet-latest" model="product.attribute.value">
+            <field name="name">claude-3-7-sonnet-latest</field>
+            <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+        </record>
+        <!-- Claude 3.5 Haiku -->
+        <record id="anthropic_product_attribute_value_claude-3-5-haiku-latest" model="product.attribute.value">
+            <field name="name">claude-3-5-haiku-latest</field>
+            <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+        </record>
+        <!-- Claude 3.5 Sonnet v2 -->
+        <record id="anthropic_product_attribute_value_claude-3-5-sonnet-latest" model="product.attribute.value">
+            <field name="name">claude-3-5-sonnet-latest</field>
+            <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+        </record>
+        <!-- Claude 3.5 Sonnet -->
+        <record id="anthropic_product_attribute_value_claude-3-5-sonnet-20240620" model="product.attribute.value">
+            <field name="name">claude-3-5-sonnet-20240620</field>
+            <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+        </record>
+        <!-- Claude 3 Opus -->
+        <record id="anthropic_product_attribute_value_claude-3-opus-latest" model="product.attribute.value">
+            <field name="name">claude-3-opus-latest</field>
+            <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+        </record>
+        <!-- Claude 3 Sonnet -->
+        <record id="anthropic_product_attribute_value_claude-3-sonnet-20240229" model="product.attribute.value">
+            <field name="name">claude-3-sonnet-20240229</field>
+            <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+        </record>
+        <!-- Claude 3 Haiku -->
+        <record id="anthropic_product_attribute_value_claude-3-haiku-20240307" model="product.attribute.value">
+            <field name="name">claude-3-haiku-20240307</field>
+            <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+        </record>
+        <!-- Attribute Line -->
+        <record id="anthropic_product_template_attribute_line_model" model="product.template.attribute.line">
+            <field name="product_tmpl_id" ref="anthropic_product_template" />
+            <field name="attribute_id" ref="product_attribute_model" />
+            <field name="value_ids" eval="[(6, 0, [
                             ref('anthropic_product_attribute_value_claude-3-7-sonnet-latest'),
                             ref('anthropic_product_attribute_value_claude-3-5-haiku-latest'),
                             ref('anthropic_product_attribute_value_claude-3-5-sonnet-20240620'),
@@ -67,20 +67,20 @@
                             ref('anthropic_product_attribute_value_claude-3-sonnet-20240229'),
                             ref('anthropic_product_attribute_value_claude-3-haiku-20240307'),
                     ])]" />
-    </record>
-<!--
-    <record id="anthropic_product_supplierinfo_1" model="product.supplierinfo">
-      <field name="product_id" ref="anthropic_product_template" />
-      <field name="partner_id" ref="anthropic_res_partner" />
-      <field name="price">0.0034</field>
-      <field name="currency_id" ref="base.USD" />
-    </record>
--->
-    <!-- Token Type -->
-    <record id="anthropic_product_template_attribute_line_token_type" model="product.template.attribute.line">
-      <field name="product_tmpl_id" ref="anthropic_product_template" />
-      <field name="attribute_id" ref="product_attribute_token_type" />
-      <field name="value_ids" eval="[(6, 0, [
+        </record>
+        <!--
+            <record id="anthropic_product_supplierinfo_1" model="product.supplierinfo">
+              <field name="product_id" ref="anthropic_product_template" />
+              <field name="partner_id" ref="anthropic_res_partner" />
+              <field name="price">0.0034</field>
+              <field name="currency_id" ref="base.USD" />
+            </record>
+        -->
+        <!-- Token Type -->
+        <record id="anthropic_product_template_attribute_line_token_type" model="product.template.attribute.line">
+            <field name="product_tmpl_id" ref="anthropic_product_template" />
+            <field name="attribute_id" ref="product_attribute_token_type" />
+            <field name="value_ids" eval="[(6, 0, [
          ref('product_attribute_value_input_tokens'),
          ref('product_attribute_value_input_tokens_audio'),
          ref('product_attribute_value_input_tokens_cache_read'),
@@ -89,6 +89,6 @@
          ref('product_attribute_value_output_tokens_audio'),
          ref('product_attribute_value_output_tokens_reasoning'),
          ])]" />
-    </record>
-  </data>
+        </record>
+    </data>
 </odoo>
