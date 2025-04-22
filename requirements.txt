@@ -1,16 +1,8 @@
-yfinance
-openai
 langchain-core
-langchain-openai
-langchain-mistralai
-langchain-groq
-langchain_anthropic
 langgraph
 langchain_community
 markdown
-transformers
 unidecode
-crawl4ai
 scrapy
 markdownify
 faiss-cpu
@@ -22,5 +14,4 @@ typing_extensions
 duckduckgo_search
 IPython
 lxml_html_clean
-#lxml==4.8.0
 lxml
