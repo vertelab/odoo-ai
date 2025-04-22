@@ -247,7 +247,6 @@ class AIMemory(models.Model):
         record_data = memory.env[memory.model_name].search(domain).read(model_fields)
         return record_data
 
-
     def setup_db_for_model(self, memory):
         module_dicts = self._model_memory_type_data(memory=memory)
         raw_documents = []
