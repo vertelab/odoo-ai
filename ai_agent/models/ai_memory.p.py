@@ -119,7 +119,7 @@ class AIMemory(models.Model):
     split_chunk_size = fields.Integer(default=1000)
     status = fields.Selection(
         selection=[("draft", "Draft"), ("active", "Active"), ("done", "Done"), ("error", "Error")], default="draft")
-    # #if VERSION >= '16.0'
+    # #if VERSION >= "16.0"
     tag_ids = fields.Many2many(comodel_name='product.tag', string='Tags')
     # #endif
     url = fields.Char(string='Url', trim=True, )
