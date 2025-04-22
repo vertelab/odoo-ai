@@ -242,10 +242,14 @@ class AIMemory(models.Model):
         raw_documents = [memory.create_document(text=all_pages, metadata={})]
         memory.create_vector(raw_documents)
 
-    def setup_db_for_model(self,memory):
+    def _model_memory_type_data(self, memory):
         model_fields = eval(memory.field_list)
         domain = safe_eval(memory.filter_domain) if memory.filter_domain else []
-        module_dicts = memory.env[memory.model_name].search(domain).read(model_fields)
+        record_data = memory.env[memory.model_name].search(domain).read(model_fields)
+        return record_data
+
+    def setup_db_for_model(self, memory):
+        module_dicts = self._model_memory_type_data(memory=memory)
         raw_documents = []
         is_first = True
         runs = 0
@@ -255,15 +259,16 @@ class AIMemory(models.Model):
                     module_dict[key] = item.isoformat()
                 if isinstance(item, bytes):
                     module_dict[key] = base64.b64encode(item).decode("utf-8")
-                if isinstance(item, fields.Html):                    
-                    module_dict[key]=BeautifulSoup(item.encode('utf-8').decode('unicode_escape'), 'html.parser').get_text()
+                if isinstance(item, fields.Html):
+                    module_dict[key] = BeautifulSoup(item.encode('utf-8').decode('unicode_escape'),
+                                                     'html.parser').get_text()
                 if isinstance(item, Markup):
                     decoded = str(item).encode('utf-8').decode('unicode_escape')
                     # Step 3: Remove HTML
                     clean_text = BeautifulSoup(item, 'html.parser').get_text()
                     # ~ module_dict[key] = str(clean_text.encode('utf-8'))
                     module_dict[key] = str(clean_text)
-                    
+
                     _logger.warning(f"{clean_text}=  {repr(item)}=")
 
             raw_documents.append(memory.create_document(text=json.dumps(module_dict), metadata=module_dict))
@@ -271,10 +276,10 @@ class AIMemory(models.Model):
             runs = math.ceil(len(raw_documents) / memory.record_limit)
             for run in range(runs):
                 if is_first or memory.vector_type != "faiss":
-                    self.create_vector(raw_documents[run*memory.record_limit:(run + 1)*memory.record_limit],memory)
+                    self.create_vector(raw_documents[run * memory.record_limit:(run + 1) * memory.record_limit], memory)
                     is_first = False
                 elif self.memory_faiss:
-                    self.add_to_memory_faiss(raw_documents[run*memory.record_limit:(run + 1)*memory.record_limit])
+                    self.add_to_memory_faiss(raw_documents[run * memory.record_limit:(run + 1) * memory.record_limit])
 
     def _compute_tokens(self, text):
         """Count tokens accurately using tiktoken for OpenAI models."""
