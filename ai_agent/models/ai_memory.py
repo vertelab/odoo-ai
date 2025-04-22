@@ -185,18 +185,18 @@ class AIMemory(models.Model):
                 break
             yield chunk
 
-    def rag_datastream(self,chunk: str):
-            return Document(id=uuid.uuid4(), page_content=f"{chunk}",
+    def rag_datastream(self, chunk: str):
+        return Document(id=uuid.uuid4(), page_content=f"{chunk}",
                         metadata={"name": self.name, "type": "datastream"})
 
-            # ir_attachments = self.env["ir.attachment"].search(
-            #     [("res_model", "=", memory._name), ("res_id", "=", memory.id)])
-            #
-            # raw_documents = [self.create_document_from_file(attachment) for attachment in ir_attachments]
-            # if raw_documents:
-            #     self.create_vector(raw_documents,memory=memory)
-            # else:
-            #     raise UserError(_("No attachments to RAG"))
+        # ir_attachments = self.env["ir.attachment"].search(
+        #     [("res_model", "=", memory._name), ("res_id", "=", memory.id)])
+        #
+        # raw_documents = [self.create_document_from_file(attachment) for attachment in ir_attachments]
+        # if raw_documents:
+        #     self.create_vector(raw_documents,memory=memory)
+        # else:
+        #     raise UserError(_("No attachments to RAG"))
 
 
 
@@ -254,7 +254,7 @@ class AIMemory(models.Model):
                     module_dict[key] = item.isoformat()
                 if isinstance(item, bytes):
                     module_dict[key] = base64.b64encode(item).decode("utf-8")
-                if isinstance(item, fields.Html):
+                if isinstance(item, fields.Html):                    
                     module_dict[key]=BeautifulSoup(item.encode('utf-8').decode('unicode_escape'), 'html.parser').get_text()
                 if isinstance(item, Markup):
                     decoded = str(item).encode('utf-8').decode('unicode_escape')
@@ -262,7 +262,7 @@ class AIMemory(models.Model):
                     clean_text = BeautifulSoup(item, 'html.parser').get_text()
                     # ~ module_dict[key] = str(clean_text.encode('utf-8'))
                     module_dict[key] = str(clean_text)
-
+                    
                     _logger.warning(f"{clean_text}=  {repr(item)}=")
 
             raw_documents.append(memory.create_document(text=json.dumps(module_dict), metadata=module_dict))
@@ -447,7 +447,7 @@ class AIMemory(models.Model):
     def cron(self):
         self.env['ai.memory'].search(
             [('last_run', '<', fields.Datetime.now() - relativedelta(days=self.nbr_days))]).run()
-
+    
     def log_message(self, body, is_error=False):
         if is_error:
             self.status = "error"
