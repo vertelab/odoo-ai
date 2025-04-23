@@ -10,6 +10,7 @@
       <field name="image_1920" type="base64" file="ai_agent/static/img/groq-ai-logo.png" />
     </record>
     <!-- Model -->
+    <!-- https://groq.com/pricing/ -->
     <record id="groq_product_attribute_value_distil-whisper-large-v3-en" model="product.attribute.value">
       <field name="name">distil-whisper-large-v3-en</field>
       <field name="licence">mit</field>
