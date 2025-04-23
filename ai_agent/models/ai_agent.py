@@ -56,7 +56,7 @@ class AIAgent(models.Model):
 
     ai_agent_data_ids = fields.One2many(comodel_name="ai.agent.data", inverse_name="agent_id")
     ai_agent_llm_id = fields.Many2one(comodel_name="ai.agent.llm", string="LLM", help="Choose Large Language Model",
-                                      domain="[('status','=','confirmed')]")
+                                      domain="[('status','=','confirmed'),('is_embedded', '=', False)]")
     ai_backstory = fields.Text(string="Backstory")
     ai_description = fields.Text()
     ai_goal = fields.Text(string="Goal")
