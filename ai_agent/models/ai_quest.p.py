@@ -828,7 +828,7 @@ class AIQuest(models.Model):
             messages = local_dict.get('response', {}).get('messages', [])
             result = self._get_last_ai_message(messages)
         else:
-            return
+            return None
 
         if not isinstance(result, list):
             result = [result]
