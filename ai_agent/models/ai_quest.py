@@ -524,10 +524,8 @@ class AIQuest(models.Model):
             if self._check_quest_error():
                 raise UserError(self._check_quest_error())
             vals = self._server_action_values(records=records)
-            print("vals", vals)
             res = self.run(**vals)
             self.log_message(f'server-action {res}')
-
 
     def _cron_values(self, **kwargs):
         return kwargs
@@ -741,7 +739,7 @@ class AIQuest(models.Model):
             messages = local_dict.get('response', {}).get('messages', [])
             result = self._get_last_ai_message(messages)
         else:
-            return None
+            return
 
         if not isinstance(result, list):
             result = [result]
