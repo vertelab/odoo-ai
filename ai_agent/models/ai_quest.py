@@ -739,7 +739,7 @@ class AIQuest(models.Model):
             messages = local_dict.get('response', {}).get('messages', [])
             result = self._get_last_ai_message(messages)
         else:
-            return
+            return None
 
         if not isinstance(result, list):
             result = [result]
@@ -779,12 +779,10 @@ class AIQuest(models.Model):
                 })
         for quest in self:
             if quest.server_action_id and quest.init_type == "server-action":
-                quest.server_action_id.write({
-                    "name": quest.name,
-                    "code": f"action = env.ref('{quest._get_eid()}').server_action(records)",
-                    "binding_view_types": "form,list",
-                    "binding_model_id": self.model_id.id if self.status == 'active' else None
-                })
+                quest.server_action_id.write(
+                    {'name': quest.name, 'code': f"action = env.ref('{quest._get_eid()}').server_action(records)",
+                     "binding_view_types": "form,list",
+                     'binding_model_id': self.model_id.id if self.status == 'active' else None})
             if quest.cron_id:
                 quest.cron_id.write({'name': quest.name, 'code': f"action = env.ref('{quest._get_eid()}').cron()"})
             if quest.channel_id:
