@@ -1,4 +1,5 @@
 import logging
+import math
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_community.document_loaders import TextLoader
 from langchain_community.vectorstores import FAISS
@@ -7,6 +8,7 @@ from langchain_openai import OpenAIEmbeddings
 from langchain_text_splitters.character import RecursiveCharacterTextSplitter
 from random import randint
 from urllib.parse import urljoin, urlparse
+
 from odoo import models, fields, api, _
 from odoo.tools.safe_eval import safe_eval
 from odoo.exceptions import UserError
@@ -19,11 +21,20 @@ class AIMemory(models.Model):
     vector_type = fields.Selection(selection_add=[("pg_vector", "Postgres Vector")],ondelete={'pg_vector': 'cascade'})
     ai_memory_rag_ids = fields.One2many(comodel_name="ai.memory.rag",inverse_name="ai_memory_id") 
 
-    def create_vector(self,raw_documents,memory):
-        documents, embeddings = super(AIMemory,self).create_vector(raw_documents,memory)
+    def create_vector(self,documents,memory):
+        split_documents, embeddings = super(AIMemory,self).create_vector(documents,memory)
         if self.vector_type == "pg_vector":
             self.setup_pg_vector()
-            self.store_in_pg_vector(documents,embeddings)
+            if memory.document_chunks != 0:
+                if len(split_documents) < memory.document_chunks:
+                    raise UserError(f"The chunks per session ({memory.document_chunks}) is less than the number of documents after they have been split ({len(split_documents)}), which is not allowed. If you are using a model, a tip is to not set the chunks per session to be bigger than the amount of records you have.")
+                runs = math.ceil(len(split_documents) / memory.document_chunks)
+                for run in range(runs):
+                    docs_to_embedd = split_documents[run * memory.document_chunks:(run + 1) * memory.document_chunks]
+                    self.store_in_pg_vector(docs_to_embedd,embeddings)
+            else:
+                self.store_in_pg_vector(split_documents,embeddings)
+            
             # if memory.memory_type == "model" and memory.model_id:
             #     self.pg_vector_create_column(documents, embeddings, memory)
             # else:

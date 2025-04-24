@@ -52,7 +52,7 @@
                             <field name="filter_domain" widget="domain" options="{'model': 'model_name'}" attrs="{'invisible': [('memory_type', '!=', 'model')]}" />
                             <field name="shell_cmd" attrs="{'invisible': [('memory_type', '!=', 'datastream')]}" />
                             <!-- #endif -->
-                            <field name="record_limit"/>
+                            <field name="document_chunks"/>
                         </group>
                         <group>
                             <field name="vector_type" />

@@ -1,23 +1,18 @@
-import datetime
-import tiktoken
-import pymupdf
-import time
 from bs4 import BeautifulSoup
-from dateutil.relativedelta import relativedelta
-from langchain_community.document_loaders import PyPDFLoader, TextLoader
-from langchain_community.vectorstores import FAISS
 from langchain_core.documents.base import Document
-from langchain_text_splitters.character import RecursiveCharacterTextSplitter
-from markupsafe import Markup
-from odoo import models, fields, api, _
-from odoo.exceptions import UserError, ValidationError
-from odoo.tools.safe_eval import safe_eval
-from random import randint
+from langchain_community.vectorstores import FAISS
 from typing import Generator
-from urllib.parse import urljoin, urlparse
+from markupsafe import Markup
+from langchain_community.document_loaders import PyPDFLoader
+from random import randint
+from langchain_text_splitters.character import RecursiveCharacterTextSplitter
+from dateutil.relativedelta import relativedelta
+from langchain_community.document_loaders import TextLoader
+from urllib.parse import urljoin
+from urllib.parse import urlparse
 import base64
+import datetime
 import faiss
-import fitz
 import io
 import json
 import logging
@@ -25,11 +20,21 @@ import markdownify
 import math
 import requests
 import subprocess
+import tiktoken
+import time
 import uuid
 
+# #if VERSION >= "16.0"
+import pymupdf
+# #elif VERSION <= "15.0"
+import fitz as pymupdf
+# #endif
+
+from odoo import models, fields, api, _
+from odoo.exceptions import UserError, ValidationError
+from odoo.tools.safe_eval import safe_eval
 
 _logger = logging.getLogger(__name__)
-
 
 class AIAgentMemory(models.Model):
     _name = 'ai.agent.memory'
@@ -125,23 +130,13 @@ class AIMemory(models.Model):
     url = fields.Char(string='Url', trim=True, )
     vector_type = fields.Selection(selection=[('faiss', 'FAISS'), ('st', 'Short Term')], string='Vector type',
                                    help="The type of vector database")
-    record_limit = fields.Integer(string="Record Limit", default=1)
+    document_chunks = fields.Integer(string="Chunks Per Session", default=0, help="This number will limit the amount of document chunks used in one embedding session. This can help with timeout issues. If zero, one session will be used.")
 
-
-    @api.constrains('record_limit')
-    def _check_record_limit(self):
+    @api.constrains('document_chunks')
+    def _check_document_chunks(self):
         for record in self:
-            if record.memory_type == "model":
-                domain = safe_eval(record.filter_domain) if record.filter_domain else []
-                if not record.model_name:
-                    raise UserError("You have not selected a model for the memory type")
-                domain_count = self.env[record.model_name].search_count(domain)
-                if record.record_limit < 1:
-                    raise ValidationError(_("The record limit can't be less than one."))
-                if record.record_limit > domain_count:
-                    raise ValidationError(_("The record limit can't be bigger than the amount of records."))
-
-
+            if record.document_chunks < 0:
+                raise ValidationError(_("The chuncks per session can't be less than zero."))
 
     @api.onchange('model_id')
     def _onchange_model_id(self):
@@ -155,24 +150,26 @@ class AIMemory(models.Model):
     # RAG
     # ------------------------------------------------------------
 
-    def rag_local_attatchemts(self):
-        for memory in self:
-            raw_documents = [self.create_document_from_file(attachment) for attachment in
-                             self.env["ir.attachment"].search(
-                                 [("res_model", "=", memory._name), ("res_id", "=", memory.id)])]
-            if raw_documents:
-                self.create_vector(raw_documents,memory=memory)
-            else:
-                raise UserError(_("No attachments to RAG"))
+    def rag_local_attachments(self,memory):
+        documents = []
+        attachments = self.env["ir.attachment"].search(
+                                [("res_model", "=", memory._name), ("res_id", "=", memory.id)])
+        for attachment in attachments:
+            documents.extend(self.create_documents_from_file(attachment))
 
-    def rag_attatchemts(self):
-        for memory in self:
+        if documents:
+            self.create_vector(documents=documents,memory=memory)
+        else:
+            raise UserError(_("No attachments to RAG"))
 
-            raw_documents = [self.create_document_from_file(attachment) for attachment in
-                             self.env["ir.attachment"].search(
-                                 [("res_model", "=", memory._name), ("res_id", "=", memory.id)])]
-            if raw_documents:
-                self.create_vector(raw_documents,memory=memory)
+    def rag_attachments(self,memory):
+        if memory.attachment_ids:
+            documents = []
+            for attachment in memory.attachment_ids:
+                documents.extend(self.create_documents_from_file(attachment))
+            
+            if documents:
+                self.create_vector(documents=documents,memory=memory)
             else:
                 raise UserError(_("No attachments to RAG"))
 
@@ -188,21 +185,6 @@ class AIMemory(models.Model):
                 break
             yield chunk
 
-    def rag_datastream(self, chunk: str):
-        return Document(id=uuid.uuid4(), page_content=f"{chunk}",
-                        metadata={"name": self.name, "type": "datastream"})
-
-        # ir_attachments = self.env["ir.attachment"].search(
-        #     [("res_model", "=", memory._name), ("res_id", "=", memory.id)])
-        #
-        # raw_documents = [self.create_document_from_file(attachment) for attachment in ir_attachments]
-        # if raw_documents:
-        #     self.create_vector(raw_documents,memory=memory)
-        # else:
-        #     raise UserError(_("No attachments to RAG"))
-
-
-
     def action_test_rag(self):
         action = {
             'name': 'Test Action',
@@ -214,8 +196,6 @@ class AIMemory(models.Model):
         }
         return action
 
-
-
     def text_splitter(self, documents):
         return RecursiveCharacterTextSplitter(
             chunk_size=self.split_chunk_size,  # chunk size (characters)
@@ -226,23 +206,28 @@ class AIMemory(models.Model):
     def create_document(self, text, metadata):
         return Document(id=uuid.uuid4(), page_content=text, metadata=metadata)
 
-    def create_document_from_file(self, attachment_id):
+    def create_documents_from_file(self, attachment_id):
         file = base64.b64decode(attachment_id.datas)
+        documents = []
         if attachment_id.name.split(".")[-1] == "pdf":
             pages = pymupdf.open(stream=file)
-            content = "\n".join([page.get_text() for page in pages])
+            _logger.error(f"{pages=}")
+            for page in pages:
+                metadata = pages.metadata
+                metadata.update({"name": attachment_id.name, "type": "pdf", "page_count": pages.page_count, "table_of_content": pages.get_toc()})
+                documents.append(self.create_document(text=f"{page.get_text()}",metadata=metadata))
         else:
             content = file.decode("utf-8")
-        return Document(id=uuid.uuid4(), page_content=f"{content}",
-                        metadata={"name": attachment_id.name, "type": "attachment"})
+            documents.append(self.create_document(text=f"{content}",metadata={"name": attachment_id.name, "type": "text"}))
+        return documents
 
     def setup_db_for_bs4(self,memory):
         if not memory.url:
             raise UserError(_(f"Missing url on memory ({self.name})"))
         all_pages = self.scrape_website(memory.url, memory.max_nbr_pages)
         memory.memory_markdown = base64.b64encode(all_pages)
-        raw_documents = [memory.create_document(text=all_pages, metadata={})]
-        memory.create_vector(raw_documents)
+        documents = [memory.create_document(text=all_pages, metadata={})]
+        memory.create_vector(documents=documents,memory=memory)
 
     def _model_memory_type_data(self, memory):
         model_fields = eval(memory.field_list)
@@ -252,9 +237,7 @@ class AIMemory(models.Model):
 
     def setup_db_for_model(self, memory):
         module_dicts = self._model_memory_type_data(memory=memory)
-        raw_documents = []
-        is_first = True
-        runs = 0
+        documents = []
         for module_dict in module_dicts:
             for key, item in module_dict.items():
                 if isinstance(item, fields.datetime) or isinstance(item, fields.date):
@@ -273,15 +256,8 @@ class AIMemory(models.Model):
 
                     _logger.warning(f"{clean_text}=  {repr(item)}=")
 
-            raw_documents.append(memory.create_document(text=json.dumps(module_dict), metadata=module_dict))
-        if len(raw_documents) != 0:
-            runs = math.ceil(len(raw_documents) / memory.record_limit)
-            for run in range(runs):
-                if is_first or memory.vector_type != "faiss":
-                    self.create_vector(raw_documents[run * memory.record_limit:(run + 1) * memory.record_limit], memory)
-                    is_first = False
-                elif self.memory_faiss:
-                    self.add_to_memory_faiss(raw_documents[run * memory.record_limit:(run + 1) * memory.record_limit])
+            documents.append(memory.create_document(text=json.dumps(module_dict), metadata=module_dict))
+        self.create_vector(documents=documents, memory=memory)
 
     def _compute_tokens(self, text):
         """Count tokens accurately using tiktoken for OpenAI models."""
@@ -327,19 +303,19 @@ class AIMemory(models.Model):
     # Create Vector Hook
     # ------------------------------------------------------------
 
-    def create_vector(self, raw_documents, memory):
-        documents = self.text_splitter(raw_documents)
+    def create_vector(self, documents, memory):
+        split_documents = self.text_splitter(documents)
         embeddings = self.ai_agent_llm_id.get_embedding()
         if not embeddings:
             raise UserError("No Embedding found")
         if self.vector_type == 'faiss':
 
-            input_tokens = self._compute_tokens(documents)
+            input_tokens = self._compute_tokens(split_documents)
 
             # Check current minute usage from session lines
             current_usage = self._get_current_minute_usage()
 
-            if current_usage + input_tokens > self.ai_agent_llm_id.tpm:
+            if self.ai_agent_llm_id.tpm != 0 and current_usage + input_tokens > self.ai_agent_llm_id.tpm:
                 message = f"TPM limit would be exceeded: {current_usage + input_tokens} > {self.ai_agent_llm_id.tpm}"
                 _logger.warning(message)
                 raise UserError(message)
@@ -353,20 +329,32 @@ class AIMemory(models.Model):
                 _logger.warning(
                     f"TPM threshold reached: {current_usage}/{self.ai_agent_llm_id.tpm} tokens used this minute")
                 time.sleep(self.ai_agent_llm_id.sleep_duration)  # Sleep for the configured duration (default 15 sec)
+            
+            if memory.document_chunks != 0:
+                if len(split_documents) < memory.document_chunks:
+                    raise UserError(f"The chunks per session ({memory.document_chunks}) is less than the number of documents after they have been split ({len(split_documents)}), which is not allowed. If you are using a model, a tip is to not set the chunks per session to be bigger than the amount of records you have.")
+                runs = math.ceil(len(split_documents) / memory.document_chunks)
+                self.memory_faiss = False
+                for run in range(runs):
+                    docs_to_embedd = split_documents[run * memory.document_chunks:(run + 1) * memory.document_chunks]
+                    if not memory.memory_faiss:
+                        db = FAISS.from_documents(docs_to_embedd, embeddings)
+                        self.memory_faiss = base64.b64encode(db.serialize_to_bytes())
+                    else:
+                        self.add_to_memory_faiss(docs_to_embedd)
+            else:
+                db = FAISS.from_documents(split_documents, embeddings)
+                self.memory_faiss = base64.b64encode(db.serialize_to_bytes())
 
-            db = FAISS.from_documents(documents, embeddings)
-            self.memory_faiss = base64.b64encode(db.serialize_to_bytes())
-        return documents, embeddings
+        return split_documents, embeddings
 
     # ------------------------------------------------------------
     # FAISS
     # ------------------------------------------------------------
 
-    def add_to_memory_faiss(self,raw_documents):
-        documents = self.text_splitter(raw_documents)
+    def add_to_memory_faiss(self,split_documents):
         db = self.load_faiss()
-        uuids = [str(uuid.uuid4()) for _ in range(len(documents))]
-        db.add_documents(documents=documents, ids=uuids)
+        db.add_documents(documents=split_documents)
         self.memory_faiss = base64.b64encode(db.serialize_to_bytes())
 
     def load_faiss(self):
@@ -426,8 +414,10 @@ class AIMemory(models.Model):
     # ------------------------------------------------------------
 
     def run(self):
-        self.real_run()
-        #self.with_delay().real_run()
+        if self.debug:
+            self.real_run()
+        else:
+            self.with_delay().real_run()
 
     def real_run(self):
         for memory in self:
@@ -440,17 +430,18 @@ class AIMemory(models.Model):
             elif memory.memory_type == 'model':
                 memory.setup_db_for_model(memory)
             elif memory.memory_type == 'attachments':
-                memory.rag_attatchemts()
+                memory.rag_attachments(memory)
             elif memory.memory_type == 'local_attachment':
-                memory.rag_local_attatchemts()
+                memory.rag_local_attachments(memory)
             elif memory.memory_type == 'datastream':
-                raw_documents = []
-                for no_chunks, chunk in enumerate(self.read_stream_chunked(self.shell_cmd, self.split_chunk_size)):
-                    raw_documents.append(Document(id=str(uuid.uuid4()), page_content=chunk,
-                        metadata={"name": self.name, "type": "datastream", 'chunk_number': no_chunks + 1}))
-                    if no_chunks >= self.record_limit:
-                        break
-                memory.create_vector(raw_documents,memory)
+                memory.file_stream(memory)
+
+    def file_stream(self,memory):
+        documents = []
+        for index, chunk in enumerate(self.read_stream_chunked(self.shell_cmd, self.split_chunk_size)):
+            documents.append(self.create_document(text=chunk,
+                metadata={"name": self.name, "type": "datastream", 'chunk_number': index + 1}))
+        memory.create_vector(documents=documents,memory=memory)
 
     def cron(self):
         self.env['ai.memory'].search(
