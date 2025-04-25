@@ -66,6 +66,11 @@ class AIAgentLLM(models.Model):
     azure_endpoint = fields.Char(string="Azure Endpoint")
     api_version = fields.Char(string="API version")
 
+    tpm = fields.Integer(string="Token Per Minute", related="model_id.tpm")
+    rpm = fields.Integer(string="Request Per Minute", related="model_id.rpm")
+    threshold = fields.Float(string="Threshold", default=80)
+    sleep_duration = fields.Integer(string="Sleep For", default=15)
+
     def action_get_quests(self):
         action = {
             'name': 'AI Quests',
@@ -166,7 +171,7 @@ class AIAgentLLM(models.Model):
             api_key = self.ai_api_key
             if not api_key:
                 api_key = tools.config.get(self.product_tmpl_id.fallback_api_key_name, False)
-                _logger.error(f"{"API Key Found" if api_key else "No API Key found"}")
+                _logger.error(f"{'API Key Found' if api_key else 'No API Key found'}")
             if self.product_tmpl_id.llm_type == "ChatOllama":
                 return LLM(verbose=verbose, temperature=temperature, callbacks=callbacks, base_url=self.endpoint, disable_streaming=True,
                        model=self.model_id.name, **kwarg)
@@ -199,6 +204,7 @@ class AIAgentLLM(models.Model):
                 return LLM(model=self.model_id.name, base_url=self.endpoint)
             elif api_key:
                 return LLM(api_key=api_key, model=self.model_id.name)
+            return None
 
         except ImportError as e:
             _logger.error(f"Error importing {self.product_tmpl_id.llm_library}: {e}")
@@ -236,10 +242,6 @@ class AIAgentLLM(models.Model):
             self.log_message(body=error_msg, is_error=True)
             raise ValueError(error_msg)
         try:
-            # if self.product_tmpl_id.llm_type == "ChatOllama":
-            #     messages = [config, HumanMessage(content=input)]
-            #     response = self.get_llm().invoke(messages)
-            # else:
             response = self.get_llm().invoke(input, config)
         except HTTPStatusError as e:
             if e.response.status_code == 429:
@@ -250,7 +252,6 @@ class AIAgentLLM(models.Model):
                 _logger.warning(f"Other HTTP-error... {e=}")
                 self.log_message(body=f"Other HTTP-error...{e=}\n{input=} {config=} {session=} {quest=} {agent=}", is_error=True)            
                 raise  # For other HTTP errors, don't retry
-            return None
         except Exception as e:
             self.log_message(body=f"LLM {self.name} {e}\n\n{input=} {config=} {session=} {quest=} {agent=}\n{traceback.format_exc()}", is_error=True)
             _logger.error(f"LLM {self.name} {e}\n{traceback.format_exc()}")
@@ -322,8 +323,11 @@ class AIAgentLLM(models.Model):
 
     def get_agent_executor(self, prompt, tools, temperature=1.0, verbose=False, callbacks=None):
         return AgentExecutor(
-            agent=create_openai_tools_agent(eval(self.get_llm(temperature=temperature, verbose=verbose)), tools,
-                                            prompt),
+            agent=create_openai_tools_agent(
+                eval(
+                    self.get_llm(temperature=temperature, verbose=verbose)
+                ), tools, prompt
+            ),
             tools=tools,
             verbose=verbose,
             callbacks=callbacks,

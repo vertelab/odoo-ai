@@ -18,17 +18,17 @@ class EmbeddingMixin(models.AbstractModel):
     _name = "llm.embedding.mixin"
     _description = "Vector Embedding Mixin"
 
-    embedding = PgVector(
-        string="Embedding",
-        help="Vector embedding for similarity search",
-    )
+    # embedding = PgVector(
+    #     string="Embedding",
+    #     help="Vector embedding for similarity search",
+    # )
 
-    embedding_model_id = fields.Many2one(
-        "llm.model",
-        string="Embedding Model",
-        domain="[('model_use', '=', 'embedding')]",
-        help="The model used to create embeddings",
-    )
+    # embedding_model_id = fields.Many2one(
+    #     "llm.model",
+    #     string="Embedding Model",
+    #     domain="[('model_use', '=', 'embedding')]",
+    #     help="The model used to create embeddings",
+    # )
 
     @api.model
     def search_similar(
