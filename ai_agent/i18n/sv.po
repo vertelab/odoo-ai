@@ -52,7 +52,7 @@ msgid ""
 "<span class=\"oe_inline\" invisible=\"init_type not in "
 "['chat','channel']\">messages</span>"
 msgstr ""
-"<span class=\"oe_inline\" invisible=\"init_type finns inte i "
+"<span class=\"oe_inline\" invisible=\"init_type not in "
 "['chat','channel']\">meddelanden</span>"
 
 #. module: ai_agent
