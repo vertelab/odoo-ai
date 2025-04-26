@@ -54,6 +54,18 @@ class AIAgentMemory(models.Model):
     def run(self):
         self.ai_memory_id.run()
 
+    def get_memory(self,**kwarg):
+        rag = ""
+        for m in self:
+            rags=[]
+            for q in ['question', 'message', 'latest_message', 'topic']:
+                if q in kwarg:
+                    rags.extend(m.ai_memory_id._get_memory(kwarg[q], m.nbr_rags))
+            rag += "Memory: {m.name} instructions: {m.instructions}\n" + "\n".join(list(set(rags))[:m.nbr_rags])
+        return rag
+
+
+
 
 class AIquestMemory(models.Model):
     _name = 'ai.quest.memory'
@@ -348,16 +360,6 @@ class AIMemory(models.Model):
     # Get Memory Hook
     # ------------------------------------------------------------
                 
-    def get_memory(self,**kwarg):
-        rag = ""
-        for m in self:
-            rags=[]
-            for q in ['question', 'message', 'latest_message', 'topic']:
-                if q in kwarg:
-                    rags.extend(m._get_memory(kwarg[q], m.nbr_rags))
-            rag += "Memory: {m.name} instructions: {m.instructions}\n" + "\n".join(list(set(rags))[:m.nbr_rags])
-        return rag
-
     def _get_memory(self, question, k):
         rags = []
         if ai_quest_memory_id.ai_memory_id.vector_type == "faiss":
