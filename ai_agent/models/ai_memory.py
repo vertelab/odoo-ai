@@ -359,17 +359,16 @@ class AIMemory(models.Model):
     # ------------------------------------------------------------
     # Get Memory Hook
     # ------------------------------------------------------------
-                
+
     def _get_memory(self, question, k):
         rags = []
-        if ai_quest_memory_id.ai_memory_id.vector_type == "faiss":
-            ai_memory_id = ai_quest_memory_id.ai_memory_id
-            db = ai_memory_id.load_faiss()
-            if db:
-                docs = db.similarity_search(question, k=k)
-                for doc in docs:
-                    if doc and doc.page_content:
-                       rags.append(doc.page_content)
+        for m in self:
+            if m.vector_type == "faiss":
+                db = m.load_faiss()
+                if db:
+                    for doc in db.similarity_search(question, k=k):
+                        if doc and doc.page_content:
+                           rags.append(doc.page_content)
         return rags
 
 
