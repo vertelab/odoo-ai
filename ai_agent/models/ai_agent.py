@@ -647,6 +647,7 @@ class AIAgent(models.Model):
                 - {quest.description}
                 
                 Knowledge :
+                    {self.extra_context(quest=quest)}                
                     {self.agent_extra_context(quest=quest, record=kwargs.get('record'))}
                 """
             )
