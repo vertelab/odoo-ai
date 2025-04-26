@@ -637,7 +637,7 @@ class AIAgent(models.Model):
                 Role: {self.ai_role}
                 Goal: {self.ai_goal}
                 Backstory: {self.ai_backstory}
-                Memory: {self._get_memory(latest_message)} {self._get_memory(topic)}
+                {self.ai_memory_ids.get_memory(latest_message=latest_message,topic=topic)}
 
                 Instructions:
                 - Provide thorough, complete responses
@@ -704,19 +704,6 @@ class AIAgent(models.Model):
                 }
 
         return agent_node
-
-    def _get_memory(self, question, k=3, **kwarg):
-        rags = []
-        for ai_quest_memory_id in self.ai_memory_ids:
-            if ai_quest_memory_id.ai_memory_id.vector_type == "faiss":
-                ai_memory_id = ai_quest_memory_id.ai_memory_id
-                db = ai_memory_id.load_faiss()
-                if db:
-                    docs = db.similarity_search(question, k=k)
-                    for doc in docs:
-                        if doc and doc.page_content:
-                           rags.append(doc.page_content)
-        return "\n".join(rags)
 
     def _get_tools(self, state=None):
         """Get the available tools for this agent."""
