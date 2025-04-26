@@ -65,7 +65,7 @@ class AIAgentMemory(models.Model):
             for q in ['question', 'message', 'latest_message', 'topic']:
                 if q in kwarg:
                     rags.extend(m.ai_memory_id._get_memory(kwarg[q], m.ai_memory_id.nbr_rags))
-            rag += f"Memory: {m.name} instructions: {m.instruction}\n" + "\n".join(list(set(rags))[:m.ai_memory_id.nbr_rags])
+            rag += f"Memory: {m.ai_memory_id.name} instructions: {m.ai_memory_id.instruction}\n" + "\n".join(list(set(rags))[:m.ai_memory_id.nbr_rags])
         return rag
 
 
