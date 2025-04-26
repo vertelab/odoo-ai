@@ -151,7 +151,7 @@ class AIAgent(models.Model):
         if quest.use_company_info:
             res['company_info'] = f'Company information: {self.env.user.company_id.company_mission=} {self.env.user.company_id.company_values=}'
         if quest.use_personal_info:
-            res['user_info'] = f'User information: {self.env.user.name=} {self.env.user.function=} {self.env.user.city=}'
+            res['user_info'] = f'User information: {self.env.user.name=} {self.env.user.function=} {self.env.user.city=} {self.env.user.comment}'
         if quest.use_time_context:
             now = datetime.now()
             res['time_context'] = f'Current date {now.strftime("%Y-%m-%d")} Current time {now.strftime("%H:%M:%S")} Week Number {now.isocalendar()[1]}\n'
