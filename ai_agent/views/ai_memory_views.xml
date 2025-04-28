@@ -43,6 +43,7 @@
                             <field name="filter_domain" widget="domain" options="{'model': 'model_name'}" invisible="memory_type != 'model'" />
                             <field name="shell_cmd" invisible="memory_type != 'datastream'" />
                             <field name="document_chunks"/>
+                            <field name="company_id" groups="base.group_multi_company" />
                         </group>
                         <group>
                             <field name="vector_type" />
@@ -96,6 +97,7 @@
                 <field name="memory_type" />
                 <field name="last_run" />
                 <field name="is_favorite" />
+                <field name="company_id" groups="base.group_multi_company" />
             </tree>
         </field>
     </record>
@@ -109,12 +111,15 @@
                 <field name="name" />
                 <field name="vector_type" />
                 <field name="memory_type" />
+                <field name="company_id" />
                 <field name="tag_ids" widget="many2many_tags" />
                 <filter string="Favorites" name="favorites" domain="[('is_favorite', '=', True)]" />
                 <filter string="Debug Mode" name="debug" domain="[('debug', '=', True)]" />
+                <filter string="Global Company" name="company" domain="[('company_id', '=', False)]" />
                 <group expand="0" string="Group By">
                     <filter string="AI Type" name="group_by_vector_type" context="{'group_by': 'vector_type'}" />
                     <filter string="Memory Type" name="group_by_memory_type" context="{'group_by': 'memory_type'}" />
+                    <filter string="Company" name="group_by_company_id" context="{'group_by': 'company_id'}" />
                 </group>
             </search>
         </field>
@@ -163,6 +168,7 @@
                                 <div>
                                     <field name="memory_type" />
                                     <field name="url" />
+                                    <field name="company_id" groups="base.group_multi_company" />
                                 </div>
                                 <div>
                                     Last Run:
