@@ -43,6 +43,8 @@ class AIMemory(models.Model):
 
     def create_text_embeddings(self,documents,embeddings):
         text_embeddings = [embeddings.embed_query(document.page_content) for document in documents]
+        if not text_embeddings:
+            raise UserError("Faild to get embeddings!")
         return text_embeddings
 
     def store_in_pg_vector(self,documents,embeddings):

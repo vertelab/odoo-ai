@@ -283,6 +283,8 @@ class AIAgentLLM(models.Model):
         else:
             try:
                 response = self.invoke("What is 1+1, answer with a single digit")
+            except ModuleNotFoundError as e:
+                raise UserError(f"{e}")
             except Exception as e:
                 _logger.error(f"{e=}")
                 session.add_message(f"Could not confirm llm: {str(e)}\n{traceback.format_exc()}")
@@ -303,6 +305,8 @@ class AIAgentLLM(models.Model):
     def test_embedd(self,session=False):
         try:
             self.get_embedding().embed_query("test")
+        except ModuleNotFoundError as e:
+            raise UserError(f"{e}")
         except KeyError as e:
             _logger.error(f"{e=}")
             session.add_message(f"Could not embedd: {str(e)}\n{traceback.format_exc()}")
@@ -313,6 +317,8 @@ class AIAgentLLM(models.Model):
             return False
         except Exception as e:
             _logger.error(f"{e=}")
+            session.add_message(f"Could not embedd: {str(e)}\n{traceback.format_exc()}")
+            self.message_post(body=_(f"Could not embedd: {str(e)}"), message_type="notification")
             self.status = "error"
             if session:
                 session.status = 'done'

@@ -16,6 +16,8 @@
             <field name="name">deepseek-r1:32b</field>
             <field name="attribute_id" ref="ai_agent.product_attribute_model" />
             <field name="has_endpoint" eval="True"/>
+            <field name="tpm">2000000</field>
+            <field name="rpm">10000</field>
         </record>
 
         <record id="ollama_product_attribute_value_nomic-embed-text" model="product.attribute.value">
@@ -23,6 +25,8 @@
             <field name="attribute_id" ref="ai_agent.product_attribute_model" />
             <field name="is_embedded" eval="True"/>
             <field name="has_endpoint" eval="True"/>
+            <field name="tpm">2000000</field>
+            <field name="rpm">10000</field>
         </record>
 
         <record id="ollama_product_attribute_value_snowflake-arctic-embed" model="product.attribute.value">
@@ -30,6 +34,8 @@
             <field name="attribute_id" ref="ai_agent.product_attribute_model" />
             <field name="is_embedded" eval="True"/>
             <field name="has_endpoint" eval="True"/>
+            <field name="tpm">2000000</field>
+            <field name="rpm">10000</field>
         </record>
 
         <record id="ollama_product_template_attribute_line_model" model="product.template.attribute.line">
