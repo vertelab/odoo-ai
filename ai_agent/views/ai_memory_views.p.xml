@@ -52,7 +52,7 @@
                             <field name="filter_domain" widget="domain" options="{'model': 'model_name'}" attrs="{'invisible': [('memory_type', '!=', 'model')]}" />
                             <field name="shell_cmd" attrs="{'invisible': [('memory_type', '!=', 'datastream')]}" />
                             <!-- #endif -->
-                            <field name="record_limit"/>
+                            <field name="document_chunks"/>
                         </group>
                         <group>
                             <field name="vector_type" />
@@ -63,6 +63,7 @@
                             <field name="split_chunk_size" />
                             <field name="split_chunk_overlap" />
                             <field name="last_run" />
+                            <field name="nbr_rags" />
                             <field name="nbr_days" />
                             <field name="debug" />
                             <field name="object_id" />
@@ -96,6 +97,10 @@
                             <field name="field_list" nolabel="1" />
                         </page>
                         <!-- #endif -->
+                        <page name="instruction" string="Instruction" >
+                            <field name="instruction" nolabel="1" />
+                        </page>
+
                     </notebook>
                 </sheet>
                 <!-- #if VERSION >= "18.0" -->
