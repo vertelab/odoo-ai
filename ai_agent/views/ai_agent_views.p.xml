@@ -19,6 +19,7 @@
                     <field name="status" widget="badge" decoration-info="status == 'draft'" decoration-success="status == 'active'" decoration-muted="status == 'done'" decoration-danger="status == 'error'" />
                     <field name="is_favorite" widget="boolean_favorite" optional="hide" />
                     <field name="debug" optional="hide" />
+                     <field name="company_id" groups="base.group_multi_company" />
                 </list>
                 <!-- #elif VERSION <= "17.0" -->
                 <tree string="AI Agents" decoration-info="status=='draft'" decoration-success="status=='active'" decoration-muted="status=='done'" decoration-danger="status=='error'" multi_edit="1">
@@ -35,6 +36,7 @@
                     <field name="status" widget="badge" decoration-info="status == 'draft'" decoration-success="status == 'active'" decoration-muted="status == 'done'" decoration-danger="status == 'error'" />
                     <field name="is_favorite" widget="boolean_favorite" optional="hide" />
                     <field name="debug" optional="hide" />
+                    <field name="company_id" groups="base.group_multi_company" />
                 </tree>
                 <!-- #endif -->
             </field>
@@ -52,14 +54,17 @@
                     <field name="ai_description" />
                     <field name="ai_goal" />
                     <field name="ai_backstory" />
+                     <field name="company_id" groups="base.group_multi_company" />
                     <!-- #if VERSION >= "16.0" -->
 					<field name="tag_ids" />
 					<!-- #endif -->
                     <field name="object_id" />
                     <filter string="Favorite" name="favorite" domain="[('is_favorite', '=', True)]" />
+                    <filter string="Global Company" name="company" domain="[('company_id', '=', False)]" />
                     <group expand="0" string="Group By">
                         <filter string="AI Agent LLM" name="group_by_llm" context="{'group_by': 'ai_agent_llm_id'}" />
                         <filter string="AI Type" name="group_by_type" context="{'group_by': 'ai_type'}" />
+                        <filter string="Company" name="group_by_company_id" context="{'group_by': 'company_id'}" />
                     </group>
                 </search>
             </field>
@@ -102,6 +107,7 @@
                                 <!-- #if VERSION == 16.0 -->
                                 <field name="tag_ids" widget="many2many_tags" />
                                 <!-- #endif -->
+                                <field name="company_id" groups="base.group_multi_company" />
                             </group>
                             <group>
                                 <!-- #if VERSION >= "17.0" -->
@@ -260,6 +266,7 @@
                                                 <t t-if="record.last_run.value != False">
                                                     <span class="fa fa-clock-o me-2" title="Dates" />
                                                     <field name="last_run" />
+                                                    <field name="company_id" groups="base.group_multi_company" />
                                                 </t>
                                             </div>
                                         </div>
