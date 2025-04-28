@@ -58,6 +58,18 @@ class AIAgentMemory(models.Model):
     def run(self):
         self.ai_memory_id.run()
 
+    def get_memory(self,**kwarg):
+        rag = ""
+        for m in self:
+            rags=[]
+            for q in ['question', 'message', 'latest_message', 'topic']:
+                if q in kwarg:
+                    rags.extend(m.ai_memory_id._get_memory(kwarg[q], m.ai_memory_id.nbr_rags))
+            rag += f"Memory: {m.ai_memory_id.name} instructions: {m.ai_memory_id.instruction}\n" + "\n".join(list(set(rags))[:m.ai_memory_id.nbr_rags])
+        return rag
+
+
+
 
 class AIquestMemory(models.Model):
     _name = 'ai.quest.memory'
@@ -99,7 +111,8 @@ class AIMemory(models.Model):
     debug = fields.Boolean(string='Debug')
     field_list = fields.Text(string='Field List', default="['name']", readonly=False)
     filter_domain = fields.Char(string='Record selection')
-    image_128 = fields.Image("Image", max_width=128, max_height=128)
+    image_128 = fields.Image(string="Image", max_width=128, max_height=128)
+    instruction = fields.Text(string="Instruction",help="Instructions how the LLM should use this memory")
     is_favorite = fields.Boolean()
     last_run = fields.Datetime()
     max_nbr_pages = fields.Integer(string="Max Number of Pages")
@@ -113,6 +126,7 @@ class AIMemory(models.Model):
     model_name = fields.Char(related='model_id.model', string='Model Name', readonly=True, store=True)
     name = fields.Char(required=True)
     nbr_days = fields.Integer(string='Number days this memory will live')
+    nbr_rags = fields.Integer(string="Number rags",default=3,help='Number rags this memory will add to LLM context')
     object_id = fields.Reference(string='Object', selection=lambda m: [(model.model, model.name) for model in
                                                                        m.env['ir.model'].sudo().search([])])
     quest_count = fields.Integer(compute="compute_quest_count")
@@ -351,6 +365,22 @@ class AIMemory(models.Model):
                 raise UserError(_("Faild to embedd"))
 
         return split_documents, embeddings
+        
+    # ------------------------------------------------------------
+    # Get Memory Hook
+    # ------------------------------------------------------------
+
+    def _get_memory(self, question, k):
+        rags = []
+        for m in self:
+            if m.vector_type == "faiss":
+                db = m.load_faiss()
+                if db:
+                    for doc in db.similarity_search(question, k=k):
+                        if doc and doc.page_content:
+                           rags.append(doc.page_content)
+        return rags
+
 
     # ------------------------------------------------------------
     # FAISS
