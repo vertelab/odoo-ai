@@ -339,12 +339,16 @@ class AIMemory(models.Model):
                     docs_to_embedd = split_documents[run * memory.document_chunks:(run + 1) * memory.document_chunks]
                     if not memory.memory_faiss:
                         db = FAISS.from_documents(docs_to_embedd, embeddings)
+                      
                         self.memory_faiss = base64.b64encode(db.serialize_to_bytes())
                     else:
                         self.add_to_memory_faiss(docs_to_embedd)
             else:
                 db = FAISS.from_documents(split_documents, embeddings)
                 self.memory_faiss = base64.b64encode(db.serialize_to_bytes())
+
+            if not self.memory_faiss:
+                raise UserError(_("Faild to embedd"))
 
         return split_documents, embeddings
 
