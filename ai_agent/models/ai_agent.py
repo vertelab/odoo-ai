@@ -50,7 +50,7 @@ class AIAgent(models.Model):
 
     ai_agent_data_ids = fields.One2many(comodel_name="ai.agent.data", inverse_name="agent_id")
     ai_agent_llm_id = fields.Many2one(comodel_name="ai.agent.llm", string="LLM", help="Choose Large Language Model",
-                                      domain="[('status','=','confirmed')]")
+                                      domain="[('status','=','confirmed'),('is_embedded', '=', False)]")
     ai_backstory = fields.Text(string="Backstory")
     ai_description = fields.Text()
     ai_goal = fields.Text(string="Goal")
@@ -151,7 +151,7 @@ class AIAgent(models.Model):
         if quest.use_company_info:
             res['company_info'] = f'Company information: {self.env.user.company_id.company_mission=} {self.env.user.company_id.company_values=}'
         if quest.use_personal_info:
-            res['user_info'] = f'User information: {self.env.user.name=} {self.env.user.function=} {self.env.user.city=} {self.env.user.comment}'
+            res['user_info'] = f'User information: {self.env.user.name=} {self.env.user.function=} {self.env.user.city=}'
         if quest.use_time_context:
             now = datetime.now()
             res['time_context'] = f'Current date {now.strftime("%Y-%m-%d")} Current time {now.strftime("%H:%M:%S")} Week Number {now.isocalendar()[1]}\n'
@@ -637,7 +637,7 @@ class AIAgent(models.Model):
                 Role: {self.ai_role}
                 Goal: {self.ai_goal}
                 Backstory: {self.ai_backstory}
-                {self.ai_memory_ids.get_memory(latest_message=latest_message,topic=topic)}
+                Memory: {self._get_memory(latest_message)} {self._get_memory(topic)}
 
                 Instructions:
                 - Provide thorough, complete responses
@@ -647,7 +647,6 @@ class AIAgent(models.Model):
                 - {quest.description}
                 
                 Knowledge :
-                    {self.extra_context(quest=quest)}                
                     {self.agent_extra_context(quest=quest, record=kwargs.get('record'))}
                 """
             )
@@ -705,6 +704,19 @@ class AIAgent(models.Model):
                 }
 
         return agent_node
+
+    def _get_memory(self, question, k=3, **kwarg):
+        rags = []
+        for ai_quest_memory_id in self.ai_memory_ids:
+            if ai_quest_memory_id.ai_memory_id.vector_type == "faiss":
+                ai_memory_id = ai_quest_memory_id.ai_memory_id
+                db = ai_memory_id.load_faiss()
+                if db:
+                    docs = db.similarity_search(question, k=k)
+                    for doc in docs:
+                        if doc and doc.page_content:
+                           rags.append(doc.page_content)
+        return "\n".join(rags)
 
     def _get_tools(self, state=None):
         """Get the available tools for this agent."""
