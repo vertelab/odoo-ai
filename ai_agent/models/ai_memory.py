@@ -104,6 +104,7 @@ class AIMemory(models.Model):
     attachment_ids = fields.Many2many(comodel_name="ir.attachment")
     base_image_128 = fields.Image("Base Image", max_width=128, max_height=128, compute='_compute_base_image_128')
     color = fields.Integer(default=lambda self: randint(1, 11))
+    company_id = fields.Many2one(comodel_name='res.company',string="Company",help="") # domain|context|ondelete="'set null', 'restrict', 'cascade'"|auto_join|delegate
     debug = fields.Boolean(string='Debug')
     field_list = fields.Text(string='Field List', default="['name']", readonly=False)
     filter_domain = fields.Char(string='Record selection')
@@ -346,12 +347,16 @@ class AIMemory(models.Model):
                     docs_to_embedd = split_documents[run * memory.document_chunks:(run + 1) * memory.document_chunks]
                     if not memory.memory_faiss:
                         db = FAISS.from_documents(docs_to_embedd, embeddings)
+                      
                         self.memory_faiss = base64.b64encode(db.serialize_to_bytes())
                     else:
                         self.add_to_memory_faiss(docs_to_embedd)
             else:
                 db = FAISS.from_documents(split_documents, embeddings)
                 self.memory_faiss = base64.b64encode(db.serialize_to_bytes())
+
+            if not self.memory_faiss:
+                raise UserError(_("Faild to embedd"))
 
         return split_documents, embeddings
         
@@ -468,7 +473,7 @@ class AIMemory(models.Model):
 
     def cron(self):
         self.env['ai.memory'].search(
-            [('last_run', '<', fields.Datetime.now() - relativedelta(days=self.nbr_days))]).run()
+            ['&',('nbr_days','>',0),('last_run', '<', fields.Datetime.now() - relativedelta(days=self.nbr_days))]).run()
     
     def log_message(self, body, is_error=False):
         if is_error:

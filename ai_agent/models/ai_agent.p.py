@@ -76,6 +76,7 @@ class AIAgent(models.Model):
     base_image_128 = fields.Image("Base Image", max_width=128, max_height=128,
                                   compute='_compute_base_image_128')
     color = fields.Integer(default=lambda self: randint(1, 11))
+    company_id = fields.Many2one(comodel_name='res.company',string="Company",help="") # domain|context|ondelete="'set null', 'restrict', 'cascade'"|auto_join|delegate
     debug = fields.Boolean(string='Debug')
     image_128 = fields.Image("Image", max_width=128, max_height=128)
     is_favorite = fields.Boolean()

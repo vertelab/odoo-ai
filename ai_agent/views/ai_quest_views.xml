@@ -9,7 +9,7 @@
                     <field name="name" />
                     <field name="ai_type" />
                     <field name="status" />
-                    <field name="company_id" />
+                    <field name="company_id" groups="base.group_multi_company" />
                 </tree>
             </field>
         </record>
@@ -22,17 +22,20 @@
                     <field name="name" />
                     <field name="description" />
                     <field name="sub_description" />
+                     <field name="company_id" groups="base.group_multi_company" />
                     <filter string="Draft" name="draft" domain="[('status', '=', 'draft')]" />
                     <filter string="Active" name="active" domain="[('status', '=', 'active')]" />
                     <filter string="Done" name="done" domain="[('status', '=', 'done')]" />
                     <filter string="Error" name="done" domain="[('status', '=', 'error')]" />
                     <filter string="Favorite" name="favorite" domain="[('is_favorite', '=', True)]" />
                     <filter string="My Quests" name="my_quest" domain="[('user_id', '=', uid)]" help="My Quests" />
+                    <filter string="Global Company" name="company" domain="[('company_id', '=', False)]" />
                     <group expand="0" string="Group By">
                         <filter string="Status" name="group_by_status" context="{'group_by': 'status'}" />
                         <filter string="AI Type" name="group_by_ai_type" context="{'group_by': 'ai_type'}" />
                         <filter string="Owner" name="group_by_user" context="{'group_by': 'user_id'}" />
                         <filter string="Customer" name="group_by_partner" context="{'group_by': 'partner_id'}" />
+                         <filter string="Company" name="group_by_company_id" context="{'group_by': 'company_id'}" />
                     </group>
                 </search>
             </field>
@@ -81,7 +84,7 @@
                                 <field name="ai_type" />
                                 <field name="user_id" widget="many2one_avatar_user" />
                                 <field name="partner_id" />
-                                <field name="company_id" />
+                                <field name="company_id" groups="base.group_multi_company" />
                             </group>
                             <group>
                                 <field name="init_type" />
