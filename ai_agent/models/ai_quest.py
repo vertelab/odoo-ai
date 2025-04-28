@@ -778,7 +778,7 @@ class AIQuest(models.Model):
             messages = local_dict.get('response', {}).get('messages', [])
             result = self._get_last_ai_message(messages)
         else:
-            return
+            return None
 
         if not isinstance(result, list):
             result = [result]
@@ -1022,7 +1022,8 @@ class AIQuest(models.Model):
                     return {
                         "next": first_worker,
                         'session': session,
-                        'messages': messages
+                        'messages': messages,
+                        'cycle_count': state['cycle_count']
                     }
 
                 # Prepare prompt for the supervisor
@@ -1096,7 +1097,8 @@ class AIQuest(models.Model):
                 return {
                     "next": decision,
                     'session': session,
-                    'messages': state.get('messages')
+                    'messages': state.get('messages'),
+                    'cycle_count': state['cycle_count']
                 }
 
             except Exception as e:
@@ -1374,3 +1376,4 @@ class AgentState(TypedDict):
     current_agent: str
     sequence_position: int
     last_position: int
+    cycle_count: int
