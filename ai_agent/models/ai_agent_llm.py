@@ -154,6 +154,19 @@ class AIAgentLLM(models.Model):
         self.message_post(body=f"{body} | {self.last_run}", message_type="notification")
 
     def get_llm(self, verbose=False, temperature=0.7, callbacks=None, **kwarg):
+        # Apply RPM limiting before getting the LLM
+        try:
+            # Check rate limits
+            can_proceed, sleep_time = self.check_rate_limits()
+
+            # Apply sleep if needed
+            if sleep_time > 0:
+                _logger.info(f"Rate limiting: Sleeping for {sleep_time}s before using {self.name}")
+                time.sleep(sleep_time)
+        except UserError as e:
+            # Re-raise the rate limit error
+            raise
+
         try:
             module = importlib.import_module(self.product_tmpl_id.llm_library)
             LLM = getattr(module, self.product_tmpl_id.llm_type)
