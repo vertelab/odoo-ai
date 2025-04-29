@@ -120,15 +120,3 @@ class AIQuestSessionMessage(models.Model):
     message_content = fields.Text()
     message_raw = fields.Text()
     
-    @api.model
-    def save_messages(self, session, messages):
-        if isinstance(message, AIMessage):
-            messages=[messages]
-        for seq, message in enumerate(messages):
-            self.create = {
-                "sequence": seq,
-                "ai_quest_session_id": session.id,
-                "message_type": type(message).__name__,
-                "message_content": message.content,
-                "message_raw": f"{message}",
-            }
