@@ -762,7 +762,6 @@ class AIQuest(models.Model):
             return None
         session = local_dict.get('session', eval_context['session'])
 
-
         result = None
         if local_dict.get('result'):
             messages = local_dict.get('result', {}).get('messages', [])
@@ -773,7 +772,6 @@ class AIQuest(models.Model):
 
         # Record token usage from actual response metadata
         if result and hasattr(result, 'response_metadata') and result.response_metadata:
-            print("-----i got here")
             metadata = result.response_metadata
             if 'token_usage' in metadata and metadata['token_usage']:
                 token_usage = metadata['token_usage']
@@ -789,18 +787,12 @@ class AIQuest(models.Model):
 
                     llm = agent_line.ai_agent_id.ai_agent_llm_id
 
-                    print("llm.model_id.name in model_name", llm.model_id)
-                    print("llm.model_id.name in model_name", model_name)
-                    print("llm.model_id.name in model_name", llm.model_id.name in model_name)
-
                     # Check if this LLM matches the model used
                     if (model_name and llm.model_id and llm.model_id.name in model_name) or not model_name:
                         # Record the actual token usage
                         llm.record_usage(total_tokens)
                         _logger.info(f"Recorded {total_tokens} tokens for LLM {llm.name}")
 
-
-                print("total_tokens", total_tokens)
                 # Also check supervisor LLM
                 if self.is_supervisor and self.supervisor_llm_id:
                     if (model_name and self.supervisor_llm_id.model_id and
@@ -1068,6 +1060,9 @@ class AIQuest(models.Model):
                 prompt += (f"\n\nImportant: You must choose EXACTLY one of these agents by name or say FINISH. Do not "
                            f"modify the agent names.")
 
+                if self.debug:
+                    session.add_message(f"Supervisor prompt: {prompt}")
+
                 # Apply rate limiting before using supervisor LLM
                 if self.supervisor_llm_id:
                     try:
@@ -1087,9 +1082,6 @@ class AIQuest(models.Model):
 
                         # Return FINISH on rate limit to avoid getting stuck
                         return {"next": "FINISH", 'session': session}
-
-                if self.debug:
-                    session.add_message(f"Supervisor prompt: {prompt}")
 
                 # Get LLM for supervisor
                 llm = self.supervisor_llm_id.get_llm(temperature=self.supervisor_temperature)

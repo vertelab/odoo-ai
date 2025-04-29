@@ -1,10 +1,11 @@
 import httpx
 import importlib
 import logging
-import threading
+from collections import defaultdict
 import time
 import traceback
-from collections import defaultdict
+import threading
+import time
 
 from httpx import HTTPStatusError
 from langchain.agents import AgentExecutor, create_openai_tools_agent, create_json_chat_agent, create_react_agent
@@ -15,7 +16,6 @@ from odoo.exceptions import UserError, AccessError, ValidationError
 from pydantic import SecretStr
 from random import randint
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
-
 _logger = logging.getLogger(__name__)
 
 LICENCES = [
@@ -36,6 +36,7 @@ _token_usage = defaultdict(int)  # llm_id -> current tokens used
 _request_usage = defaultdict(int)  # llm_id -> current requests
 _usage_timestamps = {}  # llm_id -> last reset timestamp
 _minute_buckets = {}                 # llm_id -> current minute bucket
+
 
 class AIAgentLLM(models.Model):
     _name = 'ai.agent.llm'
@@ -153,20 +154,6 @@ class AIAgentLLM(models.Model):
         self.message_post(body=f"{body} | {self.last_run}", message_type="notification")
 
     def get_llm(self, verbose=False, temperature=0.7, callbacks=None, **kwarg):
-        """Get the LLM with rate limiting applied"""
-        # Apply RPM limiting before getting the LLM
-        try:
-            # Check rate limits
-            can_proceed, sleep_time = self.check_rate_limits()
-
-            # Apply sleep if needed
-            if sleep_time > 0:
-                _logger.info(f"Rate limiting: Sleeping for {sleep_time}s before using {self.name}")
-                time.sleep(sleep_time)
-        except UserError as e:
-            # Re-raise the rate limit error
-            raise
-
         try:
             module = importlib.import_module(self.product_tmpl_id.llm_library)
             LLM = getattr(module, self.product_tmpl_id.llm_type)
@@ -243,7 +230,6 @@ class AIAgentLLM(models.Model):
         retry=retry_if_exception_type(httpx.HTTPStatusError)
     )
     def invoke(self, input, config=None, session=None, quest=None, agent=None, debug=False):
-        print("invoke is called")
         if input is None:
             error_msg = f"Input cannot be None. Please provide a valid input. {input=} {config=} {session=} {quest=} {agent=}"
             self.log_message(body=error_msg, is_error=True)
