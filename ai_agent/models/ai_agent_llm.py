@@ -1,8 +1,10 @@
 import httpx
 import importlib
 import logging
+import threading
 import time
 import traceback
+from collections import defaultdict
 
 from httpx import HTTPStatusError
 from langchain.agents import AgentExecutor, create_openai_tools_agent, create_json_chat_agent, create_react_agent
@@ -13,6 +15,7 @@ from odoo.exceptions import UserError, AccessError, ValidationError
 from pydantic import SecretStr
 from random import randint
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+
 _logger = logging.getLogger(__name__)
 
 LICENCES = [
@@ -27,6 +30,12 @@ LICENCES = [
     ('mit', 'MIT License'),
 ]
 
+# In-memory storage for rate limiting
+_rate_limit_lock = threading.RLock()
+_token_usage = defaultdict(int)  # llm_id -> current tokens used
+_request_usage = defaultdict(int)  # llm_id -> current requests
+_usage_timestamps = {}  # llm_id -> last reset timestamp
+_minute_buckets = {}                 # llm_id -> current minute bucket
 
 class AIAgentLLM(models.Model):
     _name = 'ai.agent.llm'
@@ -143,6 +152,20 @@ class AIAgentLLM(models.Model):
         self.message_post(body=f"{body} | {self.last_run}", message_type="notification")
 
     def get_llm(self, verbose=False, temperature=0.7, callbacks=None, **kwarg):
+        """Get the LLM with rate limiting applied"""
+        # Apply RPM limiting before getting the LLM
+        try:
+            # Check rate limits
+            can_proceed, sleep_time = self.check_rate_limits()
+
+            # Apply sleep if needed
+            if sleep_time > 0:
+                _logger.info(f"Rate limiting: Sleeping for {sleep_time}s before using {self.name}")
+                time.sleep(sleep_time)
+        except UserError as e:
+            # Re-raise the rate limit error
+            raise
+
         try:
             module = importlib.import_module(self.product_tmpl_id.llm_library)
             LLM = getattr(module, self.product_tmpl_id.llm_type)
@@ -219,6 +242,7 @@ class AIAgentLLM(models.Model):
         retry=retry_if_exception_type(httpx.HTTPStatusError)
     )
     def invoke(self, input, config=None, session=None, quest=None, agent=None, debug=False):
+        print("invoke is called")
         if input is None:
             error_msg = f"Input cannot be None. Please provide a valid input. {input=} {config=} {session=} {quest=} {agent=}"
             self.log_message(body=error_msg, is_error=True)
@@ -326,3 +350,85 @@ class AIAgentLLM(models.Model):
             llm.ai_api_key = llm.product_tmpl_id.ai_api_key
 
 
+    def _reset_if_new_minute(self):
+        """Reset counters if we've moved to a new minute"""
+        current_minute = int(time.time()) // 60
+
+        with _rate_limit_lock:
+            last_minute = _minute_buckets.get(self.id, 0)
+            if current_minute > last_minute:
+                # Reset counters for this LLM
+                _token_usage[self.id] = 0
+                _request_usage[self.id] = 0
+                _minute_buckets[self.id] = current_minute
+                _logger.info(f"Rate limiting counters reset for LLM {self.name} (ID: {self.id})")
+                return True
+        return False
+
+    def check_rate_limits(self):
+        """
+        Check RPM limits only (since we don't know tokens yet)
+
+        Returns:
+            Tuple: (can_proceed, sleep_duration)
+
+        Raises:
+            UserError if RPM limit would be exceeded
+        """
+        # Skip if no RPM limit defined
+        if not self.rpm:
+            return True, 0
+
+        # Reset counters if in a new minute
+        self._reset_if_new_minute()
+
+        with _rate_limit_lock:
+            current_requests = _request_usage.get(self.id, 0)
+
+            # Check RPM limits
+            if self.rpm > 0 and current_requests + 1 > self.rpm:
+                error_msg = f"RPM limit exceeded for {self.name}: {current_requests + 1} > {self.rpm}"
+                _logger.warning(error_msg)
+                raise UserError(error_msg)
+
+            # Check if approaching threshold for RPM
+            at_request_threshold = self.rpm > 0 and current_requests > (self.rpm * self.threshold / 100)
+
+            if at_request_threshold:
+                _logger.info(f"RPM threshold reached for {self.name}: {current_requests}/{self.rpm}")
+                return True, self.sleep_duration
+
+            # Increment request count immediately
+            _request_usage[self.id] += 1
+            _logger.debug(f"Request count for {self.name} (ID: {self.id}) increased to {_request_usage[self.id]}")
+
+        return True, 0
+
+    def record_usage(self, tokens):
+        """
+        Record token usage from response metadata
+
+        Args:
+            tokens: Total tokens from response metadata
+        """
+        if not tokens:
+            return
+
+        # Reset counters if in a new minute
+        self._reset_if_new_minute()
+
+        with _rate_limit_lock:
+            # Record tokens
+            _token_usage[self.id] += tokens
+
+            # Check if we've exceeded TPM (this is just for logging since we can't stop the request now)
+            if self.tpm and 0 < self.tpm < _token_usage[self.id]:
+                _logger.warning(
+                    f"TPM limit exceeded for {self.name} after response: "
+                    f"{_token_usage[self.id]} > {self.tpm}"
+                )
+            else:
+                _logger.info(
+                    f"Recorded {tokens} tokens for {self.name} (ID: {self.id}), "
+                    f"now at {_token_usage[self.id]}/{self.tpm or 'unlimited'}"
+                )
