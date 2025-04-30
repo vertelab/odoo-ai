@@ -80,8 +80,11 @@ class AIAgentLLM(models.Model):
     rpm = fields.Integer(string="Request Per Minute", related="model_id.rpm")
     threshold = fields.Float(string="Threshold", default=80)
     sleep_duration = fields.Integer(string="Sleep For", default=15)
-    context_window = fields.Integer(string="Context Window", copy=False)
-    has_temperature = fields.Boolean(string="Has Temperature", default=False, copy=False)
+
+    context_window = fields.Integer(
+        string="Context Window", copy=False, related="model_id.context_window")
+    has_temperature = fields.Boolean(
+        string="Has Temperature", default=False, copy=False, related="model_id.has_temperature")
 
     def action_get_quests(self):
         action = {
