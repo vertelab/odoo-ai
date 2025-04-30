@@ -82,7 +82,7 @@ class AIAgentLLM(models.Model):
     threshold = fields.Float(string="Threshold", default=80)
     sleep_duration = fields.Integer(string="Sleep For", default=15)
     context_window = fields.Integer(string="Context Window", copy=False)
-    has_temperate = fields.Boolean(string="Has Template", default=False, copy=False)
+    has_temperature = fields.Boolean(string="Has Temperature", default=False, copy=False)
 
     def action_get_quests(self):
         action = {
@@ -162,7 +162,6 @@ class AIAgentLLM(models.Model):
         try:
             # Check rate limits
             can_proceed, sleep_time = self.check_rate_limits()
-
             # Apply sleep if needed
             if sleep_time > 0:
                 _logger.info(f"Rate limiting: Sleeping for {sleep_time}s before using {self.name}")
@@ -174,20 +173,25 @@ class AIAgentLLM(models.Model):
         try:
             module = importlib.import_module(self.product_tmpl_id.llm_library)
             LLM = getattr(module, self.product_tmpl_id.llm_type)
-            #_logger.warning(f"{LLM=}")
-            if self.product_tmpl_id.llm_type == "AzureChatOpenAI":
-               kwarg['api_version'] = self.api_version
-               kwarg['azure_endpoint'] = self.azure_endpoint
+
             api_key = self.ai_api_key
             if not api_key:
                 api_key = tools.config.get(self.product_tmpl_id.fallback_api_key_name, False)
                 _logger.error(f"{'API Key Found' if api_key else 'No API Key found'}")
+
+            if self.has_temperature:
+                kwarg['temperature'] = temperature
+
             if self.product_tmpl_id.llm_type == "ChatOllama":
-                return LLM(verbose=verbose, temperature=temperature, callbacks=callbacks, base_url=self.endpoint, disable_streaming=True,
-                       model=self.model_id.name, **kwarg)
+                kwarg["base_url"] = self.endpoint
+                kwarg["disable_streaming"] = True
+            elif self.product_tmpl_id.llm_type == "AzureChatOpenAI":
+                kwarg['api_version'] = self.api_version
+                kwarg['azure_endpoint'] = self.azure_endpoint
             else:
-                return LLM(verbose=verbose, temperature=temperature, callbacks=callbacks, api_key=api_key,
-                       model=self.model_id.name, **kwarg)
+                kwarg["api_key"] = api_key
+                kwarg['temperature'] = temperature
+            return LLM(verbose=verbose, callbacks=callbacks, model=self.model_id.name, **kwarg)
         except ImportError as e:
             _logger.error(f"Error importing {self.product_tmpl_id.llm_library}: {e}")
             raise
@@ -197,7 +201,6 @@ class AIAgentLLM(models.Model):
         except Exception as e:
             _logger.error(f"An error occurred: {e}")
             raise
-
 
     def get_embedding(self):
         try:

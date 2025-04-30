@@ -180,7 +180,6 @@ class AIAgentLLM(models.Model):
         try:
             # Check rate limits
             can_proceed, sleep_time = self.check_rate_limits()
-
             # Apply sleep if needed
             if sleep_time > 0:
                 _logger.info(f"Rate limiting: Sleeping for {sleep_time}s before using {self.name}")
@@ -192,20 +191,25 @@ class AIAgentLLM(models.Model):
         try:
             module = importlib.import_module(self.product_tmpl_id.llm_library)
             LLM = getattr(module, self.product_tmpl_id.llm_type)
-            #_logger.warning(f"{LLM=}")
-            if self.product_tmpl_id.llm_type == "AzureChatOpenAI":
-               kwarg['api_version'] = self.api_version
-               kwarg['azure_endpoint'] = self.azure_endpoint
+
             api_key = self.ai_api_key
             if not api_key:
                 api_key = tools.config.get(self.product_tmpl_id.fallback_api_key_name, False)
                 _logger.error(f"{'API Key Found' if api_key else 'No API Key found'}")
+
+            if self.product_tmpl_id.llm_type == "AzureChatOpenAI":
+               kwarg['api_version'] = self.api_version
+               kwarg['azure_endpoint'] = self.azure_endpoint
+
             if self.product_tmpl_id.llm_type == "ChatOllama":
-                return LLM(verbose=verbose, temperature=temperature, callbacks=callbacks, base_url=self.endpoint, disable_streaming=True,
-                       model=self.model_id.name, **kwarg)
+                return LLM(
+                    verbose=verbose, temperature=temperature, callbacks=callbacks,
+                    base_url=self.endpoint, disable_streaming=True, model=self.model_id.name, **kwarg
+                )
             else:
-                return LLM(verbose=verbose, temperature=temperature, callbacks=callbacks, api_key=api_key,
-                       model=self.model_id.name, **kwarg)
+                return LLM(
+                    verbose=verbose, temperature=temperature, callbacks=callbacks,
+                    api_key=api_key, model=self.model_id.name, **kwarg)
         except ImportError as e:
             _logger.error(f"Error importing {self.product_tmpl_id.llm_library}: {e}")
             raise

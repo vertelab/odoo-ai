@@ -151,7 +151,7 @@
                                 <field name="api_version" attrs="{'required': [('llm_type', '=', 'AzureChatOpenAI')], 'invisible': [('llm_type', '!=', 'AzureChatOpenAI')]}"/>
                                 <!-- #endif -->
                                 <field name="context_window"/>
-                                <field name="has_temperate"/>
+                                <field name="has_temperature"/>
                             </group>
                         </group>
                         <group>

@@ -61,6 +61,7 @@ class AIAgent(models.Model):
     ai_temperature = fields.Float(string='Temperature', default=0.7,
                                   help="Temperature controls the randomness and creativity of the model's output, "
                                        "<1.0 more predictable and consistent >1.0 more diverse and creative responses")
+    has_temperature = fields.Boolean(string="Has Temperature", related='ai_agent_llm_id.has_temperature')
     ai_tool_ids = fields.One2many(comodel_name='ai.agent.tool', inverse_name='ai_agent_id', string="", help="")
     ai_type = fields.Selection(selection=[("default", "Default"), ('ai-programmer', 'AI Programmer')],
                                default="default", required=True)
@@ -560,7 +561,7 @@ class AIAgent(models.Model):
             if content == "2":
                 self.message_post(body=_(f"Llm confirmed: 1+1={content}"), message_type="notification")
                 self.status = "active"
-                return 
+                return None
         self.message_post(body=_(f"Could not confirm agent: {response=}"), message_type="notification")
 
 
@@ -569,6 +570,7 @@ class AIAgent(models.Model):
             self.status = "error"
         self.last_run = fields.Datetime.now()
         self.message_post(body=f"{body} | {self.last_run}", message_type="notification")
+        self.env.cr.commit()
 
     def _extract_placeholders(self, template):
         # Regular expression to find {placeholder} and {{placeholder}}
@@ -728,15 +730,16 @@ class AIAgent(models.Model):
 
             except Exception as e:
                 _logger.error(f"Error in agent {self.name}: {str(e)}")
-                session.add_message(f"Agent {self.name} error: {str(e)}\n{traceback.format_exc()}")
-                return {
-                    "messages": [
-                        AIMessage(
-                            content=f"Agent {self.name} error: {str(e)}\n{traceback.format_exc()}",
-                            name=self.name.replace(' ', '_').replace(',', '').replace('.', '')
-                        )
-                    ]
-                }
+                self.log_message(f"Agent {self.name} error: {str(e)}\n{traceback.format_exc()}")
+                # session.save_messages(f"Agent {self.name} error: {str(e)}\n{traceback.format_exc()}")
+                # return {
+                #     "messages": [
+                #         AIMessage(
+                #             content=f"Agent {self.name} error: {str(e)}\n{traceback.format_exc()}",
+                #             name=self.name.replace(' ', '_').replace(',', '').replace('.', '')
+                #         )
+                #     ]
+                # }
 
             _logger.info(f"Agent {self.name} generated response")
             state['session'].save_messages(result.get('messages', []))

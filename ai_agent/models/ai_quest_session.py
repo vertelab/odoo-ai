@@ -246,12 +246,12 @@ class AIQuestSession(models.Model):
             if self.ai_quest_id.debug:
                 self.message_post(body=f'Missing {result=}')
 
-    def add_message(self, message,**kwarg):
+    def add_message(self, message, **kwarg):
         self.env['ai.quest.session.message'].add(self, message, **kwarg)
    
-    def save_messages(self, message,**kwarg):
-        # ~ if isinstance(response, dict):
-        self.message_post(body=f"save_message<br>{message=}<br><br>{type(message)=}<br>{isinstance(message, dict)=}<br>{isinstance(message, list)=}<br>{isinstance(message, AIMessage)=}")
+    def save_messages(self, message, **kwarg):
+        self.message_post(
+            body=f"save_message<br>{message=}<br><br>{type(message)=}<br>{isinstance(message, dict)=}<br>{isinstance(message, list)=}<br>{isinstance(message, AIMessage)=}")
         self.env['ai.quest.session.message'].save_messages(self,message,**kwarg)
 
  
