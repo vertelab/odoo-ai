@@ -598,6 +598,7 @@ class AIAgent(models.Model):
             self.status = "error"
         self.last_run = fields.Datetime.now()
         self.message_post(body=f"{body} | {self.last_run}", message_type="notification")
+        self.env.cr.commit()
 
     def _extract_placeholders(self, template):
         # Regular expression to find {placeholder} and {{placeholder}}
@@ -757,8 +758,9 @@ class AIAgent(models.Model):
 
             except Exception as e:
                 _logger.error(f"Error in agent {self.name}: {str(e)}")
-                session.add_message(f"Agent {self.name} error: {str(e)}\n{traceback.format_exc()}")
                 self.log_message(f"Agent {self.name} error: {str(e)}\n{traceback.format_exc()}")
+                session.add_message(f"Agent {self.name} error: {str(e)}\n{traceback.format_exc()}")
+
                 # return {
                 #     "messages": [
                 #         AIMessage(
