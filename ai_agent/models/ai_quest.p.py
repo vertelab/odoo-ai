@@ -205,7 +205,7 @@ class AIQuest(models.Model):
 
     chat_history_limit = fields.Integer(string='Chat History Limit', default=10,
                                         help='Limit the chat history to this number of messages')
-    chat_user_id = fields.Many2one(comodel_name='res.users', string="Chat User", help="")
+    chat_user_id = fields.Many2one(comodel_name='res.users', string="Chat User", help="", readonly=True)
     code = fields.Text(string='Python Code', default=DEFAULT_PYTHON_CODE,
                        help="Write Python code that the action will execute. Some variables are available for use; "
                             "help about python expression is given in the help tab.")
@@ -527,10 +527,11 @@ class AIQuest(models.Model):
         if self.init_type == 'chat':
             self.init_type_str = _(f'Chat with this bot, the dialog is private for you and the bot')
             if not self.chat_user_id:
-                self.chat_user_id = self.chat_user_id.create({
+                self.chat_user_id = self.env['res.users'].create({
                     'name': self.name,
                     'login': self.name,
-                })
+                    'ai_quest_id': self.id
+                }).id
         self.name = name
 
     def _get_eid(self):
