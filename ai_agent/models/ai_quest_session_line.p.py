@@ -83,9 +83,8 @@ class AIQuestSessionLine(models.Model):
                     "db_uuid": session.db_uuid,
                     "finish_reason": aimessage.response_metadata.get("finish_reason", ''),
                     "model_id": agent.ai_agent_llm_id.model_id.product_attribute_value_id.id if agent else session.ai_agent_llm_id.model_id.product_attribute_value_id.id,
-                    "model_real": aimessage.response_metadata.get("model_name",
-                                                                  None) or aimessage.response_metadata.get("model",
-                                                                                                           None),
+                    "model_real": aimessage.response_metadata.get(
+                        "model_name", None) or aimessage.response_metadata.get("model", None),
                     "product_tmpl_id": session.ai_agent_llm_id.product_tmpl_id.id,
                     "run_id": aimessage.id,
                     "system_fingerprint": aimessage.response_metadata.get("system_fingerprint", ''),
@@ -120,15 +119,3 @@ class AIQuestSessionMessage(models.Model):
     message_content = fields.Text()
     message_raw = fields.Text()
     
-    @api.model
-    def save_messages(self, session, messages):
-        if isinstance(message, AIMessage):
-            messages=[messages]
-        for seq, message in enumerate(messages):
-            self.create = {
-                "sequence": seq,
-                "ai_quest_session_id": session.id,
-                "message_type": type(message).__name__,
-                "message_content": message.content,
-                "message_raw": f"{message}",
-            }

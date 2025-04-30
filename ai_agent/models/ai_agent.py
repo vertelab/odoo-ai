@@ -4,6 +4,7 @@ import sys
 import logging
 import re
 import traceback
+import time
 
 from datetime import datetime
 from json.decoder import JSONDecodeError
@@ -60,6 +61,7 @@ class AIAgent(models.Model):
     ai_temperature = fields.Float(string='Temperature', default=0.7,
                                   help="Temperature controls the randomness and creativity of the model's output, "
                                        "<1.0 more predictable and consistent >1.0 more diverse and creative responses")
+    has_temperature = fields.Boolean(string="Has Temperature", related='ai_agent_llm_id.has_temperature')
     ai_tool_ids = fields.One2many(comodel_name='ai.agent.tool', inverse_name='ai_agent_id', string="", help="")
     ai_type = fields.Selection(selection=[("default", "Default"), ('ai-programmer', 'AI Programmer')],
                                default="default", required=True)
@@ -568,6 +570,7 @@ class AIAgent(models.Model):
             self.status = "error"
         self.last_run = fields.Datetime.now()
         self.message_post(body=f"{body} | {self.last_run}", message_type="notification")
+        self.env.cr.commit()
 
     def _extract_placeholders(self, template):
         # Regular expression to find {placeholder} and {{placeholder}}
@@ -606,19 +609,16 @@ class AIAgent(models.Model):
         topic = kwargs.get('topic', kwargs.get('message', ''))
         session = kwargs.get('session', False)
         debug = kwargs.get('debug', False)
-
         quest = session.ai_quest_id
-
         quest_description = quest.description
         use_lang = f"Use language {self.env.user.lang}" if quest.use_personal_lang else ''
-        
-
 
         def agent_node(state):
             """Process messages and generate a response."""
 
             if debug:
                 session.add_message(f"Agent {self.name} agent_node Initial state: {state=}")
+
             messages = state.get('messages', [])
             if isinstance(messages, list) and hasattr(messages[-1], 'content'):
                 latest_message = messages[-1].content
@@ -654,6 +654,33 @@ class AIAgent(models.Model):
 
             messages = [system_message, HumanMessage(content=topic)]
 
+            # Apply rate limiting before invoking LLM
+            if self.ai_agent_llm_id:
+                try:
+                    # Check rate limits (focusing on RPM since we don't know tokens yet)
+                    can_proceed, sleep_time = self.ai_agent_llm_id.check_rate_limits()
+
+                    # Apply sleep if needed
+                    if sleep_time > 0:
+                        _logger.info(f"Rate limiting: Agent {self.name} sleeping for {sleep_time}s")
+                        if debug:
+                            session.add_message(f"Rate limiting: Agent {self.name} sleeping for {sleep_time}s")
+                        time.sleep(sleep_time)
+                except UserError as e:
+                    # Rate limit exceeded
+                    error_msg = f"Rate limit exceeded for agent {self.name}: {str(e)}"
+                    _logger.warning(error_msg)
+                    session.add_message(error_msg)
+
+                    return {
+                        "messages": [
+                            AIMessage(
+                                content=f"Rate limit exceeded for agent {self.name}. Please try again later.",
+                                name=self.name.replace(' ', '_').replace(',', '').replace('.', '')
+                            )
+                        ]
+                    }
+
             if debug:
                 self.log_message(f"Agent  {self.name} before invoke {messages=} {state=}")
                 _logger.debug(f"Agent {self.name} {messages=} {state=}")
@@ -662,25 +689,58 @@ class AIAgent(models.Model):
             llm = self.ai_agent_llm_id.get_llm()
             tools = self._get_tools(state)
 
-            langgraph_agent_executor = create_react_agent(llm, tools=tools)
-
             try:
+                langgraph_agent_executor = create_react_agent(llm, tools=tools)
+
                 result = langgraph_agent_executor.invoke({
                     "input": latest_message,
                     "messages": messages
                 })
 
+                # Record token usage from response metadata
+                if hasattr(result, 'metadata') and result.metadata:
+                    metadata = result.metadata
+                    if 'token_usage' in metadata:
+                        token_usage = metadata['token_usage']
+                        total_tokens = token_usage.get('total_tokens', 0)
+
+                        # Record the tokens
+                        self.ai_agent_llm_id.record_usage(total_tokens)
+                        if debug:
+                            session.add_message(
+                                f"Recorded {total_tokens} tokens for agent {self.name} LLM {self.ai_agent_llm_id.name}"
+                            )
+
+                # If no metadata in result directly, check individual messages
+                elif 'messages' in result:
+                    for message in result['messages']:
+                        if hasattr(message, 'response_metadata') and message.response_metadata:
+                            metadata = message.response_metadata
+                            if 'token_usage' in metadata:
+                                token_usage = metadata['token_usage']
+                                total_tokens = token_usage.get('total_tokens', 0)
+
+                                # Record the tokens
+                                self.ai_agent_llm_id.record_usage(total_tokens)
+                                if debug:
+                                    session.add_message(
+                                        f"Recorded {total_tokens} tokens for agent {self.name} LLM {self.ai_agent_llm_id.name}"
+                                    )
+                                break  # Only need to record once
+
             except Exception as e:
                 _logger.error(f"Error in agent {self.name}: {str(e)}")
+                self.log_message(f"Agent {self.name} error: {str(e)}\n{traceback.format_exc()}")
                 session.add_message(f"Agent {self.name} error: {str(e)}\n{traceback.format_exc()}")
-                return {
-                    "messages": [
-                        AIMessage(
-                            content=f"Agent {self.name} error: {str(e)}\n{traceback.format_exc()}",
-                            name=self.name.replace(' ', '_').replace(',', '').replace('.', '')
-                        )
-                    ]
-                }
+
+                # return {
+                #     "messages": [
+                #         AIMessage(
+                #             content=f"Agent {self.name} error: {str(e)}\n{traceback.format_exc()}",
+                #             name=self.name.replace(' ', '_').replace(',', '').replace('.', '')
+                #         )
+                #     ]
+                # }
 
             _logger.info(f"Agent {self.name} generated response")
             state['session'].save_messages(result.get('messages', []))
