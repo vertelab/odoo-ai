@@ -62,6 +62,8 @@ class ProductAttributeValue(models.Model):
 
     tpm = fields.Integer(string="Token Per Minute")
     rpm = fields.Integer(string="Request Per Minute")
+    context_window = fields.Integer(string="Context Window", copy=False)
+    has_temperature = fields.Boolean(string="Has Temperature", default=False, copy=False)
 
 
 class ProductTemplateAttributeValue(models.Model):
@@ -69,3 +71,7 @@ class ProductTemplateAttributeValue(models.Model):
 
     tpm = fields.Integer(string="Token Per Minute", related="product_attribute_value_id.tpm")
     rpm = fields.Integer(string="Request Per Minute", related="product_attribute_value_id.rpm")
+    context_window = fields.Integer(
+        string="Context Window", copy=False, related="product_attribute_value_id.context_window")
+    has_temperature = fields.Boolean(
+        string="Has Temperature", default=False, copy=False, related="product_attribute_value_id.has_temperature")
