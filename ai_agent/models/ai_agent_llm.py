@@ -158,7 +158,6 @@ class AIAgentLLM(models.Model):
         self.message_post(body=f"{body} | {self.last_run}", message_type="notification")
 
     def get_llm(self, verbose=False, temperature=0.7, callbacks=None, **kwarg):
-        """Get the LLM with rate limiting applied"""
         # Apply RPM limiting before getting the LLM
         try:
             # Check rate limits
