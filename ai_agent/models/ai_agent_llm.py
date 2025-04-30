@@ -59,7 +59,9 @@ class AIAgentLLM(models.Model):
                                related='model_id.product_attribute_value_id.licence')
     llm_etype = fields.Char(related="product_tmpl_id.llm_etype")
     llm_type = fields.Char(related="product_tmpl_id.llm_type", required=True)
-    model_id = fields.Many2one(comodel_name='product.template.attribute.value', string="Model", required=True, )
+    model_id = fields.Many2one(
+        comodel_name='product.template.attribute.value', string="Model", required=True, readonly=True
+    )
     name = fields.Char(required=True)
     product_tmpl_id = fields.Many2one(comodel_name='product.template', string="Provider",
                                       domain="[('is_llm','=',True)]", required=True)
@@ -79,6 +81,8 @@ class AIAgentLLM(models.Model):
     rpm = fields.Integer(string="Request Per Minute", related="model_id.rpm")
     threshold = fields.Float(string="Threshold", default=80)
     sleep_duration = fields.Integer(string="Sleep For", default=15)
+    context_window = fields.Integer(string="Context Window", copy=False)
+    has_temperate = fields.Boolean(string="Has Template", default=False, copy=False)
 
     def action_get_quests(self):
         action = {

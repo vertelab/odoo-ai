@@ -97,6 +97,8 @@
                                 <field name="licence" />
                                 <field name="is_embedded" invisible="1"/>
                                 <field name="has_endpoint" invisible="1"/>
+                                <field name="tpm"/>
+                                <field name="rpm"/>
                             </group>
                             <group>
                                 <field name="llm_type" invisible="is_embedded == True"/>
@@ -106,6 +108,8 @@
                                 <field name="endpoint" invisible="has_endpoint == False"/>
                                 <field name="azure_endpoint" required="llm_type == 'AzureChatOpenAI'" invisible="llm_type != 'AzureChatOpenAI'"/>
                                 <field name="api_version" required="llm_type == 'AzureChatOpenAI'" invisible="llm_type != 'AzureChatOpenAI'"/>
+                                <field name="context_window"/>
+                                <field name="has_temperate"/>
                             </group>
                         </group>
                         <group>
