@@ -67,6 +67,7 @@ class AIAgent(models.Model):
     ai_temperature = fields.Float(string='Temperature', default=0.7,
                                   help="Temperature controls the randomness and creativity of the model's output, "
                                        "<1.0 more predictable and consistent >1.0 more diverse and creative responses")
+    has_temperature = fields.Boolean(string="Has Temperature", related='ai_agent_llm_id.has_temperature')
     ai_tool_ids = fields.One2many(comodel_name='ai.agent.tool', inverse_name='ai_agent_id', string="", help="")
     ai_type = fields.Selection(selection=[("default", "Default"), ('ai-programmer', 'AI Programmer')],
                                default="default", required=True)
@@ -733,14 +734,15 @@ class AIAgent(models.Model):
             except Exception as e:
                 _logger.error(f"Error in agent {self.name}: {str(e)}")
                 session.add_message(f"Agent {self.name} error: {str(e)}\n{traceback.format_exc()}")
-                return {
-                    "messages": [
-                        AIMessage(
-                            content=f"Agent {self.name} error: {str(e)}\n{traceback.format_exc()}",
-                            name=self.name.replace(' ', '_').replace(',', '').replace('.', '')
-                        )
-                    ]
-                }
+                self.log_message(f"Agent {self.name} error: {str(e)}\n{traceback.format_exc()}")
+                # return {
+                #     "messages": [
+                #         AIMessage(
+                #             content=f"Agent {self.name} error: {str(e)}\n{traceback.format_exc()}",
+                #             name=self.name.replace(' ', '_').replace(',', '').replace('.', '')
+                #         )
+                #     ]
+                # }
 
             _logger.info(f"Agent {self.name} generated response")
             state['session'].save_messages(result.get('messages', []))

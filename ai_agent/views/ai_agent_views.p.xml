@@ -115,7 +115,13 @@
                                 <!-- #elif VERSION <= "16.0" -->
                                 <field name="ai_agent_llm_id" attrs="{'required': [('status', '!=', 'draft')]}" />
                                 <!-- #endif -->
-                                <field name="ai_temperature" />
+                                <field name="has_temperature" invisible="1" />
+
+                                <!-- #if VERSION >= "17.0" -->
+                                <field name="ai_temperature" invisible="not has_temperature" />
+                                <!-- #elif VERSION <= "16.0" -->
+                                <field name="ai_temperature" attrs="{'invisible': [('has_temperature', '=', False)]}"/>
+                                <!-- #endif -->
                                 <field name="last_run" />
                             </group>
                         </group>

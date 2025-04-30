@@ -86,7 +86,9 @@
                             </group>
                             <group>
                                 <field name="ai_agent_llm_id" attrs="{'required': [('status', '!=', 'draft')]}" />
-                                <field name="ai_temperature" />
+                                <field name="has_temperature" invisible="1" />
+
+                                <field name="ai_temperature" attrs="{'invisible': [('has_temperature', '=', False)]}"/>
                                 <field name="last_run" />
                             </group>
                         </group>
