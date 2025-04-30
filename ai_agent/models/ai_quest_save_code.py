@@ -16,9 +16,11 @@ class AiQuest(models.Model):
  
     def to_xml(self,record):
         """Return XML-data for record."""
-        record_elem = etree.Element('record', model=record._name, id=record._name.replace('.', '_')+"_"+str(record.id))        
+        record_elem = etree.Element('record', model=record._name, id=record.name.replace('.', '_')+"_"+str(record.id))        
         for field in record._fields:
             value = getattr(record, field)
+            if field in ['id','display_name','create_date','create_uid','write_date','write_uid','_count']:
+                next
             if value and not record._fields[field].type in ('one2many', 'many2many'):
                 field_elem = etree.SubElement(record_elem, 'field', name=field)
                 field_elem.text = str(value)
@@ -93,7 +95,7 @@ class AiQuest(models.Model):
     'author': "{author}",
     'category': 'Tools',
     'description': \"\"\"\n{description}\n\"\"\",
-    'data': [],
+    'data': ['data/ai_quest.xml'],
     'installable': True,
     'application': False,
 }}
