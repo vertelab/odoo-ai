@@ -208,7 +208,6 @@ class AIAgentLLM(models.Model):
                 kwarg['azure_endpoint'] = self.azure_endpoint
             else:
                 kwarg["api_key"] = api_key
-                kwarg['temperature'] = temperature
             return LLM(verbose=verbose, callbacks=callbacks, model=self.model_id.name, **kwarg)
         except ImportError as e:
             _logger.error(f"Error importing {self.product_tmpl_id.llm_library}: {e}")
