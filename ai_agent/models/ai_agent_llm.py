@@ -202,7 +202,6 @@ class AIAgentLLM(models.Model):
             _logger.error(f"An error occurred: {e}")
             raise
 
-
     def get_embedding(self):
         try:
             module = importlib.import_module(self.product_tmpl_id.llm_library)
