@@ -59,7 +59,9 @@ class AIAgentLLM(models.Model):
                                related='model_id.product_attribute_value_id.licence')
     llm_etype = fields.Char(related="product_tmpl_id.llm_etype")
     llm_type = fields.Char(related="product_tmpl_id.llm_type", required=True)
-    model_id = fields.Many2one(comodel_name='product.template.attribute.value', string="Model", required=True, )
+    model_id = fields.Many2one(
+        comodel_name='product.template.attribute.value', string="Model", required=True, readonly=True
+    )
     name = fields.Char(required=True)
     product_tmpl_id = fields.Many2one(comodel_name='product.template', string="Provider",
                                       domain="[('is_llm','=',True)]", required=True)
@@ -81,6 +83,8 @@ class AIAgentLLM(models.Model):
     rpm = fields.Integer(string="Request Per Minute", related="model_id.rpm")
     threshold = fields.Float(string="Threshold", default=80)
     sleep_duration = fields.Integer(string="Sleep For", default=15)
+    context_window = fields.Integer(string="Context Window", copy=False)
+    has_temperate = fields.Boolean(string="Has Template", default=False, copy=False)
 
     def action_get_quests(self):
         action = {
@@ -176,7 +180,6 @@ class AIAgentLLM(models.Model):
         try:
             # Check rate limits
             can_proceed, sleep_time = self.check_rate_limits()
-
             # Apply sleep if needed
             if sleep_time > 0:
                 _logger.info(f"Rate limiting: Sleeping for {sleep_time}s before using {self.name}")
@@ -188,20 +191,25 @@ class AIAgentLLM(models.Model):
         try:
             module = importlib.import_module(self.product_tmpl_id.llm_library)
             LLM = getattr(module, self.product_tmpl_id.llm_type)
-            #_logger.warning(f"{LLM=}")
-            if self.product_tmpl_id.llm_type == "AzureChatOpenAI":
-               kwarg['api_version'] = self.api_version
-               kwarg['azure_endpoint'] = self.azure_endpoint
+
             api_key = self.ai_api_key
             if not api_key:
                 api_key = tools.config.get(self.product_tmpl_id.fallback_api_key_name, False)
                 _logger.error(f"{'API Key Found' if api_key else 'No API Key found'}")
+
+            if self.product_tmpl_id.llm_type == "AzureChatOpenAI":
+               kwarg['api_version'] = self.api_version
+               kwarg['azure_endpoint'] = self.azure_endpoint
+
             if self.product_tmpl_id.llm_type == "ChatOllama":
-                return LLM(verbose=verbose, temperature=temperature, callbacks=callbacks, base_url=self.endpoint, disable_streaming=True,
-                       model=self.model_id.name, **kwarg)
+                return LLM(
+                    verbose=verbose, temperature=temperature, callbacks=callbacks,
+                    base_url=self.endpoint, disable_streaming=True, model=self.model_id.name, **kwarg
+                )
             else:
-                return LLM(verbose=verbose, temperature=temperature, callbacks=callbacks, api_key=api_key,
-                       model=self.model_id.name, **kwarg)
+                return LLM(
+                    verbose=verbose, temperature=temperature, callbacks=callbacks,
+                    api_key=api_key, model=self.model_id.name, **kwarg)
         except ImportError as e:
             _logger.error(f"Error importing {self.product_tmpl_id.llm_library}: {e}")
             raise
