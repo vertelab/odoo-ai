@@ -88,6 +88,7 @@
                             <group>
                                 <field name="ai_agent_llm_id" required="status != 'draft'" />
                                 <field name="has_temperature" invisible="1" />
+
                                 <field name="ai_temperature" invisible="not has_temperature" />
                                 <field name="last_run" />
                             </group>

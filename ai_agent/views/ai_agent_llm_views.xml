@@ -116,7 +116,7 @@
                             <separator />
                         </group>
                     </sheet>
-<chatter/>
+                    <chatter/>
                 </form>
             </field>
         </record>

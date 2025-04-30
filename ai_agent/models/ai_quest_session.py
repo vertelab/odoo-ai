@@ -250,8 +250,7 @@ class AIQuestSession(models.Model):
         self.env['ai.quest.session.message'].add(self, message, **kwarg)
    
     def save_messages(self, message, **kwarg):
-        self.message_post(
-            body=f"save_message<br>{message=}<br><br>{type(message)=}<br>{isinstance(message, dict)=}<br>{isinstance(message, list)=}<br>{isinstance(message, AIMessage)=}")
+        self.message_post(body=f"save_message<br>{message=}<br><br>{type(message)=}<br>{isinstance(message, dict)=}<br>{isinstance(message, list)=}<br>{isinstance(message, AIMessage)=}")
         self.env['ai.quest.session.message'].save_messages(self,message,**kwarg)
 
  
