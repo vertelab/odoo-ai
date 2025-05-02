@@ -1,6 +1,9 @@
 from odoo import models, fields, api, _
 from odoo.addons.ai_agent.models.ai_agent_llm import LICENCES
 
+import logging
+_logger = logging.getLogger(__name__) 
+
 class ProductTemplate(models.Model):
     _inherit = 'product.template'
 
@@ -37,6 +40,45 @@ class ProductTemplate(models.Model):
                     'product_tmpl_id': p.id,
                     'name': f"{p.name}-{model.name}",
                 })
+    
+    def create_llm_demo(self):
+        for p in self:
+            attrs_value = self.env["product.template.attribute.value"].search([
+                ('product_tmpl_id', '=', p.id),
+                ("attribute_id", "=", self.env.ref("ai_agent.product_attribute_model").id),
+                ("name", "=", "llama-3.3-70b-versatile")
+            ])
+            
+            for model in attrs_value:
+                sanitized_name = f"{p.name}-{model.name}".lower().replace(" ", "_").replace(".", "_")
+                xml_id = f"ai_agent.ai_agent_{sanitized_name}"
+                
+                # Check if external ID exists
+                existing = self.env['ir.model.data'].search([
+                    ('module', '=', 'ai_agent'),
+                    ('name', '=', f"ai_agent_{sanitized_name}"),
+                    ('model', '=', 'ai.agent.llm')
+                ], limit=1)
+                
+                if existing:
+                    continue  # Skip creation if exists
+                    
+                groq_demo_llm = self.env['ai.agent.llm'].create({
+                    'ai_api_key': p.ai_api_key,
+                    'model_id': model.id,
+                    'product_tmpl_id': p.id,
+                    'name': f"{p.name}-{model.name}",
+                    'status':"confirmed",
+                })
+                
+                self.env['ir.model.data'].create({
+                    'name': f"ai_agent_{sanitized_name}",
+                    'model': 'ai.agent.llm',
+                    'module': 'ai_agent',
+                    'res_id': groq_demo_llm.id,
+                    'noupdate': True,
+                })
+                
 
     def action_get_session_lines(self):
         action = {

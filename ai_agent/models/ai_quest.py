@@ -591,6 +591,7 @@ class AIQuest(models.Model):
         return kwargs
 
     def chat(self, message, channel, bot_user):
+        
         """"
             Implements chat with channel and bot
             
@@ -601,9 +602,9 @@ class AIQuest(models.Model):
             
         """
         if (self.init_type == 'chat' and self.chat_user_id) or (self.init_type == "channel" and self.channel_id):
+            self = self.sudo()
             if self._check_quest_error():
                 raise UserError(self._check_quest_error())
-
             self.write({'real_channel_id': channel.id, 'real_chat_user_id': bot_user.id})
             session = message.parent_id.ai_quest_session_id if message.parent_id and message.parent_id.ai_quest_session_id else \
                 message.parent_id.ai_quest_session_id if message.ai_quest_session_id else \
