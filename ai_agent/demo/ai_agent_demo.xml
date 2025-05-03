@@ -1,5 +1,5 @@
 <odoo>
-  <data noupdate="1">
+  <data noupdate="0">
 
     <record id="ai_agent_supervisor_chat" model="ai.agent">
       <field name="name">Supervisor Chatbot</field>
@@ -109,6 +109,117 @@
       <field name="ai_quest_id" ref="ai_quest_aria" />
       <field name="ai_agent_id" ref="ai_agent_aria" />
     </record>
+    
+    
+<!--
+    llm for demo, uses 	Groq-llama-3.3-70b-versatile Running a functions since setting product attributes without external id is difficult
+    On groq product run funtion to create llms
+    Then call another function to set the llm on the agents?
+    Need to set it to the correct state.
+    
+-->
+    <function 
+    model="product.template" 
+    name="create_llm_demo" 
+    eval="[ref('ai_agent.groq_product_template')]"/>
+<!--
+    <record id="ai_agent_groq-llama-3_3-70b-versatile" model="ai.agent.llm">
+        <field name="name">Groq-llama-3.3-70b-versatile</field>
+        <field name="is_key_required">True</field>
+        <field name="licence">Llama Community-licens</field>
+        <field name="llm_type">ChatGroq</field>
+        <field name="product_tmpl_id" ref="groq_product_template"/>
+        <field name="model_id">
+    </record>
+-->
+
+    
+    <record id="ai_agent_code_master" model="ai.agent">
+      <field name="name">CodeMaster AI</field>
+      <field name="ai_agent_llm_id" ref="ai_agent_groq-llama-3_3-70b-versatile"/>
+      <field name="ai_role">Senior programming assistant specializing in Odoo development and general software engineering</field>
+      <field name="ai_goal">
+        To help developers solve complex programming challenges, optimize code quality, 
+        and accelerate Odoo module development through expert guidance
+      </field>
+      <field name="ai_backstory">
+        Created by veteran Odoo developers with 15+ years combined experience,
+        CodeMaster AI combines deep technical knowledge with practical problem-solving skills.
+        Trained on thousands of code reviews and real-world Odoo implementations.
+      </field>
+      <field name="ai_prompt_template">
+        As CodeMaster AI, provide expert-level programming assistance focusing on:
+        1. Odoo-specific solutions (Python/XML/QWeb/JS)
+        2. Code debugging and optimization
+        3. Architecture design patterns
+        4. Best practices for module development
+        
+        Always analyze the full context before answering. For code examples:
+        - Use proper syntax highlighting
+        - Include error handling
+        - Suggest performance improvements
+        - Highlight security considerations
+        
+        When unsure, ask clarifying questions about:
+        - Odoo version
+        - Specific error messages
+        - Business requirements
+        - Existing code structure
+        
+        {message}
+      </field>
+      <field name="status">active</field>
+    </record>
+
+<!--
+Quest chat for helping with programing
+-->
+    <record id="ai_quest_code_chat" model="ai.quest">
+      <field name="name">CodeHelper Chat</field>
+      <field name="init_type">chat</field>
+      <field name="code">result = quest.build(session=session,message=message_body).invoke(message_invoke)</field>
+      <field name="description">
+        Expert programming assistant that helps developers solve technical challenges,
+        debug code, and implement Odoo-specific solutions through interactive chat.
+        Specializes in Python, XML, JavaScript, and QWeb templates.
+      </field>
+      <field name="status">active</field>
+    </record>
+
+    <record id="ai_quest_code_helper_agent" model="ai.quest.agent">
+      <field name="ai_quest_id" ref="ai_quest_code_chat"/>
+      <field name="ai_agent_id" ref="ai_agent_code_master"/>
+    </record>
+    
+    <function 
+    model="ai.quest" 
+    name="_onchange_init_type" 
+    eval="[ref('ai_quest_code_chat')]"/>
+<!--
+Quest channel for helping with programing
+-->
+    <record id="ai_quest_code_channel" model="ai.quest">
+      <field name="name">CodeHelper Channel</field>
+      <field name="init_type">channel</field>
+      <field name="code">result = quest.build(session=session,message=message_body).invoke(message_invoke)</field>
+      <field name="description">
+        Expert programming assistant that helps developers solve technical challenges,
+        debug code, and implement Odoo-specific solutions through interactive chat.
+        Specializes in Python, XML, JavaScript, and QWeb templates.
+      </field>
+      <field name="status">active</field>
+    </record>
+
+    <record id="ai_quest_code_helper_agent_channel" model="ai.quest.agent">
+      <field name="ai_quest_id" ref="ai_quest_code_channel"/>
+      <field name="ai_agent_id" ref="ai_agent_code_master"/>
+    </record>
+    
+    <function 
+    model="ai.quest" 
+    name="_onchange_init_type" 
+    eval="[ref('ai_quest_code_channel')]"/>
+
 
   </data>
 </odoo>
