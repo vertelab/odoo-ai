@@ -153,7 +153,7 @@ class AITool(models.Model):
     @api.depends('image_128')
     def _compute_base_image_128(self):
         for record in self:
-            record.base_image_128 = record.image_128 or record.ai_agent_llm_id.image_128
+            record.base_image_128 = record.image_128 or None
 
     def log_message(self, body, is_error=False):
         if is_error:
