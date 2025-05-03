@@ -3,8 +3,8 @@ from odoo import models, api
 from odoo.exceptions import UserError
 import base64
 import io
+import re
 import zipfile
-
 
 class AiQuest(models.Model):
     _inherit = 'ai.quest'
@@ -13,77 +13,90 @@ class AiQuest(models.Model):
         xml_id = object.get_external_id().get(object.id)
         if not xml_id:
             xml_id = f"{module}.{object._name.replace('.', '_')}_{object.id}"
+        return xml_id.replace('new.','').lower()
  
-    def to_xml(self,record):
+    def to_xml(self,module,record):
         """Return XML-data for record."""
-        record_elem = etree.Element('record', model=record._name, id=record.name.replace('.', '_')+"_"+str(record.id))        
+        record_elem = etree.Element('record', model=record._name, id=self.external_id(module,record))        
         for field in record._fields:
+            if field in ['id','display_name','create_date','create_uid','write_date','write_uid','last_run',]:
+                continue
             value = getattr(record, field)
-            if field in ['id','display_name','create_date','create_uid','write_date','write_uid','_count']:
-                next
-            if value and not record._fields[field].type in ('one2many', 'many2many'):
+            if field == 'memory_faiss' and value: # Large file
+                etree.SubElement(record_elem,'field',name=field,type="base64",file=f"{module}/files/{record.name}.faiss")
+                continue
+            if value and not record._fields[field].type in ('one2many', 'many2many','many2one') and not record._fields[field].compute:
                 field_elem = etree.SubElement(record_elem, 'field', name=field)
-                field_elem.text = str(value)
-        return etree.tostring(record_elem, pretty_print=True, encoding='unicode')
+                if record._fields[field].type in ('text','html'):
+                    field_elem.text = etree.CDATA(str(value))
+                else:
+                    field_elem.text = str(value)
+        return "\n" + etree.tostring(record_elem, pretty_print=True, encoding='unicode') + "\n\n"
     
     @api.model
-    def generate_simple_module(self, module_name, description="Simple example module", author="Your Name"):
-        record_ids = []
-        xml_body = "\n<!-- Full records: Quest, agent memory and tools -->"
-
-        ai_quest_id = f"{module_name}.{self._name.replace('.', '_')}"
-
-        tools = self.env['ai.tool']
-        memory = self.env['ai.memory']
-        agent = self.env['ai.agent']
+    def generate_simple_module(self, module_name):
+        xml_body = "\n<!-- Full records: Quest, agent memory and tools -->\n"
+        obj = [self]
         for a in self.ai_agent_ids.mapped('ai_agent_id'):
-            agent |= a
-            memory |= a.ai_memory_ids.mapped('ai_memory_id')
-            tools |= a.ai_tool_ids.mapped('ai_tool_id')
-        # Create full record
-        xml_body += self.to_xml(self)
-        for o in agent:
-            xml_body += self.to_xml(o)        
-        for o in memory:
-            xml_body += self.to_xml(o)       
-        for o in tools:
-            xml_body += self.to_xml(o)        
+            obj.append(a)
+            obj.extend(list(a.ai_memory_ids.mapped('ai_memory_id')))
+            obj.extend(list(a.ai_tool_ids.mapped('ai_tool_id')))
+        for o in list(set(obj)):
+            xml_body += self.to_xml(module_name,o)        
         
-        xml_body += "\n<!-- Glue records: agent to tools -->"
-        for a in agent:
+        xml_body += "\n<!-- Glue records: agent to tools -->\n"
+        for a in self.ai_agent_ids.mapped('ai_agent_id'):
             for t in a.ai_tool_ids.mapped('ai_tool_id'):
                 xml_body += f"""
-        <record id="{a._name.replace('.', '_')}_{t._name.replace('.', '_')}" model="ai.agent.tool">
+        <record id="{a._name.replace('.', '_')}_{t._name.replace('.', '_')}_{t.id}" model="ai.agent.tool">
             <field name="ai_agent_id" ref="{self.external_id(module_name, a)}"/>
             <field name="ai_tool_id" ref="{self.external_id(module_name, t)}"/>
         </record>
-        """
+        """.strip()
 
-        xml_body += "\n<!-- Glue records: agent to memory -->"
-        for a in agent:
+            xml_body += "\n<!-- Glue records: agent to memory -->\n"
             for m in a.ai_memory_ids.mapped('ai_memory_id'):
                 xml_body += f"""
-        <record id="{a._name.replace('.', '_')}_{m._name.replace('.', '_')}" model="ai.agent.memory">
+        <record id="{a._name.replace('.', '_')}_{m._name.replace('.', '_')}_{m.id}" model="ai.agent.memory">
             <field name="ai_agent_id" ref="{self.external_id(module_name, a)}"/>
             <field name="ai_memory_id" ref="{self.external_id(module_name, m)}"/>
-        </record>
-        """
+        </record>\n
+        """.strip()
+            attachments =  []
+            for att in self.env['ir.attachment'].search([
+                                    ('res_model', '=', m._name),
+                                    ('res_id', '=', m.id),
+                            ]):
+                # Skapa ett unikt id för bilagan
+                att_xml_id = f"{module_name}_attachment_{att.id}"
+                # Lägg till bilagan i xml_body (datas är base64)
+                xml_body += "\n" + f"""\n<record id="{att_xml_id}" model="ir.attachment">
+    <field name="name">{att.name}</field>
+    <field name="type">{att.type}</field>
+    <field name="datas" type="base64" file="{module_name}/files/{att.name}"/>
+    <field name="res_model">{att.res_model}</field>
+    <field name="res_id" ref="{self.external_id(module_name, m)}"/>
+    <field name="mimetype">{att.mimetype or ''}</field>
+</record>
 
-        xml_body += "\n<!-- Glue records: quest to agent -->"
-        for a in self.mapped('ai_agent_ids').mapped('ai_agent_id'):
-            xml_body += f"""
-        <record id="{self._name.replace('.', '_')}_{a._name.replace('.', '_')}" model="ai.quest.agent">
+""".strip()
+            attachments.append((f"{module_name}/files/{att.name}",base64.b64decode(att.datas)))
+            if m.memory_faiss:
+                attachments.append((f"{module_name}/files/{m.name}.faiss",base64.b64decode(m.memory_faiss)))
+            xml_body += "\n<!-- Glue records: quest to agent -->\n"
+            for a in self.mapped('ai_agent_ids').mapped('ai_agent_id'):
+                xml_body += f"""
+        <record id="{self._name.replace('.', '_')}_{a._name.replace('.', '_')}_{a.id}" model="ai.quest.agent">
             <field name="ai_agent_id" ref="{self.external_id(module_name, a)}"/>
             <field name="ai_quest_id" ref="{self.external_id(module_name, self)}"/>
         </record>
-        """
+        """.strip()
 
-        raise UserError(xml_body)
-        # Filstructure 
+        # Filestructure 
         files = {
             f'{module_name}/__init__.py': "#\n",
             f'{module_name}/data/ai_quest.xml':  f"""\
-<?xml version="1.0" encoding="utf-8"?>\n<odoo>\n<data noupdate="1">
+<?xml version="1.0" encoding="utf-8"?>\n<odoo>\n<data>
 {xml_body}
 </data>\n</odoo>
 """,
@@ -92,56 +105,22 @@ class AiQuest(models.Model):
     'name': "{module_name.replace('_', ' ').title()}",
     'version': '1.0',
     'depends': ['ai_agent'],
-    'author': "{author}",
+    'author': "{self.env.company.name}",
     'category': 'Tools',
-    'description': \"\"\"\n{description}\n\"\"\",
+    'description': \"\"\"\nQuest {self.name}\n\"\"\",
     'data': ['data/ai_quest.xml'],
     'installable': True,
     'application': False,
 }}
 """,
         }
+        for att in attachments:
+            files[att[0]]=att[1]
         mem_zip = io.BytesIO()
         with zipfile.ZipFile(mem_zip, 'w', zipfile.ZIP_DEFLATED) as zf:
             for path, content in files.items():
                 zf.writestr(path, content)
         mem_zip.seek(0)
         zip_bytes = mem_zip.read()
-        # Return as base64 for attachement or download
+        # Return as base64 for a attachement
         return base64.b64encode(zip_bytes).decode('ascii')
-
-
-
-                # ~ <button name="generate_simple_module"
-                        # ~ type="object"
-                        # ~ string="Ladda ner zip"
-                        # ~ icon="fa-download"
-                        # ~ class="btn-primary"/>
-
-
-
-# ~ def action_download_zip(self):
-    # ~ self.ensure_one()
-    # ~ download_url = '/my_module/download_zip/%s' % self.id
-    # ~ return {
-        # ~ 'type': 'ir.actions.act_url',
-        # ~ 'url': download_url,
-        # ~ 'target': 'self',
-    # ~ }
-
-
-# ~ from odoo import http
-# ~ from odoo.http import request
-
-# ~ class MyModuleController(http.Controller):
-
-    # ~ @http.route('/my_module/download_zip/<int:record_id>', type='http', auth='user')
-    # ~ def download_zip(self, record_id, **kwargs):
-        # ~ record = request.env['my.model'].browse(record_id)
-        # ~ zip_bytes = record.generate_simple_module_zip(...)  # Din metod som skapar zip
-        # ~ filename = 'my_module.zip'
-        # ~ headers = [
-            # ~ ('Content-Type', 'application/zip'),
-            # ~ ('Content-Disposition', f'attachment; filename="{filename}"'),
-        # ~ ]
-        # ~ return request.make_response(zip_bytes, headers)
