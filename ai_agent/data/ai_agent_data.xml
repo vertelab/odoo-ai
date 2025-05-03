@@ -136,7 +136,7 @@
     <field name="name">Export AI-Quest as a module</field>
     <field name="model_id" ref="ai_agent.model_ai_quest"/>
     <field name="binding_type">action</field>
-    <field name="binding_view_types">list,form</field>
+    <field name="binding_view_types">list,form,calendar,kanban,pivot</field>
     <field name="binding_model_id" ref="ai_agent.model_ai_quest"/>
 <!--
     <field name="groups_id"  eval="[(4, ref('base.group_user'))]"/>
