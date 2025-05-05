@@ -16,11 +16,15 @@ class AiQuest(models.Model):
         xml_id = object.get_external_id().get(object.id)
         if not xml_id:
             xml_id = f"{module}.{object._name.replace('.', '_')}_{object.id}"
-        return xml_id.replace('new.','').lower()
+        return xml_id.replace('new.','')
  
     def to_xml(self,module,record):
         """Return XML-data for record."""
-        record_elem = etree.Element('record', model=record._name, id=self.external_id(module,record))        
+        ext_id = self.external_id(module,record)
+        m,r = ext_id.split('.')
+        if m != module:
+            return f"\n<!-- not exported {ext_id}\n"
+        record_elem = etree.Element('record', model=record._name, id=ext_id)        
         for field in record._fields:
             if field in ['id','display_name','create_date','create_uid','write_date','write_uid','last_run',]:
                 continue
@@ -67,7 +71,7 @@ class AiQuest(models.Model):
             <field name="ai_agent_id" ref="{self.external_id(module_name, a)}"/>
             <field name="ai_memory_id" ref="{self.external_id(module_name, m)}"/>
         </record>\n
-        """.strip()
+        """.strip() + "\n"
                 for att in self.env['ir.attachment'].search([
                                         ('res_model', '=', m._name),
                                         ('res_id', '=', m.id),
@@ -84,19 +88,20 @@ class AiQuest(models.Model):
         <field name="mimetype">{att.mimetype or ''}</field>
     </record>
 
-    """.strip()
+    """.strip() + "\n"
                         attachments.append((f"{module_name}/files/{att.name}",base64.b64decode(att.datas)))
                 if m.memory_faiss:
                     attachments.append((f"{module_name}/files/{m.name}.faiss",base64.b64decode(m.memory_faiss)))
             
             xml_body += "\n<!-- Glue records: quest to agent -->\n"
-            for a in self.mapped('ai_agent_ids').mapped('ai_agent_id'):
+            for a in self.mapped('ai_agent_ids'):
                 xml_body += f"""
-        <record id="{self._name.replace('.', '_')}_{a._name.replace('.', '_')}_{a.id}" model="ai.quest.agent">
-            <field name="ai_agent_id" ref="{self.external_id(module_name, a)}"/>
+        <record id="{self._name.replace('.', '_')}_{a.ai_agent_id._name.replace('.', '_')}_{a.ai_agent_id.id}" model="ai.quest.agent">
+            <field name="ai_agent_id" ref="{self.external_id(module_name, a.ai_agent_id)}"/>
+            <field name="sequence">{a.sequence}</field>
             <field name="ai_quest_id" ref="{self.external_id(module_name, self)}"/>
         </record>
-        """.strip()
+        """.strip() + "\n"
 
         # Filestructure 
         files = {
