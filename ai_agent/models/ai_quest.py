@@ -690,11 +690,12 @@ class AIQuest(models.Model):
     @api.model
     def markdown2html(self, text):
         return markdown.markdown(text)
-
+    
+    @api.model
     def json2dict(self, text):
         json_split = text.split('```')
         if len(json_split) > 1:
-            text = text.split('```')[1].replace("json", "").replace("\n", "")
+            text = text.split('```')[1].replace("json", "").replace("\n", "").replace("'", '"')
             return json.loads(text)
         return False
 
