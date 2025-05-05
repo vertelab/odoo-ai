@@ -24,6 +24,8 @@ class AiQuest(models.Model):
         for field in record._fields:
             if field in ['id','display_name','create_date','create_uid','write_date','write_uid','last_run',]:
                 continue
+            if record._fields[field].type in ('one2many', 'many2many','many2one','related'):
+                continue                
             value = getattr(record, field)
             if field == 'memory_faiss' and value: # Large file
                 etree.SubElement(record_elem,'field',name=field,type="base64",file=f"{module}/files/{record.name}.faiss")
@@ -44,7 +46,7 @@ class AiQuest(models.Model):
         for a in self.ai_agent_ids.mapped('ai_agent_id'):
             obj.append(a)
             obj.extend(list(a.ai_memory_ids.mapped('ai_memory_id')))
-            obj.extend(list(a.ai_tool_ids.mapped('ai_tool_id')))
+            obj.extend([t.ai_tool_id for t in a.ai_tool_ids])
         for o in list(set(obj)):
             xml_body += self.to_xml(module_name,o)        
         
