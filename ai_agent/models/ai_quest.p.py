@@ -179,7 +179,7 @@ class AIQuest(models.Model):
     ai_agent_ids = fields.One2many(comodel_name='ai.quest.agent', inverse_name='ai_quest_id')
     ai_type = fields.Selection(selection=[("default", "Default"), ('ai-programmer', 'AI Programmer')],
                                default="default", required=True)
-    alias_id = fields.Many2one(comodel_name='mail.alias', string='Alias', ondelete="restrict", required=True,
+    alias_id = fields.Many2one(comodel_name='mail.alias', string='Alias', ondelete="restrict", required=False,
                                help="The email address associated with this channel. New emails received will "
                                     "automatically create new leads assigned to the channel.")
     # #if VERSION <= "17.0"
