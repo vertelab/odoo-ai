@@ -7,7 +7,7 @@ msgstr ""
 "Project-Id-Version: Odoo Server 18.0-20250410\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2025-04-23 13:32+0000\n"
-"PO-Revision-Date: 2025-05-06 09:59+0200\n"
+"PO-Revision-Date: 2025-05-06 12:02+0200\n"
 "Last-Translator: \n"
 "Language-Team: \n"
 "Language: sv\n"
@@ -246,7 +246,7 @@ msgstr "AI Swedens LLM AI Model Licensavtal"
 #: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_session_line_list
 #: model_terms:ir.ui.view,arch_db:ai_agent.view_ai_quest_session_line_calendar
 msgid "AI polletts"
-msgstr "Tokens"
+msgstr "AI-poletter"
 
 #. module: ai_agent
 #: model:ir.model,name:ai_agent.model_ai_tool
@@ -942,7 +942,7 @@ msgstr "Felsökningsläge"
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.groq_product_attribute_value_deepseek-r1-distill-llama-70b
 msgid "DeepSeek-R1-Distill-Llama-70b"
-msgstr "DeepSeek-R1-Distill-Llama-70b"
+msgstr ""
 
 #. module: ai_agent
 #: model:ir.model.fields.selection,name:ai_agent.selection__ai_agent__ai_type__default
@@ -1075,7 +1075,7 @@ msgstr "Inbäddad klass"
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_memory__ai_agent_llm_id
 msgid "Embedded LLM"
-msgstr "Inbyggd LLM"
+msgstr "Inbäddad LLM"
 
 #. module: ai_agent
 #: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_session_search
@@ -1107,7 +1107,7 @@ msgstr "Fel"
 #. module: ai_agent
 #: model:ir.model.fields.selection,name:ai_agent.selection__ai_memory__vector_type__faiss
 msgid "FAISS"
-msgstr "FAISS"
+msgstr ""
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_memory__memory_faiss
@@ -1126,7 +1126,7 @@ msgstr "Misslyckades med att ladda databasen"
 #: model:ir.model.fields,field_description:ai_agent.field_product_product__fallback_api_key_name
 #: model:ir.model.fields,field_description:ai_agent.field_product_template__fallback_api_key_name
 msgid "Fallback Api Key Name"
-msgstr "Fallback Api Key Name"
+msgstr "Namn på reserv-API-nyckel"
 
 #. module: ai_agent
 #: model_terms:ir.ui.view,arch_db:ai_agent.ai_agent_llm_search
@@ -1206,7 +1206,7 @@ msgstr "Mål"
 #. module: ai_agent
 #: model:ir.model.fields.selection,name:ai_agent.selection__product_attribute_value__licence__google-ai-terms
 msgid "Google AI-terms"
-msgstr "Google AI-termer"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.template,name:ai_agent.google_llm_product_template
@@ -1302,7 +1302,7 @@ msgstr ""
 #: model:ir.model.fields,field_description:ai_agent.field_ai_tool__id
 #: model:ir.model.fields,field_description:ai_agent.field_ai_tool_test_wizard__id
 msgid "ID"
-msgstr "ID"
+msgstr ""
 
 #. module: ai_agent
 #: model:ir.model.fields,help:ai_agent.field_ai_quest__alias_parent_thread_id
@@ -1600,7 +1600,7 @@ msgstr "Begränsa chatthistoriken till detta antal meddelanden"
 #. module: ai_agent
 #: model:ir.model.fields.selection,name:ai_agent.selection__product_attribute_value__licence__llama-community
 msgid "Llama Community License"
-msgstr "Llama Community-licens"
+msgstr ""
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest__llm_count
@@ -2016,7 +2016,7 @@ msgstr "Föremål"
 #. module: ai_agent
 #: model:product.template,name:ai_agent.ollama_product_template
 msgid "Ollama"
-msgstr "Ollama"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.template,name:ai_agent.open_ai_product_template
@@ -2591,7 +2591,7 @@ msgstr "Test AI"
 #. module: ai_agent
 #: model:ir.actions.server,name:ai_agent.action_test_llms
 msgid "Test LLMs"
-msgstr "Testa LLM"
+msgstr "Testa LLMer"
 
 #. module: ai_agent
 #: model:ir.actions.act_window,name:ai_agent.action_ai_quest_test_mail_wizard
@@ -2920,17 +2920,17 @@ msgstr "parti"
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.huggingface_product_attribute_value_bert
 msgid "bert-base-uncased"
-msgstr "bert-basen-avvecklad"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.bloom_product_attribute_value
 msgid "bigscience/bloom"
-msgstr "bigscience/bloom"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.google_llm_product_attribute_value_chat-bison-001
 msgid "chat-bison-001"
-msgstr "katt-bison-001"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.anthropic_product_attribute_value_claude-3-5-haiku-latest
@@ -2970,22 +2970,22 @@ msgstr "data_typ"
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.deepseek-ai_deepseek-r1_product_attribute_value
 msgid "deepseek-ai/DeepSeek-R1"
-msgstr "deepseek-ai/DeepSeek-R1"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.ollama_product_attribute_value_deepseek-r1-32b
 msgid "deepseek-r1:32b"
-msgstr "deepseek-r1:32b"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.groq_product_attribute_value_distil-whisper-large-v3-en
 msgid "distil-whisper-large-v3-en"
-msgstr "distil-whisper-large-v3-en"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.distilbert_product_attribute_value
 msgid "distilbert-base-uncased"
-msgstr "distilbert-basen-avvecklad"
+msgstr ""
 
 #. module: ai_agent
 #: model_terms:ir.ui.view,arch_db:ai_agent.ai_agent_form
@@ -3001,37 +3001,37 @@ msgstr ""
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.bart_product_attribute_value
 msgid "facebook/bart-base"
-msgstr "facebook/bart-base"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.google_llm_product_attribute_value_gemini-pro
 msgid "gemini-pro"
-msgstr "gemini pro"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.google_llm_product_attribute_value_gemini-pro-vision
 msgid "gemini-pro-vision"
-msgstr "gemini-provision"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.groq_product_attribute_value_gemma2-9b-it
 msgid "gemma2-9b-it"
-msgstr "gemma2-9b-sv"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.electra_product_attribute_value
 msgid "google/electra-base-discriminator"
-msgstr "google/electra-base-diskriminator"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.open_ai_product_attribute_value_gpt-4-5
 msgid "gpt-4.5"
-msgstr "gpt-4.5"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.open_ai_product_attribute_value_gpt-4o
 msgid "gpt-4o"
-msgstr "gpt-4o"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.open_ai_product_attribute_value_gpt-4o-audio-preview
@@ -3041,7 +3041,7 @@ msgstr ""
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.open_ai_product_attribute_value_gpt-4o-mini
 msgid "gpt-4o-mini"
-msgstr "gpt-4o-mini"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.open_ai_product_attribute_value_gpt-4o-mini-audio-preview
@@ -3051,12 +3051,12 @@ msgstr ""
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.huggingface_product_attribute_value_gpt2
 msgid "gpt2"
-msgstr "gpt2"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.grok_product_attribute_value_grok-1
 msgid "grok-1"
-msgstr "grok-1"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.product_attribute_value_image
@@ -3086,27 +3086,27 @@ msgstr "inmatning_tokens_cache_läsning"
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.groq_product_attribute_value_llama-3-1-8b-instant
 msgid "llama-3.1-8b-instant"
-msgstr "lama-3.1-8b-instant"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.groq_product_attribute_value_llama-3-3-70b-versatile
 msgid "llama-3.3-70b-versatile"
-msgstr "llama-3.3-70b-versatile"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.groq_product_attribute_value_llama-guard-3-8b
 msgid "llama-guard-3-8b"
-msgstr "llama-guard-3-8b"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.groq_product_attribute_value_llama3-70b-8192
 msgid "llama3-70b-8192"
-msgstr "flamma3-70b-8192"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.groq_product_attribute_value_llama3-8b-8192
 msgid "llama3-8b-8192"
-msgstr "flamma3-8b-8192"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.deberta_product_attribute_value
@@ -3126,7 +3126,7 @@ msgstr ""
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.mistral_product_attribute_value_mistral_embed
 msgid "mistral-embed"
-msgstr "mistral-embed"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.mistral_product_attribute_value_mistral-large-latest
@@ -3146,7 +3146,7 @@ msgstr ""
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.groq_product_attribute_value_mixtral-8x7b-32768
 msgid "mixtral-8x7b-32768"
-msgstr "mixtral-8x7b-32768"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute,name:ai_agent.product_attribute_model
@@ -3168,27 +3168,27 @@ msgstr ""
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.open_ai_product_attribute_value_o1
 msgid "o1"
-msgstr "o1"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.open_ai_product_attribute_value_o1-mini
 msgid "o1-mini"
-msgstr "o1-mini"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.open_ai_product_attribute_value_o3-mini
 msgid "o3-mini"
-msgstr "o3-mini"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.mistral_product_attribute_value_open-codestral-mamba
 msgid "open-codestral-mamba"
-msgstr "öppen-codestral-mamba"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.mistral_product_attribute_value_open-mistral-nemo
 msgid "open-mistral-nemo"
-msgstr "öppen-mistral-nemo"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.product_attribute_value_output_tokens
@@ -3208,7 +3208,7 @@ msgstr "utdata_tokens_resonemang"
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.mistral_product_attribute_value_pixtral-12b-2409
 msgid "pixtral-12b-2409"
-msgstr "pixtral-12b-2409"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.mistral_product_attribute_value_pixtral-large-latest
@@ -3223,12 +3223,12 @@ msgstr ""
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.sentence_transformers_all_MiniLM_l6_v2d_product_attribute_value
 msgid "sentence-transformers/all-MiniLM-l6-v2"
-msgstr "mening-transformatorer/alla-MiniLM-l6-v2"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.huggingface_product_attribute_value_mpnet
 msgid "sentence-transformers/all-mpnet-base-v2"
-msgstr "mening-transformatorer/all-mpnet-base-v2"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.ollama_product_attribute_value_snowflake-arctic-embed
@@ -3268,7 +3268,7 @@ msgstr "text"
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.google_llm_product_attribute_value_text-bison-001
 msgid "text-bison-001"
-msgstr "text-bison-001"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.open_ai_product_attribute_value_text-embedding-3-large
@@ -3288,12 +3288,12 @@ msgstr "token_typ"
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.groq_product_attribute_value_whisper-large-v3
 msgid "whisper-large-v3"
-msgstr "whisper-large-v3"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.groq_product_attribute_value_whisper-large-v3-turbo
 msgid "whisper-large-v3-turbo"
-msgstr "whisper-large-v3-turbo"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.xlm_roberta_product_attribute_value
