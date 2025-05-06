@@ -7,7 +7,7 @@ msgstr ""
 "Project-Id-Version: Odoo Server 18.0-20250410\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2025-04-23 13:32+0000\n"
-"PO-Revision-Date: 2025-04-23 16:10+0200\n"
+"PO-Revision-Date: 2025-05-06 09:59+0200\n"
 "Last-Translator: \n"
 "Language-Team: \n"
 "Language: sv\n"
@@ -278,7 +278,7 @@ msgstr "AI-uppdrag för att utföra operationer"
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.ai-sweden-models_gpt-sw3-40b_product_attribute_value
 msgid "AI-Sweden-Models/gpt-sw3-40b"
-msgstr "AI-Sverige-Modeller/gpt-sw3-40b"
+msgstr "AI-Sverige-Models/gpt-sw3-40b"
 
 #. module: ai_agent
 #: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_session_line_search
@@ -1236,7 +1236,7 @@ msgstr "Grok"
 #. module: ai_agent
 #: model:product.template,name:ai_agent.groq_product_template
 msgid "Groq"
-msgstr "Groq"
+msgstr ""
 
 #. module: ai_agent
 #: model_terms:ir.ui.view,arch_db:ai_agent.ai_agent_llm_search
@@ -1275,12 +1275,12 @@ msgstr "Hur uppdraget initsieras"
 #. module: ai_agent
 #: model:product.template,name:ai_agent.huggingface_product_template
 msgid "HuggingFace"
-msgstr "HuggingFace"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.template,name:ai_agent.huggingface_inference_api_product_template
 msgid "HuggingFaceInferenceAPI"
-msgstr "HuggingFaceInferenceAPI"
+msgstr ""
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_agent__id
@@ -1459,7 +1459,7 @@ msgstr "Json"
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.KBLab_sentence-bert-swedish-cased_product_attribute_value
 msgid "KBLab/sentence-bert-swedish-cased"
-msgstr "KBLab/mening-bert-svenska-fall"
+msgstr ""
 
 #. module: ai_agent
 #: model_terms:ir.ui.view,arch_db:ai_agent.ai_agent_llm_search
@@ -2935,32 +2935,32 @@ msgstr "katt-bison-001"
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.anthropic_product_attribute_value_claude-3-5-haiku-latest
 msgid "claude-3-5-haiku-latest"
-msgstr "claude-3-5-haiku-nyaste"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.anthropic_product_attribute_value_claude-3-5-sonnet-latest
 msgid "claude-3-5-sonnet-latest"
-msgstr "claude-3-5-sonnet-nyaste"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.anthropic_product_attribute_value_claude-3-haiku-latest
 msgid "claude-3-haiku-latest"
-msgstr "claude-3-haiku-nyaste"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.anthropic_product_attribute_value_claude-3-opus-latest
 msgid "claude-3-opus-latest"
-msgstr "claude-3-opus-nyaste"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.anthropic_product_attribute_value_claude-3-sonnet-latest
 msgid "claude-3-sonnet-latest"
-msgstr "claude-3-sonnet-nyaste"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.mistral_product_attribute_value_codestral-latest
 msgid "codestral-latest"
-msgstr "kodestral-nyaste"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute,name:ai_agent.product_attribute_data_type
@@ -2996,7 +2996,7 @@ msgstr "t.ex. stöd"
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.google_llm_product_attribute_value_embedding-gecko-001
 msgid "embedding-gecko-001"
-msgstr "inbäddning-gecko-001"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.bart_product_attribute_value
@@ -3036,7 +3036,7 @@ msgstr "gpt-4o"
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.open_ai_product_attribute_value_gpt-4o-audio-preview
 msgid "gpt-4o-audio-preview"
-msgstr "gpt-4o-audio-förhandsgranskning"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.open_ai_product_attribute_value_gpt-4o-mini
@@ -3046,7 +3046,7 @@ msgstr "gpt-4o-mini"
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.open_ai_product_attribute_value_gpt-4o-mini-audio-preview
 msgid "gpt-4o-mini-audio-preview"
-msgstr "gpt-4o-mini-audio-förhandsgranskning"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.huggingface_product_attribute_value_gpt2
@@ -3076,7 +3076,7 @@ msgstr "input_tokens"
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.product_attribute_value_input_tokens_audio
 msgid "input_tokens_audio"
-msgstr "inmatning_tokens_audio"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.product_attribute_value_input_tokens_cache_read
@@ -3111,17 +3111,17 @@ msgstr "flamma3-8b-8192"
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.deberta_product_attribute_value
 msgid "microsoft/deberta-base"
-msgstr "microsoft/deberta-basen"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.mistral_product_attribute_value_ministral-3b-latest
 msgid "ministral-3b-latest"
-msgstr "ministral-3b-nyaste"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.mistral_product_attribute_value_ministral-8b-latest
 msgid "ministral-8b-latest"
-msgstr "ministral-8b-nyaste"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.mistral_product_attribute_value_mistral_embed
@@ -3131,17 +3131,17 @@ msgstr "mistral-embed"
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.mistral_product_attribute_value_mistral-large-latest
 msgid "mistral-large-latest"
-msgstr "mistral-large-nyaste"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.mistral_product_attribute_value_mistral-moderation-latest
 msgid "mistral-moderation-latest"
-msgstr "mistral-moderering-nyaste"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.mistral_product_attribute_value_mistral-small-latest
 msgid "mistral-small-latest"
-msgstr "mistral-liten-nyaste"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.groq_product_attribute_value_mixtral-8x7b-32768
@@ -3163,7 +3163,7 @@ msgstr "inget svar"
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.ollama_product_attribute_value_nomic-embed-text
 msgid "nomic-embed-text"
-msgstr "nomic-inbäddad-text"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.open_ai_product_attribute_value_o1
@@ -3198,7 +3198,7 @@ msgstr "utdata_tokens"
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.product_attribute_value_output_tokens_audio
 msgid "output_tokens_audio"
-msgstr "utdata_tokens_audio"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.product_attribute_value_output_tokens_reasoning
@@ -3213,12 +3213,12 @@ msgstr "pixtral-12b-2409"
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.mistral_product_attribute_value_pixtral-large-latest
 msgid "pixtral-large-latest"
-msgstr "pixtral-stor-nyaste"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.roberta_product_attribute_value
 msgid "roberta-base"
-msgstr "roberta-basen"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.sentence_transformers_all_MiniLM_l6_v2d_product_attribute_value
@@ -3233,7 +3233,7 @@ msgstr "mening-transformatorer/all-mpnet-base-v2"
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.ollama_product_attribute_value_snowflake-arctic-embed
 msgid "snowflake-arctic-embed"
-msgstr "snöflinga-arktisk-inbäddad"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.open_ai_product_attribute_value_sync
@@ -3258,7 +3258,7 @@ msgstr "t.ex. Handboken"
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.t5_product_attribute_value
 msgid "t5-base"
-msgstr "t5-basen"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.product_attribute_value_text
@@ -3273,12 +3273,12 @@ msgstr "text-bison-001"
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.open_ai_product_attribute_value_text-embedding-3-large
 msgid "text-embedding-3-large"
-msgstr "text-inbäddning-3-large"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.open_ai_product_attribute_value_text-embedding-3-small
 msgid "text-embedding-3-small"
-msgstr "text-inbäddning-3-small"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute,name:ai_agent.product_attribute_token_type
@@ -3298,4 +3298,4 @@ msgstr "whisper-large-v3-turbo"
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.xlm_roberta_product_attribute_value
 msgid "xlm-roberta-base"
-msgstr "xlm-roberta-basen"
+msgstr ""
