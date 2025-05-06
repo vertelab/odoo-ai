@@ -4,6 +4,7 @@ import logging
 from collections import defaultdict
 import time
 import traceback
+import tiktoken
 import threading
 import time
 
@@ -161,18 +162,6 @@ class AIAgentLLM(models.Model):
         self.message_post(body=f"{body} | {self.last_run}", message_type="notification")
 
     def get_llm(self, verbose=False, temperature=0.7, callbacks=None, **kwarg):
-        # Apply RPM limiting before getting the LLM
-        try:
-            # Check rate limits
-            can_proceed, sleep_time = self.check_rate_limits()
-            # Apply sleep if needed
-            if sleep_time > 0:
-                _logger.info(f"Rate limiting: Sleeping for {sleep_time}s before using {self.name}")
-                time.sleep(sleep_time)
-        except UserError as e:
-            # Re-raise the rate limit error
-            raise
-
         try:
             module = importlib.import_module(self.product_tmpl_id.llm_library)
             LLM = getattr(module, self.product_tmpl_id.llm_type)
@@ -251,21 +240,29 @@ class AIAgentLLM(models.Model):
         wait=wait_exponential(multiplier=1, min=4, max=10),
         retry=retry_if_exception_type(httpx.HTTPStatusError)
     )
-    def invoke(self, input, config=None, session=None, quest=None, agent=None, debug=False):
-        if input is None:
-            error_msg = f"Input cannot be None. Please provide a valid input. {input=} {config=} {session=} {quest=} {agent=}"
+    def invoke(self, input_text, config=None, session=None, quest=None, agent=None, debug=False):
+        if input_text is None:
+            error_msg = f"Input cannot be None. Please provide a valid input. {input_text=} {config=} {session=} {quest=} {agent=}"
             self.log_message(body=error_msg, is_error=True)
             raise ValueError(error_msg)
         try:
-            response = self.get_llm().invoke(input, config)
+            # Check rate limits here, before getting the LLM
+            can_proceed, sleep_time = self.check_rate_limits(input_text=input_text)
+
+            # Apply sleep if needed
+            if sleep_time > 0:
+                _logger.info(f"Rate limiting: Sleeping for {sleep_time}s before using {self.name}")
+                time.sleep(sleep_time)
+
+            response = self.get_llm().invoke(input_text, config)
         except HTTPStatusError as e:
             if e.response.status_code == 429:
                 _logger.warning(f"Rate limit exceeded. Retrying in a moment...")
-                self.log_message(body=f"Rate limit exceeded. Retrying in a moment...\n{input=} {config=} {session=} {quest=} {agent=}", is_error=False)
+                self.log_message(body=f"Rate limit exceeded. Retrying in a moment...\n{input_text=} {config=} {session=} {quest=} {agent=}", is_error=False)
                 raise  # This will trigger a retry
             else:
                 _logger.warning(f"Other HTTP-error... {e=}")
-                self.log_message(body=f"Other HTTP-error...{e=}\n{input=} {config=} {session=} {quest=} {agent=}", is_error=True)            
+                self.log_message(body=f"Other HTTP-error...{e=}\n{input_text=} {config=} {session=} {quest=} {agent=}", is_error=True)
                 raise  # For other HTTP errors, don't retry
         except Exception as e:
             self.log_message(body=f"LLM {self.name} {e}\n\n{input=} {config=} {session=} {quest=} {agent=}\n{traceback.format_exc()}", is_error=True)
@@ -358,6 +355,23 @@ class AIAgentLLM(models.Model):
         for llm in self:
             llm.ai_api_key = llm.product_tmpl_id.ai_api_key
 
+    def _compute_tokens(self, text):
+        """Count tokens accurately using tiktoken for OpenAI models."""
+        try:
+            # Convert to string if needed
+            if not isinstance(text, str):
+                if hasattr(text, 'content'):
+                    text = text.content
+                else:
+                    text = str(text)
+
+            enc = tiktoken.encoding_for_model(self.model_id.name)
+            token_count = len(enc.encode(text))
+            return token_count
+        except Exception as e:
+            _logger.warning(f"Error using tiktoken: {e}. Using character-based token estimation.")
+            return len(text) // 4 if text else 0  # Rough estimate of 4 chars per token
+
 
     def _reset_if_new_minute(self):
         """Reset counters if we've moved to a new minute"""
@@ -374,18 +388,21 @@ class AIAgentLLM(models.Model):
                 return True
         return False
 
-    def check_rate_limits(self):
+    def check_rate_limits(self, input_text=None):
         """
-        Check RPM limits only (since we don't know tokens yet)
+        Check both RPM and TPM limits before making a request
+
+        Args:
+            input_text: Optional text to estimate token count for
 
         Returns:
             Tuple: (can_proceed, sleep_duration)
 
         Raises:
-            UserError if RPM limit would be exceeded
+            UserError if limits would be exceeded
         """
-        # Skip if no RPM limit defined
-        if not self.rpm:
+        # Skip if no limits defined
+        if not self.rpm and not self.tpm:
             return True, 0
 
         # Reset counters if in a new minute
@@ -395,16 +412,39 @@ class AIAgentLLM(models.Model):
             current_requests = _request_usage.get(self.id, 0)
 
             # Check RPM limits
-            if self.rpm > 0 and current_requests + 1 > self.rpm:
+            if 0 < self.rpm < current_requests + 1:
                 error_msg = f"RPM limit exceeded for {self.name}: {current_requests + 1} > {self.rpm}"
                 _logger.warning(error_msg)
                 raise UserError(error_msg)
 
+            # Check TPM limits if input text provided and TPM is set
+            if input_text and self.tpm > 0:
+                # Estimate tokens for this request
+                estimated_tokens = self._compute_tokens(input_text)
+                current_tokens = _token_usage.get(self.id, 0)
+
+                # Check if would exceed TPM limit
+                if current_tokens + estimated_tokens > self.tpm:
+                    error_msg = f"TPM limit would be exceeded for {self.name}: {current_tokens} + ~{estimated_tokens} > {self.tpm}"
+                    _logger.warning(error_msg)
+                    raise UserError(error_msg)
+
+                # Pre-increment the token counter with our estimate
+                _token_usage[self.id] += estimated_tokens
+                _logger.debug(f"Input token usage for {self.name} (ID: {self.id}) increased to {_token_usage[self.id]}")
+
             # Check if approaching threshold for RPM
             at_request_threshold = self.rpm > 0 and current_requests > (self.rpm * self.threshold / 100)
 
-            if at_request_threshold:
-                _logger.info(f"RPM threshold reached for {self.name}: {current_requests}/{self.rpm}")
+            # Check if approaching threshold for TPM
+            at_token_threshold = False
+            if self.tpm > 0:
+                current_tokens = _token_usage.get(self.id, 0)
+                at_token_threshold = current_tokens > (self.tpm * self.threshold / 100)
+
+            if at_request_threshold or at_token_threshold:
+                _logger.info(
+                    f"Rate limit threshold reached for {self.name}: RPM={current_requests}/{self.rpm}, TPM={_token_usage.get(self.id, 0)}/{self.tpm}")
                 return True, self.sleep_duration
 
             # Increment request count immediately
