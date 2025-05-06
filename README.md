@@ -6,6 +6,6 @@ ERROR: Cannot uninstall typing_extensions 4.10.0, RECORD file not found. Hint: T
 ```
 To fix this issue, the easiest way is to run the command below in the project/repository directory.
 ```
-sudo pip3 install -r requirements.txt --ignore-installed
+sudo pip3 install -r requirements.txt --ignore-installed --break-system-packages
 ```
 

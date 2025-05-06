@@ -15,3 +15,5 @@ duckduckgo_search
 IPython
 lxml_html_clean
 lxml
+tiktoken
+httpx
