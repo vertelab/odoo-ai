@@ -23,7 +23,7 @@ class AiQuest(models.Model):
         ext_id = self.external_id(module,record)
         m,r = ext_id.split('.')
         if m != module:
-            return f"\n<!-- not exported {ext_id}\n"
+            return f"\n<!-- not exported {ext_id} -->\n"
         record_elem = etree.Element('record', model=record._name, id=ext_id)        
         for field in record._fields:
             if field in ['id','display_name','create_date','create_uid','write_date','write_uid','last_run',]:
@@ -33,6 +33,9 @@ class AiQuest(models.Model):
             value = getattr(record, field)
             if field == 'memory_faiss' and value: # Large file
                 etree.SubElement(record_elem,'field',name=field,type="base64",file=f"{module}/files/{record.name}.faiss")
+                continue
+            if field == 'memory_markdown' and value: # Large file
+                etree.SubElement(record_elem,'field',name=field,type="base64",file=f"{module}/files/{record.name}.markdown")
                 continue
             if value and not record._fields[field].type in ('one2many', 'many2many','many2one') and not record._fields[field].compute:
                 field_elem = etree.SubElement(record_elem, 'field', name=field)
@@ -92,7 +95,9 @@ class AiQuest(models.Model):
                         attachments.append((f"{module_name}/files/{att.name}",base64.b64decode(att.datas)))
                 if m.memory_faiss:
                     attachments.append((f"{module_name}/files/{m.name}.faiss",base64.b64decode(m.memory_faiss)))
-            
+                if m.memory_markdown:
+                    attachments.append((f"{module_name}/files/{m.name}.markdown",base64.b64decode(m.memory_markdown)))
+                                
             xml_body += "\n<!-- Glue records: quest to agent -->\n"
             for a in self.mapped('ai_agent_ids'):
                 xml_body += f"""
