@@ -661,31 +661,9 @@ class AIAgent(models.Model):
             messages = [system_message, HumanMessage(content=topic)]
 
             # Apply rate limiting before invoking LLM
-            if self.ai_agent_llm_id:
-                try:
-                    # Check rate limits (focusing on RPM since we don't know tokens yet)
-                    can_proceed, sleep_time = self.ai_agent_llm_id.check_rate_limits()
+            if not self.ai_agent_llm_id.check_rate_limits(input_text=topic):
+                return False
 
-                    # Apply sleep if needed
-                    if sleep_time > 0:
-                        _logger.info(f"Rate limiting: Agent {self.name} sleeping for {sleep_time}s")
-                        if debug:
-                            session.add_message(f"Rate limiting: Agent {self.name} sleeping for {sleep_time}s")
-                        time.sleep(sleep_time)
-                except UserError as e:
-                    # Rate limit exceeded
-                    error_msg = f"Rate limit exceeded for agent {self.name}: {str(e)}"
-                    _logger.warning(error_msg)
-                    session.add_message(error_msg)
-
-                    return {
-                        "messages": [
-                            AIMessage(
-                                content=f"Rate limit exceeded for agent {self.name}. Please try again later.",
-                                name=self.name.replace(' ', '_').replace(',', '').replace('.', '')
-                            )
-                        ]
-                    }
 
             if debug:
                 self.log_message(f"Agent  {self.name} before invoke {messages=} {state=}")
@@ -703,37 +681,6 @@ class AIAgent(models.Model):
                     "messages": messages
                 })
 
-                # Record token usage from response metadata
-                if hasattr(result, 'metadata') and result.metadata:
-                    metadata = result.metadata
-                    if 'token_usage' in metadata:
-                        token_usage = metadata['token_usage']
-                        total_tokens = token_usage.get('total_tokens', 0)
-
-                        # Record the tokens
-                        self.ai_agent_llm_id.record_usage(total_tokens)
-                        if debug:
-                            session.add_message(
-                                f"Recorded {total_tokens} tokens for agent {self.name} LLM {self.ai_agent_llm_id.name}"
-                            )
-
-                # If no metadata in result directly, check individual messages
-                elif 'messages' in result:
-                    for message in result['messages']:
-                        if hasattr(message, 'response_metadata') and message.response_metadata:
-                            metadata = message.response_metadata
-                            if 'token_usage' in metadata:
-                                token_usage = metadata['token_usage']
-                                total_tokens = token_usage.get('total_tokens', 0)
-
-                                # Record the tokens
-                                self.ai_agent_llm_id.record_usage(total_tokens)
-                                if debug:
-                                    session.add_message(
-                                        f"Recorded {total_tokens} tokens for agent {self.name} LLM {self.ai_agent_llm_id.name}"
-                                    )
-                                break  # Only need to record once
-
             except Exception as e:
                 _logger.error(f"Error in agent {self.name}: {str(e)}")
                 self.log_message(f"Agent {self.name} error: {str(e)}\n{traceback.format_exc()}")
@@ -750,8 +697,6 @@ class AIAgent(models.Model):
 
             _logger.info(f"Agent {self.name} generated response")
             state['session'].save_messages(result.get('messages', []))
-            # Return response
-            # return result
 
             # Get the last AI message from the result
             ai_messages = [m for m in result.get('messages', []) if isinstance(m, AIMessage)]
