@@ -192,7 +192,7 @@ class AIQuest(models.Model):
     filter_domain = fields.Char(string='Record Selection', )
     image_128 = fields.Image("Image", max_width=128, max_height=128)
     init_type = fields.Selection(selection=INIT_TYPES, string='Initiate', help="How the Quest is initialized",
-                                 required=True, default='manual', copy=False)
+                                 required=True, default='manual')
     init_type_str = fields.Html(string='', )
     is_favorite = fields.Boolean()
     last_run = fields.Datetime()
@@ -227,7 +227,7 @@ class AIQuest(models.Model):
                                        help='Set Personas language for the LLM')
     use_time_context = fields.Boolean(string='Use Time Context', default=True,
                                       help='Inform the LLM of current time, date')
-    user_id = fields.Many2one(comodel_name='res.users', string="Owner", help="", copy=False)
+    user_id = fields.Many2one(comodel_name='res.users', string="Owner", help="")
     user_in_group = fields.Boolean(compute='_compute_user_in_group')
     is_supervisor = fields.Boolean(string='Is Supervisor',
                                    help="This is a ReAct type of quest using a supervisor coordinating agents")

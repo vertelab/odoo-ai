@@ -100,7 +100,7 @@ class AIMemory(models.Model):
     ai_agent_ids = fields.One2many(comodel_name="ai.agent.memory", inverse_name="ai_memory_id")
     ai_agent_llm_id = fields.Many2one(
         string="Embedded LLM", comodel_name="ai.agent.llm", required=True,
-        domain="[('is_embedded','=',True), ('status','=','confirmed')]")
+        domain="[('is_embedded','=',True),('status','=','confirmed')]")
     attachment_ids = fields.Many2many(comodel_name="ir.attachment")
     base_image_128 = fields.Image("Base Image", max_width=128, max_height=128, compute='_compute_base_image_128')
     color = fields.Integer(default=lambda self: randint(1, 11))
