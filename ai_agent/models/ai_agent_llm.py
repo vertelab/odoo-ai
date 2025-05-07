@@ -387,70 +387,106 @@ class AIAgentLLM(models.Model):
                 return True
         return False
 
+    def _check_rpm_limits(self):
+        """Check request per minute limits"""
+        current_requests = _request_usage.get(self.id, 0)
+
+        # Check if would exceed RPM limit
+        if 0 < self.rpm < current_requests + 1:
+            error_msg = f"Request per minute (RPM) limit exceeded for {self.name}: {current_requests + 1} > {self.rpm}"
+            _logger.warning(error_msg)
+            raise UserError(error_msg)
+
+        # Check if approaching threshold
+        at_request_threshold = self.rpm > 0 and current_requests > (self.rpm * self.threshold / 100)
+        if at_request_threshold:
+            _logger.info(f"RPM threshold reached for {self.name}: {current_requests}/{self.rpm}")
+            _logger.info(f"Sleeping for {self.sleep_duration}s to avoid exceeding RPM limits")
+            time.sleep(self.sleep_duration)
+
+        # Increment request counter
+        _request_usage[self.id] += 1
+        _logger.debug(f"Request count for {self.name} (ID: {self.id}) increased to {_request_usage[self.id]}")
+
+        return True
+
+    def _check_tpm_limits(self, input_text):
+        """Check token per minute limits"""
+        if not input_text or self.tpm <= 0:
+            return True
+
+        # Always reset if we've moved to a new minute before checking
+        self._reset_if_new_minute()
+
+        # Get CURRENT token usage AFTER potential reset
+        current_tokens = _token_usage.get(self.id, 0)
+        estimated_tokens = self._compute_tokens(input_text)
+
+        # Log the current state for debugging
+        _logger.info(
+            f"TPM check: current_tokens={current_tokens}, estimated_tokens={estimated_tokens}, limit={self.tpm}")
+
+        # Check if single request is too large
+        if estimated_tokens > self.tpm:
+            error_msg = f"Single request TPM exceeds limit for {self.name}: {estimated_tokens} > {self.tpm}"
+            _logger.warning(error_msg)
+            raise UserError(error_msg)
+
+        # If accumulated tokens would exceed limit, sleep
+        if current_tokens + estimated_tokens > self.tpm:
+            _logger.info(f"Would exceed TPM limit: {current_tokens} + ~{estimated_tokens} > {self.tpm}")
+            _logger.info(f"Sleeping for {self.sleep_duration}s to slow down token usage")
+            time.sleep(self.sleep_duration)
+
+            # Update token count after sleeping
+            self._reset_if_new_minute()
+            current_tokens = _token_usage.get(self.id, 0)
+
+        # Check if approaching threshold - only if we already have some accumulated tokens
+        elif current_tokens > 0 and (current_tokens + estimated_tokens) > (self.tpm * self.threshold / 100):
+            _logger.info(f"TPM threshold reached for {self.name}: {current_tokens + estimated_tokens}/{self.tpm}")
+            _logger.info(f"Sleeping for {self.sleep_duration}s to avoid exceeding TPM limits")
+            time.sleep(self.sleep_duration)
+
+        # Increment token counter
+        _token_usage[self.id] += estimated_tokens
+        _logger.debug(f"Input token usage for {self.name} (ID: {self.id}) increased to {_token_usage[self.id]}")
+
+        return True
+
     def check_rate_limits(self, input_text=None):
         """
         Check both RPM and TPM limits before making a request
+        Applies sleep automatically if approaching thresholds
 
         Args:
             input_text: Optional text to estimate token count for
 
         Returns:
-            Tuple: (can_proceed, sleep_duration)
+            Boolean: True if the request can proceed
 
         Raises:
             UserError if limits would be exceeded
         """
         # Skip if no limits defined
         if not self.rpm and not self.tpm:
-            return True, 0
+            return True
 
         # Reset counters if in a new minute
         self._reset_if_new_minute()
 
         with _rate_limit_lock:
-            current_requests = _request_usage.get(self.id, 0)
+            _logger.info(
+                f"Current token usage before checks: {_token_usage.get(self.id, 0)}/{self.tpm}, current RPM: {_request_usage.get(self.id, 0)}/{self.rpm}")
 
-            # Check RPM limits
-            if 0 < self.rpm < current_requests + 1:
-                error_msg = f"RPM limit exceeded for {self.name}: {current_requests + 1} > {self.rpm}"
-                _logger.warning(error_msg)
-                raise UserError(error_msg)
+            # Check RPM limits first
+            self._check_rpm_limits()
 
-            # Check TPM limits if input text provided and TPM is set
+            # Then check TPM limits if input text provided
             if input_text and self.tpm > 0:
-                # Estimate tokens for this request
-                estimated_tokens = self._compute_tokens(input_text)
-                current_tokens = _token_usage.get(self.id, 0)
+                self._check_tpm_limits(input_text)
 
-                # Check if would exceed TPM limit
-                if current_tokens + estimated_tokens > self.tpm:
-                    error_msg = f"TPM limit would be exceeded for {self.name}: {current_tokens} + ~{estimated_tokens} > {self.tpm}"
-                    _logger.warning(error_msg)
-                    raise UserError(error_msg)
-
-                # Pre-increment the token counter with our estimate
-                _token_usage[self.id] += estimated_tokens
-                _logger.debug(f"Input token usage for {self.name} (ID: {self.id}) increased to {_token_usage[self.id]}")
-
-            # Check if approaching threshold for RPM
-            at_request_threshold = self.rpm > 0 and current_requests > (self.rpm * self.threshold / 100)
-
-            # Check if approaching threshold for TPM
-            at_token_threshold = False
-            if self.tpm > 0:
-                current_tokens = _token_usage.get(self.id, 0)
-                at_token_threshold = current_tokens > (self.tpm * self.threshold / 100)
-
-            if at_request_threshold or at_token_threshold:
-                _logger.info(
-                    f"Rate limit threshold reached for {self.name}: RPM={current_requests}/{self.rpm}, TPM={_token_usage.get(self.id, 0)}/{self.tpm}")
-                return True, self.sleep_duration
-
-            # Increment request count immediately
-            _request_usage[self.id] += 1
-            _logger.debug(f"Request count for {self.name} (ID: {self.id}) increased to {_request_usage[self.id]}")
-
-        return True, 0
+        return True
 
     def record_usage(self, tokens):
         """
