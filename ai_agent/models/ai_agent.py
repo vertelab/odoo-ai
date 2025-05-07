@@ -675,37 +675,6 @@ class AIAgent(models.Model):
                     "messages": messages
                 })
 
-                # Record token usage from response metadata
-                # if hasattr(result, 'metadata') and result.metadata:
-                #     metadata = result.metadata
-                #     if 'token_usage' in metadata:
-                #         token_usage = metadata['token_usage']
-                #         total_tokens = token_usage.get('total_tokens', 0)
-                #
-                #         # Record the tokens
-                #         self.ai_agent_llm_id.record_usage(total_tokens)
-                #         if debug:
-                #             session.add_message(
-                #                 f"Recorded {total_tokens} tokens for agent {self.name} LLM {self.ai_agent_llm_id.name}"
-                #             )
-
-                # If no metadata in result directly, check individual messages
-                # elif 'messages' in result:
-                #     for message in result['messages']:
-                #         if hasattr(message, 'response_metadata') and message.response_metadata:
-                #             metadata = message.response_metadata
-                #             if 'token_usage' in metadata:
-                #                 token_usage = metadata['token_usage']
-                #                 total_tokens = token_usage.get('total_tokens', 0)
-                #
-                #                 # Record the tokens
-                #                 self.ai_agent_llm_id.record_usage(total_tokens)
-                #                 if debug:
-                #                     session.add_message(
-                #                         f"Recorded {total_tokens} tokens for agent {self.name} LLM {self.ai_agent_llm_id.name}"
-                #                     )
-                #                 break  # Only need to record once
-
             except Exception as e:
                 _logger.error(f"Error in agent {self.name}: {str(e)}")
                 self.log_message(f"Agent {self.name} error: {str(e)}\n{traceback.format_exc()}")

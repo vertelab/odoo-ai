@@ -443,7 +443,7 @@ class AIAgentLLM(models.Model):
             self._reset_if_new_minute()
             current_tokens = _token_usage.get(self.id, 0)
 
-        # Check if approaching threshold
+        # Check if approaching threshold - only if we already have some accumulated tokens
         elif current_tokens > 0 and (current_tokens + estimated_tokens) > (self.tpm * self.threshold / 100):
             _logger.info(f"TPM threshold reached for {self.name}: {current_tokens + estimated_tokens}/{self.tpm}")
             _logger.info(f"Sleeping for {self.sleep_duration}s to avoid exceeding TPM limits")

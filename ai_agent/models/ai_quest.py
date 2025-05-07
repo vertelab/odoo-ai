@@ -774,37 +774,6 @@ class AIQuest(models.Model):
             messages = local_dict.get('response', {}).get('messages', [])
             result = self._get_last_ai_message(messages)
 
-        # Record token usage from actual response metadata
-        if result and hasattr(result, 'response_metadata') and result.response_metadata:
-            metadata = result.response_metadata
-            if 'token_usage' in metadata and metadata['token_usage']:
-                token_usage = metadata['token_usage']
-                total_tokens = token_usage.get('total_tokens', 0)
-
-                # Find which LLM was used based on model_name if available
-                model_name = metadata.get('model_name')
-
-                # Get all LLMs used in this quest
-                for agent_line in self.ai_agent_ids:
-                    if not agent_line.ai_agent_id or not agent_line.ai_agent_id.ai_agent_llm_id:
-                        continue
-
-                    llm = agent_line.ai_agent_id.ai_agent_llm_id
-
-                    # Check if this LLM matches the model used
-                    # if (model_name and llm.model_id and llm.model_id.name in model_name) or not model_name:
-                    #     # Record the actual token usage
-                    #     llm.record_usage(total_tokens)
-                    #     _logger.info(f"Recorded {total_tokens} tokens for LLM {llm.name}")
-
-                # Also check supervisor LLM
-                # if self.is_supervisor and self.supervisor_llm_id:
-                #     if (model_name and self.supervisor_llm_id.model_id and
-                #         self.supervisor_llm_id.model_id.name == model_name) or not model_name:
-                #         self.supervisor_llm_id.record_usage(total_tokens)
-                #         _logger.info(
-                #             f"Recorded {total_tokens} tokens for supervisor LLM {self.supervisor_llm_id.name}")
-
         if not isinstance(result, list):
             result = [result]
 
@@ -1098,20 +1067,6 @@ class AIQuest(models.Model):
                 # Get supervisor decision
                 response = llm.invoke(messages_to_llm)
                 content = response.content
-
-                # Record token usage if metadata is available
-                # if hasattr(response, 'response_metadata') and response.response_metadata:
-                #     metadata = response.response_metadata
-                #     if 'token_usage' in metadata:
-                #         token_usage = metadata['token_usage']
-                #         total_tokens = token_usage.get('total_tokens', 0)
-                #
-                #         # Record the tokens
-                #         self.supervisor_llm_id.record_usage(total_tokens)
-                #         if self.debug:
-                #             session.add_message(
-                #                 f"Recorded {total_tokens} tokens for supervisor LLM {self.supervisor_llm_id.name}"
-                #             )
 
                 if self.debug:
                     session.add_message(f"Supervisor raw response: {content}")
