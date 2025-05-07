@@ -117,6 +117,7 @@ and cost-effective AI systems that drive innovation and efficiency across their 
         "data/ai_agent_data.xml",
         "data/ai_tool_data.xml",
         "data/ollama_data.xml",
+        "data/nebius_data.xml",
         "wizard/ai_agent_test_wizard_views.xml",
         "wizard/ai_quest_test_mail_wizard_views.xml",
         "wizard/ai_memory_test_wizard_views.xml",
