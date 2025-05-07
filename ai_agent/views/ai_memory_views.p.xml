@@ -37,7 +37,7 @@
                         <group>
                             <!-- #if VERSION >= "17.0" -->
                             <field name="memory_type" />
-                            <field name="url" invisible="memory_type != 'bs4'" />
+                            <field name="url" invisible="memory_type != 'bs4'" widget="url" />
                             <field name="max_nbr_pages" invisible="memory_type != 'bs4'" />
                             <field name="model_id" invisible="memory_type != 'model'" />
                             <field name="model_name" invisible="1" />
@@ -45,7 +45,7 @@
                             <field name="shell_cmd" invisible="memory_type != 'datastream'" />
                             <!-- #elif VERSION <= "16.0" -->
                             <field name="memory_type" />
-                            <field name="url" attrs="{'invisible': [('memory_type', '!=', 'bs4')]}" />
+                            <field name="url" attrs="{'invisible': [('memory_type', '!=', 'bs4')]}" widget="url" />
                             <field name="max_nbr_pages" attrs="{'invisible': [('memory_type', '!=', 'bs4')]}" />
                             <field name="model_id" attrs="{'invisible': [('memory_type', '!=', 'model')]}" />
                             <field name="model_name" invisible="1" />
