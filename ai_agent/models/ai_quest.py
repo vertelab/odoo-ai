@@ -491,7 +491,7 @@ class AIQuest(models.Model):
             user_id.write({'ai_quest_id': user_vals.get('ai_quest_id')})
             return user_id
         else:
-            return res_user.create({user_vals})
+            return res_user.with_context(no_reset_password=True).create(user_vals)
 
     def _get_eid(self):
         if not self.name:
