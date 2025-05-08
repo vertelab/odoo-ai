@@ -527,12 +527,21 @@ class AIQuest(models.Model):
         if self.init_type == 'chat':
             self.init_type_str = _(f'Chat with this bot, the dialog is private for you and the bot')
             if not self.chat_user_id:
-                self.chat_user_id = self.env['res.users'].create({
+                user_vals = {
                     'name': self.name,
                     'login': self.name,
-                    'ai_quest_id': self.id
-                }).id
+                    'ai_quest_id': self._origin.id or self.id
+                }
+                self.chat_user_id = self._get_or_set_chat_user(user_vals).id
         self.name = name
+
+    def _get_or_set_chat_user(self, user_vals):
+        res_user = self.env['res.users']
+        if user_id := res_user.search([('name', '=', user_vals.get('name'))], limit=1):
+            user_id.write({'ai_quest_id': user_vals.get('ai_quest_id')})
+            return user_id
+        else:
+            return res_user.create({user_vals})
 
     def _get_eid(self):
         if not self.name:

@@ -47,7 +47,7 @@
                         </group>
                         <group>
                             <field name="vector_type" />
-                            <field name="ai_agent_llm_id" />
+                            <field name="ai_agent_llm_id" required="1"/>
                             <field name="split_chunk_size" />
                             <field name="split_chunk_overlap" />
                             <field name="last_run" />
