@@ -571,12 +571,15 @@ class AIQuest(models.Model):
         return kwargs
 
     def server_action(self, records):
+        vals = self._server_action_values(records=records)
+
         if self.init_type == 'server-action' and self.server_action_id:
             if self._check_quest_error():
                 raise UserError(self._check_quest_error())
-            vals = self._server_action_values(records=records)
-            res = self.run(**vals)
-            self.log_message(f'server-action {res}')
+
+        res = self.run(**vals)
+        self.log_message(f'server-action {res}')
+        return res
 
     def _cron_values(self, **kwargs):
         return kwargs
@@ -709,7 +712,7 @@ class AIQuest(models.Model):
         if len(json_split) > 1:
             text = text.split('```')[1].replace("json", "").replace("\n", "").replace("'", '"')
             return json.loads(text)
-        return False
+        return eval(text)
 
     # ------------------------------------------------------------
     # Python CODE eval

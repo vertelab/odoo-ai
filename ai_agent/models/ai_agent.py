@@ -517,7 +517,7 @@ class AIAgent(models.Model):
             tools = "<small>fa&colon;fa-tools " + re.sub(r'[()\[\]{}:]', ' ', ','.join(
                 [t.ai_tool_id.name.replace('|', ' ') for t in self.ai_tool_ids])) + "</small>\n" if self.ai_tool_ids else ''
             memories = "<small>fa&colon;fa-book " + re.sub(r'[()\[\]{}:]', ' ', ','.join(
-                [m.ai_memory_id.name.replace('|', ' ') for m in self.ai_memory_ids])) + "</small>\n" if self.ai_memory_ids else ''
+                [m.ai_memory_id.name.replace('|', ' ') for m in self.ai_memory_ids if m.ai_memory_id])) + "</small>\n" if self.ai_memory_ids else ''
             llm = "<small>fa&colon;fa-cog " + re.sub(r'[()\[\]{}:]', ' ',
                                                      self.ai_agent_llm_id.name) + "</small>" if self.ai_agent_llm_id and self.ai_agent_llm_id.name else ''
             return f"{name}\n{tools}{memories}{llm}"
