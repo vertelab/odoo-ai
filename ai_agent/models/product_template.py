@@ -19,6 +19,7 @@ class ProductTemplate(models.Model):
     llm_price_url = fields.Char(string='Pricelist', size=64, trim=True, help="Pricelist for tokens and llm")
     token_sys = fields.Integer(string='System Tokens')
     session_line_count = fields.Integer(compute="compute_session_line_count")
+    endpoint = fields.Char(string="Endpoint")
     azure_endpoint = fields.Char(string="Azure Endpoint")
     api_version = fields.Char(string="API version")
     
@@ -95,8 +96,10 @@ class ProductAttributeValue(models.Model):
     _inherit = 'product.attribute.value'
 
     licence = fields.Selection(selection=LICENCES, string='Licence', default='commercial')
-    is_embedded = fields.Boolean(string='Is Embedded')
-    has_endpoint = fields.Boolean(string="Has Endpoint")
+    is_text2image = fields.Boolean(string='Is Text to image', default=False)
+    is_vision = fields.Boolean(string='Is Vision', default=False)
+    is_embedded = fields.Boolean(string='Is Embedded', default=False)
+    has_endpoint = fields.Boolean(string="Has Endpoint", default=False)
 
     tpm = fields.Integer(string="Token Per Minute")
     rpm = fields.Integer(string="Request Per Minute")

@@ -29,6 +29,10 @@ LICENCES = [
     ('llama-community', 'Llama Community License'),
     ('mistral-research', 'Mistral Research License'),
     ('mit', 'MIT License'),
+    ('deepseek','DEEPSEEK LICENSE AGREEMENT'),
+    ('nvidia','NVIDIA Open Model License Agreement'),
+    ('gemma','Gemma Terms of Use'),
+    ('stability-ai','Stability AI CreativeML Open RAIL++-M'),
 ]
 
 # In-memory storage for rate limiting
@@ -52,6 +56,8 @@ class AIAgentLLM(models.Model):
     endpoint = fields.Char()
     image_128 = fields.Image("Image", max_width=128, max_height=128, related="product_tmpl_id.image_128")
     is_embedded = fields.Boolean(related='model_id.product_attribute_value_id.is_embedded')
+    is_text2image = fields.Boolean(related='model_id.product_attribute_value_id.is_text2image')
+    is_vision = fields.Boolean(related='model_id.product_attribute_value_id.is_vision')
     has_endpoint = fields.Boolean(related='model_id.product_attribute_value_id.has_endpoint')
     is_favorite = fields.Boolean()
     is_key_required = fields.Boolean(default=True)
