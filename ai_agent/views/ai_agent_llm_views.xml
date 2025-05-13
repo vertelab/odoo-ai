@@ -12,6 +12,8 @@
                     <field name="llm_etype" optional="hide" />
                     <field name="licence" />
                     <field name="is_embedded" />
+                    <field name="is_text2image" />
+                    <field name="is_vision" />
                     <field name="endpoint" optional="hide" />
                     <field name="is_key_required" />
                     <field name="last_run" />
@@ -36,6 +38,8 @@
                 <search string="Search AI Agent LLM">
                     <field name="endpoint" />
                     <field name="is_embedded" />
+                    <field name="is_text2image" />
+                    <field name="is_vision" />
                     <field name="last_run" />
                     <field name="llm_etype" />
                     <field name="llm_type" />
@@ -44,6 +48,8 @@
                     <field name="product_tmpl_id" />
                     <filter string="Confirmed" name="confirmed" domain="[('status', '=', 'confirmed')]" />
                     <filter string="Embedded" name="embedded" domain="[('is_embedded', '=', True)]" />
+                    <filter string="Vision" name="vision" domain="[('is_vision', '=', True)]" />
+                    <filter string="Text2Image" name="text2image" domain="[('is_text2image', '=', True)]" />
                     <filter string="Error" name="error" domain="[('status', '=', 'error')]" />
                     <filter string="Favorite" name="favorite" domain="[('is_favorite', '=', True)]" />
                     <filter string="Key Required" name="key_required" domain="[('is_key_required', '=', True)]" />

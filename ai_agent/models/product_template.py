@@ -95,8 +95,10 @@ class ProductAttributeValue(models.Model):
     _inherit = 'product.attribute.value'
 
     licence = fields.Selection(selection=LICENCES, string='Licence', default='commercial')
-    is_embedded = fields.Boolean(string='Is Embedded')
-    has_endpoint = fields.Boolean(string="Has Endpoint")
+    is_text2image = fields.Boolean(string='Is Text to image', default=False)
+    is_vision = fields.Boolean(string='Is Vision', default=False)
+    is_embedded = fields.Boolean(string='Is Embedded', default=False)
+    has_endpoint = fields.Boolean(string="Has Endpoint", default=False)
 
     tpm = fields.Integer(string="Token Per Minute")
     rpm = fields.Integer(string="Request Per Minute")
