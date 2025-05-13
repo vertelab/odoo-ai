@@ -12,7 +12,6 @@
     <!-- Model -->
     <!-- https://studio.nebius.com/settings/rate-limits -->
     <record id="nebius_qwen_qwen3_235b_a22b" model="product.attribute.value">
-<<<<<<< HEAD
       <field name="name">Qwen/Qwen3-235B-A22B</field>
       <field name="licence">apache-2.0</field>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
