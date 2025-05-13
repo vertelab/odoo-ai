@@ -252,14 +252,6 @@ class AIAgentLLM(models.Model):
             self.log_message(body=error_msg, is_error=True)
             raise ValueError(error_msg)
         try:
-            # Check rate limits here, before getting the LLM
-            can_proceed, sleep_time = self.check_rate_limits(input_text=input_text)
-
-            # Apply sleep if needed
-            if sleep_time > 0:
-                _logger.info(f"Rate limiting: Sleeping for {sleep_time}s before using {self.name}")
-                time.sleep(sleep_time)
-
             response = self.get_llm().invoke(input_text, config)
         except HTTPStatusError as e:
             if e.response.status_code == 429:

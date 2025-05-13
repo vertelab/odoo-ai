@@ -1,4 +1,5 @@
 import base64
+import ast
 import json
 import logging
 import markdown
@@ -527,12 +528,21 @@ class AIQuest(models.Model):
         if self.init_type == 'chat':
             self.init_type_str = _(f'Chat with this bot, the dialog is private for you and the bot')
             if not self.chat_user_id:
-                self.chat_user_id = self.env['res.users'].create({
+                user_vals = {
                     'name': self.name,
                     'login': self.name,
-                    'ai_quest_id': self.id
-                }).id
+                    'ai_quest_id': self._origin.id or self.id
+                }
+                self.chat_user_id = self._get_or_set_chat_user(user_vals).id
         self.name = name
+
+    def _get_or_set_chat_user(self, user_vals):
+        res_user = self.env['res.users']
+        if user_id := res_user.search([('name', '=', user_vals.get('name'))], limit=1):
+            user_id.write({'ai_quest_id': user_vals.get('ai_quest_id')})
+            return user_id
+        else:
+            return res_user.with_context(no_reset_password=True).create(user_vals)
 
     def _get_eid(self):
         if not self.name:
@@ -609,12 +619,15 @@ class AIQuest(models.Model):
         return kwargs
 
     def server_action(self, records):
+        vals = self._server_action_values(records=records)
+
         if self.init_type == 'server-action' and self.server_action_id:
             if self._check_quest_error():
                 raise UserError(self._check_quest_error())
-            vals = self._server_action_values(records=records)
-            res = self.run(**vals)
-            self.log_message(f'server-action {res}')
+
+        res = self.run(**vals)
+        self.log_message(f'server-action {res}')
+        return res
 
     def _cron_values(self, **kwargs):
         return kwargs
@@ -743,11 +756,51 @@ class AIQuest(models.Model):
     
     @api.model
     def json2dict(self, text):
-        json_split = text.split('```')
-        if len(json_split) > 1:
-            text = text.split('```')[1].replace("json", "").replace("\n", "").replace("'", '"')
-            return json.loads(text)
-        return False
+        """Safely extract and parse JSON or dictionary-like content from text."""
+        # First attempt: Look for JSON content within code blocks
+        json_match = re.search(r'```(?:json)?\s*([\s\S]*?)```', text)
+        if json_match:
+            json_content = json_match.group(1).strip()
+            try:
+                return json.loads(json_content)
+            except json.JSONDecodeError:
+                # Try some common JSON cleanup operations
+                cleaned = json_content.replace('\\\'', '\'')  # Handle escaped single quotes
+                cleaned = cleaned.replace('\n', ' ')  # Remove newlines within the JSON
+                cleaned = re.sub(r'\\n', '\\\\n', cleaned)  # Properly escape \n sequences
+
+                try:
+                    return json.loads(cleaned)
+                except json.JSONDecodeError:
+                    pass  # Move to next method if this fails
+
+        # Second attempt: Try to find a dictionary-like structure
+        dict_match = re.search(r'\{[\s\S]*?}', text)
+        if dict_match:
+            dict_text = dict_match.group(0)
+            try:
+                # Try direct JSON parsing first
+                return json.loads(dict_text)
+            except json.JSONDecodeError:
+                # If JSON parsing fails, try to convert to valid Python dict syntax
+                py_dict = dict_text.replace(
+                    'null', 'None'
+                ).replace('true', 'True').replace('false', 'False')
+                try:
+                    # Use safer ast.literal_eval instead of eval
+                    return ast.literal_eval(py_dict)
+                except (SyntaxError, ValueError):
+                    pass  # Move to next method if this fails
+
+        # Third attempt: As a last resort, try ast.literal_eval on the entire text
+        # This is much safer than using eval()
+        try:
+            return ast.literal_eval(text)
+        except (SyntaxError, ValueError):
+            pass
+
+        # If all parsing attempts fail, return an empty dictionary
+        return {}
 
     # ------------------------------------------------------------
     # Python CODE eval

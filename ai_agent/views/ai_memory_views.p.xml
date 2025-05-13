@@ -60,7 +60,7 @@
                             <!-- #if VERSION >= "16.0" -->
                             <field name="tag_ids" widget="many2many_tags" />
                             <!-- #endif -->
-                            <field name="ai_agent_llm_id" />
+                            <field name="ai_agent_llm_id" required="1"/>
                             <field name="split_chunk_size" />
                             <field name="split_chunk_overlap" />
                             <field name="last_run" />

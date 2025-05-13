@@ -134,7 +134,7 @@
                                 <field name="model_name" invisible="1" />
                                 <field name="filter_domain" widget="domain" options="{'model-field': 'res.partner'}" invisible="init_type != 'cron'" />
                                 <field name="channel_id" invisible="init_type != 'channel'" required="init_type == 'channel'" />
-                                <field name="chat_user_id" invisible="init_type != 'chat'" required="init_type == 'chat'" />
+                                <field name="chat_user_id" invisible="init_type != 'chat'" required="init_type == 'chat'" force_save="1" />
                                 <field name="use_chat_history" on_change="1" invisible="init_type not in ['chat','channel'] or use_chat_history == True" class="oe_inline" />
                                 <label for="use_chat_history" invisible="init_type not in ['chat','channel'] or use_chat_history == False" class="oe_inline" />
                                 <div>
@@ -399,7 +399,7 @@
             <!-- #endif -->
         </record>
 
-        <menuitem id="ai_agent.menu_ai_agent_root" name="AI Orchestration" groups="ai_agent.group_ai_agent_developer,ai_agent.group_ai_agent_manager" action="action_ai_quest" />
+        <menuitem id="ai_agent.menu_ai_agent_root" name="AI Orchestration" groups="ai_agent.group_ai_agent_developer,ai_agent.group_ai_agent_manager" action="action_ai_quest" web_icon="ai_agent,static/description/icon.png"/>
         <menuitem id="ai_agent.menu_ai_agent_menu" parent="ai_agent.menu_ai_agent_root" name="Agents and Quests" />
         <menuitem id="ai_agent.menu_ai_quest" name="Ai Quest" parent="ai_agent.menu_ai_agent_menu" action="action_ai_quest" />
 
