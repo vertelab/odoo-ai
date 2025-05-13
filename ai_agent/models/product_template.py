@@ -19,6 +19,7 @@ class ProductTemplate(models.Model):
     llm_price_url = fields.Char(string='Pricelist', size=64, trim=True, help="Pricelist for tokens and llm")
     token_sys = fields.Integer(string='System Tokens')
     session_line_count = fields.Integer(compute="compute_session_line_count")
+    endpoint = fields.Char(string="Endpoint")
     azure_endpoint = fields.Char(string="Azure Endpoint")
     api_version = fields.Char(string="API version")
     

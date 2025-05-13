@@ -1,62 +1,84 @@
 <odoo>
-    <data>
-        <record id="view_ai_llm_attribute_value_tree" model="ir.ui.view">
-            <field name="name">ai.agent.llm.tree</field>
-            <field name="model">product.attribute.value</field>
-            <field name="arch" type="xml">
-                <list string="LLM Attributes">
-                    <field name="name" />
-                    <field name="tpm" />
-                    <field name="rpm" />
-                    <field name="context_window" />
-                    <field name="has_temperature" />
-                </list>
-            </field>
-        </record>
-
-        <record id="view_ai_llm_attribute_value_search" model="ir.ui.view">
-            <field name="name">ai.agent.llm.search</field>
-            <field name="model">product.attribute.value</field>
-            <field name="arch" type="xml">
-                <search string="Search LLM Attributes">
-                    <field name="name" />
-                </search>
-            </field>
-        </record>
-
-        <record id="view_ai_llm_attribute_value_form" model="ir.ui.view">
-            <field name="name">product.attribute.value.form</field>
-            <field name="model">product.attribute.value</field>
-            <field name="arch" type="xml">
-                <form>
-                    <sheet>
-                        <group>
-                            <group>
-                                <field name="licence" />
-                                <field name="is_embedded"/>
-                                <field name="tpm"/>
-                                <field name="rpm"/>
-                            </group>
-                            <group>
-                                <field name="context_window"/>
-                                <field name="has_temperature"/>
-                                <field name="has_endpoint"/>
-                            </group>
-                        </group>
-                    </sheet>
-                </form>
-            </field>
-        </record>
-
-
-
-        <record id="action_ai_llm_attribute_value" model="ir.actions.act_window">
-            <field name="name">LLM Attributes</field>
-            <field name="res_model">product.attribute.value</field>
-            <field name="view_mode">list,form</field>
-        </record>
-
-        <menuitem id="ai_agent.menu_ai_llm_attribute_value" name="LLM Attributes" parent="ai_agent.menu_ai_agent_configuration" action="action_ai_llm_attribute_value" />
-
-    </data>
+  <data>
+    <record id="product_template_attribute_value_view_form" model="ir.ui.view">
+      <field name="name">product.template.attribute.value.llm</field>
+      <field name="model">product.template.attribute.value</field>
+      <field name="inherit_id" ref="product.product_template_attribute_value_view_form" />
+      <field name="arch" type="xml">
+        <field name="price_extra" position="after">
+          <field name="licence" />
+          <field name="is_embedded" />
+          <field name="is_vision" />
+          <field name="is_text2image" />
+          <field name="is_embedded" />
+          <field name="tpm" />
+          <field name="rpm" />
+          <group>
+            <field name="context_window" />
+            <field name="has_temperature" />
+            <field name="has_endpoint" />
+          </group>
+          <field name="tpm" />
+          <field name="rpm" />
+          <field name="context_window" />
+          <field name="has_temperature" />
+        </field>
+      </field>
+    </record>
+    <record id="view_ai_llm_attribute_value_tree" model="ir.ui.view">
+      <field name="name">ai.agent.llm.tree</field>
+      <field name="model">product.attribute.value</field>
+      <field name="arch" type="xml">
+        <list string="LLM Attributes">
+          <field name="name" />
+          <field name="tpm" />
+          <field name="rpm" />
+          <field name="context_window" />
+          <field name="has_temperature" />
+        </list>
+      </field>
+    </record>
+    <record id="view_ai_llm_attribute_value_search" model="ir.ui.view">
+      <field name="name">ai.agent.llm.search</field>
+      <field name="model">product.attribute.value</field>
+      <field name="arch" type="xml">
+        <search string="Search LLM Attributes">
+          <field name="name" />
+        </search>
+      </field>
+    </record>
+    <record id="view_ai_llm_attribute_value_form" model="ir.ui.view">
+      <field name="name">product.attribute.value.form</field>
+      <field name="model">product.attribute.value</field>
+      <field name="arch" type="xml">
+        <form>
+          <sheet>
+            <group>
+              <group>
+                <field name="licence" />
+                <field name="is_embedded" />
+                <field name="is_vision" />
+                <field name="is_text2image" />
+                <field name="is_text2image" />                
+                <field name="tpm" />
+                <field name="rpm" />
+              </group>
+              <group>
+                <field name="context_window" />
+                <field name="has_temperature" />
+                <field name="has_endpoint" />
+                <field name="endpoint"  />
+              </group>
+            </group>
+          </sheet>
+        </form>
+      </field>
+    </record>
+    <record id="action_ai_llm_attribute_value" model="ir.actions.act_window">
+      <field name="name">LLM Attributes</field>
+      <field name="res_model">product.attribute.value</field>
+      <field name="view_mode">list,form</field>
+    </record>
+    <menuitem id="ai_agent.menu_ai_llm_attribute_value" name="LLM Attributes" parent="ai_agent.menu_ai_agent_configuration" action="action_ai_llm_attribute_value" />
+  </data>
 </odoo>
