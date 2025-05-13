@@ -195,11 +195,13 @@ class AIAgentLLM(models.Model):
                 api_key = tools.config.get(self.product_tmpl_id.fallback_api_key_name, False)
                 _logger.error(f"{'API Key Found' if api_key else 'No API Key found'}")
 
+            if self.endpoint:
+                kwarg['base_url'] = self.endpoint
+
             if self.has_temperature:
                 kwarg['temperature'] = temperature
 
             if self.product_tmpl_id.llm_type == "ChatOllama":
-                kwarg["base_url"] = self.endpoint
                 kwarg["disable_streaming"] = True
             elif self.product_tmpl_id.llm_type == "AzureChatOpenAI":
                 kwarg['api_version'] = self.api_version
