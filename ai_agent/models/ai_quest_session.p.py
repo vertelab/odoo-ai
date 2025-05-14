@@ -250,7 +250,7 @@ class AIQuestSession(models.Model):
                     self.env['ai.quest.session.line'].new_line(session=self, aimessage=message, agent=agent,
                                                                debug=self.debug, memory=memory, tool=tool)
             if objects:
-                for rec in objects.get('records'):
+                for rec in objects.get('records',[]):
                     self.env['ai.session.object'].create({
                         'ai_session_id': objects.get('ai_session_id').id,
                         'object_id': f"{rec._name}, {rec.id}",
