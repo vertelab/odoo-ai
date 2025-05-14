@@ -191,7 +191,7 @@
                     <field name="color" />
                     <field name="init_type" />
                     <field name="status" />
-                    <field name="user_id" />
+                    <field name="user_id" />            
                     <field name="partner_id" />
                     <field name="is_favorite" />
                     <field name="is_supervisor" />
@@ -207,7 +207,7 @@
                             </t>
 
                             <t t-name="card">
-                                <div class="row g-0 mt-1">
+                                <div class="row g-0 mt-3">
                                     <div class="col-2 me-2">
                                         <field name="avatar_128" alt="Contact image" widget="image" options="{'img_class': 'object-fit-cover'}"/>
                                     </div>
@@ -242,6 +242,7 @@
                 </kanban>
             </field>
         </record>
+
 
         <record id="ai_quest_kanban2" model="ir.ui.view">
             <field name="name">ai.quest.kanban</field>

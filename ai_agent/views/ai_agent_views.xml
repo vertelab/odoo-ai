@@ -48,15 +48,13 @@
                 </search>
             </field>
         </record>
+
         <record id="ai_agent_form" model="ir.ui.view">
             <field name="name">ai.agent.form</field>
             <field name="model">ai.agent</field>
             <field name="arch" type="xml">
                 <form>
                     <header>
-<!--
-                        <button name="get_test_wizard" type="object" string="Test" />
--->
                         <button name="test" type="object" string="Test" />
                         <field name="status" widget="statusbar" statusbar_visible="draft,active,done" options="{'clickable': '1', 'fold_field': 'fold'}" />
                     </header>
