@@ -882,7 +882,7 @@ class AIQuest(models.Model):
                      "binding_view_types": "form,list",
                      'binding_model_id': self.model_id.id if self.status == 'active' else None})
             if quest.cron_id:
-                quest.cron_id.write({'name': quest.name, 'code': f"action = env.ref('{quest._get_eid()}').cron()"})
+                quest.cron_id.write({'name': quest.name, 'code': f"action = env.ref('{quest._get_eid()}').cron(records)"})
             if quest.channel_id:
                 quest.channel_id.write({'name': quest.name, 'ai_quest_id': quest.id, })
             if quest.chat_user_id:
