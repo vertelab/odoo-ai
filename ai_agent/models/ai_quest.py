@@ -445,7 +445,7 @@ class AIQuest(models.Model):
                     'name': self.name,
                     'model_id': self.model_id.id if self.model_id else self.env.ref('base.model_res_partner').id,
                     'state': 'code',
-                    'code': f"action = env.ref('{self._get_eid()}').cron()",
+                    'code': f"action = env.ref('{self._get_eid()}').cron(records)",
                 })
         # ~ if self.init_type != 'server-action' and self.server_action_id:
         # ~ self.server_action_id.unlink()
