@@ -543,26 +543,24 @@ class AIQuest(models.Model):
     # ------------------------------------------------------------
     def _check_quest_error(self):
         if len(self.ai_agent_ids) == 0:
-            return _('You have to assign at least one agent to the quest')
+            raise UserError(_('You have to assign at least one agent to the quest'))
         if len(self.ai_agent_ids.filtered(lambda a: a.ai_agent_id.status != 'active')) > 0:
-            return _('Check status on agents')
+            raise UserError(_('Check status on agents'))
         if len(self.ai_agent_ids.filtered(lambda a: a.ai_agent_id.ai_agent_llm_id == False)) > 0:
-            return _('Missing LLM on agent')
+            raise UserError(_('Missing LLM on agent'))
         if len(self.ai_agent_ids.filtered(lambda a: a.ai_agent_id.ai_agent_llm_id == False)) > 0:
-            return _('Missing LLM on agent')
+            raise UserError(_('Missing LLM on agent'))
         if len(self.ai_agent_ids.filtered(lambda a: a.ai_agent_id.ai_agent_llm_id.status != 'confirmed')) > 0:
-            return _('Check status on LLMs')
+            raise UserError(_('Check status on LLMs'))
         if len(self.ai_agent_ids.filtered(
                 lambda a: a.ai_agent_id.ai_agent_llm_id.is_key_required and not a.ai_agent_id.ai_agent_llm_id.ai_api_key
         )) > 0:
             pass
             # return _('Missing API Key on LLMs')
-        # if self.status != 'active':
-        #     return _('Wrong status on the quest')
         if self.code == DEFAULT_PYTHON_CODE:
-            return _('Missing Python Code on the quest')
+            raise UserError(_('Missing Python Code on the quest'))
         if not self.description:
-            return _('Missing Description on the quest')
+            raise UserError(_('Missing Description on the quest'))
         return False
 
     def _server_action_values(self, **kwargs):
@@ -588,13 +586,16 @@ class AIQuest(models.Model):
         if self.init_type == 'cron' and self.cron_id:
             if self._check_quest_error():
                 self.log_message(self._check_quest_error())
+
             if self.filter_domain:
-                domain = safe_eval.safe_eval(self_sudo.filter_domain, self._get_eval_context())
+                # domain = safe_eval(self_sudo.filter_domain, self._get_eval_context())
+                domain = safe_eval(self_sudo.filter_domain)
                 records = self.env[self.model_id.model].search(domain)
             else:
-                records = {}
+                records = records
             vals = self._cron_values(records=records)
             result = self.run(**vals)
+            _logger.info(f"cron job {result=}")
 
     def _chat_values(self, **kwargs):
         return kwargs
