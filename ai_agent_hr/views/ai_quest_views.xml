@@ -44,6 +44,7 @@
                 <xpath expr="//div[hasclass('o_kanban_record_bottom')]//div[hasclass('oe_kanban_bottom_right')]" position="inside">
                     <field name="department_id" widget="many2one_avatar" />
                 </xpath>
+
             </field>
         </record>
         <record id="view_ai_quest_calendar" model="ir.ui.view">
