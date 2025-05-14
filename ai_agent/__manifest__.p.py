@@ -112,6 +112,7 @@ and cost-effective AI systems that drive innovation and efficiency across their 
         "data/mistral_data.xml",
         "data/anthropic_data.xml",
         "data/azure_data.xml",
+        "data/berget_ai_data.xml",
         "data/grok_data.xml",
         "data/groq_data.xml",
         "data/google_data.xml",
