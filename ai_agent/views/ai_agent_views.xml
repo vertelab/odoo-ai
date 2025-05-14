@@ -48,15 +48,13 @@
                 </search>
             </field>
         </record>
+
         <record id="ai_agent_form" model="ir.ui.view">
             <field name="name">ai.agent.form</field>
             <field name="model">ai.agent</field>
             <field name="arch" type="xml">
                 <form>
                     <header>
-<!--
-                        <button name="get_test_wizard" type="object" string="Test" />
--->
                         <button name="test" type="object" string="Test" />
                         <field name="status" widget="statusbar" statusbar_visible="draft,active,done" options="{'clickable': '1', 'fold_field': 'fold'}" />
                     </header>
@@ -93,17 +91,12 @@
                                 <field name="last_run" />
                             </group>
                         </group>
-                        <!--
-                             <group>
-                             <separator />
-                        -->
+
                         <group>
                             <field name="ai_role" />
                             <field name="ai_goal" />
                         </group>
-                        <!--
-                             </group>
-                        -->
+
                         <notebook>
                             <page string="Description" id="description">
                                 <field name="ai_description" nolabel="1" />
@@ -158,7 +151,7 @@
             <field name="name">ai.agent.kanban</field>
             <field name="model">ai.agent</field>
             <field name="arch" type="xml">
-                <kanban class="o_kanban_mobile">
+                <kanban highlight_color="color" class="o_kanban_mobile">
                     <field name="id" />
                     <field name="name" />
                     <field name="color" />
