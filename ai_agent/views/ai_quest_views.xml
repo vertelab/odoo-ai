@@ -106,9 +106,11 @@
                                 <field name="alias_contact" string="Accept Emails From" invisible="init_type != 'mail'" required="init_type == 'cron'" />
                                 <field name="server_action_id" invisible="init_type != 'server-action'" required="init_type == 'server-action'" />
                                 <field name="cron_id" invisible="init_type != 'cron'" required="init_type == 'cron'" />
+
                                 <field name="model_id" invisible="init_type not in ['server-action','cron','powerbox']" required="init_type in ['server-action','cron']" />
                                 <field name="model_name" invisible="1" />
-                                <field name="filter_domain" widget="domain" options="{'model-field': 'res.partner'}" invisible="init_type != 'cron'" />
+                                <field name="filter_domain" widget="domain" options="{'model': 'model_name'}" invisible="init_type != 'cron'" />
+
                                 <field name="channel_id" invisible="init_type != 'channel'" required="init_type == 'channel'" />
                                 <field name="chat_user_id" invisible="init_type != 'chat'" required="init_type == 'chat'" force_save="1" />
                                 <field name="use_chat_history" on_change="1" invisible="init_type not in ['chat','channel'] or use_chat_history == True" class="oe_inline" />
