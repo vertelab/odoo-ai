@@ -294,7 +294,7 @@
                             </t>
 
                             <t t-name="card">
-                                <div class="row g-0 mt-3">
+                                <div class="row g-0 mt-1">
                                     <div class="col-2 me-2">
                                         <field name="avatar_128" alt="Contact image" widget="image" options="{'img_class': 'object-fit-cover'}"/>
                                     </div>
