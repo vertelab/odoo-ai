@@ -20,7 +20,6 @@ class ProductTemplate(models.Model):
     token_sys = fields.Integer(string='System Tokens')
     session_line_count = fields.Integer(compute="compute_session_line_count")
     endpoint = fields.Char(string="Endpoint")
-    azure_endpoint = fields.Char(string="Azure Endpoint")
     api_version = fields.Char(string="API version")
     
     @api.depends("ai_session_lines_ids")
@@ -40,6 +39,7 @@ class ProductTemplate(models.Model):
                     'model_id': model.id,
                     'product_tmpl_id': p.id,
                     'name': f"{p.name}-{model.name}",
+                    'endpoint': model.endpoint,
                 })
     
     def create_llm_demo(self):
@@ -117,3 +117,4 @@ class ProductTemplateAttributeValue(models.Model):
         string="Context Window", copy=False, related="product_attribute_value_id.context_window")
     has_temperature = fields.Boolean(
         string="Has Temperature", default=False, copy=False, related="product_attribute_value_id.has_temperature")
+    endpoint = fields.Char(string="Endpoint",related="product_attribute_value_id.endpoint")
