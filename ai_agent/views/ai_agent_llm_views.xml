@@ -112,7 +112,6 @@
                                 <field name="product_tmpl_id" />
                                 <field name="model_id" invisible="product_tmpl_id == False" domain="[('product_tmpl_id', '=', product_tmpl_id),('attribute_id','=', %(ai_agent.product_attribute_model)d)]" />
                                 <field name="endpoint" invisible="has_endpoint == False"/>
-                                <field name="azure_endpoint" required="llm_type == 'AzureChatOpenAI'" invisible="llm_type != 'AzureChatOpenAI'"/>
                                 <field name="api_version" required="llm_type == 'AzureChatOpenAI'" invisible="llm_type != 'AzureChatOpenAI'"/>
                                 <field name="context_window"/>
                                 <field name="has_temperature"/>

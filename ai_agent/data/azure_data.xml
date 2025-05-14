@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-  <data noupdate="1">
+  <data noupdate="0">
     <!-- Source: azure.microsoft.com/en-us/pricing/details/machine-learning/#pricing -->
     <record id="azure_product_template" model="product.template">
       <field name="name">Azure OpenAI</field>
@@ -11,49 +11,44 @@
       <field name="fallback_api_key_name">azure_api_key</field>
       <field name="image_1920" type="base64" file="ai_agent/static/img/azure_openai-logo.png" />
     </record>
+
+    <record id="azure_product_attribute_value_o1" model="product.attribute.value">
+      <field name="name">o1</field>
+      <!-- <field name="licence">azure-research</field> -->
+      <field name="has_endpoint" eval="True" />
+      <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+    </record>
+    <record id="azure_product_attribute_value_o1-mini" model="product.attribute.value">
+      <field name="name">o1-mini</field>
+      <!-- <field name="licence">azure-research</field> -->
+      <field name="has_endpoint" eval="True" />
+      <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+    </record>
+    <record id="azure_product_attribute_value_GPT-4o" model="product.attribute.value">
+      <field name="name">GPT-4o</field>
+      <!-- <field name="licence">azure-research</field> -->
+      <field name="has_endpoint" eval="True" />
+      <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+    </record>
+    <record id="azure_product_attribute_value_GPT-4o-mini" model="product.attribute.value">
+      <field name="name">GPT-4o-mini</field>
+      <!-- <field name="licence">azure-research</field> -->
+      <field name="has_endpoint" eval="True" />
+      <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+    </record>
+
     <!--        &lt;!&ndash; Model &ndash;&gt;-->
     <!--        &lt;!&ndash; See link for different OpenAI Services used as a model. Region: "Sweden Central" + Currency: "SEK" &ndash;&gt;-->
     <!--        &lt;!&ndash; Source: https://azure.microsoft.com/en-us/pricing/details/cognitive-services/openai-service/ &ndash;&gt;-->
-    <!--        <record id="azure_product_attribute_value_o1" model="product.attribute.value">-->
-    <!--            <field name="name">o1</field>-->
-    <!--            &lt;!&ndash;-->
-    <!--                   <field name="licence">azure-research</field>-->
-    <!--            &ndash;&gt;-->
-    <!--            <field name="attribute_id" ref="ai_agent.product_attribute_model" />-->
-    <!--        </record>-->
-    <!--        <record id="azure_product_attribute_value_o1-mini" model="product.attribute.value">-->
-    <!--            <field name="name">o1-mini</field>-->
-    <!--            <field name="attribute_id" ref="ai_agent.product_attribute_model" />-->
-    <!--        </record>-->
-    <!--        <record id="azure_product_attribute_value_GPT-4o" model="product.attribute.value">-->
-    <!--            <field name="name">GPT-4o</field>-->
-    <!--            <field name="attribute_id" ref="ai_agent.product_attribute_model" />-->
-    <!--        </record>-->
-    <!--        <record id="azure_product_attribute_value_GPT-4o-mini" model="product.attribute.value">-->
-    <!--            <field name="name">GPT-4o-mini</field>-->
-    <!--            <field name="attribute_id" ref="ai_agent.product_attribute_model" />-->
-    <!--        </record>-->
-    <!--        &lt;!&ndash; Attribute Line &ndash;&gt;-->
-    <!--        <record id="azure_product_template_attribute_line_model" model="product.template.attribute.line">-->
-    <!--            <field name="product_tmpl_id" ref="azure_product_template" />-->
-    <!--            <field name="attribute_id" ref="product_attribute_model" />-->
-    <!--            <field name="value_ids" eval="[(6, 0, [-->
-    <!--                    ref('azure_product_attribute_value_o1'),-->
-    <!--                    ref('azure_product_attribute_value_o1-mini'),-->
-    <!--                    ref('azure_product_attribute_value_GPT-4o'),-->
-    <!--                    ref('azure_product_attribute_value_GPT-4o-mini'),-->
-    <!--                    ])]" />-->
-    <!--        </record>-->
-    <!--   -->
-    <!-- Attribute Line using existing models -->
+
     <record id="azure_product_template_attribute_line_model" model="product.template.attribute.line">
       <field name="product_tmpl_id" ref="azure_product_template" />
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
       <field name="value_ids" eval="[(6, 0, [
-                    ref('ai_agent.open_ai_product_attribute_value_o1'),
-                    ref('ai_agent.open_ai_product_attribute_value_o1-mini'),
-                    ref('ai_agent.open_ai_product_attribute_value_gpt-4o'),
-                    ref('ai_agent.open_ai_product_attribute_value_gpt-4o-mini'),
+                    ref('ai_agent.azure_product_attribute_value_o1'),
+                    ref('ai_agent.azure_product_attribute_value_o1-mini'),
+                    ref('ai_agent.azure_product_attribute_value_GPT-4o'),
+                    ref('ai_agent.azure_product_attribute_value_GPT-4o-mini'),
                     ])]" />
     </record>
     <!-- Token Type -->
