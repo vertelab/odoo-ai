@@ -547,9 +547,9 @@ class AIQuest(models.Model):
         if len(self.ai_agent_ids.filtered(lambda a: a.ai_agent_id.status != 'active')) > 0:
             raise UserError(_('Check status on agents'))
         if len(self.ai_agent_ids.filtered(lambda a: a.ai_agent_id.ai_agent_llm_id == False)) > 0:
-            raise UserError( _('Missing LLM on agent'))
+            raise UserError(_('Missing LLM on agent'))
         if len(self.ai_agent_ids.filtered(lambda a: a.ai_agent_id.ai_agent_llm_id == False)) > 0:
-            raise UserError( _('Missing LLM on agent'))
+            raise UserError(_('Missing LLM on agent'))
         if len(self.ai_agent_ids.filtered(lambda a: a.ai_agent_id.ai_agent_llm_id.status != 'confirmed')) > 0:
             raise UserError(_('Check status on LLMs'))
         if len(self.ai_agent_ids.filtered(
@@ -764,7 +764,6 @@ class AIQuest(models.Model):
         :param action: the current server action
         :type action: browse record
         :returns: dict -- evaluation context given to (safe_)safe_eval """
-        print("kw", kw)
         records = kw.get('records', [])
         message = kw.get('message', False)
         prompt = kw.get('prompt', '')
