@@ -100,6 +100,7 @@ class ProductAttributeValue(models.Model):
     is_vision = fields.Boolean(string='Is Vision', default=False)
     is_embedded = fields.Boolean(string='Is Embedded', default=False)
     has_endpoint = fields.Boolean(string="Has Endpoint", default=False)
+    endpoint = fields.Char(string="Endpoint")
 
     tpm = fields.Integer(string="Token Per Minute")
     rpm = fields.Integer(string="Request Per Minute")
