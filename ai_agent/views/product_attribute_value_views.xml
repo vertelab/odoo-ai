@@ -70,7 +70,7 @@
                 <field name="context_window" />
                 <field name="has_temperature" />
                 <field name="has_endpoint" />
-                <!-- <field name="endpoint"  /> -->
+                <field name="endpoint"  />
               </group>
             </group>
           </sheet>
