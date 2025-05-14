@@ -7,7 +7,7 @@ msgstr ""
 "Project-Id-Version: Odoo Server 18.0-20250410\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2025-04-23 13:32+0000\n"
-"PO-Revision-Date: 2025-05-06 12:02+0200\n"
+"PO-Revision-Date: 2025-05-14 13:52+0200\n"
 "Last-Translator: \n"
 "Language-Team: \n"
 "Language: sv\n"
@@ -1063,14 +1063,14 @@ msgstr "E-postdomän, t.ex. \"example.com\" i \"odoo@example.com"
 #. module: ai_agent
 #: model_terms:ir.ui.view,arch_db:ai_agent.ai_agent_llm_search
 msgid "Embedded"
-msgstr "Inbäddad"
+msgstr ""
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_agent_llm__llm_etype
 #: model:ir.model.fields,field_description:ai_agent.field_product_product__llm_etype
 #: model:ir.model.fields,field_description:ai_agent.field_product_template__llm_etype
 msgid "Embedded Class"
-msgstr "Inbäddad klass"
+msgstr ""
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_memory__ai_agent_llm_id
@@ -1403,7 +1403,7 @@ msgstr "Infoga"
 #: model:ir.model.fields,field_description:ai_agent.field_ai_agent_llm__is_embedded
 #: model:ir.model.fields,field_description:ai_agent.field_product_attribute_value__is_embedded
 msgid "Is Embedded"
-msgstr "Är inbäddad"
+msgstr ""
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_agent__is_favorite
