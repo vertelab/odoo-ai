@@ -69,15 +69,13 @@
                 </search>
             </field>
         </record>
+
         <record id="ai_agent_form" model="ir.ui.view">
             <field name="name">ai.agent.form</field>
             <field name="model">ai.agent</field>
             <field name="arch" type="xml">
                 <form>
                     <header>
-<!--
-                        <button name="get_test_wizard" type="object" string="Test" />
--->
                         <button name="test" type="object" string="Test" />
                         <field name="status" widget="statusbar" statusbar_visible="draft,active,done" options="{'clickable': '1', 'fold_field': 'fold'}" />
                     </header>
@@ -125,17 +123,12 @@
                                 <field name="last_run" />
                             </group>
                         </group>
-                        <!--
-                             <group>
-                             <separator />
-                        -->
+
                         <group>
                             <field name="ai_role" />
                             <field name="ai_goal" />
                         </group>
-                        <!--
-                             </group>
-                        -->
+
                         <notebook>
                             <page string="Description" id="description">
                                 <field name="ai_description" nolabel="1" />
@@ -215,7 +208,7 @@
             <field name="name">ai.agent.kanban</field>
             <field name="model">ai.agent</field>
             <field name="arch" type="xml">
-                <kanban class="o_kanban_mobile">
+                <kanban highlight_color="color" class="o_kanban_mobile">
                     <field name="id" />
                     <field name="name" />
                     <field name="color" />
@@ -226,6 +219,49 @@
                     <field name="last_run" />
                     <field name="object_id" />
                     <templates>
+                        <!-- #if VERSION >= "18.0" -->
+                        <t t-name="kanban-box">
+                            <t t-name="menu">
+                                <t t-if="widget.editable"><a role="menuitem" type="open" class="dropdown-item">Edit</a></t>
+                                <t t-if="widget.deletable"><a role="menuitem" type="delete" class="dropdown-item">Delete</a></t>
+                            </t>
+
+                            <t t-name="card">
+                                <div class="row g-0 mt-1">
+                                    <div class="col-2 me-2">
+                                        <field name="base_image_128" alt="Agent Image" widget="image" options="{'img_class': 'object-fit-cover'}"/>
+                                    </div>
+                                    <div class="col-9">
+                                        <div class="o_project_kanban_main d-flex align-items-baseline gap-1">
+                                            <div class="min-w-0 me-2">
+                                                <span class="text-truncate d-block fs-4 fw-bold" t-att-title="record.name.value"><field name="name"/></span>
+                                                <div class="my-2">
+                                                    <field name="ai_agent_llm_id" />
+                                                </div>
+                                                <div>
+                                                    <field name="status" widget="label_selection" options="{'classes': {'draft': 'default', 'active': 'success', 'done': 'info', 'error': 'danger'}}" />
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <footer class="mt-auto pt-3 ms-1">
+                                    <div class="d-flex align-items-center">
+                                        <field name="is_favorite" widget="boolean_favorite" nolabel="1" force_save="1" />
+                                        <field name="ai_type" widget="label_selection" options="{'classes': {'default': 'default'}}" />
+                                    </div>
+                                    <div class="d-flex ms-auto align-items-center">
+                                        <t t-if="record.last_run.value != False">
+                                            <span class="fa fa-clock-o me-2" title="Dates" />
+                                            <field name="last_run" />
+                                            <field name="company_id" groups="base.group_multi_company" />
+                                        </t>
+                                    </div>
+                                </footer>
+                            </t>
+                        </t>
+                        <!-- #elif VERSION <= "17.0" -->
                         <t t-name="kanban-box">
                             <div t-attf-class="oe_kanban_global_click o_ai_agent_kanban #{kanban_color(record.color.raw_value)}">
                                 <div class="o_kanban_image me-1">
@@ -280,6 +316,7 @@
                                 </div>
                             </div>
                         </t>
+                        <!-- #endif -->
                     </templates>
                 </kanban>
             </field>
