@@ -15,7 +15,7 @@
             <field name="model">ai.quest</field>
             <field name="inherit_id" ref="ai_agent.ai_quest_search" />
             <field name="arch" type="xml">
-                <field name="tag_ids" position="after">
+                <field name="description" position="after">
                     <field name="department_id" />
                 </field>
                 <filter name="group_by_partner" position="after">
@@ -44,6 +44,7 @@
                 <xpath expr="//div[hasclass('o_kanban_record_bottom')]//div[hasclass('oe_kanban_bottom_right')]" position="inside">
                     <field name="department_id" widget="many2one_avatar" />
                 </xpath>
+
             </field>
         </record>
         <record id="view_ai_quest_calendar" model="ir.ui.view">
