@@ -28,8 +28,11 @@ class MailChannel(models.Model):
     @api.returns('mail.message', lambda value: value.id)
     def message_post(self, **kwargs):
         message = super(MailChannel, self).message_post(**kwargs)
+        self.send_ai_message(message)
+        return message
 
-        ai_quest = None
+    def get_user_and_quest(self):
+        ai_quest = False
         if self.channel_type == "chat":
             ai_quest = self.env['res.users'].browse(self.channel_last_seen_partner_ids.mapped('partner_id.user_ids.id')).mapped(
                 'ai_quest_id')
@@ -37,6 +40,13 @@ class MailChannel(models.Model):
         else:  # channel
             ai_quest = self.ai_quest_id
             user = self.env.ref('base.user_root')
+        return user, ai_quest
+
+
+    def send_ai_message(self,message):
+
+        user, ai_quest = self.get_user_and_quest()
+        message_id = False
 
         if message.author_id != user.partner_id:
             if ai_quest and self._continue_with_chat(ai_quest, message):
@@ -63,7 +73,9 @@ class MailChannel(models.Model):
                     )
                     if _props and message_id:
                         self._postprocess_message_post(message_id, _props)
-        return message
+                    
+        return message_id
+        
 
     def _continue_with_chat(self, ai_quest, message):
         if not ai_quest.allow_trigger_words:
