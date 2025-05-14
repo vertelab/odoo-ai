@@ -441,7 +441,7 @@ class AIQuest(models.Model):
                     'name': self.name,
                     'model_id': self.model_id.id if self.model_id else self.env.ref('base.model_res_partner').id,
                     'state': 'code',
-                    'code': f"action = env.ref('{self._get_eid()}').cron()",
+                    'code': f"action = env.ref('{self._get_eid()}').cron(records)",
                 })
         # ~ if self.init_type != 'server-action' and self.server_action_id:
         # ~ self.server_action_id.unlink()
@@ -877,7 +877,7 @@ class AIQuest(models.Model):
                      "binding_view_types": "form,list",
                      'binding_model_id': self.model_id.id if self.status == 'active' else None})
             if quest.cron_id:
-                quest.cron_id.write({'name': quest.name, 'code': f"action = env.ref('{quest._get_eid()}').cron()"})
+                quest.cron_id.write({'name': quest.name, 'code': f"action = env.ref('{quest._get_eid()}').cron(records)"})
             if quest.channel_id:
                 quest.channel_id.write({'name': quest.name, 'ai_quest_id': quest.id, })
             if quest.chat_user_id:
