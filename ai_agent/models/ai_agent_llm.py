@@ -81,7 +81,6 @@ class AIAgentLLM(models.Model):
         default="not_confirmed")
     status_color = fields.Integer(compute="compute_status_color")
     tag_ids = fields.Many2many(comodel_name='product.tag', string='Tags')
-    azure_endpoint = fields.Char(string="Azure Endpoint")
     api_version = fields.Char(string="API version")
 
     tpm = fields.Integer(string="Token Per Minute", related="model_id.tpm")
@@ -177,19 +176,20 @@ class AIAgentLLM(models.Model):
                 api_key = tools.config.get(self.product_tmpl_id.fallback_api_key_name, False)
                 _logger.error(f"{'API Key Found' if api_key else 'No API Key found'}")
 
-            if self.endpoint:
-                kwarg['base_url'] = self.endpoint
-
-            if self.has_temperature:
-                kwarg['temperature'] = temperature
-
             if self.product_tmpl_id.llm_type == "ChatOllama":
                 kwarg["disable_streaming"] = True
             elif self.product_tmpl_id.llm_type == "AzureChatOpenAI":
                 kwarg['api_version'] = self.api_version
-                kwarg['azure_endpoint'] = self.azure_endpoint
+                kwarg['azure_endpoint'] = self.endpoint
             else:
                 kwarg["api_key"] = api_key
+
+                if self.has_endpoint:
+                    kwarg['base_url'] = self.endpoint
+
+                if self.has_temperature:
+                    kwarg['temperature'] = temperature
+            
             return LLM(verbose=verbose, callbacks=callbacks, model=self.model_id.name, **kwarg)
         except ImportError as e:
             _logger.error(f"Error importing {self.product_tmpl_id.llm_library}: {e}")

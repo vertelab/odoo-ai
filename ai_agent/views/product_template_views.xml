@@ -33,7 +33,6 @@
                             <field name="llm_etype"/>
                             <field name="llm_price_url" widget="url"/>
                             <field name="ai_api_key"/>
-                            <field name="azure_endpoint" required="llm_type == 'AzureChatOpenAI'" invisible="llm_type != 'AzureChatOpenAI'"/>
                             <field name="api_version" required="llm_type == 'AzureChatOpenAI'" invisible="llm_type != 'AzureChatOpenAI'"/>
                         </group>
                     </group>
