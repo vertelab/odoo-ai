@@ -145,7 +145,7 @@ DEFAULT_PYTHON_CODE = """# Available variables:
 # To return a result assign result\n
 # Example:
 #
-# result = quest.build_graph(session=session,message=message_body).invoke(message_invoke)
+# result = quest.build(session=session,message=message_body).invoke(message_invoke)
 #\n\n\n
 """
 
@@ -581,6 +581,7 @@ class AIQuest(models.Model):
         return kwargs
 
     def cron(self, records):
+        print("records", records)
         self.ensure_one()
         self_sudo = self.sudo()
         if self.init_type == 'cron' and self.cron_id:

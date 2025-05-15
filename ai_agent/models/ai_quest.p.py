@@ -155,7 +155,7 @@ DEFAULT_PYTHON_CODE = """# Available variables:
 # To return a result assign result\n
 # Example:
 #
-# result = quest.build_graph(session=session,message=message_body).invoke(message_invoke)
+# result = quest.build(session=session,message=message_body).invoke(message_invoke)
 #\n\n\n
 """
 
