@@ -223,7 +223,8 @@
                                         <field name="supervisor_llm_id" />
                                     </group>
                                     <group>
-                                        <field name="supervisor_temperature" />
+                                        <field name="supervisor_temperature"/>
+                                        <field name="supervisor_cycles"/>
                                     </group>
                                 </group>
                                 <field name="supervisor_prompt" />
