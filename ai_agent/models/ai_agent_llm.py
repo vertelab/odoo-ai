@@ -27,6 +27,8 @@ LICENCES = [
     ('gemma-terms-of-use', 'Gemma Terms of Use'),
     ('google-ai-terms', 'Google AI-terms'),
     ('llama-community', 'Llama Community License'),
+    ('Ilama3.1',"Llama 3.1 Community License"),
+    ('Ilama3.3',"Llama 3.3 Community License"),
     ('mistral-research', 'Mistral Research License'),
     ('mit', 'MIT License'),
     ('deepseek','DEEPSEEK LICENSE AGREEMENT'),

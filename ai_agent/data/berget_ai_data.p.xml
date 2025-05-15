@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
   <data noupdate="0">
-    <record id="nebius_product_template" model="product.template">
+    <record id="berget_product_template" model="product.template">
       <field name="name">Berget AI</field>
-      <field name="is_llm">True</field>
+      <field name="is_llm" eval="True"/>
       <field name="llm_library">langchain_openai</field>
       <field name="llm_type">ChatOpenAI</field>
       <field name="fallback_api_key_name">berget_api_key</field>
@@ -20,25 +20,25 @@
       <field name="tpm">400000</field>
       <field name="rpm">600</field>
       <field name="has_endpoint" eval="True" />
-      <field name="endpoint" value="https://api.berget.ai" />
+      <field name="endpoint">https://api.berget.ai/v1/</field>
     </record>
-    <record id="Llama_3.1_8B_Instruct" model="product.attribute.value">
+    <record id="Llama_3_1_8B_Instruct" model="product.attribute.value">
       <field name="name">Llama-3.1-8B-Instruct</field>
       <field name="licence">Ilama3.1</field>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
       <field name="tpm">400000</field>
       <field name="rpm">600</field>
       <field name="has_endpoint" eval="True" />
-      <field name="endpoint" value="https://api.berget.ai" />
+      <field name="endpoint">https://api.berget.ai/v1/</field>
     </record>
-    <record id="Llama_3.3_70B_Instruct" model="product.attribute.value">
+    <record id="Llama_3_3_70B_Instruct" model="product.attribute.value">
       <field name="name">meta-llama/Llama-3.3-70B-Instruct</field>
       <field name="licence">Ilama3.3</field>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
       <field name="tpm">400000</field>
       <field name="rpm">600</field>
       <field name="has_endpoint" eval="True" />
-      <field name="endpoint" value="https://api.berget.ai" />
+      <field name="endpoint">https://api.berget.ai/v1/</field>
     </record>
     <record id="unsloth_DeepSeek_R1_GGUF" model="product.attribute.value">
       <field name="name">unsloth/DeepSeek-R1-GGUF</field>
@@ -47,16 +47,16 @@
       <field name="tpm">400000</field>
       <field name="rpm">600</field>
       <field name="has_endpoint" eval="True" />
-      <field name="endpoint" value="https://api.berget.ai" />
+      <field name="endpoint">https://api.berget.ai/v1/</field>
     </record>
-    <record id="Mistral_Small_3.1_24B_Instruct_2503" model="product.attribute.value">
+    <record id="Mistral_Small_3_1_24B_Instruct_2503" model="product.attribute.value">
       <field name="name">mistralai/Mistral-Small-3.1-24B-Instruct-2503</field>
       <field name="licence">apache-2.0</field>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
       <field name="tpm">400000</field>
       <field name="rpm">600</field>
       <field name="has_endpoint" eval="True" />
-      <field name="endpoint" value="https://api.berget.ai" />
+      <field name="endpoint">https://api.berget.ai/v1/</field>
     </record>
     <!-- Attribute Line -->
     <record id="berget_ai_product_template_attribute_line_model" model="product.template.attribute.line">
@@ -64,14 +64,14 @@
       <field name="attribute_id" ref="product_attribute_model" />
       <field name="value_ids" eval="[(6, 0, [
                 ref('DeepCoder_14B_Preview'),
-                ref('Llama_3.1_8B_Instruct'),
-                ref('Llama_3.3_70B_Instruct'),
+                ref('Llama_3_1_8B_Instruct'),
+                ref('Llama_3_3_70B_Instruct'),
                 ref('unsloth_DeepSeek_R1_GGUF'),
-                ref('Mistral_Small_3.1_24B_Instruct_2503'),
+                ref('Mistral_Small_3_1_24B_Instruct_2503'),
                     ])]" />
     </record>
-    <record id="nebius_product_template_attribute_line_token_type" model="product.template.attribute.line">
-      <field name="product_tmpl_id" ref="nebius_product_template" />
+    <record id="berget_product_template_attribute_line_token_type" model="product.template.attribute.line">
+      <field name="product_tmpl_id" ref="berget_product_template" />
       <field name="attribute_id" ref="product_attribute_token_type" />
       <field name="value_ids" eval="[(6, 0, [
          ref('product_attribute_value_input_tokens'),
