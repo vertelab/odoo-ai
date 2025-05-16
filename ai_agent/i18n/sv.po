@@ -7,7 +7,7 @@ msgstr ""
 "Project-Id-Version: Odoo Server 18.0-20250410\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2025-04-23 13:32+0000\n"
-"PO-Revision-Date: 2025-05-14 13:52+0200\n"
+"PO-Revision-Date: 2025-05-16 11:28+0200\n"
 "Last-Translator: \n"
 "Language-Team: \n"
 "Language: sv\n"
@@ -37,13 +37,13 @@ msgstr "<span class=\"fa fa-lg fa-android\" aria-label=\"Antal uppdrag\"/>"
 #: model_terms:ir.ui.view,arch_db:ai_agent.res_config_settings_view_form
 msgid ""
 "<span class=\"o_form_label\" invisible=\"quests &gt; 1\"> Quests</span>\n"
-"            <span class=\"o_form_label\" invisible=\"quests &lt;= 1\"> "
-"Quests</span>\n"
+"            <span class=\"o_form_label\" invisible=\"quests &lt;= 1\"> Quests</"
+"span>\n"
 "            <br/>"
 msgstr ""
 "<span class=\"o_form_label\" invisible=\"quests &gt; 1\"> Uppdrag</span>\n"
-"            <span class=\"o_form_label\" invisible=\"quests &lt;= 1\"> "
-"Uppdrag</span>\n"
+"            <span class=\"o_form_label\" invisible=\"quests &lt;= 1\"> Uppdrag</"
+"span>\n"
 "            <br/>"
 
 #. module: ai_agent
@@ -61,8 +61,8 @@ msgid ""
 "A Python dictionary that will be evaluated to provide default values when "
 "creating new records for this alias."
 msgstr ""
-"En Python-ordlista som utvärderas för att ange standardvärden när nya "
-"poster skapas för detta alias."
+"En Python-ordlista som utvärderas för att ange standardvärden när nya poster "
+"skapas för detta alias."
 
 #. module: ai_agent
 #: model:ir.model,name:ai_agent.model_ai_memory_test_wizard
@@ -1307,8 +1307,8 @@ msgstr ""
 #. module: ai_agent
 #: model:ir.model.fields,help:ai_agent.field_ai_quest__alias_parent_thread_id
 msgid ""
-"ID of the parent record holding the alias (example: project holding the "
-"task creation alias)"
+"ID of the parent record holding the alias (example: project holding the task "
+"creation alias)"
 msgstr ""
 "ID för den överordnade post som innehåller aliaset (exempel: projekt som "
 "innehåller aliaset för skapande av uppgift)"
@@ -1362,8 +1362,8 @@ msgstr "Om markerad, några meddelanden har ett leveransfel."
 #. module: ai_agent
 #: model:ir.model.fields,help:ai_agent.field_ai_quest__alias_bounced_content
 msgid ""
-"If set, this content will automatically be sent out to unauthorized users "
-"instead of the default message."
+"If set, this content will automatically be sent out to unauthorized users instead "
+"of the default message."
 msgstr ""
 "Om den är inställd kommer detta innehåll automatiskt att skickas ut till "
 "obehöriga användare i stället för standardmeddelandet."
@@ -1830,8 +1830,7 @@ msgstr "Namn på langchain-klassen, t.ex. OpenAIEmbeddings eller MistralAIEmbedd
 #: model:ir.model.fields,help:ai_agent.field_product_product__llm_library
 #: model:ir.model.fields,help:ai_agent.field_product_template__llm_library
 msgid ""
-"Name of langchain library eg langchain_openai, langchain_groq, "
-"langchain_mistralai"
+"Name of langchain library eg langchain_openai, langchain_groq, langchain_mistralai"
 msgstr ""
 "Namn på langchain-bibliotek t.ex. langchain_openai, langchain_groq, "
 "langchain_mistralai"
@@ -1969,22 +1968,19 @@ msgstr "Antal meddelanden med leveransfel"
 #: code:addons/ai_agent/models/ai_quest.p.py:0
 #: code:addons/ai_agent/models/ai_quest.py:0
 msgid ""
-"OBS: An error occurred, you should contact administrator to look into the "
-"quest"
+"OBS: An error occurred, you should contact administrator to look into the quest"
 msgstr ""
-"OBS: Ett fel inträffade, du bör kontakta administratören för att undersöka "
-"frågan"
+"OBS: Ett fel inträffade, du bör kontakta administratören för att undersöka frågan"
 
 #. module: ai_agent
 #. odoo-python
 #: code:addons/ai_agent/models/ai_quest.p.py:0
 #: code:addons/ai_agent/models/ai_quest.py:0
 msgid ""
-"OBS: Quest does not exist, you should contact administrator to look into "
-"the quest"
+"OBS: Quest does not exist, you should contact administrator to look into the quest"
 msgstr ""
-"OBS: Uppdraget finns inte, du bör kontakta administratören för att "
-"undersöka uppdraget"
+"OBS: Uppdraget finns inte, du bör kontakta administratören för att undersöka "
+"uppdraget"
 
 #. module: ai_agent
 #: model:ir.actions.act_window,name:ai_agent.action_ai_session_object
@@ -2025,13 +2021,13 @@ msgstr "Open AI"
 #. module: ai_agent
 #: model:ir.model.fields,help:ai_agent.field_ai_quest__alias_force_thread_id
 msgid ""
-"Optional ID of a thread (record) to which all incoming messages will be "
-"attached, even if they did not reply to it. If set, this will disable the "
-"creation of new records completely."
+"Optional ID of a thread (record) to which all incoming messages will be attached, "
+"even if they did not reply to it. If set, this will disable the creation of new "
+"records completely."
 msgstr ""
 "Valfritt ID för en tråd (record) som alla inkommande meddelanden kommer att "
-"kopplas till, även om de inte besvarades. Om detta anges inaktiveras "
-"skapandet av nya poster helt och hållet."
+"kopplas till, även om de inte besvarades. Om detta anges inaktiveras skapandet av "
+"nya poster helt och hållet."
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_res_company__company_mission
@@ -2068,13 +2064,13 @@ msgstr "Parent Record Thread ID"
 #. module: ai_agent
 #: model:ir.model.fields,help:ai_agent.field_ai_quest__alias_parent_model_id
 msgid ""
-"Parent model holding the alias. The model holding the alias reference is "
-"not necessarily the model given by alias_model_id (example: project "
-"(parent_model) and task (model))"
+"Parent model holding the alias. The model holding the alias reference is not "
+"necessarily the model given by alias_model_id (example: project (parent_model) "
+"and task (model))"
 msgstr ""
-"Överordnad modell som håller i aliaset. Den modell som håller "
-"aliasreferensen är inte nödvändigtvis den modell som anges av "
-"alias_model_id (exempel: project (parent_model) och task (model))"
+"Överordnad modell som håller i aliaset. Den modell som håller aliasreferensen är "
+"inte nödvändigtvis den modell som anges av alias_model_id (exempel: project "
+"(parent_model) och task (model))"
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest__company_partner_id
@@ -2101,8 +2097,7 @@ msgid ""
 "- followers: only followers of the related document or members of following "
 "channels\n"
 msgstr ""
-"Policy för att posta ett meddelande på dokumentet med hjälp av "
-"mailgateway.\n"
+"Policy för att posta ett meddelande på dokumentet med hjälp av mailgateway.\n"
 "- alla: alla kan posta\n"
 "- partners: endast autentiserade partners\n"
 "- följare: endast följare av det relaterade dokumentet eller medlemmar av "
@@ -2387,7 +2382,7 @@ msgstr "Sessions-ID"
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session__session_line_ids
 #: model:ir.model.fields,field_description:ai_agent.field_ai_tool__session_line_ids
 msgid "Session Line"
-msgstr "sessionsrad"
+msgstr "Sessionsrad"
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_agent__session_line_count
@@ -2565,12 +2560,11 @@ msgstr "Temperatur"
 #: model:ir.model.fields,help:ai_agent.field_ai_agent__ai_temperature
 #: model:ir.model.fields,help:ai_agent.field_ai_quest__supervisor_temperature
 msgid ""
-"Temperature controls the randomness and creativity of the model's output, "
-"<1.0 more predictable and consistent >1.0 more diverse and creative "
-"responses"
+"Temperature controls the randomness and creativity of the model's output, <1.0 "
+"more predictable and consistent >1.0 more diverse and creative responses"
 msgstr ""
-"Temperaturen styr slumpmässigheten och kreativiteten i modellens utdata, "
-"<1,0 mer förutsägbar och konsekvent >1,0 mer varierande och kreativa svar"
+"Temperaturen styr slumpmässigheten och kreativiteten i modellens utdata, <1,0 mer "
+"förutsägbar och konsekvent >1,0 mer varierande och kreativa svar"
 
 #. module: ai_agent
 #: model_terms:ir.ui.view,arch_db:ai_agent.ai_agent_form
@@ -2613,19 +2607,19 @@ msgid ""
 "The email address associated with this channel. New emails received will "
 "automatically create new leads assigned to the channel."
 msgstr ""
-"Den e-postadress som är kopplad till den här kanalen. Nya e-postmeddelanden "
-"som tas emot kommer automatiskt att skapa nya leads som tilldelas kanalen."
+"Den e-postadress som är kopplad till den här kanalen. Nya e-postmeddelanden som "
+"tas emot kommer automatiskt att skapa nya leads som tilldelas kanalen."
 
 #. module: ai_agent
 #: model:ir.model.fields,help:ai_agent.field_ai_quest__alias_model_id
 msgid ""
-"The model (Odoo Document Kind) to which this alias corresponds. Any "
-"incoming email that does not reply to an existing record will cause the "
-"creation of a new record of this model (e.g. a Project Task)"
+"The model (Odoo Document Kind) to which this alias corresponds. Any incoming "
+"email that does not reply to an existing record will cause the creation of a new "
+"record of this model (e.g. a Project Task)"
 msgstr ""
-"Den modell (Odoo Document Kind) som detta alias motsvarar. Alla inkommande "
-"e-postmeddelanden som inte svarar på en befintlig post kommer att leda till "
-"att en ny post skapas av denna modell (t.ex. en projektuppgift)"
+"Den modell (Odoo Document Kind) som detta alias motsvarar. Alla inkommande e-"
+"postmeddelanden som inte svarar på en befintlig post kommer att leda till att en "
+"ny post skapas av denna modell (t.ex. en projektuppgift)"
 
 #. module: ai_agent
 #: model:ir.model.fields,help:ai_agent.field_ai_quest__alias_name
@@ -2633,8 +2627,8 @@ msgid ""
 "The name of the email alias, e.g. 'jobs' if you want to catch emails for "
 "<jobs@example.odoo.com>"
 msgstr ""
-"Namnet på e-postaliaset, t.ex. \"jobs\" om du vill fånga upp e-"
-"postmeddelanden för <jobs@example.odoo.com>"
+"Namnet på e-postaliaset, t.ex. \"jobs\" om du vill fånga upp e-postmeddelanden "
+"för <jobs@example.odoo.com>"
 
 #. module: ai_agent
 #: model:ir.model.fields,help:ai_agent.field_ai_tool_test_wizard__object_name
@@ -2664,8 +2658,7 @@ msgstr "Typ av vektordatabas"
 #. module: ai_agent
 #: model:res.groups,comment:ai_agent.group_ai_agent_developer
 msgid "The user will be able to approve document created by employees."
-msgstr ""
-"Användaren kommer att kunna godkänna dokument som skapats av anställda."
+msgstr "Användaren kommer att kunna godkänna dokument som skapats av anställda."
 
 #. module: ai_agent
 #: model:res.groups,comment:ai_agent.group_ai_agent_manager
@@ -2674,8 +2667,8 @@ msgid ""
 "The user will have access to the human resources configuration as well as "
 "statistic reports."
 msgstr ""
-"Användaren kommer att ha tillgång till konfigurationen av personalresurser "
-"samt statistiska rapporter."
+"Användaren kommer att ha tillgång till konfigurationen av personalresurser samt "
+"statistiska rapporter."
 
 #. module: ai_agent
 #. odoo-javascript
@@ -2688,8 +2681,7 @@ msgstr "Tänker..."
 #: model:ir.model.fields,help:ai_agent.field_ai_quest__is_supervisor
 msgid "This is a ReAct type of quest using a supervisor coordinating agents"
 msgstr ""
-"Detta är ett uppdrag av typen ReAct med en supervisor som koordinerar "
-"agenter"
+"Detta är ett uppdrag av typen ReAct med en supervisor som koordinerar agenter"
 
 #. module: ai_agent
 #: model:ir.model.fields,help:ai_agent.field_ai_quest__real_channel_id
@@ -2883,11 +2875,11 @@ msgstr "Webbplatsens kommunikationshistorik"
 #. module: ai_agent
 #: model:ir.model.fields,help:ai_agent.field_ai_quest__code
 msgid ""
-"Write Python code that the action will execute. Some variables are "
-"available for use; help about python expression is given in the help tab."
+"Write Python code that the action will execute. Some variables are available for "
+"use; help about python expression is given in the help tab."
 msgstr ""
-"Skriv Python-kod som åtgärden ska utföra. Vissa variabler är tillgängliga "
-"för användning; hjälp om Python-uttryck finns i fliken Hjälp."
+"Skriv Python-kod som åtgärden ska utföra. Vissa variabler är tillgängliga för "
+"användning; hjälp om Python-uttryck finns i fliken Hjälp."
 
 #. module: ai_agent
 #. odoo-python
@@ -3154,8 +3146,7 @@ msgstr "modell"
 
 #. module: ai_agent
 #. odoo-python
-#: code:addons/ai_agent/models/mail.p.py:0
-#: code:addons/ai_agent/models/mail.py:0
+#: code:addons/ai_agent/models/mail.p.py:0 code:addons/ai_agent/models/mail.py:0
 msgid "no answer"
 msgstr "inget svar"
 
