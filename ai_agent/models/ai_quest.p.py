@@ -250,7 +250,7 @@ class AIQuest(models.Model):
                                       help='Add company mission and values to the context')
     use_personal_info = fields.Boolean(string='Use Personal Info', default=True,
                                        help='Add personal name and other info to the context')
-    use_personal_lang = fields.Boolean(string='Use Personal Language', default=True,
+    use_personal_lang = fields.Boolean(string='Use the Users Language', default=True,
                                        help='Set Personas language for the LLM')
     use_time_context = fields.Boolean(string='Use Time Context', default=True,
                                       help='Inform the LLM of current time, date')
