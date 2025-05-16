@@ -4,10 +4,10 @@
 #
 msgid ""
 msgstr ""
-"Project-Id-Version: Odoo Server 18.0-20250410\n"
+"Project-Id-Version: Odoo Server 18.0-20250516\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2025-04-23 13:32+0000\n"
-"PO-Revision-Date: 2025-05-16 13:51+0200\n"
+"POT-Creation-Date: 2025-05-16 13:40+0000\n"
+"PO-Revision-Date: 2025-05-16 15:42+0200\n"
 "Last-Translator: \n"
 "Language-Team: \n"
 "Language: sv\n"
@@ -37,13 +37,13 @@ msgstr "<span class=\"fa fa-lg fa-android\" aria-label=\"Antal uppdrag\"/>"
 #: model_terms:ir.ui.view,arch_db:ai_agent.res_config_settings_view_form
 msgid ""
 "<span class=\"o_form_label\" invisible=\"quests &gt; 1\"> Quests</span>\n"
-"            <span class=\"o_form_label\" invisible=\"quests &lt;= 1\"> Quests</"
-"span>\n"
+"            <span class=\"o_form_label\" invisible=\"quests &lt;= 1\"> "
+"Quests</span>\n"
 "            <br/>"
 msgstr ""
 "<span class=\"o_form_label\" invisible=\"quests &gt; 1\"> Uppdrag</span>\n"
-"            <span class=\"o_form_label\" invisible=\"quests &lt;= 1\"> Uppdrag</"
-"span>\n"
+"            <span class=\"o_form_label\" invisible=\"quests &lt;= 1\"> "
+"Uppdrag</span>\n"
 "            <br/>"
 
 #. module: ai_agent
@@ -61,8 +61,8 @@ msgid ""
 "A Python dictionary that will be evaluated to provide default values when "
 "creating new records for this alias."
 msgstr ""
-"En Python-ordlista som utvärderas för att ange standardvärden när nya poster "
-"skapas för detta alias."
+"En Python-ordlista som utvärderas för att ange standardvärden när nya "
+"poster skapas för detta alias."
 
 #. module: ai_agent
 #: model:ir.model,name:ai_agent.model_ai_memory_test_wizard
@@ -84,7 +84,7 @@ msgstr "AI-agent"
 #. module: ai_agent
 #: model:ir.model,name:ai_agent.model_ai_agent_data
 msgid "AI Agent Data"
-msgstr "AI Agent Data"
+msgstr ""
 
 #. module: ai_agent
 #: model:res.groups,name:ai_agent.group_ai_agent_developer
@@ -96,7 +96,7 @@ msgstr "Utvecklare av AI-agent"
 #: model_terms:ir.ui.view,arch_db:ai_agent.ai_agent_search
 #: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_session_search
 msgid "AI Agent LLM"
-msgstr "AI Agent LLM"
+msgstr ""
 
 #. module: ai_agent
 #: model_terms:ir.ui.view,arch_db:ai_agent.view_ai_agent_llm_tree
@@ -106,7 +106,7 @@ msgstr "AI-agent LLM:er"
 #. module: ai_agent
 #: model:res.groups,name:ai_agent.group_ai_agent_manager
 msgid "AI Agent Manager"
-msgstr "AI Agent Manager"
+msgstr ""
 
 #. module: ai_agent
 #: model:ir.model,name:ai_agent.model_ai_agent_memory
@@ -116,7 +116,7 @@ msgstr "AI Agent Minne"
 #. module: ai_agent
 #: model:res.groups,name:ai_agent.group_ai_agent_supervisor
 msgid "AI Agent Supervisor"
-msgstr "AI Agent Supervisor"
+msgstr ""
 
 #. module: ai_agent
 #: model:ir.model,name:ai_agent.model_ai_agent_tool
@@ -165,40 +165,39 @@ msgstr "AI-leverantörer"
 #: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_list
 #: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_session_search
 #: model_terms:ir.ui.view,arch_db:ai_agent.ai_session_object_search
-#: model_terms:ir.ui.view,arch_db:ai_agent.view_ai_quest_kanban
 msgid "AI Quest"
-msgstr "AI Uppdrag"
+msgstr ""
 
 #. module: ai_agent
 #: model:ir.model,name:ai_agent.model_ai_quest_agent
 msgid "AI Quest Agent"
-msgstr "AI Uppdragsagent"
+msgstr "AI Quest AGent"
 
 #. module: ai_agent
 #: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_form
 msgid "AI Quest Agents"
-msgstr "AI Uppdragsagenter"
+msgstr "AI Quest-agenter"
 
 #. module: ai_agent
 #: model:ir.model,name:ai_agent.model_ai_quest_memory
 msgid "AI Quest Memory"
-msgstr "AI Uppdragsminne"
+msgstr "AI Quest Minne"
 
 #. module: ai_agent
 #: model:ir.model,name:ai_agent.model_ai_quest_session
 #: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_session_line_search
 msgid "AI Quest Session"
-msgstr "AI Uppdragssession"
+msgstr "AI Quest-session"
 
 #. module: ai_agent
 #: model:ir.model,name:ai_agent.model_ai_quest_session_line
 msgid "AI Quest Session Line"
-msgstr "AI Uppdragssessionsrad"
+msgstr ""
 
 #. module: ai_agent
 #: model:ir.model,name:ai_agent.model_ai_quest_session_message
 msgid "AI Quest Session Message"
-msgstr "Meddelande om AI Uppdragssession"
+msgstr "Meddelande om AI Quest-session"
 
 #. module: ai_agent
 #: model_terms:ir.ui.view,arch_db:ai_agent.view_ai_quest_calendar
@@ -212,13 +211,13 @@ msgstr "AI-uppdrag"
 #: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_session_list
 #: model_terms:ir.ui.view,arch_db:ai_agent.ai_session_object_search
 msgid "AI Session"
-msgstr "AI session"
+msgstr "AI Quest-session"
 
 #. module: ai_agent
 #: model:ir.model,name:ai_agent.model_ai_session_object
 #: model_terms:ir.ui.view,arch_db:ai_agent.ai_session_object_list
 msgid "AI Session Object"
-msgstr "AI sessonsobjekt"
+msgstr "AI Sesson Objekt"
 
 #. module: ai_agent
 #: model_terms:ir.ui.view,arch_db:ai_agent.view_ai_quest_session_calendar
@@ -230,7 +229,7 @@ msgstr "AI-sessioner"
 #: code:addons/ai_agent/models/ai_quest.p.py:0
 #: code:addons/ai_agent/models/ai_quest.py:0
 msgid "AI Staff"
-msgstr "AI-personal"
+msgstr ""
 
 #. module: ai_agent
 #: model:ir.model.fields.selection,name:ai_agent.selection__product_attribute_value__licence__ai-sweden-llm-ai-model
@@ -245,8 +244,8 @@ msgstr "AI Swedens LLM AI Model Licensavtal"
 #: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_session_line_form
 #: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_session_line_list
 #: model_terms:ir.ui.view,arch_db:ai_agent.view_ai_quest_session_line_calendar
-msgid "AI polletts"
-msgstr "AI-poletter"
+msgid "AI Tokens"
+msgstr "Tokens"
 
 #. module: ai_agent
 #: model:ir.model,name:ai_agent.model_ai_tool
@@ -273,12 +272,12 @@ msgstr "AI-typ"
 #: code:addons/ai_agent/static/src/js/quest_plugin.js:0
 #: code:addons/ai_agent/static/src/js/quest_plugin.p.js:0
 msgid "AI quest to perform operations"
-msgstr "AI-uppdrag för att utföra operationer"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.ai-sweden-models_gpt-sw3-40b_product_attribute_value
 msgid "AI-Sweden-Models/gpt-sw3-40b"
-msgstr ""
+msgstr "AI-Sverige-Modeller/gpt-sw3-40b"
 
 #. module: ai_agent
 #: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_session_line_search
@@ -310,7 +309,12 @@ msgstr "Acceptera e-postmeddelanden från"
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session__message_needaction
 #: model:ir.model.fields,field_description:ai_agent.field_ai_tool__message_needaction
 msgid "Action Needed"
-msgstr "Åtgärd krävs"
+msgstr "Åtgärder krävs"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest__chat_trigger_words
+msgid "Activation word"
+msgstr "Triggerord"
 
 #. module: ai_agent
 #: model:ir.model.fields.selection,name:ai_agent.selection__ai_agent__status__active
@@ -352,7 +356,7 @@ msgstr "Aktivitet Undantag Dekoration"
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session__activity_state
 #: model:ir.model.fields,field_description:ai_agent.field_ai_tool__activity_state
 msgid "Activity State"
-msgstr "Aktivitetsläge"
+msgstr "Aktivitet Stat"
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_agent__activity_type_icon
@@ -362,7 +366,7 @@ msgstr "Aktivitetsläge"
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session__activity_type_icon
 #: model:ir.model.fields,field_description:ai_agent.field_ai_tool__activity_type_icon
 msgid "Activity Type Icon"
-msgstr "Aktivitetstypikon"
+msgstr "Aktivitetstyp Ikon"
 
 #. module: ai_agent
 #: model:ir.model.fields,help:ai_agent.field_ai_quest__use_chat_history
@@ -393,12 +397,17 @@ msgstr "Avancerade inställningar"
 #: model:ir.model.fields,field_description:ai_agent.field_ai_agent_data__agent_id
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest_agent__ai_agent_id
 msgid "Agent"
-msgstr "Agent"
+msgstr ""
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest__agent_count
 msgid "Agent Count"
 msgstr "Agenträkning"
+
+#. module: ai_agent
+#: model_terms:ir.ui.view,arch_db:ai_agent.view_ai_agent_kanban
+msgid "Agent Image"
+msgstr ""
 
 #. module: ai_agent
 #: model:ir.actions.act_window,name:ai_agent.action_ai_agent_llm
@@ -433,7 +442,7 @@ msgstr "Agenter och uppdrag"
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session_line__ai_agent_id
 #: model:ir.model.fields,field_description:ai_agent.field_ai_tool__ai_agent_ids
 msgid "Ai Agent"
-msgstr "Ai Agent"
+msgstr ""
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_agent_llm__ai_agent_count
@@ -446,7 +455,7 @@ msgstr "Ai Agent Räkna"
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_agent__ai_agent_data_ids
 msgid "Ai Agent Data"
-msgstr "Ai Agent Data"
+msgstr ""
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_agent_data__ai_agent_data_type
@@ -457,7 +466,7 @@ msgstr "Ai Agent Datatyp"
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session__ai_agent_llm_id
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session__ai_agent_llm_ids
 msgid "Ai Agent Llm"
-msgstr "Ai Agent Llm"
+msgstr ""
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_agent_llm__ai_api_key
@@ -479,12 +488,12 @@ msgstr "Ai Inmatning"
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session_line__ai_llm_id
 msgid "Ai Llm"
-msgstr "Ai Llm"
+msgstr ""
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session__ai_llm_count
 msgid "Ai Llm Count"
-msgstr "Antal Ai Llm"
+msgstr "Ai Llm Räkning"
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_agent__ai_memory_ids
@@ -508,18 +517,18 @@ msgstr "Mall för AI-Instruktion"
 #: model:ir.model.fields,field_description:ai_agent.field_ai_session_object__ai_quest_id
 #: model:ir.ui.menu,name:ai_agent.menu_ai_quest
 msgid "Ai Quest"
-msgstr "Ai-uppdrag"
+msgstr ""
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session_line__ai_quest_session_id
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session_message__ai_quest_session_id
 msgid "Ai Quest Session"
-msgstr "Ai-uppdragssession"
+msgstr ""
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_session_object__ai_session_id
 msgid "Ai Session"
-msgstr "Ai-session"
+msgstr ""
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_agent__ai_tool_ids
@@ -539,12 +548,12 @@ msgstr "Ai Typ"
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest__alias_id
 msgid "Alias"
-msgstr "Alias"
+msgstr ""
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest__alias_contact
 msgid "Alias Contact Security"
-msgstr "Alias säkerhetskontakt"
+msgstr "Alias Kontakt Säkerhet"
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest__alias_domain_id
@@ -554,7 +563,7 @@ msgstr "Alias Domän"
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest__alias_domain
 msgid "Alias Domain Name"
-msgstr "Alias domännamn"
+msgstr "Alias domän"
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest__alias_full_name
@@ -564,12 +573,12 @@ msgstr "Alias e-post"
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest__alias_name
 msgid "Alias Name"
-msgstr "Alias namn"
+msgstr "Alias-namn"
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest__alias_status
 msgid "Alias Status"
-msgstr "Alias Status"
+msgstr ""
 
 #. module: ai_agent
 #: model:ir.model.fields,help:ai_agent.field_ai_quest__alias_status
@@ -582,14 +591,9 @@ msgid "Aliased Model"
 msgstr "Aliasmodell"
 
 #. module: ai_agent
-#: model:ir.model.fields,field_description:ai_agent.field_ai_quest__allow_trigger_words
-msgid "Allow Trigger"
-msgstr "Använd aktiveringsord"
-
-#. module: ai_agent
 #: model:product.template,name:ai_agent.anthropic_product_template
 msgid "Anthropic"
-msgstr "Anthropic"
+msgstr ""
 
 #. module: ai_agent
 #: model:ir.model.fields.selection,name:ai_agent.selection__product_attribute_value__licence__apache-2_0
@@ -630,7 +634,7 @@ msgstr "Atributvärden"
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest__avatar_128
 msgid "Avatar"
-msgstr "Avatar"
+msgstr ""
 
 #. module: ai_agent
 #: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_session_search
@@ -638,16 +642,19 @@ msgid "Average Time"
 msgstr "Genomsnittlig tid"
 
 #. module: ai_agent
-#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_llm__azure_endpoint
-#: model:ir.model.fields,field_description:ai_agent.field_product_product__azure_endpoint
-#: model:ir.model.fields,field_description:ai_agent.field_product_template__azure_endpoint
-msgid "Azure Endpoint"
-msgstr "Azure Endpoint"
-
-#. module: ai_agent
 #: model:product.template,name:ai_agent.azure_product_template
 msgid "Azure OpenAI"
-msgstr "Azure OpenAI"
+msgstr ""
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.nebius_baai_bge_en_icl
+msgid "BAAI/bge-en-icl"
+msgstr ""
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.nebius_baai_bge_multilingual_gemma2
+msgid "BAAI/bge-multilingual-gemma2"
+msgstr ""
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_agent__ai_backstory
@@ -663,6 +670,11 @@ msgid "Base Image"
 msgstr "Basbild"
 
 #. module: ai_agent
+#: model:product.template,name:ai_agent.berget_product_template
+msgid "Berget AI"
+msgstr ""
+
+#. module: ai_agent
 #: model:ir.model.fields.selection,name:ai_agent.selection__product_attribute_value__licence__bigcode-open-rail-m-v1
 msgid "BigCode Open RAIL-M v1 License Agreement"
 msgstr "BigCode Open RAIL-M v1 Licensavtal"
@@ -670,7 +682,7 @@ msgstr "BigCode Open RAIL-M v1 Licensavtal"
 #. module: ai_agent
 #: model:ir.model.fields,help:ai_agent.field_ai_quest__model_id
 msgid "Bind this Quest to this model"
-msgstr "Knyt detta uppdrag till denna modell"
+msgstr "Bind detta uppdrag till denna modell"
 
 #. module: ai_agent
 #: model_terms:ir.ui.view,arch_db:ai_agent.test_mail_wizard_view
@@ -699,7 +711,7 @@ msgstr "Chattanvändare"
 
 #. module: ai_agent
 #: model:ir.model.fields,help:ai_agent.field_ai_quest__real_chat_user_id
-msgid "Chat user that chat method is using"
+msgid "Chat user thet chat-method is using"
 msgstr "Chattanvändare som använder den här chattmetoden"
 
 #. module: ai_agent
@@ -717,14 +729,14 @@ msgstr "Chatta med användare"
 #: code:addons/ai_agent/models/ai_quest.p.py:0
 #: code:addons/ai_agent/models/ai_quest.py:0
 msgid "Check status on LLMs"
-msgstr "Kontrollera status på LLM"
+msgstr ""
 
 #. module: ai_agent
 #. odoo-python
 #: code:addons/ai_agent/models/ai_quest.p.py:0
 #: code:addons/ai_agent/models/ai_quest.py:0
 msgid "Check status on agents"
-msgstr "Kontrollera status på agenter"
+msgstr ""
 
 #. module: ai_agent
 #: model:ir.model.fields,help:ai_agent.field_ai_agent__ai_agent_llm_id
@@ -735,7 +747,12 @@ msgstr "Välj stor språkmodell"
 #. module: ai_agent
 #: model:ir.model.fields,help:ai_agent.field_ai_quest__supervisor_llm_id
 msgid "Choose Large Language Model for the supervisor"
-msgstr "Välj stor språkmodell för koordinatorn"
+msgstr "Välj stor språkmodell för handledaren"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_memory__document_chunks
+msgid "Chunks Per Session"
+msgstr ""
 
 #. module: ai_agent
 #: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_form
@@ -769,8 +786,15 @@ msgid "Companies"
 msgstr "Bolag"
 
 #. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent__company_id
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_llm__company_id
+#: model:ir.model.fields,field_description:ai_agent.field_ai_memory__company_id
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest__company_id
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session__company_id
+#: model:ir.model.fields,field_description:ai_agent.field_ai_tool__company_id
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_agent_search
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_search
+#: model_terms:ir.ui.view,arch_db:ai_agent.view_ai_memory_search
 msgid "Company"
 msgstr "Företag"
 
@@ -796,9 +820,21 @@ msgid "Confirmed"
 msgstr "Bekräftad"
 
 #. module: ai_agent
+#: model_terms:ir.ui.view,arch_db:ai_agent.view_ai_quest_kanban
+msgid "Contact image"
+msgstr ""
+
+#. module: ai_agent
 #: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_form
 msgid "Context Settings"
 msgstr "Inställningar för kontext"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_llm__context_window
+#: model:ir.model.fields,field_description:ai_agent.field_product_attribute_value__context_window
+#: model:ir.model.fields,field_description:ai_agent.field_product_template_attribute_value__context_window
+msgid "Context Window"
+msgstr ""
 
 #. module: ai_agent
 #: model:ir.actions.server,name:ai_agent.ai_quest_agent_creation_server_agent
@@ -872,13 +908,18 @@ msgstr "Valuta"
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest__alias_bounced_content
 msgid "Custom Bounced Message"
-msgstr "Anpassat avvisningsmeddelande"
+msgstr "Anpassat meddelande om studs"
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest__partner_id
 #: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_search
 msgid "Customer"
 msgstr "Kund"
+
+#. module: ai_agent
+#: model:ir.model.fields.selection,name:ai_agent.selection__product_attribute_value__licence__deepseek
+msgid "DEEPSEEK LICENSE AGREEMENT"
+msgstr ""
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_agent_data__data
@@ -894,7 +935,7 @@ msgstr "Typ av data"
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_agent_data__data_uuid
 msgid "Data Uuid"
-msgstr "Data Uuid"
+msgstr ""
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session__db_name
@@ -911,7 +952,7 @@ msgstr "Databas UUID"
 #. module: ai_agent
 #: model:ir.model.fields.selection,name:ai_agent.selection__ai_memory__memory_type__datastream
 msgid "Datastream"
-msgstr "Datastream"
+msgstr ""
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_session_object__datetime
@@ -922,7 +963,7 @@ msgstr "Datum"
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session_line__datetime
 msgid "Datetime"
-msgstr "Datumtid"
+msgstr "Datatid"
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_agent__debug
@@ -977,12 +1018,12 @@ msgstr "Beskrivning"
 #: code:addons/ai_agent/static/src/js/components/quest_selector_dialog.p.xml:0
 #: code:addons/ai_agent/static/src/js/components/quest_selector_dialog.xml:0
 msgid "Discard"
-msgstr "Kassera"
+msgstr ""
 
 #. module: ai_agent
 #: model:ir.model,name:ai_agent.model_discuss_channel
 msgid "Discussion Channel"
-msgstr "Diskussionskanal"
+msgstr "Kanal"
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_agent__display_name
@@ -1029,9 +1070,7 @@ msgid "Draft"
 msgstr "Utkast"
 
 #. module: ai_agent
-#: model_terms:ir.ui.view,arch_db:ai_agent.view_ai_agent_kanban
 #: model_terms:ir.ui.view,arch_db:ai_agent.view_ai_memory_kanban
-#: model_terms:ir.ui.view,arch_db:ai_agent.view_ai_quest_kanban
 #: model_terms:ir.ui.view,arch_db:ai_agent.view_ai_tool_kanban
 msgid "Dropdown menu"
 msgstr "Rullgardinsmeny"
@@ -1058,24 +1097,24 @@ msgstr "Alias för e-post"
 #. module: ai_agent
 #: model:ir.model.fields,help:ai_agent.field_ai_quest__alias_domain
 msgid "Email domain e.g. 'example.com' in 'odoo@example.com'"
-msgstr "E-postdomän, t.ex. \"example.com\" i \"odoo@example.com\""
+msgstr "E-postdomän, t.ex. \"example.com\" i \"odoo@example.com"
 
 #. module: ai_agent
 #: model_terms:ir.ui.view,arch_db:ai_agent.ai_agent_llm_search
 msgid "Embedded"
-msgstr ""
+msgstr "Inbäddad"
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_agent_llm__llm_etype
 #: model:ir.model.fields,field_description:ai_agent.field_product_product__llm_etype
 #: model:ir.model.fields,field_description:ai_agent.field_product_template__llm_etype
 msgid "Embedded Class"
-msgstr ""
+msgstr "Inbäddad klass"
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_memory__ai_agent_llm_id
 msgid "Embedded LLM"
-msgstr "Inbäddad LLM"
+msgstr "Inbyggd LLM"
 
 #. module: ai_agent
 #: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_session_search
@@ -1089,6 +1128,10 @@ msgstr "Slutdatum"
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_agent_llm__endpoint
+#: model:ir.model.fields,field_description:ai_agent.field_product_attribute_value__endpoint
+#: model:ir.model.fields,field_description:ai_agent.field_product_product__endpoint
+#: model:ir.model.fields,field_description:ai_agent.field_product_template__endpoint
+#: model:ir.model.fields,field_description:ai_agent.field_product_template_attribute_value__endpoint
 msgid "Endpoint"
 msgstr "Slutpunkt"
 
@@ -1105,6 +1148,11 @@ msgid "Error"
 msgstr "Fel"
 
 #. module: ai_agent
+#: model:ir.actions.server,name:ai_agent.action_export_quest_as_module
+msgid "Export AI-Quest as a module"
+msgstr ""
+
+#. module: ai_agent
 #: model:ir.model.fields.selection,name:ai_agent.selection__ai_memory__vector_type__faiss
 msgid "FAISS"
 msgstr ""
@@ -1117,16 +1165,23 @@ msgstr "FAISS-index"
 
 #. module: ai_agent
 #. odoo-python
+#: code:addons/ai_agent/models/ai_memory.p.py:0
+#: code:addons/ai_agent/models/ai_memory.py:0
+msgid "Faild to embedd"
+msgstr ""
+
+#. module: ai_agent
+#. odoo-python
 #: code:addons/ai_agent/wizard/ai_memory_test_wizard.p.py:0
 #: code:addons/ai_agent/wizard/ai_memory_test_wizard.py:0
 msgid "Failed to load database"
-msgstr "Misslyckades med att ladda databasen"
+msgstr ""
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_product_product__fallback_api_key_name
 #: model:ir.model.fields,field_description:ai_agent.field_product_template__fallback_api_key_name
 msgid "Fallback Api Key Name"
-msgstr "Namn på reserv-API-nyckel"
+msgstr ""
 
 #. module: ai_agent
 #: model_terms:ir.ui.view,arch_db:ai_agent.ai_agent_llm_search
@@ -1194,9 +1249,27 @@ msgid "Font awesome icon e.g. fa-tasks"
 msgstr "Font awesome-ikon, t.ex. fa-tasks"
 
 #. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.azure_product_attribute_value_GPT-4o
+msgid "GPT-4o"
+msgstr ""
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.azure_product_attribute_value_GPT-4o-mini
+msgid "GPT-4o-mini"
+msgstr ""
+
+#. module: ai_agent
+#: model:ir.model.fields.selection,name:ai_agent.selection__product_attribute_value__licence__gemma
 #: model:ir.model.fields.selection,name:ai_agent.selection__product_attribute_value__licence__gemma-terms-of-use
 msgid "Gemma Terms of Use"
 msgstr "Gemma Användarvillkor"
+
+#. module: ai_agent
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_agent_search
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_search
+#: model_terms:ir.ui.view,arch_db:ai_agent.view_ai_memory_search
+msgid "Global Company"
+msgstr ""
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_agent__ai_goal
@@ -1206,7 +1279,7 @@ msgstr "Mål"
 #. module: ai_agent
 #: model:ir.model.fields.selection,name:ai_agent.selection__product_attribute_value__licence__google-ai-terms
 msgid "Google AI-terms"
-msgstr ""
+msgstr "Google AI-termer"
 
 #. module: ai_agent
 #: model:product.template,name:ai_agent.google_llm_product_template
@@ -1268,6 +1341,14 @@ msgid "Has Message"
 msgstr "Har meddelande"
 
 #. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent__has_temperature
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_llm__has_temperature
+#: model:ir.model.fields,field_description:ai_agent.field_product_attribute_value__has_temperature
+#: model:ir.model.fields,field_description:ai_agent.field_product_template_attribute_value__has_temperature
+msgid "Has Temperature"
+msgstr ""
+
+#. module: ai_agent
 #: model:ir.model.fields,help:ai_agent.field_ai_quest__init_type
 msgid "How the Quest is initialized"
 msgstr "Hur uppdraget initsieras"
@@ -1307,8 +1388,8 @@ msgstr ""
 #. module: ai_agent
 #: model:ir.model.fields,help:ai_agent.field_ai_quest__alias_parent_thread_id
 msgid ""
-"ID of the parent record holding the alias (example: project holding the task "
-"creation alias)"
+"ID of the parent record holding the alias (example: project holding the "
+"task creation alias)"
 msgstr ""
 "ID för den överordnade post som innehåller aliaset (exempel: projekt som "
 "innehåller aliaset för skapande av uppgift)"
@@ -1341,7 +1422,7 @@ msgstr "Ikon för att indikera en undantagsaktivitet."
 #: model:ir.model.fields,help:ai_agent.field_ai_quest_session__message_needaction
 #: model:ir.model.fields,help:ai_agent.field_ai_tool__message_needaction
 msgid "If checked, new messages require your attention."
-msgstr "Om markerad, nya meddelanden kräver din uppmärksamhet."
+msgstr "Om den är markerad kräver nya meddelanden din uppmärksamhet."
 
 #. module: ai_agent
 #: model:ir.model.fields,help:ai_agent.field_ai_agent__message_has_error
@@ -1357,13 +1438,13 @@ msgstr "Om markerad, nya meddelanden kräver din uppmärksamhet."
 #: model:ir.model.fields,help:ai_agent.field_ai_tool__message_has_error
 #: model:ir.model.fields,help:ai_agent.field_ai_tool__message_has_sms_error
 msgid "If checked, some messages have a delivery error."
-msgstr "Om markerad, några meddelanden har ett leveransfel."
+msgstr "Om kryssrutan är markerad får vissa meddelanden ett leveransfel."
 
 #. module: ai_agent
 #: model:ir.model.fields,help:ai_agent.field_ai_quest__alias_bounced_content
 msgid ""
-"If set, this content will automatically be sent out to unauthorized users instead "
-"of the default message."
+"If set, this content will automatically be sent out to unauthorized users "
+"instead of the default message."
 msgstr ""
 "Om den är inställd kommer detta innehåll automatiskt att skickas ut till "
 "obehöriga användare i stället för standardmeddelandet."
@@ -1397,13 +1478,24 @@ msgstr "Initiera"
 #: code:addons/ai_agent/static/src/js/components/quest_prompt_dialog.p.xml:0
 #: code:addons/ai_agent/static/src/js/components/quest_prompt_dialog.xml:0
 msgid "Insert"
-msgstr "Infoga"
+msgstr ""
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_memory__instruction
+#: model_terms:ir.ui.view,arch_db:ai_agent.view_ai_memory_form
+msgid "Instruction"
+msgstr ""
+
+#. module: ai_agent
+#: model:ir.model.fields,help:ai_agent.field_ai_memory__instruction
+msgid "Instructions how the LLM should use this memory"
+msgstr ""
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_agent_llm__is_embedded
 #: model:ir.model.fields,field_description:ai_agent.field_product_attribute_value__is_embedded
 msgid "Is Embedded"
-msgstr ""
+msgstr "Är inbäddad"
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_agent__is_favorite
@@ -1433,7 +1525,7 @@ msgstr "Är nyckel nödvändig"
 #: model:ir.model.fields,field_description:ai_agent.field_product_product__is_llm
 #: model:ir.model.fields,field_description:ai_agent.field_product_template__is_llm
 msgid "Is Llm"
-msgstr "Is Llm"
+msgstr ""
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_memory_test_wizard__is_raise_error
@@ -1452,9 +1544,21 @@ msgid "Is Supervisor"
 msgstr "Är arbetsledare"
 
 #. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_llm__is_text2image
+#: model:ir.model.fields,field_description:ai_agent.field_product_attribute_value__is_text2image
+msgid "Is Text to image"
+msgstr ""
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_llm__is_vision
+#: model:ir.model.fields,field_description:ai_agent.field_product_attribute_value__is_vision
+msgid "Is Vision"
+msgstr ""
+
+#. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_agent_data__json
 msgid "Json"
-msgstr "Json"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.KBLab_sentence-bert-swedish-cased_product_attribute_value
@@ -1484,9 +1588,15 @@ msgstr "Språkmodell tilläggsavgift"
 
 #. module: ai_agent
 #: model_terms:ir.ui.view,arch_db:ai_agent.ai_agent_llm_kanban
-#: model_terms:ir.ui.view,arch_db:ai_agent.view_ai_agent_kanban
 msgid "LLM Agents"
 msgstr "LLM-ombud"
+
+#. module: ai_agent
+#: model:ir.actions.act_window,name:ai_agent.action_ai_llm_attribute_value
+#: model:ir.ui.menu,name:ai_agent.menu_ai_llm_attribute_value
+#: model_terms:ir.ui.view,arch_db:ai_agent.view_ai_llm_attribute_value_tree
+msgid "LLM Attributes"
+msgstr ""
 
 #. module: ai_agent
 #: model_terms:ir.ui.view,arch_db:ai_agent.view_ai_agent_llm_calendar
@@ -1598,8 +1708,23 @@ msgid "Limit the chat history to this number of messages"
 msgstr "Begränsa chatthistoriken till detta antal meddelanden"
 
 #. module: ai_agent
+#: model:ir.model.fields.selection,name:ai_agent.selection__product_attribute_value__licence__ilama3_1
+msgid "Llama 3.1 Community License"
+msgstr ""
+
+#. module: ai_agent
+#: model:ir.model.fields.selection,name:ai_agent.selection__product_attribute_value__licence__ilama3_3
+msgid "Llama 3.3 Community License"
+msgstr ""
+
+#. module: ai_agent
 #: model:ir.model.fields.selection,name:ai_agent.selection__product_attribute_value__licence__llama-community
 msgid "Llama Community License"
+msgstr "Llama Community-licens"
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.Llama_3_1_8B_Instruct
+msgid "Llama-3.1-8B-Instruct"
 msgstr ""
 
 #. module: ai_agent
@@ -1658,7 +1783,7 @@ msgstr "Manuell"
 #: model:ir.model.fields,field_description:ai_agent.field_ai_memory__memory_markdown
 #: model_terms:ir.ui.view,arch_db:ai_agent.view_ai_memory_form
 msgid "Markdown"
-msgstr "Markdown"
+msgstr ""
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_memory__max_nbr_pages
@@ -1687,7 +1812,7 @@ msgstr "Meddelande"
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session_message__message_content
 msgid "Message Content"
-msgstr "Meddelandeinnehåll"
+msgstr "Innehåll i meddelandet"
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_agent__message_has_error
@@ -1729,26 +1854,26 @@ msgstr "Meddelanden"
 #: code:addons/ai_agent/models/ai_quest.p.py:0
 #: code:addons/ai_agent/models/ai_quest.py:0
 msgid "Missing Description on the quest"
-msgstr "Saknar beskrivning av uppdraget"
+msgstr ""
 
 #. module: ai_agent
 #. odoo-python
 #: code:addons/ai_agent/models/ai_quest.p.py:0
 #: code:addons/ai_agent/models/ai_quest.py:0
 msgid "Missing LLM on agent"
-msgstr "Saknar LLM på agent"
+msgstr ""
 
 #. module: ai_agent
 #. odoo-python
 #: code:addons/ai_agent/models/ai_quest.p.py:0
 #: code:addons/ai_agent/models/ai_quest.py:0
 msgid "Missing Python Code on the quest"
-msgstr "Saknad Python-kod på uppdraget"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.template,name:ai_agent.mistral_product_template
 msgid "Mistral AI"
-msgstr "Mistral AI"
+msgstr ""
 
 #. module: ai_agent
 #: model:ir.model.fields.selection,name:ai_agent.selection__product_attribute_value__licence__mistral-research
@@ -1800,6 +1925,11 @@ msgid "My Quests"
 msgstr "Mina uppdrag"
 
 #. module: ai_agent
+#: model:ir.model.fields.selection,name:ai_agent.selection__product_attribute_value__licence__nvidia
+msgid "NVIDIA Open Model License Agreement"
+msgstr ""
+
+#. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_agent__name
 #: model:ir.model.fields,field_description:ai_agent.field_ai_agent_llm__name
 #: model:ir.model.fields,field_description:ai_agent.field_ai_memory__name
@@ -1817,23 +1947,30 @@ msgstr "Namn"
 #: model:ir.model.fields,help:ai_agent.field_product_product__llm_type
 #: model:ir.model.fields,help:ai_agent.field_product_template__llm_type
 msgid "Name of langchain class, eg ChatOpenAI or ChatMistralAI"
-msgstr "Namn på langchain-klassen, t.ex. ChatOpenAI eller ChatMistralAI"
+msgstr "Namn på langchain-klass, t.ex. ChatOpenAI eller ChatMistralAI"
 
 #. module: ai_agent
 #: model:ir.model.fields,help:ai_agent.field_ai_agent_llm__llm_etype
 #: model:ir.model.fields,help:ai_agent.field_product_product__llm_etype
 #: model:ir.model.fields,help:ai_agent.field_product_template__llm_etype
 msgid "Name of langchain class, eg OpenAIEmbeddings or MistralAIEmbeddings"
-msgstr "Namn på langchain-klassen, t.ex. OpenAIEmbeddings eller MistralAIEmbeddings"
+msgstr ""
+"Namn på langchain-klass, t.ex. OpenAIEmbeddings eller MistralAIEmbeddings"
 
 #. module: ai_agent
 #: model:ir.model.fields,help:ai_agent.field_product_product__llm_library
 #: model:ir.model.fields,help:ai_agent.field_product_template__llm_library
 msgid ""
-"Name of langchain library eg langchain_openai, langchain_groq, langchain_mistralai"
+"Name of langchain library eg langchain_openai, langchain_groq, "
+"langchain_mistralai"
 msgstr ""
 "Namn på langchain-bibliotek t.ex. langchain_openai, langchain_groq, "
 "langchain_mistralai"
+
+#. module: ai_agent
+#: model:product.template,name:ai_agent.nebius_product_template
+msgid "Nebius"
+msgstr ""
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_agent__activity_calendar_event_id
@@ -1880,41 +2017,46 @@ msgstr "Nästa aktivitetstyp"
 #: code:addons/ai_agent/models/ai_memory.p.py:0
 #: code:addons/ai_agent/models/ai_memory.py:0
 msgid "No attachments to RAG"
-msgstr "Inga bilagor till RAG"
+msgstr ""
 
 #. module: ai_agent
 #. odoo-python
 #: code:addons/ai_agent/wizard/ai_memory_test_wizard.p.py:0
 #: code:addons/ai_agent/wizard/ai_memory_test_wizard.py:0
 msgid "No serach results found"
-msgstr "Inga resultat hittades"
+msgstr ""
 
 #. module: ai_agent
 #. odoo-python
 #: code:addons/ai_agent/models/ai_quest.p.py:0
 #: code:addons/ai_agent/models/ai_quest.py:0
 msgid "No session added to build_graph method"
-msgstr "Ingen session tillagd till build_graph-metoden"
+msgstr ""
 
 #. module: ai_agent
 #. odoo-python
 #: code:addons/ai_agent/models/ai_quest.p.py:0
 #: code:addons/ai_agent/models/ai_quest.py:0
 msgid "No session provided to build_chain"
-msgstr "Ingen session till build_chain"
+msgstr ""
 
 #. module: ai_agent
 #. odoo-python
 #: code:addons/ai_agent/models/ai_quest.p.py:0
 #: code:addons/ai_agent/models/ai_quest.py:0
 msgid "No session provided to supervisor node"
-msgstr "Ingen session tillhandahålls till supervisor-noden"
+msgstr ""
 
 #. module: ai_agent
 #: model:ir.model.fields.selection,name:ai_agent.selection__ai_agent_llm__status__not_confirmed
 #: model_terms:ir.ui.view,arch_db:ai_agent.ai_agent_llm_search
 msgid "Not Confirmed"
 msgstr "Ej bekräftat"
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.nebius_nousresearch_hermes_3_llama_405b
+msgid "NousResearch/Hermes-3-Llama-405B"
+msgstr ""
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_agent_memory__nbr_days
@@ -1964,23 +2106,32 @@ msgid "Number of messages with delivery error"
 msgstr "Antal meddelanden med leveransfel"
 
 #. module: ai_agent
-#. odoo-python
-#: code:addons/ai_agent/models/ai_quest.p.py:0
-#: code:addons/ai_agent/models/ai_quest.py:0
-msgid ""
-"OBS: An error occurred, you should contact administrator to look into the quest"
+#: model:ir.model.fields,field_description:ai_agent.field_ai_memory__nbr_rags
+msgid "Number rags"
 msgstr ""
-"OBS: Ett fel inträffade, du bör kontakta administratören för att undersöka frågan"
+
+#. module: ai_agent
+#: model:ir.model.fields,help:ai_agent.field_ai_memory__nbr_rags
+msgid "Number rags this memory will add to LLM context"
+msgstr ""
 
 #. module: ai_agent
 #. odoo-python
 #: code:addons/ai_agent/models/ai_quest.p.py:0
 #: code:addons/ai_agent/models/ai_quest.py:0
 msgid ""
-"OBS: Quest does not exist, you should contact administrator to look into the quest"
+"OBS: An error occurred, you should contact administrator to look into the "
+"quest"
 msgstr ""
-"OBS: Uppdraget finns inte, du bör kontakta administratören för att undersöka "
-"uppdraget"
+
+#. module: ai_agent
+#. odoo-python
+#: code:addons/ai_agent/models/ai_quest.p.py:0
+#: code:addons/ai_agent/models/ai_quest.py:0
+msgid ""
+"OBS: Quest does not exist, you should contact administrator to look into "
+"the quest"
+msgstr ""
 
 #. module: ai_agent
 #: model:ir.actions.act_window,name:ai_agent.action_ai_session_object
@@ -1999,7 +2150,7 @@ msgstr "AI-sessionsobjekt"
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_tool_test_wizard__object_name
 msgid "Object Name"
-msgstr "Objektetsnamn"
+msgstr "Objektets namn"
 
 #. module: ai_agent
 #: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_form
@@ -2021,13 +2172,13 @@ msgstr "Open AI"
 #. module: ai_agent
 #: model:ir.model.fields,help:ai_agent.field_ai_quest__alias_force_thread_id
 msgid ""
-"Optional ID of a thread (record) to which all incoming messages will be attached, "
-"even if they did not reply to it. If set, this will disable the creation of new "
-"records completely."
+"Optional ID of a thread (record) to which all incoming messages will be "
+"attached, even if they did not reply to it. If set, this will disable the "
+"creation of new records completely."
 msgstr ""
 "Valfritt ID för en tråd (record) som alla inkommande meddelanden kommer att "
-"kopplas till, även om de inte besvarades. Om detta anges inaktiveras skapandet av "
-"nya poster helt och hållet."
+"kopplas till, även om de inte besvarades. Om detta anges inaktiveras "
+"skapandet av nya poster helt och hållet."
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_res_company__company_mission
@@ -2059,25 +2210,25 @@ msgstr "Föräldramodell"
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest__alias_parent_thread_id
 msgid "Parent Record Thread ID"
-msgstr "Parent Record Thread ID"
+msgstr ""
 
 #. module: ai_agent
 #: model:ir.model.fields,help:ai_agent.field_ai_quest__alias_parent_model_id
 msgid ""
-"Parent model holding the alias. The model holding the alias reference is not "
-"necessarily the model given by alias_model_id (example: project (parent_model) "
-"and task (model))"
+"Parent model holding the alias. The model holding the alias reference is "
+"not necessarily the model given by alias_model_id (example: project "
+"(parent_model) and task (model))"
 msgstr ""
-"Överordnad modell som håller i aliaset. Den modell som håller aliasreferensen är "
-"inte nödvändigtvis den modell som anges av alias_model_id (exempel: project "
-"(parent_model) och task (model))"
+"Överordnad modell som håller i aliaset. Den modell som håller "
+"aliasreferensen är inte nödvändigtvis den modell som anges av "
+"alias_model_id (exempel: project (parent_model) och task (model))"
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest__company_partner_id
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session__commercial_partner_id
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session_line__commercial_partner_id
 msgid "Partner"
-msgstr "Partner"
+msgstr ""
 
 #. module: ai_agent
 #. odoo-javascript
@@ -2086,7 +2237,7 @@ msgstr "Partner"
 #: code:addons/ai_agent/static/src/js/wysiwyg/wysiwyg.js:0
 #: code:addons/ai_agent/static/src/js/wysiwyg/wysiwyg.p.js:0
 msgid "Pick a quest to perform operations"
-msgstr "Välj ett uppdrag för att utföra operationer"
+msgstr ""
 
 #. module: ai_agent
 #: model:ir.model.fields,help:ai_agent.field_ai_quest__alias_contact
@@ -2097,7 +2248,8 @@ msgid ""
 "- followers: only followers of the related document or members of following "
 "channels\n"
 msgstr ""
-"Policy för att posta ett meddelande på dokumentet med hjälp av mailgateway.\n"
+"Policy för att posta ett meddelande på dokumentet med hjälp av "
+"mailgateway.\n"
 "- alla: alla kan posta\n"
 "- partners: endast autentiserade partners\n"
 "- följare: endast följare av det relaterade dokumentet eller medlemmar av "
@@ -2106,7 +2258,7 @@ msgstr ""
 #. module: ai_agent
 #: model:ir.model.fields.selection,name:ai_agent.selection__ai_quest__init_type__powerbox
 msgid "Powerbox"
-msgstr "Powerbox"
+msgstr ""
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_product_product__llm_price_url
@@ -2117,7 +2269,7 @@ msgstr "Prislista"
 #. module: ai_agent
 #: model:ir.model.fields,help:ai_agent.field_product_product__llm_price_url
 #: model:ir.model.fields,help:ai_agent.field_product_template__llm_price_url
-msgid "Pricelist for polletts and llm"
+msgid "Pricelist for tokens and llm"
 msgstr "Prislista för polletts och llm"
 
 #. module: ai_agent
@@ -2125,6 +2277,11 @@ msgstr "Prislista för polletts och llm"
 #: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_session_line_search
 msgid "Product"
 msgstr "Produkt"
+
+#. module: ai_agent
+#: model:ir.model,name:ai_agent.model_product_template_attribute_value
+msgid "Product Template Attribute Value"
+msgstr "Attributvärde för produktmall"
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session_line__product_tmpl_id
@@ -2185,6 +2342,96 @@ msgid "Quests"
 msgstr "Uppdrag"
 
 #. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.nebius_qwen_qvq_72b_preview
+msgid "Qwen/QVQ-72B-preview"
+msgstr ""
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.nebius_qwen_qwq_32b
+msgid "Qwen/QwQ-32B"
+msgstr ""
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.nebius_qwen_qwq_32b_preview
+msgid "Qwen/QwQ-32B-Preview"
+msgstr ""
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.nebius_qwen_qwq_32b_fast
+msgid "Qwen/QwQ-32B-fast"
+msgstr ""
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.nebius_qwen_qwen2_vl_72b_instruct
+msgid "Qwen/Qwen2-VL-72B-Instruct"
+msgstr ""
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.nebius_qwen_qwen2_vl_7b_instruct
+msgid "Qwen/Qwen2-VL-7B-Instruct"
+msgstr ""
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.nebius_qwen_qwen2_5_1_5b_instruct
+msgid "Qwen/Qwen2.5-1.5B-Instruct"
+msgstr ""
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.nebius_qwen_qwen2_5_32b_instruct
+msgid "Qwen/Qwen2.5-32B-Instruct"
+msgstr ""
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.nebius_qwen_qwen2_5_32b_instruct_fast
+msgid "Qwen/Qwen2.5-32B-Instruct-fast"
+msgstr ""
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.nebius_qwen_qwen2_5_72b_instruct
+msgid "Qwen/Qwen2.5-72B-Instruct"
+msgstr ""
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.nebius_qwen_qwen2_5_72b_instruct_fast
+msgid "Qwen/Qwen2.5-72B-Instruct-fast"
+msgstr ""
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.nebius_qwen_qwen2_5_vl_72b_instruct
+msgid "Qwen/Qwen2.5-VL-72B-Instruct"
+msgstr ""
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.nebius_qwen_qwen3_14b
+msgid "Qwen/Qwen3-14B"
+msgstr ""
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.nebius_qwen_qwen3_235b_a22b
+msgid "Qwen/Qwen3-235B-A22B"
+msgstr ""
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.nebius_qwen_qwen3_30b_a3b
+msgid "Qwen/Qwen3-30B-A3B"
+msgstr ""
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.nebius_qwen_qwen3_30b_a3b_fast
+msgid "Qwen/Qwen3-30B-A3B-fast"
+msgstr ""
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.nebius_qwen_qwen3_32b
+msgid "Qwen/Qwen3-32B"
+msgstr ""
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.nebius_qwen_qwen3_4b_fast
+msgid "Qwen/Qwen3-4B-fast"
+msgstr ""
+
+#. module: ai_agent
 #: model:ir.actions.server,name:ai_agent.action_rag_attachments
 msgid "RAG Attachments"
 msgstr "RAG Bilagor"
@@ -2192,7 +2439,7 @@ msgstr "RAG Bilagor"
 #. module: ai_agent
 #: model:ir.actions.server,name:ai_agent.action_rag_models
 msgid "RAG Models"
-msgstr "RAG Models"
+msgstr ""
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_agent__rating_ids
@@ -2203,11 +2450,6 @@ msgstr "RAG Models"
 #: model:ir.model.fields,field_description:ai_agent.field_ai_tool__rating_ids
 msgid "Ratings"
 msgstr "Betyg"
-
-#. module: ai_agent
-#: model:ir.model.fields,field_description:ai_agent.field_ai_memory__record_limit
-msgid "Record Limit"
-msgstr "Rekordgräns"
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest__filter_domain
@@ -2223,6 +2465,13 @@ msgstr "Registrera tråd-ID"
 #: model:ir.model.fields,field_description:ai_agent.field_ai_memory__filter_domain
 msgid "Record selection"
 msgstr "Urval av poster"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_llm__rpm
+#: model:ir.model.fields,field_description:ai_agent.field_product_attribute_value__rpm
+#: model:ir.model.fields,field_description:ai_agent.field_product_template_attribute_value__rpm
+msgid "Request Per Minute"
+msgstr ""
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_agent__activity_user_id
@@ -2290,8 +2539,13 @@ msgstr "Sök AI-sessioner"
 
 #. module: ai_agent
 #: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_session_line_search
-msgid "Search AI polletts"
-msgstr "Sök AI-tokens"
+msgid "Search AI Tokens"
+msgstr ""
+
+#. module: ai_agent
+#: model_terms:ir.ui.view,arch_db:ai_agent.view_ai_llm_attribute_value_search
+msgid "Search LLM Attributes"
+msgstr ""
 
 #. module: ai_agent
 #: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_session_message_search
@@ -2308,21 +2562,21 @@ msgstr "Sök objekt"
 #: code:addons/ai_agent/static/src/js/quest_plugin.js:0
 #: code:addons/ai_agent/static/src/js/quest_plugin.p.js:0
 msgid "Select Quest"
-msgstr "Välj uppdrag"
+msgstr ""
 
 #. module: ai_agent
 #. odoo-javascript
 #: code:addons/ai_agent/static/src/js/components/quest_selector_dialog.p.xml:0
 #: code:addons/ai_agent/static/src/js/components/quest_selector_dialog.xml:0
 msgid "Select a Quest"
-msgstr "Välj en Quest"
+msgstr ""
 
 #. module: ai_agent
 #. odoo-javascript
 #: code:addons/ai_agent/static/src/js/components/quest_prompt_dialog.p.xml:0
 #: code:addons/ai_agent/static/src/js/components/quest_prompt_dialog.xml:0
 msgid "Send a message"
-msgstr "Skicka ett meddelande"
+msgstr ""
 
 #. module: ai_agent
 #: model:ir.model.fields,help:ai_agent.field_ai_quest__chat_trigger_words
@@ -2358,7 +2612,7 @@ msgstr "Serveråtgärd som ska utföras när detta uppdrag initieras"
 #: model:ir.model.fields,field_description:ai_agent.field_mail_message__ai_quest_session_id
 #: model:ir.model.fields,field_description:ai_agent.field_res_users__ai_quest_session_id
 msgid "Session"
-msgstr "Session"
+msgstr ""
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_agent__session_count
@@ -2382,7 +2636,7 @@ msgstr "Sessions-ID"
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session__session_line_ids
 #: model:ir.model.fields,field_description:ai_agent.field_ai_tool__session_line_ids
 msgid "Session Line"
-msgstr "Sessionsrad"
+msgstr "Token"
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_agent__session_line_count
@@ -2394,12 +2648,12 @@ msgstr "Sessionsrad"
 #: model:ir.model.fields,field_description:ai_agent.field_product_product__session_line_count
 #: model:ir.model.fields,field_description:ai_agent.field_product_template__session_line_count
 msgid "Session Line Count"
-msgstr "Antal sessionssrader"
+msgstr "Summa pollett"
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session__session_message_ids
 msgid "Session Message"
-msgstr "Sessionsmeddelande"
+msgstr "Meddelande från sessionen"
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session__session_message_count
@@ -2440,22 +2694,32 @@ msgstr "Shell-kommando för att hämta dataströmmen ge cat filnamn"
 #. module: ai_agent
 #: model:ir.model.fields.selection,name:ai_agent.selection__ai_memory__vector_type__st
 msgid "Short Term"
-msgstr "Kortsiktigt"
+msgstr "Kort sikt"
 
 #. module: ai_agent
 #: model:ir.model.fields.selection,name:ai_agent.selection__ai_memory__memory_type__bs4
 msgid "Simple Webscraper"
-msgstr "Enkel webbskrapare"
+msgstr "Enkel webbskrämmare"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_llm__sleep_duration
+msgid "Sleep For"
+msgstr ""
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_memory__split_chunk_overlap
 msgid "Split Chunk Overlap"
-msgstr "Dela chunköverlappning"
+msgstr "Split Chunk Överlappning"
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_memory__split_chunk_size
 msgid "Split Chunk Size"
-msgstr "Dela chunkstorlek"
+msgstr "Split Chunk Storlek"
+
+#. module: ai_agent
+#: model:ir.model.fields.selection,name:ai_agent.selection__product_attribute_value__licence__stability-ai
+msgid "Stability AI CreativeML Open RAIL++-M"
+msgstr ""
 
 #. module: ai_agent
 #: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_session_search
@@ -2485,7 +2749,7 @@ msgstr "Startdatum"
 #: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_session_search
 #: model_terms:ir.ui.view,arch_db:ai_agent.view_ai_tool_search
 msgid "Status"
-msgstr "Status"
+msgstr ""
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_agent_llm__status_color
@@ -2513,7 +2777,7 @@ msgstr ""
 #. module: ai_agent
 #: model_terms:ir.ui.view,arch_db:ai_agent.view_ai_tool_kanban
 msgid "Status:"
-msgstr "Status:"
+msgstr ""
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest__sub_description
@@ -2523,12 +2787,17 @@ msgstr "Underbeskrivning"
 #. module: ai_agent
 #: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_form
 msgid "Supervisor"
-msgstr "Koordinator"
+msgstr "Arbetsledare"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest__supervisor_cycles
+msgid "Supervisor Cycles"
+msgstr ""
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest__supervisor_prompt
 msgid "Supervisor Prompt"
-msgstr "Koordinator instruktion"
+msgstr ""
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session_line__system_fingerprint
@@ -2538,7 +2807,7 @@ msgstr "Systemets fingeravtryck"
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_product_product__token_sys
 #: model:ir.model.fields,field_description:ai_agent.field_product_template__token_sys
-msgid "System polletts"
+msgid "System Tokens"
 msgstr "Systemtoken"
 
 #. module: ai_agent
@@ -2560,11 +2829,12 @@ msgstr "Temperatur"
 #: model:ir.model.fields,help:ai_agent.field_ai_agent__ai_temperature
 #: model:ir.model.fields,help:ai_agent.field_ai_quest__supervisor_temperature
 msgid ""
-"Temperature controls the randomness and creativity of the model's output, <1.0 "
-"more predictable and consistent >1.0 more diverse and creative responses"
+"Temperature controls the randomness and creativity of the model's output, "
+"<1.0 more predictable and consistent >1.0 more diverse and creative "
+"responses"
 msgstr ""
-"Temperaturen styr slumpmässigheten och kreativiteten i modellens utdata, <1,0 mer "
-"förutsägbar och konsekvent >1,0 mer varierande och kreativa svar"
+"Temperaturen styr slumpmässigheten och kreativiteten i modellens utdata, "
+"<1,0 mer förutsägbar och konsekvent >1,0 mer varierande och kreativa svar"
 
 #. module: ai_agent
 #: model_terms:ir.ui.view,arch_db:ai_agent.ai_agent_form
@@ -2574,17 +2844,17 @@ msgstr ""
 #: model_terms:ir.ui.view,arch_db:ai_agent.view_ai_memory_form
 #: model_terms:ir.ui.view,arch_db:ai_agent.view_ai_tool_form
 msgid "Test"
-msgstr "Test"
+msgstr ""
 
 #. module: ai_agent
 #: model:ir.actions.act_window,name:ai_agent.action_ai_agent_test_wizard
 msgid "Test AI"
-msgstr "Test AI"
+msgstr ""
 
 #. module: ai_agent
 #: model:ir.actions.server,name:ai_agent.action_test_llms
 msgid "Test LLMs"
-msgstr "Testa LLMer"
+msgstr "Testa LLM"
 
 #. module: ai_agent
 #: model:ir.actions.act_window,name:ai_agent.action_ai_quest_test_mail_wizard
@@ -2602,24 +2872,36 @@ msgid "Test Tool Input"
 msgstr "Inmatning av testverktyg"
 
 #. module: ai_agent
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_agent_llm_search
+msgid "Text2Image"
+msgstr ""
+
+#. module: ai_agent
+#. odoo-python
+#: code:addons/ai_agent/models/ai_memory.p.py:0
+#: code:addons/ai_agent/models/ai_memory.py:0
+msgid "The chuncks per session can't be less than zero."
+msgstr ""
+
+#. module: ai_agent
 #: model:ir.model.fields,help:ai_agent.field_ai_quest__alias_id
 msgid ""
 "The email address associated with this channel. New emails received will "
 "automatically create new leads assigned to the channel."
 msgstr ""
-"Den e-postadress som är kopplad till den här kanalen. Nya e-postmeddelanden som "
-"tas emot kommer automatiskt att skapa nya leads som tilldelas kanalen."
+"Den e-postadress som är kopplad till den här kanalen. Nya e-postmeddelanden "
+"som tas emot kommer automatiskt att skapa nya leads som tilldelas kanalen."
 
 #. module: ai_agent
 #: model:ir.model.fields,help:ai_agent.field_ai_quest__alias_model_id
 msgid ""
-"The model (Odoo Document Kind) to which this alias corresponds. Any incoming "
-"email that does not reply to an existing record will cause the creation of a new "
-"record of this model (e.g. a Project Task)"
+"The model (Odoo Document Kind) to which this alias corresponds. Any "
+"incoming email that does not reply to an existing record will cause the "
+"creation of a new record of this model (e.g. a Project Task)"
 msgstr ""
-"Den modell (Odoo Document Kind) som detta alias motsvarar. Alla inkommande e-"
-"postmeddelanden som inte svarar på en befintlig post kommer att leda till att en "
-"ny post skapas av denna modell (t.ex. en projektuppgift)"
+"Den modell (Odoo Document Kind) som detta alias motsvarar. Alla inkommande "
+"e-postmeddelanden som inte svarar på en befintlig post kommer att leda till "
+"att en ny post skapas av denna modell (t.ex. en projektuppgift)"
 
 #. module: ai_agent
 #: model:ir.model.fields,help:ai_agent.field_ai_quest__alias_name
@@ -2627,27 +2909,13 @@ msgid ""
 "The name of the email alias, e.g. 'jobs' if you want to catch emails for "
 "<jobs@example.odoo.com>"
 msgstr ""
-"Namnet på e-postaliaset, t.ex. \"jobs\" om du vill fånga upp e-postmeddelanden "
-"för <jobs@example.odoo.com>"
+"Namnet på e-postaliaset, t.ex. \"jobs\" om du vill fånga upp e-"
+"postmeddelanden för <jobs@example.odoo.com>"
 
 #. module: ai_agent
 #: model:ir.model.fields,help:ai_agent.field_ai_tool_test_wizard__object_name
 msgid "The name that this object will have in state"
-msgstr "Det namn som detta objekt kommer att ha i aktivitetsläge"
-
-#. module: ai_agent
-#. odoo-python
-#: code:addons/ai_agent/models/ai_memory.p.py:0
-#: code:addons/ai_agent/models/ai_memory.py:0
-msgid "The record limit can't be bigger than the amount of records."
-msgstr "Postgränsen kan inte vara större än antalet poster."
-
-#. module: ai_agent
-#. odoo-python
-#: code:addons/ai_agent/models/ai_memory.p.py:0
-#: code:addons/ai_agent/models/ai_memory.py:0
-msgid "The record limit can't be less than one."
-msgstr "Postgränsen kan inte vara mindre än ett."
+msgstr "Det namn som detta objekt kommer att ha i staten"
 
 #. module: ai_agent
 #: model:ir.model.fields,help:ai_agent.field_ai_memory__vector_type
@@ -2658,7 +2926,8 @@ msgstr "Typ av vektordatabas"
 #. module: ai_agent
 #: model:res.groups,comment:ai_agent.group_ai_agent_developer
 msgid "The user will be able to approve document created by employees."
-msgstr "Användaren kommer att kunna godkänna dokument som skapats av anställda."
+msgstr ""
+"Användaren kommer att kunna godkänna dokument som skapats av anställda."
 
 #. module: ai_agent
 #: model:res.groups,comment:ai_agent.group_ai_agent_manager
@@ -2667,31 +2936,52 @@ msgid ""
 "The user will have access to the human resources configuration as well as "
 "statistic reports."
 msgstr ""
-"Användaren kommer att ha tillgång till konfigurationen av personalresurser samt "
-"statistiska rapporter."
+"Användaren kommer att ha tillgång till konfigurationen av personalresurser "
+"samt statistiska rapporter."
 
 #. module: ai_agent
 #. odoo-javascript
 #: code:addons/ai_agent/static/src/js/components/quest_prompt_dialog.p.xml:0
 #: code:addons/ai_agent/static/src/js/components/quest_prompt_dialog.xml:0
 msgid "Thinking..."
-msgstr "Tänker..."
+msgstr ""
+
+#. module: ai_agent
+#: model:ir.model.fields,help:ai_agent.field_ai_quest__supervisor_cycles
+msgid ""
+"This field dictates how many cycles a supervisor can go through before "
+"terminating and returning an answer."
+msgstr ""
 
 #. module: ai_agent
 #: model:ir.model.fields,help:ai_agent.field_ai_quest__is_supervisor
 msgid "This is a ReAct type of quest using a supervisor coordinating agents"
 msgstr ""
-"Detta är ett uppdrag av typen ReAct med en supervisor som koordinerar agenter"
+"Detta är ett uppdrag av typen ReAct med en supervisor som koordinerar "
+"agenter"
 
 #. module: ai_agent
 #: model:ir.model.fields,help:ai_agent.field_ai_quest__real_channel_id
 msgid "This is the channel chat-method get"
-msgstr "Detta är kanalen som chatt-metoden får"
+msgstr "Detta är kanalen chatt-metoden få"
 
 #. module: ai_agent
 #: model:ir.model.fields,help:ai_agent.field_ai_memory__memory_type
 msgid "This is the source for memory"
 msgstr "Detta är källan till minnet"
+
+#. module: ai_agent
+#: model:ir.model.fields,help:ai_agent.field_ai_memory__document_chunks
+msgid ""
+"This number will limit the amount of document chunks used in one embedding "
+"session. This can help with timeout issues. If zero, one session will be "
+"used."
+msgstr ""
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_llm__threshold
+msgid "Threshold"
+msgstr ""
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session__time_difference_ms
@@ -2701,7 +2991,7 @@ msgstr "Tidsskillnad (ms)"
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session_line__token
 msgid "Token"
-msgstr "Token"
+msgstr ""
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session_line__token_monetary
@@ -2709,9 +2999,16 @@ msgid "Token Monetary"
 msgstr "Token Monetär"
 
 #. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_agent_llm__tpm
+#: model:ir.model.fields,field_description:ai_agent.field_product_attribute_value__tpm
+#: model:ir.model.fields,field_description:ai_agent.field_product_template_attribute_value__tpm
+msgid "Token Per Minute"
+msgstr ""
+
+#. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session_line__token_sys
 msgid "Token Sys"
-msgstr "Token Sys"
+msgstr ""
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session_line__token_type_id
@@ -2728,7 +3025,7 @@ msgstr "Token-typ"
 #: model_terms:ir.ui.view,arch_db:ai_agent.view_ai_tool_form
 #: model_terms:ir.ui.view,arch_db:ai_agent.view_product_template_product_form
 msgid "Tokens"
-msgstr "Tokens"
+msgstr ""
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_agent_tool__ai_tool_id
@@ -2749,18 +3046,13 @@ msgstr "Verktyg"
 
 #. module: ai_agent
 #: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_session_line_list
-msgid "Total System polletts"
-msgstr "Totalt antal systemtokens"
+msgid "Total System Tokens"
+msgstr ""
 
 #. module: ai_agent
 #: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_session_line_list
-msgid "Total polletts"
-msgstr "Totalt antal polletter"
-
-#. module: ai_agent
-#: model:ir.model.fields,field_description:ai_agent.field_ai_quest__chat_trigger_words
-msgid "Trigger Word"
-msgstr "Triggerord"
+msgid "Total Tokens"
+msgstr ""
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session__type_of_output
@@ -2780,7 +3072,7 @@ msgstr "Typ av undantagsaktivitet som registreras."
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest__uuid
 msgid "UUID"
-msgstr "UUID"
+msgstr ""
 
 #. module: ai_agent
 #: model:ir.actions.server,name:ai_agent.update_api__key
@@ -2797,7 +3089,7 @@ msgstr "Ladda upp e-post"
 #: model:ir.model.fields,field_description:ai_agent.field_ai_memory__url
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest_memory__ai_memory_url
 msgid "Url"
-msgstr "Url"
+msgstr ""
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest__use_chat_history
@@ -2815,14 +3107,19 @@ msgid "Use Personal Info"
 msgstr "Använd personlig information"
 
 #. module: ai_agent
-#: model:ir.model.fields,field_description:ai_agent.field_ai_quest__use_personal_lang
-msgid "Use Personal Language"
-msgstr "Använd användarens språk"
-
-#. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest__use_time_context
 msgid "Use Time Context"
-msgstr "Använd tidskontext"
+msgstr "Använda tidskontext"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest__allow_trigger_words
+msgid "Use activation word"
+msgstr "Tillåt avtryckare"
+
+#. module: ai_agent
+#: model:ir.model.fields,field_description:ai_agent.field_ai_quest__use_personal_lang
+msgid "Use the Users Language"
+msgstr "Använd ett personligt språk"
 
 #. module: ai_agent
 #: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_form
@@ -2846,6 +3143,11 @@ msgstr "Användare i grupp"
 #: model:ir.model.fields,field_description:ai_agent.field_ai_memory_test_wizard__ai_vector_type
 msgid "Vector type"
 msgstr "Vektortyp"
+
+#. module: ai_agent
+#: model_terms:ir.ui.view,arch_db:ai_agent.ai_agent_llm_search
+msgid "Vision"
+msgstr ""
 
 #. module: ai_agent
 #: model_terms:ir.ui.view,arch_db:ai_agent.test_wizard_view
@@ -2875,18 +3177,33 @@ msgstr "Webbplatsens kommunikationshistorik"
 #. module: ai_agent
 #: model:ir.model.fields,help:ai_agent.field_ai_quest__code
 msgid ""
-"Write Python code that the action will execute. Some variables are available for "
-"use; help about python expression is given in the help tab."
+"Write Python code that the action will execute. Some variables are "
+"available for use; help about python expression is given in the help tab."
 msgstr ""
-"Skriv Python-kod som åtgärden ska utföra. Vissa variabler är tillgängliga för "
-"användning; hjälp om Python-uttryck finns i fliken Hjälp."
+"Skriv Python-kod som åtgärden ska utföra. Vissa variabler är tillgängliga "
+"för användning; hjälp om Python-uttryck finns i fliken Hjälp."
 
 #. module: ai_agent
 #. odoo-python
-#: code:addons/ai_agent/models/ai_quest.p.py:
-#: code:addons/ai_agent/models/ai_quest.py:
+#: code:addons/ai_agent/models/ai_quest.p.py:0
+#: code:addons/ai_agent/models/ai_quest.py:0
 msgid "You have to assign at least one agent to the quest"
-msgstr "Du måste tilldela minst en agent till uppdraget"
+msgstr ""
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.nebius_aaditya_llama3_openbiollm_70b
+msgid "aaditya/Llama3-OpenBioLLM-70B"
+msgstr ""
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.nebius_aaditya_llama3_openbiollm_8b
+msgid "aaditya/Llama3-OpenBioLLM-8B"
+msgstr ""
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.DeepCoder_14B_Preview
+msgid "agentica-org/DeepCoder-14B-Preview"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.albert_product_attribute_value
@@ -2894,9 +3211,14 @@ msgid "albert-base-v2"
 msgstr ""
 
 #. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.nebius_allenai_olmo_7b_instruct_hf
+msgid "allenai/OLMo-7B-Instruct-hf"
+msgstr ""
+
+#. module: ai_agent
 #: model:product.attribute,name:ai_agent.product_attribute_api_type
 msgid "api_type"
-msgstr ""
+msgstr "api_typ"
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.product_attribute_value_audio
@@ -2911,7 +3233,7 @@ msgstr "parti"
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.huggingface_product_attribute_value_bert
 msgid "bert-base-uncased"
-msgstr ""
+msgstr "bert-basen-avvecklad"
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.bloom_product_attribute_value
@@ -2919,48 +3241,88 @@ msgid "bigscience/bloom"
 msgstr ""
 
 #. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.nebius_black_forest_labs_flux_dev
+msgid "black-forest-labs/flux-dev"
+msgstr ""
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.nebius_black_forest_labs_flux_schnell
+msgid "black-forest-labs/flux-schnell"
+msgstr ""
+
+#. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.google_llm_product_attribute_value_chat-bison-001
 msgid "chat-bison-001"
-msgstr ""
+msgstr "katt-bison-001"
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.anthropic_product_attribute_value_claude-3-5-haiku-latest
 msgid "claude-3-5-haiku-latest"
+msgstr "claude-3-5-haiku-nyaste"
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.anthropic_product_attribute_value_claude-3-5-sonnet-20240620
+msgid "claude-3-5-sonnet-20240620"
 msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.anthropic_product_attribute_value_claude-3-5-sonnet-latest
 msgid "claude-3-5-sonnet-latest"
+msgstr "claude-3-5-sonnet-nyaste"
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.anthropic_product_attribute_value_claude-3-7-sonnet-latest
+msgid "claude-3-7-sonnet-latest"
 msgstr ""
 
 #. module: ai_agent
-#: model:product.attribute.value,name:ai_agent.anthropic_product_attribute_value_claude-3-haiku-latest
-msgid "claude-3-haiku-latest"
+#: model:product.attribute.value,name:ai_agent.anthropic_product_attribute_value_claude-3-haiku-20240307
+msgid "claude-3-haiku-20240307"
 msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.anthropic_product_attribute_value_claude-3-opus-latest
 msgid "claude-3-opus-latest"
-msgstr ""
+msgstr "claude-3-opus-nyaste"
 
 #. module: ai_agent
-#: model:product.attribute.value,name:ai_agent.anthropic_product_attribute_value_claude-3-sonnet-latest
-msgid "claude-3-sonnet-latest"
+#: model:product.attribute.value,name:ai_agent.anthropic_product_attribute_value_claude-3-sonnet-20240229
+msgid "claude-3-sonnet-20240229"
 msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.mistral_product_attribute_value_codestral-latest
 msgid "codestral-latest"
-msgstr ""
+msgstr "kodestral-nyaste"
 
 #. module: ai_agent
 #: model:product.attribute,name:ai_agent.product_attribute_data_type
 msgid "data_type"
+msgstr "data_typ"
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.nebius_deepseek_ai_deepseek_coder_v2_lite_instruct
+msgid "deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct"
 msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.deepseek-ai_deepseek-r1_product_attribute_value
 msgid "deepseek-ai/DeepSeek-R1"
+msgstr ""
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.nebius_deepseek_ai_deepseek_r1_distill_llama_70b
+msgid "deepseek-ai/DeepSeek-R1-Distill-Llama-70B"
+msgstr ""
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.nebius_deepseek_ai_deepseek_v3_0324
+msgid "deepseek-ai/DeepSeek-V3-0324"
+msgstr ""
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.nebius_deepseek_ai_deepseek_v3_0324_fast
+msgid "deepseek-ai/DeepSeek-V3-0324-fast"
 msgstr ""
 
 #. module: ai_agent
@@ -2976,7 +3338,7 @@ msgstr ""
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.distilbert_product_attribute_value
 msgid "distilbert-base-uncased"
-msgstr ""
+msgstr "distilbert-basen-avvecklad"
 
 #. module: ai_agent
 #: model_terms:ir.ui.view,arch_db:ai_agent.ai_agent_form
@@ -2987,7 +3349,7 @@ msgstr "t.ex. stöd"
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.google_llm_product_attribute_value_embedding-gecko-001
 msgid "embedding-gecko-001"
-msgstr ""
+msgstr "inbäddning-gecko-001"
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.bart_product_attribute_value
@@ -2997,21 +3359,51 @@ msgstr ""
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.google_llm_product_attribute_value_gemini-pro
 msgid "gemini-pro"
-msgstr ""
+msgstr "gemini pro"
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.google_llm_product_attribute_value_gemini-pro-vision
 msgid "gemini-pro-vision"
-msgstr ""
+msgstr "gemini-provision"
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.groq_product_attribute_value_gemma2-9b-it
 msgid "gemma2-9b-it"
-msgstr ""
+msgstr "gemma2-9b-sv"
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.electra_product_attribute_value
 msgid "google/electra-base-discriminator"
+msgstr "google/electra-base-diskriminator"
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.nebius_google_gemma_2_27b_it
+msgid "google/gemma-2-27b-it"
+msgstr ""
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.nebius_google_gemma_2_27b_it_fast
+msgid "google/gemma-2-27b-it-fast"
+msgstr ""
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.nebius_google_gemma_2_2b_it
+msgid "google/gemma-2-2b-it"
+msgstr ""
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.nebius_google_gemma_2_2b_it_fast
+msgid "google/gemma-2-2b-it-fast"
+msgstr ""
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.nebius_google_gemma_2_9b_it
+msgid "google/gemma-2-9b-it"
+msgstr ""
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.nebius_google_gemma_2_9b_it_fast
+msgid "google/gemma-2-9b-it-fast"
 msgstr ""
 
 #. module: ai_agent
@@ -3027,7 +3419,7 @@ msgstr ""
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.open_ai_product_attribute_value_gpt-4o-audio-preview
 msgid "gpt-4o-audio-preview"
-msgstr ""
+msgstr "gpt-4o-audio-förhandsgranskning"
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.open_ai_product_attribute_value_gpt-4o-mini
@@ -3037,7 +3429,7 @@ msgstr ""
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.open_ai_product_attribute_value_gpt-4o-mini-audio-preview
 msgid "gpt-4o-mini-audio-preview"
-msgstr ""
+msgstr "gpt-4o-mini-audio-förhandsgranskning"
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.huggingface_product_attribute_value_gpt2
@@ -3045,8 +3437,38 @@ msgid "gpt2"
 msgstr ""
 
 #. module: ai_agent
-#: model:product.attribute.value,name:ai_agent.grok_product_attribute_value_grok-1
-msgid "grok-1"
+#: model:product.attribute.value,name:ai_agent.grok_product_attribute_value_grok-2-image-latest
+msgid "grok-2-image-latest"
+msgstr ""
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.grok_product_attribute_value_grok-2-latest
+msgid "grok-2-latest"
+msgstr ""
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.grok_product_attribute_value_grok-2-vision-latest
+msgid "grok-2-vision-latest"
+msgstr ""
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.grok_product_attribute_value_grok-3-fast-latest
+msgid "grok-3-fast-beta"
+msgstr ""
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.grok_product_attribute_value_grok-3-latest
+msgid "grok-3-latest"
+msgstr ""
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.grok_product_attribute_value_grok-3-mini-latest
+msgid "grok-3-mini-beta"
+msgstr ""
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.grok_product_attribute_value_grok-3-mini-fast-latest
+msgid "grok-3-mini-mini-beta"
 msgstr ""
 
 #. module: ai_agent
@@ -3067,17 +3489,22 @@ msgstr ""
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.product_attribute_value_input_tokens_audio
 msgid "input_tokens_audio"
-msgstr ""
+msgstr "inmatning_tokens_audio"
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.product_attribute_value_input_tokens_cache_read
 msgid "input_tokens_cache_read"
+msgstr "inmatning_tokens_cache_läsning"
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.nebius_intfloat_e5_mistral_7b_instruct
+msgid "intfloat/e5-mistral-7b-instruct"
 msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.groq_product_attribute_value_llama-3-1-8b-instant
 msgid "llama-3.1-8b-instant"
-msgstr ""
+msgstr "lama-3.1-8b-instant"
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.groq_product_attribute_value_llama-3-3-70b-versatile
@@ -3092,27 +3519,92 @@ msgstr ""
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.groq_product_attribute_value_llama3-70b-8192
 msgid "llama3-70b-8192"
-msgstr ""
+msgstr "flamma3-70b-8192"
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.groq_product_attribute_value_llama3-8b-8192
 msgid "llama3-8b-8192"
+msgstr "flamma3-8b-8192"
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.nebius_llava_hf_llava_1_5_13b_hf
+msgid "llava-hf/llava-1.5-13b-hf"
+msgstr ""
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.nebius_llava_hf_llava_1_5_7b_hf
+msgid "llava-hf/llava-1.5-7b-hf"
+msgstr ""
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.nebius_meta_llama_llama_3_2_1b_instruct
+msgid "meta-llama/Llama-3.2-1B-Instruct"
+msgstr ""
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.nebius_meta_llama_llama_3_2_3b_instruct
+msgid "meta-llama/Llama-3.2-3B-Instruct"
+msgstr ""
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.Llama_3_3_70B_Instruct
+msgid "meta-llama/Llama-3.3-70B-Instruct"
+msgstr ""
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.nebius_meta_llama_llama_guard_3_8b
+msgid "meta-llama/Llama-Guard-3-8B"
+msgstr ""
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.nebius_microsoft_phi_3_medium_128k_instruct
+msgid "microsoft/Phi-3-medium-128k-instruct"
+msgstr ""
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.nebius_microsoft_phi_3_medium_128k_instruct_fast
+msgid "microsoft/Phi-3-medium-128k-instruct-fast"
+msgstr ""
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.nebius_microsoft_phi_3_mini_4k_instruct
+msgid "microsoft/Phi-3-mini-4k-instruct"
+msgstr ""
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.nebius_microsoft_phi_3_mini_4k_instruct_fast
+msgid "microsoft/Phi-3-mini-4k-instruct-fast"
+msgstr ""
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.nebius_microsoft_phi_3_5_moe_instruct
+msgid "microsoft/Phi-3.5-MoE-instruct"
+msgstr ""
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.nebius_microsoft_phi_3_5_mini_instruct
+msgid "microsoft/Phi-3.5-mini-instruct"
 msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.deberta_product_attribute_value
 msgid "microsoft/deberta-base"
+msgstr "microsoft/deberta-basen"
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.nebius_microsoft_phi_4
+msgid "microsoft/phi-4"
 msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.mistral_product_attribute_value_ministral-3b-latest
 msgid "ministral-3b-latest"
-msgstr ""
+msgstr "ministral-3b-nyaste"
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.mistral_product_attribute_value_ministral-8b-latest
 msgid "ministral-8b-latest"
-msgstr ""
+msgstr "ministral-8b-nyaste"
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.mistral_product_attribute_value_mistral_embed
@@ -3122,16 +3614,22 @@ msgstr ""
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.mistral_product_attribute_value_mistral-large-latest
 msgid "mistral-large-latest"
-msgstr ""
+msgstr "mistral-large-nyaste"
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.mistral_product_attribute_value_mistral-moderation-latest
 msgid "mistral-moderation-latest"
-msgstr ""
+msgstr "mistral-moderering-nyaste"
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.mistral_product_attribute_value_mistral-small-latest
 msgid "mistral-small-latest"
+msgstr "mistral-liten-nyaste"
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.Mistral_Small_3_1_24B_Instruct_2503
+#: model:product.attribute.value,name:ai_agent.nebius_mistralai_mistral_small_3_1_24b_instruct_2503
+msgid "mistralai/Mistral-Small-3.1-24B-Instruct-2503"
 msgstr ""
 
 #. module: ai_agent
@@ -3146,21 +3644,44 @@ msgstr "modell"
 
 #. module: ai_agent
 #. odoo-python
-#: code:addons/ai_agent/models/mail.p.py:0 code:addons/ai_agent/models/mail.py:0
+#: code:addons/ai_agent/models/mail.p.py:0
+#: code:addons/ai_agent/models/mail.py:0
 msgid "no answer"
-msgstr "inget svar"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.ollama_product_attribute_value_nomic-embed-text
 msgid "nomic-embed-text"
+msgstr "nomic-inbäddad-text"
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.nebius_nvidia_llama_3_1_nemotron_70b_instruct_hf
+msgid "nvidia/Llama-3.1-Nemotron-70B-Instruct-HF"
 msgstr ""
 
 #. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.nebius_nvidia_llama_3_1_nemotron_70b_instruct_hf_fast
+msgid "nvidia/Llama-3.1-Nemotron-70B-Instruct-HF-fast"
+msgstr ""
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.nebius_nvidia_llama_3_1_nemotron_ultra_253b_v1
+msgid "nvidia/Llama-3_1-Nemotron-Ultra-253B-v1"
+msgstr ""
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.nebius_nvidia_llama_3_3_nemotron_super_49b_v1
+msgid "nvidia/Llama-3_3-Nemotron-Super-49B-v1"
+msgstr ""
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.azure_product_attribute_value_o1
 #: model:product.attribute.value,name:ai_agent.open_ai_product_attribute_value_o1
 msgid "o1"
 msgstr ""
 
 #. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.azure_product_attribute_value_o1-mini
 #: model:product.attribute.value,name:ai_agent.open_ai_product_attribute_value_o1-mini
 msgid "o1-mini"
 msgstr ""
@@ -3173,27 +3694,27 @@ msgstr ""
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.mistral_product_attribute_value_open-codestral-mamba
 msgid "open-codestral-mamba"
-msgstr ""
+msgstr "öppen-codestral-mamba"
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.mistral_product_attribute_value_open-mistral-nemo
 msgid "open-mistral-nemo"
-msgstr ""
+msgstr "öppen-mistral-nemo"
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.product_attribute_value_output_tokens
 msgid "output_tokens"
-msgstr ""
+msgstr "utdata_tokens"
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.product_attribute_value_output_tokens_audio
 msgid "output_tokens_audio"
-msgstr ""
+msgstr "utdata_tokens_audio"
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.product_attribute_value_output_tokens_reasoning
 msgid "output_tokens_reasoning"
-msgstr ""
+msgstr "utdata_tokens_resonemang"
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.mistral_product_attribute_value_pixtral-12b-2409
@@ -3203,26 +3724,31 @@ msgstr ""
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.mistral_product_attribute_value_pixtral-large-latest
 msgid "pixtral-large-latest"
-msgstr ""
+msgstr "pixtral-stor-nyaste"
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.roberta_product_attribute_value
 msgid "roberta-base"
-msgstr ""
+msgstr "roberta-basen"
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.sentence_transformers_all_MiniLM_l6_v2d_product_attribute_value
 msgid "sentence-transformers/all-MiniLM-l6-v2"
-msgstr ""
+msgstr "mening-transformatorer/alla-MiniLM-l6-v2"
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.huggingface_product_attribute_value_mpnet
 msgid "sentence-transformers/all-mpnet-base-v2"
-msgstr ""
+msgstr "mening-transformatorer/all-mpnet-base-v2"
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.ollama_product_attribute_value_snowflake-arctic-embed
 msgid "snowflake-arctic-embed"
+msgstr "snöflinga-arktisk-inbäddad"
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.nebius_stability_ai_sdxl
+msgid "stability-ai/sdxl"
 msgstr ""
 
 #. module: ai_agent
@@ -3233,7 +3759,7 @@ msgstr "synkronisering"
 #. module: ai_agent
 #: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_form
 msgid "t.ex. Chatbot"
-msgstr "t.ex. Chatbot"
+msgstr ""
 
 #. module: ai_agent
 #: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_form
@@ -3242,18 +3768,18 @@ msgstr "t.ex. Chatbot för specialfall"
 
 #. module: ai_agent
 #: model_terms:ir.ui.view,arch_db:ai_agent.view_ai_memory_form
-msgid "E.g. handbook"
+msgid "t.ex. Handboken"
 msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.t5_product_attribute_value
 msgid "t5-base"
-msgstr ""
+msgstr "t5-basen"
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.product_attribute_value_text
 msgid "text"
-msgstr "text"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.google_llm_product_attribute_value_text-bison-001
@@ -3263,17 +3789,22 @@ msgstr ""
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.open_ai_product_attribute_value_text-embedding-3-large
 msgid "text-embedding-3-large"
-msgstr ""
+msgstr "text-inbäddning-3-large"
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.open_ai_product_attribute_value_text-embedding-3-small
 msgid "text-embedding-3-small"
-msgstr ""
+msgstr "text-inbäddning-3-small"
 
 #. module: ai_agent
 #: model:product.attribute,name:ai_agent.product_attribute_token_type
 msgid "token_type"
 msgstr "token_typ"
+
+#. module: ai_agent
+#: model:product.attribute.value,name:ai_agent.unsloth_DeepSeek_R1_GGUF
+msgid "unsloth/DeepSeek-R1-GGUF"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.groq_product_attribute_value_whisper-large-v3
@@ -3288,4 +3819,4 @@ msgstr ""
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.xlm_roberta_product_attribute_value
 msgid "xlm-roberta-base"
-msgstr ""
+msgstr "xlm-roberta-basen"
