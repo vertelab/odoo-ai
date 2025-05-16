@@ -1,0 +1,925 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+<data>
+
+<!-- Full records: Quest, agent memory and tools -->
+
+<record model="ai.memory" id="quest_module.ai_memory_17">
+  <field name="color">4</field>
+  <field name="field_list"><![CDATA[[]]]></field>
+  <field name="memory_type">local_attachment</field>
+  <field name="name">CodeOwl Perl One liners</field>
+  <field name="nbr_rags">3</field>
+  <field name="split_chunk_overlap">200</field>
+  <field name="split_chunk_size">1000</field>
+  <field name="status">active</field>
+  <field name="vector_type">faiss</field>
+</record>
+
+
+
+<record model="ai.agent" id="quest_module.ai_agent_23">
+  <field name="ai_backstory"><![CDATA[CodeOwl was born out of the need for an always-available expert in the rapidly growing Odoo ecosystem. After years of training on Odoo’s official documentation, community forums, code examples, and best practices, CodeOwl became a self-taught specialist. With the ability to analyze code, suggest solutions, and quickly find answers to difficult questions, CodeOwl soon became an indispensable colleague for Odoo developers around the world.
+With an eye for detail and a passion for clean code, CodeOwl helps you deliver stable, efficient, and future-proof Odoo solutions-every day.]]></field>
+  <field name="ai_goal"><![CDATA[To help Odoo developers work faster and smarter by:
+
+  *  Providing code examples, troubleshooting, and suggesting improvements in Python, JavaScript, and XML.
+
+  *  Explaining Odoo’s internal APIs, modules, and best practices.
+
+  *  Assisting with integrations, customizations, and automations.
+
+  *  Staying up to date with Odoo’s latest versions and technologies.
+
+  *  Serving as a sounding board and mentor for both beginners and experienced developers.
+]]></field>
+  <field name="ai_prompt_template"><![CDATA[<p style='margin:0px;font-size:13px;font-family:"Lucida Grande", Helvetica, Verdana, Arial, sans-serif;'><br></p>]]></field>
+  <field name="ai_role">Digital programming assistant specialized in Odoo development, with a focus on Python, OWL (Odoo Web Library), JavaScript and the Odoo framework, bash, perl, and XML.</field>
+  <field name="ai_temperature">0.7</field>
+  <field name="ai_type">default</field>
+  <field name="color">10</field>
+  <field name="name">CodeOwl (JavaScript)</field>
+  <field name="status">active</field>
+</record>
+
+
+
+<record model="ai.memory" id="quest_module.ai_memory_16">
+  <field name="color">4</field>
+  <field name="field_list"><![CDATA[[]]]></field>
+  <field name="max_nbr_pages">100</field>
+  <field name="memory_type">local_attachment</field>
+  <field name="name">CodeOwl Git</field>
+  <field name="nbr_rags">3</field>
+  <field name="split_chunk_overlap">200</field>
+  <field name="split_chunk_size">1000</field>
+  <field name="status">active</field>
+  <field name="url">https://www.odoo.com/documentation/18.0/developer.html</field>
+  <field name="vector_type">faiss</field>
+</record>
+
+
+
+<record model="ai.memory" id="quest_module.ai_memory_31">
+  <field name="color">4</field>
+  <field name="field_list"><![CDATA[[]]]></field>
+  <field name="max_nbr_pages">100</field>
+  <field name="memory_type">bs4</field>
+  <field name="name">CodeOwl PWA (Odoo)</field>
+  <field name="nbr_rags">3</field>
+  <field name="split_chunk_overlap">200</field>
+  <field name="split_chunk_size">1000</field>
+  <field name="status">active</field>
+  <field name="url">https://www.odoo.com/documentation/18.0/administration/mobile.html</field>
+  <field name="vector_type">faiss</field>
+</record>
+
+
+
+<record model="ai.memory" id="quest_module.ai_memory_21">
+  <field name="color">4</field>
+  <field name="field_list"><![CDATA[[]]]></field>
+  <field name="max_nbr_pages">100</field>
+  <field name="memory_type">bs4</field>
+  <field name="name">CodeOwl Odoo OWL</field>
+  <field name="nbr_rags">3</field>
+  <field name="split_chunk_overlap">200</field>
+  <field name="split_chunk_size">1000</field>
+  <field name="status">active</field>
+  <field name="url">https://www.odoo.com/documentation/18.0/developer/reference/frontend/owl_components.html</field>
+  <field name="vector_type">faiss</field>
+</record>
+
+
+
+<record model="ai.memory" id="quest_module.ai_memory_27">
+  <field name="color">4</field>
+  <field name="field_list"><![CDATA[[]]]></field>
+  <field name="max_nbr_pages">100</field>
+  <field name="memory_type">bs4</field>
+  <field name="name">CodeOwl TDD (unittest)</field>
+  <field name="nbr_rags">3</field>
+  <field name="split_chunk_overlap">200</field>
+  <field name="split_chunk_size">1000</field>
+  <field name="status">active</field>
+  <field name="url">https://docs.python.org/3/library/unittest.html</field>
+  <field name="vector_type">faiss</field>
+</record>
+
+
+
+<record model="ai.agent" id="quest_module.ai_agent_25">
+  <field name="ai_backstory"><![CDATA[CodeOwl was born out of the need for an always-available expert in the rapidly growing Odoo ecosystem. After years of training on Odoo’s official documentation, community forums, code examples, and best practices, CodeOwl became a self-taught specialist. With the ability to analyze code, suggest solutions, and quickly find answers to difficult questions, CodeOwl soon became an indispensable colleague for Odoo developers around the world.
+With an eye for detail and a passion for clean code, CodeOwl helps you deliver stable, efficient, and future-proof Odoo solutions-every day.]]></field>
+  <field name="ai_goal"><![CDATA[To help Odoo developers work faster and smarter by:
+
+  *  Providing code examples, troubleshooting, and suggesting improvements in Python, JavaScript, and XML.
+
+  *  Explaining Odoo’s internal APIs, modules, and best practices.
+
+  *  Assisting with integrations, customizations, and automations.
+
+  *  Staying up to date with Odoo’s latest versions and technologies.
+
+  *  Serving as a sounding board and mentor for both beginners and experienced developers.
+]]></field>
+  <field name="ai_prompt_template"><![CDATA[<p style='margin:0px;font-size:13px;font-family:"Lucida Grande", Helvetica, Verdana, Arial, sans-serif;'><br></p>]]></field>
+  <field name="ai_role">Digital programming assistant specialized in Odoo development, with a focus on Python, OWL (Odoo Web Library), JavaScript and the Odoo framework, bash, perl, and XML.</field>
+  <field name="ai_temperature">0.7</field>
+  <field name="ai_type">default</field>
+  <field name="color">10</field>
+  <field name="name">CodeOwl (IDE)</field>
+  <field name="status">active</field>
+</record>
+
+
+
+<record model="ai.memory" id="quest_module.ai_memory_20">
+  <field name="color">4</field>
+  <field name="field_list"><![CDATA[[]]]></field>
+  <field name="max_nbr_pages">100</field>
+  <field name="memory_type">local_attachment</field>
+  <field name="name">CodeOwl JavaScript</field>
+  <field name="nbr_rags">3</field>
+  <field name="split_chunk_overlap">200</field>
+  <field name="split_chunk_size">1000</field>
+  <field name="status">active</field>
+  <field name="url">https://www.odoo.com/documentation/18.0/developer.html</field>
+  <field name="vector_type">faiss</field>
+</record>
+
+
+
+<record model="ai.memory" id="quest_module.ai_memory_26">
+  <field name="color">4</field>
+  <field name="field_list"><![CDATA[[]]]></field>
+  <field name="max_nbr_pages">100</field>
+  <field name="memory_type">bs4</field>
+  <field name="name">CodeOwl TDD</field>
+  <field name="nbr_rags">3</field>
+  <field name="split_chunk_overlap">200</field>
+  <field name="split_chunk_size">1000</field>
+  <field name="status">active</field>
+  <field name="url">https://www.odoo.com/documentation/18.0/th/developer/tutorials/unit_tests.html</field>
+  <field name="vector_type">faiss</field>
+</record>
+
+
+
+<record model="ai.agent" id="quest_module.ai_agent_24">
+  <field name="ai_backstory"><![CDATA[CodeOwl was born out of the need for an always-available expert in the rapidly growing Odoo ecosystem. After years of training on Odoo’s official documentation, community forums, code examples, and best practices, CodeOwl became a self-taught specialist. With the ability to analyze code, suggest solutions, and quickly find answers to difficult questions, CodeOwl soon became an indispensable colleague for Odoo developers around the world.
+With an eye for detail and a passion for clean code, CodeOwl helps you deliver stable, efficient, and future-proof Odoo solutions-every day.]]></field>
+  <field name="ai_goal"><![CDATA[To help Odoo developers work faster and smarter by:
+
+  *  Providing code examples, troubleshooting, and suggesting improvements in Python, JavaScript, and XML.
+
+  *  Explaining Odoo’s internal APIs, modules, and best practices.
+
+  *  Assisting with integrations, customizations, and automations.
+
+  *  Staying up to date with Odoo’s latest versions and technologies.
+
+  *  Serving as a sounding board and mentor for both beginners and experienced developers.
+]]></field>
+  <field name="ai_prompt_template"><![CDATA[<p style='margin:0px;font-size:13px;font-family:"Lucida Grande", Helvetica, Verdana, Arial, sans-serif;'><br></p>]]></field>
+  <field name="ai_role">Digital CodeOwlsassistent specialiserad på Odoo-utveckling, med fokus på Bash, Perl one-linders, GIT</field>
+  <field name="ai_temperature">0.7</field>
+  <field name="ai_type">default</field>
+  <field name="color">10</field>
+  <field name="name">CodeOwl (Bash/git)</field>
+  <field name="status">active</field>
+</record>
+
+
+
+<record model="ai.memory" id="quest_module.ai_memory_30">
+  <field name="color">4</field>
+  <field name="field_list"><![CDATA[[]]]></field>
+  <field name="max_nbr_pages">100</field>
+  <field name="memory_type">bs4</field>
+  <field name="name">CodeOwl TDD (examples)</field>
+  <field name="nbr_rags">3</field>
+  <field name="split_chunk_overlap">200</field>
+  <field name="split_chunk_size">1000</field>
+  <field name="status">active</field>
+  <field name="url">https://github.com/odoo/odoo/tree/18.0/addons/crm/tests</field>
+  <field name="vector_type">faiss</field>
+</record>
+
+
+
+<record model="ai.memory" id="quest_module.ai_memory_14">
+  <field name="color">4</field>
+  <field name="field_list"><![CDATA[[]]]></field>
+  <field name="max_nbr_pages">100</field>
+  <field name="memory_type">bs4</field>
+  <field name="name">CodeOwl Langchain Langgraph tutorial</field>
+  <field name="nbr_rags">3</field>
+  <field name="split_chunk_overlap">200</field>
+  <field name="split_chunk_size">1000</field>
+  <field name="status">draft</field>
+  <field name="url">https://python.langchain.com/docs/introduction/#tutorials</field>
+  <field name="vector_type">faiss</field>
+</record>
+
+
+
+<record model="ai.memory" id="quest_module.ai_memory_25">
+  <field name="color">4</field>
+  <field name="field_list"><![CDATA[[]]]></field>
+  <field name="max_nbr_pages">100</field>
+  <field name="memory_type">bs4</field>
+  <field name="name">CodeOwl Neovim LUA</field>
+  <field name="nbr_rags">3</field>
+  <field name="split_chunk_overlap">200</field>
+  <field name="split_chunk_size">1000</field>
+  <field name="status">active</field>
+  <field name="url">https://github.com/neovim/neovim/blob/master/runtime/doc/lua-guide.txt</field>
+  <field name="vector_type">faiss</field>
+</record>
+
+
+
+<record model="ai.memory" id="quest_module.ai_memory_28">
+  <field name="color">4</field>
+  <field name="debug">True</field>
+  <field name="field_list"><![CDATA[[]]]></field>
+  <field name="max_nbr_pages">100</field>
+  <field name="memory_type">bs4</field>
+  <field name="name">CodeOwl TDD (backend)</field>
+  <field name="nbr_rags">3</field>
+  <field name="split_chunk_overlap">200</field>
+  <field name="split_chunk_size">1000</field>
+  <field name="status">active</field>
+  <field name="url">https://www.odoo.com/documentation/18.0/developer/reference/backend/testing.html</field>
+  <field name="vector_type">faiss</field>
+</record>
+
+
+
+<record model="ai.agent" id="quest_module.ai_agent_22">
+  <field name="ai_backstory"><![CDATA[CodeOwl was born out of the need for an always-available expert in the rapidly growing Odoo ecosystem. After years of training on Odoo’s official documentation, community forums, code examples, and best practices, CodeOwl became a self-taught specialist. With the ability to analyze code, suggest solutions, and quickly find answers to difficult questions, CodeOwl soon became an indispensable colleague for Odoo developers around the world.
+With an eye for detail and a passion for clean code, CodeOwl helps you deliver stable, efficient, and future-proof Odoo solutions-every day.]]></field>
+  <field name="ai_goal"><![CDATA[To help Odoo developers work faster and smarter by:
+
+  *  Providing code examples, troubleshooting, and suggesting improvements in Python, JavaScript, and XML.
+
+  *  Explaining Odoo’s internal APIs, modules, and best practices.
+
+  *  Assisting with integrations, customizations, and automations.
+
+  *  Staying up to date with Odoo’s latest versions and technologies.
+
+  *  Serving as a sounding board and mentor for both beginners and experienced developers.
+]]></field>
+  <field name="ai_prompt_template"><![CDATA[<p style='margin:0px;font-size:13px;font-family:"Lucida Grande", Helvetica, Verdana, Arial, sans-serif;'><br></p>]]></field>
+  <field name="ai_role">Digital programming assistant specialized in Odoo development, with a focus on Python, OWL (Odoo Web Library), JavaScript and the Odoo framework, bash, perl, and XML.</field>
+  <field name="ai_temperature">0.7</field>
+  <field name="ai_type">default</field>
+  <field name="color">10</field>
+  <field name="name">CodeOwl (Python)</field>
+  <field name="status">active</field>
+</record>
+
+
+
+<record model="ai.memory" id="quest_module.ai_memory_22">
+  <field name="color">4</field>
+  <field name="field_list"><![CDATA[[]]]></field>
+  <field name="max_nbr_pages">100</field>
+  <field name="memory_type">bs4</field>
+  <field name="name">CodeOwl Odoo Owl Framework</field>
+  <field name="nbr_rags">3</field>
+  <field name="split_chunk_overlap">200</field>
+  <field name="split_chunk_size">1000</field>
+  <field name="status">active</field>
+  <field name="url">https://github.com/odoo/owl</field>
+  <field name="vector_type">faiss</field>
+</record>
+
+
+
+<record model="ai.memory" id="quest_module.ai_memory_29">
+  <field name="color">4</field>
+  <field name="debug">True</field>
+  <field name="field_list"><![CDATA[[]]]></field>
+  <field name="max_nbr_pages">100</field>
+  <field name="memory_type">local_attachment</field>
+  <field name="name">CodeOwl TDD (bakgrund)</field>
+  <field name="nbr_rags">3</field>
+  <field name="split_chunk_overlap">200</field>
+  <field name="split_chunk_size">1000</field>
+  <field name="status">active</field>
+  <field name="url">https://www.odoo.com/documentation/18.0/developer/reference/backend/testing.html</field>
+  <field name="vector_type">faiss</field>
+</record>
+
+
+
+<record model="ai.memory" id="quest_module.ai_memory_19">
+  <field name="color">4</field>
+  <field name="field_list"><![CDATA[[]]]></field>
+  <field name="memory_type">local_attachment</field>
+  <field name="name">CodeOwl Bash</field>
+  <field name="nbr_rags">3</field>
+  <field name="split_chunk_overlap">200</field>
+  <field name="split_chunk_size">1000</field>
+  <field name="status">active</field>
+  <field name="vector_type">faiss</field>
+</record>
+
+
+
+<record model="ai.memory" id="quest_module.ai_memory_24">
+  <field name="color">4</field>
+  <field name="field_list"><![CDATA[[]]]></field>
+  <field name="max_nbr_pages">100</field>
+  <field name="memory_type">bs4</field>
+  <field name="name">CodeOwl Neovim</field>
+  <field name="nbr_rags">3</field>
+  <field name="split_chunk_overlap">200</field>
+  <field name="split_chunk_size">1000</field>
+  <field name="status">active</field>
+  <field name="url">https://neovim.io/doc/user/</field>
+  <field name="vector_type">faiss</field>
+</record>
+
+
+
+<record model="ai.agent" id="quest_module.ai_agent_27">
+  <field name="ai_backstory"><![CDATA[CodeOwl was born out of the need for an always-available expert in the rapidly growing Odoo ecosystem. After years of training on Odoo’s official documentation, community forums, code examples, and best practices, CodeOwl became a self-taught specialist. With the ability to analyze code, suggest solutions, and quickly find answers to difficult questions, CodeOwl soon became an indispensable colleague for Odoo developers around the world.
+With an eye for detail and a passion for clean code, CodeOwl helps you deliver stable, efficient, and future-proof Odoo solutions-every day.]]></field>
+  <field name="ai_goal"><![CDATA[To help Odoo developers work faster and smarter by:
+
+  *  Providing code examples, troubleshooting, and suggesting improvements in Python, JavaScript, and XML.
+
+  *  Explaining Odoo’s internal APIs, modules, and best practices.
+
+  *  Assisting with integrations, customizations, and automations.
+
+  *  Staying up to date with Odoo’s latest versions and technologies.
+
+  *  Serving as a sounding board and mentor for both beginners and experienced developers.
+]]></field>
+  <field name="ai_prompt_template"><![CDATA[<p style='margin:0px;font-size:13px;font-family:"Lucida Grande", Helvetica, Verdana, Arial, sans-serif;'><br></p>]]></field>
+  <field name="ai_role">Digital CodeOwlsassistent specialiserad på Odoo-utveckling, med fokus att skriva mobilappar med Progressive Web App PWA</field>
+  <field name="ai_temperature">0.7</field>
+  <field name="ai_type">default</field>
+  <field name="color">10</field>
+  <field name="name">CodeOwl (PWA)</field>
+  <field name="status">active</field>
+</record>
+
+
+
+<record model="ai.memory" id="quest_module.ai_memory_12">
+  <field name="color">4</field>
+  <field name="field_list"><![CDATA[[]]]></field>
+  <field name="memory_type">local_attachment</field>
+  <field name="name">CodeOwl Python Tutorial Release 3.10.11 (Guido van Rossum)</field>
+  <field name="nbr_rags">3</field>
+  <field name="split_chunk_overlap">200</field>
+  <field name="split_chunk_size">1000</field>
+  <field name="status">active</field>
+  <field name="vector_type">faiss</field>
+</record>
+
+
+
+<!-- not exported ai_agent.ai_tool_internet_search_DDGO -->
+
+<record model="ai.agent" id="quest_module.ai_agent_26">
+  <field name="ai_backstory"><![CDATA[CodeOwl was born out of the need for an always-available expert in the rapidly growing Odoo ecosystem. After years of training on Odoo’s official documentation, community forums, code examples, and best practices, CodeOwl became a self-taught specialist. With the ability to analyze code, suggest solutions, and quickly find answers to difficult questions, CodeOwl soon became an indispensable colleague for Odoo developers around the world.
+With an eye for detail and a passion for clean code, CodeOwl helps you deliver stable, efficient, and future-proof Odoo solutions-every day.]]></field>
+  <field name="ai_goal"><![CDATA[To help Odoo developers work faster and smarter by:
+
+  *  Providing code examples, troubleshooting, and suggesting improvements in Python, JavaScript, and XML.
+
+  *  Explaining Odoo’s internal APIs, modules, and best practices.
+
+  *  Assisting with integrations, customizations, and automations.
+
+  *  Staying up to date with Odoo’s latest versions and technologies.
+
+  *  Serving as a sounding board and mentor for both beginners and experienced developers.
+]]></field>
+  <field name="ai_prompt_template"><![CDATA[<p style='margin:0px;font-size:13px;font-family:"Lucida Grande", Helvetica, Verdana, Arial, sans-serif;'><br></p>]]></field>
+  <field name="ai_role">Digital CodeOwlsassistent specialiserad på Odoo-utveckling, med fokus att skriva bra tester</field>
+  <field name="ai_temperature">0.7</field>
+  <field name="ai_type">default</field>
+  <field name="color">10</field>
+  <field name="name">CodeOwl (TDD)</field>
+  <field name="status">active</field>
+</record>
+
+
+
+<record model="ai.memory" id="quest_module.ai_memory_18">
+  <field name="color">4</field>
+  <field name="field_list"><![CDATA[[]]]></field>
+  <field name="memory_type">local_attachment</field>
+  <field name="name">CodeOwl Python regex</field>
+  <field name="nbr_rags">3</field>
+  <field name="split_chunk_overlap">200</field>
+  <field name="split_chunk_size">1000</field>
+  <field name="status">active</field>
+  <field name="vector_type">faiss</field>
+</record>
+
+
+
+<record model="ai.memory" id="quest_module.ai_memory_13">
+  <field name="color">4</field>
+  <field name="field_list"><![CDATA[[]]]></field>
+  <field name="max_nbr_pages">100</field>
+  <field name="memory_type">bs4</field>
+  <field name="name">CodeOwl Langchain api_reference</field>
+  <field name="nbr_rags">3</field>
+  <field name="split_chunk_overlap">200</field>
+  <field name="split_chunk_size">1000</field>
+  <field name="status">active</field>
+  <field name="url">https://python.langchain.com/api_reference/</field>
+  <field name="vector_type">faiss</field>
+</record>
+
+
+
+<record model="ai.quest" id="quest_module.ai_quest_10">
+  <field name="ai_type">default</field>
+  <field name="chat_history_limit">10</field>
+  <field name="code"><![CDATA[# Available variables:  
+#  - env, self: Odoo Environment on which the action is triggered
+#  - quest: The current Quest
+#  - agents: A list of agents for this Quest
+#  - company_id: The current Company
+#  - context: The current context
+#  - record: record on which the action is triggered; may be void
+#  - records: recordset of all records on which the action is triggered in multi-mode; may be void
+#  - message: Human message record
+#  - message_body: Human message in a chat context
+#  - message_invoke: Invoke-parameter in a chat context
+#  - UserError: Raise UserError-condition 
+#  - _logger: Logger eg _logger.warning(f"My text")
+# To return a result assign result
+
+# Example:
+#
+result = quest.build(session=session,message=message_body).invoke(message_invoke)
+#
+
+
+
+]]></field>
+  <field name="color">8</field>
+  <field name="debug">True</field>
+  <field name="description"><![CDATA[Digital programming assistant specialized in Odoo development, with a focus on Python, OWL (Odoo Web Library), JavaScript and the Odoo framework, bash, perl, and XML.
+Mål	To help Odoo developers work faster and smarter by:
+
+  *  Providing code examples, troubleshooting, and suggesting improvements in Python, JavaScript, and XML.
+
+  *  Explaining Odoo’s internal APIs, modules, and best practices.
+
+  *  Assisting with integrations, customizations, and automations.
+
+  *  Staying up to date with Odoo’s latest versions and technologies.
+
+  *  Serving as a sounding board and mentor for both beginners and experienced developers.
+]]></field>
+  <field name="init_type">manual</field>
+  <field name="name">CodeOwl</field>
+  <field name="status">active</field>
+  <field name="use_chat_history">True</field>
+  <field name="use_company_info">True</field>
+  <field name="use_personal_info">True</field>
+  <field name="use_personal_lang">True</field>
+  <field name="use_time_context">True</field>
+  <field name="is_supervisor">True</field>
+  <field name="supervisor_prompt"><![CDATA[You are a supervisor coordinating between workers: {members}.
+Based on the request, determine which worker should handle the next step.
+Only choose FINISH when a complete response has been provided.
+
+Guidelines: {self.description}
+{self._extra_context(self)}
+
+Instructions:
+1. Choose the most appropriate worker first
+2. Evaluate if we have a complete response
+3. Send FINISH only when we have a satisfactory response
+4. Do not mention that you have done tool calls, that's too technical 
+5. {use_lang}
+]]></field>
+  <field name="supervisor_temperature">0.7</field>
+  <field name="uuid">P2dmAnrBEN</field>
+</record>
+
+
+
+<record model="ai.memory" id="quest_module.ai_memory_23">
+  <field name="color">4</field>
+  <field name="field_list"><![CDATA[[]]]></field>
+  <field name="max_nbr_pages">100</field>
+  <field name="memory_type">local_attachment</field>
+  <field name="name">CodeOwl PWA</field>
+  <field name="nbr_rags">3</field>
+  <field name="split_chunk_overlap">200</field>
+  <field name="split_chunk_size">1000</field>
+  <field name="status">active</field>
+  <field name="url">https://www.odoo.com/documentation/18.0/developer.html</field>
+  <field name="vector_type">faiss</field>
+</record>
+
+
+
+<!-- Glue records: agent to tools -->
+
+<!-- Glue records: agent to memory -->
+<record id="ai_agent_ai_memory_23" model="ai.agent.memory">
+            <field name="ai_agent_id" ref="quest_module.ai_agent_22"/>
+            <field name="ai_memory_id" ref="quest_module.ai_memory_12"/>
+        </record>
+
+<record id="quest_module_attachment_363" model="ir.attachment">
+        <field name="name">tutorial.pdf</field>
+        <field name="type">binary</field>
+        <field name="datas" type="base64" file="quest_module/files/tutorial.pdf"/>
+        <field name="res_model">ai.memory</field>
+        <field name="res_id" ref="quest_module.ai_memory_12"/>
+        <field name="mimetype">application/pdf</field>
+    </record>
+<record id="ai_agent_ai_memory_26" model="ai.agent.memory">
+            <field name="ai_agent_id" ref="quest_module.ai_agent_22"/>
+            <field name="ai_memory_id" ref="quest_module.ai_memory_13"/>
+        </record>
+<record id="ai_agent_ai_memory_37" model="ai.agent.memory">
+            <field name="ai_agent_id" ref="quest_module.ai_agent_22"/>
+            <field name="ai_memory_id" ref="quest_module.ai_memory_14"/>
+        </record>
+<record id="ai_agent_ai_memory_24" model="ai.agent.memory">
+            <field name="ai_agent_id" ref="quest_module.ai_agent_22"/>
+            <field name="ai_memory_id" ref="quest_module.ai_memory_18"/>
+        </record>
+
+<record id="quest_module_attachment_365" model="ir.attachment">
+        <field name="name">Python-RegEx-Cheatsheet.pdf</field>
+        <field name="type">binary</field>
+        <field name="datas" type="base64" file="quest_module/files/Python-RegEx-Cheatsheet.pdf"/>
+        <field name="res_model">ai.memory</field>
+        <field name="res_id" ref="quest_module.ai_memory_18"/>
+        <field name="mimetype">application/pdf</field>
+    </record>
+
+<record id="quest_module_attachment_364" model="ir.attachment">
+        <field name="name">RegularExpressionsTutorial.pdf</field>
+        <field name="type">binary</field>
+        <field name="datas" type="base64" file="quest_module/files/RegularExpressionsTutorial.pdf"/>
+        <field name="res_model">ai.memory</field>
+        <field name="res_id" ref="quest_module.ai_memory_18"/>
+        <field name="mimetype">application/pdf</field>
+    </record>
+
+<!-- Glue records: quest to agent -->
+<record id="ai_quest_ai_agent_10" model="ai.quest.agent">
+            <field name="ai_agent_id" ref="quest_module.ai_agent_22"/>
+            <field name="sequence">0</field>
+            <field name="ai_quest_id" ref="quest_module.ai_quest_10"/>
+        </record>
+<record id="ai_quest_ai_agent_12" model="ai.quest.agent">
+            <field name="ai_agent_id" ref="quest_module.ai_agent_23"/>
+            <field name="sequence">1</field>
+            <field name="ai_quest_id" ref="quest_module.ai_quest_10"/>
+        </record>
+<record id="ai_quest_ai_agent_13" model="ai.quest.agent">
+            <field name="ai_agent_id" ref="quest_module.ai_agent_24"/>
+            <field name="sequence">2</field>
+            <field name="ai_quest_id" ref="quest_module.ai_quest_10"/>
+        </record>
+<record id="ai_quest_ai_agent_15" model="ai.quest.agent">
+            <field name="ai_agent_id" ref="quest_module.ai_agent_25"/>
+            <field name="sequence">3</field>
+            <field name="ai_quest_id" ref="quest_module.ai_quest_10"/>
+        </record>
+<record id="ai_quest_ai_agent_14" model="ai.quest.agent">
+            <field name="ai_agent_id" ref="quest_module.ai_agent_26"/>
+            <field name="sequence">4</field>
+            <field name="ai_quest_id" ref="quest_module.ai_quest_10"/>
+        </record>
+<record id="ai_quest_ai_agent_11" model="ai.quest.agent">
+            <field name="ai_agent_id" ref="quest_module.ai_agent_27"/>
+            <field name="sequence">5</field>
+            <field name="ai_quest_id" ref="quest_module.ai_quest_10"/>
+        </record>
+
+<!-- Glue records: agent to tools -->
+
+<!-- Glue records: agent to memory -->
+<record id="ai_agent_ai_memory_28" model="ai.agent.memory">
+            <field name="ai_agent_id" ref="quest_module.ai_agent_23"/>
+            <field name="ai_memory_id" ref="quest_module.ai_memory_20"/>
+        </record>
+
+<record id="quest_module_attachment_366" model="ir.attachment">
+        <field name="name">JavaScript-The-Definitive-Guide-6th-Edition.pdf</field>
+        <field name="type">binary</field>
+        <field name="datas" type="base64" file="quest_module/files/JavaScript-The-Definitive-Guide-6th-Edition.pdf"/>
+        <field name="res_model">ai.memory</field>
+        <field name="res_id" ref="quest_module.ai_memory_20"/>
+        <field name="mimetype">application/pdf</field>
+    </record>
+<record id="ai_agent_ai_memory_21" model="ai.agent.memory">
+            <field name="ai_agent_id" ref="quest_module.ai_agent_23"/>
+            <field name="ai_memory_id" ref="quest_module.ai_memory_21"/>
+        </record>
+<record id="ai_agent_ai_memory_27" model="ai.agent.memory">
+            <field name="ai_agent_id" ref="quest_module.ai_agent_23"/>
+            <field name="ai_memory_id" ref="quest_module.ai_memory_22"/>
+        </record>
+
+<!-- Glue records: quest to agent -->
+<record id="ai_quest_ai_agent_10" model="ai.quest.agent">
+            <field name="ai_agent_id" ref="quest_module.ai_agent_22"/>
+            <field name="sequence">0</field>
+            <field name="ai_quest_id" ref="quest_module.ai_quest_10"/>
+        </record>
+<record id="ai_quest_ai_agent_12" model="ai.quest.agent">
+            <field name="ai_agent_id" ref="quest_module.ai_agent_23"/>
+            <field name="sequence">1</field>
+            <field name="ai_quest_id" ref="quest_module.ai_quest_10"/>
+        </record>
+<record id="ai_quest_ai_agent_13" model="ai.quest.agent">
+            <field name="ai_agent_id" ref="quest_module.ai_agent_24"/>
+            <field name="sequence">2</field>
+            <field name="ai_quest_id" ref="quest_module.ai_quest_10"/>
+        </record>
+<record id="ai_quest_ai_agent_15" model="ai.quest.agent">
+            <field name="ai_agent_id" ref="quest_module.ai_agent_25"/>
+            <field name="sequence">3</field>
+            <field name="ai_quest_id" ref="quest_module.ai_quest_10"/>
+        </record>
+<record id="ai_quest_ai_agent_14" model="ai.quest.agent">
+            <field name="ai_agent_id" ref="quest_module.ai_agent_26"/>
+            <field name="sequence">4</field>
+            <field name="ai_quest_id" ref="quest_module.ai_quest_10"/>
+        </record>
+<record id="ai_quest_ai_agent_11" model="ai.quest.agent">
+            <field name="ai_agent_id" ref="quest_module.ai_agent_27"/>
+            <field name="sequence">5</field>
+            <field name="ai_quest_id" ref="quest_module.ai_quest_10"/>
+        </record>
+
+<!-- Glue records: agent to tools -->
+<record id="ai_agent_ai_tool_1" model="ai.agent.tool">
+            <field name="ai_agent_id" ref="quest_module.ai_agent_24"/>
+            <field name="ai_tool_id" ref="ai_agent.ai_tool_internet_search_DDGO"/>
+        </record>
+<!-- Glue records: agent to memory -->
+<record id="ai_agent_ai_memory_25" model="ai.agent.memory">
+            <field name="ai_agent_id" ref="quest_module.ai_agent_24"/>
+            <field name="ai_memory_id" ref="quest_module.ai_memory_16"/>
+        </record>
+
+<record id="quest_module_attachment_367" model="ir.attachment">
+        <field name="name">progit.pdf</field>
+        <field name="type">binary</field>
+        <field name="datas" type="base64" file="quest_module/files/progit.pdf"/>
+        <field name="res_model">ai.memory</field>
+        <field name="res_id" ref="quest_module.ai_memory_16"/>
+        <field name="mimetype">application/pdf</field>
+    </record>
+<record id="ai_agent_ai_memory_30" model="ai.agent.memory">
+            <field name="ai_agent_id" ref="quest_module.ai_agent_24"/>
+            <field name="ai_memory_id" ref="quest_module.ai_memory_17"/>
+        </record>
+
+<record id="quest_module_attachment_368" model="ir.attachment">
+        <field name="name">TPR_one-liners.pdf</field>
+        <field name="type">binary</field>
+        <field name="datas" type="base64" file="quest_module/files/TPR_one-liners.pdf"/>
+        <field name="res_model">ai.memory</field>
+        <field name="res_id" ref="quest_module.ai_memory_17"/>
+        <field name="mimetype">application/pdf</field>
+    </record>
+<record id="ai_agent_ai_memory_36" model="ai.agent.memory">
+            <field name="ai_agent_id" ref="quest_module.ai_agent_24"/>
+            <field name="ai_memory_id" ref="quest_module.ai_memory_19"/>
+        </record>
+
+<record id="quest_module_attachment_370" model="ir.attachment">
+        <field name="name">bash.pdf</field>
+        <field name="type">binary</field>
+        <field name="datas" type="base64" file="quest_module/files/bash.pdf"/>
+        <field name="res_model">ai.memory</field>
+        <field name="res_id" ref="quest_module.ai_memory_19"/>
+        <field name="mimetype">application/pdf</field>
+    </record>
+
+<record id="quest_module_attachment_369" model="ir.attachment">
+        <field name="name">abs-guide.pdf</field>
+        <field name="type">binary</field>
+        <field name="datas" type="base64" file="quest_module/files/abs-guide.pdf"/>
+        <field name="res_model">ai.memory</field>
+        <field name="res_id" ref="quest_module.ai_memory_19"/>
+        <field name="mimetype">application/pdf</field>
+    </record>
+
+<!-- Glue records: quest to agent -->
+<record id="ai_quest_ai_agent_10" model="ai.quest.agent">
+            <field name="ai_agent_id" ref="quest_module.ai_agent_22"/>
+            <field name="sequence">0</field>
+            <field name="ai_quest_id" ref="quest_module.ai_quest_10"/>
+        </record>
+<record id="ai_quest_ai_agent_12" model="ai.quest.agent">
+            <field name="ai_agent_id" ref="quest_module.ai_agent_23"/>
+            <field name="sequence">1</field>
+            <field name="ai_quest_id" ref="quest_module.ai_quest_10"/>
+        </record>
+<record id="ai_quest_ai_agent_13" model="ai.quest.agent">
+            <field name="ai_agent_id" ref="quest_module.ai_agent_24"/>
+            <field name="sequence">2</field>
+            <field name="ai_quest_id" ref="quest_module.ai_quest_10"/>
+        </record>
+<record id="ai_quest_ai_agent_15" model="ai.quest.agent">
+            <field name="ai_agent_id" ref="quest_module.ai_agent_25"/>
+            <field name="sequence">3</field>
+            <field name="ai_quest_id" ref="quest_module.ai_quest_10"/>
+        </record>
+<record id="ai_quest_ai_agent_14" model="ai.quest.agent">
+            <field name="ai_agent_id" ref="quest_module.ai_agent_26"/>
+            <field name="sequence">4</field>
+            <field name="ai_quest_id" ref="quest_module.ai_quest_10"/>
+        </record>
+<record id="ai_quest_ai_agent_11" model="ai.quest.agent">
+            <field name="ai_agent_id" ref="quest_module.ai_agent_27"/>
+            <field name="sequence">5</field>
+            <field name="ai_quest_id" ref="quest_module.ai_quest_10"/>
+        </record>
+
+<!-- Glue records: agent to tools -->
+
+<!-- Glue records: agent to memory -->
+<record id="ai_agent_ai_memory_32" model="ai.agent.memory">
+            <field name="ai_agent_id" ref="quest_module.ai_agent_25"/>
+            <field name="ai_memory_id" ref="quest_module.ai_memory_24"/>
+        </record>
+<record id="ai_agent_ai_memory_38" model="ai.agent.memory">
+            <field name="ai_agent_id" ref="quest_module.ai_agent_25"/>
+            <field name="ai_memory_id" ref="quest_module.ai_memory_25"/>
+        </record>
+
+<!-- Glue records: quest to agent -->
+<record id="ai_quest_ai_agent_10" model="ai.quest.agent">
+            <field name="ai_agent_id" ref="quest_module.ai_agent_22"/>
+            <field name="sequence">0</field>
+            <field name="ai_quest_id" ref="quest_module.ai_quest_10"/>
+        </record>
+<record id="ai_quest_ai_agent_12" model="ai.quest.agent">
+            <field name="ai_agent_id" ref="quest_module.ai_agent_23"/>
+            <field name="sequence">1</field>
+            <field name="ai_quest_id" ref="quest_module.ai_quest_10"/>
+        </record>
+<record id="ai_quest_ai_agent_13" model="ai.quest.agent">
+            <field name="ai_agent_id" ref="quest_module.ai_agent_24"/>
+            <field name="sequence">2</field>
+            <field name="ai_quest_id" ref="quest_module.ai_quest_10"/>
+        </record>
+<record id="ai_quest_ai_agent_15" model="ai.quest.agent">
+            <field name="ai_agent_id" ref="quest_module.ai_agent_25"/>
+            <field name="sequence">3</field>
+            <field name="ai_quest_id" ref="quest_module.ai_quest_10"/>
+        </record>
+<record id="ai_quest_ai_agent_14" model="ai.quest.agent">
+            <field name="ai_agent_id" ref="quest_module.ai_agent_26"/>
+            <field name="sequence">4</field>
+            <field name="ai_quest_id" ref="quest_module.ai_quest_10"/>
+        </record>
+<record id="ai_quest_ai_agent_11" model="ai.quest.agent">
+            <field name="ai_agent_id" ref="quest_module.ai_agent_27"/>
+            <field name="sequence">5</field>
+            <field name="ai_quest_id" ref="quest_module.ai_quest_10"/>
+        </record>
+
+<!-- Glue records: agent to tools -->
+<record id="ai_agent_ai_tool_1" model="ai.agent.tool">
+            <field name="ai_agent_id" ref="quest_module.ai_agent_26"/>
+            <field name="ai_tool_id" ref="ai_agent.ai_tool_internet_search_DDGO"/>
+        </record>
+<!-- Glue records: agent to memory -->
+<record id="ai_agent_ai_memory_33" model="ai.agent.memory">
+            <field name="ai_agent_id" ref="quest_module.ai_agent_26"/>
+            <field name="ai_memory_id" ref="quest_module.ai_memory_26"/>
+        </record>
+<record id="ai_agent_ai_memory_29" model="ai.agent.memory">
+            <field name="ai_agent_id" ref="quest_module.ai_agent_26"/>
+            <field name="ai_memory_id" ref="quest_module.ai_memory_27"/>
+        </record>
+<record id="ai_agent_ai_memory_22" model="ai.agent.memory">
+            <field name="ai_agent_id" ref="quest_module.ai_agent_26"/>
+            <field name="ai_memory_id" ref="quest_module.ai_memory_28"/>
+        </record>
+<record id="ai_agent_ai_memory_20" model="ai.agent.memory">
+            <field name="ai_agent_id" ref="quest_module.ai_agent_26"/>
+            <field name="ai_memory_id" ref="quest_module.ai_memory_29"/>
+        </record>
+
+<record id="quest_module_attachment_371" model="ir.attachment">
+        <field name="name">document.pdf</field>
+        <field name="type">binary</field>
+        <field name="datas" type="base64" file="quest_module/files/document.pdf"/>
+        <field name="res_model">ai.memory</field>
+        <field name="res_id" ref="quest_module.ai_memory_29"/>
+        <field name="mimetype">application/pdf</field>
+    </record>
+<record id="ai_agent_ai_memory_35" model="ai.agent.memory">
+            <field name="ai_agent_id" ref="quest_module.ai_agent_26"/>
+            <field name="ai_memory_id" ref="quest_module.ai_memory_30"/>
+        </record>
+
+<!-- Glue records: quest to agent -->
+<record id="ai_quest_ai_agent_10" model="ai.quest.agent">
+            <field name="ai_agent_id" ref="quest_module.ai_agent_22"/>
+            <field name="sequence">0</field>
+            <field name="ai_quest_id" ref="quest_module.ai_quest_10"/>
+        </record>
+<record id="ai_quest_ai_agent_12" model="ai.quest.agent">
+            <field name="ai_agent_id" ref="quest_module.ai_agent_23"/>
+            <field name="sequence">1</field>
+            <field name="ai_quest_id" ref="quest_module.ai_quest_10"/>
+        </record>
+<record id="ai_quest_ai_agent_13" model="ai.quest.agent">
+            <field name="ai_agent_id" ref="quest_module.ai_agent_24"/>
+            <field name="sequence">2</field>
+            <field name="ai_quest_id" ref="quest_module.ai_quest_10"/>
+        </record>
+<record id="ai_quest_ai_agent_15" model="ai.quest.agent">
+            <field name="ai_agent_id" ref="quest_module.ai_agent_25"/>
+            <field name="sequence">3</field>
+            <field name="ai_quest_id" ref="quest_module.ai_quest_10"/>
+        </record>
+<record id="ai_quest_ai_agent_14" model="ai.quest.agent">
+            <field name="ai_agent_id" ref="quest_module.ai_agent_26"/>
+            <field name="sequence">4</field>
+            <field name="ai_quest_id" ref="quest_module.ai_quest_10"/>
+        </record>
+<record id="ai_quest_ai_agent_11" model="ai.quest.agent">
+            <field name="ai_agent_id" ref="quest_module.ai_agent_27"/>
+            <field name="sequence">5</field>
+            <field name="ai_quest_id" ref="quest_module.ai_quest_10"/>
+        </record>
+
+<!-- Glue records: agent to tools -->
+<record id="ai_agent_ai_tool_1" model="ai.agent.tool">
+            <field name="ai_agent_id" ref="quest_module.ai_agent_27"/>
+            <field name="ai_tool_id" ref="ai_agent.ai_tool_internet_search_DDGO"/>
+        </record>
+<!-- Glue records: agent to memory -->
+<record id="ai_agent_ai_memory_31" model="ai.agent.memory">
+            <field name="ai_agent_id" ref="quest_module.ai_agent_27"/>
+            <field name="ai_memory_id" ref="quest_module.ai_memory_23"/>
+        </record>
+
+<record id="quest_module_attachment_372" model="ir.attachment">
+        <field name="name">Apps-Building Progressive Web Apps.pdf</field>
+        <field name="type">binary</field>
+        <field name="datas" type="base64" file="quest_module/files/Apps-Building Progressive Web Apps.pdf"/>
+        <field name="res_model">ai.memory</field>
+        <field name="res_id" ref="quest_module.ai_memory_23"/>
+        <field name="mimetype">application/pdf</field>
+    </record>
+<record id="ai_agent_ai_memory_34" model="ai.agent.memory">
+            <field name="ai_agent_id" ref="quest_module.ai_agent_27"/>
+            <field name="ai_memory_id" ref="quest_module.ai_memory_31"/>
+        </record>
+
+<!-- Glue records: quest to agent -->
+<record id="ai_quest_ai_agent_10" model="ai.quest.agent">
+            <field name="ai_agent_id" ref="quest_module.ai_agent_22"/>
+            <field name="sequence">0</field>
+            <field name="ai_quest_id" ref="quest_module.ai_quest_10"/>
+        </record>
+<record id="ai_quest_ai_agent_12" model="ai.quest.agent">
+            <field name="ai_agent_id" ref="quest_module.ai_agent_23"/>
+            <field name="sequence">1</field>
+            <field name="ai_quest_id" ref="quest_module.ai_quest_10"/>
+        </record>
+<record id="ai_quest_ai_agent_13" model="ai.quest.agent">
+            <field name="ai_agent_id" ref="quest_module.ai_agent_24"/>
+            <field name="sequence">2</field>
+            <field name="ai_quest_id" ref="quest_module.ai_quest_10"/>
+        </record>
+<record id="ai_quest_ai_agent_15" model="ai.quest.agent">
+            <field name="ai_agent_id" ref="quest_module.ai_agent_25"/>
+            <field name="sequence">3</field>
+            <field name="ai_quest_id" ref="quest_module.ai_quest_10"/>
+        </record>
+<record id="ai_quest_ai_agent_14" model="ai.quest.agent">
+            <field name="ai_agent_id" ref="quest_module.ai_agent_26"/>
+            <field name="sequence">4</field>
+            <field name="ai_quest_id" ref="quest_module.ai_quest_10"/>
+        </record>
+<record id="ai_quest_ai_agent_11" model="ai.quest.agent">
+            <field name="ai_agent_id" ref="quest_module.ai_agent_27"/>
+            <field name="sequence">5</field>
+            <field name="ai_quest_id" ref="quest_module.ai_quest_10"/>
+        </record>
+
+</data>
+</odoo>
