@@ -7,7 +7,7 @@ msgstr ""
 "Project-Id-Version: Odoo Server 18.0-20250410\n"
 "Report-Msgid-Bugs-To: \n"
 "POT-Creation-Date: 2025-04-23 13:32+0000\n"
-"PO-Revision-Date: 2025-05-16 11:28+0200\n"
+"PO-Revision-Date: 2025-05-16 13:51+0200\n"
 "Last-Translator: \n"
 "Language-Team: \n"
 "Language: sv\n"
@@ -172,33 +172,33 @@ msgstr "AI Uppdrag"
 #. module: ai_agent
 #: model:ir.model,name:ai_agent.model_ai_quest_agent
 msgid "AI Quest Agent"
-msgstr "AI uppdragsagent"
+msgstr "AI Uppdragsagent"
 
 #. module: ai_agent
 #: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_form
 msgid "AI Quest Agents"
-msgstr "AI uppdragsagenter"
+msgstr "AI Uppdragsagenter"
 
 #. module: ai_agent
 #: model:ir.model,name:ai_agent.model_ai_quest_memory
 msgid "AI Quest Memory"
-msgstr "AI uppdragsminne"
+msgstr "AI Uppdragsminne"
 
 #. module: ai_agent
 #: model:ir.model,name:ai_agent.model_ai_quest_session
 #: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_session_line_search
 msgid "AI Quest Session"
-msgstr "AI uppdragssession"
+msgstr "AI Uppdragssession"
 
 #. module: ai_agent
 #: model:ir.model,name:ai_agent.model_ai_quest_session_line
 msgid "AI Quest Session Line"
-msgstr "AI uppdragssessionsrad"
+msgstr "AI Uppdragssessionsrad"
 
 #. module: ai_agent
 #: model:ir.model,name:ai_agent.model_ai_quest_session_message
 msgid "AI Quest Session Message"
-msgstr "Meddelande om AI uppdragssession"
+msgstr "Meddelande om AI Uppdragssession"
 
 #. module: ai_agent
 #: model_terms:ir.ui.view,arch_db:ai_agent.view_ai_quest_calendar
@@ -484,7 +484,7 @@ msgstr "Ai Llm"
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session__ai_llm_count
 msgid "Ai Llm Count"
-msgstr "Ai Llm Räkning"
+msgstr "Antal Ai Llm"
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_agent__ai_memory_ids
@@ -584,7 +584,7 @@ msgstr "Aliasmodell"
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest__allow_trigger_words
 msgid "Allow Trigger"
-msgstr "Tillåt avtryckare"
+msgstr "Använd aktiveringsord"
 
 #. module: ai_agent
 #: model:product.template,name:ai_agent.anthropic_product_template
@@ -735,7 +735,7 @@ msgstr "Välj stor språkmodell"
 #. module: ai_agent
 #: model:ir.model.fields,help:ai_agent.field_ai_quest__supervisor_llm_id
 msgid "Choose Large Language Model for the supervisor"
-msgstr "Välj stor språkmodell för handledaren"
+msgstr "Välj stor språkmodell för koordinatorn"
 
 #. module: ai_agent
 #: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_form
@@ -1058,7 +1058,7 @@ msgstr "Alias för e-post"
 #. module: ai_agent
 #: model:ir.model.fields,help:ai_agent.field_ai_quest__alias_domain
 msgid "Email domain e.g. 'example.com' in 'odoo@example.com'"
-msgstr "E-postdomän, t.ex. \"example.com\" i \"odoo@example.com"
+msgstr "E-postdomän, t.ex. \"example.com\" i \"odoo@example.com\""
 
 #. module: ai_agent
 #: model_terms:ir.ui.view,arch_db:ai_agent.ai_agent_llm_search
@@ -2817,12 +2817,12 @@ msgstr "Använd personlig information"
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest__use_personal_lang
 msgid "Use Personal Language"
-msgstr "Använd ett personligt språk"
+msgstr "Använd användarens språk"
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest__use_time_context
 msgid "Use Time Context"
-msgstr "Använda tidskontext"
+msgstr "Använd tidskontext"
 
 #. module: ai_agent
 #: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_form
@@ -2896,7 +2896,7 @@ msgstr ""
 #. module: ai_agent
 #: model:product.attribute,name:ai_agent.product_attribute_api_type
 msgid "api_type"
-msgstr "api_typ"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.product_attribute_value_audio
@@ -2956,7 +2956,7 @@ msgstr ""
 #. module: ai_agent
 #: model:product.attribute,name:ai_agent.product_attribute_data_type
 msgid "data_type"
-msgstr "data_typ"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.deepseek-ai_deepseek-r1_product_attribute_value
@@ -3242,8 +3242,8 @@ msgstr "t.ex. Chatbot för specialfall"
 
 #. module: ai_agent
 #: model_terms:ir.ui.view,arch_db:ai_agent.view_ai_memory_form
-msgid "t.ex. Handboken"
-msgstr "t.ex. Handboken"
+msgid "E.g. handbook"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.t5_product_attribute_value
