@@ -245,6 +245,7 @@ class AIQuest(models.Model):
     company_partner_id = fields.Many2one('res.partner', related="company_id.partner_id")
     allow_trigger_words = fields.Boolean(string="Allow Trigger")
     chat_trigger_words = fields.Text(string="Trigger Word", help="Separate words using commas")
+    supervisor_cycles = fields.Integer(string="Supervisor Cycles", default=5, help="This field dictates how many cycles a supervisor can go through before terminating and returning an answer.")
 
     @api.model
     def get_xmlrpc_quests(self):
@@ -1045,7 +1046,7 @@ class AIQuest(models.Model):
                     state['cycle_count'] += 1
 
                 # Force FINISH if we're cycling too much
-                if state['cycle_count'] > 5:  # Adjust threshold as needed
+                if state['cycle_count'] > self.supervisor_cycles:  # Adjust threshold as needed
                     session.add_message(f"Forcing FINISH after {state['cycle_count']} cycles")
                     return {"next": "FINISH", 'session': session}
 

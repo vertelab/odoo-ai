@@ -167,38 +167,38 @@ msgstr "AI-leverantörer"
 #: model_terms:ir.ui.view,arch_db:ai_agent.ai_session_object_search
 #: model_terms:ir.ui.view,arch_db:ai_agent.view_ai_quest_kanban
 msgid "AI Quest"
-msgstr "AI Quest"
+msgstr "AI Uppdrag"
 
 #. module: ai_agent
 #: model:ir.model,name:ai_agent.model_ai_quest_agent
 msgid "AI Quest Agent"
-msgstr "AI Quest AGent"
+msgstr "AI uppdragsagent"
 
 #. module: ai_agent
 #: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_form
 msgid "AI Quest Agents"
-msgstr "AI Quest-agenter"
+msgstr "AI uppdragsagenter"
 
 #. module: ai_agent
 #: model:ir.model,name:ai_agent.model_ai_quest_memory
 msgid "AI Quest Memory"
-msgstr "AI Quest Minne"
+msgstr "AI uppdragsminne"
 
 #. module: ai_agent
 #: model:ir.model,name:ai_agent.model_ai_quest_session
 #: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_session_line_search
 msgid "AI Quest Session"
-msgstr "AI Quest-session"
+msgstr "AI uppdragssession"
 
 #. module: ai_agent
 #: model:ir.model,name:ai_agent.model_ai_quest_session_line
 msgid "AI Quest Session Line"
-msgstr "AI Quest Session Line"
+msgstr "AI uppdragssessionsrad"
 
 #. module: ai_agent
 #: model:ir.model,name:ai_agent.model_ai_quest_session_message
 msgid "AI Quest Session Message"
-msgstr "Meddelande om AI Quest-session"
+msgstr "Meddelande om AI uppdragssession"
 
 #. module: ai_agent
 #: model_terms:ir.ui.view,arch_db:ai_agent.view_ai_quest_calendar
@@ -212,13 +212,13 @@ msgstr "AI-uppdrag"
 #: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_session_list
 #: model_terms:ir.ui.view,arch_db:ai_agent.ai_session_object_search
 msgid "AI Session"
-msgstr "AI Quest-session"
+msgstr "AI session"
 
 #. module: ai_agent
 #: model:ir.model,name:ai_agent.model_ai_session_object
 #: model_terms:ir.ui.view,arch_db:ai_agent.ai_session_object_list
 msgid "AI Session Object"
-msgstr "AI Sesson Objekt"
+msgstr "AI sessonsobjekt"
 
 #. module: ai_agent
 #: model_terms:ir.ui.view,arch_db:ai_agent.view_ai_quest_session_calendar
@@ -278,7 +278,7 @@ msgstr "AI-uppdrag för att utföra operationer"
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.ai-sweden-models_gpt-sw3-40b_product_attribute_value
 msgid "AI-Sweden-Models/gpt-sw3-40b"
-msgstr "AI-Sverige-Models/gpt-sw3-40b"
+msgstr ""
 
 #. module: ai_agent
 #: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_session_line_search
@@ -310,7 +310,7 @@ msgstr "Acceptera e-postmeddelanden från"
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session__message_needaction
 #: model:ir.model.fields,field_description:ai_agent.field_ai_tool__message_needaction
 msgid "Action Needed"
-msgstr "Åtgärder krävs"
+msgstr "Åtgärd krävs"
 
 #. module: ai_agent
 #: model:ir.model.fields.selection,name:ai_agent.selection__ai_agent__status__active
@@ -352,7 +352,7 @@ msgstr "Aktivitet Undantag Dekoration"
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session__activity_state
 #: model:ir.model.fields,field_description:ai_agent.field_ai_tool__activity_state
 msgid "Activity State"
-msgstr "Aktivitet Stat"
+msgstr "Aktivitetsläge"
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_agent__activity_type_icon
@@ -362,7 +362,7 @@ msgstr "Aktivitet Stat"
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session__activity_type_icon
 #: model:ir.model.fields,field_description:ai_agent.field_ai_tool__activity_type_icon
 msgid "Activity Type Icon"
-msgstr "Aktivitetstyp Ikon"
+msgstr "Aktivitetstypikon"
 
 #. module: ai_agent
 #: model:ir.model.fields,help:ai_agent.field_ai_quest__use_chat_history
@@ -508,18 +508,18 @@ msgstr "Mall för AI-Instruktion"
 #: model:ir.model.fields,field_description:ai_agent.field_ai_session_object__ai_quest_id
 #: model:ir.ui.menu,name:ai_agent.menu_ai_quest
 msgid "Ai Quest"
-msgstr "Ai Quest"
+msgstr "Ai-uppdrag"
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session_line__ai_quest_session_id
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session_message__ai_quest_session_id
 msgid "Ai Quest Session"
-msgstr "Ai Quest Session"
+msgstr "Ai-uppdragssession"
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_session_object__ai_session_id
 msgid "Ai Session"
-msgstr "Ai Session"
+msgstr "Ai-session"
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_agent__ai_tool_ids
@@ -544,7 +544,7 @@ msgstr "Alias"
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest__alias_contact
 msgid "Alias Contact Security"
-msgstr "Alias Kontakt Säkerhet"
+msgstr "Alias säkerhetskontakt"
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest__alias_domain_id
@@ -554,7 +554,7 @@ msgstr "Alias Domän"
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest__alias_domain
 msgid "Alias Domain Name"
-msgstr "Alias domän"
+msgstr "Alias domännamn"
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest__alias_full_name
@@ -564,7 +564,7 @@ msgstr "Alias e-post"
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest__alias_name
 msgid "Alias Name"
-msgstr "Alias-namn"
+msgstr "Alias namn"
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest__alias_status
@@ -670,7 +670,7 @@ msgstr "BigCode Open RAIL-M v1 Licensavtal"
 #. module: ai_agent
 #: model:ir.model.fields,help:ai_agent.field_ai_quest__model_id
 msgid "Bind this Quest to this model"
-msgstr "Bind detta uppdrag till denna modell"
+msgstr "Knyt detta uppdrag till denna modell"
 
 #. module: ai_agent
 #: model_terms:ir.ui.view,arch_db:ai_agent.test_mail_wizard_view
@@ -699,7 +699,7 @@ msgstr "Chattanvändare"
 
 #. module: ai_agent
 #: model:ir.model.fields,help:ai_agent.field_ai_quest__real_chat_user_id
-msgid "Chat user thet chat-method is using"
+msgid "Chat user that chat method is using"
 msgstr "Chattanvändare som använder den här chattmetoden"
 
 #. module: ai_agent
@@ -872,7 +872,7 @@ msgstr "Valuta"
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest__alias_bounced_content
 msgid "Custom Bounced Message"
-msgstr "Anpassat meddelande om studs"
+msgstr "Anpassat avvisningsmeddelande"
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest__partner_id
@@ -922,7 +922,7 @@ msgstr "Datum"
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session_line__datetime
 msgid "Datetime"
-msgstr "Datatid"
+msgstr "Datumtid"
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_agent__debug
@@ -982,7 +982,7 @@ msgstr "Kassera"
 #. module: ai_agent
 #: model:ir.model,name:ai_agent.model_discuss_channel
 msgid "Discussion Channel"
-msgstr "Kanal"
+msgstr "Diskussionskanal"
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_agent__display_name
@@ -1047,7 +1047,7 @@ msgstr "Redigera"
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.gptj_product_attribute_value
 msgid "EleutherAI/gpt-j-6B"
-msgstr "EleutherAI/gpt-j-6B"
+msgstr ""
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest__alias_email
@@ -1211,12 +1211,12 @@ msgstr ""
 #. module: ai_agent
 #: model:product.template,name:ai_agent.google_llm_product_template
 msgid "Google LLM"
-msgstr "Google LLM"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.template,name:ai_agent.google_vertex_product_template
 msgid "Google Vertex AI"
-msgstr "Google Vertex AI"
+msgstr ""
 
 #. module: ai_agent
 #: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_form
@@ -1231,7 +1231,7 @@ msgstr "Graf Text"
 #. module: ai_agent
 #: model:product.template,name:ai_agent.grok_product_template
 msgid "Grok"
-msgstr "Grok"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.template,name:ai_agent.groq_product_template
@@ -1341,7 +1341,7 @@ msgstr "Ikon för att indikera en undantagsaktivitet."
 #: model:ir.model.fields,help:ai_agent.field_ai_quest_session__message_needaction
 #: model:ir.model.fields,help:ai_agent.field_ai_tool__message_needaction
 msgid "If checked, new messages require your attention."
-msgstr "Om den är markerad kräver nya meddelanden din uppmärksamhet."
+msgstr "Om markerad, nya meddelanden kräver din uppmärksamhet."
 
 #. module: ai_agent
 #: model:ir.model.fields,help:ai_agent.field_ai_agent__message_has_error
@@ -1357,7 +1357,7 @@ msgstr "Om den är markerad kräver nya meddelanden din uppmärksamhet."
 #: model:ir.model.fields,help:ai_agent.field_ai_tool__message_has_error
 #: model:ir.model.fields,help:ai_agent.field_ai_tool__message_has_sms_error
 msgid "If checked, some messages have a delivery error."
-msgstr "Om kryssrutan är markerad får vissa meddelanden ett leveransfel."
+msgstr "Om markerad, några meddelanden har ett leveransfel."
 
 #. module: ai_agent
 #: model:ir.model.fields,help:ai_agent.field_ai_quest__alias_bounced_content
@@ -1687,7 +1687,7 @@ msgstr "Meddelande"
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session_message__message_content
 msgid "Message Content"
-msgstr "Innehåll i meddelandet"
+msgstr "Meddelandeinnehåll"
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_agent__message_has_error
@@ -1817,15 +1817,14 @@ msgstr "Namn"
 #: model:ir.model.fields,help:ai_agent.field_product_product__llm_type
 #: model:ir.model.fields,help:ai_agent.field_product_template__llm_type
 msgid "Name of langchain class, eg ChatOpenAI or ChatMistralAI"
-msgstr "Namn på langchain-klass, t.ex. ChatOpenAI eller ChatMistralAI"
+msgstr "Namn på langchain-klassen, t.ex. ChatOpenAI eller ChatMistralAI"
 
 #. module: ai_agent
 #: model:ir.model.fields,help:ai_agent.field_ai_agent_llm__llm_etype
 #: model:ir.model.fields,help:ai_agent.field_product_product__llm_etype
 #: model:ir.model.fields,help:ai_agent.field_product_template__llm_etype
 msgid "Name of langchain class, eg OpenAIEmbeddings or MistralAIEmbeddings"
-msgstr ""
-"Namn på langchain-klass, t.ex. OpenAIEmbeddings eller MistralAIEmbeddings"
+msgstr "Namn på langchain-klassen, t.ex. OpenAIEmbeddings eller MistralAIEmbeddings"
 
 #. module: ai_agent
 #: model:ir.model.fields,help:ai_agent.field_product_product__llm_library
@@ -2004,7 +2003,7 @@ msgstr "AI-sessionsobjekt"
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_tool_test_wizard__object_name
 msgid "Object Name"
-msgstr "Objektets namn"
+msgstr "Objektetsnamn"
 
 #. module: ai_agent
 #: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_form
@@ -2388,7 +2387,7 @@ msgstr "Sessions-ID"
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session__session_line_ids
 #: model:ir.model.fields,field_description:ai_agent.field_ai_tool__session_line_ids
 msgid "Session Line"
-msgstr "Token"
+msgstr "sessionsrad"
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_agent__session_line_count
@@ -2400,12 +2399,12 @@ msgstr "Token"
 #: model:ir.model.fields,field_description:ai_agent.field_product_product__session_line_count
 #: model:ir.model.fields,field_description:ai_agent.field_product_template__session_line_count
 msgid "Session Line Count"
-msgstr "Summa pollett"
+msgstr "Antal sessionssrader"
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session__session_message_ids
 msgid "Session Message"
-msgstr "Meddelande från sessionen"
+msgstr "Sessionsmeddelande"
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session__session_message_count
@@ -2446,22 +2445,22 @@ msgstr "Shell-kommando för att hämta dataströmmen ge cat filnamn"
 #. module: ai_agent
 #: model:ir.model.fields.selection,name:ai_agent.selection__ai_memory__vector_type__st
 msgid "Short Term"
-msgstr "Kort sikt"
+msgstr "Kortsiktigt"
 
 #. module: ai_agent
 #: model:ir.model.fields.selection,name:ai_agent.selection__ai_memory__memory_type__bs4
 msgid "Simple Webscraper"
-msgstr "Enkel webbskrämmare"
+msgstr "Enkel webbskrapare"
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_memory__split_chunk_overlap
 msgid "Split Chunk Overlap"
-msgstr "Split Chunk Överlappning"
+msgstr "Dela chunköverlappning"
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_memory__split_chunk_size
 msgid "Split Chunk Size"
-msgstr "Split Chunk Storlek"
+msgstr "Dela chunkstorlek"
 
 #. module: ai_agent
 #: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_session_search
@@ -2529,12 +2528,12 @@ msgstr "Underbeskrivning"
 #. module: ai_agent
 #: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_form
 msgid "Supervisor"
-msgstr "Arbetsledare"
+msgstr "Koordinator"
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest__supervisor_prompt
 msgid "Supervisor Prompt"
-msgstr "Supervisor Prompt"
+msgstr "Koordinator instruktion"
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session_line__system_fingerprint
@@ -2640,21 +2639,21 @@ msgstr ""
 #. module: ai_agent
 #: model:ir.model.fields,help:ai_agent.field_ai_tool_test_wizard__object_name
 msgid "The name that this object will have in state"
-msgstr "Det namn som detta objekt kommer att ha i staten"
+msgstr "Det namn som detta objekt kommer att ha i aktivitetsläge"
 
 #. module: ai_agent
 #. odoo-python
 #: code:addons/ai_agent/models/ai_memory.p.py:0
 #: code:addons/ai_agent/models/ai_memory.py:0
 msgid "The record limit can't be bigger than the amount of records."
-msgstr "Recordgränsen kan inte vara större än antalet poster."
+msgstr "Postgränsen kan inte vara större än antalet poster."
 
 #. module: ai_agent
 #. odoo-python
 #: code:addons/ai_agent/models/ai_memory.p.py:0
 #: code:addons/ai_agent/models/ai_memory.py:0
 msgid "The record limit can't be less than one."
-msgstr "Rekordgränsen kan inte vara mindre än ett."
+msgstr "Postgränsen kan inte vara mindre än ett."
 
 #. module: ai_agent
 #: model:ir.model.fields,help:ai_agent.field_ai_memory__vector_type
@@ -2695,7 +2694,7 @@ msgstr ""
 #. module: ai_agent
 #: model:ir.model.fields,help:ai_agent.field_ai_quest__real_channel_id
 msgid "This is the channel chat-method get"
-msgstr "Detta är kanalen chatt-metoden få"
+msgstr "Detta är kanalen som chatt-metoden får"
 
 #. module: ai_agent
 #: model:ir.model.fields,help:ai_agent.field_ai_memory__memory_type
@@ -2892,15 +2891,15 @@ msgstr ""
 
 #. module: ai_agent
 #. odoo-python
-#: code:addons/ai_agent/models/ai_quest.p.py:0
-#: code:addons/ai_agent/models/ai_quest.py:0
+#: code:addons/ai_agent/models/ai_quest.p.py:
+#: code:addons/ai_agent/models/ai_quest.py:
 msgid "You have to assign at least one agent to the quest"
 msgstr "Du måste tilldela minst en agent till uppdraget"
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.albert_product_attribute_value
 msgid "albert-base-v2"
-msgstr "albert-base-v2"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute,name:ai_agent.product_attribute_api_type
@@ -3071,7 +3070,7 @@ msgstr "inmatning cached_tokens"
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.product_attribute_value_input_tokens
 msgid "input_tokens"
-msgstr "input_tokens"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.product_attribute_value_input_tokens_audio
@@ -3081,7 +3080,7 @@ msgstr ""
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.product_attribute_value_input_tokens_cache_read
 msgid "input_tokens_cache_read"
-msgstr "inmatning_tokens_cache_läsning"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.groq_product_attribute_value_llama-3-1-8b-instant
@@ -3193,7 +3192,7 @@ msgstr ""
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.product_attribute_value_output_tokens
 msgid "output_tokens"
-msgstr "utdata_tokens"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.product_attribute_value_output_tokens_audio
@@ -3203,7 +3202,7 @@ msgstr ""
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.product_attribute_value_output_tokens_reasoning
 msgid "output_tokens_reasoning"
-msgstr "utdata_tokens_resonemang"
+msgstr ""
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.mistral_product_attribute_value_pixtral-12b-2409
