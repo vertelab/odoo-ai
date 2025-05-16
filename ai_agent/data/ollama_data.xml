@@ -9,7 +9,7 @@
             <field name="llm_type">ChatOllama</field>
             <field name="llm_etype">OllamaEmbeddings</field>
             <field name="fallback_api_key_name">ollama_api_key</field>
-            <field name="image_1920" type="base64" file="ai_agent/static/img/ollama-logo.jpg" /> 
+            <field name="image_1920" type="base64" file="ai_agent/static/img/ollama-logo.png" /> 
         </record>
 
         <record id="ollama_product_attribute_value_deepseek-r1-32b" model="product.attribute.value">
