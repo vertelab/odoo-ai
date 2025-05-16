@@ -244,8 +244,8 @@ class AIQuest(models.Model):
     )
     company_id = fields.Many2one('res.company', required=True, default=lambda self: self.env.company)
     company_partner_id = fields.Many2one('res.partner', related="company_id.partner_id")
-    allow_trigger_words = fields.Boolean(string="Allow Trigger")
-    chat_trigger_words = fields.Text(string="Trigger Word", help="Separate words using commas")
+    allow_trigger_words = fields.Boolean(string="Use activation word")
+    chat_trigger_words = fields.Text(string="Activation word", help="Separate words using commas")
     supervisor_cycles = fields.Integer(string="Supervisor Cycles", default=5, help="This field dictates how many cycles a supervisor can go through before terminating and returning an answer.")
 
     @api.model
