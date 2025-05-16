@@ -155,7 +155,7 @@ DEFAULT_PYTHON_CODE = """# Available variables:
 # To return a result assign result\n
 # Example:
 #
-# result = quest.build_graph(session=session,message=message_body).invoke(message_invoke)
+# result = quest.build(session=session,message=message_body).invoke(message_invoke)
 #\n\n\n
 """
 
@@ -1148,13 +1148,8 @@ class AIQuest(models.Model):
                 if self.supervisor_llm_id:
                     try:
                         # Check rate limits
-                        can_proceed, sleep_time = self.supervisor_llm_id.check_rate_limits()
-
-                        # Apply sleep if needed
-                        if sleep_time > 0:
-                            _logger.info(f"Rate limiting: Supervisor sleeping for {sleep_time}s")
-                            session.add_message(f"Rate limiting: Supervisor sleeping for {sleep_time}s")
-                            time.sleep(sleep_time)
+                        if not self.supervisor_llm_id.check_rate_limits(input_text=prompt):
+                            return False
                     except UserError as e:
                         # Rate limit exceeded
                         error_msg = f"Rate limit exceeded for supervisor: {str(e)}"
