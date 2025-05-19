@@ -7,7 +7,7 @@
       <field name="llm_library">langchain_openai</field>
       <field name="llm_type">ChatOpenAI</field>
       <field name="fallback_api_key_name">nebius_api_key</field>
-      <!-- <field name="image_1920" type="base64" file="ai_agent/static/img/nebius-logo.png" /> -->
+      <field name="image_1920" type="base64" file="ai_agent/static/img/nebius-logo.png" />
     </record>
     <!-- Model -->
     <!-- https://studio.nebius.com/settings/rate-limits -->
@@ -19,7 +19,8 @@
       <field name="rpm">600</field>
       <field name="has_endpoint" eval="True" />
       <field name="endpoint">https://api.studio.nebius.com/v1/</field>
-    </record>
+<field name="context_window" eval="200000"/>
+</record>
     <record id="nebius_qwen_qwen3_30b_a3b" model="product.attribute.value">
       <field name="name">Qwen/Qwen3-30B-A3B</field>
       <field name="licence">apache-2.0</field>
@@ -28,7 +29,8 @@
       <field name="rpm">600</field>
       <field name="has_endpoint" eval="True" />
       <field name="endpoint">https://api.studio.nebius.com/v1/</field>
-    </record>
+<field name="context_window" eval="200000"/>
+</record>
     <record id="nebius_qwen_qwen3_30b_a3b_fast" model="product.attribute.value">
       <field name="name">Qwen/Qwen3-30B-A3B-fast</field>
       <field name="licence">apache-2.0</field>
@@ -37,7 +39,8 @@
       <field name="rpm">600</field>
       <field name="has_endpoint" eval="True" />
       <field name="endpoint">https://api.studio.nebius.com/v1/</field>
-    </record>
+<field name="context_window" eval="200000"/>
+</record>
     <record id="nebius_qwen_qwen3_32b" model="product.attribute.value">
       <field name="name">Qwen/Qwen3-32B</field>
       <field name="licence">apache-2.0</field>
@@ -46,7 +49,8 @@
       <field name="rpm">600</field>
       <field name="has_endpoint" eval="True" />
       <field name="endpoint">https://api.studio.nebius.com/v1/</field>
-    </record>
+<field name="context_window" eval="200000"/>
+</record>
     <record id="nebius_qwen_qwen3_14b" model="product.attribute.value">
       <field name="name">Qwen/Qwen3-14B</field>
       <field name="licence">apache-2.0</field>
@@ -55,7 +59,8 @@
       <field name="rpm">600</field>
       <field name="has_endpoint" eval="True" />
       <field name="endpoint">https://api.studio.nebius.com/v1/</field>
-    </record>
+<field name="context_window" eval="200000"/>
+</record>
     <record id="nebius_qwen_qwen3_4b_fast" model="product.attribute.value">
       <field name="name">Qwen/Qwen3-4B-fast</field>
       <field name="licence">apache-2.0</field>
@@ -64,7 +69,8 @@
       <field name="rpm">600</field>
       <field name="has_endpoint" eval="True" />
       <field name="endpoint">https://api.studio.nebius.com/v1/</field>
-    </record>
+<field name="context_window" eval="200000"/>
+</record>
     <record id="nebius_nvidia_llama_3_1_nemotron_ultra_253b_v1" model="product.attribute.value">
       <field name="name">nvidia/Llama-3_1-Nemotron-Ultra-253B-v1</field>
       <field name="licence">nvidia</field>
@@ -73,7 +79,8 @@
       <field name="rpm">600</field>
       <field name="has_endpoint" eval="True" />
       <field name="endpoint">https://api.studio.nebius.com/v1/</field>
-    </record>
+<field name="context_window" eval="200000"/>
+</record>
     <record id="nebius_deepseek_ai_deepseek_v3_0324" model="product.attribute.value">
       <field name="name">deepseek-ai/DeepSeek-V3-0324</field>
       <field name="licence">deepseek</field>
@@ -82,7 +89,8 @@
       <field name="rpm">3000</field>
       <field name="has_endpoint" eval="True" />
       <field name="endpoint">https://api.studio.nebius.com/v1/</field>
-    </record>
+<field name="context_window" eval="200000"/>
+</record>
     <record id="nebius_deepseek_ai_deepseek_v3_0324_fast" model="product.attribute.value">
       <field name="name">deepseek-ai/DeepSeek-V3-0324-fast</field>
       <field name="licence">deepseek</field>
@@ -91,7 +99,8 @@
       <field name="rpm">600</field>
       <field name="has_endpoint" eval="True" />
       <field name="endpoint">https://api.studio.nebius.com/v1/</field>
-    </record>
+<field name="context_window" eval="200000"/>
+</record>
     <record id="nebius_deepseek_ai_deepseek_coder_v2_lite_instruct" model="product.attribute.value">
       <field name="name">deepseek-ai/DeepSeek-Coder-V2-Lite-Instruct</field>
       <field name="licence">deepseek</field>
@@ -100,7 +109,8 @@
       <field name="rpm">600</field>
       <field name="has_endpoint" eval="True" />
       <field name="endpoint">https://api.studio.nebius.com/v1/</field>
-    </record>
+<field name="context_window" eval="200000"/>
+</record>
     <record id="nebius_microsoft_phi_3_mini_4k_instruct_fast" model="product.attribute.value">
       <field name="name">microsoft/Phi-3-mini-4k-instruct-fast</field>
       <field name="licence">mit</field>
@@ -109,7 +119,8 @@
       <field name="rpm">600</field>
       <field name="has_endpoint" eval="True" />
       <field name="endpoint">https://api.studio.nebius.com/v1/</field>
-    </record>
+<field name="context_window" eval="200000"/>
+</record>
     <record id="nebius_microsoft_phi_3_mini_4k_instruct" model="product.attribute.value">
       <field name="name">microsoft/Phi-3-mini-4k-instruct</field>
       <field name="licence">mit</field>
@@ -118,7 +129,8 @@
       <field name="rpm">600</field>
       <field name="has_endpoint" eval="True" />
       <field name="endpoint">https://api.studio.nebius.com/v1/</field>
-    </record>
+<field name="context_window" eval="200000"/>
+</record>
     <record id="nebius_microsoft_phi_3_5_mini_instruct" model="product.attribute.value">
       <field name="name">microsoft/Phi-3.5-mini-instruct</field>
       <field name="licence">mit</field>
@@ -127,7 +139,8 @@
       <field name="rpm">600</field>
       <field name="has_endpoint" eval="True" />
       <field name="endpoint">https://api.studio.nebius.com/v1/</field>
-    </record>
+<field name="context_window" eval="200000"/>
+</record>
     <record id="nebius_microsoft_phi_3_5_moe_instruct" model="product.attribute.value">
       <field name="name">microsoft/Phi-3.5-MoE-instruct</field>
       <field name="licence">mit</field>
@@ -136,7 +149,8 @@
       <field name="rpm">600</field>
       <field name="has_endpoint" eval="True" />
       <field name="endpoint">https://api.studio.nebius.com/v1/</field>
-    </record>
+<field name="context_window" eval="200000"/>
+</record>
     <record id="nebius_microsoft_phi_3_medium_128k_instruct_fast" model="product.attribute.value">
       <field name="name">microsoft/Phi-3-medium-128k-instruct-fast</field>
       <field name="licence">mit</field>
@@ -145,7 +159,8 @@
       <field name="rpm">600</field>
       <field name="has_endpoint" eval="True" />
       <field name="endpoint">https://api.studio.nebius.com/v1/</field>
-    </record>
+<field name="context_window" eval="200000"/>
+</record>
     <record id="nebius_microsoft_phi_3_medium_128k_instruct" model="product.attribute.value">
       <field name="name">microsoft/Phi-3-medium-128k-instruct</field>
       <field name="licence">mit</field>
@@ -154,7 +169,8 @@
       <field name="rpm">600</field>
       <field name="has_endpoint" eval="True" />
       <field name="endpoint">https://api.studio.nebius.com/v1/</field>
-    </record>
+<field name="context_window" eval="200000"/>
+</record>
     <record id="nebius_allenai_olmo_7b_instruct_hf" model="product.attribute.value">
       <field name="name">allenai/OLMo-7B-Instruct-hf</field>
       <field name="licence">apache-2.0</field>
@@ -163,7 +179,8 @@
       <field name="rpm">600</field>
       <field name="has_endpoint" eval="True" />
       <field name="endpoint">https://api.studio.nebius.com/v1/</field>
-    </record>
+<field name="context_window" eval="200000"/>
+</record>
     <record id="nebius_llava_hf_llava_1_5_7b_hf" model="product.attribute.value">
       <field name="name">llava-hf/llava-1.5-7b-hf</field>
       <field name="licence">apache-2.0</field>
@@ -173,7 +190,8 @@
       <field name="rpm">600</field>
       <field name="has_endpoint" eval="True" />
       <field name="endpoint">https://api.studio.nebius.com/v1/</field>
-    </record>
+<field name="context_window" eval="200000"/>
+</record>
     <record id="nebius_llava_hf_llava_1_5_13b_hf" model="product.attribute.value">
       <field name="name">llava-hf/llava-1.5-13b-hf</field>
       <field name="licence">apache-2.0</field>
@@ -183,7 +201,8 @@
       <field name="rpm">600</field>
       <field name="has_endpoint" eval="True" />
       <field name="endpoint">https://api.studio.nebius.com/v1/</field>
-    </record>
+<field name="context_window" eval="200000"/>
+</record>
     <record id="nebius_qwen_qwen2_vl_72b_instruct" model="product.attribute.value">
       <field name="name">Qwen/Qwen2-VL-72B-Instruct</field>
       <field name="licence">apache-2.0</field>
@@ -193,7 +212,8 @@
       <field name="rpm">20</field>
       <field name="has_endpoint" eval="True" />
       <field name="endpoint">https://api.studio.nebius.com/v1/</field>
-    </record>
+<field name="context_window" eval="200000"/>
+</record>
     <record id="nebius_qwen_qwen2_5_vl_72b_instruct" model="product.attribute.value">
       <field name="name">Qwen/Qwen2.5-VL-72B-Instruct</field>
       <field name="licence">apache-2.0</field>
@@ -203,7 +223,8 @@
       <field name="rpm">20</field>
       <field name="has_endpoint" eval="True" />
       <field name="endpoint">https://api.studio.nebius.com/v1/</field>
-    </record>
+<field name="context_window" eval="200000"/>
+</record>
     <record id="nebius_qwen_qwen2_vl_7b_instruct" model="product.attribute.value">
       <field name="name">Qwen/Qwen2-VL-7B-Instruct</field>
       <field name="licence">apache-2.0</field>
@@ -213,7 +234,8 @@
       <field name="rpm">60</field>
       <field name="has_endpoint" eval="True" />
       <field name="endpoint">https://api.studio.nebius.com/v1/</field>
-    </record>
+<field name="context_window" eval="200000"/>
+</record>
     <record id="nebius_google_gemma_2_2b_it_fast" model="product.attribute.value">
       <field name="name">google/gemma-2-2b-it-fast</field>
       <field name="licence">gemma</field>
@@ -222,7 +244,8 @@
       <field name="rpm">600</field>
       <field name="has_endpoint" eval="True" />
       <field name="endpoint">https://api.studio.nebius.com/v1/</field>
-    </record>
+<field name="context_window" eval="200000"/>
+</record>
     <record id="nebius_google_gemma_2_2b_it" model="product.attribute.value">
       <field name="name">google/gemma-2-2b-it</field>
       <field name="licence">gemma</field>
@@ -231,7 +254,8 @@
       <field name="rpm">600</field>
       <field name="has_endpoint" eval="True" />
       <field name="endpoint">https://api.studio.nebius.com/v1/</field>
-    </record>
+<field name="context_window" eval="200000"/>
+</record>
     <record id="nebius_google_gemma_2_9b_it_fast" model="product.attribute.value">
       <field name="name">google/gemma-2-9b-it-fast</field>
       <field name="licence">gemma</field>
@@ -240,7 +264,8 @@
       <field name="rpm">600</field>
       <field name="has_endpoint" eval="True" />
       <field name="endpoint">https://api.studio.nebius.com/v1/</field>
-    </record>
+<field name="context_window" eval="200000"/>
+</record>
     <record id="nebius_google_gemma_2_9b_it" model="product.attribute.value">
       <field name="name">google/gemma-2-9b-it</field>
       <field name="licence">gemma</field>
@@ -249,7 +274,8 @@
       <field name="rpm">600</field>
       <field name="has_endpoint" eval="True" />
       <field name="endpoint">https://api.studio.nebius.com/v1/</field>
-    </record>
+<field name="context_window" eval="200000"/>
+</record>
     <record id="nebius_meta_llama_llama_guard_3_8b" model="product.attribute.value">
       <field name="name">meta-llama/Llama-Guard-3-8B</field>
       <field name="licence">llama-community</field>
@@ -258,7 +284,8 @@
       <field name="rpm">600</field>
       <field name="has_endpoint" eval="True" />
       <field name="endpoint">https://api.studio.nebius.com/v1/</field>
-    </record>
+<field name="context_window" eval="200000"/>
+</record>
     <record id="nebius_nvidia_llama_3_1_nemotron_70b_instruct_hf_fast" model="product.attribute.value">
       <field name="name">nvidia/Llama-3.1-Nemotron-70B-Instruct-HF-fast</field>
       <field name="licence">nvidia</field>
@@ -267,7 +294,8 @@
       <field name="rpm">600</field>
       <field name="has_endpoint" eval="True" />
       <field name="endpoint">https://api.studio.nebius.com/v1/</field>
-    </record>
+<field name="context_window" eval="200000"/>
+</record>
     <record id="nebius_nvidia_llama_3_1_nemotron_70b_instruct_hf" model="product.attribute.value">
       <field name="name">nvidia/Llama-3.1-Nemotron-70B-Instruct-HF</field>
       <field name="licence">nvidia</field>
@@ -276,7 +304,8 @@
       <field name="rpm">600</field>
       <field name="has_endpoint" eval="True" />
       <field name="endpoint">https://api.studio.nebius.com/v1/</field>
-    </record>
+<field name="context_window" eval="200000"/>
+</record>
     <record id="nebius_google_gemma_2_27b_it_fast" model="product.attribute.value">
       <field name="name">google/gemma-2-27b-it-fast</field>
       <field name="licence">gemma</field>
@@ -285,7 +314,8 @@
       <field name="rpm">600</field>
       <field name="has_endpoint" eval="True" />
       <field name="endpoint">https://api.studio.nebius.com/v1/</field>
-    </record>
+<field name="context_window" eval="200000"/>
+</record>
     <record id="nebius_google_gemma_2_27b_it" model="product.attribute.value">
       <field name="name">google/gemma-2-27b-it</field>
       <field name="licence">gemma</field>
@@ -294,7 +324,8 @@
       <field name="rpm">600</field>
       <field name="has_endpoint" eval="True" />
       <field name="endpoint">https://api.studio.nebius.com/v1/</field>
-    </record>
+<field name="context_window" eval="200000"/>
+</record>
     <record id="nebius_qwen_qwen2_5_32b_instruct_fast" model="product.attribute.value">
       <field name="name">Qwen/Qwen2.5-32B-Instruct-fast</field>
       <field name="licence">apache-2.0</field>
@@ -303,7 +334,8 @@
       <field name="rpm">600</field>
       <field name="has_endpoint" eval="True" />
       <field name="endpoint">https://api.studio.nebius.com/v1/</field>
-    </record>
+<field name="context_window" eval="200000"/>
+</record>
     <record id="nebius_qwen_qwen2_5_32b_instruct" model="product.attribute.value">
       <field name="name">Qwen/Qwen2.5-32B-Instruct</field>
       <field name="licence">apache-2.0</field>
@@ -312,7 +344,8 @@
       <field name="rpm">600</field>
       <field name="has_endpoint" eval="True" />
       <field name="endpoint">https://api.studio.nebius.com/v1/</field>
-    </record>
+<field name="context_window" eval="200000"/>
+</record>
     <record id="nebius_qwen_qwen2_5_1_5b_instruct" model="product.attribute.value">
       <field name="name">Qwen/Qwen2.5-1.5B-Instruct</field>
       <field name="licence">apache-2.0</field>
@@ -321,7 +354,8 @@
       <field name="rpm">600</field>
       <field name="has_endpoint" eval="True" />
       <field name="endpoint">https://api.studio.nebius.com/v1/</field>
-    </record>
+<field name="context_window" eval="200000"/>
+</record>
     <record id="nebius_qwen_qwen2_5_72b_instruct_fast" model="product.attribute.value">
       <field name="name">Qwen/Qwen2.5-72B-Instruct-fast</field>
       <field name="licence">apache-2.0</field>
@@ -330,7 +364,8 @@
       <field name="rpm">600</field>
       <field name="has_endpoint" eval="True" />
       <field name="endpoint">https://api.studio.nebius.com/v1/</field>
-    </record>
+<field name="context_window" eval="200000"/>
+</record>
     <record id="nebius_qwen_qwen2_5_72b_instruct" model="product.attribute.value">
       <field name="name">Qwen/Qwen2.5-72B-Instruct</field>
       <field name="licence">apache-2.0</field>
@@ -339,7 +374,8 @@
       <field name="rpm">600</field>
       <field name="has_endpoint" eval="True" />
       <field name="endpoint">https://api.studio.nebius.com/v1/</field>
-    </record>
+<field name="context_window" eval="200000"/>
+</record>
     <record id="nebius_aaditya_llama3_openbiollm_8b" model="product.attribute.value">
       <field name="name">aaditya/Llama3-OpenBioLLM-8B</field>
       <field name="licence">llama-community</field>
@@ -348,7 +384,8 @@
       <field name="rpm">600</field>
       <field name="has_endpoint" eval="True" />
       <field name="endpoint">https://api.studio.nebius.com/v1/</field>
-    </record>
+<field name="context_window" eval="200000"/>
+</record>
     <record id="nebius_aaditya_llama3_openbiollm_70b" model="product.attribute.value">
       <field name="name">aaditya/Llama3-OpenBioLLM-70B</field>
       <field name="licence">llama-community</field>
@@ -357,7 +394,8 @@
       <field name="rpm">600</field>
       <field name="has_endpoint" eval="True" />
       <field name="endpoint">https://api.studio.nebius.com/v1/</field>
-    </record>
+<field name="context_window" eval="200000"/>
+</record>
     <record id="nebius_baai_bge_multilingual_gemma2" model="product.attribute.value">
       <field name="name">BAAI/bge-multilingual-gemma2</field>
       <field name="licence">gemma</field>
@@ -367,7 +405,8 @@
       <field name="rpm">10000</field>
       <field name="has_endpoint" eval="True" />
       <field name="endpoint">https://api.studio.nebius.com/v1/</field>
-    </record>
+<field name="context_window" eval="200000"/>
+</record>
     <record id="nebius_baai_bge_en_icl" model="product.attribute.value">
       <field name="name">BAAI/bge-en-icl</field>
       <field name="licence">apache-2.0</field>
@@ -377,7 +416,8 @@
       <field name="rpm">10000</field>
       <field name="has_endpoint" eval="True" />
       <field name="endpoint">https://api.studio.nebius.com/v1/</field>
-    </record>
+<field name="context_window" eval="200000"/>
+</record>
     <record id="nebius_intfloat_e5_mistral_7b_instruct" model="product.attribute.value">
       <field name="name">intfloat/e5-mistral-7b-instruct</field>
       <field name="licence">mit</field>
@@ -387,7 +427,8 @@
       <field name="rpm">10000</field>
       <field name="has_endpoint" eval="True" />
       <field name="endpoint">https://api.studio.nebius.com/v1/</field>
-    </record>
+<field name="context_window" eval="200000"/>
+</record>
     <record id="nebius_black_forest_labs_flux_schnell" model="product.attribute.value">
       <field name="name">black-forest-labs/flux-schnell</field>
       <field name="licence">apache-2.0</field>
@@ -396,7 +437,8 @@
       <field name="rpm">100</field>
       <field name="has_endpoint" eval="True" />
       <field name="endpoint">https://api.studio.nebius.com/v1/</field>
-    </record>
+<field name="context_window" eval="200000"/>
+</record>
     <record id="nebius_black_forest_labs_flux_dev" model="product.attribute.value">
       <field name="name">black-forest-labs/flux-dev</field>
       <field name="licence">apache-2.0</field>
@@ -405,7 +447,8 @@
       <field name="rpm">100</field>
       <field name="has_endpoint" eval="True" />
       <field name="endpoint">https://api.studio.nebius.com/v1/</field>
-    </record>
+<field name="context_window" eval="200000"/>
+</record>
     <record id="nebius_stability_ai_sdxl" model="product.attribute.value">
       <field name="name">stability-ai/sdxl</field>
       <field name="licence">stability-ai</field>
@@ -414,7 +457,8 @@
       <field name="rpm">50</field>
       <field name="has_endpoint" eval="True" />
       <field name="endpoint">https://api.studio.nebius.com/v1/</field>
-    </record>
+<field name="context_window" eval="200000"/>
+</record>
     <record id="nebius_meta_llama_llama_3_2_1b_instruct" model="product.attribute.value">
       <field name="name">meta-llama/Llama-3.2-1B-Instruct</field>
       <field name="licence">llama-community</field>
@@ -423,7 +467,8 @@
       <field name="rpm">600</field>
       <field name="has_endpoint" eval="True" />
       <field name="endpoint">https://api.studio.nebius.com/v1/</field>
-    </record>
+<field name="context_window" eval="200000"/>
+</record>
     <record id="nebius_meta_llama_llama_3_2_3b_instruct" model="product.attribute.value">
       <field name="name">meta-llama/Llama-3.2-3B-Instruct</field>
       <field name="licence">llama-community</field>
@@ -432,7 +477,8 @@
       <field name="rpm">600</field>
       <field name="has_endpoint" eval="True" />
       <field name="endpoint">https://api.studio.nebius.com/v1/</field>
-    </record>
+<field name="context_window" eval="200000"/>
+</record>
     <record id="nebius_qwen_qwq_32b" model="product.attribute.value">
       <field name="name">Qwen/QwQ-32B</field>
       <field name="licence">apache-2.0</field>
@@ -441,7 +487,8 @@
       <field name="rpm">600</field>
       <field name="has_endpoint" eval="True" />
       <field name="endpoint">https://api.studio.nebius.com/v1/</field>
-    </record>
+<field name="context_window" eval="200000"/>
+</record>
     <record id="nebius_qwen_qwq_32b_fast" model="product.attribute.value">
       <field name="name">Qwen/QwQ-32B-fast</field>
       <field name="licence">apache-2.0</field>
@@ -450,7 +497,8 @@
       <field name="rpm">600</field>
       <field name="has_endpoint" eval="True" />
       <field name="endpoint">https://api.studio.nebius.com/v1/</field>
-    </record>
+<field name="context_window" eval="200000"/>
+</record>
     <record id="nebius_qwen_qwq_32b_preview" model="product.attribute.value">
       <field name="name">Qwen/QwQ-32B-Preview</field>
       <field name="licence">apache-2.0</field>
@@ -459,7 +507,8 @@
       <field name="rpm">600</field>
       <field name="has_endpoint" eval="True" />
       <field name="endpoint">https://api.studio.nebius.com/v1/</field>
-    </record>
+<field name="context_window" eval="200000"/>
+</record>
     <record id="nebius_qwen_qvq_72b_preview" model="product.attribute.value">
       <field name="name">Qwen/QVQ-72B-preview</field>
       <field name="licence">apache-2.0</field>
@@ -469,7 +518,8 @@
       <field name="rpm">20</field>
       <field name="has_endpoint" eval="True" />
       <field name="endpoint">https://api.studio.nebius.com/v1/</field>
-    </record>
+<field name="context_window" eval="200000"/>
+</record>
     <record id="nebius_microsoft_phi_4" model="product.attribute.value">
       <field name="name">microsoft/phi-4</field>
       <field name="licence">mit</field>
@@ -478,7 +528,8 @@
       <field name="rpm">600</field>
       <field name="has_endpoint" eval="True" />
       <field name="endpoint">https://api.studio.nebius.com/v1/</field>
-    </record>
+<field name="context_window" eval="200000"/>
+</record>
     <record id="nebius_nousresearch_hermes_3_llama_405b" model="product.attribute.value">
       <field name="name">NousResearch/Hermes-3-Llama-405B</field>
       <field name="licence">llama-community</field>
@@ -487,7 +538,8 @@
       <field name="rpm">120</field>
       <field name="has_endpoint" eval="True" />
       <field name="endpoint">https://api.studio.nebius.com/v1/</field>
-    </record>
+<field name="context_window" eval="200000"/>
+</record>
     <record id="nebius_deepseek_ai_deepseek_r1_distill_llama_70b" model="product.attribute.value">
       <field name="name">deepseek-ai/DeepSeek-R1-Distill-Llama-70B</field>
       <field name="licence">deepseek</field>
@@ -496,7 +548,8 @@
       <field name="rpm">600</field>
       <field name="has_endpoint" eval="True" />
       <field name="endpoint">https://api.studio.nebius.com/v1/</field>
-    </record>
+<field name="context_window" eval="200000"/>
+</record>
     <record id="nebius_mistralai_mistral_small_3_1_24b_instruct_2503" model="product.attribute.value">
       <field name="name">mistralai/Mistral-Small-3.1-24B-Instruct-2503</field>
       <field name="licence">mit</field>
@@ -506,7 +559,8 @@
       <field name="rpm">600</field>
       <field name="has_endpoint" eval="True" />
       <field name="endpoint">https://api.studio.nebius.com/v1/</field>
-    </record>
+<field name="context_window" eval="200000"/>
+</record>
     <record id="nebius_nvidia_llama_3_3_nemotron_super_49b_v1" model="product.attribute.value">
       <field name="name">nvidia/Llama-3_3-Nemotron-Super-49B-v1</field>
       <field name="licence">nvidia</field>
@@ -515,7 +569,8 @@
       <field name="rpm">600</field>
       <field name="has_endpoint" eval="True" />
       <field name="endpoint">https://api.studio.nebius.com/v1/</field>
-    </record>
+<field name="context_window" eval="200000"/>
+</record>
     <!-- Attribute Line -->
     <record id="nebius_ai_product_template_attribute_line_model" model="product.template.attribute.line">
       <field name="product_tmpl_id" ref="nebius_product_template" />
