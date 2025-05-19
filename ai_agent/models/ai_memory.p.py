@@ -23,6 +23,7 @@ import subprocess
 import tiktoken
 import time
 import uuid
+from secrets import choice
 
 # #if VERSION >= "16.0"
 import pymupdf
@@ -35,6 +36,17 @@ from odoo.exceptions import UserError, ValidationError
 from odoo.tools.safe_eval import safe_eval
 
 _logger = logging.getLogger(__name__)
+
+
+avatar_memory = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 530.06 530.06">
+<circle cx="265.03" cy="265.03" r="265.03" fill="#875a7b"/>
+<path d="M371.04 212.02H159.02c-14.58 0-26.41 11.83-26.41 26.41v132.52c0 14.58 11.83 26.41 26.41 26.41h212.02c14.58 0 26.41-11.83 26.41-26.41V238.43c0-14.58-11.83-26.41-26.41-26.41zm0 158.93H159.02V238.43h212.02v132.52z" fill="#ffffff"/>
+<circle cx="212.02" cy="291.44" r="26.41" fill="#ffffff"/>
+<circle cx="318.04" cy="291.44" r="26.41" fill="#ffffff"/>
+<path d="M265.03 132.52c-29.15 0-52.81 23.66-52.81 52.81v26.41h105.62v-26.41c0-29.15-23.66-52.81-52.81-52.81zm0 52.81c-14.58 0-26.41-11.83-26.41-26.41s11.83-26.41 26.41-26.41 26.41 11.83 26.41 26.41-11.83 26.41-26.41 26.41z" fill="#ffffff"/>
+<rect x="238.62" y="344.25" width="52.81" height="26.41" fill="#ffffff"/>
+</svg>'''
+
 
 class AIAgentMemory(models.Model):
     _name = 'ai.agent.memory'
@@ -100,6 +112,15 @@ class AIMemory(models.Model):
     #_inherit = ["mail.thread", "mail.activity.mixin", "llm.embedding.mixin"]
     _description = 'AI Memory'
 
+
+    # #if VERSION == "14.0"
+    avatar_128 = fields.Image("Avatar", max_width=128, max_height=128)
+    # #elif VERSION >= "15.0"
+    avatar_128 = fields.Image("Avatar", max_width=128, max_height=128, compute='_compute_avatar_128')
+    # #endif
+
+
+
     ai_agent_count = fields.Integer(compute="compute_ai_agent_count")
     ai_agent_ids = fields.One2many(comodel_name="ai.agent.memory", inverse_name="ai_memory_id")
     ai_agent_llm_id = fields.Many2one(
@@ -139,6 +160,7 @@ class AIMemory(models.Model):
     split_chunk_size = fields.Integer(default=1000)
     status = fields.Selection(
         selection=[("draft", "Draft"), ("active", "Active"), ("done", "Done"), ("error", "Error")], default="draft")
+    status_color = fields.Integer(compute="compute_status_color")
     # #if VERSION >= "16.0"
     tag_ids = fields.Many2many(comodel_name='product.tag', string='Tags')
     # #endif
@@ -160,6 +182,48 @@ class AIMemory(models.Model):
                 [('model', '=', self.model_id.model)]).mapped('name')]) + "]"
         else:
             self.field_list = "[]"
+
+    @api.model
+    def _generate_random_token(self):
+        return ''.join(choice('abcdefghijkmnopqrstuvwxyzABCDEFGHIJKLMNPQRSTUVWXYZ23456789') for _i in range(10))
+
+    uuid = fields.Char('UUID', size=50, default=_generate_random_token, copy=False)
+
+    # #if VERSION >= '16.0'
+    @api.depends('memory_type', 'image_128', 'uuid')
+    def _compute_avatar_128(self):
+        for record in self:
+            record.avatar_128 = record.image_128 or record._generate_avatar()
+
+    def _generate_avatar(self):
+
+        avatar = {
+            'bs4': avatar_memory,
+            'model': avatar_memory,
+            'local_attachment': avatar_memory,
+            'attachments': avatar_memory,
+            'datastream': avatar_memory,
+        }[self.memory_type]
+        bgcolor = get_hsl_from_seed(self.uuid)
+        avatar = avatar.replace('fill="#875a7b"', f'fill="{bgcolor}"')
+        return base64.b64encode(avatar.encode())
+
+    # #endif
+
+
+
+    @api.depends("status")
+    def compute_status_color(self):
+        for record in self:
+            record.status_color = 0
+            if record.status == "draft":
+                record.status_color = 3  # Orange
+            elif record.status == "active":
+                record.status_color = 10  # Green
+            elif record.status == "done":
+                record.status_color = 3  # Orange
+            elif record.status == "error":
+                record.status_color = 1  # Red
 
     # ------------------------------------------------------------
     # RAG
