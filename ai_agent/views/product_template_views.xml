@@ -4,6 +4,13 @@
         <field name="model">product.template</field>
         <field name="inherit_id" ref="product.product_template_only_form_view"/>
         <field name="arch" type="xml">
+            <header position="inside">
+                <button string="Create LLMs"
+                        type="object"
+                        name="create_llm"
+                           invisible="is_llm == False"
+                    />
+            </header>
             <div name="options" position="inside">
                 <span groups="ai_agent.group_ai_agent_developer,ai_agent.group_ai_agent_manager,ai_agent.group_ai_agent_supervisor" class="d-inline-block">
                     <field name="is_llm"/>

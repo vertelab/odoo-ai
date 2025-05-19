@@ -1,5 +1,7 @@
 from odoo import models, fields, api, _
 from odoo.addons.ai_agent.models.ai_agent_llm import LICENCES
+from odoo.exceptions import UserError
+
 
 import logging
 _logger = logging.getLogger(__name__) 
@@ -33,14 +35,25 @@ class ProductTemplate(models.Model):
                 ('product_tmpl_id', '=', p.id),
                 ("attribute_id", "=", self.env.ref("ai_agent.product_attribute_model").id)
             ])
+            llms = self.env['ai.agent.llm'].search([('product_tmpl_id','=',p.id)])
             for model in attrs_value:
-                self.env['ai.agent.llm'].create({
-                    'ai_api_key': p.ai_api_key,
-                    'model_id': model.id,
-                    'product_tmpl_id': p.id,
-                    'name': f"{p.name}-{model.name}",
-                    'endpoint': model.endpoint,
-                })
+                if not f"{p.name}-{model.name}" in llms.mapped('name'):
+                    # ~ raise UserError(f"{p.name}-{model.name}" in llms.mapped('name'))
+                    self.env['ai.agent.llm'].create({
+                        'ai_api_key': p.ai_api_key,
+                        'model_id': model.id,
+                        'product_tmpl_id': p.id,
+                        'name': f"{p.name}-{model.name}",
+                        'endpoint': model.endpoint,
+                    })
+        return {
+            'type': 'ir.actions.act_window',
+            'name': f"View LLM for {p.name}",
+            'res_model': 'ai.agent.llm',
+            'view_mode': 'kanban,list,calendar,form',
+            'domain': [('product_tmpl_id', '=', p.id)],
+            'target': 'current',
+        } 
     
     def create_llm_demo(self):
         for p in self:
