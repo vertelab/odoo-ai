@@ -15,57 +15,68 @@
       <field name="name">mistral-large-latest</field>
        <field name="licence">mistral-research</field>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
-    </record>
+<field name="context_window" eval="200000"/>
+</record>
     <record id="mistral_product_attribute_value_pixtral-large-latest" model="product.attribute.value">
       <field name="name">pixtral-large-latest</field>
        <field name="licence">mistral-research</field>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
-    </record>
+<field name="context_window" eval="200000"/>
+</record>
     <record id="mistral_product_attribute_value_mistral-moderation-latest" model="product.attribute.value">
       <field name="name">mistral-moderation-latest</field>
              <field name="licence">mistral-research</field>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
-    </record>
+<field name="context_window" eval="200000"/>
+</record>
     <record id="mistral_product_attribute_value_ministral-3b-latest" model="product.attribute.value">
       <field name="name">ministral-3b-latest</field>
              <field name="licence">mistral-research</field>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
-    </record>
+<field name="context_window" eval="200000"/>
+</record>
     <record id="mistral_product_attribute_value_ministral-8b-latest" model="product.attribute.value">
       <field name="name">ministral-8b-latest</field>
              <field name="licence">mistral-research</field>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
-    </record>
+<field name="context_window" eval="200000"/>
+</record>
     <record id="mistral_product_attribute_value_open-mistral-nemo" model="product.attribute.value">
       <field name="name">open-mistral-nemo</field>
              <field name="licence">apache-2.0</field>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
-    </record>
+<field name="context_window" eval="200000"/>
+</record>
     <record id="mistral_product_attribute_value_mistral-small-latest" model="product.attribute.value">
       <field name="name">mistral-small-latest</field>
              <field name="licence">mistral-research</field>     
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
-    </record>
+<field name="context_window" eval="200000"/>
+</record>
     <record id="mistral_product_attribute_value_codestral-latest" model="product.attribute.value">
       <field name="name">codestral-latest</field>
                   <field name="licence">mistral-research</field>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
-    </record>
+<field name="context_window" eval="200000"/>
+</record>
     <record id="mistral_product_attribute_value_pixtral-12b-2409" model="product.attribute.value">
       <field name="name">pixtral-12b-2409</field>
                   <field name="licence">mistral-research</field>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
-    </record>
+<field name="context_window" eval="200000"/>
+</record>
     <record id="mistral_product_attribute_value_open-codestral-mamba" model="product.attribute.value">
       <field name="name">open-codestral-mamba</field>
       <field name="licence">apache-2.0</field>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
-    </record>
+<field name="context_window" eval="200000"/>
+</record>
     <record id="mistral_product_attribute_value_mistral_embed" model="product.attribute.value">
       <field name="name">mistral-embed</field>
       <field name="is_embedded" eval="True"/>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
-    </record>
+<field name="context_window" eval="200000"/>
+</record>
     <!-- Attribute Line -->
     <record id="mistral_product_template_attribute_line_model" model="product.template.attribute.line">
       <field name="product_tmpl_id" ref="mistral_product_template" />

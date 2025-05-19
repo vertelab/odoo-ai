@@ -3,11 +3,11 @@
   <data noupdate="0">
     <record id="berget_product_template" model="product.template">
       <field name="name">Berget AI</field>
-      <field name="is_llm" eval="True"/>
+      <field name="is_llm" eval="True" />
       <field name="llm_library">langchain_openai</field>
       <field name="llm_type">ChatOpenAI</field>
       <field name="fallback_api_key_name">berget_api_key</field>
-       <field name="image_1920" type="base64" file="ai_agent/static/img/berget-logo.png" /> 
+      <field name="image_1920" type="base64" file="ai_agent/static/img/berget-logo.png" />
     </record>
     <!-- Model -->
     <!-- https://berget.ai/models -->
@@ -21,6 +21,7 @@
       <field name="rpm">600</field>
       <field name="has_endpoint" eval="True" />
       <field name="endpoint">https://api.berget.ai/v1/</field>
+      <field name="context_window" eval="200000" />
     </record>
     <record id="Llama_3_1_8B_Instruct" model="product.attribute.value">
       <field name="name">Llama-3.1-8B-Instruct</field>
@@ -30,6 +31,7 @@
       <field name="rpm">600</field>
       <field name="has_endpoint" eval="True" />
       <field name="endpoint">https://api.berget.ai/v1/</field>
+      <field name="context_window" eval="200000" />
     </record>
     <record id="Llama_3_3_70B_Instruct" model="product.attribute.value">
       <field name="name">meta-llama/Llama-3.3-70B-Instruct</field>
@@ -39,6 +41,7 @@
       <field name="rpm">600</field>
       <field name="has_endpoint" eval="True" />
       <field name="endpoint">https://api.berget.ai/v1/</field>
+      <field name="context_window" eval="200000" />
     </record>
     <record id="unsloth_DeepSeek_R1_GGUF" model="product.attribute.value">
       <field name="name">unsloth/DeepSeek-R1-GGUF</field>
@@ -48,6 +51,7 @@
       <field name="rpm">600</field>
       <field name="has_endpoint" eval="True" />
       <field name="endpoint">https://api.berget.ai/v1/</field>
+      <field name="context_window" eval="200000" />
     </record>
     <record id="Mistral_Small_3_1_24B_Instruct_2503" model="product.attribute.value">
       <field name="name">mistralai/Mistral-Small-3.1-24B-Instruct-2503</field>
@@ -57,6 +61,7 @@
       <field name="rpm">600</field>
       <field name="has_endpoint" eval="True" />
       <field name="endpoint">https://api.berget.ai/v1/</field>
+      <field name="context_window" eval="200000" />
     </record>
     <!-- Attribute Line -->
     <record id="berget_ai_product_template_attribute_line_model" model="product.template.attribute.line">
