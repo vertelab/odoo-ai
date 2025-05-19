@@ -1,218 +1,230 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <!-- Form View -->
-    <record id="view_ai_memory_form" model="ir.ui.view">
-        <field name="name">ai.memory.form</field>
-        <field name="model">ai.memory</field>
-        <field name="arch" type="xml">
-            <form>
-                <header>
-                    <button name="run" type="object" string="Run" class="btn-primary" />
-                    <button name="action_test_rag" type="object" string="Test" />
-                    <field name="status" widget="statusbar" statusbar_visible="active,done" options="{'clickable': '1', 'fold_field': 'fold'}" />
-                </header>
-                <sheet>
-                    <div name="button_box" id="button_box" class="oe_button_box">
-                        <button name="action_get_agents" class="oe_stat_button " type="object" icon="fa-user-secret">
-                            <field string="Agents" name="ai_agent_count" widget="statinfo" />
-                        </button>
-                        <button name="action_get_quests" class="oe_stat_button " type="object" icon="fa-rocket">
-                            <field string="Quests" name="quest_count" widget="statinfo" />
-                        </button>
-                        <button name="action_get_sessions" class="oe_stat_button" type="object" icon="fa-flag-checkered">
-                            <field string="Sessions" name="session_count" widget="statinfo" />
-                        </button>
-                        <button name="action_get_session_lines" class="oe_stat_button" type="object" icon="fa-money">
-                            <field string="Tokens" name="session_line_count" widget="statinfo" />
-                        </button>
-                    </div>
-                    <field name="image_128" widget="image" class="oe_avatar" />
-                    <div class="oe_title">
-                        <h1 class="d-flex flex-row">
-                            <field name="is_favorite" nolabel="1" widget="boolean_favorite" class="me-2" />
-                            <field name="name" class="o_text_overflow" placeholder="t.ex. Handboken" modifiers="{&quot;required&quot;: true}" />
-                        </h1>
-                    </div>
-                    <group>
-                        <group>
-                            <field name="memory_type" />
-                            <field name="url" attrs="{'invisible': [('memory_type', '!=', 'bs4')]}" widget="url" />
-                            <field name="max_nbr_pages" attrs="{'invisible': [('memory_type', '!=', 'bs4')]}" />
-                            <field name="model_id" attrs="{'invisible': [('memory_type', '!=', 'model')]}" />
-                            <field name="model_name" invisible="1" />
-                            <field name="filter_domain" widget="domain" options="{'model': 'model_name'}" attrs="{'invisible': [('memory_type', '!=', 'model')]}" />
-                            <field name="shell_cmd" attrs="{'invisible': [('memory_type', '!=', 'datastream')]}" />
-                            <field name="document_chunks"/>
-                            <field name="company_id" groups="base.group_multi_company" />
-                        </group>
-                        <group>
-                            <field name="vector_type" />
-                            <field name="tag_ids" widget="many2many_tags" />
-                            <field name="ai_agent_llm_id" required="1"/>
-                            <field name="split_chunk_size" />
-                            <field name="split_chunk_overlap" />
-                            <field name="last_run" />
-                            <field name="nbr_rags" />
-                            <field name="nbr_days" />
-                            <field name="debug" />
-                            <field name="object_id" />
-                        </group>
-                    </group>
-                    <notebook>
-                        <page name="faiss_index" string="FAISS Index" attrs="{'invisible': [('vector_type', '!=', 'faiss')]}"  groups="base.group_no_one">
-                            <field name="memory_faiss" />
-                        </page>
-                        <page name="markdown" string="Markdown" attrs="{'invisible': [('memory_type', '!=', 'bs4')]}">
-                            <field name="memory_markdown" />
-                        </page>
-                        <page name="attachment" string="Attachment" attrs="{'invisible': [('memory_type', '!=', 'attachments')]}">
-                            <field name="attachment_ids" />
-                        </page>
-                        <page name="field_list_page" string="Field List" attrs="{'invisible': [('memory_type', '!=', 'model')]}">
-                            <field name="field_list" nolabel="1" />
-                        </page>
-                        <page name="instruction" string="Instruction" >
-                            <field name="instruction" nolabel="1" />
-                        </page>
-
-                    </notebook>
-                </sheet>
-                <div class="oe_chatter">
-                    <field name="message_follower_ids" widget="mail_followers" />
-                    <field name="activity_ids" widget="mail_activity" />
-                    <field name="message_ids" widget="mail_thread" />
+  <!-- Form View -->
+  <record id="view_ai_memory_form" model="ir.ui.view">
+    <field name="name">ai.memory.form</field>
+    <field name="model">ai.memory</field>
+    <field name="arch" type="xml">
+      <form>
+        <header>
+          <button name="run" type="object" string="Run" class="btn-primary" />
+          <button name="action_test_rag" type="object" string="Test" />
+          <field name="status" widget="statusbar" statusbar_visible="active,done" options="{'clickable': '1', 'fold_field': 'fold'}" />
+        </header>
+        <sheet>
+          <div name="button_box" id="button_box" class="oe_button_box">
+            <button name="action_get_agents" class="oe_stat_button " type="object" icon="fa-user-secret">
+              <field string="Agents" name="ai_agent_count" widget="statinfo" />
+            </button>
+            <button name="action_get_quests" class="oe_stat_button " type="object" icon="fa-rocket">
+              <field string="Quests" name="quest_count" widget="statinfo" />
+            </button>
+            <button name="action_get_sessions" class="oe_stat_button" type="object" icon="fa-flag-checkered">
+              <field string="Sessions" name="session_count" widget="statinfo" />
+            </button>
+            <button name="action_get_session_lines" class="oe_stat_button" type="object" icon="fa-money">
+              <field string="Tokens" name="session_line_count" widget="statinfo" />
+            </button>
+          </div>
+          <field name="image_128" widget="image" class="oe_avatar" />
+          <div class="oe_title">
+            <h1 class="d-flex flex-row">
+              <field name="is_favorite" nolabel="1" widget="boolean_favorite" class="me-2" />
+              <field name="name" class="o_text_overflow" placeholder="t.ex. Handboken" modifiers="{&quot;required&quot;: true}" />
+            </h1>
+          </div>
+          <group>
+            <group>
+              <field name="memory_type" />
+              <field name="url" attrs="{'invisible': [('memory_type', '!=', 'bs4')]}" widget="url" />
+              <field name="max_nbr_pages" attrs="{'invisible': [('memory_type', '!=', 'bs4')]}" />
+              <field name="model_id" attrs="{'invisible': [('memory_type', '!=', 'model')]}" />
+              <field name="model_name" invisible="1" />
+              <field name="filter_domain" widget="domain" options="{'model': 'model_name'}" attrs="{'invisible': [('memory_type', '!=', 'model')]}" />
+              <field name="shell_cmd" attrs="{'invisible': [('memory_type', '!=', 'datastream')]}" />
+              <field name="document_chunks" />
+              <field name="company_id" groups="base.group_multi_company" />
+            </group>
+            <group>
+              <field name="vector_type" />
+              <field name="tag_ids" widget="many2many_tags" />
+              <field name="ai_agent_llm_id" required="1" />
+              <field name="split_chunk_size" />
+              <field name="split_chunk_overlap" />
+              <field name="last_run" />
+              <field name="nbr_rags" />
+              <field name="nbr_days" />
+              <field name="debug" />
+              <field name="object_id" />
+            </group>
+          </group>
+          <notebook>
+            <page name="faiss_index" string="FAISS Index" attrs="{'invisible': [('vector_type', '!=', 'faiss')]}" groups="base.group_no_one">
+              <field name="memory_faiss" />
+            </page>
+            <page name="markdown" string="Markdown" attrs="{'invisible': [('memory_type', '!=', 'bs4')]}">
+              <field name="memory_markdown" />
+            </page>
+            <page name="attachment" string="Attachment" attrs="{'invisible': [('memory_type', '!=', 'attachments')]}">
+              <field name="attachment_ids" />
+            </page>
+            <page name="field_list_page" string="Field List" attrs="{'invisible': [('memory_type', '!=', 'model')]}">
+              <field name="field_list" nolabel="1" />
+            </page>
+            <page name="instruction" string="Instruction">
+              <field name="instruction" nolabel="1" />
+            </page>
+          </notebook>
+        </sheet>
+        <div class="oe_chatter">
+          <field name="message_follower_ids" widget="mail_followers" />
+          <field name="activity_ids" widget="mail_activity" />
+          <field name="message_ids" widget="mail_thread" />
+        </div>
+      </form>
+    </field>
+  </record>
+  <!-- List View -->
+  <record id="view_ai_memory_tree" model="ir.ui.view">
+    <field name="name">ai.memory.tree</field>
+    <field name="model">ai.memory</field>
+    <field name="arch" type="xml">
+      <tree>
+        <field name="name" />
+        <field name="vector_type" />
+        <field name="memory_type" />
+        <field name="last_run" />
+        <field name="is_favorite" />
+        <field name="company_id" groups="base.group_multi_company" />
+      </tree>
+    </field>
+  </record>
+  <!-- Search View -->
+  <record id="view_ai_memory_search" model="ir.ui.view">
+    <field name="name">ai.memory.search</field>
+    <field name="model">ai.memory</field>
+    <field name="arch" type="xml">
+      <search>
+        <field name="name" />
+        <field name="vector_type" />
+        <field name="memory_type" />
+        <field name="company_id" />
+        <field name="tag_ids" widget="many2many_tags" />
+        <filter string="Favorites" name="favorites" domain="[('is_favorite', '=', True)]" />
+        <filter string="Debug Mode" name="debug" domain="[('debug', '=', True)]" />
+        <filter string="Global Company" name="company" domain="[('company_id', '=', False)]" />
+        <group expand="0" string="Group By">
+          <filter string="AI Type" name="group_by_vector_type" context="{'group_by': 'vector_type'}" />
+          <filter string="Memory Type" name="group_by_memory_type" context="{'group_by': 'memory_type'}" />
+          <filter string="Company" name="group_by_company_id" context="{'group_by': 'company_id'}" />
+        </group>
+      </search>
+    </field>
+  </record>
+  <!-- Kanban View -->
+  <record id="view_ai_memory_kanban" model="ir.ui.view">
+    <field name="name">ai.memory.kanban</field>
+    <field name="model">ai.memory</field>
+    <field name="arch" type="xml">
+      <kanban>
+        <field name="id" />
+        <field name="name" />
+        <field name="avatar_128" />
+        <field name="vector_type" />
+        <field name="memory_type" />
+        <field name="last_run" />
+        <field name="url" />
+        <field name="is_favorite" />
+        <field name="status_color" />
+        <field name="status" />
+        <field name="color" />
+        <templates>
+          <t t-name="kanban-box">
+            <div t-attf-class="oe_kanban_color_#{kanban_getcolor(record.color.raw_value)} oe_kanban_card oe_kanban_global_click">
+              <div class="o_kanban_image me-1">
+                <field name="avatar_128" alt="Memory image" widget="image" options="{'img_class': 'object-fit-cover'}" class="o_image_64_contain" />
+              </div>
+              <!--
+                   <div class="o_dropdown_kanban dropdown">
+                   <a class="dropdown-toggle o-no-caret btn" role="button" data-toggle="dropdown" href="#" aria-label="Dropdown menu" title="Dropdown menu">
+                   <span class="fa fa-ellipsis-v" />
+                   </a>
+                   <div class="dropdown-menu" role="menu">
+                   <t t-if="widget.editable">
+                   <a type="edit" class="dropdown-item">Edit</a>
+                   </t>
+                   <t t-if="widget.deletable">
+                   <a type="delete" class="dropdown-item">Delete</a>
+                   </t>
+                   <ul class="oe_kanban_colorpicker" data-field="color" />
+                   </div>
+                   </div>
+              -->
+              <div class="oe_kanban_content">
+                <div class="o_kanban_record_top mb-0">
+                  <div class="o_kanban_record_headings">
+                    <span style="margin-right: 5px;">
+                      <field name="is_favorite" widget="boolean_favorite" nolabel="1" force_save="1" />
+                    </span>
+                    <strong class="o_kanban_record_title">
+                      <field name="name" />
+                    </strong>
+                  </div>
                 </div>
-            </form>
-        </field>
-    </record>
-
-    <!-- List View -->
-    <record id="view_ai_memory_tree" model="ir.ui.view">
-        <field name="name">ai.memory.tree</field>
-        <field name="model">ai.memory</field>
-        <field name="arch" type="xml">
-            <tree>
-                <field name="name" />
-                <field name="vector_type" />
-                <field name="memory_type" />
-                <field name="last_run" />
-                <field name="is_favorite" />
-                <field name="company_id" groups="base.group_multi_company" />
-            </tree>
-        </field>
-    </record>
-
-    <!-- Search View -->
-    <record id="view_ai_memory_search" model="ir.ui.view">
-        <field name="name">ai.memory.search</field>
-        <field name="model">ai.memory</field>
-        <field name="arch" type="xml">
-            <search>
-                <field name="name" />
-                <field name="vector_type" />
-                <field name="memory_type" />
-                <field name="company_id" />
-                <field name="tag_ids" widget="many2many_tags" />
-                <filter string="Favorites" name="favorites" domain="[('is_favorite', '=', True)]" />
-                <filter string="Debug Mode" name="debug" domain="[('debug', '=', True)]" />
-                <filter string="Global Company" name="company" domain="[('company_id', '=', False)]" />
-                <group expand="0" string="Group By">
-                    <filter string="AI Type" name="group_by_vector_type" context="{'group_by': 'vector_type'}" />
-                    <filter string="Memory Type" name="group_by_memory_type" context="{'group_by': 'memory_type'}" />
-                    <filter string="Company" name="group_by_company_id" context="{'group_by': 'company_id'}" />
-                </group>
-            </search>
-        </field>
-    </record>
-
-    <!-- Kanban View -->
-    <record id="view_ai_memory_kanban" model="ir.ui.view">
-        <field name="name">ai.memory.kanban</field>
-        <field name="model">ai.memory</field>
-        <field name="arch" type="xml">
-            <kanban>
-                <field name="id" />
-                <field name="name" />
-                <field name="vector_type" />
-                <field name="memory_type" />
-                <field name="last_run" />
-                <field name="url" />
-                <field name="is_favorite" />
-                <field name="color" />
-                <templates>
-                    <t t-name="kanban-box">
-                        <div t-attf-class="oe_kanban_color_#{kanban_getcolor(record.color.raw_value)} oe_kanban_card oe_kanban_global_click">
-                            <div class="o_dropdown_kanban dropdown">
-                                <a class="dropdown-toggle o-no-caret btn" role="button" data-toggle="dropdown" href="#" aria-label="Dropdown menu" title="Dropdown menu">
-                                    <span class="fa fa-ellipsis-v" />
-                                </a>
-                                <div class="dropdown-menu" role="menu">
-                                    <t t-if="widget.editable">
-                                        <a type="edit" class="dropdown-item">Edit</a>
-                                    </t>
-                                    <t t-if="widget.deletable">
-                                        <a type="delete" class="dropdown-item">Delete</a>
-                                    </t>
-                                    <ul class="oe_kanban_colorpicker" data-field="color" />
-                                </div>
-                            </div>
-                            <div class="oe_kanban_content">
-                                <div>
-                                    <strong class="o_kanban_record_title">
-                                        <field name="name" />
-                                    </strong>
-                                </div>
-                                <div>
-                                    <field name="vector_type" />
-                                </div>
-                                <div>
-                                    <field name="memory_type" />
-                                    <field name="url" />
-                                    <field name="company_id" groups="base.group_multi_company" />
-                                </div>
-                                <div>
-                                    Last Run:
-                                    <field name="last_run" />
-                                </div>
-                                <div class="o_kanban_record_bottom">
-                                    <div class="oe_kanban_bottom_left">
-                                    </div>
-                                    <div class="oe_kanban_bottom_right">
-                                        <field name="is_favorite" widget="boolean_favorite" />
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </t>
-                </templates>
-            </kanban>
-        </field>
-    </record>
-
-    <!-- Calendar View -->
-    <record id="view_ai_memory_calendar" model="ir.ui.view">
-        <field name="name">ai.memory.calendar</field>
-        <field name="model">ai.memory</field>
-        <field name="arch" type="xml">
-            <calendar string="AI Memory" date_start="last_run" color="vector_type">
-                <field name="name" />
-                <field name="vector_type" />
-                <field name="memory_type" />
-            </calendar>
-        </field>
-    </record>
-
-    <!-- Action -->
-    <record id="action_ai_memory" model="ir.actions.act_window">
-        <field name="name">AI Memory</field>
-        <field name="res_model">ai.memory</field>
-        <field name="view_mode">kanban,tree,form,calendar</field>
-        <field name="help" type="html">
-            <p class="o_view_nocontent_smiling_face">Create your first AI Memory!</p>
-        </field>
-    </record>
-
-    <!-- Menu Item -->
-    <menuitem id="menu_ai_memory" name="AI Memory" parent="ai_agent.menu_ai_agent_configuration" action="action_ai_memory" sequence="10" />
-
+                <div>
+                  <field name="vector_type" />
+                </div>
+                <div>
+                  <field name="memory_type" />
+                  <field name="url" />
+                  <field name="company_id" groups="base.group_multi_company" />
+                </div>
+                <div class="oe_kanban_footer mt-3">
+                  <div class="o_kanban_record_bottom">
+                    <div class="oe_kanban_bottom_left">
+                      <t t-if="record.last_run.value != False">
+                        <span class="fa fa-clock-o me-2" title="Dates" />
+                        <field name="last_run" />
+                      </t>
+                    </div>
+                    <div class="oe_kanban_bottom_right">
+                      <span t-att-class="'o_status_bubble mx-0 o_color_bubble_' + record.status_color.value" t-att-title="record.status.value" />
+                    </div>
+                  </div>
+                </div>
+                <div class="o_kanban_record_bottom">
+                  <div class="oe_kanban_bottom_left">
+                  </div>
+                  <div class="oe_kanban_bottom_right" />
+                </div>
+              </div>
+            </div>
+          </t>
+        </templates>
+      </kanban>
+    </field>
+  </record>
+  <!-- Calendar View -->
+  <record id="view_ai_memory_calendar" model="ir.ui.view">
+    <field name="name">ai.memory.calendar</field>
+    <field name="model">ai.memory</field>
+    <field name="arch" type="xml">
+      <calendar string="AI Memory" date_start="last_run" color="vector_type">
+        <field name="name" />
+        <field name="vector_type" />
+        <field name="memory_type" />
+      </calendar>
+    </field>
+  </record>
+  <!-- Action -->
+  <record id="action_ai_memory" model="ir.actions.act_window">
+    <field name="name">AI Memory</field>
+    <field name="res_model">ai.memory</field>
+    <field name="view_mode">kanban,tree,form,calendar</field>
+    <field name="help" type="html">
+      <p class="o_view_nocontent_smiling_face">Create your first AI Memory!</p>
+    </field>
+  </record>
+  <!-- Menu Item -->
+  <menuitem id="menu_ai_memory" name="AI Memory" parent="ai_agent.menu_ai_agent_configuration" action="action_ai_memory" sequence="10" />
 </odoo>
