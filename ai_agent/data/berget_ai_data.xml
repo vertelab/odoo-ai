@@ -11,8 +11,41 @@
     </record>
     <!-- Model -->
     <!-- https://berget.ai/models -->
+    <!-- 1. intfloat/multilingual-e5-large-instruct -->
+    <!-- 2. ** BAAI/bge-reranker-v2-m3 (offline) -->
+    <!-- 3. agentica-org/DeepCoder-14B-Preview -->
+    <!-- 4. ** KBLab/kb-whisper-large (offline) -->
+    <!-- 5. google/gemma-3-27b-it -->
+    <!-- 6. meta-llama/Llama-3.1-8B-Instruct -->
+    <!-- 7. meta-llama/Llama-3.3-70B-Instruct -->
+    <!-- 8. unsloth/MAI-DS-R1-GGUF -->
+    <!-- 9. mistralai/Mistral-Small-3.1-24B-Instruct-2503 -->
+    
     <!-- API -->
     <!-- https://api.berget.ai/ -->
+    <!-- 1. Multilingual_E5_large_instruct -->
+    <record id="Multilingual_E5_large_instruct" model="product.attribute.value">
+      <field name="name">intfloat/multilingual-e5-large-instruct</field>
+      <field name="licence">mit</field>
+      <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+      <field name="tpm">400000</field>
+      <field name="rpm">600</field>
+      <field name="has_endpoint" eval="True" />
+      <field name="endpoint">https://api.berget.ai/v1/</field>
+      <field name="context_window" eval="200000" />
+    </record>
+    <!-- 2. bge_reranker_v2_m3 -->
+    <record id="bge_reranker_v2_m3" model="product.attribute.value">
+      <field name="name">BAAI/bge-reranker-v2-m3</field>
+      <field name="licence">mit</field>
+      <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+      <field name="tpm">400000</field>
+      <field name="rpm">600</field>
+      <field name="has_endpoint" eval="True" />
+      <field name="endpoint">https://api.berget.ai/v1/</field>
+      <field name="context_window" eval="200000" />
+    </record>
+    <!-- 3. DeepCoder_14B_Preview -->
     <record id="DeepCoder_14B_Preview" model="product.attribute.value">
       <field name="name">agentica-org/DeepCoder-14B-Preview</field>
       <field name="licence">mit</field>
@@ -23,6 +56,29 @@
       <field name="endpoint">https://api.berget.ai/v1/</field>
       <field name="context_window" eval="200000" />
     </record>
+    <!-- 4. KB_Whisper_Large -->
+    <record id="KB_Whisper_Large" model="product.attribute.value">
+      <field name="name">KBLab/kb-whisper-large</field>
+      <field name="licence">apache-2.0</field>
+      <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+      <field name="tpm">400000</field>
+      <field name="rpm">600</field>
+      <field name="has_endpoint" eval="True" />
+      <field name="endpoint">https://api.berget.ai/v1/</field>
+      <field name="context_window" eval="200000" />
+    </record>
+    <!-- 5. Gemma_3_27B_it -->
+    <record id="Gemma_3_27B_it" model="product.attribute.value">
+      <field name="name">google/gemma-3-27b-it</field>
+      <field name="licence">gemma</field>
+      <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+      <field name="tpm">400000</field>
+      <field name="rpm">600</field>
+      <field name="has_endpoint" eval="True" />
+      <field name="endpoint">https://api.berget.ai/v1/</field>
+      <field name="context_window" eval="200000" />
+    </record>
+    <!-- 6. Llama_3_1_8B_Instruct -->
     <record id="Llama_3_1_8B_Instruct" model="product.attribute.value">
       <field name="name">Llama-3.1-8B-Instruct</field>
       <field name="licence">Ilama3.1</field>
@@ -33,7 +89,8 @@
       <field name="endpoint">https://api.berget.ai/v1/</field>
       <field name="context_window" eval="200000" />
     </record>
-    <record id="Llama_3_3_70B_Instruct" model="product.attribute.value">
+    <!-- 7. Llama_3_1_70B_Instruct -->
+    <record id="Llama_3_1_70B_Instruct" model="product.attribute.value">
       <field name="name">meta-llama/Llama-3.3-70B-Instruct</field>
       <field name="licence">Ilama3.3</field>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
@@ -43,6 +100,7 @@
       <field name="endpoint">https://api.berget.ai/v1/</field>
       <field name="context_window" eval="200000" />
     </record>
+    <!-- 8. unsloth_DeepSeek_R1_GGUF -->
     <record id="unsloth_DeepSeek_R1_GGUF" model="product.attribute.value">
       <field name="name">unsloth/DeepSeek-R1-GGUF</field>
       <field name="licence">mit</field>
@@ -53,6 +111,7 @@
       <field name="endpoint">https://api.berget.ai/v1/</field>
       <field name="context_window" eval="200000" />
     </record>
+    <!-- 9. Mistral_Small_3_1_24B_Instruct_2503 -->
     <record id="Mistral_Small_3_1_24B_Instruct_2503" model="product.attribute.value">
       <field name="name">mistralai/Mistral-Small-3.1-24B-Instruct-2503</field>
       <field name="licence">apache-2.0</field>
@@ -68,7 +127,11 @@
       <field name="product_tmpl_id" ref="berget_product_template" />
       <field name="attribute_id" ref="product_attribute_model" />
       <field name="value_ids" eval="[(6, 0, [
+                ref('Multilingual_E5_large_instruct'),
+                ref('bge_reranker_v2_m3'),
                 ref('DeepCoder_14B_Preview'),
+                ref('KB_Whisper_Large'),
+                ref('Gemma_3_27B_it'),
                 ref('Llama_3_1_8B_Instruct'),
                 ref('Llama_3_3_70B_Instruct'),
                 ref('unsloth_DeepSeek_R1_GGUF'),
