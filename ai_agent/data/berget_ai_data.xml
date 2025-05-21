@@ -89,8 +89,8 @@
       <field name="endpoint">https://api.berget.ai/v1/</field>
       <field name="context_window" eval="200000" />
     </record>
-    <!-- 7. Llama_3_1_70B_Instruct -->
-    <record id="Llama_3_1_70B_Instruct" model="product.attribute.value">
+    <!-- 7. Llama_3_3_70B_Instruct -->
+    <record id="Llama_3_3_70B_Instruct" model="product.attribute.value">
       <field name="name">meta-llama/Llama-3.3-70B-Instruct</field>
       <field name="licence">Ilama3.3</field>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
