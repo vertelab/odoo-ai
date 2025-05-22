@@ -94,10 +94,29 @@ class AIAgent(models.Model):
     status = fields.Selection(
         selection=[("draft", "Draft"), ("active", "Active"), ("done", "Done"), ("error", "Error")],
         default="draft")
+        
+    status_color = fields.Integer(compute="compute_status_color")
+
+    @api.depends("status")
+    def compute_status_color(self):
+        for record in self:
+            record.status_color = 0
+            if record.status == "draft":
+                record.status_color = 3  # Orange
+            elif record.status == "active":
+                record.status_color = 10  # Green
+            elif record.status == "done":
+                record.status_color = 3  # Orange
+            elif record.status == "error":
+                record.status_color = 1  # Red
+
     # #if VERSION >= '16.0'  
     tag_ids = fields.Many2many(comodel_name='product.tag', string='Tags')
 
     # #endif
+
+
+
 
     @api.depends('image_128')
     def _compute_base_image_128(self):

@@ -201,6 +201,7 @@
                     <field name="session_count" />
                     <field name="avatar_128" />
                     <field name="image_128" />
+                    <field name="status_color" />
                     <templates>
                         <t t-name="kanban-box">
                             <div t-attf-class="oe_kanban_global_click o_ai_agent_kanban #{kanban_color(record.color.raw_value)}">
