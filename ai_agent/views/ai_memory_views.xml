@@ -144,13 +144,13 @@
             </t>
             <field name="color" widget="kanban_color_picker" />
           </t>
-          <t t-name="card" class="flex-row">
-            <aside class="Xo_kanban_aside_full">
+          <t t-name="card" class="flex-row" >
+            <aside xclass="Xo_kanban_aside_full" t-attf-class="ms-2 oe_kanban_card oe_kanban_global_click #{kanban_color(record.color.raw_value)}">
               <t t-if="record.avatar_128.raw_value">
                 <field name="avatar_128" alt="Memory image" widget="image" options="{'img_class': 'object-fit-cover'}" class="o_image_64_contain" />
               </t>
             </aside>
-            <main class="ms-2">
+            <main t-attf-class="ms-2 oe_kanban_card oe_kanban_global_click oe_kanban_color_#{record.color.raw_value} ">
                 <div class="o_text_overflow d-flex align-items-center">
                   <field name="is_favorite" widget="boolean_favorite" nolabel="1" force_save="1" style="margin-right: 5px;" />
                   <field class="fw-bold fs-5" name="name" />
@@ -186,7 +186,7 @@
   <field name="ai_agent_llm_id" class="me-2 o_text_overflow" />
 </div>
 <div class="d-flex mt-auto align-items-center">
-  <field name="ai_agent_ids" widget="many2many_tags" options="{'color_field': 'color'}" />
+  <field name="ai_agent_ids" widget="many2many_tags" options="{'color_field': 'color'}" class="o_text_overflow" />
 </div>
 
                 <footer>
