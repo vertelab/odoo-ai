@@ -37,6 +37,21 @@ from odoo.tools.safe_eval import safe_eval
 
 _logger = logging.getLogger(__name__)
 
+##if VERSION >= '16.0'
+from odoo.addons.base.models.avatar_mixin import get_hsl_from_seed
+# #else
+from hashlib import sha512
+def get_hsl_from_seed(seed):
+    hashed_seed = sha512(seed.encode()).hexdigest()
+    # full range of colors, in degree
+    hue = int(hashed_seed[0:2], 16) * 360 / 255
+    # colorful result but not too flashy, in percent
+    sat = int(hashed_seed[2:4], 16) * ((70 - 40) / 255) + 40
+    # not too bright and not too dark, in percent
+    lig = 45
+    return f'hsl({hue:.0f}, {sat:.0f}%, {lig:.0f}%)'
+##endif
+
 
 avatar_memory = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 530.06 530.06">
 <circle cx="265.03" cy="265.03" r="265.03" fill="#875a7b"/>
@@ -46,6 +61,34 @@ avatar_memory = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 530.06 5
 <path d="M265.03 132.52c-29.15 0-52.81 23.66-52.81 52.81v26.41h105.62v-26.41c0-29.15-23.66-52.81-52.81-52.81zm0 52.81c-14.58 0-26.41-11.83-26.41-26.41s11.83-26.41 26.41-26.41 26.41 11.83 26.41 26.41-11.83 26.41-26.41 26.41z" fill="#ffffff"/>
 <rect x="238.62" y="344.25" width="52.81" height="26.41" fill="#ffffff"/>
 </svg>'''
+avatar_document = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <circle cx="64" cy="64" r="64" fill="#875a7b"/>
+  <rect x="36" y="28" width="56" height="72" rx="8" fill="#fff" stroke="#cfd8dc" stroke-width="2"/>
+  <polygon points="92,28 92,44 76,28" fill="#e3e7ea"/>
+  <rect x="44" y="44" width="40" height="6" rx="2" fill="#cfd8dc"/>
+  <rect x="44" y="56" width="40" height="6" rx="2" fill="#cfd8dc"/>
+  <rect x="44" y="68" width="28" height="6" rx="2" fill="#cfd8dc"/>
+  <rect x="44" y="80" width="24" height="6" rx="2" fill="#cfd8dc"/>
+</svg>'''
+avatar_website = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <!-- Bakgrundscirkel -->
+  <circle cx="64" cy="64" r="64" fill="#875a7b"/>
+  <!-- Webbläsarfönster -->
+  <rect x="32" y="36" width="64" height="56" rx="8" fill="#fff" stroke="#b2dfdb" stroke-width="2"/>
+  <!-- Toppfält i webbläsaren -->
+  <rect x="32" y="36" width="64" height="14" rx="4" fill="#e0f2f1"/>
+  <!-- Tre "knappar" i webbläsarfönstrets topp -->
+  <circle cx="40" cy="43" r="2" fill="#ff5252"/>
+  <circle cx="46" cy="43" r="2" fill="#ffeb3b"/>
+  <circle cx="52" cy="43" r="2" fill="#69f0ae"/>
+  <!-- Glob-symbol i mitten -->
+  <circle cx="64" cy="72" r="18" fill="#b2dfdb"/>
+  <ellipse cx="64" cy="72" rx="12" ry="18" fill="none" stroke="#50bfa5" stroke-width="2"/>
+  <ellipse cx="64" cy="72" rx="18" ry="7" fill="none" stroke="#50bfa5" stroke-width="2"/>
+  <line x1="46" y1="72" x2="82" y2="72" stroke="#50bfa5" stroke-width="2"/>
+  <line x1="64" y1="54" x2="64" y2="90" stroke="#50bfa5" stroke-width="2"/>
+</svg>'''
+
 
 
 class AIAgentMemory(models.Model):
@@ -66,6 +109,8 @@ class AIAgentMemory(models.Model):
         selection=[("not_confirmed", "Not Confirmed"), ("confirmed", "Confirmed"), ("error", "Error")],
         related="ai_memory_id.ai_agent_llm_id.status")
     ai_memory_url = fields.Char(string='Url', related="ai_memory_id.url")
+    color = fields.Integer(related="ai_agent_id.color")
+    name = fields.Char(related="ai_agent_id.name")
 
     def run(self):
         self.ai_memory_id.run()
@@ -196,14 +241,13 @@ class AIMemory(models.Model):
             record.avatar_128 = record.image_128 or record._generate_avatar()
 
     def _generate_avatar(self):
-
         avatar = {
-            'bs4': avatar_memory,
+            'bs4': avatar_website,
             'model': avatar_memory,
-            'local_attachment': avatar_memory,
+            'local_attachment': avatar_document,
             'attachments': avatar_memory,
             'datastream': avatar_memory,
-        }[self.memory_type]
+        }.get(self.memory_type,avatar_memory)
         bgcolor = get_hsl_from_seed(self.uuid)
         avatar = avatar.replace('fill="#875a7b"', f'fill="{bgcolor}"')
         return base64.b64encode(avatar.encode())
