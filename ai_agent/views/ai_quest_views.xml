@@ -208,6 +208,7 @@
                             <t t-name="menu">
                                 <t t-if="widget.editable"><a role="menuitem" type="open" class="dropdown-item">Edit</a></t>
                                 <t t-if="widget.deletable"><a role="menuitem" type="delete" class="dropdown-item">Delete</a></t>
+                                 <field name="color" widget="kanban_color_picker" />
                             </t>
 
                             <t t-name="card">
@@ -216,18 +217,20 @@
                                         <field name="avatar_128" alt="Contact image" widget="image" options="{'img_class': 'object-fit-cover'}"/>
                                     </div>
                                     <div class="col-9">
-                                        <div class="o_project_kanban_main d-flex align-items-baseline gap-1">
-                                            <div class="min-w-0 me-2">
+                                        <div class="o_project_kanban_main">
+                                            <div class="d-flex align-items-center gap-2">
                                                 <field name="is_favorite" widget="boolean_favorite" nolabel="1" force_save="1" />
                                                 <span class="text-truncate d-block fs-4 fw-bold" t-att-title="record.name.value"><field name="name"/></span>
+                                                <field name="sub_description" class="o_text_overflow" placeholder="t.ex. Chatbot for special cases" modifiers="{&quot;required&quot;: true}" />
+                                                
+                                            </div>    
                                                 <field name="init_type" class="me-1"/>
+                                                
                                                 <div class="my-2">
                                                     <field name="tag_ids" widget="many2many_tags" options="{'color_field': 'color'}" />
                                                 </div>
-                                                <div>
-                                                    <field name="status" widget="label_selection" options="{'classes': {'draft': 'default', 'active': 'success', 'done': 'info', 'error': 'danger'}}" />
-                                                </div>
-                                            </div>
+                                                
+                                        
                                         </div>
                                     </div>
                                 </div>
