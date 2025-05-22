@@ -212,43 +212,48 @@
                             </t>
 
                             <t t-name="card">
-                                <div class="row g-0 mt-1">
-                                    <div class="col-2 me-2">
-                                        <field name="avatar_128" alt="Contact image" widget="image" options="{'img_class': 'object-fit-cover'}"/>
-                                    </div>
-                                    <div class="col-9">
-                                        <div class="o_project_kanban_main">
-                                            <div class="d-flex align-items-center gap-2">
-                                                <field name="is_favorite" widget="boolean_favorite" nolabel="1" force_save="1" />
-                                                <span class="text-truncate d-block fs-4 fw-bold" t-att-title="record.name.value"><field name="name"/></span>
-                                                <field name="sub_description" class="o_text_overflow" placeholder="t.ex. Chatbot for special cases" modifiers="{&quot;required&quot;: true}" />
-                                                
-                                            </div>    
-                                                <field name="init_type" class="me-1"/>
-                                                
-                                                <div class="my-2">
-                                                    <field name="tag_ids" widget="many2many_tags" options="{'color_field': 'color'}" />
-                                                </div>
-                                                
-                                        
-                                        </div>
-                                    </div>
+                              <div class="row g-0 mt-1">
+                                <div class="col-2 me-2">
+                                  <field name="avatar_128" alt="Contact image" widget="image" options="{'img_class': 'object-fit-cover'}" />
                                 </div>
-                                <field name="user_id" widget="many2one_avatar_user" domain="[('share', '=', False)]" class="ms-auto"/>
-                            
-
-<footer>
-                  <div class="d-flex justify-content-between align-items-center w-100">
-                    <div class="d-flex align-items-center">
-                      <span class="fa fa-clock-o me-2" title="Dates" />
-                      <field name="last_run" t-if="record.last_run.value != False" />
-                    </div>
-                    <span t-att-class="'o_status_bubble mx-0 o_color_bubble_' + record.status_color.value" t-att-title="record.status.value" />
-                  </div>
-                </footer>
-
-   
-                            </t>
+                                <div class="col-9">
+                                  <div id="main" class="o_project_kanban_main">
+                                    <!-- Rad 1: is_favorite + name -->
+                                    <div class="d-flex align-items-center gap-2">
+                                      <field name="is_favorite" widget="boolean_favorite" nolabel="1" force_save="1" />
+                                      <span class="text-truncate fs-4 fw-bold" t-att-title="record.name.value">
+                                        <field name="name" />
+                                      </span>
+                                    </div>
+                                    <!-- Rad 2: sub_description -->
+                                    <div class="my-1">
+                                      <span class="text-truncate" t-att-title="record.sub_description.value">
+                                        <field name="sub_description" />
+                                      </span>
+                                    </div>
+                                    <!-- Rad 3: init_type + model_id -->
+                                    <div class="d-flex align-items-center gap-2 my-1">
+                                      <field name="init_type" class="me-1" />
+                                      <field name="model_id" invisible="init_type not in ['server-action','cron','powerbox']" />
+                                    </div>
+                                    <div class="my-2">
+                                      <field name="tag_ids" widget="many2many_tags" options="{'color_field': 'color'}" />
+                                    </div>
+                                  </div>
+                                <field name="company_id" groups="base.group_multi_company" />
+                                </div>
+                              </div>
+                              <footer>
+                                <div class="d-flex justify-content-between align-items-center w-100">
+                                  <div class="d-flex align-items-center">
+                                    <span class="fa fa-clock-o me-2" title="Dates" />
+                                    <field name="last_run" t-if="record.last_run.value != False" />
+                                  </div>
+                                  <field name="user_id" widget="many2one_avatar_user" domain="[('share', '=', False)]" class="ms-auto" style="margin-right: 5px;" />
+                                  <span t-att-class="'o_status_bubble mx-0 o_color_bubble_' + record.status_color.value" t-att-title="record.status.value" />
+                                </div>
+                              </footer>
+                            </t>    
                         </t>
                     </templates>
                 </kanban>
