@@ -250,6 +250,22 @@ class AIQuest(models.Model):
     allow_trigger_words = fields.Boolean(string="Use activation word")
     chat_trigger_words = fields.Text(string="Activation word", help="Separate words using commas")
     supervisor_cycles = fields.Integer(string="Supervisor Cycles", default=5, help="This field dictates how many cycles a supervisor can go through before terminating and returning an answer.")
+    status_color = fields.Integer(compute="compute_status_color")
+    
+    @api.depends("status")
+    def compute_status_color(self):
+        for record in self:
+            record.status_color = 0
+            if record.status == "draft":
+                record.status_color = 3  # Orange
+            elif record.status == "active":
+                record.status_color = 10  # Green
+            elif record.status == "done":
+                record.status_color = 3  # Orange
+            elif record.status == "error":
+                record.status_color = 1  # Red
+
+
 
     @api.model
     def get_xmlrpc_quests(self):
