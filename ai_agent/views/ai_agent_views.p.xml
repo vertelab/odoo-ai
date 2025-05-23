@@ -226,7 +226,7 @@
                 <field name="base_image_128" alt="Agent Image" widget="image" options="{'img_class': 'object-fit-cover'}" />
               </div>
               <main t-attf-class="ms-2 oe_kanban_card oe_kanban_global_click oe_kanban_color_#{record.color.raw_value} ">
-                <div class="col-9">
+                <div class="col-9" >
                   <div class="o_project_kanban_main d-flex align-items-baseline gap-1">
                     <div class="o_text_overflow d-flex align-items-center">
                       <field name="is_favorite" widget="boolean_favorite" nolabel="1" force_save="1" style="margin-right: 5px;" />
