@@ -149,60 +149,52 @@
             <field name="color" widget="kanban_color_picker" />
           </t>
           <t t-name="card" class="flex-row" >
-            <aside xclass="Xo_kanban_aside_full" t-attf-class="ms-2 oe_kanban_card oe_kanban_global_click #{kanban_color(record.color.raw_value)}">
+            <aside xclass="Xo_kanban_aside_full" t-attf-class="ms-2 oe_kanban_card oe_kanban_global_click oe_kanban_color_#{record.color.raw_value} ">
               <t t-if="record.avatar_128.raw_value">
                 <field name="avatar_128" alt="Memory image" widget="image" options="{'img_class': 'object-fit-cover'}" class="o_image_64_contain" />
               </t>
             </aside>
-            <main t-attf-class="ms-2 oe_kanban_card oe_kanban_global_click oe_kanban_color_#{record.color.raw_value} ">
-                <div class="o_text_overflow d-flex align-items-center">
-                  <field name="is_favorite" widget="boolean_favorite" nolabel="1" force_save="1" style="margin-right: 5px;" />
-                  <field class="fw-bold fs-5" name="name" />
-                </div>
-              <div class="o_text_overflow d-flex align-items-center">
-                <field name="memory_type" style="margin-right: 5px;" />
-                <field name="vector_type" />
-              </div>
-              
-              <div class="d-flex mt-auto align-items-center">
-              
-              <field name="url" invisible="memory_type != 'bs4'" widget="url" class="o_text_overflow" />
-              <t t-if="record.memory_type.value == 'bs4'">
-                  
-                  <span class="o_form_label">
-<!--
-    <t t-esc="record.max_nbr_pages.field.description.string"/>
--->
-    <t t-esc="record.max_nbr_pages.field.string"/>
-</span>
-<field name="max_nbr_pages"/>
-
-                  
-                  
-
-</t>
-              <field name="max_nbr_pages" invisible="memory_type != 'bs4'" />
-              <field name="model_id" invisible="memory_type != 'model'" />
-              <field name="shell_cmd" invisible="memory_type != 'datastream'" class="o_text_overflow" />
-              <field name="company_id" groups="base.group_multi_company" />
-</div>              
-<div class="d-flex mt-auto align-items-center">
-  <field name="ai_agent_llm_id" class="me-2 o_text_overflow" />
-</div>
-<div class="d-flex mt-auto align-items-center">
-  <field name="ai_agent_ids" widget="many2many_tags" options="{'color_field': 'color'}" class="o_text_overflow" />
-</div>
-
-                <footer>
-                  <div class="d-flex justify-content-between align-items-center w-100">
-                    <div class="d-flex align-items-center">
-                      <span class="fa fa-clock-o me-2" title="Dates" />
-                      <field name="last_run" t-if="record.last_run.value != False" />
-                    </div>
-                    <span t-att-class="'o_status_bubble mx-0 o_color_bubble_' + record.status_color.value" t-att-title="record.status.value" />
+                <main t-attf-class="ms-2 oe_kanban_card oe_kanban_global_click oe_kanban_color_#{record.color.raw_value} ">
+                  <div class="o_text_overflow d-flex align-items-center">
+                    <field name="is_favorite" widget="boolean_favorite" nolabel="1" force_save="1" style="margin-right: 5px;" />
+                    <field class="fw-bold fs-5" name="name" />
                   </div>
-                </footer>
-            </main>
+                  <div class="o_text_overflow d-flex align-items-center">
+                    <field name="memory_type" style="margin-right: 5px;" />
+                    <field name="vector_type" />
+                  </div>
+                  <div class="d-flex mt-auto align-items-center">
+                    <field name="url" invisible="memory_type != 'bs4'" widget="url" class="o_text_overflow" />
+                    <t t-if="record.memory_type.value == 'bs4'">
+                      <span class="o_form_label">
+                        <!--
+                             <t t-esc="record.max_nbr_pages.field.description.string"/>
+                        -->
+                        <t t-esc="record.max_nbr_pages.field.string" />
+                      </span>
+                      <field name="max_nbr_pages" />
+                    </t>
+                    <field name="max_nbr_pages" invisible="memory_type != 'bs4'" />
+                    <field name="model_id" invisible="memory_type != 'model'" />
+                    <field name="shell_cmd" invisible="memory_type != 'datastream'" class="o_text_overflow" />
+                    <field name="company_id" groups="base.group_multi_company" />
+                  </div>
+                  <div class="d-flex mt-auto align-items-center">
+                    <field name="ai_agent_llm_id" class="me-2 o_text_overflow" />
+                  </div>
+                  <div class="d-flex mt-auto align-items-center">
+                    <field name="ai_agent_ids" widget="many2many_tags" options="{'color_field': 'color'}" class="o_text_overflow" />
+                  </div>
+                  <footer>
+                    <div class="d-flex justify-content-between align-items-center w-100">
+                      <div class="d-flex align-items-center">
+                        <span class="fa fa-clock-o me-2" title="Dates" />
+                        <field name="last_run" t-if="record.last_run.value != False" />
+                      </div>
+                      <span t-att-class="'o_status_bubble mx-0 o_color_bubble_' + record.status_color.value" t-att-title="record.status.value" />
+                    </div>
+                  </footer>
+                </main>
           </t>
         </templates>
       </kanban>

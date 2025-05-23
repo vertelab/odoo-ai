@@ -89,6 +89,17 @@ avatar_website = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128
   <line x1="64" y1="54" x2="64" y2="90" stroke="#50bfa5" stroke-width="2"/>
 </svg>'''
 
+avatar_datastream = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <circle cx="64" cy="64" r="64" fill="#875a7b"/>
+  <!-- Vågor för dataström -->
+  <path d="M20 90 Q40 70 64 90 Q88 110 108 90" fill="none" stroke="#fff" stroke-width="4"/>
+  <path d="M20 70 Q40 50 64 70 Q88 90 108 70" fill="none" stroke="#90caf9" stroke-width="3"/>
+  <path d="M20 50 Q40 30 64 50 Q88 70 108 50" fill="none" stroke="#fff" stroke-width="2"/>
+  <!-- Cirklar för datapunkter -->
+  <circle cx="32" cy="80" r="4" fill="#fff"/>
+  <circle cx="64" cy="70" r="4" fill="#90caf9"/>
+  <circle cx="96" cy="80" r="4" fill="#fff"/>
+</svg>'''
 
 
 class AIAgentMemory(models.Model):
@@ -246,7 +257,7 @@ class AIMemory(models.Model):
             'model': avatar_memory,
             'local_attachment': avatar_document,
             'attachments': avatar_memory,
-            'datastream': avatar_memory,
+            'datastream': avatar_datastream,
         }.get(self.memory_type,avatar_memory)
         bgcolor = get_hsl_from_seed(self.uuid)
         avatar = avatar.replace('fill="#875a7b"', f'fill="{bgcolor}"')
