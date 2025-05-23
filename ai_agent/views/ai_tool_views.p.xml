@@ -28,9 +28,10 @@
                     </div>
                     <field name="image_128" widget="image" class="oe_avatar" />
                     <div class="oe_title">
-                        <h1>
-                            <field name="name" placeholder="Name" />
-                        </h1>
+                      <h1 class="d-flex flex-row">
+                        <field name="is_favorite" nolabel="1" widget="boolean_favorite" class="me-2" />
+                        <field name="name" class="o_text_overflow" placeholder="t.ex. Handboken" modifiers="{&quot;required&quot;: true}" />
+                      </h1>
                     </div>
                     <group>
                         <group>
@@ -40,8 +41,7 @@
                             <field name="last_run" />
                         </group>
                         <group>
-                            <field name="debug" />
-                            <field name="is_favorite" />
+                            <field name="debug" widget="boolean_toggle"  />
                             <!-- #if VERSION == 16.0 -->
                             <field name="tag_ids" widget="many2many_tags" />
                             <!-- #endif -->
@@ -114,66 +114,67 @@
         <field name="model">ai.tool</field>
         <field name="arch" type="xml">
             <kanban>
+                <field name="color" />
+                <field name="debug" />
                 <field name="id" />
+                <field name="is_favorite" />
+                <field name="last_run" />
                 <field name="name" />
+                <field name="status" />
+                <field name="status_color" />
                 <field name="tool" />
                 <field name="tool_lib" />
-                <field name="status" />
-                <field name="last_run" />
-                <field name="is_favorite" />
-                <field name="color" />
                 <templates>
-                    <t t-name="kanban-box">
-                        <div t-attf-class="oe_kanban_color_#{kanban_getcolor(record.color.raw_value)} oe_kanban_card oe_kanban_global_click">
-                            <div class="o_dropdown_kanban dropdown">
-                                <a class="dropdown-toggle o-no-caret btn" role="button" data-toggle="dropdown" href="#" aria-label="Dropdown menu" title="Dropdown menu">
-                                    <span class="fa fa-ellipsis-v" />
-                                </a>
-                                <div class="dropdown-menu" role="menu">
-                                    <t t-if="widget.editable">
-                                        <a type="edit" class="dropdown-item">Edit</a>
-                                    </t>
-                                    <t t-if="widget.deletable">
-                                        <a type="delete" class="dropdown-item">Delete</a>
-                                    </t>
-                                    <ul class="oe_kanban_colorpicker" data-field="color" />
-                                </div>
-                            </div>
-                            <div class="oe_kanban_content">
-                                <div>
-                                    <strong class="o_kanban_record_title">
-                                        <field name="name" />
-                                    </strong>
-                                </div>
-                                <div>
-                                    Tool:
-                                    <field name="tool" />
-                                </div>
-                                <div>
-                                    Library:
-                                    <field name="tool_lib" />
-                                </div>
-                                <div>
-                                    Status:
-                                    <field name="status" />
-                                </div>
-                                <div>
-                                    Last Run:
-                                    <field name="last_run" />
-                                </div>
-                                <div class="o_kanban_record_bottom">
-                                    <div class="oe_kanban_bottom_left">
-                                        <!-- #if VERSION == 16.0 -->
-                                        <field name="tag_ids" widget="many2many_tags" />
-                                        <!-- #endif -->
-                                    </div>
-                                    <div class="oe_kanban_bottom_right">
-                                        <field name="is_favorite" widget="boolean_favorite" />
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
+                  <!-- Menu -->
+                  <t t-name="menu">
+                    <t t-if="widget.editable">
+                      <a role="menuitem" type="open" class="dropdown-item">Edit</a>
                     </t>
+                    <t t-if="widget.deletable">
+                      <a role="menuitem" type="delete" class="dropdown-item">Delete</a>
+                    </t>
+                    <field name="color" widget="kanban_color_picker" />
+                  </t>
+                  <!-- Card -->
+                  <t t-name="card" class="flex-row">
+                    <div class="col-2 me-2 oe_kanban_color_#{record.color.raw_value}">
+                      <field name="base_image_128" alt="Agent Image" widget="image" options="{'img_class': 'object-fit-cover'}" />
+                    </div>
+                    <main t-attf-class="ms-2 oe_kanban_card oe_kanban_global_click oe_kanban_color_#{record.color.raw_value or 0} ">
+                      <div class="col-9">
+                        <div class="o_project_kanban_main d-flex align-items-baseline gap-1">
+                          <div class="o_text_overflow d-flex align-items-center">
+                            <field name="is_favorite" widget="boolean_favorite" nolabel="1" force_save="1" style="margin-right: 5px;" />
+                            <field class="fw-bold fs-5" name="name" />
+                          </div>
+                        </div>
+                        <div>
+                          Tool:
+                          <field name="tool" />
+                        </div>
+                        <div>
+                          Library:
+                          <field name="tool_lib" />
+                        </div>
+                        <div class="d-flex mt-auto align-items-center">
+                          <field name="ai_agent_ids" widget="many2many_tags" options="{'color_field': 'color'}" class="o_text_overflow" />
+                        </div>
+
+                      </div>
+                      <footer>
+                          <div class="d-flex justify-content-between align-items-center w-100">
+                            <div class="d-flex align-items-center">
+                              <span class="fa fa-clock-o me-2" title="Dates" />
+                              <field name="last_run" t-if="record.last_run.value != False" />
+                            </div>
+                            <div class="d-flex align-items-center">
+                              <span class="fa fa-bug" t-if="record.debug.raw_value" style="margin-right: 5px;"></span>
+                              <span t-att-class="'o_status_bubble mx-0 o_color_bubble_' + record.status_color.value" t-att-title="record.status.value" />
+                            </div>
+                          </div>
+                        </footer>
+                    </main>
+                  </t>
                 </templates>
             </kanban>
         </field>
