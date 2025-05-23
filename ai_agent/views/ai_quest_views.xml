@@ -188,20 +188,21 @@
             <field name="model">ai.quest</field>
             <field name="arch" type="xml">
                 <kanban highlight_color="color" class="o_kanban_small_column" quick_create="false" records_draggable="false">
-                    <field name="id" />
-                    <field name="name" />
+                    <field name="agent_count" />
+                    <field name="avatar_128" />
                     <field name="color" />
+                    <field name="debug" />
+                    <field name="id" />
+                    <field name="image_128" />
                     <field name="init_type" />
-                    <field name="status" />
-                    <field name="user_id" />            
-                    <field name="partner_id" />
                     <field name="is_favorite" />
                     <field name="is_supervisor" />
-                    <field name="agent_count" />
+                    <field name="name" />
+                    <field name="partner_id" />
                     <field name="session_count" />
-                    <field name="avatar_128" />
-                    <field name="image_128" />
+                    <field name="status" />
                     <field name="status_color" />
+                    <field name="user_id" />            
                     <templates>
                         <t t-name="kanban-box">
                             <div t-attf-class="oe_kanban_global_click o_ai_agent_kanban #{kanban_color(record.color.raw_value)}">
