@@ -23,8 +23,10 @@ class AIAgentTool(models.Model):
     _description = 'AI Agent Tool'
 
     ai_agent_id = fields.Many2one(comodel_name='ai.agent', string="", help="")
-    sequence = fields.Integer(string='Sequence')
     ai_tool_id = fields.Many2one(comodel_name='ai.tool', string="Tool", help="")
+    color = fields.Integer(related="ai_agent_id.color")
+    name = fields.Char(related="ai_agent_id.name")
+    sequence = fields.Integer(string='Sequence')
 
 
 class AITool(models.Model):
@@ -54,6 +56,21 @@ class AITool(models.Model):
     tool = fields.Char(string='Tool', trim=True, )
     tool_api_key = fields.Char(string='API-key', trim=True, )
     tool_lib = fields.Char(string='Library', trim=True, )
+    status_color = fields.Integer(compute="compute_status_color")
+
+    @api.depends("status")
+    def compute_status_color(self):
+        for record in self:
+            record.status_color = 0
+            if record.status == "draft":
+                record.status_color = 3  # Orange
+            elif record.status == "active":
+                record.status_color = 10  # Green
+            elif record.status == "done":
+                record.status_color = 3  # Orange
+            elif record.status == "error":
+                record.status_color = 1  # Red
+
 
     def action_get_quests(self):
         action = {
