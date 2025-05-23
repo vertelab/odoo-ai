@@ -14,4 +14,4 @@ typing_extensions
 duckduckgo_search
 IPython
 lxml_html_clean
-lxml
+lxml==5.1.0
