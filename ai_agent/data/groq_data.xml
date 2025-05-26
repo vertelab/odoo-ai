@@ -11,16 +11,12 @@
     </record>
     <!-- Model -->
     <!-- https://groq.com/pricing/ -->
-
     <record id="groq_product_attribute_value_llama-4-maverick-17b-128e-instruct" model="product.attribute.value">
       <field name="name">meta-llama/llama-4-maverick-17b-128e-instruct</field>
       <field name="licence">llama-community</field>
       <field name="context_window" eval="131072" />
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
-    </record>    
-    
-    
-    
+    </record>
     <record id="groq_product_attribute_value_llama-4-scout-17b-16e-instruct" model="product.attribute.value">
       <field name="name">meta-llama/llama-4-scout-17b-16e-instruct</field>
       <field name="licence">llama-community</field>
@@ -32,21 +28,19 @@
       <field name="licence">apache-2.0</field>
       <field name="context_window" eval="32000" />
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
-    </record>    
+    </record>
     <record id="groq_product_attribute_value_playai-tts" model="product.attribute.value">
       <field name="name">playai-tts</field>
       <field name="licence">playai</field>
       <field name="context_window" eval="10000" />
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
-    </record>      
+    </record>
     <record id="groq_product_attribute_value_qwen-qwq-32b" model="product.attribute.value">
       <field name="name">qwen-qwq-32b</field>
-      <field name="licence"></field>
+      <field name="licence" />
       <field name="context_window" eval="128000" />
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
-    </record>   
-  
-    
+    </record>
     <record id="groq_product_attribute_value_distil-whisper-large-v3-en" model="product.attribute.value">
       <field name="name">distil-whisper-large-v3-en</field>
       <field name="licence">mit</field>
@@ -54,20 +48,20 @@
     </record>
     <record id="groq_product_attribute_value_gemma2-9b-it" model="product.attribute.value">
       <field name="name">gemma2-9b-it</field>
-            <field name="context_window" eval="8192" />
+      <field name="context_window" eval="8192" />
       <field name="licence">gemma-terms-of-use</field>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
     </record>
     <record id="groq_product_attribute_value_llama-3-3-70b-versatile" model="product.attribute.value">
       <field name="name">llama-3.3-70b-versatile</field>
       <field name="licence">llama-community</field>
-            <field name="context_window" eval="128000" />
+      <field name="context_window" eval="128000" />
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
     </record>
     <record id="groq_product_attribute_value_llama-3-1-8b-instant" model="product.attribute.value">
       <field name="name">llama-3.1-8b-instant</field>
       <field name="licence">llama-community</field>
-            <field name="context_window" eval="128000" />
+      <field name="context_window" eval="128000" />
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
     </record>
     <record id="groq_product_attribute_value_llama-guard-3-8b" model="product.attribute.value">
@@ -78,13 +72,13 @@
     <record id="groq_product_attribute_value_llama3-70b-8192" model="product.attribute.value">
       <field name="name">llama3-70b-8192</field>
       <field name="licence">llama-community</field>
-            <field name="context_window" eval="8192" />
+      <field name="context_window" eval="8192" />
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
     </record>
     <record id="groq_product_attribute_value_llama3-8b-8192" model="product.attribute.value">
       <field name="name">llama3-8b-8192</field>
       <field name="licence">llama-community</field>
-            <field name="context_window" eval="8192" />
+      <field name="context_window" eval="8192" />
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
     </record>
     <record id="groq_product_attribute_value_mixtral-8x7b-32768" model="product.attribute.value">
