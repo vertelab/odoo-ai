@@ -166,7 +166,7 @@
                   <field name="context_window" title="Context Window" />
                 </span>
                 <field name="ai_agent_ids" widget="many2many_tags" options="{'color_field': 'color'}" />
-                <span><field name="session_line_count" style="margin-right: 5px;"/>Tokens</span>
+                <span><field name="session_line_count" style="margin-right: 5px;"/>tokens</span>
                 
                 <field name="licence" />
                 <footer>
