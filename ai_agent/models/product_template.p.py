@@ -119,6 +119,7 @@ class ProductAttributeValue(models.Model):
     licence = fields.Selection(selection=LICENCES, string='Licence', default='commercial')
     is_text2image = fields.Boolean(string='Is Text to image', default=False)
     is_vision = fields.Boolean(string='Is Vision', default=False)
+    is_asr = fields.Boolean(string='Automatic Speech Control', default=False)
     is_embedded = fields.Boolean(string='Is Embedded', default=False)
     has_endpoint = fields.Boolean(string="Has Endpoint", default=False)
     endpoint = fields.Char(string="Endpoint")
