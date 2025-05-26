@@ -43,6 +43,7 @@
     </record>
     <record id="groq_product_attribute_value_distil-whisper-large-v3-en" model="product.attribute.value">
       <field name="name">distil-whisper-large-v3-en</field>
+      <field name="is_asr" eval='True' />
       <field name="licence">mit</field>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
     </record>
@@ -81,18 +82,15 @@
       <field name="context_window" eval="8192" />
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
     </record>
-    <record id="groq_product_attribute_value_mixtral-8x7b-32768" model="product.attribute.value">
-      <field name="name">mixtral-8x7b-32768</field>
-      <field name="licence">apache-2.0</field>
-      <field name="attribute_id" ref="ai_agent.product_attribute_model" />
-    </record>
     <record id="groq_product_attribute_value_whisper-large-v3" model="product.attribute.value">
       <field name="name">whisper-large-v3</field>
+      <field name="is_asr" eval='True' />
       <field name="licence">mit</field>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
     </record>
     <record id="groq_product_attribute_value_whisper-large-v3-turbo" model="product.attribute.value">
       <field name="name">whisper-large-v3-turbo</field>
+      <field name="is_asr" eval='True' />
       <field name="licence">mit</field>
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
     </record>
@@ -118,7 +116,6 @@
                             ref('groq_product_attribute_value_llama-guard-3-8b'),
                             ref('groq_product_attribute_value_llama3-70b-8192'),
                             ref('groq_product_attribute_value_llama3-8b-8192'),
-                            ref('groq_product_attribute_value_mixtral-8x7b-32768'),
                             ref('groq_product_attribute_value_whisper-large-v3'),
                             ref('groq_product_attribute_value_whisper-large-v3-turbo'),
                             ref('groq_product_attribute_value_deepseek-r1-distill-llama-70b'),
