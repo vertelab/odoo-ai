@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <data noupdate="1">
+    <data noupdate="0">
         <!-- Source: https://python.langchain.com/v0.1/docs/integrations/llms/anthropic/ -->
         <!-- Source: https://docs.anthropic.com/en/docs/about-claude/models -->
         <record id="anthropic_product_template" model="product.template">
@@ -20,6 +20,18 @@
             <field name="image_1920" type="base64" file="ai_agent/static/img/anthropic_logo.png" />
         </record>
         <!-- Model -->
+         <!-- Claude 4 Opus -->
+        <record id="anthropic_product_attribute_value_claude-4-opus-latest" model="product.attribute.value">
+          <field name="name">claude-opus-4-0</field>
+          <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+          <field name="context_window" eval="200000" />
+        </record>
+         <!-- Claude 4 Sonnet -->
+        <record id="anthropic_product_attribute_value_claude-4-sonnet-latest" model="product.attribute.value">
+          <field name="name">claude-claude-sonnet-4-0</field>
+          <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+          <field name="context_window" eval="200000" />
+        </record>
         <!-- Claude 3.7 Sonnet -->
         <record id="anthropic_product_attribute_value_claude-3-7-sonnet-latest" model="product.attribute.value">
           <field name="name">claude-3-7-sonnet-latest</field>
@@ -67,6 +79,8 @@
             <field name="product_tmpl_id" ref="anthropic_product_template" />
             <field name="attribute_id" ref="product_attribute_model" />
             <field name="value_ids" eval="[(6, 0, [
+                            ref('anthropic_product_attribute_value_claude-4-opus-latest'),
+                            ref('anthropic_product_attribute_value_claude-4-sonnet-latest'),
                             ref('anthropic_product_attribute_value_claude-3-7-sonnet-latest'),
                             ref('anthropic_product_attribute_value_claude-3-5-haiku-latest'),
                             ref('anthropic_product_attribute_value_claude-3-5-sonnet-20240620'),
