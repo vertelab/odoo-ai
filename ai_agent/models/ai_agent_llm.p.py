@@ -20,6 +20,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
 _logger = logging.getLogger(__name__)
 
 LICENCES = [
+    ('playai', "PlayAI Model License Agreement"),
     ('ai-sweden-llm-ai-model', "AI Sweden's LLM AI Model License Agreement"),
     ('apache-2.0', 'Apache 2.0 License'),
     ('bigcode-open-rail-m-v1', 'BigCode Open RAIL-M v1 License Agreement'),
