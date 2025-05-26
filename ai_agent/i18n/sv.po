@@ -3529,7 +3529,7 @@ msgstr ""
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.groq_product_attribute_value_llama3-70b-8192
 msgid "llama3-70b-8192"
-msgstr ""
+msgstr "llama3-70b-8192"
 
 #. module: ai_agent
 #: model:product.attribute.value,name:ai_agent.groq_product_attribute_value_llama3-8b-8192

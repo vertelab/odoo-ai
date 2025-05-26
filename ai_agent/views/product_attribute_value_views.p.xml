@@ -69,6 +69,7 @@
             <group>
               <group>
                 <field name="licence" />
+                <field name="is_asr" />
                 <field name="is_embedded" />
                 <field name="is_vision" />
                 <field name="is_text2image" />
