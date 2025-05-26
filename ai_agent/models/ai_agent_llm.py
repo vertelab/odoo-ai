@@ -58,6 +58,7 @@ class AIAgentLLM(models.Model):
     company_id = fields.Many2one(comodel_name='res.company',string="Company",help="",related="product_tmpl_id.company_id") # domain|context|ondelete="'set null', 'restrict', 'cascade'"|auto_join|delegate
     endpoint = fields.Char()
     image_128 = fields.Image("Image", max_width=128, max_height=128, related="product_tmpl_id.image_128")
+    is_asr = fields.Boolean(related='model_id.product_attribute_value_id.is_asr')
     is_embedded = fields.Boolean(related='model_id.product_attribute_value_id.is_embedded')
     is_text2image = fields.Boolean(related='model_id.product_attribute_value_id.is_text2image')
     is_vision = fields.Boolean(related='model_id.product_attribute_value_id.is_vision')
