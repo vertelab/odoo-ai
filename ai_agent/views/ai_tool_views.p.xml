@@ -113,7 +113,7 @@
         <field name="name">ai.tool.kanban</field>
         <field name="model">ai.tool</field>
         <field name="arch" type="xml">
-            <kanban>
+            <kanban highlight_color="color" quick_create="false">
                 <field name="color" />
                 <field name="debug" />
                 <field name="id" />
