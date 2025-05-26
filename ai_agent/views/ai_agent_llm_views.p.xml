@@ -1,297 +1,276 @@
 <odoo>
-    <data>
-        <record id="view_ai_agent_llm_tree" model="ir.ui.view">
-            <field name="name">ai.agent.llm.tree</field>
-            <field name="model">ai.agent.llm</field>
-            <field name="arch" type="xml">
-                <!-- #if VERSION >= "18.0" -->
-                <list string="AI Agent LLMs" decoration-info="status=='not_confirmed'" decoration-success="status=='confirmed'" decoration-danger="status=='error'" multi_edit="1">
-                    <field name="name" />
-                    <field name="product_tmpl_id" optional="hide" />
-                    <field name="model_id" />
-                    <field name="llm_type" optional="hide" />
-                    <field name="llm_etype" optional="hide" />
-                    <field name="licence" />
-                    <field name="is_embedded" />
-                    <field name="is_text2image" />
-                    <field name="is_vision" />
-                    <field name="endpoint" optional="hide" />
-                    <field name="is_key_required" />
-                    <field name="last_run" />
-                    <field name="ai_agent_count" optional="hide" />
-                    <field name="quest_count" optional="hide" />
-                    <field name="session_count" optional="hide" />
-                    <field name="session_line_count" optional="hide" />
-                    <field name="status" widget="badge" />
-                    <field name="is_favorite" widget="boolean_favorite" nolabel="1" />
-                    <!--
-                         <button name="action_confirm" string="Confirm" type="object" icon="fa-check" attrs="{'invisible': [('status', '!=', 'not_confirmed')]}"/>
-                         <button name="action_reset" string="Reset" type="object" icon="fa-undo" attrs="{'invisible': [('status', '=', 'not_confirmed')]}"/>
-                    -->
-                </list>
-                <!-- #elif VERSION <= "17.0" -->
-                <tree string="AI Agent LLMs" decoration-info="status=='not_confirmed'" decoration-success="status=='confirmed'" decoration-danger="status=='error'" multi_edit="1">
-                    <field name="name" />
-                    <field name="product_tmpl_id" optional="hide" />
-                    <field name="model_id" />
-                    <field name="llm_type" optional="hide" />
-                    <field name="llm_etype" optional="hide" />
-                    <field name="licence" />
-                    <field name="is_embedded" />
-                    <field name="is_text2image" />
-                    <field name="is_vision" />
-                    <field name="endpoint" optional="hide" />
-                    <field name="is_key_required" />
-                    <field name="last_run" />
-                    <field name="ai_agent_count" optional="hide" />
-                    <field name="quest_count" optional="hide" />
-                    <field name="session_count" optional="hide" />
-                    <field name="session_line_count" optional="hide" />
-                    <field name="status" widget="badge" />
-                    <field name="is_favorite" widget="boolean_favorite" nolabel="1" />
-                    <!--
-                         <button name="action_confirm" string="Confirm" type="object" icon="fa-check" attrs="{'invisible': [('status', '!=', 'not_confirmed')]}"/>
-                         <button name="action_reset" string="Reset" type="object" icon="fa-undo" attrs="{'invisible': [('status', '=', 'not_confirmed')]}"/>
-                    -->
-                </tree>
+  <data>
+    <record id="view_ai_agent_llm_tree" model="ir.ui.view">
+      <field name="name">ai.agent.llm.tree</field>
+      <field name="model">ai.agent.llm</field>
+      <field name="arch" type="xml">
+        <!-- #if VERSION >= "18.0" -->
+        <list string="AI Agent LLMs" decoration-info="status=='not_confirmed'" decoration-success="status=='confirmed'" decoration-danger="status=='error'" multi_edit="1">
+          <field name="name" />
+          <field name="product_tmpl_id" optional="hide" />
+          <field name="model_id" />
+          <field name="llm_type" optional="hide" />
+          <field name="llm_etype" optional="hide" />
+          <field name="licence" />
+          <field name="is_embedded" />
+          <field name="is_text2image" />
+          <field name="is_vision" />
+          <field name="endpoint" optional="hide" />
+          <field name="is_key_required" />
+          <field name="last_run" />
+          <field name="ai_agent_count" optional="hide" />
+          <field name="quest_count" optional="hide" />
+          <field name="session_count" optional="hide" />
+          <field name="session_line_count" optional="hide" />
+          <field name="status" widget="badge" />
+          <field name="is_favorite" widget="boolean_favorite" nolabel="1" />
+          <!--
+               <button name="action_confirm" string="Confirm" type="object" icon="fa-check" attrs="{'invisible': [('status', '!=', 'not_confirmed')]}"/>
+               <button name="action_reset" string="Reset" type="object" icon="fa-undo" attrs="{'invisible': [('status', '=', 'not_confirmed')]}"/>
+          -->
+        </list>
+        <!-- #elif VERSION <= "17.0" -->
+        <tree string="AI Agent LLMs" decoration-info="status=='not_confirmed'" decoration-success="status=='confirmed'" decoration-danger="status=='error'" multi_edit="1">
+          <field name="name" />
+          <field name="product_tmpl_id" optional="hide" />
+          <field name="model_id" />
+          <field name="llm_type" optional="hide" />
+          <field name="llm_etype" optional="hide" />
+          <field name="licence" />
+          <field name="is_embedded" />
+          <field name="is_text2image" />
+          <field name="is_vision" />
+          <field name="endpoint" optional="hide" />
+          <field name="is_key_required" />
+          <field name="last_run" />
+          <field name="ai_agent_count" optional="hide" />
+          <field name="quest_count" optional="hide" />
+          <field name="session_count" optional="hide" />
+          <field name="session_line_count" optional="hide" />
+          <field name="status" widget="badge" />
+          <field name="is_favorite" widget="boolean_favorite" nolabel="1" />
+          <!--
+               <button name="action_confirm" string="Confirm" type="object" icon="fa-check" attrs="{'invisible': [('status', '!=', 'not_confirmed')]}"/>
+               <button name="action_reset" string="Reset" type="object" icon="fa-undo" attrs="{'invisible': [('status', '=', 'not_confirmed')]}"/>
+          -->
+        </tree>
+        <!-- #endif -->
+      </field>
+    </record>
+    <record id="ai_agent_llm_search" model="ir.ui.view">
+      <field name="name">ai.agent.llm.search</field>
+      <field name="model">ai.agent.llm</field>
+      <field name="arch" type="xml">
+        <search string="Search AI Agent LLM">
+          <field name="endpoint" />
+          <field name="is_embedded" />
+          <field name="is_text2image" />
+          <field name="is_vision" />
+          <field name="last_run" />
+          <field name="llm_etype" />
+          <field name="llm_type" />
+          <field name="model_id" />
+          <field name="name" />
+          <field name="product_tmpl_id" />
+          <filter string="Confirmed" name="confirmed" domain="[('status', '=', 'confirmed')]" />
+          <filter string="Embedded" name="embedded" domain="[('is_embedded', '=', True)]" />
+          <filter string="Vision" name="vision" domain="[('is_vision', '=', True)]" />
+          <filter string="Text2Image" name="text2image" domain="[('is_text2image', '=', True)]" />
+          <filter string="Error" name="error" domain="[('status', '=', 'error')]" />
+          <filter string="Favorite" name="favorite" domain="[('is_favorite', '=', True)]" />
+          <filter string="Key Required" name="key_required" domain="[('is_key_required', '=', True)]" />
+          <filter string="Not Confirmed" name="not_confirmed" domain="[('status', '=', 'not_confirmed')]" />
+          <group expand="0" string="Group By">
+            <filter string="LLM Type" name="group_by_llm_type" context="{'group_by': 'llm_type'}" />
+            <filter string="Last Run" name="group_by_last_run" context="{'group_by': 'last_run'}" />
+            <filter string="Model" name="group_by_model" context="{'group_by': 'model_id'}" />
+            <filter string="Provider" name="group_by_product_tmpl" context="{'group_by': 'product_tmpl_id'}" />
+            <filter string="Status" name="group_by_status" context="{'group_by': 'status'}" />
+          </group>
+        </search>
+      </field>
+    </record>
+    <record id="ai_agent_llm_form" model="ir.ui.view">
+      <field name="name">ai.agent.llm.form</field>
+      <field name="model">ai.agent.llm</field>
+      <field name="arch" type="xml">
+        <form>
+          <header>
+            <button name="test_llm" type="object" string="Test" />
+            <field name="status" widget="statusbar" statusbar_visible="not_confirmed,confirmed" options="{'clickable': '1', 'fold_field': 'fold'}" />
+          </header>
+          <sheet>
+            <div name="button_box" id="button_box" class="oe_button_box">
+              <button name="action_get_agents" class="oe_stat_button " type="object" icon="fa-user-secret">
+                <field string="Agents" name="ai_agent_count" widget="statinfo" />
+              </button>
+              <button name="action_get_quests" class="oe_stat_button " type="object" icon="fa-rocket">
+                <field string="Quests" name="quest_count" widget="statinfo" />
+              </button>
+              <button name="action_get_sessions" class="oe_stat_button" type="object" icon="fa-flag-checkered">
+                <field string="Sessions" name="session_count" widget="statinfo" />
+              </button>
+              <button name="action_get_session_lines" class="oe_stat_button" type="object" icon="fa-money">
+                <field string="Tokens" name="session_line_count" widget="statinfo" />
+              </button>
+            </div>
+            <field name="image_128" widget="image" class="oe_avatar" />
+            <div class="oe_title">
+              <label for="name" string="Name" />
+              <h1>
+                <field name="name" class="oe_inline" modifiers="{&quot;required&quot;: true}" default_focus="1" placeholder="e.g. support" readonly="0" />
+              </h1>
+            </div>
+            <group>
+              <group>
+                <field name="has_endpoint" invisible="1" />
+                <!-- #if VERSION == 16.0 -->
+                <field name="tag_ids" widget="many2many_tags" />
                 <!-- #endif -->
-            </field>
-        </record>
-
-        <record id="ai_agent_llm_search" model="ir.ui.view">
-            <field name="name">ai.agent.llm.search</field>
-            <field name="model">ai.agent.llm</field>
-            <field name="arch" type="xml">
-                <search string="Search AI Agent LLM">
-                    <field name="endpoint" />
-                    <field name="is_embedded" />
-                    <field name="is_text2image" />
-                    <field name="is_vision" />
-                    <field name="last_run" />
-                    <field name="llm_etype" />
-                    <field name="llm_type" />
-                    <field name="model_id" />
-                    <field name="name" />
-                    <field name="product_tmpl_id" />
-                    <filter string="Confirmed" name="confirmed" domain="[('status', '=', 'confirmed')]" />
-                    <filter string="Embedded" name="embedded" domain="[('is_embedded', '=', True)]" />
-                    <filter string="Vision" name="vision" domain="[('is_vision', '=', True)]" />
-                    <filter string="Text2Image" name="text2image" domain="[('is_text2image', '=', True)]" />
-                    <filter string="Error" name="error" domain="[('status', '=', 'error')]" />
-                    <filter string="Favorite" name="favorite" domain="[('is_favorite', '=', True)]" />
-                    <filter string="Key Required" name="key_required" domain="[('is_key_required', '=', True)]" />
-                    <filter string="Not Confirmed" name="not_confirmed" domain="[('status', '=', 'not_confirmed')]" />
-                    <group expand="0" string="Group By">
-                        <filter string="LLM Type" name="group_by_llm_type" context="{'group_by': 'llm_type'}" />
-                        <filter string="Last Run" name="group_by_last_run" context="{'group_by': 'last_run'}" />
-                        <filter string="Model" name="group_by_model" context="{'group_by': 'model_id'}" />
-                        <filter string="Provider" name="group_by_product_tmpl" context="{'group_by': 'product_tmpl_id'}" />
-                        <filter string="Status" name="group_by_status" context="{'group_by': 'status'}" />
-                    </group>
-                </search>
-            </field>
-        </record>
-
-        <record id="ai_agent_llm_form" model="ir.ui.view">
-            <field name="name">ai.agent.llm.form</field>
-            <field name="model">ai.agent.llm</field>
-            <field name="arch" type="xml">
-                <form>
-                    <header>
-                        <button name="test_llm" type="object" string="Test" />
-                        <field name="status" widget="statusbar" statusbar_visible="not_confirmed,confirmed" options="{'clickable': '1', 'fold_field': 'fold'}" />
-                    </header>
-                    <sheet>
-                        <div name="button_box" id="button_box" class="oe_button_box">
-                            <button name="action_get_agents" class="oe_stat_button " type="object" icon="fa-user-secret">
-                                <field string="Agents" name="ai_agent_count" widget="statinfo" />
-                            </button>
-                            <button name="action_get_quests" class="oe_stat_button " type="object" icon="fa-rocket">
-                                <field string="Quests" name="quest_count" widget="statinfo" />
-                            </button>
-                            <button name="action_get_sessions" class="oe_stat_button" type="object" icon="fa-flag-checkered">
-                                <field string="Sessions" name="session_count" widget="statinfo" />
-                            </button>
-                            <button name="action_get_session_lines" class="oe_stat_button" type="object" icon="fa-money">
-                                <field string="Tokens" name="session_line_count" widget="statinfo" />
-                            </button>
-                        </div>
-                        <field name="image_128" widget="image" class="oe_avatar" />
-                        <div class="oe_title">
-                            <label for="name" string="Name" />
-                            <h1>
-                                <field name="name" class="oe_inline" modifiers="{&quot;required&quot;: true}" default_focus="1" placeholder="e.g. support" readonly="0" />
-                            </h1>
-                        </div>
-                        <group>
-                            <group>
-                                <field name="has_endpoint" invisible="1"/>
-                                <!-- #if VERSION == 16.0 -->
-                                <field name="tag_ids" widget="many2many_tags" />
-                                <!-- #endif -->
-                                <field name="is_key_required" widget="boolean_toggle" />
-                                <!-- #if VERSION >= "18.0" -->
-                                <field name="ai_api_key" invisible="is_key_required == False" />
-                                <!-- #elif VERSION <= "17.0" -->
-                                <field name="ai_api_key" attrs="{'invisible': [('is_key_required', '=', False)]}" />
-                                <!-- #endif -->
-                                <field name="licence" />
-                                <field name="is_embedded" />
-                                <field name="is_text2image" />
-                                <field name="is_vision" />
-
-                                <field name="tpm"/>
-                                <field name="rpm"/>
-                                <field name="last_run" />
-                                
-                            </group>
-                            <group>
-                                <!-- #if VERSION >= "18.0" -->
-                                <field name="llm_type" invisible="is_embedded == True"/>
-                                <field name="llm_etype" invisible="is_embedded == False" />
-                                <field name="product_tmpl_id" />
-                                <field name="model_id" invisible="product_tmpl_id == False" domain="[('product_tmpl_id', '=', product_tmpl_id),('attribute_id','=', %(ai_agent.product_attribute_model)d)]" />
-                                <field name="endpoint" invisible="has_endpoint == False"/>
-                                <field name="api_version" required="llm_type == 'AzureChatOpenAI'" invisible="llm_type != 'AzureChatOpenAI'"/>
-                                <!-- #elif VERSION <= "17.0" -->
-                                <field name="llm_type" attrs="{'invisible': [('is_embedded', '=', True)]}"/>
-                                <field name="llm_etype" attrs="{'invisible': [('is_embedded', '=', False)]}" />
-                                <field name="product_tmpl_id" />
-                                <field name="model_id" attrs="{'invisible': [('product_tmpl_id', '=', False)]}" domain="[('product_tmpl_id', '=', product_tmpl_id),('attribute_id','=', %(ai_agent.product_attribute_model)d)]" />
-                                <field name="endpoint" attrs="{'invisible': [('has_endpoint', '=', False)]}" />
-                                <field name="api_version" attrs="{'required': [('llm_type', '=', 'AzureChatOpenAI')], 'invisible': [('llm_type', '!=', 'AzureChatOpenAI')]}"/>
-                                <!-- #endif -->
-                                <field name="context_window"/>
-                                <field name="has_temperature"/>
-                            </group>
-                        </group>
-                        <group>
-                            <separator />
-                        </group>
-                    </sheet>
-                    <!-- #if VERSION >= "18.0" -->
-                    <chatter/>
-                    <!-- #elif VERSION <= "17.0" -->
-                    <div class="oe_chatter">
-                        <field name="message_follower_ids" widget="mail_followers" />
-                        <field name="activity_ids" widget="mail_activity" />
-                        <field name="message_ids" widget="mail_thread" />
+                <field name="is_key_required" widget="boolean_toggle" />
+                <!-- #if VERSION >= "18.0" -->
+                <field name="ai_api_key" invisible="is_key_required == False" />
+                <!-- #elif VERSION <= "17.0" -->
+                <field name="ai_api_key" attrs="{'invisible': [('is_key_required', '=', False)]}" />
+                <!-- #endif -->
+                <field name="licence" />
+                <field name="is_embedded" />
+                <field name="is_text2image" />
+                <field name="is_vision" />
+                <field name="tpm" />
+                <field name="rpm" />
+                <field name="last_run" />
+              </group>
+              <group>
+                <!-- #if VERSION >= "18.0" -->
+                <field name="llm_type" invisible="is_embedded == True" />
+                <field name="llm_etype" invisible="is_embedded == False" />
+                <field name="product_tmpl_id" />
+                <field name="model_id" invisible="product_tmpl_id == False" domain="[('product_tmpl_id', '=', product_tmpl_id),('attribute_id','=', %(ai_agent.product_attribute_model)d)]" />
+                <field name="endpoint" invisible="has_endpoint == False" />
+                <field name="api_version" required="llm_type == 'AzureChatOpenAI'" invisible="llm_type != 'AzureChatOpenAI'" />
+                <!-- #elif VERSION <= "17.0" -->
+                <field name="llm_type" attrs="{'invisible': [('is_embedded', '=', True)]}" />
+                <field name="llm_etype" attrs="{'invisible': [('is_embedded', '=', False)]}" />
+                <field name="product_tmpl_id" />
+                <field name="model_id" attrs="{'invisible': [('product_tmpl_id', '=', False)]}" domain="[('product_tmpl_id', '=', product_tmpl_id),('attribute_id','=', %(ai_agent.product_attribute_model)d)]" />
+                <field name="endpoint" attrs="{'invisible': [('has_endpoint', '=', False)]}" />
+                <field name="api_version" attrs="{'required': [('llm_type', '=', 'AzureChatOpenAI')], 'invisible': [('llm_type', '!=', 'AzureChatOpenAI')]}" />
+                <!-- #endif -->
+                <field name="context_window" />
+                <field name="has_temperature" />
+              </group>
+            </group>
+            <group>
+              <separator />
+            </group>
+          </sheet>
+          <!-- #if VERSION >= "18.0" -->
+          <chatter />
+          <!-- #elif VERSION <= "17.0" -->
+          <div class="oe_chatter">
+            <field name="message_follower_ids" widget="mail_followers" />
+            <field name="activity_ids" widget="mail_activity" />
+            <field name="message_ids" widget="mail_thread" />
+          </div>
+          <!-- #endif -->
+        </form>
+      </field>
+    </record>
+    <record id="ai_agent_llm_kanban" model="ir.ui.view">
+      <field name="name">ai.agent.llm.kanban</field>
+      <field name="model">ai.agent.llm</field>
+      <field name="arch" type="xml">
+        <kanban sample="1" class="o_kanban_mobile" color_field="color" quick_create="false" highlight_color="color">
+          <field name="ai_agent_count" />
+          <field name="ai_agent_ids" />
+          <field name="color" />
+          <field name="context_window" />
+          <field name="id" />
+          <field name="is_embedded" />
+          <field name="is_text2image" />
+          <field name="is_vision" />
+          <field name="last_run" />
+          <field name="licence" />
+          <field name="name" />
+          <field name="status" />
+          <field name="status_color" />
+          <templates>
+            <!-- Menu -->
+            <t t-name="menu">
+              <a role="menuitem" type="open" class="dropdown-item" t-if="widget.editable">Edit</a>
+              <a role="menuitem" type="delete" class="dropdown-item" t-if="widget.deletable">Delete</a>
+              <field name="color" widget="kanban_color_picker" />
+            </t>
+            <!-- Card -->
+            <t t-name="card" class="flex-row">
+              <aside class="col-2 me-1">
+                <field name="image_128" alt="Agent Image" widget="image" />
+              </aside>
+              <main t-attf-class="ms-2">
+                <div class="o_text_overflow d-flex align-items-center">
+                  <field name="is_favorite" widget="boolean_favorite" nolabel="1" force_save="1" style="margin-right: 5px;" />
+                  <field class="fw-bold fs-5" name="name" />
+                </div>
+                <span>
+                  Context Window
+                  <field name="context_window" title="Context Window" />
+                </span>
+                <field name="ai_agent_ids" widget="many2many_tags" options="{'color_field': 'color'}" />
+                <span><field name="session_line_count" style="margin-right: 5px;"/>tokens</span>
+                
+                <field name="licence" />
+                <footer>
+                  <div class="d-flex justify-content-between align-items-center w-100">
+                    <div class="d-flex align-items-center">
+                      <span class="fa fa-clock-o me-2" title="Dates" />
+                      <field name="last_run" t-if="record.last_run.value != False" />
                     </div>
-                    <!-- #endif -->
-                </form>
-            </field>
-        </record>
-
-        <record id="ai_agent_llm_kanban" model="ir.ui.view">
-            <field name="name">ai.agent.llm.kanban</field>
-            <field name="model">ai.agent.llm</field>
-            <field name="arch" type="xml">
-                <kanban sample="1" class="o_kanban_mobile" color_field="color">
-                    <field name="name" />
-                    <field name="id" />
-                    <field name="color" />
-                    <field name="status" />
-                    <field name="status_color" />
-                    <field name="last_run" />
-                    <field name="ai_agent_count" />
-                    <field name="ai_agent_ids" />
-                    <field name="is_text2image" />
-                    <field name="is_vision" />
-                    <field name="is_embedded" />
-                    <field name="licence" />
-                    <field name="context_window" />
-                    <templates>
-                        <t t-name="kanban-box">
-                            <div t-attf-class="oe_kanban_card oe_kanban_global_click #{kanban_color(record.color.raw_value)}">
-                                <div class="o_kanban_image me-1">
-                                    <img t-att-src="kanban_image('ai.agent.llm', 'image_128', record.id.raw_value)" alt="LLM Agents" class="o_image_64_contain"/>
-                                </div>
-                                <div class="oe_kanban_details">
-                                    <div class="o_kanban_record_top mb-0">
-                                        <div class="o_kanban_record_headings">
-                                            <span style="margin-right: 5px;">
-                                                <field name="is_favorite" widget="boolean_favorite" nolabel="1" force_save="1" />
-                                            </span>
-                                            <strong class="o_kanban_record_title">
-                                                <field name="name"/>
-                                            </strong>
-                                        </div>
-                                    </div>
-
-                                    <div class="oe_kanban_content flex-grow-1 flex-column">
-                                        <div class="oe_kanban_details">
-                                            <div class="oe_kanban_left">
-                                                <span>Context Window <field name="context_window" title="Context Window"/></span>
-                                                <field name="ai_agent_ids" widget="many2many_tags" options="{'color_field': 'color'}" />
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <div class="oe_kanban_footer mt-3">
-                                        <div class="o_kanban_record_bottom">
-                                            <div class="oe_kanban_bottom_left">
-                                                <field name="licence"/>
-                                                <t t-if="record.last_run.value != False">
-                                                    <span class="fa fa-clock-o me-2" title="Dates" />
-                                                    <field name="last_run" />
-                                                </t>
-
-                                            </div>
-
-                                            <div class="oe_kanban_bottom_right">
-                                                <span class="fa fa-hotel" t-if="record.is_embedded.raw_value == true"></span>
-                                                <span class="fa fa-eye" t-if="record.is_vision.raw_value == true"></span>
-                                                <span class="fa fa-file-photo-o" t-if="record.is_text2image.raw_value == true"></span>
-                                                <span t-att-class="'o_status_bubble mx-0 o_color_bubble_' + record.status_color.value" t-att-title="record.status.value" />
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                </div>
-                            </div>
-                        </t>
-                    </templates>
-                </kanban>
-            </field>
-        </record>
-
-        <record id="view_ai_agent_llm_calendar" model="ir.ui.view">
-            <field name="name">ai.agent.llm.calendar</field>
-            <field name="model">ai.agent.llm</field>
-            <field name="arch" type="xml">
-                <calendar string="LLM Calendar" date_start="last_run" color="color" mode="month">
-                    <field name="name" />
-                    <field name="product_tmpl_id" />
-                    <field name="model_id" />
-                    <field name="licence" />
-                    <field name="is_embedded" />
-                    <field name="status" />
-                </calendar>
-            </field>
-        </record>
-
-        <record id="action_test_llms" model="ir.actions.server">
-            <field name="name">Test LLMs</field>
-            <field name="model_id" ref="ai_agent.model_ai_agent_llm"/>
-            <field name="binding_model_id" ref="ai_agent.model_ai_agent_llm" />
-            <field name="state">code</field>
-            <field name="code">
-for record in records:
-    record.test_llm()
-            </field>
-        </record>
-
-        <record id="action_ai_agent_llm" model="ir.actions.act_window">
-            <field name="name">Agent LLM</field>
-            <field name="res_model">ai.agent.llm</field>
-            <!-- #if VERSION >= "18.0" -->
-            <field name="view_mode">kanban,list,form,calendar</field>
-            <!-- #elif VERSION <= "17.0" -->
-            <field name="view_mode">kanban,tree,form,calendar</field>
-            <!-- #endif -->
-        </record>
-
-        <menuitem id="ai_agent.menu_ai_agent_llm" name="LLMs" parent="ai_agent.menu_ai_agent_configuration" action="action_ai_agent_llm" />
-
-    </data>
+                    <span class="fa fa-hotel" t-if="record.is_embedded.raw_value == true" />
+                    <span class="fa fa-eye" t-if="record.is_vision.raw_value == true" />
+                    <span class="fa fa-file-photo-o" t-if="record.is_text2image.raw_value == true" />
+                    <span t-att-class="'o_status_bubble mx-0 o_color_bubble_' + record.status_color.value" t-att-title="record.status.value" />
+                  </div>
+                </footer>
+              </main>
+            </t>
+          </templates>
+        </kanban>
+      </field>
+    </record>
+    <record id="view_ai_agent_llm_calendar" model="ir.ui.view">
+      <field name="name">ai.agent.llm.calendar</field>
+      <field name="model">ai.agent.llm</field>
+      <field name="arch" type="xml">
+        <calendar string="LLM Calendar" date_start="last_run" color="color" mode="month">
+          <field name="name" />
+          <field name="product_tmpl_id" />
+          <field name="model_id" />
+          <field name="licence" />
+          <field name="is_embedded" />
+          <field name="status" />
+        </calendar>
+      </field>
+    </record>
+    <record id="action_test_llms" model="ir.actions.server">
+      <field name="name">Test LLMs</field>
+      <field name="model_id" ref="ai_agent.model_ai_agent_llm" />
+      <field name="binding_model_id" ref="ai_agent.model_ai_agent_llm" />
+      <field name="state">code</field>
+      <field name="code">
+        for record in records:
+        record.test_llm()
+      </field>
+    </record>
+    <record id="action_ai_agent_llm" model="ir.actions.act_window">
+      <field name="name">Agent LLM</field>
+      <field name="res_model">ai.agent.llm</field>
+      <!-- #if VERSION >= "18.0" -->
+      <field name="view_mode">kanban,list,form,calendar</field>
+      <!-- #elif VERSION <= "17.0" -->
+      <field name="view_mode">kanban,tree,form,calendar</field>
+      <!-- #endif -->
+    </record>
+    <menuitem id="ai_agent.menu_ai_agent_llm" name="LLMs" parent="ai_agent.menu_ai_agent_configuration" action="action_ai_agent_llm" />
+  </data>
 </odoo>
