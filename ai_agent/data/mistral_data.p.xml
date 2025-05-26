@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-  <data noupdate="1">
+  <data noupdate="0">
     <record id="mistral_product_template" model="product.template">
       <field name="name">Mistral AI</field>
       <field name="is_llm">True</field>
@@ -77,11 +77,18 @@
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
 <field name="context_window" eval="200000"/>
 </record>
+<record id="mistral_product_attribute_value_devstral-small-2505" model="product.attribute.value">
+      <field name="name">devstral-small-2505</field>
+      <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+<field name="context_window" eval="200000"/>
+</record>
+
     <!-- Attribute Line -->
     <record id="mistral_product_template_attribute_line_model" model="product.template.attribute.line">
       <field name="product_tmpl_id" ref="mistral_product_template" />
       <field name="attribute_id" ref="product_attribute_model" />
       <field name="value_ids" eval="[(6, 0, [
+                    ref('mistral_product_attribute_value_devstral-small-2505'),
                     ref('ai_agent.mistral_product_attribute_value_mistral-large-latest'),
                     ref('mistral_product_attribute_value_pixtral-large-latest'),
                     ref('mistral_product_attribute_value_mistral-moderation-latest'),
