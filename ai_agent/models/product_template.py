@@ -10,6 +10,8 @@ class ProductTemplate(models.Model):
     _inherit = 'product.template'
 
     ai_api_key = fields.Char()
+    asr_type = fields.Char(trim=True)
+    asr_library = fields.Char(trim=True)
     fallback_api_key_name = fields.Char()
     ai_session_lines_ids = fields.One2many(comodel_name='ai.quest.session.line', inverse_name='product_tmpl_id',
                                            string="AI Tokens", help="")
@@ -107,6 +109,7 @@ class ProductTemplate(models.Model):
 
 class ProductAttributeValue(models.Model):
     _inherit = 'product.attribute.value'
+
 
     licence = fields.Selection(selection=LICENCES, string='Licence', default='commercial')
     is_text2image = fields.Boolean(string='Is Text to image', default=False)
