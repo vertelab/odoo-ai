@@ -17,6 +17,7 @@ from odoo.exceptions import UserError, AccessError, ValidationError
 from pydantic import SecretStr
 from random import randint
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+from odoo.modules.module import get_resource_path
 _logger = logging.getLogger(__name__)
 
 LICENCES = [
@@ -54,6 +55,7 @@ class AIAgentLLM(models.Model):
     ai_agent_count = fields.Integer(compute="compute_ai_agent_count")
     ai_agent_ids = fields.One2many(comodel_name="ai.agent", inverse_name="ai_agent_llm_id")
     ai_api_key = fields.Char(default=lambda self: self.product_tmpl_id.ai_api_key)
+    asr_type = field.Char(related="product_tmpl_id.asr_type)
     color = fields.Integer(default=lambda self: randint(1, 11))
     company_id = fields.Many2one(comodel_name='res.company',string="Company",help="",related="product_tmpl_id.company_id") # domain|context|ondelete="'set null', 'restrict', 'cascade'"|auto_join|delegate
     endpoint = fields.Char()
@@ -250,6 +252,28 @@ class AIAgentLLM(models.Model):
             _logger.error(f"An error occurred: {e}")
             raise
 
+    def get_transcription(self):
+        try:
+            module = importlib.import_module(self.product_tmpl_id.llm_library)
+            LLM = getattr(module, self.product_tmpl_id.llm_type)
+            api_key = self.ai_api_key
+            if not api_key:
+                api_key = tools.config.get(self.product_tmpl_id.fallback_api_key_name, False)
+            if api_key:
+                return LLM(api_key=api_key)
+            return None
+
+        except ImportError as e:
+            _logger.error(f"Error importing {self.product_tmpl_id.llm_library}: {e}")
+            raise
+        except AttributeError as e:
+            _logger.error(f"Error: {self.product_tmpl_id.llm_etype} not found in {self.product_tmpl_id.llm_library}")
+            raise
+        except Exception as e:
+            _logger.error(f"An error occurred: {e}")
+            raise
+
+
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=4, max=10),
@@ -312,7 +336,10 @@ class AIAgentLLM(models.Model):
     def test_llm(self):
         session = self.env['ai.quest.session'].llm_init(self)
         if self.is_embedded:
-            return self.test_embedd(session)          
+            return self.test_embedd(session)
+        elif self.is_asr:
+            return self.test_asr(session)
+
         else:
             try:
                 response = self.invoke("What is 1+1, answer with a single digit")
@@ -360,6 +387,33 @@ class AIAgentLLM(models.Model):
         self.status = "confirmed"
         return 
 
+    def test_asr(self,session=False):
+        try:
+            path = get_resource_path('ai_agent','static/src/audio','oneplusone.m4a')
+            with open(path,"rb") as file:
+                asr = self.get_transcription()
+                asr.audio.transcriptions.create(file=file,model=self.model_id.name)
+        except ModuleNotFoundError as e:
+            raise UserError(f"{e}")
+        except KeyError as e:
+            _logger.error(f"{e=}")
+            session.add_message(f"Could not transcribe  : {str(e)}\n{traceback.format_exc()}")
+            self.message_post(body=_(f"Could not transcribe: {str(e)}"), message_type="notification")
+            self.status = "error"
+            if session:
+                session.status = 'done'
+            return False
+        except Exception as e:
+            _logger.error(f"{e=}")
+            session.add_message(f"Could not transcribe: {str(e)}\n{traceback.format_exc()}")
+            self.message_post(body=_(f"Could not transcribe: {str(e)}"), message_type="notification")
+            self.status = "error"
+            if session:
+                session.status = 'done'
+            return False
+        self.message_post(body=_(f"Transcription is working"), message_type="notification")
+        self.status = "confirmed"
+        return 
 
     def get_agent_executor(self, prompt, tools, temperature=1.0, verbose=False, callbacks=None):
         return AgentExecutor(
