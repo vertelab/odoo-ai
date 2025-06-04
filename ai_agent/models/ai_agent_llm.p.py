@@ -55,7 +55,7 @@ class AIAgentLLM(models.Model):
     ai_agent_count = fields.Integer(compute="compute_ai_agent_count")
     ai_agent_ids = fields.One2many(comodel_name="ai.agent", inverse_name="ai_agent_llm_id")
     ai_api_key = fields.Char(default=lambda self: self.product_tmpl_id.ai_api_key)
-    asr_type = field.Char(related="product_tmpl_id.asr_type)
+    asr_type = fields.Char(related="product_tmpl_id.asr_type")
     color = fields.Integer(default=lambda self: randint(1, 11))
     company_id = fields.Many2one(comodel_name='res.company',string="Company",help="",related="product_tmpl_id.company_id") # domain|context|ondelete="'set null', 'restrict', 'cascade'"|auto_join|delegate
     endpoint = fields.Char()
