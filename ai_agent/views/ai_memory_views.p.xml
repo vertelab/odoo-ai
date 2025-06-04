@@ -54,6 +54,8 @@
               <!-- #endif -->
               <field name="document_chunks" />
               <field name="company_id" groups="base.group_multi_company" />
+              <field name="youtube_search"/>
+              <field name="youtube_video_ids"/>
             </group>
             <group>
               <field name="vector_type" />

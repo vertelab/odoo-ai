@@ -24,7 +24,8 @@ import tiktoken
 import time
 import uuid
 from secrets import choice
-
+from youtube_transcript_api import YouTubeTranscriptApi
+from langchain_core.documents import Document
 import pymupdf
 
 from odoo import models, fields, api, _
@@ -177,7 +178,7 @@ class AIMemory(models.Model):
     memory_markdown = fields.Binary(string='Markdown', attachment=True)
     memory_type = fields.Selection(
         selection=[("bs4", "Simple Webscraper"), ("model", "Model"), ("local_attachment", "Local Attachment"),
-                   ("attachments", "Attachments"),("datastream", "Datastream")], default="model", required=True,
+                   ("attachments", "Attachments"),("datastream", "Datastream"), ("youtube", "Youtube")], default="model", required=True,
         help="This is the source for memory")
     model_id = fields.Many2one(comodel_name='ir.model')
     model_name = fields.Char(related='model_id.model', string='Model Name', readonly=True, store=True)
@@ -258,6 +259,55 @@ class AIMemory(models.Model):
     # ------------------------------------------------------------
     # RAG
     # ------------------------------------------------------------
+
+
+     #------------------------------------------------------------
+        #YOUTUBTE
+
+        
+    youtube_search = fields.Char(string="YouTube Search")
+    youtube_video_ids = fields.Char(string="YouTube Video IDs")
+
+
+
+    def rag_youtube(self, memory):
+        video_ids = []
+
+        if memory.youtube_search:
+            video_ids = self._search_youtube_ids(memory.youtube_search)
+        elif memory.youtube_video_ids:
+            video_ids = [vid.strip() for vid in memory.youtube_video_ids.split(",") if vid.strip()]
+        else:
+            raise UserError(_("Please provide a search phrase or video IDs."))
+
+        documents = []
+        for vid in video_ids:
+            try:
+                transcript = YouTubeTranscriptApi.get_transcript(vid)
+                text = "\n".join([entry["text"] for entry in transcript])
+                documents.append(Document(page_content=text, metadata={"source": f"https://www.youtube.com/watch?v={vid}"}))
+            except Exception as e:
+                _logger.warning(f"Failed to fetch transcript for video {vid}: {e}")
+
+        if documents:
+            self.create_vector(documents=documents, memory=memory)
+        else:
+            raise UserError(_("No transcripts found for the provided videos."))
+
+
+
+    def _search_youtube_ids(self, query):
+        from langchain_community.tools.youtube.search import YouTubeSearchTool
+
+        tool = YouTubeSearchTool()
+        result = tool.run(query + ",5")  # eller justera antalet
+
+        # Extrahera video-ID:n från länkar
+        import re
+        urls = re.findall(r'https://www\.youtube\.com/watch\?v=([\w\-]+)', result)
+        return urls
+    
+     #------------------------------------------------------------
 
     def rag_local_attachments(self,memory):
         documents = []
@@ -564,6 +614,8 @@ class AIMemory(models.Model):
                 memory.rag_local_attachments(memory)
             elif memory.memory_type == 'datastream':
                 memory.file_stream(memory)
+            elif memory.memory_type == 'youtube':
+                memory.rag_youtube(memory)
 
     def file_stream(self,memory):
         documents = []
