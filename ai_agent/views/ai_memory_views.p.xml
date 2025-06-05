@@ -211,11 +211,17 @@
                     <field name="vector_type" />
                   </div>
                   <div class="d-flex mt-auto align-items-center">
+                    <!-- #if VERSION >= "17.0" -->
                     <field name="url" invisible="memory_type != 'bs4'" widget="url" class="o_text_overflow" />
                     <br/>
-
                     <field name="model_id" invisible="memory_type != 'model'" />
                     <field name="shell_cmd" invisible="memory_type != 'datastream'" class="o_text_overflow" />
+                    <!-- #elif VERSION <= "16.0" -->
+                    <field name="url" attrs="{'invisible': [('memory_type', '!=', 'bs4')]}" widget="url" class="o_text_overflow" />
+                    <br/>
+                    <field name="model_id" attrs="{'invisible': [('memory_type', '!=', 'model')]}" />
+                    <field name="shell_cmd" attrs="{'invisible': [('memory_type', '!=', 'datastream')]}" class="o_text_overflow" />
+                    <!-- #endif -->
                     <field name="company_id" groups="base.group_multi_company" />
                   </div>
                     <div class="d-flex mt-auto align-items-center" t-if="record.memory_type.raw_value == 'bs4'">

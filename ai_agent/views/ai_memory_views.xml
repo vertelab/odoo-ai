@@ -169,7 +169,6 @@
                   <div class="d-flex mt-auto align-items-center">
                     <field name="url" invisible="memory_type != 'bs4'" widget="url" class="o_text_overflow" />
                     <br/>
-
                     <field name="model_id" invisible="memory_type != 'model'" />
                     <field name="shell_cmd" invisible="memory_type != 'datastream'" class="o_text_overflow" />
                     <field name="company_id" groups="base.group_multi_company" />
