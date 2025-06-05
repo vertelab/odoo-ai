@@ -181,6 +181,7 @@
         </form>
       </field>
     </record>
+    
     <record id="ai_agent_llm_kanban" model="ir.ui.view">
       <field name="name">ai.agent.llm.kanban</field>
       <field name="model">ai.agent.llm</field>
@@ -201,7 +202,58 @@
           <field name="status" />
           <field name="status_color" />
           <templates>
-            <!-- Menu -->
+            <!-- #if VERSION < "15.0" -->
+             <t t-name="kanban-box">
+                            <div t-attf-class="oe_kanban_card oe_kanban_global_click #{kanban_color(record.color.raw_value)}">
+                                <div class="o_kanban_image me-1">
+                                    <img t-att-src="kanban_image('ai.agent.llm', 'image_128', record.id.raw_value)" alt="LLM Agents" class="o_image_64_contain"/>
+                                </div>
+                                <div class="oe_kanban_details">
+                                    <div class="o_kanban_record_top mb-0">
+                                        <div class="o_kanban_record_headings">
+                                            <span style="margin-right: 5px;">
+                                                <field name="is_favorite" widget="boolean_favorite" nolabel="1" force_save="1" />
+                                            </span>
+                                            <strong class="o_kanban_record_title">
+                                                <field name="name"/>
+                                            </strong>
+                                        </div>
+                                    </div>
+
+                                    <div class="oe_kanban_content flex-grow-1 flex-column">
+                                        <div class="oe_kanban_details">
+                                            <div class="oe_kanban_left">
+                                                <span>Context Window <field name="context_window" title="Context Window"/></span>
+                                                <field name="ai_agent_ids" widget="many2many_tags" options="{'color_field': 'color'}" />
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="oe_kanban_footer mt-3">
+                                        <div class="o_kanban_record_bottom">
+                                            <div class="oe_kanban_bottom_left">
+                                                <field name="licence"/>
+                                                <t t-if="record.last_run.value != False">
+                                                    <span class="fa fa-clock-o me-2" title="Dates" />
+                                                    <field name="last_run" />
+                                                </t>
+
+                                            </div>
+
+                                            <div class="oe_kanban_bottom_right">
+                                                <span class="fa fa-hotel" t-if="record.is_embedded.raw_value == true"></span>
+                                                <span class="fa fa-eye" t-if="record.is_vision.raw_value == true"></span>Add commentMore actions
+                                                <span class="fa fa-file-photo-o" t-if="record.is_text2image.raw_value == true"></span>
+                                                <span t-att-class="'o_status_bubble mx-0 o_color_bubble_' + record.status_color.value" t-att-title="record.status.value" />
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                </div>
+                            </div>
+                        </t>
+            <!-- #elif VERSION >= "15.0" -->
+             <!-- Menu -->
             <t t-name="menu">
               <a role="menuitem" type="open" class="dropdown-item" t-if="widget.editable">Edit</a>
               <a role="menuitem" type="delete" class="dropdown-item" t-if="widget.deletable">Delete</a>
@@ -240,10 +292,12 @@
                 </footer>
               </main>
             </t>
+            <!-- #endif -->
           </templates>
         </kanban>
       </field>
     </record>
+    
     <record id="view_ai_agent_llm_calendar" model="ir.ui.view">
       <field name="name">ai.agent.llm.calendar</field>
       <field name="model">ai.agent.llm</field>
