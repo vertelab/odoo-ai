@@ -18,3 +18,4 @@ lxml
 tiktoken
 httpx
 ipython
+youtube_transcript_api
