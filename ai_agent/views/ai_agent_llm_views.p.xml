@@ -1,5 +1,6 @@
 <odoo>
   <data>
+      
     <record id="view_ai_agent_llm_tree" model="ir.ui.view">
       <field name="name">ai.agent.llm.tree</field>
       <field name="model">ai.agent.llm</field>
@@ -58,6 +59,7 @@
         <!-- #endif -->
       </field>
     </record>
+    
     <record id="ai_agent_llm_search" model="ir.ui.view">
       <field name="name">ai.agent.llm.search</field>
       <field name="model">ai.agent.llm</field>
@@ -93,6 +95,7 @@
         </search>
       </field>
     </record>
+    
     <record id="ai_agent_llm_form" model="ir.ui.view">
       <field name="name">ai.agent.llm.form</field>
       <field name="model">ai.agent.llm</field>
@@ -147,15 +150,17 @@
               </group>
               <group>
                 <!-- #if VERSION >= "18.0" -->
-                <field name="llm_type" invisible="is_embedded == True" />
-                <field name="llm_etype" invisible="is_embedded == False" />
+                <field name="llm_type" invisible="is_embedded == True or is_asr == True" />
+                <field name="llm_etype" invisible="is_embedded == False or is_asr == True" />
+                <field name="asr_type" invisible="is_asr == False"/>
                 <field name="product_tmpl_id" />
                 <field name="model_id" invisible="product_tmpl_id == False" domain="[('product_tmpl_id', '=', product_tmpl_id),('attribute_id','=', %(ai_agent.product_attribute_model)d)]" />
                 <field name="endpoint" invisible="has_endpoint == False" />
                 <field name="api_version" required="llm_type == 'AzureChatOpenAI'" invisible="llm_type != 'AzureChatOpenAI'" />
                 <!-- #elif VERSION <= "17.0" -->
-                <field name="llm_type" attrs="{'invisible': [('is_embedded', '=', True)]}" />
-                <field name="llm_etype" attrs="{'invisible': [('is_embedded', '=', False)]}" />
+                <field name="llm_type" attrs="{'invisible': ['|',('is_embedded', '=', True), ('is_asr', '=', True)]}" />
+                <field name="llm_etype" attrs="{'invisible': ['|',('is_embedded', '=', False), ('is_asr', '=', True)]}" />
+                <field name="asr_type" attrs="{'invisible': [('is_asr', '=', False)]}"/>
                 <field name="product_tmpl_id" />
                 <field name="model_id" attrs="{'invisible': [('product_tmpl_id', '=', False)]}" domain="[('product_tmpl_id', '=', product_tmpl_id),('attribute_id','=', %(ai_agent.product_attribute_model)d)]" />
                 <field name="endpoint" attrs="{'invisible': [('has_endpoint', '=', False)]}" />
