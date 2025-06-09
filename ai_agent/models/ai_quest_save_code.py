@@ -16,7 +16,7 @@ class AiQuest(models.Model):
         xml_id = object.get_external_id().get(object.id)
         if not xml_id:
             xml_id = f"{module}.{object._name.replace('.', '_')}_{object.id}"
-        return xml_id.replace('new.','')
+        return xml_id.replace('new.',f'{module}.')
  
     def to_xml(self,module,record):
         """Return XML-data for record."""
