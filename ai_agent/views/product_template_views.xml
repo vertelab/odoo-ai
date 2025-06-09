@@ -33,6 +33,8 @@
                         <group>
                             <field name="token_sys"/>
                             <field name="llm_additional_rate"/>
+                            <field name="asr_library"/>
+                            <field name="asr_type"/>
                         </group>
                         <group>
                             <field name="llm_library"/>

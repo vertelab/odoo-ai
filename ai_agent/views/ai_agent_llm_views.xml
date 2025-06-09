@@ -1,5 +1,6 @@
 <odoo>
   <data>
+      
     <record id="view_ai_agent_llm_tree" model="ir.ui.view">
       <field name="name">ai.agent.llm.tree</field>
       <field name="model">ai.agent.llm</field>
@@ -30,6 +31,7 @@
         </tree>
       </field>
     </record>
+    
     <record id="ai_agent_llm_search" model="ir.ui.view">
       <field name="name">ai.agent.llm.search</field>
       <field name="model">ai.agent.llm</field>
@@ -65,6 +67,7 @@
         </search>
       </field>
     </record>
+    
     <record id="ai_agent_llm_form" model="ir.ui.view">
       <field name="name">ai.agent.llm.form</field>
       <field name="model">ai.agent.llm</field>
@@ -111,8 +114,9 @@
                 <field name="last_run" />
               </group>
               <group>
-                <field name="llm_type" attrs="{'invisible': [('is_embedded', '=', True)]}" />
-                <field name="llm_etype" attrs="{'invisible': [('is_embedded', '=', False)]}" />
+                <field name="llm_type" attrs="{'invisible': ['|',('is_embedded', '=', True), ('is_asr', '=', True)]}" />
+                <field name="llm_etype" attrs="{'invisible': ['|',('is_embedded', '=', False), ('is_asr', '=', True)]}" />
+                <field name="asr_type" attrs="{'invisible': [('is_asr', '=', False)]}"/>
                 <field name="product_tmpl_id" />
                 <field name="model_id" attrs="{'invisible': [('product_tmpl_id', '=', False)]}" domain="[('product_tmpl_id', '=', product_tmpl_id),('attribute_id','=', %(ai_agent.product_attribute_model)d)]" />
                 <field name="endpoint" attrs="{'invisible': [('has_endpoint', '=', False)]}" />

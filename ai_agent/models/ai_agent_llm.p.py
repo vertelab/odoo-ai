@@ -8,15 +8,18 @@ import tiktoken
 import threading
 import time
 
+from langchain_core.documents.base import Blob
 from httpx import HTTPStatusError
 from langchain.agents import AgentExecutor, create_openai_tools_agent, create_json_chat_agent, create_react_agent
 from langchain.schema import HumanMessage
 from langchain_core.messages import AIMessage
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+from random import randint
+
+
 from odoo import models, fields, api, tools, _
 from odoo.exceptions import UserError, AccessError, ValidationError
 from pydantic import SecretStr
-from random import randint
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 from odoo.modules.module import get_resource_path
 _logger = logging.getLogger(__name__)
 
@@ -252,22 +255,22 @@ class AIAgentLLM(models.Model):
             _logger.error(f"An error occurred: {e}")
             raise
 
-    def get_transcription(self):
+    def get_transcription_llm(self):
         try:
-            module = importlib.import_module(self.product_tmpl_id.llm_library)
-            LLM = getattr(module, self.product_tmpl_id.llm_type)
+            module = importlib.import_module(self.product_tmpl_id.asr_library)
+            LLM = getattr(module, self.product_tmpl_id.asr_type)
             api_key = self.ai_api_key
             if not api_key:
                 api_key = tools.config.get(self.product_tmpl_id.fallback_api_key_name, False)
             if api_key:
-                return LLM(api_key=api_key)
+                return LLM(base_url=self.endpoint,api_key=api_key,model=self.model_id.name)
             return None
 
         except ImportError as e:
-            _logger.error(f"Error importing {self.product_tmpl_id.llm_library}: {e}")
+            _logger.error(f"Error importing {self.product_tmpl_id.asr_library}: {e}")
             raise
         except AttributeError as e:
-            _logger.error(f"Error: {self.product_tmpl_id.llm_etype} not found in {self.product_tmpl_id.llm_library}")
+            _logger.error(f"Error: {self.product_tmpl_id.asr_type} not found in {self.product_tmpl_id.asr_library}")
             raise
         except Exception as e:
             _logger.error(f"An error occurred: {e}")
@@ -388,11 +391,14 @@ class AIAgentLLM(models.Model):
         return 
 
     def test_asr(self,session=False):
+        result = ""
         try:
             path = get_resource_path('ai_agent','static/src/audio','oneplusone.m4a')
-            with open(path,"rb") as file:
-                asr = self.get_transcription()
-                asr.audio.transcriptions.create(file=file,model=self.model_id.name)
+            _logger.error(f"{path=}")
+            file = Blob.from_path(path)
+            _logger.error(f"{file=}")
+            asr = self.get_transcription_llm()
+            result = asr.parse(file)
         except ModuleNotFoundError as e:
             raise UserError(f"{e}")
         except KeyError as e:
@@ -410,8 +416,10 @@ class AIAgentLLM(models.Model):
             self.status = "error"
             if session:
                 session.status = 'done'
+            if "No such file or directory: 'ffprobe'" in e:
+                raise UserError("You need to install ffmpeg")
             return False
-        self.message_post(body=_(f"Transcription is working"), message_type="notification")
+        self.message_post(body=_(f"LLM Transcription: {result[0].page_content}"), message_type="notification")
         self.status = "confirmed"
         return 
 

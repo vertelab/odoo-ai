@@ -7,6 +7,8 @@
       <field name="llm_library">langchain_openai</field>
       <field name="llm_type">ChatOpenAI</field>
       <field name="fallback_api_key_name">berget_api_key</field>
+      <field name="asr_library">langchain_community.document_loaders.parsers.audio</field>
+      <field name="asr_type">OpenAIWhisperParser</field>
       <field name="image_1920" type="base64" file="ai_agent/static/img/berget-logo.png" />
     </record>
     <!-- Model -->
@@ -63,6 +65,7 @@
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
       <field name="tpm">400000</field>
       <field name="rpm">600</field>
+       <field name="is_asr" eval='True' />
       <field name="has_endpoint" eval="True" />
       <field name="endpoint">https://api.berget.ai/v1/</field>
       <field name="context_window" eval="200000" />
