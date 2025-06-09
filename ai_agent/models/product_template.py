@@ -10,8 +10,8 @@ class ProductTemplate(models.Model):
     _inherit = 'product.template'
 
     ai_api_key = fields.Char()
-    asr_type = fields.Char(trim=True)
-    asr_library = fields.Char(trim=True)
+    asr_type = fields.Char(string="ASR Class",trim=True)
+    asr_library = fields.Char(string="ASR Library",trim=True)
     fallback_api_key_name = fields.Char()
     ai_session_lines_ids = fields.One2many(comodel_name='ai.quest.session.line', inverse_name='product_tmpl_id',
                                            string="AI Tokens", help="")
