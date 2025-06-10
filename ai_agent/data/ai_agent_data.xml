@@ -1,5 +1,6 @@
 <odoo>
   <data noupdate="1">
+      
     <record id="ai_agent_ai_programmer" model="ai.agent">
       <field name="name">Questra, the Quest Architect AI</field>
       <field name="ai_role">AI Agent Programmer specialist</field>
@@ -25,12 +26,14 @@
       </field>
       <field name="ai_type">ai-programmer</field>
     </record>
+    
     <record id="ai_quest_agent_creation_server_agent" model="ir.actions.server">
       <field name="name">Create Agents for Quest</field>
       <field name="model_id" ref="model_ai_quest" />
       <field name="binding_model_id" ref="model_ai_quest" />
       <field name="state">code</field>
     </record>
+    
     <record id="ai_quest_agent_creation" model="ai.quest">
       <field name="name">Create agents for a quest</field>
       <field name="ai_type">ai-programmer</field>
@@ -67,6 +70,7 @@
       </field>
       <field name="description"><![CDATA[As an AI Programmer Specialist, your task is to analyze, optimize, and implement the agentic quest "[QUEST_NAME]". Your objective is to create a sophisticated multi-agent system that efficiently fulfills the quest's goals while aligning with the company's mission, vision, and strategic objectives. 1. Quest Analysis: - Thoroughly analyze the quest "[QUEST_NAME]", its objectives, and potential challenges. - Identify key performance indicators (KPIs) for measuring the quest's success. - Consider how the quest aligns with and contributes to the company's overall strategy. 2. Agent Design and Selection: - Design new agents or select existing ones that can collaboratively achieve the quest's goals. - Ensure each agent has a specific, complementary role within the multi-agent system. - Define clear objectives, backstories, and specialized knowledge for each agent. 3. Tool Integration: - Identify and select appropriate tools that can enhance the agents' capabilities. - Consider both general-purpose and domain-specific tools that align with the quest's requirements. 4. Multi-Agent System Architecture: - Design an efficient architecture for agent interaction and collaboration. - Implement a control flow that optimizes task distribution and information sharing among agents. 5. Code Implementation: - Develop LangGraph Python code that orchestrates the multi-agent system. - Ensure the code is modular, scalable, and adheres to best practices in multi-agent programming. 6. Output Format: Provide your solution in the following JSON-record format: { "agents": [ {"agent_id": id of existing agent}, ... ], "new_agents": [ { "name": "agent name", "ai_role": "agent's role description", "ai_goal": "agent's specific goal", "ai_backstory": "agent's backstory", "ai_prompt_template": "agent's prompt template" }, ... ], "tools": [ "tool_1", "tool_2", ... ], "code": "LangGraph Python code for the multi-agent system" } 7. Documentation and Explanation: - Provide a brief explanation of your multi-agent system design as remarks in the code. - Justify your choices of agents, tools, and architecture. - Explain how your solution aligns with the company's strategic objectives. Remember to prioritize efficiency, scalability, and alignment with the company's goals in your solution. Your multi-agent system should be capable of adapting to changing requirements and handling complex scenarios within the scope of the "[QUEST_NAME]" quest. ]]></field>
     </record>
+    
     <record id="ai_quest_test" model="ai.quest">
       <field name="name">Test LLM or Agent</field>
       <field name="ai_type">ai-programmer</field>
@@ -74,10 +78,12 @@
       <field name="code" />
       <field name="description">As an LLM Test Specialist, your task is to Test the agent or LLM</field>
     </record>
+    
     <record id="ai_quest_agent_creation_agent1" model="ai.quest.agent">
       <field name="ai_quest_id" ref="ai_quest_agent_creation" />
       <field name="ai_agent_id" ref="ai_agent_ai_programmer" />
     </record>
+    
     <record id="ai_agent_ai_odoopythonexpert" model="ai.agent">
       <field name="name">Odex, the Odoo Development Expert</field>
       <field name="ai_role">Odoo and Python Programming Specialist</field>
@@ -108,6 +114,7 @@
       <field name="ai_prompt_template">{message}</field>
       <field name="ai_type">ai-programmer</field>
     </record>
+    
     <record id="ai_agent_llm_expert" model="ai.agent">
       <field name="name">Lexica, the LLM Analyst AI</field>
       <field name="ai_role">LLM Expert and Analyst</field>
@@ -132,6 +139,7 @@
       <field name="ai_prompt_template">{message}</field>
       <field name="ai_type">ai-programmer</field>
     </record>
+    
 <record id="action_export_quest_as_module" model="ir.actions.server">
     <field name="name">Export AI-Quest as a module</field>
     <field name="model_id" ref="ai_agent.model_ai_quest"/>

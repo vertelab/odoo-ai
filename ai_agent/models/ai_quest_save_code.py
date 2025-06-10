@@ -11,19 +11,18 @@ _logger = logging.getLogger(__name__)
 
 class AiQuest(models.Model):
     _inherit = 'ai.quest'
-    
+
     def external_id(self,module,object):
         xml_id = object.get_external_id().get(object.id)
         if not xml_id:
-            xml_id = f"{module}.{object._name.replace('.', '_')}_{object.id}"
-        return xml_id.replace('new.',f'{module}.')
+            xml_id = f"{object._name.replace('.', '_')}_{object.id}"
+        return xml_id.replace('new.','')  
  
     def to_xml(self,module,record):
         """Return XML-data for record."""
         ext_id = self.external_id(module,record)
-        m,r = ext_id.split('.')
-        if m != module:
-            return f"\n<!-- not exported {ext_id} -->\n"
+        if '.' in ext_id:
+            return f"\n<!-- not exported {ext_id} (Use a copy of this record if you want to export it)-->\n"
         record_elem = etree.Element('record', model=record._name, id=ext_id)        
         for field in record._fields:
             if field in ['id','display_name','create_date','create_uid','write_date','write_uid','last_run',]:
@@ -44,7 +43,7 @@ class AiQuest(models.Model):
                 else:
                     field_elem.text = str(value)
         return "\n" + etree.tostring(record_elem, pretty_print=True, encoding='unicode') + "\n\n"
-    
+
     @api.model
     def generate_simple_module(self, module_name):
         attachments =  []
