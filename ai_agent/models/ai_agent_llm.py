@@ -1,3 +1,4 @@
+import base64
 import httpx
 import importlib
 import logging
@@ -15,6 +16,7 @@ from langchain.schema import HumanMessage
 from langchain_core.messages import AIMessage
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 from random import randint
+from pathlib import Path
 
 
 from odoo import models, fields, api, tools, _
@@ -258,6 +260,34 @@ class AIAgentLLM(models.Model):
             _logger.error(f"An error occurred: {e}")
             raise
 
+    @api.model
+    def is_base64_string(self,s):
+        if not isinstance(s, str):
+            return False
+        try:
+            decoded = base64.b64decode(s, validate=True)
+            # Optionally: check if decoded is mostly non-printable bytes
+            if len(decoded) == 0:
+                return False
+            # Heuristic: if more than 30% non-printable, likely binary
+            non_printable = sum(1 for b in decoded if b < 32 or b > 126)
+            if non_printable / len(decoded) > 0.3:
+                return True
+            return False
+        except Exception:
+            return False
+
+    @api.model
+    def make_blob(self,file,is_path=False):
+        if is_path:
+            blob = Blob.from_path(file)
+        elif type(file) == type(bytes) and self.is_base64_string(file):
+            file = base64.b64decode(file)
+            blob = Blob.from_data(file)
+        else:
+            blob = Blob.from_data(file)
+        return blob
+            
 
     @retry(
         stop=stop_after_attempt(3),

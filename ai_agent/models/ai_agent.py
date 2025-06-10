@@ -7,6 +7,7 @@ import traceback
 import time
 
 from datetime import datetime
+from pathlib import Path
 from json.decoder import JSONDecodeError
 from langchain.agents import initialize_agent, AgentType, Tool, AgentExecutor, LLMSingleActionAgent, AgentOutputParser, \
     create_tool_calling_agent, create_xml_agent, create_json_chat_agent
@@ -16,11 +17,13 @@ from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder, PromptTem
 from langchain.schema import AIMessage, HumanMessage, SystemMessage, BaseMessage, AgentAction, AgentFinish
 from langchain.tools import tool
 from langchain_community.chat_message_histories import ChatMessageHistory
+from langchain_core.documents.base import Blob
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langgraph.prebuilt import create_react_agent
 from langchain.chains.summarize import load_summarize_chain
 from langchain.text_splitter import CharacterTextSplitter
 from langchain.docstore.document import Document
+
 from odoo import models, fields, api, _
 from odoo.addons.ai_agent.models.ai_quest import AgentState
 from odoo.exceptions import UserError
@@ -685,14 +688,35 @@ class AIAgent(models.Model):
                 # Get LLM
             llm = self.ai_agent_llm_id.get_llm()
             tools = self._get_tools(state)
-
+                          
             try:
-                langgraph_agent_executor = create_react_agent(llm, tools=tools)
+                if self.ai_agent_llm_id.is_asr:
+                    file = ""
+                    if not state.get("file"):
+                        raise Exception(f"file in state is empty")
+                    if type(state.get("file")) != type(Blob):
+                        if Path(file).exists():
+                            file = self.ai_agent_llm_id.make_blob(state.get("file"),is_path=True)
+                        else:
+                            file = self.ai_agent_llm_id.make_blob(state.get("file"))
+                    llm = self.ai_agent_llm_id.get_transcription_llm()
+                    transcriptions = llm.parse(file)
+                    for t in transcriptions:
+                        messages = [
+                                    AIMessage(content=str(t.page_content),
+                                    name=self.name.replace(' ', '_').replace(',', '').replace('.', '')) 
+                                    for t in transcriptions]
+                                    
+                        result = {"messages": messages}
+                        
+                        
+                else:
+                    langgraph_agent_executor = create_react_agent(llm, tools=tools)
 
-                result = langgraph_agent_executor.invoke({
-                    "input": latest_message,
-                    "messages": messages
-                })
+                    result = langgraph_agent_executor.invoke({
+                        "input": latest_message,
+                        "messages": messages
+                    })
 
             except Exception as e:
                 _logger.error(f"Error in agent {self.name}: {str(e)}")
