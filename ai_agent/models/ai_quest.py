@@ -18,11 +18,14 @@ from langchain.agents import Tool, AgentExecutor, LLMSingleActionAgent, AgentOut
     create_xml_agent, create_json_chat_agent
 from langchain.prompts import ChatPromptTemplate
 from langchain.schema import AgentAction, AgentFinish
+from langchain_core.documents.base import Blob
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from langchain_core.runnables.graph import MermaidDrawMethod
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import StateGraph, START, END
 from langgraph.prebuilt import create_react_agent
+
+
 from odoo import models, fields, api, _
 from odoo.addons.ai_agent.models.ai_quest_session import AIQuestSession
 from odoo.exceptions import UserError, ValidationError
@@ -1469,3 +1472,4 @@ class AgentState(TypedDict):
     sequence_position: int
     last_position: int
     cycle_count: int
+    file: Blob
