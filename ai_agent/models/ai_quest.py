@@ -620,7 +620,9 @@ class AIQuest(models.Model):
             return res
 
     def powerbox(self, quest, prompt, res_model, res_id):
-        ai_quest = self.env['ai.quest'].browse(quest.get('id')).exists()
+        if isinstance(quest, dict):
+            quest = quest.get('id')
+        ai_quest = self.env['ai.quest'].browse(quest).exists()
         if not ai_quest:
             raise UserError(_("OBS: Quest does not exist, you should contact administrator to look into the quest"))
         if res_model and res_id:
