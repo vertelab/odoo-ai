@@ -68,12 +68,16 @@ class EmbeddingMixin(models.AbstractModel):
         if domain:
             # Correctly calculate the WHERE clause using the model itself    
             query_obj = self.env[self._name].sudo()._where_calc(domain).select()
+            _logger.warning(f"{query_obj=}")
             where_clause = query_obj.code.split(" WHERE ")[1]
             where_params = query_obj.params
 
             if where_clause:
                 domain_clause = f"AND {where_clause}"
                 params = [min_similarity] + where_params + [limit]
+
+        _logger.error(f"{domain=}")
+        _logger.error(f"{domain_clause=}")
 
         # Execute the search query with selected operator
         # Modify the query to use the vector only once (storing it in a CTE)
@@ -89,6 +93,8 @@ class EmbeddingMixin(models.AbstractModel):
             ORDER BY similarity DESC
             LIMIT %s
         """
+        
+        # _logger.error(f"{query=}")
 
         self.env.cr.execute(query, params)
         results = self.env.cr.fetchall()
