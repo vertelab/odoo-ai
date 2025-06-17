@@ -74,6 +74,9 @@ class EmbeddingMixin(models.AbstractModel):
                 domain_clause = f"AND {where_clause}"
                 params = [min_similarity] + where_params + [limit]
 
+        _logger.error(f"{domain=}")
+        _logger.error(f"{domain_clause=}")
+
         # Execute the search query with selected operator
         # Modify the query to use the vector only once (storing it in a CTE)
         query = f"""
@@ -88,6 +91,8 @@ class EmbeddingMixin(models.AbstractModel):
             ORDER BY similarity DESC
             LIMIT %s
         """
+        
+        # _logger.error(f"{query=}")
 
         self.env.cr.execute(query, params)
         results = self.env.cr.fetchall()
