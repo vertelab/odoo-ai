@@ -32,7 +32,7 @@ class EmbeddingMixin(models.AbstractModel):
 
     @api.model
     def search_similar(
-        self, query_vector, domain=None, limit=10, min_similarity=0.0, operator="<=>"
+        self, query_vector, domain=None, limit=10, min_similarity=0.0, embedding_column="embedding", operator="<=>"
     ):
         """
         Search for similar records using vector similarity.
@@ -59,7 +59,6 @@ class EmbeddingMixin(models.AbstractModel):
 
         # Determine the table and embedding column
         model_table = self._table
-        embedding_column = "embedding"
 
         # Build the domain clause
         domain_clause = ""
@@ -103,6 +102,8 @@ class EmbeddingMixin(models.AbstractModel):
 
         self.env.cr.execute(query, params)
         results = self.env.cr.fetchall()
+
+        _logger.error(f"{results=}")
 
         if not results:
             return self.browse([]), []
