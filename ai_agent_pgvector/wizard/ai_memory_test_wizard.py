@@ -11,8 +11,6 @@ class AIMemoryTestWizard(models.Model):
 
     def test_rag(self):
         super(AIMemoryTestWizard,self).test_rag()
-        _logger.error(f"{self.ai_memory.ai_memory_rag_ids=}")
-        _logger.error(f"{self.ai_memory.ai_memory_rag_ids=}"*100)
         if self.ai_vector_type == "pg_vector" and self.ai_memory.ai_memory_rag_ids:
             embedder = self.ai_memory.ai_agent_llm_id.get_embedding()
             input_vector = embedder.embed_query(self.test_rag_input)
