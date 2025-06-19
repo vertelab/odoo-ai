@@ -109,7 +109,7 @@ class AIAgentMemory(models.Model):
 
     ai_agent_id = fields.Many2one(comodel_name='ai.agent', string="", help="")
     sequence = fields.Integer(string='Sequence')
-    nbr_days = fields.Integer(string='Number days this memory will live', related="ai_memory_id.nbr_days")
+    # nbr_days = fields.Integer(string='Number days this memory will live', related="ai_memory_id.nbr_days")
     last_run = fields.Datetime(string='Last Run', related="ai_memory_id.last_run")
     ai_memory_id = fields.Many2one(comodel_name='ai.memory', string="Memory", help="")
     ai_memory_status = fields.Selection(
@@ -146,7 +146,7 @@ class AIquestMemory(models.Model):
 
     ai_quest_id = fields.Many2one(comodel_name='ai.quest', string="", help="")
     sequence = fields.Integer(string='Sequence')
-    nbr_days = fields.Integer(string='Number days this memory will live', related="ai_memory_id.nbr_days")
+    # nbr_days = fields.Integer(string='Number days this memory will live', related="ai_memory_id.nbr_days")
     last_run = fields.Datetime(string='Last Run', related="ai_memory_id.last_run")
     ai_memory_id = fields.Many2one(comodel_name='ai.memory', string="Memory", help="")
     ai_memory_status = fields.Selection(
@@ -187,6 +187,9 @@ class AIMemory(models.Model):
     base_image_128 = fields.Image("Base Image", max_width=128, max_height=128, compute='_compute_base_image_128')
     color = fields.Integer(default=lambda self: randint(1, 11))
     company_id = fields.Many2one(comodel_name='res.company',string="Company",help="") # domain|context|ondelete="'set null', 'restrict', 'cascade'"|auto_join|delegate
+    cron_record_limit = fields.Integer()
+    cron_interval_type = fields.Selection(selection=[("minutes", "Minutes"),("hours", "Hours"), ("days", "Days"), ("weeks","Weeks"), ("months", "Months")],default="days")
+    cron_interval_number = fields.Integer()
     debug = fields.Boolean(string='Debug')
     field_list = fields.Text(string='Field List', default="['name']", readonly=False)
     filter_domain = fields.Char(string='Record selection')
@@ -204,11 +207,13 @@ class AIMemory(models.Model):
     model_id = fields.Many2one(comodel_name='ir.model')
     model_name = fields.Char(related='model_id.model', string='Model Name', readonly=True, store=True)
     name = fields.Char(required=True)
-    nbr_days = fields.Integer(string='Number days this memory will live')
     nbr_rags = fields.Integer(string="Number rags",default=3,help='Number rags this memory will add to LLM context')
+    nbr_days = fields.Integer(string='Number days this memory will live')
+
     object_id = fields.Reference(string='Object', selection=lambda m: [(model.model, model.name) for model in
                                                                        m.env['ir.model'].sudo().search([])])
     quest_count = fields.Integer(compute="compute_quest_count")
+    use_cron = fields.Boolean()
     session_count = fields.Integer(compute="compute_session_count")
     session_line_count = fields.Integer(compute="compute_session_line_count")
     session_line_ids = fields.One2many(comodel_name="ai.quest.session.line", inverse_name="ai_memory_id")
@@ -314,10 +319,10 @@ class AIMemory(models.Model):
             except Exception as e:
                 _logger.warning(f"Failed to fetch transcript for video {vid}: {e}")
 
-        if documents:
-            self.create_vector(documents=documents, memory=memory)
-        else:
-            raise UserError(_("No transcripts found for the provided videos."))
+        if not documents:
+            UserError(_("No transcripts found for the provided videos."))
+        
+        return documents
 
 
 
@@ -334,28 +339,15 @@ class AIMemory(models.Model):
     
      #------------------------------------------------------------
 
-    def rag_local_attachments(self,memory):
-        documents = []
-        attachments = self.env["ir.attachment"].search(
-                                [("res_model", "=", memory._name), ("res_id", "=", memory.id)])
-        for attachment in attachments:
-            documents.extend(self.create_documents_from_file(attachment))
-
-        if documents:
-            self.create_vector(documents=documents,memory=memory)
-        else:
-            raise UserError(_("No attachments to RAG"))
-
-    def rag_attachments(self,memory):
-        if memory.attachment_ids:
+    def rag_attachments(self,attachments):
             documents = []
-            for attachment in memory.attachment_ids:
+            for attachment in attachments:
                 documents.extend(self.create_documents_from_file(attachment))
             
-            if documents:
-                self.create_vector(documents=documents,memory=memory)
-            else:
-                raise UserError(_("No attachments to RAG"))
+            if not documents:
+               raise UserError(_("No attachments to RAG")) 
+            
+            return documents
 
 
     def read_stream_chunked(self,command: str, chunk_size: int = 1024) -> Generator[str, None, None]:
@@ -411,16 +403,16 @@ class AIMemory(models.Model):
         all_pages = self.scrape_website(memory.url, memory.max_nbr_pages)
         memory.memory_markdown = base64.b64encode(all_pages)
         documents = [memory.create_document(text=all_pages, metadata={})]
-        memory.create_vector(documents=documents,memory=memory)
+        return documents
 
-    def _model_memory_type_data(self, memory):
+    def _model_memory_type_data(self, memory, limit=None):
         model_fields = eval(memory.field_list)
         domain = safe_eval(memory.filter_domain) if memory.filter_domain else []
-        record_data = memory.env[memory.model_name].search(domain).read(model_fields)
+        record_data = memory.env[memory.model_name].search(domain,limit=limit).read(model_fields)
         return record_data
 
-    def setup_db_for_model(self, memory):
-        module_dicts = self._model_memory_type_data(memory=memory)
+    def setup_db_for_model(self, memory, limit=None):
+        module_dicts = self._model_memory_type_data(memory=memory,limit=limit)
         documents = []
         for module_dict in module_dicts:
             for key, item in module_dict.items():
@@ -441,7 +433,7 @@ class AIMemory(models.Model):
                     _logger.warning(f"{clean_text}=  {repr(item)}=")
 
             documents.append(memory.create_document(text=json.dumps(module_dict), metadata=module_dict))
-        self.create_vector(documents=documents, memory=memory)
+        return documents
 
     def _compute_tokens(self, text):
         """Count tokens accurately using tiktoken for OpenAI models."""
@@ -623,35 +615,54 @@ class AIMemory(models.Model):
         else:
             self.with_delay().real_run()
 
-    def real_run(self):
+    def real_run(self,documents=[]):
         for memory in self:
             if memory.status != "active":
                 raise UserError(_(f"Wrong state on memory ({self.name})"))
 
             memory.last_run = fields.Datetime.now()
-            if memory.memory_type == 'bs4':
-                memory.setup_db_for_bs4(memory)
-            elif memory.memory_type == 'model':
-                memory.setup_db_for_model(memory)
-            elif memory.memory_type == 'attachments':
-                memory.rag_attachments(memory)
-            elif memory.memory_type == 'local_attachment':
-                memory.rag_local_attachments(memory)
-            elif memory.memory_type == 'datastream':
-                memory.file_stream(memory)
-            elif memory.memory_type == 'youtube':
-                memory.rag_youtube(memory)
+            if not documents and memory.memory_type == 'bs4':
+                documents = memory.setup_db_for_bs4(memory)
+            elif not documents and memory.memory_type == 'model':
+                documents = memory.setup_db_for_model(memory)
+            elif not documents and memory.memory_type == 'attachments':
+                documents = memory.rag_attachments(memory.attachment_ids)
+            elif not documents and memory.memory_type == 'local_attachment':
+                attachments = self.env["ir.attachment"].search(
+                                [("res_model", "=", memory._name), ("res_id", "=", memory.id)])
+                documents = memory.rag_attachments(attachments)
+            elif not documents and memory.memory_type == 'datastream':
+                documents = memory.file_stream(memory)
+            elif not documents and memory.memory_type == 'youtube':
+                documents = memory.rag_youtube(memory)
+            
+            if not documents:
+                raise UserError("No documents to rag")
+            
+            self.create_vector(documents=documents, memory=memory)
+            
+            return documents
+
 
     def file_stream(self,memory):
         documents = []
         for index, chunk in enumerate(self.read_stream_chunked(self.shell_cmd, self.split_chunk_size)):
             documents.append(self.create_document(text=chunk,
                 metadata={"name": self.name, "type": "datastream", 'chunk_number': index + 1}))
-        memory.create_vector(documents=documents,memory=memory)
+        return documents
 
     def cron(self):
         self.env['ai.memory'].search(
-            ['&',('nbr_days','>',0),('last_run', '<', fields.Datetime.now() - relativedelta(days=self.nbr_days))]).run()
+            [('nbr_days','>',0),('last_run', '<', fields.Datetime.now() - relativedelta(days=self.nbr_days))]).run()
+    
+    def cron_rag(self):
+        ai_memory_ids = self.env['ai.memory'].search([('use_cron', '=', True)])
+        relevant_ai_memory_ids = ai_memory_ids.filtered(lambda m: fields.Datetime.now() > m.last_run + relativedelta(**{m.cron_interval_type:m.cron_interval_number}))
+        for ai_memory_id in relevant_ai_memory_ids:
+            documents = []
+            if ai_memory_id.cron_record_limit and ai_memory_id.memory_type == 'model':
+                documents = ai_memory_id.setup_db_for_model(ai_memory_id,limit=ai_memory_id.cron_record_limit)
+            ai_memory_id.real_run(documents=documents)
     
     def log_message(self, body, is_error=False):
         if is_error:
