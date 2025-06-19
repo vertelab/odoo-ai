@@ -55,7 +55,6 @@
               <field name="split_chunk_overlap" />
               <field name="last_run" />
               <field name="nbr_rags" />
-              <field name="nbr_days" />
               <field name="debug" />
               <field name="object_id" />
             </group>
@@ -72,6 +71,18 @@
             </page>
             <page name="field_list_page" string="Field List" attrs="{'invisible': [('memory_type', '!=', 'model')]}">
               <field name="field_list" nolabel="1" />
+            </page>
+            <page name="Schedual RAGing">
+                <group>
+                    <group>
+                        <field name="use_cron" />
+                    </group>
+                    <group>
+                        <field name="cron_interval_type" />
+                        <field name="cron_interval_number" />
+                        <field name="cron_record_limit" />
+                    </group>
+                </group>
             </page>
             <page name="instruction" string="Instruction">
               <field name="instruction" nolabel="1" />
