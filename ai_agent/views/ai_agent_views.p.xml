@@ -146,7 +146,9 @@
                     <field name="ai_memory_llm_status" />
                     <field name="ai_memory_url" optional='hide' />
                     <field name="last_run" optional='hide' />
+<!--
                     <field name="nbr_days" optional='hide' />
+-->
                     <button name="run" string="Run" type="object" icon="" />
                   </list>
                   <!-- #elif VERSION <= "17.0" -->
@@ -158,7 +160,9 @@
                     <field name="ai_memory_llm_status" />
                     <field name="ai_memory_url" optional='hide' />
                     <field name="last_run" optional='hide' />
+<!--
                     <field name="nbr_days" optional='hide' />
+-->
                     <button name="run" string="Run" type="object" icon="" />
                   </tree>
                   <!-- #endif -->

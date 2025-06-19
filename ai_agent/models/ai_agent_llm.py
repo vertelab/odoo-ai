@@ -376,6 +376,7 @@ class AIAgentLLM(models.Model):
         session.status = 'done'
         self.message_post(body=_(f"Could not confirm llm: {response=}"), message_type="notification")
 
+    @retry(ConnectionError,tries=6)
     def test_embedd(self,session=False):
         try:
             self.get_embedding().embed_query("test")
