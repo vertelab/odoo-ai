@@ -1,22 +1,15 @@
 from bs4 import BeautifulSoup
-from dateutil.relativedelta import relativedelta
-from langchain_community.document_loaders import PyPDFLoader
-from langchain_community.document_loaders import TextLoader
-from langchain_community.vectorstores import FAISS
-from langchain_core.documents import Document
 from langchain_core.documents.base import Document
-from langchain_text_splitters.character import RecursiveCharacterTextSplitter
-from markupsafe import Markup
-from odoo import models, fields, api, _
-from odoo.addons.base.models.avatar_mixin import get_hsl_from_seed
-from odoo.exceptions import UserError, ValidationError
-from odoo.tools.safe_eval import safe_eval
-from random import randint
-from secrets import choice
+from langchain_community.vectorstores import FAISS
 from typing import Generator
+from markupsafe import Markup
+from langchain_community.document_loaders import PyPDFLoader
+from random import randint
+from langchain_text_splitters.character import RecursiveCharacterTextSplitter
+from dateutil.relativedelta import relativedelta
+from langchain_community.document_loaders import TextLoader
 from urllib.parse import urljoin
 from urllib.parse import urlparse
-from youtube_transcript_api import YouTubeTranscriptApi
 import base64
 import datetime
 import faiss
@@ -25,14 +18,24 @@ import json
 import logging
 import markdownify
 import math
-import pymupdf
 import requests
 import subprocess
 import tiktoken
 import time
 import uuid
+from secrets import choice
+from youtube_transcript_api import YouTubeTranscriptApi
+from langchain_core.documents import Document
+import pymupdf
+
+from odoo import models, fields, api, _
+from odoo.exceptions import UserError, ValidationError
+from odoo.tools.safe_eval import safe_eval
 
 _logger = logging.getLogger(__name__)
+
+from odoo.addons.base.models.avatar_mixin import get_hsl_from_seed
+
 
 avatar_memory = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 530.06 530.06">
 <circle cx="265.03" cy="265.03" r="265.03" fill="#875a7b"/>
