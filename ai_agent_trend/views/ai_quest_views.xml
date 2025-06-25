@@ -1,0 +1,66 @@
+<odoo>
+    <data>
+        <record id="ai_quest_list" model="ir.ui.view">
+            <field name="name">ai.quest.list.department</field>
+            <field name="model">ai.quest</field>
+            <field name="inherit_id" ref="ai_agent.ai_quest_list" />
+            <field name="arch" type="xml">
+                <field name="status" position="after">
+                    <field name="department_id" />
+                </field>
+            </field>
+        </record>
+        <record id="ai_quest_search" model="ir.ui.view">
+            <field name="name">ai.quest.search.department</field>
+            <field name="model">ai.quest</field>
+            <field name="inherit_id" ref="ai_agent.ai_quest_search" />
+            <field name="arch" type="xml">
+                <field name="description" position="after">
+                    <field name="department_id" />
+                </field>
+                <filter name="group_by_partner" position="after">
+                    <filter string="Department" name="group_by_department" context="{'group_by': 'department_id'}" />
+                </filter>
+            </field>
+        </record>
+        <record id="ai_quest_form" model="ir.ui.view">
+            <field name="name">ai.quest.form.department</field>
+            <field name="model">ai.quest</field>
+            <field name="inherit_id" ref="ai_agent.ai_quest_form" />
+            <field name="arch" type="xml">
+                <field name="partner_id" position="after">
+                    <field name="department_id" />
+                </field>
+            </field>
+        </record>
+        <record id="view_ai_quest_kanban" model="ir.ui.view">
+            <field name="name">ai.quest.kanban.department</field>
+            <field name="model">ai.quest</field>
+            <field name="inherit_id" ref="ai_agent.view_ai_quest_kanban" />
+            <field name="arch" type="xml">
+                <field name="partner_id" position="after">
+                    <field name="department_id" />
+                </field>
+<!--
+                <xpath expr="//t[@t-name='kanban-box']/t[@t-name='card']/div[1]/div[2]/div[hasclass('o_project_kanban_main')]/div[1]/div[last()]" position="after">
+-->
+                <div id="main" position="after">
+                    <div>
+                        <field name="department_id" widget="many2one_avatar" />
+                    </div>
+                </div>
+
+            </field>
+        </record>
+        <record id="view_ai_quest_calendar" model="ir.ui.view">
+            <field name="name">ai.quest.calendar.department</field>
+            <field name="model">ai.quest</field>
+            <field name="inherit_id" ref="ai_agent.view_ai_quest_calendar" />
+            <field name="arch" type="xml">
+                <field name="status" position="after">
+                    <field name="department_id" />
+                </field>
+            </field>
+        </record>
+    </data>
+</odoo>
