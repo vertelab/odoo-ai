@@ -18,11 +18,11 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
 from random import randint
 from pathlib import Path
 
-
 from odoo import models, fields, api, tools, _
 from odoo.exceptions import UserError, AccessError, ValidationError
 from pydantic import SecretStr
 from odoo.modules.module import get_resource_path
+
 _logger = logging.getLogger(__name__)
 
 LICENCES = [
@@ -34,14 +34,14 @@ LICENCES = [
     ('gemma-terms-of-use', 'Gemma Terms of Use'),
     ('google-ai-terms', 'Google AI-terms'),
     ('llama-community', 'Llama Community License'),
-    ('Ilama3.1',"Llama 3.1 Community License"),
-    ('Ilama3.3',"Llama 3.3 Community License"),
+    ('Ilama3.1', "Llama 3.1 Community License"),
+    ('Ilama3.3', "Llama 3.3 Community License"),
     ('mistral-research', 'Mistral Research License'),
     ('mit', 'MIT License'),
-    ('deepseek','DEEPSEEK LICENSE AGREEMENT'),
-    ('nvidia','NVIDIA Open Model License Agreement'),
-    ('gemma','Gemma Terms of Use'),
-    ('stability-ai','Stability AI CreativeML Open RAIL++-M'),
+    ('deepseek', 'DEEPSEEK LICENSE AGREEMENT'),
+    ('nvidia', 'NVIDIA Open Model License Agreement'),
+    ('gemma', 'Gemma Terms of Use'),
+    ('stability-ai', 'Stability AI CreativeML Open RAIL++-M'),
 ]
 
 # In-memory storage for rate limiting
@@ -49,7 +49,7 @@ _rate_limit_lock = threading.RLock()
 _token_usage = defaultdict(int)  # llm_id -> current tokens used
 _request_usage = defaultdict(int)  # llm_id -> current requests
 _usage_timestamps = {}  # llm_id -> last reset timestamp
-_minute_buckets = {}                 # llm_id -> current minute bucket
+_minute_buckets = {}  # llm_id -> current minute bucket
 
 
 class AIAgentLLM(models.Model):
@@ -62,7 +62,8 @@ class AIAgentLLM(models.Model):
     ai_api_key = fields.Char(default=lambda self: self.product_tmpl_id.ai_api_key)
     asr_type = fields.Char(related="product_tmpl_id.asr_type")
     color = fields.Integer(default=lambda self: randint(1, 11))
-    company_id = fields.Many2one(comodel_name='res.company',string="Company",help="",related="product_tmpl_id.company_id") # domain|context|ondelete="'set null', 'restrict', 'cascade'"|auto_join|delegate
+    company_id = fields.Many2one(comodel_name='res.company', string="Company", help="",
+                                 related="product_tmpl_id.company_id")  # domain|context|ondelete="'set null', 'restrict', 'cascade'"|auto_join|delegate
     endpoint = fields.Char()
     image_128 = fields.Image("Image", max_width=128, max_height=128, related="product_tmpl_id.image_128")
     is_asr = fields.Boolean(related='model_id.product_attribute_value_id.is_asr')
@@ -200,7 +201,7 @@ class AIAgentLLM(models.Model):
 
                 if self.has_temperature:
                     kwarg['temperature'] = temperature
-            
+
             return LLM(verbose=verbose, callbacks=callbacks, model=self.model_id.name, **kwarg)
         except ImportError as e:
             _logger.error(f"Error importing {self.product_tmpl_id.llm_library}: {e}")
@@ -222,7 +223,7 @@ class AIAgentLLM(models.Model):
             if "HuggingFaceInferenceAPIEmbeddings" == self.product_tmpl_id.llm_etype:
                 return LLM(api_key=SecretStr(api_key), model_name=self.model_id.name)
             elif "HuggingFaceEmbeddings" == self.product_tmpl_id.llm_etype:
-                 return LLM(model_name=self.model_id.name)
+                return LLM(model_name=self.model_id.name)
             elif "OllamaEmbeddings" == self.product_tmpl_id.llm_etype:
                 return LLM(model=self.model_id.name, base_url=self.endpoint)
             elif api_key:
@@ -247,7 +248,7 @@ class AIAgentLLM(models.Model):
             if not api_key:
                 api_key = tools.config.get(self.product_tmpl_id.fallback_api_key_name, False)
             if api_key:
-                return LLM(base_url=self.endpoint,api_key=api_key,model=self.model_id.name)
+                return LLM(base_url=self.endpoint, api_key=api_key, model=self.model_id.name)
             return None
 
         except ImportError as e:
@@ -261,7 +262,7 @@ class AIAgentLLM(models.Model):
             raise
 
     @api.model
-    def is_base64_string(self,s):
+    def is_base64_string(self, s):
         if not isinstance(s, str):
             return False
         try:
@@ -278,7 +279,7 @@ class AIAgentLLM(models.Model):
             return False
 
     @api.model
-    def make_blob(self,file,is_path=False):
+    def make_blob(self, file, is_path=False):
         if is_path:
             blob = Blob.from_path(file)
         elif type(file) == type(bytes) and self.is_base64_string(file):
@@ -287,7 +288,6 @@ class AIAgentLLM(models.Model):
         else:
             blob = Blob.from_data(file)
         return blob
-            
 
     @retry(
         stop=stop_after_attempt(3),
@@ -319,14 +319,19 @@ class AIAgentLLM(models.Model):
         except HTTPStatusError as e:
             if e.response.status_code == 429:
                 _logger.warning(f"Rate limit exceeded. Retrying in a moment...")
-                self.log_message(body=f"Rate limit exceeded. Retrying in a moment...\n{input_text=} {config=} {session=} {quest=} {agent=}", is_error=False)
+                self.log_message(
+                    body=f"Rate limit exceeded. Retrying in a moment...\n{input_text=} {config=} {session=} {quest=} {agent=}",
+                    is_error=False)
                 raise  # This will trigger a retry
             else:
                 _logger.warning(f"Other HTTP-error... {e=}")
-                self.log_message(body=f"Other HTTP-error...{e=}\n{input_text=} {config=} {session=} {quest=} {agent=}", is_error=True)
+                self.log_message(body=f"Other HTTP-error...{e=}\n{input_text=} {config=} {session=} {quest=} {agent=}",
+                                 is_error=True)
                 raise  # For other HTTP errors, don't retry
         except Exception as e:
-            self.log_message(body=f"LLM {self.name} {e}\n\n{input=} {config=} {session=} {quest=} {agent=}\n{traceback.format_exc()}", is_error=True)
+            self.log_message(
+                body=f"LLM {self.name} {e}\n\n{input=} {config=} {session=} {quest=} {agent=}\n{traceback.format_exc()}",
+                is_error=True)
             _logger.error(f"LLM {self.name} {e}\n{traceback.format_exc()}")
             return None
 
@@ -373,12 +378,12 @@ class AIAgentLLM(models.Model):
                 if content == "2":
                     self.message_post(body=_(f"Llm confirmed: 1+1={content}"), message_type="notification")
                     self.status = "confirmed"
-                    return 
+                    return
         session.status = 'done'
         self.message_post(body=_(f"Could not confirm llm: {response=}"), message_type="notification")
 
-    #@retry(ConnectionError,tries=6)
-    def test_embedd(self,session=False):
+    # @retry(ConnectionError, tries=6)
+    def test_embedd(self, session=False):
         try:
             self.get_embedding().embed_query("test")
         except ModuleNotFoundError as e:
@@ -401,12 +406,12 @@ class AIAgentLLM(models.Model):
             return False
         self.message_post(body=_(f"Embedding is working"), message_type="notification")
         self.status = "confirmed"
-        return 
+        return
 
-    def test_asr(self,session=False):
+    def test_asr(self, session=False):
         result = ""
         try:
-            path = get_resource_path('ai_agent','static/src/audio','oneplusone.m4a')
+            path = get_resource_path('ai_agent', 'static/src/audio', 'oneplusone.m4a')
             _logger.error(f"{path=}")
             file = Blob.from_path(path)
             _logger.error(f"{file=}")
@@ -434,7 +439,7 @@ class AIAgentLLM(models.Model):
             return False
         self.message_post(body=_(f"LLM Transcription: {result[0].page_content}"), message_type="notification")
         self.status = "confirmed"
-        return 
+        return
 
     def get_agent_executor(self, prompt, tools, temperature=1.0, verbose=False, callbacks=None):
         return AgentExecutor(
@@ -468,7 +473,6 @@ class AIAgentLLM(models.Model):
         except Exception as e:
             _logger.warning(f"Error using tiktoken: {e}. Using character-based token estimation.")
             return len(text) // 4 if text else 0  # Rough estimate of 4 chars per token
-
 
     def _reset_if_new_minute(self):
         """Reset counters if we've moved to a new minute"""
