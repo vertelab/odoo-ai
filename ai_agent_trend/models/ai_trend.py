@@ -13,7 +13,6 @@ _logger = logging.getLogger(__name__)
 
 class AITrend(models.Model):
     _name = 'ai.trend'
-    _inherit = "ai.memory"
     _description = 'AI Trend'
     
     channel_or_author = fields.Char(string='Channel/Author')
@@ -31,16 +30,23 @@ class AITrend(models.Model):
     url = fields.Char(string='URL', required=True)
     video_id = fields.Char(string='YouTube Video ID')
     views = fields.Integer(string='Views')
+    ai_memory_id = fields.Many2one(comodel_name='ai.memory',string="AI-Memory",help="")
 
 
     def run(self):
         self.ai_memory_id.run()
 
 
-    def get_latest_most_viewed_videos(api_key, topic, region_code='SE', max_results=50,transcript_lang='sv'):
-        youtube = build('youtube', 'v3', developerKey="AIzaSyC3ULi_Tu8xjbg-Sm0pNnKlfNPT3ql-JU4")
+    def get_latest_most_viewed_videos(self,topic, region_code='SE', max_results=50,transcript_lang='sv'):
+        def check_exist(video_id):
+            return self.env['ai.trend'].search_count([('video_id','=',video_id)]) > 0
+        
+        
+        youtube_api_key = self.env['ir.config_parameter'].sudo().get_param('ai_agent_trend.youtube_api_key',None)
+        if not youtube_api_key:
+            raise UserError('Missing Youtube API Key Keys are created at https://console.cloud.google.com')
+        youtube = build('youtube', 'v3', developerKey=youtube_api_key)
 
-        # 1. Sök efter de senaste videorna inom topic
         search_response = youtube.search().list(
             q=topic,
             type='video',
@@ -50,15 +56,21 @@ class AITrend(models.Model):
             maxResults=max_results
         ).execute()
 
-        video_ids = [item['id']['videoId'] for item in search_response['items']]
+        existing_video_ids = self.env['ai.trend'].search([('video_id', 'in', [item['id']['videoId'] for item in search_response['items']])
+            ]).mapped('video_id')
+        video_ids = [
+            item['id']['videoId']
+            for item in search_response['items']
+            if item['id']['videoId'] not in existing_video_ids
+        ]
 
-        # 2. Hämta statistik (bl.a. visningar) för dessa videor
+        # Get statistics
         videos_response = youtube.videos().list(
             id=','.join(video_ids),
             part='snippet,statistics'
         ).execute()
 
-        # 3. Sortera videor på visningar (mest sedda först)
+        # Sort
         videos = []
         for item in videos_response['items']:
             video_id = item['id']
@@ -70,21 +82,20 @@ class AITrend(models.Model):
                 'views': int(item['statistics'].get('viewCount', 0)),
                 'url': f"https://www.youtube.com/watch?v={item['id']}"
             })
-        # Sortera listan på antal visningar, fallande
-        videos.sort(key=lambda x: x['views'], reverse=True)
-        for v in videos[:5]:
-           try:
-                transcript = YouTubeTranscriptApi.get_transcript(v['videoId'], languages=[transcript_lang, 'en'])
-                # Slå ihop texten till en sträng
-                transcript_text = " ".join([x['text'] for x in transcript])
-                v['transcript'] = transcript_text
-           except Exception as e:
-                v['transcript'] = None  # Ingen transkription tillgänglig
-
+        videos = sorted(videos, key=lambda x: x['views'], reverse=True)[:10]
+        if videos:
+            for v in videos:
+               try:
+                    transcript = YouTubeTranscriptApi.get_transcript(v['videoId'], languages=[transcript_lang, 'en'])
+                    transcript_text = " ".join([x['text'] for x in transcript])
+                    v['transcript'] = transcript_text
+               except Exception as e:
+                    v['transcript'] = None
+            self.env['ai.trend'].create(videos)
 
         return videos[:10]
         
-    def fetch_linkedin_trending_posts(topic: str, max_posts: int = 10):
+    def fetch_linkedin_trending_posts(self,topic: str, max_posts: int = 10):
         async def async_crawl():
             search_url = f"https://www.linkedin.com/search/results/content/?keywords={topic}&origin=GLOBAL_SEARCH_HEADER"
             schema = {
@@ -116,3 +127,13 @@ class AITrend(models.Model):
 # for post in trending_posts:
 #     print(post)
 
+class AIMemory(models.Model):
+    _inherit = 'ai.memory'
+
+    ai_trend_ids = fields.One2many(comodel_name="ai.trend", inverse_name="ai_memory_id")
+    ai_trend_topics = fields.Char(string="Topics",help="Comaseparated list of topics")
+    
+    def create_trend_articles(self):
+        for topic in split(self.ai_trend_topics,','):
+            self.env['ai.trend'].fetch_youtube_trending_posts(topic)
+            self.env['ai.trend'].fetch_linkedin_trending_posts(topic)
