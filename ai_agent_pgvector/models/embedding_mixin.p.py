@@ -85,17 +85,17 @@ class EmbeddingMixin(models.AbstractModel):
         # Build the similarity query focusing only on the main table
         # since we already have the filtered candidate IDs
         query = f"""
-                WITH query_vector AS (
-                    SELECT '{vector_str}'::vector AS vec
-                )
-                SELECT id, 1 - ({embedding_column} {operator} query_vector.vec) as similarity
-                FROM {self._table}, query_vector
-                WHERE id = ANY(%s)
-                AND {embedding_column} IS NOT NULL
-                AND (1 - ({embedding_column} {operator} query_vector.vec)) >= %s
-                ORDER BY similarity DESC
-                LIMIT %s
-            """
+            WITH query_vector AS (
+                SELECT '{vector_str}'::vector AS vec
+            )
+            SELECT id, 1 - ({embedding_column} {operator} query_vector.vec) as similarity
+            FROM {self._table}, query_vector
+            WHERE id = ANY(%s)
+            AND {embedding_column} IS NOT NULL
+            AND (1 - ({embedding_column} {operator} query_vector.vec)) >= %s
+            ORDER BY similarity DESC
+            LIMIT %s
+        """
 
         params = [list(candidate_ids), min_similarity, limit]
 
