@@ -32,7 +32,7 @@ class EmbeddingMixin(models.AbstractModel):
 
     @api.model
     def search_similar(
-        self, query_vector, domain=None, limit=10, min_similarity=0.0, embedding_column="embedding", operator="<=>"
+            self, query_vector, domain=None, limit=10, min_similarity=0.0, embedding_column="embedding", operator="<=>"
     ):
         """
         Search for similar records using vector similarity.
@@ -57,53 +57,54 @@ class EmbeddingMixin(models.AbstractModel):
         # Format the query vector using pgvector's Vector class
         vector_str = Vector._to_db(query_vector)
 
-        # Determine the table and embedding column
-        model_table = self._table
+        # Start with basic domain to filter out records without embeddings
+        base_domain = [(embedding_column, '!=', False)]
 
-        # Build the domain clause
-        domain_clause = ""
-        params = [min_similarity, limit]
+        # Debug: Check if any records have embeddings
+        all_with_embeddings = self.search([(embedding_column, '!=', False)])
+        _logger.error(f"Total records with embeddings: {len(all_with_embeddings)}")
 
+        # Debug: Check domain separately if provided
         if domain:
-            # Correctly calculate the WHERE clause using the model itself    
-            # #if VERSION <= "17.0"
-            query_obj = self.env[self._name].sudo()._where_calc(domain)
-            tables, where_clause, where_params = query_obj.get_sql()
-            # #elif VERSION >= "18.0"
-            query_obj = self.env[self._name].sudo()._where_calc(domain).select()
-            _logger.warning(f"{query_obj=}")
-            where_clause = query_obj.code.split(" WHERE ")[1]
-            where_params = query_obj.params
-            # #endif
+            domain_matches = self.search(domain)
+            _logger.error(f"Records matching domain {domain}: {len(domain_matches)}")
+            base_domain.extend(domain)
 
-            if where_clause:
-                domain_clause = f"AND {where_clause}"
-                params = [min_similarity] + where_params + [limit]
+        # First, get all candidate records using Odoo's ORM
+        # This handles all the complex JOINs properly
+        candidates = self.search(base_domain)
+        _logger.error(f"Final candidates after combining filters: {len(candidates)}")
 
-        _logger.error(f"{domain=}")
-        _logger.error(f"{domain_clause=}")
+        if not candidates:
+            _logger.error("No candidates found - returning empty result")
+            return self.browse([]), []
 
-        # Execute the search query with selected operator
-        # Modify the query to use the vector only once (storing it in a CTE)
+        # Now do the vector similarity search on the candidate IDs
+        candidate_ids = tuple(candidates.ids)
+
+        # Build the similarity query focusing only on the main table
+        # since we already have the filtered candidate IDs
         query = f"""
-            WITH query_vector AS (
-                SELECT '{vector_str}'::vector AS vec
-            )
-            SELECT id, 1 - ({embedding_column} {operator} query_vector.vec) as similarity
-            FROM {model_table}, query_vector
-            WHERE {embedding_column} IS NOT NULL
-            AND (1 - ({embedding_column} {operator} query_vector.vec)) >= %s
-            {domain_clause}
-            ORDER BY similarity DESC
-            LIMIT %s
-        """
-        
-        # _logger.error(f"{query=}")
+                WITH query_vector AS (
+                    SELECT '{vector_str}'::vector AS vec
+                )
+                SELECT id, 1 - ({embedding_column} {operator} query_vector.vec) as similarity
+                FROM {self._table}, query_vector
+                WHERE id = ANY(%s)
+                AND {embedding_column} IS NOT NULL
+                AND (1 - ({embedding_column} {operator} query_vector.vec)) >= %s
+                ORDER BY similarity DESC
+                LIMIT %s
+            """
+
+        params = [list(candidate_ids), min_similarity, limit]
 
         self.env.cr.execute(query, params)
         results = self.env.cr.fetchall()
 
-        _logger.error(f"{results=}")
+        _logger.info(f"Vector similarity results count: {len(results)}")
+        if results:
+            _logger.warning(f"Sample results: {results[:3]}")  # Show first 3 results
 
         if not results:
             return self.browse([]), []
