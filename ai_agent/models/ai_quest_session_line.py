@@ -45,8 +45,8 @@ class AIQuestSessionLine(models.Model):
                 'input_tokens_audio': aimessage.usage_metadata.get('input_token_details', {}).get('audio',0),
                 'input_tokens_cache_read': aimessage.usage_metadata.get('input_token_details', {}).get('cache_read',0),
                 'output_tokens': aimessage.usage_metadata.get('output_tokens', 0),
-                'output_tokens_audio': aimessage.usage_metadata.get('output_token_details', {'audio': 0}).get('audio',0),
-                'output_tokens_reasoning': aimessage.usage_metadata.get('output_token_details', {'reasoning': 0}).get('reasoning',0),
+                'output_tokens_audio': aimessage.usage_metadata.get('output_token_details', {}).get('audio',0),
+                'output_tokens_reasoning': aimessage.usage_metadata.get('output_token_details', {}).get('reasoning'),
             }  # Don't count tokens twice
             token_types['input_tokens'] -= (token_types['input_tokens_audio'] + token_types['input_tokens_cache_read'])
             token_types['output_tokens'] -= (
