@@ -36,7 +36,11 @@ class AISessionObject(models.Model):
     def _compute_display_name(self):
         for record in self:
             if record.model_id:
+                # #if VERSION >= "15.0"
                 record.display_name = f"[{record.model_id.name}] {record.object_id.display_name}"
+                # #elif VERSION <= "14.0"
+                record.display_name = f"[{record.model_id.ai_name if record.model_id.ai_name else record.model_id.name}] {record.object_id.display_name}"
+                # #endif 
             elif not record.model_id:
                 record.display_name = f"{record.object_id.display_name}"
             else:

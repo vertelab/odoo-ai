@@ -211,6 +211,7 @@ class AIAgentLLM(models.Model):
             elif self.product_tmpl_id.llm_type == "AzureChatOpenAI":
                 kwarg['api_version'] = self.api_version
                 kwarg['azure_endpoint'] = self.endpoint
+                kwarg["api_key"] = api_key #its needed
             else:
                 kwarg["api_key"] = api_key
 
@@ -219,8 +220,12 @@ class AIAgentLLM(models.Model):
 
                 if self.has_temperature:
                     kwarg['temperature'] = temperature
-
+            # #if VERSION >= "15.0"
             return LLM(verbose=verbose, callbacks=callbacks, model=self.model_id.name, **kwarg)
+            # #elif VERSION <= "14.0"
+            return LLM(verbose=verbose, callbacks=callbacks, model=self.model_id.ai_name if self.model_id.ai_name else self.model_id.name, **kwarg)
+            # #endif   
+
         except ImportError as e:
             _logger.error(f"Error importing {self.product_tmpl_id.llm_library}: {e}")
             raise
@@ -239,13 +244,29 @@ class AIAgentLLM(models.Model):
             if not api_key:
                 api_key = tools.config.get(self.product_tmpl_id.fallback_api_key_name, False)
             if "HuggingFaceInferenceAPIEmbeddings" == self.product_tmpl_id.llm_etype:
+                # #if VERSION >= "15.0"
                 return LLM(api_key=SecretStr(api_key), model_name=self.model_id.name)
+                # #elif VERSION <= "14.0"
+                return LLM(api_key=SecretStr(api_key), model_name=self.model_id.ai_name if self.model_id.ai_name else self.model_id.name)
+                # #endif   
             elif "HuggingFaceEmbeddings" == self.product_tmpl_id.llm_etype:
+                # #if VERSION >= "15.0"
                 return LLM(model_name=self.model_id.name)
+                # #elif VERSION <= "14.0"
+                return LLM(model_name=self.model_id.ai_name if self.model_id.ai_name else self.model_id.name)
+                # #endif  
             elif "OllamaEmbeddings" == self.product_tmpl_id.llm_etype:
+                # #if VERSION >= "15.0"
                 return LLM(model=self.model_id.name, base_url=self.endpoint)
+                # #elif VERSION <= "14.0"
+                return LLM(model=self.model_id.ai_name if self.model_id.ai_name else self.model_id.name, base_url=self.endpoint)
+                # #endif  
             elif api_key:
+                # #if VERSION >= "15.0"
                 return LLM(api_key=api_key, model=self.model_id.name)
+                # #elif VERSION <= "14.0"
+                return LLM(api_key=api_key, model=self.model_id.ai_name if self.model_id.ai_name else self.model_id.name)
+                # #endif 
             return None
 
         except ImportError as e:
@@ -266,7 +287,11 @@ class AIAgentLLM(models.Model):
             if not api_key:
                 api_key = tools.config.get(self.product_tmpl_id.fallback_api_key_name, False)
             if api_key:
+                # #if VERSION >= "15.0"
                 return LLM(base_url=self.endpoint, api_key=api_key, model=self.model_id.name)
+                # #elif VERSION <= "14.0"
+                return LLM(base_url=self.endpoint, api_key=api_key, model=self.model_id.ai_name if self.model_id.ai_name else self.model_id.name)
+                # #endif 
             return None
 
         except ImportError as e:
@@ -485,7 +510,11 @@ class AIAgentLLM(models.Model):
                 else:
                     text = str(text)
 
+            # #if VERSION >= "15.0"
             enc = tiktoken.encoding_for_model(self.model_id.name)
+            # #elif VERSION <= "14.0"
+            enc = tiktoken.encoding_for_model(self.model_id.ai_name if self.model_id.ai_name else self.model_id.name)
+            # #endif 
             token_count = len(enc.encode(text))
             return token_count
         except Exception as e:
