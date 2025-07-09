@@ -2,7 +2,7 @@
 ##############################################################################
 #
 #    Odoo SA, Open Source Management Solution, third party addon
-#    Copyright (C) 2024- Vertel AB (<https://vertel.se>).
+#    Copyright (C) 2025- Vertel AB (<https://vertel.se>).
 #
 #    This program is free software: you can redistribute it and/or modify
 #    it under the terms of the GNU Affero General Public License as
@@ -20,33 +20,30 @@
 ##############################################################################
 
 {
-    'name': 'odoo-ai: Agent Orchestration HR',
+    'name': 'odoo-ai: Agent Trend Analysis',
     'version': '0.3',
-    'summary': 'Agent Orchestration HR',
+    'summary': 'Agent for analysing trends an create material for blogs and Linkedin-articles',
     'category': 'Productivity / Discuss',
     'description': """
-        Agent Orchestration for departments
-        Organize you AI Staff
+        Agent for analysing trends an create material for blogs and Linkedin-articles
+        
     """,
     #'sequence': '1',
     'author': 'Vertel AB',
-    'website': 'https://vertel.se/apps/odoo-ai/ai_agent_hr',
+    'website': 'https://vertel.se/apps/odoo-ai/ai_agent_trend',
     'images': ['static/description/banner.png'],  # 560x280 px.
     'license': 'AGPL-3',
     'contributor': '',
     'maintainer': 'Vertel AB',
-    'repository': 'https://github.com/vertelab/odoo-ai/ai_business_intelligence',
     # Any module necessary for this one to work correctly
     'depends': [
-        'ai_agent',
-        'hr',
+        'ai_agent_pgvector',
     ],
     'data': [
-        'data/ai_agent_data.xml',
-        'views/hr_department_views.xml',
-        'views/ai_quest_views.xml',
-        'views/ai_quest_session_views.xml',
-        'views/ai_quest_session_line_views.xml',
+        # ~ 'data/ai_agent_data.xml',
+        'security/ir.model.access.csv',
+        'views/ai_trend_views.xml',
+        'views/res_config_settings_views.xml',
     ],
     'installable': True,
     'auto_install': False,

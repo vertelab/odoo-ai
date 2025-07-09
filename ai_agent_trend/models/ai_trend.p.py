@@ -15,22 +15,22 @@ class AITrend(models.Model):
     _name = 'ai.trend'
     _description = 'AI Trend'
     
-    channel_or_author = fields.Char(string='Channel/Author')
+    ai_memory_id = fields.Many2one(comodel_name='ai.memory',string="AI-Memory",help="")
+    channel_or_author = fields.Char(string='Channel/Author', search=True)
     comments = fields.Integer(string='Comments')
-    content = fields.Text(string='Transcript / Article Content')
+    content = fields.Text(string='Transcript / Article Content',search=True)
     content_embedding = PgVector(dimension=768)
-    date_published = fields.Datetime(string='Published At')
-    description = fields.Text(string='Description')
+    date_published = fields.Datetime(string='Published At',search=True)
+    description = fields.Text(string='Description',search=True)
     likes = fields.Integer(string='Likes')
     linkedin_post_id = fields.Char(string='LinkedIn Post ID')
-    name = fields.Char(string='Title', required=True)
+    name = fields.Char(string='Title', required=True,search=True)
     platform = fields.Selection([('youtube', 'YouTube'),('linkedin', 'LinkedIn')], string='Platform', required=True)
-    topic = fields.Char(string='Topic')
+    topic = fields.Char(string='Topic',search=True)
     trend_score = fields.Float(string='Trend Score')
     url = fields.Char(string='URL', required=True)
     video_id = fields.Char(string='YouTube Video ID')
     views = fields.Integer(string='Views')
-    ai_memory_id = fields.Many2one(comodel_name='ai.memory',string="AI-Memory",help="")
 
 
     def run(self):
@@ -77,7 +77,7 @@ class AITrend(models.Model):
             videos.append({
                 'title': item['snippet']['title'],
                 'channel': item['snippet']['channelTitle'],
-                'publishedAt': item['snippet']['publishedAt'],
+                'date_published': item['snippet']['publishedAt'],
                 'videoId': video_id,
                 'views': int(item['statistics'].get('viewCount', 0)),
                 'url': f"https://www.youtube.com/watch?v={item['id']}"
@@ -88,9 +88,9 @@ class AITrend(models.Model):
                try:
                     transcript = YouTubeTranscriptApi.get_transcript(v['videoId'], languages=[transcript_lang, 'en'])
                     transcript_text = " ".join([x['text'] for x in transcript])
-                    v['transcript'] = transcript_text
+                    v['content'] = transcript_text
                except Exception as e:
-                    v['transcript'] = None
+                    v['content'] = None
             self.env['ai.trend'].create(videos)
 
         return videos[:10]
@@ -104,7 +104,7 @@ class AITrend(models.Model):
                 "fields": [
                     {"name": "author", "selector": "span.feed-shared-actor__name", "type": "text"},
                     {"name": "content", "selector": "div.feed-shared-update-v2__description", "type": "text"},
-                    {"name": "date", "selector": "span.feed-shared-actor__sub-description > span", "type": "text"}
+                    {"name": "date_published", "selector": "span.feed-shared-actor__sub-description > span", "type": "text"}
                 ]
             }
             extraction_strategy = JsonCssExtractionStrategy(schema)
@@ -132,8 +132,25 @@ class AIMemory(models.Model):
 
     ai_trend_ids = fields.One2many(comodel_name="ai.trend", inverse_name="ai_memory_id")
     ai_trend_topics = fields.Char(string="Topics",help="Comaseparated list of topics")
-    
-    def create_trend_articles(self):
-        for topic in split(self.ai_trend_topics,','):
-            self.env['ai.trend'].fetch_youtube_trending_posts(topic)
-            self.env['ai.trend'].fetch_linkedin_trending_posts(topic)
+    ai_trend_topics_nbr = fields.Integer(string="Topics",compute="_ai_trend_topics_nbr")
+    memory_type = fields.Selection(selection_add=[("ai_trend", "AI Trend")],ondelete={'ai_trend': 'cascade'})
+
+    @api.onchange('memory_type')
+    def _onchange_memory_type_trend(self):
+        if self.memory_type == 'ai_trend':
+            self.vector_type = 'pg_vector'
+
+
+    @api.depends('ai_trend_ids')
+    def __ai_trend_topics_nbr(self):
+        for m in self:
+            m.ai_trend_topics_nbr = len(m.ai_trend_ids)
+
+    def run(self):
+        for m in self:
+            if m.memory_type == 'ai_trend':
+                 for topic in [t.strip() for t in (m.ai_trend_topics or '').split(',') if t.strip()]:
+                    self.env['ai.trend'].fetch_youtube_trending_posts(topic)
+                    self.env['ai.trend'].fetch_linkedin_trending_posts(topic)
+            else:
+                super(AIMemory,m).run()       
