@@ -192,6 +192,7 @@ class AIAgentLLM(models.Model):
             elif self.product_tmpl_id.llm_type == "AzureChatOpenAI":
                 kwarg['api_version'] = self.api_version
                 kwarg['azure_endpoint'] = self.endpoint
+                kwarg["api_key"] = api_key
             else:
                 kwarg["api_key"] = api_key
 
