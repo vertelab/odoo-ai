@@ -445,8 +445,12 @@ class AIMemory(models.Model):
                     text = text.content
                 else:
                     text = str(text)
-
+                    
+            # #if VERSION >= "15.0"
             enc = tiktoken.encoding_for_model(self.ai_agent_llm_id.model_id.name)
+            # #elif VERSION <= "14.0"
+            enc = tiktoken.encoding_for_model(self.ai_agent_llm_id.model_id.ai_name if self.model_id.ai_name else self.model_id.name)
+            # #endif 
 
             token_count = len(enc.encode(text))
             return token_count

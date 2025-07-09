@@ -193,6 +193,7 @@ class AIAgentLLM(models.Model):
             elif self.product_tmpl_id.llm_type == "AzureChatOpenAI":
                 kwarg['api_version'] = self.api_version
                 kwarg['azure_endpoint'] = self.endpoint
+                kwarg["api_key"] = api_key #its needed
             else:
                 kwarg["api_key"] = api_key
 
@@ -201,8 +202,8 @@ class AIAgentLLM(models.Model):
 
                 if self.has_temperature:
                     kwarg['temperature'] = temperature
-
             return LLM(verbose=verbose, callbacks=callbacks, model=self.model_id.name, **kwarg)
+
         except ImportError as e:
             _logger.error(f"Error importing {self.product_tmpl_id.llm_library}: {e}")
             raise

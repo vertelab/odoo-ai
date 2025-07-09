@@ -499,6 +499,7 @@ class AIQuest(models.Model):
     def _onchange_init_type(self):
         name = self.name
         model = self.model_id.name
+        
         qtype = _('AI Staff') if self.ai_type == 'ai-staff' else _('Quest')
         self.init_type_str = _(f'This {qtype} will begin work when you press START button')
 

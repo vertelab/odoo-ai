@@ -13,13 +13,24 @@
     </record>
 
     <record id="azure_product_attribute_value_o1" model="product.attribute.value">
+      <!-- #if VERSION >= "15.0" -->  
       <field name="name">o1</field>
+      <!-- #elif VERSION <= "14.0" -->
+      <field name="name">azure-o1</field>
+      <field name="ai_name">o1</field>
+      <!-- #endif -->
       <!-- <field name="licence">azure-research</field> -->
       <field name="has_endpoint" eval="True" />
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
     </record>
     <record id="azure_product_attribute_value_o1-mini" model="product.attribute.value">
+      <!-- #if VERSION >= "15.0" -->  
       <field name="name">o1-mini</field>
+      <!-- #elif VERSION <= "14.0" -->
+      <field name="name">azure-o1-mini</field>
+      <field name="ai_name">o1-mini</field>
+      <!-- #endif -->
+      
       <!-- <field name="licence">azure-research</field> -->
       <field name="has_endpoint" eval="True" />
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />

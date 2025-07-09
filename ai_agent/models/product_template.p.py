@@ -45,7 +45,11 @@ class ProductTemplate(models.Model):
                         'ai_api_key': p.ai_api_key,
                         'model_id': model.id,
                         'product_tmpl_id': p.id,
+                        # #if VERSION >= "15.0"
                         'name': f"{p.name}-{model.name}",
+                        # #elif VERSION <= "14.0"
+                        'name': f"{p.name}-{model.ai_name if model.ai_name else model.name}",
+                        # #endif
                         'endpoint': model.endpoint,
                     })
         return {
@@ -87,7 +91,11 @@ class ProductTemplate(models.Model):
                     'ai_api_key': p.ai_api_key,
                     'model_id': model.id,
                     'product_tmpl_id': p.id,
+                    # #if VERSION >= "15.0"
                     'name': f"{p.name}-{model.name}",
+                    # #elif VERSION <= "14.0"
+                    'name': f"{p.name}-{model.ai_name if model.ai_name else model.name}",
+                    # #endif
                     'status':"confirmed",
                 })
                 
@@ -117,8 +125,10 @@ class ProductTemplate(models.Model):
 
 class ProductAttributeValue(models.Model):
     _inherit = 'product.attribute.value'
-
-
+    # #if VERSION <= "14.0"
+    ai_name = fields.Char()
+    # #endif
+    
     licence = fields.Selection(selection=LICENCES, string='Licence', default='commercial')
     is_text2image = fields.Boolean(string='Is Text to image', default=False)
     is_vision = fields.Boolean(string='Is Vision', default=False)
@@ -135,7 +145,11 @@ class ProductAttributeValue(models.Model):
 
 class ProductTemplateAttributeValue(models.Model):
     _inherit = 'product.template.attribute.value'
-
+    
+    # #if VERSION <= "14.0"
+    ai_name = fields.Char(related="product_attribute_value_id.ai_name")
+    # #endif
+    
     tpm = fields.Integer(string="Token Per Minute", related="product_attribute_value_id.tpm")
     rpm = fields.Integer(string="Request Per Minute", related="product_attribute_value_id.rpm")
     context_window = fields.Integer(
