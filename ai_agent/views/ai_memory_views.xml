@@ -42,10 +42,11 @@
               <field name="model_name" invisible="1" />
               <field name="filter_domain" widget="domain" options="{'model': 'model_name'}" attrs="{'invisible': [('memory_type', '!=', 'model')]}" />
               <field name="shell_cmd" attrs="{'invisible': [('memory_type', '!=', 'datastream')]}" />
+              <field name="youtube_search" attrs="{'invisible': [('memory_type', '!=', 'youtube')]}"/>
+              <field name="youtube_video_ids" attrs="{'invisible': [('memory_type', '!=', 'youtube')]}"/>
               <field name="document_chunks" />
               <field name="company_id" groups="base.group_multi_company" />
-              <field name="youtube_search"/>
-              <field name="youtube_video_ids"/>
+             
             </group>
             <group>
               <field name="vector_type" />

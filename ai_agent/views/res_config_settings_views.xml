@@ -1,32 +1,34 @@
 <odoo>
   <data>
-
-
+    
+    <record id="ai_agent_config_settings_action" model="ir.actions.act_window">
+      <field name="name">Settings</field>
+      <field name="res_model">res.config.settings</field>
+      <field name="view_id" ref="res_config_settings_view_form" />
+      <field name="view_mode">form</field>
+      <field name="target">inline</field>
+      <field name="context">{'module' : 'ai_agent', 'bin_size': False}</field>
+    </record>
     <record id="res_config_settings_view_form" model="ir.ui.view">
-      <field name="name">res.config.settings.view.form.quests</field>
+      <field name="name">res.config.settings.form.ai_agent</field>
       <field name="model">res.config.settings</field>
+      <field name="priority" eval="5" />
       <field name="inherit_id" ref="base.res_config_settings_view_form" />
       <field name="arch" type="xml">
-
         <div class="col-12 col-lg-6 o_setting_box" id="active_user_setting" position="after">
           <div class="col-12 col-lg-6 o_setting_box" id="quests_setting">
             <div class="o_setting_right_pane">
-              <span class="fa fa-lg fa-android" aria-label="Number of quests"/>
-              <field name="quests" class="w-auto ps-3 fw-bold"/>
-              <span class="o_form_label" attrs="{'invisible':[('active_user_count', '&gt;', '1')]}">
-                                            Quests
-              </span>
-              <span class="o_form_label" attrs="{'invisible':[('active_user_count', '&lt;=', '1')]}">
-                                            Quests
-              </span>
-              <br/>
-              <button name="%(ai_agent.action_ai_quest)d" icon="fa-arrow-right" type="action" string="Manage Quests" class="btn-link o_web_settings_access_rights"/>
+              <span class="fa fa-lg fa-android" aria-label="Number of quests" />
+              <field name="quests" class="w-auto ps-3 fw-bold" />
+              <span class="o_form_label" attrs="{'invisible':[('active_user_count', '&gt;', '1')]}">Quests</span>
+              <span class="o_form_label" attrs="{'invisible':[('active_user_count', '&lt;=', '1')]}">Quests</span>
+              <br />
+              <button name="%(ai_agent.action_ai_quest)d" icon="fa-arrow-right" type="action" string="Manage Quests" class="btn-link o_web_settings_access_rights" />
             </div>
           </div>
         </div>
-
       </field>
     </record>
-
+    <menuitem id="ai_agent_config_settings_menu" name="Settings" parent="ai_agent.menu_ai_agent_configuration" action="ai_agent_config_settings_action" sequence="0" />
   </data>
 </odoo>
