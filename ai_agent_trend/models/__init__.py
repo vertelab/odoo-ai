@@ -1,2 +1,2 @@
-from . import ai_trend
-from . import res_config_settings
+from . import ai_quest
+from . import hr_department

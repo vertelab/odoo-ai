@@ -22,5 +22,6 @@ youtube_transcript_api
 google-api-python-client
 google-auth-httplib2
 google-auth-oauthlib
+pydub
 langchain_postgres
 pgvector
