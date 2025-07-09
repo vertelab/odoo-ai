@@ -109,8 +109,7 @@ class ProductTemplate(models.Model):
 
 class ProductAttributeValue(models.Model):
     _inherit = 'product.attribute.value'
-
-
+    
     licence = fields.Selection(selection=LICENCES, string='Licence', default='commercial')
     is_text2image = fields.Boolean(string='Is Text to image', default=False)
     is_vision = fields.Boolean(string='Is Vision', default=False)
@@ -127,7 +126,8 @@ class ProductAttributeValue(models.Model):
 
 class ProductTemplateAttributeValue(models.Model):
     _inherit = 'product.template.attribute.value'
-
+    
+    
     tpm = fields.Integer(string="Token Per Minute", related="product_attribute_value_id.tpm")
     rpm = fields.Integer(string="Request Per Minute", related="product_attribute_value_id.rpm")
     context_window = fields.Integer(
