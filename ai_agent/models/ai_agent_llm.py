@@ -202,8 +202,8 @@ class AIAgentLLM(models.Model):
 
                 if self.has_temperature:
                     kwarg['temperature'] = temperature
-
             return LLM(verbose=verbose, callbacks=callbacks, model=self.model_id.name, **kwarg)
+
         except ImportError as e:
             _logger.error(f"Error importing {self.product_tmpl_id.llm_library}: {e}")
             raise
