@@ -11,17 +11,15 @@
           <field name="is_embedded" />
           <field name="is_vision" />
           <field name="is_text2image" /> -->
-          <field name="tpm" />
-          <field name="rpm" />
           <group>
+            <field name="ai_name"/>
             <field name="context_window" />
             <field name="has_temperature" />
+            <field name="tpm" />
+            <field name="rpm" />
             <!-- <field name="has_endpoint" /> -->
           </group>
-          <field name="tpm" />
-          <field name="rpm" />
-          <field name="context_window" />
-          <field name="has_temperature" />
+
         </field>
       </field>
     </record>
@@ -58,6 +56,7 @@
           <sheet>
             <group>
               <group>
+                <field name="ai_name"/>
                 <field name="licence" />
                 <field name="is_asr" />
                 <field name="is_embedded" />

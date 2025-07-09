@@ -201,8 +201,8 @@ class AIAgentLLM(models.Model):
 
                 if self.has_temperature:
                     kwarg['temperature'] = temperature
+            return LLM(verbose=verbose, callbacks=callbacks, model=self.model_id.ai_name if self.model_id.ai_name else self.model_id.name, **kwarg)
 
-            return LLM(verbose=verbose, callbacks=callbacks, model=self.model_id.name, **kwarg)
         except ImportError as e:
             _logger.error(f"Error importing {self.product_tmpl_id.llm_library}: {e}")
             raise
@@ -221,13 +221,13 @@ class AIAgentLLM(models.Model):
             if not api_key:
                 api_key = tools.config.get(self.product_tmpl_id.fallback_api_key_name, False)
             if "HuggingFaceInferenceAPIEmbeddings" == self.product_tmpl_id.llm_etype:
-                return LLM(api_key=SecretStr(api_key), model_name=self.model_id.name)
+                return LLM(api_key=SecretStr(api_key), model_name=self.model_id.ai_name if self.model_id.ai_name else self.model_id.name)
             elif "HuggingFaceEmbeddings" == self.product_tmpl_id.llm_etype:
-                return LLM(model_name=self.model_id.name)
+                return LLM(model_name=self.model_id.ai_name if self.model_id.ai_name else self.model_id.name)
             elif "OllamaEmbeddings" == self.product_tmpl_id.llm_etype:
-                return LLM(model=self.model_id.name, base_url=self.endpoint)
+                return LLM(model=self.model_id.ai_name if self.model_id.ai_name else self.model_id.name, base_url=self.endpoint)
             elif api_key:
-                return LLM(api_key=api_key, model=self.model_id.name)
+                return LLM(api_key=api_key, model=self.model_id.ai_name if self.model_id.ai_name else self.model_id.name)
             return None
 
         except ImportError as e:
@@ -248,7 +248,7 @@ class AIAgentLLM(models.Model):
             if not api_key:
                 api_key = tools.config.get(self.product_tmpl_id.fallback_api_key_name, False)
             if api_key:
-                return LLM(base_url=self.endpoint, api_key=api_key, model=self.model_id.name)
+                return LLM(base_url=self.endpoint, api_key=api_key, model=self.model_id.ai_name if self.model_id.ai_name else self.model_id.name)
             return None
 
         except ImportError as e:
@@ -467,7 +467,7 @@ class AIAgentLLM(models.Model):
                 else:
                     text = str(text)
 
-            enc = tiktoken.encoding_for_model(self.model_id.name)
+            enc = tiktoken.encoding_for_model(self.model_id.ai_name if self.model_id.ai_name else self.model_id.name)
             token_count = len(enc.encode(text))
             return token_count
         except Exception as e:

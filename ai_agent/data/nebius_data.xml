@@ -551,7 +551,8 @@
 <field name="context_window" eval="200000"/>
 </record>
     <record id="nebius_mistralai_mistral_small_3_1_24b_instruct_2503" model="product.attribute.value">
-      <field name="name">mistralai/Mistral-Small-3.1-24B-Instruct-2503</field>
+      <field name="name">nebius-mistralai/Mistral-Small-3.1-24B-Instruct-2503</field>
+      <field name="ai_name">mistralai/Mistral-Small-3.1-24B-Instruct-2503</field>
       <field name="licence">mit</field>
       <field name="is_vision" eval="True" />
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
