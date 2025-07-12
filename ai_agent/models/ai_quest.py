@@ -593,13 +593,20 @@ class AIQuest(models.Model):
 
     def server_action(self, records):
         vals = self._server_action_values(records=records)
-
+        # ~ if not vals.get('session'):
+            # ~ vals['session'] = self.env['ai.quest.session'].quest_init(self)
         if self.init_type == 'server-action' and self.server_action_id:
             if self._check_quest_error():
+                _logger.error('Server Action %s' % self._check_quest_error())
                 raise UserError(self._check_quest_error())
-
         res = self.run(**vals)
-        self.log_message(f'server-action {res}')
+        if self.debug:
+            records[0].message_post(
+                    body=f'server-action {vals}',
+                    subtype_xmlid='mail.mt_note',  # Log note subtype
+                    message_type='comment',
+                )
+            self.log_message(f'server-action {res}')
         return res
 
     def _cron_values(self, **kwargs):
@@ -826,6 +833,7 @@ class AIQuest(models.Model):
     def run(self, **kwargs):
         if self.debug:
             _logger.warning(f" RUN {kwargs=}")
+            self.log_message(f" RUN {kwargs=}")
         local_dict = {}
         try:
             if self.debug:
@@ -901,10 +909,18 @@ class AIQuest(models.Model):
                 })
         for quest in self:
             if quest.server_action_id and quest.init_type == "server-action":
+                if quest.debug:
+                    code = f"_logger.info('Server Action {quest.name}')\naction = env.ref('{quest._get_eid()}').server_action(records)"
+                else:
+                    code = f"action = env.ref('{quest._get_eid()}').server_action(records)"
                 quest.server_action_id.write(
-                    {'name': quest.name, 'code': f"action = env.ref('{quest._get_eid()}').server_action(records)",
-                     "binding_view_types": "form,list",
-                     'binding_model_id': self.model_id.id if self.status == 'active' else None})
+                    {'name': quest.name, 
+                     'code': f"{code}",
+                     'state': 'code',
+                     'binding_type': "action",
+                     'binding_view_types': "form,list",
+                     'binding_model_id': self.model_id.id if self.status == 'active' else None,
+                     })
             if quest.cron_id:
                 quest.cron_id.write({'name': quest.name, 'code': f"action = env.ref('{quest._get_eid()}').cron(records)"})
             if quest.channel_id:
@@ -924,13 +940,18 @@ class AIQuest(models.Model):
                 new_server_action = self.server_action_id = self.server_action_id.create({
                     'name': record["name"],
                     'model_id': record["model_id"],
+                    'binding_model_id': record["model_id"],
                     "binding_view_types": "form,list",
+                    "binding_type": "action",
                     'state': 'code',
                     'code': "",
                 })
         res = super(AIQuest, self).create(vals_list)
         if new_server_action:
-            new_server_action.write({"code": f"action = env.ref('{res._get_eid()}').server_action(records)"})
+            if res.debug:
+                new_server_action.write({"code": f"_logger.info('Server Action {res.name}')\naction = env.ref('{res._get_eid()}').server_action(records)"})
+            else:
+                new_server_action.write({"code": f"action = env.ref('{res._get_eid()}').server_action(records)"})
             res.write({"server_action_id": new_server_action.id})
         return res
 
@@ -1330,6 +1351,18 @@ class AIQuest(models.Model):
         """Build a sequential chain of agents."""
         if not self.ai_agent_ids:
             raise ValueError("No agents provided")
+        if not self.description:
+            raise ValueError("No quest description provided")
+
+        quest_description = self.description
+            
+        if kwargs.get('record'):  # Populate with data from record if there is a record
+            try:
+                data = kwargs.get('record').read()[0]
+                quest_description = quest_description.format(**{k: data[k] for k in data.keys()})
+            except Exception as e:
+                _logger.warning(f"Error formatting quest description with record data: {e}")
+
 
         # Get agents sorted by sequence
         agents = [agent for agent in self.ai_agent_ids.sorted(key=lambda s: s.sequence).mapped('ai_agent_id') if agent]
@@ -1348,7 +1381,7 @@ class AIQuest(models.Model):
         def initial_node(state):
             """Initialize the state for the chain."""
             # Get the initial message/topic
-            initial_message = kwargs.get('topic', kwargs.get('message', ''))
+            initial_message = kwargs.get('topic', kwargs.get('message', '')) + " " + quest_description
 
             #TODO Fixa extra context T/0463
 
