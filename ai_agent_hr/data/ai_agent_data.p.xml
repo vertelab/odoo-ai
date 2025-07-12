@@ -43,23 +43,15 @@
       <field name="server_action_id" ref="ai_quest__organisation_specialist_goals_server_agent"/>
       <field name="init_type">server-action</field>
       <field name="code">for department in records:
-    result = agents[0].prompt_agent(session=session,debug=quest.debug,department=department.name,
-                                    company_information=f"{company_id.name=} {company_id.company_mission=} {company_id.company_values=}",
-                                    quest_instructions=f"{quest.description} ",quest_list=[],
-                                    module_list=module_list,
-                                    job_list=quest._get_jobs(department),
-                                    )
+    result = quest.build(session=session,record=department).invoke({})
     if result:
-        department.write({'goals_responsibilities': quest.markdown2html(result.content)})
-    elif quest.debug:
-        department.message_post(body=f"no result {result=}", message_type="notification")
-        continue
-    else:
-        continue
+        answer = quest.get_last_ai_message_content(result)
+        department.write({'goals_responsibilities':quest.markdown2html(answer)})
       </field>
-      <field name="description">As an AI Organizational Specialist, your task is to analyze and optimize the structure, goals, and responsibilities of the [DEPARTMENT_NAME] department. Consider the company's overall mission, vision, and strategic objectives when formulating your recommendations. Your analysis should cover the following areas:
+      <field name="description">As an AI Organizational Specialist, your task is to analyze and optimize the structure, goals, and responsibilities of the {name} department. 
+      Consider the company's overall mission, vision, and strategic objectives when formulating your recommendations and do not have any other department in mind than {name}. Your analysis should cover the following areas:
         
-        1. Department Responsibilities and Boundaries:
+        1. {name} Department Responsibilities and Boundaries:
         - Core functions and areas of expertise
         - Owned and contributed business processes
         - Key stakeholders and interdepartmental interfaces
