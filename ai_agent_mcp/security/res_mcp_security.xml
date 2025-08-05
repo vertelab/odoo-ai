@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+  <record id="res_mcp_rule_company" model="ir.rule">
+    <field name="name">Res MCP own company rule</field>
+    <field name="model_id" ref="model_res_mcp"/>
+    <field name="domain_force">['|',('company_id', '=', False),('company_id', '=', user.company_id.id)]</field>
+    <field name="groups" eval="[(4, ref('base.group_user'))]"/>
+    <field name="global" eval="False"/>
+  </record>
+</odoo>
