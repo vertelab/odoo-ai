@@ -30,6 +30,9 @@
             <field name="debug" widget="boolean_toggle" />
           </group>
           <notebook>
+            <page name="desc" string="Description">
+              <field name="description" nolabel="1" />
+            </page>
             <page name="Schedual">
               <group>
                 <group>
@@ -40,9 +43,7 @@
                 </group>
               </group>
             </page>
-            <page name="desc" string="Description">
-              <field name="description" nolabel="1" />
-            </page>
+
           </notebook>
         </sheet>
          <chatter/>
