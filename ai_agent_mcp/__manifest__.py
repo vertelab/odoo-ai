@@ -26,22 +26,26 @@
 
     'name': "odoo-ai: MCP Resource Management",
     'version': "1.0",
-    'summary': "Manage external MCP resources for AI Quests to use",
+    'summary': "Adds MCP Power to AI Agent and AI Quests",
     'category': "AI Orchestration",
     "description": "Module to manage 'res.mcp' resources with interface and security rules.",
     "author": "Vertel AB",
     'website': "https://vertel.se/apps/odoo-ai/ai_agent",
     'images': ["static/description/banner.png"],  # 560x280
     "license": "AGPL-3",
-    "depends": [
-        "mail",
-        "ai_agent",
-    ],
+    "depends": ["fastapi", "ai_agent"],
+    'external_dependencies': {
+        'python': ['fastapi-mcp', 'fastmcp']
+    },
+    
     "data": [
         "security/ir.model.access.csv",
         "security/res_mcp_security.xml",
         "views/res_mcp_views.xml",
-    ],
+        'views/ai_quest_view.xml',
+        'views/ai_tool_view.xml',
+    ],    
+    'post_init_hook': 'post_init_hook',
     "installable": True,
     "application": False,
     "auto_install": False,

@@ -1,0 +1,10 @@
+{
+	"servers": {
+		"my-mcp-server-32af2fc7": {
+			"url": "http://localhost:8000/sse",
+			"type": "http",
+            "headers": {}
+		}
+	},
+	"inputs": []
+}
