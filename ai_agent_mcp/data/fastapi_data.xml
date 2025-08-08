@@ -6,7 +6,7 @@
                 AI Agent API
             </field>
             <field name="app">ai_agent_mcp</field>
-            <field name="root_path">/fastapi/mcp</field>
+            <field name="root_path">/api</field>
             <field name="demo_auth_method">http_basic</field>
             <field name="user_id" ref="base.user_admin"/>
         </record>
