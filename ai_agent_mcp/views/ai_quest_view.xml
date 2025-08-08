@@ -1,6 +1,5 @@
 <odoo>
     <data>
-
         <record id="ai_quest_mcp_form" model="ir.ui.view">
             <field name="name">ai.quest.form.mcp</field>
             <field name="model">ai.quest</field>
@@ -11,6 +10,5 @@
                 </field>
             </field>
         </record>
-
     </data>
 </odoo>

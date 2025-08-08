@@ -1,10 +1,13 @@
 {
-	"servers": {
-		"my-mcp-server-32af2fc7": {
-			"url": "http://localhost:8000/sse",
-			"type": "http",
-            "headers": {}
-		}
-	},
-	"inputs": []
+  "mcpServers": {
+    "odoo-ai-agent": {
+      "transport": "http",
+      "baseUrl": "http://localhost:8069/mcp",
+      "auth": {
+        "type": "basic",
+        "username": "admin", 
+        "password": "admin"
+      }
+    }
+  }
 }
