@@ -148,7 +148,7 @@
                               <field name="last_run" t-if="record.last_run.value != False" />
                             </div>
                             <div class="d-flex align-items-center">
-                              <span class="fa fa-bug" t-if="record.debug.raw_value" style="margin-right: 5px;"></span>
+                              <span class="fa fa-bug" t-if="record.debug.raw_value" style="margin-right: 5px;" title="Debug"/>
                               <span t-att-class="'o_status_bubble mx-0 o_color_bubble_' + record.status_color.value" t-att-title="record.status.value" />
                             </div>
                           </div>
