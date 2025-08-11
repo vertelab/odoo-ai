@@ -46,6 +46,7 @@ def create_dynamic_quest_router() -> APIRouter:
                 def quest_endpoint(prompt: str = Body(..., embed=True)) -> Dict[str, Any]:
                     _logger.info(f"Executing quest '{q_name}'.")
                     try:
+                        # Create a new Odoo environment for each request using api.Environment.manage()
                         temp_registry = Registry.new(request.env.cr.dbname)
                         with temp_registry.cursor() as cr:
                             odoo_env = api.Environment(cr, SUPERUSER_ID, {})

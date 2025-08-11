@@ -35,15 +35,17 @@
     "license": "AGPL-3",
     "depends": ["fastapi", "ai_agent"],
     'external_dependencies': {
-        'python': ['fastapi-mcp']
+        'python': ['fastapi-mcp', 'fastmcp']
     },
+    
     "data": [
-        'data/fastapi_data.xml',
         "security/ir.model.access.csv",
         "security/res_mcp_security.xml",
         "views/res_mcp_views.xml",
         'views/ai_quest_view.xml',
-    ],
+        'views/ai_tool_view.xml',
+    ],    
+    'post_init_hook': 'post_init_hook',
     "installable": True,
     "application": False,
     "auto_install": False,
