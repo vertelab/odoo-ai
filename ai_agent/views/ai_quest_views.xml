@@ -252,8 +252,8 @@
                                   </div>
                                   
                                     <div class="d-flex align-items-center">
-                                      <span class="fa fa-reddit-alien" t-if="record.is_supervisor.raw_value" style="margin-right: 5px;" />
-                                      <span class="fa fa-bug" t-if="record.debug.raw_value" style="margin-right: 5px;" />
+                                      <span class="fa fa-reddit-alien" t-if="record.is_supervisor.raw_value" style="margin-right: 5px;" title="Is Supervisor" />
+                                      <span class="fa fa-bug" t-if="record.debug.raw_value" style="margin-right: 5px;" title="Debug"/>
                                       <field name="user_id" widget="many2one_avatar_user" domain="[('share', '=', False)]" class="ms-auto" style="margin-right: 5px;" />
                                       <span t-att-class="'o_status_bubble mx-0 o_color_bubble_' + record.status_color.value" t-att-title="record.status.value" />
                                     </div>

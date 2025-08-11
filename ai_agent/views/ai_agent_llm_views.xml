@@ -185,10 +185,10 @@
                       <span class="fa fa-clock-o me-2" title="Dates" />
                       <field name="last_run" t-if="record.last_run.value != False" />
                     </div>
-                    <span class="fa fa-hotel" t-if="record.is_embedded.raw_value == true" />
-                    <span class="fa fa-comment" t-if="record.is_asr.raw_value == true" />
-                    <span class="fa fa-eye" t-if="record.is_vision.raw_value == true" />
-                    <span class="fa fa-file-photo-o" t-if="record.is_text2image.raw_value == true" />
+                    <span class="fa fa-hotel" t-if="record.is_embedded.raw_value == true" title="is embedded"/>
+                    <span class="fa fa-comment" t-if="record.is_asr.raw_value == true" title="is aSR"/>
+                    <span class="fa fa-eye" t-if="record.is_vision.raw_value == true" title="has vision"/>
+                    <span class="fa fa-file-photo-o" t-if="record.is_text2image.raw_value == true" title="text2image"/>
                     <span t-att-class="'o_status_bubble mx-0 o_color_bubble_' + record.status_color.value" t-att-title="record.status.value" />
                   </div>
                 </footer>

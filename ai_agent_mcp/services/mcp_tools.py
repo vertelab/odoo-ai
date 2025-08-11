@@ -50,9 +50,6 @@ def create_dynamic_quest_router() -> APIRouter:
                         temp_registry = Registry.new(request.env.cr.dbname)
                         with temp_registry.cursor() as cr:
                             odoo_env = api.Environment(cr, SUPERUSER_ID, {})
-                            print("odoo env", odoo_env)
-                            print("q_id", q_id)
-                            print("prompt", prompt)
                             result = execute_quest_by_id(odoo_env, q_id, prompt)
                             return {"response": result}
                     except Exception as e:
@@ -116,8 +113,6 @@ def execute_quest_by_id(env: api.Environment, quest_id: int, prompt: str, contex
                 content = "No AI message content found for this quest."
         else:
             content = "Quest completed successfully."
-
-        print("content", content)
 
         return content
 
