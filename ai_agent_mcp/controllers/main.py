@@ -16,7 +16,7 @@ from odoo.modules.registry import Registry
 from odoo import api, SUPERUSER_ID
 from ..security.auth import verify_api_key
 from ..services.mcp_tools import (
-    get_available_quests, 
+    get_available_quests,
     execute_quest_by_id,
     get_all_model_names,
     get_model_definition,

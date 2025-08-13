@@ -29,7 +29,7 @@ class AIQuestMCP(models.Model):
             self.tool_name = re.sub(r'[^a-zA-Z0-9_]', '', self.name.lower().replace(' ', '_'))
         else:
             self.tool_name = ''
-    
+
     @api.model_create_multi
     def create(self, vals_list):
         for vals in vals_list:
