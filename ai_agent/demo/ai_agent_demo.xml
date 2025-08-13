@@ -226,7 +226,10 @@ message_body = mail.email_from
 result = quest.build(session=session,message=message_body).invoke(quest.create_human_message(message_body))
 content = quest.get_last_ai_message_content(result)
 partner_dict = quest.json2dict(content)
-quest.env["res.partner"].create(partner_dict['partners'])
+for partner in partner_dict['partners']:
+    is_partner = quest.env["res.partner"].search([('name', '=', partner.get('name')), ('email', '=', partner.get('email'))])
+    if not is_partner:
+        quest.env["res.partner"].create(partner)
       </field>
       <field name="description">
 "You will receive an email. Return the possible partners based on the email addresses connected to the email. For example, dan@brown.com should return a JSON like this:
