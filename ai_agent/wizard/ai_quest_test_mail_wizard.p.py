@@ -25,13 +25,13 @@ class AIQuestTestMailWizard(models.TransientModel):
     def test_mail(self):
         mail_thread = self.env["mail.thread"]
         byte_mail = base64.b64decode(self.eml_file)
-        mail = email.message_from_bytes(byte_mail)
+        mail = email.message_from_bytes(byte_mail, policy=email.policy.SMTP)
         is_mail = self.env["mail.message"].search([("message_id", "=", mail['Message-ID'])])
         if is_mail:
-            is_mail.unlink()
-        thread_id = mail_thread.message_process(model="ai.quest",message=base64.b64decode(self.eml_file),save_original=True)
+            is_mail.sudo().unlink()
+        thread_id = mail_thread.message_process(model="ai.quest.session",message=base64.b64decode(self.eml_file),save_original=True)
+        session_id = self.env["ai.quest.session"].browse(thread_id)
 
+        session_id.write({"ai_quest_id": self.ai_quest_id.id})                
 
-
-            
-
+        self.ai_quest_id.mail(mail=session_id.message_ids[0],session=session_id)

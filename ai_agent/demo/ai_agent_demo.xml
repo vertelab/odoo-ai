@@ -100,11 +100,6 @@
       </field>
     </record>
    
-    <!-- <record id="ai_quest_aria_agent1" model="ai.quest.agent">
-      <field name="ai_quest_id" ref="ai_quest_aria" />
-      <field name="ai_agent_id" ref="ai_agent_supervisor_chat" />
-    </record> -->
-   
     <record id="ai_quest_aria_agent2" model="ai.quest.agent">
       <field name="ai_quest_id" ref="ai_quest_aria" />
       <field name="ai_agent_id" ref="ai_agent_aria" />
@@ -220,6 +215,32 @@ Quest channel for helping with programing
     name="_onchange_init_type" 
     eval="[ref('ai_quest_code_channel')]"/>
 
+<!--
+A quest to add partners from incoming emails
+-->
+    <record id="ai_quest_partner_creator" model="ai.quest">
+      <field name="name">Partner Creator</field>
+      <field name="init_type">mail</field>
+      <field name="code">
+message_body = mail.email_from
+result = quest.build(session=session,message=message_body).invoke(quest.create_human_message(message_body))
+content = quest.get_last_ai_message_content(result)
+partner_dict = quest.json2dict(content)
+quest.env["res.partner"].create(partner_dict['partners'])
+      </field>
+      <field name="description">
+"You will receive an email. Return the possible partners based on the email addresses connected to the email. For example, dan@brown.com should return a JSON like this:
+{"partners":[{"name":"dan","email":"dan@brown.com" }, {"name":"brown", "email": false}]}
+
+The first part of the email before the "@" sign should be a partner. It should come with the email as the current email. The domain of the email should also be a partner but without the email specified. Remove top domains from the names. There should never be a case where there are more than two partners from one email. If a name contains a separator, for example ".", you should replace it with a space." You do not have to explain your answer, just return it.
+      </field>
+      <field name="status">active</field>
+    </record>
+    
+    <function 
+    model="ai.quest" 
+    name="_onchange_init_type" 
+    eval="[ref('ai_quest_partner_creator')]"/>
 
   </data>
 </odoo>
