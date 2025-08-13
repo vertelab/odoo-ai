@@ -106,12 +106,26 @@ Example Header:
 ### 4. MCP Client Configuration
 
 Example `mcp_config.json` for your MCP client:
-
+#### - Windsurf
 ```json
 {
   "mcpServers": {
     "odoo-ai-quest-mcp": {
       "serverUrl": "http://localhost:7069/api/mcp",
+      "headers": {
+        "Authorization": "Bearer <YOUR_GENERATED_API_KEY>"
+      }
+    }
+  }
+}
+```
+
+#### - Neovim
+```json
+{
+  "mcpServers": {
+    "odoo-ai-quest-mcp": {
+      "url": "http://localhost:7069/api/mcp",
       "headers": {
         "Authorization": "Bearer <YOUR_GENERATED_API_KEY>"
       }
