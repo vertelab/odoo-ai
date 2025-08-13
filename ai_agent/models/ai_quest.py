@@ -662,8 +662,10 @@ class AIQuest(models.Model):
         if self.init_type == "mail":
             if self._check_quest_error():
                 self.log_message(self._check_quest_error())
+            _logger.error(f"{mail=}")
             mail_body = html2plaintext(self.markdown2html(mail.body)).replace("<b>", "").replace("</b>", "").replace(
                 "<br>", "").replace("<p>", "").replace("</p>", "").replace("\n", "")
+            _logger.error(f"{mail_body=}")
             vals = self._mail_values(mail=mail, mail_body=mail_body, session=session, attachments=mail.attachment_ids)
             res = self.run(**vals)
             return res
@@ -732,60 +734,45 @@ class AIQuest(models.Model):
                 result.append(data)
             except json.JSONDecodeError:
                 _logger.error(f"Failed to parse: {match}")
-
+        _logger.error(result)
         return result
 
     @api.model
     def markdown2html(self, text):
         return markdown.markdown(text)
+        
+    @api.model
+    def create_human_message(self,text):
+        return {"messages": [HumanMessage(content=text)]}
     
     @api.model
     def json2dict(self, text):
-        """Safely extract and parse JSON or dictionary-like content from text."""
-        # First attempt: Look for JSON content within code blocks
-        json_match = re.search(r'```(?:json)?\s*([\s\S]*?)```', text)
-        if json_match:
-            json_content = json_match.group(1).strip()
+        # Iterate through the string to find the start of a JSON object or array.
+        start_index = -1
+        for i, char in enumerate(text):
+            if char in ['{', '[']:
+                start_index = i
+                break
+
+        if start_index == -1:
+            _logger.error("No JSON object or array start character found.")
+            return {}
+
+        # Try to parse a valid JSON substring starting from the found index.
+        for end_index in range(len(text), start_index, -1):
+            substring = text[start_index:end_index]
             try:
-                return json.loads(json_content)
+                # Attempt to load the substring as JSON.
+                json_data = json.loads(substring)
+                print("Successfully extracted and parsed JSON data!")
+                return json_data
             except json.JSONDecodeError:
-                # Try some common JSON cleanup operations
-                cleaned = json_content.replace('\\\'', '\'')  # Handle escaped single quotes
-                cleaned = cleaned.replace('\n', ' ')  # Remove newlines within the JSON
-                cleaned = re.sub(r'\\n', '\\\\n', cleaned)  # Properly escape \n sequences
-
-                try:
-                    return json.loads(cleaned)
-                except json.JSONDecodeError:
-                    pass  # Move to next method if this fails
-
-        # Second attempt: Try to find a dictionary-like structure
-        dict_match = re.search(r'\{[\s\S]*?}', text)
-        if dict_match:
-            dict_text = dict_match.group(0)
-            try:
-                # Try direct JSON parsing first
-                return json.loads(dict_text)
-            except json.JSONDecodeError:
-                # If JSON parsing fails, try to convert to valid Python dict syntax
-                py_dict = dict_text.replace(
-                    'null', 'None'
-                ).replace('true', 'True').replace('false', 'False')
-                try:
-                    # Use safer ast.literal_eval instead of eval
-                    return ast.literal_eval(py_dict)
-                except (SyntaxError, ValueError):
-                    pass  # Move to next method if this fails
-
-        # Third attempt: As a last resort, try ast.literal_eval on the entire text
-        # This is much safer than using eval()
-        try:
-            return ast.literal_eval(text)
-        except (SyntaxError, ValueError):
-            pass
-
-        # If all parsing attempts fail, return an empty dictionary
+                # If it fails, continue to the next possible end point.
+                continue
+        
+        _logger.error("Could not find a valid JSON object in the string.")
         return {}
+
 
     # ------------------------------------------------------------
     # Python CODE eval
@@ -801,7 +788,9 @@ class AIQuest(models.Model):
         records = kw.get('records', [])
         message = kw.get('message', False)
         prompt = kw.get('prompt', '')
-        message_body = html2plaintext(message.body) if message else prompt
+        mail = kw.get("mail", False)
+        mail_body = kw.get('mail_body', '')
+        message_body = html2plaintext(message.body) if message else prompt if prompt else mail_body
         
         eval_context = {
             'action': action,
@@ -816,8 +805,9 @@ class AIQuest(models.Model):
             'record': records[0] if records else None,
             'records': records,
             # context
+            'mail': mail,
             'message_body': message_body,
-            'message_invoke': {"messages": [HumanMessage(content=message_body)]},
+            'message_invoke': self.create_human_message(message_body),
             # Exceptions
             'Warning': Warning,
             'UserError': UserError,
