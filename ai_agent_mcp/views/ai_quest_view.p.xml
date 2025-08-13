@@ -1,0 +1,21 @@
+<odoo>
+    <data>
+        <record id="ai_quest_mcp_form" model="ir.ui.view">
+            <field name="name">ai.quest.form.mcp</field>
+            <field name="model">ai.quest</field>
+            <field name="inherit_id" ref="ai_agent.ai_quest_form" />
+            <field name="arch" type="xml">
+                <field name="model_id" position="after">
+                    <field name="available_to_mcp" />
+                    <field name="tool_name" invisible="not available_to_mcp"/>
+                </field>
+                <xpath expr="//page[last()]" position="after">
+                    <page string="MCP" id="mcp" invisible="not available_to_mcp">
+                        <label for="input_schema"/>
+                        <field name="input_schema"/>
+                    </page>
+                </xpath>
+            </field>
+        </record>
+    </data>
+</odoo>
