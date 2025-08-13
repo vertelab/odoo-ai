@@ -662,10 +662,8 @@ class AIQuest(models.Model):
         if self.init_type == "mail":
             if self._check_quest_error():
                 self.log_message(self._check_quest_error())
-            _logger.error(f"{mail=}")
             mail_body = html2plaintext(self.markdown2html(mail.body)).replace("<b>", "").replace("</b>", "").replace(
                 "<br>", "").replace("<p>", "").replace("</p>", "").replace("\n", "")
-            _logger.error(f"{mail_body=}")
             vals = self._mail_values(mail=mail, mail_body=mail_body, session=session, attachments=mail.attachment_ids)
             res = self.run(**vals)
             return res
@@ -734,7 +732,6 @@ class AIQuest(models.Model):
                 result.append(data)
             except json.JSONDecodeError:
                 _logger.error(f"Failed to parse: {match}")
-        _logger.error(result)
         return result
 
     @api.model
