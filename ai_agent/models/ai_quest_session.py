@@ -38,7 +38,7 @@ class AISessionObject(models.Model):
             if record.model_id:
                 record.display_name = f"[{record.model_id.ai_name if record.model_id.ai_name else record.model_id.name}] {record.object_id.display_name}"
             elif not record.model_id:
-                record.display_name = f"{record.object_id.display_name}"
+                record.display_name = f"{record.object_id.display_name if record.object_id else False}"
             else:
                 record.display_name = False
 
@@ -84,7 +84,7 @@ class AIQuestSession(models.Model):
     user_id = fields.Many2one(comodel_name='res.users', string="User", help="")
     
     display_name = fields.Char(compute='_compute_display_name')
-    company_id = fields.Many2one('res.company', required=True, related="ai_quest_id.company_id")
+    company_id = fields.Many2one('res.company',related="ai_quest_id.company_id")
  
     @api.depends("name")
     def _compute_display_name(self):
