@@ -177,8 +177,6 @@ class AIQuest(models.Model):
     alias_id = fields.Many2one(comodel_name='mail.alias', string='Alias', ondelete="restrict", required=False,
                                help="The email address associated with this channel. New emails received will "
                                     "automatically create new leads assigned to the channel.")
-    alias_user_id = fields.Many2one(comodel_name='res.users', related='alias_id.alias_user_id', readonly=False,
-                                    inherited=True)
 
     avatar_128 = fields.Image("Avatar", max_width=128, max_height=128, compute='_compute_avatar_128')
 
