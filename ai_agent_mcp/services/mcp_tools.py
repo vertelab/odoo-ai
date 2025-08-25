@@ -207,7 +207,7 @@ def create_dynamic_quest_router() -> APIRouter:
                 ArgsModel = create_pydantic_model(model_name, quest['inputSchema'])
 
                 def create_endpoint_function(q_id, q_title, q_tool_name):
-                    def quest_endpoint(args: ArgsModel) -> Dict[str, Any]:
+                    def quest_endpoint(args: ArgsModel = Body(..., embed=True)) -> Dict[str, Any]:
                         _logger.info(f"Executing quest '{q_title}' via tool '{q_tool_name}'.")
                         try:
                             temp_registry = Registry.new(request.env.cr.dbname)
