@@ -1,6 +1,7 @@
 import logging
 
 import numpy as np
+
 #from pgvector import Vector
 from pgvector.asyncpg import Vector
 
