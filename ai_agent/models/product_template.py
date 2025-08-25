@@ -124,6 +124,12 @@ class ProductAttributeValue(models.Model):
     context_window = fields.Integer(string="Context Window", copy=False)
     has_temperature = fields.Boolean(string="Has Temperature", default=False, copy=False)
 
+    def set_updatable(self):
+        att_values = self.env["ir.model.data"].search([("model", "=", "product.attribute.value"),("module", "=", "ai_agent")])
+        _logger.error(f"{att_values=}")
+        for att_value in att_values:
+            att_value.noupdate = False
+
 
 class ProductTemplateAttributeValue(models.Model):
     _inherit = 'product.template.attribute.value'

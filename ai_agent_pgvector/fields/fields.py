@@ -1,7 +1,10 @@
 import logging
 
 import numpy as np
-from pgvector import Vector
+
+#from pgvector import Vector
+from pgvector.asyncpg import Vector
+
 from pgvector.psycopg2 import register_vector
 
 from odoo import fields, tools

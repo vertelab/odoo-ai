@@ -79,7 +79,7 @@ class AIAgentLLM(models.Model):
     llm_etype = fields.Char(related="product_tmpl_id.llm_etype")
     llm_type = fields.Char(related="product_tmpl_id.llm_type", required=True)
     model_id = fields.Many2one(
-        comodel_name='product.template.attribute.value', string="Model", required=True, readonly=True
+        comodel_name='product.template.attribute.value', string="Model", required=False, readonly=True
     )
     name = fields.Char(required=True)
     product_tmpl_id = fields.Many2one(comodel_name='product.template', string="Provider",

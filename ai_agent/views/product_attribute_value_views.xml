@@ -83,6 +83,15 @@
       <field name="res_model">product.attribute.value</field>
       <field name="view_mode">list,form</field>
     </record>
+
+    <record id="action_set_updatable" model="ir.actions.server">
+        <field name="name">Action Set Updatable</field>
+        <field name="model_id" ref="ai_agent.model_product_attribute_value"/>
+        <field name="binding_model_id" ref="ai_agent.model_product_attribute_value"/>   
+        <field name="binding_view_types">list,form</field>
+        <field name="state">code</field>
+        <field name="code">records.set_updatable()</field>
+    </record>
     
     <menuitem id="ai_agent.menu_ai_llm_attribute_value" name="LLM Attributes" parent="ai_agent.menu_ai_agent_configuration" action="action_ai_llm_attribute_value" />
     

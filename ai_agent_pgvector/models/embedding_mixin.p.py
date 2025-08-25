@@ -1,6 +1,7 @@
 import logging
 
-from pgvector import Vector
+#from pgvector import Vector
+from pgvector.asyncpg import Vector
 
 from odoo import api, fields, models
 
