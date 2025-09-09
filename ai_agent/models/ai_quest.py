@@ -244,7 +244,7 @@ class AIQuest(models.Model):
         help="Temperature controls the randomness and creativity of the model's output, "
              "<1.0 more predictable and consistent >1.0 more diverse and creative responses"
     )
-    company_id = fields.Many2one('res.company', required=True, default=lambda self: self.env.company)
+    company_id = fields.Many2one('res.company', default=lambda self: self.env.company)
     company_partner_id = fields.Many2one('res.partner', related="company_id.partner_id")
     allow_trigger_words = fields.Boolean(string="Use activation word")
     chat_trigger_words = fields.Text(string="Activation word", help="Separate words using commas")
