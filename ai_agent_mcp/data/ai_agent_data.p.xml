@@ -1,0 +1,17 @@
+<odoo>
+    <data noupdate="1">
+
+        <record id="ai_agent_project_assistant" model="ai.agent">
+            <field name="name">Project Assistant Agent</field>
+            <field name="ai_role">Project Assistant</field>
+            <field name="ai_goal">Help the user with their projects and tasks.</field>
+            <field name="ai_type">default</field>
+        </record>
+
+        <record id="ai_agent_tool_project_assistant" model="ai.agent.tool">
+            <field name="ai_agent_id" ref="ai_agent_project_assistant"/>
+            <field name="ai_tool_id" ref="ai_tool_find_tasks"/>
+        </record>
+
+    </data>
+</odoo>
