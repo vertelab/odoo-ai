@@ -38,6 +38,9 @@
     },
     "data": [
         'data/fastapi_data.xml',
+        'data/tools_data.xml',
+        'data/ai_agent_data.xml',
+        'data/ai_quest_data.xml',
         "security/ir.model.access.csv",
         "security/res_mcp_security.xml",
         "views/res_mcp_views.xml",

@@ -1,0 +1,31 @@
+<odoo>
+    <data noupdate="1">
+
+        <record id="ai_quest_project_assistant" model="ai.quest">
+            <field name="name">Project_Assistant</field>
+            <field name="init_type">manual</field>
+            <field name="ai_type">default</field>
+            <field name="input_schema">
+{
+  "type": "object",
+  "properties": {
+    "prompt": {
+      "type": "string",
+      "description": "User Prompt"
+    }
+  },
+  "required": ["prompt"]
+}
+            </field>
+            <field name="description">You have been assigned to be a assistant in a odoo environment. To help you have been given tools lets you access information in this odoo environment.
+So far you have only been given one tool and that is find_tasks, us it when appropriate.</field>
+        </record>
+
+<record id="ai_quest_agent_project_assistant" model="ai.quest.agent">
+    <field name="ai_quest_id" ref="ai_quest_project_assistant" />
+    <field name="ai_agent_id" ref="ai_agent_project_assistant" />
+</record>
+
+    </data>
+</odoo>
+
