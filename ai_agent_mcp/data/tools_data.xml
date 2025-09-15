@@ -7,5 +7,17 @@
             <field name="tool_lib">odoo.addons.ai_agent_mcp.tools.tools</field>
         </record>
 
+        <record id="ai_tool_get_tasks_description" model="ai.tool">
+            <field name="name">Get Tasks Description</field>
+            <field name="tool">get_tasks_description</field>
+            <field name="tool_lib">odoo.addons.ai_agent_mcp.tools.tools</field>
+        </record>
+
+        <record id="ai_tool_update_tasks_stage" model="ai.tool">
+            <field name="name">Update Task Stage</field>
+            <field name="tool">update_tasks_stage</field>
+            <field name="tool_lib">odoo.addons.ai_agent_mcp.tools.tools</field>
+        </record>
+
     </data>
 </odoo>
