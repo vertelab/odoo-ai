@@ -181,7 +181,7 @@ class FastapiEndpoint(models.Model):
                 return []
 
         @mcp_server.server.read_resource()
-        async def read_odoo_resource(uri: str) -> List[types.TextContent]:
+        async def read_odoo_resource(uri: str) -> str:
             """Reads data for a dynamic Odoo resource based on its URI."""
             _logger.info(f"Reading Odoo resource with URI: {uri}")
 
@@ -209,14 +209,7 @@ class FastapiEndpoint(models.Model):
                 if data is None:
                     raise ValueError(f"Resource URI '{uri}' did not match any known pattern.")
 
-                # Return as types.TextContent for FastApiMCP
-                content = types.TextContent(
-                    type="text",
-                    text=json.dumps(data, indent=2, default=str),
-                )
-
-                _logger.info(f"Successfully read resource '{uri}', data length: {len(str(data))}")
-                return [content]
+                return json.dumps(data, indent=2)
 
             except ValueError as ve:
                 _logger.warning(f"Value error while reading resource '{uri}': {ve}")
