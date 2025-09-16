@@ -181,7 +181,7 @@ class FastapiEndpoint(models.Model):
                 return []
 
         @mcp_server.server.read_resource()
-        async def read_odoo_resource(uri: str) -> str: #List[types.TextContent]:
+        async def read_odoo_resource(uri: str) -> str:
             """Reads data for a dynamic Odoo resource based on its URI."""
             _logger.info(f"Reading Odoo resource with URI: {uri}")
 
@@ -231,7 +231,6 @@ class FastapiEndpoint(models.Model):
         match = re.match(r"^odoo://models/([a-zA-Z0-9._-]+)$", uri_str)
         if match:
             model_name = match.group(1)
-            print("model_name", model_name)
             return get_model_definition(env, model_name)
 
         # Pattern 3: odoo://records/{model_name}/{record_id}
