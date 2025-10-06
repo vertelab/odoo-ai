@@ -60,17 +60,23 @@ class FastapiEndpoint(models.Model):
     def _get_stable_env(self):
         """Get a stable Odoo environment for database operations."""
         try:
-            # Try to use existing request environment first
+            # First priority: use existing request environment
             if hasattr(request, 'env') and request.env:
                 return request.env
 
-            # Fallback: create new environment
+            # Second priority: use self.env if it's valid
+            if self.env and not self.env.cr.closed:
+                return self.env
+
+            # Last resort: create new environment with proper cursor management
+            # Note: This should be used carefully as the caller needs to manage the cursor
             registry = Registry(self.env.cr.dbname)
-            with registry.cursor() as cr:
-                return api.Environment(cr, SUPERUSER_ID, {})
+            cr = registry.cursor()
+            return api.Environment(cr, SUPERUSER_ID, {})
+
         except Exception as e:
             _logger.error(f"Error getting stable environment: {e}")
-            # Last resort: use self.env
+            # Return self.env as absolute fallback
             return self.env
 
     def _get_mcp_enabled_app(self) -> FastAPI:
@@ -175,30 +181,35 @@ class FastapiEndpoint(models.Model):
                 return []
 
         @mcp_server.server.read_resource()
-        async def read_odoo_resource(uri: str) -> List[types.TextContent]:
+        async def read_odoo_resource(uri: str) -> str:
             """Reads data for a dynamic Odoo resource based on its URI."""
             _logger.info(f"Reading Odoo resource with URI: {uri}")
 
             try:
-                # Get stable environment
-                env = self._get_stable_env()
-                if not env:
-                    raise ValueError("Could not establish database environment")
+                data = None
 
-                # Route URI to appropriate handler
-                data = self._route_resource_uri(env, uri)
+                # Try to use existing environment first
+                try:
+                    if hasattr(request, 'env') and request.env and not request.env.cr.closed:
+                        env = request.env
+                        data = self._route_resource_uri(env, uri)
+                    elif self.env and not self.env.cr.closed:
+                        env = self.env
+                        data = self._route_resource_uri(env, uri)
+                except Exception as e:
+                    _logger.warning(f"Could not use existing environment: {e}")
+
+                # If existing env failed, create a new one with proper cursor management
+                if data is None:
+                    registry = Registry(self.env.cr.dbname)
+                    with registry.cursor() as cr:
+                        env = api.Environment(cr, SUPERUSER_ID, {})
+                        data = self._route_resource_uri(env, uri)
 
                 if data is None:
                     raise ValueError(f"Resource URI '{uri}' did not match any known pattern.")
 
-                # Return as types.TextContent for FastApiMCP
-                content = types.TextContent(
-                    type="text",
-                    text=json.dumps(data, indent=2, default=str),
-                )
-
-                _logger.info(f"Successfully read resource '{uri}', data length: {len(str(data))}")
-                return [content]
+                return json.dumps(data, indent=2)
 
             except ValueError as ve:
                 _logger.warning(f"Value error while reading resource '{uri}': {ve}")
@@ -210,24 +221,26 @@ class FastapiEndpoint(models.Model):
     def _route_resource_uri(self, env, uri: str):
         """Route URI to appropriate data handler."""
 
+        uri_str = str(uri) if not isinstance(uri, str) else uri
+
         # Pattern 1: odoo://models
-        if uri == "odoo://models":
+        if uri_str == "odoo://models":
             return get_all_model_names(env)
 
         # Pattern 2: odoo://models/{model_name}
-        match = re.match(r"^odoo://models/([a-zA-Z0-9._-]+)$", uri)
+        match = re.match(r"^odoo://models/([a-zA-Z0-9._-]+)$", uri_str)
         if match:
             model_name = match.group(1)
             return get_model_definition(env, model_name)
 
         # Pattern 3: odoo://records/{model_name}/{record_id}
-        match = re.match(r"^odoo://records/([a-zA-Z0-9._-]+)/(\d+)$", uri)
+        match = re.match(r"^odoo://records/([a-zA-Z0-9._-]+)/(\d+)$", uri_str)
         if match:
             model_name, record_id_str = match.groups()
             return get_record_by_id(env, model_name, int(record_id_str))
 
         # Pattern 4: odoo://records/{model_name}/search/{domain}
-        match = re.match(r"^odoo://records/([a-zA-Z0-9._-]+)/search/(.*)$", uri)
+        match = re.match(r"^odoo://records/([a-zA-Z0-9._-]+)/search/(.*)$", uri_str)
         if match:
             model_name, domain_str = match.groups()
             return search_model_records(env, model_name, domain_str)
