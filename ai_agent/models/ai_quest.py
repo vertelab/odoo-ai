@@ -1374,8 +1374,6 @@ class AIQuest(models.Model):
             human_message = HumanMessage(content=initial_message)
 
             _logger.error(f"{human_message=}")
-            _logger.warning("look here2"*100)
-            _logger.warning(f"{kwargs=}")
             return {
                 "messages": [human_message],
                 'quest': self,
