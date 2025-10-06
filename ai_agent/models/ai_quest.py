@@ -1375,7 +1375,6 @@ class AIQuest(models.Model):
             human_message = HumanMessage(content=initial_message)
 
             _logger.error(f"{human_message=}")
-
             return {
                 "messages": [human_message],
                 'quest': self,
@@ -1386,6 +1385,7 @@ class AIQuest(models.Model):
                 'current_agent': 'initial_node',
                 'sequence_position': 0,
                 'last_position': len(agents),
+                'record_id': kwargs.get('record_id', False),
             }
 
         try:
@@ -1483,6 +1483,7 @@ class AgentState(TypedDict):
     messages: Annotated[Sequence[BaseMessage], operator.add]
     session: Optional[SkipValidation[AIQuestSession]] = None
     quest: Optional[SkipValidation[AIQuest]] = None
+    record_id: int = None
     topic: str
     scratchpad: Annotated[List[str], operator.add]
     next: str
