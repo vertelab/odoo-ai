@@ -376,7 +376,7 @@ msgstr "Lägga till chatthistorik i sammanhanget"
 #. module: ai_agent
 #: model:ir.model.fields,help:ai_agent.field_ai_quest__use_company_info
 msgid "Add company mission and values to the context"
-msgstr "Lägg till företagets uppdrag och värderingar i sammanhanget"
+msgstr "Lägg till bolagets uppdrag och värderingar i sammanhanget"
 
 #. module: ai_agent
 #: model:ir.model.fields,help:ai_agent.field_ai_quest__use_personal_info
@@ -397,7 +397,7 @@ msgstr "Avancerade inställningar"
 #: model:ir.model.fields,field_description:ai_agent.field_ai_agent_data__agent_id
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest_agent__ai_agent_id
 msgid "Agent"
-msgstr ""
+msgstr "Agent"
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest__agent_count
@@ -407,7 +407,7 @@ msgstr "Agenträkning"
 #. module: ai_agent
 #: model_terms:ir.ui.view,arch_db:ai_agent.view_ai_agent_kanban
 msgid "Agent Image"
-msgstr ""
+msgstr "Agentavbild"
 
 #. module: ai_agent
 #: model:ir.actions.act_window,name:ai_agent.action_ai_agent_llm
@@ -450,7 +450,7 @@ msgstr ""
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session__ai_agent_count
 #: model:ir.model.fields,field_description:ai_agent.field_ai_tool__ai_agent_count
 msgid "Ai Agent Count"
-msgstr "Ai Agent Räkna"
+msgstr "Antalet Ai Agenter"
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_agent__ai_agent_data_ids
@@ -493,7 +493,7 @@ msgstr ""
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session__ai_llm_count
 msgid "Ai Llm Count"
-msgstr "Ai Llm Räkning"
+msgstr "Antal Ai Llm:er"
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_agent__ai_memory_ids
@@ -528,7 +528,7 @@ msgstr "AI Uppdragssession"
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_session_object__ai_session_id
 msgid "Ai Session"
-msgstr ""
+msgstr "Ai sessioner"
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_agent__ai_tool_ids
@@ -548,7 +548,7 @@ msgstr "Ai Typ"
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest__alias_id
 msgid "Alias"
-msgstr ""
+msgstr "Alias"
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest__alias_contact
@@ -598,7 +598,7 @@ msgstr ""
 #. module: ai_agent
 #: model:ir.model.fields.selection,name:ai_agent.selection__product_attribute_value__licence__apache-2_0
 msgid "Apache 2.0 License"
-msgstr ""
+msgstr "Apache 2.0 Licens"
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest_session_line__api_type_id
@@ -796,7 +796,7 @@ msgstr "Bolag"
 #: model_terms:ir.ui.view,arch_db:ai_agent.ai_quest_search
 #: model_terms:ir.ui.view,arch_db:ai_agent.view_ai_memory_search
 msgid "Company"
-msgstr "Företag"
+msgstr "Bolag"
 
 #. module: ai_agent
 #: model:ir.model,name:ai_agent.model_res_config_settings
@@ -3109,7 +3109,7 @@ msgstr "Använd chatthistorik"
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest__use_company_info
 msgid "Use Company Info"
-msgstr "Använd företagsinformation"
+msgstr "Använd bolagsinformation"
 
 #. module: ai_agent
 #: model:ir.model.fields,field_description:ai_agent.field_ai_quest__use_personal_info
