@@ -11,12 +11,10 @@ import time
 
 from langchain_core.documents.base import Blob
 from httpx import HTTPStatusError
-from langchain.agents import AgentExecutor, create_openai_tools_agent, create_json_chat_agent, create_react_agent
-from langchain.schema import HumanMessage
+from langchain_classic.agents import AgentExecutor, create_openai_tools_agent
 from langchain_core.messages import AIMessage
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 from random import randint
-from pathlib import Path
 
 from odoo import models, fields, api, tools, _
 from odoo.exceptions import UserError, AccessError, ValidationError
@@ -208,6 +206,7 @@ class AIAgentLLM(models.Model):
 
             if self.product_tmpl_id.llm_type == "ChatOllama":
                 kwarg["disable_streaming"] = True
+                kwarg['base_url'] = self.endpoint
             elif self.product_tmpl_id.llm_type == "AzureChatOpenAI":
                 kwarg['api_version'] = self.api_version
                 kwarg['azure_endpoint'] = self.endpoint
