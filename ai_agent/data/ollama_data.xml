@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <data noupdate="1">
+    <data noupdate="0">
       
         <record id="ollama_product_template" model="product.template">
             <field name="name">Ollama</field>
@@ -12,7 +12,15 @@
             <field name="image_1920" type="base64" file="ai_agent/static/img/ollama-logo.png" /> 
         </record>
 
-        <record id="ollama_product_attribute_value_deepseek-r1-32b" model="product.attribute.value">
+        <record id="ollama_product_attribute_value_gpt-oss" model="product.attribute.value">
+            <field name="name">gpt-oss</field>
+            <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+            <field name="has_endpoint" eval="True"/>
+            <field name="tpm">2000000</field>
+            <field name="rpm">10000</field>
+        </record>
+
+         <record id="ollama_product_attribute_value_deepseek-r1-32b" model="product.attribute.value">
             <field name="name">deepseek-r1:32b</field>
             <field name="attribute_id" ref="ai_agent.product_attribute_model" />
             <field name="has_endpoint" eval="True"/>
@@ -45,6 +53,7 @@
                             ref('ollama_product_attribute_value_nomic-embed-text'),
                             ref('ollama_product_attribute_value_snowflake-arctic-embed'),
                             ref('ollama_product_attribute_value_deepseek-r1-32b'),
+                            ref('ollama_product_attribute_value_gpt-oss'),
                     ])]" />
         </record>
 
