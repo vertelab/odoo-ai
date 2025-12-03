@@ -1,41 +1,22 @@
 import importlib
-import json
-import sys
 import logging
 import re
 import traceback
-import time
-
 from datetime import datetime
 from pathlib import Path
-from json.decoder import JSONDecodeError
-from langchain.agents import initialize_agent, AgentType, Tool, AgentExecutor, LLMSingleActionAgent, AgentOutputParser, \
-    create_tool_calling_agent, create_xml_agent, create_json_chat_agent
-from langchain.agents.agent_toolkits import create_conversational_retrieval_agent
-from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder, PromptTemplate, HumanMessagePromptTemplate, \
-    SystemMessagePromptTemplate
-from langchain.schema import AIMessage, HumanMessage, SystemMessage, BaseMessage, AgentAction, AgentFinish
-from langchain.tools import tool
+
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_community.chat_message_histories import ChatMessageHistory
 from langchain_core.documents.base import Blob
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langgraph.prebuilt import create_react_agent
-from langchain.chains.summarize import load_summarize_chain
-from langchain.text_splitter import CharacterTextSplitter
-from langchain.docstore.document import Document
+from langchain.agents import create_agent
+# from langgraph.prebuilt import create_react_agent
+from langchain_classic.chains.summarize import load_summarize_chain
+from langchain_text_splitters import CharacterTextSplitter
+from langchain_core.documents import Document
 
 from odoo import models, fields, api, _
-from odoo.addons.ai_agent.models.ai_quest import AgentState
 from odoo.exceptions import UserError
 from random import randint
-
-from typing_extensions import NotRequired, TypedDict
-
-if sys.version_info >= (3, 12):
-    from typing import Annotated, List, NotRequired, Sequence, TypedDict, Union, Any
-else:
-    from typing_extensions import Annotated, List, NotRequired, Sequence, TypedDict, Union, Any
-
 
 # https://python.langchain.com/api_reference/langchain/agents.html
 
@@ -45,12 +26,6 @@ _logger = logging.getLogger(__name__)
 class SafeDict(dict):
     def __missing__(self, key):
         return '{' + key + '}'
-
-
-# Skapa en output-parser
-class SimpleOutputParser(AgentOutputParser):
-    def parse(self, llm_output: str) -> Union[AgentAction, AgentFinish]:
-        return AgentAction(tool="Simple Tool", tool_input=llm_output.strip(" ").strip('"'), log=llm_output)
 
 
 class AIAgent(models.Model):
@@ -419,7 +394,7 @@ class AIAgent(models.Model):
                         
                         
                 else:
-                    langgraph_agent_executor = create_react_agent(llm, tools=tools)
+                    langgraph_agent_executor = create_agent(llm, tools=tools)
 
                     result = langgraph_agent_executor.invoke({
                         "input": latest_message,
