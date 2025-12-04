@@ -294,7 +294,7 @@
                     <field name="user_id" />            
                     <templates>
                         <!-- #if VERSION >= "18.0" -->
-                        <t t-name="kanban-box">
+                        <t t-name="card">
                             <t t-name="menu">
                                 <t t-if="widget.editable"><a role="menuitem" type="open" class="dropdown-item">Edit</a></t>
                                 <t t-if="widget.deletable"><a role="menuitem" type="delete" class="dropdown-item">Delete</a></t>
@@ -352,7 +352,7 @@
                             </t>    
                         </t>
                         <!-- #elif VERSION <= "17.0" -->
-                        <t t-name="kanban-box">
+                        <t t-name="card">
                             <div t-attf-class="oe_kanban_global_click o_ai_agent_kanban #{kanban_color(record.color.raw_value)}">
                                 <div class="o_kanban_image me-1">
                                     <img t-att-src="kanban_image('ai.quest', 'avatar_128', record.id.raw_value)" alt="AI Quest" class="oe_module_icon" />
@@ -421,7 +421,7 @@
                     <field name="name" />
                     <field name="color" />
                     <templates>
-                        <t t-name="kanban-box">
+                        <t t-name="card">
                             <div t-attf-class="#{kanban_color(record.color.raw_value)} oe_kanban_content oe_kanban_global_click o_kanban_get_form">
                                 <div class="o_project_kanban_main ">
                                     <div class="o_kanban_card_content mw-100">
