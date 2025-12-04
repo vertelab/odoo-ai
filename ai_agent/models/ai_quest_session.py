@@ -29,7 +29,7 @@ class AISessionObject(models.Model):
                                                       m.env['ir.model'].sudo().search([])],
                                  readonly=False, required=True)
 
-    display_name = fields.Char(string="Object", compute='_compute_display_name')
+    display_name = fields.Char(string="Display Name", compute='_compute_display_name')
     color = fields.Integer(related="ai_session_id.ai_quest_id.color")
 
     @api.depends('object_id')

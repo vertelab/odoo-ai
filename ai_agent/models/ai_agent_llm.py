@@ -72,8 +72,7 @@ class AIAgentLLM(models.Model):
     is_favorite = fields.Boolean()
     is_key_required = fields.Boolean(default=True)
     last_run = fields.Datetime()
-    licence = fields.Selection(selection=LICENCES, string='Licence',
-                               related='model_id.product_attribute_value_id.licence')
+    licence = fields.Selection(string='Licence', related='model_id.product_attribute_value_id.licence')
     llm_etype = fields.Char(related="product_tmpl_id.llm_etype")
     llm_type = fields.Char(related="product_tmpl_id.llm_type", required=True)
     model_id = fields.Many2one(
@@ -100,7 +99,7 @@ class AIAgentLLM(models.Model):
     context_window = fields.Integer(
         string="Context Window", copy=False, related="model_id.context_window")
     has_temperature = fields.Boolean(
-        string="Has Temperature", default=False, copy=False, related="model_id.has_temperature")
+        string="Has Temperature", copy=False, related="model_id.has_temperature")
 
     def action_get_quests(self):
         action = {

@@ -112,17 +112,17 @@ class ProductAttributeValue(models.Model):
     ai_name = fields.Char()
     
     licence = fields.Selection(selection=LICENCES, string='Licence', default='commercial')
-    is_text2image = fields.Boolean(string='Is Text to image', default=False)
-    is_vision = fields.Boolean(string='Is Vision', default=False)
-    is_asr = fields.Boolean(string='Automatic Speech Control', default=False)
-    is_embedded = fields.Boolean(string='Is Embedded', default=False)
-    has_endpoint = fields.Boolean(string="Has Endpoint", default=False)
+    is_text2image = fields.Boolean(string='Is Text to image')
+    is_vision = fields.Boolean(string='Is Vision')
+    is_asr = fields.Boolean(string='Automatic Speech Control')
+    is_embedded = fields.Boolean(string='Is Embedded')
+    has_endpoint = fields.Boolean(string="Has Endpoint")
     endpoint = fields.Char(string="Endpoint")
 
     tpm = fields.Integer(string="Token Per Minute")
     rpm = fields.Integer(string="Request Per Minute")
     context_window = fields.Integer(string="Context Window", copy=False)
-    has_temperature = fields.Boolean(string="Has Temperature", default=False, copy=False)
+    has_temperature = fields.Boolean(string="Has Temperature", copy=False)
 
     def set_updatable(self):
         att_values = self.env["ir.model.data"].search([("model", "=", "product.attribute.value"),("module", "=", "ai_agent")])
@@ -141,5 +141,5 @@ class ProductTemplateAttributeValue(models.Model):
     context_window = fields.Integer(
         string="Context Window", copy=False, related="product_attribute_value_id.context_window")
     has_temperature = fields.Boolean(
-        string="Has Temperature", default=False, copy=False, related="product_attribute_value_id.has_temperature")
+        string="Has Temperature", copy=False, related="product_attribute_value_id.has_temperature")
     endpoint = fields.Char(string="Endpoint",related="product_attribute_value_id.endpoint")
