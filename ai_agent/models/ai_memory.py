@@ -3,11 +3,9 @@ from langchain_core.documents.base import Document
 from langchain_community.vectorstores import FAISS
 from typing import Generator
 from markupsafe import Markup
-from langchain_community.document_loaders import PyPDFLoader
 from random import randint
 from langchain_text_splitters.character import RecursiveCharacterTextSplitter
 from dateutil.relativedelta import relativedelta
-from langchain_community.document_loaders import TextLoader
 from urllib.parse import urljoin
 from urllib.parse import urlparse
 import base64
