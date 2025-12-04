@@ -116,13 +116,10 @@ class AIQuestAgent(models.Model):
     ai_quest_id = fields.Many2one(comodel_name='ai.quest', string="", help="")
     ai_agent_id = fields.Many2one(
         comodel_name='ai.agent', string="Agent", help="", required=False)
-    ai_agent_status = fields.Selection(selection=[
-        ("draft", "Draft"), ("active", "Active"), ("done", "Done"), ("error", "Error")], default="draft", related='ai_agent_id.status')
+    ai_agent_status = fields.Selection(related='ai_agent_id.status')
     ai_agent_llm_id = fields.Many2one(comodel_name="ai.agent.llm", string="LLM", help="Choose Large Language Model",
                                       domain="[('status','=','confirmed')]", related='ai_agent_id.ai_agent_llm_id')
-    ai_llm_status = fields.Selection(
-        selection=[("not_confirmed", "Not Confirmed"), ("confirmed", "Confirmed"), ("error", "Error")],
-        default="not_confirmed", related='ai_agent_id.ai_agent_llm_id.status')
+    ai_llm_status = fields.Selection(related='ai_agent_id.ai_agent_llm_id.status')
     object_id = fields.Reference(string='Object', related="ai_agent_id.object_id")
     sequence = fields.Integer(string='Sequence')
 
@@ -170,14 +167,14 @@ class AIQuest(models.Model):
     ai_agent_ids = fields.One2many(comodel_name='ai.quest.agent', inverse_name='ai_quest_id')
     ai_type = fields.Selection(selection=[("default", "Default"), ('ai-programmer', 'AI Programmer')],
                                default="default", required=True)
-    alias_id = fields.Many2one(comodel_name='mail.alias', string='Alias', ondelete="restrict", required=False,
+    alias_id = fields.Many2one(comodel_name='mail.alias', string='Alias', ondelete="restrict", required=True,
                                help="The email address associated with this channel. New emails received will "
                                     "automatically create new leads assigned to the channel.")
 
     avatar_128 = fields.Image("Avatar", max_width=128, max_height=128, compute='_compute_avatar_128')
 
     channel_id = fields.Many2one(comodel_name='discuss.channel', string="Channel", help="")
-    real_channel_id = fields.Many2one(comodel_name='discuss.channel', string="Channel",
+    real_channel_id = fields.Many2one(comodel_name='discuss.channel', string="Real Channel",
                                       help="This is the channel chat-method get")
 
     chat_history_limit = fields.Integer(string='Chat History Limit', default=10,
@@ -202,7 +199,7 @@ class AIQuest(models.Model):
     model_name = fields.Char(related='model_id.model', string='Model Name', readonly=True, store=True)
     name = fields.Char(required=True)
     partner_id = fields.Many2one(comodel_name='res.partner', string="Customer", help="")
-    real_chat_user_id = fields.Many2one(comodel_name='res.users', string="Chat User",
+    real_chat_user_id = fields.Many2one(comodel_name='res.users', string="Real Chat User",
                                         help="Chat user thet chat-method is using")
     server_action_id = fields.Many2one('ir.actions.server', string='Server Action',
                                        help="Server action to be executed when this quest is initialized",
