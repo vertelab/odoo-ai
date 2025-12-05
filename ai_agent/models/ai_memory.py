@@ -93,10 +93,10 @@ class AIAgentMemory(models.Model):
     # nbr_days = fields.Integer(string='Number days this memory will live', related="ai_memory_id.nbr_days")
     last_run = fields.Datetime(string='Last Run', related="ai_memory_id.last_run")
     ai_memory_id = fields.Many2one(comodel_name='ai.memory', string="Memory", help="")
-    ai_memory_status = fields.Selection(related="ai_memory_id.status")
+    ai_memory_status = fields.Selection(related="ai_memory_id.status", string="Memory Status")
     ai_memory_llm_id = fields.Many2one(comodel_name="ai.agent.llm", string="LLM",
                                        related="ai_memory_id.ai_agent_llm_id")
-    ai_memory_llm_status = fields.Selection(related="ai_memory_id.ai_agent_llm_id.status")
+    ai_memory_llm_status = fields.Selection(related="ai_memory_id.ai_agent_llm_id.status", string="Memory LLM Status")
     ai_memory_url = fields.Char(string='Url', related="ai_memory_id.url")
     color = fields.Integer(related="ai_agent_id.color")
     name = fields.Char(related="ai_agent_id.name")
@@ -126,10 +126,10 @@ class AIquestMemory(models.Model):
     # nbr_days = fields.Integer(string='Number days this memory will live', related="ai_memory_id.nbr_days")
     last_run = fields.Datetime(string='Last Run', related="ai_memory_id.last_run")
     ai_memory_id = fields.Many2one(comodel_name='ai.memory', string="Memory", help="")
-    ai_memory_status = fields.Selection(related="ai_memory_id.status")
+    ai_memory_status = fields.Selection(related="ai_memory_id.status", string="Memory Status")
     ai_memory_llm_id = fields.Many2one(comodel_name="ai.agent.llm", string="LLM",
                                        related="ai_memory_id.ai_agent_llm_id")
-    ai_memory_llm_status = fields.Selection(related="ai_memory_id.ai_agent_llm_id.status")
+    ai_memory_llm_status = fields.Selection(related="ai_memory_id.ai_agent_llm_id.status", string="Memory LLM Status")
     ai_memory_url = fields.Char(string='Url', related="ai_memory_id.url")
 
     def run(self):
