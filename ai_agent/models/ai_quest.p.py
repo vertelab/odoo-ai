@@ -120,10 +120,10 @@ class AIQuestAgent(models.Model):
     ai_quest_id = fields.Many2one(comodel_name='ai.quest', string="", help="")
     ai_agent_id = fields.Many2one(
         comodel_name='ai.agent', string="Agent", help="", required=False)
-    ai_agent_status = fields.Selection(related='ai_agent_id.status')
+    ai_agent_status = fields.Selection(related='ai_agent_id.status', string="Agent Status")
     ai_agent_llm_id = fields.Many2one(comodel_name="ai.agent.llm", string="LLM", help="Choose Large Language Model",
                                       domain="[('status','=','confirmed')]", related='ai_agent_id.ai_agent_llm_id')
-    ai_llm_status = fields.Selection(related='ai_agent_id.ai_agent_llm_id.status')
+    ai_llm_status = fields.Selection(related='ai_agent_id.ai_agent_llm_id.status', string="LLM Status")
     object_id = fields.Reference(string='Object', related="ai_agent_id.object_id")
     sequence = fields.Integer(string='Sequence')
 
