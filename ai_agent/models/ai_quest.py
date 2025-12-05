@@ -263,7 +263,6 @@ class AIQuest(models.Model):
         for quest_id in quest_ids:
             if add := math.floor(quest_id.session_line_count / 1000000):
                 quests += add
-        _logger.error(f"{quests=}")
         return quests
 
 
@@ -656,7 +655,6 @@ class AIQuest(models.Model):
             if ai_messages:
                 last_ai_message = ai_messages[-1] if len(ai_messages) != 0 else None
                 if messages and last_ai_message:
-                    _logger.error(f"{last_ai_message=}")
                     return last_ai_message.content
 
     @api.model
@@ -800,8 +798,6 @@ class AIQuest(models.Model):
         if not isinstance(result, list):
             result = [result]
 
-        _logger.error(f"{result=}")
-
         objects = {
             'ai_session_id': eval_context.get('session'),
             'ai_quest_id': eval_context.get('self'),
@@ -864,7 +860,6 @@ class AIQuest(models.Model):
 
     @api.model_create_multi
     def create(self, vals_list):
-        _logger.error(f"{vals_list=}")
         new_server_action = False
         for record in vals_list:
             if not record.get("user_id"):
@@ -1324,7 +1319,6 @@ class AIQuest(models.Model):
             # Create a proper HumanMessage
             human_message = HumanMessage(content=initial_message)
 
-            _logger.error(f"{human_message=}")
             return {
                 "messages": [human_message],
                 'quest': self,

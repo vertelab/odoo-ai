@@ -214,11 +214,7 @@ class AIQuestSession(models.Model):
     def _message_set_main_attachment_id(self, attachment_ids):
         thread_ids = super(AIQuestSession, self)._message_set_main_attachment_id(attachment_ids)
 
-        _logger.error(f"{self.session=}")
-
         if self.ai_quest_id and self.message_ids[0].message_type == "email":
-            _logger.warning(f"{self.message_ids[0].body=}")
-
             self.ai_quest_id.mail(mail=self.message_ids[0], session=self)
 
         return thread_ids
@@ -246,7 +242,6 @@ class AIQuestSession(models.Model):
         if objects is None:
             objects = {}
         if result is not None:
-            _logger.warning(f"store session data before loop {objects=} {result=}")
             self.enddate = fields.Datetime.now()
             self.status = 'done'
             for message in result:
@@ -319,7 +314,6 @@ class AIQuestSession(models.Model):
             if session.debug:
                 session.log(agent, f"[session] revisit {session.name=} {agent.name=}")
         else:
-            _logger.warning(f"{agent=} {agent[0].ai_agent_llm_id=}")
             session = self.env['ai.quest.session'].create({
                 'status': 'active',
                 'ai_agent_id': agent.id,
@@ -335,7 +329,6 @@ class AIQuestSession(models.Model):
 
     @api.model
     def quest_init(self, quest, debug=False):
-        _logger.warning(f"{quest.id=}")
         quest.last_run = fields.Datetime.now()
         session_ids = self.env['ai.quest.session'].search([
             ('ai_quest_id', '=', quest.id), ('status', '=', 'active')], limit=1)
@@ -351,7 +344,6 @@ class AIQuestSession(models.Model):
                 'ai_agent_id': agents[0].id if agents else None,
                 'ai_agent_llm_id': agents[0].ai_agent_llm_id.id if agents else None,
             }
-            _logger.warning(f"{r=}")
             session = self.env['ai.quest.session'].create({
                 'startdate': fields.Datetime.now(),
                 'status': 'active',

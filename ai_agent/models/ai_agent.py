@@ -95,7 +95,6 @@ class AIAgent(models.Model):
     def action_get_quests(self):
         if self.session_line_ids:
             ai_quest_ids = list(set(map(lambda session_line_id: session_line_id.ai_quest_id.id, self.session_line_ids)))
-            _logger.error(f"{ai_quest_ids=}")
             ai_quest_ids = list(
                 set(map(lambda ai_quest_session_id: ai_quest_session_id.ai_quest_id.id, ai_quest_session_ids)))
             action = {
@@ -203,7 +202,6 @@ class AIAgent(models.Model):
 
     def get_test_wizard(self):
         action = self.env.ref("ai_agent.action_ai_agent_test_wizard").read()[0]
-        _logger.error(f"{action=}")
         action["context"] = {"default_ai_agent_id": self.id}
         return action
 
@@ -237,8 +235,6 @@ class AIAgent(models.Model):
         # Generate the summary
         summary = chain.invoke(docs)
         
-        _logger.error(f"{summary=}")
-
         response={}
         whole_text = ""
         for page in summary["input_documents"]:
@@ -454,7 +450,6 @@ class AIAgent(models.Model):
             TOOL = None
             try:
                 module = importlib.import_module(ai_tool_id.tool_lib)
-                _logger.error(f"{module=}")
                 TOOL = getattr(module, ai_tool_id.tool)(state)
             except ImportError as e:
                 _logger.error(f"Error importing {ai_tool_id.tool_lib=}: {e} {traceback.format_exc()}")
@@ -465,5 +460,4 @@ class AIAgent(models.Model):
                 _logger.error(f"An error occurred: {e}  {traceback.format_exc()}")
             if TOOL:
                 tools.append(TOOL)
-        _logger.warning(f"{tools=}")
         return tools
