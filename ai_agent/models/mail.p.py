@@ -60,7 +60,6 @@ class MailChannel(models.Model):
         if message.author_id != user.partner_id:
             if ai_quest and self._continue_with_chat(ai_quest, message):
                 bot_response = ai_quest.with_user(self.env.user).chat(message, self, user)
-                _logger.error(f"{bot_response=}")
 
                 if bot_response:
                     answer = _('no answer')
