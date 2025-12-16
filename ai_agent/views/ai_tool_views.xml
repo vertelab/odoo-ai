@@ -85,6 +85,7 @@
         </field>
     </record>
     <!-- Kanban View -->
+   
     <record id="view_ai_tool_kanban" model="ir.ui.view">
         <field name="name">ai.tool.kanban</field>
         <field name="model">ai.tool</field>
@@ -155,6 +156,8 @@
             </kanban>
         </field>
     </record>
+
+
     <!-- Calendar View -->
     <record id="view_ai_tool_calendar" model="ir.ui.view">
         <field name="name">ai.tool.calendar</field>
