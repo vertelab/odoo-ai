@@ -1,9 +1,11 @@
 langchain-core
+langchain
 langgraph
 langchain_community
 markdown
 unidecode
 scrapy
+youtube-transcript-api
 markdownify
 faiss-cpu
 pymupdf
@@ -13,5 +15,6 @@ beautifulsoup4
 typing_extensions
 duckduckgo_search
 IPython
+tiktoken
 lxml_html_clean
 lxml==5.1.0
