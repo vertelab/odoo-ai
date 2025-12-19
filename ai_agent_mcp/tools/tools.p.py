@@ -1,14 +1,6 @@
 import logging
-import requests
-import sys
-import json
 from langchain.tools import tool
-from bs4 import BeautifulSoup
 from odoo.addons.ai_agent.models.ai_quest import AgentState
-
-# Import things that are needed generically
-from pydantic import BaseModel, Field, ConfigDict
-from langchain.tools import BaseTool, StructuredTool, tool
 
 _logger = logging.getLogger(__name__)
 
