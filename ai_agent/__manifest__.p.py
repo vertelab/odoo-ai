@@ -98,7 +98,6 @@ and cost-effective AI systems that drive innovation and efficiency across their 
         "mail",
         "product",
         "crm",
-        "queue_job",
         ##if VERSION >= '16.0'
         "web_widget_mermaid_field"
         ##endif
