@@ -1,0 +1,31 @@
+<odoo>
+  <record id="res_config_settings_view_form" model="ir.ui.view">
+    <field name="name">res.config.settings.form.ai_trend</field>
+    <field name="model">res.config.settings</field>
+    <field name="priority" eval="50" />
+    <field name="inherit_id" ref="base.res_config_settings_view_form" />
+    <field name="arch" type="xml">
+      <!-- #if VERSION >= "17.0" -->
+      <xpath expr="//app[@name='ai_agent']" position="inside">
+        <block title="AI-trend">
+          <setting id="ai_trend_setting">
+            <span class="fa fa-lg fa-android" aria-label="API Key" />
+            <field name="youtube_api_key" class="w-auto ps-3 fw-bold" />
+            <br />
+          </setting>
+        </block>
+      </xpath>
+      <!-- #elif VERSION <= "16.0" -->
+      <div class="col-12 col-lg-6 o_setting_box" id="active_user_setting" position="after">
+        <div class="col-12 col-lg-6 o_setting_box" id="quests_setting">
+          <div class="o_setting_right_pane">
+            <span class="fa fa-lg fa-android" aria-label="API Key" />
+            <field name="youtube_api_key" class="w-auto ps-3 fw-bold" />
+          </div>
+        </div>
+      </div>
+      <!-- #endif -->
+    </field>
+  </record>
+</odoo>
+
