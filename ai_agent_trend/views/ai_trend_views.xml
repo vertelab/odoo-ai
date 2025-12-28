@@ -133,7 +133,7 @@
     <record id="action_ai_trend_from_memory" model="ir.actions.act_window">
     <field name="name">AI Trends</field>
     <field name="res_model">ai.trend</field>
-    <field name="view_mode">tree,form</field>
+    <field name="view_mode">list,form,kanban,calendar</field>
     <field name="domain">[('ai_memory_id', '=', active_id)]</field>
   </record>
   
