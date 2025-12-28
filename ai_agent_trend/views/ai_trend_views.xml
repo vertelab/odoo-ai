@@ -1,0 +1,157 @@
+<odoo>
+  <!-- List (tree) -->
+  <record id="view_ai_trend_tree" model="ir.ui.view">
+    <field name="name">ai.trend.tree</field>
+    <field name="model">ai.trend</field>
+    <field name="arch" type="xml">
+      <list string="AI Trends">
+        <field name="name" />
+        <field name="platform" optional="hide" />
+        <field name="topic" optional="hide" />
+        <field name="date_published" optional="hide" />
+        <field name="channel_or_author" optional="hide" />
+        <field name="description" optional="show" />
+        <field name="content" optional="show" />
+        <field name="content_embedding" optional="show" />
+        <field name="trend_score" optional="show" />
+        <field name="url" optional="show" />
+        <field name="video_id" optional="show" />
+        <field name="linkedin_post_id" optional="show" />
+        <field name="views" optional="show" />
+        <field name="likes" optional="show" />
+        <field name="comments" optional="show" />
+        <field name="ai_memory_id" optional="show" />
+      </list>
+    </field>
+  </record>
+  <!-- Search -->
+  <record id="view_ai_trend_search" model="ir.ui.view">
+    <field name="name">ai.trend.search</field>
+    <field name="model">ai.trend</field>
+    <field name="arch" type="xml">
+      <search string="AI Trend Search">
+        <field name="name" />
+        <field name="topic" />
+        <field name="description" />
+        <field name="content" />
+        <!-- Other fields and group by options -->
+        <field name="ai_memory_id" />
+        <field name="channel_or_author" />
+        <field name="comments" />
+        <field name="likes" />
+        <field name="linkedin_post_id" />
+        <field name="platform" />
+        <field name="trend_score" />
+        <field name="url" />
+        <field name="video_id" />
+        <field name="views" />
+        <field name="date_published" />
+        <filter name="platform_youtube" string="YouTube" domain="[('platform','=','youtube')]" />
+        <filter name="platform_linkedin" string="LinkedIn" domain="[('platform','=','linkedin')]" />
+        <!-- Group By options -->
+        <group expand="1" string="Group By">
+          <filter name="group_by_ai_memory" string="AI Memory" context="{'group_by':'ai_memory_id'}" />
+          <filter name="group_by_topic" string="Topic" context="{'group_by':'topic'}" />
+          <filter name="group_by_platform" string="Platform" context="{'group_by':'platform'}" />
+          <filter name="group_by_channel" string="Channel/Author" context="{'group_by':'channel_or_author'}" />
+          <filter name="group_by_date" string="Date" context="{'group_by':'date_published'}" />
+        </group>
+      </search>
+    </field>
+  </record>
+  <!-- Formulärvy (form) -->
+  <record id="view_ai_trend_form" model="ir.ui.view">
+    <field name="name">ai.trend.form</field>
+    <field name="model">ai.trend</field>
+    <field name="arch" type="xml">
+      <form string="AI Trend">
+        <sheet>
+          <group>
+            <field name="name" />
+            <field name="platform" />
+            <field name="url" />
+            <field name="date_published" />
+            <field name="channel_or_author" />
+            <field name="description" />
+            <field name="views" />
+            <field name="likes" />
+            <field name="comments" />
+            <field name="topic" />
+            <field name="content" />
+            <field name="trend_score" />
+          </group>
+        </sheet>
+      </form>
+    </field>
+  </record>
+  <!-- Kanban -->
+  <record id="view_ai_trend_kanban" model="ir.ui.view">
+    <field name="name">ai.trend.kanban</field>
+    <field name="model">ai.trend</field>
+    <field name="arch" type="xml">
+      <kanban>
+        <field name="name" />
+        <field name="platform" />
+        <templates>
+          <t t-name="kanban-box">
+            <div class="oe_kanban_global_click">
+              <strong>
+                <field name="name" />
+              </strong>
+              <br />
+              <small>
+                <field name="platform" />
+              </small>
+            </div>
+          </t>
+        </templates>
+      </kanban>
+    </field>
+  </record>
+  <!-- Caelndar -->
+  <record id="view_ai_trend_calendar" model="ir.ui.view">
+    <field name="name">ai.trend.calendar</field>
+    <field name="model">ai.trend</field>
+    <field name="arch" type="xml">
+      <calendar string="AI Trends" date_start="date_published">
+        <field name="name" />
+        <field name="platform" />
+      </calendar>
+    </field>
+  </record>
+  <!-- Action för att öppna vyerna -->
+  <record id="action_ai_trend" model="ir.actions.act_window">
+    <field name="name">AI Trends</field>
+    <field name="res_model">ai.trend</field>
+    <field name="view_mode">kanban,list,form,calendar</field>
+    <field name="help" type="html">
+      <p class="o_view_nocontent_smiling_face">Create and manage trending published material from LinkedIn and YouTube.</p>
+    </field>
+  </record>
+  <menuitem id="menu_ai_trend" name="AI Trend" parent="ai_agent.menu_ai_agent_configuration" action="action_ai_trend" sequence="10" />
+  
+    <record id="action_ai_trend_from_memory" model="ir.actions.act_window">
+    <field name="name">AI Trends</field>
+    <field name="res_model">ai.trend</field>
+    <field name="view_mode">list,form,kanban,calendar</field>
+    <field name="domain">[('ai_memory_id', '=', active_id)]</field>
+  </record>
+  
+  
+  <record id="view_ai_memory_form_inherit_ai_trend" model="ir.ui.view">
+    <field name="name">ai.memory.form.inherit.ai.trend</field>
+    <field name="model">ai.memory</field>
+    <field name="inherit_id" ref="ai_agent.view_ai_memory_form" />
+    <field name="arch" type="xml">
+      <xpath expr="//div[@name='button_box']" position="inside">
+        <button name="%(action_ai_trend_from_memory)d" type="action" class="oe_stat_button" icon="fa-line-chart" invisible="memory_type != 'ai_trend'">
+          <field name="ai_trend_ids" widget="statinfo" string="AI Trends" />
+        </button>
+      </xpath>
+      <xpath expr="//field[@name='memory_type']" position="after">
+        <field name="ai_trend_topics" invisible="memory_type != 'ai_trend'" />
+      </xpath>
+    </field>
+  </record>
+
+</odoo>

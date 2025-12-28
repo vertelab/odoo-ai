@@ -625,7 +625,7 @@ class AIQuest(models.Model):
             result = quest.build_graph(session=session,message=message).invoke(message_invoke)
             
             
-        """
+        """        
         if (self.init_type == 'chat' and self.chat_user_id) or (self.init_type == "channel" and self.channel_id):
             self = self.sudo()
             if self._check_quest_error():
@@ -809,6 +809,7 @@ class AIQuest(models.Model):
             eval_context = self._get_eval_context(None, kwargs)
             # eval_context["session"].status = "active"
             if self.debug:
+                eval_context["session"].add_message(f"Eval Context\n{eval_context}\nCode\n{self.code}")
                 _logger.warning(f"Efter eval context {eval_context=}" + f"{self.code=}\n=======\n {local_dict=}")
             safe_eval(self.code, eval_context, local_dict, mode="exec", nocopy=True)
         except ValueError as e:
@@ -823,6 +824,7 @@ class AIQuest(models.Model):
                 self.log_message(f"{e=}\n\n=====\n{self.code=}\n=======\n {local_dict=}")
             return None
         session = local_dict.get('session', eval_context['session'])
+        session.add_message(f"{local_dict=}")
 
         result = None
         if local_dict.get('result'):
@@ -1320,11 +1322,13 @@ class AIQuest(models.Model):
             raise ValueError("No quest description provided")
 
         quest_description = self.description
-            
+        # ~ raise UserError(f"{kwargs=}\n{quest_description=}")
         if kwargs.get('record'):  # Populate with data from record if there is a record
             try:
                 data = kwargs.get('record').read()[0]
-                quest_description = quest_description.format(**{k: data[k] for k in data.keys()})
+                quest_description = quest_description.format(**{k: data[k] for k in data.keys()}) 
+                raise UserError(f"{data=}\n{quest_description=}")
+                _logger.warning(f"{data=}\n{quest_description=}")
             except Exception as e:
                 _logger.warning(f"Error formatting quest description with record data: {e}")
 
@@ -1337,11 +1341,12 @@ class AIQuest(models.Model):
         if not session:
             raise UserError(_("No session provided to build_chain"))
 
+
         # Set debug mode
         debug = kwargs.get('debug', self.debug)
 
         if debug:
-            session.add_message(f"Building chain with {len(agents)} agents")
+            session.add_message(f"Building chain with {len(agents)} agents\n{quest_description=}")
 
         def initial_node(state):
             """Initialize the state for the chain."""

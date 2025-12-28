@@ -42,6 +42,25 @@ class MailChannel(models.Model):
             user = self.env.ref('base.user_root')
         return user, ai_quest
 
+    def get_user_context(self):
+        """Hämta aktuell vy/action för användaren"""
+        user = self.env.user
+        request = self.env['ir.http']._get_request() if hasattr(self.env, '_get_request') else None
+        
+        context_info = {
+            'model': request and request.context.get('active_model') or 'unknown',
+            'record_id': request and request.context.get('active_id') or False,
+            'view_type': request and request.context.get('view_type') or 'form',
+            'action_id': request and request.context.get('params', {}).get('action') or False,
+            'user_id': user.id,
+            'username': user.name,
+            'channel_uuid': self.uuid,
+            # ~ 'session_id': user.session_id,
+            # ~ 'session_info': user.session_info,
+        }
+        
+        return context_info
+
 
     def send_ai_message(self,message):
 
@@ -87,7 +106,16 @@ class MailChannel(models.Model):
             return True
         return False
 
+    def post_message(self, **kwargs):
+        context_info = self.get_user_context()
+        body = f"{kwargs['body']} [Model: {context_info['model']}, ID: {context_info['record_id']}]"
+        return super().post_message(body=body, **kwargs)
+
+
     def _process_message_post(self, bot_response):
+        
+        _logger.warning(f"-----------------> {self.get_user_context()=}")
+        
         message_content = _('no answer')
 
         if bot_response.get('response', False):
