@@ -188,6 +188,7 @@ class AIQuest(models.Model):
     init_type_str = fields.Html(string='', )
     is_favorite = fields.Boolean()
     last_run = fields.Datetime()
+    has_code = fields.Boolean(string='Has Code',default=False,help="Python code to build and invoke the quest")
     llm_count = fields.Integer(compute="compute_llm_count")
     model_id = fields.Many2one(comodel_name='ir.model', string="Model", help="Bind this Quest to this model")
     model_name = fields.Char(related='model_id.model', string='Model Name', readonly=True, store=True)
@@ -801,27 +802,53 @@ class AIQuest(models.Model):
         if self.debug:
             _logger.warning(f" RUN {kwargs=}")
             self.log_message(f" RUN {kwargs=}")
+        if kwargs.get('mermaid'):
+            return None
+        ## eval_context
         local_dict = {}
         try:
             if self.debug:
                 _logger.warning(f" Före eval context -----------------------")
             eval_context = self._get_eval_context(None, kwargs)
-            # eval_context["session"].status = "active"
             if self.debug:
-                eval_context["session"].add_message(f"Eval Context\n{eval_context}\nCode\n{self.code}")
-                _logger.warning(f"Efter eval context {eval_context=}" + f"{self.code=}\n=======\n {local_dict=}")
-            safe_eval(self.code, eval_context, local_dict, mode="exec", nocopy=True)
+                eval_context["session"].add_message(f"Eval Context\n{eval_context}\nCode\n{self.code if self.has_code else 'built-in graph'}")
+                _logger.warning(f"Efter eval context {eval_context=}" + f"{self.code=}\n=======\n")
         except ValueError as e:
             self.log_message(f"ValueError {e=}", is_error=True)
+            eval_context["session"].done_message(f"ValueError {e=}")
             if self.debug:
-                self.log_message(f"{e=}\n\n=====\n{self.code=}\n=======\n {local_dict=}\n{traceback.format_exc()}")
+                self.log_message(f"{e=}\n\n=====\n{self.code=}\n=======\n{traceback.format_exc()}")
             return None
         except Exception as e:
             _logger.error(f"{e=}")
             self.log_message(f" {e=}  {traceback.format_exc()}")
+            eval_context["session"].done_message(f" {e=}  {traceback.format_exc()}")
             if self.debug:
-                self.log_message(f"{e=}\n\n=====\n{self.code=}\n=======\n {local_dict=}")
+                self.log_message(f"{e=}\n\n=====\n{self.code=}\n=======\n")
             return None
+       
+        ## invoke quest
+        if not self.has_code:
+            try:
+                local_dict['result'] = self.build(session=eval_context.get('session'),
+                                     message=eval_context.get('message_body'),
+                                     record=eval_context.get('record'),
+                                     records=eval_context.get('records'),
+                                     ).invoke(eval_context.get('message_invoke'))
+            except Exception as e:
+                _logger.error(f"quest-build {e=} {traceback.format_exc()}")
+                self.log_message(f"quest-build {e=}  {traceback.format_exc()}")
+                eval_context["session"].done_message(f"quest-build {e=}  {traceback.format_exc()}")
+                return None
+        else:
+            local_dict = {}
+            try:
+                safe_eval(self.code, eval_context, local_dict, mode="exec", nocopy=True)
+            except Exception as e:
+                _logger.error(f"safe_eval {e=} {self.code=} {eval_context=}")
+                self.log_message(f"safe_eval {e=} {self.code=} {eval_context=} {traceback.format_exc()}")
+                eval_context["session"].done_message(f"safe_eval {e=} {self.code=} {eval_context=} {traceback.format_exc()}")
+                return None
         session = local_dict.get('session', eval_context['session'])
         session.add_message(f"{local_dict=}")
 
@@ -842,8 +869,8 @@ class AIQuest(models.Model):
             'records': eval_context.get('records')
         }
 
-        if result:
-            session.store_session_data(result=result, objects=objects)
+        # ~ if result:
+        session.store_session_data(result=result, objects=objects)
 
         return local_dict
 
@@ -925,13 +952,13 @@ class AIQuest(models.Model):
     # LangGraph 
     # ------------------------------------------------------------
 
-    def build(self, mermaid=True,**kwargs):
+    def build(self, mermaid=False,**kwargs):
         kwargs.update({"mermaid": mermaid})
         if self.is_supervisor:
-            _logger.info(f"Building graph with supervisor ")
+            _logger.info(f"Building graph with supervisor {kwargs}")
             return self.build_supervisor(**kwargs)
         else:
-            _logger.info(f"Building chain ")
+            _logger.info(f"Building chain {kwargs}")
             return self.build_chain(**kwargs)
 
     def build_supervisor(self, **kwargs):
@@ -952,7 +979,7 @@ class AIQuest(models.Model):
 
         try:
             # Create graph
-            graph_builder = StateGraph(AgentState)
+            graph_builder = StateGraph(AgentState,session)
 
             # Add supervisor
             _logger.info(f"Adding supervisor with {members=}")
@@ -995,7 +1022,7 @@ class AIQuest(models.Model):
             #     self.log_message(f"Graph structure: {json.dumps(graph.get_graph().to_json(), indent=2)}")
             #     _logger.debug(f"Graph structure: {json.dumps(graph.get_graph().to_json(), indent=2)}")
 
-            return graph
+            return CustomStateGraph(graph,**kwargs)
 
         except Exception as e:
             self.log_message(f"Error building graph: {str(e)}", is_error=True)
@@ -1115,7 +1142,7 @@ class AIQuest(models.Model):
                         # Rate limit exceeded
                         error_msg = f"Rate limit exceeded for supervisor: {str(e)}"
                         _logger.warning(error_msg)
-                        session.add_message(error_msg)
+                        session.done_message(error_msg)
 
                         # Return FINISH on rate limit to avoid getting stuck
                         return {"next": "FINISH", 'session': session}
@@ -1188,7 +1215,7 @@ class AIQuest(models.Model):
 
             except Exception as e:
                 _logger.error(f"Error in supervisor chain: {str(e)}", exc_info=True)
-                session.add_message(f"Error in supervisor chain: {str(e)}\n{traceback.format_exc()}")
+                session.done_message(f"Error in supervisor chain: {str(e)}\n{traceback.format_exc()}")
                 return {"next": "FINISH", 'session': session}
 
         return supervisor_chain
@@ -1319,27 +1346,23 @@ class AIQuest(models.Model):
             raise ValueError("No agents provided")
         if not self.description:
             raise ValueError("No quest description provided")
-
-        quest_description = self.description
-        # ~ raise UserError(f"{kwargs=}\n{quest_description=}")
-        if kwargs.get('record'):  # Populate with data from record if there is a record
-            try:
-                data = kwargs.get('record').read()[0]
-                quest_description = quest_description.format(**{k: data[k] for k in data.keys()}) 
-                raise UserError(f"{data=}\n{quest_description=}")
-                _logger.warning(f"{data=}\n{quest_description=}")
-            except Exception as e:
-                _logger.warning(f"Error formatting quest description with record data: {e}")
-
-
-        # Get agents sorted by sequence
-        agents = [agent for agent in self.ai_agent_ids.sorted(key=lambda s: s.sequence).mapped('ai_agent_id') if agent]
-
         # Get session
         session = kwargs.get('session', False)
         if not session:
+            session=self.env['ai.quest.session'].quest_init(self)
             raise UserError(_("No session provided to build_chain"))
-
+        quest_description = self.description
+        if kwargs.get('record'):  # Populate with data from record if there is a record
+            try:
+                data = kwargs.get('record').read()[0]
+                quest_description = quest_description.format(**{k: data[k] for k in data.keys()})
+                session.add_message(f"build_chain {quest_description=}")
+            except Exception as e:
+                _logger.warning(f"Error formatting quest description with record data: {e}")
+                session.done_message(f"build_chain Error formatting quest description with record data: {e}\n{kwargs.get('record')=}\n{quest_description=}")
+                
+        # Get agents sorted by sequence
+        agents = [agent for agent in self.ai_agent_ids.sorted(key=lambda s: s.sequence).mapped('ai_agent_id') if agent]
 
         # Set debug mode
         debug = kwargs.get('debug', self.debug)
@@ -1355,7 +1378,7 @@ class AIQuest(models.Model):
             #TODO Fixa extra context T/0463
 
             if debug:
-                session.add_message(f"Initializing chain with message: {initial_message[:100]}...")
+                session.add_message(f"Initializing chain with message: {initial_message}...")
 
             # Create a proper HumanMessage
             human_message = HumanMessage(content=initial_message)
@@ -1414,12 +1437,12 @@ class AIQuest(models.Model):
             # Compile the graph
             compiled_graph = graph.compile()
 
-            return compiled_graph
+            return CustomStateGraph(compiled_graph,**kwargs)
 
         except Exception as e:
             error_msg = f"Error building chain: {str(e)}\n{traceback.format_exc()}"
             _logger.error(error_msg)
-            session.add_message(error_msg)
+            session.done_message(error_msg)
             raise
 
     # Inspired by https://github.com/menonpg/agentic_search_openai_langgraph/blob/main/agents.py
@@ -1436,17 +1459,17 @@ class AIQuest(models.Model):
             try:
                 return json.loads(json_string)
             except json.JSONDecodeError:
-                session.add_message(f"{agent} Error: Invalid JSON format with backtick {json_string=}")
+                session.done_message(f"{agent} Error: Invalid JSON format with backtick {json_string=}")
                 return None
         else:
             try:
                 return json.loads(message)
             except json.JSONDecodeError:
-                session.add_message(f"{agent} Error: Invalid JSON format\n{message}")
+                session.done_message(f"{agent} Error: Invalid JSON format\n{message}")
             try:
                 return json.loads(message)
             except json.JSONDecodeError:
-                session.add_message(f"{agent} Error: Invalid JSON tried updated '''json {message}'''")
+                session.done_message(f"{agent} Error: Invalid JSON tried updated '''json {message}'''")
 
     def get_agent_name(self, **kwargs):
         if kwargs.get('mermaid'):
@@ -1478,3 +1501,22 @@ class AgentState(TypedDict):
     last_position: int
     cycle_count: int
     file: Blob
+
+class CustomStateGraph:
+    
+    def __init__(self, compiled_graph,session,**kwargs):
+        self.compiled_graph = compiled_graph
+        self.session = session
+        self.mermaid = kwargs.get('mermaid')
+    
+    def invoke(self, state: AgentState, config=None, **kwargs) -> AgentState:
+        
+        original_result = self.compiled_graph.invoke(state, config, **kwargs)
+        self.session.add_message(f"Custom invoke completed:  {original_result=} {state=}" )
+        _logger.error(f"Custom invoke completed:  {original_result=} {state=}")
+        
+        return original_result
+        
+    def get_graph(self):
+        self.session.done_message(f"Custom State Graph mermaid completed" )
+        return self.compiled_graph.get_graph()
