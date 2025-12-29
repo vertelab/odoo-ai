@@ -294,7 +294,11 @@ class AIAgent(models.Model):
         # Regular expression to find {placeholder} and {{placeholder}}
         pattern = r'\{\{(.*?)\}\}|\{(.*?)\}'
         # Find all matches
-        matches = re.findall(pattern, template)
+        try:
+            matches = re.findall(pattern, template)
+        except Exception as e:
+            _logger.error(f"_extract_placeholders {e=} {pattern=} {template=} {traceback.format_exc()}")
+            return []
         # Extract only non-empty values from the matches
         placeholders = [match[0] or match[1] for match in matches]
 
@@ -302,40 +306,44 @@ class AIAgent(models.Model):
 
     def agent_extra_context(self, quest=None, record=None):
         if record:
-            record_data = record.read()[0]
+            try:
+                record_data = record.read()[0]
 
-            # Extract placeholders from ai_prompt_template
-            placeholders = self._extract_placeholders(self.ai_prompt_template)
+                # Extract placeholders from ai_prompt_template
+                placeholders = self._extract_placeholders(self.ai_prompt_template or "")
 
-            # Process the fields
-            processed_data = {}
-            for field, value in record_data.items():
-                # If the value is a tuple with an ID and name, extract the name
-                if isinstance(value, tuple) and len(value) == 2:
-                    processed_data[field] = value[1]
-                else:
-                    processed_data[field] = value  # Keep other field values as they are
+                # Process the fields
+                processed_data = {}
+                for field, value in record_data.items():
+                    # If the value is a tuple with an ID and name, extract the name
+                    if isinstance(value, tuple) and len(value) == 2:
+                        processed_data[field] = value[1]
+                    else:
+                        processed_data[field] = value  # Keep other field values as they are
 
-            # Filter processed_data to only include fields in placeholders
-            filtered_data = {key: processed_data[key] for key in placeholders if key in processed_data}
-            return filtered_data
-        return {}
+                # Filter processed_data to only include fields in placeholders
+                filtered_data = {key: processed_data[key] for key in placeholders if key in processed_data}
+                return filtered_data
+            except Exception as e:
+                _logger.error(f"agent_extra_context {e=} {traceback.format_exc()}")
+                return {}
+        else:
+            return {}
 
     def create_node(self, **kwargs):
         """Creates a node for the agent in the graph."""
 
         topic = kwargs.get('topic', kwargs.get('message', ''))
         session = kwargs.get('session', False)
-        debug = kwargs.get('debug', False)
         quest = session.ai_quest_id
-        quest_description = quest.description
         use_lang = f"Use language {self.env.user.lang}" if quest.use_personal_lang else ''
+        session.add_message(f"Agent {self.name} for {quest.name} create_node {kwargs=} ")
 
         def agent_node(state):
             """Process messages and generate a response."""
 
-            if debug:
-                session.add_message(f"Agent {self.name} agent_node Initial state: {state=}")
+            # ~ if quest.debug:
+            session.add_message(f"Agent {self.name} agent_node Initial state: {state=}")
 
             messages = state.get('messages', [])
             if isinstance(messages, list) and hasattr(messages[-1], 'content'):
@@ -348,7 +356,7 @@ class AIAgent(models.Model):
             if isinstance(state.get('scratchpad', []), str):
                 state['scratchpad'] = [state.get('scratchpad', '')]
 
-            if debug:
+            if quest.debug:
                 session.add_message(f"Agent {self.name} received messages: {len(messages)} {messages=} {state=}")
 
             system_message = SystemMessage(
@@ -369,6 +377,9 @@ class AIAgent(models.Model):
                     {self.agent_extra_context(quest=quest, record=kwargs.get('record'))}
                 """
             )
+            # ~ if quest.debug:
+            session.add_message(f"Agent {self.name} system message: {system_message=} {state=}")
+            _logger.error(f"Agent {self.name} system message: {system_message=} {session=} {state=}")
 
             messages = [system_message, HumanMessage(content=topic)]
 
@@ -377,14 +388,14 @@ class AIAgent(models.Model):
                 return False
 
 
-            if debug:
+            if quest.debug:
                 self.log_message(f"Agent  {self.name} before invoke {messages=} {state=}")
                 _logger.debug(f"Agent {self.name} {messages=} {state=}")
 
                 # Get LLM
             llm = self.ai_agent_llm_id.get_llm()
             tools = self._get_tools(state)
-                          
+            state['session'].add_message(f"Agent {self.name} {self.ai_agent_llm_id.name=} {llm=}  {tools=} {state=}")            
             try:
                 if self.ai_agent_llm_id.is_asr:
                     file = ""
@@ -417,7 +428,7 @@ class AIAgent(models.Model):
             except Exception as e:
                 _logger.error(f"Error in agent {self.name}: {str(e)}")
                 self.log_message(f"Agent {self.name} error: {str(e)}\n{traceback.format_exc()}")
-                session.add_message(f"Agent {self.name} error: {str(e)}\n{traceback.format_exc()}")
+                session.done_message(f"Agent {self.name} error: {str(e)}\n{traceback.format_exc()}")
 
                 # return {
                 #     "messages": [
