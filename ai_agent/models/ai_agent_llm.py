@@ -309,7 +309,6 @@ class AIAgentLLM(models.Model):
         retry=retry_if_exception_type(httpx.HTTPStatusError)
     )
     def invoke(self, input_text, config=None, session=None, quest=None, agent=None, debug=False):
-        _logger.error(f"invokeinvokeinvokeinvokeinvokeinvokeinvokeinvokeinvokeinvokeinvokeinvokeinvokeinvokeinvokeinvokeinvoke")
         if input_text is None:
             error_msg = f"Input cannot be None. Please provide a valid input. {input_text=} {config=} {session=} {quest=} {agent=}"
             self.log_message(body=error_msg, is_error=True)
