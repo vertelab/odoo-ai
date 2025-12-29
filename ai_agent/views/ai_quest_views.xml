@@ -132,6 +132,7 @@
                         </group>
                         <group string="Advanced Settings" col="2">
                             <field name="debug" widget="boolean_toggle" />
+                            <field name="has_code" widget="boolean_toggle" />
                             <field name="is_supervisor" />
                         </group>
                         <group col="4" string="Context Settings">
@@ -148,7 +149,7 @@
                             <page string="Description" id="desc">
                                 <field name="description" />
                             </page>
-                            <page string="Code" id="code">
+                            <page string="Code" id="code" invisible="not has_code">
                                 <field name="code" widget="ace" options="{'mode': 'python','theme': 'solarized_dark', 'tabSize': 4, 'showGutter': true}"/>
                             </page>
                             <page string="Supervisor" id="supervisor" invisible="is_supervisor == False">

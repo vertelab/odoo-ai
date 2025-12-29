@@ -55,7 +55,7 @@ class AIQuestSession(models.Model):
     _order = 'startdate desc'
 
     session = fields.Char(default=lambda self: str(uuid.uuid4()))
-    name = fields.Char(default=lambda self: self.session)
+    name = fields.Char(related="session")
     ai_agent_count = fields.Integer(compute='_compute_ai_agent_count')
     ai_agent_id = fields.Many2one(comodel_name="ai.agent", string="Ai Agent")
     ai_agent_ids = fields.Many2many(comodel_name="ai.agent", string="Ai Agents")
@@ -271,6 +271,10 @@ class AIQuestSession(models.Model):
 
     def add_message(self, message, **kwarg):
         self.env['ai.quest.session.message'].add(self, message, **kwarg)
+        
+    def done_message(self, message, **kwarg):
+        self.env['ai.quest.session.message'].add(self, message, **kwarg)
+        self.status = 'done'
    
     def save_messages(self, message, **kwarg):
         self.message_post(body=f"save_message<br>{message=}<br><br>{type(message)=}<br>{isinstance(message, dict)=}<br>{isinstance(message, list)=}<br>{isinstance(message, AIMessage)=}")
