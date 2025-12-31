@@ -319,13 +319,13 @@ class AIAgent(models.Model):
         session = kwargs.get('session', False)
         quest = session.ai_quest_id
         use_lang = f"Use language {self.env.user.lang}" if quest.use_personal_lang else ''
-        session.add_message(f"Agent {self.name} for {quest.name} create_node {kwargs=} ")
+        # ~ session.add_message(f"Agent {self.name} for {quest.name} create_node {kwargs=} ")
 
         def agent_node(state):
             """Process messages and generate a response."""
 
             # ~ if quest.debug:
-            session.add_message(f"Agent {self.name} agent_node Initial state: {state=}")
+            session.add_message(f"Agent {self.name} agent_node Initial state: ",state=state)
 
             messages = state.get('messages', [])
             if isinstance(messages, list) and hasattr(messages[-1], 'content'):
@@ -333,14 +333,13 @@ class AIAgent(models.Model):
             else:
                 latest_message = messages[-1]
 
-            _logger.info(f"Agent {self.name} received messages: {len(messages)}  {state=}")
-
             if isinstance(state.get('scratchpad', []), str):
                 state['scratchpad'] = [state.get('scratchpad', '')]
 
             if quest.debug:
-                session.add_message(f"Agent {self.name} received messages: {len(messages)} {messages=} {state=}")
-
+                # ~ session.add_message(f"Agent {self.name} received messages: {len(messages)} {messages=} {state=}")
+                _logger.info(f"Agent {self.name} received messages: {len(messages)}  {state=}")
+                
             system_message = SystemMessage(
                 content=f"""You are an agent with specific responsibilities.
                 Role: {self.ai_role}
@@ -359,9 +358,9 @@ class AIAgent(models.Model):
                     {self.agent_extra_context(quest=quest, record=kwargs.get('record'))}
                 """
             )
-            # ~ if quest.debug:
-            session.add_message(f"Agent {self.name} system message: {system_message=} {state=}")
-            _logger.error(f"Agent {self.name} system message: {system_message=} {session=} {state=}")
+            if quest.debug:
+                session.add_message(f"Agent {self.name} system message: {system_message=} {state=}")
+                _logger.error(f"Agent {self.name} system message: {system_message=} {session=} {state=}")
 
             messages = [system_message, HumanMessage(content=topic)]
 
@@ -371,13 +370,13 @@ class AIAgent(models.Model):
 
 
             if quest.debug:
-                self.log_message(f"Agent  {self.name} before invoke {messages=} {state=}")
+                # ~ self.log_message(f"Agent  {self.name} before invoke {messages=} {state=}")
                 _logger.debug(f"Agent {self.name} {messages=} {state=}")
 
                 # Get LLM
             llm = self.ai_agent_llm_id.get_llm()
             tools = self._get_tools(state)
-            state['session'].add_message(f"Agent {self.name} {self.ai_agent_llm_id.name=} {llm=}  {tools=} {state=}")            
+            # ~ state['session'].add_message(f"Agent {self.name} {self.ai_agent_llm_id.name=} {llm=}  {tools=} {state=}")            
             try:
                 if self.ai_agent_llm_id.is_asr:
                     file = ""
