@@ -277,14 +277,14 @@ class AIQuest(models.Model):
             real_ai_agent_ids = list(set(filter(lambda ai_agent_id: ai_agent_id.ai_agent_id.id, rec.ai_agent_ids)))
             if real_ai_agent_ids:
                 try:
-                    graph = rec.build(session=self.env['ai.quest.session'].quest_init(rec), mermaid=True)
+                    graph = rec.build(session=self.env['ai.quest.session'].quest_init(rec,mermaid=True), mermaid=True)
                     rec.mermaid_graph = graph_to_mermaid(graph.get_graph())
                 except Exception as e:
                     raise UserError(f"Error building chain: {str(e)}\n{traceback.format_exc()}")
             else:
                 rec.mermaid_graph = False
 
-    mermaid_graph = fields.Text("Graph Text", compute=_compute_graph_image, compute_sudo=True, store=False)
+    mermaid_graph = fields.Text("Graph Text", compute="_compute_graph_image", compute_sudo=True, store=False)
 
     @api.model
     def _generate_random_token(self):
@@ -802,7 +802,7 @@ class AIQuest(models.Model):
     def run(self, **kwargs):
         if self.debug:
             _logger.warning(f" RUN {kwargs=}")
-            self.log_message(f" RUN {kwargs=}")
+            # ~ self.log_message(f" RUN {kwargs=}")
         if kwargs.get('mermaid'):
             return None
         ## eval_context
@@ -812,7 +812,7 @@ class AIQuest(models.Model):
                 _logger.warning(f" Före eval context -----------------------")
             eval_context = self._get_eval_context(None, kwargs)
             if self.debug:
-                eval_context["session"].add_message(f"Eval Context\n{eval_context}\nCode\n{self.code if self.has_code else 'built-in graph'}")
+                # ~ eval_context["session"].add_message(f"Eval Context\n{eval_context}\nCode\n{self.code if self.has_code else 'built-in graph'}")
                 _logger.warning(f"Efter eval context {eval_context=}" + f"{self.code=}\n=======\n")
         except ValueError as e:
             self.log_message(f"ValueError {e=}", is_error=True)
@@ -851,7 +851,7 @@ class AIQuest(models.Model):
                 eval_context["session"].done_message(f"safe_eval {e=} {self.code=} {eval_context=} {traceback.format_exc()}")
                 return None
         session = local_dict.get('session', eval_context['session'])
-        session.add_message(f"{local_dict=}")
+        # ~ session.add_message(f"{local_dict=}")
 
         result = None
         if local_dict.get('result'):
@@ -955,6 +955,14 @@ class AIQuest(models.Model):
 
     def build(self, mermaid=False,**kwargs):
         kwargs.update({"mermaid": mermaid})
+        kwargs['quest_description'] = self.description
+        if kwargs.get('record'):  # Populate with data from record if there is a record
+            try:
+                data = kwargs.get('record').read()[0]
+                kwargs['quest_description'] = self.description.format(**{k: data[k] for k in data.keys()})
+            except Exception as e:
+                _logger.warning(f"Error formatting quest description with record data: {e}")
+                raise
         if self.is_supervisor:
             _logger.info(f"Building graph with supervisor {kwargs}")
             return self.build_supervisor(**kwargs)
@@ -1039,14 +1047,9 @@ class AIQuest(models.Model):
 
         use_lang = f"Use language {self.env.user.lang} for the answer to Human" if self.use_personal_lang else ''
         topic = kwargs.get('topic', kwargs.get('message', ''))
-        quest_description = self.description
+        quest_description = kwargs.get('quest_description',session.ai_quest_id.description)
 
-        if kwargs.get('record'):  # Populate with data from record if there is a record
-            try:
-                data = kwargs.get('record').read()[0]
-                quest_description = quest_description.format(**{k: data[k] for k in data.keys()})
-            except Exception as e:
-                _logger.warning(f"Error formatting quest description with record data: {e}")
+
 
         # Format the supervisor prompt with required parameters
         system_prompt = """You are a supervisor coordinating between workers: {members}.
@@ -1352,16 +1355,7 @@ class AIQuest(models.Model):
         if not session:
             session=self.env['ai.quest.session'].quest_init(self)
             raise UserError(_("No session provided to build_chain"))
-        quest_description = self.description
-        if kwargs.get('record'):  # Populate with data from record if there is a record
-            try:
-                data = kwargs.get('record').read()[0]
-                quest_description = quest_description.format(**{k: data[k] for k in data.keys()})
-                session.add_message(f"build_chain {quest_description=}")
-            except Exception as e:
-                _logger.warning(f"Error formatting quest description with record data: {e}")
-                session.done_message(f"build_chain Error formatting quest description with record data: {e}\n{kwargs.get('record')=}\n{quest_description=}")
-                
+        quest_description = kwargs.get('quest_description',session.ai_quest_id.description)                
         # Get agents sorted by sequence
         agents = [agent for agent in self.ai_agent_ids.sorted(key=lambda s: s.sequence).mapped('ai_agent_id') if agent]
 
@@ -1370,7 +1364,8 @@ class AIQuest(models.Model):
 
         if debug:
             session.add_message(f"Building chain with {len(agents)} agents\n{quest_description=}")
-
+            _logger.warning(f"Building chain with {len(agents)} agents\n{quest_description=}")
+            
         def initial_node(state):
             """Initialize the state for the chain."""
             # Get the initial message/topic
@@ -1399,7 +1394,7 @@ class AIQuest(models.Model):
 
         try:
             # Create the graph
-            graph = StateGraph(AgentState)
+            graph = StateGraph(AgentState,session)
 
             # Add initial node
             graph.add_node("initial", initial_node)
@@ -1509,15 +1504,18 @@ class CustomStateGraph:
         self.compiled_graph = compiled_graph
         self.session = session
         self.mermaid = kwargs.get('mermaid')
+        self.quest = kwargs.get('quest')
+        self.debug = kwargs.get('debug',False)
     
     def invoke(self, state: AgentState, config=None, **kwargs) -> AgentState:
         
         original_result = self.compiled_graph.invoke(state, config, **kwargs)
-        self.session.add_message(f"Custom invoke completed:  {original_result=} {state=}" )
-        _logger.error(f"Custom invoke completed:  {original_result=} {state=}")
+        if self.debug:
+            # ~ self.session.add_message(f"Custom invoke completed:  {original_result=} {state=}" )
+            _logger.info(f"Custom invoke completed:  {original_result=} {state=}")
         
         return original_result
         
     def get_graph(self):
-        self.session.done_message(f"Custom State Graph mermaid completed" )
+        _logger.info(f"Custom State Graph mermaid completed" )
         return self.compiled_graph.get_graph()

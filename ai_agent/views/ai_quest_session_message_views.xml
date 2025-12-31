@@ -6,10 +6,15 @@
         <field name="arch" type="xml">
             <tree string="Messages">
                 <field name="sequence"/>
+<!--
                 <field name="ai_quest_session_id"/>
+-->
+                <field name="date"/>
                 <field name="message_type"/>
                 <field name="message_content"/>
+                <field name="message" optional="hide"/>
                 <field name="message_raw" optional="hide"/>
+                <field name="time_difference_ms" optional="hide"/>
             </tree>
         </field>
     </record>
@@ -38,17 +43,30 @@
                 <sheet string="Message">
                     <group>
                         <group>
+<!--
                             <field name="ai_quest_session_id"/>
+-->
+                            <field name="date"/>
+                            <field name="time_difference_ms"/>
                             <field name="message_type"/>
                             <field name="message_content"/>
-                            <field name="message_raw"/>
                         </group>
-                        <group>
-                        </group>
+    
                     </group>
-                    <group>
-                        <separator/>
-                    </group>
+<notebook>
+<page string="Content" name="content">
+            <field name="message" nolabel="1"/>
+</page>
+<page string="Html Content" name="raw">
+            <field name="message_html" nolabel="1"/>
+</page>
+<page string="Raw Content" name="raw">
+            <field name="message_raw" nolabel="1"/>
+</page>
+<page string="Traceback" name="trace">
+            <field name="traceback" nolabel="1"/>
+</page>
+</notebook>
                 </sheet>
             </form>
         </field>

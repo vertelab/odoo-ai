@@ -1,13 +1,11 @@
-import uuid
-
+from langchain_core.messages import AIMessage, HumanMessage, ChatMessage, SystemMessage, ToolMessage
 from odoo import models, fields, api, _
 from odoo.exceptions import UserError, AccessError, ValidationError
 import logging
-
-from langchain_core.messages import AIMessage, HumanMessage, ChatMessage, SystemMessage, ToolMessage
+import time
+import uuid
 
 _logger = logging.getLogger(__name__)
-
 
 class AISessionObject(models.Model):
     _name = 'ai.session.object'
@@ -76,10 +74,11 @@ class AIQuestSession(models.Model):
     session_object_count = fields.Integer(compute='_compute_session_object_count')
     session_object_ids = fields.One2many(comodel_name="ai.session.object", inverse_name="ai_session_id")
     startdate = fields.Datetime(default=lambda self: fields.Datetime.now())
+    starttime = fields.Float(string='Start time (ms)',default=lambda t: int(time.time() * 1000))
     status = fields.Selection(
         selection=[("draft", "Draft"), ("active", "Active"), ("done", "Done"), ("error", "Error")],
         default="draft")
-    time_difference_ms = fields.Float(string='Time Difference (ms)', compute='_compute_time_difference', store=True)
+    time_difference_ms = fields.Integer(string='Time Difference (ms)', compute='_compute_time_difference', store=True)
     type_of_output = fields.Text()
     user_id = fields.Many2one(comodel_name='res.users', string="User", help="")
     
@@ -203,10 +202,7 @@ class AIQuestSession(models.Model):
     def _compute_time_difference(self):
         for record in self:
             if record.startdate and record.enddate:
-                start = fields.Datetime.from_string(record.startdate)
-                end = fields.Datetime.from_string(record.enddate)
-                time_delta = end - start
-                record.time_difference_ms = int(time_delta.total_seconds() * 1000)
+                record.time_difference_ms = int(time.time() * 1000) - record.starttime
             else:
                 record.time_difference_ms = 0
 
@@ -233,7 +229,8 @@ class AIQuestSession(models.Model):
                     #         'object_id': (o._name, o.id),
                     #     })
             
-            self.env['ai.quest.session.message'].save_messages(self,result)
+            # ~ self.env['ai.quest.session.message'].save_messages(self,result)
+            _logger.info(f"store_session_data {result=}\n{objects=}")
 
             self.status = 'done'
         else:
@@ -249,7 +246,7 @@ class AIQuestSession(models.Model):
         self.status = 'done'
    
     def save_messages(self, message, **kwarg):
-        self.message_post(body=f"save_message<br>{message=}<br><br>{type(message)=}<br>{isinstance(message, dict)=}<br>{isinstance(message, list)=}<br>{isinstance(message, AIMessage)=}")
+        # ~ self.message_post(body=f"save_message<br>{message=}<br><br>{type(message)=}<br>{isinstance(message, dict)=}<br>{isinstance(message, list)=}<br>{isinstance(message, AIMessage)=}")
         self.env['ai.quest.session.message'].save_messages(self,message,**kwarg)
 
  
@@ -304,7 +301,16 @@ class AIQuestSession(models.Model):
         return session
 
     @api.model
-    def quest_init(self, quest, debug=False):
+    def quest_init(self, quest, mermaid=False, debug=False):
+        if mermaid:
+            session = self.env['ai.quest.session'].search([],limit=1)
+            if not session:
+                session = self.env['ai.quest.session'].create({
+                    'startdate': fields.Datetime.now(),
+                    'status': 'done',
+                })
+            return session # dummy session
+            
         quest.last_run = fields.Datetime.now()
         session_ids = self.env['ai.quest.session'].search([
             ('ai_quest_id', '=', quest.id), ('status', '=', 'active')], limit=1)
