@@ -317,6 +317,7 @@ class AIAgent(models.Model):
         session = kwargs.get('session', False)
         quest = session.ai_quest_id
         use_lang = f"Use language {self.env.user.lang}" if quest.use_personal_lang else ''
+        quest_description = kwargs.get('quest_description', session.ai_quest_id.description)
         # ~ session.add_message(f"Agent {self.name} for {quest.name} create_node {kwargs=} ")
 
         def agent_node(state):
@@ -350,7 +351,7 @@ class AIAgent(models.Model):
                 - Use available tools and memory when needed
                 - Stay focused on your specific role
                 - {use_lang} 
-                - {quest.description}
+                - {quest_description}
                 
                 Knowledge :
                     {self.agent_extra_context(quest=quest, record=kwargs.get('record'))}
