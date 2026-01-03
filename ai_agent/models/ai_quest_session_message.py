@@ -113,6 +113,7 @@ class AIQuestSessionMessage(models.Model):
                 "message_type": 'add',
                 "message_content": message[:100],
                 "message": format_dict(kwarg),
+                # ~ "message_html": markdown.markdown(format_dict(kwarg).replace('\n','<br/>')),
                 "message_html": markdown.markdown(format_dict(kwarg)),
                 "message_raw": f"{kwarg}",
                 "traceback": f"add\n{''.join(traceback.format_stack(limit=15))}",
