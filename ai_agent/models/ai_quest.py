@@ -158,6 +158,7 @@ class AIQuest(models.Model):
     _name = 'ai.quest'
     _inherit = ["mail.thread", "mail.activity.mixin", "mail.alias.mixin"]
     _description = 'AI Quest'
+    _order = "sequence asc, name asc"
 
     agent_count = fields.Integer(compute="compute_agent_count")
     ai_agent_ids = fields.One2many(comodel_name='ai.quest.agent', inverse_name='ai_quest_id')
@@ -211,6 +212,7 @@ class AIQuest(models.Model):
     session_object_count = fields.Integer(compute="compute_session_object_count")
     session_object_ids = fields.One2many(comodel_name="ai.session.object", inverse_name="ai_quest_id")
     sub_description = fields.Char(string="Sub Description")
+    sequence = fields.Integer(string='Sequence')
     status = fields.Selection(
         selection=[("draft", "Draft"), ("active", "Active"), ("done", "Done"), ("error", "Error")],
         default="draft")
@@ -268,6 +270,10 @@ class AIQuest(models.Model):
             if add := math.floor(quest_id.session_line_count / 1000000):
                 quests += add
         return quests
+        
+    @api.model
+    def get_ai_type(self,ai_type):
+        return self.search([('ai_type','=',ai_type)],order='sequence asc',limit=1)
 
     @api.depends('is_supervisor',
                  'ai_agent_ids.sequence',
