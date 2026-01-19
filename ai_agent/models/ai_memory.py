@@ -575,10 +575,11 @@ class AIMemory(models.Model):
     # ------------------------------------------------------------
 
     def run(self):
-        if self.debug:
-            self.real_run()
-        else:
-            self.with_delay().real_run()
+        self.real_run()
+        # if self.debug:
+        #     self.real_run()
+        # else:
+        #     self.with_delay().real_run()
 
     def real_run(self,documents=[]):
         for memory in self:

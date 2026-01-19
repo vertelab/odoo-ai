@@ -164,7 +164,6 @@ and cost-effective AI systems that drive innovation and efficiency across their 
             "pymupdf",
             "requests",
             "unidecode",
-            #"uuid",
         ],
     },
     ## if VERSION >= '16.0'
