@@ -26,7 +26,7 @@ class AIQuestSessionMessage(models.Model):
     
     traceback = fields.Text()
     date = fields.Datetime(default=lambda self: fields.Datetime.now())
-    time_difference_ms = fields.Integer(string='Time Difference (ms)', compute='_compute_time_difference', store=True)
+    time_difference_ms = fields.Float(string='Time Difference (ms)', compute='_compute_time_difference', store=True)
 
 
     @api.model
