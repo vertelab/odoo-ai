@@ -16,6 +16,7 @@
             <field name="name">gpt-oss</field>
             <field name="attribute_id" ref="ai_agent.product_attribute_model" />
             <field name="has_endpoint" eval="True"/>
+            <field name="is_key_required" eval="False">
             <field name="tpm">2000000</field>
             <field name="rpm">10000</field>
         </record>
@@ -24,6 +25,7 @@
             <field name="name">deepseek-r1:32b</field>
             <field name="attribute_id" ref="ai_agent.product_attribute_model" />
             <field name="has_endpoint" eval="True"/>
+            <field name="is_key_required" eval="False">
             <field name="tpm">2000000</field>
             <field name="rpm">10000</field>
         </record>
@@ -33,6 +35,7 @@
             <field name="attribute_id" ref="ai_agent.product_attribute_model" />
             <field name="is_embedded" eval="True"/>
             <field name="has_endpoint" eval="True"/>
+            <field name="is_key_required" eval="False">
             <field name="tpm">2000000</field>
             <field name="rpm">10000</field>
         </record>
@@ -42,6 +45,7 @@
             <field name="attribute_id" ref="ai_agent.product_attribute_model" />
             <field name="is_embedded" eval="True"/>
             <field name="has_endpoint" eval="True"/>
+            <field name="is_key_required" eval="False">
             <field name="tpm">2000000</field>
             <field name="rpm">10000</field>
         </record>
