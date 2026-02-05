@@ -136,6 +136,7 @@ class ProductAttributeValue(models.Model):
     is_embedded = fields.Boolean(string='Is Embedded')
     has_endpoint = fields.Boolean(string="Has Endpoint")
     endpoint = fields.Char(string="Endpoint")
+    is_key_required = fields.Boolean(default=True)
 
     tpm = fields.Integer(string="Token Per Minute")
     rpm = fields.Integer(string="Request Per Minute")
