@@ -9,8 +9,8 @@ class AIQuestSession(models.Model):
 
     ai_type = fields.Selection(selection_add=[('e-avrop', 'E-avrop')], ondelete={'e-avrop': 'cascade'})
 
-    def _message_set_main_attachment_id(self, attachment_ids):
-        thread_ids = super(AIQuestSession,self)._message_set_main_attachment_id(attachment_ids)
+    def _message_set_main_attachment_id(self, attachment_ids, force=False):
+        thread_ids = super(AIQuestSession,self)._message_set_main_attachment_id(attachment_ids,force=force)
 
         if self.ai_type == "e-avrop":
             self.ai_quest_id.mail(mail=self.message_ids[0],session=self)

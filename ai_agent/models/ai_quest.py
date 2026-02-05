@@ -565,7 +565,7 @@ class AIQuest(models.Model):
         if len(self.ai_agent_ids.filtered(lambda a: a.ai_agent_id.ai_agent_llm_id == False)) > 0:
             raise UserError(_('Missing LLM on agent'))
         if len(self.ai_agent_ids.filtered(lambda a: a.ai_agent_id.ai_agent_llm_id.status != 'confirmed')) > 0:
-            raise UserError(_('Check status on LLMs'))
+            raise UserError(_(f'Check status on LLMs {self.ai_agent_ids=}'))
         if len(self.ai_agent_ids.filtered(
                 lambda a: a.ai_agent_id.ai_agent_llm_id.is_key_required and not a.ai_agent_id.ai_agent_llm_id.ai_api_key
         )) > 0:
