@@ -49,7 +49,7 @@ class AISessionObject(models.Model):
 class AIQuestSession(models.Model):
     _name = 'ai.quest.session'
     _description = 'AI Quest Session'
-    _inherit = ["mail.thread", "mail.activity.mixin"]
+    _inherit = ["mail.thread.main.attachment", "mail.activity.mixin"]
     _order = 'startdate desc'
 
     session = fields.Char(default=lambda self: str(uuid.uuid4()))
@@ -210,8 +210,8 @@ class AIQuestSession(models.Model):
         for record in self:
             record.session_message_count = len(record.session_message_ids)
 
-    def _message_set_main_attachment_id(self, attachment_ids):
-        thread_ids = super(AIQuestSession, self)._message_set_main_attachment_id(attachment_ids)
+    def _message_set_main_attachment_id(self, attachment_ids, force=False):
+        thread_ids = super(AIQuestSession, self)._message_set_main_attachment_id(attachment_ids,force=force)
 
         if self.ai_quest_id and self.message_ids[0].message_type == "email":
             self.ai_quest_id.mail(mail=self.message_ids[0], session=self)
