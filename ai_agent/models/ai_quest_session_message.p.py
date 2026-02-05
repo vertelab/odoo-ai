@@ -183,7 +183,7 @@ class AIQuestSessionMessage(models.Model):
                 "message": f"{format_dict(message) if type(message) != 'str' else message}",
                 "message_raw": f"{message}",
                 # ~ "prompt": kwarg.get('prompt',f"{traceback.format_exc()}"),
-                "traceback": f"save_message ({len(messages)})\n{''.join(traceback.format_stack(limit=15))}",
+                #"traceback": f"save_message ({len(messages)})\n{''.join(traceback.format_stack(limit=15))}",
             })
             
     @api.depends('date')
