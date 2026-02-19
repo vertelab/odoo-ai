@@ -49,7 +49,11 @@ class AISessionObject(models.Model):
 class AIQuestSession(models.Model):
     _name = 'ai.quest.session'
     _description = 'AI Quest Session'
+    # #if VERSION >= "18.0"
     _inherit = ["mail.thread.main.attachment", "mail.activity.mixin"]
+    # #elif VERSION <= "17.0"
+    _inherit = ["mail.activity.mixin"]
+    # #endif
     _order = 'startdate desc'
 
     session = fields.Char(default=lambda self: str(uuid.uuid4()))
