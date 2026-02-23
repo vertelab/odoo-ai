@@ -88,7 +88,7 @@ class AIMemory(models.Model):
         text_embeddings = self.create_text_embeddings(documents,embeddings)
         
         if self.check_if_column_exsists(db_model_name) == False:
-            sql_add_column = f"ALTER TABLE {db_model_name} ADD embedding vector(768);"
+            sql_add_column = f"ALTER TABLE {db_model_name} ADD embedding vector(1024);"
             self.env.cr.execute(sql_add_column)
             self.env.cr.commit()
         
@@ -111,7 +111,7 @@ class AIMemory(models.Model):
             sql_create_table = f"""CREATE TABLE documents (
                         id SERIAL PRIMARY KEY,
                         content TEXT NOT NULL,
-                        embedding vector    (768),  -- Match your embedding model's dimensions
+                        embedding vector    (1024),  -- Match your embedding model's dimensions
                         metadata JSONB           -- Optional metadata (e.g., source, author)
                         );"""
             sql_setup_index_for_table = "CREATE INDEX ON documents USING hnsw (embedding vector_l2_ops);"
