@@ -236,42 +236,43 @@ class AIAgentLLM(models.Model):
 
     def get_embedding(self):
         try:
-            module = importlib.import_module(self.product_tmpl_id.llm_library)
+            library = self.product_tmpl_id.llm_elibrary if self.product_tmpl_id.llm_elibrary else self.product_tmpl_id.llm_library
+            module = importlib.import_module(library)
             LLM = getattr(module, self.product_tmpl_id.llm_etype)
             api_key = self.ai_api_key
             if not api_key:
                 api_key = tools.config.get(self.product_tmpl_id.fallback_api_key_name, False)
+
+            # #if VERSION >= "15.0"
             if "HuggingFaceInferenceAPIEmbeddings" == self.product_tmpl_id.llm_etype:
-                # #if VERSION >= "15.0"
                 return LLM(api_key=SecretStr(api_key), model_name=self.model_id.name)
-                # #elif VERSION <= "14.0"
-                return LLM(api_key=SecretStr(api_key), model_name=self.model_id.ai_name if self.model_id.ai_name else self.model_id.name)
-                # #endif   
             elif "HuggingFaceEmbeddings" == self.product_tmpl_id.llm_etype:
-                # #if VERSION >= "15.0"
                 return LLM(model_name=self.model_id.name)
-                # #elif VERSION <= "14.0"
-                return LLM(model_name=self.model_id.ai_name if self.model_id.ai_name else self.model_id.name)
-                # #endif  
             elif "OllamaEmbeddings" == self.product_tmpl_id.llm_etype:
-                # #if VERSION >= "15.0"
                 return LLM(model=self.model_id.name, base_url=self.endpoint)
-                # #elif VERSION <= "14.0"
-                return LLM(model=self.model_id.ai_name if self.model_id.ai_name else self.model_id.name, base_url=self.endpoint)
-                # #endif  
+            elif "CustomBergetEmbeddings" == self.product_tmpl_id.llm_etype:
+                return LLM(api_key=api_key, model=self.model_id.name, api_url=self.endpoint)
             elif api_key:
-                # #if VERSION >= "15.0"
                 return LLM(api_key=api_key, model=self.model_id.name)
-                # #elif VERSION <= "14.0"
+
+            # # elif VERSION <= "14.0"
+            if "HuggingFaceInferenceAPIEmbeddings" == self.product_tmpl_id.llm_etype:
+                return LLM(api_key=SecretStr(api_key), model_name=self.model_id.ai_name if self.model_id.ai_name else self.model_id.name)
+            elif "HuggingFaceEmbeddings" == self.product_tmpl_id.llm_etype:
+                return LLM(model_name=self.model_id.ai_name if self.model_id.ai_name else self.model_id.name)
+            elif "OllamaEmbeddings" == self.product_tmpl_id.llm_etype:
+                return LLM(model=self.model_id.ai_name if self.model_id.ai_name else self.model_id.name, base_url=self.endpoint)
+            elif api_key:
                 return LLM(api_key=api_key, model=self.model_id.ai_name if self.model_id.ai_name else self.model_id.name)
-                # #endif 
+            # # endif
+
             return None
 
         except ImportError as e:
-            _logger.error(f"Error importing {self.product_tmpl_id.llm_library}: {e}")
+            _logger.error(f"Error importing {library}: {e}")
             raise
         except AttributeError as e:
-            _logger.error(f"Error: {self.product_tmpl_id.llm_etype} not found in {self.product_tmpl_id.llm_library}")
+            _logger.error(f"Error: {self.product_tmpl_id.llm_etype} not found in {library}")
             raise
         except Exception as e:
             _logger.error(f"An error occurred: {e}")
@@ -426,7 +427,8 @@ class AIAgentLLM(models.Model):
     # @retry(ConnectionError, tries=6)
     def test_embedd(self, session=False):
         try:
-            self.get_embedding().embed_query("test")
+            test = self.get_embedding().embed_query("test")
+            _logger.error(f"{test=}")
         except ModuleNotFoundError as e:
             raise UserError(f"{e}")
         except KeyError as e:

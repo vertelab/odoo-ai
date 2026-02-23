@@ -20,6 +20,7 @@ class ProductTemplate(models.Model):
     llm_library = fields.Char(string='Library', size=64, trim=True, help="Name of langchain library eg langchain_openai, langchain_groq, langchain_mistralai")
     llm_type = fields.Char(string='LLM Class', size=64, trim=True, help="Name of langchain class, eg ChatOpenAI or ChatMistralAI")
     llm_etype = fields.Char(string='Embedded Class', size=64, trim=True, help="Name of langchain class, eg OpenAIEmbeddings or MistralAIEmbeddings")
+    llm_elibrary = fields.Char(string="Embedding Library", size=128,help="Use this library for embeddings. For when the embedding class is not in the same library as the chat")
     llm_price_url = fields.Char(string='Pricelist', size=64, trim=True, help="Pricelist for tokens and llm")
     token_sys = fields.Integer(string='System Tokens')
     session_line_count = fields.Integer(compute="compute_session_line_count")
