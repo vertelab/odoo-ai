@@ -15,8 +15,8 @@ class MailMessageReaction(models.Model):
 
     message_question_id = fields.Many2one(related="message_id.parent_id")
     message_answer_id = fields.Many2one(related="message_id")
-    message_question_embedding = PgVector(dimension=768)
-    message_answer_embedding = PgVector(dimension=768)
+    message_question_embedding = PgVector(dimension=1024)
+    message_answer_embedding = PgVector(dimension=1024)
 
     @api.model_create_multi
     def create(self, vals_list):
