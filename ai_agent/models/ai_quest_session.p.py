@@ -49,7 +49,11 @@ class AISessionObject(models.Model):
 class AIQuestSession(models.Model):
     _name = 'ai.quest.session'
     _description = 'AI Quest Session'
+    # #if VERSION >= "18.0"
     _inherit = ["mail.thread.main.attachment", "mail.activity.mixin"]
+    # #elif VERSION <= "17.0"
+    _inherit = ["mail.activity.mixin"]
+    # #endif
     _order = 'startdate desc'
 
     session = fields.Char(default=lambda self: str(uuid.uuid4()))
@@ -82,7 +86,7 @@ class AIQuestSession(models.Model):
     status = fields.Selection(
         selection=[("draft", "Draft"), ("active", "Active"), ("done", "Done"), ("error", "Error")],
         default="draft")
-    time_difference_ms = fields.Integer(string='Time Difference (ms)', compute='_compute_time_difference', store=True)
+    time_difference_ms = fields.Float(string='Time Difference (ms)', compute='_compute_time_difference', store=True)
     type_of_output = fields.Text()
     user_id = fields.Many2one(comodel_name='res.users', string="User", help="")
     
