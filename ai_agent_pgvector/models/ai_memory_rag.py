@@ -16,5 +16,5 @@ class AIAgentMemoryRAG(models.Model):
 
     ai_memory_id = fields.Many2one(comodel_name="ai.memory")
     original_text = fields.Text()
-    embedding = PgVector(dimension=768)
+    embedding = PgVector(dimension=1024)
     metadata = fields.Text()
