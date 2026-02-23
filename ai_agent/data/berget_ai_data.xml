@@ -6,13 +6,15 @@
       <field name="is_llm" eval="True" />
       <field name="llm_library">langchain_openai</field>
       <field name="llm_type">ChatOpenAI</field>
+      <field name="llm_etype">CustomBergetEmbeddings</field>
+      <field name="llm_elibrary">odoo.addons.ai_agent.models.custom_models.berget_ai_models</field>
       <field name="fallback_api_key_name">berget_api_key</field>
       <field name="asr_library">langchain_community.document_loaders.parsers.audio</field>
       <field name="asr_type">OpenAIWhisperParser</field>
       <field name="image_1920" type="base64" file="ai_agent/static/img/berget-logo.png" />
     </record>
     <!-- Model -->
-    <!-- https://berget.ai/models -->
+    <!-- https://berget.ai/models --> 
     <!-- 1. intfloat/multilingual-e5-large-instruct -->
     <!-- 2. ** BAAI/bge-reranker-v2-m3 (offline) -->
     <!-- 3. agentica-org/DeepCoder-14B-Preview -->
@@ -32,6 +34,19 @@
       <field name="attribute_id" ref="ai_agent.product_attribute_model" />
       <field name="tpm">400000</field>
       <field name="rpm">600</field>
+      <field name="is_embedded" eval="True"/>
+      <field name="has_endpoint" eval="True" />
+      <field name="endpoint">https://api.berget.ai/v1/</field>
+      <field name="context_window" eval="200000" />
+    </record>
+
+    <record id="Multilingual_E5_large" model="product.attribute.value">
+      <field name="name">intfloat/multilingual-e5-large</field>
+      <field name="licence">mit</field>
+      <field name="attribute_id" ref="ai_agent.product_attribute_model" />
+      <field name="tpm">400000</field>
+      <field name="rpm">600</field>
+      <field name="is_embedded" eval="True"/>
       <field name="has_endpoint" eval="True" />
       <field name="endpoint">https://api.berget.ai/v1/</field>
       <field name="context_window" eval="200000" />
@@ -131,6 +146,7 @@
       <field name="attribute_id" ref="product_attribute_model" />
       <field name="value_ids" eval="[(6, 0, [
                 ref('Multilingual_E5_large_instruct'),
+                ref('Multilingual_E5_large'),
                 ref('bge_reranker_v2_m3'),
                 ref('DeepCoder_14B_Preview'),
                 ref('KB_Whisper_Large'),
