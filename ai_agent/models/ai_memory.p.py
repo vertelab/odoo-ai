@@ -10,7 +10,6 @@ from urllib.parse import urljoin
 from urllib.parse import urlparse
 import base64
 import datetime
-import faiss
 import io
 import json
 import logging
@@ -548,6 +547,7 @@ class AIMemory(models.Model):
         self.memory_faiss = base64.b64encode(db.serialize_to_bytes())
 
     def load_faiss(self):
+        import faiss
         if self.memory_faiss:
             faiss_file = base64.b64decode(self.memory_faiss)
             db = FAISS.deserialize_from_bytes(faiss_file, self.ai_agent_llm_id.get_embedding(),
