@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Extend ai.quest form to add context injection settings -->
+    <record id="view_ai_quest_form_inherit_context" model="ir.ui.view">
+        <field name="name">ai.quest.form.inherit.context</field>
+        <field name="model">ai.quest</field>
+        <field name="inherit_id" ref="ai_agent.ai_quest_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//notebook" position="before">
+                <group string="Record Context Injection" col="2">
+                    <field name="context_injection_enabled"
+                           widget="boolean_toggle"/>
+                    <field name="context_include_chatter"
+                           invisible="not context_injection_enabled"/>
+                    <field name="context_chatter_limit"
+                           invisible="not context_include_chatter or not context_injection_enabled"/>
+                    <field name="context_max_fields"
+                           invisible="not context_injection_enabled"/>
+                </group>
+            </xpath>
+        </field>
+    </record>
+</odoo>

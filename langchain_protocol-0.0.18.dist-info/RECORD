@@ -1,0 +1,10 @@
+langchain_protocol-0.0.18.dist-info/INSTALLER,sha256=zuuue4knoyJ-UwPPXg8fezS7VCrXJQrAP7zeNuwvFQg,4
+langchain_protocol-0.0.18.dist-info/METADATA,sha256=DyaHdfk04n8VCa8SA_aF0XKWF1iV-nuxql4-DEB9FYM,2406
+langchain_protocol-0.0.18.dist-info/RECORD,,
+langchain_protocol-0.0.18.dist-info/WHEEL,sha256=mffPy8wBnZQn2VnJUU5jE99KsxaSfiyMHV9Yt0aLVxs,87
+langchain_protocol-0.0.18.dist-info/licenses/LICENSE,sha256=iT5uMCdYlpEsIcd_n3wRKrqF_ZhdBbJqKUJM9-UR0Xc,1072
+langchain_protocol/__init__.py,sha256=wg507LjA9xPpxi5lGE4cs8neiRUB6UKfMqYfr1sVhNo,123
+langchain_protocol/__pycache__/__init__.cpython-312.pyc,,
+langchain_protocol/__pycache__/protocol.cpython-312.pyc,,
+langchain_protocol/protocol.py,sha256=oiUjR2OFjfAftfIOKmlruuHhNCUqRK73TIIzmFi8wIk,18858
+langchain_protocol/py.typed,sha256=47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU,0

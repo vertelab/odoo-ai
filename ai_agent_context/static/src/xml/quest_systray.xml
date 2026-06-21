@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+    <t t-name="ai_agent_context.QuestSystray" owl="1">
+        <button
+            class="btn btn-secondary o_systray_quest_btn d-flex align-items-center"
+            t-on-click="onClickLaunchQuest"
+            title="Launch AI Quest with record context"
+            aria-label="Launch AI Quest"
+        >
+            <i class="fa fa-magic me-1"/>
+            <span class="d-none d-lg-inline">AI Quest</span>
+        </button>
+    </t>
+</templates>

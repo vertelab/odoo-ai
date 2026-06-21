@@ -1,0 +1,14 @@
+itemloaders-1.4.0.dist-info/INSTALLER,sha256=zuuue4knoyJ-UwPPXg8fezS7VCrXJQrAP7zeNuwvFQg,4
+itemloaders-1.4.0.dist-info/METADATA,sha256=BRc9mCwLE3PN7A9Cs5spmauo_RnKvM5u36nxM_uHG9o,4166
+itemloaders-1.4.0.dist-info/RECORD,,
+itemloaders-1.4.0.dist-info/WHEEL,sha256=WLgqFyCfm_KASv4WHyYy0P3pM_m7J5L9k2skdKLirC8,87
+itemloaders-1.4.0.dist-info/licenses/LICENSE,sha256=_TMa88y4d2u-fzF4IeXguRwqt8c0ZOd0JdUiBPe12YA,1517
+itemloaders/__init__.py,sha256=0y2N4EvpWRXhkyx9HjhqI9ge6j4f1Gd0yevLmFRKh6s,22648
+itemloaders/__pycache__/__init__.cpython-312.pyc,,
+itemloaders/__pycache__/common.cpython-312.pyc,,
+itemloaders/__pycache__/processors.cpython-312.pyc,,
+itemloaders/__pycache__/utils.cpython-312.pyc,,
+itemloaders/common.py,sha256=NahT4tjknlc7qFH154X9_kBqzsgbuAuwenA-YdKpck4,677
+itemloaders/processors.py,sha256=4egzwRXy1sfXCdyVnEsSe6fEiWtYAXuS9I6JoMs_FhI,9127
+itemloaders/py.typed,sha256=47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU,0
+itemloaders/utils.py,sha256=49T4TEXgaePrJSxEhc1B4tmODrRsxyML-nVxMuYf9Ms,1569

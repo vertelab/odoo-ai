@@ -1,0 +1,16 @@
+protego-0.6.1.dist-info/INSTALLER,sha256=zuuue4knoyJ-UwPPXg8fezS7VCrXJQrAP7zeNuwvFQg,4
+protego-0.6.1.dist-info/METADATA,sha256=wnqqMdL_C2RAFoXny4xy4dI39ZxkCmyJQubOdhLJRfg,6352
+protego-0.6.1.dist-info/RECORD,,
+protego-0.6.1.dist-info/WHEEL,sha256=mffPy8wBnZQn2VnJUU5jE99KsxaSfiyMHV9Yt0aLVxs,87
+protego-0.6.1.dist-info/licenses/LICENSE,sha256=B_J2ssQH1wmEP5GwwO51wYXp5FZj8XcNdkKeQkO7xU4,1519
+protego/__init__.py,sha256=Bw7A7eMIL88nNPxd8gCQbdakc5e0RmF9H1fm-ajg1UE,126
+protego/__pycache__/__init__.cpython-312.pyc,,
+protego/__pycache__/_protego.cpython-312.pyc,,
+protego/__pycache__/_ruleset.cpython-312.pyc,,
+protego/__pycache__/_urlpattern.cpython-312.pyc,,
+protego/__pycache__/_utils.cpython-312.pyc,,
+protego/_protego.py,sha256=uGnyTz72LsDOULvTuYIKbnQlIGApExwbaFTMqAQsqvo,9386
+protego/_ruleset.py,sha256=K88ehmYLQLe6Tc_I0nGGagNNBXoFKHF6rQOByAjljrY,5251
+protego/_urlpattern.py,sha256=3cRFQhGVrXS9p_-K9hjt2Iu4WTVukbvyXyPMtmQ3KWk,2034
+protego/_utils.py,sha256=wl6db8ge2kbf3Lz1OldW7P5JC5cyrMVcT1En6TkwfZM,2853
+protego/py.typed,sha256=47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU,0

@@ -1,0 +1,2 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_ai_quest_session_context,ai.quest.session.context,model_ai_quest_session,base.group_user,1,1,1,1
