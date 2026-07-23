@@ -21,5 +21,5 @@
 
 ## Phase 4: Polish
 
-- [ ] **T4.1** — Unit tests for provider, tools, loop, context
-- [ ] **T4.2** — Documentation and logging
+- [x] **T4.1** — Unit tests for provider, tools, loop, context (23 tests)
+- [x] **T4.2** — Documentation and logging
