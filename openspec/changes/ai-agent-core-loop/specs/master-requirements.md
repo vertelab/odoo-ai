@@ -240,6 +240,34 @@ Auto-generated from definitions. Usage examples. Recipes in recipes/tools/.
 
 ---
 
+## Shared Skills & Agent Administration
+
+### SHARE-001 [NOW] — Unified recipe library
+/srv/salt/ai/recipes/ — canonical source. All agents read the same files.
+
+### SHARE-002 [NOW] — Thin router skills
+Skills are trigger+topic table. No embedded procedures. References recipes.
+
+### SHARE-003 [NEXT] — Recipe migration
+Extract from ~74 existing skills. Remove duplicates. Replace with routers.
+
+### SHARE-004 [NOW] — Agent administration in Odoo
+All agent types managed in same UI: ai.agent kanban/list/form.
+
+### SHARE-005 [NOW] — Python Pi-agent administration
+Register, start/stop, monitor, configure skills — all from Odoo.
+
+### SHARE-006 [NOW] — Skill assignment UI
+Unified skill picker. Same catalog for ai_quest and Pi-agents.
+
+### SHARE-007 [NEXT] — Skill catalog sync
+Auto-create ai.skill from recipe frontmatter. Version tracking.
+
+### SHARE-008 [NOW] — Agent type model
+ai.agent.agent_type: odoo | pi_python | pi_node | opencode | external.
+
+---
+
 ## Graph Data (odoograph via pgGraph)
 
 ### GRAPH-001 [NOW] — Graph backend via pgGraph
@@ -370,6 +398,9 @@ Skill files MUST be thin routers, not full of embedded procedures.
 │                                      TOOL-004 Tool execution             │
 │                                      TOOL-005 Tool serialization         │
 │                                      TOOL-006 Risk levels                │
+│  SHARE-001 Unified recipe library   SHARE-005 Pi-agent admin in Odoo    │
+│  SHARE-002 Thin router skills       SHARE-006 Skill assignment UI        │
+│  SHARE-004 Agent admin in Odoo      SHARE-008 Agent type model          │
 │                                                                          │
 │  NEXT CHANGE (ai-agent-skills)                                           │
 │  ─────────────────────────────                                           │
