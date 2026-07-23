@@ -1,0 +1,2 @@
+# Security access for ai_agent_core — inherits from ai_agent models
+# No new models to secure yet; access comes from ai_agent
