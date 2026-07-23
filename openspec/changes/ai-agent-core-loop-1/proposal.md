@@ -2,9 +2,9 @@
 
 ## Summary
 
-Build the absolute minimum for an ai_quest agent to run: the agent loop, Bifrost provider, direct provider, tool abstraction, and session management. This is the foundation — everything else builds on this.
+Build the absolute minimum for an ai_quest agent to run: the agent loop, Bifrost provider, direct provider, tool abstraction, session management, and foundational chat UI. This is the foundation — everything else builds on this.
 
-## In scope (9 requirements)
+## In scope (16 requirements)
 
 ### Agent Loop
 - **LOOP-001**: `AgentLoop` — while-loop: prompt → provider → tools → repeat. ~200 lines.
@@ -24,6 +24,15 @@ Build the absolute minimum for an ai_quest agent to run: the agent loop, Bifrost
 ### Session
 - **SESS-001**: `ai.quest.session` extended — config_json, history_json, token tracking.
 - **SESS-002**: Session lifecycle — draft → active → done (or error).
+
+### Web UI (foundation)
+- **UI-001**: Markdown rendering — agent responses rendered as formatted Markdown (bold, lists, tables, code blocks).
+- **UI-002**: Thinking visualization — collapsible "🧠 Thinking..." section showing agent reasoning steps.
+- **UI-003**: Step-by-step TaskList — live display of agent workflow: tool calls, results, agent transitions.
+- **UI-004**: Session history — sidebar shows past sessions for current quest, click to resume.
+- **UI-005**: New chat button — starts fresh session within current quest.
+- **UI-006**: Model selector — dropdown showing available models per quest/provider.
+- **UI-007**: Provider status indicator — online/offline/error badge per provider.
 
 ### Human-in-the-Loop (minimal)
 - **HITL-004**: `AutoInterruptHandler` — always approve, immediate timeout. For cron/server-action only.
