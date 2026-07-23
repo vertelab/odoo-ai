@@ -85,12 +85,6 @@
                            statusbar_visible="draft,confirmed"/>
                 </header>
                 <sheet>
-                    <div class="oe_button_box" name="button_box">
-                        <button name="%(action_ai_model)d" type="action"
-                                class="oe_stat_button" icon="fa-cubes">
-                            <field name="model_count" widget="statinfo"/>
-                        </button>
-                    </div>
                     <div class="oe_title">
                         <h1><field name="name" placeholder="Provider Name"/></h1>
                     </div>
