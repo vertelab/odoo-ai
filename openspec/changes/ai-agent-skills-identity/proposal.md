@@ -24,6 +24,9 @@ Add the complete agent identity system (SOUL.md), shared skills library, graph d
 ### Taskless Layer (9 requirements)
 - **TASK-001..008**: DETECT, ROUTE, IMPROVE, VERIFY, ONBOARD, recipe-text, consent-gates, thin router skills.
 
+### Kaizen Loop (1 requirement)
+- **KAIZEN-001**: Weekly self-review. Agent wakes on schedule, analyzes its own performance (error rates, costs, patterns), proposes improvements with evidence, implements human-approved changes, and tracks metrics week-over-week. Bridges PAPER-006 (Evals) and TASK-003 (IMPROVE) — makes improvement proactive, not reactive.
+
 ## Depends on
 - Change 1 (core loop)
 - Change 2 (interrupt)
