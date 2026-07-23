@@ -23,6 +23,7 @@ PROVIDER_TYPES = [
     ('ollama', 'Ollama'),
     ('openrouter', 'OpenRouter'),
     ('bifrost', 'Bifrost Gateway'),
+    ('openrouter', 'OpenRouter'),
     ('custom', 'Custom (OpenAI-compatible)'),
 ]
 
@@ -86,13 +87,20 @@ class AIProvider(models.Model):
         }
 
     def _fetch_models_from_api(self):
-        """Fetch models from provider's /v1/models endpoint."""
+        """Fetch models from provider's /v1/models endpoint.
+        
+        Bifrost returns models in format "provider/model_name"
+        (e.g., "openrouter/anthropic/claude-sonnet-4").
+        These are upstream provider names — the provider IS Bifrost,
+        the prefix is the upstream routing hint.
+        """
         self.ensure_one()
         url = self.base_url.rstrip('/') + '/models'
-        headers = {'Authorization': f'Bearer {self.api_key}'}
-        if self.provider_type == 'anthropic':
-            headers = {'x-api-key': self.api_key, 'anthropic-version': '2023-06-01'}
-            url = self.base_url.rstrip('/') + '/models'
+        headers = {}
+        if self.api_key:
+            headers['Authorization'] = f'Bearer {self.api_key}'
+        if self.provider_type == 'bifrost':
+            headers['X-Virtual-Key'] = 'opencode'
 
         try:
             ctx = ssl.create_default_context()
@@ -110,14 +118,23 @@ class AIProvider(models.Model):
         for m in models:
             model_id = m.get('id', '')
             if not model_id or model_id.startswith('ft:'):
-                continue  # skip fine-tuned models
-            self._import_model(m)
+                continue
+            
+            # For Bifrost: model IDs look like "openrouter/anthropic/claude-sonnet-4"
+            # Store the full Bifrost path, but use simplified name for display
+            display_name = model_id
+            if self.provider_type == 'bifrost' and '/' in model_id:
+                # Bifrost routing: upstream_provider/actual_model
+                # Keep full path for use, extract simple name for display
+                parts = model_id.split('/')
+                display_name = parts[-1] if len(parts) > 1 else model_id
+            
+            self._import_model(model_id, display_name)
             count += 1
         return count
 
-    def _import_model(self, data: dict):
+    def _import_model(self, model_id: str, display_name: str = ''):
         """Create or update ai.model from provider data."""
-        model_id = data.get('id', '')
         existing = self.env['ai.model'].search([
             ('name', '=', model_id),
             ('provider_id', '=', self.id),
@@ -125,22 +142,20 @@ class AIProvider(models.Model):
 
         vals = {
             'name': model_id,
+            'display_name': display_name or model_id,
             'provider_id': self.id,
             'status': 'active',
         }
-        if data.get('context_window'):
-            vals['context_window'] = data['context_window']
-        if data.get('max_output_tokens'):
-            vals['max_output_tokens'] = data['max_output_tokens']
 
         # Detect capabilities from model name
-        if any(k in model_id.lower() for k in ('vision', 'gpt-4o', 'gemini', 'claude-3', 'claude-4')):
+        name_lower = model_id.lower()
+        if any(k in name_lower for k in ('vision', 'gpt-4o', 'gemini', 'claude-3', 'claude-4')):
             vals['is_vision'] = True
-        if any(k in model_id.lower() for k in ('embed', 'text-embedding')):
+        if any(k in name_lower for k in ('embed', 'text-embedding')):
             vals['is_embedded'] = True
-        if any(k in model_id.lower() for k in ('whisper', 'tts', 'audio')):
+        if any(k in name_lower for k in ('whisper', 'tts', 'audio')):
             vals['is_asr'] = True
-        if any(k in model_id.lower() for k in ('dall-e', 'imagen')):
+        if any(k in name_lower for k in ('dall-e', 'imagen')):
             vals['is_text2image'] = True
 
         if existing:
@@ -187,7 +202,17 @@ class AIProviderWizard(models.TransientModel):
         name_lower = (self.name or '').lower()
 
         # Auto-detect provider type
-        if 'openai' in url_lower or 'openai' in name_lower:
+        if 'bifrost' in name_lower or '192.168.11.150' in url_lower:
+            vals['provider_type'] = 'bifrost'
+            vals['base_url'] = 'http://192.168.11.150:8080/v1'
+            vals['is_key_required'] = False
+        elif 'berget' in url_lower or 'berget' in name_lower:
+            vals['provider_type'] = 'custom'
+            vals['base_url'] = 'https://berget.ai/v1'
+        elif 'openrouter' in url_lower or 'openrouter' in name_lower:
+            vals['provider_type'] = 'openrouter'
+            vals['base_url'] = 'https://openrouter.ai/api/v1'
+        elif 'openai' in url_lower or 'openai' in name_lower:
             vals['provider_type'] = 'openai'
             vals['base_url'] = 'https://api.openai.com/v1'
         elif 'anthropic' in url_lower or 'claude' in name_lower:
