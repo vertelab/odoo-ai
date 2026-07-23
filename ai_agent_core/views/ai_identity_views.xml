@@ -42,14 +42,14 @@
         <field name="name">ai.identity.tree</field>
         <field name="model">ai.identity</field>
         <field name="arch" type="xml">
-            <tree>
+            <list>
                 <field name="name"/>
                 <field name="scope"/>
                 <field name="is_template"/>
                 <field name="template_category"/>
                 <field name="use_count"/>
                 <field name="active"/>
-            </tree>
+            </list>
         </field>
     </record>
 

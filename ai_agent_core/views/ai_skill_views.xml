@@ -33,13 +33,13 @@
         <field name="name">ai.skill.tree</field>
         <field name="model">ai.skill</field>
         <field name="arch" type="xml">
-            <tree>
+            <list>
                 <field name="name"/>
                 <field name="category"/>
                 <field name="compatibility"/>
                 <field name="version"/>
                 <field name="use_count"/>
-            </tree>
+            </list>
         </field>
     </record>
 
