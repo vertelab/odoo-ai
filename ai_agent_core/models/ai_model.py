@@ -15,7 +15,7 @@ _logger = logging.getLogger(__name__)
 class AIModel(models.Model):
     _name = 'ai.model'
     _description = 'AI Model'
-    _inherit = ['mail.thread']
+    _inherit = ['mail.thread', 'mail.activity.mixin']
     _order = 'provider_id, name asc'
 
     name = fields.Char('Model ID', required=True,

@@ -31,7 +31,7 @@ PROVIDER_TYPES = [
 class AIProvider(models.Model):
     _name = 'ai.provider'
     _description = 'AI Provider'
-    _inherit = ['mail.thread']
+    _inherit = ['mail.thread', 'mail.activity.mixin']
     _order = 'name asc'
 
     name = fields.Char(required=True)
