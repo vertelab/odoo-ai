@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+from __future__ import annotations
 """
 Tool System — without LangChain (TOOL-001, TOOL-005).
 
@@ -10,7 +11,7 @@ Serialization is lazy — only when needed for API calls.
 """
 
 from dataclasses import dataclass, field
-from typing import Any, Callable, Awaitable
+from typing import Any, Callable, Awaitable, List, Dict
 
 # ---------------------------------------------------------------------------
 # Tool (TOOL-001)
@@ -26,7 +27,7 @@ class Tool:
 
     name: str
     description: str
-    parameters: dict  # JSON Schema for parameters
+    parameters: Dict  # JSON Schema for parameters
     handler: Callable[..., Awaitable[str]]
     risk_level: str = "read_only"  # safe | read_only | write | destructive | execute
     source: str = "custom"  # odoo_model | mcp | custom

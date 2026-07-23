@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+from __future__ import annotations
 """
 Context management — Auto-summarize + token estimation (LOOP-004).
 

@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+from __future__ import annotations
 """
 Provider Layer — AIProvider ABC + BifrostProvider + DirectProvider.
 
@@ -261,8 +262,8 @@ class BifrostProvider(AIProvider):
                     except json.JSONDecodeError:
                         continue
 
+    @staticmethod
     def _build_openai_body(
-        self,
         model: str,
         messages: list[Message],
         tools: Optional[list[dict]],

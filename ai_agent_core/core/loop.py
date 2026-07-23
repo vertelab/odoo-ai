@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+from __future__ import annotations
 """
 Agent Loop — Buzz-inspired while-loop (LOOP-001, LOOP-003).
 
@@ -361,8 +362,6 @@ class StreamingAgentLoop(AgentLoop):
                                 tool_call_id=tc["id"],
                                 name=tc["name"],
                             ))
-                                # No tool_call payload for tool_result in streaming
-                                pass
 
                         tool_calls_seen = []
                         text_buffer = ""

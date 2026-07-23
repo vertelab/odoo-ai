@@ -38,7 +38,7 @@ class AIStreamController(http.Controller):
             )
 
         # Resolve quest configuration
-        model = "gpt-4o"
+        model = "cerebras/gpt-oss-120b"
         system_prompt = ""
         quest_name = "default"
 
@@ -63,13 +63,14 @@ class AIStreamController(http.Controller):
         def generate():
             """SSE event generator — runs async loop in sync context."""
             try:
+                _logger.info("SSE stream starting — prompt: %s...", prompt[:50])
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
                 try:
                     async def _stream():
-                        from ..core.provider import BifrostProvider
-                        from ..core.tools import ToolRegistry, builtin_tools
-                        from ..core.loop import StreamingAgentLoop, AgentConfig
+                        from odoo.addons.ai_agent_core.core.provider import BifrostProvider
+                        from odoo.addons.ai_agent_core.core.tools import ToolRegistry, builtin_tools
+                        from odoo.addons.ai_agent_core.core.loop import StreamingAgentLoop, AgentConfig
 
                         provider = BifrostProvider(
                             base_url="http://192.168.11.150:8080/v1",
@@ -93,26 +94,20 @@ class AIStreamController(http.Controller):
                             if event.type == "token":
                                 data["token"] = event.token
                             elif event.type == "tool_call_start":
-                                data["tool_call"] = {
-                                    "id": event.tool_call.id if event.tool_call else "",
-                                    "name": event.tool_call.name if event.tool_call else "",
-                                }
+                                if event.tool_call:
+                                    data["tool_call"] = {
+                                        "id": event.tool_call.id,
+                                        "name": event.tool_call.name,
+                                    }
                             elif event.type in ("done", "error"):
                                 data["finish_reason"] = event.finish_reason
                             yield f"data: {json.dumps(data)}\n\n"
 
-                    async_gen = _stream()
-
-                    async def consume():
-                        async for chunk in async_gen:
-                            yield chunk
-
-                    for chunk in loop.run_until_complete(_collect(consume())):
+                    results = loop.run_until_complete(_collect(_stream()))
+                    for chunk in results:
                         yield chunk
-
                 finally:
                     loop.close()
-
             except Exception as e:
                 _logger.error("SSE stream error: %s", e, exc_info=True)
                 yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
