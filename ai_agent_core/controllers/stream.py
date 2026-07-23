@@ -136,13 +136,67 @@ class AIStreamController(http.Controller):
                 f'<span class="quest-icon">🎯</span>{q.name}</div>'
             )
 
-        html = _CHAT_HTML.replace('<!-- QUEST_ITEMS -->', quest_items)
+        html = _CHAT_HTML_v2.replace('<!-- QUEST_ITEMS -->', quest_items)
         return Response(html, headers=[('Content-Type', 'text/html; charset=utf-8')])
 
+    @http.route('/ai/interrupt/poll', type='http', auth='public', cors='*', sitemap=False)
+    def interrupt_poll(self, session_uuid=None, **kw):
+        """SSE endpoint for interrupt events (needs_input, needs_approval)."""
+        if not session_uuid:
+            return Response(
+                json.dumps({"error": "Missing session_uuid"}),
+                status=400, content_type='application/json',
+            )
+
+        def generate():
+            handler = _get_webui_handler(session_uuid)
+            if not handler:
+                yield f"data: {json.dumps({'type': 'done'})}\n\n"
+                return
+
+            while True:
+                pending = handler.get_pending()
+                if pending:
+                    yield f"data: {json.dumps(pending)}\n\n"
+                    return
+                time.sleep(0.5)
+
+        return request.make_response(
+            generate(),
+            headers={
+                'Content-Type': 'text/event-stream',
+                'Cache-Control': 'no-cache',
+            }
+        )
+
+    @http.route('/ai/interrupt/respond', type='json', auth='public',
+                methods=['POST'], csrf=False, sitemap=False)
+    def interrupt_respond(self, session_uuid=None, response=None, **kw):
+        """POST endpoint for human response to interrupt."""
+        if not session_uuid or not response:
+            return {"error": "Missing session_uuid or response"}
+
+        handler = _get_webui_handler(session_uuid)
+        if handler:
+            handler.set_response(response)
+            return {"status": "ok"}
+        return {"error": "No pending interrupt for this session"}
+
 
 # ---------------------------------------------------------------------------
-# Helper: collect async generator into list (for sync→async bridge)
+# Helper: WebUI handler registry (in-memory, per Odoo worker)
 # ---------------------------------------------------------------------------
+
+_webui_handlers: dict[str, 'WebUIInterruptHandler'] = {}
+
+def _get_webui_handler(session_uuid: str):
+    return _webui_handlers.get(session_uuid)
+
+def _register_webui_handler(session_uuid: str, handler):
+    _webui_handlers[session_uuid] = handler
+
+def _unregister_webui_handler(session_uuid: str):
+    _webui_handlers.pop(session_uuid, None)
 
 async def _collect(agen):
     """Collect all items from an async generator into a list."""
@@ -156,7 +210,7 @@ async def _collect(agen):
 # Chat UI HTML template
 # ---------------------------------------------------------------------------
 
-_CHAT_HTML = '''<!DOCTYPE html>
+_CHAT_HTML_v2 = '''<!DOCTYPE html>
 <html lang="sv">
 <head>
 <meta charset="utf-8"/>
@@ -201,6 +255,19 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);overflow:hid
 .chat-input-row button{padding:12px 20px;background:var(--accent);border:none;border-radius:var(--radius);color:#fff;font-size:14px;font-weight:600;cursor:pointer;transition:background .15s}
 .chat-input-row button:hover{background:var(--accent-hover)}
 .chat-input-row button:disabled{opacity:0.5;cursor:not-allowed}
+.cancel-btn{background:#555!important;display:none}
+.cancel-btn:hover{background:#777!important}
+.interrupt-dialog{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:1000;justify-content:center;align-items:center}
+.interrupt-dialog.active{display:flex}
+.interrupt-box{background:var(--bg);border:1px solid var(--accent);border-radius:var(--radius);padding:24px;max-width:500px;width:90%}
+.interrupt-box h3{color:var(--accent);margin-bottom:12px}
+.interrupt-box p{margin-bottom:16px;color:var(--text)}
+.interrupt-box textarea{width:100%;padding:12px;background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-family:var(--font);font-size:14px;min-height:80px;resize:vertical}
+.interrupt-box .btn-row{display:flex;gap:8px;margin-top:12px;justify-content:flex-end}
+.interrupt-box button{padding:10px 20px;border:none;border-radius:var(--radius);cursor:pointer;font-weight:600}
+.interrupt-box .btn-approve{background:var(--accent);color:#fff}
+.interrupt-box .btn-deny{background:#555;color:#fff}
+.token-info{font-size:12px;color:var(--text-muted);padding:4px 20px 0;text-align:right}
 </style>
 </head>
 <body>
@@ -215,21 +282,29 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);overflow:hid
 <div class="chat-main">
 <div class="chat-header">Chattar med <strong id="active-quest-name">Allman assistent</strong></div>
 <div class="messages" id="messages"></div>
+<div class="token-info" id="token-info"></div>
+<div class="interrupt-dialog" id="interrupt-dialog"><div class="interrupt-box"><h3 id="interrupt-title">Agenten behöver input</h3><p id="interrupt-question"></p><textarea id="interrupt-response" placeholder="Ditt svar..."></textarea><div class="btn-row"><button class="btn-deny" onclick="respondInterrupt(false)">Avbryt</button><button class="btn-approve" onclick="respondInterrupt(true)">Svara</button></div></div></div>
 <div class="chat-input-area"><div class="chat-input-row">
 <input type="text" id="prompt-input" placeholder="Skriv ett meddelande..." autofocus/>
 <button id="send-btn" onclick="sendMessage()">Skicka</button>
+<button id="cancel-btn" onclick="cancelStream()" class="cancel-btn">Avbryt</button>
 </div></div>
 </div>
 </div>
 <script>
-var activeQuestId='',activeQuestName='default',currentAiMessage=null,currentAgentCards={},streaming=!1;
+var activeQuestId='',activeQuestName='default',currentAiMessage=null,currentAgentCards={},streaming=!1,currentEventSource=null,tokenCount=0;
+var interruptPollSource=null,sessionUuid='';
 document.getElementById('quest-list').addEventListener('click',function(e){var t=e.target.closest('.quest-item');if(!t)return;document.querySelectorAll('.quest-item').forEach(function(e){e.classList.remove('active')});t.classList.add('active');activeQuestId=t.dataset.id;activeQuestName=t.dataset.name;document.getElementById('active-quest-name').textContent=t.textContent.trim()});
 document.getElementById('prompt-input').addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage()}});
 function _(e,t,n){var a=document.createElement(e);if(t)a.className=t;if(n!==undefined)a.innerHTML=n;return a}
 function scrollBottom(){var e=document.getElementById('messages');e.scrollTop=e.scrollHeight}
-function sendMessage(){var e=document.getElementById('prompt-input'),t=document.getElementById('send-btn'),n=e.value.trim();if(!n||streaming)return;e.value='';streaming=!0;t.disabled=!0;var a=_('div','message user',escapeHtml(n));document.getElementById('messages').appendChild(a);scrollBottom();currentAiMessage=_('div','message ai','');document.getElementById('messages').appendChild(currentAiMessage);currentAgentCards={};scrollBottom();var i='prompt='+encodeURIComponent(n);if(activeQuestId)i+='&quest_id='+activeQuestId;var o=new EventSource('/ai/stream?'+i);o.onmessage=function(e){try{var t=JSON.parse(e.data);handleStreamEvent(t,o)}catch(e){}};o.onerror=function(){if(streaming){o.close();finishStream()}}}
-function handleStreamEvent(e,t){switch(e.type){case'token':currentAiMessage.innerHTML+=e.token;break;case'tool_call_start':var a=_('div','agent-card','');var name=e.tool_call?e.tool_call.name:'tool';a.innerHTML='<div class="agent-card-header"><span>🔧</span><span>'+escapeHtml(name)+'</span></div><div class="agent-card-body">Kör...</div>';currentAiMessage.appendChild(a);currentAgentCards[name]=a;break;case'done':t.close();finishStream();break;case'error':currentAiMessage.innerHTML+='<div style="color:#ff5252">❌ '+escapeHtml(e.message)+'</div>';t.close();finishStream();break}scrollBottom()}
-function finishStream(){if(currentAiMessage&&!currentAiMessage.textContent.trim()){currentAiMessage.innerHTML='<em style="color:var(--text-muted)">(inget svar)</em>'}streaming=!1;document.getElementById('send-btn').disabled=!1;document.getElementById('prompt-input').focus();currentAiMessage=null;currentAgentCards={}}
+function updateTokenInfo(){document.getElementById('token-info').textContent='Tokens: ~'+tokenCount}
+function sendMessage(){var e=document.getElementById('prompt-input'),t=document.getElementById('send-btn'),n=e.value.trim();if(!n||streaming)return;e.value='';streaming=!0;t.style.display='none';document.getElementById('cancel-btn').style.display='inline-block';tokenCount=0;updateTokenInfo();var a=_('div','message user',escapeHtml(n));document.getElementById('messages').appendChild(a);scrollBottom();currentAiMessage=_('div','message ai','');document.getElementById('messages').appendChild(currentAiMessage);currentAgentCards={};scrollBottom();var i='prompt='+encodeURIComponent(n);if(activeQuestId)i+='&quest_id='+activeQuestId;currentEventSource=new EventSource('/ai/stream?'+i);currentEventSource.onmessage=function(e){try{var t=JSON.parse(e.data);handleStreamEvent(t)}catch(e){}};currentEventSource.onerror=function(){if(streaming){currentEventSource.close();finishStream()}}}
+function cancelStream(){if(currentEventSource){currentEventSource.close()}finishStream()}
+function handleStreamEvent(e){switch(e.type){case'token':currentAiMessage.innerHTML+=e.token;tokenCount++;updateTokenInfo();break;case'tool_call_start':var a=_('div','agent-card','');var n=e.tool_call?e.tool_call.name:'tool';a.innerHTML='<div class="agent-card-header"><span>🔧</span><span>'+escapeHtml(n)+'</span></div><div class="agent-card-body">Kör...</div>';currentAiMessage.appendChild(a);currentAgentCards[n]=a;break;case'needs_approval':showInterruptDialog('Godkänn verktyg: '+escapeHtml(e.tool_call?e.tool_call.name:'?'),e._approval_type||'tool_approval');break;case'needs_input':showInterruptDialog(e.question||'Agenten behöver input','clarification');break;case'done':currentEventSource.close();finishStream();break;case'error':currentAiMessage.innerHTML+='<div style="color:#ff5252">❌ '+escapeHtml(e.message)+'</div>';currentEventSource.close();finishStream();break}scrollBottom()}
+function showInterruptDialog(question,type){document.getElementById('interrupt-question').textContent=question;document.getElementById('interrupt-dialog').classList.add('active');document.getElementById('interrupt-response').focus();window._interruptType=type}
+function respondInterrupt(approved){var resp=document.getElementById('interrupt-response').value;document.getElementById('interrupt-dialog').classList.remove('active');document.getElementById('interrupt-response').value='';if(!approved){currentAiMessage.innerHTML+='<div style="color:var(--text-muted)">❌ Avbrutet av användaren</div>';cancelStream();return}if(resp){currentAiMessage.innerHTML+='<div style="color:var(--text-muted);margin:8px 0">💬 '+escapeHtml(resp)+'</div>';var x=new XMLHttpRequest();x.open('POST','/ai/interrupt/respond',!0);x.setRequestHeader('Content-Type','application/json');x.send(JSON.stringify({session_uuid:sessionUuid,response:resp}))}}
+function finishStream(){if(currentAiMessage&&!currentAiMessage.textContent.trim()){currentAiMessage.innerHTML='<em style="color:var(--text-muted)">(inget svar)</em>'}streaming=!1;document.getElementById('send-btn').style.display='inline-block';document.getElementById('cancel-btn').style.display='none';document.getElementById('prompt-input').focus();currentAiMessage=null;currentAgentCards={};currentEventSource=null}
 function escapeHtml(e){var t=document.createElement('div');t.textContent=e;return t.innerHTML}
 </script>
 </body>

@@ -225,26 +225,81 @@ class DiscussInterruptHandler(InterruptHandler):
 class WebUIInterruptHandler(InterruptHandler):
     """Human-in-the-loop via web UI (SSE + HTTP POST).
 
-    Placeholder — full implementation in T2.1.
+    Flow:
+    1. Agent needs input → emit SSE event "needs_input"
+    2. Frontend shows dialog → user types response
+    3. Frontend POSTs to /ai/session/{uuid}/respond
+    4. Handler resolves with the response
     """
 
-    def __init__(self, session_uuid: str):
+    def __init__(self, session_uuid: str, env=None):
         self.session_uuid = session_uuid
-        self._pending_question: Optional[dict] = None
-        self._human_response: Optional[dict] = None
+        self.env = env
+        self._pending: dict = {}
+        self._response: dict | None = None
         self._steer_buffer: list[str] = []
 
+    def emit_sse(self, event_type: str, data: dict) -> None:
+        """Store pending interrupt for SSE polling."""
+        key = f"ai_interrupt_{self.session_uuid}"
+        self._pending = {
+            "type": event_type,
+            "data": data,
+            "timestamp": time.time(),
+            "session_uuid": self.session_uuid,
+        }
+
+    def get_pending(self) -> dict | None:
+        """Get and clear pending interrupt (for SSE poll)."""
+        pending = self._pending
+        self._pending = {}
+        return pending if pending.get("type") else None
+
+    def set_response(self, response: str) -> None:
+        """Receive human response from POST endpoint."""
+        self._response = {"action": "answer", "answer": response}
+
     async def ask(self, question: str, approval_type: str = "", context: str = "", timeout: float = 300) -> dict:
-        # TODO: Emit SSE event → frontend shows dialog → wait for POST
-        return {"action": "timeout", "reason": "WebUI handler not fully implemented"}
+        """Emit SSE event and wait for POST response."""
+        self.emit_sse("needs_input", {
+            "question": question,
+            "approval_type": approval_type,
+            "context": context,
+        })
+
+        self._response = None
+        start = time.time()
+        while time.time() - start < timeout:
+            await asyncio.sleep(1)
+            if self._response:
+                result = self._response
+                self._response = None
+                return result
+
+        return {"action": "timeout", "reason": f"no response in {timeout}s"}
 
     async def approve_tool(self, tool_name: str, risk_level: str, arguments: dict) -> bool:
+        self.emit_sse("needs_approval", {
+            "tool_name": tool_name,
+            "risk_level": risk_level,
+            "arguments": arguments,
+        })
+
         result = await self.ask(
-            question=f"Approve tool: {tool_name}",
+            question=f"Approve tool: {tool_name}?",
             approval_type="tool_approval",
             timeout=120,
         )
-        return result["action"] == "answer"
+        if result["action"] == "answer":
+            return result["answer"].lower().strip() in ("ja", "yes", "ok", "approve")
+        return False
 
     async def drain_steer(self) -> list[str]:
-        return []
+        """Return queued steer messages and clear buffer."""
+        steers = list(self._steer_buffer)
+        self._steer_buffer.clear()
+        return steers
+
+    def queue_steer(self, message: str) -> None:
+        """Queue a mid-turn steer message."""
+        self._steer_buffer.append(message)
