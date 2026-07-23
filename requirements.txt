@@ -2,7 +2,7 @@ langchain
 langchain-core
 langgraph
 langchain_community
-markdown
+Markdown
 unidecode
 scrapy
 markdownify
