@@ -1,3 +1,9 @@
 id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
-access_ai_identity_user,ai.identity.user,model_ai_identity,base.group_user,1,1,1,1
-access_ai_skill_user,ai.skill.user,model_ai_skill,base.group_user,1,1,1,1
+access_ai_quest,ai.quest,model_ai_quest,base.group_user,1,1,1,1
+access_ai_quest_agent,ai.quest.agent,model_ai_quest_agent,base.group_user,1,1,1,1
+access_ai_agent,ai.agent,model_ai_agent,base.group_user,1,1,1,1
+access_ai_agent_tool,ai.agent.tool,model_ai_agent_tool,base.group_user,1,1,1,1
+access_ai_session,ai.quest.session,model_ai_quest_session,base.group_user,1,1,1,1
+access_ai_memory,ai.memory,model_ai_memory,base.group_user,1,1,1,1
+access_ai_identity,ai.identity,model_ai_identity,base.group_user,1,1,1,1
+access_ai_skill,ai.skill,model_ai_skill,base.group_user,1,1,1,1

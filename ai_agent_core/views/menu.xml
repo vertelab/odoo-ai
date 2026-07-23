@@ -1,26 +1,39 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <!-- Main menu -->
     <menuitem id="menu_ai_root"
               name="AI Orkestrering"
-              sequence="90"
-              web_icon="ai_agent_core,static/description/icon.png"/>
+              sequence="90"/>
 
-    <!-- Agents -->
-    <menuitem id="menu_ai_identity"
-              name="Agenter"
+    <menuitem id="menu_ai_quest"
+              name="Quests"
               parent="menu_ai_root"
               sequence="10"
+              action="action_ai_quest"/>
+
+    <menuitem id="menu_ai_agent"
+              name="Agenter"
+              parent="menu_ai_root"
+              sequence="20"
+              action="action_ai_agent"/>
+
+    <menuitem id="menu_ai_identity"
+              name="Identiteter"
+              parent="menu_ai_root"
+              sequence="15"
               action="action_ai_identity"/>
 
-    <!-- Skills -->
     <menuitem id="menu_ai_skill"
               name="Skills"
               parent="menu_ai_root"
-              sequence="20"
+              sequence="30"
               action="action_ai_skill"/>
 
-    <!-- Chat -->
+    <menuitem id="menu_ai_memory"
+              name="Minne"
+              parent="menu_ai_root"
+              sequence="40"
+              action="action_ai_memory"/>
+
     <menuitem id="menu_ai_chat"
               name="AI Chat"
               parent="menu_ai_root"
@@ -28,8 +41,20 @@
               action="action_ai_chat"/>
 
     <!-- Actions -->
+    <record id="action_ai_quest" model="ir.actions.act_window">
+        <field name="name">Quests</field>
+        <field name="res_model">ai.quest</field>
+        <field name="view_mode">kanban,list,form</field>
+    </record>
+
+    <record id="action_ai_agent" model="ir.actions.act_window">
+        <field name="name">Agenter</field>
+        <field name="res_model">ai.agent</field>
+        <field name="view_mode">kanban,list,form</field>
+    </record>
+
     <record id="action_ai_identity" model="ir.actions.act_window">
-        <field name="name">AI Agents</field>
+        <field name="name">Identiteter</field>
         <field name="res_model">ai.identity</field>
         <field name="view_mode">kanban,list,form</field>
     </record>
@@ -38,6 +63,12 @@
         <field name="name">Skills</field>
         <field name="res_model">ai.skill</field>
         <field name="view_mode">kanban,list,form</field>
+    </record>
+
+    <record id="action_ai_memory" model="ir.actions.act_window">
+        <field name="name">Minne</field>
+        <field name="res_model">ai.memory</field>
+        <field name="view_mode">tree,form</field>
     </record>
 
     <record id="action_ai_chat" model="ir.actions.act_url">

@@ -1,80 +1,50 @@
 # -*- coding: utf-8 -*-
-"""
-Session Model (SESS-001, SESS-002) — standalone in ai_agent_core.
+"""ai.quest.session — standalone session model for agent runs."""
 
-If ai_agent is also installed, the model names don't conflict
-because our model is different from ai.quest.session.
-"""
-
-import json
-import logging
-
+import json, logging, uuid
 from odoo import models, fields, api
 
 _logger = logging.getLogger(__name__)
 
 
-class AICoreSession(models.Model):
-    """Agent session for ai_agent_core."""
-    _name = 'ai.core.session'
-    _description = 'AI Core Session'
-    _order = 'startdate desc'
+class AIQuestSession(models.Model):
+    _name = 'ai.quest.session'
+    _description = 'AI Quest Session'
+    _order = 'create_date desc'
 
-    session = fields.Char(default=lambda self: self._generate_uuid())
-    name = fields.Char(related='session')
-    startdate = fields.Datetime(default=lambda self: fields.Datetime.now())
-    enddate = fields.Datetime()
+    name = fields.Char(default=lambda self: str(uuid.uuid4())[:8])
+    quest_id = fields.Many2one('ai.quest', string='Quest', ondelete='cascade')
+    agent_id = fields.Many2one('ai.agent', string='Agent')
+    identity_id = fields.Many2one('ai.identity', string='Identity')
+
     status = fields.Selection([
-        ('draft', 'Draft'),
-        ('active', 'Active'),
-        ('done', 'Done'),
-        ('error', 'Error'),
+        ('draft', 'Draft'), ('active', 'Active'),
+        ('done', 'Done'), ('error', 'Error'),
     ], default='draft')
 
-    # Configuration
-    config_json = fields.Text('Agent Configuration')
+    config_json = fields.Text('Configuration')
     history_json = fields.Text('Message History')
 
-    # Token tracking
-    token_input_total = fields.Integer('Input Tokens', default=0)
-    token_output_total = fields.Integer('Output Tokens', default=0)
-    cost_estimated = fields.Float('Estimated Cost (USD)', default=0.0)
+    token_input = fields.Integer('Input Tokens', default=0)
+    token_output = fields.Integer('Output Tokens', default=0)
+    cost_estimated = fields.Float('Cost (USD)', default=0.0)
 
-    # Lifecycle
-    round_count = fields.Integer('Round Count', default=0)
+    create_date = fields.Datetime('Started', default=lambda self: fields.Datetime.now())
+    end_date = fields.Datetime('Ended')
+    round_count = fields.Integer('Rounds', default=0)
     finish_reason = fields.Char('Finish Reason')
 
-    # Relations
-    identity_id = fields.Many2one('ai.identity', string='Agent Identity')
-    user_id = fields.Many2one('res.users', string='User')
+    user_id = fields.Many2one('res.users', default=lambda self: self.env.user)
+    company_id = fields.Many2one('res.company', default=lambda self: self.env.company)
 
-    def _generate_uuid(self):
-        import uuid
-        return str(uuid.uuid4())
-
-    def save_config(self, config: dict) -> None:
+    def save_config(self, config: dict):
         self.config_json = json.dumps(config, default=str)
 
-    def load_config(self) -> dict:
-        return json.loads(self.config_json) if self.config_json else {}
+    def add_tokens(self, input_t: int, output_t: int):
+        self.token_input += input_t
+        self.token_output += output_t
 
-    def save_history(self, messages: list) -> None:
-        self.history_json = json.dumps(
-            [{"role": getattr(m, 'role', '?'), "content": getattr(m, 'content', '')}
-             for m in messages],
-            default=str,
-        )
-
-    def add_tokens(self, input_tokens: int, output_tokens: int) -> None:
-        self.token_input_total += input_tokens
-        self.token_output_total += output_tokens
-
-    def mark_done(self, reason: str = "stop") -> None:
+    def mark_done(self, reason='stop'):
         self.status = 'done'
         self.finish_reason = reason
-        self.enddate = fields.Datetime.now()
-
-    def mark_error(self, reason: str = "error") -> None:
-        self.status = 'error'
-        self.finish_reason = reason
-        self.enddate = fields.Datetime.now()
+        self.end_date = fields.Datetime.now()

@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="ai_agent_kanban" model="ir.ui.view">
+        <field name="name">ai.agent.kanban</field>
+        <field name="model">ai.agent</field>
+        <field name="arch" type="xml">
+            <kanban>
+                <field name="name"/>
+                <field name="status"/>
+                <field name="provider_type"/>
+                <templates>
+                    <t t-name="card">
+                        <div class="oe_kanban_card">
+                            <div class="o_kanban_card_header">
+                                <strong><field name="name"/></strong>
+                            </div>
+                            <div class="o_kanban_card_content">
+                                <field name="description" class="text-muted small"/>
+                            </div>
+                            <div class="o_kanban_card_footer">
+                                <field name="provider_type"/> ·
+                                <field name="status" widget="badge"
+                                       decoration-success="status=='active'"/>
+                            </div>
+                        </div>
+                    </t>
+                </templates>
+            </kanban>
+        </field>
+    </record>
+
+    <record id="ai_agent_list" model="ir.ui.view">
+        <field name="name">ai.agent.list</field>
+        <field name="model">ai.agent</field>
+        <field name="arch" type="xml">
+            <list string="AI Agents">
+                <field name="name"/>
+                <field name="provider_type"/>
+                <field name="status"/>
+                <field name="quest_count"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="ai_agent_form" model="ir.ui.view">
+        <field name="name">ai.agent.form</field>
+        <field name="model">ai.agent</field>
+        <field name="arch" type="xml">
+            <form>
+                <sheet>
+                    <div class="oe_title">
+                        <h1><field name="name" placeholder="Agent Name"/></h1>
+                    </div>
+                    <group col="2">
+                        <field name="identity_id"/>
+                        <field name="status"/>
+                    </group>
+                    <notebook>
+                        <page string="Provider">
+                            <group>
+                                <field name="provider_type"/>
+                                <field name="bifrost_model" invisible="provider_type!='bifrost'"/>
+                                <field name="bifrost_virtual_key" invisible="provider_type!='bifrost'"/>
+                                <field name="direct_provider" invisible="provider_type!='direct'"/>
+                                <field name="direct_model" invisible="provider_type!='direct'"/>
+                            </group>
+                            <group string="Config">
+                                <field name="temperature"/>
+                                <field name="max_tokens"/>
+                                <field name="max_rounds"/>
+                            </group>
+                        </page>
+                        <page string="Skills">
+                            <field name="skill_ids"/>
+                        </page>
+                        <page string="Tools">
+                            <field name="tool_ids">
+                                <list editable="bottom">
+                                    <field name="sequence" widget="handle"/>
+                                    <field name="name"/>
+                                    <field name="risk_level"/>
+                                </list>
+                            </field>
+                        </page>
+                        <page string="Budget">
+                            <group>
+                                <field name="budget_limit"/>
+                                <field name="budget_used" readonly="1"/>
+                            </group>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+</odoo>

@@ -1,0 +1,146 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Kanban -->
+    <record id="ai_quest_kanban" model="ir.ui.view">
+        <field name="name">ai.quest.kanban</field>
+        <field name="model">ai.quest</field>
+        <field name="arch" type="xml">
+            <kanban class="o_kanban_mobile">
+                <field name="name"/>
+                <field name="status"/>
+                <field name="init_type"/>
+                <field name="color"/>
+                <templates>
+                    <t t-name="card">
+                        <div class="oe_kanban_card">
+                            <div class="o_kanban_card_header">
+                                <strong class="o_kanban_record_title"><field name="name"/></strong>
+                            </div>
+                            <div class="o_kanban_card_content">
+                                <field name="sub_description" class="text-muted small"/>
+                            </div>
+                            <div class="o_kanban_card_footer">
+                                <field name="init_type"/> ·
+                                <field name="status" widget="badge"
+                                       decoration-success="status=='active'"
+                                       decoration-warning="status=='draft'"
+                                       decoration-danger="status=='error'"/>
+                            </div>
+                        </div>
+                    </t>
+                </templates>
+            </kanban>
+        </field>
+    </record>
+
+    <!-- List -->
+    <record id="ai_quest_list" model="ir.ui.view">
+        <field name="name">ai.quest.list</field>
+        <field name="model">ai.quest</field>
+        <field name="arch" type="xml">
+            <list string="AI Quests">
+                <field name="name"/>
+                <field name="init_type"/>
+                <field name="status" widget="badge"
+                       decoration-success="status=='active'"
+                       decoration-warning="status=='draft'"/>
+                <field name="agent_count"/>
+                <field name="session_count"/>
+                <field name="user_id"/>
+                <field name="company_id" groups="base.group_multi_company"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- Search -->
+    <record id="ai_quest_search" model="ir.ui.view">
+        <field name="name">ai.quest.search</field>
+        <field name="model">ai.quest</field>
+        <field name="arch" type="xml">
+            <search string="Search Quests">
+                <field name="name"/>
+                <field name="description"/>
+                <field name="tag_ids"/>
+                <filter string="Active" name="active" domain="[('status','=','active')]"/>
+                <filter string="Draft" name="draft" domain="[('status','=','draft')]"/>
+                <filter string="Error" name="error" domain="[('status','=','error')]"/>
+                <separator/>
+                <filter string="Favorites" name="favorite" domain="[('is_favorite','=',True)]"/>
+                <group expand="0" string="Group By">
+                    <filter string="Status" name="group_status" context="{'group_by':'status'}"/>
+                    <filter string="Type" name="group_type" context="{'group_by':'init_type'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <!-- Form -->
+    <record id="ai_quest_form" model="ir.ui.view">
+        <field name="name">ai.quest.form</field>
+        <field name="model">ai.quest</field>
+        <field name="arch" type="xml">
+            <form>
+                <header>
+                    <field name="status" widget="statusbar"
+                           statusbar_visible="active,done"/>
+                </header>
+                <sheet string="AI Quest">
+                    <div class="oe_button_box" name="button_box">
+                        <button name="action_get_agents" class="oe_stat_button"
+                                type="object" icon="fa-users">
+                            <field name="agent_count" widget="statinfo"/>
+                        </button>
+                        <button name="action_get_sessions" class="oe_stat_button"
+                                type="object" icon="fa-history">
+                            <field name="session_count" widget="statinfo"/>
+                        </button>
+                    </div>
+                    <div class="oe_title">
+                        <h1><field name="name" placeholder="Quest Name"/></h1>
+                    </div>
+                    <group col="4">
+                        <field name="init_type"/>
+                        <field name="is_supervisor"/>
+                        <field name="model_id"/>
+                        <field name="identity_id"/>
+                    </group>
+                    <notebook>
+                        <page string="Description">
+                            <field name="description" widget="text" nolabel="1"/>
+                        </page>
+                        <page string="Agents">
+                            <field name="agent_ids">
+                                <list editable="bottom">
+                                    <field name="sequence" widget="handle"/>
+                                    <field name="agent_id"/>
+                                </list>
+                            </field>
+                        </page>
+                        <page string="Chat">
+                            <group>
+                                <field name="allow_trigger_words"/>
+                                <field name="chat_trigger_words"
+                                       invisible="not allow_trigger_words"/>
+                                <field name="chat_history_limit"/>
+                            </group>
+                        </page>
+                        <page string="Context">
+                            <group>
+                                <field name="use_chat_history"/>
+                                <field name="use_company_info"/>
+                                <field name="use_personal_info"/>
+                                <field name="use_personal_lang"/>
+                                <field name="use_time_context"/>
+                            </group>
+                        </page>
+                        <page string="Schedule" invisible="init_type!='cron'">
+                            <group>
+                                <field name="filter_domain"/>
+                            </group>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+</odoo>
