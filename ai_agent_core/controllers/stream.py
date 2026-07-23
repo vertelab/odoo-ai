@@ -3,14 +3,12 @@
 SSE Streaming Controller for AI.Quest responses.
 
 Token-by-token streaming via Server-Sent Events.
-When the real provider/loop layer is ready, swap the _mock_stream
-generator for a real one. The SSE protocol is the same either way.
+Uses real BifrostProvider + StreamingAgentLoop (no mock).
 """
 
+import asyncio
 import json
 import logging
-import time
-import re
 
 from odoo import http
 from odoo.http import request, Response
@@ -18,95 +16,12 @@ from odoo.http import request, Response
 _logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Mock token stream — replace with real LLM when ready
-# ---------------------------------------------------------------------------
-
-MOCK_RESPONSES = {
-    "customer_analysis": (
-        "Baserat på analysen av kund 123:s köpmönster ser vi följande:\n\n"
-        "**Kundprofil:**\n"
-        "- Kund sedan 2023, VIP-status\n"
-        "- 42 ordrar, totalt 1 200 000 kr\n"
-        "- Senaste köp: 2026-07-20\n\n"
-        "**Riskindikatorer:**\n"
-        "- Köpfrekvens har gått från 14 → 28 dagar (avtagande)\n"
-        "- Returfrekvens ökar: 5% → 12%\n"
-        "- 3 supportärenden senaste 30 dagarna\n\n"
-        "**Rekommendation:**\n"
-        "72% churn-risk inom 30 dagar. Föreslår omedelbar kontakt "
-        "från account manager samt lojalitetserbjudande."
-    ),
-    "default": (
-        "Här är en analys av din fråga:\n\n"
-        "Efter att ha granskat datan kan jag se att det finns "
-        "flera intressanta mönster. Huvudpunkterna är:\n\n"
-        "1. **Trenden pekar uppåt** — en ökning på 15% jämfört med föregående period\n"
-        "2. **Säsongsvariation** — Q3 är traditionellt starkast\n"
-        "3. **Risker** — leverantörskedjan visar tecken på stress\n\n"
-        "Vill du att jag gräver djupare i någon av dessa punkter?"
-    ),
-}
-
-
-def _mock_stream(quest_name):
-    """Simulate token-by-token streaming. Replace with real LLM later."""
-    text = MOCK_RESPONSES.get(quest_name, MOCK_RESPONSES["default"])
-
-    # Simulate tool calls for supervisor-style responses
-    if "analys" in quest_name.lower():
-        yield {"type": "supervisor.start", "reasoning": "Delegerar till 2 agenter: Kunddata, Beteendeanalys"}
-        time.sleep(0.3)
-
-        yield {
-            "type": "agent.start",
-            "agent_id": "agent-1",
-            "name": "Kunddata-agent",
-            "icon": "📊",
-        }
-        time.sleep(0.2)
-        yield {"type": "agent.tool_call", "agent_id": "agent-1", "tool": "search_read", "model": "sale.order"}
-        time.sleep(0.3)
-        yield {"type": "agent.tool_result", "agent_id": "agent-1", "count": 42, "summary": "42 ordrar, 1.2M kr"}
-        time.sleep(0.1)
-        yield {"type": "agent.done", "agent_id": "agent-1"}
-
-        yield {
-            "type": "agent.start",
-            "agent_id": "agent-2",
-            "name": "Beteendeanalys-agent",
-            "icon": "📈",
-        }
-        time.sleep(0.2)
-        yield {"type": "agent.tool_call", "agent_id": "agent-2", "tool": "analyze_pattern", "model": "sale.order"}
-        time.sleep(0.4)
-        yield {"type": "agent.tool_result", "agent_id": "agent-2", "count": 1, "summary": "Churn-risk: 72%"}
-        time.sleep(0.1)
-        yield {"type": "agent.done", "agent_id": "agent-2"}
-
-        yield {"type": "supervisor.conclusion"}
-
-    # Token stream
-    for word in re.split(r'(\s+)', text):
-        if word:
-            yield {"type": "token", "token": word}
-            time.sleep(0.03)  # simulate realistic typing speed
-
-    yield {"type": "done"}
-
-
-# ---------------------------------------------------------------------------
 # SSE Controller
 # ---------------------------------------------------------------------------
 
 
 class AIStreamController(http.Controller):
-    """Server-Sent Events endpoint for streaming AI responses.
-
-    GET /ai/stream?quest_id=<id>&prompt=<text>
-    
-    Auth is handled by Odoo's standard session cookie.
-    For external clients, use API key via Bearer token.
-    """
+    """Server-Sent Events endpoint for streaming AI responses."""
 
     @http.route('/ai/ping', type='http', auth='none', cors='*', sitemap=False)
     def ping(self):
@@ -114,7 +29,7 @@ class AIStreamController(http.Controller):
 
     @http.route('/ai/stream', type='http', auth='public', cors='*', sitemap=False)
     def stream(self, quest_id=None, prompt=None, **kw):
-        """Stream AI response via SSE."""
+        """Stream AI response via SSE using real provider."""
         if not prompt:
             return Response(
                 json.dumps({"error": "Missing prompt parameter"}),
@@ -122,22 +37,84 @@ class AIStreamController(http.Controller):
                 content_type='application/json',
             )
 
+        # Resolve quest configuration
+        model = "gpt-4o"
+        system_prompt = ""
         quest_name = "default"
+
         if quest_id:
             try:
                 quest = request.env['ai.quest'].browse(int(quest_id))
                 if quest.exists():
-                    quest_name = quest.name.lower()
+                    quest_name = quest.name
+                    if quest.description:
+                        system_prompt = quest.description
+                    # Use quest's LLM if configured
+                    llm_ids = quest.ai_agent_ids.filtered(
+                        lambda a: a.ai_agent_id.ai_agent_llm_id
+                    )
+                    if llm_ids:
+                        llm = llm_ids[0].ai_agent_id.ai_agent_llm_id
+                        if llm.model_name:
+                            model = llm.model_name
             except Exception:
                 pass
 
         def generate():
-            """SSE event generator."""
+            """SSE event generator — runs async loop in sync context."""
             try:
-                for event in _mock_stream(quest_name):
-                    yield f"data: {json.dumps(event)}\n\n"
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
+                    async def _stream():
+                        from ..core.provider import BifrostProvider
+                        from ..core.tools import ToolRegistry, builtin_tools
+                        from ..core.loop import StreamingAgentLoop, AgentConfig
+
+                        provider = BifrostProvider(
+                            base_url="http://192.168.11.150:8080/v1",
+                            virtual_key="opencode",
+                        )
+                        tools = ToolRegistry()
+                        tools.register_many(builtin_tools())
+
+                        loop_obj = StreamingAgentLoop(
+                            provider=provider,
+                            tools=tools,
+                            config=AgentConfig(
+                                model=model,
+                                system_prompt=system_prompt,
+                                max_rounds=10,
+                            ),
+                        )
+
+                        async for event in loop_obj.run_stream(prompt):
+                            data = {"type": event.type}
+                            if event.type == "token":
+                                data["token"] = event.token
+                            elif event.type == "tool_call_start":
+                                data["tool_call"] = {
+                                    "id": event.tool_call.id if event.tool_call else "",
+                                    "name": event.tool_call.name if event.tool_call else "",
+                                }
+                            elif event.type in ("done", "error"):
+                                data["finish_reason"] = event.finish_reason
+                            yield f"data: {json.dumps(data)}\n\n"
+
+                    async_gen = _stream()
+
+                    async def consume():
+                        async for chunk in async_gen:
+                            yield chunk
+
+                    for chunk in loop.run_until_complete(_collect(consume())):
+                        yield chunk
+
+                finally:
+                    loop.close()
+
             except Exception as e:
-                _logger.error("SSE stream error: %s", e)
+                _logger.error("SSE stream error: %s", e, exc_info=True)
                 yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
 
         return request.make_response(
@@ -159,9 +136,32 @@ class AIStreamController(http.Controller):
         )
         quest_items = ''
         for q in quests:
-            quest_items += f'<div class="quest-item" data-id="{q.id}" data-name="{q.name}"><span class="quest-icon">🎯</span>{q.name}</div>'
-        
-        html = '''<!DOCTYPE html>
+            quest_items += (
+                f'<div class="quest-item" data-id="{q.id}" data-name="{q.name}">'
+                f'<span class="quest-icon">🎯</span>{q.name}</div>'
+            )
+
+        html = _CHAT_HTML.replace('<!-- QUEST_ITEMS -->', quest_items)
+        return Response(html, headers=[('Content-Type', 'text/html; charset=utf-8')])
+
+
+# ---------------------------------------------------------------------------
+# Helper: collect async generator into list (for sync→async bridge)
+# ---------------------------------------------------------------------------
+
+async def _collect(agen):
+    """Collect all items from an async generator into a list."""
+    result = []
+    async for item in agen:
+        result.append(item)
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Chat UI HTML template
+# ---------------------------------------------------------------------------
+
+_CHAT_HTML = '''<!DOCTYPE html>
 <html lang="sv">
 <head>
 <meta charset="utf-8"/>
@@ -197,7 +197,6 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);overflow:hid
 .agent-card{background:var(--agent-card);border:1px solid var(--border);border-radius:8px;margin:8px 0;padding:12px}
 .agent-card-header{display:flex;align-items:center;gap:8px;font-weight:600;margin-bottom:6px;cursor:pointer;font-size:13px;user-select:none}
 .agent-card-body{font-size:13px}
-.hidden{display:none}
 .tool-call{font-size:12px;color:var(--text-muted);padding:4px 8px;background:rgba(255,255,255,0.03);border-radius:4px;margin:4px 0;font-family:monospace}
 .tool-result{font-size:12px;color:#4caf50;padding:4px 8px;margin:2px 0}
 .chat-input-area{padding:16px 20px;border-top:1px solid var(--border)}
@@ -214,11 +213,12 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);overflow:hid
 <div class="sidebar">
 <div class="sidebar-header"><span>🤖</span> AI Chat</div>
 <div class="quest-list" id="quest-list">
-<div class="quest-item active" data-id="" data-name="default"><span class="quest-icon">💬</span> Allmän assistent</div>
-''' + quest_items + '''</div>
+<div class="quest-item active" data-id="" data-name="default"><span class="quest-icon">💬</span> Allman assistent</div>
+<!-- QUEST_ITEMS -->
+</div>
 </div>
 <div class="chat-main">
-<div class="chat-header">Chattar med <strong id="active-quest-name">Allmän assistent</strong></div>
+<div class="chat-header">Chattar med <strong id="active-quest-name">Allman assistent</strong></div>
 <div class="messages" id="messages"></div>
 <div class="chat-input-area"><div class="chat-input-row">
 <input type="text" id="prompt-input" placeholder="Skriv ett meddelande..." autofocus/>
@@ -232,11 +232,10 @@ document.getElementById('quest-list').addEventListener('click',function(e){var t
 document.getElementById('prompt-input').addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage()}});
 function _(e,t,n){var a=document.createElement(e);if(t)a.className=t;if(n!==undefined)a.innerHTML=n;return a}
 function scrollBottom(){var e=document.getElementById('messages');e.scrollTop=e.scrollHeight}
-function sendMessage(){var e=document.getElementById('prompt-input'),t=document.getElementById('send-btn'),n=e.value.trim();if(!n||streaming)return;e.value='';streaming=!0;t.disabled=!0;var a=_('div','message user',escapeHtml(n));document.getElementById('messages').appendChild(a);scrollBottom();currentAiMessage=_('div','message ai','');document.getElementById('messages').appendChild(currentAiMessage);currentAgentCards={};scrollBottom();var i='prompt='+encodeURIComponent(n);if(activeQuestId)i+='&quest_id='+activeQuestId;console.log('SSE connecting to /ai/stream?'+i);var o=new EventSource('/ai/stream?'+i);o.onopen=function(){console.log('SSE connected')};o.onmessage=function(e){try{var t=JSON.parse(e.data);handleStreamEvent(t,o)}catch(e){console.error('Parse error:',e)}};o.onerror=function(e){console.log('SSE error/close, readyState='+o.readyState);if(streaming){o.close();finishStream()}}}
-function handleStreamEvent(e,t){switch(e.type){case'supervisor.start':currentAiMessage.innerHTML+='<div style="color:var(--text-muted);margin-bottom:8px">🔍 <em>Supervisor: '+escapeHtml(e.reasoning)+'</em></div>';break;case'agent.start':currentAgentCards[e.agent_id]=_('div','agent-card','');currentAgentCards[e.agent_id].innerHTML='<div class="agent-card-header" ><span>'+e.icon+'</span><span>'+escapeHtml(e.name)+'</span></div><div class="agent-card-body"></div>';currentAiMessage.appendChild(currentAgentCards[e.agent_id]);break;case'agent.tool_call':if(currentAgentCards[e.agent_id]){var n=currentAgentCards[e.agent_id].querySelector('.agent-card-body');n.innerHTML+='<div class="tool-call">🔧 '+escapeHtml(e.tool)+'('+escapeHtml(e.model)+')</div>'}break;case'agent.tool_result':if(currentAgentCards[e.agent_id]){var a=currentAgentCards[e.agent_id].querySelector('.agent-card-body');a.innerHTML+='<div class="tool-result">✅ '+escapeHtml(e.summary)+'</div>'}break;case'agent.done':break;case'supervisor.conclusion':currentAiMessage.innerHTML+='<div style="color:var(--accent);margin-top:8px;font-weight:600">✅ Slutsats:</div>';break;case'token':currentAiMessage.innerHTML+=e.token;break;case'done':t.close();finishStream();break;case'error':currentAiMessage.innerHTML+='<div style="color:#ff5252;margin-top:8px">❌ '+escapeHtml(e.message)+'</div>';t.close();finishStream();break}scrollBottom()}
+function sendMessage(){var e=document.getElementById('prompt-input'),t=document.getElementById('send-btn'),n=e.value.trim();if(!n||streaming)return;e.value='';streaming=!0;t.disabled=!0;var a=_('div','message user',escapeHtml(n));document.getElementById('messages').appendChild(a);scrollBottom();currentAiMessage=_('div','message ai','');document.getElementById('messages').appendChild(currentAiMessage);currentAgentCards={};scrollBottom();var i='prompt='+encodeURIComponent(n);if(activeQuestId)i+='&quest_id='+activeQuestId;var o=new EventSource('/ai/stream?'+i);o.onmessage=function(e){try{var t=JSON.parse(e.data);handleStreamEvent(t,o)}catch(e){}};o.onerror=function(){if(streaming){o.close();finishStream()}}}
+function handleStreamEvent(e,t){switch(e.type){case'token':currentAiMessage.innerHTML+=e.token;break;case'tool_call_start':var a=_('div','agent-card','');var name=e.tool_call?e.tool_call.name:'tool';a.innerHTML='<div class="agent-card-header"><span>🔧</span><span>'+escapeHtml(name)+'</span></div><div class="agent-card-body">Kör...</div>';currentAiMessage.appendChild(a);currentAgentCards[name]=a;break;case'done':t.close();finishStream();break;case'error':currentAiMessage.innerHTML+='<div style="color:#ff5252">❌ '+escapeHtml(e.message)+'</div>';t.close();finishStream();break}scrollBottom()}
 function finishStream(){if(currentAiMessage&&!currentAiMessage.textContent.trim()){currentAiMessage.innerHTML='<em style="color:var(--text-muted)">(inget svar)</em>'}streaming=!1;document.getElementById('send-btn').disabled=!1;document.getElementById('prompt-input').focus();currentAiMessage=null;currentAgentCards={}}
 function escapeHtml(e){var t=document.createElement('div');t.textContent=e;return t.innerHTML}
 </script>
 </body>
 </html>'''
-        return Response(html, headers=[('Content-Type', 'text/html; charset=utf-8')])

@@ -15,7 +15,7 @@
 ## Phase 3: Session & Integration
 
 - [x] **T3.1** — `models/ai_session.py` — Extended session model (SESS-001, SESS-002)
-- [ ] **T3.2** — Replace mock stream with real BifrostProvider in SSE controller
+- [x] **T3.2** — Replace mock stream with real BifrostProvider in SSE controller
 - [ ] **T3.3** — Wire AgentLoop into ai.quest.run() for one quest
 - [ ] **T3.4** — Test end-to-end: quest runs via cron with new loop
 
