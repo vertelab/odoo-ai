@@ -11,7 +11,7 @@
                 <field name="use_count"/>
                 <field name="is_template"/>
                 <templates>
-                    <t t-name="kanban-box">
+                    <t t-name="card">
                         <div class="oe_kanban_card">
                             <div class="o_kanban_card_header">
                                 <strong><field name="name"/></strong>

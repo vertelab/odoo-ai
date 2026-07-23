@@ -31,13 +31,13 @@
     <record id="action_ai_identity" model="ir.actions.act_window">
         <field name="name">AI Agents</field>
         <field name="res_model">ai.identity</field>
-        <field name="view_mode">kanban,tree,form</field>
+        <field name="view_mode">kanban,list,form</field>
     </record>
 
     <record id="action_ai_skill" model="ir.actions.act_window">
         <field name="name">Skills</field>
         <field name="res_model">ai.skill</field>
-        <field name="view_mode">kanban,tree,form</field>
+        <field name="view_mode">kanban,list,form</field>
     </record>
 
     <record id="action_ai_chat" model="ir.actions.act_url">
