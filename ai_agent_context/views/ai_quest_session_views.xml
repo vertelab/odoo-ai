@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Extend ai.quest.session form to show context info -->
+    <record id="view_ai_quest_session_form_inherit_context" model="ir.ui.view">
+        <field name="name">ai.quest.session.form.inherit.context</field>
+        <field name="model">ai.quest.session</field>
+        <field name="inherit_id" ref="ai_agent.ai_quest_session_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//sheet" position="inside">
+                <div class="alert alert-info" role="alert"
+                     invisible="not has_context">
+                    <strong>Record Context Available</strong>
+                    <field name="context_record_name"
+                           invisible="not context_record_name"/>
+                    <button type="object"
+                            name="action_view_context_record"
+                            string="View Record"
+                            class="btn btn-sm btn-secondary"
+                            invisible="not context_record_id"/>
+                </div>
+            </xpath>
+        </field>
+    </record>
+
+    <!-- Extend ai.quest.session tree to show context badge -->
+    <record id="view_ai_quest_session_tree_inherit_context" model="ir.ui.view">
+        <field name="name">ai.quest.session.tree.inherit.context</field>
+        <field name="model">ai.quest.session</field>
+        <field name="inherit_id" ref="ai_agent.ai_quest_session_list"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='ai_quest_id']" position="after">
+                <field name="has_context" widget="boolean"
+                       string="Context" optional="hide"/>
+            </xpath>
+        </field>
+    </record>
+</odoo>

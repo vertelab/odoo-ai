@@ -1,0 +1,16 @@
+itemadapter-0.13.1.dist-info/INSTALLER,sha256=zuuue4knoyJ-UwPPXg8fezS7VCrXJQrAP7zeNuwvFQg,4
+itemadapter-0.13.1.dist-info/METADATA,sha256=wnt8pTZa7wkjk-nfGhev5zLAz8wKsLzdGlK0irr7ULI,22721
+itemadapter-0.13.1.dist-info/RECORD,,
+itemadapter-0.13.1.dist-info/WHEEL,sha256=WLgqFyCfm_KASv4WHyYy0P3pM_m7J5L9k2skdKLirC8,87
+itemadapter-0.13.1.dist-info/licenses/LICENSE,sha256=irgaybyKbgi_FWAP_B5YejcPBH0Amj-mtT0O6bmr0A0,1461
+itemadapter/__init__.py,sha256=JBFa3yzLgcG0BG0qNsrdJVy649C8oRHDpjbubiq8MLI,193
+itemadapter/__pycache__/__init__.cpython-312.pyc,,
+itemadapter/__pycache__/_imports.cpython-312.pyc,,
+itemadapter/__pycache__/_json_schema.cpython-312.pyc,,
+itemadapter/__pycache__/adapter.cpython-312.pyc,,
+itemadapter/__pycache__/utils.cpython-312.pyc,,
+itemadapter/_imports.py,sha256=a6i-j6vkILfrdSdKVY7pS6e089O6ntQnaCzTF0Is4eo,1672
+itemadapter/_json_schema.py,sha256=v1duU1ryDbPcDZnR85x742I5Qku1HTAvXjeUX7fNBCU,22378
+itemadapter/adapter.py,sha256=-BnzX1SvyrWFCdlVHu5_SogVCDSF78XuPBH-6Fdw40g,17160
+itemadapter/py.typed,sha256=47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU,0
+itemadapter/utils.py,sha256=q7L8Rurf5Zh8SPm6L5zM5o0-FeQHN3LsV_q0k40HaM4,4278

@@ -26,3 +26,6 @@ google-auth-oauthlib
 pydub
 langchain_postgres
 pgvector
+
+# ai_agent_context — record context injection
+pytz

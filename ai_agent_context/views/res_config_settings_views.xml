@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_res_config_settings_form_inherit_context" model="ir.ui.view">
+        <field name="name">res.config.settings.form.inherit.context</field>
+        <field name="model">res.config.settings</field>
+        <field name="inherit_id" ref="ai_agent.res_config_settings_view_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//app[@name='ai_agent']//block" position="inside">
+                <setting id="context_injection_setting"
+                         help="Automatically include record fields and chatter history as AI context">
+                    <span class="fa fa-lg fa-magic"/>
+                    <field name="ai_context_default_enabled"/>
+                    <label for="ai_context_default_enabled"
+                           string="Enable Record Context Injection"/>
+                    <div invisible="not ai_context_default_enabled">
+                        <field name="ai_context_default_chatter"
+                               string="Include Chatter History"/>
+                        <label for="ai_context_default_chatter"/>
+                        <div invisible="not ai_context_default_chatter">
+                            <label for="ai_context_chatter_limit"
+                                   string="Chatter Message Limit"/>
+                            <field name="ai_context_chatter_limit"/>
+                        </div>
+                    </div>
+                </setting>
+            </xpath>
+        </field>
+    </record>
+</odoo>
