@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_ai_skill_kanban" model="ir.ui.view">
+        <field name="name">ai.skill.kanban</field>
+        <field name="model">ai.skill</field>
+        <field name="arch" type="xml">
+            <kanban>
+                <field name="name"/>
+                <field name="category"/>
+                <field name="use_count"/>
+                <field name="version"/>
+                <templates>
+                    <t t-name="kanban-box">
+                        <div class="oe_kanban_card">
+                            <div class="o_kanban_card_header">
+                                <strong><field name="name"/></strong>
+                                <span class="float-end badge bg-secondary"><field name="category"/></span>
+                            </div>
+                            <div class="o_kanban_card_content">
+                                <field name="description" class="text-muted small"/>
+                            </div>
+                            <div class="o_kanban_card_footer">
+                                v<field name="version"/> · Used: <field name="use_count"/>x
+                            </div>
+                        </div>
+                    </t>
+                </templates>
+            </kanban>
+        </field>
+    </record>
+
+    <record id="view_ai_skill_tree" model="ir.ui.view">
+        <field name="name">ai.skill.tree</field>
+        <field name="model">ai.skill</field>
+        <field name="arch" type="xml">
+            <tree>
+                <field name="name"/>
+                <field name="category"/>
+                <field name="compatibility"/>
+                <field name="version"/>
+                <field name="use_count"/>
+            </tree>
+        </field>
+    </record>
+
+    <record id="view_ai_skill_form" model="ir.ui.view">
+        <field name="name">ai.skill.form</field>
+        <field name="model">ai.skill</field>
+        <field name="arch" type="xml">
+            <form>
+                <sheet>
+                    <div class="oe_title">
+                        <h1><field name="name" placeholder="Skill Name"/></h1>
+                    </div>
+                    <group col="2">
+                        <field name="category"/>
+                        <field name="compatibility"/>
+                        <field name="version"/>
+                        <field name="use_count" readonly="1"/>
+                    </group>
+                    <group string="Description">
+                        <field name="description" widget="text" nolabel="1"/>
+                    </group>
+                    <group string="Triggers">
+                        <field name="trigger_keywords"
+                               placeholder="moms, deklaration, skatteverket"/>
+                    </group>
+                    <notebook>
+                        <page string="Recipe">
+                            <field name="recipe_text" widget="text" nolabel="1"/>
+                        </page>
+                        <page string="Verify Cases">
+                            <group string="Success Cases">
+                                <field name="success_cases" widget="text" nolabel="1"/>
+                            </group>
+                            <group string="Failure Cases">
+                                <field name="failure_cases" widget="text" nolabel="1"/>
+                            </group>
+                        </page>
+                        <page string="Improve">
+                            <group string="Improvement Guidance">
+                                <field name="improvement_guidance" widget="text" nolabel="1"/>
+                            </group>
+                            <group string="References">
+                                <field name="improvement_references" widget="text" nolabel="1"/>
+                            </group>
+                            <button name="action_improve" string="Apply Improvement"
+                                    type="object" class="btn-primary"/>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+</odoo>

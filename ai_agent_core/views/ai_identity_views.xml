@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Kanban -->
+    <record id="view_ai_identity_kanban" model="ir.ui.view">
+        <field name="name">ai.identity.kanban</field>
+        <field name="model">ai.identity</field>
+        <field name="arch" type="xml">
+            <kanban class="o_kanban_mobile">
+                <field name="name"/>
+                <field name="scope"/>
+                <field name="use_count"/>
+                <field name="is_template"/>
+                <templates>
+                    <t t-name="kanban-box">
+                        <div class="oe_kanban_card">
+                            <div class="o_kanban_card_header">
+                                <strong><field name="name"/></strong>
+                            </div>
+                            <div class="o_kanban_card_content">
+                                <div class="text-muted small">
+                                    Scope: <field name="scope"/>
+                                    <t t-if="is_template">
+                                        <span class="badge bg-info">Template</span>
+                                    </t>
+                                </div>
+                                <div class="text-muted small mt-1">
+                                    <field name="personality" widget="text" class="oe_inline"/>
+                                </div>
+                            </div>
+                            <div class="o_kanban_card_footer">
+                                Used: <field name="use_count"/> times
+                            </div>
+                        </div>
+                    </t>
+                </templates>
+            </kanban>
+        </field>
+    </record>
+
+    <!-- Tree -->
+    <record id="view_ai_identity_tree" model="ir.ui.view">
+        <field name="name">ai.identity.tree</field>
+        <field name="model">ai.identity</field>
+        <field name="arch" type="xml">
+            <tree>
+                <field name="name"/>
+                <field name="scope"/>
+                <field name="is_template"/>
+                <field name="template_category"/>
+                <field name="use_count"/>
+                <field name="active"/>
+            </tree>
+        </field>
+    </record>
+
+    <!-- Form -->
+    <record id="view_ai_identity_form" model="ir.ui.view">
+        <field name="name">ai.identity.form</field>
+        <field name="model">ai.identity</field>
+        <field name="arch" type="xml">
+            <form>
+                <sheet>
+                    <div class="oe_title">
+                        <h1><field name="name" placeholder="Agent Name"/></h1>
+                    </div>
+                    <group col="2">
+                        <field name="scope"/>
+                        <field name="active"/>
+                        <field name="is_template"/>
+                        <field name="template_category" invisible="not is_template"/>
+                    </group>
+
+                    <notebook>
+                        <page string="Soul">
+                            <group string="Personality">
+                                <field name="personality" widget="text" nolabel="1"/>
+                            </group>
+                            <group string="Communication Style">
+                                <field name="style" widget="text" nolabel="1"/>
+                            </group>
+                            <group string="Values">
+                                <field name="values" widget="text" nolabel="1"/>
+                            </group>
+                            <group string="Boundaries">
+                                <field name="boundaries" widget="text" nolabel="1"/>
+                            </group>
+                        </page>
+                        <page string="User Model">
+                            <group>
+                                <field name="user_model_enabled"/>
+                                <field name="user_model" widget="text"
+                                       invisible="not user_model_enabled"/>
+                            </group>
+                        </page>
+                        <page string="Skills">
+                            <field name="skill_ids">
+                                <tree>
+                                    <field name="name"/>
+                                    <field name="category"/>
+                                    <field name="use_count"/>
+                                </tree>
+                            </field>
+                        </page>
+                        <page string="System Prompt">
+                            <field name="system_prompt" widget="text" nolabel="1"
+                                   readonly="1"/>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+</odoo>

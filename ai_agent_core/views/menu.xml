@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Main menu -->
+    <menuitem id="menu_ai_root"
+              name="AI Orkestrering"
+              sequence="90"
+              web_icon="ai_agent_core,static/description/icon.png"/>
+
+    <!-- Agents -->
+    <menuitem id="menu_ai_identity"
+              name="Agenter"
+              parent="menu_ai_root"
+              sequence="10"
+              action="action_ai_identity"/>
+
+    <!-- Skills -->
+    <menuitem id="menu_ai_skill"
+              name="Skills"
+              parent="menu_ai_root"
+              sequence="20"
+              action="action_ai_skill"/>
+
+    <!-- Chat -->
+    <menuitem id="menu_ai_chat"
+              name="AI Chat"
+              parent="menu_ai_root"
+              sequence="90"
+              action="action_ai_chat"/>
+
+    <!-- Actions -->
+    <record id="action_ai_identity" model="ir.actions.act_window">
+        <field name="name">AI Agents</field>
+        <field name="res_model">ai.identity</field>
+        <field name="view_mode">kanban,tree,form</field>
+    </record>
+
+    <record id="action_ai_skill" model="ir.actions.act_window">
+        <field name="name">Skills</field>
+        <field name="res_model">ai.skill</field>
+        <field name="view_mode">kanban,tree,form</field>
+    </record>
+
+    <record id="action_ai_chat" model="ir.actions.act_url">
+        <field name="name">AI Chat</field>
+        <field name="url">/ai/chat</field>
+        <field name="target">self</field>
+    </record>
+</odoo>

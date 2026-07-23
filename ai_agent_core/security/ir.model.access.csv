@@ -1,2 +1,3 @@
-# Security access for ai_agent_core — inherits from ai_agent models
-# No new models to secure yet; access comes from ai_agent
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_ai_identity_user,ai.identity.user,model_ai_identity,base.group_user,1,1,1,1
+access_ai_skill_user,ai.skill.user,model_ai_skill,base.group_user,1,1,1,1
