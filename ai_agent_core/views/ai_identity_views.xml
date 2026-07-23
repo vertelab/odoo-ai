@@ -93,13 +93,7 @@
                             </group>
                         </page>
                         <page string="Skills">
-                            <field name="skill_ids">
-                                <tree>
-                                    <field name="name"/>
-                                    <field name="category"/>
-                                    <field name="use_count"/>
-                                </tree>
-                            </field>
+                            <field name="skill_ids"/>
                         </page>
                         <page string="System Prompt">
                             <field name="system_prompt" widget="text" nolabel="1"
