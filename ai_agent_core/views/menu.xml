@@ -24,7 +24,7 @@
     <record id="action_ai_memory" model="ir.actions.act_window">
         <field name="name">Minne</field>
         <field name="res_model">ai.memory</field>
-        <field name="view_mode">tree,form</field>
+        <field name="view_mode">list,form</field>
     </record>
     <record id="action_ai_chat" model="ir.actions.act_url">
         <field name="name">AI Chat</field>
