@@ -23,7 +23,7 @@ INIT_TYPES = [
 class AIQuest(models.Model):
     _name = 'ai.quest'
     _description = 'AI Quest'
-    _inherit = ['mail.thread', 'mail.activity.mixin', 'mail.alias.mixin']
+    _inherit = ['mail.thread', 'mail.activity.mixin']
     _order = 'sequence asc, name asc'
 
     name = fields.Char(required=True)
@@ -80,7 +80,6 @@ class AIQuest(models.Model):
     is_favorite = fields.Boolean('Favorite')
 
     # Mail
-    alias_name = fields.Char('Alias')
 
     # Stats
     session_count = fields.Integer(compute='_compute_session_count')
