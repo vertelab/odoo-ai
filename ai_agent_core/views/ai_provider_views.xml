@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Provider Kanban -->
+    <record id="ai_provider_kanban" model="ir.ui.view">
+        <field name="name">ai.provider.kanban</field>
+        <field name="model">ai.provider</field>
+        <field name="arch" type="xml">
+            <kanban class="o_kanban_mobile">
+                <field name="name"/>
+                <field name="provider_type"/>
+                <field name="status"/>
+                <field name="model_count"/>
+                <templates>
+                    <t t-name="card">
+                        <div class="oe_kanban_card">
+                            <div class="o_kanban_card_header">
+                                <strong class="o_kanban_record_title"><field name="name"/></strong>
+                            </div>
+                            <div class="o_kanban_card_content">
+                                <div class="text-muted small"><field name="provider_type"/></div>
+                                <div class="mt-1">
+                                    <field name="model_count"/> models
+                                </div>
+                            </div>
+                            <div class="o_kanban_card_footer">
+                                <field name="status" widget="badge"
+                                       decoration-success="status=='confirmed'"
+                                       decoration-warning="status=='draft'"
+                                       decoration-danger="status=='error'"/>
+                            </div>
+                        </div>
+                    </t>
+                </templates>
+            </kanban>
+        </field>
+    </record>
+
+    <!-- Provider List -->
+    <record id="ai_provider_list" model="ir.ui.view">
+        <field name="name">ai.provider.list</field>
+        <field name="model">ai.provider</field>
+        <field name="arch" type="xml">
+            <list string="Providers" decoration-info="status=='draft'" decoration-success="status=='confirmed'">
+                <field name="name"/>
+                <field name="provider_type"/>
+                <field name="base_url"/>
+                <field name="model_count"/>
+                <field name="last_checked"/>
+                <field name="status" widget="badge"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- Provider Form -->
+    <record id="ai_provider_form" model="ir.ui.view">
+        <field name="name">ai.provider.form</field>
+        <field name="model">ai.provider</field>
+        <field name="arch" type="xml">
+            <form>
+                <header>
+                    <button name="action_test_connection" type="object"
+                            string="Test Connection" class="btn-secondary"/>
+                    <button name="action_fetch_models" type="object"
+                            string="Fetch Models" class="btn-primary"/>
+                    <field name="status" widget="statusbar"
+                           statusbar_visible="draft,confirmed"/>
+                </header>
+                <sheet>
+                    <div class="oe_button_box" name="button_box">
+                        <button name="%(action_ai_model)d" type="action"
+                                class="oe_stat_button" icon="fa-cubes">
+                            <field name="model_count" widget="statinfo"/>
+                        </button>
+                    </div>
+                    <div class="oe_title">
+                        <h1><field name="name" placeholder="Provider Name"/></h1>
+                    </div>
+                    <group col="2">
+                        <field name="provider_type"/>
+                        <field name="active"/>
+                        <field name="base_url" widget="url"/>
+                        <field name="is_key_required"/>
+                    </group>
+                    <group string="API Key" invisible="not is_key_required">
+                        <field name="api_key" password="True"/>
+                    </group>
+                    <group string="Advanced">
+                        <field name="timeout"/>
+                        <field name="retry_count"/>
+                        <field name="last_checked"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!-- Provider Discover Wizard -->
+    <record id="ai_provider_wizard_form" model="ir.ui.view">
+        <field name="name">ai.provider.wizard.form</field>
+        <field name="model">ai.provider.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Discover Provider">
+                <group>
+                    <field name="name" placeholder="e.g. OpenAI, Anthropic, Bifrost"/>
+                    <field name="url" placeholder="e.g. api.openai.com or https://api.openai.com/v1"/>
+                </group>
+                <footer>
+                    <button name="action_discover" type="object"
+                            string="Discover" class="btn-primary"/>
+                    <button string="Cancel" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_ai_provider_wizard" model="ir.actions.act_window">
+        <field name="name">Discover Provider</field>
+        <field name="res_model">ai.provider.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+</odoo>

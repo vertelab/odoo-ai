@@ -40,6 +40,8 @@
     'data': [
         'security/ir.model.access.csv',
         'views/menu.xml',
+        'views/ai_provider_views.xml',
+        'views/ai_model_views.xml',
         'views/ai_quest_views.xml',
         'views/ai_agent_views.xml',
         'views/ai_identity_views.xml',

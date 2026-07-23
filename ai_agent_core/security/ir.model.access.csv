@@ -7,3 +7,6 @@ access_ai_session,ai.quest.session,model_ai_quest_session,base.group_user,1,1,1,
 access_ai_memory,ai.memory,model_ai_memory,base.group_user,1,1,1,1
 access_ai_identity,ai.identity,model_ai_identity,base.group_user,1,1,1,1
 access_ai_skill,ai.skill,model_ai_skill,base.group_user,1,1,1,1
+access_ai_provider,ai.provider,model_ai_provider,base.group_user,1,1,1,1
+access_ai_model,ai.model,model_ai_model,base.group_user,1,1,1,1
+access_ai_provider_wizard,ai.provider.wizard,model_ai_provider_wizard,base.group_user,1,1,1,1

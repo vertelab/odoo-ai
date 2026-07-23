@@ -1,6 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
     <!-- Actions (referenced by menuitems — must come first) -->
+    <record id="action_ai_provider" model="ir.actions.act_window">
+        <field name="name">Providers</field>
+        <field name="res_model">ai.provider</field>
+        <field name="view_mode">kanban,list,form</field>
+    </record>
+    <record id="action_ai_model" model="ir.actions.act_window">
+        <field name="name">Models</field>
+        <field name="res_model">ai.model</field>
+        <field name="view_mode">kanban,list,form</field>
+        <field name="context">{'search_default_group_provider': 1}</field>
+    </record>
     <record id="action_ai_quest" model="ir.actions.act_window">
         <field name="name">Quests</field>
         <field name="res_model">ai.quest</field>
@@ -35,6 +46,10 @@
     <!-- Menu -->
     <menuitem id="menu_ai_root" name="AI Orkestrering" sequence="90"/>
 
+    <menuitem id="menu_ai_provider" name="Providers" parent="menu_ai_root"
+              sequence="5" action="action_ai_provider"/>
+    <menuitem id="menu_ai_model" name="Modeller" parent="menu_ai_root"
+              sequence="7" action="action_ai_model"/>
     <menuitem id="menu_ai_quest" name="Quests" parent="menu_ai_root"
               sequence="10" action="action_ai_quest"/>
     <menuitem id="menu_ai_identity" name="Identiteter" parent="menu_ai_root"
