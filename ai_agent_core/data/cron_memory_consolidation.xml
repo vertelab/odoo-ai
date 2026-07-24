@@ -5,23 +5,13 @@
         <field name="name">AI: Daglig minneskonsolidering</field>
         <field name="model_id" ref="model_ai_quest"/>
         <field name="state">code</field>
-        <field name="code">
-# Consolidate memories for all active quests with identities
-quests = env['ai.quest'].search([
-    ('status', '=', 'active'),
-    ('identity_id', '!=', False),
-])
-consolidated = 0
+        <field name="code"># Consolidate memories for all active quests with identities
+quests = env['ai.quest'].search([('status', '=', 'active'), ('identity_id', '!=', False)])
 for quest in quests:
     try:
-        count = quest.consolidate_memories()
-        consolidated += count
+        quest.consolidate_memories()
     except Exception:
-        pass
-_logger = logging.getLogger(__name__)
-if consolidated:
-    _logger.info('Daily consolidation: %d memories across %d quests', consolidated, len(quests))
-        </field>
+        pass</field>
         <field name="interval_number">1</field>
         <field name="interval_type">days</field>
         <field name="numbercall">-1</field>
