@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
     <!-- Cron: Weekly Kaizen (runs every Sunday at 03:00) -->
-    <record id="cron_kaizen_weekly" model="ir.cron">
+    <record id="cron_kaizen_weekly" model="ir.cron" noupdate="1">
         <field name="name">AI: Veckovis Kaizen-rapport</field>
         <field name="model_id" ref="model_ai_kaizen_report"/>
         <field name="state">code</field>

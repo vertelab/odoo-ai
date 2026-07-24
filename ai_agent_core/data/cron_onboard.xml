@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
     <!-- Cron: ONBOARD scan (runs every 4 hours) -->
-    <record id="cron_onboard_scan" model="ir.cron">
+    <record id="cron_onboard_scan" model="ir.cron" noupdate="1">
         <field name="name">AI: ONBOARD — scanna efter quest-kandidater</field>
         <field name="model_id" ref="model_ai_onboard_candidate"/>
         <field name="state">code</field>

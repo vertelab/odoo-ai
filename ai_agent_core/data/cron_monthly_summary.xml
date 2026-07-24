@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
     <!-- Cron: Generate monthly systemtoken summaries (runs 1st of each month at 03:00) -->
-    <record id="cron_monthly_summary" model="ir.cron">
+    <record id="cron_monthly_summary" model="ir.cron" noupdate="1">
         <field name="name">AI: Generera månadssammanställning</field>
         <field name="model_id" ref="model_ai_quest_monthly_summary"/>
         <field name="state">code</field>
