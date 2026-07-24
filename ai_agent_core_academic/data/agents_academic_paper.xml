@@ -7,7 +7,6 @@
         <field name="provider_type">bifrost</field>
         <field name="bifrost_model">cerebras/gpt-oss-120b</field>
         <field name="status">active</field>
-        <field name="skill_ids" eval="[(6, 0, [ref('skill_academic_paper')])]"/>
     </record>
 
     <!-- ===== LITERATURE STRATEGIST ===== -->
@@ -17,7 +16,6 @@
         <field name="provider_type">bifrost</field>
         <field name="bifrost_model">cerebras/gpt-oss-120b</field>
         <field name="status">active</field>
-        <field name="skill_ids" eval="[(6, 0, [ref('skill_academic_paper')])]"/>
     </record>
 
     <!-- ===== STRUCTURE ARCHITECT ===== -->
@@ -27,7 +25,6 @@
         <field name="provider_type">bifrost</field>
         <field name="bifrost_model">cerebras/gpt-oss-120b</field>
         <field name="status">active</field>
-        <field name="skill_ids" eval="[(6, 0, [ref('skill_academic_paper')])]"/>
     </record>
 
     <!-- ===== ARGUMENT BUILDER ===== -->
@@ -37,7 +34,6 @@
         <field name="provider_type">bifrost</field>
         <field name="bifrost_model">cerebras/gpt-oss-120b</field>
         <field name="status">active</field>
-        <field name="skill_ids" eval="[(6, 0, [ref('skill_academic_paper')])]"/>
     </record>
 
     <!-- ===== DRAFT WRITER ===== -->
@@ -47,7 +43,6 @@
         <field name="provider_type">bifrost</field>
         <field name="bifrost_model">cerebras/gpt-oss-120b</field>
         <field name="status">active</field>
-        <field name="skill_ids" eval="[(6, 0, [ref('skill_academic_paper')])]"/>
     </record>
 
     <!-- ===== CITATION COMPLIANCE ===== -->
@@ -57,7 +52,6 @@
         <field name="provider_type">bifrost</field>
         <field name="bifrost_model">cerebras/gpt-oss-120b</field>
         <field name="status">active</field>
-        <field name="skill_ids" eval="[(6, 0, [ref('skill_academic_paper')])]"/>
     </record>
 
     <!-- ===== PEER REVIEWER ===== -->
@@ -67,7 +61,6 @@
         <field name="provider_type">bifrost</field>
         <field name="bifrost_model">cerebras/gpt-oss-120b</field>
         <field name="status">active</field>
-        <field name="skill_ids" eval="[(6, 0, [ref('skill_academic_paper')])]"/>
     </record>
 
     <!-- ===== FORMATTER ===== -->
@@ -77,7 +70,6 @@
         <field name="provider_type">bifrost</field>
         <field name="bifrost_model">cerebras/gpt-oss-120b</field>
         <field name="status">active</field>
-        <field name="skill_ids" eval="[(6, 0, [ref('skill_academic_paper')])]"/>
     </record>
 
     <!-- ===== SOCRATIC MENTOR ===== -->
@@ -87,7 +79,6 @@
         <field name="provider_type">bifrost</field>
         <field name="bifrost_model">cerebras/gpt-oss-120b</field>
         <field name="status">active</field>
-        <field name="skill_ids" eval="[(6, 0, [ref('skill_academic_paper')])]"/>
     </record>
 
     <!-- ===== REVISION COACH ===== -->
@@ -97,7 +88,6 @@
         <field name="provider_type">bifrost</field>
         <field name="bifrost_model">cerebras/gpt-oss-120b</field>
         <field name="status">active</field>
-        <field name="skill_ids" eval="[(6, 0, [ref('skill_academic_paper')])]"/>
     </record>
 
     <!-- ===== ABSTRACT BILINGUAL ===== -->
@@ -107,7 +97,6 @@
         <field name="provider_type">bifrost</field>
         <field name="bifrost_model">cerebras/gpt-oss-120b</field>
         <field name="status">active</field>
-        <field name="skill_ids" eval="[(6, 0, [ref('skill_academic_paper')])]"/>
     </record>
 
     <!-- ===== VISUALIZATION ===== -->
@@ -117,6 +106,5 @@
         <field name="provider_type">bifrost</field>
         <field name="bifrost_model">cerebras/gpt-oss-120b</field>
         <field name="status">active</field>
-        <field name="skill_ids" eval="[(6, 0, [ref('skill_academic_paper')])]"/>
     </record>
 </odoo>

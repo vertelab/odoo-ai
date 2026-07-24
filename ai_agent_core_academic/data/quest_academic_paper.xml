@@ -5,10 +5,10 @@
         <field name="description">Academic paper writing supervisor. Coordinates 12 agents through 7-phase pipeline: Intake, Literature Search, Structure Design, Argument Building, Draft Writing, Citation Compliance, Peer Review. Modes: full pipeline, plan only, revision, abstract only.</field>
         <field name="sub_description">12-agent pipeline — research to publication</field>
         <field name="init_type">manual</field>
-        <field name="is_supervisor" eval="True"/>
+        <field name="is_supervisor" eval="1"/>
         <field name="status">active</field>
-        <field name="use_chat_history" eval="True"/>
-        <field name="use_time_context" eval="True"/>
+        <field name="use_chat_history" eval="1"/>
+        <field name="use_time_context" eval="1"/>
     </record>
 
     <record id="quest_agent_intake" model="ai.quest.agent">
