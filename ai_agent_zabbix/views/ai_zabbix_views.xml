@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="ai_zabbix_config_form" model="ir.ui.view">
+        <field name="name">ai.zabbix.config.form</field>
+        <field name="model">ai.zabbix.config</field>
+        <field name="arch" type="xml">
+            <form>
+                <header>
+                    <button name="action_test_connection" type="object"
+                            string="Testa anslutning" class="btn-primary"/>
+                </header>
+                <sheet>
+                    <div class="oe_title">
+                        <h1><field name="name"/></h1>
+                    </div>
+                    <group col="2">
+                        <field name="active" widget="boolean_toggle"/>
+                        <field name="connection_ok" widget="boolean_fa_icon"
+                               attrs="{'invisible': [('connection_ok', '=', False)]}"/>
+                    </group>
+                    <group string="Anslutning">
+                        <field name="url"/>
+                        <field name="api_token" password="True"/>
+                        <field name="timeout"/>
+                        <field name="verify_ssl"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="ai_zabbix_config_action" model="ir.actions.act_window">
+        <field name="name">Zabbix</field>
+        <field name="res_model">ai.zabbix.config</field>
+        <field name="view_mode">form</field>
+        <field name="target">current</field>
+    </record>
+
+    <menuitem id="menu_ai_zabbix"
+              parent="ai_agent_core.menu_ai_orchestration_root"
+              action="ai_zabbix_config_action"
+              sequence="90"/>
+</odoo>

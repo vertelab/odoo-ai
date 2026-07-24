@@ -375,6 +375,11 @@ class AIStreamController(http.Controller):
             session.token_input += token_input
             session.token_output += token_output
             session.write_date = fields.Datetime.now()
+
+            # Trigger cap check on parent quest
+            if session.quest_id and session.quest_id.monthly_cap_mtokens:
+                session.quest_id.check_cap()
+
             _logger.info("Saved response to session %s: %d in/%d out tokens, model=%s",
                         thread_id, token_input, token_output, model_real or 'unknown')
         return Response(json.dumps({"status": "ok"}), content_type='application/json')

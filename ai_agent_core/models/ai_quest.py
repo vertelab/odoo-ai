@@ -113,6 +113,89 @@ class AIQuest(models.Model):
     cap_warning_sent = fields.Boolean('Varning skickad')
     cap_exhausted = fields.Boolean('Tak överskridet')
 
+    @api.constrains('monthly_cap_mtokens')
+    def _check_monthly_cap(self):
+        for r in self:
+            if r.monthly_cap_mtokens < 0:
+                raise UserError(_('Månadstak får inte vara negativt'))
+            if r.monthly_cap_mtokens > 0 and r.started_mtokens > r.monthly_cap_mtokens:
+                raise UserError(_(
+                    'Kan inte sätta taket till %dM — redan förbrukat %dM denna månad'
+                ) % (r.monthly_cap_mtokens, r.started_mtokens))
+
+    def check_cap(self):
+        """Check if quest has exceeded its monthly cap. Returns (warning, exhausted).
+        
+        Called after session lines are created. Posts discuss notification at 80%.
+        Hard stop at 100%.
+        """
+        self.ensure_one()
+        if not self.monthly_cap_mtokens:
+            return False, False  # No cap set
+
+        cap_tokens = self.monthly_cap_mtokens * 1_000_000
+        used = self.session_line_count
+
+        warning = used >= cap_tokens * 0.8
+        exhausted = used >= cap_tokens
+
+        if warning and not self.cap_warning_sent:
+            self.cap_warning_sent = True
+            self._notify_cap('warning', used, cap_tokens)
+
+        if exhausted and not self.cap_exhausted:
+            self.cap_exhausted = True
+            self._notify_cap('exhausted', used, cap_tokens)
+
+        return warning, exhausted
+
+    def reset_cap(self):
+        """Reset cap flags — called when user increases cap."""
+        self.ensure_one()
+        if not self.monthly_cap_mtokens:
+            self.cap_warning_sent = False
+            self.cap_exhausted = False
+            return
+        cap_tokens = self.monthly_cap_mtokens * 1_000_000
+        used = self.session_line_count
+        self.cap_warning_sent = used >= cap_tokens * 0.8
+        self.cap_exhausted = used >= cap_tokens
+
+    def _notify_cap(self, level, used, cap):
+        """Post cap notification to quest's discuss channel + Zabbix."""
+        self.ensure_one()
+        pct = int(used / cap * 100) if cap else 0
+        mtokens = self.started_mtokens
+
+        if level == 'warning':
+            msg = (
+                f'⚠️ **Varning: AI-medarbetaren "{self.name}" har använt {pct}% '
+                f'av månadstaket.**\n\n'
+                f'Förbrukat: {mtokens}M av {self.monthly_cap_mtokens}M systemtokens.\n'
+                f'Du kan höja taket i quest-inställningarna.'
+            )
+        else:
+            msg = (
+                f'🛑 **Tak överskridet: AI-medarbetaren "{self.name}" har nått '
+                f'månadstaket på {self.monthly_cap_mtokens}M systemtokens.**\n\n'
+                f'Agenten är nu pausad. Höj taket för att återaktivera.'
+            )
+
+        # Post via message_post (mail.thread)
+        self.message_post(body=msg, message_type='notification')
+        _logger.info('Cap %s for quest "%s": %d/%d (%.0f%%)',
+                    level, self.name, used, cap, pct)
+
+        # Send Zabbix event (if ai_agent_zabbix is installed)
+        if level == 'exhausted':
+            try:
+                zabbix_configs = self.env['ai.zabbix.config'].search(
+                    [('active', '=', True)], limit=1)
+                if zabbix_configs:
+                    zabbix_configs.notify_cap_exceeded(self)
+            except Exception as e:
+                _logger.warning('Zabbix notification failed (non-critical): %s', e)
+
     skill_copy_ids = fields.One2many('ai.quest.skill', 'quest_id',
         string='Skill Copies',
         help='Quest-specific copies of shared skills')
@@ -163,6 +246,49 @@ class AIQuest(models.Model):
             'res_model': 'ai.quest.session', 'view_mode': 'list,form',
             'target': 'current',
             'domain': [('quest_id', '=', self.id)],
+        }
+
+    def action_monthly_overview(self):
+        """Smart button: show this month's session lines with systemtoken breakdown."""
+        self.ensure_one()
+        from datetime import date
+        today = date.today()
+        month_start = date(today.year, today.month, 1)
+        return {
+            'name': f'Förbrukning — {self.name}',
+            'type': 'ir.actions.act_window',
+            'res_model': 'ai.quest.session.line',
+            'view_mode': 'list,pivot',
+            'target': 'current',
+            'domain': [
+                ('session_id.quest_id', '=', self.id),
+                ('create_date', '>=', month_start.isoformat()),
+            ],
+            'context': {
+                'pivot_measures': ['token_sys', 'token_input', 'token_output'],
+                'pivot_column_groupby': ['model_real'],
+                'pivot_row_groupby': ['session_id'],
+            },
+        }
+
+    def get_billing_data(self):
+        """Return billing data for external Odoo via XMLRPC.
+        
+        Returns JSON with active quests, user counts, and per-quest
+        systemtoken consumption for the current month.
+        """
+        self.ensure_one()
+        from datetime import date
+        today = date.today()
+        return {
+            'quest_id': self.id,
+            'quest_name': self.name,
+            'month': today.strftime('%Y-%m'),
+            'started_mtokens': self.started_mtokens,
+            'session_line_count': self.session_line_count,
+            'monthly_cap_mtokens': self.monthly_cap_mtokens,
+            'cap_exhausted': self.cap_exhausted,
+            'status': self.status,
         }
 
 

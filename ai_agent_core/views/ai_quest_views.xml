@@ -102,6 +102,10 @@
                             <field name="started_mtokens" widget="statinfo"
                                    string="Påbörjade M"/>
                         </div>
+                        <button name="action_monthly_overview" class="oe_stat_button"
+                                type="object" icon="fa-calendar"
+                                string="Månadsöversikt"
+                                help="Visa månadens systemtoken-förbrukning per modell"/>
                     </div>
                     <div class="oe_title">
                         <h1><field name="name" placeholder="Quest Name"/></h1>
@@ -151,6 +155,23 @@
                         <page string="Schedule" invisible="init_type!='cron'">
                             <group>
                                 <field name="filter_domain"/>
+                            </group>
+                        </page>
+                        <page string="Budget">
+                            <group string="Månadstak (Systemtokens)">
+                                <field name="monthly_cap_mtokens"
+                                    help="0 = obegränsat. Tak i miljoner systemtokens.\nVid 80%: varning. Vid 100%: agenten pausas."/>
+                                <field name="session_line_count" readonly="1"
+                                    string="Förbrukat denna månad"/>
+                                <field name="started_mtokens" readonly="1"
+                                    string="Påbörjade M-tokens"/>
+                            </group>
+                            <group string="Status">
+                                <field name="cap_warning_sent" readonly="1"
+                                    attrs="{'invisible': [('cap_warning_sent', '=', False)]}"/>
+                                <field name="cap_exhausted" readonly="1"
+                                    attrs="{'invisible': [('cap_exhausted', '=', False)]}"
+                                    widget="boolean_toggle"/>
                             </group>
                         </page>
                     </notebook>

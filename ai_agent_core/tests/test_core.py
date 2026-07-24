@@ -1169,6 +1169,63 @@ class TestSystemtoken(unittest.TestCase):
         self.assertIn("model_real", content)
         self.assertIn("sys_multiplier", content)
 
+    def test_cap_enforcement_source(self):
+        """T2.2: quest model has cap enforcement methods."""
+        import os
+        path = os.path.join(
+            os.path.dirname(__file__), '..', 'models', 'ai_quest.py'
+        )
+        path = os.path.abspath(path)
+        with open(path) as f:
+            content = f.read()
+        self.assertIn("check_cap", content)
+        self.assertIn("reset_cap", content)
+        self.assertIn("_notify_cap", content)
+        self.assertIn("get_billing_data", content)
+        self.assertIn("action_monthly_overview", content)
+        self.assertIn("_check_monthly_cap", content)
+
+    def test_zabbix_module_exists(self):
+        """T2.5: ai_agent_zabbix module structure exists."""
+        import os
+        base = os.path.join(os.path.dirname(__file__), '..', '..', 'ai_agent_zabbix')
+        base = os.path.abspath(base)
+        self.assertTrue(os.path.isdir(base), f"ai_agent_zabbix not found at {base}")
+        for fname in ['__manifest__.py', '__init__.py', 'models/__init__.py', 
+                       'models/ai_zabbix.py', 'views/ai_zabbix_views.xml',
+                       'security/ir.model.access.csv']:
+            path = os.path.join(base, fname)
+            self.assertTrue(os.path.isfile(path), f"Missing: {fname}")
+
+    def test_zabbix_jsonrpc_source(self):
+        """T2.5: Zabbix client uses JSON-RPC 2.0 pattern."""
+        import os
+        path = os.path.join(
+            os.path.dirname(__file__), '..', '..', 'ai_agent_zabbix',
+            'models', 'ai_zabbix.py'
+        )
+        path = os.path.abspath(path)
+        with open(path) as f:
+            content = f.read()
+        self.assertIn("jsonrpc", content)
+        self.assertIn("2.0", content)
+        self.assertIn("send_event", content)
+        self.assertIn("notify_cap_exceeded", content)
+
+    def test_billing_data_fields(self):
+        """T2.7: quest get_billing_data returns expected fields."""
+        import os
+        path = os.path.join(
+            os.path.dirname(__file__), '..', 'models', 'ai_quest.py'
+        )
+        path = os.path.abspath(path)
+        with open(path) as f:
+            content = f.read()
+        self.assertIn("'started_mtokens'", content)
+        self.assertIn("'session_line_count'", content)
+        self.assertIn("'monthly_cap_mtokens'", content)
+        self.assertIn("'cap_exhausted'", content)
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
