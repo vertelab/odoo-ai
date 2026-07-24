@@ -14,3 +14,4 @@ from . import res_users
 from . import res_config_settings
 from . import ai_kaizen
 from . import ai_onboard
+from . import ir_actions_server

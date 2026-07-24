@@ -55,9 +55,15 @@ class AIQuest(models.Model):
     model_id = fields.Many2one('ir.model', string='Target Model')
     model_ids = fields.Many2many('ir.model', 'ai_quest_model_rel',
         'quest_id', 'model_id', string='Target Models',
-        help='Models this quest can work with')
+        help='Models this quest can work with. For powerbox quests, '
+             'actions are auto-created and bound to these models.')
     model_name = fields.Char(related='model_id.model', readonly=True, store=True)
     filter_domain = fields.Char('Record Filter')
+
+    # Powerbox action bindings (auto-managed)
+    powerbox_action_ids = fields.One2many('ir.actions.server',
+        'powerbox_quest_id', string='Powerbox Actions',
+        help='Auto-created server actions bound to target models')
 
     agent_ids = fields.One2many('ai.quest.agent', 'quest_id', string='Agents')
     agent_count = fields.Integer(compute='_compute_agent_count')
@@ -221,6 +227,96 @@ class AIQuest(models.Model):
     def _compute_agent_count(self):
         for r in self:
             r.agent_count = len(r.agent_ids)
+
+    # ── Powerbox action binding ──
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        quests = super().create(vals_list)
+        for quest in quests:
+            if quest.init_type == 'powerbox' and quest.status == 'active':
+                quest._sync_powerbox_actions()
+        return quests
+
+    def write(self, vals):
+        result = super().write(vals)
+        for quest in self:
+            if quest.init_type == 'powerbox' and quest.status == 'active':
+                if any(f in vals for f in ('name', 'sub_description', 'model_ids',
+                                            'init_type', 'status', 'active')):
+                    quest._sync_powerbox_actions()
+        return result
+
+    def _sync_powerbox_actions(self):
+        """Auto-create/update ir.actions.server bound to target models.
+
+        Each powerbox quest gets one server action per target model.
+        The action appears in the Action menu on that model's views.
+        Actions are kept in sync with quest name, subtitle, and active status.
+        """
+        self.ensure_one()
+        if self.init_type != 'powerbox':
+            return
+
+        ServerAction = self.env['ir.actions.server']
+        target_models = self.model_ids
+        if self.model_id and self.model_id not in target_models:
+            target_models |= self.model_id
+
+        # Collect existing actions for this quest
+        existing = {}
+        for action in self.powerbox_action_ids:
+            if action.binding_model_id:
+                existing[action.binding_model_id.id] = action
+
+        desired_models = set(target_models.ids)
+        current_models = set(existing.keys())
+
+        # Remove actions for models no longer targeted
+        for model_id in current_models - desired_models:
+            existing[model_id].unlink()
+
+        # Create/update actions for target models
+        for model in target_models:
+            action = existing.get(model.id)
+            action_vals = {
+                'name': self.name,
+                'help': self.sub_description or self.description[:200] if self.description else '',
+                'model_id': model.id,
+                'binding_model_id': model.id,
+                'binding_type': 'action',
+                'binding_view_types': 'list,form',
+                'state': 'code',
+                'code': (
+                    f'# Powerbox: {self.name}\n'
+                    f'quest = env["ai.quest"].browse({self.id})\n'
+                    f'record = env[record._name].browse(record.id) if record else None\n'
+                    f'if record:\n'
+                    f'    result = quest.powerbox(\n'
+                    f'        prompt="Analysera och ge rekommendationer",\n'
+                    f'        record=record\n'
+                    f'    )\n'
+                    f'    action = {{\n'
+                    f'        "type": "ir.actions.act_window",\n'
+                    f'        "name": "{self.name}",\n'
+                    f'        "view_mode": "form",\n'
+                    f'        "res_model": "ai.quest.session",\n'
+                    f'        "target": "new",\n'
+                    f'    }}\n'
+                ),
+                'powerbox_quest_id': self.id,
+            }
+
+            if action:
+                action.write(action_vals)
+            else:
+                action = ServerAction.create(action_vals)
+
+            # Ensure it's active
+            if self.active and self.status == 'active':
+                action.active = True
+            else:
+                action.active = False
 
     def _compute_session_count(self):
         for r in self:
