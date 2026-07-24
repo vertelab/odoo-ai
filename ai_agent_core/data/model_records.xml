@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Explicit ir.model records for new models (required before cron refs) -->
+    <record id="model_ai_quest_monthly_summary" model="ir.model">
+        <field name="model">ai.quest.monthly.summary</field>
+        <field name="name">AI Quest Monthly Summary</field>
+    </record>
+    <record id="model_ai_kaizen_report" model="ir.model">
+        <field name="model">ai.kaizen.report</field>
+        <field name="name">Kaizen Weekly Report</field>
+    </record>
+    <record id="model_ai_kaizen_finding" model="ir.model">
+        <field name="model">ai.kaizen.finding</field>
+        <field name="name">Kaizen Finding</field>
+    </record>
+    <record id="model_ai_onboard_candidate" model="ir.model">
+        <field name="model">ai.onboard.candidate</field>
+        <field name="name">ONBOARD Discovery</field>
+    </record>
+</odoo>
