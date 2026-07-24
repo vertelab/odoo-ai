@@ -17,3 +17,5 @@ access_ai_monthly_summary_admin,ai.quest.monthly.summary.admin,model_ai_quest_mo
 access_ai_kaizen_report,ai.kaizen.report,model_ai_kaizen_report,base.group_user,1,0,0,0
 access_ai_kaizen_finding,ai.kaizen.finding,model_ai_kaizen_finding,base.group_user,1,0,0,0
 access_ai_kaizen_admin,ai.kaizen.admin,model_ai_kaizen_report,base.group_system,1,1,1,1
+access_ai_onboard_candidate,ai.onboard.candidate,model_ai_onboard_candidate,base.group_user,1,0,0,0
+access_ai_onboard_admin,ai.onboard.admin,model_ai_onboard_candidate,base.group_system,1,1,1,1

@@ -13,3 +13,4 @@ from . import ai_session_line
 from . import res_users
 from . import res_config_settings
 from . import ai_kaizen
+from . import ai_onboard

@@ -142,6 +142,23 @@ class AIKaizenReport(models.Model):
                 message_type='notification',
             )
 
+        # Mark ONBOARD candidates as presented (Hole 2)
+        onboard_candidates = self.env['ai.onboard.candidate'].search([
+            ('status', '=', 'new'),
+        ])
+        if onboard_candidates:
+            onboard_candidates.write({
+                'status': 'presented',
+                'presented_at_kaizen': report.id,
+            })
+            # Append ONBOARD section to report
+            onboard_text = _render_onboard_section(onboard_candidates)
+            report.report_text = (report.report_text or '') + onboard_text
+            report.quest_id.message_post(
+                body=onboard_text,
+                message_type='notification',
+            )
+
         _logger.info('Kaizen report for %s: %d sessions, %d errors, %d findings',
                      quest.name, week_data['session_count'],
                      week_data['error_count'], len(report.finding_ids))
@@ -330,3 +347,28 @@ def _trend(current, previous):
     if not previous:
         return 0.0
     return ((current - previous) / previous) * 100
+
+
+def _render_onboard_section(candidates):
+    """Render ONBOARD findings as kaizen report section."""
+    if not candidates:
+        return ''
+
+    lines = [
+        "",
+        "## 🆕 Upptäckta möjligheter (ONBOARD)",
+    ]
+    for c in candidates:
+        icon = {
+            'data_quality': '📊',
+            'repetitive_task': '🔄',
+            'module_gap': '🧩',
+            'error_pattern': '❌',
+            'integration': '🔌',
+        }.get(c.source, '•')
+        lines.append(f"\n{icon} **{c.description}**")
+        lines.append(f"  Typ: {c.suggested_quest_type} | Confidence: {c.confidence:.0%}")
+        if c.record_count:
+            lines.append(f"  Antal: {c.record_count} poster")
+
+    return '\n'.join(lines)
