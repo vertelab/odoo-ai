@@ -131,3 +131,21 @@ class AIIdentity(models.Model):
     def action_use(self):
         """Increment use count."""
         self.use_count += 1
+
+    def copy_for_user(self, user):
+        """Create a personal copy of this identity for a specific user (Hole 3).
+        
+        The copy starts from the template but lives independently —
+        changes to the original template do NOT affect existing copies.
+        Same pattern as ai.quest.skill (quest-specific fork of shared skill).
+        """
+        self.ensure_one()
+        copy = self.copy({
+            'name': f"{self.name} — {user.name}",
+            'scope': 'personal',
+            'is_template': False,
+            'template_id': self.id if self.is_template else self.template_id.id,
+        })
+        _logger.info('Created identity copy %s for user %s from template %s',
+                     copy.name, user.name, self.name)
+        return copy

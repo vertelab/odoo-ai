@@ -386,6 +386,10 @@ class AIStreamController(http.Controller):
                 if quest.monthly_cap_mtokens:
                     quest.check_cap()
 
+                # Implicit identity learning (Hole 3)
+                if quest.identity_id and quest.identity_id.scope == 'personal':
+                    _implicit_learn(quest.identity_id, content)
+
             _logger.info("Saved response to session %s: %d in/%d out tokens, model=%s",
                         thread_id, token_input, token_output, model_real or 'unknown')
         return Response(json.dumps({"status": "ok"}), content_type='application/json')
@@ -413,6 +417,58 @@ class AIStreamController(http.Controller):
         }), content_type='application/json')
 
     # === Improvement & Upload ===
+
+    @http.route('/ai/learn', type='http', auth='public',
+                methods=['POST'], csrf=False, sitemap=False)
+    def learn_command(self, **kw):
+        """/learn command — update personal companion identity (Hole 3)."""
+        user = request.env.user
+        body = json.loads(request.httprequest.data or '{}')
+        learning = body.get('learning', '').strip()
+        quest_id = body.get('quest_id')
+
+        if not learning:
+            return Response(json.dumps({"error": "Empty learning"}),
+                          content_type='application/json', status=400)
+
+        # Find the quest (personal companion or specified)
+        quest = None
+        if quest_id:
+            quest = request.env['ai.quest'].browse(int(quest_id))
+        elif user.personal_quest_id:
+            quest = user.personal_quest_id
+
+        if not quest or not quest.exists():
+            return Response(json.dumps({
+                "error": "No personal companion found. Enable it in Settings first."
+            }), content_type='application/json', status=404)
+
+        identity = quest.identity_id
+        if not identity:
+            return Response(json.dumps({
+                "error": "Quest has no identity to update"
+            }), content_type='application/json', status=400)
+
+        # Determine what to update based on learning content
+        learning_lower = learning.lower()
+        if any(kw in learning_lower for kw in ('föredrar', 'prefer', 'gillar', 'like', 'korta svar', 'short answer', 'stil', 'style')):
+            identity.style = (identity.style or '') + f'\n- {learning}'
+            field_updated = 'style'
+        elif any(kw in learning_lower for kw in ('jobbar med', 'work with', 'arbetar', 'fokus', 'focus', 'domain')):
+            identity.user_model = (identity.user_model or '') + f'\n- {learning}'
+            field_updated = 'user_model'
+        else:
+            identity.user_model = (identity.user_model or '') + f'\n- {learning}'
+            field_updated = 'user_model'
+
+        _logger.info('/learn: updated %s.%s for quest %s: %s',
+                    identity.name, field_updated, quest.name, learning[:80])
+
+        return Response(json.dumps({
+            "status": "ok",
+            "message": f"Jag har noterat: '{learning[:100]}' (uppdaterade {field_updated}).",
+            "field": field_updated,
+        }), content_type='application/json')
 
     @http.route('/ai/improve', type='http', auth='public',
                 methods=['POST'], csrf=False, sitemap=False)
@@ -685,3 +741,40 @@ def _chunk_text(text: str, max_chars: int = 2000) -> list:
     if len(text) <= max_chars:
         return [text]
     return [text[i:i + max_chars] for i in range(0, len(text), max_chars)]
+
+
+def _implicit_learn(identity, assistant_content):
+    """Extract learnings from assistant response for identity (Hole 3).
+    
+    Looks for patterns in the assistant's response that indicate
+    user preferences or context. Very lightweight — no extra LLM call.
+    Uses simple heuristics rather than another API call to keep costs low.
+    """
+    if not identity or not assistant_content:
+        return
+
+    learnings = []
+    content_lower = assistant_content.lower()
+
+    # Heuristic: if assistant explains something in Swedish, user prefers Swedish
+    if any(word in content_lower for word in ('svenska', 'bokföring', 'moms', 'faktura',
+                                                'redovisning', 'deklaration')):
+        if 'swedish' not in (identity.user_model or '').lower():
+            learnings.append('Användaren arbetar med svensk ekonomi/redovisning')
+
+    # Heuristic: if assistant provides CSV/Excel exports, user wants structured data
+    if any(word in content_lower for word in ('csv', 'excel', 'export', 'fil', 'ladda ner')):
+        if 'strukturerad' not in (identity.user_model or '').lower():
+            learnings.append('Användaren efterfrågar ofta dataexport (CSV/Excel)')
+
+    # Heuristic: short response → user may prefer brevity
+    if len(assistant_content) < 300:
+        if 'kortfattad' not in (identity.style or '').lower():
+            # Only add if this pattern repeats (tracked via memory, not here)
+            pass  # Too aggressive for a single sample — let /learn handle this explicitly
+
+    if learnings:
+        new_model = (identity.user_model or '') + '\n' + '\n'.join(f'- {l}' for l in learnings)
+        identity.user_model = new_model[:4000]
+        _logger.info('Implicit learn: added %d facts to identity %s',
+                     len(learnings), identity.name)

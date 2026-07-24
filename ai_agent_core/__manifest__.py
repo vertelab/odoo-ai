@@ -51,6 +51,7 @@
         'views/ai_tool_views.xml',
         'views/ai_session_views.xml',
         'views/ai_monthly_summary_views.xml',
+        'views/res_config_settings_views.xml',
         'views/templates.xml',
     ],
     'installable': True,
