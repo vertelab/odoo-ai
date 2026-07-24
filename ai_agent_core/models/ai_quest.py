@@ -93,6 +93,9 @@ class AIQuest(models.Model):
 
     session_count = fields.Integer(compute='_compute_session_count')
     session_ids = fields.One2many('ai.quest.session', 'quest_id')
+    skill_copy_ids = fields.One2many('ai.quest.skill', 'quest_id',
+        string='Skill Copies',
+        help='Quest-specific copies of shared skills')
     last_run = fields.Datetime()
 
     tag_ids = fields.Many2many('product.tag', string='Tags')

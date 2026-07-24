@@ -11,3 +11,4 @@ access_ai_provider,ai.provider,model_ai_provider,base.group_user,1,1,1,1
 access_ai_model,ai.model,model_ai_model,base.group_user,1,1,1,1
 access_ai_provider_wizard,ai.provider.wizard,model_ai_provider_wizard,base.group_user,1,1,1,1
 access_ai_skill_export_wizard,ai.skill.export.wizard,model_ai_skill_export_wizard,base.group_user,1,1,1,1
+access_ai_quest_skill,ai.quest.skill,model_ai_quest_skill,base.group_user,1,1,1,1

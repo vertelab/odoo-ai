@@ -41,7 +41,22 @@ class AIQuestSession(models.Model):
     thread_name = fields.Char('Thread Name')
     session_line_ids = fields.One2many(
         'ai.quest.session.line', 'session_id', string='Messages')
+    line_count = fields.Integer('Messages', compute='_compute_line_count')
     active = fields.Boolean('Active', default=True)
+
+    @api.depends('session_line_ids')
+    def _compute_line_count(self):
+        for r in self:
+            r.line_count = len(r.session_line_ids)
+
+    def action_get_lines(self):
+        return {
+            'name': 'Messages', 'type': 'ir.actions.act_window',
+            'res_model': 'ai.quest.session.line', 'view_mode': 'list,form',
+            'target': 'current',
+            'domain': [('session_id', '=', self.id)],
+            'context': {'default_session_id': self.id},
+        }
 
     def save_config(self, config: dict):
         self.config_json = json.dumps(config, default=str)

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_ai_session_tree" model="ir.ui.view">
+        <field name="name">ai.quest.session.tree</field>
+        <field name="model">ai.quest.session</field>
+        <field name="arch" type="xml">
+            <tree>
+                <field name="name"/>
+                <field name="thread_name"/>
+                <field name="quest_id"/>
+                <field name="status" widget="badge"
+                       decoration-success="status=='done'"
+                       decoration-warning="status=='active'"/>
+                <field name="create_date"/>
+            </tree>
+        </field>
+    </record>
+</odoo>
