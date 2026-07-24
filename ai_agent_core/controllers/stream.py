@@ -416,6 +416,92 @@ class AIStreamController(http.Controller):
             } for s in sessions]
         }), content_type='application/json')
 
+    # === Powerbox API (slash command) ===
+
+    @http.route('/ai/powerbox/lookup', type='http', auth='public',
+                methods=['GET'], csrf=False, sitemap=False)
+    def powerbox_lookup(self, model=None, res_id=None, **kw):
+        """Return powerbox quests available for a given model/record.
+
+        Called by the frontend slash-command widget when user types '/'.
+        Returns quests filtered by the record's model.
+        """
+        if not model:
+            return Response(json.dumps({"quests": []}),
+                          content_type='application/json')
+
+        quests = request.env['ai.quest'].search([
+            ('init_type', '=', 'powerbox'),
+            ('status', '=', 'active'),
+            ('active', '=', True),
+            '|',
+            ('model_ids.model', '=', model),
+            ('model_ids', '=', False),  # No model restriction = available on all
+        ], order='sequence asc, name asc')
+
+        # If res_id provided, also filter by model_id (single model field)
+        if res_id:
+            single_model_quests = request.env['ai.quest'].search([
+                ('init_type', '=', 'powerbox'),
+                ('status', '=', 'active'),
+                ('active', '=', True),
+                ('model_id.model', '=', model),
+            ])
+            quests |= single_model_quests
+
+        # Deduplicate
+        quests = quests.sorted('sequence')
+
+        return Response(json.dumps({
+            "quests": [{
+                "id": q.id,
+                "name": q.name,
+                "sub_description": q.sub_description or '',
+                "icon": q._POWERBOX_SVG if hasattr(q, '_POWERBOX_SVG') else '',
+                "color": q.color,
+            } for q in quests]
+        }), content_type='application/json')
+
+    @http.route('/ai/powerbox/run', type='http', auth='public',
+                methods=['POST'], csrf=False, sitemap=False)
+    def powerbox_run(self, **kw):
+        """Run a powerbox quest with text content from a field.
+
+        POST body: {quest_id, text, model, res_id}
+        Returns AI-processed text.
+        """
+        body = json.loads(request.httprequest.data or '{}')
+        quest_id = body.get('quest_id')
+        text = body.get('text', '').strip()
+        model = body.get('model', '')
+        res_id = body.get('res_id')
+
+        if not quest_id or not text:
+            return Response(json.dumps({"error": "Missing quest_id or text"}),
+                          content_type='application/json', status=400)
+
+        quest = request.env['ai.quest'].browse(int(quest_id))
+        if not quest.exists() or quest.init_type != 'powerbox':
+            return Response(json.dumps({"error": "Quest not found or not powerbox"}),
+                          content_type='application/json', status=404)
+
+        try:
+            result = quest.powerbox(
+                prompt=text,
+                res_model=model,
+                res_id=int(res_id) if res_id else None,
+            )
+            return Response(json.dumps({
+                "status": "ok",
+                "result": result,
+                "quest_name": quest.name,
+            }), content_type='application/json')
+        except Exception as e:
+            _logger.error('Powerbox run error: %s', e)
+            return Response(json.dumps({
+                "error": str(e),
+            }), content_type='application/json', status=500)
+
     # === Improvement & Upload ===
 
     @http.route('/ai/learn', type='http', auth='public',
