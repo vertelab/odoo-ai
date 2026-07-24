@@ -721,38 +721,23 @@ def post_init_hook(env):
 
     _logger.info('Created chat quest "%s"', advisor.name)
 
-    # ── 6. Create "Strategy Review" quest (cron) ──
+    # ── 6. Create "Strategy Review" quest (manual, cron-ready) ──
+    # Cron config can be added later via ir.actions.server + ir.cron.
     review = env['ai.quest'].create({
         'name': 'Strategy Review',
         'description': (
             'Weekly strategy kaizen. Reviews all active strategic plans, '
             'flags risks that have escalated, suggests OKR adjustments, '
-            'and identifies stale initiatives. Runs automatically every Monday.'
+            'and identifies stale initiatives. '
+            'Configure a Scheduled Action to automate this quest.'
         ),
         'sub_description': 'Weekly automated strategy review and kaizen',
-        'init_type': 'cron',
+        'init_type': 'manual',
         'status': 'active',
         'is_supervisor': False,
         'use_chat_history': False,
         'use_time_context': True,
     })
-
-    # Create cron job
-    cron = env['ir.cron'].create({
-        'name': 'Strategy Weekly Review',
-        'model_id': env['ir.model'].search([('model', '=', 'ai.quest')], limit=1).id,
-        'state': 'code',
-        'code': (
-            "env['ai.quest'].browse(%d).with_context(ai_cron=True).powerbox("
-            "'Review all active strategy plans. Flag escalated risks. "
-            "Suggest OKR adjustments. Identify stale initiatives.')"
-        ) % review.id,
-        'interval_number': 1,
-        'interval_type': 'weeks',
-        'numbercall': -1,
-        'active': True,
-    })
-    review.cron_id = cron.id
 
     # Review uses executor only (synthesizes everything)
     env['ai.quest.agent'].create({
@@ -761,7 +746,7 @@ def post_init_hook(env):
         'sequence': 1,
     })
 
-    _logger.info('Created cron quest "%s" (weekly, Monday)', review.name)
+    _logger.info('Created review quest "%s"', review.name)
     _logger.info(
         'ai_agent_core_strategy: %d skills, %d agents, %d quests created',
         len(skill_map), len(agent_map), 3)

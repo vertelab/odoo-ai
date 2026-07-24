@@ -64,7 +64,37 @@ class AIQuest(models.Model):
     agent_count = fields.Integer(compute='_compute_agent_count')
     is_supervisor = fields.Boolean('Supervisor Mode')
 
-    identity_id = fields.Many2one('ai.identity', string='Agent Identity')
+    identity_id = fields.Many2one('ai.identity', string='Agent Identity',
+        help='Select a template to create a personal copy for this quest. '
+             'The copy evolves independently — template changes do NOT affect it.')
+
+    # ── Identity auto-copy on selection ──
+
+    @api.onchange('identity_id')
+    def _onchange_identity_id(self):
+        """When user selects a template identity, auto-create a copy.
+        
+        The copy lives independently — the quest's identity evolves
+        separately from the original template. Same pattern as ai.quest.skill.
+        """
+        if self.identity_id and self.identity_id.is_template:
+            # Create a copy for this quest
+            copy = self.identity_id.copy({
+                'name': '%s — %s' % (self.identity_id.name, self.name or 'Quest'),
+                'is_template': False,
+                'template_id': self.identity_id.id,
+                'scope': self.identity_id.scope,
+            })
+            self.identity_id = copy.id
+            return {
+                'warning': {
+                    'title': 'Identity kopierad',
+                    'message': (
+                        'En personlig kopia av "%s" har skapats för denna quest. '
+                        'Kopian utvecklas oberoende av originalmallen.'
+                    ) % self.identity_id.name,
+                }
+            }
     cron_id = fields.Many2one('ir.cron', string='Scheduled Action', ondelete='cascade')
     server_action_id = fields.Many2one('ir.actions.server', string='Server Action', ondelete='cascade')
 

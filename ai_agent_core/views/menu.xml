@@ -9,8 +9,8 @@
               sequence="10" action="action_ai_quest"/>
     <menuitem id="menu_ai_agent" name="Agenter" parent="menu_ai_root"
               sequence="20" action="action_ai_agent"/>
-    <menuitem id="menu_ai_identity" name="Identiteter" parent="menu_ai_root"
-              sequence="30" action="action_ai_identity"/>
+    <menuitem id="menu_ai_identity" name="Identiteter" parent="menu_ai_configuration"
+              sequence="15" action="action_ai_identity"/>
     <menuitem id="menu_ai_chat" name="AI Chat" parent="menu_ai_root"
               sequence="90" action="action_ai_chat"/>
 
