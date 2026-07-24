@@ -4,7 +4,7 @@
     <menuitem
         id="menu_ai_tool"
         name="Custom Tools"
-        parent="menu_ai_orchestration_config"
+        parent="menu_ai_configuration"
         action="action_ai_tool"
         sequence="35"/>
 
