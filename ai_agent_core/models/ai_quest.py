@@ -30,6 +30,7 @@ def _quest_is_accessible(quest, user):
 INIT_TYPES = [
     ('manual', 'Manual'), ('chat', 'Chat with User'), ('channel', 'Chat with Channel'),
     ('cron', 'Scheduled Action'), ('server-action', 'Server Action'), ('mail', 'Mail'),
+    ('powerbox', 'Powerbox'),
 ]
 
 
@@ -323,6 +324,166 @@ class AIQuest(models.Model):
             # Last month
             'last_month_sys_tokens': self.last_month_sys_tokens,
         }
+
+    # ── Powerbox (init_type='powerbox') ──
+
+    _POWERBOX_SVG = (
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 530.06 530.06">'
+        '<circle cx="265.03" cy="265.03" r="265.03" fill="#875a7b"/>'
+        '<path d="M371.04 159.02H159.02c-14.58 0-26.41 11.83-26.41 26.41'
+        'v159.02c0 14.58 11.83 26.41 26.41 26.41h212.02c14.58 0 '
+        '26.41-11.83 26.41-26.41V185.43c0-14.58-11.83-26.41-26.41-26.41z'
+        'm0 185.43H159.02V185.43h212.02v159.02z" fill="#ffffff"/>'
+        '<path d="M212.02 238.43h105.62v26.41H212.02z'
+        'M212.02 291.44h105.62v26.41H212.02z" fill="#ffffff"/>'
+        '<circle cx="345.04" cy="265.03" r="26.41" fill="#ffffff"/>'
+        '</svg>'
+    )
+
+    def powerbox(self, prompt, res_model=None, res_id=None, record=None):
+        """Run quest as a powerbox — triggered from anywhere in Odoo.
+
+        Args:
+            prompt: The prompt to send to the AI
+            res_model: Model name of the triggering record
+            res_id: ID of the triggering record
+            record: Optional record object (alternative to res_model+res_id)
+
+        Returns:
+            AI response text (markdown)
+
+        Usage from server actions:
+            result = quest.powerbox(
+                prompt="Summarize this record",
+                res_model=record._name,
+                res_id=record.id
+            )
+        """
+        self.ensure_one()
+        if self.init_type != 'powerbox':
+            _logger.warning('powerbox called on non-powerbox quest %s', self.name)
+
+        # Resolve record
+        if record is None and res_model and res_id:
+            record = self.env[res_model].browse(int(res_id)).exists()
+
+        # Build context from record
+        record_context = ''
+        if record:
+            try:
+                record_data = record.read()[0] if hasattr(record, 'read') else {}
+                # Include key fields (skip binary, computed, related)
+                key_fields = {}
+                for field, value in record_data.items():
+                    if value is not None and not isinstance(value, (bytes, bool)):
+                        key_fields[field] = str(value)[:200]
+                record_context = '\n'.join(
+                    f'{k}: {v}' for k, v in list(key_fields.items())[:15]
+                )
+            except Exception:
+                record_context = str(record)[:500]
+
+        # Compile full prompt
+        full_prompt = prompt
+        if record_context:
+            full_prompt = (
+                f"Context (record {res_model or '?'}#{res_id or '?'}):\n"
+                f"{record_context}\n\n"
+                f"Task: {prompt}"
+            )
+
+        # Create session
+        session = self.env['ai.quest.session'].create({
+            'quest_id': self.id,
+            'status': 'active',
+            'user_id': self.env.user.id,
+        })
+
+        # Get model from first agent
+        model = 'cerebras/gpt-oss-120b'  # default
+        system_prompt = self.description or ''
+        if self.identity_id:
+            system_prompt = self.identity_id.system_prompt or system_prompt
+
+        try:
+            import asyncio
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                from odoo.addons.ai_agent_core.core.provider import BifrostProvider
+                from odoo.addons.ai_agent_core.core.tools import ToolRegistry, builtin_tools
+                from odoo.addons.ai_agent_core.core.loop import AgentLoop, AgentConfig
+
+                provider = BifrostProvider(
+                    base_url='http://192.168.11.150:8080/v1',
+                    virtual_key='opencode',
+                )
+                tools = ToolRegistry()
+                tools.register_many(builtin_tools())
+
+                loop_obj = AgentLoop(
+                    provider=provider,
+                    tools=tools,
+                    config=AgentConfig(
+                        model=model,
+                        system_prompt=system_prompt,
+                        max_rounds=5,
+                    ),
+                )
+
+                async def _run():
+                    return await loop_obj.run(full_prompt)
+
+                response = loop.run_until_complete(_run())
+            finally:
+                loop.close()
+
+            # Save session line with token tracking
+            if hasattr(response, 'text'):
+                input_t = getattr(response, 'input_tokens', 0)
+                output_t = getattr(response, 'output_tokens', 0)
+                model_real = getattr(response, 'model', '')
+                sys_mult = 1.0
+                if model_real:
+                    ai_model = self.env['ai.model'].search(
+                        [('name', 'ilike', model_real)], limit=1)
+                    if ai_model:
+                        sys_mult = ai_model.sys_multiplier
+
+                self.env['ai.quest.session.line'].create({
+                    'session_id': session.id,
+                    'role': 'assistant',
+                    'content': response.text,
+                    'token_input': input_t,
+                    'token_output': output_t,
+                    'model_real': model_real,
+                    'sys_multiplier': sys_mult,
+                })
+
+                # Update session and quest totals
+                session.token_input += input_t
+                session.token_output += output_t
+                session.status = 'done'
+
+                self.total_input_tokens += input_t
+                self.total_output_tokens += output_t
+                self.total_sys_tokens += int((input_t + output_t) * sys_mult)
+
+                import re
+                import markdown
+                answer = response.text
+                answer = re.sub(
+                    r'<think>.*?</think>', '', answer, flags=re.DOTALL)
+                return markdown.markdown(answer) if markdown else answer
+
+            # Fallback: return raw text
+            return str(response) if response else ''
+
+        except Exception as e:
+            session.status = 'error'
+            session.finish_reason = str(e)[:200]
+            _logger.error('Powerbox error for quest %s: %s', self.name, e)
+            raise UserError(_('Powerbox error: %s') % str(e))
 
 
 class AIQuestMonthlySummary(models.Model):
