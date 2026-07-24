@@ -39,7 +39,6 @@
     ],
     'data': [
         'security/ir.model.access.csv',
-        'data/model_records.xml',
         # 'data/cron_monthly_summary.xml',  # TEMP: disabled for ai_agent_core_strategy install
         'data/cron_bifrost_sync.xml',
         'data/cron_kaizen.xml',
