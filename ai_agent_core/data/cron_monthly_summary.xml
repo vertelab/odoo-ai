@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Cron: Generate monthly systemtoken summaries (runs 1st of each month at 03:00) -->
+    <record id="cron_monthly_summary" model="ir.cron">
+        <field name="name">AI: Generera månadssammanställning</field>
+        <field name="model_id" ref="model_ai_quest_monthly_summary"/>
+        <field name="state">code</field>
+        <field name="code">model.generate_monthly_summaries()</field>
+        <field name="interval_number">1</field>
+        <field name="interval_type">months</field>
+        <field name="numbercall">-1</field>
+        <field name="nextcall" eval="(DateTime.now().replace(day=1) + relativedelta(months=1)).strftime('%Y-%m-01 03:00:00')"/>
+        <field name="active" eval="True"/>
+    </record>
+</odoo>

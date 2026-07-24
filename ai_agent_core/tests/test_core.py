@@ -1226,6 +1226,59 @@ class TestSystemtoken(unittest.TestCase):
         self.assertIn("'monthly_cap_mtokens'", content)
         self.assertIn("'cap_exhausted'", content)
 
+    def test_monthly_summary_model_source(self):
+        """T3.5: AIQuestMonthlySummary model exists with generate_monthly_summaries."""
+        import os
+        path = os.path.join(
+            os.path.dirname(__file__), '..', 'models', 'ai_quest.py'
+        )
+        path = os.path.abspath(path)
+        with open(path) as f:
+            content = f.read()
+        self.assertIn("class AIQuestMonthlySummary", content)
+        self.assertIn("generate_monthly_summaries", content)
+        self.assertIn("model_breakdown", content)
+        self.assertIn("total_sys_tokens", content)
+        self.assertIn("started_mtokens", content)
+
+    def test_dashboard_views_exist(self):
+        """T3.2: Monthly summary views exist."""
+        import os
+        path = os.path.join(
+            os.path.dirname(__file__), '..', 'views', 'ai_monthly_summary_views.xml'
+        )
+        path = os.path.abspath(path)
+        self.assertTrue(os.path.isfile(path), "ai_monthly_summary_views.xml missing")
+        with open(path) as f:
+            content = f.read()
+        self.assertIn("pivot", content)
+        self.assertIn("graph", content)
+        self.assertIn("tree", content)
+
+    def test_cron_data_files_exist(self):
+        """T3.3, T3.5: Cron data files for monthly summary and bifrost sync."""
+        import os
+        for fname in ['cron_monthly_summary.xml', 'cron_bifrost_sync.xml']:
+            path = os.path.join(
+                os.path.dirname(__file__), '..', 'data', fname
+            )
+            path = os.path.abspath(path)
+            self.assertTrue(os.path.isfile(path),
+                f"Missing data file: {fname}")
+
+    def test_manifest_includes_new_resources(self):
+        """T3.x: Manifest includes monthly summary views, data files."""
+        import os
+        path = os.path.join(
+            os.path.dirname(__file__), '..', '__manifest__.py'
+        )
+        path = os.path.abspath(path)
+        with open(path) as f:
+            content = f.read()
+        self.assertIn("ai_monthly_summary_views.xml", content)
+        self.assertIn("cron_monthly_summary.xml", content)
+        self.assertIn("cron_bifrost_sync.xml", content)
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

@@ -12,3 +12,5 @@ access_ai_model,ai.model,model_ai_model,base.group_user,1,1,1,1
 access_ai_provider_wizard,ai.provider.wizard,model_ai_provider_wizard,base.group_user,1,1,1,1
 access_ai_skill_export_wizard,ai.skill.export.wizard,model_ai_skill_export_wizard,base.group_user,1,1,1,1
 access_ai_quest_skill,ai.quest.skill,model_ai_quest_skill,base.group_user,1,1,1,1
+access_ai_monthly_summary,ai.quest.monthly.summary,model_ai_quest_monthly_summary,base.group_user,1,0,0,0
+access_ai_monthly_summary_admin,ai.quest.monthly.summary.admin,model_ai_quest_monthly_summary,base.group_system,1,1,1,1

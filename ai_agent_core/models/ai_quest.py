@@ -292,6 +292,125 @@ class AIQuest(models.Model):
         }
 
 
+class AIQuestMonthlySummary(models.Model):
+    """Monthly systemtoken summary for billing and reporting (T3.5)."""
+    _name = 'ai.quest.monthly_summary'
+    _description = 'Monthly Quest Summary'
+    _order = 'month desc, quest_id asc'
+    _rec_name = 'display_name'
+
+    quest_id = fields.Many2one('ai.quest', required=True, ondelete='cascade',
+                                string='Quest')
+    month = fields.Char('Month', required=True,
+                         help='YYYY-MM format')
+    display_name = fields.Char(compute='_compute_display_name', store=True)
+
+    # Systemtoken consumption
+    total_sys_tokens = fields.Integer('Systemtokens')
+    started_mtokens = fields.Integer('Påbörjade M-tokens',
+        compute='_compute_started_mtokens', store=True)
+    total_input_tokens = fields.Integer('Input Tokens')
+    total_output_tokens = fields.Integer('Output Tokens')
+    session_count = fields.Integer('Sessions')
+
+    # Model breakdown (JSON)
+    model_breakdown = fields.Text('Per-Model Breakdown',
+        help='JSON: {model_real: {tokens, systemtokens, sessions}}')
+
+    # Cap info at time of summary
+    monthly_cap_mtokens = fields.Integer('Cap (M tokens)')
+    cap_exhausted_count = fields.Integer('Times Cap Exhausted')
+
+    # Cost
+    estimated_cost_usd = fields.Float('Est. Provider Cost (USD)')
+
+    @api.depends('quest_id.name', 'month')
+    def _compute_display_name(self):
+        for r in self:
+            quest_name = r.quest_id.name if r.quest_id else '?'
+            r.display_name = f'{quest_name} — {r.month}'
+
+    @api.depends('total_sys_tokens')
+    def _compute_started_mtokens(self):
+        import math
+        for r in self:
+            r.started_mtokens = math.ceil(r.total_sys_tokens / 1_000_000) if r.total_sys_tokens else 0
+
+    def generate_monthly_summaries(self, month=None):
+        """Cron: create monthly summaries for all active quests.
+        
+        Called at month rollover. Aggregates session_line data for the
+        specified month (default: previous month).
+        """
+        from datetime import date, timedelta
+        if not month:
+            today = date.today()
+            first_of_month = date(today.year, today.month, 1)
+            last_month = first_of_month - timedelta(days=1)
+            month = last_month.strftime('%Y-%m')
+
+        year, m = month.split('-')
+        month_start = f'{year}-{m}-01'
+        month_end = f'{year}-{int(m)+1}-01' if int(m) < 12 else f'{int(year)+1}-01-01'
+
+        quests = self.env['ai.quest'].search([('status', '=', 'active')])
+        created = 0
+        for quest in quests:
+            # Check if summary already exists
+            existing = self.search([
+                ('quest_id', '=', quest.id),
+                ('month', '=', month),
+            ], limit=1)
+            if existing:
+                continue
+
+            # Aggregate session lines for this month
+            lines = self.env['ai.quest.session.line'].search([
+                ('session_id.quest_id', '=', quest.id),
+                ('create_date', '>=', month_start),
+                ('create_date', '<', month_end),
+            ])
+            if not lines:
+                continue
+
+            # Per-model breakdown
+            model_data = {}
+            for line in lines:
+                model = line.model_real or 'unknown'
+                if model not in model_data:
+                    model_data[model] = {'tokens': 0, 'systemtokens': 0, 'sessions': set()}
+                model_data[model]['tokens'] += (line.token_input + line.token_output)
+                model_data[model]['systemtokens'] += (line.token_sys or 0)
+                if line.session_id:
+                    model_data[model]['sessions'].add(line.session_id.id)
+
+            # Convert sets to counts
+            for model in model_data:
+                model_data[model]['session_count'] = len(model_data[model]['sessions'])
+                del model_data[model]['sessions']
+
+            total_sys = sum(d['systemtokens'] for d in model_data.values())
+            total_in = sum(l.token_input for l in lines)
+            total_out = sum(l.token_output for l in lines)
+            sessions = len(set(l.session_id.id for l in lines))
+
+            self.create({
+                'quest_id': quest.id,
+                'month': month,
+                'total_sys_tokens': total_sys,
+                'total_input_tokens': total_in,
+                'total_output_tokens': total_out,
+                'session_count': sessions,
+                'model_breakdown': json.dumps(model_data),
+                'monthly_cap_mtokens': quest.monthly_cap_mtokens,
+                'cap_exhausted_count': 1 if quest.cap_exhausted else 0,
+            })
+            created += 1
+
+        _logger.info('Monthly summaries generated for %s: %d quests', month, created)
+        return created
+
+
 class AIQuestAgent(models.Model):
     _name = 'ai.quest.agent'
     _description = 'Quest Agent Assignment'

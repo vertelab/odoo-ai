@@ -39,6 +39,8 @@
     ],
     'data': [
         'security/ir.model.access.csv',
+        'data/cron_monthly_summary.xml',
+        'data/cron_bifrost_sync.xml',
         'views/menu.xml',
         'views/ai_provider_views.xml',
         'views/ai_model_views.xml',
@@ -48,6 +50,7 @@
         'views/ai_skill_views.xml',
         'views/ai_tool_views.xml',
         'views/ai_session_views.xml',
+        'views/ai_monthly_summary_views.xml',
         'views/templates.xml',
     ],
     'installable': True,
