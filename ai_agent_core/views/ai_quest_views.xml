@@ -118,7 +118,6 @@
                         </page>
                         <page string="Chat">
                             <group>
-                                <field name="show_in_chat"
                                        help="When enabled, this quest appears in the /ai/chat web interface."/>
                                 <field name="allow_trigger_words"/>
                                 <field name="chat_trigger_words"
@@ -128,9 +127,7 @@
                         </page>
                         <page string="Access">
                             <group string="Access Control">
-                                <field name="group_ids" widget="many2many_tags"
                                        help="Only users in these groups can see this quest in web chat."/>
-                                <field name="user_ids" widget="many2many_tags"
                                        help="Only these specific users can see this quest in web chat."/>
                             </group>
                         </page>
