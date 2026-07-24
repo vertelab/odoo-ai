@@ -1,0 +1,60 @@
+/* Powerbox — Slash command dropdown */
+.powerbox-overlay {
+    position: fixed;
+    z-index: 1050;
+}
+
+.powerbox-dropdown {
+    display: block !important;
+    position: fixed;
+    background: var(--o-dropdown-bg, #fff);
+    border: 1px solid var(--o-dropdown-border, #dee2e6);
+    border-radius: 0.375rem;
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+    min-width: 250px;
+    max-height: 320px;
+    overflow-y: auto;
+}
+
+.powerbox-dropdown .dropdown-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    cursor: pointer;
+    transition: background-color 0.15s;
+}
+
+.powerbox-dropdown .dropdown-item:hover,
+.powerbox-dropdown .dropdown-item.active {
+    background-color: var(--o-dropdown-link-hover-bg, #e9ecef);
+}
+
+.powerbox-icon {
+    width: 24px;
+    height: 24px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.powerbox-icon svg {
+    width: 18px;
+    height: 18px;
+}
+
+.powerbox-loading {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background: white;
+    border-radius: 8px;
+    padding: 10px 16px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    display: flex;
+    align-items: center;
+    font-size: 13px;
+    z-index: 1060;
+}

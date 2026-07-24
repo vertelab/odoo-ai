@@ -56,6 +56,12 @@
         'views/res_config_settings_views.xml',
         'views/templates.xml',
     ],
+    'assets': {
+        'web.assets_backend': [
+            'ai_agent_core/static/src/js/powerbox.js',
+            'ai_agent_core/static/src/css/powerbox.css',
+        ],
+    },
     'installable': True,
     'auto_install': False,
     'application': True,
