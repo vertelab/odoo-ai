@@ -1,103 +1,136 @@
 # -*- coding: utf-8 -*-
-"""
-Skill Model — reusable agent competencies (SHARE-001 to SHARE-008).
-
-ai.skill defines what an agent CAN do, independent of who they ARE.
-Skills follow the Agent Skills standard (agentskills.io).
-"""
+"""ai.skill — agentskills.io-compatible skill model."""
 
 import logging
-
 from odoo import models, fields, api
 
 _logger = logging.getLogger(__name__)
 
 
 class AISkill(models.Model):
-    """A reusable skill — what an agent can do."""
     _name = 'ai.skill'
     _description = 'AI Skill'
+    _inherit = ['mail.thread', 'mail.activity.mixin']
     _order = 'category, name asc'
 
-    name = fields.Char('Skill Name', required=True)
+    name = fields.Char(required=True)
     active = fields.Boolean(default=True)
-    description = fields.Text(
-        'Description',
-        required=True,
-        help='Max 1024 chars per agentskills.io standard. '
-             'Describes what the skill does and when to use it.',
-    )
+    description = fields.Text(required=True,
+        help='Max 1024 chars per agentskills.io standard.')
 
-    # ── Trigger ──
-    trigger_keywords = fields.Char(
-        'Trigger Keywords',
-        help='Comma-separated keywords that activate this skill. '
-             'Example: "moms, deklaration, skatteverket"',
-    )
+    # Visual
+    image_128 = fields.Image('Image', max_width=128, max_height=128)
+    color = fields.Integer(default=lambda self: __import__('random').randint(1, 11))
 
-    # ── Recipes ──
-    recipe_text = fields.Text(
-        'Recipe',
-        help='The canonical procedure for this skill. '
-             'Agent reads this when the skill is activated. '
-             'Taskless pattern: recipe is the authoritative source.',
-    )
+    # Source
+    github_url = fields.Char('GitHub URL',
+        help='URL to the original skill repository on GitHub')
+    source_type = fields.Selection([
+        ('odoo', 'Created in Odoo'),
+        ('github', 'Imported from GitHub'),
+        ('pi', 'Pi Agent Skill'),
+    ], default='odoo')
 
-    # ── Compatibility ──
+    # Trigger
+    trigger_keywords = fields.Char('Trigger Keywords',
+        help='Comma-separated keywords')
+
+    # Recipe
+    recipe_text = fields.Text('Recipe',
+        help='The canonical procedure. Agent reads this when activated.')
+
+    # Compatibility
     compatibility = fields.Selection([
         ('any', 'Any Agent'),
         ('odoo', 'Odoo Agent'),
         ('pi_python', 'Pi Python Agent'),
         ('pi_node', 'Pi Node.js Agent'),
-    ], default='any',
-       help='Which agent types can use this skill.')
+    ], default='any')
 
-    # ── Verify cases (Taskless pattern) ──
-    success_cases = fields.Text(
-        'Success Cases',
-        help='Examples of correct behavior. One per line.',
-    )
-    failure_cases = fields.Text(
-        'Failure Cases',
-        help='Examples of incorrect behavior. One per line.',
-    )
+    # Verify
+    success_cases = fields.Text('Success Cases')
+    failure_cases = fields.Text('Failure Cases')
 
-    # ── Category ──
+    # Category
     category = fields.Selection([
         ('accounting', 'Accounting'),
         ('development', 'Development'),
         ('infrastructure', 'Infrastructure'),
         ('analysis', 'Analysis'),
         ('communication', 'Communication'),
+        ('research', 'Research'),
         ('general', 'General'),
     ], default='general')
 
-    # ── Stats ──
-    use_count = fields.Integer('Times Used', default=0)
-    version = fields.Integer('Version', default=1)
+    # Stats
+    use_count = fields.Integer(default=0)
+    version = fields.Integer(default=1)
     last_improved = fields.Datetime('Last Improved')
+    agent_count = fields.Integer(compute='_compute_agent_count')
 
-    # ── Improvement (Taskless IMPROVE pattern) ──
-    improvement_guidance = fields.Text(
-        'Improvement Guidance',
-        help='Feedback for improving this skill. '
-             'Taskless pattern: guidance + references → iterate.',
-    )
-    improvement_references = fields.Text(
-        'Improvement References',
-        help='Concrete examples for improvement. '
-             'Taskless pattern: false positives/negatives.',
-    )
+    # Improvement
+    improvement_guidance = fields.Text('Improvement Guidance')
+    improvement_references = fields.Text('Improvement References')
+
+    @api.depends()
+    def _compute_agent_count(self):
+        for r in self:
+            r.agent_count = self.env['ai.agent'].search_count([
+                ('skill_ids', 'in', r.id)
+            ])
 
     def action_improve(self):
-        """Run one improvement iteration (Taskless IMPROVE)."""
         self.ensure_one()
         self.version += 1
         self.last_improved = fields.Datetime.now()
-        # Clear guidance after applying
         self.improvement_guidance = False
         self.improvement_references = False
 
     def action_use(self):
-        """Increment use count."""
         self.use_count += 1
+
+    def action_export_skill_md(self):
+        """Export skill to agentskills.io-compatible SKILL.md."""
+        self.ensure_one()
+        import re
+        n = re.sub(r'[^a-z0-9-]', '', self.name.lower().replace(' ', '-'))[:64]
+        d = (self.description or '')[:1024]
+        md = f'''---
+name: {n}
+description: {d}
+compatibility: {self.compatibility}
+metadata:
+  category: {self.category}
+  trigger_keywords: {self.trigger_keywords or ''}
+---
+
+{self.recipe_text or ''}
+'''
+        return {
+            'type': 'ir.actions.act_window',
+            'name': f'Export {self.name}',
+            'res_model': 'ai.skill.export.wizard',
+            'view_mode': 'form',
+            'target': 'new',
+            'context': {'default_skill_md': md, 'default_skill_id': self.id},
+        }
+
+
+class AISkillExportWizard(models.TransientModel):
+    _name = 'ai.skill.export.wizard'
+    _description = 'Export Skill to SKILL.md'
+
+    skill_id = fields.Many2one('ai.skill', readonly=True)
+    skill_md = fields.Text('SKILL.md', readonly=True)
+
+    def action_copy(self):
+        """Copy to clipboard hint."""
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'title': 'Copied',
+                'message': 'SKILL.md content ready — use Ctrl+C to copy',
+                'type': 'success',
+            }
+        }

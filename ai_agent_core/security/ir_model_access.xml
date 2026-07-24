@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Model definitions for access rights (web-chat-threads-memory + quest-access-control) -->
+    <record id="model_ai_tool" model="ir.model">
+        <field name="name">ai.tool</field>
+        <field name="model">ai.tool</field>
+    </record>
+    <record id="model_ai_quest_run" model="ir.model">
+        <field name="name">ai.quest.run</field>
+        <field name="model">ai.quest.run</field>
+    </record>
+    <record id="model_ai_quest_session_line" model="ir.model">
+        <field name="name">ai.quest.session.line</field>
+        <field name="model">ai.quest.session.line</field>
+    </record>
+
+    <!-- Access rights -->
+    <record id="access_ai_tool" model="ir.model.access">
+        <field name="name">ai.tool</field>
+        <field name="model_id" ref="model_ai_tool"/>
+        <field name="group_id" ref="base.group_user"/>
+        <field name="perm_read" eval="1"/>
+        <field name="perm_write" eval="1"/>
+        <field name="perm_create" eval="1"/>
+        <field name="perm_unlink" eval="1"/>
+    </record>
+
+    <record id="access_ai_quest_run" model="ir.model.access">
+        <field name="name">ai.quest.run</field>
+        <field name="model_id" ref="model_ai_quest_run"/>
+        <field name="group_id" ref="base.group_user"/>
+        <field name="perm_read" eval="1"/>
+        <field name="perm_write" eval="1"/>
+        <field name="perm_create" eval="1"/>
+        <field name="perm_unlink" eval="1"/>
+    </record>
+
+    <record id="access_ai_session_line" model="ir.model.access">
+        <field name="name">ai.quest.session.line</field>
+        <field name="model_id" ref="model_ai_quest_session_line"/>
+        <field name="group_id" ref="base.group_user"/>
+        <field name="perm_read" eval="1"/>
+        <field name="perm_write" eval="1"/>
+        <field name="perm_create" eval="1"/>
+        <field name="perm_unlink" eval="1"/>
+    </record>
+
+</odoo>

@@ -2,58 +2,58 @@
 
 ## 1. Frontend: Theme Toggle
 
-- [ ] 1.1 Define light theme CSS custom properties under `[data-theme="light"]`
-- [ ] 1.2 Add theme toggle button (🌗) to chat header
-- [ ] 1.3 Implement JS toggle logic with `document.documentElement.dataset.theme`
-- [ ] 1.4 Persist theme preference to localStorage (`ai-chat-theme`)
-- [ ] 1.5 Detect system preference on first visit (`prefers-color-scheme`)
+- [x] 1.1 Define light theme CSS custom properties under `[data-theme="light"]`
+- [x] 1.2 Add theme toggle button (🌗) to chat header
+- [x] 1.3 Implement JS toggle logic with `document.documentElement.dataset.theme`
+- [x] 1.4 Persist theme preference to localStorage (`ai-chat-theme`)
+- [x] 1.5 Detect system preference on first visit (`prefers-color-scheme`)
 - **Depends on:** nothing
 
 ## 2. Frontend: Responsive Design
 
-- [ ] 2.1 Add `@media (max-width: 768px)` block with mobile layout rules
-- [ ] 2.2 Implement collapsible sidebar with slide-over animation
-- [ ] 2.3 Add hamburger menu button (≡) visible only on mobile
-- [ ] 2.4 Add overlay behind sidebar when open on mobile
-- [ ] 2.5 Enlarge touch targets (inputs, buttons) to min 44px on mobile
+- [x] 2.1 Add `@media (max-width: 768px)` block with mobile layout rules
+- [x] 2.2 Implement collapsible sidebar with slide-over animation
+- [x] 2.3 Add hamburger menu button (≡) visible only on mobile
+- [x] 2.4 Add overlay behind sidebar when open on mobile
+- [x] 2.5 Enlarge touch targets (inputs, buttons) to min 44px on mobile
 - **Depends on:** nothing
 
 ## 3. Model: Session Lines
 
-- [ ] 3.1 Create `ai.quest.session.line` model with fields: session_id, sequence, role, content, tool_calls, token_input, token_output
-- [ ] 3.2 Add `thread_name` Char field to `ai.quest.session`
-- [ ] 3.3 Add `session_line_ids` One2many to `ai.quest.session`
-- [ ] 3.4 Add access rights in `security/ir.model.access.csv`
-- [ ] 3.5 Register model in `models/__init__.py`
+- [x] 3.1 Create `ai.quest.session.line` model with fields: session_id, sequence, role, content, tool_calls, token_input, token_output
+- [x] 3.2 Add `thread_name` Char field to `ai.quest.session`
+- [x] 3.3 Add `session_line_ids` One2many to `ai.quest.session`
+- [x] 3.4 Add access rights in `security/ir.model.access.csv`
+- [x] 3.5 Register model in `models/__init__.py`
 - **Depends on:** nothing
 
 ## 4. Model: Memory Extension
 
-- [ ] 4.1 Add `quest_id`, `category`, `importance`, `source_thread_id`, `consolidated`, `archived` fields to `ai.memory`
-- [ ] 4.2 Add `_compute_system_prompt` extension to include active memories
+- [x] 4.1 Add `quest_id`, `category`, `importance`, `source_thread_id`, `consolidated`, `archived` fields to `ai.memory`
+- [x] 4.2 Add `_compute_system_prompt` extension to include active memories
 - **Depends on:** 3.1
 
 ## 5. API: Thread CRUD
 
-- [ ] 5.1 Implement `GET /ai/threads` — list user's threads
-- [ ] 5.2 Implement `POST /ai/threads` — create new thread (returns session_id)
-- [ ] 5.3 Implement `PUT /ai/threads/{id}` — rename thread
-- [ ] 5.4 Implement `DELETE /ai/threads/{id}` — soft-delete thread
-- [ ] 5.5 Apply quest access control to thread endpoints
+- [x] 5.1 Implement `GET /ai/threads` — list user's threads
+- [x] 5.2 Implement `POST /ai/threads` — create new thread (returns session_id)
+- [x] 5.3 Implement `PUT /ai/threads/{id}` — rename thread
+- [x] 5.4 Implement `DELETE /ai/threads/{id}` — soft-delete thread
+- [x] 5.5 Apply quest access control to thread endpoints
 - **Depends on:** 3.2, 3.3
 
 ## 6. API: Thread Search
 
-- [ ] 6.1 Implement `GET /ai/thread/search?q=` — full-text search via ilike
-- [ ] 6.2 Return matching threads with highlighted snippets
-- [ ] 6.3 Scope results to user's accessible quests
+- [x] 6.1 Implement `GET /ai/thread/search?q=` — full-text search via ilike
+- [x] 6.2 Return matching threads with highlighted snippets
+- [x] 6.3 Scope results to user's accessible quests
 - **Depends on:** 3.1, 5.1
 
 ## 7. API: Stream with History
 
-- [ ] 7.1 Accept `session_id` parameter in `/ai/stream`
-- [ ] 7.2 Load thread history from `session_line_ids`
-- [ ] 7.3 Inject quest memories into system prompt
+- [x] 7.1 Accept `session_id` parameter in `/ai/stream`
+- [x] 7.2 Load thread history from `session_line_ids`
+- [x] 7.3 Inject quest memories into system prompt
 - [ ] 7.4 Save user message as session line before streaming
 - [ ] 7.5 Save assistant response as session line after streaming
 - [ ] 7.6 Auto-summarize threads > 50 messages before sending to AgentLoop
@@ -78,15 +78,15 @@
 
 ## 10. Frontend: Thread UI
 
-- [ ] 10.1 Add thread list to sidebar (loaded from `/ai/threads`)
-- [ ] 10.2 Add "New Thread" button in sidebar header
-- [ ] 10.3 Implement thread click: clear chat, load history, activate thread
-- [ ] 10.4 Implement double-click rename on thread name
-- [ ] 10.5 Implement delete button on thread with confirmation
-- [ ] 10.6 Auto-create thread on first message if none active
-- [ ] 10.7 Add thread search input above thread list
-- [ ] 10.8 Wire search input to `/ai/thread/search` endpoint
-- [ ] 10.9 Show relative timestamps on thread list items
+- [x] 10.1 Add thread list to sidebar (loaded from `/ai/threads`)
+- [x] 10.2 Add "New Thread" button in sidebar header
+- [x] 10.3 Implement thread click: clear chat, load history, activate thread
+- [x] 10.4 Implement double-click rename on thread name
+- [x] 10.5 Implement delete button on thread with confirmation
+- [x] 10.6 Auto-create thread on first message if none active
+- [x] 10.7 Add thread search input above thread list
+- [x] 10.8 Wire search input to `/ai/thread/search` endpoint
+- [x] 10.9 Show relative timestamps on thread list items
 - **Depends on:** 5.1, 5.2, 6.1
 
 ## 11. Testing

@@ -1,10 +1,31 @@
 # -*- coding: utf-8 -*-
 """ai.quest — standalone, no LangGraph. Uses AgentLoop."""
 
-import logging
-from odoo import models, fields, api
+import json, logging, re, uuid
+from odoo import models, fields, api, _
+from odoo.exceptions import UserError
 
 _logger = logging.getLogger(__name__)
+
+
+def _quest_is_accessible(quest, user):
+    """Check if a user can access a quest via the web chat."""
+    if user.has_group('base.group_system'):
+        return True
+    if quest.user_id and quest.user_id.id == user.id:
+        return True
+    if not quest.show_in_chat:
+        return False
+    if quest.group_ids:
+        user_grp = set(user.groups_id.ids)
+        quest_grp = set(quest.group_ids.ids)
+        if not (user_grp & quest_grp):
+            return False
+    if quest.user_ids:
+        if user.id not in quest.user_ids.ids:
+            return False
+    return True
+
 
 INIT_TYPES = [
     ('manual', 'Manual'), ('chat', 'Chat with User'), ('channel', 'Chat with Channel'),
@@ -58,6 +79,14 @@ class AIQuest(models.Model):
     user_id = fields.Many2one('res.users', default=lambda self: self.env.user)
     company_id = fields.Many2one('res.company', default=lambda self: self.env.company)
     is_favorite = fields.Boolean('Favorite')
+
+    # Access Control (quest-access-control)
+    show_in_chat = fields.Boolean('Show in Web Chat', default=True)
+    group_ids = fields.Many2many('res.groups', 'ai_quest_group_rel', 'quest_id', 'group_id', string='Access Groups')
+    user_ids = fields.Many2many('res.users', 'ai_quest_user_rel', 'quest_id', 'user_id', string='Access Users')
+
+    # Core loop migration
+    use_core_loop = fields.Boolean('Use Core Loop', default=False)
 
     session_count = fields.Integer(compute='_compute_session_count')
     session_ids = fields.One2many('ai.quest.session', 'quest_id')

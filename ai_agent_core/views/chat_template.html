@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="sv" data-theme="dark">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>
+<title>AI Chat</title>
+<style>
+/* === DARK THEME (default) === */
+:root, [data-theme="dark"] {
+    --bg: #1a1a2e; --bg-sidebar: #16213e; --bg-message-user: #0f3460;
+    --bg-message-ai: #16213e; --bg-input: #16213e; --text: #e0e0e0;
+    --text-muted: #888; --accent: #e94560; --accent-hover: #ff6b81;
+    --border: #2a2a4a; --agent-card: #1a2744; --radius: 10px;
+    --overlay: rgba(0,0,0,0.7); --danger: #ff5252;
+    --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+/* === LIGHT THEME === */
+[data-theme="light"] {
+    --bg: #ffffff; --bg-sidebar: #f0f2f5; --bg-message-user: #e3f2fd;
+    --bg-message-ai: #fafafa; --bg-input: #f5f5f5; --text: #1a1a2e;
+    --text-muted: #666; --accent: #1976d2; --accent-hover: #1565c0;
+    --border: #e0e0e0; --agent-card: #f0f4ff; --radius: 10px;
+    --overlay: rgba(0,0,0,0.3); --danger: #d32f2f;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:var(--font);background:var(--bg);color:var(--text);overflow:hidden;transition:background .3s,color .3s}
+.chat-app{display:flex;height:100vh;height:100dvh}
+/* === SIDEBAR === */
+.sidebar{width:280px;background:var(--bg-sidebar);display:flex;flex-direction:column;border-right:1px solid var(--border);flex-shrink:0;transition:background .3s,left .3s;z-index:100}
+.sidebar-header{padding:12px 16px;font-size:16px;font-weight:700;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;justify-content:space-between}
+.sidebar-header-left{display:flex;align-items:center;gap:8px}
+.sidebar-actions{display:flex;gap:4px}
+.sidebar-btn{background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:18px;padding:4px 6px;border-radius:6px;transition:background .15s,color .15s}
+.sidebar-btn:hover{background:rgba(128,128,128,0.15);color:var(--text)}
+.new-thread-btn{width:100%;padding:10px;margin:8px;background:var(--accent);color:#fff;border:none;border-radius:var(--radius);cursor:pointer;font-size:14px;font-weight:600;transition:background .15s}
+.new-thread-btn:hover{background:var(--accent-hover)}
+.thread-search{padding:0 8px;margin-bottom:4px}
+.thread-search input{width:100%;padding:8px 12px;background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:13px;font-family:var(--font);outline:none}
+.thread-search input:focus{border-color:var(--accent)}
+.thread-list{flex:1;overflow-y:auto;padding:4px 8px}
+.thread-item{padding:8px 10px;border-radius:var(--radius);cursor:pointer;margin-bottom:1px;font-size:13px;transition:background .15s;display:flex;align-items:center;gap:8px;position:relative}
+.thread-item:hover{background:rgba(128,128,128,0.1)}
+.thread-item.active{background:rgba(128,128,128,0.15)}
+.thread-icon{font-size:14px;flex-shrink:0}
+.thread-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.thread-name-input{flex:1;background:var(--bg-input);border:1px solid var(--accent);border-radius:4px;color:var(--text);font-size:13px;padding:2px 6px;outline:none;font-family:var(--font)}
+.thread-delete{display:none;color:var(--danger);font-size:16px;cursor:pointer;padding:0 4px;flex-shrink:0}
+.thread-item:hover .thread-delete{display:block}
+.thread-time{font-size:11px;color:var(--text-muted);flex-shrink:0}
+/* Quest section */
+.quest-section{margin-top:8px;border-top:1px solid var(--border);padding-top:8px}
+.quest-section-title{font-size:11px;color:var(--text-muted);padding:4px 12px;text-transform:uppercase;letter-spacing:1px}
+.quest-item{padding:8px 12px;border-radius:var(--radius);cursor:pointer;margin-bottom:1px;font-size:13px;transition:background .15s;display:flex;align-items:center;gap:8px}
+.quest-item:hover{background:rgba(128,128,128,0.1)}
+.quest-item.active{background:rgba(128,128,128,0.15)}
+.quest-icon{font-size:14px}
+/* === CHAT MAIN === */
+.chat-main{flex:1;display:flex;flex-direction:column;min-width:0}
+.chat-header{padding:10px 16px;border-bottom:1px solid var(--border);font-size:13px;color:var(--text-muted);display:flex;align-items:center;gap:8px;min-height:44px}
+.chat-header strong{color:var(--text)}
+.chat-header-right{margin-left:auto;display:flex;align-items:center;gap:4px}
+.theme-btn{background:none;border:none;font-size:20px;cursor:pointer;padding:4px 8px;border-radius:6px;transition:background .15s}
+.theme-btn:hover{background:rgba(128,128,128,0.15)}
+.messages{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px}
+.message{max-width:85%;padding:10px 14px;border-radius:var(--radius);font-size:14px;line-height:1.6;animation:fadeIn .2s ease;word-wrap:break-word}
+@keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+.message.user{align-self:flex-end;background:var(--bg-message-user);border-bottom-right-radius:4px}
+.message.ai{align-self:flex-start;background:var(--bg-message-ai);border:1px solid var(--border);border-bottom-left-radius:4px;max-width:100%;white-space:pre-wrap;width:100%}
+.message.ai strong{color:var(--accent)}
+.message.system{align-self:center;font-size:12px;color:var(--text-muted);font-style:italic;max-width:90%;text-align:center}
+.agent-card{background:var(--agent-card);border:1px solid var(--border);border-radius:8px;margin:6px 0;padding:10px}
+.agent-card-header{display:flex;align-items:center;gap:8px;font-weight:600;margin-bottom:4px;cursor:pointer;font-size:13px;user-select:none}
+.agent-card-body{font-size:13px}
+.tool-call{font-size:12px;color:var(--text-muted);padding:3px 6px;background:rgba(128,128,128,0.08);border-radius:4px;margin:3px 0;font-family:monospace}
+.tool-result{font-size:12px;color:#4caf50;padding:3px 6px;margin:2px 0}
+.chat-input-area{padding:12px 16px;border-top:1px solid var(--border)}
+.chat-input-row{display:flex;gap:8px}
+.chat-input-row input{flex:1;padding:10px 14px;background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:14px;font-family:var(--font);outline:none;min-height:44px}
+.chat-input-row input:focus{border-color:var(--accent)}
+.chat-input-row button{padding:10px 18px;background:var(--accent);border:none;border-radius:var(--radius);color:#fff;font-size:14px;font-weight:600;cursor:pointer;transition:background .15s;min-height:44px;white-space:nowrap}
+.chat-input-row button:hover{background:var(--accent-hover)}
+.chat-input-row button:disabled{opacity:0.5;cursor:not-allowed}
+.cancel-btn{background:#555!important;display:none}
+.cancel-btn:hover{background:#777!important}
+/* === INTERRUPT DIALOG === */
+.interrupt-dialog{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:var(--overlay);z-index:1000;justify-content:center;align-items:center}
+.interrupt-dialog.active{display:flex}
+.interrupt-box{background:var(--bg);border:1px solid var(--accent);border-radius:var(--radius);padding:20px;max-width:500px;width:90%}
+.interrupt-box h3{color:var(--accent);margin-bottom:10px;font-size:16px}
+.interrupt-box p{margin-bottom:12px;color:var(--text);font-size:14px}
+.interrupt-box textarea{width:100%;padding:10px;background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-family:var(--font);font-size:14px;min-height:80px;resize:vertical}
+.interrupt-box .btn-row{display:flex;gap:8px;margin-top:12px;justify-content:flex-end}
+.interrupt-box button{padding:8px 16px;border:none;border-radius:var(--radius);cursor:pointer;font-weight:600;font-size:14px}
+.interrupt-box .btn-approve{background:var(--accent);color:#fff}
+.interrupt-box .btn-deny{background:#555;color:#fff}
+/* === MOBILE OVERLAY === */
+.sidebar-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:var(--overlay);z-index:99}
+/* === TOKEN INFO === */
+.token-info{font-size:11px;color:var(--text-muted);padding:2px 16px 4px;text-align:right}
+/* === HAMBURGER === */
+.hamburger{display:none;background:none;border:none;color:var(--text);font-size:22px;cursor:pointer;padding:2px 8px}
+/* === RESPONSIVE === */
+@media (max-width: 768px) {
+    .hamburger{display:block}
+    .sidebar{position:fixed;left:-290px;top:0;bottom:0;width:280px;transition:left .25s ease}
+    .sidebar.open{left:0;box-shadow:4px 0 20px rgba(0,0,0,0.3)}
+    .sidebar-overlay.active{display:block}
+    .chat-header{padding:10px 12px}
+    .chat-header strong{font-size:13px}
+    .messages{padding:12px;gap:10px}
+    .message{max-width:95%;font-size:15px;padding:10px 12px}
+    .chat-input-area{padding:10px 12px}
+    .chat-input-row input{font-size:16px;padding:12px 14px}
+    .chat-input-row button{font-size:14px;padding:12px 16px}
+    .interrupt-box{padding:16px;max-width:95%}
+}
+</style>
+</head>
+<body>
+<div class="chat-app">
+<!-- Sidebar overlay for mobile -->
+<div class="sidebar-overlay" id="sidebar-overlay" onclick="toggleSidebar()"></div>
+
+<!-- Sidebar -->
+<div class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+        <div class="sidebar-header-left"><span>🤖</span> AI Chat</div>
+        <div class="sidebar-actions">
+            <button class="sidebar-btn" onclick="toggleSidebar()" title="Stäng">✕</button>
+        </div>
+    </div>
+    <button class="new-thread-btn" onclick="newThread()">+ Ny tråd</button>
+    <div class="thread-search"><input type="text" id="search-input" placeholder="🔍 Sök trådar..." oninput="searchThreads(this.value)"/></div>
+    <div class="thread-list" id="thread-list">
+        <!-- THREAD_ITEMS -->
+    </div>
+    <div class="quest-section">
+        <div class="quest-section-title">Agenter</div>
+        <div class="thread-list" id="quest-list">
+            <div class="quest-item active" data-id="" data-name="default"><span class="quest-icon">💬</span> Allmän assistent</div>
+            <!-- QUEST_ITEMS -->
+        </div>
+    </div>
+</div>
+
+<!-- Chat area -->
+<div class="chat-main">
+    <div class="chat-header">
+        <button class="hamburger" onclick="toggleSidebar()" title="Meny">☰</button>
+        <span>Chattar med <strong id="active-quest-name">Allmän assistent</strong></span>
+        <div class="chat-header-right">
+            <span id="active-thread-name" style="font-size:12px;color:var(--text-muted);margin-right:8px"></span>
+            <button class="theme-btn" id="theme-btn" onclick="toggleTheme()" title="Växla tema">🌙</button>
+        </div>
+    </div>
+    <div class="messages" id="messages"></div>
+    <div class="token-info" id="token-info"></div>
+    <div class="interrupt-dialog" id="interrupt-dialog">
+        <div class="interrupt-box">
+            <h3 id="interrupt-title">Agenten behöver input</h3>
+            <p id="interrupt-question"></p>
+            <textarea id="interrupt-response" placeholder="Ditt svar..."></textarea>
+            <div class="btn-row">
+                <button class="btn-deny" onclick="respondInterrupt(false)">Avbryt</button>
+                <button class="btn-approve" onclick="respondInterrupt(true)">Svara</button>
+            </div>
+        </div>
+    </div>
+    <div class="chat-input-area"><div class="chat-input-row">
+        <input type="text" id="prompt-input" placeholder="Skriv ett meddelande..." autofocus/>
+        <button id="send-btn" onclick="sendMessage()">Skicka</button>
+        <button id="cancel-btn" onclick="cancelStream()" class="cancel-btn">Avbryt</button>
+    </div></div>
+</div>
+</div>
+
+<script>
+// === STATE ===
+var activeQuestId='',activeQuestName='default',activeSessionId='',activeThreadName='';
+var currentAiMessage=null,currentAgentCards={},streaming=!1,currentEventSource=null,tokenCount=0;
+var sessionUuid='';
+
+// === THEME ===
+function initTheme(){
+    var t=localStorage.getItem('ai-chat-theme');
+    if(!t){t=window.matchMedia('(prefers-color-scheme:light)').matches?'light':'dark'}
+    setTheme(t)
+}
+function setTheme(t){
+    document.documentElement.dataset.theme=t;
+    document.getElementById('theme-btn').textContent=t==='light'?'☀️':'🌙';
+    localStorage.setItem('ai-chat-theme',t)
+}
+function toggleTheme(){
+    setTheme(document.documentElement.dataset.theme==='dark'?'light':'dark')
+}
+
+// === SIDEBAR (responsive) ===
+function toggleSidebar(){
+    var s=document.getElementById('sidebar');
+    var o=document.getElementById('sidebar-overlay');
+    s.classList.toggle('open');o.classList.toggle('active')
+}
+
+// === THREADS ===
+function loadThreads(){
+    fetch('/ai/threads').then(function(r){return r.json()}).then(function(data){
+        var list=document.getElementById('thread-list');
+        list.innerHTML='';
+        (data.threads||[]).forEach(function(t){
+            var d=document.createElement('div');
+            d.className='thread-item'+(t.id==activeSessionId?' active':'');
+            d.dataset.id=t.id;d.dataset.name=t.name||'';
+            d.innerHTML='<span class="thread-icon">📝</span><span class="thread-name">'+esc(t.name||'Tråd')+'</span><span class="thread-delete" title="Radera">×</span><span class="thread-time">'+relTime(t.last_activity)+'</span>';
+            d.querySelector('.thread-name').addEventListener('dblclick',function(e){e.stopPropagation();renameThread(d)});
+            d.querySelector('.thread-delete').addEventListener('click',function(e){e.stopPropagation();deleteThread(t.id,d)});
+            d.addEventListener('click',function(){selectThread(t.id,t.name)});
+            list.appendChild(d)
+        })
+    })
+}
+function newThread(){
+    activeSessionId='';activeThreadName='';
+    document.getElementById('messages').innerHTML='';
+    document.getElementById('active-thread-name').textContent='';
+    document.getElementById('prompt-input').focus();
+    loadThreads()
+}
+function selectThread(id,name){
+    activeSessionId=id;activeThreadName=name||'';
+    document.getElementById('active-thread-name').textContent=name||'Tråd';
+    document.getElementById('messages').innerHTML='';
+    // Load history
+    fetch('/ai/threads/'+id).then(function(r){return r.json()}).then(function(data){
+        var msgs=document.getElementById('messages');
+        msgs.innerHTML='';
+        (data.messages||[]).forEach(function(m){
+            var cls=m.role==='user'?'message user':m.role==='system'?'message system':'message ai';
+            var d=document.createElement('div');d.className=cls;
+            d.innerHTML=m.content.replace(/\n/g,'<br>');
+            msgs.appendChild(d)
+        });
+        scrollBottom()
+    });
+    loadThreads()
+}
+function renameThread(el){
+    var nameEl=el.querySelector('.thread-name');
+    var oldName=nameEl.textContent;
+    var input=document.createElement('input');
+    input.className='thread-name-input';input.value=oldName;
+    nameEl.replaceWith(input);input.focus();input.select();
+    input.addEventListener('blur',function(){saveRename(el.dataset.id,input.value,el)});
+    input.addEventListener('keydown',function(e){if(e.key==='Enter'){saveRename(el.dataset.id,input.value,el)}})
+}
+function saveRename(id,name,el){
+    fetch('/ai/threads/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name})}).then(function(){loadThreads()})
+}
+function deleteThread(id,el){
+    if(!confirm('Radera denna tråd?'))return;
+    fetch('/ai/threads/'+id,{method:'DELETE'}).then(function(){
+        if(activeSessionId==id){newThread()}
+        loadThreads()
+    })
+}
+function searchThreads(q){
+    if(!q||q.length<2){loadThreads();return}
+    fetch('/ai/thread/search?q='+encodeURIComponent(q)).then(function(r){return r.json()}).then(function(data){
+        var list=document.getElementById('thread-list');
+        list.innerHTML='';
+        (data.threads||[]).forEach(function(t){
+            var d=document.createElement('div');
+            d.className='thread-item';
+            d.dataset.id=t.id;d.dataset.name=t.name||'';
+            d.innerHTML='<span class="thread-icon">📝</span><span class="thread-name">'+esc(t.name||'Tråd')+'</span><span class="thread-time">'+relTime(t.last_activity)+'</span>';
+            d.addEventListener('click',function(){selectThread(t.id,t.name)});
+            list.appendChild(d)
+        })
+    })
+}
+
+// === QUEST LIST ===
+document.getElementById('quest-list').addEventListener('click',function(e){
+    var t=e.target.closest('.quest-item');if(!t)return;
+    document.querySelectorAll('.quest-item').forEach(function(e){e.classList.remove('active')});
+    t.classList.add('active');activeQuestId=t.dataset.id;activeQuestName=t.dataset.name;
+    document.getElementById('active-quest-name').textContent=t.textContent.trim()
+});
+
+// === CHAT ===
+document.getElementById('prompt-input').addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage()}});
+function esc(s){var d=document.createElement('div');d.textContent=s;return d.innerHTML}
+function scrollBottom(){var e=document.getElementById('messages');e.scrollTop=e.scrollHeight}
+function updateTokenInfo(){document.getElementById('token-info').textContent='Tokens: ~'+tokenCount}
+
+function sendMessage(){
+    var e=document.getElementById('prompt-input'),t=document.getElementById('send-btn'),n=e.value.trim();
+    if(!n||streaming)return;e.value='';
+    streaming=!0;t.style.display='none';document.getElementById('cancel-btn').style.display='inline-block';
+    tokenCount=0;updateTokenInfo();
+    var a=document.createElement('div');a.className='message user';a.innerHTML=esc(n);
+    document.getElementById('messages').appendChild(a);scrollBottom();
+    currentAiMessage=document.createElement('div');currentAiMessage.className='message ai';
+    document.getElementById('messages').appendChild(currentAiMessage);
+    currentAgentCards={};scrollBottom();
+    // Auto-create thread if needed
+    if(!activeSessionId){
+        fetch('/ai/threads',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({quest_id:activeQuestId||null,name:n.substring(0,60)})})
+        .then(function(r){return r.json()}).then(function(d){activeSessionId=d.id;startStream(n)})
+    } else {startStream(n)}
+}
+function startStream(prompt){
+    var url='/ai/stream?prompt='+encodeURIComponent(prompt);
+    if(activeQuestId)url+='&quest_id='+activeQuestId;
+    if(activeSessionId)url+='&session_id='+activeSessionId;
+    currentEventSource=new EventSource(url);
+    currentEventSource.onmessage=function(e){try{var t=JSON.parse(e.data);handleStreamEvent(t)}catch(e){}};
+    currentEventSource.onerror=function(){if(streaming){currentEventSource.close();finishStream()}}
+}
+function cancelStream(){if(currentEventSource){currentEventSource.close()}finishStream()}
+function handleStreamEvent(e){
+    switch(e.type){
+        case'token':currentAiMessage.innerHTML+=e.token;tokenCount++;updateTokenInfo();break;
+        case'tool_call_start':var a=document.createElement('div');a.className='agent-card';var n=e.tool_call?e.tool_call.name:'tool';a.innerHTML='<div class="agent-card-header"><span>🔧</span><span>'+esc(n)+'</span></div><div class="agent-card-body">Kör...</div>';currentAiMessage.appendChild(a);currentAgentCards[n]=a;break;
+        case'needs_approval':showInterruptDialog('Godkänn verktyg: '+esc(e.tool_call?e.tool_call.name:'?'),'tool_approval');break;
+        case'needs_input':showInterruptDialog(e.question||'Agenten behöver input','clarification');break;
+        case'done':currentEventSource.close();finishStream();break;
+        case'error':currentAiMessage.innerHTML+='<div style="color:var(--danger)">❌ '+esc(e.message)+'</div>';currentEventSource.close();finishStream();break
+    }scrollBottom()
+}
+function showInterruptDialog(question,type){document.getElementById('interrupt-question').textContent=question;document.getElementById('interrupt-dialog').classList.add('active');document.getElementById('interrupt-response').focus();window._interruptType=type}
+function respondInterrupt(approved){
+    var resp=document.getElementById('interrupt-response').value;
+    document.getElementById('interrupt-dialog').classList.remove('active');
+    document.getElementById('interrupt-response').value='';
+    if(!approved){currentAiMessage.innerHTML+='<div style="color:var(--text-muted)">❌ Avbrutet av användaren</div>';cancelStream();return}
+    if(resp){currentAiMessage.innerHTML+='<div style="color:var(--text-muted);margin:8px 0">💬 '+esc(resp)+'</div>';
+        var x=new XMLHttpRequest();x.open('POST','/ai/interrupt/respond',!0);
+        x.setRequestHeader('Content-Type','application/json');x.send(JSON.stringify({session_uuid:sessionUuid,response:resp}))
+    }
+}
+function finishStream(){
+    if(currentAiMessage&&!currentAiMessage.textContent.trim()){currentAiMessage.innerHTML='<em style="color:var(--text-muted)">(inget svar)</em>'}
+    streaming=!1;document.getElementById('send-btn').style.display='inline-block';
+    document.getElementById('cancel-btn').style.display='none';
+    document.getElementById('prompt-input').focus();
+    currentAiMessage=null;currentAgentCards={};currentEventSource=null;
+    // Refresh thread list
+    if(activeSessionId)loadThreads()
+}
+function relTime(ts){
+    if(!ts)return'';
+    var d=new Date(ts),now=new Date(),diff=now-d;
+    var m=Math.floor(diff/60000),h=Math.floor(diff/3600000),days=Math.floor(diff/86400000);
+    if(m<1)return'nyss';if(m<60)return m+'min sen';
+    if(h<24)return h+'t sen';if(days<7)return days+'d sen';
+    return d.toLocaleDateString('sv-SE')
+}
+
+// === INIT ===
+initTheme();loadThreads();
+</script>
+</body>
+</html>

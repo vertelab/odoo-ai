@@ -28,6 +28,23 @@ class AIMemory(models.Model):
     identity_id = fields.Many2one('ai.identity', string='Identity')
     agent_id = fields.Many2one('ai.agent', string='Agent')
 
+    # Quest learning (quest-learning-memory)
+    quest_id = fields.Many2one('ai.quest', string='Quest',
+                                help='The quest this memory belongs to')
+    category = fields.Selection([
+        ('preference', 'User Preference'),
+        ('fact', 'Key Fact'),
+        ('correction', 'Correction'),
+        ('pattern', 'Pattern'),
+        ('feedback', 'Feedback'),
+    ], string='Category')
+    source_thread_id = fields.Many2one('ai.quest.session', string='Source Thread',
+                                        help='Thread where this memory was extracted')
+    consolidated = fields.Boolean('Consolidated', default=False,
+                                   help='Included in system prompt after consolidation')
+    archived = fields.Boolean('Archived', default=False,
+                               help='Hidden from system prompt injection')
+
     # Metadata
     tags = fields.Char('Tags', help='Comma-separated')
     importance = fields.Selection([

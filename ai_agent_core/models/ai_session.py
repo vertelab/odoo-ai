@@ -37,6 +37,12 @@ class AIQuestSession(models.Model):
     user_id = fields.Many2one('res.users', default=lambda self: self.env.user)
     company_id = fields.Many2one('res.company', default=lambda self: self.env.company)
 
+    # Thread support
+    thread_name = fields.Char('Thread Name')
+    session_line_ids = fields.One2many(
+        'ai.quest.session.line', 'session_id', string='Messages')
+    active = fields.Boolean('Active', default=True)
+
     def save_config(self, config: dict):
         self.config_json = json.dumps(config, default=str)
 

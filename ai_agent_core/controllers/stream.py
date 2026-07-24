@@ -9,8 +9,10 @@ Uses real BifrostProvider + StreamingAgentLoop (no mock).
 import asyncio
 import json
 import logging
+import time
+from html import escape
 
-from odoo import http
+from odoo import http, fields
 from odoo.http import request, Response
 
 # Import access control helper (quest-access-control change)
@@ -34,8 +36,8 @@ class AIStreamController(http.Controller):
         return request.make_response('pong', [('Content-Type', 'text/plain')])
 
     @http.route('/ai/stream', type='http', auth='public', cors='*', sitemap=False)
-    def stream(self, quest_id=None, prompt=None, **kw):
-        """Stream AI response via SSE using real provider."""
+    def stream(self, quest_id=None, prompt=None, session_id=None, **kw):
+        """Stream AI response via SSE. Supports session persistence."""
         if not prompt:
             return Response(
                 json.dumps({"error": "Missing prompt parameter"}),
@@ -46,24 +48,21 @@ class AIStreamController(http.Controller):
         # Resolve quest configuration
         model = "cerebras/gpt-oss-120b"
         system_prompt = ""
-        quest_name = "default"
+        quest = None
 
         if quest_id:
             try:
                 quest = request.env['ai.quest'].browse(int(quest_id))
                 if quest.exists():
-                    # Access check (quest-access-control)
+                    # Access check
                     if request.env.user and not _quest_is_accessible(quest, request.env.user):
                         return Response(
                             json.dumps({"error": "Quest not accessible"}),
                             status=403,
                             content_type='application/json',
                         )
-
-                    quest_name = quest.name
                     if quest.description:
                         system_prompt = quest.description
-                    # Use quest's LLM if configured
                     llm_ids = quest.ai_agent_ids.filtered(
                         lambda a: a.ai_agent_id.ai_agent_llm_id
                     )
@@ -73,6 +72,45 @@ class AIStreamController(http.Controller):
                             model = llm.model_name
             except Exception:
                 pass
+
+        # Load thread history if session_id provided
+        session = None
+        history_messages = []
+        if session_id:
+            try:
+                session = request.env['ai.quest.session'].browse(int(session_id))
+                if session.exists():
+                    # Inject quest memories into system prompt
+                    if quest and quest.identity_id:
+                        memories_text = _get_quest_memories(quest)
+                        if memories_text:
+                            system_prompt = (system_prompt + '\n\n' + memories_text).strip()
+
+                    # Load history from session lines
+                    lines = session.session_line_ids.sorted('sequence')
+                    for line in lines:
+                        history_messages.append({
+                            'role': line.role,
+                            'content': line.content or '',
+                        })
+                    # Auto-summarize if too many messages
+                    if len(lines) > 50:
+                        summary = '[...Tidigare konversation sammanfattad...]'
+                        history_messages = [{'role': 'system', 'content': summary}] + history_messages[-20:]
+            except Exception:
+                pass
+
+        # Save user message as session line
+        user_id = request.env.user.id if request.env.user else None
+        if session and user_id:
+            next_seq = len(session.session_line_ids) + 1
+            request.env['ai.quest.session.line'].create({
+                'session_id': session.id,
+                'sequence': next_seq,
+                'role': 'user',
+                'content': prompt,
+            })
+            session.write_date = fields.Datetime.now()
 
         def generate():
             """SSE event generator — runs async loop in sync context."""
@@ -138,21 +176,20 @@ class AIStreamController(http.Controller):
 
     @http.route('/ai/chat', type='http', auth='public', sitemap=False)
     def chat_ui(self, **kw):
-        """Render standalone AI chat interface."""
+        """Render standalone AI chat interface with threads, theme, and responsive design."""
+        user = request.env.user
+
+        # Load quests (filtered by access)
         quests = request.env['ai.quest'].search(
             [('status', '=', 'active')],
             order='sequence asc, name asc',
         )
-
-        # Filter by access control (quest-access-control change)
-        user = request.env.user
         accessible_quests = []
         if _quest_is_accessible and user:
             for q in quests:
                 if _quest_is_accessible(q, user):
                     accessible_quests.append(q)
         else:
-            # Fallback: show quests with no restrictions (public access)
             for q in quests:
                 if q.show_in_chat and not q.group_ids and not q.user_ids:
                     accessible_quests.append(q)
@@ -164,7 +201,26 @@ class AIStreamController(http.Controller):
                 f'<span class="quest-icon">🎯</span>{q.name}</div>'
             )
 
-        html = _CHAT_HTML_v2.replace('<!-- QUEST_ITEMS -->', quest_items)
+        # Load user's threads (most recent 50)
+        thread_items = ''
+        if user and user.id:
+            sessions = request.env['ai.quest.session'].search([
+                ('user_id', '=', user.id),
+                ('active', '=', True),
+            ], order='write_date desc', limit=50)
+            for s in sessions:
+                name = s.thread_name or (s.name or 'Tråd')
+                thread_items += (
+                    f'<div class="thread-item" data-id="{s.id}" data-name="{escape(name)}">'
+                    f'<span class="thread-icon">📝</span>'
+                    f'<span class="thread-name">{escape(name)}</span>'
+                    f'<span class="thread-delete" title="Radera">×</span>'
+                    f'</div>'
+                )
+
+        html = (_CHAT_HTML_v3
+                .replace('<!-- QUEST_ITEMS -->', quest_items)
+                .replace('<!-- THREAD_ITEMS -->', thread_items))
         return Response(html, headers=[('Content-Type', 'text/html; charset=utf-8')])
 
     @http.route('/ai/interrupt/poll', type='http', auth='public', cors='*', sitemap=False)
@@ -210,6 +266,107 @@ class AIStreamController(http.Controller):
             return {"status": "ok"}
         return {"error": "No pending interrupt for this session"}
 
+    # === Thread API (web-chat-threads-memory change) ===
+
+    @http.route('/ai/threads', type='json', auth='public',
+                methods=['GET'], csrf=False, sitemap=False)
+    def thread_list(self, **kw):
+        """List user's threads."""
+        user = request.env.user
+        if not user or not user.id:
+            return {"threads": []}
+        sessions = request.env['ai.quest.session'].search([
+            ('user_id', '=', user.id),
+            ('active', '=', True),
+        ], order='write_date desc', limit=50)
+        return {
+            "threads": [{
+                "id": s.id,
+                "name": s.thread_name or (s.name or 'Tråd'),
+                "quest_id": s.quest_id.id if s.quest_id else None,
+                "last_activity": s.write_date,
+                "message_count": len(s.session_line_ids),
+            } for s in sessions]
+        }
+
+    @http.route('/ai/threads', type='json', auth='public',
+                methods=['POST'], csrf=False, sitemap=False)
+    def thread_create(self, **kw):
+        """Create a new thread."""
+        user = request.env.user
+        data = request.jsonrequest if hasattr(request, 'jsonrequest') else kw
+        name = data.get('name', 'Ny tråd')
+        quest_id = data.get('quest_id')
+        vals = {
+            'user_id': user.id if user.id else None,
+            'thread_name': name[:200],
+            'status': 'active',
+        }
+        if quest_id:
+            vals['quest_id'] = int(quest_id)
+        session = request.env['ai.quest.session'].create(vals)
+        return {"id": session.id, "name": session.thread_name}
+
+    @http.route('/ai/threads/<int:thread_id>', type='json', auth='public',
+                methods=['GET'], csrf=False, sitemap=False)
+    def thread_get(self, thread_id, **kw):
+        """Get thread with messages."""
+        session = request.env['ai.quest.session'].browse(thread_id)
+        if not session.exists():
+            return {"error": "Thread not found"}
+        lines = session.session_line_ids.sorted('sequence')
+        return {
+            "id": session.id,
+            "name": session.thread_name or (session.name or ''),
+            "messages": [{
+                "role": l.role,
+                "content": l.content or '',
+                "tool_name": l.tool_name,
+            } for l in lines]
+        }
+
+    @http.route('/ai/threads/<int:thread_id>', type='json', auth='public',
+                methods=['PUT'], csrf=False, sitemap=False)
+    def thread_rename(self, thread_id, **kw):
+        """Rename a thread."""
+        data = request.jsonrequest if hasattr(request, 'jsonrequest') else kw
+        name = data.get('name', '')
+        session = request.env['ai.quest.session'].browse(thread_id)
+        if session.exists():
+            session.thread_name = name[:200]
+        return {"status": "ok"}
+
+    @http.route('/ai/threads/<int:thread_id>', type='json', auth='public',
+                methods=['DELETE'], csrf=False, sitemap=False)
+    def thread_delete(self, thread_id, **kw):
+        """Soft-delete a thread."""
+        session = request.env['ai.quest.session'].browse(thread_id)
+        if session.exists():
+            session.active = False
+        return {"status": "ok"}
+
+    @http.route('/ai/thread/search', type='json', auth='public',
+                methods=['GET'], csrf=False, sitemap=False)
+    def thread_search(self, q='', **kw):
+        """Search threads by message content."""
+        user = request.env.user
+        if not q or len(q) < 2 or not user or not user.id:
+            return {"threads": []}
+        lines = request.env['ai.quest.session.line'].search([
+            ('content', 'ilike', q),
+            ('session_id.user_id', '=', user.id),
+            ('session_id.active', '=', True),
+        ], limit=50)
+        thread_ids = list(set(lines.mapped('session_id.id')))
+        sessions = request.env['ai.quest.session'].browse(thread_ids)
+        return {
+            "threads": [{
+                "id": s.id,
+                "name": s.thread_name or (s.name or 'Tråd'),
+                "last_activity": s.write_date,
+            } for s in sessions]
+        }
+
 
 # ---------------------------------------------------------------------------
 # Helper: WebUI handler registry (in-memory, per Odoo worker)
@@ -226,6 +383,23 @@ def _register_webui_handler(session_uuid: str, handler):
 def _unregister_webui_handler(session_uuid: str):
     _webui_handlers.pop(session_uuid, None)
 
+
+def _get_quest_memories(quest) -> str:
+    """Get consolidated memories for quest's system prompt."""
+    try:
+        memories = request.env['ai.memory'].search([
+            ('quest_id', '=', quest.id),
+            ('consolidated', '=', True),
+            ('archived', '=', False),
+        ], limit=20)
+        if memories:
+            items = [f"- {m.content}" for m in memories]
+            return "## Lärt om denna quest\n" + "\n".join(items)
+    except Exception:
+        pass
+    return ""
+
+
 async def _collect(agen):
     """Collect all items from an async generator into a list."""
     result = []
@@ -238,102 +412,15 @@ async def _collect(agen):
 # Chat UI HTML template
 # ---------------------------------------------------------------------------
 
-_CHAT_HTML_v2 = '''<!DOCTYPE html>
-<html lang="sv">
-<head>
-<meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>AI Chat</title>
-<style>
-:root {
-    --bg: #1a1a2e; --bg-sidebar: #16213e; --bg-message-user: #0f3460;
-    --bg-message-ai: #16213e; --bg-input: #16213e; --text: #e0e0e0;
-    --text-muted: #888; --accent: #e94560; --accent-hover: #ff6b81;
-    --border: #2a2a4a; --agent-card: #1a2744; --radius: 10px;
-    --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-}
-*{margin:0;padding:0;box-sizing:border-box}
-body{font-family:var(--font);background:var(--bg);color:var(--text);overflow:hidden}
-.chat-app{display:flex;height:100vh}
-.sidebar{width:280px;background:var(--bg-sidebar);display:flex;flex-direction:column;border-right:1px solid var(--border);flex-shrink:0}
-.sidebar-header{padding:16px;font-size:18px;font-weight:700;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px}
-.quest-list{flex:1;overflow-y:auto;padding:8px}
-.quest-item{padding:10px 12px;border-radius:var(--radius);cursor:pointer;margin-bottom:2px;font-size:14px;transition:background .15s;display:flex;align-items:center;gap:8px}
-.quest-item:hover{background:rgba(255,255,255,0.05)}
-.quest-item.active{background:rgba(233,69,96,0.15);color:var(--accent)}
-.quest-icon{font-size:18px}
-.chat-main{flex:1;display:flex;flex-direction:column;min-width:0}
-.chat-header{padding:12px 20px;border-bottom:1px solid var(--border);font-size:14px;color:var(--text-muted);display:flex;align-items:center;gap:8px}
-.chat-header strong{color:var(--text)}
-.messages{flex:1;overflow-y:auto;padding:20px;display:flex;flex-direction:column;gap:16px}
-.message{max-width:85%;padding:12px 16px;border-radius:var(--radius);font-size:14px;line-height:1.6;animation:fadeIn .2s ease}
-@keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
-.message.user{align-self:flex-end;background:var(--bg-message-user);border-bottom-right-radius:4px}
-.message.ai{align-self:flex-start;background:var(--bg-message-ai);border:1px solid var(--border);border-bottom-left-radius:4px;max-width:100%;white-space:pre-wrap;width:100%}
-.message.ai strong{color:var(--accent)}
-.agent-card{background:var(--agent-card);border:1px solid var(--border);border-radius:8px;margin:8px 0;padding:12px}
-.agent-card-header{display:flex;align-items:center;gap:8px;font-weight:600;margin-bottom:6px;cursor:pointer;font-size:13px;user-select:none}
-.agent-card-body{font-size:13px}
-.tool-call{font-size:12px;color:var(--text-muted);padding:4px 8px;background:rgba(255,255,255,0.03);border-radius:4px;margin:4px 0;font-family:monospace}
-.tool-result{font-size:12px;color:#4caf50;padding:4px 8px;margin:2px 0}
-.chat-input-area{padding:16px 20px;border-top:1px solid var(--border)}
-.chat-input-row{display:flex;gap:8px}
-.chat-input-row input{flex:1;padding:12px 16px;background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:14px;font-family:var(--font);outline:none}
-.chat-input-row input:focus{border-color:var(--accent)}
-.chat-input-row button{padding:12px 20px;background:var(--accent);border:none;border-radius:var(--radius);color:#fff;font-size:14px;font-weight:600;cursor:pointer;transition:background .15s}
-.chat-input-row button:hover{background:var(--accent-hover)}
-.chat-input-row button:disabled{opacity:0.5;cursor:not-allowed}
-.cancel-btn{background:#555!important;display:none}
-.cancel-btn:hover{background:#777!important}
-.interrupt-dialog{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:1000;justify-content:center;align-items:center}
-.interrupt-dialog.active{display:flex}
-.interrupt-box{background:var(--bg);border:1px solid var(--accent);border-radius:var(--radius);padding:24px;max-width:500px;width:90%}
-.interrupt-box h3{color:var(--accent);margin-bottom:12px}
-.interrupt-box p{margin-bottom:16px;color:var(--text)}
-.interrupt-box textarea{width:100%;padding:12px;background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-family:var(--font);font-size:14px;min-height:80px;resize:vertical}
-.interrupt-box .btn-row{display:flex;gap:8px;margin-top:12px;justify-content:flex-end}
-.interrupt-box button{padding:10px 20px;border:none;border-radius:var(--radius);cursor:pointer;font-weight:600}
-.interrupt-box .btn-approve{background:var(--accent);color:#fff}
-.interrupt-box .btn-deny{background:#555;color:#fff}
-.token-info{font-size:12px;color:var(--text-muted);padding:4px 20px 0;text-align:right}
-</style>
-</head>
-<body>
-<div class="chat-app">
-<div class="sidebar">
-<div class="sidebar-header"><span>🤖</span> AI Chat</div>
-<div class="quest-list" id="quest-list">
-<div class="quest-item active" data-id="" data-name="default"><span class="quest-icon">💬</span> Allman assistent</div>
-<!-- QUEST_ITEMS -->
-</div>
-</div>
-<div class="chat-main">
-<div class="chat-header">Chattar med <strong id="active-quest-name">Allman assistent</strong></div>
-<div class="messages" id="messages"></div>
-<div class="token-info" id="token-info"></div>
-<div class="interrupt-dialog" id="interrupt-dialog"><div class="interrupt-box"><h3 id="interrupt-title">Agenten behöver input</h3><p id="interrupt-question"></p><textarea id="interrupt-response" placeholder="Ditt svar..."></textarea><div class="btn-row"><button class="btn-deny" onclick="respondInterrupt(false)">Avbryt</button><button class="btn-approve" onclick="respondInterrupt(true)">Svara</button></div></div></div>
-<div class="chat-input-area"><div class="chat-input-row">
-<input type="text" id="prompt-input" placeholder="Skriv ett meddelande..." autofocus/>
-<button id="send-btn" onclick="sendMessage()">Skicka</button>
-<button id="cancel-btn" onclick="cancelStream()" class="cancel-btn">Avbryt</button>
-</div></div>
-</div>
-</div>
-<script>
-var activeQuestId='',activeQuestName='default',currentAiMessage=null,currentAgentCards={},streaming=!1,currentEventSource=null,tokenCount=0;
-var interruptPollSource=null,sessionUuid='';
-document.getElementById('quest-list').addEventListener('click',function(e){var t=e.target.closest('.quest-item');if(!t)return;document.querySelectorAll('.quest-item').forEach(function(e){e.classList.remove('active')});t.classList.add('active');activeQuestId=t.dataset.id;activeQuestName=t.dataset.name;document.getElementById('active-quest-name').textContent=t.textContent.trim()});
-document.getElementById('prompt-input').addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage()}});
-function _(e,t,n){var a=document.createElement(e);if(t)a.className=t;if(n!==undefined)a.innerHTML=n;return a}
-function scrollBottom(){var e=document.getElementById('messages');e.scrollTop=e.scrollHeight}
-function updateTokenInfo(){document.getElementById('token-info').textContent='Tokens: ~'+tokenCount}
-function sendMessage(){var e=document.getElementById('prompt-input'),t=document.getElementById('send-btn'),n=e.value.trim();if(!n||streaming)return;e.value='';streaming=!0;t.style.display='none';document.getElementById('cancel-btn').style.display='inline-block';tokenCount=0;updateTokenInfo();var a=_('div','message user',escapeHtml(n));document.getElementById('messages').appendChild(a);scrollBottom();currentAiMessage=_('div','message ai','');document.getElementById('messages').appendChild(currentAiMessage);currentAgentCards={};scrollBottom();var i='prompt='+encodeURIComponent(n);if(activeQuestId)i+='&quest_id='+activeQuestId;currentEventSource=new EventSource('/ai/stream?'+i);currentEventSource.onmessage=function(e){try{var t=JSON.parse(e.data);handleStreamEvent(t)}catch(e){}};currentEventSource.onerror=function(){if(streaming){currentEventSource.close();finishStream()}}}
-function cancelStream(){if(currentEventSource){currentEventSource.close()}finishStream()}
-function handleStreamEvent(e){switch(e.type){case'token':currentAiMessage.innerHTML+=e.token;tokenCount++;updateTokenInfo();break;case'tool_call_start':var a=_('div','agent-card','');var n=e.tool_call?e.tool_call.name:'tool';a.innerHTML='<div class="agent-card-header"><span>🔧</span><span>'+escapeHtml(n)+'</span></div><div class="agent-card-body">Kör...</div>';currentAiMessage.appendChild(a);currentAgentCards[n]=a;break;case'needs_approval':showInterruptDialog('Godkänn verktyg: '+escapeHtml(e.tool_call?e.tool_call.name:'?'),e._approval_type||'tool_approval');break;case'needs_input':showInterruptDialog(e.question||'Agenten behöver input','clarification');break;case'done':currentEventSource.close();finishStream();break;case'error':currentAiMessage.innerHTML+='<div style="color:#ff5252">❌ '+escapeHtml(e.message)+'</div>';currentEventSource.close();finishStream();break}scrollBottom()}
-function showInterruptDialog(question,type){document.getElementById('interrupt-question').textContent=question;document.getElementById('interrupt-dialog').classList.add('active');document.getElementById('interrupt-response').focus();window._interruptType=type}
-function respondInterrupt(approved){var resp=document.getElementById('interrupt-response').value;document.getElementById('interrupt-dialog').classList.remove('active');document.getElementById('interrupt-response').value='';if(!approved){currentAiMessage.innerHTML+='<div style="color:var(--text-muted)">❌ Avbrutet av användaren</div>';cancelStream();return}if(resp){currentAiMessage.innerHTML+='<div style="color:var(--text-muted);margin:8px 0">💬 '+escapeHtml(resp)+'</div>';var x=new XMLHttpRequest();x.open('POST','/ai/interrupt/respond',!0);x.setRequestHeader('Content-Type','application/json');x.send(JSON.stringify({session_uuid:sessionUuid,response:resp}))}}
-function finishStream(){if(currentAiMessage&&!currentAiMessage.textContent.trim()){currentAiMessage.innerHTML='<em style="color:var(--text-muted)">(inget svar)</em>'}streaming=!1;document.getElementById('send-btn').style.display='inline-block';document.getElementById('cancel-btn').style.display='none';document.getElementById('prompt-input').focus();currentAiMessage=null;currentAgentCards={};currentEventSource=null}
-function escapeHtml(e){var t=document.createElement('div');t.textContent=e;return t.innerHTML}
-</script>
-</body>
-</html>'''
+import os as _os
+
+def _load_chat_template():
+    """Load the chat HTML template from file."""
+    _path = _os.path.join(_os.path.dirname(__file__), '..', 'views', 'chat_template.html')
+    try:
+        with open(_os.path.abspath(_path), 'r', encoding='utf-8') as _f:
+            return _f.read()
+    except Exception:
+        return '<html><body>Error loading template</body></html>'
+
+_CHAT_HTML_v3 = _load_chat_template()

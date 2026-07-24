@@ -1,27 +1,56 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
+    <!-- Kanban with image + color -->
     <record id="view_ai_skill_kanban" model="ir.ui.view">
         <field name="name">ai.skill.kanban</field>
         <field name="model">ai.skill</field>
         <field name="arch" type="xml">
-            <kanban>
-                <field name="name"/>
+            <kanban class="o_kanban_mobile" color_field="color"
+                    quick_create="false" highlight_color="color">
+                <field name="color"/>
+                <field name="image_128"/>
                 <field name="category"/>
+                <field name="compatibility"/>
                 <field name="use_count"/>
                 <field name="version"/>
+                <field name="source_type"/>
+                <field name="agent_count"/>
                 <templates>
                     <t t-name="card">
                         <div class="oe_kanban_card">
-                            <div class="o_kanban_card_header">
-                                <strong><field name="name"/></strong>
-                                <span class="float-end badge bg-secondary"><field name="category"/></span>
-                            </div>
-                            <div class="o_kanban_card_content">
-                                <field name="description" class="text-muted small"/>
-                            </div>
-                            <div class="o_kanban_card_footer">
-                                v<field name="version"/> · Used: <field name="use_count"/>x
-                            </div>
+                            <aside class="col-2 me-1">
+                                <field name="image_128" widget="image"
+                                       t-att-alt="record.name.value"/>
+                            </aside>
+                            <main class="ms-2">
+                                <div class="o_text_overflow d-flex align-items-center">
+                                    <strong class="fs-5"><field name="name"/></strong>
+                                </div>
+                                <div class="text-muted small mt-1">
+                                    <field name="description"/>
+                                </div>
+                                <footer>
+                                    <div class="d-flex justify-content-between align-items-center w-100">
+                                        <div>
+                                            <span class="badge bg-secondary">
+                                                <field name="category"/>
+                                            </span>
+                                            <span class="badge bg-info ms-1"
+                                                  t-if="record.source_type.raw_value == 'github'">
+                                                <span class="fa fa-github"/> GitHub
+                                            </span>
+                                        </div>
+                                        <div class="d-flex align-items-center">
+                                            <span class="text-muted small me-2">
+                                                <field name="agent_count"/> agents
+                                            </span>
+                                            <span class="text-muted small">
+                                                v<field name="version"/>
+                                            </span>
+                                        </div>
+                                    </div>
+                                </footer>
+                            </main>
                         </div>
                     </t>
                 </templates>
@@ -29,34 +58,81 @@
         </field>
     </record>
 
+    <!-- List -->
     <record id="view_ai_skill_tree" model="ir.ui.view">
-        <field name="name">ai.skill.tree</field>
+        <field name="name">ai.skill.list</field>
         <field name="model">ai.skill</field>
         <field name="arch" type="xml">
-            <list>
+            <list string="Skills" multi_edit="1">
                 <field name="name"/>
                 <field name="category"/>
                 <field name="compatibility"/>
+                <field name="source_type"/>
                 <field name="version"/>
                 <field name="use_count"/>
+                <field name="agent_count"/>
+                <field name="github_url" optional="hide"/>
             </list>
         </field>
     </record>
 
+    <!-- Search -->
+    <record id="view_ai_skill_search" model="ir.ui.view">
+        <field name="name">ai.skill.search</field>
+        <field name="model">ai.skill</field>
+        <field name="arch" type="xml">
+            <search string="Search Skills">
+                <field name="name"/>
+                <field name="description"/>
+                <field name="trigger_keywords"/>
+                <filter string="GitHub" name="github"
+                        domain="[('source_type','=','github')]"/>
+                <filter string="Odoo" name="odoo"
+                        domain="[('source_type','=','odoo')]"/>
+                <separator/>
+                <filter string="Archived" name="inactive"
+                        domain="[('active','=',False)]"/>
+                <group expand="0" string="Group By">
+                    <filter string="Category" name="group_category"
+                            context="{'group_by':'category'}"/>
+                    <filter string="Source" name="group_source"
+                            context="{'group_by':'source_type'}"/>
+                    <filter string="Compatibility" name="group_compat"
+                            context="{'group_by':'compatibility'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <!-- Form -->
     <record id="view_ai_skill_form" model="ir.ui.view">
         <field name="name">ai.skill.form</field>
         <field name="model">ai.skill</field>
         <field name="arch" type="xml">
             <form>
                 <sheet>
+                    <div class="oe_button_box" name="button_box">
+                        <button name="action_export_skill_md" type="object"
+                                class="oe_stat_button" icon="fa-share-square-o"
+                                string="Export SKILL.md"/>
+                    </div>
+                    <field name="image_128" widget="image" class="oe_avatar"/>
+                    <field name="active" invisible="1"/>
                     <div class="oe_title">
                         <h1><field name="name" placeholder="Skill Name"/></h1>
                     </div>
                     <group col="2">
                         <field name="category"/>
                         <field name="compatibility"/>
+                        <field name="source_type"/>
+                        <field name="github_url"
+                               widget="url"
+                               invisible="source_type!='github'"
+                               placeholder="https://github.com/user/repo"/>
                         <field name="version"/>
                         <field name="use_count" readonly="1"/>
+                        <field name="agent_count" readonly="1"/>
+                        <field name="color" widget="color_picker"/>
                     </group>
                     <group string="Description">
                         <field name="description" widget="text" nolabel="1"/>
@@ -70,25 +146,49 @@
                             <field name="recipe_text" widget="text" nolabel="1"/>
                         </page>
                         <page string="Verify Cases">
-                            <group string="Success Cases">
+                            <group string="Success">
                                 <field name="success_cases" widget="text" nolabel="1"/>
                             </group>
-                            <group string="Failure Cases">
+                            <group string="Failure">
                                 <field name="failure_cases" widget="text" nolabel="1"/>
                             </group>
                         </page>
                         <page string="Improve">
-                            <group string="Improvement Guidance">
+                            <group string="Guidance">
                                 <field name="improvement_guidance" widget="text" nolabel="1"/>
                             </group>
                             <group string="References">
                                 <field name="improvement_references" widget="text" nolabel="1"/>
                             </group>
-                            <button name="action_improve" string="Apply Improvement"
-                                    type="object" class="btn-primary"/>
+                            <button name="action_improve" type="object"
+                                    string="Apply Improvement" class="btn-primary"/>
                         </page>
                     </notebook>
                 </sheet>
+                <div class="oe_chatter">
+                    <field name="message_follower_ids"/>
+                    <field name="activity_ids"/>
+                    <field name="message_ids"/>
+                </div>
+            </form>
+        </field>
+    </record>
+
+    <!-- Export Wizard -->
+    <record id="view_ai_skill_export_wizard" model="ir.ui.view">
+        <field name="name">ai.skill.export.wizard</field>
+        <field name="model">ai.skill.export.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Export SKILL.md">
+                <group>
+                    <field name="skill_md" widget="text" nolabel="1"
+                           colspan="2" height="400"/>
+                </group>
+                <footer>
+                    <button name="action_copy" type="object"
+                            string="Copy to Clipboard" class="btn-primary"/>
+                    <button string="Close" class="btn-secondary" special="cancel"/>
+                </footer>
             </form>
         </field>
     </record>
