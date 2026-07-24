@@ -114,6 +114,7 @@ class AIStreamController(http.Controller):
 
         def generate():
             """SSE event generator — runs async loop in sync context."""
+            full_response = []
             try:
                 _logger.info("SSE stream starting — prompt: %s...", prompt[:50])
                 loop = asyncio.new_event_loop()
@@ -145,6 +146,7 @@ class AIStreamController(http.Controller):
                             data = {"type": event.type}
                             if event.type == "token":
                                 data["token"] = event.token
+                                full_response.append(event.token)
                             elif event.type == "tool_call_start":
                                 if event.tool_call:
                                     data["tool_call"] = {
@@ -160,6 +162,20 @@ class AIStreamController(http.Controller):
                         yield chunk
                 finally:
                     loop.close()
+
+                # Save assistant response as session line
+                response_text = ''.join(full_response)
+                if session and user_id and response_text.strip():
+                    next_seq = len(session.session_line_ids) + 1
+                    request.env['ai.quest.session.line'].create({
+                        'session_id': session.id,
+                        'sequence': next_seq,
+                        'role': 'assistant',
+                        'content': response_text,
+                    })
+                    session.write_date = fields.Datetime.now()
+                    request.env.cr.commit()
+
             except Exception as e:
                 _logger.error("SSE stream error: %s", e, exc_info=True)
                 yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
@@ -268,90 +284,95 @@ class AIStreamController(http.Controller):
 
     # === Thread API (web-chat-threads-memory change) ===
 
-    @http.route('/ai/threads', type='json', auth='public',
+    @http.route('/ai/threads', type='http', auth='public',
                 methods=['GET'], csrf=False, sitemap=False)
     def thread_list(self, **kw):
         """List user's threads."""
         user = request.env.user
         if not user or not user.id:
-            return {"threads": []}
+            return Response(json.dumps({"threads": []}), content_type='application/json')
         sessions = request.env['ai.quest.session'].search([
             ('user_id', '=', user.id),
             ('active', '=', True),
         ], order='write_date desc', limit=50)
-        return {
+        return Response(json.dumps({
             "threads": [{
                 "id": s.id,
                 "name": s.thread_name or (s.name or 'Tråd'),
                 "quest_id": s.quest_id.id if s.quest_id else None,
-                "last_activity": s.write_date,
+                "last_activity": str(s.write_date) if s.write_date else None,
                 "message_count": len(s.session_line_ids),
             } for s in sessions]
-        }
+        }), content_type='application/json')
 
-    @http.route('/ai/threads', type='json', auth='public',
+    @http.route('/ai/threads', type='http', auth='public',
                 methods=['POST'], csrf=False, sitemap=False)
     def thread_create(self, **kw):
         """Create a new thread."""
         user = request.env.user
-        data = request.jsonrequest if hasattr(request, 'jsonrequest') else kw
-        name = data.get('name', 'Ny tråd')
-        quest_id = data.get('quest_id')
+        # Parse JSON body for type='http' POST
+        body = json.loads(request.httprequest.data or '{}')
+        name = body.get('name', 'Ny tråd')
+        # Clean name: remove newlines, collapse spaces, trim, limit length
+        name = ' '.join(str(name).split())[:50]
+        quest_id = body.get('quest_id')
         vals = {
             'user_id': user.id if user.id else None,
-            'thread_name': name[:200],
+            'thread_name': name,
             'status': 'active',
         }
         if quest_id:
             vals['quest_id'] = int(quest_id)
         session = request.env['ai.quest.session'].create(vals)
-        return {"id": session.id, "name": session.thread_name}
+        return Response(json.dumps({"id": session.id, "name": session.thread_name}),
+                       content_type='application/json')
 
-    @http.route('/ai/threads/<int:thread_id>', type='json', auth='public',
+    @http.route('/ai/threads/<int:thread_id>', type='http', auth='public',
                 methods=['GET'], csrf=False, sitemap=False)
     def thread_get(self, thread_id, **kw):
         """Get thread with messages."""
         session = request.env['ai.quest.session'].browse(thread_id)
         if not session.exists():
-            return {"error": "Thread not found"}
+            return Response(json.dumps({"error": "Thread not found"}), content_type='application/json', status=404)
         lines = session.session_line_ids.sorted('sequence')
-        return {
+        return Response(json.dumps({
             "id": session.id,
             "name": session.thread_name or (session.name or ''),
+            "quest_id": session.quest_id.id if session.quest_id else None,
             "messages": [{
                 "role": l.role,
                 "content": l.content or '',
                 "tool_name": l.tool_name,
             } for l in lines]
-        }
+        }), content_type='application/json')
 
-    @http.route('/ai/threads/<int:thread_id>', type='json', auth='public',
+    @http.route('/ai/threads/<int:thread_id>', type='http', auth='public',
                 methods=['PUT'], csrf=False, sitemap=False)
     def thread_rename(self, thread_id, **kw):
         """Rename a thread."""
-        data = request.jsonrequest if hasattr(request, 'jsonrequest') else kw
-        name = data.get('name', '')
+        body = json.loads(request.httprequest.data or '{}')
+        name = body.get('name', '')
         session = request.env['ai.quest.session'].browse(thread_id)
         if session.exists():
             session.thread_name = name[:200]
-        return {"status": "ok"}
+        return Response(json.dumps({"status": "ok"}), content_type='application/json')
 
-    @http.route('/ai/threads/<int:thread_id>', type='json', auth='public',
+    @http.route('/ai/threads/<int:thread_id>', type='http', auth='public',
                 methods=['DELETE'], csrf=False, sitemap=False)
     def thread_delete(self, thread_id, **kw):
         """Soft-delete a thread."""
         session = request.env['ai.quest.session'].browse(thread_id)
         if session.exists():
             session.active = False
-        return {"status": "ok"}
+        return Response(json.dumps({"status": "ok"}), content_type='application/json')
 
-    @http.route('/ai/thread/search', type='json', auth='public',
+    @http.route('/ai/thread/search', type='http', auth='public',
                 methods=['GET'], csrf=False, sitemap=False)
     def thread_search(self, q='', **kw):
         """Search threads by message content."""
         user = request.env.user
         if not q or len(q) < 2 or not user or not user.id:
-            return {"threads": []}
+            return Response(json.dumps({"threads": []}), content_type='application/json')
         lines = request.env['ai.quest.session.line'].search([
             ('content', 'ilike', q),
             ('session_id.user_id', '=', user.id),
@@ -359,13 +380,13 @@ class AIStreamController(http.Controller):
         ], limit=50)
         thread_ids = list(set(lines.mapped('session_id.id')))
         sessions = request.env['ai.quest.session'].browse(thread_ids)
-        return {
+        return Response(json.dumps({
             "threads": [{
                 "id": s.id,
                 "name": s.thread_name or (s.name or 'Tråd'),
-                "last_activity": s.write_date,
+                "last_activity": str(s.write_date) if s.write_date else None,
             } for s in sessions]
-        }
+        }), content_type='application/json')
 
 
 # ---------------------------------------------------------------------------

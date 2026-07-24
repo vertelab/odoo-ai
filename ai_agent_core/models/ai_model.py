@@ -40,7 +40,8 @@ class AIModel(models.Model):
                                     help='Supports token-by-token streaming')
 
     # Context
-    context_window = fields.Integer('Context Window (tokens)', default=128000)
+    context_window = fields.Integer('Context Window (tokens)', default=128000,
+        help='Model context window. Claude=200K, GPT-4o=128K, DeepSeek=1M')
     max_output_tokens = fields.Integer('Max Output Tokens', default=16384)
 
     # Cost

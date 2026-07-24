@@ -227,17 +227,21 @@ function newThread(){
     loadThreads()
 }
 function selectThread(id,name){
-    activeSessionId=id;activeThreadName=name||'';
-    document.getElementById('active-thread-name').textContent=name||'Tråd';
-    document.getElementById('messages').innerHTML='';
-    // Load history
     fetch('/ai/threads/'+id).then(function(r){return r.json()}).then(function(data){
-        var msgs=document.getElementById('messages');
-        msgs.innerHTML='';
+        activeSessionId=id;activeThreadName=data.name||name||'';
+        document.getElementById('active-thread-name').textContent=data.name||'Tråd';
+        // Restore quest
+        if(data.quest_id){activeQuestId=data.quest_id;
+            document.querySelectorAll('.quest-item').forEach(function(e){e.classList.remove('active')});
+            var qi=document.querySelector('.quest-item[data-id="'+data.quest_id+'"]');
+            if(qi){qi.classList.add('active');activeQuestName=qi.dataset.name;
+                document.getElementById('active-quest-name').textContent=qi.textContent.trim()}
+        }
+        var msgs=document.getElementById('messages');msgs.innerHTML='';
         (data.messages||[]).forEach(function(m){
             var cls=m.role==='user'?'message user':m.role==='system'?'message system':'message ai';
             var d=document.createElement('div');d.className=cls;
-            d.innerHTML=m.content.replace(/\n/g,'<br>');
+            d.innerHTML=m.role==='user'?esc(m.content):md2html(m.content);
             msgs.appendChild(d)
         });
         scrollBottom()
@@ -254,7 +258,20 @@ function renameThread(el){
     input.addEventListener('keydown',function(e){if(e.key==='Enter'){saveRename(el.dataset.id,input.value,el)}})
 }
 function saveRename(id,name,el){
-    fetch('/ai/threads/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name})}).then(function(){loadThreads()})
+    fetch('/ai/threads/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name})})
+    .then(function(r){return r.json()}).then(function(d){
+        // Restore the span with new name
+        var input=el.querySelector('.thread-name-input');
+        if(input){
+            var span=document.createElement('span');
+            span.className='thread-name';span.textContent=name;
+            input.replaceWith(span);
+            el.dataset.name=name;
+            if(activeSessionId==id){activeThreadName=name;
+                document.getElementById('active-thread-name').textContent=name}
+        }
+        loadThreads()
+    })
 }
 function deleteThread(id,el){
     if(!confirm('Radera denna tråd?'))return;
@@ -290,6 +307,57 @@ document.getElementById('quest-list').addEventListener('click',function(e){
 // === CHAT ===
 document.getElementById('prompt-input').addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage()}});
 function esc(s){var d=document.createElement('div');d.textContent=s;return d.innerHTML}
+// Simple Markdown to HTML converter (supports tables, code blocks, headers, lists)
+function md2html(s){
+    if(!s)return'';
+    s=esc(s);
+    // Code blocks ```
+    s=s.replace(/```(\w*)\n([\s\S]*?)```/g,'<pre><code>$2</code></pre>');
+    // Inline code `code`
+    s=s.replace(/`([^`]+)`/g,'<code>$1</code>');
+    // Bold **text**
+    s=s.replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>');
+    // Italic *text* (not inside words)
+    s=s.replace(/\b\*(.+?)\*\b/g,'<em>$1</em>');
+    // Headers
+    s=s.replace(/^#### (.+)$/gm,'<h4>$1</h4>');
+    s=s.replace(/^### (.+)$/gm,'<h3>$1</h3>');
+    s=s.replace(/^## (.+)$/gm,'<h2>$1</h2>');
+    s=s.replace(/^# (.+)$/gm,'<h1>$1</h1>');
+    // Horizontal rule
+    s=s.replace(/^---+$/gm,'<hr>');
+    // Tables: | a | b |\n|---|---|\n| c | d |
+    s=s.replace(/((?:^\|.+\|\n)+)/gm,function(m){
+        var lines=m.trim().split('\n');
+        if(lines.length<2)return m;
+        var html='<table><thead><tr>';
+        var headers=lines[0].split('|').filter(function(c){return c.trim()});
+        headers.forEach(function(h){html+='<th>'+h.trim()+'</th>'});
+        html+='</tr></thead><tbody>';
+        for(var i=1;i<lines.length;i++){
+            var cells=lines[i].split('|').filter(function(c){return c.trim()});
+            if(cells.length===0||lines[i].match(/^[\s|:-]+$/))continue;
+            html+='<tr>';
+            cells.forEach(function(c){html+='<td>'+c.trim()+'</td>'});
+            html+='</tr>'
+        }
+        html+='</tbody></table>';
+        return html
+    });
+    // Unordered lists
+    s=s.replace(/^[*-] (.+)$/gm,'<li>$1</li>');
+    // Blockquotes
+    s=s.replace(/^> (.+)$/gm,'<blockquote>$1</blockquote>');
+    // Double newline = paragraph
+    s=s.replace(/\n\n/g,'</p><p>');
+    s=s.replace(/\n/g,'<br>');
+    s='<p>'+s+'</p>';
+    s=s.replace(/<p><\/p>/g,'');
+    s=s.replace(/<p><br><\/p>/g,'');
+    // Group consecutive <li>
+    s=s.replace(/(<li>.*?<\/li>)+/g,'<ul>$&</ul>');
+    return s
+}
 function scrollBottom(){var e=document.getElementById('messages');e.scrollTop=e.scrollHeight}
 function updateTokenInfo(){document.getElementById('token-info').textContent='Tokens: ~'+tokenCount}
 
@@ -303,10 +371,15 @@ function sendMessage(){
     currentAiMessage=document.createElement('div');currentAiMessage.className='message ai';
     document.getElementById('messages').appendChild(currentAiMessage);
     currentAgentCards={};scrollBottom();
-    // Auto-create thread if needed
+    // Auto-create thread with clean name from first message
     if(!activeSessionId){
-        fetch('/ai/threads',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({quest_id:activeQuestId||null,name:n.substring(0,60)})})
-        .then(function(r){return r.json()}).then(function(d){activeSessionId=d.id;startStream(n)})
+        var cleanName=n.replace(/[\n\r]+/g,' ').replace(/\s+/g,' ').trim().substring(0,50);
+        fetch('/ai/threads',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({quest_id:activeQuestId||null,name:cleanName})})
+        .then(function(r){return r.json()}).then(function(d){
+            activeSessionId=d.id;activeThreadName=d.name;
+            document.getElementById('active-thread-name').textContent=d.name;
+            startStream(n)
+        })
     } else {startStream(n)}
 }
 function startStream(prompt){
@@ -340,20 +413,26 @@ function respondInterrupt(approved){
     }
 }
 function finishStream(){
-    if(currentAiMessage&&!currentAiMessage.textContent.trim()){currentAiMessage.innerHTML='<em style="color:var(--text-muted)">(inget svar)</em>'}
+    if(currentAiMessage){
+        if(!currentAiMessage.textContent.trim()){currentAiMessage.innerHTML='<em style="color:var(--text-muted)">(inget svar)</em>'}
+        else{currentAiMessage.innerHTML=md2html(currentAiMessage.textContent)}
+    }
     streaming=!1;document.getElementById('send-btn').style.display='inline-block';
     document.getElementById('cancel-btn').style.display='none';
     document.getElementById('prompt-input').focus();
     currentAiMessage=null;currentAgentCards={};currentEventSource=null;
-    // Refresh thread list
     if(activeSessionId)loadThreads()
 }
 function relTime(ts){
     if(!ts)return'';
-    var d=new Date(ts),now=new Date(),diff=now-d;
+    // Parse ISO/ODoo datetime: "2026-07-24 08:22:13.901733"
+    var d=new Date(ts.replace(' ','T')+'Z');
+    if(isNaN(d.getTime())){d=new Date(ts)}
+    if(isNaN(d.getTime()))return'';
+    var now=new Date(),diff=now-d;
     var m=Math.floor(diff/60000),h=Math.floor(diff/3600000),days=Math.floor(diff/86400000);
-    if(m<1)return'nyss';if(m<60)return m+'min sen';
-    if(h<24)return h+'t sen';if(days<7)return days+'d sen';
+    if(m<1)return'nyss';if(m<60)return m+' min sen';
+    if(h<24)return h+' h sen';if(days<7)return days+' d sen';
     return d.toLocaleDateString('sv-SE')
 }
 

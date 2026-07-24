@@ -101,7 +101,7 @@
                     <group col="4">
                         <field name="init_type"/>
                         <field name="is_supervisor"/>
-                        <field name="model_id"/>
+                        <field name="model_ids" widget="many2many_tags"/>
                         <field name="identity_id"/>
                     </group>
                     <notebook>

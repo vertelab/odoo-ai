@@ -52,6 +52,9 @@ class AIQuest(models.Model):
 
     init_type = fields.Selection(INIT_TYPES, required=True, default='manual')
     model_id = fields.Many2one('ir.model', string='Target Model')
+    model_ids = fields.Many2many('ir.model', 'ai_quest_model_rel',
+        'quest_id', 'model_id', string='Target Models',
+        help='Models this quest can work with')
     model_name = fields.Char(related='model_id.model', readonly=True, store=True)
     filter_domain = fields.Char('Record Filter')
 
