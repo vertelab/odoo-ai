@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Menu item in AI Orchestration -->
+    <menuitem
+        id="menu_ai_tool"
+        name="Custom Tools"
+        parent="menu_ai_orchestration_config"
+        action="action_ai_tool"
+        sequence="35"/>
+
+    <!-- Tool list view -->
+    <record id="view_ai_tool_tree" model="ir.ui.view">
+        <field name="name">ai.tool.tree</field>
+        <field name="model">ai.tool</field>
+        <field name="arch" type="xml">
+            <tree string="AI Tools" editable="bottom">
+                <field name="name"/>
+                <field name="risk_level" widget="badge"/>
+                <field name="call_count" string="Calls"/>
+                <field name="error_count" string="Errors"/>
+                <field name="active" invisible="1"/>
+            </tree>
+        </field>
+    </record>
+
+    <!-- Tool form view -->
+    <record id="view_ai_tool_form" model="ir.ui.view">
+        <field name="name">ai.tool.form</field>
+        <field name="model">ai.tool</field>
+        <field name="arch" type="xml">
+            <form string="AI Tool">
+                <header>
+                    <button name="action_test" type="object" string="Test Tool"
+                            class="btn-primary"/>
+                    <field name="active" widget="boolean_toggle"/>
+                </header>
+                <sheet>
+                    <div class="oe_title">
+                        <h1><field name="name" placeholder="Tool Name"/></h1>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="description"
+                                   placeholder="What this tool does (shown to LLM)..."/>
+                            <field name="risk_level"/>
+                        </group>
+                        <group>
+                            <field name="call_count"/>
+                            <field name="error_count"/>
+                            <field name="last_called"/>
+                        </group>
+                    </group>
+                    <group string="Code">
+                        <field name="code" widget="code"
+                               options="{'mode': 'python'}"
+                               placeholder="async def execute(**kwargs): return 'result'"/>
+                    </group>
+                    <group string="Parameters (JSON Schema)">
+                        <field name="parameters" widget="code"
+                               options="{'mode': 'json'}"
+                               placeholder='{"type": "object", "properties": {...}}'/>
+                    </group>
+                    <group string="Usage">
+                        <field name="agent_ids" widget="many2many_tags"/>
+                        <field name="quest_ids" widget="many2many_tags"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!-- Tool search view -->
+    <record id="view_ai_tool_search" model="ir.ui.view">
+        <field name="name">ai.tool.search</field>
+        <field name="model">ai.tool</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="name"/>
+                <filter name="safe" string="Safe" domain="[('risk_level','=','safe')]"/>
+                <filter name="read_only" string="Read Only"
+                        domain="[('risk_level','=','read_only')]"/>
+                <filter name="write" string="Write" domain="[('risk_level','=','write')]"/>
+                <filter name="destructive" string="Destructive"
+                        domain="[('risk_level','=','destructive')]"/>
+            </search>
+        </field>
+    </record>
+
+    <!-- Tool action -->
+    <record id="action_ai_tool" model="ir.actions.act_window">
+        <field name="name">Custom Tools</field>
+        <field name="res_model">ai.tool</field>
+        <field name="view_mode">tree,form</field>
+    </record>
+
+    <!-- Quest Run wizard form -->
+    <record id="view_ai_quest_run_form" model="ir.ui.view">
+        <field name="name">ai.quest.run.form</field>
+        <field name="model">ai.quest.run</field>
+        <field name="arch" type="xml">
+            <form string="Run Quest (Core Loop)">
+                <group>
+                    <field name="quest_id" invisible="1"/>
+                    <field name="prompt" widget="text"
+                           placeholder="Enter your prompt..."/>
+                </group>
+                <group string="Result" attrs="{'invisible': [('status', '=', 'running')]}">
+                    <field name="status" widget="badge"/>
+                    <field name="result" widget="text" nolabel="1"/>
+                    <group>
+                        <field name="token_input"/>
+                        <field name="token_output"/>
+                    </group>
+                </group>
+                <footer>
+                    <button name="action_run" type="object" string="Run"
+                            class="btn-primary"
+                            attrs="{'invisible': [('status', '!=', 'running')]}"/>
+                    <button string="Close" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+</odoo>

@@ -10,3 +10,5 @@ access_ai_skill,ai.skill,model_ai_skill,base.group_user,1,1,1,1
 access_ai_provider,ai.provider,model_ai_provider,base.group_user,1,1,1,1
 access_ai_model,ai.model,model_ai_model,base.group_user,1,1,1,1
 access_ai_provider_wizard,ai.provider.wizard,model_ai_provider_wizard,base.group_user,1,1,1,1
+access_ai_tool,ai.tool,model_ai_tool,base.group_user,1,1,1,1
+access_ai_quest_run,ai.quest.run,model_ai_quest_run,base.group_user,1,1,1,1

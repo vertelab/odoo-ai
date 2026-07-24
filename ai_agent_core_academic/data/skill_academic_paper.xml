@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- academic-paper skill -->
+    <record id="skill_academic_paper" model="ai.skill">
+        <field name="name">Academic Paper Writing</field>
+        <field name="description">12-agent academic paper writing pipeline. 11 modes (full/plan/outline/revision/abstract/lit-review/format-convert/citation-check/disclosure/rebuttal-audit). 6 paper types, 5 citation formats. Style Calibration + Writing Quality Check.</field>
+        <field name="category">general</field>
+        <field name="compatibility">any</field>
+        <field name="trigger_keywords">write paper, academic paper, paper outline, revise paper, literature review, conference paper, journal article, thesis chapter, research paper, guide my paper, 寫論文, 學術論文, 논문 작성</field>
+        <field name="recipe_text"><![CDATA[
+# Academic Paper Writing — 12-Agent Pipeline
+
+A general-purpose academic paper writing tool covering all disciplines.
+
+## Pipeline Phases
+
+1. **Intake** — Configuration interview: paper type, discipline, citation format, output format
+2. **Literature Search** — Systematic search strategy, source screening
+3. **Structure Design** — Paper architecture, outline, word count allocation
+4. **Argument Building** — Claim-evidence chains, logical flow
+5. **Draft Writing** — Section-by-section draft, register adjustment
+6. **Citation Compliance** — Multi-format citation verification
+7. **Peer Review** — Five-dimension scoring, revision suggestions
+
+## Modes
+
+- **full**: Complete pipeline from intake to formatted output
+- **plan**: Socratic dialogue to map chapter structure
+- **outline**: Generate detailed outline only
+- **revision**: Improve existing draft with reviewer feedback
+- **abstract**: Generate bilingual abstract
+- **lit-review**: Focused literature review paper
+- **format-convert**: Convert between formats (LaTeX/DOCX/PDF/Markdown)
+- **citation-check**: Verify all citations against sources
+- **disclosure**: Generate AI usage disclosure statement
+- **rebuttal-audit**: Audit response to reviewer comments
+
+## Quality Gates
+
+- Integrity verification before each phase transition
+- Citation trust-chain verification
+- Writing quality check (anti-pattern detection)
+- Peer review with five-dimension scoring
+]]></field>
+    </record>
+
+    <!-- academic-paper-reviewer skill -->
+    <record id="skill_academic_reviewer" model="ai.skill">
+        <field name="name">Academic Paper Reviewer</field>
+        <field name="description">7-agent peer review team for academic papers. Methodology, domain, devil's advocate, perspective, field analysis, editorial synthesis, EIC decision.</field>
+        <field name="category">general</field>
+        <field name="compatibility">any</field>
+        <field name="trigger_keywords">review paper, peer review, academic review, referee report, editorial decision, revise and resubmit, 審查, 評審, 심사</field>
+    </record>
+</odoo>

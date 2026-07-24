@@ -7,3 +7,4 @@ from . import ai_session
 from . import ai_memory
 from . import ai_identity
 from . import ai_skill
+from . import ai_tool

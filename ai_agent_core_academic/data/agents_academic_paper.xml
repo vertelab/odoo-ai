@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- ===== INTAKE AGENT ===== -->
+    <record id="agent_intake" model="ai.agent">
+        <field name="name">Intake Agent</field>
+        <field name="description">Configuration interview agent. Determines paper type, discipline, citation format, output format, and writing mode before the pipeline starts.</field>
+        <field name="provider_type">bifrost</field>
+        <field name="bifrost_model">cerebras/gpt-oss-120b</field>
+        <field name="status">active</field>
+        <field name="skill_ids" eval="[(6, 0, [ref('skill_academic_paper')])]"/>
+    </record>
+
+    <!-- ===== LITERATURE STRATEGIST ===== -->
+    <record id="agent_literature" model="ai.agent">
+        <field name="name">Literature Strategist</field>
+        <field name="description">Phase 1: Designs systematic literature search strategy, screens sources, and produces Literature Search Report with annotated bibliography.</field>
+        <field name="provider_type">bifrost</field>
+        <field name="bifrost_model">cerebras/gpt-oss-120b</field>
+        <field name="status">active</field>
+        <field name="skill_ids" eval="[(6, 0, [ref('skill_academic_paper')])]"/>
+    </record>
+
+    <!-- ===== STRUCTURE ARCHITECT ===== -->
+    <record id="agent_structure" model="ai.agent">
+        <field name="name">Structure Architect</field>
+        <field name="description">Phase 2: Selects optimal paper structure (IMRaD/Thematic/Theoretical), designs section-by-section outline, allocates word counts, maps evidence to sections.</field>
+        <field name="provider_type">bifrost</field>
+        <field name="bifrost_model">cerebras/gpt-oss-120b</field>
+        <field name="status">active</field>
+        <field name="skill_ids" eval="[(6, 0, [ref('skill_academic_paper')])]"/>
+    </record>
+
+    <!-- ===== ARGUMENT BUILDER ===== -->
+    <record id="agent_argument" model="ai.agent">
+        <field name="name">Argument Builder</field>
+        <field name="description">Phase 3: Builds claim-evidence chains (CER), constructs logical flow between sections, ensures every claim has supporting evidence.</field>
+        <field name="provider_type">bifrost</field>
+        <field name="bifrost_model">cerebras/gpt-oss-120b</field>
+        <field name="status">active</field>
+        <field name="skill_ids" eval="[(6, 0, [ref('skill_academic_paper')])]"/>
+    </record>
+
+    <!-- ===== DRAFT WRITER ===== -->
+    <record id="agent_draft_writer" model="ai.agent">
+        <field name="name">Draft Writer</field>
+        <field name="description">Phase 4: Writes full-text draft section by section following the outline and argument blueprint. Applies academic writing style and register.</field>
+        <field name="provider_type">bifrost</field>
+        <field name="bifrost_model">cerebras/gpt-oss-120b</field>
+        <field name="status">active</field>
+        <field name="skill_ids" eval="[(6, 0, [ref('skill_academic_paper')])]"/>
+    </record>
+
+    <!-- ===== CITATION COMPLIANCE ===== -->
+    <record id="agent_citation" model="ai.agent">
+        <field name="name">Citation Compliance</field>
+        <field name="description">Phase 5: Verifies all citations against sources, checks format compliance (APA/Chicago/MLA/IEEE/Vancouver), flags missing or fabricated references.</field>
+        <field name="provider_type">bifrost</field>
+        <field name="bifrost_model">cerebras/gpt-oss-120b</field>
+        <field name="status">active</field>
+        <field name="skill_ids" eval="[(6, 0, [ref('skill_academic_paper')])]"/>
+    </record>
+
+    <!-- ===== PEER REVIEWER ===== -->
+    <record id="agent_peer_reviewer" model="ai.agent">
+        <field name="name">Peer Reviewer</field>
+        <field name="description">Phase 6: Five-dimension review (methodology, argumentation, clarity, contribution, reproducibility). Produces review report with revision suggestions.</field>
+        <field name="provider_type">bifrost</field>
+        <field name="bifrost_model">cerebras/gpt-oss-120b</field>
+        <field name="status">active</field>
+        <field name="skill_ids" eval="[(6, 0, [ref('skill_academic_paper')])]"/>
+    </record>
+
+    <!-- ===== FORMATTER ===== -->
+    <record id="agent_formatter" model="ai.agent">
+        <field name="name">Formatter</field>
+        <field name="description">Phase 7: Converts draft to target format (LaTeX, DOCX via Pandoc, PDF, Markdown). Applies journal/conference template.</field>
+        <field name="provider_type">bifrost</field>
+        <field name="bifrost_model">cerebras/gpt-oss-120b</field>
+        <field name="status">active</field>
+        <field name="skill_ids" eval="[(6, 0, [ref('skill_academic_paper')])]"/>
+    </record>
+
+    <!-- ===== SOCRATIC MENTOR ===== -->
+    <record id="agent_socratic" model="ai.agent">
+        <field name="name">Socratic Mentor</field>
+        <field name="description">Plan mode: Guides researcher through paper structure via Socratic dialogue. Helps clarify research questions, methodology choices, and argument structure before writing begins.</field>
+        <field name="provider_type">bifrost</field>
+        <field name="bifrost_model">cerebras/gpt-oss-120b</field>
+        <field name="status">active</field>
+        <field name="skill_ids" eval="[(6, 0, [ref('skill_academic_paper')])]"/>
+    </record>
+
+    <!-- ===== REVISION COACH ===== -->
+    <record id="agent_revision" model="ai.agent">
+        <field name="name">Revision Coach</field>
+        <field name="description">Revision mode: Analyzes reviewer comments, creates revision roadmap, guides author through revision cycles with tracked changes.</field>
+        <field name="provider_type">bifrost</field>
+        <field name="bifrost_model">cerebras/gpt-oss-120b</field>
+        <field name="status">active</field>
+        <field name="skill_ids" eval="[(6, 0, [ref('skill_academic_paper')])]"/>
+    </record>
+
+    <!-- ===== ABSTRACT BILINGUAL ===== -->
+    <record id="agent_abstract" model="ai.agent">
+        <field name="name">Abstract Writer (Bilingual)</field>
+        <field name="description">Generates bilingual abstract (English + target language). Ensures both versions are semantically equivalent and follow journal word limits.</field>
+        <field name="provider_type">bifrost</field>
+        <field name="bifrost_model">cerebras/gpt-oss-120b</field>
+        <field name="status">active</field>
+        <field name="skill_ids" eval="[(6, 0, [ref('skill_academic_paper')])]"/>
+    </record>
+
+    <!-- ===== VISUALIZATION ===== -->
+    <record id="agent_visualization" model="ai.agent">
+        <field name="name">Visualization Agent</field>
+        <field name="description">Generates figures, tables, and diagrams for the paper. Creates statistical visualizations, conceptual diagrams, and data representations.</field>
+        <field name="provider_type">bifrost</field>
+        <field name="bifrost_model">cerebras/gpt-oss-120b</field>
+        <field name="status">active</field>
+        <field name="skill_ids" eval="[(6, 0, [ref('skill_academic_paper')])]"/>
+    </record>
+</odoo>

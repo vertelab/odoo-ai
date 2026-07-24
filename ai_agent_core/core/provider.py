@@ -121,6 +121,8 @@ class ChatResponse:
     output_tokens: int = 0
     model: str = ""
     finish_reason: str = "stop"
+    needs_clarification: bool = False  # HITL-007: agent needs to ask a question
+    clarification_question: str = ""  # The question to ask the user
 
 
 @dataclass

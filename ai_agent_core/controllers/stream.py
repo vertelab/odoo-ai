@@ -13,6 +13,12 @@ import logging
 from odoo import http
 from odoo.http import request, Response
 
+# Import access control helper (quest-access-control change)
+try:
+    from odoo.addons.ai_agent_core.models.ai_quest import _quest_is_accessible
+except ImportError:
+    _quest_is_accessible = None
+
 _logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -46,6 +52,14 @@ class AIStreamController(http.Controller):
             try:
                 quest = request.env['ai.quest'].browse(int(quest_id))
                 if quest.exists():
+                    # Access check (quest-access-control)
+                    if request.env.user and not _quest_is_accessible(quest, request.env.user):
+                        return Response(
+                            json.dumps({"error": "Quest not accessible"}),
+                            status=403,
+                            content_type='application/json',
+                        )
+
                     quest_name = quest.name
                     if quest.description:
                         system_prompt = quest.description
@@ -129,8 +143,22 @@ class AIStreamController(http.Controller):
             [('status', '=', 'active')],
             order='sequence asc, name asc',
         )
+
+        # Filter by access control (quest-access-control change)
+        user = request.env.user
+        accessible_quests = []
+        if _quest_is_accessible and user:
+            for q in quests:
+                if _quest_is_accessible(q, user):
+                    accessible_quests.append(q)
+        else:
+            # Fallback: show quests with no restrictions (public access)
+            for q in quests:
+                if q.show_in_chat and not q.group_ids and not q.user_ids:
+                    accessible_quests.append(q)
+
         quest_items = ''
-        for q in quests:
+        for q in accessible_quests:
             quest_items += (
                 f'<div class="quest-item" data-id="{q.id}" data-name="{q.name}">'
                 f'<span class="quest-icon">🎯</span>{q.name}</div>'

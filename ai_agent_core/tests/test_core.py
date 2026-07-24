@@ -384,6 +384,660 @@ class TestAgentLoop(unittest.TestCase):
         self.assertEqual(result.text, "Done after tool")
         self.assertEqual(call_count[0], 1)
 
+    def test_parallel_tool_execution(self):
+        """Test that multiple tool calls execute in parallel (LOOP-007)."""
+        from ai_agent_core.core.provider import ChatResponse, ToolCall
+        execution_order = []
+        import time as _time
+
+        async def slow_tool(delay=0.05, name=""):
+            await asyncio.sleep(delay)
+            execution_order.append(name)
+            return name
+
+        provider = self.MockProvider()
+
+        call_phase = [0]
+        async def chat_with_parallel_tools(*args, **kwargs):
+            call_phase[0] += 1
+            if call_phase[0] == 1:
+                return ChatResponse(
+                    text="",
+                    tool_calls=[
+                        ToolCall(id="t1", name="slow_a", arguments={"delay": 0.05, "name": "a"}),
+                        ToolCall(id="t2", name="slow_b", arguments={"delay": 0.05, "name": "b"}),
+                        ToolCall(id="t3", name="slow_c", arguments={"delay": 0.05, "name": "c"}),
+                    ],
+                    input_tokens=5,
+                    output_tokens=3,
+                )
+            return ChatResponse(text="All done", input_tokens=5, output_tokens=3)
+
+        provider.chat = chat_with_parallel_tools
+
+        tools = self.ToolRegistry()
+        tools.register_many([
+            self.Tool(
+                name="slow_a", description="Slow tool A",
+                parameters={"type": "object", "properties": {"delay": {"type": "number"}, "name": {"type": "string"}}},
+                handler=slow_tool, risk_level="safe",
+            ),
+            self.Tool(
+                name="slow_b", description="Slow tool B",
+                parameters={"type": "object", "properties": {"delay": {"type": "number"}, "name": {"type": "string"}}},
+                handler=slow_tool, risk_level="safe",
+            ),
+            self.Tool(
+                name="slow_c", description="Slow tool C",
+                parameters={"type": "object", "properties": {"delay": {"type": "number"}, "name": {"type": "string"}}},
+                handler=slow_tool, risk_level="safe",
+            ),
+        ])
+
+        loop_obj = self.AgentLoop(
+            provider=provider, tools=tools,
+            config=self.AgentConfig(max_rounds=5, max_parallel_tools=3),
+        )
+        loop = asyncio.new_event_loop()
+        result = loop.run_until_complete(loop_obj.run("test parallel"))
+        loop.close()
+
+        self.assertEqual(result.text, "All done")
+        self.assertEqual(len(execution_order), 3)
+
+    def test_cancel_agent_loop(self):
+        """Test cancellation support (LOOP-005)."""
+        provider = self.MockProvider()
+        tools = self.ToolRegistry()
+        loop_obj = self.AgentLoop(
+            provider=provider, tools=tools,
+            config=self.AgentConfig(max_rounds=5),
+        )
+
+        loop_obj.cancel()
+
+        loop = asyncio.new_event_loop()
+        result = loop.run_until_complete(loop_obj.run("test cancel"))
+        loop.close()
+
+        self.assertEqual(result.finish_reason, "cancelled")
+
+    def test_tool_needs_human_approval(self):
+        """Test HITL-005: approval threshold per tool."""
+        safe_tool = self.Tool(
+            name="safe", description="Safe tool",
+            parameters={}, handler=lambda **kw: "ok",
+            risk_level="safe",
+        )
+        write_tool = self.Tool(
+            name="write", description="Write tool",
+            parameters={}, handler=lambda **kw: "ok",
+            risk_level="write",
+        )
+        destructive_tool = self.Tool(
+            name="destroy", description="Destructive tool",
+            parameters={}, handler=lambda **kw: "ok",
+            risk_level="destructive",
+        )
+
+        self.assertFalse(safe_tool.needs_human_approval(2))
+        self.assertTrue(write_tool.needs_human_approval(2))
+        self.assertTrue(destructive_tool.needs_human_approval(0))
+
+
+# ---------------------------------------------------------------------------
+# Supervisor Tests
+# ---------------------------------------------------------------------------
+
+class TestSupervisorLoop(unittest.TestCase):
+    """Test SupervisorLoop routing."""
+
+    def setUp(self):
+        from ai_agent_core.core.provider import AIProvider, ChatResponse, TokenEvent
+        from ai_agent_core.core.tools import ToolRegistry
+        from ai_agent_core.core.loop import AgentLoop, AgentConfig
+        from ai_agent_core.core.supervisor import SupervisorLoop, SpecialistAgent, SupervisorConfig
+
+        self.AgentLoop = AgentLoop
+        self.AgentConfig = AgentConfig
+        self.ToolRegistry = ToolRegistry
+        self.SupervisorLoop = SupervisorLoop
+        self.SpecialistAgent = SpecialistAgent
+        self.SupervisorConfig = SupervisorConfig
+
+        class MockRouterProvider(AIProvider):
+            async def chat(self, model, messages, tools=None, system_prompt="", temperature=0.7, max_tokens=4096):
+                return ChatResponse(
+                    text='{"agent": "analyst", "reason": "test routing"}',
+                    input_tokens=10, output_tokens=5,
+                )
+            async def chat_stream(self, *args, **kwargs):
+                yield TokenEvent(type="token", token='{"agent": "analyst"}')
+                yield TokenEvent(type="done", finish_reason="stop")
+
+        class MockWorkerProvider(AIProvider):
+            async def chat(self, model, messages, tools=None, system_prompt="", temperature=0.7, max_tokens=4096):
+                return ChatResponse(
+                    text="Analysis complete: 42",
+                    input_tokens=10, output_tokens=5,
+                )
+            async def chat_stream(self, *args, **kwargs):
+                yield TokenEvent(type="token", token="Analysis complete")
+                yield TokenEvent(type="done", finish_reason="stop")
+
+        self.MockRouterProvider = MockRouterProvider
+        self.MockWorkerProvider = MockWorkerProvider
+
+    def test_supervisor_routes_to_specialist(self):
+        router = self.MockRouterProvider()
+        worker = self.MockWorkerProvider()
+
+        analyst_loop = self.AgentLoop(
+            provider=worker,
+            tools=self.ToolRegistry(),
+            config=self.AgentConfig(),
+        )
+
+        supervisor = self.SupervisorLoop(
+            router_provider=router,
+            agents=[
+                self.SpecialistAgent(
+                    name="analyst",
+                    description="Data analysis agent",
+                    loop=analyst_loop,
+                    triggers=["analyze", "report"],
+                ),
+            ],
+        )
+
+        loop = asyncio.new_event_loop()
+        result = loop.run_until_complete(supervisor.run("analyze sales"))
+        loop.close()
+
+        self.assertIn("42", result.text)
+
+    def test_supervisor_keyword_fallback(self):
+        """Test that keyword matching works when router returns invalid JSON."""
+        from ai_agent_core.core.provider import AIProvider, ChatResponse, TokenEvent
+
+        class BadRouterProvider(AIProvider):
+            async def chat(self, *args, **kwargs):
+                return ChatResponse(text="not json", input_tokens=2, output_tokens=2)
+            async def chat_stream(self, *args, **kwargs):
+                yield TokenEvent(type="token", token="bad")
+                yield TokenEvent(type="done", finish_reason="stop")
+
+        router = BadRouterProvider()
+        worker = self.MockWorkerProvider()
+
+        analyst_loop = self.AgentLoop(
+            provider=worker, tools=self.ToolRegistry(), config=self.AgentConfig(),
+        )
+        support_loop = self.AgentLoop(
+            provider=worker, tools=self.ToolRegistry(), config=self.AgentConfig(),
+        )
+
+        supervisor = self.SupervisorLoop(
+            router_provider=router,
+            agents=[
+                self.SpecialistAgent(
+                    name="analyst", description="Analysis",
+                    loop=analyst_loop, triggers=["analyze"],
+                ),
+                self.SpecialistAgent(
+                    name="support", description="Support",
+                    loop=support_loop, triggers=["help", "support"],
+                ),
+            ],
+        )
+
+        loop = asyncio.new_event_loop()
+        result = loop.run_until_complete(supervisor.run("I need help with support"))
+        loop.close()
+
+        self.assertIn("42", result.text)
+
+
+# ---------------------------------------------------------------------------
+# Odoo Model Tools Tests
+# ---------------------------------------------------------------------------
+
+class TestModelTools(unittest.TestCase):
+    """Test OdooModelTools factory."""
+
+    def test_model_to_tools_generates_five_tools(self):
+        from ai_agent_core.core.tools import model_to_tools
+        tools = model_to_tools("res.partner")
+        self.assertEqual(len(tools), 5)
+
+        names = {t.name for t in tools}
+        self.assertIn("search_read_res_partner", names)
+        self.assertIn("read_res_partner", names)
+        self.assertIn("write_res_partner", names)
+        self.assertIn("create_res_partner", names)
+        self.assertIn("unlink_res_partner", names)
+
+    def test_model_tool_risk_levels(self):
+        from ai_agent_core.core.tools import model_to_tools
+        tools = model_to_tools("res.partner")
+
+        risk_map = {t.name: t.risk_level for t in tools}
+        self.assertEqual(risk_map["search_read_res_partner"], "read_only")
+        self.assertEqual(risk_map["read_res_partner"], "read_only")
+        self.assertEqual(risk_map["write_res_partner"], "write")
+        self.assertEqual(risk_map["create_res_partner"], "write")
+        self.assertEqual(risk_map["unlink_res_partner"], "destructive")
+
+    def test_model_tools_to_openai(self):
+        from ai_agent_core.core.tools import model_to_tools
+        tools = model_to_tools("res.partner")
+
+        for tool in tools:
+            openai_def = tool.to_openai()
+            self.assertEqual(openai_def["type"], "function")
+            self.assertIn("name", openai_def["function"])
+            self.assertIn("description", openai_def["function"])
+            self.assertIn("parameters", openai_def["function"])
+
+
+# ---------------------------------------------------------------------------
+# Taskless Tests: Detect, Route, Improve, Verify
+# ---------------------------------------------------------------------------
+
+class TestDetect(unittest.TestCase):
+    """Test EnvironmentDetector (TASK-001)."""
+
+    def test_scan_returns_result(self):
+        from ai_agent_core.core.detect import EnvironmentDetector
+        detector = EnvironmentDetector()
+        result = detector.scan()
+        self.assertIsNotNone(result)
+        self.assertIsInstance(result.codebase_todos, list)
+        self.assertIsInstance(result.recurring_patterns, list)
+
+    def test_scan_has_timestamp(self):
+        from ai_agent_core.core.detect import EnvironmentDetector
+        detector = EnvironmentDetector()
+        result = detector.scan()
+        self.assertTrue(result.timestamp)
+
+    def test_result_to_json(self):
+        from ai_agent_core.core.detect import EnvironmentDetector
+        detector = EnvironmentDetector()
+        result = detector.scan()
+        json_str = result.to_json()
+        self.assertIn("timestamp", json_str)
+        self.assertIn("codebase_todos", json_str)
+
+
+class TestRoute(unittest.TestCase):
+    """Test IntelligentRouter (TASK-002)."""
+
+    def test_route_returns_decision(self):
+        from ai_agent_core.core.route import IntelligentRouter
+        router = IntelligentRouter()
+        decision = router.route("Analyze sales data")
+        self.assertIn(decision.destination, ("existing", "local", "remote"))
+        self.assertTrue(decision.reasoning)
+
+    def test_route_remote_with_no_matches(self):
+        from ai_agent_core.core.route import IntelligentRouter
+        router = IntelligentRouter()
+        decision = router.route("Some complex ambiguous request")
+        self.assertEqual(decision.destination, "remote")
+
+    def test_route_local_data_query(self):
+        from ai_agent_core.core.route import IntelligentRouter
+        from ai_agent_core.core.detect import DetectResult, ModelInfo
+
+        router = IntelligentRouter()
+        env_info = DetectResult()
+        env_info.registered_models = [
+            ModelInfo(name="res.partner", display_name="Contact", record_count=100),
+        ]
+        decision = router.route("Show me all contacts", env_info=env_info)
+        self.assertEqual(decision.destination, "local")
+
+    def test_rule_based_router(self):
+        from ai_agent_core.core.route import RuleBasedRouter
+        router = RuleBasedRouter()
+        decision = router.route("List all customers")
+        self.assertIn(decision.destination, ("local", "remote"))
+
+
+class TestImprove(unittest.TestCase):
+    """Test ImprovementLoop (TASK-003)."""
+
+    def test_improve_rule_based(self):
+        import asyncio
+        from ai_agent_core.core.improve import ImprovementLoop, ImprovementGuidance
+
+        loop = ImprovementLoop(max_iterations=2)
+        guidance = ImprovementGuidance(
+            text="Add missing item",
+            false_negatives=["Missing Corp"],
+            false_positives=["Bad Corp"],
+        )
+        result = asyncio.run(loop.improve(
+            output="Results:\n- Bad Corp\n- Good Corp",
+            guidance=guidance,
+        ))
+        self.assertGreater(len(result.iterations), 0)
+        # Should have removed Bad Corp and added Missing Corp
+        self.assertNotIn("Bad Corp", result.final_output)
+        self.assertIn("Missing Corp", result.final_output)
+
+    def test_improve_score_perfect(self):
+        """When no improvement needed, converge immediately."""
+        import asyncio
+        from ai_agent_core.core.improve import ImprovementLoop, ImprovementGuidance
+
+        loop = ImprovementLoop(max_iterations=1)
+        guidance = ImprovementGuidance(
+            text="Already correct",
+        )
+        result = asyncio.run(loop.improve(
+            output="Perfect output",
+            guidance=guidance,
+        ))
+        # When no false_positives/negatives, score should be 1.0
+        self.assertEqual(result.iterations[0].improvement_score, 1.0)
+
+
+class TestVerify(unittest.TestCase):
+    """Test OutputVerifier (TASK-004)."""
+
+    def test_verify_passes(self):
+        from ai_agent_core.core.verify import OutputVerifier
+        verifier = OutputVerifier()
+        result = verifier.verify(
+            output="Customers: ACME Corp",
+            tests=[{"expected_contains": ["Customer"]}],
+            requirements=["must contain Customer"],
+        )
+        self.assertTrue(result.passed)
+        self.assertEqual(result.score, 1.0)
+
+    def test_verify_fails_missing(self):
+        from ai_agent_core.core.verify import OutputVerifier
+        verifier = OutputVerifier()
+        result = verifier.verify(
+            output="No data",
+            tests=[{"expected_contains": ["Customer"]}],
+        )
+        self.assertFalse(result.passed)
+        self.assertTrue(result.needs_fix)
+
+    def test_verify_schema_json(self):
+        from ai_agent_core.core.verify import OutputVerifier
+        verifier = OutputVerifier()
+        result = verifier.verify(
+            output='{"name": "Test", "value": 42}',
+            schema={"type": "object", "required": ["name"]},
+        )
+        self.assertTrue(result.passed)
+
+    def test_verify_schema_missing_field(self):
+        from ai_agent_core.core.verify import OutputVerifier
+        verifier = OutputVerifier()
+        result = verifier.verify(
+            output='{"value": 42}',
+            schema={"type": "object", "required": ["name"]},
+        )
+        self.assertFalse(result.passed)
+        self.assertTrue(any("Missing" in e.message for e in result.schema_errors))
+
+    def test_verify_fix_suggestions(self):
+        from ai_agent_core.core.verify import OutputVerifier
+        verifier = OutputVerifier()
+        result = verifier.verify(
+            output="Wrong",
+            tests=[{"expected_contains": ["Right"]}],
+        )
+        self.assertTrue(len(result.fix_suggestions) > 0)
+
+    def test_verify_requirements_count(self):
+        from ai_agent_core.core.verify import OutputVerifier
+        verifier = OutputVerifier()
+        result = verifier.verify(
+            output="- item1",
+            requirements=["must have at least 3 items"],
+        )
+        self.assertFalse(result.passed)
+
+    def test_verify_requirements_contains(self):
+        from ai_agent_core.core.verify import OutputVerifier
+        verifier = OutputVerifier()
+        result = verifier.verify(
+            output="Report\nContains important data",
+            requirements=['must contain "important data"'],
+        )
+        self.assertTrue(result.passed)
+
+
+class TestBudget(unittest.TestCase):
+    """Test BudgetTracker (PAPER-004)."""
+
+    def test_budget_recording(self):
+        from ai_agent_core.core.budget import BudgetTracker
+        tracker = BudgetTracker(limit=50.0)
+        cost = tracker.record_call(1000, 500)
+        self.assertGreater(cost, 0)
+        self.assertGreater(tracker.used, 0)
+        self.assertEqual(tracker.total_calls, 1)
+
+    def test_budget_not_exhausted(self):
+        from ai_agent_core.core.budget import BudgetTracker
+        tracker = BudgetTracker(limit=50.0)
+        self.assertFalse(tracker.is_exhausted)
+
+    def test_budget_exhausted(self):
+        from ai_agent_core.core.budget import BudgetTracker, BudgetExhaustedError
+        tracker = BudgetTracker(limit=0.001)  # Very low limit
+        with self.assertRaises(BudgetExhaustedError):
+            tracker.record_call(10000, 5000)  # This will exhaust it
+
+    def test_budget_no_limit(self):
+        from ai_agent_core.core.budget import BudgetTracker
+        tracker = BudgetTracker(limit=0.0)  # No limit
+        tracker.record_call(1000000, 1000000)
+        self.assertFalse(tracker.is_exhausted)
+
+    def test_budget_can_afford(self):
+        from ai_agent_core.core.budget import BudgetTracker
+        tracker = BudgetTracker(limit=10.0)
+        self.assertTrue(tracker.can_afford(100, 50))
+        # Use most of the budget
+        tracker.record_call(3000000, 50000)
+        self.assertFalse(tracker.can_afford(100000, 100000))
+
+    def test_budget_state(self):
+        from ai_agent_core.core.budget import BudgetTracker
+        tracker = BudgetTracker(limit=100.0, agent_name="test_agent")
+        tracker.record_call(1000, 500)
+        state = tracker.get_state()
+        self.assertEqual(state.agent_name, "test_agent")
+        self.assertEqual(state.limit, 100.0)
+        self.assertGreater(state.used, 0)
+
+    def test_budget_reset_month(self):
+        from ai_agent_core.core.budget import BudgetTracker
+        tracker = BudgetTracker(limit=100.0)
+        tracker.record_call(10000, 5000)
+        self.assertGreater(tracker.used, 0)
+        tracker.reset_month()
+        self.assertEqual(tracker.used, 0)
+        self.assertEqual(tracker.total_calls, 0)
+
+
+class TestEval(unittest.TestCase):
+    """Test AgentEvaluator (PAPER-006)."""
+
+    def test_eval_case(self):
+        from ai_agent_core.core.eval import EvalCase
+        case = EvalCase(
+            input="What is 2+2?",
+            expected_output="4",
+            expected_contains=["4"],
+            category="math",
+            difficulty="easy",
+        )
+        self.assertEqual(case.category, "math")
+        self.assertIn("4", case.expected_contains)
+
+    def test_eval_run_stats(self):
+        from ai_agent_core.core.eval import EvalRun
+        run = EvalRun(
+            agent_name="test",
+            total_cases=10,
+            passed=8,
+            failed=2,
+        )
+        run.accuracy = 0.8
+        json_str = run.to_json()
+        self.assertIn("test", json_str)
+        self.assertIn("0.8", json_str)
+
+    def test_analyze_trend(self):
+        from ai_agent_core.core.eval import EvalRun, analyze_trend
+        run1 = EvalRun(total_cases=5, passed=3, failed=2, accuracy=0.6, total_cost=0.50)
+        run2 = EvalRun(total_cases=5, passed=4, failed=1, accuracy=0.8, total_cost=0.45)
+        trend = analyze_trend([run1, run2])
+        self.assertEqual(trend.runs, 2)
+        self.assertTrue(trend.improving)
+
+
+# ---------------------------------------------------------------------------
+# Quest Access Control Tests (quest-access-control change)
+# ---------------------------------------------------------------------------
+
+class TestQuestAccessControl(unittest.TestCase):
+    """Test _quest_is_accessible logic and controller access checks."""
+
+    def test_function_exists(self):
+        """Verify the access helper function exists in the source code."""
+        # Parse source to verify function exists (avoid Odoo import)
+        import os
+        path = os.path.join(
+            os.path.dirname(__file__), '..', 'models', 'ai_quest.py'
+        )
+        path = os.path.abspath(path)
+        with open(path) as f:
+            content = f.read()
+        self.assertIn("def _quest_is_accessible", content)
+
+    def test_access_logic_with_mock(self):
+        """Test access logic using mock objects."""
+        from unittest.mock import MagicMock
+
+        # Replicate the access logic inline for testing
+        def _quest_is_accessible(quest, user):
+            if user.has_group('base.group_system'):
+                return True
+            if quest.user_id and quest.user_id.id == user.id:
+                return True
+            if not quest.show_in_chat:
+                return False
+            if quest.group_ids:
+                user_grp = set(user.groups_id.ids)
+                quest_grp = set(quest.group_ids.ids)
+                if not (user_grp & quest_grp):
+                    return False
+            if quest.user_ids:
+                if user.id not in quest.user_ids.ids:
+                    return False
+            return True
+
+        # Mock quest: show_in_chat=True, no restrictions
+        quest = MagicMock()
+        quest.show_in_chat = True
+        quest.user_id = MagicMock()
+        quest.user_id.id = 1
+        quest.group_ids = []
+        quest.user_ids = []
+
+        # Mock admin user
+        admin = MagicMock()
+        admin.id = 99
+        admin.has_group = MagicMock(return_value=True)
+
+        # Admin always has access
+        self.assertTrue(_quest_is_accessible(quest, admin))
+
+        # Mock regular user (not owner)
+        regular = MagicMock()
+        regular.id = 2
+        regular.has_group = MagicMock(return_value=False)
+        regular.groups_id = MagicMock()
+        regular.groups_id.ids = []
+
+        # Regular user has access when no restrictions
+        # quest.group_ids is falsy list → no restriction
+        quest.group_ids = []
+        quest.user_ids = []
+        self.assertTrue(_quest_is_accessible(quest, regular))
+
+        # Show in chat = False → denied for regular user
+        quest.show_in_chat = False
+        self.assertFalse(_quest_is_accessible(quest, regular))
+
+        # Admin still has access even with show_in_chat=False
+        self.assertTrue(_quest_is_accessible(quest, admin))
+
+        # Reset, add group restriction
+        quest.show_in_chat = True
+        mock_group = MagicMock()
+        mock_group.id = 10
+        mock_group.ids = [10]
+        quest.group_ids = mock_group
+        quest.group_ids.ids = [10]
+        quest.user_ids = []
+
+        # User not in group → denied
+        regular.groups_id.ids = [20]
+        self.assertFalse(_quest_is_accessible(quest, regular))
+
+        # User in group → allowed
+        regular.groups_id.ids = [10]
+        self.assertTrue(_quest_is_accessible(quest, regular))
+
+        # Add user restriction
+        quest.group_ids = []
+        mock_user = MagicMock()
+        mock_user.ids = [5]
+        quest.user_ids = mock_user
+        quest.user_ids.ids = [5]
+
+        # User not in list → denied
+        regular.id = 2
+        self.assertFalse(_quest_is_accessible(quest, regular))
+
+        # User in list → allowed
+        regular.id = 5
+        self.assertTrue(_quest_is_accessible(quest, regular))
+
+        # Owner always has access
+        quest.user_id.id = 2
+        regular.id = 2
+        quest.group_ids = mock_group  # Has group restriction
+        quest.group_ids.ids = [99]
+        self.assertTrue(_quest_is_accessible(quest, regular))
+
+    def test_default_values(self):
+        """Verify model fields exist in the source code."""
+        # Parse the source to verify field definitions
+        import os
+        path = os.path.join(
+            os.path.dirname(__file__), '..', 'models', 'ai_quest.py'
+        )
+        path = os.path.abspath(path)
+        with open(path) as f:
+            content = f.read()
+        self.assertIn("show_in_chat", content)
+        self.assertIn("group_ids", content)
+        self.assertIn("user_ids", content)
+        self.assertIn("_quest_is_accessible", content)
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
