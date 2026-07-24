@@ -1,35 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <!-- Academic Paper Writer Quest -->
     <record id="quest_academic_paper" model="ai.quest">
         <field name="name">Academic Paper Writer</field>
-        <field name="description"><![CDATA[
-You are an academic paper writing supervisor. You coordinate a team of 12 specialized agents through a 7-phase pipeline to produce publishable academic papers.
-
-## Pipeline
-1. Intake → 2. Literature Search → 3. Structure Design → 4. Argument Building → 5. Draft Writing → 6. Citation Compliance → 7. Peer Review
-
-## Available Agents
-- Intake Agent: Configuration interview (paper type, discipline, format)
-- Literature Strategist: Systematic literature search
-- Structure Architect: Paper architecture and outline
-- Argument Builder: Claim-evidence chains
-- Draft Writer: Full-text drafting
-- Citation Compliance: Citation verification
-- Peer Reviewer: Five-dimension review
-- Formatter: Output formatting
-- Socratic Mentor: Guided planning mode
-- Revision Coach: Reviewer feedback integration
-- Abstract Writer: Bilingual abstracts
-- Visualization Agent: Figures and tables
-
-## Modes
-- Default (full pipeline): Run all 7 phases sequentially
-- Plan mode: Use Socratic Mentor only
-- Revision mode: Use Revision Coach + Citation Compliance
-- Abstract only: Use Abstract Writer
-]]></field>
-        <field name="sub_description">12-agent pipeline for academic paper writing — research to publication</field>
+        <field name="description">Academic paper writing supervisor. Coordinates 12 agents through 7-phase pipeline: Intake, Literature Search, Structure Design, Argument Building, Draft Writing, Citation Compliance, Peer Review. Modes: full pipeline, plan only, revision, abstract only.</field>
+        <field name="sub_description">12-agent pipeline — research to publication</field>
         <field name="init_type">manual</field>
         <field name="is_supervisor" eval="True"/>
         <field name="status">active</field>
@@ -37,7 +11,6 @@ You are an academic paper writing supervisor. You coordinate a team of 12 specia
         <field name="use_time_context" eval="True"/>
     </record>
 
-    <!-- Quest → Agent assignments (in pipeline sequence) -->
     <record id="quest_agent_intake" model="ai.quest.agent">
         <field name="quest_id" ref="quest_academic_paper"/>
         <field name="agent_id" ref="agent_intake"/>
@@ -77,25 +50,5 @@ You are an academic paper writing supervisor. You coordinate a team of 12 specia
         <field name="quest_id" ref="quest_academic_paper"/>
         <field name="agent_id" ref="agent_formatter"/>
         <field name="sequence" eval="8"/>
-    </record>
-    <record id="quest_agent_socratic" model="ai.quest.agent">
-        <field name="quest_id" ref="quest_academic_paper"/>
-        <field name="agent_id" ref="agent_socratic"/>
-        <field name="sequence" eval="9"/>
-    </record>
-    <record id="quest_agent_revision" model="ai.quest.agent">
-        <field name="quest_id" ref="quest_academic_paper"/>
-        <field name="agent_id" ref="agent_revision"/>
-        <field name="sequence" eval="10"/>
-    </record>
-    <record id="quest_agent_abstract" model="ai.quest.agent">
-        <field name="quest_id" ref="quest_academic_paper"/>
-        <field name="agent_id" ref="agent_abstract"/>
-        <field name="sequence" eval="11"/>
-    </record>
-    <record id="quest_agent_visualization" model="ai.quest.agent">
-        <field name="quest_id" ref="quest_academic_paper"/>
-        <field name="agent_id" ref="agent_visualization"/>
-        <field name="sequence" eval="12"/>
     </record>
 </odoo>
