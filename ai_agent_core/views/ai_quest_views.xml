@@ -102,6 +102,10 @@
                             <field name="started_mtokens" widget="statinfo"
                                    string="Påbörjade M"/>
                         </div>
+                        <div class="oe_stat_button" icon="fa-calculator">
+                            <field name="total_sys_tokens" widget="statinfo"
+                                   string="Totalt"/>
+                        </div>
                         <button name="action_monthly_overview" class="oe_stat_button"
                                 type="object" icon="fa-calendar"
                                 string="Månadsöversikt"
@@ -165,6 +169,14 @@
                                     string="Förbrukat denna månad"/>
                                 <field name="started_mtokens" readonly="1"
                                     string="Påbörjade M-tokens"/>
+                            </group>
+                            <group string="All-time totals">
+                                <field name="total_sys_tokens" readonly="1"
+                                    string="Totalt systemtokens"/>
+                                <field name="total_input_tokens" readonly="1"/>
+                                <field name="total_output_tokens" readonly="1"/>
+                                <field name="last_month_sys_tokens" readonly="1"
+                                    string="Förra månaden"/>
                             </group>
                             <group string="Status">
                                 <field name="cap_warning_sent" readonly="1"

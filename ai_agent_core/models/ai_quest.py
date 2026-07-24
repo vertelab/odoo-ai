@@ -106,6 +106,19 @@ class AIQuest(models.Model):
         'Påbörjade M-tokens', compute='_compute_started_mtokens',
         help='ceil(session_line_count / 1_000_000) — for billing')
 
+    # All-time totals (for XMLRPC billing)
+    total_sys_tokens = fields.Integer(
+        'Totalt systemtokens', default=0,
+        help='All-time systemtoken consumption. Incremented per session line.')
+    total_input_tokens = fields.Integer('Totalt input tokens', default=0)
+    total_output_tokens = fields.Integer('Totalt output tokens', default=0)
+
+    # Last month (from monthly_summary, for XMLRPC billing)
+    last_month_sys_tokens = fields.Integer(
+        'Förra månadens systemtokens',
+        compute='_compute_last_month', store=False,
+        help='Systemtokens consumed last calendar month')
+
     # Cap enforcement (Horisont 2)
     monthly_cap_mtokens = fields.Integer(
         'Månadstak (M systemtokens)', default=0,
@@ -232,6 +245,20 @@ class AIQuest(models.Model):
         for r in self:
             r.started_mtokens = math.ceil(r.session_line_count / 1_000_000) if r.session_line_count else 0
 
+    def _compute_last_month(self):
+        """Read last month's total from monthly_summary."""
+        from datetime import date, timedelta
+        today = date.today()
+        first_of_month = date(today.year, today.month, 1)
+        last_month_date = first_of_month - timedelta(days=1)
+        last_month = last_month_date.strftime('%Y-%m')
+        for r in self:
+            summary = self.env['ai.quest.monthly_summary'].search([
+                ('quest_id', '=', r.id),
+                ('month', '=', last_month),
+            ], limit=1)
+            r.last_month_sys_tokens = summary.total_sys_tokens if summary else 0
+
     def action_get_agents(self):
         return {
             'name': 'Agents', 'type': 'ir.actions.act_window',
@@ -289,6 +316,12 @@ class AIQuest(models.Model):
             'monthly_cap_mtokens': self.monthly_cap_mtokens,
             'cap_exhausted': self.cap_exhausted,
             'status': self.status,
+            # All-time totals
+            'total_sys_tokens': self.total_sys_tokens,
+            'total_input_tokens': self.total_input_tokens,
+            'total_output_tokens': self.total_output_tokens,
+            # Last month
+            'last_month_sys_tokens': self.last_month_sys_tokens,
         }
 
 

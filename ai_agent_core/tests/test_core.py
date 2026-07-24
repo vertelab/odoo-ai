@@ -1225,6 +1225,8 @@ class TestSystemtoken(unittest.TestCase):
         self.assertIn("'session_line_count'", content)
         self.assertIn("'monthly_cap_mtokens'", content)
         self.assertIn("'cap_exhausted'", content)
+        self.assertIn("'total_sys_tokens'", content)
+        self.assertIn("'last_month_sys_tokens'", content)
 
     def test_monthly_summary_model_source(self):
         """T3.5: AIQuestMonthlySummary model exists with generate_monthly_summaries."""

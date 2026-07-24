@@ -376,9 +376,15 @@ class AIStreamController(http.Controller):
             session.token_output += token_output
             session.write_date = fields.Datetime.now()
 
-            # Trigger cap check on parent quest
-            if session.quest_id and session.quest_id.monthly_cap_mtokens:
-                session.quest_id.check_cap()
+            # Increment quest all-time totals
+            if session.quest_id:
+                quest = session.quest_id
+                quest.total_input_tokens += token_input
+                quest.total_output_tokens += token_output
+                quest.total_sys_tokens += int((token_input + token_output) * sys_mult)
+                # Trigger cap check
+                if quest.monthly_cap_mtokens:
+                    quest.check_cap()
 
             _logger.info("Saved response to session %s: %d in/%d out tokens, model=%s",
                         thread_id, token_input, token_output, model_real or 'unknown')
