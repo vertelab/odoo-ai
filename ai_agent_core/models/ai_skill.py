@@ -31,6 +31,27 @@ class AISkill(models.Model):
         ('pi', 'Pi Agent Skill'),
     ], default='odoo')
 
+    def _compute_github_avatar(self):
+        """Fetch GitHub user avatar when source_type is github."""
+        for skill in self:
+            if skill.source_type == 'github' and skill.github_url and not skill.image_128:
+                import re, base64, urllib.request, ssl
+                m = re.search(r'github\.com/([^/]+)', skill.github_url)
+                if m:
+                    user = m.group(1)
+                    try:
+                        ctx = ssl.create_default_context()
+                        ctx.check_hostname = False
+                        ctx.verify_mode = ssl.CERT_NONE
+                        req = urllib.request.Request(
+                            f'https://github.com/{user}.png',
+                            headers={'User-Agent': 'Odoo'}
+                        )
+                        with urllib.request.urlopen(req, timeout=10, context=ctx) as resp:
+                            skill.image_128 = base64.b64encode(resp.read())
+                    except Exception:
+                        pass
+
     # Trigger
     trigger_keywords = fields.Char('Trigger Keywords',
         help='Comma-separated keywords')

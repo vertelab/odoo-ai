@@ -371,16 +371,23 @@ function sendMessage(){
     currentAiMessage=document.createElement('div');currentAiMessage.className='message ai';
     document.getElementById('messages').appendChild(currentAiMessage);
     currentAgentCards={};scrollBottom();
-    // Auto-create thread with clean name from first message
+    // Auto-create thread if needed, then save user message
+    function doStream(){
+        // Save user message to thread
+        if(activeSessionId&&n){
+            fetch('/ai/threads/'+activeSessionId+'/respond',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:n,role:'user'})})
+        }
+        startStream(n)
+    }
     if(!activeSessionId){
         var cleanName=n.replace(/[\n\r]+/g,' ').replace(/\s+/g,' ').trim().substring(0,50);
         fetch('/ai/threads',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({quest_id:activeQuestId||null,name:cleanName})})
         .then(function(r){return r.json()}).then(function(d){
             activeSessionId=d.id;activeThreadName=d.name;
             document.getElementById('active-thread-name').textContent=d.name;
-            startStream(n)
+            doStream()
         })
-    } else {startStream(n)}
+    } else {doStream()}
 }
 function startStream(prompt){
     var url='/ai/stream?prompt='+encodeURIComponent(prompt);
@@ -414,8 +421,15 @@ function respondInterrupt(approved){
 }
 function finishStream(){
     if(currentAiMessage){
-        if(!currentAiMessage.textContent.trim()){currentAiMessage.innerHTML='<em style="color:var(--text-muted)">(inget svar)</em>'}
-        else{currentAiMessage.innerHTML=md2html(currentAiMessage.textContent)}
+        var txt=currentAiMessage.textContent.trim();
+        if(!txt){currentAiMessage.innerHTML='<em style="color:var(--text-muted)">(inget svar)</em>'}
+        else{
+            currentAiMessage.innerHTML=md2html(txt);
+            // Save assistant response to thread
+            if(activeSessionId&&txt){
+                fetch('/ai/threads/'+activeSessionId+'/respond',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:txt})})
+            }
+        }
     }
     streaming=!1;document.getElementById('send-btn').style.display='inline-block';
     document.getElementById('cancel-btn').style.display='none';

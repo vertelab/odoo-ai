@@ -68,7 +68,6 @@
                                 <field name="temperature"/>
                                 <field name="max_tokens"/>
                                 <field name="max_rounds"/>
-                                <field name="language"/>
                             </group>
                         </page>
                         <page string="Skills">

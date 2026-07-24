@@ -140,9 +140,44 @@ async def _tool_calculator(expression: str) -> str:
         return f"Error: {e}"
 
 
-async def _tool_echo(message: str) -> str:
-    """Echo back the message. Test tool."""
-    return message
+async def _tool_web_search(query: str = "") -> str:
+    """Search the web using DuckDuckGo. Returns top 5 results."""
+    if not query or not query.strip():
+        return "Error: query is required"
+    try:
+        from duckduckgo_search import DDGS
+        results = list(DDGS().text(query, max_results=5))
+        if not results:
+            return "No results found."
+        return "\n".join(
+            f"{i+1}. {r.get('title','?')}\n   {r.get('body','')[:200]}\n   {r.get('href','')}"
+            for i, r in enumerate(results)
+        )
+    except ImportError:
+        return "Error: duckduckgo_search not installed. Run: pip install duckduckgo-search"
+    except Exception as e:
+        return f"Search error: {e}"
+
+
+async def _tool_fetch_url(url: str = "") -> str:
+    """Fetch and extract text content from a URL."""
+    if not url:
+        return "Error: url is required"
+    try:
+        import httpx
+        async with httpx.AsyncClient(timeout=15) as client:
+            r = await client.get(url, headers={'User-Agent': 'Odoo-AI/1.0'})
+            r.raise_for_status()
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(r.text, 'html.parser')
+        for tag in soup(['script', 'style', 'nav', 'footer', 'header']):
+            tag.decompose()
+        text = soup.get_text(separator=' ', strip=True)
+        return text[:5000] if len(text) > 5000 else text
+    except ImportError as e:
+        return f"Error: {e}. Run: pip install httpx beautifulsoup4"
+    except Exception as e:
+        return f"Fetch error: {e}"
 
 
 def builtin_tools() -> list[Tool]:
@@ -166,6 +201,40 @@ def builtin_tools() -> list[Tool]:
             source="builtin",
         ),
         Tool(
+            name="web_search",
+            description="Search the web using DuckDuckGo. Returns top 5 results with title, snippet, and URL.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Search query (10 words or less)",
+                    }
+                },
+                "required": ["query"],
+            },
+            handler=_tool_web_search,
+            risk_level="safe",
+            source="builtin",
+        ),
+        Tool(
+            name="fetch_url",
+            description="Fetch and extract text content from a URL. Returns the main text content of the page.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "The URL to fetch",
+                    }
+                },
+                "required": ["url"],
+            },
+            handler=_tool_fetch_url,
+            risk_level="safe",
+            source="builtin",
+        ),
+        Tool(
             name="echo",
             description="Echo back the message. Useful for testing.",
             parameters={
@@ -183,6 +252,11 @@ def builtin_tools() -> list[Tool]:
             source="builtin",
         ),
     ]
+
+
+async def _tool_echo(message: str) -> str:
+    """Echo back the message. Test tool."""
+    return message
 
 
 # ---------------------------------------------------------------------------

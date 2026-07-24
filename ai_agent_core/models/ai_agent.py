@@ -46,8 +46,6 @@ class AIAgent(models.Model):
     temperature = fields.Float(default=0.7)
     max_tokens = fields.Integer(default=4096)
     max_rounds = fields.Integer(default=10)
-    language = fields.Many2one('res.lang', string='Response Language',
-        help='Force agent responses in this language. Leave empty for auto-detect.')
 
     # Budget
     budget_limit = fields.Float('Monthly Budget (USD)', default=0)

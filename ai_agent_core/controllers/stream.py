@@ -12,7 +12,7 @@ import logging
 import time
 from html import escape
 
-from odoo import http, fields
+from odoo import http, fields, api
 from odoo.http import request, Response
 
 # Import access control helper (quest-access-control change)
@@ -100,18 +100,6 @@ class AIStreamController(http.Controller):
             except Exception:
                 pass
 
-        # Save user message as session line
-        user_id = request.env.user.id if request.env.user else None
-        if session and user_id:
-            next_seq = len(session.session_line_ids) + 1
-            request.env['ai.quest.session.line'].create({
-                'session_id': session.id,
-                'sequence': next_seq,
-                'role': 'user',
-                'content': prompt,
-            })
-            session.write_date = fields.Datetime.now()
-
         def generate():
             """SSE event generator — runs async loop in sync context."""
             full_response = []
@@ -162,20 +150,6 @@ class AIStreamController(http.Controller):
                         yield chunk
                 finally:
                     loop.close()
-
-                # Save assistant response as session line
-                response_text = ''.join(full_response)
-                if session and user_id and response_text.strip():
-                    next_seq = len(session.session_line_ids) + 1
-                    request.env['ai.quest.session.line'].create({
-                        'session_id': session.id,
-                        'sequence': next_seq,
-                        'role': 'assistant',
-                        'content': response_text,
-                    })
-                    session.write_date = fields.Datetime.now()
-                    request.env.cr.commit()
-
             except Exception as e:
                 _logger.error("SSE stream error: %s", e, exc_info=True)
                 yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
@@ -317,6 +291,7 @@ class AIStreamController(http.Controller):
         name = ' '.join(str(name).split())[:50]
         quest_id = body.get('quest_id')
         vals = {
+            'name': name,
             'user_id': user.id if user.id else None,
             'thread_name': name,
             'status': 'active',
@@ -355,15 +330,30 @@ class AIStreamController(http.Controller):
         session = request.env['ai.quest.session'].browse(thread_id)
         if session.exists():
             session.thread_name = name[:200]
+            session.name = name[:200]
         return Response(json.dumps({"status": "ok"}), content_type='application/json')
 
-    @http.route('/ai/threads/<int:thread_id>', type='http', auth='public',
-                methods=['DELETE'], csrf=False, sitemap=False)
-    def thread_delete(self, thread_id, **kw):
-        """Soft-delete a thread."""
+    @http.route('/ai/threads/<int:thread_id>/respond', type='http', auth='public',
+                methods=['POST'], csrf=False, sitemap=False)
+    def thread_save_response(self, thread_id, **kw):
+        """Save an assistant response to a thread (called by frontend after streaming)."""
+        body = json.loads(request.httprequest.data or '{}')
+        content = body.get('content', '')
+        role = body.get('role', 'assistant')
+        if not content.strip():
+            return Response(json.dumps({"status": "ok"}), content_type='application/json')
         session = request.env['ai.quest.session'].browse(thread_id)
         if session.exists():
-            session.active = False
+            next_seq = len(session.session_line_ids) + 1
+            request.env['ai.quest.session.line'].create({
+                'session_id': session.id,
+                'sequence': next_seq,
+                'role': role,
+                'content': content,
+            })
+            session.write_date = fields.Datetime.now()
+            _logger.info("Frontend saved assistant response (%d chars) to session %s",
+                        len(content), thread_id)
         return Response(json.dumps({"status": "ok"}), content_type='application/json')
 
     @http.route('/ai/thread/search', type='http', auth='public',
