@@ -14,3 +14,6 @@ access_ai_skill_export_wizard,ai.skill.export.wizard,model_ai_skill_export_wizar
 access_ai_quest_skill,ai.quest.skill,model_ai_quest_skill,base.group_user,1,1,1,1
 access_ai_monthly_summary,ai.quest.monthly.summary,model_ai_quest_monthly_summary,base.group_user,1,0,0,0
 access_ai_monthly_summary_admin,ai.quest.monthly.summary.admin,model_ai_quest_monthly_summary,base.group_system,1,1,1,1
+access_ai_kaizen_report,ai.kaizen.report,model_ai_kaizen_report,base.group_user,1,0,0,0
+access_ai_kaizen_finding,ai.kaizen.finding,model_ai_kaizen_finding,base.group_user,1,0,0,0
+access_ai_kaizen_admin,ai.kaizen.admin,model_ai_kaizen_report,base.group_system,1,1,1,1
