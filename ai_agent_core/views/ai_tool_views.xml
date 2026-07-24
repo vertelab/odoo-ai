@@ -91,33 +91,5 @@
     </record>
 
 
-    <!-- Quest Run wizard form -->
-    <record id="view_ai_quest_run_form" model="ir.ui.view">
-        <field name="name">ai.quest.run.form</field>
-        <field name="model">ai.quest.run</field>
-        <field name="arch" type="xml">
-            <form string="Run Quest (Core Loop)">
-                <group>
-                    <field name="quest_id" invisible="1"/>
-                    <field name="prompt" widget="text"
-                           placeholder="Enter your prompt..."/>
-                </group>
-                <group string="Result" attrs="{'invisible': [('status', '=', 'running')]}">
-                    <field name="status" widget="badge"/>
-                    <field name="result" widget="text" nolabel="1"/>
-                    <group>
-                        <field name="token_input"/>
-                        <field name="token_output"/>
-                    </group>
-                </group>
-                <footer>
-                    <button name="action_run" type="object" string="Run"
-                            class="btn-primary"
-                            attrs="{'invisible': [('status', '!=', 'running')]}"/>
-                    <button string="Close" class="btn-secondary" special="cancel"/>
-                </footer>
-            </form>
-        </field>
-    </record>
 
 </odoo>
