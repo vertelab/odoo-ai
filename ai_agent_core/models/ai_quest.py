@@ -23,6 +23,7 @@ class AIQuest(models.Model):
     description = fields.Text(help='System prompt / quest purpose')
     sub_description = fields.Char('Short Description')
     active = fields.Boolean(default=True)
+    color = fields.Integer(default=lambda self: __import__('random').randint(1, 11))
 
     status = fields.Selection([
         ('draft', 'Draft'), ('active', 'Active'), ('done', 'Done'), ('error', 'Error'),
