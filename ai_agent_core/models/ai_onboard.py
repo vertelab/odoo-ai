@@ -51,12 +51,15 @@ class AIOnboardCandidate(models.Model):
         ('created_quest', 'Quest Created'),
         ('created_ticket', 'Ticket Created'),
         ('created_action', 'Action Created'),
+        ('created_nonconformity', 'Nonconformity Created'),
         ('ignored', 'Ignored'),
     ], default='new')
 
     # Result if acted upon
     resulting_quest_id = fields.Many2one('ai.quest', string='Created Quest')
     resulting_ticket_id = fields.Integer('Ticket ID')
+    resulting_action_id = fields.Many2one('ir.actions.server', string='Created Action')
+    resulting_nonconformity_id = fields.Integer('Nonconformity ID')
     presented_at_kaizen = fields.Many2one('ai.kaizen.report',
         string='Presented at Kaizen')
 
@@ -203,19 +206,136 @@ class AIOnboardCandidate(models.Model):
         }
 
     def action_notify(self):
-        """Send a notification about this candidate."""
+        """Send a notification about this candidate to admin users."""
         self.ensure_one()
-        self.env['mail.message'].create({
-            'subject': f'ONBOARD upptäckt: {self.description[:80]}',
-            'body': f"**ONBOARD upptäckte:** {self.description}\n\n"
-                    f"Typ: {self.suggested_quest_type}\n"
-                    f"Källa: {self.source}\n"
-                    f"Confidence: {self.confidence:.0%}\n\n"
-                    f"[Skapa quest][Ignorera]",
-            'model': 'ai.onboard.candidate',
-            'res_id': self.id,
-        })
+        self.message_post(
+            subject=f'ONBOARD upptäckt: {self.description[:80]}',
+            body=f"**ONBOARD upptäckte:** {self.description}\n\n"
+                 f"Typ: {self.suggested_quest_type}\n"
+                 f"Källa: {self.source}\n"
+                 f"Confidence: {self.confidence:.0%}\n"
+                 f"Antal poster: {self.record_count or 'N/A'}",
+            message_type='notification',
+            partner_ids=[(4, uid) for uid in
+                self.env.ref('base.group_system').users.ids],
+        )
         return True
+
+    def action_create_server_action(self):
+        """Create an ir.actions.server from this candidate.
+        
+        The action is created as a draft that the admin can configure.
+        Useful when the candidate identifies a repetitive task that
+        should be automated but doesn't need a full AI quest.
+        """
+        self.ensure_one()
+
+        # Try to determine the target model from evidence
+        model_name = 'ir.actions.server'  # default
+        if self.source_module:
+            model = self.env.get(self.source_module)
+            if model:
+                model_name = self.source_module
+
+        action = self.env['ir.actions.server'].create({
+            'name': f'ONBOARD: {self.description[:50]}',
+            'model_id': self.env['ir.model'].search(
+                [('model', '=', model_name)], limit=1).id,
+            'state': 'code',
+            'code': f'# ONBOARD-generated action\n'
+                    f'# {self.description}\n'
+                    f'# Source: {self.source}\n'
+                    f'# Auto-generated — configure before use\n'
+                    f'# model: {model_name}\n'
+                    f'raise NotImplementedError("Configure this action")',
+        })
+        self.resulting_action_id = action.id
+        self.status = 'created_action'
+        _logger.info('ONBOARD: created server action %s for candidate %s',
+                     action.name, self.description[:50])
+        return {
+            'type': 'ir.actions.act_window',
+            'res_model': 'ir.actions.server',
+            'res_id': action.id,
+            'view_mode': 'form',
+            'target': 'current',
+        }
+
+    def action_create_helpdesk_ticket(self):
+        """Create a helpdesk ticket from this candidate.
+        
+        Only works if helpdesk module is installed.
+        """
+        self.ensure_one()
+        ticket_model = self.env.get('helpdesk.ticket')
+        if not ticket_model:
+            _logger.warning('ONBOARD: helpdesk not installed, cannot create ticket')
+            return self.action_notify()  # Fallback to notification
+
+        # Find or create a team
+        team = self.env['helpdesk.team'].search([], limit=1)
+        if not team:
+            team = self.env['helpdesk.team'].create({
+                'name': 'AI ONBOARD',
+            })
+
+        ticket = ticket_model.create({
+            'name': f'ONBOARD: {self.description[:80]}',
+            'description': (
+                f"**Upptäckt av ONBOARD**\n\n"
+                f"{self.description}\n\n"
+                f"Typ: {self.suggested_quest_type}\n"
+                f"Källa: {self.source}\n"
+                f"Confidence: {self.confidence:.0%}\n"
+                f"Evidens: {self.evidence or 'N/A'}\n"
+                f"Antal poster: {self.record_count or 'N/A'}"
+            ),
+            'team_id': team.id,
+            'priority': '2' if self.confidence > 0.7 else '1',
+        })
+        self.resulting_ticket_id = ticket.id
+        self.status = 'created_ticket'
+        _logger.info('ONBOARD: created helpdesk ticket %s for candidate %s',
+                     ticket.id, self.description[:50])
+        return {
+            'type': 'ir.actions.act_window',
+            'res_model': 'helpdesk.ticket',
+            'res_id': ticket.id,
+            'view_mode': 'form',
+            'target': 'current',
+        }
+
+    def action_create_nonconformity(self):
+        """Create an avvikelserapport (nonconformity) from this candidate.
+        
+        Only works if mgmtsystem module is installed.
+        """
+        self.ensure_one()
+        nc_model = self.env.get('mgmtsystem.nonconformity')
+        if not nc_model:
+            _logger.warning('ONBOARD: mgmtsystem not installed, cannot create nonconformity')
+            return self.action_notify()  # Fallback to notification
+
+        nc = nc_model.create({
+            'name': f'ONBOARD: {self.description[:80]}',
+            'description': (
+                f"Upptäckt av ONBOARD\n\n{self.description}\n\n"
+                f"Typ: {self.suggested_quest_type}\n"
+                f"Källa: {self.source}\n"
+                f"Evidens: {self.evidence or 'N/A'}"
+            ),
+        })
+        self.resulting_nonconformity_id = nc.id
+        self.status = 'created_nonconformity'
+        _logger.info('ONBOARD: created nonconformity %s for candidate %s',
+                     nc.id, self.description[:50])
+        return {
+            'type': 'ir.actions.act_window',
+            'res_model': 'mgmtsystem.nonconformity',
+            'res_id': nc.id,
+            'view_mode': 'form',
+            'target': 'current',
+        }
 
     def action_ignore(self):
         """Ignore this candidate."""
