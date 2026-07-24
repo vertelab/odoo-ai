@@ -65,6 +65,7 @@
                 <field name="is_text2image"/>
                 <field name="cost_input_1k" optional="hide"/>
                 <field name="cost_output_1k" optional="hide"/>
+                <field name="sys_multiplier" optional="hide"/>
                 <field name="status" widget="badge"/>
             </list>
         </field>
@@ -127,6 +128,14 @@
                             <group string="Cost (per 1K tokens)">
                                 <field name="cost_input_1k"/>
                                 <field name="cost_output_1k"/>
+                            </group>
+                        </page>
+                        <page string="Systemtoken">
+                            <group string="Pricing">
+                                <field name="sys_multiplier"
+                                    help="How many systemtokens 1 real token costs. Includes Vertel margin."/>
+                                <field name="provider_cost_1M"
+                                    help="What the provider charges per 1M tokens. Admin insight only."/>
                             </group>
                         </page>
                         <page string="License">

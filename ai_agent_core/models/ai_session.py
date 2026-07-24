@@ -61,9 +61,29 @@ class AIQuestSession(models.Model):
     def save_config(self, config: dict):
         self.config_json = json.dumps(config, default=str)
 
-    def add_tokens(self, input_t: int, output_t: int):
+    def add_tokens(self, input_t: int, output_t: int, model_real: str = ''):
+        """Record token usage and create a session line with systemtoken tracking."""
         self.token_input += input_t
         self.token_output += output_t
+
+        # Look up sys_multiplier from ai.model
+        sys_mult = 1.0
+        if model_real:
+            ai_model = self.env['ai.model'].search(
+                [('name', 'ilike', model_real)], limit=1)
+            if ai_model:
+                sys_mult = ai_model.sys_multiplier
+
+        # Create session line for token tracking
+        self.env['ai.quest.session.line'].create({
+            'session_id': self.id,
+            'role': 'assistant',
+            'content': f'Tokens: {input_t} in / {output_t} out',
+            'token_input': input_t,
+            'token_output': output_t,
+            'model_real': model_real,
+            'sys_multiplier': sys_mult,
+        })
 
     def mark_done(self, reason='stop'):
         self.status = 'done'

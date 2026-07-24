@@ -48,6 +48,12 @@ class AIModel(models.Model):
     cost_input_1k = fields.Float('Input Cost per 1K tokens', digits=(12, 8))
     cost_output_1k = fields.Float('Output Cost per 1K tokens', digits=(12, 8))
 
+    # Systemtoken pricing (admin-styrd)
+    sys_multiplier = fields.Float('Systemtoken-multiplikator', default=1.0,
+        help='How many systemtokens 1 real token costs. 1.0 = DeepSeek, 5.0 = GPT-4o, 6.0 = Claude. Includes Vertel margin.')
+    provider_cost_1M = fields.Float('Provider $/1M tokens',
+        help='What the provider actually charges per 1M tokens. For admin insight only.')
+
     # Status
     status = fields.Selection([
         ('active', 'Active'),

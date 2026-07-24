@@ -94,6 +94,14 @@
                                 type="object" icon="fa-history">
                             <field name="session_count" widget="statinfo"/>
                         </button>
+                        <div class="oe_stat_button" icon="fa-database">
+                            <field name="session_line_count" widget="statinfo"
+                                   string="Systemtokens"/>
+                        </div>
+                        <div class="oe_stat_button" icon="fa-pie-chart">
+                            <field name="started_mtokens" widget="statinfo"
+                                   string="Påbörjade M"/>
+                        </div>
                     </div>
                     <div class="oe_title">
                         <h1><field name="name" placeholder="Quest Name"/></h1>

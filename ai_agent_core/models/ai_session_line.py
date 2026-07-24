@@ -4,7 +4,7 @@ ai.quest.session.line — Individual messages within a thread.
 
 Each line represents one message in a conversation thread.
 """
-from odoo import models, fields
+from odoo import models, fields, api
 
 
 class AIQuestSessionLine(models.Model):
@@ -28,3 +28,16 @@ class AIQuestSessionLine(models.Model):
     tool_name = fields.Char('Tool Name')
     token_input = fields.Integer('Input Tokens', default=0)
     token_output = fields.Integer('Output Tokens', default=0)
+
+    # Systemtoken tracking
+    model_real = fields.Char('Model Used',
+        help='The actual model name returned by the provider (e.g. claude-sonnet-4-20250514)')
+    sys_multiplier = fields.Float('Systemtoken-multiplikator', default=1.0,
+        help='Multiplier from ai.model at the time this line was created')
+    token_sys = fields.Integer('Systemtokens', compute='_compute_token_sys', store=True,
+        help='(token_input + token_output) × sys_multiplier')
+
+    @api.depends('token_input', 'token_output', 'sys_multiplier')
+    def _compute_token_sys(self):
+        for line in self:
+            line.token_sys = int((line.token_input + line.token_output) * line.sys_multiplier)

@@ -336,24 +336,47 @@ class AIStreamController(http.Controller):
     @http.route('/ai/threads/<int:thread_id>/respond', type='http', auth='public',
                 methods=['POST'], csrf=False, sitemap=False)
     def thread_save_response(self, thread_id, **kw):
-        """Save an assistant response to a thread (called by frontend after streaming)."""
+        """Save an assistant response to a thread (called by frontend after streaming).
+        
+        Accepts optional token tracking fields: token_input, token_output, model_real.
+        These enable systemtoken computation via sys_multiplier.
+        """
         body = json.loads(request.httprequest.data or '{}')
         content = body.get('content', '')
         role = body.get('role', 'assistant')
+        model_real = body.get('model_real', '')
+        token_input = body.get('token_input', 0)
+        token_output = body.get('token_output', 0)
         if not content.strip():
             return Response(json.dumps({"status": "ok"}), content_type='application/json')
         session = request.env['ai.quest.session'].browse(thread_id)
         if session.exists():
             next_seq = len(session.session_line_ids) + 1
+
+            # Resolve sys_multiplier from ai.model if model_real is provided
+            sys_mult = 1.0
+            if model_real:
+                ai_model = request.env['ai.model'].search(
+                    [('name', 'ilike', model_real)], limit=1)
+                if ai_model:
+                    sys_mult = ai_model.sys_multiplier
+
             request.env['ai.quest.session.line'].create({
                 'session_id': session.id,
                 'sequence': next_seq,
                 'role': role,
                 'content': content,
+                'token_input': token_input,
+                'token_output': token_output,
+                'model_real': model_real,
+                'sys_multiplier': sys_mult,
             })
+            # Also update session totals
+            session.token_input += token_input
+            session.token_output += token_output
             session.write_date = fields.Datetime.now()
-            _logger.info("Frontend saved assistant response (%d chars) to session %s",
-                        len(content), thread_id)
+            _logger.info("Saved response to session %s: %d in/%d out tokens, model=%s",
+                        thread_id, token_input, token_output, model_real or 'unknown')
         return Response(json.dumps({"status": "ok"}), content_type='application/json')
 
     @http.route('/ai/thread/search', type='http', auth='public',

@@ -11,6 +11,9 @@
                 <field name="status" widget="badge"
                        decoration-success="status=='done'"
                        decoration-warning="status=='active'"/>
+                <field name="token_input" optional="hide"/>
+                <field name="token_output" optional="hide"/>
+                <field name="cost_estimated" optional="hide"/>
                 <field name="create_date"/>
             </tree>
         </field>

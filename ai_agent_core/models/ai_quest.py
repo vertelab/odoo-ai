@@ -93,6 +93,26 @@ class AIQuest(models.Model):
 
     session_count = fields.Integer(compute='_compute_session_count')
     session_ids = fields.One2many('ai.quest.session', 'quest_id')
+
+    # Systemtoken tracking
+    session_line_ids = fields.One2many(
+        'ai.quest.session.line', related='session_ids.session_line_ids',
+        string='Session Lines',
+        help='All message lines from all sessions of this quest')
+    session_line_count = fields.Integer(
+        'Systemtokens (månad)', compute='_compute_session_line_count',
+        help='Total systemtokens consumed this calendar month')
+    started_mtokens = fields.Integer(
+        'Påbörjade M-tokens', compute='_compute_started_mtokens',
+        help='ceil(session_line_count / 1_000_000) — for billing')
+
+    # Cap enforcement (Horisont 2)
+    monthly_cap_mtokens = fields.Integer(
+        'Månadstak (M systemtokens)', default=0,
+        help='0 = unlimited. Cap in millions of systemtokens.')
+    cap_warning_sent = fields.Boolean('Varning skickad')
+    cap_exhausted = fields.Boolean('Tak överskridet')
+
     skill_copy_ids = fields.One2many('ai.quest.skill', 'quest_id',
         string='Skill Copies',
         help='Quest-specific copies of shared skills')
@@ -108,6 +128,26 @@ class AIQuest(models.Model):
     def _compute_session_count(self):
         for r in self:
             r.session_count = len(r.session_ids)
+
+    @api.depends('session_line_ids.token_sys', 'session_line_ids.create_date')
+    def _compute_session_line_count(self):
+        """Sum of systemtokens for the current calendar month."""
+        from datetime import date
+        today = date.today()
+        month_start = date(today.year, today.month, 1)
+        for r in self:
+            total = 0
+            for line in r.session_line_ids:
+                if line.create_date and line.create_date.date() >= month_start:
+                    total += line.token_sys or 0
+            r.session_line_count = total
+
+    @api.depends('session_line_count')
+    def _compute_started_mtokens(self):
+        """Number of started millions (rounded up)."""
+        import math
+        for r in self:
+            r.started_mtokens = math.ceil(r.session_line_count / 1_000_000) if r.session_line_count else 0
 
     def action_get_agents(self):
         return {
