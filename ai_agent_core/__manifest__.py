@@ -43,6 +43,7 @@
         'data/cron_bifrost_sync.xml',
         'data/cron_kaizen.xml',
         'data/cron_onboard.xml',
+        'data/cron_memory_consolidation.xml',
         'views/menu.xml',
         'views/ai_provider_views.xml',
         'views/ai_model_views.xml',

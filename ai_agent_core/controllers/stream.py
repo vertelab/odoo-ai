@@ -95,8 +95,18 @@ class AIStreamController(http.Controller):
                         })
                     # Auto-summarize if too many messages
                     if len(lines) > 50:
-                        summary = '[...Tidigare konversation sammanfattad...]'
+                        summary = _summarize_history(session, lines)
                         history_messages = [{'role': 'system', 'content': summary}] + history_messages[-20:]
+
+                    # Save user message as session line (T7.4)
+                    next_seq = len(lines) + 1
+                    request.env['ai.quest.session.line'].create({
+                        'session_id': session.id,
+                        'sequence': next_seq,
+                        'role': 'user',
+                        'content': prompt,
+                    })
+                    session.write_date = fields.Datetime.now()
             except Exception:
                 pass
 
@@ -318,6 +328,7 @@ class AIStreamController(http.Controller):
                 "role": l.role,
                 "content": l.content or '',
                 "tool_name": l.tool_name,
+                "token_sys": l.token_sys or 0,
             } for l in lines]
         }), content_type='application/json')
 
@@ -392,6 +403,10 @@ class AIStreamController(http.Controller):
 
             _logger.info("Saved response to session %s: %d in/%d out tokens, model=%s",
                         thread_id, token_input, token_output, model_real or 'unknown')
+
+            # Trigger async memory extraction (T8)
+            _extract_memories_async(session, content)
+
         return Response(json.dumps({"status": "ok"}), content_type='application/json')
 
     @http.route('/ai/thread/search', type='http', auth='public',
@@ -827,6 +842,87 @@ def _chunk_text(text: str, max_chars: int = 2000) -> list:
     if len(text) <= max_chars:
         return [text]
     return [text[i:i + max_chars] for i in range(0, len(text), max_chars)]
+
+
+def _summarize_history(session, lines):
+    """T7.6: Summarize thread history when > 50 messages.
+    
+    Uses a simple approach: take first message as context,
+    last 5 messages as recent context, drop the middle.
+    This avoids an expensive LLM call for summarization.
+    """
+    if len(lines) <= 50:
+        return None
+    
+    first_msg = lines[0].content[:200] if lines and lines[0].content else 'Start'
+    recent = '\n'.join(
+        f"[{l.role}] {l.content[:100]}"
+        for l in lines[-5:]
+        if l.content
+    )
+    return (
+        f"[Tidigare konversation ({len(lines)} meddelanden) sammanfattad. "
+        f"Första meddelandet: {first_msg}. "
+        f"Senaste: {recent}]"
+    )
+
+
+def _extract_memories_async(session, assistant_content):
+    """T8.1-T8.4: Extract key facts from conversation as ai.memory.
+    
+    Runs asynchronously after each assistant response.
+    Uses heuristic extraction (fast, no LLM cost) + stores as ai.memory.
+    """
+    if not session or not assistant_content:
+        return
+
+    try:
+        quest = session.quest_id
+        if not quest:
+            return
+
+        memories = []
+        content_lower = assistant_content.lower()
+
+        # Heuristic extraction — fast, no API cost
+        if any(kw in content_lower for kw in ('svenska', 'swedish', 'bokföring', 'moms', 'redovisning')):
+            memories.append({
+                'fact': 'Användaren arbetar med svensk ekonomi/redovisning',
+                'category': 'preference',
+                'importance': 'medium',
+            })
+
+        if any(kw in content_lower for kw in ('csv', 'excel', 'export', 'ladda ner', 'fil')):
+            memories.append({
+                'fact': 'Användaren efterfrågar dataexport',
+                'category': 'fact',
+                'importance': 'low',
+            })
+
+        if len(assistant_content) < 200:
+            memories.append({
+                'fact': 'Kort svar gavs — användaren kan föredra koncisa svar',
+                'category': 'preference',
+                'importance': 'low',
+            })
+
+        # Store as ai.memory
+        for m in memories:
+            request.env['ai.memory'].create({
+                'name': m['fact'][:80],
+                'content': m['fact'],
+                'quest_id': quest.id,
+                'category': m['category'],
+                'importance': m['importance'],
+                'source_thread_id': session.id,
+            })
+
+        if memories:
+            _logger.debug('Extracted %d memories from session %s',
+                         len(memories), session.id)
+
+    except Exception as e:
+        _logger.debug('Memory extraction skipped: %s', e)
 
 
 def _implicit_learn(identity, assistant_content):

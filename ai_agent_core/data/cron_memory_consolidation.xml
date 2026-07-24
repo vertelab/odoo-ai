@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Cron: Daily memory consolidation (runs at 02:00) -->
+    <record id="cron_memory_consolidation" model="ir.cron">
+        <field name="name">AI: Daglig minneskonsolidering</field>
+        <field name="model_id" ref="model_ai_quest"/>
+        <field name="state">code</field>
+        <field name="code">
+# Consolidate memories for all active quests with identities
+quests = env['ai.quest'].search([
+    ('status', '=', 'active'),
+    ('identity_id', '!=', False),
+])
+consolidated = 0
+for quest in quests:
+    try:
+        count = quest.consolidate_memories()
+        consolidated += count
+    except Exception:
+        pass
+_logger = logging.getLogger(__name__)
+if consolidated:
+    _logger.info('Daily consolidation: %d memories across %d quests', consolidated, len(quests))
+        </field>
+        <field name="interval_number">1</field>
+        <field name="interval_type">days</field>
+        <field name="numbercall">-1</field>
+        <field name="active" eval="True"/>
+    </record>
+</odoo>

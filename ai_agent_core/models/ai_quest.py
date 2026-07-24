@@ -176,6 +176,73 @@ class AIQuest(models.Model):
         self.cap_warning_sent = used >= cap_tokens * 0.8
         self.cap_exhausted = used >= cap_tokens
 
+    def consolidate_memories(self):
+        """T9.1-T9.5: Daily memory consolidation.
+        
+        Groups memories by category, de-duplicates, ranks by importance.
+        Updates identity.user_model with consolidated text.
+        Auto-archives low-importance memories older than 30 days.
+        """
+        self.ensure_one()
+        if not self.identity_id:
+            return 0
+
+        from datetime import date, timedelta
+        cutoff = date.today() - timedelta(days=30)
+
+        # Get active memories for this quest
+        memories = self.env['ai.memory'].search([
+            ('quest_id', '=', self.id),
+            ('archived', '=', False),
+        ])
+
+        if not memories:
+            return 0
+
+        # Auto-archive old low-importance memories
+        old_low = memories.filtered(
+            lambda m: m.importance == 'low' and
+            m.create_date and m.create_date.date() < cutoff
+        )
+        if old_low:
+            old_low.write({'archived': True})
+            memories -= old_low
+
+        # Cap active memories at 50
+        if len(memories) > 50:
+            to_archive = memories.sorted(
+                lambda m: {'high': 3, 'medium': 2, 'low': 1}.get(m.importance, 0)
+            )[:len(memories) - 50]
+            to_archive.write({'archived': True})
+            memories -= to_archive
+
+        # Group by category for consolidation
+        by_category = {}
+        for m in memories:
+            cat = m.category or 'fact'
+            if cat not in by_category:
+                by_category[cat] = []
+            by_category[cat].append(m.content[:200])
+
+        # Build consolidated user_model text
+        lines = []
+        for cat, facts in sorted(by_category.items()):
+            # Deduplicate similar facts
+            unique = list(set(facts))[:5]
+            if unique:
+                lines.append(f"## {cat}")
+                for f in unique:
+                    lines.append(f"- {f}")
+
+        if lines:
+            self.identity_id.user_model = '\n'.join(lines)[:4000]
+
+        # Mark consolidated
+        memories.write({'consolidated': True})
+        _logger.info('Consolidated %d memories for quest %s into %d categories',
+                     len(memories), self.name, len(by_category))
+        return len(memories)
+
     def _notify_cap(self, level, used, cap):
         """Post cap notification to quest's discuss channel + Zabbix."""
         self.ensure_one()

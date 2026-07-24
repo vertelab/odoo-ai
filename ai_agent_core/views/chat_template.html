@@ -172,7 +172,11 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);overflow:hid
         <input type="text" id="prompt-input" placeholder="Skriv ett meddelande..." autofocus/>
         <button id="send-btn" onclick="sendMessage()">Skicka</button>
         <button id="cancel-btn" onclick="cancelStream()" class="cancel-btn">Avbryt</button>
-    </div></div>
+    </div>
+    <div class="systemtoken-status" id="systemtoken-status" style="display:none;font-size:11px;color:var(--text-muted);padding-top:4px;text-align:right">
+        Session: <span id="sys-tokens">0</span> systemtokens
+    </div>
+    </div>
 </div>
 </div>
 
@@ -363,6 +367,24 @@ function md2html(s){
 function scrollBottom(){var e=document.getElementById('messages');e.scrollTop=e.scrollHeight}
 function updateTokenInfo(){document.getElementById('token-info').textContent='Tokens: ~'+tokenCount}
 
+function updateSystemtokenDisplay(){
+    if(!activeSessionId)return;
+    fetch('/ai/threads/'+activeSessionId).then(r=>r.json()).then(d=>{
+        var total=0;
+        if(d.messages){
+            d.messages.forEach(function(m){
+                if(m.token_sys)total+=m.token_sys;
+            });
+        }
+        var el=document.getElementById('systemtoken-status');
+        var sp=document.getElementById('sys-tokens');
+        if(el&&sp&&total>0){
+            sp.textContent=total.toLocaleString();
+            el.style.display='block';
+        }
+    }).catch(function(){})
+}
+
 function sendMessage(){
     var e=document.getElementById('prompt-input'),t=document.getElementById('send-btn'),n=e.value.trim();
     if(!n||streaming)return;e.value='';
@@ -441,9 +463,13 @@ function finishStream(){
         if(!txt){currentAiMessage.innerHTML='<em style="color:var(--text-muted)">(inget svar)</em>'}
         else{
             currentAiMessage.innerHTML=md2html(txt);
-            // Save assistant response to thread
+            // Save assistant response to thread with token estimates
             if(activeSessionId&&txt){
-                fetch('/ai/threads/'+activeSessionId+'/respond',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:txt})})
+                var estInput=Math.round(txt.length/4);
+                var estOutput=txt.length;
+                fetch('/ai/threads/'+activeSessionId+'/respond',{method:'POST',headers:{'Content-Type':'application/json'},
+                    body:JSON.stringify({content:txt,token_input:estInput,token_output:tokenCount,model_real:'web-chat'})})
+                    .then(r=>r.json()).then(d=>{updateSystemtokenDisplay()})
             }
         }
     }
