@@ -2,7 +2,6 @@
 """Post-install hook: create academic paper writing quest and agents."""
 
 import logging
-from odoo import api, SUPERUSER_ID
 
 _logger = logging.getLogger(__name__)
 
@@ -18,9 +17,8 @@ AGENTS = [
 ]
 
 
-def post_init_hook(cr, registry):
+def post_init_hook(env):
     """Create agents and quest after module installation."""
-    env = api.Environment(cr, SUPERUSER_ID, {})
 
     # Create skill
     skill = env['ai.skill'].create({
