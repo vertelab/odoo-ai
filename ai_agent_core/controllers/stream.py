@@ -378,9 +378,84 @@ class AIStreamController(http.Controller):
             } for s in sessions]
         }), content_type='application/json')
 
+    # === Improvement & Upload ===
+
+    @http.route('/ai/improve', type='http', auth='public',
+                methods=['POST'], csrf=False, sitemap=False)
+    def improve_quest(self, **kw):
+        """Förbättra-kommando: uppdatera quest med feedback."""
+        user = request.env.user
+        body = json.loads(request.httprequest.data or '{}')
+        quest_id = body.get('quest_id')
+        guidance_text = body.get('guidance', '')
+        if not guidance_text.strip():
+            return Response(json.dumps({"error": "Tom förbättringstext"}),
+                          content_type='application/json', status=400)
+        quest = request.env['ai.quest'].browse(int(quest_id)) if quest_id else None
+        if not quest or not quest.exists():
+            return Response(json.dumps({"error": "Quest ej hittad"}),
+                          content_type='application/json', status=404)
+        is_admin = user.has_group('base.group_system')
+        is_owner = quest.user_id and quest.user_id.id == user.id
+        if not (is_admin or is_owner):
+            return Response(json.dumps({"error": "Saknar rättighet"}),
+                          content_type='application/json', status=403)
+        memory = request.env['ai.memory'].create({
+            'name': f'Forbattring: {guidance_text[:80]}',
+            'content': guidance_text,
+            'quest_id': quest.id,
+            'category': 'feedback',
+            'importance': 'high',
+        })
+        if quest.identity_id:
+            existing = quest.identity_id.user_model or ''
+            new_entry = f"\n- Forbattring ({fields.Datetime.now()}): {guidance_text[:200]}"
+            quest.identity_id.user_model = (existing + new_entry)[:4000]
+        _logger.info("Improvement on quest %s: %s", quest.name, guidance_text[:100])
+        return Response(json.dumps({
+            "status": "ok", "memory_id": memory.id,
+            "message": f"Forbattring sparad for '{quest.name}'.",
+        }), content_type='application/json')
+
+    @http.route('/ai/upload', type='http', auth='public',
+                methods=['POST'], csrf=False, sitemap=False)
+    def upload_document(self, **kw):
+        """Ladda upp dokument -> RAG-minne."""
+        quest_id = kw.get('quest_id')
+        file_obj = request.httprequest.files.get('file')
+        if not file_obj:
+            return Response(json.dumps({"error": "Ingen fil"}),
+                          content_type='application/json', status=400)
+        filename = file_obj.filename
+        content = file_obj.read()
+        text = _extract_text(filename, content)
+        if not text or not text.strip():
+            return Response(json.dumps({"error": "Kunde ej extrahera text"}),
+                          content_type='application/json', status=400)
+        quest = request.env['ai.quest'].browse(int(quest_id)) if quest_id else None
+        chunks = _chunk_text(text, 2000)
+        memories = []
+        for i, chunk in enumerate(chunks):
+            m = request.env['ai.memory'].create({
+                'name': f'{filename} (del {i+1})' if len(chunks) > 1 else filename,
+                'content': chunk,
+                'quest_id': quest.id if quest else None,
+                'category': 'fact',
+                'importance': 'medium',
+                'tags': f'uploaded,{filename}',
+            })
+            memories.append(m.id)
+        _logger.info("Upload: %s (%d chars, %d chunks)", filename, len(text), len(chunks))
+        return Response(json.dumps({
+            "status": "ok", "filename": filename,
+            "chars": len(text), "chunks": len(chunks),
+            "memory_ids": memories,
+            "message": f"'{filename}' uppladdat ({len(chunks)} minnesposter).",
+        }), content_type='application/json')
+
 
 # ---------------------------------------------------------------------------
-# Helper: WebUI handler registry (in-memory, per Odoo worker)
+# Helper functions
 # ---------------------------------------------------------------------------
 
 _webui_handlers: dict[str, 'WebUIInterruptHandler'] = {}
@@ -435,3 +510,144 @@ def _load_chat_template():
         return '<html><body>Error loading template</body></html>'
 
 _CHAT_HTML_v3 = _load_chat_template()
+
+
+def _extract_text(filename: str, content: bytes) -> str:
+    """Extract text from uploaded file. Supports:
+    - Plain text: txt, md, csv, py, js, html, xml, json, yml, yaml, rst
+    - PDF: via PyPDF2
+    - Word: docx (python-docx)
+    - Excel: xlsx (openpyxl)
+    - PowerPoint: pptx (python-pptx)
+    - OpenDocument: odt, ods, odp (ZIP+XML parser)
+    - Legacy: doc, xls, ppt, rtf (via LibreOffice if installed)
+    """
+    ext = filename.lower().split('.')[-1] if '.' in filename else ''
+
+    # Plain text formats
+    if ext in ('txt', 'md', 'csv', 'py', 'js', 'html', 'xml', 'json', 'yml', 'yaml', 'rst', 'log', 'ini', 'cfg'):
+        try:
+            return content.decode('utf-8')
+        except UnicodeDecodeError:
+            return content.decode('utf-8', errors='replace')
+
+    # PDF
+    elif ext == 'pdf':
+        try:
+            import io, PyPDF2
+            reader = PyPDF2.PdfReader(io.BytesIO(content))
+            return '\n'.join(p.extract_text() or '' for p in reader.pages)
+        except ImportError:
+            return f"[PDF kräver PyPDF2 — {len(content)} bytes]"
+        except Exception as e:
+            return f"[PDF-fel: {e}]"
+
+    # Word .docx
+    elif ext == 'docx':
+        try:
+            import io, docx
+            doc = docx.Document(io.BytesIO(content))
+            return '\n'.join(p.text for p in doc.paragraphs if p.text.strip())
+        except ImportError:
+            return f"[DOCX kräver python-docx — {len(content)} bytes]"
+        except Exception as e:
+            return f"[DOCX-fel: {e}]"
+
+    # Excel .xlsx
+    elif ext == 'xlsx':
+        try:
+            import io, openpyxl
+            wb = openpyxl.load_workbook(io.BytesIO(content), read_only=True, data_only=True)
+            text = []
+            for sheet_name in wb.sheetnames:
+                ws = wb[sheet_name]
+                text.append(f'=== {sheet_name} ===')
+                for row in ws.iter_rows(values_only=True):
+                    row_text = ' | '.join(str(c) if c is not None else '' for c in row)
+                    if row_text.strip():
+                        text.append(row_text)
+            return '\n'.join(text)
+        except ImportError:
+            return f"[XLSX kräver openpyxl — {len(content)} bytes]"
+        except Exception as e:
+            return f"[XLSX-fel: {e}]"
+
+    # PowerPoint .pptx
+    elif ext == 'pptx':
+        try:
+            import io, pptx
+            prs = pptx.Presentation(io.BytesIO(content))
+            text = []
+            for i, slide in enumerate(prs.slides, 1):
+                text.append(f'=== Slide {i} ===')
+                for shape in slide.shapes:
+                    if shape.has_text_frame:
+                        for para in shape.text_frame.paragraphs:
+                            if para.text.strip():
+                                text.append(para.text)
+            return '\n'.join(text)
+        except ImportError:
+            return f"[PPTX kräver python-pptx — {len(content)} bytes]"
+        except Exception as e:
+            return f"[PPTX-fel: {e}]"
+
+    # OpenDocument: odt, ods, odp (ZIP med content.xml)
+    elif ext in ('odt', 'ods', 'odp'):
+        try:
+            import io, zipfile, xml.etree.ElementTree as ET
+            with zipfile.ZipFile(io.BytesIO(content)) as zf:
+                if 'content.xml' in zf.namelist():
+                    xml_content = zf.read('content.xml')
+                    root = ET.fromstring(xml_content)
+                    # All text content (ns-agnostic)
+                    text = []
+                    for elem in root.iter():
+                        if elem.text and elem.text.strip():
+                            tag = elem.tag.split('}')[-1] if '}' in elem.tag else elem.tag
+                            if tag in ('p', 'h', 'title', 'td', 'th', 'li'):
+                                text.append(elem.text.strip())
+                    return '\n'.join(text) if text else f"[ODF: kunde ej extrahera text]"
+                else:
+                    return f"[ODF: content.xml saknas i {filename}]"
+        except Exception as e:
+            return f"[ODF-fel: {e}]"
+
+    # Legacy formats: doc, xls, ppt, rtf → LibreOffice headless
+    elif ext in ('doc', 'xls', 'ppt', 'rtf'):
+        try:
+            import subprocess, tempfile, os
+            with tempfile.NamedTemporaryFile(suffix=f'.{ext}', delete=False) as tmp_in:
+                tmp_in.write(content)
+                tmp_in_path = tmp_in.name
+            tmp_out_path = tmp_in_path + '.txt'
+            result = subprocess.run(
+                ['libreoffice', '--headless', '--convert-to', 'txt:Text',
+                 '--outdir', os.path.dirname(tmp_out_path), tmp_in_path],
+                capture_output=True, timeout=30,
+            )
+            if result.returncode == 0 and os.path.exists(tmp_out_path):
+                with open(tmp_out_path, 'r', errors='replace') as f:
+                    text = f.read()
+                os.unlink(tmp_in_path)
+                os.unlink(tmp_out_path)
+                return text
+            os.unlink(tmp_in_path)
+            return f"[LibreOffice misslyckades för {filename}]"
+        except FileNotFoundError:
+            return f"[LibreOffice ej installerat — {filename} kan ej läsas]"
+        except Exception as e:
+            return f"[{ext.upper()}-fel: {e}]"
+
+    # Fallback: try UTF-8
+    else:
+        try:
+            return content.decode('utf-8')
+        except Exception:
+            return f"[Binär fil: {filename} ({len(content)} bytes) — formatet '{ext}' stöds ej]"
+
+
+def _chunk_text(text: str, max_chars: int = 2000) -> list:
+    """Split text into chunks."""
+    if len(text) <= max_chars:
+        return [text]
+    return [text[i:i + max_chars] for i in range(0, len(text), max_chars)]

@@ -47,7 +47,6 @@
         'views/ai_identity_views.xml',
         'views/ai_skill_views.xml',
         'views/ai_tool_views.xml',
-        'views/ai_session_views.xml',
         'views/templates.xml',
     ],
     'installable': True,

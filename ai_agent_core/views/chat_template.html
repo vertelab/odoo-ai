@@ -167,6 +167,8 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);overflow:hid
         </div>
     </div>
     <div class="chat-input-area"><div class="chat-input-row">
+        <input type="file" id="file-input" style="display:none" onchange="uploadFile(this)" accept=".txt,.md,.csv,.py,.js,.html,.xml,.json,.yml,.yaml,.pdf,.docx,.xlsx,.pptx,.odt,.ods,.odp,.doc,.xls,.ppt,.rtf"/>
+        <button id="upload-btn" onclick="document.getElementById('file-input').click()" title="Ladda upp dokument" style="background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius);color:var(--text-muted);font-size:18px;cursor:pointer;padding:8px 12px;min-height:44px">📎</button>
         <input type="text" id="prompt-input" placeholder="Skriv ett meddelande..." autofocus/>
         <button id="send-btn" onclick="sendMessage()">Skicka</button>
         <button id="cancel-btn" onclick="cancelStream()" class="cancel-btn">Avbryt</button>
@@ -364,6 +366,20 @@ function updateTokenInfo(){document.getElementById('token-info').textContent='To
 function sendMessage(){
     var e=document.getElementById('prompt-input'),t=document.getElementById('send-btn'),n=e.value.trim();
     if(!n||streaming)return;e.value='';
+
+    // Detektera "Förbättra:" / "Improve:" kommando
+    if(/^(Forbattra|Improve|Forbättra):\s*/i.test(n)){
+        var guidance=n.replace(/^(Forbattra|Improve|Forbättra):\s*/i,'').trim();
+        if(!activeQuestId){alert('Välj en quest först!');return}
+        fetch('/ai/improve',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({quest_id:activeQuestId,guidance:guidance})})
+        .then(function(r){return r.json()}).then(function(d){
+            var a=document.createElement('div');a.className='message system';
+            a.innerHTML='✅ '+esc(d.message||d.error||'Okant svar');
+            document.getElementById('messages').appendChild(a);scrollBottom()
+        });
+        return
+    }
+
     streaming=!0;t.style.display='none';document.getElementById('cancel-btn').style.display='inline-block';
     tokenCount=0;updateTokenInfo();
     var a=document.createElement('div');a.className='message user';a.innerHTML=esc(n);
@@ -448,6 +464,22 @@ function relTime(ts){
     if(m<1)return'nyss';if(m<60)return m+' min sen';
     if(h<24)return h+' h sen';if(days<7)return days+' d sen';
     return d.toLocaleDateString('sv-SE')
+}
+
+// === FILE UPLOAD ===
+function uploadFile(input){
+    var file=input.files[0];if(!file)return;
+    var a=document.createElement('div');a.className='message system';
+    a.innerHTML='📎 Laddar upp '+esc(file.name)+'...';
+    document.getElementById('messages').appendChild(a);scrollBottom();
+    var fd=new FormData();fd.append('file',file);
+    if(activeQuestId)fd.append('quest_id',activeQuestId);
+    fetch('/ai/upload',{method:'POST',body:fd})
+    .then(function(r){return r.json()}).then(function(d){
+        a.innerHTML='✅ '+esc(d.message||d.error||'Okant');
+        scrollBottom()
+    });
+    input.value=''
 }
 
 // === INIT ===
