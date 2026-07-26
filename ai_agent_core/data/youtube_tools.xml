@@ -1,0 +1,562 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo noupdate="1">
+
+    <!-- ── Tool: youtube_get_transcript ── -->
+    <record id="tool_youtube_get_transcript" model="ai.tool">
+        <field name="name">youtube_get_transcript</field>
+        <field name="description">Get transcript from a YouTube video. Accepts YouTube URL or video ID. Returns transcript segments with timestamps and metadata. No API key needed.</field>
+        <field name="risk_level">safe</field>
+        <field name="active">True</field>
+        <field name="parameters">{"type": "object", "properties": {"video_id": {"type": "string", "description": "YouTube URL (youtube.com/watch?v=ID, youtu.be/ID) or 11-char video ID"}, "language": {"type": "string", "description": "Language code (default: en). Examples: en, sv, es, de"}}, "required": ["video_id"]}</field>
+        <field name="code">async def execute(video_id="", language="en"):
+    """Get transcript from a YouTube video.
+
+    Args:
+        video_id: YouTube URL or 11-char video ID
+        language: Language code (default: 'en')
+
+    Returns:
+        JSON with transcript segments and metadata
+    """
+    import json
+    import re
+    from youtube_transcript_api import YouTubeTranscriptApi
+
+    if not video_id:
+        return json.dumps({"error": "video_id is required"})
+
+    # Extract video ID from URL
+    url_patterns = [
+        r'(?:youtube\\.com/watch\\?v=|youtu\\.be/|youtube\\.com/shorts/)([a-zA-Z0-9_-]{11})',
+        r'^([a-zA-Z0-9_-]{11})$',
+    ]
+    vid = None
+    for pattern in url_patterns:
+        m = re.search(pattern, video_id.strip())
+        if m:
+            vid = m.group(1)
+            break
+
+    if not vid:
+        return json.dumps({"error": f"Could not extract video ID from '{video_id}'"})
+
+    try:
+        api = YouTubeTranscriptApi()
+        transcript = api.fetch(vid, languages=[language])
+        segments = [
+            {"text": seg.text, "start": seg.start, "duration": seg.duration}
+            for seg in transcript
+        ]
+        return json.dumps({
+            "video_id": vid,
+            "language": language,
+            "segment_count": len(segments),
+            "segments": segments,
+        }, indent=2, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({"error": str(e), "video_id": vid})</field>
+    </record>
+
+    <!-- ── Tool: youtube_search ── -->
+    <record id="tool_youtube_search" model="ai.tool">
+        <field name="name">youtube_search</field>
+        <field name="description">Search YouTube for videos or channels. Uses Google Data API v3. Requires GOOGLE_API_KEY environment variable.</field>
+        <field name="risk_level">read_only</field>
+        <field name="active">True</field>
+        <field name="parameters">{"type": "object", "properties": {"query": {"type": "string", "description": "Search query (1-200 characters)"}, "max_results": {"type": "integer", "description": "Maximum results (1-50, default 10)"}, "search_type": {"type": "string", "enum": ["video", "channel"], "description": "Search type: video or channel"}}, "required": ["query"]}</field>
+        <field name="code">async def execute(query="", max_results=10, search_type="video"):
+    """Search YouTube for videos or channels.
+
+    Args:
+        query: Search query (1-200 chars)
+        max_results: Max results (1-50, default 10)
+        search_type: "video" or "channel" (default: "video")
+
+    Returns:
+        JSON with matching videos/channels and metadata
+    """
+    import json
+    import os
+    from googleapiclient.discovery import build
+
+    if not query:
+        return json.dumps({"error": "query is required"})
+
+    api_key = os.environ.get('GOOGLE_API_KEY')
+    if not api_key:
+        return json.dumps({
+            "error": "GOOGLE_API_KEY not set — search requires a Google API key with YouTube Data API v3 enabled"
+        })
+
+    try:
+        youtube = build('youtube', 'v3', developerKey=api_key, cache_discovery=False)
+        request = youtube.search().list(
+            q=query,
+            part='snippet',
+            type=search_type,
+            maxResults=min(max_results, 50)
+        )
+        response = request.execute()
+        results = []
+        for item in response.get('items', []):
+            entry = {'type': 'video' if 'videoId' in item['id'] else 'channel'}
+            if 'videoId' in item['id']:
+                entry['videoId'] = item['id']['videoId']
+            if 'channelId' in item['id']:
+                entry['channelId'] = item['id']['channelId']
+            entry['title'] = item['snippet']['title']
+            entry['channelId'] = item['snippet']['channelId']
+            entry['channelTitle'] = item['snippet']['channelTitle']
+            entry['publishedAt'] = item['snippet']['publishedAt']
+            entry['description'] = item['snippet']['description'][:300]
+            thumb = item['snippet'].get('thumbnails', {})
+            if thumb:
+                entry['thumbnail'] = thumb.get('default', {}).get('url', '')
+            results.append(entry)
+
+        return json.dumps({
+            "query": query,
+            "type": search_type,
+            "result_count": len(results),
+            "results": results,
+        }, indent=2, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({"error": f"Search failed: {e}"})</field>
+    </record>
+
+    <!-- ── Tool: youtube_channel ── -->
+    <record id="tool_youtube_channel" model="ai.tool">
+        <field name="name">youtube_channel</field>
+        <field name="description">YouTube channel operations: get latest uploads (free, no key needed via RSS), list all videos (paginated, needs GOOGLE_API_KEY), or resolve @handle to channel ID.</field>
+        <field name="risk_level">read_only</field>
+        <field name="active">True</field>
+        <field name="parameters">{"type": "object", "properties": {"channel": {"type": "string", "description": "@handle, channel URL, or UC... channel ID"}, "action": {"type": "string", "enum": ["latest", "videos", "resolve"], "description": "latest (free, 15 videos via RSS), videos (paginated, needs GOOGLE_API_KEY), resolve (@handle to UC... ID)"}, "limit": {"type": "integer", "description": "Max results for videos action (1-50)"}, "continuation": {"type": "string", "description": "Next page token for videos pagination"}}, "required": ["channel", "action"]}</field>
+        <field name="code">async def execute(channel="", action="latest", limit=10, continuation=""):
+    """YouTube channel operations.
+
+    Args:
+        channel: @handle, channel URL, or UC... channel ID
+        action: "latest" (free, 15 videos via RSS), "videos" (paginated, needs GOOGLE_API_KEY), "resolve" (free, @handle to UC... ID)
+        limit: Max results for "videos" action (1-50)
+        continuation: Next page token for paginated "videos"
+
+    Returns:
+        JSON with channel info and videos
+    """
+    import json
+    import os
+    import re
+
+    if action == "resolve":
+        api_key = os.environ.get('GOOGLE_API_KEY')
+        if not api_key:
+            return json.dumps({"error": "GOOGLE_API_KEY required for channel resolve"})
+        from googleapiclient.discovery import build
+        youtube = build('youtube', 'v3', developerKey=api_key, cache_discovery=False)
+        handle = channel.lstrip('@')
+        request = youtube.search().list(
+            q=f"@{handle}", part='snippet', type='channel', maxResults=1
+        )
+        response = request.execute()
+        items = response.get('items', [])
+        if items:
+            cid = items[0]['snippet']['channelId']
+            return json.dumps({
+                "channel_id": cid,
+                "title": items[0]['snippet']['title'],
+                "resolved_from": channel
+            })
+        return json.dumps({"error": f"Channel not found: {channel}"})
+
+    if action == "latest":
+        import urllib.request
+        import xml.etree.ElementTree as ET
+        cid = channel
+        m = re.search(r'UC[a-zA-Z0-9_-]{22}', channel)
+        if m:
+            cid = m.group(0)
+        else:
+            api_key = os.environ.get('GOOGLE_API_KEY')
+            if not api_key:
+                return json.dumps({"error": "Need GOOGLE_API_KEY to resolve handle, or pass UC... ID directly"})
+            from googleapiclient.discovery import build
+            youtube = build('youtube', 'v3', developerKey=api_key, cache_discovery=False)
+            handle = channel.lstrip('@')
+            req = youtube.search().list(q=f"@{handle}", part='snippet', type='channel', maxResults=1)
+            resp = req.execute()
+            items = resp.get('items', [])
+            if not items:
+                return json.dumps({"error": f"Channel not found: {channel}"})
+            cid = items[0]['snippet']['channelId']
+        rss_url = f"https://www.youtube.com/feeds/videos.xml?channel_id={cid}"
+        try:
+            req = urllib.request.Request(rss_url, headers={'User-Agent': 'Odoo-AI/1.0'})
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                tree = ET.parse(resp)
+            root = tree.getroot()
+            ns = {'atom': 'http://www.w3.org/2005/Atom'}
+            entries = root.findall('atom:entry', ns)
+            videos = []
+            for entry in entries[:limit]:
+                vid = entry.find('yt:videoId', {'yt': 'http://www.youtube.com/xml/schemas/2015'})
+                title = entry.find('atom:title', ns)
+                published = entry.find('atom:published', ns)
+                author = entry.find('atom:author', ns)
+                author_name = author.find('atom:name', ns) if author is not None else None
+                link = entry.find('atom:link', ns)
+                videos.append({
+                    "videoId": vid.text if vid is not None else "",
+                    "title": title.text if title is not None else "",
+                    "published": published.text if published is not None else "",
+                    "author": author_name.text if author_name is not None else "",
+                    "link": link.get('href') if link is not None else "",
+                })
+            return json.dumps({
+                "channel_id": cid,
+                "result_count": len(videos),
+                "results": videos,
+            }, indent=2, ensure_ascii=False)
+        except Exception as e:
+            return json.dumps({"error": f"RSS fetch failed: {e}"})
+
+    if action == "videos":
+        api_key = os.environ.get('GOOGLE_API_KEY')
+        if not api_key:
+            return json.dumps({"error": "GOOGLE_API_KEY required for channel videos listing"})
+        from googleapiclient.discovery import build
+        youtube = build('youtube', 'v3', developerKey=api_key, cache_discovery=False)
+        if continuation:
+            request = youtube.search().list(
+                part='snippet', type='video', maxResults=min(limit, 50), pageToken=continuation
+            )
+        else:
+            cid = channel
+            m = re.search(r'UC[a-zA-Z0-9_-]{22}', channel)
+            if m:
+                cid = m.group(0)
+            else:
+                handle = channel.lstrip('@')
+                req = youtube.search().list(
+                    q=f"@{handle}", part='snippet', type='channel', maxResults=1
+                )
+                resp = req.execute()
+                items = resp.get('items', [])
+                if not items:
+                    return json.dumps({"error": f"Channel not found: {channel}"})
+                cid = items[0]['snippet']['channelId']
+            request = youtube.search().list(
+                channelId=cid, part='snippet', type='video', order='date', maxResults=min(limit, 50)
+            )
+        response = request.execute()
+        results = []
+        for item in response.get('items', []):
+            results.append({
+                "videoId": item['id']['videoId'],
+                "title": item['snippet']['title'],
+                "publishedAt": item['snippet']['publishedAt'],
+                "description": item['snippet']['description'][:200],
+                "thumbnail": item['snippet'].get('thumbnails', {}).get('default', {}).get('url', ''),
+            })
+        return json.dumps({
+            "result_count": len(results),
+            "has_more": 'nextPageToken' in response,
+            "next_page_token": response.get('nextPageToken', ''),
+            "results": results,
+        }, indent=2, ensure_ascii=False)
+
+    return json.dumps({"error": f"Unknown action: {action}. Use: latest, videos, resolve"})</field>
+    </record>
+
+    <!-- ── Tool: youtube_playlist ── -->
+    <record id="tool_youtube_playlist" model="ai.tool">
+        <field name="name">youtube_playlist</field>
+        <field name="description">Fetch videos from a YouTube playlist. Accepts playlist URL or ID. Supports pagination. Requires GOOGLE_API_KEY.</field>
+        <field name="risk_level">read_only</field>
+        <field name="active">True</field>
+        <field name="parameters">{"type": "object", "properties": {"playlist_id": {"type": "string", "description": "Playlist URL or ID (PL/UU/LL/FL/OL prefix)"}, "max_results": {"type": "integer", "description": "Max videos per page (1-50, default 10)"}, "continuation": {"type": "string", "description": "Next page token for paginated results"}}, "required": ["playlist_id"]}</field>
+        <field name="code">async def execute(playlist_id="", max_results=10, continuation=""):
+    """Fetch videos from a YouTube playlist.
+
+    Args:
+        playlist_id: YouTube playlist URL or ID (PL/UU/LL/FL/OL prefix)
+        max_results: Max videos per page (1-50, default 10)
+        continuation: Next page token for pagination
+
+    Returns:
+        JSON with playlist info and videos
+    """
+    import json
+    import os
+    import re
+
+    api_key = os.environ.get('GOOGLE_API_KEY')
+    if not api_key:
+        return json.dumps({"error": "GOOGLE_API_KEY required for playlist access"})
+
+    if not playlist_id and not continuation:
+        return json.dumps({"error": "playlist_id or continuation required"})
+
+    from googleapiclient.discovery import build
+    youtube = build('youtube', 'v3', developerKey=api_key, cache_discovery=False)
+
+    pid = playlist_id
+    m = re.search(r'(?:list=|/playlist\\?list=)([a-zA-Z0-9_-]+)', playlist_id)
+    if m:
+        pid = m.group(1)
+
+    try:
+        kwargs = {'part': 'snippet', 'maxResults': min(max_results, 50)}
+        if pid:
+            kwargs['playlistId'] = pid
+        if continuation:
+            kwargs['pageToken'] = continuation
+
+        request = youtube.playlistItems().list(**kwargs)
+        response = request.execute()
+
+        results = []
+        for item in response.get('items', []):
+            snippet = item['snippet']
+            results.append({
+                "videoId": snippet['resourceId']['videoId'],
+                "title": snippet['title'],
+                "position": snippet.get('position', 0),
+                "channelId": snippet.get('channelId', ''),
+                "channelTitle": snippet.get('channelTitle', ''),
+                "publishedAt": snippet.get('publishedAt', ''),
+                "description": snippet.get('description', '')[:200],
+                "thumbnail": snippet.get('thumbnails', {}).get('default', {}).get('url', ''),
+            })
+
+        return json.dumps({
+            "playlist_id": pid or "(continuation mode)",
+            "result_count": len(results),
+            "has_more": 'nextPageToken' in response,
+            "next_page_token": response.get('nextPageToken', ''),
+            "results": results,
+        }, indent=2, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({"error": f"Playlist fetch failed: {e}"})</field>
+    </record>
+
+    <!-- ── Skill: youtube-transcript ── -->
+    <record id="skill_youtube_transcript" model="ai.skill">
+        <field name="name">youtube-transcript</field>
+        <field name="description">Hämta text-transkript från YouTube-videor. Använd när användaren delar en YouTube-länk och vill ha texten utskriven, sammanfattad, översatt eller analyserad.</field>
+        <field name="category">research</field>
+        <field name="trigger_keywords">youtube transcript, video transcript, captions, text from video, summarize video, undertext, video text, transkribera</field>
+        <field name="compatibility">any</field>
+        <field name="active">True</field>
+        <field name="recipe_text"># youtube-transcript
+
+## När du ska använda denna skill
+
+Anropa `youtube_get_transcript` tool när användaren:
+- Delar en YouTube-länk och vill ha textinnehållet
+- Ber om en sammanfattning av en video
+- Vill översätta eller citera från en video
+- Frågar om specifika detaljer som nämns i en video
+
+## Hur du använder
+
+1. Extrahera video-ID från URL:en (11 tecken, t.ex. dQw4w9WgXcQ)
+2. Anropa `youtube_get_transcript` med video_url eller video_id
+3. Valfritt: ange språk (default: en, använd sv för svenska)
+4. Resultatet innehåller segment med tidsstämplar och text
+
+## Arbetsflöden
+
+### Sammanfatta en video
+- Hämta transkript → analysera innehållet → presentera sammanfattning med nyckelpunkter
+
+### Citat från video
+- Använd tidsstämplarna för att referera till specifika ögonblick i videon
+
+### Översättning
+- Hämta transkript på originalspråk → översätt till användarens språk
+
+## Felhantering
+
+| Fel | Åtgärd |
+|-----|--------|
+| "No transcript available" | Videon har inga captions. Försök med annat språk eller informera användaren. |
+| "Video not found" | Kontrollera att URL:en är korrekt. |
+| Ogiltigt video-ID | Extrahera ID från URL:en, inte hela URL:en. |
+
+OBS: Ingen API-nyckel krävs! Fungerar med alla YouTube-videor som har captions aktiverade.</field>
+    </record>
+
+    <!-- ── Skill: youtube-search ── -->
+    <record id="skill_youtube_search" model="ai.skill">
+        <field name="name">youtube-search</field>
+        <field name="description">Sök efter videor och kanaler på YouTube. Använd när användaren vill hitta innehåll om ett ämne, upptäcka tutorials, eller leta efter specifika kanaler.</field>
+        <field name="category">research</field>
+        <field name="trigger_keywords">youtube search, find videos, search youtube, hitta video, sök youtube, youtube sökning</field>
+        <field name="compatibility">any</field>
+        <field name="active">True</field>
+        <field name="recipe_text"># youtube-search
+
+## När du ska använda denna skill
+
+Anropa `youtube_search` tool när användaren:
+- Vill hitta videor om ett specifikt ämne
+- Söker efter en kanal
+- Behöver forskningsmaterial från YouTube
+- Vill upptäcka populära videor inom ett ämne
+
+## Hur du använder
+
+1. Anropa `youtube_search` med en sökfråga (query)
+2. Valfritt: ange `search_type` (video eller channel)
+3. Valfritt: ange `max_results` (1-50, standard 10)
+
+## Sökresultat
+
+Varje videoresultat innehåller:
+- videoId, title, channelTitle, publishedAt
+- description, thumbnail
+
+Varje kanalresultat innehåller:
+- channelId, title, description, thumbnail
+
+## Arbetsflöden
+
+### Forskningsflöde
+Sök → välj relevanta videor → hämta transkript från varje → sammanfatta insikter
+
+### Kanalupptäckt
+Sök med `search_type=channel` för att hitta kanaler, inte enskilda videor
+
+## Viktigt
+- Kräver GOOGLE_API_KEY miljövariabel
+- Om nyckel saknas, informera användaren</field>
+    </record>
+
+    <!-- ── Skill: youtube-channels ── -->
+    <record id="skill_youtube_channels" model="ai.skill">
+        <field name="name">youtube-channels</field>
+        <field name="description">Utforska YouTube-kanaler — hämta senaste uploads, lista alla videos, sök inom kanal. Använd när användaren nämner en kanal eller @handle och vill se deras innehåll.</field>
+        <field name="category">research</field>
+        <field name="trigger_keywords">youtube channel, channel uploads, latest videos, @handle, kanal, senaste videos, channel videos</field>
+        <field name="compatibility">any</field>
+        <field name="active">True</field>
+        <field name="recipe_text"># youtube-channels
+
+## När du ska använda denna skill
+
+Anropa `youtube_channel` tool när användaren:
+- Nämner en @handle eller kanal-URL
+- Vill se senaste uploads från en kanal
+- Vill lista alla videos från en kanal
+- Vill söka inom en specifik kanal
+- Behöver resolve:a ett @handle till kanal-ID
+
+## Hur du använder
+
+### Senaste uploads (gratis, ingen API-nyckel)
+Anropa `youtube_channel` med:
+- channel: @handle, URL eller UC...-ID
+- action: "latest"
+- limit: antal videos (max 15, standard 10)
+
+### Alla videos (paginering, kräver API-nyckel)
+Anropa `youtube_channel` med:
+- channel: @handle, URL eller UC...-ID
+- action: "videos"
+- limit: per sida (max 50)
+- continuation: (tom för första sidan, nästa sidas token för fortsättning)
+
+### Resolve handle
+Anropa `youtube_channel` med:
+- channel: @handle (t.ex. @TED)
+- action: "resolve"
+
+## Arbetsflöden
+
+### Monitorera en kanal
+Latest (gratis) → om intressant video → hämta transcript
+
+### Forskning på en kanal
+Resolve handle → list all videos → filtrera på ämne → hämta transcript från relevanta</field>
+    </record>
+
+    <!-- ── Skill: youtube-playlist ── -->
+    <record id="skill_youtube_playlist" model="ai.skill">
+        <field name="name">youtube-playlist</field>
+        <field name="description">Hämta videos från YouTube-spellistor. Använd när användaren delar en spellänk eller vill analysera en hel spellista.</field>
+        <field name="category">research</field>
+        <field name="trigger_keywords">youtube playlist, spellista, playlist videos, playlist analysis, kurs, kursmaterial</field>
+        <field name="compatibility">any</field>
+        <field name="active">True</field>
+        <field name="recipe_text"># youtube-playlist
+
+## När du ska använda denna skill
+
+Anropa `youtube_playlist` tool när användaren:
+- Delar en YouTube-spellista
+- Vill se alla videos i en spellista
+- Vill analysera en hel kurs/playlist
+- Frågar om innehållet i en spellista
+
+## Hur du använder
+
+Anropa `youtube_playlist` med:
+- playlist_id: spelliste-URL eller ID (prefix: PL, UU, LL, FL, OL)
+- max_results: per sida (1-50, standard 10)
+- continuation: nästa sidas token (för paginering)
+
+## Arbetsflöden
+
+### Lista spellista
+Hämta första sidan → visa videos med titel och position
+
+### Full analys av kurs/spellista
+1. Hämta spellistans videos (första sidan)
+2. Om fler sidor finns, fortsätt med continuation tokens
+3. För varje video: hämta transcript med youtube_get_transcript
+4. Sammanställ en strukturerad analys
+
+### Kombinerat flöde (max 5 videos)
+För att undvika för många API-anrop, begränsa transcript-hämtning till de första 5 videorna i spellistan som standard.
+
+## Viktigt
+- Kräver GOOGLE_API_KEY för playlist-åtkomst
+- Spelliste-ID börjar med PL, UU, LL, FL eller OL</field>
+    </record>
+
+    <!-- ── Skill: youtube-full ── -->
+    <record id="skill_youtube_full" model="ai.skill">
+        <field name="name">youtube-full</field>
+        <field name="description">Komplett YouTube-verktygslåda — transkript, sökning, kanaler och spellistor i en skill. Använd för agenter som behöver full YouTube-tillgång.</field>
+        <field name="category">research</field>
+        <field name="trigger_keywords">youtube, video, transkript, sökning, kanal, spellista, youtube full</field>
+        <field name="compatibility">any</field>
+        <field name="active">True</field>
+        <field name="recipe_text"># youtube-full
+
+Komplett YouTube-verktygslåda. Innehåller alla fyra individuella YouTube-skills.
+
+## Tillgängliga verktyg
+
+| Tool | Beskrivning | API-nyckel? |
+|------|-------------|-------------|
+| `youtube_get_transcript` | Hämta transkript från video | ❌ Nej |
+| `youtube_search` | Sök efter videor/kanaler | ✅ GOOGLE_API_KEY |
+| `youtube_channel` | Kanal-operationer | Delvis (latest: nej, videos: ja) |
+| `youtube_playlist` | Hämta spelliste-videos | ✅ GOOGLE_API_KEY |
+
+## När du ska använda vilket verktyg
+
+- **Användaren delar en videolänk** → `youtube_get_transcript`
+- **Användaren vill hitta innehåll** → `youtube_search`
+- **Användaren nämner en kanal/@handle** → `youtube_channel` med action=latest
+- **Användaren vill lista alla videos från en kanal** → `youtube_channel` med action=videos
+- **Användaren delar en spellänk** → `youtube_playlist`
+- **Användaren vill forska/researcha** → Sök → välj → transcript på varje
+
+## Aktivering
+
+Använd `/youtube-full` för att aktivera denna skill explicit, eller låt trigger keywords aktivera den automatiskt.</field>
+    </record>
+
+</odoo>

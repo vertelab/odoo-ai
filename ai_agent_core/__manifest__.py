@@ -48,6 +48,7 @@
         'data/cron_memory_consolidation.xml',
         'data/cron_scheduled_quests.xml',
         'data/bridge_config.xml',
+        'data/youtube_tools.xml',
         'views/ai_monthly_summary_views.xml',
         'views/menu.xml',
         'views/ai_provider_views.xml',

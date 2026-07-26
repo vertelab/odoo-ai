@@ -131,6 +131,7 @@ class AITool(models.Model):
             'str': str, 'int': int, 'float': float, 'bool': bool,
             'list': list, 'dict': dict, 'len': len,
             'range': range, 'enumerate': enumerate, 'zip': zip,
+            '__import__': __import__,
             'print': lambda *a, **kw: None,  # no-op in sandbox
         }
 
@@ -139,6 +140,8 @@ class AITool(models.Model):
             'env': self.env,
             'json': __import__('json'),
             'datetime': __import__('datetime'),
+            'os': __import__('os'),
+            're': __import__('re'),
         }
 
         try:
