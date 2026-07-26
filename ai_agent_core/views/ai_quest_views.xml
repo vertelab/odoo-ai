@@ -81,6 +81,8 @@
         <field name="arch" type="xml">
             <form>
                 <header>
+                    <button name="action_open_builder" type="object"
+                            string="🤖 Build with AI" class="btn-primary"/>
                     <field name="status" widget="statusbar"
                            statusbar_visible="active,done"/>
                 </header>
@@ -91,40 +93,76 @@
                             <field name="agent_count" widget="statinfo"/>
                         </button>
                         <button name="action_get_sessions" class="oe_stat_button"
-                                type="object" icon="fa-history">
+                                type="object" icon="fa-flag-checkered">
                             <field name="session_count" widget="statinfo"/>
                         </button>
-                        <div class="oe_stat_button" icon="fa-database">
+                        <button name="action_get_session_lines" class="oe_stat_button"
+                                type="object" icon="fa-money">
                             <field name="session_line_count" widget="statinfo"
-                                   string="Systemtokens"/>
-                        </div>
-                        <div class="oe_stat_button" icon="fa-pie-chart">
-                            <field name="started_mtokens" widget="statinfo"
-                                   string="Påbörjade M"/>
-                        </div>
-                        <div class="oe_stat_button" icon="fa-calculator">
-                            <field name="total_sys_tokens" widget="statinfo"
-                                   string="Totalt"/>
-                        </div>
-                        <button name="action_monthly_overview" class="oe_stat_button"
-                                type="object" icon="fa-calendar"
-                                string="Månadsöversikt"
-                                help="Visa månadens systemtoken-förbrukning per modell"/>
+                                   string="Tokens"/>
+                        </button>
+                        <button name="action_get_session_objects" class="oe_stat_button"
+                                type="object" icon="fa-puzzle-piece">
+                            <field name="session_object_count" widget="statinfo"
+                                   string="Objects"/>
+                        </button>
                     </div>
                     <div class="oe_title">
                         <h1><field name="name" placeholder="Quest Name"/></h1>
+                        <field name="sub_description" placeholder="Short description"/>
                     </div>
                     <group col="4">
-                        <field name="init_type"/>
                         <field name="is_supervisor"/>
                         <field name="model_ids" widget="many2many_tags"/>
                         <field name="identity_id"/>
+                        <field name="tag_ids" widget="many2many_tags"/>
                     </group>
                     <notebook>
                         <page string="Description">
-                            <field name="description" widget="text" nolabel="1"/>
+                            <field name="description" widget="text" nolabel="1"
+                                   placeholder="System prompt / quest purpose..."/>
+                        </page>
+                        <page string="Initiation Types">
+                            <field name="has_web_ui" invisible="1"/>
+                            <field name="has_chat" invisible="1"/>
+                            <field name="has_channel" invisible="1"/>
+                            <field name="has_mail" invisible="1"/>
+                            <field name="has_cron" invisible="1"/>
+                            <field name="has_server_action" invisible="1"/>
+                            <field name="has_openai_api" invisible="1"/>
+                            <group string="Active Types">
+                                <field name="active_init_types" widget="many2many_tags"
+                                       options="{'no_create': True, 'no_open': True}"/>
+                            </group>
+                            <group string="Configuration" col="2">
+                                <!-- Web UI -->
+                                <field name="debug" invisible="not has_web_ui"/>
+                                <!-- Mail -->
+                                <field name="alias_name" invisible="not has_mail"
+                                       string="Email Alias"/>
+                                <!-- Chat & Channel -->
+                                <field name="chat_user_id" invisible="not has_chat and not has_channel"
+                                       readonly="1"/>
+                                <field name="channel_id" invisible="not has_channel"/>
+                                <field name="allow_trigger_words" invisible="not has_chat and not has_channel"/>
+                                <field name="chat_trigger_words"
+                                       invisible="(not has_chat and not has_channel) or not allow_trigger_words"/>
+                                <!-- Cron -->
+                                <field name="cron_id" invisible="not has_cron"/>
+                                <field name="filter_domain" invisible="not has_cron"/>
+                                <field name="notify_on_completion" invisible="not has_cron"/>
+                                <field name="notify_target" invisible="not has_cron or not notify_on_completion"/>
+                                <field name="auto_allowed_tools" invisible="not has_cron"/>
+                                <field name="auto_allowed_commands" invisible="not has_cron"/>
+                                <!-- Server Action -->
+                                <field name="server_action_id" invisible="not has_server_action"/>
+                                <!-- OpenAI API -->
+                                <field name="api_key_attachment_id" invisible="not has_openai_api"/>
+                            </group>
                         </page>
                         <page string="Agents">
+                            <field name="skill_ids" widget="many2many_tags"
+                                   string="Quest Skills (pipeline)"/>
                             <field name="agent_ids">
                                 <list editable="bottom">
                                     <field name="sequence" widget="handle"/>
@@ -132,22 +170,16 @@
                                 </list>
                             </field>
                         </page>
-                        <page string="Chat">
-                            <group>
-                                       help="When enabled, this quest appears in the /ai/chat web interface."/>
-                                <field name="allow_trigger_words"/>
-                                <field name="chat_trigger_words"
-                                       invisible="not allow_trigger_words"/>
-                                <field name="chat_history_limit"/>
-                            </group>
-                        </page>
-                        <page string="Access">
-                            <group string="Access Control">
-                                       help="Only users in these groups can see this quest in web chat."/>
-                                       help="Only these specific users can see this quest in web chat."/>
-                            </group>
-                        </page>
                         <page string="Context">
+                            <group string="Context Injection">
+                                <field name="context_injection_enabled"/>
+                                <field name="context_max_fields"
+                                       invisible="not context_injection_enabled"/>
+                                <field name="context_include_chatter"
+                                       invisible="not context_injection_enabled"/>
+                                <field name="context_chatter_limit"
+                                       invisible="not context_injection_enabled or not context_include_chatter"/>
+                            </group>
                             <group>
                                 <field name="use_chat_history"/>
                                 <field name="use_company_info"/>
@@ -156,9 +188,11 @@
                                 <field name="use_time_context"/>
                             </group>
                         </page>
-                        <page string="Schedule" invisible="init_type!='cron'">
-                            <group>
-                                <field name="filter_domain"/>
+                        <page string="Access">
+                            <group string="Access Control">
+                                <field name="show_in_chat"/>
+                                <field name="group_ids" widget="many2many_tags"/>
+                                <field name="user_ids" widget="many2many_tags"/>
                             </group>
                         </page>
                         <page string="Budget">
@@ -180,14 +214,15 @@
                             </group>
                             <group string="Status">
                                 <field name="cap_warning_sent" readonly="1"
-                                    attrs="{'invisible': [('cap_warning_sent', '=', False)]}"/>
+                                    invisible="not cap_warning_sent"/>
                                 <field name="cap_exhausted" readonly="1"
-                                    attrs="{'invisible': [('cap_exhausted', '=', False)]}"
+                                    invisible="not cap_exhausted"
                                     widget="boolean_toggle"/>
                             </group>
                         </page>
                     </notebook>
                 </sheet>
+                <chatter/>
             </form>
         </field>
     </record>
