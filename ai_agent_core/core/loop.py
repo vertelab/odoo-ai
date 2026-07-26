@@ -791,7 +791,7 @@ class StreamingAgentLoop(AgentLoop):
                                     "type": "function",
                                     "function": {
                                         "name": tc["name"],
-                                        "arguments": str(tc["arguments"]),
+                                        "arguments": json.dumps(tc["arguments"]),
                                     },
                                 }
                                 for tc in tool_calls_seen
@@ -824,7 +824,10 @@ class StreamingAgentLoop(AgentLoop):
 
                         tool_calls_seen = []
                         text_buffer = ""
-                        continue  # next round
+                        # break (inte continue!) — continue skulle bara hämta
+                        # nästa event ur samma stream; en dubbel-done från
+                        # providern skulle då avsluta loopen innan runda 2.
+                        break  # → while-loopen startar nästa runda
 
                     else:
                         # Done — return final text

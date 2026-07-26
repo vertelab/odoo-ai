@@ -342,9 +342,14 @@ class BifrostProvider(AIProvider):
         )
 
         tool_call_buffer: dict[str, dict] = {}
+        done_sent = False  # [DONE]-markören får inte ge en andra done
 
         async for chunk in self._post_stream("/chat/completions", body):
             if isinstance(chunk, TokenEvent):
+                if chunk.type == "done":
+                    if done_sent:
+                        continue
+                    done_sent = True
                 yield chunk
                 continue
 
@@ -390,7 +395,9 @@ class BifrostProvider(AIProvider):
                         name=buf["name"],
                         arguments=buf["arguments"] if isinstance(buf["arguments"], dict) else {},
                     ))
-                yield TokenEvent(type="done", finish_reason=finish)
+                if not done_sent:
+                    done_sent = True
+                    yield TokenEvent(type="done", finish_reason=finish)
 
 
 # ---------------------------------------------------------------------------

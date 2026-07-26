@@ -962,16 +962,15 @@ function sendMessage(){
     document.getElementById('messages').appendChild(currentAiMessage);
     currentAgentCards={};scrollBottom();
 
-    // Auto-create thread if needed, then save user message
+    // Auto-create thread if needed, then stream.
+    // NOTE: /ai/stream saves the user line server-side — no extra POST here
+    // (the old /respond call duplicated every user message in the session).
     function doStream(){
-        if(activeSessionId&&n){
-            fetch('/ai/threads/'+activeSessionId+'/respond',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:n,role:'user'})})
-        }
         startStream(n)
     }
     if(!activeSessionId){
         var cleanName=n.replace(/[\n\r]+/g,' ').replace(/\s+/g,' ').trim().substring(0,50);
-        var sbody=JSON.stringify({quest_id:activeQuestId||null,name:cleanName,skill_id:contextSkill?parseInt(contextSkill):null});
+        var sbody=JSON.stringify({quest_id:activeQuestId||null,name:cleanName,skill_id:contextSkill?parseInt(contextSkill):null,context_quest:contextQuest||null});
         fetch('/ai/threads',{method:'POST',headers:{'Content-Type':'application/json'},body:sbody})
         .then(function(r){return r.json()}).then(function(d){
             activeSessionId=d.id;activeThreadName=d.name;
@@ -981,7 +980,9 @@ function sendMessage(){
         })
     } else {doStream()}
 }
+var streamText='';
 function startStream(prompt){
+    streamText='';
     var url='/ai/stream?prompt='+encodeURIComponent(prompt);
     if(activeQuestId)url+='&quest_id='+activeQuestId;
     if(activeSessionId)url+='&session_id='+activeSessionId;
@@ -994,7 +995,7 @@ function startStream(prompt){
 function cancelStream(){if(currentEventSource){currentEventSource.close()}finishStream()}
 function handleStreamEvent(e){
     switch(e.type){
-        case'token':currentAiMessage.innerHTML+=e.token;tokenCount++;updateTokenInfo();break;
+        case'token':currentAiMessage.innerHTML+=e.token;streamText+=e.token;tokenCount++;updateTokenInfo();break;
         case'tool_call_start':var a=document.createElement('div');a.className='agent-card';var n=e.tool_call?e.tool_call.name:'tool';a.innerHTML='<div class="agent-card-header"><span>🔧</span><span>'+esc(n)+'</span></div><div class="agent-card-body">Kör...</div>';currentAiMessage.appendChild(a);currentAgentCards[n]=a;break;
         case'needs_approval':showInterruptDialog('Godkänn verktyg: '+esc(e.tool_call?e.tool_call.name:'?'),'tool_approval');break;
         case'needs_input':showInterruptDialog(e.question||'Agenten behöver input','clarification');break;
@@ -1015,11 +1016,15 @@ function respondInterrupt(approved){
 }
 function finishStream(){
     if(currentAiMessage){
-        var txt=currentAiMessage.textContent.trim();
-        if(!txt){currentAiMessage.innerHTML='<em style="color:var(--text-muted)">(inget svar)</em>'}
-        else{
-            // Render markdown + wrap with message actions
-            currentAiMessage.innerHTML=addMessageActions(md2html(txt));
+        // Save/render only the streamed TEXT — textContent includes rendered
+        // tool-call badges ("🔧nameKör...") which polluted session history.
+        var txt=streamText.trim();
+        if(!txt&&!currentAiMessage.textContent.trim()){
+            currentAiMessage.innerHTML='<em style="color:var(--text-muted)">(inget svar)</em>'
+        }else{
+            // Render markdown + wrap with message actions (badges were
+            // progress indicators; the final text replaces them)
+            if(txt){currentAiMessage.innerHTML=addMessageActions(md2html(txt))}
             // Save assistant response
             if(activeSessionId&&txt){
                 var estInput=Math.round(txt.length/4);

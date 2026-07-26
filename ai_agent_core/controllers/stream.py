@@ -78,6 +78,25 @@ class AIStreamController(http.Controller):
                             )
                             system_prompt = system_prompt + skill_context
                             _logger.info('Injected skill #%s into system prompt for Skill Builder', context_skill)
+                    # Inject quest context for Quest Builder — otherwise the
+                    # builder doesn't know WHICH quest "Study this quest" means
+                    context_quest = kw.get('context_quest')
+                    if context_quest:
+                        cq = request.env['ai.quest'].sudo().browse(int(context_quest))
+                        if cq.exists():
+                            agents_desc = ", ".join(
+                                f"{rel.agent_id.name} ({rel.agent_id.model_id.name if rel.agent_id.model_id else '?'})"
+                                for rel in cq.agent_ids) or "(inga agenter)"
+                            quest_context = (
+                                f"\n\n## QUEST TO STUDY/IMPROVE (always remember this context — this is 'the quest' the user refers to)\n"
+                                f"Name: {cq.name}\n"
+                                f"Status: {cq.status}\n"
+                                f"Init type: {cq.init_type}\n"
+                                f"Description: {(cq.description or '')[:800]}\n"
+                                f"Agents: {agents_desc}\n"
+                            )
+                            system_prompt = system_prompt + quest_context
+                            _logger.info('Injected quest #%s into system prompt for Quest Builder', context_quest)
                     # Get model from quest's agents (ai_agent_core fields)
                     for qa in quest.agent_ids:
                         agent = qa.agent_id
@@ -182,6 +201,16 @@ class AIStreamController(http.Controller):
         # generate(). Extract everything needed into plain values here.
         gen_is_supervisor = False
         gen_agents = []  # [{'name', 'description', 'model'}]
+        # DB identity for the post-teardown cursor (tool execution needs an
+        # env, but `request.env` is unbound inside the SSE generator)
+        gen_dbname = request.env.cr.dbname
+        gen_uid = request.env.uid
+        gen_context = dict(request.env.context)
+        # NATS executor config (tool-executor-nats)
+        nats_api_secret = request.env['ir.config_parameter'].sudo().get_param(
+            'ai_agent_core.api_secret', '')
+        nats_max_retries = int(request.env['ir.config_parameter'].sudo().get_param(
+            'pi.nats.max_retries', '3'))
         if quest and quest.exists():
             try:
                 gen_is_supervisor = bool(quest.is_supervisor)
@@ -208,9 +237,9 @@ class AIStreamController(http.Controller):
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
                 try:
-                    async def _stream():
+                    async def _stream(gen_env):
                         from odoo.addons.ai_agent_core.core.provider import BifrostProvider
-                        from odoo.addons.ai_agent_core.core.tools import ToolRegistry, builtin_tools
+                        from odoo.addons.ai_agent_core.core.tools import ToolRegistry, builtin_tools, wrap_tools_with_env
                         from odoo.addons.ai_agent_core.core.loop import StreamingAgentLoop, AgentConfig
                         from odoo.addons.ai_agent_core.core.supervisor import StreamingSupervisorLoop, SupervisorConfig, SpecialistAgent
 
@@ -219,7 +248,7 @@ class AIStreamController(http.Controller):
                             virtual_key="opencode",
                         )
                         tools = ToolRegistry()
-                        tools.register_many(builtin_tools())
+                        tools.register_many(wrap_tools_with_env(builtin_tools(), gen_env))
 
                         if gen_is_supervisor and len(gen_agents) > 1:
                             # Build supervisor with streaming
@@ -230,7 +259,13 @@ class AIStreamController(http.Controller):
                                     description=a['description'],
                                     loop=StreamingAgentLoop(
                                         provider=provider, tools=tools,
-                                        config=AgentConfig(model=a['model'], system_prompt=system_prompt, max_rounds=10),
+                                        config=AgentConfig(
+                                            model=a['model'],
+                                            system_prompt=system_prompt,
+                                            max_rounds=10,
+                                            nats_api_secret=nats_api_secret,
+                                            nats_max_retries=nats_max_retries,
+                                        ),
                                     ),
                                 ))
                             loop_obj = StreamingSupervisorLoop(
@@ -245,6 +280,8 @@ class AIStreamController(http.Controller):
                                     model=model,
                                     system_prompt=system_prompt,
                                     max_rounds=10,
+                                    nats_api_secret=nats_api_secret,
+                                    nats_max_retries=nats_max_retries,
                                 ),
                             )
 
@@ -263,7 +300,13 @@ class AIStreamController(http.Controller):
                                 data["finish_reason"] = event.finish_reason
                             yield f"data: {json.dumps(data)}\n\n"
 
-                    results = loop.run_until_complete(_collect(_stream()))
+                    # Fresh cursor + env for the post-teardown phase:
+                    # tool handlers run ORM calls while streaming.
+                    from odoo import api as _api, registry as _registry
+                    with _registry(gen_dbname).cursor() as gen_cr:
+                        gen_env = _api.Environment(gen_cr, gen_uid, gen_context)
+                        results = loop.run_until_complete(_collect(_stream(gen_env)))
+                        gen_cr.commit()
                     for chunk in results:
                         yield chunk
                 finally:
@@ -511,6 +554,16 @@ class AIStreamController(http.Controller):
         name = ' '.join(str(name).split())[:50]
         quest_id = body.get('quest_id')
         skill_id = body.get('skill_id')
+        # Builder context: the auto-init prompt ("Study this quest…") makes a
+        # useless thread name — name the thread after the subject quest instead
+        context_quest = body.get('context_quest')
+        if context_quest:
+            try:
+                cq = request.env['ai.quest'].browse(int(context_quest))
+                if cq.exists():
+                    name = cq.name[:50]
+            except (ValueError, TypeError):
+                pass
         vals = {
             'name': name,
             'user_id': user.id if user.id else None,
@@ -1494,12 +1547,22 @@ class AIOpenAIAPI(http.Controller):
                     model_name = llm.model_name
                     break
 
+        # NATS executor config (tool-executor-nats)
+        _nats_api_secret = request.env['ir.config_parameter'].sudo().get_param(
+            'ai_agent_core.api_secret', '')
+        _nats_max_retries = int(request.env['ir.config_parameter'].sudo().get_param(
+            'pi.nats.max_retries', '3'))
+        # DB identity for the post-teardown cursor in the SSE generator
+        _gen_dbname = request.env.cr.dbname
+        _gen_uid = request.env.uid
+        _gen_context = dict(request.env.context)
+
         if not stream:
             # Non-streaming: run and return full response
             try:
                 import asyncio
                 from odoo.addons.ai_agent_core.core.provider import BifrostProvider
-                from odoo.addons.ai_agent_core.core.tools import ToolRegistry, builtin_tools
+                from odoo.addons.ai_agent_core.core.tools import ToolRegistry, builtin_tools, wrap_tools_with_env
                 from odoo.addons.ai_agent_core.core.loop import AgentLoop, AgentConfig
 
                 provider = BifrostProvider(
@@ -1507,11 +1570,16 @@ class AIOpenAIAPI(http.Controller):
                     virtual_key='opencode',
                 )
                 tools = ToolRegistry()
-                tools.register_many(builtin_tools())
+                tools.register_many(wrap_tools_with_env(builtin_tools(), request.env))
 
                 loop_obj = AgentLoop(
                     provider=provider, tools=tools,
-                    config=AgentConfig(model=model_name, system_prompt=system_prompt, max_rounds=10),
+                    config=AgentConfig(
+                        model=model_name, system_prompt=system_prompt,
+                        max_rounds=10,
+                        nats_api_secret=_nats_api_secret,
+                        nats_max_retries=_nats_max_retries,
+                    ),
                 )
 
                 aloop = asyncio.new_event_loop()
@@ -1557,19 +1625,32 @@ class AIOpenAIAPI(http.Controller):
                 try:
                     import asyncio
                     from odoo.addons.ai_agent_core.core.provider import BifrostProvider
-                    from odoo.addons.ai_agent_core.core.tools import ToolRegistry, builtin_tools
+                    from odoo.addons.ai_agent_core.core.tools import ToolRegistry, builtin_tools, wrap_tools_with_env
                     from odoo.addons.ai_agent_core.core.loop import StreamingAgentLoop, AgentConfig
 
                     provider = BifrostProvider(
                         base_url='http://192.168.11.150:8080/v1',
                         virtual_key='opencode',
                     )
-                    tools = ToolRegistry()
-                    tools.register_many(builtin_tools())
+                    from odoo import api as _api, registry as _registry
+                    _gen_cr = _registry(_gen_dbname).cursor()
+                    try:
+                        tools = ToolRegistry()
+                        tools.register_many(wrap_tools_with_env(
+                            builtin_tools(),
+                            _api.Environment(_gen_cr, _gen_uid, _gen_context)))
+                    except Exception:
+                        _gen_cr.close()
+                        raise
 
                     loop = StreamingAgentLoop(
                         provider=provider, tools=tools,
-                        config=AgentConfig(model=model_name, system_prompt=system_prompt, max_rounds=10),
+                        config=AgentConfig(
+                            model=model_name, system_prompt=system_prompt,
+                            max_rounds=10,
+                            nats_api_secret=_nats_api_secret,
+                            nats_max_retries=_nats_max_retries,
+                        ),
                     )
 
                     async def _stream():
@@ -1595,11 +1676,19 @@ class AIOpenAIAPI(http.Controller):
                         results = aloop.run_until_complete(_collect())
                     finally:
                         aloop.close()
+                    try:
+                        _gen_cr.commit()
+                    finally:
+                        _gen_cr.close()
 
                     for chunk in results:
                         yield chunk
 
                 except Exception as e:
+                    try:
+                        _gen_cr.close()
+                    except Exception:
+                        pass
                     _logger.error('OpenAI SSE error: %s', e, exc_info=True)
                     yield f'data: {json.dumps({"error": {"message": str(e)}})}\n\n'
                     yield 'data: [DONE]\n\n'
