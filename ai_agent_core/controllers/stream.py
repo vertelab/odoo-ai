@@ -381,7 +381,12 @@ class AIStreamController(http.Controller):
         html = (_CHAT_HTML_v3
                 .replace('<!-- QUEST_OPTIONS -->', quest_items)
                 .replace('<!-- THREAD_ITEMS -->', thread_items))
-        return Response(html, headers=[('Content-Type', 'text/html; charset=utf-8')])
+        # no-store: chat_template.html is inline JS — a cached page keeps
+        # running stale frontend code after deploys (bit us in production)
+        return Response(html, headers=[
+            ('Content-Type', 'text/html; charset=utf-8'),
+            ('Cache-Control', 'no-store, must-revalidate'),
+        ])
 
     # === Skills API (slash commands) ===
 
