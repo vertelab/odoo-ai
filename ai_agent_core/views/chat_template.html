@@ -11,8 +11,9 @@
     --bg-message-ai: #16213e; --bg-input: #16213e; --text: #e0e0e0;
     --text-muted: #888; --accent: #e94560; --accent-hover: #ff6b81;
     --border: #2a2a4a; --agent-card: #1a2744; --radius: 10px;
-    --overlay: rgba(0,0,0,0.7); --danger: #ff5252;
+    --overlay: rgba(0,0,0,0.7); --danger: #ff5252; --success: #4caf50;
     --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --welcome-bg: #16213e; --modal-bg: #1a1a2e;
 }
 /* === LIGHT THEME === */
 [data-theme="light"] {
@@ -20,7 +21,8 @@
     --bg-message-ai: #fafafa; --bg-input: #f5f5f5; --text: #1a1a2e;
     --text-muted: #666; --accent: #1976d2; --accent-hover: #1565c0;
     --border: #e0e0e0; --agent-card: #f0f4ff; --radius: 10px;
-    --overlay: rgba(0,0,0,0.3); --danger: #d32f2f;
+    --overlay: rgba(0,0,0,0.3); --danger: #d32f2f; --success: #2e7d32;
+    --welcome-bg: #f5f7fa; --modal-bg: #ffffff;
 }
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:var(--font);background:var(--bg);color:var(--text);overflow:hidden;transition:background .3s,color .3s}
@@ -32,7 +34,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);overflow:hid
 .sidebar-actions{display:flex;gap:4px}
 .sidebar-btn{background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:18px;padding:4px 6px;border-radius:6px;transition:background .15s,color .15s}
 .sidebar-btn:hover{background:rgba(128,128,128,0.15);color:var(--text)}
-.new-thread-btn{width:100%;padding:10px;margin:8px;background:var(--accent);color:#fff;border:none;border-radius:var(--radius);cursor:pointer;font-size:14px;font-weight:600;transition:background .15s}
+.new-thread-btn{width:calc(100% - 16px);padding:10px;margin:8px;background:var(--accent);color:#fff;border:none;border-radius:var(--radius);cursor:pointer;font-size:14px;font-weight:600;transition:background .15s;box-sizing:border-box}
 .new-thread-btn:hover{background:var(--accent-hover)}
 .thread-search{padding:0 8px;margin-bottom:4px}
 .thread-search input{width:100%;padding:8px 12px;background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:13px;font-family:var(--font);outline:none}
@@ -41,12 +43,22 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);overflow:hid
 .thread-item{padding:8px 10px;border-radius:var(--radius);cursor:pointer;margin-bottom:1px;font-size:13px;transition:background .15s;display:flex;align-items:center;gap:8px;position:relative}
 .thread-item:hover{background:rgba(128,128,128,0.1)}
 .thread-item.active{background:rgba(128,128,128,0.15)}
+.thread-item.pinned{order:-1;border-left:2px solid var(--accent)}
 .thread-icon{font-size:14px;flex-shrink:0}
 .thread-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .thread-name-input{flex:1;background:var(--bg-input);border:1px solid var(--accent);border-radius:4px;color:var(--text);font-size:13px;padding:2px 6px;outline:none;font-family:var(--font)}
+.thread-pin{display:none;color:var(--text-muted);font-size:14px;cursor:pointer;padding:0 4px;flex-shrink:0;transition:color .15s}
+.thread-pin.pinned{color:var(--accent);display:block}
+.thread-item:hover .thread-pin:not(.pinned){display:block}
+.thread-pin:hover{color:var(--accent)}
 .thread-delete{display:none;color:var(--danger);font-size:16px;cursor:pointer;padding:0 4px;flex-shrink:0}
 .thread-item:hover .thread-delete{display:block}
 .thread-time{font-size:11px;color:var(--text-muted);flex-shrink:0}
+
+/* Pinned section header */
+.pinned-header{font-size:11px;color:var(--accent);padding:6px 12px 2px;text-transform:uppercase;letter-spacing:1px;display:none}
+.pinned-header.visible{display:block}
+
 /* Quest section */
 .quest-section{margin-top:8px;border-top:1px solid var(--border);padding-top:8px}
 .quest-section-title{font-size:11px;color:var(--text-muted);padding:4px 12px;text-transform:uppercase;letter-spacing:1px}
@@ -54,35 +66,93 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);overflow:hid
 .quest-item:hover{background:rgba(128,128,128,0.1)}
 .quest-item.active{background:rgba(128,128,128,0.15)}
 .quest-icon{font-size:14px}
+
 /* === CHAT MAIN === */
 .chat-main{flex:1;display:flex;flex-direction:column;min-width:0}
-.chat-header{padding:10px 16px;border-bottom:1px solid var(--border);font-size:13px;color:var(--text-muted);display:flex;align-items:center;gap:8px;min-height:44px}
+.chat-header{padding:10px 16px;border-bottom:1px solid var(--border);font-size:13px;color:var(--text-muted);display:flex;align-items:center;gap:8px;min-height:44px;flex-wrap:wrap}
 .chat-header strong{color:var(--text)}
-.chat-header-right{margin-left:auto;display:flex;align-items:center;gap:4px}
+.chat-header select#quest-selector{background:var(--bg-input);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;font-weight:600;padding:2px 8px;cursor:pointer;font-family:var(--font);outline:none;max-width:220px}
+.chat-header select#quest-selector:focus{border-color:var(--accent)}
+.chat-header-right{margin-left:auto;display:flex;align-items:center;gap:6px}
+.chat-header-right .header-btn{background:none;border:none;font-size:16px;cursor:pointer;padding:4px 6px;border-radius:6px;transition:background .15s;color:var(--text-muted)}
+.chat-header-right .header-btn:hover{background:rgba(128,128,128,0.15);color:var(--text)}
 .theme-btn{background:none;border:none;font-size:20px;cursor:pointer;padding:4px 8px;border-radius:6px;transition:background .15s}
 .theme-btn:hover{background:rgba(128,128,128,0.15)}
-.messages{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px}
-.message{max-width:85%;padding:10px 14px;border-radius:var(--radius);font-size:14px;line-height:1.6;animation:fadeIn .2s ease;word-wrap:break-word}
+
+/* Model selector */
+.model-selector{position:relative;margin-left:8px}
+.model-selector select{background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:12px;padding:4px 24px 4px 8px;cursor:pointer;font-family:var(--font);appearance:none;-webkit-appearance:none;outline:none}
+.model-selector select:focus{border-color:var(--accent)}
+.model-selector::after{content:'▾';position:absolute;right:8px;top:50%;transform:translateY(-50%);pointer-events:none;font-size:10px;color:var(--text-muted)}
+.model-selector .vision-badge{display:inline-block;background:var(--accent);color:#fff;font-size:10px;padding:1px 5px;border-radius:4px;margin-left:4px;vertical-align:middle}
+
+/* Welcome screen */
+.welcome-screen{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 20px;text-align:center}
+.welcome-icon{font-size:64px;margin-bottom:16px}
+.welcome-title{font-size:24px;font-weight:700;margin-bottom:8px;color:var(--text)}
+.welcome-desc{font-size:14px;color:var(--text-muted);margin-bottom:24px;max-width:500px;line-height:1.5}
+.welcome-suggestions{display:flex;flex-direction:column;gap:8px;max-width:450px;width:100%}
+.welcome-suggestion{padding:12px 16px;background:var(--welcome-bg);border:1px solid var(--border);border-radius:var(--radius);cursor:pointer;font-size:13px;text-align:left;transition:background .15s,border-color .15s;color:var(--text)}
+.welcome-suggestion:hover{background:rgba(128,128,128,0.1);border-color:var(--accent)}
+.welcome-suggestion .suggestion-icon{font-size:16px;margin-right:8px}
+
+/* Messages area */
+.messages{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px;scroll-behavior:smooth}
+.message{max-width:85%;padding:10px 14px;border-radius:var(--radius);font-size:14px;line-height:1.6;animation:fadeIn .2s ease;word-wrap:break-word;position:relative}
 @keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
 .message.user{align-self:flex-end;background:var(--bg-message-user);border-bottom-right-radius:4px}
 .message.ai{align-self:flex-start;background:var(--bg-message-ai);border:1px solid var(--border);border-bottom-left-radius:4px;max-width:100%;white-space:pre-wrap;width:100%}
 .message.ai strong{color:var(--accent)}
 .message.system{align-self:center;font-size:12px;color:var(--text-muted);font-style:italic;max-width:90%;text-align:center}
+
+/* Message actions (copy, thumbs) */
+.message-actions{display:none;position:absolute;right:6px;bottom:-8px;gap:2px;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:2px 4px;z-index:5}
+.message:hover .message-actions,.message.ai:hover .message-actions{display:flex}
+.msg-action-btn{background:none;border:none;cursor:pointer;font-size:14px;padding:2px 4px;border-radius:4px;color:var(--text-muted);transition:color .15s,background .15s}
+.msg-action-btn:hover{background:rgba(128,128,128,0.15);color:var(--text)}
+.msg-action-btn.active{color:var(--accent)}
+.msg-action-btn.copied{color:var(--success)}
+
+/* Agent card / tool call */
 .agent-card{background:var(--agent-card);border:1px solid var(--border);border-radius:8px;margin:6px 0;padding:10px}
 .agent-card-header{display:flex;align-items:center;gap:8px;font-weight:600;margin-bottom:4px;cursor:pointer;font-size:13px;user-select:none}
 .agent-card-body{font-size:13px}
 .tool-call{font-size:12px;color:var(--text-muted);padding:3px 6px;background:rgba(128,128,128,0.08);border-radius:4px;margin:3px 0;font-family:monospace}
 .tool-result{font-size:12px;color:#4caf50;padding:3px 6px;margin:2px 0}
-.chat-input-area{padding:12px 16px;border-top:1px solid var(--border)}
-.chat-input-row{display:flex;gap:8px}
-.chat-input-row input{flex:1;padding:10px 14px;background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:14px;font-family:var(--font);outline:none;min-height:44px}
-.chat-input-row input:focus{border-color:var(--accent)}
+
+/* Input area */
+.chat-input-area{padding:12px 16px;border-top:1px solid var(--border);position:relative}
+.chat-input-row{display:flex;gap:8px;align-items:flex-end}
+.chat-input-row input[type="text"]{flex:1;padding:10px 14px;background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:14px;font-family:var(--font);outline:none;min-height:44px}
+.chat-input-row input[type="text"]:focus{border-color:var(--accent)}
 .chat-input-row button{padding:10px 18px;background:var(--accent);border:none;border-radius:var(--radius);color:#fff;font-size:14px;font-weight:600;cursor:pointer;transition:background .15s;min-height:44px;white-space:nowrap}
 .chat-input-row button:hover{background:var(--accent-hover)}
 .chat-input-row button:disabled{opacity:0.5;cursor:not-allowed}
 .cancel-btn{background:#555!important;display:none}
 .cancel-btn:hover{background:#777!important}
-/* === INTERRUPT DIALOG === */
+
+/* Upload & image buttons */
+.input-btn{background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius);color:var(--text-muted);font-size:18px;cursor:pointer;padding:8px 12px;min-height:44px;transition:color .15s,border-color .15s}
+.input-btn:hover{color:var(--text);border-color:var(--accent)}
+.image-preview{display:none;position:absolute;bottom:100%;left:16px;background:var(--bg);border:1px solid var(--accent);border-radius:var(--radius);padding:8px;margin-bottom:8px;z-index:50;max-width:200px}
+.image-preview img{max-width:180px;max-height:120px;border-radius:6px;display:block}
+.image-preview .remove-preview{position:absolute;top:-8px;right:-8px;background:var(--danger);color:#fff;border:none;border-radius:50%;width:20px;height:20px;font-size:12px;cursor:pointer;display:flex;align-items:center;justify-content:center}
+
+/* Modal */
+.modal-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:var(--overlay);z-index:1000;justify-content:center;align-items:center}
+.modal-overlay.active{display:flex}
+.modal-box{background:var(--modal-bg);border:1px solid var(--accent);border-radius:var(--radius);padding:24px;max-width:420px;width:90%}
+.modal-box h3{color:var(--text);margin-bottom:16px;font-size:18px}
+.modal-box label{display:block;font-size:13px;color:var(--text-muted);margin-bottom:4px}
+.modal-box input[type="text"]{width:100%;padding:10px;background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-family:var(--font);font-size:14px;margin-bottom:12px;outline:none}
+.modal-box input:focus{border-color:var(--accent)}
+.modal-box .btn-row{display:flex;gap:8px;justify-content:flex-end;margin-top:8px}
+.modal-box button{padding:10px 18px;border:none;border-radius:var(--radius);cursor:pointer;font-weight:600;font-size:14px}
+.modal-box .btn-primary{background:var(--accent);color:#fff}
+.modal-box .btn-danger{background:var(--danger);color:#fff}
+.modal-box .btn-secondary{background:#555;color:#fff}
+
+/* Interrupt dialog */
 .interrupt-dialog{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:var(--overlay);z-index:1000;justify-content:center;align-items:center}
 .interrupt-dialog.active{display:flex}
 .interrupt-box{background:var(--bg);border:1px solid var(--accent);border-radius:var(--radius);padding:20px;max-width:500px;width:90%}
@@ -93,27 +163,56 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);overflow:hid
 .interrupt-box button{padding:8px 16px;border:none;border-radius:var(--radius);cursor:pointer;font-weight:600;font-size:14px}
 .interrupt-box .btn-approve{background:var(--accent);color:#fff}
 .interrupt-box .btn-deny{background:#555;color:#fff}
-/* === MOBILE OVERLAY === */
+
+/* Sidebar overlay mobile */
 .sidebar-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:var(--overlay);z-index:99}
-/* === TOKEN INFO === */
+
+/* Token info */
 .token-info{font-size:11px;color:var(--text-muted);padding:2px 16px 4px;text-align:right}
-/* === HAMBURGER === */
+
+/* Hamburger */
 .hamburger{display:none;background:none;border:none;color:var(--text);font-size:22px;cursor:pointer;padding:2px 8px}
+
 /* === RESPONSIVE === */
 @media (max-width: 768px) {
     .hamburger{display:block}
     .sidebar{position:fixed;left:-290px;top:0;bottom:0;width:280px;transition:left .25s ease}
     .sidebar.open{left:0;box-shadow:4px 0 20px rgba(0,0,0,0.3)}
     .sidebar-overlay.active{display:block}
-    .chat-header{padding:10px 12px}
-    .chat-header strong{font-size:13px}
+    .chat-header{padding:10px 12px;flex-wrap:wrap}
+    .chat-header strong{font-size:12px}
+    .model-selector select{font-size:11px;padding:3px 18px 3px 6px}
     .messages{padding:12px;gap:10px}
     .message{max-width:95%;font-size:15px;padding:10px 12px}
     .chat-input-area{padding:10px 12px}
     .chat-input-row input{font-size:16px;padding:12px 14px}
     .chat-input-row button{font-size:14px;padding:12px 16px}
     .interrupt-box{padding:16px;max-width:95%}
+    .welcome-title{font-size:20px}
+    .welcome-desc{font-size:13px}
 }
+
+/* === SLASH COMMAND DROPDOWN === */
+.slash-dropdown{display:none;position:absolute;bottom:100%;left:0;right:0;background:var(--bg-sidebar);border:1px solid var(--accent);border-radius:var(--radius);margin-bottom:4px;max-height:240px;overflow-y:auto;z-index:200;box-shadow:0 -4px 20px rgba(0,0,0,0.3)}
+.slash-dropdown.active{display:block}
+.slash-item{padding:8px 12px;cursor:pointer;font-size:13px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--border);transition:background .1s}
+.slash-item:last-child{border-bottom:none}
+.slash-item:hover,.slash-item.selected{background:rgba(128,128,128,0.15)}
+.slash-item-icon{font-size:16px;width:24px;text-align:center;flex-shrink:0}
+.slash-item-name{font-weight:600;color:var(--text);white-space:nowrap}
+.slash-item-desc{font-size:11px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.slash-item-keywords{font-size:10px;color:var(--accent);opacity:0.7}
+.slash-no-results{padding:10px 14px;font-size:12px;color:var(--text-muted);text-align:center}
+
+/* === EMBEDDED MODE === */
+.chat-embedded .sidebar{display:none!important}
+.chat-embedded .hamburger{display:none!important}
+.chat-embedded .sidebar-overlay{display:none!important}
+.chat-embedded .chat-main{margin:0;padding:0}
+.chat-embedded .chat-header{padding:6px 12px;min-height:36px;font-size:12px}
+.chat-embedded .chat-header strong{font-size:12px}
+.chat-embedded .messages{padding:8px 12px}
+.chat-embedded .chat-input-area{padding:8px 12px}
 </style>
 </head>
 <body>
@@ -131,14 +230,25 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);overflow:hid
     </div>
     <button class="new-thread-btn" onclick="newThread()">+ Ny tråd</button>
     <div class="thread-search"><input type="text" id="search-input" placeholder="🔍 Sök trådar..." oninput="searchThreads(this.value)"/></div>
+    <div class="pinned-header" id="pinned-header">📌 Fästa trådar</div>
     <div class="thread-list" id="thread-list">
         <!-- THREAD_ITEMS -->
     </div>
     <div class="quest-section">
-        <div class="quest-section-title">Agenter</div>
-        <div class="thread-list" id="quest-list">
-            <div class="quest-item active" data-id="" data-name="default"><span class="quest-icon">💬</span> Allmän assistent</div>
-            <!-- QUEST_ITEMS -->
+        <div class="quest-section-title">Trådar</div>
+    </div>
+</div>
+
+<!-- Thread edit modal -->
+<div class="modal-overlay" id="thread-edit-modal">
+    <div class="modal-box">
+        <h3>Redigera tråd</h3>
+        <label for="modal-thread-name">Namn</label>
+        <input type="text" id="modal-thread-name" placeholder="Trådnamn..."/>
+        <div class="btn-row">
+            <button class="btn-danger" id="modal-delete-btn" onclick="modalDeleteThread()">🗑 Radera</button>
+            <button class="btn-secondary" onclick="closeThreadEditModal()">Avbryt</button>
+            <button class="btn-primary" onclick="modalRenameThread()">Spara</button>
         </div>
     </div>
 </div>
@@ -147,14 +257,31 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);overflow:hid
 <div class="chat-main">
     <div class="chat-header">
         <button class="hamburger" onclick="toggleSidebar()" title="Meny">☰</button>
-        <span>Chattar med <strong id="active-quest-name">Allmän assistent</strong></span>
+        <span>Chattar med</span>
+        <select id="quest-selector" onchange="onQuestSelect()">
+            <option value="" data-name="default">Allmän assistent</option>
+            <!-- QUEST_OPTIONS -->
+        </select>
+        <div class="model-selector" id="model-selector-container" style="display:none">
+            <select id="model-selector" onchange="onModelSelect()"></select>
+        </div>
         <div class="chat-header-right">
             <span id="active-thread-name" style="font-size:12px;color:var(--text-muted);margin-right:8px"></span>
+            <button class="header-btn" id="thread-edit-btn" title="Redigera tråd" onclick="openThreadEditModal()" style="display:none">✏️</button>
             <button class="theme-btn" id="theme-btn" onclick="toggleTheme()" title="Växla tema">🌙</button>
         </div>
     </div>
-    <div class="messages" id="messages"></div>
+    <div class="messages" id="messages">
+        <!-- Welcome screen shown initially -->
+        <div class="welcome-screen" id="welcome-screen">
+            <div class="welcome-icon">💬</div>
+            <div class="welcome-title">Allmän assistent</div>
+            <div class="welcome-desc">Ställ en fråga eller välj en agent i sidopanelen för att komma igång.</div>
+        </div>
+    </div>
     <div class="token-info" id="token-info"></div>
+
+    <!-- Interrupt dialog -->
     <div class="interrupt-dialog" id="interrupt-dialog">
         <div class="interrupt-box">
             <h3 id="interrupt-title">Agenten behöver input</h3>
@@ -166,9 +293,18 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);overflow:hid
             </div>
         </div>
     </div>
-    <div class="chat-input-area"><div class="chat-input-row">
+
+    <div class="chat-input-area">
+    <div class="slash-dropdown" id="slash-dropdown"></div>
+    <div class="image-preview" id="image-preview">
+        <button class="remove-preview" onclick="removeImagePreview()">×</button>
+        <img id="image-preview-img" src="" alt="Förhandsvisning"/>
+    </div>
+    <div class="chat-input-row">
         <input type="file" id="file-input" style="display:none" onchange="uploadFile(this)" accept=".txt,.md,.csv,.py,.js,.html,.xml,.json,.yml,.yaml,.pdf,.docx,.xlsx,.pptx,.odt,.ods,.odp,.doc,.xls,.ppt,.rtf"/>
-        <button id="upload-btn" onclick="document.getElementById('file-input').click()" title="Ladda upp dokument" style="background:var(--bg-input);border:1px solid var(--border);border-radius:var(--radius);color:var(--text-muted);font-size:18px;cursor:pointer;padding:8px 12px;min-height:44px">📎</button>
+        <button id="upload-btn" class="input-btn" onclick="document.getElementById('file-input').click()" title="Ladda upp dokument">📎</button>
+        <button id="image-btn" class="input-btn" style="display:none" onclick="document.getElementById('image-input').click()" title="Ladda upp bild">📷</button>
+        <input type="file" id="image-input" style="display:none" accept="image/*" onchange="previewImage(this)"/>
         <input type="text" id="prompt-input" placeholder="Skriv ett meddelande..." autofocus/>
         <button id="send-btn" onclick="sendMessage()">Skicka</button>
         <button id="cancel-btn" onclick="cancelStream()" class="cancel-btn">Avbryt</button>
@@ -181,10 +317,40 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);overflow:hid
 </div>
 
 <script>
+// === EMBEDDED MODE ===
+var params=new URLSearchParams(window.location.search);
+var embedded=params.get('embedded')==='1';
+var contextQuest=params.get('context_quest')||'';
+var contextSkill=params.get('context_skill')||'';
+if(embedded){document.body.classList.add('chat-embedded')}
+
+// Auto-init: if context_skill is set, tell the AI to read it
+var autoInitSkill=contextSkill||'';
+
+// Signal to parent window when build is complete
+function signalBuildComplete(questId,summary){
+    if(embedded&&window.parent!==window){
+        window.parent.postMessage({type:'quest_builder_done',questId:questId,summary:summary},'*')
+    }
+}
+
 // === STATE ===
 var activeQuestId='',activeQuestName='default',activeSessionId='',activeThreadName='';
+// Pre-select quest from URL params
+var urlQuestId=params.get('quest_id')||'';
+if(urlQuestId){activeQuestId=urlQuestId}
 var currentAiMessage=null,currentAgentCards={},streaming=!1,currentEventSource=null,tokenCount=0;
 var sessionUuid='';
+// Model selector state
+var availableModels=[],selectedModel='',hasVisionModel=!1;
+var cachedModels={}; // {questId: [{name,display_name,is_vision,...}]}
+// Image upload state
+var pendingImageBase64='';
+// Slash command state
+var slashSkills=[],slashSelectedIdx=-1,slashVisible=!1,slashMatched='';
+var cachedSkills={}; // {questId: [{name,description,...}]}
+// Feedback tracking
+var messageFeedback={}; // {msgIndex: 'up'|'down'}
 
 // === THEME ===
 function initTheme(){
@@ -201,56 +367,337 @@ function toggleTheme(){
     setTheme(document.documentElement.dataset.theme==='dark'?'light':'dark')
 }
 
-// === SIDEBAR (responsive) ===
+// === SIDEBAR ===
 function toggleSidebar(){
     var s=document.getElementById('sidebar');
     var o=document.getElementById('sidebar-overlay');
     s.classList.toggle('open');o.classList.toggle('active')
 }
 
+// === MODEL SELECTOR ===
+function fetchModels(questId){
+    if(cachedModels[questId]){availableModels=cachedModels[questId];renderModelSelector();return}
+    if(!questId){hideModelSelector();return}
+    fetch('/ai/quest/models?quest_id='+encodeURIComponent(questId))
+    .then(function(r){return r.json()}).then(function(d){
+        cachedModels[questId]=d.models||[];
+        if(questId==activeQuestId){availableModels=cachedModels[questId];renderModelSelector()}
+    }).catch(function(){hideModelSelector()})
+}
+function renderModelSelector(){
+    var sel=document.getElementById('model-selector');
+    var cont=document.getElementById('model-selector-container');
+    if(!availableModels.length){cont.style.display='none';hasVisionModel=!1;updateImageButton();return}
+    cont.style.display='inline-block';
+    // Check if current selection is still valid
+    var selExists=availableModels.some(function(m){return m.name===selectedModel});
+    if(!selExists){selectedModel=availableModels[0].name}
+    var html='';
+    availableModels.forEach(function(m){
+        html+='<option value="'+esc(m.name)+'"'+(m.name===selectedModel?' selected':'')+'>'
+            +esc(m.display_name||m.name)+'</option>';
+    });
+    sel.innerHTML=html;
+    // Update vision flag
+    hasVisionModel=availableModels.some(function(m){return m.is_vision});
+    if(selectedModel){
+        var selM=availableModels.find(function(m){return m.name===selectedModel});
+        if(selM)hasVisionModel=selM.is_vision;
+    }
+    updateImageButton();
+}
+function onModelSelect(){
+    selectedModel=document.getElementById('model-selector').value;
+    // Update vision flag
+    var selM=availableModels.find(function(m){return m.name===selectedModel});
+    hasVisionModel=selM?selM.is_vision:!1;
+    updateImageButton();
+}
+function hideModelSelector(){
+    document.getElementById('model-selector-container').style.display='none';
+    hasVisionModel=!1;updateImageButton();
+}
+
+// === IMAGE UPLOAD ===
+function updateImageButton(){
+    var btn=document.getElementById('image-btn');
+    btn.style.display=hasVisionModel?'inline-flex':'none';
+}
+function previewImage(input){
+    var file=input.files[0];if(!file)return;
+    var reader=new FileReader();
+    reader.onload=function(e){
+        pendingImageBase64=e.target.result;
+        var preview=document.getElementById('image-preview');
+        var img=document.getElementById('image-preview-img');
+        img.src=pendingImageBase64;
+        preview.style.display='block';
+    };
+    reader.readAsDataURL(file);
+    input.value='';
+}
+function removeImagePreview(){
+    pendingImageBase64='';
+    document.getElementById('image-preview').style.display='none';
+    document.getElementById('image-preview-img').src='';
+}
+
+// === WELCOME SCREEN ===
+function updateWelcomeScreen(){
+    var el=document.getElementById('messages');
+    var showWelcome=!activeSessionId&&el.querySelectorAll('.message').length===0;
+    var existing=document.getElementById('welcome-screen');
+    if(showWelcome){
+        if(!existing){
+            var w=document.createElement('div');
+            w.className='welcome-screen';w.id='welcome-screen';
+            el.appendChild(w);
+            existing=w;
+        }
+        var questName=activeQuestName||'Allmän assistent';
+        var desc='';
+        if(activeQuestId){
+            // Try to get description from quest item
+            var qi=document.querySelector('.quest-item[data-id="'+activeQuestId+'"]');
+            desc=qi?qi.textContent.trim().replace(/^[🎯💬📋🔧📊🔍📌]\s*/,''):questName;
+        }
+        existing.innerHTML='<div class="welcome-icon">'+(activeQuestId?'🎯':'💬')+'</div>'
+            +'<div class="welcome-title">'+esc(questName)+'</div>'
+            +'<div class="welcome-desc">'+(activeQuestId?
+                'Ställ en fråga för att starta en konversation med '+esc(questName)+'. Agenten svarar baserat på sin konfiguration och dina instruktioner.'
+                :'Ställ en fråga eller välj en agent i sidopanelen för att komma igång.')+'</div>'
+            +(activeQuestId?getSuggestionPrompts(questName):'');
+        existing.style.display='flex';
+    }else{
+        if(existing)existing.style.display='none';
+    }
+}
+function getSuggestionPrompts(questName){
+    var suggestions={
+        'Strategy Composer':[
+            {icon:'📊',text:'Analysera vår nuvarande marknadsposition'},
+            {icon:'🎯',text:'Skapa ett strategiskt initiativ för nästa kvartal'},
+            {icon:'📈',text:'Identifiera våra tre största tillväxtmöjligheter'}
+        ],
+        'Code Assistant':[
+            {icon:'💻',text:'Skriv en Python-funktion för att parsa CSV'},
+            {icon:'🔍',text:'Hitta och fixa buggar i min kod'},
+            {icon:'📝',text:'Förklara hur denna SQL-fråga fungerar'}
+        ],
+        'Swedish Accounting':[
+            {icon:'🧮',text:'Hur bokför jag en leverantörsfaktura med moms?'},
+            {icon:'📋',text:'Skapa en resultaträkning för senaste kvartalet'},
+            {icon:'💰',text:'Förklara periodiseringsfond för aktiebolag'}
+        ]
+    };
+    var items=suggestions[questName];
+    if(!items){
+        items=[
+            {icon:'💡',text:'Vad kan du hjälpa mig med?'},
+            {icon:'📋',text:'Berätta om dina funktioner'},
+            {icon:'🚀',text:'Hur kommer jag igång?'}
+        ];
+    }
+    return '<div class="welcome-suggestions">'+items.map(function(s,i){
+        return '<div class="welcome-suggestion" onclick="sendSuggestion('+i+')">'
+            +'<span class="suggestion-icon">'+s.icon+'</span>'+esc(s.text)+'</div>';
+    }).join('')+'</div>';
+}
+// Store suggestions for click handler
+var _currentSuggestions=[];
+function sendSuggestion(idx){
+    var text=_currentSuggestions[idx];
+    if(text){document.getElementById('prompt-input').value=text.text;sendMessage()}
+}
+// Hook into getting suggestions
+var _origUpdateWelcome=updateWelcomeScreen;
+updateWelcomeScreen=function(){
+    var qi=document.querySelector('.quest-item[data-id="'+activeQuestId+'"]');
+    var questName=activeQuestName||'Allmän assistent';
+    if(activeQuestId){
+        var items={
+            'Strategy Composer':[
+                {icon:'📊',text:'Analysera vår nuvarande marknadsposition'},
+                {icon:'🎯',text:'Skapa ett strategiskt initiativ för nästa kvartal'},
+                {icon:'📈',text:'Identifiera våra tre största tillväxtmöjligheter'}
+            ],
+            'Code Assistant':[
+                {icon:'💻',text:'Skriv en Python-funktion för att parsa CSV'},
+                {icon:'🔍',text:'Hitta och fixa buggar i min kod'},
+                {icon:'📝',text:'Förklara hur denna SQL-fråga fungerar'}
+            ],
+            'Swedish Accounting':[
+                {icon:'🧮',text:'Hur bokför jag en leverantörsfaktura med moms?'},
+                {icon:'📋',text:'Skapa en resultaträkning för senaste kvartalet'},
+                {icon:'💰',text:'Förklara periodiseringsfond för aktiebolag'}
+            ]
+        };
+        _currentSuggestions=items[questName]||[
+            {icon:'💡',text:'Vad kan du hjälpa mig med?'},
+            {icon:'📋',text:'Berätta om dina funktioner'},
+            {icon:'🚀',text:'Hur kommer jag igång?'}
+        ];
+    }else{
+        _currentSuggestions=[];
+    }
+    _origUpdateWelcome();
+};
+
+// === THREAD PINNING ===
+function getPinnedThreads(){
+    try{return JSON.parse(localStorage.getItem('ai-chat-pinned')||'[]')}catch(e){return[]}
+}
+function setPinnedThreads(ids){
+    localStorage.setItem('ai-chat-pinned',JSON.stringify(ids))
+}
+function toggleThreadPin(id,el){
+    var pinned=getPinnedThreads();
+    var idx=pinned.indexOf(id);
+    if(idx>=0){pinned.splice(idx,1)}else{pinned.push(id)}
+    setPinnedThreads(pinned);
+    loadThreads()
+}
+
+// === THREAD EDIT MODAL ===
+var _modalThreadId=null;
+function openThreadEditModal(){
+    if(!activeSessionId)return;
+    _modalThreadId=activeSessionId;
+    document.getElementById('modal-thread-name').value=activeThreadName||'';
+    document.getElementById('thread-edit-modal').classList.add('active');
+    document.getElementById('modal-thread-name').focus();
+    document.getElementById('modal-thread-name').select();
+}
+function closeThreadEditModal(){
+    document.getElementById('thread-edit-modal').classList.remove('active');
+    _modalThreadId=null;
+}
+function modalRenameThread(){
+    if(!_modalThreadId)return;
+    var name=document.getElementById('modal-thread-name').value.trim();
+    if(!name)return;
+    fetch('/ai/threads/'+_modalThreadId,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name})})
+    .then(function(r){return r.json()}).then(function(){
+        if(activeSessionId==_modalThreadId){activeThreadName=name;
+            document.getElementById('active-thread-name').textContent=name}
+        closeThreadEditModal();loadThreads()
+    })
+}
+function modalDeleteThread(){
+    if(!_modalThreadId)return;
+    if(!confirm('Radera denna tråd permanent?'))return;
+    fetch('/ai/threads/'+_modalThreadId,{method:'DELETE'}).then(function(){
+        if(activeSessionId==_modalThreadId){newThread()}
+        closeThreadEditModal();loadThreads()
+    })
+}
+// Allow Enter key in modal
+document.addEventListener('DOMContentLoaded',function(){
+    document.getElementById('modal-thread-name').addEventListener('keydown',function(e){
+        if(e.key==='Enter'){modalRenameThread()}
+    });
+});
+
+// === MESSAGE ACTIONS (copy, thumbs) ===
+function copyMessage(el){
+    var msgEl=el.closest('.message');
+    if(!msgEl)return;
+    // Get text content (strip HTML tags)
+    var text=msgEl.textContent.trim();
+    navigator.clipboard.writeText(text).then(function(){
+        el.classList.add('copied');
+        el.textContent='✅';
+        setTimeout(function(){el.classList.remove('copied');el.textContent='📋'},1500)
+    }).catch(function(){})
+}
+function feedbackMessage(el,direction){
+    el.closest('.message-actions').querySelectorAll('.msg-action-btn').forEach(function(b){
+        b.classList.remove('active')
+    });
+    el.classList.add('active');
+}
+
 // === THREADS ===
 function loadThreads(){
+    var pinned=getPinnedThreads();
     fetch('/ai/threads').then(function(r){return r.json()}).then(function(data){
         var list=document.getElementById('thread-list');
+        var pinnedHeader=document.getElementById('pinned-header');
         list.innerHTML='';
-        (data.threads||[]).forEach(function(t){
+        var threads=data.threads||[];
+        // Sort: pinned first
+        threads.sort(function(a,b){
+            var pa=pinned.indexOf(a.id)>=0?0:1;
+            var pb=pinned.indexOf(b.id)>=0?0:1;
+            return pa-pb;
+        });
+        var hasPinned=!1;
+        // When working on a skill, only show sessions for this skill
+        if(contextSkill){
+            var sid=parseInt(contextSkill);
+            threads=threads.filter(function(t){
+                return t.skill_id===sid
+            })
+        }
+        threads.forEach(function(t){
+            var isPinned=pinned.indexOf(t.id)>=0;
+            if(isPinned)hasPinned=!0;
             var d=document.createElement('div');
-            d.className='thread-item'+(t.id==activeSessionId?' active':'');
+            d.className='thread-item'+(t.id==activeSessionId?' active':'')+(isPinned?' pinned':'');
             d.dataset.id=t.id;d.dataset.name=t.name||'';
-            d.innerHTML='<span class="thread-icon">📝</span><span class="thread-name">'+esc(t.name||'Tråd')+'</span><span class="thread-delete" title="Radera">×</span><span class="thread-time">'+relTime(t.last_activity)+'</span>';
-            d.querySelector('.thread-name').addEventListener('dblclick',function(e){e.stopPropagation();renameThread(d)});
+            d.innerHTML='<span class="thread-pin'+(isPinned?' pinned':'')+'" title="'+(isPinned?'Ta bort fästning':'Fäst tråd')+'">📌</span>'
+                +'<span class="thread-name">'+esc(t.name||'Tråd')+'</span>'
+                +'<span class="thread-delete" title="Radera">×</span>'
+                +'<span class="thread-time">'+relTime(t.last_activity)+'</span>';
+            d.querySelector('.thread-pin').addEventListener('click',function(e){e.stopPropagation();toggleThreadPin(t.id,d)});
             d.querySelector('.thread-delete').addEventListener('click',function(e){e.stopPropagation();deleteThread(t.id,d)});
             d.addEventListener('click',function(){selectThread(t.id,t.name)});
             list.appendChild(d)
-        })
+        });
+        pinnedHeader.classList.toggle('visible',hasPinned);
     })
 }
 function newThread(){
     activeSessionId='';activeThreadName='';
-    document.getElementById('messages').innerHTML='';
     document.getElementById('active-thread-name').textContent='';
-    document.getElementById('prompt-input').focus();
-    loadThreads()
+    document.getElementById('thread-edit-btn').style.display='none';
+    removeImagePreview();
+    updateWelcomeScreen();
+    loadThreads();
+    if(window.innerWidth<=768){toggleSidebar()}
 }
 function selectThread(id,name){
     fetch('/ai/threads/'+id).then(function(r){return r.json()}).then(function(data){
         activeSessionId=id;activeThreadName=data.name||name||'';
         document.getElementById('active-thread-name').textContent=data.name||'Tråd';
+        document.getElementById('thread-edit-btn').style.display='inline-block';
         // Restore quest
-        if(data.quest_id){activeQuestId=data.quest_id;
-            document.querySelectorAll('.quest-item').forEach(function(e){e.classList.remove('active')});
-            var qi=document.querySelector('.quest-item[data-id="'+data.quest_id+'"]');
-            if(qi){qi.classList.add('active');activeQuestName=qi.dataset.name;
-                document.getElementById('active-quest-name').textContent=qi.textContent.trim()}
+        if(data.quest_id){
+            activeQuestId=data.quest_id;
+            document.getElementById('quest-selector').value=data.quest_id;
+            activeQuestName=data.quest_name||'';
+            fetchModels(activeQuestId);
+        }else{
+            hideModelSelector();
         }
         var msgs=document.getElementById('messages');msgs.innerHTML='';
-        (data.messages||[]).forEach(function(m){
-            var cls=m.role==='user'?'message user':m.role==='system'?'message system':'message ai';
-            var d=document.createElement('div');d.className=cls;
-            d.innerHTML=m.role==='user'?esc(m.content):md2html(m.content);
-            msgs.appendChild(d)
-        });
-        scrollBottom()
+        // Hide welcome screen
+        var wel=document.getElementById('welcome-screen');if(wel)wel.style.display='none';
+        if(!data.messages||!data.messages.length){
+            msgs.innerHTML='<div class="message system">Denna tråd har inga meddelanden än.</div>';
+        }else{
+            data.messages.forEach(function(m){
+                if(m.content&&m.content.trim()){
+                    var role=m.role||'assistant';
+                    var cls=role==='user'?'message user':role==='system'?'message system':'message ai';
+                    var d=document.createElement('div');d.className=cls;
+                    d.innerHTML=role==='user'?esc(m.content):addMessageActions(md2html(m.content));
+                    msgs.appendChild(d)
+                }
+            });
+        }
+        scrollBottom();
+        if(window.innerWidth<=768){toggleSidebar()}
     });
     loadThreads()
 }
@@ -266,7 +713,6 @@ function renameThread(el){
 function saveRename(id,name,el){
     fetch('/ai/threads/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name})})
     .then(function(r){return r.json()}).then(function(d){
-        // Restore the span with new name
         var input=el.querySelector('.thread-name-input');
         if(input){
             var span=document.createElement('span');
@@ -289,53 +735,153 @@ function deleteThread(id,el){
 function searchThreads(q){
     if(!q||q.length<2){loadThreads();return}
     fetch('/ai/thread/search?q='+encodeURIComponent(q)).then(function(r){return r.json()}).then(function(data){
-        var list=document.getElementById('thread-list');
-        list.innerHTML='';
-        (data.threads||[]).forEach(function(t){
+        var list=document.getElementById('thread-list');list.innerHTML='';
+        var pinned=getPinnedThreads();
+        (data.threads||[]).sort(function(a,b){
+            var pa=pinned.indexOf(a.id)>=0?0:1;
+            var pb=pinned.indexOf(b.id)>=0?0:1;
+            return pa-pb;
+        }).forEach(function(t){
+            var isPinned=pinned.indexOf(t.id)>=0;
             var d=document.createElement('div');
-            d.className='thread-item';
+            d.className='thread-item'+(isPinned?' pinned':'');
             d.dataset.id=t.id;d.dataset.name=t.name||'';
-            d.innerHTML='<span class="thread-icon">📝</span><span class="thread-name">'+esc(t.name||'Tråd')+'</span><span class="thread-time">'+relTime(t.last_activity)+'</span>';
+            d.innerHTML='<span class="thread-pin'+(isPinned?' pinned':'')+'" title="'+(isPinned?'Ta bort fästning':'Fäst tråd')+'">📌</span>'
+                +'<span class="thread-name">'+esc(t.name||'Tråd')+'</span>'
+                +'<span class="thread-time">'+relTime(t.last_activity)+'</span>';
+            d.querySelector('.thread-pin').addEventListener('click',function(e){e.stopPropagation();toggleThreadPin(t.id,d)});
             d.addEventListener('click',function(){selectThread(t.id,t.name)});
             list.appendChild(d)
         })
     })
 }
 
-// === QUEST LIST ===
-document.getElementById('quest-list').addEventListener('click',function(e){
-    var t=e.target.closest('.quest-item');if(!t)return;
-    document.querySelectorAll('.quest-item').forEach(function(e){e.classList.remove('active')});
-    t.classList.add('active');activeQuestId=t.dataset.id;activeQuestName=t.dataset.name;
-    document.getElementById('active-quest-name').textContent=t.textContent.trim()
-});
+// === SLASH COMMANDS ===
+function fetchSkills(questId){
+    if(cachedSkills[questId]){slashSkills=cachedSkills[questId];return}
+    fetch('/ai/quest/skills?quest_id='+encodeURIComponent(questId))
+    .then(function(r){return r.json()}).then(function(d){
+        cachedSkills[questId]=d.skills||[];
+        if(questId==activeQuestId){slashSkills=cachedSkills[questId]}
+    })
+}
+function showSlashDropdown(filter){
+    var dd=document.getElementById('slash-dropdown'),html='';
+    if(!activeQuestId){html='<div class="slash-no-results">Välj en agent först — klicka på en agent i sidopanelen</div>';dd.innerHTML=html;dd.classList.add('active');slashVisible=!0;return}
+    if(!cachedSkills[activeQuestId]){
+        html='<div class="slash-no-results">Laddar skills...</div>';dd.innerHTML=html;dd.classList.add('active');slashVisible=!0;
+        fetchSkills(activeQuestId);return;
+    }
+    if(!slashSkills.length){html='<div class="slash-no-results">Inga skills bundna till denna agent. Lägg till skills via agent-inställningarna.</div>';dd.innerHTML=html;dd.classList.add('active');slashVisible=!0;return}
+    var matches=filter===undefined?slashSkills:slashSkills.filter(function(s){
+        return s.name.toLowerCase().indexOf(filter.toLowerCase())!==-1
+    });
+    slashMatched=filter||'';
+    if(!matches.length){html='<div class="slash-no-results">Inga skills matchar "'+esc(filter)+'"</div>';dd.innerHTML=html;dd.classList.add('active');slashVisible=!0;return}
+    slashSelectedIdx=-1;
+    var catIcons={accounting:'🧮',development:'💻',infrastructure:'🔧',analysis:'📊',communication:'💬',research:'🔍',general:'📋',quest:'📌'};
+    matches.forEach(function(s,i){
+        var icon=catIcons[s.category]||'📋';
+        html+='<div class="slash-item" data-idx="'+i+'" data-name="'+esc(s.name)+'">'
+            +'<span class="slash-item-icon">'+icon+'</span>'
+            +'<span class="slash-item-name">/'+esc(s.name)+'</span>'
+            +'<span class="slash-item-desc">'+esc(s.description||'')+'</span>'
+            +'</div>';
+    });
+    dd.innerHTML=html;dd.classList.add('active');slashVisible=!0;
+    dd.querySelectorAll('.slash-item').forEach(function(el){
+        el.addEventListener('click',function(){selectSlashSkill(el.dataset.name)});
+    });
+}
+function hideSlashDropdown(){
+    document.getElementById('slash-dropdown').classList.remove('active');slashVisible=!1;slashSelectedIdx=-1;slashMatched='';
+}
+function selectSlashSkill(name){
+    var inp=document.getElementById('prompt-input');
+    var val=inp.value,caret=inp.selectionStart;
+    var before=val.substring(0,caret);
+    var slashPos=before.lastIndexOf('/');
+    if(slashPos>=0){
+        inp.value=val.substring(0,slashPos)+'/'+name+' '+val.substring(caret);
+        var newPos=slashPos+name.length+2;
+        inp.setSelectionRange(newPos,newPos);
+    }
+    hideSlashDropdown();inp.focus();
+}
+function navigateSlashDropdown(dir){
+    var items=document.querySelectorAll('#slash-dropdown .slash-item');
+    if(!items.length)return;
+    slashSelectedIdx=Math.max(-1,Math.min(items.length-1,slashSelectedIdx+dir));
+    items.forEach(function(el,i){
+        el.classList.toggle('selected',i===slashSelectedIdx);
+        if(i===slashSelectedIdx)el.scrollIntoView({block:'nearest'});
+    });
+}
+
+// Quest click handler — now via dropdown
+function onQuestSelect(){
+    var sel=document.getElementById('quest-selector');
+    var opt=sel.options[sel.selectedIndex];
+    activeQuestId=opt.value;
+    activeQuestName=opt.textContent;
+    if(activeQuestId){fetchModels(activeQuestId);fetchSkills(activeQuestId)}else{hideModelSelector()}
+    if(!activeSessionId)updateWelcomeScreen();
+    if(window.innerWidth<=768){toggleSidebar()}
+}
 
 // === CHAT ===
-document.getElementById('prompt-input').addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage()}});
+document.getElementById('prompt-input').addEventListener('keydown',function(e){
+    if(slashVisible){
+        if(e.key==='ArrowDown'){e.preventDefault();navigateSlashDropdown(1);return}
+        if(e.key==='ArrowUp'){e.preventDefault();navigateSlashDropdown(-1);return}
+        if(e.key==='Enter'||e.key==='Tab'){
+            e.preventDefault();
+            if(slashSelectedIdx>=0){
+                var items=document.querySelectorAll('#slash-dropdown .slash-item');
+                if(items[slashSelectedIdx]){selectSlashSkill(items[slashSelectedIdx].dataset.name)}
+            }else{hideSlashDropdown()}
+            return
+        }
+        if(e.key==='Escape'){e.preventDefault();hideSlashDropdown();return}
+    }
+    if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage()}
+});
+document.getElementById('prompt-input').addEventListener('input',function(e){
+    try{
+    var inp=e.target,val=inp.value,caret=inp.selectionStart;
+    var before=val.substring(0,caret);
+    var slashPos=before.lastIndexOf('/');
+    if(slashPos>=0&&slashPos===caret-1){
+        if(activeQuestId&&!cachedSkills[activeQuestId]){fetchSkills(activeQuestId)}
+        showSlashDropdown();return
+    }
+    if(slashPos>=0&&!slashVisible){
+        var after=val.substring(slashPos+1,caret);
+        if(after.indexOf(' ')===-1&&after.indexOf('/')===-1){showSlashDropdown(after);return}
+    }
+    if(slashPos>=0&&slashVisible){
+        var after2=val.substring(slashPos+1,caret);
+        if(after2.indexOf(' ')===-1&&after2.indexOf('/')===-1){showSlashDropdown(after2);return}
+    }
+    if(slashPos<0||(slashPos>=0&&val.substring(slashPos+1,caret).indexOf(' ')>=0)){hideSlashDropdown()}
+    }catch(ex){}
+});
+
 function esc(s){var d=document.createElement('div');d.textContent=s;return d.innerHTML}
-// Simple Markdown to HTML converter (supports tables, code blocks, headers, lists)
 function md2html(s){
     if(!s)return'';
     s=esc(s);
-    // Code blocks ```
     s=s.replace(/```(\w*)\n([\s\S]*?)```/g,'<pre><code>$2</code></pre>');
-    // Inline code `code`
     s=s.replace(/`([^`]+)`/g,'<code>$1</code>');
-    // Bold **text**
     s=s.replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>');
-    // Italic *text* (not inside words)
     s=s.replace(/\b\*(.+?)\*\b/g,'<em>$1</em>');
-    // Headers
     s=s.replace(/^#### (.+)$/gm,'<h4>$1</h4>');
     s=s.replace(/^### (.+)$/gm,'<h3>$1</h3>');
     s=s.replace(/^## (.+)$/gm,'<h2>$1</h2>');
     s=s.replace(/^# (.+)$/gm,'<h1>$1</h1>');
-    // Horizontal rule
     s=s.replace(/^---+$/gm,'<hr>');
-    // Tables: | a | b |\n|---|---|\n| c | d |
     s=s.replace(/((?:^\|.+\|\n)+)/gm,function(m){
-        var lines=m.trim().split('\n');
-        if(lines.length<2)return m;
+        var lines=m.trim().split('\n');if(lines.length<2)return m;
         var html='<table><thead><tr>';
         var headers=lines[0].split('|').filter(function(c){return c.trim()});
         headers.forEach(function(h){html+='<th>'+h.trim()+'</th>'});
@@ -343,27 +889,29 @@ function md2html(s){
         for(var i=1;i<lines.length;i++){
             var cells=lines[i].split('|').filter(function(c){return c.trim()});
             if(cells.length===0||lines[i].match(/^[\s|:-]+$/))continue;
-            html+='<tr>';
-            cells.forEach(function(c){html+='<td>'+c.trim()+'</td>'});
-            html+='</tr>'
+            html+='<tr>';cells.forEach(function(c){html+='<td>'+c.trim()+'</td>'});html+='</tr>'
         }
-        html+='</tbody></table>';
-        return html
+        html+='</tbody></table>';return html
     });
-    // Unordered lists
     s=s.replace(/^[*-] (.+)$/gm,'<li>$1</li>');
-    // Blockquotes
     s=s.replace(/^> (.+)$/gm,'<blockquote>$1</blockquote>');
-    // Double newline = paragraph
-    s=s.replace(/\n\n/g,'</p><p>');
-    s=s.replace(/\n/g,'<br>');
+    s=s.replace(/\n\n/g,'</p><p>');s=s.replace(/\n/g,'<br>');
     s='<p>'+s+'</p>';
-    s=s.replace(/<p><\/p>/g,'');
-    s=s.replace(/<p><br><\/p>/g,'');
-    // Group consecutive <li>
+    s=s.replace(/<p><\/p>/g,'');s=s.replace(/<p><br><\/p>/g,'');
     s=s.replace(/(<li>.*?<\/li>)+/g,'<ul>$&</ul>');
     return s
 }
+
+// Add copy + thumbs buttons to AI messages
+function addMessageActions(htmlContent){
+    var actions='<div class="message-actions">'
+        +'<button class="msg-action-btn" title="Kopiera" onclick="copyMessage(this)">📋</button>'
+        +'<button class="msg-action-btn" title="Bra svar" onclick="feedbackMessage(this,\'up\')">👍</button>'
+        +'<button class="msg-action-btn" title="Dåligt svar" onclick="feedbackMessage(this,\'down\')">👎</button>'
+        +'</div>';
+    return actions+htmlContent;
+}
+
 function scrollBottom(){var e=document.getElementById('messages');e.scrollTop=e.scrollHeight}
 function updateTokenInfo(){document.getElementById('token-info').textContent='Tokens: ~'+tokenCount}
 
@@ -371,17 +919,10 @@ function updateSystemtokenDisplay(){
     if(!activeSessionId)return;
     fetch('/ai/threads/'+activeSessionId).then(r=>r.json()).then(d=>{
         var total=0;
-        if(d.messages){
-            d.messages.forEach(function(m){
-                if(m.token_sys)total+=m.token_sys;
-            });
-        }
+        if(d.messages){d.messages.forEach(function(m){if(m.token_sys)total+=m.token_sys})}
         var el=document.getElementById('systemtoken-status');
         var sp=document.getElementById('sys-tokens');
-        if(el&&sp&&total>0){
-            sp.textContent=total.toLocaleString();
-            el.style.display='block';
-        }
+        if(el&&sp&&total>0){sp.textContent=total.toLocaleString();el.style.display='block'}
     }).catch(function(){})
 }
 
@@ -404,14 +945,25 @@ function sendMessage(){
 
     streaming=!0;t.style.display='none';document.getElementById('cancel-btn').style.display='inline-block';
     tokenCount=0;updateTokenInfo();
-    var a=document.createElement('div');a.className='message user';a.innerHTML=esc(n);
+
+    // Hide welcome screen
+    var wel=document.getElementById('welcome-screen');if(wel)wel.style.display='none';
+
+    // Show user message
+    var a=document.createElement('div');a.className='message user';
+    if(pendingImageBase64){
+        a.innerHTML='<div style="margin-bottom:6px"><img src="'+pendingImageBase64+'" style="max-width:200px;max-height:150px;border-radius:6px;display:block"/></div>'+esc(n);
+    }else{
+        a.innerHTML=esc(n);
+    }
     document.getElementById('messages').appendChild(a);scrollBottom();
+
     currentAiMessage=document.createElement('div');currentAiMessage.className='message ai';
     document.getElementById('messages').appendChild(currentAiMessage);
     currentAgentCards={};scrollBottom();
+
     // Auto-create thread if needed, then save user message
     function doStream(){
-        // Save user message to thread
         if(activeSessionId&&n){
             fetch('/ai/threads/'+activeSessionId+'/respond',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:n,role:'user'})})
         }
@@ -419,10 +971,12 @@ function sendMessage(){
     }
     if(!activeSessionId){
         var cleanName=n.replace(/[\n\r]+/g,' ').replace(/\s+/g,' ').trim().substring(0,50);
-        fetch('/ai/threads',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({quest_id:activeQuestId||null,name:cleanName})})
+        var sbody=JSON.stringify({quest_id:activeQuestId||null,name:cleanName,skill_id:contextSkill?parseInt(contextSkill):null});
+        fetch('/ai/threads',{method:'POST',headers:{'Content-Type':'application/json'},body:sbody})
         .then(function(r){return r.json()}).then(function(d){
             activeSessionId=d.id;activeThreadName=d.name;
             document.getElementById('active-thread-name').textContent=d.name;
+            if(contextQuest||contextSkill)document.getElementById('thread-edit-btn').style.display='inline-block';
             doStream()
         })
     } else {doStream()}
@@ -431,6 +985,8 @@ function startStream(prompt){
     var url='/ai/stream?prompt='+encodeURIComponent(prompt);
     if(activeQuestId)url+='&quest_id='+activeQuestId;
     if(activeSessionId)url+='&session_id='+activeSessionId;
+    if(contextSkill)url+='&context_skill='+contextSkill;
+    if(contextQuest)url+='&context_quest='+contextQuest;
     currentEventSource=new EventSource(url);
     currentEventSource.onmessage=function(e){try{var t=JSON.parse(e.data);handleStreamEvent(t)}catch(e){}};
     currentEventSource.onerror=function(){if(streaming){currentEventSource.close();finishStream()}}
@@ -462,13 +1018,14 @@ function finishStream(){
         var txt=currentAiMessage.textContent.trim();
         if(!txt){currentAiMessage.innerHTML='<em style="color:var(--text-muted)">(inget svar)</em>'}
         else{
-            currentAiMessage.innerHTML=md2html(txt);
-            // Save assistant response to thread with token estimates
+            // Render markdown + wrap with message actions
+            currentAiMessage.innerHTML=addMessageActions(md2html(txt));
+            // Save assistant response
             if(activeSessionId&&txt){
                 var estInput=Math.round(txt.length/4);
                 var estOutput=txt.length;
                 fetch('/ai/threads/'+activeSessionId+'/respond',{method:'POST',headers:{'Content-Type':'application/json'},
-                    body:JSON.stringify({content:txt,token_input:estInput,token_output:tokenCount,model_real:'web-chat'})})
+                    body:JSON.stringify({content:txt,token_input:estInput,token_output:tokenCount,model_real:selectedModel||'web-chat'})})
                     .then(r=>r.json()).then(d=>{updateSystemtokenDisplay()})
             }
         }
@@ -476,12 +1033,12 @@ function finishStream(){
     streaming=!1;document.getElementById('send-btn').style.display='inline-block';
     document.getElementById('cancel-btn').style.display='none';
     document.getElementById('prompt-input').focus();
+    removeImagePreview();
     currentAiMessage=null;currentAgentCards={};currentEventSource=null;
     if(activeSessionId)loadThreads()
 }
 function relTime(ts){
     if(!ts)return'';
-    // Parse ISO/ODoo datetime: "2026-07-24 08:22:13.901733"
     var d=new Date(ts.replace(' ','T')+'Z');
     if(isNaN(d.getTime())){d=new Date(ts)}
     if(isNaN(d.getTime()))return'';
@@ -508,8 +1065,48 @@ function uploadFile(input){
     input.value=''
 }
 
+// Close modal on click outside
+document.getElementById('thread-edit-modal').addEventListener('click',function(e){
+    if(e.target===this)closeThreadEditModal()
+});
+
 // === INIT ===
 initTheme();loadThreads();
+// If URL had quest_id, auto-select it when sidebar loads
+if(urlQuestId){
+    activeQuestId=urlQuestId;
+    // Try immediately, then retry after sidebar populates
+    function selectUrlQuest(){
+        var qi=document.querySelector('.quest-item[data-id="'+urlQuestId+'"]');
+        if(qi){
+            qi.click();
+        }else{
+            setTimeout(selectUrlQuest,300)
+        }
+    }
+    setTimeout(selectUrlQuest,500)
+}
+
+// Auto-init: send first message when context skill/quest is present
+if(autoInitSkill||contextQuest){
+    // Hide new-thread button in builder context
+    setTimeout(function(){
+        var ntb=document.querySelector('.new-thread-btn');
+        if(ntb)ntb.style.display='none'
+    },1000)
+    setTimeout(function(){
+        var msg='';
+        if(autoInitSkill){
+            msg='Analyze this skill. Find the single most important gap or weakness. Ask me ONE question about it.';
+        }else if(contextQuest){
+            msg='Study this quest. Tell me what you see and ask what to change.';
+        }
+        if(msg){
+            document.getElementById('prompt-input').value=msg;
+            setTimeout(function(){sendMessage()},800)
+        }
+    },2000)
+}
 </script>
 </body>
 </html>

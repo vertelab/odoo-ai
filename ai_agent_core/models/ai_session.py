@@ -14,6 +14,8 @@ class AIQuestSession(models.Model):
 
     name = fields.Char(default=lambda self: str(uuid.uuid4())[:8])
     quest_id = fields.Many2one('ai.quest', string='Quest', ondelete='cascade')
+    skill_id = fields.Many2one('ai.skill', string='Skill',
+        help='Skill being built/improved in this session')
     agent_id = fields.Many2one('ai.agent', string='Agent')
     identity_id = fields.Many2one('ai.identity', string='Identity')
 
@@ -89,3 +91,39 @@ class AIQuestSession(models.Model):
         self.status = 'done'
         self.finish_reason = reason
         self.end_date = fields.Datetime.now()
+
+    # ── Durable Resume (OpenWorker-inspired) ──
+    resumable = fields.Boolean('Resumable', default=True,
+                                help='Can this session be resumed after interruption?')
+    resumed_from_id = fields.Many2one('ai.quest.session', string='Resumed From',
+                                       help='Parent session this was resumed from')
+
+    def mark_interrupted(self):
+        """Mark session as interrupted (crash/stop) but resumable."""
+        self.status = 'active'  # Keep active so it can be resumed
+        self.finish_reason = 'interrupted'
+        self.end_date = fields.Datetime.now()
+        _logger.info('Session %s marked interrupted (resumable)', self.name)
+
+    def resume_session(self):
+        """Create a new session that continues from this interrupted one.
+
+        Returns a new session with the same quest/agent/identity config,
+        linked via resumed_from_id. The calling code should re-run the
+        AgentLoop with the history from this session.
+        """
+        self.ensure_one()
+        if not self.resumable:
+            return None
+
+        new_session = self.create({
+            'quest_id': self.quest_id.id,
+            'agent_id': self.agent_id.id,
+            'identity_id': self.identity_id.id,
+            'status': 'active',
+            'config_json': self.config_json,
+            'user_id': self.user_id.id,
+            'resumed_from_id': self.id,
+        })
+        _logger.info('Resumed session %s from %s', new_session.name, self.name)
+        return new_session

@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 from . import ai_provider
 from . import ai_model
+from . import ai_tag
 from . import ai_quest
 from . import ai_agent
 from . import ai_session
@@ -10,7 +11,11 @@ from . import ai_quest_skill
 from . import ai_identity
 from . import ai_skill
 from . import ai_session_line
+from . import ai_quest_init_type
 from . import res_users
 from . import res_config_settings
 from . import ai_kaizen
+from . import ai_tag
 from . import ai_onboard
+from . import base_model
+from . import mail_thread

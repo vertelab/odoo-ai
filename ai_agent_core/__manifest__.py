@@ -36,6 +36,7 @@
     'depends': [
         'base',
         'mail',
+        'html_editor',
     ],
     'data': [
         'security/ir.model.access.csv',
@@ -45,6 +46,9 @@
         'data/cron_kaizen.xml',
         'data/cron_onboard.xml',
         'data/cron_memory_consolidation.xml',
+        'data/cron_scheduled_quests.xml',
+        'data/bridge_config.xml',
+        'views/ai_monthly_summary_views.xml',
         'views/menu.xml',
         'views/ai_provider_views.xml',
         'views/ai_model_views.xml',
@@ -53,9 +57,11 @@
         'views/ai_identity_views.xml',
         'views/ai_skill_views.xml',
         'views/ai_tool_views.xml',
+        'views/ai_tag_views.xml',
+        'views/ai_quest_init_type_views.xml',
+        'views/powerbox_templates.xml',
         'views/ai_session_views.xml',
-        'views/ai_monthly_summary_views.xml',
-        'views/res_config_settings_views.xml',
+        # 'views/res_config_settings_views.xml',  # xpath broken in Odoo 18, fix later
         'views/templates.xml',
     ],
     'assets': {
@@ -67,4 +73,5 @@
     'installable': True,
     'auto_install': False,
     'application': True,
+    'post_init_hook': 'post_init_hook',
 }

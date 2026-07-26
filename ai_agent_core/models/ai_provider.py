@@ -227,6 +227,19 @@ class AIProvider(models.Model):
                 count += 1
         return count
 
+    def action_view_models(self):
+        """Smart button: open models linked to this provider."""
+        self.ensure_one()
+        return {
+            'name': _('Models — %s') % self.name,
+            'type': 'ir.actions.act_window',
+            'res_model': 'ai.model',
+            'view_mode': 'list,kanban,form',
+            'target': 'current',
+            'domain': [('provider_id', '=', self.id)],
+            'context': {'default_provider_id': self.id},
+        }
+
     def action_test_connection(self):
         """Test provider connection."""
         self.ensure_one()

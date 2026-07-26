@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Cron: Run all active cron-type quests every 5 minutes -->
+    <record id="cron_scheduled_quests" model="ir.cron">
+        <field name="name">AI: Run Scheduled Quests</field>
+        <field name="model_id" ref="model_ai_quest"/>
+        <field name="state">code</field>
+        <field name="code"># Run all active cron-type quests
+quests = model.search([('init_type', '=', 'cron'), ('status', '=', 'active')])
+for quest in quests:
+    try:
+        result = quest.action_run_scheduled()
+    except Exception:
+        pass</field>
+        <field name="interval_number">5</field>
+        <field name="interval_type">minutes</field>
+        <field name="active" eval="True"/>
+    </record>
+</odoo>

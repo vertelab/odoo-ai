@@ -85,6 +85,13 @@
                            statusbar_visible="draft,confirmed"/>
                 </header>
                 <sheet>
+                    <div class="oe_button_box" name="button_box">
+                        <button name="action_view_models" type="object"
+                                class="oe_stat_button" icon="fa-cubes"
+                                help="Models linked to this provider">
+                            <field name="model_count" widget="statinfo" string="Models"/>
+                        </button>
+                    </div>
                     <div class="oe_title">
                         <h1><field name="name" placeholder="Provider Name"/></h1>
                     </div>

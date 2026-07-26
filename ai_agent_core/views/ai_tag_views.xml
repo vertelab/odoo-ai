@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="ai_tag_view_tree" model="ir.ui.view">
+        <field name="name">ai.tag.tree</field>
+        <field name="model">ai.tag</field>
+        <field name="arch" type="xml">
+            <list>
+                <field name="name"/>
+                <field name="color"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="ai_tag_view_form" model="ir.ui.view">
+        <field name="name">ai.tag.form</field>
+        <field name="model">ai.tag</field>
+        <field name="arch" type="xml">
+            <form>
+                <sheet>
+                    <group>
+                        <field name="name"/>
+                        <field name="color" widget="color_picker"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="ai_tag_view_search" model="ir.ui.view">
+        <field name="name">ai.tag.search</field>
+        <field name="model">ai.tag</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="name"/>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_ai_tag" model="ir.actions.act_window">
+        <field name="name">AI Tags</field>
+        <field name="res_model">ai.tag</field>
+        <field name="view_mode">tree,form</field>
+    </record>
+</odoo>

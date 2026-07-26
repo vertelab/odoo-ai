@@ -14,6 +14,7 @@ Just a while-loop that any senior engineer can read in a sitting.
 """
 
 import asyncio
+import json
 import logging
 import time
 from dataclasses import dataclass, field
@@ -28,6 +29,12 @@ from .provider import (
     ToolCall,
 )
 from .tools import Tool, ToolRegistry
+from .permission import (
+    PermissionEngine,
+    PermissionMode,
+    Decision,
+    classify as risk_classify,
+)
 
 _logger = logging.getLogger(__name__)
 
@@ -51,6 +58,7 @@ class AgentConfig:
     max_tool_result_chars: int = 8000  # truncate large tool results
     max_parallel_tools: int = 5  # max concurrent tool executions (LOOP-007)
     approval_threshold: int = 2  # risk level requiring approval (HITL-005)
+    permission_mode: str = "interactive"  # discuss | plan | interactive | auto | custom
     max_clarifications: int = 3  # max proactive questions per turn (HITL-007)
 
 
@@ -88,16 +96,41 @@ class AgentLoop:
         tools: ToolRegistry,
         config: Optional[AgentConfig] = None,
         interrupt_handler=None,
+        permission_engine: Optional[PermissionEngine] = None,
+        context_provider: Optional[callable] = None,
     ):
         self.provider = provider
         self.tools = tools
         self.config = config or AgentConfig()
         self.interrupt_handler = interrupt_handler
+        self.context_provider = context_provider
+
+        # Permission engine (optional — backwards compatible)
+        if permission_engine:
+            self.permissions = permission_engine
+        else:
+            # Create one from config so downstream code can always reference it
+            try:
+                mode = PermissionMode(self.config.permission_mode)
+            except ValueError:
+                mode = PermissionMode.INTERACTIVE
+            self.permissions = PermissionEngine(mode=mode)
 
         # Cancellation support (LOOP-005)
         self._cancel_event = asyncio.Event()
         self._cancelled = False
         self._partial_results: list[tuple[str, str]] = []
+
+        # Todo list (plan-before-action) — use TodoList from tools
+        from .tools import TodoList
+        self.todo_list = TodoList()
+        # Wire up the todo holder so todo_write tool can access it
+        from .tools import planning_tools
+        planning_tools(self.todo_list)
+        # Also register planning tools if not already present
+        for pt in planning_tools(self.todo_list):
+            if pt.name not in self.tools:
+                self.tools.register(pt)
 
     def cancel(self) -> None:
         """Signal cancellation. Stops LLM call and pending tools."""
@@ -160,6 +193,26 @@ class AgentLoop:
                     sum(len(m.content or "") for m in messages),
                 )
                 messages = await self._summarize(messages)
+
+            # -- Context injection (OpenWorker-inspired) --
+            if self.context_provider and messages and round_num > 1:
+                try:
+                    ctx = self.context_provider() or ""
+                    if ctx:
+                        # Inject as <system-context> into last user message
+                        block = f"\n\n<system-context>\n{ctx}\n</system-context>"
+                        for i in range(len(messages) - 1, -1, -1):
+                            if messages[i].role == Role.USER:
+                                messages[i] = Message(
+                                    role=messages[i].role,
+                                    content=messages[i].content + block,
+                                    tool_call_id=messages[i].tool_call_id,
+                                    tool_calls=messages[i].tool_calls,
+                                    name=messages[i].name,
+                                )
+                                break
+                except Exception:
+                    pass  # Best-effort — never fail a turn over context injection
 
             # -- Provider call (with cancel support) --
             tool_defs = self.tools.to_openai() if len(self.tools) > 0 else None
@@ -297,26 +350,107 @@ class AgentLoop:
                 )
                 messages.append(assistant_msg)
 
-                # -- Approval check (HITL-005) --
-                if self.interrupt_handler:
-                    for tc in response.tool_calls:
-                        tool = self.tools.get(tc.name)
-                        if tool and tool.needs_human_approval(self.config.approval_threshold):
-                            approved = await self.interrupt_handler.approve_tool(
-                                tc.name, tool.risk_level, tc.arguments
-                            )
-                            if not approved:
-                                messages.append(Message(
-                                    role=Role.TOOL,
-                                    content=f"Tool '{tc.name}' was denied by user.",
-                                    tool_call_id=tc.id,
-                                    name=tc.name,
-                                ))
-                                # Remove denied tool calls from this batch
-                                response.tool_calls = [
-                                    t for t in response.tool_calls
-                                    if t.id != tc.id
-                                ]
+                # -- propose_plan interception (PLAN mode) --
+                for tc in list(response.tool_calls):
+                    if tc.name == "propose_plan":
+                        plan_text = tc.arguments.get("plan", "")
+                        _logger.info("propose_plan called: %s", plan_text[:100])
+
+                        if self.permissions.mode == PermissionMode.PLAN:
+                            # Emit plan for approval
+                            if self.interrupt_handler:
+                                result = await self.interrupt_handler.ask(
+                                    question=f"Agenten föreslår följande plan:\n\n{plan_text}\n\nGodkänn?",
+                                    approval_type="plan_approval",
+                                    timeout=300,
+                                )
+                                if result.get("action") == "answer" and result.get("answer", "").lower().strip() in (
+                                    "ja", "yes", "ok", "godkänn", "approve", "kör"
+                                ):
+                                    # Switch from PLAN to INTERACTIVE mode
+                                    self.permissions.set_mode(PermissionMode.INTERACTIVE)
+                                    plan_result = "Plan approved. Switching to interactive mode. Proceed with execution."
+                                    _logger.info("Plan approved — mode: %s", self.permissions.mode.value)
+                                else:
+                                    plan_result = f"Plan not approved: {result.get('answer', result.get('action', 'denied'))}. Revise or ask what to change."
+                                    _logger.info("Plan denied")
+                            else:
+                                # No interrupt handler — auto-approve in non-interactive mode
+                                self.permissions.set_mode(PermissionMode.INTERACTIVE)
+                                plan_result = "Plan auto-approved (no interactive handler). Switching to interactive mode."
+                        else:
+                            # Not in PLAN mode — just acknowledge
+                            plan_result = f"Not in plan mode (current: {self.permissions.mode.value}). Proceed with execution directly."
+
+                        # Append tool result for propose_plan
+                        messages.append(Message(
+                            role=Role.TOOL,
+                            content=json.dumps({
+                                "plan_received": True,
+                                "approved": self.permissions.mode != PermissionMode.PLAN,
+                                "note": plan_result,
+                            }),
+                            tool_call_id=tc.id,
+                            name=tc.name,
+                        ))
+                        # Remove propose_plan from the batch — already handled
+                        response.tool_calls = [
+                            t for t in response.tool_calls if t.id != tc.id
+                        ]
+
+                if not response.tool_calls:
+                    continue  # All calls were propose_plan — go to next round
+
+                # -- Permission check (HITL-005 + PermissionEngine) --
+                denied_tool_ids: set[str] = set()
+                for tc in response.tool_calls:
+                    tool = self.tools.get(tc.name)
+
+                    # 1. PermissionEngine.evaluate()
+                    decision = self.permissions.evaluate(
+                        tc.name, tc.arguments, metadata=tool,
+                    )
+
+                    if not decision.allowed:
+                        # Engine says no — append error, mark denied
+                        _logger.info(
+                            "Permission denied for '%s': %s",
+                            tc.name, decision.reason,
+                        )
+                        messages.append(Message(
+                            role=Role.TOOL,
+                            content=f"Tool '{tc.name}' was denied: {decision.reason}",
+                            tool_call_id=tc.id,
+                            name=tc.name,
+                        ))
+                        denied_tool_ids.add(tc.id)
+                        continue
+
+                    # 2. If needs_user approval and we have a handler, ask
+                    if decision.needs_user and self.interrupt_handler:
+                        approved = await self.interrupt_handler.approve_tool(
+                            tc.name,
+                            tool.risk_level if tool else "read_only",
+                            tc.arguments,
+                        )
+                        if not approved:
+                            messages.append(Message(
+                                role=Role.TOOL,
+                                content=f"Tool '{tc.name}' was denied by user.",
+                                tool_call_id=tc.id,
+                                name=tc.name,
+                            ))
+                            denied_tool_ids.add(tc.id)
+                            continue
+                        # User approved — record as standing rule if applicable
+                        self.permissions.allow_tool_for_session(tc.name)
+
+                # Remove denied tool calls
+                if denied_tool_ids:
+                    response.tool_calls = [
+                        t for t in response.tool_calls
+                        if t.id not in denied_tool_ids
+                    ]
 
                 # Execute tools in parallel (LOOP-007)
                 if response.tool_calls:

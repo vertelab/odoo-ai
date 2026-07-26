@@ -56,6 +56,7 @@
             <list string="Models" decoration-danger="status=='deprecated'" multi_edit="1">
                 <field name="name"/>
                 <field name="provider_id"/>
+                <field name="real_provider" optional="show"/>
                 <field name="context_window"/>
                 <field name="max_output_tokens" optional="hide"/>
                 <field name="is_vision"/>
@@ -107,6 +108,7 @@
                     <group col="2">
                         <field name="name"/>
                         <field name="status"/>
+                        <field name="real_provider"/>
                     </group>
                     <notebook>
                         <page string="Capabilities">

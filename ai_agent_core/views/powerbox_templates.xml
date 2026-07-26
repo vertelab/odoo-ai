@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+// Restore original template format
+    <template id="PowerboxOverlay" name="PowerboxOverlay">
+        <div class="powerbox-overlay" t-if="state.visible">
+            <PowerboxDropdown
+                quests="state.quests"
+                position="state.position"
+                onSelect="state.onSelect"
+                onClose="state.onClose"/>
+            <div t-if="state.loading" class="powerbox-loading">
+                <span>AI processing...</span>
+            </div>
+        </div>
+    </template>
+
+    <template id="PowerboxDropdown" name="PowerboxDropdown">
+        <div class="powerbox-dropdown o-dropdown-menu show"
+             t-att-style="'position:fixed;left:' + props.position.left + 'px;top:' + props.position.top + 'px;z-index:1050;min-width:250px;'">
+            <t t-foreach="props.quests" t-as="q" t-key="q.id">
+                <a class="dropdown-item d-flex align-items-center gap-2 py-2"
+                   t-att-class="{ 'active': state.selectedIndex === q_index }"
+                   t-on-click="() => props.onSelect(q)">
+                    <span class="fw-bold" t-out="q.name"/>
+                    <small class="text-muted" t-out="q.sub_description"/>
+                </a>
+            </t>
+            <t t-if="!props.quests.length">
+                <span class="dropdown-item text-muted">No powerbox quests available</span>
+            </t>
+        </div>
+    </template>
+</odoo>

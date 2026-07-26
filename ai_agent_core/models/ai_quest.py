@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """ai.quest — standalone, no LangGraph. Uses AgentLoop."""
 
-import json, logging, re, uuid
+import json, logging, re, uuid, base64
 from odoo import models, fields, api, _
 from odoo.exceptions import UserError
 
@@ -28,9 +28,15 @@ def _quest_is_accessible(quest, user):
 
 
 INIT_TYPES = [
-    ('manual', 'Manual'), ('chat', 'Chat with User'), ('channel', 'Chat with Channel'),
-    ('cron', 'Scheduled Action'), ('server-action', 'Server Action'), ('mail', 'Mail'),
+    ('web_ui', 'Web Chat UI'),
+    ('chat', 'Discuss — Private Chat'),
+    ('channel', 'Discuss — Team Channel'),
+    ('mail', 'Incoming Mail'),
+    ('cron', 'Scheduled Action'),
+    ('server_action', 'Server Action'),
     ('powerbox', 'Powerbox'),
+    ('manual', 'Manual'),
+    ('openai_api', 'OpenAI API'),
 ]
 
 
@@ -51,13 +57,20 @@ class AIQuest(models.Model):
         ('draft', 'Draft'), ('active', 'Active'), ('done', 'Done'), ('error', 'Error'),
     ], default='draft')
 
-    init_type = fields.Selection(INIT_TYPES, required=True, default='manual')
-    model_id = fields.Many2one('ir.model', string='Target Model')
+    init_type = fields.Selection(INIT_TYPES, string='Initiation Type (deprecated)',
+        compute='_compute_init_type', store=True,
+        help='Automatically synced from the first active Initiation Type. '
+             'Use init_type_ids for multi-type support.')
+
+    # ── Multi-model binding ──
     model_ids = fields.Many2many('ir.model', 'ai_quest_model_rel',
         'quest_id', 'model_id', string='Target Models',
         help='Models this quest can work with. For powerbox quests, '
              'the slash command only appears on records of these models.')
-    model_name = fields.Char(related='model_id.model', readonly=True, store=True)
+    model_id = fields.Many2one('ir.model', string='Target Model (primary)',
+        compute='_compute_model_id', store=True, readonly=False,
+        help='First model in the Target Models list. Deprecated in favor of model_ids.')
+    model_name = fields.Char(compute='_compute_model_name', store=True)
     filter_domain = fields.Char('Record Filter')
 
     agent_ids = fields.One2many('ai.quest.agent', 'quest_id', string='Agents')
@@ -109,6 +122,13 @@ class AIQuest(models.Model):
     use_personal_lang = fields.Boolean(default=True)
     use_time_context = fields.Boolean(default=True)
     chat_history_limit = fields.Integer(default=10)
+
+    # ── Context Injection (ported from ai_agent_context) ──
+    context_injection_enabled = fields.Boolean('Enable Record Context', default=True)
+    context_max_fields = fields.Integer('Max Context Fields', default=100)
+    context_include_chatter = fields.Boolean('Include Chatter History', default=True)
+    context_chatter_limit = fields.Integer('Chatter Message Limit', default=20)
+
     debug = fields.Boolean('Debug Mode')
 
     user_id = fields.Many2one('res.users', default=lambda self: self.env.user)
@@ -117,6 +137,11 @@ class AIQuest(models.Model):
 
     # Access Control (quest-access-control)
     show_in_chat = fields.Boolean('Show in Web Chat', default=True)
+    alias_name = fields.Char('Email Alias',
+        help='Local part of the email address')
+    api_key_attachment_id = fields.Many2one('ir.attachment',
+        string='API Key',
+        help='API key for OpenAI-compatible endpoint access')
     group_ids = fields.Many2many('res.groups', 'ai_quest_group_rel', 'quest_id', 'group_id', string='Access Groups')
     user_ids = fields.Many2many('res.users', 'ai_quest_user_rel', 'quest_id', 'user_id', string='Access Users')
 
@@ -125,6 +150,16 @@ class AIQuest(models.Model):
 
     session_count = fields.Integer(compute='_compute_session_count')
     session_ids = fields.One2many('ai.quest.session', 'quest_id')
+    session_object_count = fields.Integer(compute='_compute_session_object_count')
+
+    @api.depends('session_ids')
+    def _compute_session_object_count(self):
+        for r in self:
+            if 'ai.session.object' in self.env:
+                r.session_object_count = self.env['ai.session.object'].search_count(
+                    [('ai_quest_id', '=', r.id)])
+            else:
+                r.session_object_count = 0
 
     # Systemtoken tracking
     session_line_ids = fields.One2many(
@@ -311,9 +346,125 @@ class AIQuest(models.Model):
     skill_copy_ids = fields.One2many('ai.quest.skill', 'quest_id',
         string='Skill Copies',
         help='Quest-specific copies of shared skills')
+
+    # ── Direct quest-level skills (pipeline/orchestration) ──
+    skill_ids = fields.Many2many('ai.skill', 'ai_quest_skill_rel',
+        'quest_id', 'skill_id', string='Quest Skills',
+        help='Pipeline and orchestration skills. '
+             'Available to ALL agents in this quest. '
+             'These provide the overall coordination framework '
+             'and take priority over agent-level skills.')
     last_run = fields.Datetime()
 
-    tag_ids = fields.Many2many('product.tag', string='Tags')
+    # ── Automation / Scheduled Run (OpenWorker-inspired) ──
+    last_status = fields.Selection([
+        ('ok', 'OK'), ('error', 'Error'), ('skipped', 'Skipped'),
+    ], string='Last Run Status',
+       help='Result of the last scheduled run')
+    run_count = fields.Integer('Run Count', default=0,
+                                help='Number of times this quest has been run via cron')
+    notify_on_completion = fields.Boolean('Notify on Completion',
+                                           help='Send a notification when a scheduled run completes')
+    notify_target = fields.Char('Notify Target',
+                                 help='Channel or user reference for completion notifications')
+    auto_allowed_tools = fields.Text('Auto-Allowed Tools',
+                                      help='JSON list of tool→target standing rules. '
+                                           'Format: ["tool target", ...] or bare tool names. '
+                                           'Applied as auto-approve for scheduled runs.')
+    auto_allowed_commands = fields.Text('Auto-Allowed Commands',
+                                         help='JSON list of command prefixes. '
+                                              'Commands matching these prefixes are auto-approved '
+                                              'for scheduled runs without prompting.')
+
+    tag_ids = fields.Many2many('ai.tag', string='Tags')
+
+    # ── Multi-init-type (replaces single init_type) ──
+    init_type_ids = fields.One2many('ai.quest.init_type', 'quest_id',
+        string='Initiation Types',
+        help='Multiple ways this quest can be triggered.')
+    # Computed Many2many for many2many_tags widget in form
+    active_init_types = fields.Many2many(
+        'ai.quest.init_type', 'ai_quest_init_type_active_rel',
+        'quest_id', 'init_type_id',
+        string='Active Initiation Types',
+        compute='_compute_active_init_types', inverse='_inverse_active_init_types',
+        help='Select which ways this quest can be triggered. '
+             'Each type lights up its own configuration below.')
+
+    # Computed boolean flags for UI visibility
+    has_web_ui = fields.Boolean(compute='_compute_init_type_flags', store=True)
+    has_chat = fields.Boolean(compute='_compute_init_type_flags', store=True)
+    has_channel = fields.Boolean(compute='_compute_init_type_flags', store=True)
+    has_mail = fields.Boolean(compute='_compute_init_type_flags', store=True)
+    has_cron = fields.Boolean(compute='_compute_init_type_flags', store=True)
+    has_server_action = fields.Boolean(compute='_compute_init_type_flags', store=True)
+    has_powerbox = fields.Boolean(compute='_compute_init_type_flags', store=True)
+    has_openai_api = fields.Boolean(compute='_compute_init_type_flags', store=True)
+
+    @api.depends('init_type_ids', 'init_type_ids.active', 'init_type_ids.init_type')
+    def _compute_active_init_types(self):
+        for r in self:
+            r.active_init_types = r.init_type_ids.filtered('active')
+
+    def _inverse_active_init_types(self):
+        for r in self:
+            # Get currently active init types
+            current_map = {it.init_type: it for it in r.init_type_ids}
+            wanted_types = set(it.init_type for it in r.active_init_types)
+            current_types = set(current_map.keys())
+
+            # CREATE new init types that don't exist yet
+            to_create = wanted_types - current_types
+            for itype in to_create:
+                self.env['ai.quest.init_type'].create({
+                    'quest_id': r.id,
+                    'init_type': itype,
+                    'active': True,
+                })
+
+            # ACTIVATE existing that should be active
+            to_activate = wanted_types & current_types
+            for itype in to_activate:
+                if itype in current_map and not current_map[itype].active:
+                    current_map[itype].active = True
+
+            # DEACTIVATE existing that should not be active
+            to_deactivate = current_types - wanted_types
+            for itype in to_deactivate:
+                if itype in current_map and current_map[itype].active:
+                    current_map[itype].active = False
+
+    @api.depends('init_type_ids.init_type', 'init_type_ids.active')
+    def _compute_init_type_flags(self):
+        for r in self:
+            active_types = set(
+                it.init_type for it in r.init_type_ids if it.active
+            )
+            r.has_web_ui = 'web_ui' in active_types
+            r.has_chat = 'chat' in active_types
+            r.has_channel = 'channel' in active_types
+            r.has_mail = 'mail' in active_types
+            r.has_cron = 'cron' in active_types
+            r.has_server_action = 'server_action' in active_types
+            r.has_powerbox = 'powerbox' in active_types
+            r.has_openai_api = 'openai_api' in active_types
+
+    @api.depends('model_ids')
+    def _compute_model_id(self):
+        for r in self:
+            r.model_id = r.model_ids[0] if r.model_ids else False
+
+    @api.depends('model_id.model')
+    def _compute_model_name(self):
+        for r in self:
+            r.model_name = r.model_id.model if r.model_id else False
+
+    @api.depends('init_type_ids')
+    def _compute_init_type(self):
+        """Keep legacy init_type in sync: first active init type."""
+        for r in self:
+            active = r.init_type_ids.filtered('active')
+            r.init_type = active[0].init_type if active else 'manual'
 
     @api.depends('agent_ids')
     def _compute_agent_count(self):
@@ -358,6 +509,494 @@ class AIQuest(models.Model):
             ], limit=1)
             r.last_month_sys_tokens = summary.total_sys_tokens if summary else 0
 
+    def _get_eid(self):
+        """Get external ID for this quest, creating one if needed."""
+        self.ensure_one()
+        if not self.name:
+            from odoo.exceptions import ValidationError
+            raise ValidationError(_('Set a name for this quest'))
+        eid = list(self.get_external_id().values())[0]
+        if not eid:
+            import re
+            import unidecode
+            eid_name = unidecode.unidecode(re.sub(
+                r'[^a-zA-Z0-9\s]', '', self.name.lower()
+            ).replace(' ', '_'))
+            if self.id:
+                eid_name += f"_{self.id}"
+            eid = self.env['ir.model.data'].search(
+                [('name', '=', eid_name)], limit=1)
+            if not eid:
+                eid = self.env['ir.model.data'].create({
+                    'name': eid_name,
+                    'module': 'ai_agent_core',
+                    'model': 'ai.quest',
+                    'res_id': self.id,
+                })
+        return eid.complete_name if hasattr(eid, 'complete_name') else '%s.%s' % (eid.module, eid.name)
+
+    def server_action(self, records):
+        """Run quest as a server action triggered from Odoo UI.
+        
+        Called from ir.actions.server when user clicks the quest button
+        on a form or selects records in a list.
+        """
+        self.ensure_one()
+        if self._check_quest_error():
+            _logger.error('Server Action error: %s', self._check_quest_error())
+            raise UserError(self._check_quest_error())
+        
+        record = records[0] if records else None
+        result = self.run(records=records, record=record)
+        return result
+
+    # ── Mail (init_type='mail') ──
+
+    def mail(self, mail_message, session=None):
+        """Handle incoming mail → create session and run AgentLoop."""
+        self.ensure_one()
+        if self._check_quest_error():
+            _logger.warning('Mail quest %s has errors, skipping', self.name)
+            return None
+
+        from odoo.tools.mail import html2plaintext
+        try:
+            body_text = html2plaintext(mail_message.body or '')
+        except Exception:
+            body_text = mail_message.body or ''
+
+        if not body_text.strip():
+            return None
+
+        if session is None:
+            session = self.env['ai.quest.session'].create({
+                'quest_id': self.id, 'status': 'active',
+                'name': f'Mail: {mail_message.subject or "No subject"}',
+                'user_id': self.env.ref('base.user_root', raise_if_not_found=False).id or 1,
+            })
+
+        # Handle mail attachments as context
+        att_context = ''
+        if mail_message.attachment_ids:
+            att_texts = []
+            for att in mail_message.attachment_ids:
+                try:
+                    text = _extract_text(att.name, base64.b64decode(att.datas))
+                    if text and len(text) < 10000:
+                        att_texts.append(f'--- {att.name} ---\n{text[:2000]}')
+                except Exception:
+                    pass
+            if att_texts:
+                att_context = '\n\n## Attachments\n' + '\n'.join(att_texts)
+
+        prompt = body_text[:4000] + att_context
+        try:
+            result = self.run(session=session, message_body=prompt, mail=mail_message, prompt=prompt)
+            if result and session:
+                last_line = session.session_line_ids.sorted('sequence', reverse=True)[:1]
+                if last_line and last_line.role == 'assistant' and last_line.content:
+                    _send_mail_reply(mail_message, last_line.content[:4000], self)
+            return result
+        except Exception as e:
+            _logger.error('Mail failed for quest %s: %s', self.name, e)
+            if session:
+                session.write({'status': 'error', 'finish_reason': str(e)[:200]})
+            return None
+
+    # ── Chat / Channel (init_type='chat' | 'channel') ──
+
+    def chat(self, message, channel=None, bot_user=None):
+        """Handle Discuss message → run AgentLoop and respond."""
+        self.ensure_one()
+        if self._check_quest_error():
+            return None
+
+        # Check trigger words
+        active_init = self.init_type_ids.filtered(
+            lambda it: it.init_type in ('chat', 'channel') and it.active)
+        if active_init:
+            trigger_words = active_init[0].chat_trigger_words or ''
+            if active_init[0].allow_trigger_words and trigger_words:
+                msg_lower = (message.body or '').lower()
+                triggers = [w.strip().lower() for w in trigger_words.split(',')]
+                if not any(t in msg_lower for t in triggers):
+                    return None
+
+        # Chat history context
+        history_ctx = ''
+        use_hist = active_init and active_init[0].use_chat_history
+        hist_limit = active_init[0].chat_history_limit if active_init else 10
+        if use_hist and channel:
+            prev = self.env['mail.message'].search([
+                ('model', '=', 'discuss.channel'), ('res_id', '=', channel.id),
+            ], limit=hist_limit, order='create_date asc')
+            lines = []
+            for m in prev:
+                role = 'assistant' if m.author_id == bot_user else 'user'
+                text = (m.body or '')[:500]
+                if text.strip():
+                    lines.append(f'[{role}] {text}')
+            if lines:
+                history_ctx = '\n'.join(lines[-hist_limit:])
+
+        from odoo.tools.mail import html2plaintext
+        try:
+            msg_text = html2plaintext(message.body or '')
+        except Exception:
+            msg_text = message.body or ''
+
+        if not msg_text.strip():
+            return None
+
+        full_system = (self.description or '')
+        if history_ctx:
+            full_system += f'\n\n## Recent conversation\n{history_ctx}'
+
+        session = self.env['ai.quest.session'].create({
+            'quest_id': self.id, 'status': 'active',
+            'name': f'Chat: {msg_text[:50]}',
+            'user_id': bot_user.id if bot_user else 1,
+        })
+        self.env['ai.quest.session.line'].create({
+            'session_id': session.id, 'sequence': 1,
+            'role': 'user', 'content': msg_text[:4000],
+        })
+
+        try:
+            result = self.run(session=session, message=message,
+                            message_body=msg_text, prompt=msg_text,
+                            channel=channel, bot_user=bot_user)
+            if session and channel:
+                last_line = session.session_line_ids.sorted('sequence', reverse=True)[:1]
+                if last_line and last_line.role == 'assistant' and last_line.content:
+                    channel.message_post(
+                        body=f'<p>{last_line.content[:4000]}</p>',
+                        message_type='comment', subtype_xmlid='mail.mt_comment')
+            return result
+        except Exception as e:
+            _logger.error('Chat failed for quest %s: %s', self.name, e)
+            if session:
+                session.write({'status': 'error', 'finish_reason': str(e)[:200]})
+            return None
+
+    # ── Cron with filter_domain ──
+
+    def cron(self, records=None):
+        """Run quest as cron job, optionally filtered by domain."""
+        self.ensure_one()
+        if self._check_quest_error():
+            self.write({'last_status': 'error', 'last_run': fields.Datetime.now()})
+            return None
+
+        cron_init = self.init_type_ids.filtered(
+            lambda it: it.init_type == 'cron' and it.active)
+        if cron_init and cron_init[0].filter_domain:
+            try:
+                from odoo.tools.safe_eval import safe_eval
+                domain = safe_eval(cron_init[0].filter_domain)
+                model_name = self.model_ids[0].model if self.model_ids else 'res.partner'
+                records = self.env[model_name].search(domain)
+            except Exception as e:
+                _logger.warning('Invalid filter_domain: %s', e)
+
+        return self.action_run_scheduled()
+
+    @api.model
+    def _migrate_init_types(self):
+        """Create ai.quest.init_type records for quests missing them.
+        
+        Idempotent — safe to call multiple times.
+        Called automatically on module upgrade.
+        """
+        quests = self.search([('init_type_ids', '=', False)])
+        created = 0
+        for quest in quests:
+            old_type = quest.init_type or 'manual'
+            vals = {
+                'quest_id': quest.id,
+                'init_type': old_type,
+                'active': quest.status == 'active',
+            }
+            if old_type == 'web_ui':
+                vals['show_in_chat'] = quest.show_in_chat
+            elif old_type == 'chat':
+                vals['chat_user_id'] = quest.chat_user_id.id if quest.chat_user_id else False
+                vals['use_chat_history'] = quest.use_chat_history
+                vals['chat_history_limit'] = quest.chat_history_limit
+            elif old_type == 'channel':
+                vals['channel_id'] = quest.channel_id.id if quest.channel_id else False
+            elif old_type == 'mail':
+                pass
+            elif old_type == 'cron':
+                vals['cron_id'] = quest.cron_id.id if quest.cron_id else False
+                vals['filter_domain'] = quest.filter_domain
+            elif old_type == 'server_action':
+                vals['server_action_id'] = quest.server_action_id.id if quest.server_action_id else False
+
+            self.env['ai.quest.init_type'].create(vals)
+            created += 1
+
+        if created:
+            _logger.info('Migration: Created %d ai.quest.init_type records', created)
+        return created
+
+    # ── Record Context Injection (ported from ai_agent_context) ──
+
+    def _extra_context(self):
+        """Build extended system prompt with record data + chatter."""
+        res = super()._extra_context() if hasattr(super(), '_extra_context') else ''
+        if not self.context_injection_enabled:
+            return res
+
+        parts = []
+
+        # Level 1: User view context from channel
+        ch_ctx = self._get_channel_context()
+        if ch_ctx:
+            parts.append(
+                f"\n\n## User Context\n"
+                f"The user is currently viewing: {ch_ctx['model']}"
+                + (f" (record ID: {ch_ctx['record_id']})" if ch_ctx.get('record_id') else "")
+                + (f" in {ch_ctx['view_type']} view.\n" if ch_ctx.get('view_type') else ".\n")
+            )
+
+        # Level 2 & 3: Record fields + chatter
+        record = self._get_ai_context_record() or self._get_session_context_record()
+        if record and record.exists():
+            try:
+                parts.append(
+                    f"\n\n## Current Record: {record._name} (ID: {record.id})\n"
+                    f"You are interacting within this Odoo record. "
+                    f"Use the field data below to answer questions about it.\n"
+                )
+                try:
+                    json_data = record._ai_serialize_fields_data(
+                        max_fields=self.context_max_fields)
+                    parts.append(f"### Record Fields\n```json\n{json_data}\n```\n")
+                except Exception as e:
+                    _logger.warning('Field serialization failed: %s', e)
+
+                if self.context_include_chatter and hasattr(record, '_ai_serialize_messages_data'):
+                    try:
+                        chatter = record._ai_serialize_messages_data()
+                        if chatter:
+                            lines = chatter.split('\n')
+                            if len(lines) > self.context_chatter_limit:
+                                lines = lines[-self.context_chatter_limit:]
+                                chatter = '\n'.join(lines) + "\n(older messages omitted)"
+                            parts.append(f"### Chatter History (oldest -> newest)\n{chatter}\n")
+                    except Exception as e:
+                        _logger.warning('Chatter failed: %s', e)
+            except Exception as e:
+                _logger.error('Context injection failed: %s', e)
+
+        if parts:
+            res += "\n".join(parts)
+        return res
+
+    def _detect_record(self, kwargs):
+        """Detect context record from available sources."""
+        # 1. Direct record parameter
+        r = kwargs.get('record')
+        if r and hasattr(r, 'exists') and r.exists():
+            return r
+        # 2. First from recordset
+        records = kwargs.get('records')
+        if records and len(records) > 0:
+            return records[0]
+        # 3. env.context (form button)
+        ctx_m = self.env.context.get('context_record_model')
+        ctx_id = self.env.context.get('context_record_id')
+        if ctx_m and ctx_id:
+            try:
+                r = self.env[ctx_m].browse(int(ctx_id))
+                if r.exists():
+                    return r
+            except Exception:
+                pass
+        # 4. Channel context
+        ch = kwargs.get('channel')
+        if ch:
+            ch_model = getattr(ch, 'ai_context_model', False)
+            ch_rid = getattr(ch, 'ai_context_record_id', False)
+            if ch_model and ch_rid:
+                try:
+                    r = self.env[ch_model].browse(int(ch_rid))
+                    if r.exists():
+                        return r
+                except Exception:
+                    pass
+        # 5. Message model/res_id
+        msg = kwargs.get('message')
+        if msg:
+            for src in [msg, getattr(msg, 'parent_id', None)]:
+                if not src:
+                    continue
+                m = getattr(src, 'model', None) or getattr(src, 'res_model', None)
+                rid = getattr(src, 'res_id', None)
+                if m and rid and m != 'discuss.channel':
+                    try:
+                        r = self.env[m].browse(rid)
+                        if r.exists():
+                            return r
+                    except Exception:
+                        pass
+        # 6. Session objects
+        if ch:
+            sess = getattr(ch, 'ai_quest_session_id', None)
+            if sess and hasattr(sess, 'session_object_ids') and sess.session_object_ids:
+                obj = sess.session_object_ids[0]
+                if hasattr(obj, 'object_id') and obj.object_id:
+                    return obj.object_id
+        return None
+
+    def _get_channel_context(self):
+        """Get user view context from quest's linked discuss channel."""
+        channel = self.channel_id
+        if not channel:
+            return None
+        model = getattr(channel, 'ai_context_model', False)
+        if not model:
+            return None
+        return {
+            'model': model,
+            'record_id': getattr(channel, 'ai_context_record_id', False),
+            'view_type': getattr(channel, 'ai_context_view_type', False),
+        }
+
+    def _get_ai_context_record(self):
+        """Get record from env.context."""
+        m = self.env.context.get('_ai_context_model')
+        rid = self.env.context.get('_ai_context_id')
+        if m and rid:
+            try:
+                r = self.env[m].browse(int(rid))
+                return r if r.exists() else None
+            except Exception:
+                pass
+        return None
+
+    def _get_session_context_record(self):
+        """Get record from active sessions' objects."""
+        active = self.session_ids.filtered(lambda x: x.status == 'active')
+        for s in active:
+            if hasattr(s, 'session_object_ids') and s.session_object_ids:
+                obj = s.session_object_ids[0]
+                if hasattr(obj, 'object_id') and obj.object_id:
+                    return obj.object_id
+        return None
+
+    def _check_quest_error(self):
+        """Check quest configuration before running."""
+        if not self.agent_ids:
+            return _('You must assign at least one agent to the quest')
+        inactive = self.agent_ids.filtered(lambda a: a.agent_id and a.agent_id.status != 'active')
+        if inactive:
+            return _('Check status on agents: %s') % ', '.join(inactive.mapped('agent_id.name'))
+        return False
+
+    def _build_loop(self, provider, tools, model, system_prompt, max_rounds=10):
+        """Build AgentLoop or SupervisorLoop based on is_supervisor flag.
+
+        Returns a callable loop object with a `run(prompt)` async method.
+        """
+        from odoo.addons.ai_agent_core.core.loop import AgentLoop, AgentConfig
+
+        # Inject record context into system prompt
+        extra = self._extra_context() if self.context_injection_enabled else ''
+        if extra:
+            system_prompt = (system_prompt or '') + extra
+
+        if not self.is_supervisor or len(self.agent_ids) <= 1:
+            # Single agent — use standard AgentLoop
+            return AgentLoop(
+                provider=provider, tools=tools,
+                config=AgentConfig(
+                    model=model, system_prompt=system_prompt,
+                    max_rounds=max_rounds,
+                ),
+            )
+
+        # Multi-agent supervisor mode
+        from odoo.addons.ai_agent_core.core.supervisor import (
+            SupervisorLoop, SupervisorConfig, SpecialistAgent,
+        )
+
+        # Build quest-level orchestration context from quest skills
+        quest_skill_context = ''
+        if self.skill_ids:
+            quest_skill_context = '\n\n## Quest Orchestration Skills\n'
+            for skill in self.skill_ids:
+                quest_skill_context += f'\n### {skill.name}\n{skill.recipe_text or skill.description or ""}\n'
+
+        specialists = []
+        for agent_rel in self.agent_ids:
+            agent = agent_rel.agent_id
+            agent_model = model
+            agent_system = system_prompt
+            # Get agent-specific model from model_id
+            if agent and agent.model_id and agent.model_id.name:
+                agent_model = agent.model_id.name
+            # Build agent context with role/goal/backstory + skills
+            agent_skills_context = ''
+            for skill in agent.skill_ids:
+                agent_skills_context += f'\n### Skill: {skill.name}\n{skill.recipe_text or skill.description or ""}\n'
+            agent_system = (
+                f"Role: {agent.ai_role or agent.name}\n"
+                f"Goal: {agent.ai_goal or ''}\n"
+                f"{quest_skill_context}"
+                f"\n## Agent-Specific Skills\n{agent_skills_context}"
+                + system_prompt
+            )
+            specialist = SpecialistAgent(
+                name=agent.name,
+                description=agent.get_agent_name(),
+                loop=AgentLoop(
+                    provider=provider, tools=tools,
+                    config=AgentConfig(
+                        model=agent_model,
+                        system_prompt=agent_system,
+                        max_rounds=max_rounds,
+                    ),
+                ),
+                triggers=[],
+            )
+            specialists.append(specialist)
+
+        return SupervisorLoop(
+            router_provider=provider,
+            agents=specialists,
+            config=SupervisorConfig(
+                router_model=model,
+                max_rounds=3,
+            ),
+        )
+
+    def _get_quest_memories(self, query: str, k: int = 3) -> str:
+        """Search all FAISS memories for this quest and return context.
+
+        Called by system prompt building to inject relevant memory
+        into the agent's context.
+        """
+        self.ensure_one()
+        memories = self.env['ai.memory'].search([
+            ('quest_id', '=', self.id),
+            ('archived', '=', False),
+            ('memory_type', '=', 'faiss'),
+        ])
+        if not memories:
+            return ''
+
+        results = []
+        for mem in memories:
+            chunks = mem.search(query, k=k)
+            if chunks:
+                results.extend(chunks)
+
+        if results:
+            return '## Relevant memories\n' + '\n---\n'.join(results[:5])
+        return ''
+
     def action_get_agents(self):
         return {
             'name': 'Agents', 'type': 'ir.actions.act_window',
@@ -366,6 +1005,18 @@ class AIQuest(models.Model):
             'domain': [('id', 'in', self.agent_ids.mapped('agent_id').ids)],
         }
 
+    def action_open_builder(self):
+        """Open Quest Builder chat for this quest."""
+        self.ensure_one()
+        builder = self.env['ai.quest'].search(
+            [('name', '=', 'Quest Builder')], limit=1)
+        if not builder:
+            return {'type': 'ir.actions.act_url', 'url': '/ai/chat', 'target': 'new'}
+        url = f'/ai/chat?quest_id={builder.id}'
+        if self.id:
+            url += f'&context_quest={self.id}'
+        return {'type': 'ir.actions.act_url', 'url': url, 'target': 'new'}
+
     def action_get_sessions(self):
         return {
             'name': 'Sessions', 'type': 'ir.actions.act_window',
@@ -373,6 +1024,94 @@ class AIQuest(models.Model):
             'target': 'current',
             'domain': [('quest_id', '=', self.id)],
         }
+
+    def action_get_session_lines(self):
+        return {
+            'name': 'Session Lines', 'type': 'ir.actions.act_window',
+            'res_model': 'ai.quest.session.line',
+            'view_mode': 'list,form,pivot',
+            'target': 'current',
+            'domain': [('session_id.quest_id', '=', self.id)],
+        }
+
+    def action_get_session_objects(self):
+        if 'ai.session.object' not in self.env:
+            return {'type': 'ir.actions.act_window_close'}
+        return {
+            'name': 'Objects', 'type': 'ir.actions.act_window',
+            'res_model': 'ai.session.object',
+            'view_mode': 'list,form',
+            'target': 'current',
+            'domain': [('ai_quest_id', '=', self.id)],
+        }
+
+    def get_available_skills(self):
+        """Return all skills available to this quest.
+
+        Collects skills from:
+        0. Quest-level skills (pipeline/orchestration — HIGHEST priority)
+        1. Quest's agents (ai.quest.agent → ai.agent.skill_ids)
+        2. Quest's identity (ai.quest.identity_id.skill_ids)
+        3. Quest-specific skill copies (ai.quest.skill)
+
+        Returns a list of dicts with name, description, trigger_keywords,
+        category, recipe_text, and source.
+        """
+        self.ensure_one()
+        skills = {}  # keyed by name to deduplicate
+
+        # 0. Quest-level skills (pipeline/orchestration — highest priority)
+        for skill in self.skill_ids:
+            skills[skill.name] = {
+                'name': skill.name,
+                'description': skill.description or '',
+                'trigger_keywords': skill.trigger_keywords or '',
+                'category': skill.category or 'general',
+                'recipe_text': skill.recipe_text or '',
+                'source': 'quest',
+                'priority': 'high',
+            }
+
+        # 1. Skills from agents
+        for rel in self.agent_ids:
+            agent = rel.agent_id
+            for skill in agent.skill_ids:
+                if skill.name not in skills:
+                    skills[skill.name] = {
+                        'name': skill.name,
+                        'description': skill.description or '',
+                        'trigger_keywords': skill.trigger_keywords or '',
+                        'category': skill.category or 'general',
+                        'recipe_text': skill.recipe_text or '',
+                        'source': 'agent',
+                    }
+
+        # 2. Skills from identity
+        if self.identity_id:
+            for skill in self.identity_id.skill_ids:
+                if skill.name not in skills:
+                    skills[skill.name] = {
+                        'name': skill.name,
+                        'description': skill.description or '',
+                        'trigger_keywords': skill.trigger_keywords or '',
+                        'category': skill.category or 'general',
+                        'recipe_text': skill.recipe_text or '',
+                        'source': 'identity',
+                    }
+
+        # 3. Quest-specific skill copies (override shared with quest version)
+        for copy in self.skill_copy_ids:
+            name = copy.name
+            skills[name] = {
+                'name': name,
+                'description': copy.description or '',
+                'trigger_keywords': copy.trigger_keywords or '',
+                'category': 'quest',
+                'recipe_text': copy.recipe_text or '',
+                'source': 'quest_copy',
+            }
+
+        return list(skills.values())
 
     def action_monthly_overview(self):
         """Smart button: show this month's session lines with systemtoken breakdown."""
@@ -437,6 +1176,309 @@ class AIQuest(models.Model):
         '<circle cx="345.04" cy="265.03" r="26.41" fill="#ffffff"/>'
         '</svg>'
     )
+
+    def action_run_scheduled(self):
+        """Run this quest as a scheduled automation.
+
+        Called from ir.cron. Uses standing rules (auto_allowed_tools,
+        auto_allowed_commands) for auto-approval. Sends completion
+        notification if notify_on_completion is set.
+
+        Returns:
+            dict with status, result_text, error if any
+        """
+        self.ensure_one()
+        _logger.info('Scheduled run starting for quest: %s (run #%d)',
+                     self.name, self.run_count + 1)
+
+        # Parse standing rules
+        allowed_tools = []
+        if self.auto_allowed_tools:
+            try:
+                allowed_tools = json.loads(self.auto_allowed_tools)
+                if not isinstance(allowed_tools, list):
+                    allowed_tools = []
+            except (json.JSONDecodeError, TypeError):
+                _logger.warning('Invalid auto_allowed_tools JSON for quest %s', self.name)
+                allowed_tools = []
+
+        allowed_commands = []
+        if self.auto_allowed_commands:
+            try:
+                allowed_commands = json.loads(self.auto_allowed_commands)
+                if not isinstance(allowed_commands, list):
+                    allowed_commands = []
+            except (json.JSONDecodeError, TypeError):
+                _logger.warning('Invalid auto_allowed_commands JSON for quest %s', self.name)
+                allowed_commands = []
+
+        # Build system prompt
+        system_prompt = self.description or ''
+        if self.identity_id:
+            system_prompt = self.identity_id.system_prompt or system_prompt
+
+        # Get model from first agent or default
+        model = 'cerebras/gpt-oss-120b'
+        for agent_rel in self.agent_ids:
+            if agent_rel.agent_id.model_id:
+                model = agent_rel.agent_id.model_id.name
+                break
+
+        try:
+            # Create session
+            session = self.env['ai.quest.session'].create({
+                'quest_id': self.id,
+                'status': 'active',
+                'user_id': self.env.ref('base.user_root').id
+                          if self.env.ref('base.user_root', raise_if_not_found=False)
+                          else 1,
+            })
+
+            import asyncio
+            from odoo.addons.ai_agent_core.core.provider import BifrostProvider
+            from odoo.addons.ai_agent_core.core.tools import (
+                ToolRegistry, builtin_tools, planning_tools, TodoList,
+            )
+            from odoo.addons.ai_agent_core.core.loop import AgentLoop, AgentConfig
+            from odoo.addons.ai_agent_core.core.interrupt import AutoInterruptHandler
+            from odoo.addons.ai_agent_core.core.permission import (
+                PermissionEngine, PermissionMode,
+            )
+
+            provider = BifrostProvider(
+                base_url='http://192.168.11.150:8080/v1',
+                virtual_key='opencode',
+            )
+            tools = ToolRegistry()
+            tools.register_many(builtin_tools())
+
+            # Add planning tools
+            todo = TodoList()
+            for pt in planning_tools(todo):
+                tools.register(pt)
+
+            # Set up permission engine with AUTO mode + standing rules
+            permissions = PermissionEngine(mode=PermissionMode.AUTO)
+            for entry in allowed_tools:
+                entry = entry.strip()
+                if ' ' in entry:
+                    tool_name, target = entry.split(' ', 1)
+                    permissions.add_task_rule(tool_name.strip(), target.strip())
+                else:
+                    permissions.auto_allow_tools.add(entry)
+            for cmd in allowed_commands:
+                permissions.session_allow_commands.add(cmd.strip())
+
+            # Use auto-interrupt handler (never blocks)
+            interrupt = AutoInterruptHandler()
+
+            loop = self._build_loop(
+                provider=provider, tools=tools,
+                model=model, system_prompt=system_prompt, max_rounds=10,
+            )
+            loop.interrupt_handler = interrupt
+            loop.permission_engine = permissions
+
+            async def _run():
+                prompt = (
+                    f"You are an automated agent. Your task:\n\n{self.description}"
+                    if self.description else
+                    "Execute the scheduled task. Be thorough and complete."
+                )
+                return await loop.run(prompt)
+
+            loop_obj = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop_obj)
+            try:
+                response = loop_obj.run_until_complete(_run())
+            finally:
+                loop_obj.close()
+
+            result_text = response.text if hasattr(response, 'text') else str(response)
+
+            # Update quest stats
+            self.write({
+                'last_run': fields.Datetime.now(),
+                'last_status': 'ok',
+                'run_count': self.run_count + 1,
+                'status': 'active',
+            })
+
+            # Update session
+            session.write({
+                'status': 'done',
+                'result': result_text[:2000] if result_text else '',
+            })
+
+            # Send completion notification
+            if self.notify_on_completion and self.notify_target:
+                self._send_completion_notification(result_text, 'ok')
+
+            _logger.info('Scheduled run completed for quest: %s', self.name)
+            return {
+                'status': 'ok',
+                'result_text': result_text,
+                'run_count': self.run_count,
+            }
+
+        except Exception as e:
+            _logger.error('Scheduled run failed for quest %s: %s', self.name, e,
+                         exc_info=True)
+            self.write({
+                'last_run': fields.Datetime.now(),
+                'last_status': 'error',
+                'run_count': self.run_count + 1,
+            })
+            if self.notify_on_completion and self.notify_target:
+                self._send_completion_notification(str(e), 'error')
+            return {
+                'status': 'error',
+                'error': str(e),
+            }
+
+    def _send_completion_notification(self, result_text, status):
+        """Send completion notification to the notify_target channel."""
+        self.ensure_one()
+        if not self.notify_target:
+            return
+        try:
+            icon = '✅' if status == 'ok' else '❌'
+            msg = (
+                f'{icon} **{self.name}** — scheduled run completed.\n'
+                f'Status: {status.upper()}\n'
+                f'Run #{self.run_count}\n\n'
+                f'{result_text[:1000]}'
+            )
+            # Try posting to a discuss channel by ID or name
+            target = self.notify_target.strip()
+            if target.isdigit():
+                channel = self.env['discuss.channel'].browse(int(target))
+                if channel.exists():
+                    channel.message_post(body=msg, message_type='notification')
+            else:
+                # Post via quest's own message_post (mail.thread)
+                self.message_post(body=msg, message_type='notification')
+        except Exception as e:
+            _logger.warning('Failed to send completion notification: %s', e)
+
+    def run(self, prompt, system_prompt=None):
+        """Run quest synchronously and return AI response text.
+
+        Designed for bridge integrations (html_editor, mail, etc.)
+        where a simple prompt→response flow is needed.
+
+        Args:
+            prompt: The user prompt to send
+            system_prompt: Optional override for system prompt
+
+        Returns:
+            str: AI response text (plain text, no markdown rendering)
+        """
+        self.ensure_one()
+
+        # Resolve model from agents or use default
+        model = 'cerebras/gpt-oss-120b'
+        for qa in self.agent_ids:
+            agent = qa.agent_id
+            if agent.provider_type == 'direct' and agent.direct_model:
+                model = agent.direct_model
+                break
+            elif agent.bifrost_model:
+                model = agent.bifrost_model
+                break
+
+        # Build system prompt
+        if system_prompt is None:
+            system_prompt = self.description or ''
+            if self.identity_id:
+                system_prompt = self.identity_id.system_prompt or system_prompt
+
+        # Create session for tracking
+        session = self.env['ai.quest.session'].create({
+            'quest_id': self.id,
+            'status': 'active',
+            'user_id': self.env.user.id,
+            'name': prompt[:80] if prompt else 'Quest run',
+        })
+
+        try:
+            import asyncio
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                from odoo.addons.ai_agent_core.core.provider import BifrostProvider
+                from odoo.addons.ai_agent_core.core.tools import ToolRegistry, builtin_tools
+                from odoo.addons.ai_agent_core.core.loop import AgentLoop, AgentConfig
+
+                provider = BifrostProvider(
+                    base_url='http://192.168.11.150:8080/v1',
+                    virtual_key='opencode',
+                )
+                tools = ToolRegistry()
+                tools.register_many(builtin_tools())
+
+                loop_obj = self._build_loop(
+                    provider=provider, tools=tools,
+                    model=model, system_prompt=system_prompt, max_rounds=10,
+                )
+
+                async def _run():
+                    return await loop_obj.run(prompt)
+
+                response = loop.run_until_complete(_run())
+            finally:
+                loop.close()
+
+            result_text = response.text if hasattr(response, 'text') else str(response)
+
+            # Save session line with token tracking
+            input_t = getattr(response, 'input_tokens', 0)
+            output_t = getattr(response, 'output_tokens', 0)
+            model_real = getattr(response, 'model', '')
+            sys_mult = 1.0
+            if model_real:
+                ai_model = self.env['ai.model'].search(
+                    [('name', 'ilike', model_real)], limit=1)
+                if ai_model:
+                    sys_mult = ai_model.sys_multiplier
+
+            self.env['ai.quest.session.line'].create({
+                'session_id': session.id,
+                'role': 'user',
+                'content': prompt[:2000] if prompt else '',
+                'sequence': 1,
+            })
+            self.env['ai.quest.session.line'].create({
+                'session_id': session.id,
+                'role': 'assistant',
+                'content': result_text,
+                'token_input': input_t,
+                'token_output': output_t,
+                'model_real': model_real,
+                'sys_multiplier': sys_mult,
+                'sequence': 2,
+            })
+
+            # Update session and quest totals
+            session.write({
+                'token_input': session.token_input + input_t,
+                'token_output': session.token_output + output_t,
+                'status': 'done',
+            })
+
+            self.total_input_tokens += input_t
+            self.total_output_tokens += output_t
+            self.total_sys_tokens += int((input_t + output_t) * sys_mult)
+
+            _logger.info('Quest run completed: %s (%d in / %d out tokens)',
+                        self.name, input_t, output_t)
+
+            return result_text
+
+        except Exception as e:
+            _logger.error('Quest run failed: %s', e, exc_info=True)
+            session.write({'status': 'error'})
+            return f'Error: {str(e)}'
 
     def powerbox(self, prompt, res_model=None, res_id=None, record=None):
         """Run quest as a powerbox — triggered from anywhere in Odoo.
@@ -519,14 +1561,9 @@ class AIQuest(models.Model):
                 tools = ToolRegistry()
                 tools.register_many(builtin_tools())
 
-                loop_obj = AgentLoop(
-                    provider=provider,
-                    tools=tools,
-                    config=AgentConfig(
-                        model=model,
-                        system_prompt=system_prompt,
-                        max_rounds=5,
-                    ),
+                loop_obj = self._build_loop(
+                    provider=provider, tools=tools,
+                    model=model, system_prompt=system_prompt, max_rounds=5,
                 )
 
                 async def _run():
@@ -582,6 +1619,58 @@ class AIQuest(models.Model):
             session.finish_reason = str(e)[:200]
             _logger.error('Powerbox error for quest %s: %s', self.name, e)
             raise UserError(_('Powerbox error: %s') % str(e))
+
+
+# ---------------------------------------------------------------------------
+# Helper functions
+# ---------------------------------------------------------------------------
+
+def _send_mail_reply(mail_message, reply_text, quest):
+    """Send AI response as email reply."""
+    try:
+        if not mail_message.email_from:
+            return
+        mail_values = {
+            'subject': f'Re: {mail_message.subject or "AI Response"}',
+            'body_html': f'<pre>{reply_text}</pre>',
+            'email_to': mail_message.email_from,
+            'email_from': quest.company_id.email or 'ai@vertel.se',
+            'reply_to': mail_message.message_id,
+        }
+        mail = quest.env['mail.mail'].create(mail_values)
+        mail.send()
+        _logger.info('AI reply sent to %s for quest %s',
+                    mail_message.email_from, quest.name)
+    except Exception as e:
+        _logger.warning('Failed to send AI reply: %s', e)
+
+
+def _extract_text(filename, content):
+    """Extract text from uploaded file. Supports PDF, DOCX, TXT, etc."""
+    ext = filename.lower().split('.')[-1] if '.' in filename else ''
+    if ext in ('txt', 'md', 'csv', 'py', 'js', 'html', 'xml', 'json', 'yml', 'yaml'):
+        try:
+            return content.decode('utf-8')
+        except UnicodeDecodeError:
+            return content.decode('utf-8', errors='replace')
+    elif ext == 'pdf':
+        try:
+            import io, PyPDF2
+            reader = PyPDF2.PdfReader(io.BytesIO(content))
+            return '\n'.join(p.extract_text() or '' for p in reader.pages)
+        except Exception as e:
+            return f'[PDF: {e}]'
+    elif ext == 'docx':
+        try:
+            import io, docx
+            doc = docx.Document(io.BytesIO(content))
+            return '\n'.join(p.text for p in doc.paragraphs if p.text.strip())
+        except Exception as e:
+            return f'[DOCX: {e}]'
+    try:
+        return content.decode('utf-8')
+    except Exception:
+        return f'[Binary: {len(content)} bytes]'
 
 
 class AIQuestMonthlySummary(models.Model):

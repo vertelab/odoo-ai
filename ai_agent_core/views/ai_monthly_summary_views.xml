@@ -5,7 +5,7 @@
         <field name="name">ai.quest.monthly_summary.tree</field>
         <field name="model">ai.quest.monthly_summary</field>
         <field name="arch" type="xml">
-            <tree>
+            <list>
                 <field name="month"/>
                 <field name="quest_id"/>
                 <field name="total_sys_tokens"/>
@@ -15,7 +15,7 @@
                 <field name="session_count"/>
                 <field name="monthly_cap_mtokens" optional="hide"/>
                 <field name="cap_exhausted_count" optional="hide"/>
-            </tree>
+            </list>
         </field>
     </record>
 
@@ -56,11 +56,6 @@
         <field name="context">{'search_default_group_month': 1}</field>
         <field name="help">Systemtoken-förbrukning per quest och månad. Historisk rapportering för fakturering.</field>
     </record>
-
-    <menuitem id="menu_ai_monthly_summary"
-              parent="ai_agent_core.menu_ai_orchestration_root"
-              action="ai_monthly_summary_action"
-              sequence="50"/>
 
     <!-- Search for monthly summaries -->
     <record id="ai_monthly_summary_search" model="ir.ui.view">

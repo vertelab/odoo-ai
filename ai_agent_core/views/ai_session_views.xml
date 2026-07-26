@@ -4,7 +4,7 @@
         <field name="name">ai.quest.session.tree</field>
         <field name="model">ai.quest.session</field>
         <field name="arch" type="xml">
-            <tree>
+            <list>
                 <field name="name"/>
                 <field name="thread_name"/>
                 <field name="quest_id"/>
@@ -15,7 +15,7 @@
                 <field name="token_output" optional="hide"/>
                 <field name="cost_estimated" optional="hide"/>
                 <field name="create_date"/>
-            </tree>
+            </list>
         </field>
     </record>
 </odoo>

@@ -13,14 +13,29 @@ import { patch } from "@web/core/utils/patch";
 import { TextField } from "@web/views/fields/text/text_field";
 import { HtmlField } from "@web/views/fields/html/html_field";
 import { useService } from "@web/core/utils/hooks";
-import { Component, useState, onWillDestroy, markup } from "@odoo/owl";
+import { Component, useState, onWillDestroy, xml } from "@odoo/owl";
 
 // ---------------------------------------------------------------------------
 // Powerbox Dropdown Component
 // ---------------------------------------------------------------------------
 
 class PowerboxDropdown extends Component {
-    static template = "ai_agent_core.PowerboxDropdown";
+    static template = xml`
+        <div class="powerbox-dropdown o-dropdown-menu show"
+             t-att-style="'position:fixed;left:' + props.position.left + 'px;top:' + props.position.top + 'px;z-index:1050;min-width:250px;'">
+            <t t-foreach="props.quests" t-as="q" t-key="q.id">
+                <a class="dropdown-item d-flex align-items-center gap-2 py-2"
+                   t-att-class="{ 'active': state.selectedIndex === q_index }"
+                   t-on-click="() => props.onSelect(q)">
+                    <span class="fw-bold" t-out="q.name"/>
+                    <small class="text-muted ms-2" t-out="q.sub_description"/>
+                </a>
+            </t>
+            <t t-if="!props.quests.length">
+                <span class="dropdown-item text-muted">No powerbox quests available</span>
+            </t>
+        </div>
+    `;
     static props = {
         quests: { type: Array },
         onSelect: { type: Function },
@@ -64,30 +79,10 @@ class PowerboxDropdown extends Component {
 }
 
 // ---------------------------------------------------------------------------
-// Template
+// Templates (inline — avoids QWeb template loading issues)
 // ---------------------------------------------------------------------------
 
-PowerboxDropdown.template = markup(`
-    <div class="powerbox-dropdown o-dropdown-menu show"
-         t-att-style="'position:fixed;left:' + props.position.left + 'px;top:' + props.position.top + 'px;z-index:1050;min-width:250px;'">
-        <t t-foreach="props.quests" t-as="q" t-key="q.id">
-            <a class="dropdown-item d-flex align-items-center gap-2 py-2"
-               t-att-class="{ 'active': state.selectedIndex === q_index }"
-               t-on-click="() => props.onSelect(q)">
-                <div class="powerbox-icon me-2" t-att-style="'width:24px;height:24px;background:' + (q.color or 1)">
-                    <t t-out="q.icon_svg" />
-                </div>
-                <div class="d-flex flex-column">
-                    <span class="fw-bold" t-out="q.name" />
-                    <small class="text-muted" t-out="q.sub_description" />
-                </div>
-            </a>
-        </t>
-        <t t-if="!props.quests.length">
-            <span class="dropdown-item text-muted">No powerbox quests available</span>
-        </t>
-    </div>
-`);
+// PowerboxDropdown.template = "ai_agent_core.PowerboxDropdown";  -- replaced by inline xml`
 
 // ---------------------------------------------------------------------------
 // Powerbox mixin — adds slash command to text/html fields
@@ -311,7 +306,7 @@ addPowerboxSupport(HtmlField);
 // ---------------------------------------------------------------------------
 
 class PowerboxOverlay extends Component {
-    static template = "ai_agent_core.PowerboxOverlay";
+    static template = xml`<div/>`;
     static components = { PowerboxDropdown };
     static props = {};
 
@@ -355,23 +350,24 @@ class PowerboxOverlay extends Component {
     }
 }
 
-PowerboxOverlay.template = markup(`
+PowerboxOverlay.template = xml`
     <div class="powerbox-overlay" t-if="state.visible">
         <PowerboxDropdown
             quests="state.quests"
             position="state.position"
             onSelect="state.onSelect"
-            onClose="state.onClose"
-        />
-        <div t-if="state.loading" class="powerbox-loading">
-            <div class="spinner-border spinner-border-sm text-primary me-2" role="status"/>
+            onClose="state.onClose"/>
+        <div t-if="state.loading" class="powerbox-loading" style="position:fixed;top:50%;left:50%;z-index:1060;">
             <span>AI processing...</span>
         </div>
     </div>
-`);
+`;
+
+// Remove old template assignments
+// PowerboxOverlay.template = "ai_agent_core.PowerboxOverlay";  -- replaced by inline xml`
 
 // ---------------------------------------------------------------------------
-// Register
+// Register as main component
 // ---------------------------------------------------------------------------
 
 registry.category("main_components").add("PowerboxOverlay", {

@@ -3,6 +3,7 @@ access_ai_quest,ai.quest,model_ai_quest,base.group_user,1,1,1,1
 access_ai_quest_agent,ai.quest.agent,model_ai_quest_agent,base.group_user,1,1,1,1
 access_ai_agent,ai.agent,model_ai_agent,base.group_user,1,1,1,1
 access_ai_agent_tool,ai.agent.tool,model_ai_agent_tool,base.group_user,1,1,1,1
+access_ai_agent_memory,ai.agent.memory,model_ai_agent_memory,base.group_user,1,1,1,1
 access_ai_session,ai.quest.session,model_ai_quest_session,base.group_user,1,1,1,1
 access_ai_memory,ai.memory,model_ai_memory,base.group_user,1,1,1,1
 access_ai_identity,ai.identity,model_ai_identity,base.group_user,1,1,1,1
@@ -19,3 +20,5 @@ access_ai_kaizen_finding,ai.kaizen.finding,model_ai_kaizen_finding,base.group_us
 access_ai_kaizen_admin,ai.kaizen.admin,model_ai_kaizen_report,base.group_system,1,1,1,1
 access_ai_onboard_candidate,ai.onboard.candidate,model_ai_onboard_candidate,base.group_user,1,0,0,0
 access_ai_onboard_admin,ai.onboard.admin,model_ai_onboard_candidate,base.group_system,1,1,1,1
+access_ai_quest_init_type,ai.quest.init_type,model_ai_quest_init_type,base.group_user,1,1,1,1
+access_ai_tag_user,ai.tag.user,model_ai_tag,base.group_user,1,1,1,1

@@ -23,6 +23,13 @@ class ResConfigSettings(models.TransientModel):
         help='Identity template to copy for new personal companions. '
              'Each user gets their own copy that evolves independently.')
 
+    ai_api_secret = fields.Char(
+        'AI API Secret',
+        config_parameter='ai_agent_core.api_secret',
+        help='Shared Bearer token for the /ai/v1/* (OpenAI-compatible) and '
+             '/pi/callback endpoints. If empty, falls back to the '
+             'AI_AGENT_API_SECRET environment variable.')
+
     @api.model
     def get_values(self):
         res = super().get_values()

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="ai_quest_builder_wizard_form" model="ir.ui.view">
+        <field name="name">ai.quest.builder.wizard.form</field>
+        <field name="model">ai.quest.builder.wizard</field>
+        <field name="arch" type="xml">
+            <form>
+                <field name="chat_url" widget="url" class="oe_inline" invisible="1"/>
+                <iframe style="width:100%;height:85vh;border:none;"
+                        t-att-src="chat_url"/>
+                <footer>
+                    <button string="Close" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_ai_quest_builder_wizard" model="ir.actions.act_window">
+        <field name="name">Quest Builder</field>
+        <field name="res_model">ai.quest.builder.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+</odoo>

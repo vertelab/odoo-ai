@@ -110,6 +110,10 @@
         <field name="model">ai.skill</field>
         <field name="arch" type="xml">
             <form>
+                <header>
+                    <button name="action_open_skill_builder" type="object"
+                            string="🤖 Build with AI" class="btn-primary"/>
+                </header>
                 <sheet>
                     <div class="oe_button_box" name="button_box">
                         <button name="action_export_skill_md" type="object"

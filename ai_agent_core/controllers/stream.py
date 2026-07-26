@@ -63,15 +63,81 @@ class AIStreamController(http.Controller):
                         )
                     if quest.description:
                         system_prompt = quest.description
-                    llm_ids = quest.ai_agent_ids.filtered(
-                        lambda a: a.ai_agent_id.ai_agent_llm_id
-                    )
-                    if llm_ids:
-                        llm = llm_ids[0].ai_agent_id.ai_agent_llm_id
-                        if llm.model_name:
-                            model = llm.model_name
+                    # Inject skill context for Skill Builder (sudo needed — public users can't read ai.skill)
+                    context_skill = kw.get('context_skill')
+                    if context_skill:
+                        skill = request.env['ai.skill'].sudo().browse(int(context_skill))
+                        if skill.exists():
+                            skill_context = (
+                                f"\n\n## SKILL TO IMPROVE (always remember this context)\n"
+                                f"Name: {skill.name}\n"
+                                f"Category: {skill.category or 'general'}\n"
+                                f"Triggers: {skill.trigger_keywords or ''}\n"
+                                f"Description: {skill.description or ''}\n"
+                                f"Recipe:\n{skill.recipe_text or '(empty)'}\n"
+                            )
+                            system_prompt = system_prompt + skill_context
+                            _logger.info('Injected skill #%s into system prompt for Skill Builder', context_skill)
+                    # Get model from quest's agents (ai_agent_core fields)
+                    for qa in quest.agent_ids:
+                        agent = qa.agent_id
+                        if agent.provider_type == 'direct' and agent.direct_model:
+                            model = agent.direct_model
+                            break
+                        elif agent.model_id:
+                            model = agent.model_id.name
+                            break
             except Exception:
                 pass
+
+        # -- Slash command detection (Hermes-inspired) --
+        user_instruction = prompt
+        # Pattern: /skill-name rest of prompt
+        if prompt and prompt.startswith('/') and '/' not in prompt.split()[0][1:]:
+            parts = prompt.split(None, 1)
+            skill_name = parts[0][1:]  # Strip leading /
+            user_instruction = parts[1] if len(parts) > 1 else ''
+
+            if quest and quest.exists():
+                # Look up skill from quest
+                available = quest.get_available_skills()
+                matched = [s for s in available if s['name'] == skill_name]
+                if matched:
+                    skill = matched[0]
+                    # Inject skill recipe as system context
+                    skill_context = (
+                        f"[SKILL ACTIVATED: {skill['name']}]\n"
+                        f"The user has explicitly invoked this skill with /{skill['name']}.\n"
+                        f"Follow the recipe below for this task:\n\n"
+                        f"{skill['recipe_text']}\n\n"
+                        f"[END SKILL: {skill['name']}]\n\n"
+                    )
+                    if user_instruction:
+                        skill_context += (
+                            f"User instruction accompanying the skill invocation:\n"
+                            f"{user_instruction}\n"
+                        )
+                    system_prompt = skill_context + (system_prompt or '')
+                    _logger.info(
+                        "Slash skill activated: /%s (quest=%s)",
+                        skill_name, quest.name,
+                    )
+
+        # -- Inject available skills catalog into system prompt --
+        if quest and quest.exists() and not (prompt and prompt.startswith('/')):
+            skills = quest.get_available_skills()
+            if skills:
+                skill_lines = ["\n## Available Skills",
+                    "(Activate explicitly with /skill-name. Skills also activate "
+                    "automatically when user's message matches trigger keywords.)\n"]
+                for s in skills:
+                    trigger_info = ""
+                    if s.get('trigger_keywords'):
+                        trigger_info = f" [triggers: {s['trigger_keywords']}]"
+                    skill_lines.append(
+                        f"- **{s['name']}**: {s.get('description', '')[:200]}{trigger_info}"
+                    )
+                system_prompt = (system_prompt or '') + '\n'.join(skill_lines)
 
         # Load thread history if session_id provided
         session = None
@@ -110,8 +176,32 @@ class AIStreamController(http.Controller):
             except Exception:
                 pass
 
+        # -- Hoist recordset reads for the SSE generator --
+        # Werkzeug iterates the generator AFTER Odoo has torn down the
+        # request context, so `request` and recordsets are unbound inside
+        # generate(). Extract everything needed into plain values here.
+        gen_is_supervisor = False
+        gen_agents = []  # [{'name', 'description', 'model'}]
+        if quest and quest.exists():
+            try:
+                gen_is_supervisor = bool(quest.is_supervisor)
+                if gen_is_supervisor and len(quest.agent_ids) > 1:
+                    for agent_rel in quest.agent_ids:
+                        agent = agent_rel.agent_id
+                        gen_agents.append({
+                            'name': agent.name,
+                            'description': agent.get_agent_name(),
+                            'model': (agent.model_id.name if agent.model_id else model),
+                        })
+            except Exception:
+                _logger.exception('Failed to extract quest data for streaming')
+
         def generate():
-            """SSE event generator — runs async loop in sync context."""
+            """SSE event generator — runs async loop in sync context.
+
+            NOTE: runs after request teardown — no `request`, no recordsets,
+            no DB cursor. Only plain values captured above.
+            """
             full_response = []
             try:
                 _logger.info("SSE stream starting — prompt: %s...", prompt[:50])
@@ -122,6 +212,7 @@ class AIStreamController(http.Controller):
                         from odoo.addons.ai_agent_core.core.provider import BifrostProvider
                         from odoo.addons.ai_agent_core.core.tools import ToolRegistry, builtin_tools
                         from odoo.addons.ai_agent_core.core.loop import StreamingAgentLoop, AgentConfig
+                        from odoo.addons.ai_agent_core.core.supervisor import StreamingSupervisorLoop, SupervisorConfig, SpecialistAgent
 
                         provider = BifrostProvider(
                             base_url="http://192.168.11.150:8080/v1",
@@ -130,15 +221,32 @@ class AIStreamController(http.Controller):
                         tools = ToolRegistry()
                         tools.register_many(builtin_tools())
 
-                        loop_obj = StreamingAgentLoop(
-                            provider=provider,
-                            tools=tools,
-                            config=AgentConfig(
-                                model=model,
-                                system_prompt=system_prompt,
-                                max_rounds=10,
-                            ),
-                        )
+                        if gen_is_supervisor and len(gen_agents) > 1:
+                            # Build supervisor with streaming
+                            specialists = []
+                            for a in gen_agents:
+                                specialists.append(SpecialistAgent(
+                                    name=a['name'],
+                                    description=a['description'],
+                                    loop=StreamingAgentLoop(
+                                        provider=provider, tools=tools,
+                                        config=AgentConfig(model=a['model'], system_prompt=system_prompt, max_rounds=10),
+                                    ),
+                                ))
+                            loop_obj = StreamingSupervisorLoop(
+                                router_provider=provider, agents=specialists,
+                                config=SupervisorConfig(router_model=model),
+                            )
+                        else:
+                            loop_obj = StreamingAgentLoop(
+                                provider=provider,
+                                tools=tools,
+                                config=AgentConfig(
+                                    model=model,
+                                    system_prompt=system_prompt,
+                                    max_rounds=10,
+                                ),
+                            )
 
                         async for event in loop_obj.run_stream(prompt):
                             data = {"type": event.type}
@@ -179,26 +287,35 @@ class AIStreamController(http.Controller):
         """Render standalone AI chat interface with threads, theme, and responsive design."""
         user = request.env.user
 
-        # Load quests (filtered by access)
+        # Load quests that have a web_ui init type (filtered by access)
         quests = request.env['ai.quest'].search(
             [('status', '=', 'active')],
             order='sequence asc, name asc',
         )
         accessible_quests = []
-        if _quest_is_accessible and user:
-            for q in quests:
-                if _quest_is_accessible(q, user):
-                    accessible_quests.append(q)
-        else:
-            for q in quests:
+        for q in quests:
+            # Check access via _quest_is_accessible or fallback
+            if _quest_is_accessible and user:
+                if not _quest_is_accessible(q, user):
+                    continue
+                accessible_quests.append(q)
+            else:
                 if q.show_in_chat and not q.group_ids and not q.user_ids:
                     accessible_quests.append(q)
 
-        quest_items = ''
+        # Filter to only quests with an active web_ui init type
+        web_ui_quests = []
         for q in accessible_quests:
+            web_ui_init = q.init_type_ids.filtered(
+                lambda it: it.init_type == 'web_ui' and it.active and it.show_in_chat
+            )
+            if web_ui_init:
+                web_ui_quests.append(q)
+
+        quest_items = ''
+        for q in web_ui_quests:
             quest_items += (
-                f'<div class="quest-item" data-id="{q.id}" data-name="{q.name}">'
-                f'<span class="quest-icon">🎯</span>{q.name}</div>'
+                f'<option value="{q.id}" data-name="{escape(q.name)}">{escape(q.name)}</option>'
             )
 
         # Load user's threads (most recent 50)
@@ -219,9 +336,101 @@ class AIStreamController(http.Controller):
                 )
 
         html = (_CHAT_HTML_v3
-                .replace('<!-- QUEST_ITEMS -->', quest_items)
+                .replace('<!-- QUEST_OPTIONS -->', quest_items)
                 .replace('<!-- THREAD_ITEMS -->', thread_items))
         return Response(html, headers=[('Content-Type', 'text/html; charset=utf-8')])
+
+    # === Skills API (slash commands) ===
+
+    @http.route('/ai/quest/skills', type='http', auth='public',
+                methods=['GET'], csrf=False, sitemap=False)
+    def quest_skills(self, quest_id=None, **kw):
+        """Return available skills for a quest as JSON.
+
+        Used by the web chat UI to populate the slash-command
+        dropdown. Returns skills from the quest's agents,
+        identity, and quest-specific copies.
+        """
+        skills = []
+        if quest_id:
+            try:
+                quest = request.env['ai.quest'].browse(int(quest_id))
+                if quest.exists():
+                    available = quest.get_available_skills()
+                    for s in available:
+                        skills.append({
+                            'name': s['name'],
+                            'description': s['description'][:200],
+                            'trigger_keywords': s['trigger_keywords'],
+                            'category': s['category'],
+                        })
+            except Exception as e:
+                _logger.warning('quest_skills error: %s', e)
+
+        return Response(
+            json.dumps({'skills': skills}),
+            content_type='application/json',
+        )
+
+    @http.route('/ai/skill/<int:skill_id>', type='http', auth='public',
+                methods=['GET'], csrf=False, sitemap=False)
+    def skill_get(self, skill_id, **kw):
+        """Return full skill data as JSON for auto-init context."""
+        try:
+            skill = request.env['ai.skill'].browse(skill_id)
+            if not skill.exists():
+                return Response(json.dumps({'error': 'Skill not found'}),
+                              status=404, content_type='application/json')
+            return Response(json.dumps({
+                'id': skill.id,
+                'name': skill.name,
+                'description': skill.description or '',
+                'category': skill.category or 'general',
+                'trigger_keywords': skill.trigger_keywords or '',
+                'recipe_text': skill.recipe_text or '',
+            }), content_type='application/json')
+        except Exception as e:
+            return Response(json.dumps({'error': str(e)}),
+                          status=500, content_type='application/json')
+
+    # === Model API (quest model selector) ===
+
+    @http.route('/ai/quest/models', type='http', auth='public',
+                methods=['GET'], csrf=False, sitemap=False)
+    def quest_models(self, quest_id=None, **kw):
+        """Return available models for a quest's agents with is_vision flag.
+
+        Uses ai_agent_core fields only: agent_ids → agent_id.model_id → ai.model.
+        """
+        models = []
+        seen = set()
+        if quest_id:
+            try:
+                quest = request.env['ai.quest'].browse(int(quest_id))
+                if quest.exists():
+                    for qa in quest.agent_ids:
+                        agent = qa.agent_id
+                        if not agent.model_id:
+                            continue
+                        ai_model = agent.model_id
+                        model_name = ai_model.name
+                        if model_name in seen:
+                            continue
+                        seen.add(model_name)
+                        models.append({
+                            'name': model_name,
+                            'display_name': ai_model.display_name or model_name,
+                            'is_vision': bool(ai_model.is_vision),
+                            'agent_name': agent.name,
+                            'model_id': ai_model.id,
+                        })
+            except Exception as e:
+                _logger.warning('quest_models error: %s', e)
+
+        return Response(
+            json.dumps({'models': models}),
+            content_type='application/json',
+        )
 
     @http.route('/ai/interrupt/poll', type='http', auth='public', cors='*', sitemap=False)
     def interrupt_poll(self, session_uuid=None, **kw):
@@ -284,8 +493,9 @@ class AIStreamController(http.Controller):
                 "id": s.id,
                 "name": s.thread_name or (s.name or 'Tråd'),
                 "quest_id": s.quest_id.id if s.quest_id else None,
+                "skill_id": s.skill_id.id if s.skill_id else None,
                 "last_activity": str(s.write_date) if s.write_date else None,
-                "message_count": len(s.session_line_ids),
+                "message_count": s.line_count,
             } for s in sessions]
         }), content_type='application/json')
 
@@ -300,6 +510,7 @@ class AIStreamController(http.Controller):
         # Clean name: remove newlines, collapse spaces, trim, limit length
         name = ' '.join(str(name).split())[:50]
         quest_id = body.get('quest_id')
+        skill_id = body.get('skill_id')
         vals = {
             'name': name,
             'user_id': user.id if user.id else None,
@@ -308,6 +519,8 @@ class AIStreamController(http.Controller):
         }
         if quest_id:
             vals['quest_id'] = int(quest_id)
+        if skill_id:
+            vals['skill_id'] = int(skill_id)
         session = request.env['ai.quest.session'].create(vals)
         return Response(json.dumps({"id": session.id, "name": session.thread_name}),
                        content_type='application/json')
@@ -342,6 +555,15 @@ class AIStreamController(http.Controller):
         if session.exists():
             session.thread_name = name[:200]
             session.name = name[:200]
+        return Response(json.dumps({"status": "ok"}), content_type='application/json')
+
+    @http.route('/ai/threads/<int:thread_id>', type='http', auth='public',
+                methods=['DELETE'], csrf=False, sitemap=False)
+    def thread_delete(self, thread_id, **kw):
+        """Delete a thread (soft-delete by setting active=False)."""
+        session = request.env['ai.quest.session'].browse(thread_id)
+        if session.exists():
+            session.active = False
         return Response(json.dumps({"status": "ok"}), content_type='application/json')
 
     @http.route('/ai/threads/<int:thread_id>/respond', type='http', auth='public',
@@ -446,23 +668,12 @@ class AIStreamController(http.Controller):
                           content_type='application/json')
 
         quests = request.env['ai.quest'].search([
-            ('init_type', '=', 'powerbox'),
             ('status', '=', 'active'),
             ('active', '=', True),
             '|',
             ('model_ids.model', '=', model),
             ('model_ids', '=', False),  # No model restriction = available on all
         ], order='sequence asc, name asc')
-
-        # If res_id provided, also filter by model_id (single model field)
-        if res_id:
-            single_model_quests = request.env['ai.quest'].search([
-                ('init_type', '=', 'powerbox'),
-                ('status', '=', 'active'),
-                ('active', '=', True),
-                ('model_id.model', '=', model),
-            ])
-            quests |= single_model_quests
 
         # Deduplicate
         quests = quests.sorted('sequence')
@@ -611,8 +822,9 @@ class AIStreamController(http.Controller):
     @http.route('/ai/upload', type='http', auth='public',
                 methods=['POST'], csrf=False, sitemap=False)
     def upload_document(self, **kw):
-        """Ladda upp dokument -> RAG-minne."""
+        """Ladda upp dokument → RAG-minne (text eller FAISS)."""
         quest_id = kw.get('quest_id')
+        memory_type = kw.get('memory_type', 'text')
         file_obj = request.httprequest.files.get('file')
         if not file_obj:
             return Response(json.dumps({"error": "Ingen fil"}),
@@ -624,6 +836,33 @@ class AIStreamController(http.Controller):
             return Response(json.dumps({"error": "Kunde ej extrahera text"}),
                           content_type='application/json', status=400)
         quest = request.env['ai.quest'].browse(int(quest_id)) if quest_id else None
+
+        if memory_type == 'faiss':
+            # Create FAISS memory from uploaded document
+            try:
+                from langchain_core.documents import Document
+                doc = Document(page_content=text, metadata={'source': filename})
+                memory = request.env['ai.memory'].create({
+                    'name': f'FAISS: {filename}',
+                    'content': text[:2000],
+                    'quest_id': quest.id if quest else None,
+                    'category': 'fact',
+                    'importance': 'medium',
+                    'memory_type': 'faiss',
+                    'tags': f'uploaded,faiss,{filename}',
+                })
+                chunk_count = memory.create_vector([doc])
+                return Response(json.dumps({
+                    'status': 'ok', 'filename': filename,
+                    'chars': len(text), 'chunks': chunk_count,
+                    'memory_id': memory.id,
+                    'message': f"'{filename}' indexerat som FAISS ({chunk_count} chunks).",
+                }), content_type='application/json')
+            except Exception as e:
+                _logger.warning('FAISS upload failed, falling back to text: %s', e)
+                # Fall through to text mode
+
+        # Plain text upload (existing behavior)
         chunks = _chunk_text(text, 2000)
         memories = []
         for i, chunk in enumerate(chunks):
@@ -662,8 +901,10 @@ def _unregister_webui_handler(session_uuid: str):
 
 
 def _get_quest_memories(quest) -> str:
-    """Get consolidated memories for quest's system prompt."""
+    """Get consolidated + FAISS memories for quest's system prompt."""
+    parts = []
     try:
+        # Consolidated text memories
         memories = request.env['ai.memory'].search([
             ('quest_id', '=', quest.id),
             ('consolidated', '=', True),
@@ -671,10 +912,12 @@ def _get_quest_memories(quest) -> str:
         ], limit=20)
         if memories:
             items = [f"- {m.content}" for m in memories]
-            return "## Lärt om denna quest\n" + "\n".join(items)
+            parts.append("## Lärt om denna quest\n" + "\n".join(items))
     except Exception:
         pass
-    return ""
+
+    # Only do FAISS search if we have a prompt to search against
+    return "\n\n".join(parts) if parts else ""
 
 
 async def _collect(agen):
@@ -960,3 +1203,413 @@ def _implicit_learn(identity, assistant_content):
         identity.user_model = new_model[:4000]
         _logger.info('Implicit learn: added %d facts to identity %s',
                      len(learnings), identity.name)
+
+
+# ---------------------------------------------------------------------------
+# Callback Controllers — external systems report results back to Odoo
+# ---------------------------------------------------------------------------
+
+CALLBACK_SECRET_DEFAULT = 'CHANGE_ME_IN_PILLAR'
+CALLBACK_SECRET_PARAM = 'ai_agent_core.api_secret'
+
+
+def _get_callback_secret():
+    """Resolve the shared API secret.
+
+    Fallback chain:
+      1. System parameter ``ai_agent_core.api_secret``
+         (Settings → Technical → System Parameters)
+      2. Environment variable ``AI_AGENT_API_SECRET``
+         (injectable via Salt pillar → systemd Environment=)
+      3. Hardcoded default (development only — should never ship to prod)
+    """
+    try:
+        param = request.env['ir.config_parameter'].sudo().get_param(
+            CALLBACK_SECRET_PARAM)
+        if param:
+            return param
+    except Exception:
+        pass
+    import os
+    return os.environ.get('AI_AGENT_API_SECRET', CALLBACK_SECRET_DEFAULT)
+
+
+class PICallbackController(http.Controller):
+    """Endpoints for Pi workers, Zabbix, and Bifrost to report results."""
+
+    def _check_callback_auth(self):
+        """Validate pre-shared token from Authorization header."""
+        auth = request.httprequest.headers.get('Authorization', '')
+        expected = f'Bearer {_get_callback_secret()}'
+        if auth != expected:
+            return False
+        return True
+
+    @http.route('/pi/callback/<int:task_id>', type='json', auth='public',
+                methods=['POST'], csrf=False, sitemap=False)
+    def pi_callback(self, task_id, **kw):
+        """Receive results from Pi workers/controller.
+
+        Body: {state, result, artifacts, token_usage}
+        Updates the corresponding ai.quest.session.
+        """
+        if not self._check_callback_auth():
+            return {'error': 'Unauthorized', 'status': 403}
+
+        body = json.loads(request.httprequest.data or '{}')
+        state = body.get('state', 'done')
+        result_text = body.get('result', '')
+        artifacts = body.get('artifacts', [])
+        token_usage = body.get('token_usage', {})
+
+        session = request.env['ai.quest.session'].browse(task_id)
+        if not session.exists():
+            return {'error': 'Session not found', 'status': 404}
+
+        # Update session
+        session.write({
+            'status': 'done' if state == 'done' else 'error',
+            'finish_reason': result_text[:2000] if result_text else state,
+        })
+
+        # Save as session line
+        next_seq = len(session.session_line_ids) + 1
+        request.env['ai.quest.session.line'].create({
+            'session_id': session.id,
+            'sequence': next_seq,
+            'role': 'assistant',
+            'content': result_text[:4000] if result_text else f'Callback: {state}',
+            'token_input': token_usage.get('input', 0),
+            'token_output': token_usage.get('output', 0),
+            'model_real': 'pi-callback',
+        })
+
+        # Save artifacts as attachments
+        for art in artifacts:
+            if art.get('name') and art.get('data'):
+                request.env['ir.attachment'].create({
+                    'name': art['name'],
+                    'datas': art['data'],
+                    'res_model': 'ai.quest.session',
+                    'res_id': session.id,
+                })
+
+        _logger.info('Callback received for session %d: state=%s', task_id, state)
+        return {'status': 'ok', 'session_id': session.id}
+
+    @http.route('/pi/zabbix/webhook', type='json', auth='public',
+                methods=['POST'], csrf=False, sitemap=False)
+    def zabbix_webhook(self, **kw):
+        """Receive Zabbix alert webhooks.
+
+        Body: {host, trigger, severity, ...}
+        Creates an ai.quest.session for the designated infrastructure quest.
+        """
+        if not self._check_callback_auth():
+            return {'error': 'Unauthorized', 'status': 403}
+
+        body = json.loads(request.httprequest.data or '{}')
+        host = body.get('host', 'unknown')
+        trigger = body.get('trigger', '')
+        severity = body.get('severity', 'warning')
+
+        # Find infrastructure quest (first active quest with 'cron' or 'manual' type)
+        quest = request.env['ai.quest'].search(
+            [('status', '=', 'active')], limit=1, order='sequence asc')
+        if not quest:
+            return {'error': 'No active quest found', 'status': 404}
+
+        # Create session with alert context
+        session = request.env['ai.quest.session'].create({
+            'quest_id': quest.id,
+            'name': f'Zabbix: {trigger[:100]}',
+            'status': 'active',
+            'user_id': request.env.ref('base.user_root', raise_if_not_found=False).id or 1,
+        })
+
+        # Save alert as session line
+        prompt = f'⚠️ Zabbix Alert [{severity.upper()}]\nHost: {host}\nTrigger: {trigger}\n\nPlease analyze this alert and recommend actions.'
+        request.env['ai.quest.session.line'].create({
+            'session_id': session.id,
+            'sequence': 1,
+            'role': 'user',
+            'content': prompt,
+        })
+
+        _logger.info('Zabbix webhook: host=%s trigger=%s → session=%d',
+                    host, trigger, session.id)
+        return {'status': 'ok', 'session_id': session.id}
+
+    @http.route('/pi/bifrost/batch/callback', type='json', auth='public',
+                methods=['POST'], csrf=False, sitemap=False)
+    def bifrost_batch_callback(self, **kw):
+        """Receive Bifrost batch processing results.
+
+        Body: {batch_id, quest_id, results, errors}
+        Stores results in the corresponding quest session.
+        """
+        if not self._check_callback_auth():
+            return {'error': 'Unauthorized', 'status': 403}
+
+        body = json.loads(request.httprequest.data or '{}')
+        batch_id = body.get('batch_id', '')
+        quest_id = body.get('quest_id')
+        results = body.get('results', [])
+        errors = body.get('errors', [])
+
+        if not quest_id:
+            return {'error': 'Missing quest_id', 'status': 400}
+
+        quest = request.env['ai.quest'].browse(int(quest_id))
+        if not quest.exists():
+            return {'error': 'Quest not found', 'status': 404}
+
+        session = request.env['ai.quest.session'].create({
+            'quest_id': quest.id,
+            'name': f'Bifrost batch: {batch_id}',
+            'status': 'done',
+            'user_id': request.env.ref('base.user_root', raise_if_not_found=False).id or 1,
+        })
+
+        # Store results
+        result_text = json.dumps(results, indent=2)[:4000] if results else ''
+        error_text = json.dumps(errors, indent=2)[:2000] if errors else ''
+        content = result_text
+        if error_text:
+            content += f'\n\nErrors:\n{error_text}'
+
+        request.env['ai.quest.session.line'].create({
+            'session_id': session.id,
+            'sequence': 1,
+            'role': 'assistant',
+            'content': content or f'Batch {batch_id} completed',
+            'model_real': 'bifrost-batch',
+        })
+
+        _logger.info('Bifrost batch callback: batch=%s quest=%d → session=%d',
+                    batch_id, quest.id, session.id)
+        return {'status': 'ok', 'session_id': session.id}
+
+
+class AIOpenAIAPI(http.Controller):
+    """OpenAI-compatible API for ai.quest.
+
+    Enables Pi CLI agents and other OpenAI-compatible clients
+    to interact with Odoo quests.
+    """
+
+    def _check_api_key(self):
+        """Validate API key from Authorization header.
+
+        Phase 1: Shared secret from system parameter / env (see
+                 ``_get_callback_secret``).
+        Phase 2: Per-quest keys from ai.quest.init_type.openai_api.
+        """
+        auth = request.httprequest.headers.get('Authorization', '')
+        if not auth.startswith('Bearer '):
+            return None
+        key = auth[7:]
+        if key != _get_callback_secret():
+            return None
+        return True
+
+    @http.route('/ai/v1/models', type='http', auth='public',
+                methods=['GET'], csrf=False, sitemap=False)
+    def list_models(self, **kw):
+        """List quests available via OpenAI API."""
+        if not self._check_api_key():
+            return Response(json.dumps({'error': {'message': 'Unauthorized', 'type': 'authentication_error'}}),
+                          status=401, content_type='application/json')
+
+        quests = request.env['ai.quest'].search([('status', '=', 'active')])
+        models = []
+        for q in quests:
+            models.append({
+                'id': f'quest-{q.id}',
+                'object': 'model',
+                'created': int(q.create_date.timestamp()) if q.create_date else 0,
+                'owned_by': 'vertel',
+            })
+
+        return Response(json.dumps({'object': 'list', 'data': models}),
+                      content_type='application/json')
+
+    @http.route('/ai/v1/chat/completions', type='http', auth='public',
+                methods=['POST'], csrf=False, sitemap=False)
+    def chat_completions(self, **kw):
+        """OpenAI-compatible chat completions with SSE streaming."""
+        if not self._check_api_key():
+            return Response(json.dumps({'error': {'message': 'Unauthorized', 'type': 'authentication_error'}}),
+                          status=401, content_type='application/json')
+
+        body = json.loads(request.httprequest.data or '{}')
+        model = body.get('model', '')
+        messages = body.get('messages', [])
+        stream = body.get('stream', True)
+
+        # Parse quest ID from model (format: quest-42)
+        if not model.startswith('quest-'):
+            return Response(json.dumps({'error': {'message': f'Model {model} not found', 'type': 'invalid_request_error'}}),
+                          status=404, content_type='application/json')
+
+        try:
+            quest_id = int(model.replace('quest-', ''))
+        except ValueError:
+            return Response(json.dumps({'error': {'message': f'Invalid model: {model}', 'type': 'invalid_request_error'}}),
+                          status=400, content_type='application/json')
+
+        quest = request.env['ai.quest'].browse(quest_id)
+        if not quest.exists():
+            return Response(json.dumps({'error': {'message': f'Quest {quest_id} not found', 'type': 'invalid_request_error'}}),
+                          status=404, content_type='application/json')
+
+        # Extract last user message
+        user_messages = [m for m in messages if m.get('role') == 'user']
+        if not user_messages:
+            return Response(json.dumps({'error': {'message': 'No user message provided', 'type': 'invalid_request_error'}}),
+                          status=400, content_type='application/json')
+
+        prompt = user_messages[-1].get('content', '')
+        system_prompt = quest.description or ''
+
+        # Inject conversation history as context
+        history_context = ''
+        if len(messages) > 1:
+            history_lines = []
+            for m in messages[:-1]:
+                role = m.get('role', 'user')
+                content = m.get('content', '')
+                history_lines.append(f'[{role}] {content[:500]}')
+            history_context = '\n'.join(history_lines[-20:])
+
+        if history_context:
+            system_prompt += f'\n\n## Previous conversation\n{history_context}'
+
+        # Get model from quest's first agent
+        model_name = 'cerebras/gpt-oss-120b'
+        for agent_rel in quest.agent_ids:
+            if agent_rel.agent_id and hasattr(agent_rel.agent_id, 'ai_agent_llm_id'):
+                llm = agent_rel.agent_id.ai_agent_llm_id
+                if llm and llm.model_name:
+                    model_name = llm.model_name
+                    break
+
+        if not stream:
+            # Non-streaming: run and return full response
+            try:
+                import asyncio
+                from odoo.addons.ai_agent_core.core.provider import BifrostProvider
+                from odoo.addons.ai_agent_core.core.tools import ToolRegistry, builtin_tools
+                from odoo.addons.ai_agent_core.core.loop import AgentLoop, AgentConfig
+
+                provider = BifrostProvider(
+                    base_url='http://192.168.11.150:8080/v1',
+                    virtual_key='opencode',
+                )
+                tools = ToolRegistry()
+                tools.register_many(builtin_tools())
+
+                loop_obj = AgentLoop(
+                    provider=provider, tools=tools,
+                    config=AgentConfig(model=model_name, system_prompt=system_prompt, max_rounds=10),
+                )
+
+                aloop = asyncio.new_event_loop()
+                asyncio.set_event_loop(aloop)
+                try:
+                    response = aloop.run_until_complete(loop_obj.run(prompt))
+                finally:
+                    aloop.close()
+
+                response_text = response.text if hasattr(response, 'text') else str(response)
+                response_id = f'chatcmpl-{quest_id}-{fields.Datetime.now().timestamp()}'
+
+                return Response(json.dumps({
+                    'id': response_id,
+                    'object': 'chat.completion',
+                    'created': int(fields.Datetime.now().timestamp()),
+                    'model': model,
+                    'choices': [{
+                        'index': 0,
+                        'message': {'role': 'assistant', 'content': response_text},
+                        'finish_reason': 'stop',
+                    }],
+                    'usage': {
+                        'prompt_tokens': getattr(response, 'input_tokens', 0),
+                        'completion_tokens': getattr(response, 'output_tokens', 0),
+                        'total_tokens': getattr(response, 'input_tokens', 0) + getattr(response, 'output_tokens', 0),
+                    },
+                }), content_type='application/json')
+
+            except Exception as e:
+                _logger.error('OpenAI API error: %s', e, exc_info=True)
+                return Response(json.dumps({
+                    'error': {'message': str(e), 'type': 'server_error'}
+                }), status=500, content_type='application/json')
+
+        else:
+            # Streaming SSE response
+            def generate():
+                full_response = []
+                response_id = f'chatcmpl-{quest_id}-{fields.Datetime.now().timestamp()}'
+                created = int(fields.Datetime.now().timestamp())
+
+                try:
+                    import asyncio
+                    from odoo.addons.ai_agent_core.core.provider import BifrostProvider
+                    from odoo.addons.ai_agent_core.core.tools import ToolRegistry, builtin_tools
+                    from odoo.addons.ai_agent_core.core.loop import StreamingAgentLoop, AgentConfig
+
+                    provider = BifrostProvider(
+                        base_url='http://192.168.11.150:8080/v1',
+                        virtual_key='opencode',
+                    )
+                    tools = ToolRegistry()
+                    tools.register_many(builtin_tools())
+
+                    loop = StreamingAgentLoop(
+                        provider=provider, tools=tools,
+                        config=AgentConfig(model=model_name, system_prompt=system_prompt, max_rounds=10),
+                    )
+
+                    async def _stream():
+                        async for event in loop.run_stream(prompt):
+                            if event.type == 'token':
+                                full_response.append(event.token)
+                                yield f'data: {json.dumps({"id": response_id, "object": "chat.completion.chunk", "created": created, "model": model, "choices": [{"index": 0, "delta": {"content": event.token}}]})}\n\n'
+                            elif event.type == 'done':
+                                yield f'data: {json.dumps({"id": response_id, "object": "chat.completion.chunk", "created": created, "model": model, "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]})}\n\n'
+                                yield 'data: [DONE]\n\n'
+                            elif event.type == 'error':
+                                yield f'data: {json.dumps({"error": {"message": event.message}})}\n\n'
+                                yield 'data: [DONE]\n\n'
+
+                    aloop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(aloop)
+                    try:
+                        async def _collect():
+                            result = []
+                            async for chunk in _stream():
+                                result.append(chunk)
+                            return result
+                        results = aloop.run_until_complete(_collect())
+                    finally:
+                        aloop.close()
+
+                    for chunk in results:
+                        yield chunk
+
+                except Exception as e:
+                    _logger.error('OpenAI SSE error: %s', e, exc_info=True)
+                    yield f'data: {json.dumps({"error": {"message": str(e)}})}\n\n'
+                    yield 'data: [DONE]\n\n'
+
+            return request.make_response(
+                generate(),
+                headers={
+                    'Content-Type': 'text/event-stream',
+                    'Cache-Control': 'no-cache',
+                    'Connection': 'keep-alive',
+                    'X-Accel-Buffering': 'no',
+                }
+            )

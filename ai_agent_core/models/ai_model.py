@@ -27,6 +27,30 @@ class AIModel(models.Model):
     provider_id = fields.Many2one('ai.provider', required=True, ondelete='cascade',
                                    string='Provider')
     provider_type = fields.Selection(related='provider_id.provider_type', store=True)
+    real_provider = fields.Char('Real Provider', compute='_compute_real_provider', store=True,
+                                 help='For Bifrost models: the underlying upstream provider. '
+                                      'For others: same as provider name.')
+
+    @api.depends('name', 'provider_id.name', 'provider_id.provider_type')
+    def _compute_real_provider(self):
+        """Extract real upstream provider from model name.
+        
+        Bifrost models have names like 'openrouter/anthropic/claude-sonnet-4'
+        where the first segments indicate the upstream routing path.
+        The real provider is the last segment before the actual model name.
+        """
+        for r in self:
+            if r.provider_id.provider_type == 'bifrost' and '/' in (r.name or ''):
+                parts = r.name.split('/')
+                # Last part is the model name, the one before is the upstream provider
+                if len(parts) >= 2:
+                    # Collect all parts except the last (model name) as upstream path
+                    upstream = '/'.join(parts[:-1])
+                    r.real_provider = upstream
+                else:
+                    r.real_provider = r.provider_id.name
+            else:
+                r.real_provider = r.provider_id.name
 
     # Capabilities
     is_vision = fields.Boolean('Vision', help='Supports image input')
@@ -78,7 +102,7 @@ class AIModel(models.Model):
     session_line_count = fields.Integer(compute='_compute_session_line_count')
 
     # Tags
-    tag_ids = fields.Many2many('product.tag', string='Tags')
+    tag_ids = fields.Many2many('ai.tag', string='Tags')
 
     @api.depends('name', 'provider_id.name')
     def _compute_display_name(self):

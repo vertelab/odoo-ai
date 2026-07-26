@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- List view -->
+    <record id="ai_quest_init_type_list" model="ir.ui.view">
+        <field name="name">ai.quest.init_type.list</field>
+        <field name="model">ai.quest.init_type</field>
+        <field name="arch" type="xml">
+            <list string="Initiation Types" editable="bottom">
+                <field name="sequence" widget="handle"/>
+                <field name="init_type" required="1"/>
+                <field name="active"/>
+                <field name="show_in_chat" invisible="init_type!='web_ui'"/>
+                <field name="alias_name" invisible="init_type!='mail'"/>
+                <field name="channel_id" invisible="init_type!='channel'"/>
+                <field name="cron_id" invisible="init_type!='cron'"
+                       options="{'no_create': True}"/>
+                <field name="server_action_id" invisible="init_type!='server_action'"
+                       options="{'no_create': True}"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- Form view -->
+    <record id="ai_quest_init_type_form" model="ir.ui.view">
+        <field name="name">ai.quest.init_type.form</field>
+        <field name="model">ai.quest.init_type</field>
+        <field name="arch" type="xml">
+            <form>
+                <group>
+                    <field name="quest_id" invisible="1"/>
+                    <field name="init_type" required="1"/>
+                    <field name="active"/>
+                    <field name="sequence"/>
+                </group>
+                <group string="Web UI Settings"
+                       invisible="init_type!='web_ui'">
+                    <field name="show_in_chat"/>
+                </group>
+                <group string="Chat Settings"
+                       invisible="init_type!='chat'">
+                    <field name="chat_user_id" readonly="1"/>
+                    <field name="use_chat_history"/>
+                    <field name="chat_history_limit"
+                           invisible="not use_chat_history"/>
+                    <field name="allow_trigger_words"/>
+                    <field name="chat_trigger_words"
+                           invisible="not allow_trigger_words"/>
+                </group>
+                <group string="Channel Settings"
+                       invisible="init_type!='channel'">
+                    <field name="channel_id"/>
+                    <field name="allow_trigger_words"/>
+                    <field name="chat_trigger_words"
+                           invisible="not allow_trigger_words"/>
+                </group>
+                <group string="Mail Settings"
+                       invisible="init_type!='mail'">
+                    <field name="alias_name"/>
+                    <field name="alias_id" readonly="1"/>
+                    <field name="alias_contact"/>
+                </group>
+                <group string="Schedule Settings"
+                       invisible="init_type!='cron'">
+                    <field name="cron_id"/>
+                    <field name="filter_domain"/>
+                </group>
+                <group string="Server Action Settings"
+                       invisible="init_type!='server_action'">
+                    <field name="server_action_id"/>
+                </group>
+                <group string="API Settings"
+                       invisible="init_type!='openai_api'">
+                    <field name="api_key_attachment_id"/>
+                    <field name="rate_limit_rpm"/>
+                    <field name="rate_limit_tpm"/>
+                </group>
+            </form>
+        </field>
+    </record>
+</odoo>

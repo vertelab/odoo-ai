@@ -64,8 +64,13 @@ class Message:
     tool_call_id: Optional[str] = None
     tool_calls: Optional[list[dict]] = None
     name: Optional[str] = None
+    # Display-only sidecars — stripped before sending to providers
+    _display: Optional[dict] = None  # UI metadata (counts, filter info, etc.)
+    source: Optional[dict] = None    # Connector/source framing
+    ts: Optional[float] = None        # Append timestamp (unix seconds)
 
     def to_openai(self) -> dict:
+        """Serialize to OpenAI format. Sidecars are stripped."""
         msg = {"role": self.role.value, "content": self.content}
         if self.tool_call_id:
             msg["tool_call_id"] = self.tool_call_id
