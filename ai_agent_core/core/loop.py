@@ -28,7 +28,7 @@ from .provider import (
     TokenEvent,
     ToolCall,
 )
-from .tools import Tool, ToolRegistry
+from .tools import Tool, ToolRegistry, nats_request_reply
 from .permission import (
     PermissionEngine,
     PermissionMode,
@@ -60,6 +60,11 @@ class AgentConfig:
     approval_threshold: int = 2  # risk level requiring approval (HITL-005)
     permission_mode: str = "interactive"  # discuss | plan | interactive | auto | custom
     max_clarifications: int = 3  # max proactive questions per turn (HITL-007)
+
+    # NATS executor config (tool-executor-nats)
+    nats_api_secret: str = ""  # api_secret for Pi-agent verification
+    nats_max_retries: int = 3  # retries before giving up on NATS tool
+    nats_timeout: float = 60.0  # seconds per NATS request-reply
 
 
 # ---------------------------------------------------------------------------
@@ -104,6 +109,10 @@ class AgentLoop:
         self.config = config or AgentConfig()
         self.interrupt_handler = interrupt_handler
         self.context_provider = context_provider
+
+        # Observability: [(tool_name, result_preview), ...] per execution,
+        # read by callers (e.g. ai.quest.run) for session-line persistence
+        self.tool_history: list = []
 
         # Permission engine (optional — backwards compatible)
         if permission_engine:
@@ -522,11 +531,23 @@ class AgentLoop:
         return output
 
     async def _execute_tool(self, tool_call) -> str:
-        """Execute a single tool call with timeout and error handling."""
+        """Execute a single tool call with timeout and error handling.
+
+        Supports executor routing:
+        - executor="local" → tool.execute() (befintligt beteende)
+        - executor="nats"  → _execute_via_nats() (tool-executor-nats)
+        """
         tool = self.tools.get(tool_call.name)
         if not tool:
             return f"Error: unknown tool '{tool_call.name}'"
 
+        # NATS executor routing
+        if tool.executor == "nats":
+            result = await self._execute_via_nats(tool, tool_call.arguments)
+            self.tool_history.append((tool_call.name, str(result)[:500]))
+            return result
+
+        # Local execution (default, existing behavior)
         tool_start = time.time()
         _logger.debug("Executing tool: %s", tool_call.name)
 
@@ -552,6 +573,7 @@ class AgentLoop:
 
             result = execute_task.result()
             tool_elapsed = time.time() - tool_start
+            self.tool_history.append((tool_call.name, str(result)[:500]))
             _logger.debug(
                 "Tool '%s' completed in %.2fs, result length=%d",
                 tool_call.name, tool_elapsed, len(result),
@@ -573,6 +595,76 @@ class AgentLoop:
             )
 
         return result
+
+    async def _execute_via_nats(self, tool: 'Tool', args: dict) -> str:
+        """Execute a tool via NATS request-reply delegation.
+
+        Sends the tool call to a Pi-agent using NATS request-reply.
+        The Pi-agent verifies api_secret, executes the tool using its
+        skills, and replies with the result.
+
+        Args:
+            tool: The Tool dataclass with NATS config
+            args: Tool arguments from the LLM
+
+        Returns:
+            Result string from the Pi-agent, or error message
+        """
+        import json
+
+        nats_timeout = getattr(tool, 'nats_timeout', 30) or self.config.nats_timeout
+        max_retries = self.config.nats_max_retries
+        subject = getattr(tool, 'nats_subject', 'pi.task.do')
+        skills = getattr(tool, 'nats_skills', '')
+
+        # Build NATS payload
+        payload = {
+            "tool": tool.name,
+            "args": args,
+            "skills": [s.strip() for s in skills.split(",") if s.strip()],
+            "api_secret": self.config.nats_api_secret,
+        }
+
+        last_error = ""
+        for attempt in range(1, max_retries + 1):
+            if self._cancelled:
+                return f"Tool '{tool.name}' cancelled (NATS, attempt {attempt})"
+
+            _logger.info(
+                "NATS tool '%s' → %s (attempt %d/%d, timeout=%ds)",
+                tool.name, subject, attempt, max_retries, nats_timeout,
+            )
+
+            result = await nats_request_reply(
+                subject=subject,
+                payload=payload,
+                timeout=nats_timeout,
+            )
+
+            # Check if result is an error message
+            if result.startswith("NATS request timed out") or result.startswith("NATS request failed"):
+                last_error = result
+                _logger.warning(
+                    "NATS tool '%s' attempt %d/%d failed: %s",
+                    tool.name, attempt, max_retries, result[:100],
+                )
+                continue
+
+            # Success
+            _logger.info(
+                "NATS tool '%s' completed (attempt %d/%d, result=%d bytes)",
+                tool.name, attempt, max_retries, len(result),
+            )
+            return result
+
+        # All retries exhausted
+        error_msg = (
+            f"NATS tool '{tool.name}' failed after {max_retries} attempts. "
+            f"Last error: {last_error}. "
+            f"Pi-agent may be offline — check nats connection and agent status."
+        )
+        _logger.error(error_msg)
+        return error_msg
 
     # -- Context management (LOOP-004) --
 
@@ -708,6 +800,18 @@ class StreamingAgentLoop(AgentLoop):
                         messages.append(assistant_msg)
 
                         for tc in tool_calls_seen:
+                            # SSE-progress for NATS tools
+                            tool_obj = self.tools.get(tc["name"])
+                            if tool_obj and tool_obj.executor == "nats":
+                                yield TokenEvent(
+                                    type="tool_progress",
+                                    token=json.dumps({
+                                        "executor": "nats",
+                                        "tool": tc["name"],
+                                        "status": "pending",
+                                        "message": f"Väntar på Pi-agent ({tc['name']})...",
+                                    }),
+                                )
                             result = await self._execute_tool(
                                 ToolCall(id=tc["id"], name=tc["name"], arguments=tc["arguments"])
                             )

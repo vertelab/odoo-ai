@@ -1238,6 +1238,7 @@ class AIQuest(models.Model):
             from odoo.addons.ai_agent_core.core.provider import BifrostProvider
             from odoo.addons.ai_agent_core.core.tools import (
                 ToolRegistry, builtin_tools, planning_tools, TodoList,
+                wrap_tools_with_env,
             )
             from odoo.addons.ai_agent_core.core.loop import AgentLoop, AgentConfig
             from odoo.addons.ai_agent_core.core.interrupt import AutoInterruptHandler
@@ -1250,7 +1251,7 @@ class AIQuest(models.Model):
                 virtual_key='opencode',
             )
             tools = ToolRegistry()
-            tools.register_many(builtin_tools())
+            tools.register_many(wrap_tools_with_env(builtin_tools(), self.env))
 
             # Add planning tools
             todo = TodoList()
@@ -1407,7 +1408,9 @@ class AIQuest(models.Model):
             asyncio.set_event_loop(loop)
             try:
                 from odoo.addons.ai_agent_core.core.provider import BifrostProvider
-                from odoo.addons.ai_agent_core.core.tools import ToolRegistry, builtin_tools
+                from odoo.addons.ai_agent_core.core.tools import (
+                    ToolRegistry, builtin_tools, wrap_tools_with_env,
+                )
                 from odoo.addons.ai_agent_core.core.loop import AgentLoop, AgentConfig
 
                 provider = BifrostProvider(
@@ -1415,7 +1418,7 @@ class AIQuest(models.Model):
                     virtual_key='opencode',
                 )
                 tools = ToolRegistry()
-                tools.register_many(builtin_tools())
+                tools.register_many(wrap_tools_with_env(builtin_tools(), self.env))
 
                 loop_obj = self._build_loop(
                     provider=provider, tools=tools,
@@ -1458,6 +1461,17 @@ class AIQuest(models.Model):
                 'sys_multiplier': sys_mult,
                 'sequence': 2,
             })
+            # Persist tool executions recorded by the loop (observability
+            # + lets tests assert expect_tools via session lines)
+            for i, (t_name, t_preview) in enumerate(
+                    getattr(loop_obj, 'tool_history', [])):
+                self.env['ai.quest.session.line'].create({
+                    'session_id': session.id,
+                    'role': 'tool',
+                    'tool_name': t_name,
+                    'content': t_preview,
+                    'sequence': 10 + i,
+                })
 
             # Update session and quest totals
             session.write({
@@ -1551,7 +1565,9 @@ class AIQuest(models.Model):
             asyncio.set_event_loop(loop)
             try:
                 from odoo.addons.ai_agent_core.core.provider import BifrostProvider
-                from odoo.addons.ai_agent_core.core.tools import ToolRegistry, builtin_tools
+                from odoo.addons.ai_agent_core.core.tools import (
+                    ToolRegistry, builtin_tools, wrap_tools_with_env,
+                )
                 from odoo.addons.ai_agent_core.core.loop import AgentLoop, AgentConfig
 
                 provider = BifrostProvider(
@@ -1559,7 +1575,7 @@ class AIQuest(models.Model):
                     virtual_key='opencode',
                 )
                 tools = ToolRegistry()
-                tools.register_many(builtin_tools())
+                tools.register_many(wrap_tools_with_env(builtin_tools(), self.env))
 
                 loop_obj = self._build_loop(
                     provider=provider, tools=tools,
