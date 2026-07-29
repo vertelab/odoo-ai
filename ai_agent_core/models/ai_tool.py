@@ -89,7 +89,7 @@ class AITool(models.Model):
     )
     coworker_ids = fields.Many2many(
         'ai.coworker', 'ai_coworker_tool_custom_rel',
-        'tool_id', 'quest_id', string='Used by Quests',
+        'tool_id', 'coworker_id', string='Used by Quests',
     )
 
     # Stats

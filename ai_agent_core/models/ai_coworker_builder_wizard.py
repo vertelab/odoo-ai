@@ -17,7 +17,7 @@ class AIQuestBuilderWizard(models.TransientModel):
         help='Quest to build or edit. Empty = create new.')
     chat_url = fields.Char(compute='_compute_chat_url', string='Chat URL')
 
-    @api.depends('quest_id')
+    @api.depends('coworker_id')
     def _compute_chat_url(self):
         for wiz in self:
             # Find Quest Builder quest

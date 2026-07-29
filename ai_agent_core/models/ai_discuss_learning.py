@@ -146,7 +146,7 @@ class DiscussLearning(models.Model):
 
         identity_updates = learnings.get('identity_updates', {})
         if identity_updates:
-            quest = user.personal_quest_id
+            quest = user.personal_coworker_id
             if quest and quest.identity_id:
                 identity = quest.identity_id
                 if identity_updates.get('style'):

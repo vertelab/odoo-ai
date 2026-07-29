@@ -85,7 +85,7 @@ class AIQuest(models.Model):
 
     # ── Multi-model binding ──
     model_ids = fields.Many2many('ir.model', 'ai_coworker_model_rel',
-        'quest_id', 'model_id', string='Target Models',
+        'coworker_id', 'model_id', string='Target Models',
         help='Models this quest can work with. For powerbox quests, '
              'the slash command only appears on records of these models.')
     model_id = fields.Many2one('ir.model', string='Target Model (primary)',
@@ -94,7 +94,7 @@ class AIQuest(models.Model):
     model_name = fields.Char(compute='_compute_model_name', store=True)
     filter_domain = fields.Char('Record Filter')
 
-    agent_ids = fields.One2many('ai.coworker.agent', 'quest_id', string='Agents')
+    agent_ids = fields.One2many('ai.coworker.agent', 'coworker_id', string='Agents')
     agent_count = fields.Integer(compute='_compute_agent_count')
     is_supervisor = fields.Boolean('Supervisor Mode')
 
@@ -190,7 +190,7 @@ class AIQuest(models.Model):
     company_memory_categories = fields.Many2many(
         'ai.company.memory.category',
         'ai_coworker_company_memory_category_rel',
-        'quest_id', 'category_id',
+        'coworker_id', 'category_id',
         string='Company Memory Categories',
         help='Limit company memory to specific categories.\n'
              'Leave empty to include all accessible categories.')
@@ -216,8 +216,8 @@ class AIQuest(models.Model):
     api_key_attachment_id = fields.Many2one('ir.attachment',
         string='API Key',
         help='API key for OpenAI-compatible endpoint access')
-    group_ids = fields.Many2many('res.groups', 'ai_coworker_group_rel', 'quest_id', 'group_id', string='Access Groups')
-    user_ids = fields.Many2many('res.users', 'ai_coworker_user_rel', 'quest_id', 'user_id', string='Access Users')
+    group_ids = fields.Many2many('res.groups', 'ai_coworker_group_rel', 'coworker_id', 'group_id', string='Access Groups')
+    user_ids = fields.Many2many('res.users', 'ai_coworker_user_rel', 'coworker_id', 'user_id', string='Access Users')
 
     # Core loop migration
     use_core_loop = fields.Boolean('Use Core Loop', default=False)
@@ -331,7 +331,7 @@ class AIQuest(models.Model):
 
         # Get active memories for this quest
         memories = self.env['ai.memory'].search([
-            ('quest_id', '=', self.id),
+            ('coworker_id', '=', self.id),
             ('archived', '=', False),
         ])
 
@@ -417,13 +417,13 @@ class AIQuest(models.Model):
             except Exception as e:
                 _logger.warning('Zabbix notification failed (non-critical): %s', e)
 
-    skill_copy_ids = fields.One2many('ai.coworker.skill', 'quest_id',
+    skill_copy_ids = fields.One2many('ai.coworker.skill', 'coworker_id',
         string='Skill Copies',
         help='Quest-specific copies of shared skills')
 
     # ── Direct quest-level skills (pipeline/orchestration) ──
     skill_ids = fields.Many2many('ai.skill', 'ai_coworker_skill_rel',
-        'quest_id', 'skill_id', string='Quest Skills',
+        'coworker_id', 'skill_id', string='Quest Skills',
         help='Pipeline and orchestration skills. '
              'Available to ALL agents in this quest. '
              'These provide the overall coordination framework '
@@ -453,13 +453,13 @@ class AIQuest(models.Model):
     tag_ids = fields.Many2many('ai.tag', string='Tags')
 
     # ── Multi-init-type (replaces single init_type) ──
-    init_type_ids = fields.One2many('ai.coworker.init_type', 'quest_id',
+    init_type_ids = fields.One2many('ai.coworker.init_type', 'coworker_id',
         string='Initiation Types',
         help='Multiple ways this quest can be triggered.')
     # Computed Many2many for many2many_tags widget in form
     active_init_types = fields.Many2many(
         'ai.coworker.init_type', 'ai_coworker_init_type_active_rel',
-        'quest_id', 'init_type_id',
+        'coworker_id', 'init_type_id',
         string='Active Initiation Types',
         compute='_compute_active_init_types', inverse='_inverse_active_init_types',
         help='Select which ways this quest can be triggered. '
@@ -491,7 +491,7 @@ class AIQuest(models.Model):
             to_create = wanted_types - current_types
             for itype in to_create:
                 self.env['ai.coworker.init_type'].create({
-                    'quest_id': r.id,
+                    'coworker_id': r.id,
                     'init_type': itype,
                     'active': True,
                 })
@@ -592,7 +592,7 @@ class AIQuest(models.Model):
         last_month = last_month_date.strftime('%Y-%m')
         for r in self:
             summary = self.env['ai.coworker.monthly_summary'].search([
-                ('quest_id', '=', r.id),
+                ('coworker_id', '=', r.id),
                 ('month', '=', last_month),
             ], limit=1)
             r.last_month_sys_tokens = summary.total_sys_tokens if summary else 0
@@ -658,7 +658,7 @@ class AIQuest(models.Model):
 
         if session is None:
             session = self.env['ai.coworker.session'].create({
-                'quest_id': self.id, 'status': 'active',
+                'coworker_id': self.id, 'status': 'active',
                 'name': f'Mail: {mail_message.subject or "No subject"}',
                 'user_id': self.env.ref('base.user_root', raise_if_not_found=False).id or 1,
             })
@@ -745,7 +745,7 @@ class AIQuest(models.Model):
             full_system += f'\n\n## Recent conversation\n{history_ctx}'
 
         session = self.env['ai.coworker.session'].create({
-            'quest_id': self.id, 'status': 'active',
+            'coworker_id': self.id, 'status': 'active',
             'name': f'Chat: {msg_text[:50]}',
             'user_id': bot_user.id if bot_user else 1,
         })
@@ -920,7 +920,7 @@ class AIQuest(models.Model):
             'identity_id': identity.id,
         })
         self.env['ai.coworker.agent'].sudo().create({
-            'quest_id': self.id,
+            'coworker_id': self.id,
             'agent_id': agent.id,
             'role': 'member',
             'is_auto_created': True,
@@ -948,7 +948,7 @@ class AIQuest(models.Model):
         if self.buzz_channel_session_id:
             return self.buzz_channel_session_id
         session = self.env['ai.coworker.session'].sudo().create({
-            'quest_id': self.id,
+            'coworker_id': self.id,
             'name': f'Buzz: {self.name}',
             'thread_name': self.name,
             'status': 'active',
@@ -1121,7 +1121,7 @@ class AIQuest(models.Model):
         for quest in quests:
             old_type = quest.init_type or 'manual'
             vals = {
-                'quest_id': quest.id,
+                'coworker_id': quest.id,
                 'init_type': old_type,
                 'active': quest.status == 'active',
             }
@@ -1430,7 +1430,7 @@ class AIQuest(models.Model):
         """
         self.ensure_one()
         memories = self.env['ai.memory'].search([
-            ('quest_id', '=', self.id),
+            ('coworker_id', '=', self.id),
             ('archived', '=', False),
             ('memory_type', '=', 'faiss'),
         ])
@@ -1472,7 +1472,7 @@ class AIQuest(models.Model):
             'name': 'Sessions', 'type': 'ir.actions.act_window',
             'res_model': 'ai.coworker.session', 'view_mode': 'list,form',
             'target': 'current',
-            'domain': [('quest_id', '=', self.id)],
+            'domain': [('coworker_id', '=', self.id)],
         }
 
     def action_get_session_lines(self):
@@ -1596,7 +1596,7 @@ class AIQuest(models.Model):
         from datetime import date
         today = date.today()
         return {
-            'quest_id': self.id,
+            'coworker_id': self.id,
             'quest_name': self.name,
             'month': today.strftime('%Y-%m'),
             'started_mtokens': self.started_mtokens,
@@ -1677,7 +1677,7 @@ class AIQuest(models.Model):
         try:
             # Create session
             session = self.env['ai.coworker.session'].create({
-                'quest_id': self.id,
+                'coworker_id': self.id,
                 'status': 'active',
                 'user_id': self.env.ref('base.user_root').id
                           if self.env.ref('base.user_root', raise_if_not_found=False)
@@ -1846,7 +1846,7 @@ class AIQuest(models.Model):
 
         # Create session for tracking
         session = self.env['ai.coworker.session'].create({
-            'quest_id': self.id,
+            'coworker_id': self.id,
             'status': 'active',
             'user_id': self.env.user.id,
             'name': prompt[:80] if prompt else 'Quest run',
@@ -1998,7 +1998,7 @@ class AIQuest(models.Model):
 
         # Create session
         session = self.env['ai.coworker.session'].create({
-            'quest_id': self.id,
+            'coworker_id': self.id,
             'status': 'active',
             'user_id': self.env.user.id,
         })
@@ -2231,7 +2231,7 @@ class AIQuestMonthlySummary(models.Model):
         for quest in quests:
             # Check if summary already exists
             existing = self.search([
-                ('quest_id', '=', quest.id),
+                ('coworker_id', '=', quest.id),
                 ('month', '=', month),
             ], limit=1)
             if existing:
@@ -2268,7 +2268,7 @@ class AIQuestMonthlySummary(models.Model):
             sessions = len(set(l.session_id.id for l in lines))
 
             self.create({
-                'quest_id': quest.id,
+                'coworker_id': quest.id,
                 'month': month,
                 'total_sys_tokens': total_sys,
                 'total_input_tokens': total_in,
@@ -2289,7 +2289,7 @@ class AIQuestAgent(models.Model):
     _description = 'Quest Agent Assignment'
     _order = 'sequence asc'
 
-    quest_id = fields.Many2one('ai.coworker', required=True, ondelete='cascade')
+    coworker_id = fields.Many2one('ai.coworker', required=True, ondelete='cascade')
     agent_id = fields.Many2one('ai.agent', required=True, string='Agent')
     sequence = fields.Integer(default=10)
     role = fields.Selection([
@@ -2324,7 +2324,7 @@ class AIQuestAgent(models.Model):
                 if agent.partner_id:
                     other_buzz_assignments = self.search([
                         ('agent_id', '=', agent.id),
-                        ('quest_id.channel_id', '=', quest.channel_id.id),
+                        ('coworker_id.channel_id', '=', quest.channel_id.id),
                         ('id', '!=', rec.id),
                     ])
                     if not other_buzz_assignments:

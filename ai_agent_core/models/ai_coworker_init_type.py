@@ -28,7 +28,7 @@ class AIQuestInitType(models.Model):
     _order = 'sequence asc, id asc'
     _rec_name = 'display_name'
 
-    quest_id = fields.Many2one('ai.coworker', required=True, ondelete='cascade',
+    coworker_id = fields.Many2one("ai.coworker", required=True, ondelete='cascade',
                                 string='Quest')
     init_type = fields.Selection(INIT_TYPE_SELECTION, required=True,
                                   string='Initiation Type')
@@ -38,7 +38,7 @@ class AIQuestInitType(models.Model):
     # Display name shows the function, not the quest name
     display_name = fields.Char(compute='_compute_display_name', store=True)
 
-    @api.depends('init_type', 'quest_id.name')
+    @api.depends('init_type', 'coworker_id.name')
     def _compute_display_name(self):
         for r in self:
             label = dict(INIT_TYPE_SELECTION).get(r.init_type, r.init_type)
@@ -166,14 +166,14 @@ class AIQuestInitType(models.Model):
         if not self.chat_user_id:
             quest = self.coworker_id
             user = self.env['res.users'].search([
-                ('name', '=', quest.name),
-                ('login', '=', 'bot_' + quest.name.lower().replace(' ', '_')),
+                ('name', '=', coworker.name),
+                ('login', '=', 'bot_' + coworker.name.lower().replace(' ', '_')),
             ], limit=1)
             if not user:
                 user = self.env['res.users'].with_context(
                     no_reset_password=True).create({
-                        'name': quest.name,
-                        'login': 'bot_' + quest.name.lower().replace(' ', '_'),
+                        'name': coworker.name,
+                        'login': 'bot_' + coworker.name.lower().replace(' ', '_'),
                     })
             self.chat_user_id = user.id
 

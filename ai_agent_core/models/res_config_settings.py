@@ -79,7 +79,7 @@ class ResConfigSettings(models.TransientModel):
     def _ensure_companions(self):
         """Create personal companions for users who don't have one yet."""
         users = self.env['res.users'].search([
-            ('personal_quest_id', '=', False),
+            ('personal_coworker_id', '=', False),
             ('active', '=', True),
             ('share', '=', False),  # Not portal users
         ])

@@ -24,7 +24,7 @@ class AIQuestSkill(models.Model):
     _description = 'Quest Skill Copy'
     _order = 'sequence asc'
 
-    quest_id = fields.Many2one('ai.coworker', required=True, ondelete='cascade',
+    coworker_id = fields.Many2one("ai.coworker", required=True, ondelete='cascade',
                                 string='Quest')
     source_skill_id = fields.Many2one('ai.skill', string='Source Skill',
                                        readonly=True,
@@ -79,14 +79,14 @@ class AIQuestSkill(models.Model):
     def fork_for_quest(self, quest, skill):
         """Create a quest-specific copy of a shared skill."""
         existing = self.search([
-            ('quest_id', '=', quest.id),
+            ('coworker_id', '=', coworker.id),
             ('source_skill_id', '=', skill.id),
         ], limit=1)
         if existing:
             return existing
 
         return self.create({
-            'quest_id': quest.id,
+            'coworker_id': coworker.id,
             'source_skill_id': skill.id,
             'description': skill.description,
             'recipe_text': skill.recipe_text,

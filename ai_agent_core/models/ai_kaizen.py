@@ -20,7 +20,7 @@ class AIKaizenReport(models.Model):
     _order = 'week_start desc'
     _inherit = ['mail.thread']
 
-    quest_id = fields.Many2one('ai.coworker', required=True, ondelete='cascade',
+    coworker_id = fields.Many2one('ai.coworker', required=True, ondelete='cascade',
                                 string='Quest')
     week_start = fields.Date('Week Starting', required=True)
     week_end = fields.Date('Week Ending', required=True)
@@ -60,7 +60,7 @@ class AIKaizenReport(models.Model):
         help='Per-department nudge effectiveness data: '
              '{department: {nudge_type: {delivered, opened, converted, trend}}}')
 
-    @api.depends('quest_id.name', 'week_start')
+    @api.depends('coworker_id.name', 'week_start')
     def _compute_display_name(self):
         for r in self:
             quest_name = r.coworker_id.name if r.coworker_id else '?'
@@ -82,7 +82,7 @@ class AIKaizenReport(models.Model):
         for q in quests:
             # Skip if already generated this week
             existing = self.search([
-                ('quest_id', '=', q.id),
+                ('coworker_id', '=', q.id),
                 ('week_start', '=', week_start),
             ], limit=1)
             if existing:
@@ -116,7 +116,7 @@ class AIKaizenReport(models.Model):
 
         # Create report
         report = self.create({
-            'quest_id': coworker.id,
+            'coworker_id': coworker.id,
             'week_start': week_start,
             'week_end': week_end,
             'status': 'draft',
@@ -181,7 +181,7 @@ class AIKaizenReport(models.Model):
         ])
 
         sessions = self.env['ai.coworker.session'].search([
-            ('quest_id', '=', coworker.id),
+            ('coworker_id', '=', coworker.id),
             ('create_date', '>=', week_start_dt),
             ('create_date', '<=', week_end_dt),
         ])
@@ -190,7 +190,7 @@ class AIKaizenReport(models.Model):
 
         # Feedback from ai.memory
         feedback = self.env['ai.memory'].search([
-            ('quest_id', '=', coworker.id),
+            ('coworker_id', '=', coworker.id),
             ('category', '=', 'feedback'),
             ('create_date', '>=', week_start_dt),
             ('create_date', '<=', week_end_dt),
