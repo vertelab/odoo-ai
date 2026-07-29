@@ -409,6 +409,285 @@ Define freemium pricing tiers and conversion paths.
 4. Calculate conversion rate targets
 5. Write pricing strategy to linked document"""
 
+_RECIPE_MEETING_PREP = """# Meeting Preparation
+
+Prepare a strategic meeting agenda with AI-generated briefs per agenda item.
+Supports department-aware reporting and behavioral nudge design.
+
+## Data Sources (via XML-RPC)
+- `strategy.meeting` — the meeting record with template and type
+- `strategy.meeting.agenda.item` — agenda items with sequence, duration,
+  `item_type`, `department_id`, `report_status`
+- `strategy.plan` — related strategic plan
+- `okr.objective` / `okr.key.result` — current OKR progress.
+  Filter by `department_id` when agenda item has one.
+- `strategy.risk` — recent risk changes
+- `strategy.department.report` — this week's approved department reports
+- `marketing.world.brief` — latest world monitoring brief (if installed)
+- `strategy.meeting.decision` — previous meeting's open decisions
+
+## Process
+
+### Step 1: Read Meeting Context
+Read the meeting record to understand:
+- `meeting_type`: 'board' (formal, governance-focused) or 'management' (action-oriented)
+- `template_id`: which template was applied
+- `plan_id`: strategic context
+
+### Step 2: Process Each Agenda Item
+
+#### A. Department Report Items (`item_type='department_report'`)
+When `department_id` is set on the agenda item:
+1. Fetch `okr.objective` WHERE `department_id` = agenda_item's department
+2. For each OKR, call `_get_salience_level()` to determine:
+   - 🔴 `critical` (<60% progress): flags "Kräver beslut idag"
+   - ⚠️ `warning` (60-80%): flags "Följer planen med viss risk"
+   - ✅ `ok` (>80%): flags "I fas enligt plan"
+3. Fetch `strategy.department.report` for this department + this week
+4. Fetch kaizen findings linked to this department's quests
+5. Generate content following the **Department Report Structure** below
+6. Write to `agenda_item.notes` as HTML
+7. Set `report_status='draft'` and `ai_generated=True`
+
+#### B. Strategic Status Items (`item_type='strategic_status'`)
+For board meetings — CEO's aggregated view:
+1. Fetch all strategic OKRs (`department_id=NULL`)
+2. For each strategic OKR, find department OKRs via `parent_id`
+3. Aggregate progress from department OKRs (weighted average)
+4. Fetch all approved `strategy.department.report` for this week
+5. Generate a CEO brief with:
+   - Per strategic OKR: aggregated progress + department contributions
+   - Red/yellow/green per department
+   - Recommendations for board decisions
+
+#### C. Standard Items
+Fall back to generic meeting preparation as before.
+
+### Step 3: After Generating
+1. Post a summary message to the meeting chatter
+2. If `department_report` items: notify the department head
+   (via `department_id.manager_id.user_id`)
+
+## Department Report Structure
+
+For `department_report` items, write content to `agenda_item.notes` as HTML
+following this exact structure:
+
+```html
+<h2>Lägesrapport {department.name} — v{week_number}</h2>
+
+<h3>1. OKR-status</h3>
+<ul>
+  <li>{salience_icon} <strong>{okr.name}</strong>: {okr.progress}%
+    — {status_text}</li>
+  <!-- repeat for each OKR -->
+</ul>
+
+<h3>2. Avvikelser och trender</h3>
+<ul>
+  <li>Öppna avvikelser: {count}</li>
+  <li>Helpdesk-trend: {trend_description}</li>
+</ul>
+
+<h3>3. Personalsignaler</h3>
+<ul>
+  <li>{signal_1}</li>
+  <li>{signal_2}</li>
+</ul>
+
+<h3>4. Rekommendationer</h3>
+<ul>
+  <li>{recommendation_1}</li>
+  <li>{recommendation_2}</li>
+</ul>
+
+<p><em>AI-genererat utkast — granska och redigera före mötet.</em></p>
+```
+
+## Friction Reduction — Pre-filled Decision Proposals
+
+When an OKR is below 60% (salience = `critical`), automatically generate
+a decision proposal. Apply behavioral design principles:
+- **Default**: Pre-fill the decision, user can edit or reject
+- **Transparency**: Always mark as AI-generated
+- **Opt-out**: Always include the option to maintain current plan
+
+Write the proposal into the agenda item's `notes`:
+
+```html
+<div class="ai-decision-proposal" style="border-left: 3px solid #dc3545;
+     padding: 10px; margin: 10px 0; background: #fff5f5;">
+  <strong>🤖 AI-förslag till beslut:</strong>
+  <p>OKR "<em>{okr.name}</em>" är {okr.progress}% med
+  {weeks_remaining} veckor kvar till deadline.
+  Föreslås att ledningsgruppen beslutar att:</p>
+  <ul>
+    <li>☐ {suggested_action_1}</li>
+    <li>☐ {suggested_action_2}</li>
+    <li>☐ Behåll nuvarande plan men acceptera risk för försening</li>
+  </ul>
+  <p><em>Detta är ett AI-genererat utkast. Redigera, förkasta,
+  eller be AI:n om ett nytt förslag.</em></p>
+</div>
+```
+
+Suggested actions should be specific, actionable, and connected to the
+OKR's key results. Use data from kaizen findings and department signals
+to ground the suggestions in evidence.
+
+## Nudge Design Principles (from behavioral-design skill)
+
+When generating meeting content, apply these principles:
+1. **Salience**: Critical items first. 🔴 before ⚠️ before ✅.
+2. **Defaults**: Pre-fill, don't leave blanks. The department head edits, not creates.
+3. **Social proof**: If other departments have already reviewed, mention it.
+4. **Friction reduction**: Every decision proposal is one click away from approval.
+5. **Implementation intentions**: "After the meeting, [person] will [action] by [deadline]."
+"""
+
+_RECIPE_MEETING_MINUTES = """# Meeting Minutes Generator
+
+Generate structured meeting minutes from a completed meeting.
+
+## Data Sources (via XML-RPC)
+- `strategy.meeting` — the meeting record
+- `strategy.meeting.agenda.item` — items with notes and state
+- `strategy.meeting.decision` — decisions made during meeting
+- `strategy.meeting.participant` — attendance and roles
+
+## Process
+1. Read meeting agenda with all items
+2. For each completed agenda item, generate:
+   - Summary of discussion (from notes)
+   - Decisions made (from decisions linked to this item)
+   - Action items (extracted from discussion)
+3. Aggregate:
+   - List of all decisions with status
+   - List of all action items with suggested owners and deadlines
+   - Risk changes based on decisions
+4. Write full minutes to `minutes_draft` field
+5. Create any missing `strategy.meeting.decision` records
+
+## Output Format
+```
+Meeting Minutes — {meeting.name}
+Date: {meeting.date}
+
+Participants:
+- {name} ({role}) — ✓ attended
+
+1. {agenda_item_1}
+   Discussion: ...
+   Decision: ...
+   Action: {owner}, deadline {date}
+
+...
+```"""
+
+_RECIPE_BOARD_SECRETARY = """# Board Secretary — Governance & Follow-up
+
+Monitor open decisions, governance compliance, and prepare follow-up.
+
+## Data Sources
+- `strategy.meeting.decision` — decisions with state=approved
+- `strategy.meeting` — recent meetings
+- `strategy.risk` — open risks
+
+## Process (Daily Check)
+1. Find all decisions with `state='approved'` older than 30 days
+2. For each, check if a linked strategy record (risk, OKR, initiative) shows completion
+3. If no completion detected:
+   - Flag as "pending" for next meeting agenda
+   - Suggest escalation to meeting organizer
+4. Find decisions with `state='deferred'` — suggest re-discussion
+5. Check governance:
+   - Are there board meetings without completed minutes?
+   - Are there upcoming deadlines (board term end, risk review)?
+
+## Output
+- List of pending items for next meeting prep
+- Governance reminders"""
+
+_RECIPE_BEHAVIORAL_DESIGN = """# Behavioral Design & Nudge Design
+
+Apply behavioral science to design choice architecture that guides users
+toward strategic goals without restricting freedom of choice.
+
+## Theoretical Foundation
+- **Thaler & Sunstein (2008)**: Libertarian paternalism — design environments
+  so people make better choices, always with opt-out.
+- **Kahneman (2011)**: System 1 (fast, automatic) vs System 2 (slow, deliberate).
+  Nudges work by targeting System 1 — making the right choice the easy choice.
+- **Fogg (2019)**: B=MAP — Behavior = Motivation × Ability × Prompt.
+  Focus on Ability (reduce friction) and Prompt (trigger at the right moment).
+  Motivation is hardest to change.
+
+## Five Nudge Techniques
+
+### 1. Defaults (Johnson & Goldstein, 2003)
+Pre-fill forms, reports, and decisions with the desired outcome.
+Users can change it, but the default becomes the path of least resistance.
+- Example: Pre-fill meeting agenda with OKR status updates
+- When to use: High-effort tasks, compliance, routine reports
+
+### 2. Social Proof (Cialdini, 2006)
+Show what others are doing. Descriptive norms ("85% have already done X")
+are more effective than injunctive norms ("you should do X").
+- Example: "3 of 4 department heads have reviewed their reports"
+- When to use: Tasks where peer behavior is visible and relevant
+
+### 3. Salience (Kahneman & Tversky, 1979)
+Make important information visually prominent. Loss framing
+is approximately 2× more powerful than gain framing.
+- Example: OKR <60% → 🔴 "Requires decision today"
+- When to use: Critical deadlines, risk indicators, decision points
+
+### 4. Friction Reduction (Fogg, 2009)
+Remove steps between intention and action. Every click matters.
+- Example: AI-generated report draft instead of blank page
+- When to use: Complex tasks, knowledge work, creative output
+
+### 5. Implementation Intentions (Gollwitzer, 1999)
+"If-then" plans: "When X happens, I will do Y."
+Dramatically increases follow-through by pre-committing to a trigger.
+- Example: "When it's Friday 09:00, check your OKR progress"
+- When to use: Recurring tasks, goal pursuit, habit formation
+
+## Nudge Design Process
+
+1. **Identify the gap**: What behavior should change? Measure current state.
+2. **Diagnose the barrier**: Is it Motivation, Ability, or Prompt? (Fogg's B=MAP)
+3. **Select technique**: Match the barrier to the right nudge type.
+4. **Design the nudge**: Write the specific message, default, or prompt.
+5. **Measure effect**: Did behavior change? Log opened, converted, trend.
+6. **Iterate**: If conversion <20% for 2 weeks, switch nudge type.
+
+## Ethics Guidelines (Sunstein, 2014 — Publicity Principle)
+
+- **Transparency**: Every nudge must be labeled as AI-generated.
+- **Opt-out**: Always provide a clear way to decline or dismiss.
+- **Proportionality**: Match nudge intensity to situation severity.
+- **Publicity test**: Would you be comfortable seeing this nudge on the front page?
+- **No dark patterns**: Never trick, deceive, or hide the opt-out.
+
+## Nudge Ladder (Escalation Pattern)
+
+Day 0: Default — pre-fill desired outcome
+Day 3: Prompt — gentle reminder in personal chat
+Day 7: Social proof — "X% have already done this"
+Day 14: Default + Salience — auto-add to next meeting agenda
+Day 30: Escalation — notify department head + meeting chair
+
+Each step includes opt-out: "Pågår — påminn mig senare."
+
+## Integration with Strategy Nudge Engine
+
+- `strategy.department.report` — weekly reports with review workflow
+- `strategy.meeting.decision` — decisions with nudge_level, nudge_opt_out
+- `okr.objective._get_salience_level()` — critical/warning/ok color coding
+- `strategy.meeting.decision.cron_nudge_ladder()` — daily escalation
+- `ai.kaizen.report.nudge_metrics` — weekly aggregation per department"""
+
 _RECIPE_ODOO_CONTEXT = """# Odoo Strategy Context
 
 Connect to Odoo strategy tools via XML-RPC. All strategy data lives in Odoo models.
@@ -542,6 +821,29 @@ _SKILLS = [
      'general', 'freemium, pricing tiers, free trial, premium, conversion funnel',
      _RECIPE_FREEMIUM, f'{GITHUB_BASE}/freemium-packaging/SKILL.md'),
 
+    # ── Meetings ──
+    ('meeting-prep', 'Meeting Preparation',
+     'Prepare a strategic meeting agenda with AI-generated briefs per agenda item.',
+     'general', 'meeting, agenda, board meeting, management meeting, mötesförberedelse, dagordning',
+     _RECIPE_MEETING_PREP, ''),
+
+    ('meeting-minutes', 'Meeting Minutes',
+     'Generate structured meeting minutes from a completed meeting with decisions and actions.',
+     'general', 'minutes, protokoll, meeting notes, board minutes, styrelseprotokoll',
+     _RECIPE_MEETING_MINUTES, ''),
+
+    ('board-secretary', 'Board Secretary',
+     'Monitor open decisions, governance compliance, and prepare meeting follow-up.',
+     'general', 'board secretary, governance, decision tracking, styrelsesekreterare, beslutsuppföljning',
+     _RECIPE_BOARD_SECRETARY, ''),
+
+    # ── Behavioral design ──
+    ('behavioral-design', 'Behavioral Design',
+     'Apply behavioral science and nudge design to guide users toward strategic goals. '
+     'Covers defaults, social proof, salience, friction reduction, and implementation intentions.',
+     'general', 'nudge, behavioral design, beteendedesign, choice architecture, nudging, valarkitektur',
+     _RECIPE_BEHAVIORAL_DESIGN, ''),
+
     # ── Meta ──
     ('odoo-strategy-context', 'Odoo Strategy Context',
      'Connect to Odoo strategy tools via XML-RPC. Provides model references and security constraints.',
@@ -582,6 +884,12 @@ _AGENTS = [
      ['odoo-strategy-context', 'okr-framework', 'raci-matrix',
       'value-chain-analysis']),
 
+    ('agent_board_secretary', 'Board Secretary',
+     'Prepares meetings, generates minutes, and tracks governance compliance. '
+     'Handles board and management meeting lifecycles with AI assistance.',
+     'anthropic/claude-sonnet-4',
+     ['meeting-prep', 'meeting-minutes', 'board-secretary', 'behavioral-design']),
+
     ('agent_executor', 'Executor',
      'Supervisor fan-out target. Orchestrates multi-skill strategy generation. '
      'Synthesizes outputs from all agents into coherent business plans. '
@@ -593,7 +901,8 @@ _AGENTS = [
       'risk-matrix', 'value-chain-analysis', 'financial-forecast',
       'mece-issue-tree', 'hypothesis-tree', 'root-cause-analysis',
       'tam-sam-som', 'unit-economics', 'cost-plus-pricing',
-      'value-based-pricing', 'freemium-packaging', 'odoo-strategy-context']),
+      'value-based-pricing', 'freemium-packaging', 'odoo-strategy-context',
+      'meeting-prep', 'meeting-minutes', 'board-secretary', 'behavioral-design']),
 ]
 
 
@@ -747,6 +1056,76 @@ def post_init_hook(env):
     })
 
     _logger.info('Created review quest "%s"', review.name)
+    # ── 7. Create "Meeting Prep" quest (powerbox) ──
+    meeting_model = env['ir.model'].search([('model', '=', 'strategy.meeting')], limit=1)
+    model_ids = [(6, 0, [meeting_model.id])] if meeting_model else []
+
+    meeting_prep = env['ai.quest'].create({
+        'name': 'Meeting Prep',
+        'description': (
+            'Prepare a strategic meeting with AI-generated agenda briefs. '
+            'Generates content for each agenda item, flags decisions that need '
+            'to be made, and summarizes recent strategy changes.'
+        ),
+        'sub_description': 'AI-powered meeting preparation',
+        'init_type': 'powerbox',
+        'is_supervisor': False,
+        'status': 'active',
+        'use_chat_history': False,
+        'use_time_context': True,
+        'model_ids': model_ids,
+    })
+    env['ai.quest.agent'].create({
+        'quest_id': meeting_prep.id,
+        'agent_id': agent_map['agent_board_secretary'].id,
+        'sequence': 1,
+    })
+    _logger.info('Created quest "%s"', meeting_prep.name)
+
+    # ── 8. Create "Meeting Minutes" quest (powerbox) ──
+    meeting_minutes = env['ai.quest'].create({
+        'name': 'Meeting Minutes',
+        'description': (
+            'Generate structured meeting minutes from a completed meeting. '
+            'Extracts decisions, action items, and risk changes from the agenda.'
+        ),
+        'sub_description': 'AI-generated meeting minutes',
+        'init_type': 'powerbox',
+        'is_supervisor': False,
+        'status': 'active',
+        'use_chat_history': False,
+        'use_time_context': True,
+        'model_ids': model_ids,
+    })
+    env['ai.quest.agent'].create({
+        'quest_id': meeting_minutes.id,
+        'agent_id': agent_map['agent_board_secretary'].id,
+        'sequence': 1,
+    })
+    _logger.info('Created quest "%s"', meeting_minutes.name)
+
+    # ── 9. Create "Meeting Secretary" quest (cron, daily) ──
+    meeting_secretary = env['ai.quest'].create({
+        'name': 'Meeting Secretary',
+        'description': (
+            'Daily check of open decisions and governance items. '
+            'Flags pending decisions, suggests agenda items for next meeting, '
+            'and monitors governance compliance.'
+        ),
+        'sub_description': 'Daily governance and decision follow-up',
+        'init_type': 'manual',  # cron can be added via ir.cron
+        'is_supervisor': False,
+        'status': 'active',
+        'use_chat_history': False,
+        'use_time_context': True,
+    })
+    env['ai.quest.agent'].create({
+        'quest_id': meeting_secretary.id,
+        'agent_id': agent_map['agent_board_secretary'].id,
+        'sequence': 1,
+    })
+    _logger.info('Created quest "%s"', meeting_secretary.name)
+
     _logger.info(
         'ai_agent_core_strategy: %d skills, %d agents, %d quests created',
         len(skill_map), len(agent_map), 3)

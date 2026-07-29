@@ -39,6 +39,21 @@ INIT_TYPES = [
     ('openai_api', 'OpenAI API'),
 ]
 
+DEFAULT_AGENT_CREATOR_PROMPT = """You are a creative director designing AI agents for a Swedish workplace.
+Create a memorable, slightly playful agent persona for the role: {topic}
+
+Return ONLY a JSON object with these keys:
+- name: a catchy Swedish-sounding name (e.g. "Moms-Magnus", "Bokslut-Britta")
+- alias_name: short lowercase alias for @mentions (no spaces, e.g. "magnus")
+- personality: 1-2 sentences describing character traits
+- style: how the agent communicates
+- values: guiding principles
+- boundaries: what the agent must NOT do
+- trigger_words: comma-separated keywords for routing
+- avatar_description: visual description for an avatar
+
+Keep it professional but with personality."""
+
 
 class AIQuest(models.Model):
     _name = 'ai.quest'
@@ -76,6 +91,44 @@ class AIQuest(models.Model):
     agent_ids = fields.One2many('ai.quest.agent', 'quest_id', string='Agents')
     agent_count = fields.Integer(compute='_compute_agent_count')
     is_supervisor = fields.Boolean('Supervisor Mode')
+
+    orchestration_mode = fields.Selection([
+        ('single', 'Single Agent'),
+        ('supervisor', 'Supervisor (Hidden Team)'),
+        ('buzz', 'Buzz Workspace (Visible Team)'),
+        ('linear', 'Linear Pipeline'),
+        ('automation', 'Automation'),
+    ], string='Orchestration Mode', default='single',
+        help='How multiple agents collaborate in this quest. '
+             'Buzz makes agents visible as channel members.')
+
+    # ── Buzz workspace settings ──
+    allow_auto_create_agents = fields.Boolean(
+        'Auto-create Agents', default=True,
+        help='Allow this quest to proactively create new agents when needed.')
+    max_auto_agents = fields.Integer(
+        'Max Auto-created Agents', default=5,
+        help='Hard limit on agents created automatically by this quest.')
+    agent_creator_prompt = fields.Text(
+        'Agent Creator Prompt',
+        default=DEFAULT_AGENT_CREATOR_PROMPT,
+        help='LLM prompt template for generating new agent personas.')
+
+    # ── Multi-surface shadow session for Buzz workspaces ──
+    buzz_channel_session_id = fields.Many2one(
+        'ai.quest.session', string='Buzz Channel Session',
+        help='Shared web UI session that mirrors the linked Discuss channel.')
+
+    # ── Orchestration helpers ──
+
+    def _get_effective_orchestration_mode(self):
+        """Return effective orchestration mode, honoring legacy is_supervisor."""
+        self.ensure_one()
+        if self.orchestration_mode and self.orchestration_mode != 'single':
+            return self.orchestration_mode
+        if self.is_supervisor:
+            return 'supervisor'
+        return 'single'
 
     identity_id = fields.Many2one('ai.identity', string='Agent Identity',
         help='Select a template to create a personal copy for this quest. '
@@ -120,6 +173,21 @@ class AIQuest(models.Model):
     use_company_info = fields.Boolean(default=True)
     use_personal_info = fields.Boolean(default=True)
     use_personal_lang = fields.Boolean(default=True)
+
+    # ── Company Memory Injection ──
+    inject_company_memory = fields.Boolean(
+        string='Inject Company Memory', default=False,
+        help='Include the company\'s shared memories in the system prompt.')
+    inject_nudging = fields.Boolean(
+        string='Enable Nudging', default=False,
+        help='Enable proactive nudges via chatter activities and notifications.')
+    company_memory_categories = fields.Many2many(
+        'ai.company.memory.category',
+        'ai_quest_company_memory_category_rel',
+        'quest_id', 'category_id',
+        string='Company Memory Categories',
+        help='Limit company memory to specific categories.\n'
+             'Leave empty to include all accessible categories.')
     use_time_context = fields.Boolean(default=True)
     chat_history_limit = fields.Integer(default=10)
 
@@ -648,6 +716,10 @@ class AIQuest(models.Model):
         if not msg_text.strip():
             return None
 
+        # ── Buzz workspace branch ──
+        if self._get_effective_orchestration_mode() == 'buzz':
+            return self._buzz_chat(message, channel, msg_text, history_ctx)
+
         full_system = (self.description or '')
         if history_ctx:
             full_system += f'\n\n## Recent conversation\n{history_ctx}'
@@ -700,6 +772,281 @@ class AIQuest(models.Model):
                 _logger.warning('Invalid filter_domain: %s', e)
 
         return self.action_run_scheduled()
+
+    # ── Buzz workspace methods ──
+
+    def _buzz_route_message(self, message):
+        """Select the best agent in this buzz workspace for a message.
+
+        Priority:
+        1. @mention of agent alias
+        2. Trigger word match
+        3. LLM routing (if no clear match)
+        4. Fallback to first agent / leader
+        """
+        self.ensure_one()
+        if self.orchestration_mode != 'buzz':
+            return None
+
+        body = (message.body or '').lower()
+        agent_rels = self.agent_ids
+        if not agent_rels:
+            return None
+
+        # 1. @mention
+        for rel in agent_rels:
+            alias = (rel.agent_id.alias_name or '').lower()
+            if alias and f'@{alias}' in body:
+                return rel
+
+        # 2. Trigger words
+        for rel in agent_rels:
+            triggers = [t.strip().lower() for t in (rel.agent_id.trigger_words or '').split(',') if t.strip()]
+            if any(t in body for t in triggers):
+                return rel
+
+        # 3. Leader / fallback
+        leader = agent_rels.filtered(lambda r: r.role == 'leader')
+        if leader:
+            return leader[0]
+        return agent_rels[0]
+
+    def _buzz_run_agent(self, agent_rel, prompt, history_text=''):
+        """Run a single agent and return its response text."""
+        self.ensure_one()
+        agent = agent_rel.agent_id
+        system = self.description or ''
+        if agent.identity_id:
+            system = agent.identity_id.system_prompt or system
+        elif agent.ai_backstory:
+            system += f"\n\n{agent.ai_backstory}"
+
+        # Use existing run() with custom system prompt for simplicity
+        # TODO: per-agent model selection, tool registry
+        return self.run(prompt, system_prompt=system)
+
+    def _buzz_post_as_agent(self, agent, body, channel, internal=False):
+        """Post a message to the channel as the agent's partner."""
+        self.ensure_one()
+        if not agent.partner_id or not channel:
+            return None
+        return channel.sudo().with_context(ai_buzz_internal=internal).message_post(
+            body=f'<p>{body}</p>',
+            message_type='comment',
+            subtype_xmlid='mail.mt_comment',
+            author_id=agent.partner_id.id,
+        )
+
+    def _buzz_auto_agent_count(self):
+        """Count auto-created agents in this quest."""
+        self.ensure_one()
+        return len(self.agent_ids.filtered('is_auto_created'))
+
+    def _buzz_generate_persona(self, topic):
+        """Use LLM to generate a JSON persona for a new agent."""
+        self.ensure_one()
+        prompt_template = self.agent_creator_prompt or DEFAULT_AGENT_CREATOR_PROMPT
+        prompt = prompt_template.format(topic=topic)
+        try:
+            raw = self.with_context(ai_single_agent_run=True).run(
+                prompt, system_prompt=prompt_template.split('{topic}')[0])
+            # Extract JSON from markdown code block if present
+            text = raw or ''
+            if '```json' in text:
+                text = text.split('```json')[1].split('```')[0]
+            elif '```' in text:
+                text = text.split('```')[1].split('```')[0]
+            return json.loads(text.strip())
+        except Exception as e:
+            _logger.warning('Buzz persona generation failed: %s', e)
+            return {
+                'name': f'Specialist: {topic[:30]}',
+                'alias_name': topic.lower().replace(' ', '-')[:20],
+                'personality': f'Hjälpsam specialist inom {topic}.',
+                'style': 'Korta, tydliga svar.',
+                'values': 'Korrekthet > snabbhet.',
+                'boundaries': 'Gör inga juridiska tolkningar.',
+                'trigger_words': topic,
+                'avatar_description': f'Avatar for {topic} specialist',
+            }
+
+    def _buzz_suggest_or_create_agent(self, topic):
+        """Create or suggest a new agent for an uncovered topic.
+
+        If allow_auto_create_agents is True and under limit, create directly.
+        Otherwise suggest to the user.
+        """
+        self.ensure_one()
+        if self._buzz_auto_agent_count() >= self.max_auto_agents:
+            return {
+                'created': False,
+                'reason': 'limit',
+                'message': _('Max %s auto-created agents reached.') % self.max_auto_agents,
+            }
+
+        persona = self._buzz_generate_persona(topic)
+        identity = self.env['ai.identity'].sudo().create({
+            'name': persona['name'],
+            'personality': persona.get('personality', ''),
+            'style': persona.get('style', ''),
+            'values': persona.get('values', ''),
+            'boundaries': persona.get('boundaries', ''),
+        })
+        agent = self.env['ai.agent'].sudo().create({
+            'name': persona['name'],
+            'alias_name': persona.get('alias_name', topic.lower().replace(' ', '-')[:20]),
+            'trigger_words': persona.get('trigger_words', topic),
+            'description': persona.get('description', f'Auto-created specialist for {topic}'),
+            'identity_id': identity.id,
+        })
+        self.env['ai.quest.agent'].sudo().create({
+            'quest_id': self.id,
+            'agent_id': agent.id,
+            'role': 'member',
+            'is_auto_created': True,
+        })
+
+        # Generate AI avatar (falls back to default initials if no image model)
+        agent._generate_avatar_image(persona.get('avatar_description', ''))
+
+        if self.allow_auto_create_agents:
+            return {
+                'created': True,
+                'agent': agent,
+                'message': _('I have called in %s to help with this.') % agent.name,
+            }
+        return {
+            'created': False,
+            'suggested': agent,
+            'reason': 'manual',
+            'message': _('Should I call in %s to help with this?') % agent.name,
+        }
+
+    def _buzz_ensure_channel_session(self):
+        """Get or create the shared web UI session for this buzz workspace."""
+        self.ensure_one()
+        if self.buzz_channel_session_id:
+            return self.buzz_channel_session_id
+        session = self.env['ai.quest.session'].sudo().create({
+            'quest_id': self.id,
+            'name': f'Buzz: {self.name}',
+            'thread_name': self.name,
+            'status': 'active',
+            'user_id': self.env.ref('base.user_root').id,
+        })
+        self.buzz_channel_session_id = session.id
+        return session
+
+    def _buzz_sync_message_to_session(self, body, role='user', agent=None):
+        """Mirror a channel message to the shared web UI session."""
+        self.ensure_one()
+        if self.orchestration_mode != 'buzz':
+            return None
+        session = self._buzz_ensure_channel_session()
+        seq = len(session.session_line_ids) + 1
+        prefix = ''
+        if agent and role == 'assistant':
+            prefix = f'[{agent.name}] '
+        return self.env['ai.quest.session.line'].sudo().create({
+            'session_id': session.id,
+            'sequence': seq,
+            'role': role,
+            'content': f'{prefix}{body}'[:4000],
+        })
+
+    def _buzz_chat(self, message, channel, msg_text, history_ctx='', depth=0):
+        """Handle a channel message in buzz workspace mode."""
+        self.ensure_one()
+
+        # Avoid responding to our own agents (prevents loops)
+        author_partner = message.author_id
+        agent_partners = self.agent_ids.mapped('agent_id.partner_id')
+        if author_partner and author_partner in agent_partners:
+            return None
+
+        # Skip messages mirrored from the web UI to avoid double-processing
+        if self.env.context.get('buzz_web_ui_sync'):
+            return None
+
+        # Mirror incoming user/human message to shared web UI session
+        is_human = author_partner not in agent_partners
+        if is_human:
+            self._buzz_sync_message_to_session(msg_text, role='user')
+
+        # Limit consecutive agent turns
+        MAX_DEPTH = 3
+        if depth >= MAX_DEPTH:
+            _logger.info('Buzz chat max depth reached for quest %s', self.name)
+            return None
+
+        # Route to the best agent
+        agent_rel = self._buzz_route_message(message)
+
+        if not agent_rel:
+            # No agent matched — try proactive creation
+            topic = msg_text[:50]
+            result = self._buzz_suggest_or_create_agent(topic)
+            if result.get('created') and result.get('agent'):
+                agent_rel = self.agent_ids.filtered(
+                    lambda r: r.agent_id == result['agent'])
+                if agent_rel:
+                    agent_rel = agent_rel[0]
+                # Notify channel about the new agent
+                self._buzz_post_as_agent(
+                    result['agent'], result['message'], channel)
+            else:
+                # Post suggestion or limit message as quest (bot_user)
+                if channel:
+                    channel.message_post(
+                        body=f'<p>{result["message"]}</p>',
+                        message_type='comment', subtype_xmlid='mail.mt_comment')
+                return None
+
+        if not agent_rel:
+            return None
+
+        # Run the selected agent
+        try:
+            answer = self._buzz_run_agent(agent_rel, msg_text, history_ctx)
+            if not answer or not channel:
+                return answer
+
+            posted = self._buzz_post_as_agent(
+                agent_rel.agent_id, answer, channel, internal=(depth > 0))
+
+            # Mirror agent response to shared web UI session
+            self._buzz_sync_message_to_session(answer, role='assistant', agent=agent_rel.agent_id)
+
+            # Agent-to-agent: if answer @mentions another agent, route to them
+            next_rel = self._buzz_route_message_from_text(answer, exclude=agent_rel.agent_id)
+            if next_rel and depth < MAX_DEPTH - 1:
+                # Build a synthetic message for the next agent
+                synthetic = self.env['mail.message'].new({
+                    'body': f'<p>{answer}</p>',
+                    'model': 'discuss.channel',
+                    'res_id': channel.id,
+                    'author_id': agent_rel.agent_id.partner_id.id,
+                })
+                self._buzz_chat(
+                    synthetic, channel, answer, history_ctx, depth=depth + 1)
+
+            return answer
+        except Exception as e:
+            _logger.error('Buzz chat failed for quest %s: %s', self.name, e)
+            return None
+
+    def _buzz_route_message_from_text(self, text, exclude=None):
+        """Route based on plain text, optionally excluding an agent."""
+        self.ensure_one()
+        text_lower = (text or '').lower()
+        for rel in self.agent_ids:
+            agent = rel.agent_id
+            if exclude and agent == exclude:
+                continue
+            alias = (agent.alias_name or '').lower()
+            if alias and f'@{alias}' in text_lower:
+                return rel
+        return None
 
     @api.model
     def _migrate_init_types(self):
@@ -789,6 +1136,45 @@ class AIQuest(models.Model):
                         _logger.warning('Chatter failed: %s', e)
             except Exception as e:
                 _logger.error('Context injection failed: %s', e)
+
+        # Level 4: Personal Memory (ai.personal.memory)
+        if self.user_id and 'ai.personal.memory' in self.env:
+            try:
+                memory_block = self.env['ai.personal.memory'].build_system_prompt_block(
+                    user_id=self.user_id.id,
+                    query=self.description,
+                    max_chars=2200,
+                )
+                if memory_block:
+                    parts.append(f"\n\n{memory_block}")
+            except Exception as e:
+                _logger.debug('Personal memory injection failed: %s', e)
+
+        # Level 5: Company Memory (ai.company.memory)
+        if self.inject_company_memory and 'ai.company.memory' in self.env:
+            try:
+                cat_ids = self.company_memory_categories.ids if self.company_memory_categories else None
+                company_id = self.company_id.id or self.env.company.id
+                memory_block = self.env['ai.company.memory'].build_system_prompt_block(
+                    company_id=company_id,
+                    user_id=self.env.user.id,
+                    max_chars=2000,
+                )
+                if memory_block:
+                    parts.append(f"\n\n{memory_block}")
+            except Exception as e:
+                _logger.debug('Company memory injection failed: %s', e)
+
+        # Level 6: Company Mission & Values (use_company_info)
+        if self.use_company_info:
+            company = self.env.user.company_id
+            cinfo = []
+            if company.company_mission:
+                cinfo.append(f"## Company Mission\n{company.company_mission}")
+            if company.company_values:
+                cinfo.append(f"## Company Values\n{company.company_values}")
+            if cinfo:
+                parts.append("\n\n" + "\n\n".join(cinfo))
 
         if parts:
             res += "\n".join(parts)
@@ -896,7 +1282,7 @@ class AIQuest(models.Model):
         return False
 
     def _build_loop(self, provider, tools, model, system_prompt, max_rounds=10):
-        """Build AgentLoop or SupervisorLoop based on is_supervisor flag.
+        """Build AgentLoop or SupervisorLoop based on orchestration mode.
 
         Returns a callable loop object with a `run(prompt)` async method.
         """
@@ -907,7 +1293,10 @@ class AIQuest(models.Model):
         if extra:
             system_prompt = (system_prompt or '') + extra
 
-        if not self.is_supervisor or len(self.agent_ids) <= 1:
+        mode = self._get_effective_orchestration_mode()
+        if self.env.context.get('ai_single_agent_run'):
+            mode = 'single'
+        if mode not in ('supervisor', 'buzz') or len(self.agent_ids) <= 1:
             # Single agent — use standard AgentLoop
             return AgentLoop(
                 provider=provider, tools=tools,
@@ -917,7 +1306,7 @@ class AIQuest(models.Model):
                 ),
             )
 
-        # Multi-agent supervisor mode
+        # Multi-agent supervisor / buzz mode
         from odoo.addons.ai_agent_core.core.supervisor import (
             SupervisorLoop, SupervisorConfig, SpecialistAgent,
         )
@@ -1637,6 +2026,32 @@ class AIQuest(models.Model):
             raise UserError(_('Powerbox error: %s') % str(e))
 
 
+    def write(self, vals):
+        res = super(AIQuest, self).write(vals)
+        if any(k in vals for k in ('orchestration_mode', 'channel_id', 'is_supervisor')):
+            self._sync_buzz_agents_to_channel()
+        return res
+
+    def _sync_buzz_agents_to_channel(self):
+        """Sync agent partners to channel when buzz mode or channel changes."""
+        for quest in self:
+            if quest._get_effective_orchestration_mode() != 'buzz' or not quest.channel_id:
+                continue
+            quest.channel_id.ai_quest_id = quest.id
+            for rel in quest.agent_ids:
+                rel.agent_id._ensure_partner()
+            agent_ids = quest.agent_ids.mapped('agent_id').ids
+            quest.channel_id.ai_agent_ids = [(6, 0, agent_ids)]
+            quest.channel_id._sync_ai_agent_members()
+
+    @api.onchange('orchestration_mode')
+    def _onchange_orchestration_mode(self):
+        """Keep legacy is_supervisor in sync."""
+        if self.orchestration_mode == 'supervisor':
+            self.is_supervisor = True
+        elif self.orchestration_mode and self.orchestration_mode != 'single':
+            self.is_supervisor = False
+
 # ---------------------------------------------------------------------------
 # Helper functions
 # ---------------------------------------------------------------------------
@@ -1816,3 +2231,58 @@ class AIQuestAgent(models.Model):
     quest_id = fields.Many2one('ai.quest', required=True, ondelete='cascade')
     agent_id = fields.Many2one('ai.agent', required=True, string='Agent')
     sequence = fields.Integer(default=10)
+    role = fields.Selection([
+        ('member', 'Member'),
+        ('leader', 'Leader'),
+        ('observer', 'Observer'),
+        ('on_demand', 'On Demand'),
+    ], default='member', string='Role',
+        help='Role of this agent within the quest.')
+    is_auto_created = fields.Boolean(
+        'Auto-created', default=False,
+        help='True if this agent was created automatically by the quest.')
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        records = super(AIQuestAgent, self).create(vals_list)
+        for rec in records:
+            quest = rec.quest_id
+            if quest._get_effective_orchestration_mode() == 'buzz' and quest.channel_id:
+                rec.agent_id._ensure_partner()
+                quest.channel_id.ai_agent_ids = [(4, rec.agent_id.id)]
+                quest.channel_id._sync_ai_agent_members()
+        return records
+
+    def unlink(self):
+        for rec in self:
+            quest = rec.quest_id
+            agent = rec.agent_id
+            if quest.channel_id and agent in quest.channel_id.ai_agent_ids:
+                quest.channel_id.ai_agent_ids = [(3, agent.id)]
+                # Remove partner from channel members if not used by another buzz quest in same channel
+                if agent.partner_id:
+                    other_buzz_assignments = self.search([
+                        ('agent_id', '=', agent.id),
+                        ('quest_id.channel_id', '=', quest.channel_id.id),
+                        ('id', '!=', rec.id),
+                    ])
+                    if not other_buzz_assignments:
+                        member = self.env['discuss.channel.member'].sudo().search([
+                            ('channel_id', '=', quest.channel_id.id),
+                            ('partner_id', '=', agent.partner_id.id),
+                        ], limit=1)
+                        if member:
+                            member.unlink()
+        return super(AIQuestAgent, self).unlink()
+
+    def action_dismiss_auto_agent(self):
+        """Remove an auto-created agent from this quest and delete it if unused."""
+        for rec in self:
+            if not rec.is_auto_created:
+                raise UserError(_('Only auto-created agents can be dismissed.'))
+            agent = rec.agent_id
+            rec.unlink()
+            # Delete agent if it has no other quest assignments
+            if not self.env['ai.quest.agent'].search_count([('agent_id', '=', agent.id)]):
+                agent.sudo().unlink()
+        return {'type': 'ir.actions.act_window_close'}

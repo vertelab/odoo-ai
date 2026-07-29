@@ -248,6 +248,60 @@ def builtin_tools() -> list[Tool]:
             source="builtin",
         ),
         Tool(
+            name="browser_navigate",
+            description="Navigate to a URL using a headless browser and return the full page text content. "
+                        "Useful for browsing websites that require JavaScript rendering, "
+                        "checking if sites are up, or extracting content from dynamic pages. "
+                        "Delegates to a Pi-agent via NATS.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "The URL to navigate to (e.g. https://example.com)",
+                    },
+                    "action": {
+                        "type": "string",
+                        "enum": ["snapshot", "screenshot", "check_uptime"],
+                        "description": "What to do on the page. snapshot = read page text, "
+                                       "screenshot = capture image, check_uptime = verify page loads",
+                    },
+                },
+                "required": ["url"],
+            },
+            handler=None,
+            risk_level="read_only",
+            source="builtin",
+            executor="nats",
+            capabilities=["browser"],
+            nats_subject="pi.task.do",
+            nats_skills="agent-browser",
+        ),
+        Tool(
+            name="graph_query",
+            description="Query the Odoo Mind graph database using Cypher. "
+                        "Use this to find relationships between Odoo records — "
+                        "partners, companies, emails, invoices, strategy plans, "
+                        "knowledge articles. "
+                        "Returns JSON with nodes and relationships. "
+                        "Example: MATCH (p:OdooPartner {id: 42})-[:HAS_CONTACT]->(person) RETURN person.name, person.email "
+                        "READ-ONLY only. Cannot modify data.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Cypher query. Must be read-only (MATCH/RETURN only). "
+                                       "Example: MATCH (p:OdooPartner)-[:BELONGS_TO]->(c:Company {id: 1}) RETURN p.name",
+                    },
+                },
+                "required": ["query"],
+            },
+            handler=_tool_graph_query,
+            risk_level="read_only",
+            source="builtin",
+        ),
+        Tool(
             name="echo",
             description="Echo back the message. Useful for testing.",
             parameters={
@@ -529,6 +583,36 @@ def builtin_tools() -> list[Tool]:
 async def _tool_echo(message: str) -> str:
     """Echo back the message. Test tool."""
     return message
+
+
+async def _tool_graph_query(env, query: str = "") -> str:
+    """Query the Odoo Mind AGE graph using Cypher.
+
+    Runs read-only Cypher queries against the odoo_mind graph.
+    Returns results as JSON string.
+
+    Args:
+        env: Odoo environment (injected by wrap_tools_with_env)
+        query: Cypher query string (MATCH/RETURN only)
+
+    Returns:
+        JSON string with query results
+    """
+    import json
+    if not query or not query.strip():
+        return json.dumps({"error": "query is required"})
+    try:
+        executor = env['graph.executor']
+        if not executor.is_age_available():
+            return json.dumps({
+                "error": "Odoo Mind graph is not available. "
+                         "Apache AGE extension may not be installed.",
+                "hint": "Run: salt '*' state.apply postgres.age",
+            })
+        results = executor.cypher(query.strip(), read_only=True, timeout=10)
+        return json.dumps(results, indent=2, default=str)
+    except Exception as e:
+        return json.dumps({"error": f"Graph query failed: {e}"})
 
 
 # Global NATS connection (lazy-init)

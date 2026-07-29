@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+
+        <!-- Smart button on res.company form -->
+        <record id="view_res_company_form_inherit_memory" model="ir.ui.view">
+            <field name="name">res.company.form.inherit.company.memory</field>
+            <field name="model">res.company</field>
+            <field name="inherit_id" ref="base.view_company_form"/>
+            <field name="arch" type="xml">
+                <div name="button_box" position="inside">
+                    <button name="action_open_company_memory"
+                            type="object"
+                            class="oe_stat_button"
+                            icon="fa-database">
+                        <div class="o_stat_info">
+                            <field name="company_memory_count"/>
+                            <span class="o_stat_text">Memories</span>
+                        </div>
+                    </button>
+                </div>
+            </field>
+        </record>
+
+    </data>
+</odoo>

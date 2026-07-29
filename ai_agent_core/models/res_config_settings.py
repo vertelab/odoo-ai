@@ -30,6 +30,28 @@ class ResConfigSettings(models.TransientModel):
              '/pi/callback endpoints. If empty, falls back to the '
              'AI_AGENT_API_SECRET environment variable.')
 
+    # ── NATS Executor settings (tool-executor-nats) ──
+    pi_nats_max_retries = fields.Integer(
+        'Pi-Agent Max Retries',
+        config_parameter='pi.nats.max_retries', default=3,
+        help='Number of times to retry a NATS tool call before giving up.')
+
+    pi_nats_max_restarts = fields.Integer(
+        'Pi-Agent Max Restarts',
+        config_parameter='pi.nats.max_restarts', default=5,
+        help='Maximum number of Pi-agent restarts within the restart window.')
+
+    pi_nats_restart_window = fields.Integer(
+        'Pi-Agent Restart Window (minutes)',
+        config_parameter='pi.nats.restart_window', default=60,
+        help='Time window in minutes for counting Pi-agent restarts.')
+
+    # ── Odoo Mind Graph settings ──
+    odoomind_sync_batch_size = fields.Integer(
+        'Graph Sync Batch Size',
+        config_parameter='odoomind.sync_batch_size', default=500,
+        help='Number of records per batch when syncing to AGE graph.')
+
     @api.model
     def get_values(self):
         res = super().get_values()

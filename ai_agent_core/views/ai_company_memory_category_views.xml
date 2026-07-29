@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+
+        <!-- Tree view -->
+        <record id="view_ai_company_memory_category_list" model="ir.ui.view">
+            <field name="name">ai.company.memory.category.list</field>
+            <field name="model">ai.company.memory.category</field>
+            <field name="arch" type="xml">
+                <list>
+                    <field name="name"/>
+                    <field name="description"/>
+                    <field name="group_ids" widget="many2many_tags"/>
+                    <field name="active"/>
+                </list>
+            </field>
+        </record>
+
+        <!-- Form view -->
+        <record id="view_ai_company_memory_category_form" model="ir.ui.view">
+            <field name="name">ai.company.memory.category.form</field>
+            <field name="model">ai.company.memory.category</field>
+            <field name="arch" type="xml">
+                <form>
+                    <sheet>
+                        <group>
+                            <field name="name"/>
+                            <field name="active"/>
+                        </group>
+                        <group>
+                            <field name="description"/>
+                        </group>
+                        <group>
+                            <field name="group_ids" widget="many2many_tags"/>
+                        </group>
+                    </sheet>
+                </form>
+            </field>
+        </record>
+
+        <!-- Action -->
+        <record id="action_ai_company_memory_category" model="ir.actions.act_window">
+            <field name="name">Memory Categories</field>
+            <field name="res_model">ai.company.memory.category</field>
+            <field name="view_mode">list,form</field>
+        </record>
+
+        <!-- Menu -->
+        <menuitem id="menu_ai_company_memory_category"
+                  name="Memory Categories"
+                  parent="menu_ai_configuration"
+                  action="action_ai_company_memory_category"
+                  sequence="92"/>
+
+    </data>
+</odoo>

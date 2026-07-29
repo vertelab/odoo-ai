@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+
+        <!-- List view -->
+        <record id="view_ai_company_memory_list" model="ir.ui.view">
+            <field name="name">ai.company.memory.list</field>
+            <field name="model">ai.company.memory</field>
+            <field name="arch" type="xml">
+                <list default_order="create_date desc">
+                    <field name="content_preview" string="Memory"/>
+                    <field name="category"/>
+                    <field name="category_id"/>
+                    <field name="scope"/>
+                    <field name="importance"/>
+                    <field name="create_date"/>
+                </list>
+            </field>
+        </record>
+
+        <!-- Form view -->
+        <record id="view_ai_company_memory_form" model="ir.ui.view">
+            <field name="name">ai.company.memory.form</field>
+            <field name="model">ai.company.memory</field>
+            <field name="arch" type="xml">
+                <form>
+                    <sheet>
+                        <group>
+                            <group>
+                                <field name="company_id"/>
+                                <field name="category_id"/>
+                                <field name="scope"/>
+                                <field name="importance"/>
+                            </group>
+                            <group>
+                                <field name="source"/>
+                                <field name="source_ref"/>
+                                <field name="create_date"/>
+                                <field name="access_count"/>
+                            </group>
+                        </group>
+                        <group>
+                            <field name="content" nolabel="1"/>
+                        </group>
+                    </sheet>
+                </form>
+            </field>
+        </record>
+
+        <!-- Search view -->
+        <record id="view_ai_company_memory_search" model="ir.ui.view">
+            <field name="name">ai.company.memory.search</field>
+            <field name="model">ai.company.memory</field>
+            <field name="arch" type="xml">
+                <search>
+                    <field name="content"/>
+                    <field name="category"/>
+                    <field name="category_id"/>
+                    <field name="source"/>
+                    <field name="company_id"/>
+                    <separator/>
+                    <filter name="archived" string="Archived"
+                            domain="[('archived', '=', True)]"/>
+                    <group expand="0" string="Group By">
+                        <filter name="group_category" string="Category"
+                                context="{'group_by': 'category'}"/>
+                        <filter name="group_source" string="Source"
+                                context="{'group_by': 'source'}"/>
+                        <filter name="group_scope" string="Scope"
+                                context="{'group_by': 'scope'}"/>
+                    </group>
+                </search>
+            </field>
+        </record>
+
+        <!-- Action -->
+        <record id="action_ai_company_memory" model="ir.actions.act_window">
+            <field name="name">Company Memories</field>
+            <field name="res_model">ai.company.memory</field>
+            <field name="view_mode">list,form</field>
+        </record>
+
+        <!-- Menu -->
+        <menuitem id="menu_ai_company_memory"
+                  name="Company Memories"
+                  parent="menu_ai_configuration"
+                  action="action_ai_company_memory"
+                  sequence="91"/>
+
+    </data>
+</odoo>

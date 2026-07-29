@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+        <record id="company_memory_cat_customer" model="ai.company.memory.category">
+            <field name="name">customer</field>
+            <field name="description">Customer intelligence</field>
+        </record>
+        <record id="company_memory_cat_supplier" model="ai.company.memory.category">
+            <field name="name">supplier</field>
+            <field name="description">Supplier intelligence</field>
+        </record>
+        <record id="company_memory_cat_strategy" model="ai.company.memory.category">
+            <field name="name">strategy</field>
+            <field name="description">Strategy, OKR, BMC, SWOT</field>
+        </record>
+        <record id="company_memory_cat_marketing" model="ai.company.memory.category">
+            <field name="name">marketing</field>
+            <field name="description">Marketing campaigns, KPIs</field>
+        </record>
+        <record id="company_memory_cat_competitor" model="ai.company.memory.category">
+            <field name="name">competitor</field>
+            <field name="description">Competitor intelligence</field>
+        </record>
+        <record id="company_memory_cat_knowledge" model="ai.company.memory.category">
+            <field name="name">knowledge</field>
+            <field name="description">Knowledge base articles</field>
+        </record>
+        <record id="company_memory_cat_website" model="ai.company.memory.category">
+            <field name="name">website</field>
+            <field name="description">Website content</field>
+        </record>
+        <record id="company_memory_cat_mgmt_summary" model="ai.company.memory.category">
+            <field name="name">mgmt_summary</field>
+            <field name="description">Management summary</field>
+        </record>
+    </data>
+</odoo>

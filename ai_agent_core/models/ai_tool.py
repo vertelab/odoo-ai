@@ -22,6 +22,11 @@ RISK_LEVELS = [
     ('execute', 'Execute Code'),
 ]
 
+EXECUTOR_SELECTION = [
+    ('local', 'Local (AgentLoop)'),
+    ('nats', 'NATS (Pi Agent)'),
+]
+
 
 class AITool(models.Model):
     """A user-defined tool that agents can call."""
@@ -36,15 +41,11 @@ class AITool(models.Model):
         help='What this tool does. Shown to the LLM for tool selection.',
     )
     code = fields.Text(
-        'Code', required=True,
+        'Code', required=False,  # Not required for NATS-executor tools
         help=(
             'Python code for this tool. Must define an async function '
             'named "execute" that takes keyword arguments and returns a string. '
-            'Access Odoo ORM via "env" variable. '
-            'Example:\n'
-            'async def execute(domain=None, limit=10):\n'
-            '    records = env["res.partner"].search(domain or [], limit=limit)\n'
-            '    return "\\n".join(r.name for r in records)'
+            'Not needed for NATS-executor tools (executor="nats").'
         ),
     )
     parameters = fields.Text(
@@ -53,6 +54,33 @@ class AITool(models.Model):
         help='JSON Schema for tool parameters. Defines what the LLM can pass.',
     )
     risk_level = fields.Selection(RISK_LEVELS, default='read_only', required=True)
+
+    # Executor routing (tool-executor-nats)
+    executor = fields.Selection(
+        EXECUTOR_SELECTION, default='local', required=True,
+        help='Where this tool executes. Local = in AgentLoop. NATS = via Pi-agent.',
+    )
+    capabilities = fields.Text(
+        'Capabilities (JSON list)',
+        default='[]',
+        help='What capabilities this tool requires. E.g. ["browser"], ["infra"]. '
+             'For future capability-based skill filtering.',
+    )
+
+    # NATS executor config (when executor="nats")
+    nats_subject = fields.Char(
+        'NATS Subject', default='pi.task.do',
+        help='NATS subject for request-reply when executor="nats".',
+    )
+    nats_skills = fields.Char(
+        'Pi-Agent Skills',
+        help='Comma-separated Pi-agent skill names required for this tool. '
+             'E.g. "agent-browser", "agent-browser, caddy-routing".',
+    )
+    nats_timeout = fields.Integer(
+        'NATS Timeout (s)', default=30,
+        help='Max seconds to wait for Pi-agent reply.',
+    )
 
     # Relations
     agent_ids = fields.Many2many(
@@ -189,15 +217,42 @@ class AITool(models.Model):
         """Convert to core.tools.Tool for use in AgentLoop.
 
         Returns a Tool dataclass instance compatible with the core loop.
+        For NATS-executor tools, handler is None (execution via NATS).
         """
         from ..core.tools import Tool
+        import json
 
         params = json.loads(self.parameters) if self.parameters else {
             "type": "object", "properties": {}, "required": []
         }
 
+        caps = []
+        if self.capabilities:
+            try:
+                caps = json.loads(self.capabilities)
+                if not isinstance(caps, list):
+                    caps = []
+            except (json.JSONDecodeError, TypeError):
+                caps = []
+
+        if self.executor == "nats":
+            # NATS-executor tool — no handler code needed
+            return Tool(
+                name=self.name,
+                description=self.description,
+                parameters=params,
+                handler=None,
+                risk_level=self.risk_level,
+                source="custom",
+                executor="nats",
+                capabilities=caps,
+                nats_subject=self.nats_subject or "pi.task.do",
+                nats_skills=self.nats_skills or "",
+                nats_timeout=self.nats_timeout or 30,
+            )
+
+        # Local executor tool (existing behavior)
         async def handler(**kwargs):
-            # Re-execute in Odoo context
             try:
                 result = self._execute_tool(kwargs)
                 return result
@@ -211,4 +266,6 @@ class AITool(models.Model):
             handler=handler,
             risk_level=self.risk_level,
             source="custom",
+            executor="local",
+            capabilities=caps,
         )

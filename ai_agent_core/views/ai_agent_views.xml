@@ -105,6 +105,20 @@
                                 <field name="budget_used" readonly="1"/>
                             </group>
                         </page>
+                        <page string="Buzz Workspace">
+                            <group>
+                                <field name="is_buzz_active" readonly="1"/>
+                                <field name="alias_name"
+                                       invisible="not is_buzz_active"/>
+                                <field name="trigger_words"
+                                       invisible="not is_buzz_active"/>
+                                <field name="partner_id"
+                                       invisible="not is_buzz_active" readonly="1"/>
+                                <button name="action_regenerate_avatar" type="object"
+                                        string="Regenerate Avatar"
+                                        invisible="not is_buzz_active"/>
+                            </group>
+                        </page>
                     </notebook>
                 </sheet>
             </form>

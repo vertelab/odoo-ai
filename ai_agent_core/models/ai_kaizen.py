@@ -55,6 +55,11 @@ class AIKaizenReport(models.Model):
     finding_ids = fields.One2many('ai.kaizen.finding', 'report_id',
                                    string='Findings')
 
+    # Nudge metrics (strategy-nudge-engine)
+    nudge_metrics = fields.Json('Nudge Metrics',
+        help='Per-department nudge effectiveness data: '
+             '{department: {nudge_type: {delivered, opened, converted, trend}}}')
+
     @api.depends('quest_id.name', 'week_start')
     def _compute_display_name(self):
         for r in self:

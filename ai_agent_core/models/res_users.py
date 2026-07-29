@@ -15,6 +15,50 @@ class ResUsers(models.Model):
         help='Personal AI quest for this user. Created automatically '
              'when personal companion is enabled.')
 
+    # ── Personal Memory (ai.personal.memory) ──
+    personal_memory_ids = fields.One2many(
+        'ai.personal.memory', 'user_id',
+        string='Personal Memories',
+        help='All personal memories for this user. '
+             'Accessible from ANY AI quest the user interacts with.')
+
+    personal_memory_count = fields.Integer(
+        string='Memory Count',
+        compute='_compute_personal_memory_count',
+        help='Number of personal memories for this user.')
+
+    # ── Company Memory Access ──
+    learn_from_discuss = fields.Boolean('Learn from Discuss', default=True, help='Extract learnings from Discuss channel conversations.')
+
+    company_memory_categories = fields.Many2many(
+        'ai.company.memory.category',
+        'res_users_company_memory_category_rel',
+        'user_id', 'category_id',
+        string='Company Memory Categories',
+        help='Additional company memory categories this user can access.\n'
+             'By default, access is determined by the user\'s groups.\n'
+             'Use this to grant extra access to specific categories.')
+
+    @api.depends('personal_memory_ids')
+    def _compute_personal_memory_count(self):
+        for r in self:
+            r.personal_memory_count = len(r.personal_memory_ids)
+
+    def action_open_personal_memory(self):
+        """Smart button: öppna användarens personliga minnen."""
+        self.ensure_one()
+        return {
+            'name': 'Personal Memories',
+            'type': 'ir.actions.act_window',
+            'res_model': 'ai.personal.memory',
+            'view_mode': 'list,form',
+            'target': 'current',
+            'domain': [('user_id', '=', self.id)],
+            'context': {
+                'default_user_id': self.id,
+            },
+        }
+
     def _create_personal_companion(self, identity_template=None):
         """Create or get personal AI companion quest for this user."""
         self.ensure_one()

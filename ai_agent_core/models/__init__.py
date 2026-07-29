@@ -3,6 +3,7 @@ from . import ai_provider
 from . import ai_model
 from . import ai_tag
 from . import ai_quest
+from . import ai_quest_buzz_agent_wizard
 from . import ai_agent
 from . import ai_session
 from . import ai_memory
@@ -18,4 +19,15 @@ from . import ai_kaizen
 from . import ai_tag
 from . import ai_onboard
 from . import base_model
+from . import ai_memory_mixin
+from . import ai_personal_memory
+from . import ai_company_memory
+from . import ai_company_memory_category
+from . import res_company
 from . import mail_thread
+from . import mail_message
+from . import discuss_channel
+from . import ai_graph_node
+from . import ai_personal_goal
+from . import ai_company_identity
+from . import ai_discuss_learning

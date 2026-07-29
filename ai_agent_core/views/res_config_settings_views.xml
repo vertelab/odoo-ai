@@ -5,58 +5,34 @@
         <field name="model">res.config.settings</field>
         <field name="inherit_id" ref="base_setup.res_config_settings_view_form"/>
         <field name="arch" type="xml">
-            <xpath expr="//div[@id='main_settings']" position="after">
-                <div class="app_settings_block" id="ai_api_settings"
-                     string="AI API"
-                     data-string="AI API">
-                    <h2>AI API</h2>
-                    <div class="row mt16">
-                        <div class="col-12 col-lg-6 o_setting_box">
-                            <div class="o_setting_left_pane"/>
-                            <div class="o_setting_right_pane">
-                                <label for="ai_api_secret"/>
-                                <div class="text-muted">
-                                    Shared Bearer token for /ai/v1/* and /pi/callback.
-                                    Falls back to the AI_AGENT_API_SECRET environment
-                                    variable when empty.
-                                </div>
-                                <div class="content-group mt16">
-                                    <div class="mt8">
-                                        <field name="ai_api_secret" password="True"/>
-                                    </div>
-                                </div>
-                            </div>
+            <xpath expr="//form" position="inside">
+                <app data-string="AI API" string="AI API" name="ai_api">
+                    <setting id="ai_api_secret_setting">
+                        <field name="ai_api_secret" password="True"/>
+                        <div class="text-muted">
+                            Shared Bearer token for /ai/v1/* and /pi/callback.
+                            Falls back to the AI_AGENT_API_SECRET env variable.
                         </div>
-                    </div>
-                </div>
-                <div class="app_settings_block" id="ai_personal_companion_settings"
-                     string="Personal AI Companion"
-                     data-string="Personal AI Companion">
-                    <h2>Personal AI Companion</h2>
-                    <div class="row mt16">
-                        <div class="col-12 col-lg-6 o_setting_box">
-                            <div class="o_setting_left_pane">
-                                <field name="ai_personal_companion_enabled"/>
-                            </div>
-                            <div class="o_setting_right_pane">
-                                <label for="ai_personal_companion_enabled"/>
-                                <div class="text-muted">
-                                    Creates a personal AI quest for each user.
-                                    The companion learns from interactions and adapts over time.
-                                </div>
-                                <div class="content-group mt16"
-                                     invisible="not ai_personal_companion_enabled">
-                                    <div class="mt8">
-                                        <label for="ai_personal_companion_identity_id"
-                                               string="Default Identity Template"/>
-                                        <field name="ai_personal_companion_identity_id"
-                                               required="ai_personal_companion_enabled"/>
-                                    </div>
-                                </div>
-                            </div>
+                    </setting>
+                </app>
+                <app data-string="AI Companion" string="AI Companion" name="ai_companion">
+                    <setting id="ai_companion_setting">
+                        <field name="ai_personal_companion_enabled"/>
+                        <div class="text-muted">
+                            Creates a personal AI quest for each user.
                         </div>
-                    </div>
-                </div>
+                    </setting>
+                    <setting id="ai_companion_identity_setting"
+                             invisible="not ai_personal_companion_enabled">
+                        <field name="ai_personal_companion_identity_id"/>
+                    </setting>
+                </app>
+                <app data-string="Odoo Mind" string="Odoo Mind Graph" name="ai_mind_graph">
+                    <setting id="ai_graph_sync_batch">
+                        <label for="odoomind_sync_batch_size"/>
+                        <field name="odoomind_sync_batch_size"/>
+                    </setting>
+                </app>
             </xpath>
         </field>
     </record>

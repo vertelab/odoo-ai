@@ -112,7 +112,7 @@
                         <field name="sub_description" placeholder="Short description"/>
                     </div>
                     <group col="4">
-                        <field name="is_supervisor"/>
+                        <field name="orchestration_mode" widget="radio"/>
                         <field name="model_ids" widget="many2many_tags"/>
                         <field name="identity_id"/>
                         <field name="tag_ids" widget="many2many_tags"/>
@@ -144,6 +144,13 @@
                                 <field name="chat_user_id" invisible="not has_chat and not has_channel"
                                        readonly="1"/>
                                 <field name="channel_id" invisible="not has_channel"/>
+                                <!-- Buzz workspace settings -->
+                                <field name="allow_auto_create_agents"
+                                       invisible="orchestration_mode != 'buzz'"/>
+                                <field name="max_auto_agents"
+                                       invisible="orchestration_mode != 'buzz'"/>
+                                <field name="agent_creator_prompt"
+                                       invisible="orchestration_mode != 'buzz'"/>
                                 <field name="allow_trigger_words" invisible="not has_chat and not has_channel"/>
                                 <field name="chat_trigger_words"
                                        invisible="(not has_chat and not has_channel) or not allow_trigger_words"/>
@@ -163,10 +170,20 @@
                         <page string="Agents">
                             <field name="skill_ids" widget="many2many_tags"
                                    string="Quest Skills (pipeline)"/>
+                            <button name="%(action_ai_quest_buzz_agent_wizard)d"
+                                    type="action" string="Create Buzz Agent"
+                                    class="btn-primary"
+                                    invisible="orchestration_mode != 'buzz'"/>
                             <field name="agent_ids">
                                 <list editable="bottom">
                                     <field name="sequence" widget="handle"/>
                                     <field name="agent_id"/>
+                                    <field name="role" optional="show"/>
+                                    <field name="is_auto_created" optional="hide"/>
+                                    <button name="action_dismiss_auto_agent" type="object"
+                                            string="Dismiss" icon="fa-trash"
+                                            confirm="Remove this auto-created agent?"
+                                            invisible="not is_auto_created"/>
                                 </list>
                             </field>
                         </page>

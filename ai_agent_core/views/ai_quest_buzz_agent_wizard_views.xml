@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <record id="ai_quest_buzz_agent_wizard_form" model="ir.ui.view">
+        <field name="name">ai.quest.buzz.agent.wizard.form</field>
+        <field name="model">ai.quest.buzz.agent.wizard</field>
+        <field name="arch" type="xml">
+            <form>
+                <sheet>
+                    <group>
+                        <field name="quest_id" readonly="1"/>
+                        <field name="topic" placeholder="e.g. Swedish VAT"/>
+                    </group>
+                </sheet>
+                <footer>
+                    <button name="action_create" type="object" string="Create Agent" class="btn-primary"/>
+                    <button string="Cancel" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_ai_quest_buzz_agent_wizard" model="ir.actions.act_window">
+        <field name="name">Create Buzz Agent</field>
+        <field name="res_model">ai.quest.buzz.agent.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+</odoo>

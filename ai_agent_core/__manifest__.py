@@ -12,7 +12,7 @@
 
 {
     'name': 'odoo-ai: AI Agent Core',
-    'version': '1.0',
+    'version': '1.5',
     'summary': 'Standalone AI agent engine — SSE streaming, provider management, identity, skills, tools',
     'category': 'AI Orchestration',
     'description': """
@@ -49,10 +49,13 @@
         'data/cron_scheduled_quests.xml',
         'data/bridge_config.xml',
         'data/youtube_tools.xml',
+        'data/browser_tools.xml',
+        'data/graph_base.xml',
         'views/ai_monthly_summary_views.xml',
         'views/menu.xml',
         'views/ai_provider_views.xml',
         'views/ai_model_views.xml',
+        'views/ai_quest_buzz_agent_wizard_views.xml',
         'views/ai_quest_views.xml',
         'views/ai_agent_views.xml',
         'views/ai_identity_views.xml',
@@ -60,9 +63,18 @@
         'views/ai_tool_views.xml',
         'views/ai_tag_views.xml',
         'views/ai_quest_init_type_views.xml',
+        'views/ai_personal_memory_views.xml',
+        'views/ai_personal_goal_views.xml',
+        'views/ai_company_memory_views.xml',
+        'views/ai_company_memory_category_views.xml',
+        'views/ai_graph_node_views.xml',
+        'views/res_company_views.xml',
+        'views/res_company_memory_views.xml',
+        'data/company_memory_categories.xml',
+        'views/res_users_personal_memory_views.xml',
         'views/powerbox_templates.xml',
         'views/ai_session_views.xml',
-        # 'views/res_config_settings_views.xml',  # xpath broken in Odoo 18, fix later
+                        'views/res_config_settings_views.xml',
         'views/templates.xml',
     ],
     'assets': {
@@ -74,5 +86,8 @@
     'installable': True,
     'auto_install': False,
     'application': True,
-    'post_init_hook': 'post_init_hook',
+    'demo': [
+        'demo/demo_data.xml',
+    ],
+    'post_init_hook': 'post_init_hook_personal_memory',
 }

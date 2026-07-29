@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_ai_personal_goal_tree" model="ir.ui.view">
+        <field name="name">ai.personal.goal.tree</field>
+        <field name="model">ai.personal.goal</field>
+        <field name="arch" type="xml">
+            <list string="Personal Goals" multi_edit="0">
+                <field name="name"/>
+                <field name="user_id" optional="hide"/>
+                <field name="category" widget="badge"/>
+                <field name="progress" widget="progressbar"/>
+                <field name="status" widget="badge"
+                       decoration-success="status == 'completed'"
+                       decoration-warning="status in ('accepted','active')"
+                       decoration-muted="status == 'cancelled'"/>
+                <field name="time_bound"/>
+                <field name="source" optional="hide"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_ai_personal_goal_form" model="ir.ui.view">
+        <field name="name">ai.personal.goal.form</field>
+        <field name="model">ai.personal.goal</field>
+        <field name="arch" type="xml">
+            <form string="Personal Goal">
+                <header>
+                    <field name="status" widget="statusbar"
+                           statusbar_visible="proposed,active,completed"/>
+                    <button name="action_accept" type="object" string="Accept"
+                            class="btn-success"
+                            invisible="status != 'proposed'"/>
+                            invisible="status not in ('active','accepted')"/>
+                    <button name="action_complete" type="object" string="Complete"
+                            class="btn-success"
+                            invisible="status != 'active'"/>
+                    <button name="action_cancel" type="object" string="Cancel"
+                            class="btn-danger"
+                            invisible="status in ('completed','cancelled')"/>
+                </header>
+                <sheet>
+                    <div class="oe_title">
+                        <h1><field name="name" placeholder="Goal name..."/></h1>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="user_id"/>
+                            <field name="category"/>
+                            <field name="source"/>
+                            <field name="created_by_ai"/>
+                        </group>
+                        <group>
+                            <field name="progress" widget="progressbar"/>
+                            <field name="time_bound"/>
+                            <field name="quest_id"/>
+                        </group>
+                    </group>
+                    <group string="SMART Criteria">
+                        <group>
+                            <field name="specific" placeholder="What exactly do you want to achieve?"/>
+                            <field name="measurable" placeholder="How will you measure progress?"/>
+                            <field name="achievable" placeholder="Is this realistic?"/>
+                        </group>
+                        <group>
+                            <field name="relevant" placeholder="Why does this matter?"/>
+                            <field name="description"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page name="nudging" string="Nudging">
+                            <group>
+                                <group>
+                                    <field name="nudge_count"/>
+                                    <field name="streak_count"/>
+                                    <field name="auto_review_interval_days"/>
+                                    <field name="accept_by_default"/>
+                                </group>
+                                <group>
+                                    <field name="last_checkin"/>
+                                    <field name="implementation_intention"
+                                           placeholder="E.g. Friday 09:00, at my desk"/>
+                                    <field name="source_ref"/>
+                                </group>
+                            </group>
+                        </page>
+                        <page name="memories" string="Related Memories">
+                            <field name="linked_memory_ids" widget="many2many_tags"/>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_ai_personal_goal_search" model="ir.ui.view">
+        <field name="name">ai.personal.goal.search</field>
+        <field name="model">ai.personal.goal</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="name"/>
+                <field name="user_id"/>
+                <field name="category"/>
+                <filter name="proposed" string="AI-suggested" domain="[('status','=','proposed')]"/>
+                <filter name="active" string="Active" domain="[('status','=','active')]"/>
+                <filter name="completed" string="Completed" domain="[('status','=','completed')]"/>
+                <separator/>
+                <filter name="my_goals" string="My Goals"
+                        domain="[('user_id','=',uid)]"/>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_ai_personal_goal" model="ir.actions.act_window">
+        <field name="name">Personal Goals</field>
+        <field name="res_model">ai.personal.goal</field>
+        <field name="view_mode">tree,form</field>
+        <field name="help" type="html">
+            <p>Track your personal goals with SMART criteria.
+            Goals can be set manually or suggested by your AI companion.</p>
+        </field>
+    </record>
+
+    <menuitem id="menu_ai_personal_goal" name="Personal Goals"
+              parent="menu_ai_root" sequence="30"
+              action="action_ai_personal_goal"/>
+</odoo>

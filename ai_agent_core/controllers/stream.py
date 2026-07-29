@@ -9,6 +9,7 @@ Uses real BifrostProvider + StreamingAgentLoop (no mock).
 import asyncio
 import json
 import logging
+import threading
 import time
 from html import escape
 
@@ -192,6 +193,23 @@ class AIStreamController(http.Controller):
                         'content': prompt,
                     })
                     session.write_date = fields.Datetime.now()
+
+                    # Multi-surface: mirror user message to channel for buzz workspaces
+                    if quest and quest.orchestration_mode == 'buzz' and quest.channel_id:
+                        try:
+                            author = request.env.user.partner_id
+                            if not author:
+                                author = request.env.ref('base.partner_root')
+                            quest.channel_id.sudo().with_context(
+                                buzz_web_ui_sync=True
+                            ).message_post(
+                                body=f'<p>{escape(prompt)}</p>',
+                                message_type='comment',
+                                subtype_xmlid='mail.mt_comment',
+                                author_id=author.id,
+                            )
+                        except Exception:
+                            _logger.warning('Failed to mirror web UI message to channel', exc_info=True)
             except Exception:
                 pass
 
@@ -681,11 +699,49 @@ class AIStreamController(http.Controller):
                 if quest.identity_id and quest.identity_id.scope == 'personal':
                     _implicit_learn(quest.identity_id, content)
 
+                # Proactive company mission evolution (Hole 9)
+                try:
+                    if quest.use_company_info and role == 'assistant' and len(session.session_line_ids) >= 4:
+                        company = request.env.user.company_id
+                        if company.company_mission and request.env.user.has_group('base.group_system'):
+                            # Check thresholds
+                            config = request.env['ir.config_parameter'].sudo()
+                            interval = int(config.get_param('company.mission_review_interval_days', '30'))
+                            confidence_threshold = float(config.get_param('company.mission_confidence_threshold', '0.7'))
+                            last_review = company.company_mission_last_review or company.company_values_last_review
+                            if not last_review or (fields.Datetime.now() - last_review).days >= interval:
+                                # Thread the detection — don't block the response
+                                import threading
+                                threading.Thread(
+                                    target=_detect_and_suggest_mission,
+                                    args=(session.id, content, company.id, confidence_threshold),
+                                    daemon=True,
+                                ).start()
+                except Exception:
+                    pass  # Never fail the response over mission detection
+
             _logger.info("Saved response to session %s: %d in/%d out tokens, model=%s",
                         thread_id, token_input, token_output, model_real or 'unknown')
 
             # Trigger async memory extraction (T8)
             _extract_memories_async(session, content)
+
+            # Multi-surface: mirror assistant response to channel for buzz workspaces
+            if quest and quest.orchestration_mode == 'buzz' and quest.channel_id and role == 'assistant':
+                try:
+                    # Post as the first agent, or fallback to root
+                    agent = quest.agent_ids[:1].agent_id if quest.agent_ids else None
+                    author = agent.partner_id if agent and agent.partner_id else request.env.ref('base.partner_root')
+                    quest.channel_id.sudo().with_context(
+                        buzz_web_ui_sync=True
+                    ).message_post(
+                        body=f'<p>{escape(content)}</p>',
+                        message_type='comment',
+                        subtype_xmlid='mail.mt_comment',
+                        author_id=author.id,
+                    )
+                except Exception:
+                    _logger.warning('Failed to mirror assistant response to channel', exc_info=True)
 
         return Response(json.dumps({"status": "ok"}), content_type='application/json')
 
@@ -1261,6 +1317,82 @@ def _implicit_learn(identity, assistant_content):
         identity.user_model = new_model[:4000]
         _logger.info('Implicit learn: added %d facts to identity %s',
                      len(learnings), identity.name)
+
+
+def _detect_and_suggest_mission(session_id, last_response, company_id, threshold=0.7):
+    """Async thread: detect mission gap and suggest update via ai.company.memory."""
+    try:
+        with api.Environment.manage():
+            env = api.Environment(request.env.cr, request.env.uid, request.env.context)
+            session = env['ai.quest.session'].browse(session_id)
+            if not session.exists():
+                return
+
+            quest = session.quest_id
+            company = env['res.company'].browse(company_id)
+            if not company.exists():
+                return
+
+            # Build conversation context
+            lines = session.session_line_ids.sorted('sequence')
+            conversation = '\n'.join(
+                f"[{l.role}] {l.content[:300]}"
+                for l in lines[-8:]
+            )
+
+            prompt = f"""
+            Compare the conversation below with this company's mission and values.
+
+            Mission: {company.company_mission or '(not set)'}
+            Values: {company.company_values or '(not set)'}
+
+            Conversation:
+            {conversation}
+
+            Is there a gap, deepening, or clarification opportunity?
+            Return ONLY JSON or null:
+            {{"has_opportunity": true/false, "type": "gap|deepening|clarification",
+              "reason": "...", "suggested_mission": "...", "suggested_values": "...",
+              "field": "mission|values|both", "confidence": 0.0-1.0}}
+            """
+            try:
+                Provider = env['ai.provider']
+                response = Provider._generate(
+                    model='gpt-4o-mini',
+                    messages=[{'role': 'user', 'content': prompt}],
+                )
+                import json as _json
+                result = _json.loads(response)
+            except Exception:
+                return
+
+            if not result.get('has_opportunity') or result.get('confidence', 0) < threshold:
+                return
+
+            # Log the suggestion as a company memory for review
+            suggested = []
+            if result.get('suggested_mission') and result['suggested_mission'] != company.company_mission:
+                suggested.append(f"Mission: {result['suggested_mission']}")
+            if result.get('suggested_values') and result['suggested_values'] != company.company_values:
+                suggested.append(f"Values: {result['suggested_values']}")
+
+            if suggested:
+                env['ai.company.memory'].create({
+                    'company_id': company.id,
+                    'content': (
+                        f"**AI-suggested {result.get('type', 'update')}**\n"
+                        f"**Reason**: {result.get('reason', '')}\n"
+                        f"**Suggested**: {' | '.join(suggested)}\n"
+                        f"**Confidence**: {result.get('confidence', 0)}\n"
+                        f"**Session**: {session.name}\n"
+                        f"**Date**: {fields.Datetime.now()}"
+                    ),
+                    'category': 'management',
+                    'scope': 'public',
+                    'importance': 'medium',
+                })
+    except Exception:
+        pass
 
 
 # ---------------------------------------------------------------------------

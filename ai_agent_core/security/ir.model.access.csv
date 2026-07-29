@@ -1,6 +1,7 @@
 id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
 access_ai_quest,ai.quest,model_ai_quest,base.group_user,1,1,1,1
 access_ai_quest_agent,ai.quest.agent,model_ai_quest_agent,base.group_user,1,1,1,1
+access_ai_quest_buzz_agent_wizard,ai.quest.buzz.agent.wizard,model_ai_quest_buzz_agent_wizard,base.group_user,1,1,1,1
 access_ai_agent,ai.agent,model_ai_agent,base.group_user,1,1,1,1
 access_ai_agent_tool,ai.agent.tool,model_ai_agent_tool,base.group_user,1,1,1,1
 access_ai_agent_memory,ai.agent.memory,model_ai_agent_memory,base.group_user,1,1,1,1
@@ -22,3 +23,17 @@ access_ai_onboard_candidate,ai.onboard.candidate,model_ai_onboard_candidate,base
 access_ai_onboard_admin,ai.onboard.admin,model_ai_onboard_candidate,base.group_system,1,1,1,1
 access_ai_quest_init_type,ai.quest.init_type,model_ai_quest_init_type,base.group_user,1,1,1,1
 access_ai_tag_user,ai.tag.user,model_ai_tag,base.group_user,1,1,1,1
+access_ai_personal_memory_user,ai.personal.memory.user,model_ai_personal_memory,base.group_user,1,0,0,0
+access_ai_personal_memory_admin,ai.personal.memory.admin,model_ai_personal_memory,base.group_system,1,1,1,1
+access_ai_company_memory_user,ai.company.memory.user,model_ai_company_memory,base.group_user,1,0,0,0
+access_ai_company_memory_admin,ai.company.memory.admin,model_ai_company_memory,base.group_system,1,1,1,1
+access_graph_node_definition_user,graph.node.definition.user,model_graph_node_definition,base.group_user,1,0,0,0
+access_graph_node_definition_admin,graph.node.definition.admin,model_graph_node_definition,base.group_system,1,1,1,1
+access_graph_executor_user,graph.executor.user,model_graph_executor,base.group_user,1,0,0,0
+access_ai_company_memory_category_user,ai.company.memory.category.user,model_ai_company_memory_category,base.group_user,1,0,0,0
+access_ai_company_memory_category_admin,ai.company.memory.category.admin,model_ai_company_memory_category,base.group_system,1,1,1,1
+
+access_ai_tool,ai.tool,model_ai_tool,base.group_user,1,1,1,1
+access_ai_personal_goal_user,ai.personal.goal.user,model_ai_personal_goal,base.group_user,1,1,1,1
+access_discuss_learning_user,discuss.learning.user,model_discuss_learning,base.group_user,1,0,0,0
+access_company_identity_user,company.identity.evolution.user,model_company_identity_evolution,base.group_user,1,0,0,0

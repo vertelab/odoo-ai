@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Actions -->
+    <record id="action_graph_node_definition" model="ir.actions.act_window">
+        <field name="name">Graph Node Definitions</field>
+        <field name="res_model">graph.node.definition</field>
+        <field name="view_mode">tree,form</field>
+        <field name="help" type="html">
+            <p>Bridge modules register graph node definitions to map Odoo models to AGE graph labels.</p>
+        </field>
+    </record>
+
+    <!-- Menu: Configuration → AI → Graph Definitions -->
+    <menuitem id="menu_ai_graph" name="Odoo Mind Graph"
+              parent="menu_ai_configuration" sequence="40"
+              action="action_graph_node_definition"/>
+
+    <!-- Tree view -->
+    <record id="view_graph_node_definition_tree" model="ir.ui.view">
+        <field name="name">graph.node.definition.tree</field>
+        <field name="model">graph.node.definition</field>
+        <field name="arch" type="xml">
+            <list string="Graph Nodes" multi_edit="0">
+                <field name="graph_label"/>
+                <field name="model_id" optional="hide"/>
+                <field name="node_count" string="Noder"/>
+                <field name="last_sync"/>
+                <field name="active" widget="boolean_toggle"/>
+                <field name="module_id" optional="hide"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- Form view -->
+    <record id="view_graph_node_definition_form" model="ir.ui.view">
+        <field name="name">graph.node.definition.form</field>
+        <field name="model">graph.node.definition</field>
+        <field name="arch" type="xml">
+            <form string="Graph Node Definition">
+                <header>
+                    <field name="active" widget="boolean_toggle"/>
+                    <button name="action_sync_now" type="object"
+                            string="Sync Now" class="btn-primary"/>
+                </header>
+                <sheet>
+                    <div class="oe_title">
+                        <h1><field name="graph_label"/></h1>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="model_id"/>
+                            <field name="name_field"/>
+                        </group>
+                        <group>
+                            <field name="last_sync"/>
+                            <field name="node_count"/>
+                            <field name="last_error" widget="text"/>
+                        </group>
+                    </group>
+                    <group string="Node Properties">
+                        <field name="node_properties" widget="code"
+                               options="{'mode': 'json'}"/>
+                    </group>
+                    <group string="Edge Definitions">
+                        <field name="edge_definitions" widget="code"
+                               options="{'mode': 'json'}"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!-- Search view -->
+    <record id="view_graph_node_definition_search" model="ir.ui.view">
+        <field name="name">graph.node.definition.search</field>
+        <field name="model">graph.node.definition</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="graph_label"/>
+                <field name="model_id"/>
+                <filter name="active" string="Active"
+                        domain="[('active', '=', True)]"/>
+                <filter name="inactive" string="Inactive"
+                        domain="[('active', '=', False)]"/>
+            </search>
+        </field>
+    </record>
+</odoo>

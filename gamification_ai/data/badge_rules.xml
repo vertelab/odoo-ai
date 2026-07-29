@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+        <!-- Badge for each goal category -->
+        <record id="badge_skill" model="gamification.badge">
+            <field name="name">Skill Builder</field>
+            <field name="description">Completed a skill development goal</field>
+            <field name="predefined_category">ai_goal_skill</field>
+            <field name="rule">once</field>
+            <field name="level">1</field>
+        </record>
+        <record id="badge_knowledge" model="gamification.badge">
+            <field name="name">Knowledge Seeker</field>
+            <field name="description">Completed a knowledge acquisition goal</field>
+            <field name="predefined_category">ai_goal_knowledge</field>
+            <field name="rule">once</field>
+            <field name="level">1</field>
+        </record>
+        <record id="badge_streak_4" model="gamification.badge">
+            <field name="name">Consistency</field>
+            <field name="description">Maintained a 4-week streak on a goal</field>
+            <field name="predefined_category">ai_streak_4</field>
+            <field name="rule">once</field>
+            <field name="level">1</field>
+        </record>
+        <record id="badge_first_goal" model="gamification.badge">
+            <field name="name">First Step</field>
+            <field name="description">Completed your first AI-suggested goal</field>
+            <field name="predefined_category">ai_first_goal</field>
+            <field name="rule">once</field>
+            <field name="level">1</field>
+        </record>
+        <record id="badge_three_goals" model="gamification.badge">
+            <field name="name">Goal Getter</field>
+            <field name="description">Completed 3 AI goals in one month</field>
+            <field name="predefined_category">ai_three_goals</field>
+            <field name="rule">once</field>
+            <field name="level">2</field>
+        </record>
+    </data>
+</odoo>

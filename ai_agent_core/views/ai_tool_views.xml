@@ -19,6 +19,7 @@
         <field name="arch" type="xml">
             <list string="AI Tools" editable="bottom">
                 <field name="name"/>
+                <field name="executor"/>
                 <field name="risk_level" widget="badge"/>
                 <field name="call_count" string="Calls"/>
                 <field name="error_count" string="Errors"/>
@@ -35,7 +36,8 @@
             <form string="AI Tool">
                 <header>
                     <button name="action_test" type="object" string="Test Tool"
-                            class="btn-primary"/>
+                            class="btn-primary"
+                            invisible="executor == 'nats'"/>
                     <field name="active" widget="boolean_toggle"/>
                 </header>
                 <sheet>
@@ -47,6 +49,9 @@
                             <field name="description"
                                    placeholder="What this tool does (shown to LLM)..."/>
                             <field name="risk_level"/>
+                            <field name="executor"/>
+                            <field name="capabilities"
+                                   placeholder='["browser", "infra"]'/>
                         </group>
                         <group>
                             <field name="call_count"/>
@@ -54,7 +59,15 @@
                             <field name="last_called"/>
                         </group>
                     </group>
-                    <group string="Code">
+                    <group string="NATS Config"
+                           invisible="executor != 'nats'">
+                        <field name="nats_subject"/>
+                        <field name="nats_skills"
+                               placeholder="agent-browser, caddy-routing"/>
+                        <field name="nats_timeout"/>
+                    </group>
+                    <group string="Code"
+                           invisible="executor == 'nats'">
                         <field name="code" widget="code"
                                options="{'mode': 'python'}"
                                placeholder="async def execute(**kwargs): return 'result'"/>

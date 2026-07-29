@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo noupdate="1">
+
+    <!-- ── Tool: browser_navigate ── -->
+    <!-- Delegate to Pi-agent's agent-browser skill via NATS (tool-executor-nats) -->
+    <record id="tool_browser_navigate" model="ai.tool">
+        <field name="name">browser_navigate</field>
+        <field name="description">Navigate to a URL and inspect the page content. Returns the page title, visible text, and a summary of what the page shows. Useful for verifying that websites are up, checking page content, or extracting information from web pages.</field>
+        <field name="executor">nats</field>
+        <field name="nats_subject">pi.task.do</field>
+        <field name="nats_skills">agent-browser</field>
+        <field name="risk_level">read_only</field>
+        <field name="active">True</field>
+        <field name="code" eval="''"/>
+        <field name="parameters">{"type": "object", "properties": {
+            "url": {"type": "string", "description": "URL to navigate to (e.g. https://example.com)"},
+            "action": {"type": "string", "enum": ["snapshot", "screenshot", "check_uptime"], "description": "What to do on the page. snapshot = read page text, screenshot = capture image, check_uptime = verify page loads"}
+        }, "required": ["url"]}</field>
+        <field name="capabilities">["browser"]</field>
+    </record>
+
+</odoo>
