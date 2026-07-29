@@ -223,7 +223,7 @@ class AIQuest(models.Model):
     use_core_loop = fields.Boolean('Use Core Loop', default=False)
 
     session_count = fields.Integer(compute='_compute_session_count')
-    session_ids = fields.One2many('ai.coworker.session', 'quest_id')
+    session_ids = fields.One2many('ai.coworker.session', 'coworker_id')
     session_object_count = fields.Integer(compute='_compute_session_object_count')
 
     @api.depends('session_ids')
