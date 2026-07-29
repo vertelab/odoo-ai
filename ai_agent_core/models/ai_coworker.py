@@ -1462,7 +1462,7 @@ class AIQuest(models.Model):
             [('name', '=', 'Quest Builder')], limit=1)
         if not builder:
             return {'type': 'ir.actions.act_url', 'url': '/ai/chat', 'target': 'new'}
-        url = f'/ai/chat?quest_id={builder.id}'
+        url = f'/ai/chat?coworker_id={builder.id}'
         if self.id:
             url += f'&context_quest={self.id}'
         return {'type': 'ir.actions.act_url', 'url': url, 'target': 'new'}
@@ -2169,10 +2169,10 @@ class AIQuestMonthlySummary(models.Model):
     """Monthly systemtoken summary for billing and reporting (T3.5)."""
     _name = 'ai.coworker.monthly_summary'
     _description = 'Monthly Quest Summary'
-    _order = 'month desc, quest_id asc'
+    _order = 'month desc, coworker_id asc'
     _rec_name = 'display_name'
 
-    quest_id = fields.Many2one('ai.coworker', required=True, ondelete='cascade',
+    coworker_id = fields.Many2one('ai.coworker', required=True, ondelete='cascade',
                                 string='Quest')
     month = fields.Char('Month', required=True,
                          help='YYYY-MM format')
@@ -2197,7 +2197,7 @@ class AIQuestMonthlySummary(models.Model):
     # Cost
     estimated_cost_usd = fields.Float('Est. Provider Cost (USD)')
 
-    @api.depends('quest_id.name', 'month')
+    @api.depends('coworker_id.name', 'month')
     def _compute_display_name(self):
         for r in self:
             quest_name = r.coworker_id.name if r.coworker_id else '?'

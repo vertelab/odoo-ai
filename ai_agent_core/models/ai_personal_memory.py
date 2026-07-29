@@ -190,7 +190,7 @@ class AIPersonalMemory(models.Model):
             content (str): Markdown-text med minnet
             category (str): Typ av minne (fact, preference, etc.)
             source (str): Var kommer minnet ifrån
-            quest_id (int, optional): ai.coworker.id
+            coworker_id (int, optional): ai.coworker.id
             session_id (int, optional): ai.coworker.session.id
             company_id (int, optional): res.company.id
             importance (str): low, medium, high
@@ -514,7 +514,7 @@ class AIPersonalMemory(models.Model):
         if not user_id:
             return 0
 
-        quest_id = session.coworker_id.id
+        coworker_id = session.coworker_id.id
 
         # Hämta session lines
         lines = session.session_line_ids.sorted('sequence')

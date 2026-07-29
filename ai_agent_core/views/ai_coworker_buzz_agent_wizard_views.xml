@@ -7,7 +7,7 @@
             <form>
                 <sheet>
                     <group>
-                        <field name="quest_id" readonly="1"/>
+                        <field name="coworker_id" readonly="1"/>
                         <field name="topic" placeholder="e.g. Swedish VAT"/>
                     </group>
                 </sheet>

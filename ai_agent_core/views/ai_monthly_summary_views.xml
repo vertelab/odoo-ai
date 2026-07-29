@@ -7,7 +7,7 @@
         <field name="arch" type="xml">
             <list>
                 <field name="month"/>
-                <field name="quest_id"/>
+                <field name="coworker_id"/>
                 <field name="total_sys_tokens"/>
                 <field name="started_mtokens"/>
                 <field name="total_input_tokens" optional="hide"/>
@@ -25,7 +25,7 @@
         <field name="model">ai.coworker.monthly_summary</field>
         <field name="arch" type="xml">
             <pivot>
-                <field name="quest_id" type="row"/>
+                <field name="coworker_id" type="row"/>
                 <field name="month" type="col"/>
                 <field name="total_sys_tokens" type="measure"/>
                 <field name="started_mtokens" type="measure"/>
@@ -40,7 +40,7 @@
         <field name="model">ai.coworker.monthly_summary</field>
         <field name="arch" type="xml">
             <graph type="bar" stacked="True">
-                <field name="quest_id" type="row"/>
+                <field name="coworker_id" type="row"/>
                 <field name="month" type="col"/>
                 <field name="total_sys_tokens" type="measure"/>
                 <field name="started_mtokens" type="measure"/>
@@ -63,13 +63,13 @@
         <field name="model">ai.coworker.monthly_summary</field>
         <field name="arch" type="xml">
             <search>
-                <field name="quest_id"/>
+                <field name="coworker_id"/>
                 <field name="month"/>
                 <filter string="Denna månad" name="this_month"
                         domain="[('month', '=', context_today().strftime('%Y-%m'))]"/>
                 <separator/>
                 <group expand="0" string="Group By">
-                    <filter string="Quest" name="group_quest" context="{'group_by':'quest_id'}"/>
+                    <filter string="Quest" name="group_quest" context="{'group_by':'coworker_id'}"/>
                     <filter string="Månad" name="group_month" context="{'group_by':'month'}"/>
                 </group>
             </search>

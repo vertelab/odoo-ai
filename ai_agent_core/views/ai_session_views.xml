@@ -7,7 +7,7 @@
             <list>
                 <field name="name"/>
                 <field name="thread_name"/>
-                <field name="quest_id"/>
+                <field name="coworker_id"/>
                 <field name="status" widget="badge"
                        decoration-success="status=='done'"
                        decoration-warning="status=='active'"/>

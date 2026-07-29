@@ -37,7 +37,7 @@ class AIStreamController(http.Controller):
         return request.make_response('pong', [('Content-Type', 'text/plain')])
 
     @http.route('/ai/stream', type='http', auth='public', cors='*', sitemap=False)
-    def stream(self, quest_id=None, prompt=None, session_id=None, **kw):
+    def stream(self, coworker_id=None, prompt=None, session_id=None, **kw):
         """Stream AI response via SSE. Supports session persistence."""
         if not prompt:
             return Response(
@@ -51,7 +51,7 @@ class AIStreamController(http.Controller):
         system_prompt = ""
         quest = None
 
-        if quest_id:
+        if coworker_id:
             try:
                 quest = request.env['ai.coworker'].browse(int(coworker_id))
                 if quest.exists():
@@ -410,7 +410,7 @@ class AIStreamController(http.Controller):
 
     @http.route('/ai/quest/skills', type='http', auth='public',
                 methods=['GET'], csrf=False, sitemap=False)
-    def quest_skills(self, quest_id=None, **kw):
+    def quest_skills(self, coworker_id=None, **kw):
         """Return available skills for a quest as JSON.
 
         Used by the web chat UI to populate the slash-command
@@ -418,7 +418,7 @@ class AIStreamController(http.Controller):
         identity, and quest-specific copies.
         """
         skills = []
-        if quest_id:
+        if coworker_id:
             try:
                 quest = request.env['ai.coworker'].browse(int(coworker_id))
                 if quest.exists():
@@ -463,14 +463,14 @@ class AIStreamController(http.Controller):
 
     @http.route('/ai/quest/models', type='http', auth='public',
                 methods=['GET'], csrf=False, sitemap=False)
-    def quest_models(self, quest_id=None, **kw):
+    def quest_models(self, coworker_id=None, **kw):
         """Return available models for a quest's agents with is_vision flag.
 
         Uses ai_agent_core fields only: agent_ids → agent_id.model_id → ai.model.
         """
         models = []
         seen = set()
-        if quest_id:
+        if coworker_id:
             try:
                 quest = request.env['ai.coworker'].browse(int(coworker_id))
                 if quest.exists():
@@ -558,7 +558,7 @@ class AIStreamController(http.Controller):
             "threads": [{
                 "id": s.id,
                 "name": s.thread_name or (s.name or 'Tråd'),
-                "quest_id": s.quest_id.id if s.quest_id else None,
+                "coworker_id": s.coworker_id.id if s.coworker_id else None,
                 "skill_id": s.skill_id.id if s.skill_id else None,
                 "last_activity": str(s.write_date) if s.write_date else None,
                 "message_count": s.line_count,
@@ -575,7 +575,7 @@ class AIStreamController(http.Controller):
         name = body.get('name', 'Ny tråd')
         # Clean name: remove newlines, collapse spaces, trim, limit length
         name = ' '.join(str(name).split())[:50]
-        coworker_id = body.get('quest_id')
+        coworker_id = body.get('coworker_id')
         skill_id = body.get('skill_id')
         # Builder context: the auto-init prompt ("Study this quest…") makes a
         # useless thread name — name the thread after the subject quest instead
@@ -593,8 +593,8 @@ class AIStreamController(http.Controller):
             'thread_name': name,
             'status': 'active',
         }
-        if quest_id:
-            vals['quest_id'] = int(coworker_id)
+        if coworker_id:
+            vals['coworker_id'] = int(coworker_id)
         if skill_id:
             vals['skill_id'] = int(skill_id)
         session = request.env['ai.coworker.session'].create(vals)
@@ -612,7 +612,7 @@ class AIStreamController(http.Controller):
         return Response(json.dumps({
             "id": session.id,
             "name": session.thread_name or (session.name or ''),
-            "quest_id": session.quest_id.id if session.quest_id else None,
+            "coworker_id": session.coworker_id.id if session.coworker_id else None,
             "messages": [{
                 "role": l.role,
                 "content": l.content or '',
@@ -686,8 +686,8 @@ class AIStreamController(http.Controller):
             session.write_date = fields.Datetime.now()
 
             # Increment quest all-time totals
-            if session.quest_id:
-                quest = session.quest_id
+            if session.coworker_id:
+                quest = session.coworker_id
                 quest.total_input_tokens += token_input
                 quest.total_output_tokens += token_output
                 quest.total_sys_tokens += int((token_input + token_output) * sys_mult)
@@ -811,13 +811,13 @@ class AIStreamController(http.Controller):
         Returns AI-processed text.
         """
         body = json.loads(request.httprequest.data or '{}')
-        coworker_id = body.get('quest_id')
+        coworker_id = body.get('coworker_id')
         text = body.get('text', '').strip()
         model = body.get('model', '')
         res_id = body.get('res_id')
 
-        if not quest_id or not text:
-            return Response(json.dumps({"error": "Missing quest_id or text"}),
+        if not coworker_id or not text:
+            return Response(json.dumps({"error": "Missing coworker_id or text"}),
                           content_type='application/json', status=400)
 
         quest = request.env['ai.coworker'].browse(int(coworker_id))
@@ -851,7 +851,7 @@ class AIStreamController(http.Controller):
         user = request.env.user
         body = json.loads(request.httprequest.data or '{}')
         learning = body.get('learning', '').strip()
-        coworker_id = body.get('quest_id')
+        coworker_id = body.get('coworker_id')
 
         if not learning:
             return Response(json.dumps({"error": "Empty learning"}),
@@ -859,10 +859,10 @@ class AIStreamController(http.Controller):
 
         # Find the quest (personal companion or specified)
         quest = None
-        if quest_id:
+        if coworker_id:
             quest = request.env['ai.coworker'].browse(int(coworker_id))
-        elif user.personal_quest_id:
-            quest = user.personal_quest_id
+        elif user.personal_coworker_id:
+            quest = user.personal_coworker_id
 
         if not quest or not quest.exists():
             return Response(json.dumps({
@@ -902,12 +902,12 @@ class AIStreamController(http.Controller):
         """Förbättra-kommando: uppdatera quest med feedback."""
         user = request.env.user
         body = json.loads(request.httprequest.data or '{}')
-        coworker_id = body.get('quest_id')
+        coworker_id = body.get('coworker_id')
         guidance_text = body.get('guidance', '')
         if not guidance_text.strip():
             return Response(json.dumps({"error": "Tom förbättringstext"}),
                           content_type='application/json', status=400)
-        quest = request.env['ai.coworker'].browse(int(coworker_id)) if quest_id else None
+        quest = request.env['ai.coworker'].browse(int(coworker_id)) if coworker_id else None
         if not quest or not quest.exists():
             return Response(json.dumps({"error": "Quest ej hittad"}),
                           content_type='application/json', status=404)
@@ -919,7 +919,7 @@ class AIStreamController(http.Controller):
         memory = request.env['ai.memory'].create({
             'name': f'Forbattring: {guidance_text[:80]}',
             'content': guidance_text,
-            'quest_id': quest.id,
+            'coworker_id': quest.id,
             'category': 'feedback',
             'importance': 'high',
         })
@@ -937,7 +937,7 @@ class AIStreamController(http.Controller):
                 methods=['POST'], csrf=False, sitemap=False)
     def upload_document(self, **kw):
         """Ladda upp dokument → RAG-minne (text eller FAISS)."""
-        coworker_id = kw.get('quest_id')
+        coworker_id = kw.get('coworker_id')
         memory_type = kw.get('memory_type', 'text')
         file_obj = request.httprequest.files.get('file')
         if not file_obj:
@@ -949,7 +949,7 @@ class AIStreamController(http.Controller):
         if not text or not text.strip():
             return Response(json.dumps({"error": "Kunde ej extrahera text"}),
                           content_type='application/json', status=400)
-        quest = request.env['ai.coworker'].browse(int(coworker_id)) if quest_id else None
+        quest = request.env['ai.coworker'].browse(int(coworker_id)) if coworker_id else None
 
         if memory_type == 'faiss':
             # Create FAISS memory from uploaded document
@@ -959,7 +959,7 @@ class AIStreamController(http.Controller):
                 memory = request.env['ai.memory'].create({
                     'name': f'FAISS: {filename}',
                     'content': text[:2000],
-                    'quest_id': quest.id if quest else None,
+                    'coworker_id': quest.id if quest else None,
                     'category': 'fact',
                     'importance': 'medium',
                     'memory_type': 'faiss',
@@ -983,7 +983,7 @@ class AIStreamController(http.Controller):
             m = request.env['ai.memory'].create({
                 'name': f'{filename} (del {i+1})' if len(chunks) > 1 else filename,
                 'content': chunk,
-                'quest_id': quest.id if quest else None,
+                'coworker_id': quest.id if quest else None,
                 'category': 'fact',
                 'importance': 'medium',
                 'tags': f'uploaded,{filename}',
@@ -1020,7 +1020,7 @@ def _get_quest_memories(quest) -> str:
     try:
         # Consolidated text memories
         memories = request.env['ai.memory'].search([
-            ('quest_id', '=', quest.id),
+            ('coworker_id', '=', quest.id),
             ('consolidated', '=', True),
             ('archived', '=', False),
         ], limit=20)
@@ -1234,7 +1234,7 @@ def _extract_memories_async(session, assistant_content):
         return
 
     try:
-        quest = session.quest_id
+        quest = session.coworker_id
         if not quest:
             return
 
@@ -1268,7 +1268,7 @@ def _extract_memories_async(session, assistant_content):
             request.env['ai.memory'].create({
                 'name': m['fact'][:80],
                 'content': m['fact'],
-                'quest_id': quest.id,
+                'coworker_id': quest.id,
                 'category': m['category'],
                 'importance': m['importance'],
                 'source_thread_id': session.id,
@@ -1328,7 +1328,7 @@ def _detect_and_suggest_mission(session_id, last_response, company_id, threshold
             if not session.exists():
                 return
 
-            quest = session.quest_id
+            quest = session.coworker_id
             company = env['res.company'].browse(company_id)
             if not company.exists():
                 return
@@ -1511,7 +1511,7 @@ class PICallbackController(http.Controller):
 
         # Create session with alert context
         session = request.env['ai.coworker.session'].create({
-            'quest_id': quest.id,
+            'coworker_id': quest.id,
             'name': f'Zabbix: {trigger[:100]}',
             'status': 'active',
             'user_id': request.env.ref('base.user_root', raise_if_not_found=False).id or 1,
@@ -1543,19 +1543,19 @@ class PICallbackController(http.Controller):
 
         body = json.loads(request.httprequest.data or '{}')
         batch_id = body.get('batch_id', '')
-        coworker_id = body.get('quest_id')
+        coworker_id = body.get('coworker_id')
         results = body.get('results', [])
         errors = body.get('errors', [])
 
-        if not quest_id:
-            return {'error': 'Missing quest_id', 'status': 400}
+        if not coworker_id:
+            return {'error': 'Missing coworker_id', 'status': 400}
 
         quest = request.env['ai.coworker'].browse(int(coworker_id))
         if not quest.exists():
             return {'error': 'Quest not found', 'status': 404}
 
         session = request.env['ai.coworker.session'].create({
-            'quest_id': quest.id,
+            'coworker_id': quest.id,
             'name': f'Bifrost batch: {batch_id}',
             'status': 'done',
             'user_id': request.env.ref('base.user_root', raise_if_not_found=False).id or 1,
@@ -1650,7 +1650,7 @@ class AIOpenAIAPI(http.Controller):
 
         quest = request.env['ai.coworker'].browse(coworker_id)
         if not quest.exists():
-            return Response(json.dumps({'error': {'message': f'Quest {quest_id} not found', 'type': 'invalid_request_error'}}),
+            return Response(json.dumps({'error': {'message': f'Quest {coworker_id} not found', 'type': 'invalid_request_error'}}),
                           status=404, content_type='application/json')
 
         # Extract last user message
@@ -1727,7 +1727,7 @@ class AIOpenAIAPI(http.Controller):
                     aloop.close()
 
                 response_text = response.text if hasattr(response, 'text') else str(response)
-                response_id = f'chatcmpl-{quest_id}-{fields.Datetime.now().timestamp()}'
+                response_id = f'chatcmpl-{coworker_id}-{fields.Datetime.now().timestamp()}'
 
                 return Response(json.dumps({
                     'id': response_id,
@@ -1756,7 +1756,7 @@ class AIOpenAIAPI(http.Controller):
             # Streaming SSE response
             def generate():
                 full_response = []
-                response_id = f'chatcmpl-{quest_id}-{fields.Datetime.now().timestamp()}'
+                response_id = f'chatcmpl-{coworker_id}-{fields.Datetime.now().timestamp()}'
                 created = int(fields.Datetime.now().timestamp())
 
                 try:

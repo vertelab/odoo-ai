@@ -26,7 +26,7 @@ class RouteDecision:
     destination: str           # existing | local | remote
     reasoning: str             # WHY this destination was chosen
     confidence: float = 0.0    # 0.0 - 1.0
-    quest_id: int = 0          # If destination=existing, which quest?
+    coworker_id: int = 0          # If destination=existing, which quest?
     tool_names: list[str] = field(default_factory=list)  # If local, which tools?
     model_suggestion: str = ""  # If remote, suggested model
     estimated_cost: float = 0.0  # If remote, estimated token cost
@@ -36,7 +36,7 @@ class RouteDecision:
             "destination": self.destination,
             "reasoning": self.reasoning,
             "confidence": self.confidence,
-            "quest_id": self.quest_id,
+            "coworker_id": self.quest_id,
             "tool_names": self.tool_names,
             "model_suggestion": self.model_suggestion,
             "estimated_cost": self.estimated_cost,
@@ -155,7 +155,7 @@ class IntelligentRouter:
                     f"Reusing existing quest avoids duplicate work."
                 ),
                 confidence=min(best_score / 30, 1.0),
-                quest_id=best_quest.get("id", 0),
+                coworker_id=best_quest.get("id", 0),
             )
 
         return None

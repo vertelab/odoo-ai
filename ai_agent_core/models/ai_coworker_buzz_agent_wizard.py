@@ -4,11 +4,11 @@
 from odoo import models, fields, api
 
 
-class AIQuestBuzzAgentWizard(models.TransientModel):
+class AICoworkerBuzzAgentWizard(models.TransientModel):
     _name = 'ai.coworker.buzz.agent.wizard'
     _description = 'Create Buzz Agent'
 
-    quest_id = fields.Many2one('ai.coworker', string='Quest', required=True)
+    coworker_id = fields.Many2one('ai.coworker', string='Quest', required=True)
     topic = fields.Char('Topic / Role', required=True,
         help='What the new agent should handle, e.g. "Swedish VAT"')
 

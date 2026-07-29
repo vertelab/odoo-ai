@@ -52,7 +52,7 @@
                         <group>
                             <field name="progress" widget="progressbar"/>
                             <field name="time_bound"/>
-                            <field name="quest_id"/>
+                            <field name="coworker_id"/>
                         </group>
                     </group>
                     <group string="SMART Criteria">

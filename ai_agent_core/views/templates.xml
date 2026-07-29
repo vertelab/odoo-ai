@@ -195,7 +195,7 @@
                         scrollBottom();
 
                         var params = 'prompt=' + encodeURIComponent(prompt);
-                        if (activeQuestId) params += '&quest_id=' + activeQuestId;
+                        if (activeQuestId) params += '&coworker_id=' + activeQuestId;
 
                         var es = new EventSource('/ai/stream?' + params);
 

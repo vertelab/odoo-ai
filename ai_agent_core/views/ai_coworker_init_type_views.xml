@@ -27,7 +27,7 @@
         <field name="arch" type="xml">
             <form>
                 <group>
-                    <field name="quest_id" invisible="1"/>
+                    <field name="coworker_id" invisible="1"/>
                     <field name="init_type" required="1"/>
                     <field name="active"/>
                     <field name="sequence"/>

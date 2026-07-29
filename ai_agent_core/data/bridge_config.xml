@@ -2,8 +2,8 @@
 <odoo>
     <data noupdate="1">
         <!-- Bridge configuration — set to ai.coworker ID to enable routing -->
-        <record id="html_editor_quest_id" model="ir.config_parameter">
-            <field name="key">ai_coworker_bridge.html_editor_quest_id</field>
+        <record id="html_editor_coworker_id" model="ir.config_parameter">
+            <field name="key">ai_coworker_bridge.html_editor_coworker_id</field>
             <field name="value"></field>
         </record>
     </data>

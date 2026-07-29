@@ -433,13 +433,13 @@ def builtin_tools() -> list[Tool]:
         ),
         Tool(
             name="builder_update_quest",
-            description="Update an existing ai.coworker. Params: quest_id (required), then any of: name, description, is_supervisor.",
+            description="Update an existing ai.coworker. Params: coworker_id (required), then any of: name, description, is_supervisor.",
             parameters={"type": "object", "properties": {
-                "quest_id": {"type": "integer", "description": "Quest ID to update"},
+                "coworker_id": {"type": "integer", "description": "Quest ID to update"},
                 "name": {"type": "string"},
                 "description": {"type": "string"},
                 "is_supervisor": {"type": "boolean"},
-            }, "required": ["quest_id"]},
+            }, "required": ["coworker_id"]},
             handler=_tool_builder_update_quest,
             risk_level="destructive",
             source="builtin",
@@ -472,24 +472,24 @@ def builtin_tools() -> list[Tool]:
         ),
         Tool(
             name="builder_assign_agent",
-            description="Assign an agent to a quest. Params: quest_id, agent_id, sequence (optional).",
+            description="Assign an agent to a quest. Params: coworker_id, agent_id, sequence (optional).",
             parameters={"type": "object", "properties": {
-                "quest_id": {"type": "integer"},
+                "coworker_id": {"type": "integer"},
                 "agent_id": {"type": "integer"},
                 "sequence": {"type": "integer", "description": "Order in the agent pipeline (1-based)"},
-            }, "required": ["quest_id", "agent_id"]},
+            }, "required": ["coworker_id", "agent_id"]},
             handler=_tool_builder_assign_agent,
             risk_level="destructive",
             source="builtin",
         ),
         Tool(
             name="builder_configure_init_type",
-            description="Configure an init type on a quest. Params: quest_id, init_type (one of: web_ui,chat,channel,mail,cron,server_action,powerbox,manual,openai_api), config_json (type-specific config).",
+            description="Configure an init type on a quest. Params: coworker_id, init_type (one of: web_ui,chat,channel,mail,cron,server_action,powerbox,manual,openai_api), config_json (type-specific config).",
             parameters={"type": "object", "properties": {
-                "quest_id": {"type": "integer"},
+                "coworker_id": {"type": "integer"},
                 "init_type": {"type": "string", "description": "Init type to configure"},
                 "config": {"type": "string", "description": "JSON config: for powerbox use {\"model_ids\": [\"sale.order\",\"crm.lead\"]}, for mail use {\"alias_name\":\"support\"}"},
-            }, "required": ["quest_id", "init_type"]},
+            }, "required": ["coworker_id", "init_type"]},
             handler=_tool_builder_configure_init_type,
             risk_level="destructive",
             source="builtin",
@@ -1354,19 +1354,19 @@ def _tool_builder_create_quest(env, name, description="", init_types="", is_supe
     if init_types:
         for itype in [t.strip() for t in init_types.split(",") if t.strip()]:
             env["ai.coworker.init_type"].create({
-                "quest_id": quest.id,
+                "coworker_id": coworker.id,
                 "init_type": itype,
                 "active": True,
             })
 
-    return f"Quest #{quest.id} '{quest.name}' created with init_types: {init_types or 'none'}"
+    return f"Quest #{coworker.id} '{quest.name}' created with init_types: {init_types or 'none'}"
 
 
-def _tool_builder_update_quest(env, quest_id, **kwargs):
+def _tool_builder_update_quest(env, coworker_id, **kwargs):
     """Update an existing ai.coworker. Only updates provided fields."""
-    quest = env["ai.coworker"].browse(int(quest_id))
+    quest = env["ai.coworker"].browse(int(coworker_id))
     if not quest.exists():
-        return f"Error: Quest #{quest_id} not found"
+        return f"Error: Quest #{coworker_id} not found"
     updates = {}
     for field in ("name", "description"):
         if field in kwargs and kwargs[field]:
@@ -1375,7 +1375,7 @@ def _tool_builder_update_quest(env, quest_id, **kwargs):
         updates["is_supervisor"] = bool(kwargs["is_supervisor"])
     if updates:
         quest.write(updates)
-    return f"Quest #{quest.id} updated: {list(updates.keys())}"
+    return f"Quest #{coworker.id} updated: {list(updates.keys())}"
 
 
 def _tool_builder_create_agent(env, name, description="", model="cerebras/gpt-oss-120b", skills="", **kwargs):
@@ -1418,37 +1418,37 @@ def _tool_builder_create_skill(env, name, recipe_text, category="general", trigg
     return f"Skill #{skill.id} '{skill.name}' created (category: {category})"
 
 
-def _tool_builder_assign_agent(env, quest_id, agent_id, sequence=10, **kwargs):
+def _tool_builder_assign_agent(env, coworker_id, agent_id, sequence=10, **kwargs):
     """Assign an agent to a quest."""
-    quest = env["ai.coworker"].browse(int(quest_id))
+    quest = env["ai.coworker"].browse(int(coworker_id))
     agent = env["ai.agent"].browse(int(agent_id))
     if not quest.exists():
-        return f"Error: Quest #{quest_id} not found"
+        return f"Error: Quest #{coworker_id} not found"
     if not agent.exists():
         return f"Error: Agent #{agent_id} not found"
     existing = env["ai.coworker.agent"].search([
-        ("quest_id", "=", quest.id),
+        ("coworker_id", "=", coworker.id),
         ("agent_id", "=", agent.id),
     ])
     if existing:
         return f"Agent '{agent.name}' already assigned to quest '{quest.name}'"
     env["ai.coworker.agent"].create({
-        "quest_id": quest.id,
+        "coworker_id": coworker.id,
         "agent_id": agent.id,
         "sequence": int(sequence),
     })
     return f"Agent '{agent.name}' assigned to quest '{quest.name}' (sequence: {sequence})"
 
 
-def _tool_builder_configure_init_type(env, quest_id, init_type, config="{}", **kwargs):
+def _tool_builder_configure_init_type(env, coworker_id, init_type, config="{}", **kwargs):
     """Configure an init type on a quest."""
     import json as _json
-    quest = env["ai.coworker"].browse(int(quest_id))
+    quest = env["ai.coworker"].browse(int(coworker_id))
     if not quest.exists():
-        return f"Error: Quest #{quest_id} not found"
+        return f"Error: Quest #{coworker_id} not found"
     config_data = _json.loads(config) if isinstance(config, str) else config
     vals = {
-        "quest_id": quest.id,
+        "coworker_id": coworker.id,
         "init_type": init_type,
         "active": True,
     }

@@ -21,7 +21,7 @@ class AIPersonalGoal(models.Model):
         'res.users', string='User', required=True,
         default=lambda self: self.env.user,
         help='The user who owns this goal.')
-    quest_id = fields.Many2one(
+    coworker_id = fields.Many2one(
         'ai.coworker', string='Suggested by Quest',
         help='The AI quest that suggested this goal.')
     okr_id = fields.Reference(
