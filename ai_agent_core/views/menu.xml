@@ -12,8 +12,15 @@
         <field name="view_mode">kanban,list,form</field>
         <field name="context">{'search_default_group_provider': 1}</field>
     </record>
+    <record id="action_ai_settings" model="ir.actions.act_window">
+        <field name="name">Inställningar</field>
+        <field name="res_model">res.config.settings</field>
+        <field name="view_mode">form</field>
+        <field name="target">inline</field>
+        <field name="context">{'module':'ai_agent_core'}</field>
+    </record>
     <record id="action_ai_coworker" model="ir.actions.act_window">
-        <field name="name">Quests</field>
+        <field name="name">AI medarbetare</field>
         <field name="res_model">ai.coworker</field>
         <field name="view_mode">kanban,list,form</field>
     </record>
@@ -37,11 +44,7 @@
         <field name="res_model">ai.memory</field>
         <field name="view_mode">list,form</field>
     </record>
-    <record id="action_ai_sessions" model="ir.actions.act_window">
-        <field name="name">Sessions</field>
-        <field name="res_model">ai.coworker.session</field>
-        <field name="view_mode">list,form</field>
-    </record>
+
     <record id="action_ai_chat" model="ir.actions.act_url">
         <field name="name">AI Chat</field>
         <field name="url">/ai/chat</field>
@@ -53,7 +56,7 @@
               sequence="90" groups="base.group_user"/>
 
     <!-- Main items -->
-    <menuitem id="menu_ai_coworker" name="Quests" parent="menu_ai_root"
+    <menuitem id="menu_ai_coworker" name="AI medarbetare" parent="menu_ai_root"
               sequence="10" action="action_ai_coworker"/>
     <menuitem id="menu_ai_agent" name="Agenter" parent="menu_ai_root"
               sequence="20" action="action_ai_agent"/>
@@ -64,6 +67,8 @@
     <menuitem id="menu_ai_configuration" name="Configuration"
               parent="menu_ai_root" sequence="99"/>
 
+    <menuitem id="menu_ai_settings" name="Inställningar" parent="menu_ai_configuration"
+              sequence="10" action="action_ai_settings"/>
     <menuitem id="menu_ai_identity" name="Identiteter" parent="menu_ai_configuration"
               sequence="15" action="action_ai_identity"/>
     <menuitem id="menu_ai_provider" name="Providers" parent="menu_ai_configuration"
@@ -74,8 +79,7 @@
               sequence="40" action="action_ai_skill"/>
     <menuitem id="menu_ai_memory" name="Memory" parent="menu_ai_configuration"
               sequence="50" action="action_ai_memory"/>
-    <menuitem id="menu_ai_sessions" name="Sessions" parent="menu_ai_configuration"
-              sequence="60" action="action_ai_sessions"/>
+
 
     <!-- Monthly Summary -->
     <menuitem id="menu_ai_monthly_summary" name="Monthly Summary"
