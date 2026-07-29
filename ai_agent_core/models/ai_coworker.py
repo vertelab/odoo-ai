@@ -63,6 +63,12 @@ class AIQuest(models.Model):
 
     name = fields.Char(required=True)
     sequence = fields.Integer(default=10)
+    channel_alias = fields.Char(
+        'Channel Alias (@mention)',
+        help='Short name for @mentions in discuss channels. '
+             'E.g. "redovisning" enables @redovisning in channels.',
+        compute='_compute_channel_alias', inverse='_inverse_channel_alias',
+        store=True)
     description = fields.Text(help='System prompt / quest purpose')
     sub_description = fields.Char('Short Description')
     active = fields.Boolean(default=True)
@@ -526,6 +532,20 @@ class AIQuest(models.Model):
     def _compute_model_name(self):
         for r in self:
             r.model_name = r.model_id.model if r.model_id else False
+
+    @api.depends('name')
+    def _compute_channel_alias(self):
+        """Default channel_alias from name (lowercase, no spaces)."""
+        import re
+        for r in self:
+            if not r.name:
+                r.channel_alias = ''
+            elif not r.channel_alias:
+                r.channel_alias = re.sub(r'[^a-z0-9]', '', r.name.lower()[:20])
+
+    def _inverse_channel_alias(self):
+        """Allow manual override of channel_alias."""
+        pass  # Value is stored directly
 
     @api.depends('init_type_ids')
     def _compute_init_type(self):
@@ -1047,6 +1067,47 @@ class AIQuest(models.Model):
             if alias and f'@{alias}' in text_lower:
                 return rel
         return None
+
+    # ── Coworker channel integration ──
+
+    partner_id = fields.Many2one(
+        'res.partner', string='Channel Partner',
+        help='Created automatically when coworker joins a discuss channel.')
+
+    def _ensure_partner(self):
+        """Create or return res.partner for this coworker.
+        
+        Idempotent — does nothing if partner_id already set.
+        Created lazily — only when coworker joins a channel.
+        """
+        self.ensure_one()
+        if self.partner_id:
+            return self.partner_id
+        partner = self.env['res.partner'].sudo().create({
+            'name': self.name or 'AI Coworker',
+            'email': f'{self.channel_alias or self.name or "coworker"}@coworker.vertel.se',
+            'is_company': False,
+        })
+        self.write({'partner_id': partner.id})
+        return partner
+
+    def _route_message(self, message):
+        """Route an incoming discuss message to this coworker for AI processing.
+        
+        Creates a session and session line, then triggers the agent loop.
+        Falls back to _buzz_route_message if in buzz mode.
+        """
+        self.ensure_one()
+        if self.is_supervisor and self.agent_ids:
+            return self._buzz_route_message(message)
+        # Non-buzz mode: simple route to the coworker's chat
+        session = self._buzz_ensure_channel_session()
+        self.env['ai.coworker.session.line'].create({
+            'session_id': session.id,
+            'sequence': len(session.session_line_ids) + 1,
+            'role': 'user',
+            'content': message.body or '',
+        })
 
     @api.model
     def _migrate_init_types(self):

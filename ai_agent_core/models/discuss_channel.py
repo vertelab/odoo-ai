@@ -12,6 +12,11 @@ class DiscussChannel(models.Model):
         'channel_id', 'agent_id',
         string='AI Agents',
         help='AI agents that are visible members of this channel via Buzz workspaces.')
+    ai_coworker_ids = fields.Many2many(
+        'ai.coworker', 'discuss_channel_ai_coworker_rel',
+        'channel_id', 'coworker_id',
+        string='AI Coworkers',
+        help='AI coworkers that are visible members of this channel.')
     ai_coworker_id = fields.Many2one(
         'ai.coworker', string='Buzz Quest',
         help='The Buzz workspace quest linked to this channel, if any.')
@@ -27,4 +32,18 @@ class DiscussChannel(models.Model):
                     self.env['discuss.channel.member'].sudo().create({
                         'channel_id': channel.id,
                         'partner_id': agent.partner_id.id,
+                    })
+
+    def _sync_ai_coworker_members(self):
+        """Ensure ai.coworker partners are present in channel members."""
+        for channel in self:
+            if channel.channel_type != 'channel':
+                continue
+            current_partners = channel.channel_member_ids.mapped('partner_id')
+            for coworker in channel.ai_coworker_ids:
+                coworker._ensure_partner()
+                if coworker.partner_id and coworker.partner_id not in current_partners:
+                    self.env['discuss.channel.member'].sudo().create({
+                        'channel_id': channel.id,
+                        'partner_id': coworker.partner_id.id,
                     })
