@@ -172,7 +172,7 @@ class AIIdentity(models.Model):
         
         The copy starts from the template but lives independently —
         changes to the original template do NOT affect existing copies.
-        Same pattern as ai.quest.skill (quest-specific fork of shared skill).
+        Same pattern as ai.coworker.skill (quest-specific fork of shared skill).
         """
         self.ensure_one()
         copy = self.copy({

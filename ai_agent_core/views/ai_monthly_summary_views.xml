@@ -2,8 +2,8 @@
 <odoo>
     <!-- Monthly Summary Tree -->
     <record id="ai_monthly_summary_tree" model="ir.ui.view">
-        <field name="name">ai.quest.monthly_summary.tree</field>
-        <field name="model">ai.quest.monthly_summary</field>
+        <field name="name">ai.coworker.monthly_summary.tree</field>
+        <field name="model">ai.coworker.monthly_summary</field>
         <field name="arch" type="xml">
             <list>
                 <field name="month"/>
@@ -21,8 +21,8 @@
 
     <!-- Monthly Summary Pivot -->
     <record id="ai_monthly_summary_pivot" model="ir.ui.view">
-        <field name="name">ai.quest.monthly_summary.pivot</field>
-        <field name="model">ai.quest.monthly_summary</field>
+        <field name="name">ai.coworker.monthly_summary.pivot</field>
+        <field name="model">ai.coworker.monthly_summary</field>
         <field name="arch" type="xml">
             <pivot>
                 <field name="quest_id" type="row"/>
@@ -36,8 +36,8 @@
 
     <!-- Monthly Summary Graph -->
     <record id="ai_monthly_summary_graph" model="ir.ui.view">
-        <field name="name">ai.quest.monthly_summary.graph</field>
-        <field name="model">ai.quest.monthly_summary</field>
+        <field name="name">ai.coworker.monthly_summary.graph</field>
+        <field name="model">ai.coworker.monthly_summary</field>
         <field name="arch" type="xml">
             <graph type="bar" stacked="True">
                 <field name="quest_id" type="row"/>
@@ -51,7 +51,7 @@
     <!-- Dashboard action -->
     <record id="ai_monthly_summary_action" model="ir.actions.act_window">
         <field name="name">Månadsrapporter</field>
-        <field name="res_model">ai.quest.monthly_summary</field>
+        <field name="res_model">ai.coworker.monthly_summary</field>
         <field name="view_mode">pivot,graph,tree</field>
         <field name="context">{'search_default_group_month': 1}</field>
         <field name="help">Systemtoken-förbrukning per quest och månad. Historisk rapportering för fakturering.</field>
@@ -59,8 +59,8 @@
 
     <!-- Search for monthly summaries -->
     <record id="ai_monthly_summary_search" model="ir.ui.view">
-        <field name="name">ai.quest.monthly_summary.search</field>
-        <field name="model">ai.quest.monthly_summary</field>
+        <field name="name">ai.coworker.monthly_summary.search</field>
+        <field name="model">ai.coworker.monthly_summary</field>
         <field name="arch" type="xml">
             <search>
                 <field name="quest_id"/>

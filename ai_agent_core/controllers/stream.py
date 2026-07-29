@@ -18,7 +18,7 @@ from odoo.http import request, Response
 
 # Import access control helper (quest-access-control change)
 try:
-    from odoo.addons.ai_agent_core.models.ai_quest import _quest_is_accessible
+    from odoo.addons.ai_agent_core.models.ai_coworker import _quest_is_accessible
 except ImportError:
     _quest_is_accessible = None
 
@@ -53,7 +53,7 @@ class AIStreamController(http.Controller):
 
         if quest_id:
             try:
-                quest = request.env['ai.quest'].browse(int(quest_id))
+                quest = request.env['ai.coworker'].browse(int(coworker_id))
                 if quest.exists():
                     # Access check
                     if request.env.user and not _quest_is_accessible(quest, request.env.user):
@@ -83,7 +83,7 @@ class AIStreamController(http.Controller):
                     # builder doesn't know WHICH quest "Study this quest" means
                     context_quest = kw.get('context_quest')
                     if context_quest:
-                        cq = request.env['ai.quest'].sudo().browse(int(context_quest))
+                        cq = request.env['ai.coworker'].sudo().browse(int(context_quest))
                         if cq.exists():
                             agents_desc = ", ".join(
                                 f"{rel.agent_id.name} ({rel.agent_id.model_id.name if rel.agent_id.model_id else '?'})"
@@ -164,7 +164,7 @@ class AIStreamController(http.Controller):
         history_messages = []
         if session_id:
             try:
-                session = request.env['ai.quest.session'].browse(int(session_id))
+                session = request.env['ai.coworker.session'].browse(int(session_id))
                 if session.exists():
                     # Inject quest memories into system prompt
                     if quest and quest.identity_id:
@@ -186,7 +186,7 @@ class AIStreamController(http.Controller):
 
                     # Save user message as session line (T7.4)
                     next_seq = len(lines) + 1
-                    request.env['ai.quest.session.line'].create({
+                    request.env['ai.coworker.session.line'].create({
                         'session_id': session.id,
                         'sequence': next_seq,
                         'role': 'user',
@@ -349,7 +349,7 @@ class AIStreamController(http.Controller):
         user = request.env.user
 
         # Load quests that have a web_ui init type (filtered by access)
-        quests = request.env['ai.quest'].search(
+        quests = request.env['ai.coworker'].search(
             [('status', '=', 'active')],
             order='sequence asc, name asc',
         )
@@ -382,7 +382,7 @@ class AIStreamController(http.Controller):
         # Load user's threads (most recent 50)
         thread_items = ''
         if user and user.id:
-            sessions = request.env['ai.quest.session'].search([
+            sessions = request.env['ai.coworker.session'].search([
                 ('user_id', '=', user.id),
                 ('active', '=', True),
             ], order='write_date desc', limit=50)
@@ -420,7 +420,7 @@ class AIStreamController(http.Controller):
         skills = []
         if quest_id:
             try:
-                quest = request.env['ai.quest'].browse(int(quest_id))
+                quest = request.env['ai.coworker'].browse(int(coworker_id))
                 if quest.exists():
                     available = quest.get_available_skills()
                     for s in available:
@@ -472,7 +472,7 @@ class AIStreamController(http.Controller):
         seen = set()
         if quest_id:
             try:
-                quest = request.env['ai.quest'].browse(int(quest_id))
+                quest = request.env['ai.coworker'].browse(int(coworker_id))
                 if quest.exists():
                     for qa in quest.agent_ids:
                         agent = qa.agent_id
@@ -550,7 +550,7 @@ class AIStreamController(http.Controller):
         user = request.env.user
         if not user or not user.id:
             return Response(json.dumps({"threads": []}), content_type='application/json')
-        sessions = request.env['ai.quest.session'].search([
+        sessions = request.env['ai.coworker.session'].search([
             ('user_id', '=', user.id),
             ('active', '=', True),
         ], order='write_date desc', limit=50)
@@ -575,14 +575,14 @@ class AIStreamController(http.Controller):
         name = body.get('name', 'Ny tråd')
         # Clean name: remove newlines, collapse spaces, trim, limit length
         name = ' '.join(str(name).split())[:50]
-        quest_id = body.get('quest_id')
+        coworker_id = body.get('quest_id')
         skill_id = body.get('skill_id')
         # Builder context: the auto-init prompt ("Study this quest…") makes a
         # useless thread name — name the thread after the subject quest instead
         context_quest = body.get('context_quest')
         if context_quest:
             try:
-                cq = request.env['ai.quest'].browse(int(context_quest))
+                cq = request.env['ai.coworker'].browse(int(context_quest))
                 if cq.exists():
                     name = cq.name[:50]
             except (ValueError, TypeError):
@@ -594,10 +594,10 @@ class AIStreamController(http.Controller):
             'status': 'active',
         }
         if quest_id:
-            vals['quest_id'] = int(quest_id)
+            vals['quest_id'] = int(coworker_id)
         if skill_id:
             vals['skill_id'] = int(skill_id)
-        session = request.env['ai.quest.session'].create(vals)
+        session = request.env['ai.coworker.session'].create(vals)
         return Response(json.dumps({"id": session.id, "name": session.thread_name}),
                        content_type='application/json')
 
@@ -605,7 +605,7 @@ class AIStreamController(http.Controller):
                 methods=['GET'], csrf=False, sitemap=False)
     def thread_get(self, thread_id, **kw):
         """Get thread with messages."""
-        session = request.env['ai.quest.session'].browse(thread_id)
+        session = request.env['ai.coworker.session'].browse(thread_id)
         if not session.exists():
             return Response(json.dumps({"error": "Thread not found"}), content_type='application/json', status=404)
         lines = session.session_line_ids.sorted('sequence')
@@ -627,7 +627,7 @@ class AIStreamController(http.Controller):
         """Rename a thread."""
         body = json.loads(request.httprequest.data or '{}')
         name = body.get('name', '')
-        session = request.env['ai.quest.session'].browse(thread_id)
+        session = request.env['ai.coworker.session'].browse(thread_id)
         if session.exists():
             session.thread_name = name[:200]
             session.name = name[:200]
@@ -637,7 +637,7 @@ class AIStreamController(http.Controller):
                 methods=['DELETE'], csrf=False, sitemap=False)
     def thread_delete(self, thread_id, **kw):
         """Delete a thread (soft-delete by setting active=False)."""
-        session = request.env['ai.quest.session'].browse(thread_id)
+        session = request.env['ai.coworker.session'].browse(thread_id)
         if session.exists():
             session.active = False
         return Response(json.dumps({"status": "ok"}), content_type='application/json')
@@ -658,7 +658,7 @@ class AIStreamController(http.Controller):
         token_output = body.get('token_output', 0)
         if not content.strip():
             return Response(json.dumps({"status": "ok"}), content_type='application/json')
-        session = request.env['ai.quest.session'].browse(thread_id)
+        session = request.env['ai.coworker.session'].browse(thread_id)
         if session.exists():
             next_seq = len(session.session_line_ids) + 1
 
@@ -670,7 +670,7 @@ class AIStreamController(http.Controller):
                 if ai_model:
                     sys_mult = ai_model.sys_multiplier
 
-            request.env['ai.quest.session.line'].create({
+            request.env['ai.coworker.session.line'].create({
                 'session_id': session.id,
                 'sequence': next_seq,
                 'role': role,
@@ -752,13 +752,13 @@ class AIStreamController(http.Controller):
         user = request.env.user
         if not q or len(q) < 2 or not user or not user.id:
             return Response(json.dumps({"threads": []}), content_type='application/json')
-        lines = request.env['ai.quest.session.line'].search([
+        lines = request.env['ai.coworker.session.line'].search([
             ('content', 'ilike', q),
             ('session_id.user_id', '=', user.id),
             ('session_id.active', '=', True),
         ], limit=50)
         thread_ids = list(set(lines.mapped('session_id.id')))
-        sessions = request.env['ai.quest.session'].browse(thread_ids)
+        sessions = request.env['ai.coworker.session'].browse(thread_ids)
         return Response(json.dumps({
             "threads": [{
                 "id": s.id,
@@ -781,7 +781,7 @@ class AIStreamController(http.Controller):
             return Response(json.dumps({"quests": []}),
                           content_type='application/json')
 
-        quests = request.env['ai.quest'].search([
+        quests = request.env['ai.coworker'].search([
             ('status', '=', 'active'),
             ('active', '=', True),
             '|',
@@ -807,11 +807,11 @@ class AIStreamController(http.Controller):
     def powerbox_run(self, **kw):
         """Run a powerbox quest with text content from a field.
 
-        POST body: {quest_id, text, model, res_id}
+        POST body: {coworker_id, text, model, res_id}
         Returns AI-processed text.
         """
         body = json.loads(request.httprequest.data or '{}')
-        quest_id = body.get('quest_id')
+        coworker_id = body.get('quest_id')
         text = body.get('text', '').strip()
         model = body.get('model', '')
         res_id = body.get('res_id')
@@ -820,7 +820,7 @@ class AIStreamController(http.Controller):
             return Response(json.dumps({"error": "Missing quest_id or text"}),
                           content_type='application/json', status=400)
 
-        quest = request.env['ai.quest'].browse(int(quest_id))
+        quest = request.env['ai.coworker'].browse(int(coworker_id))
         if not quest.exists() or quest.init_type != 'powerbox':
             return Response(json.dumps({"error": "Quest not found or not powerbox"}),
                           content_type='application/json', status=404)
@@ -851,7 +851,7 @@ class AIStreamController(http.Controller):
         user = request.env.user
         body = json.loads(request.httprequest.data or '{}')
         learning = body.get('learning', '').strip()
-        quest_id = body.get('quest_id')
+        coworker_id = body.get('quest_id')
 
         if not learning:
             return Response(json.dumps({"error": "Empty learning"}),
@@ -860,7 +860,7 @@ class AIStreamController(http.Controller):
         # Find the quest (personal companion or specified)
         quest = None
         if quest_id:
-            quest = request.env['ai.quest'].browse(int(quest_id))
+            quest = request.env['ai.coworker'].browse(int(coworker_id))
         elif user.personal_quest_id:
             quest = user.personal_quest_id
 
@@ -902,12 +902,12 @@ class AIStreamController(http.Controller):
         """Förbättra-kommando: uppdatera quest med feedback."""
         user = request.env.user
         body = json.loads(request.httprequest.data or '{}')
-        quest_id = body.get('quest_id')
+        coworker_id = body.get('quest_id')
         guidance_text = body.get('guidance', '')
         if not guidance_text.strip():
             return Response(json.dumps({"error": "Tom förbättringstext"}),
                           content_type='application/json', status=400)
-        quest = request.env['ai.quest'].browse(int(quest_id)) if quest_id else None
+        quest = request.env['ai.coworker'].browse(int(coworker_id)) if quest_id else None
         if not quest or not quest.exists():
             return Response(json.dumps({"error": "Quest ej hittad"}),
                           content_type='application/json', status=404)
@@ -937,7 +937,7 @@ class AIStreamController(http.Controller):
                 methods=['POST'], csrf=False, sitemap=False)
     def upload_document(self, **kw):
         """Ladda upp dokument → RAG-minne (text eller FAISS)."""
-        quest_id = kw.get('quest_id')
+        coworker_id = kw.get('quest_id')
         memory_type = kw.get('memory_type', 'text')
         file_obj = request.httprequest.files.get('file')
         if not file_obj:
@@ -949,7 +949,7 @@ class AIStreamController(http.Controller):
         if not text or not text.strip():
             return Response(json.dumps({"error": "Kunde ej extrahera text"}),
                           content_type='application/json', status=400)
-        quest = request.env['ai.quest'].browse(int(quest_id)) if quest_id else None
+        quest = request.env['ai.coworker'].browse(int(coworker_id)) if quest_id else None
 
         if memory_type == 'faiss':
             # Create FAISS memory from uploaded document
@@ -1324,7 +1324,7 @@ def _detect_and_suggest_mission(session_id, last_response, company_id, threshold
     try:
         with api.Environment.manage():
             env = api.Environment(request.env.cr, request.env.uid, request.env.context)
-            session = env['ai.quest.session'].browse(session_id)
+            session = env['ai.coworker.session'].browse(session_id)
             if not session.exists():
                 return
 
@@ -1441,7 +1441,7 @@ class PICallbackController(http.Controller):
         """Receive results from Pi workers/controller.
 
         Body: {state, result, artifacts, token_usage}
-        Updates the corresponding ai.quest.session.
+        Updates the corresponding ai.coworker.session.
         """
         if not self._check_callback_auth():
             return {'error': 'Unauthorized', 'status': 403}
@@ -1452,7 +1452,7 @@ class PICallbackController(http.Controller):
         artifacts = body.get('artifacts', [])
         token_usage = body.get('token_usage', {})
 
-        session = request.env['ai.quest.session'].browse(task_id)
+        session = request.env['ai.coworker.session'].browse(task_id)
         if not session.exists():
             return {'error': 'Session not found', 'status': 404}
 
@@ -1464,7 +1464,7 @@ class PICallbackController(http.Controller):
 
         # Save as session line
         next_seq = len(session.session_line_ids) + 1
-        request.env['ai.quest.session.line'].create({
+        request.env['ai.coworker.session.line'].create({
             'session_id': session.id,
             'sequence': next_seq,
             'role': 'assistant',
@@ -1480,7 +1480,7 @@ class PICallbackController(http.Controller):
                 request.env['ir.attachment'].create({
                     'name': art['name'],
                     'datas': art['data'],
-                    'res_model': 'ai.quest.session',
+                    'res_model': 'ai.coworker.session',
                     'res_id': session.id,
                 })
 
@@ -1493,7 +1493,7 @@ class PICallbackController(http.Controller):
         """Receive Zabbix alert webhooks.
 
         Body: {host, trigger, severity, ...}
-        Creates an ai.quest.session for the designated infrastructure quest.
+        Creates an ai.coworker.session for the designated infrastructure quest.
         """
         if not self._check_callback_auth():
             return {'error': 'Unauthorized', 'status': 403}
@@ -1504,13 +1504,13 @@ class PICallbackController(http.Controller):
         severity = body.get('severity', 'warning')
 
         # Find infrastructure quest (first active quest with 'cron' or 'manual' type)
-        quest = request.env['ai.quest'].search(
+        quest = request.env['ai.coworker'].search(
             [('status', '=', 'active')], limit=1, order='sequence asc')
         if not quest:
             return {'error': 'No active quest found', 'status': 404}
 
         # Create session with alert context
-        session = request.env['ai.quest.session'].create({
+        session = request.env['ai.coworker.session'].create({
             'quest_id': quest.id,
             'name': f'Zabbix: {trigger[:100]}',
             'status': 'active',
@@ -1519,7 +1519,7 @@ class PICallbackController(http.Controller):
 
         # Save alert as session line
         prompt = f'⚠️ Zabbix Alert [{severity.upper()}]\nHost: {host}\nTrigger: {trigger}\n\nPlease analyze this alert and recommend actions.'
-        request.env['ai.quest.session.line'].create({
+        request.env['ai.coworker.session.line'].create({
             'session_id': session.id,
             'sequence': 1,
             'role': 'user',
@@ -1535,7 +1535,7 @@ class PICallbackController(http.Controller):
     def bifrost_batch_callback(self, **kw):
         """Receive Bifrost batch processing results.
 
-        Body: {batch_id, quest_id, results, errors}
+        Body: {batch_id, coworker_id, results, errors}
         Stores results in the corresponding quest session.
         """
         if not self._check_callback_auth():
@@ -1543,18 +1543,18 @@ class PICallbackController(http.Controller):
 
         body = json.loads(request.httprequest.data or '{}')
         batch_id = body.get('batch_id', '')
-        quest_id = body.get('quest_id')
+        coworker_id = body.get('quest_id')
         results = body.get('results', [])
         errors = body.get('errors', [])
 
         if not quest_id:
             return {'error': 'Missing quest_id', 'status': 400}
 
-        quest = request.env['ai.quest'].browse(int(quest_id))
+        quest = request.env['ai.coworker'].browse(int(coworker_id))
         if not quest.exists():
             return {'error': 'Quest not found', 'status': 404}
 
-        session = request.env['ai.quest.session'].create({
+        session = request.env['ai.coworker.session'].create({
             'quest_id': quest.id,
             'name': f'Bifrost batch: {batch_id}',
             'status': 'done',
@@ -1568,7 +1568,7 @@ class PICallbackController(http.Controller):
         if error_text:
             content += f'\n\nErrors:\n{error_text}'
 
-        request.env['ai.quest.session.line'].create({
+        request.env['ai.coworker.session.line'].create({
             'session_id': session.id,
             'sequence': 1,
             'role': 'assistant',
@@ -1582,7 +1582,7 @@ class PICallbackController(http.Controller):
 
 
 class AIOpenAIAPI(http.Controller):
-    """OpenAI-compatible API for ai.quest.
+    """OpenAI-compatible API for ai.coworker.
 
     Enables Pi CLI agents and other OpenAI-compatible clients
     to interact with Odoo quests.
@@ -1593,7 +1593,7 @@ class AIOpenAIAPI(http.Controller):
 
         Phase 1: Shared secret from system parameter / env (see
                  ``_get_callback_secret``).
-        Phase 2: Per-quest keys from ai.quest.init_type.openai_api.
+        Phase 2: Per-quest keys from ai.coworker.init_type.openai_api.
         """
         auth = request.httprequest.headers.get('Authorization', '')
         if not auth.startswith('Bearer '):
@@ -1611,7 +1611,7 @@ class AIOpenAIAPI(http.Controller):
             return Response(json.dumps({'error': {'message': 'Unauthorized', 'type': 'authentication_error'}}),
                           status=401, content_type='application/json')
 
-        quests = request.env['ai.quest'].search([('status', '=', 'active')])
+        quests = request.env['ai.coworker'].search([('status', '=', 'active')])
         models = []
         for q in quests:
             models.append({
@@ -1643,12 +1643,12 @@ class AIOpenAIAPI(http.Controller):
                           status=404, content_type='application/json')
 
         try:
-            quest_id = int(model.replace('quest-', ''))
+            coworker_id = int(model.replace('quest-', ''))
         except ValueError:
             return Response(json.dumps({'error': {'message': f'Invalid model: {model}', 'type': 'invalid_request_error'}}),
                           status=400, content_type='application/json')
 
-        quest = request.env['ai.quest'].browse(quest_id)
+        quest = request.env['ai.coworker'].browse(coworker_id)
         if not quest.exists():
             return Response(json.dumps({'error': {'message': f'Quest {quest_id} not found', 'type': 'invalid_request_error'}}),
                           status=404, content_type='application/json')

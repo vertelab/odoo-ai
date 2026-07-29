@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-ai.quest.session.line — Individual messages within a thread.
+ai.coworker.session.line — Individual messages within a thread.
 
 Each line represents one message in a conversation thread.
 """
@@ -8,12 +8,12 @@ from odoo import models, fields, api
 
 
 class AIQuestSessionLine(models.Model):
-    _name = 'ai.quest.session.line'
+    _name = 'ai.coworker.session.line'
     _description = 'Session Message Line'
     _order = 'session_id, sequence asc'
 
     session_id = fields.Many2one(
-        'ai.quest.session', required=True, ondelete='cascade',
+        'ai.coworker.session', required=True, ondelete='cascade',
         string='Thread',
     )
     sequence = fields.Integer('Order', default=10)

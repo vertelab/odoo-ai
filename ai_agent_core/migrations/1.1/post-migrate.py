@@ -7,9 +7,9 @@ _logger = logging.getLogger(__name__)
 
 
 def migrate(cr, version):
-    _logger.info('Migrating ai.quest is_supervisor to orchestration_mode')
+    _logger.info('Migrating ai.coworker is_supervisor to orchestration_mode')
     cr.execute("""
-        UPDATE ai_quest
+        UPDATE ai_coworker
         SET orchestration_mode = 'supervisor'
         WHERE is_supervisor = TRUE
           AND (orchestration_mode IS NULL OR orchestration_mode = 'single')

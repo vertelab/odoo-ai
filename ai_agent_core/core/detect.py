@@ -227,7 +227,7 @@ class EnvironmentDetector:
     def _scan_quests(self, env) -> list[QuestInfo]:
         """Detect existing AI quests."""
         try:
-            quests = env['ai.quest'].search([])
+            quests = env['ai.coworker'].search([])
             return [
                 QuestInfo(
                     id=q.id,

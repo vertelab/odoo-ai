@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
     <!-- Kanban -->
-    <record id="ai_quest_kanban" model="ir.ui.view">
-        <field name="name">ai.quest.kanban</field>
-        <field name="model">ai.quest</field>
+    <record id="ai_coworker_kanban" model="ir.ui.view">
+        <field name="name">ai.coworker.kanban</field>
+        <field name="model">ai.coworker</field>
         <field name="arch" type="xml">
             <kanban class="o_kanban_mobile">
                 <field name="name"/>
@@ -34,9 +34,9 @@
     </record>
 
     <!-- List -->
-    <record id="ai_quest_list" model="ir.ui.view">
-        <field name="name">ai.quest.list</field>
-        <field name="model">ai.quest</field>
+    <record id="ai_coworker_list" model="ir.ui.view">
+        <field name="name">ai.coworker.list</field>
+        <field name="model">ai.coworker</field>
         <field name="arch" type="xml">
             <list string="AI Quests">
                 <field name="name"/>
@@ -53,9 +53,9 @@
     </record>
 
     <!-- Search -->
-    <record id="ai_quest_search" model="ir.ui.view">
-        <field name="name">ai.quest.search</field>
-        <field name="model">ai.quest</field>
+    <record id="ai_coworker_search" model="ir.ui.view">
+        <field name="name">ai.coworker.search</field>
+        <field name="model">ai.coworker</field>
         <field name="arch" type="xml">
             <search string="Search Quests">
                 <field name="name"/>
@@ -75,9 +75,9 @@
     </record>
 
     <!-- Form -->
-    <record id="ai_quest_form" model="ir.ui.view">
-        <field name="name">ai.quest.form</field>
-        <field name="model">ai.quest</field>
+    <record id="ai_coworker_form" model="ir.ui.view">
+        <field name="name">ai.coworker.form</field>
+        <field name="model">ai.coworker</field>
         <field name="arch" type="xml">
             <form>
                 <header>
@@ -170,7 +170,7 @@
                         <page string="Agents">
                             <field name="skill_ids" widget="many2many_tags"
                                    string="Quest Skills (pipeline)"/>
-                            <button name="%(action_ai_quest_buzz_agent_wizard)d"
+                            <button name="%(action_ai_coworker_buzz_agent_wizard)d"
                                     type="action" string="Create Buzz Agent"
                                     class="btn-primary"
                                     invisible="orchestration_mode != 'buzz'"/>

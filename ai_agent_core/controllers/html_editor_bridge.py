@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 """
 Bridge controller — intercept Odoo's /html_editor/generate_text
-and route through ai.quest instead of Odoo's OLG IAP service.
+and route through ai.coworker instead of Odoo's OLG IAP service.
 
 Inherits HTML_Editor controller from html_editor module (CE).
-Overrides generate_text() to optionally use ai.quest for generation.
+Overrides generate_text() to optionally use ai.coworker for generation.
 """
 
 import logging
@@ -18,23 +18,23 @@ _logger = logging.getLogger(__name__)
 
 
 class AIQuestHtmlEditorBridge(HTML_Editor):
-    """Override generate_text to route through ai.quest when configured."""
+    """Override generate_text to route through ai.coworker when configured."""
 
     @http.route(["/web_editor/generate_text", "/html_editor/generate_text"],
                 type="json", auth="user")
     def generate_text(self, prompt, conversation_history):
-        """Override: route through ai.quest if bridge is configured.
+        """Override: route through ai.coworker if bridge is configured.
 
         Falls back to original OLG IAP call if no quest is configured
         or the quest fails.
         """
         # Check if bridge is enabled
         IrConfig = request.env['ir.config_parameter'].sudo()
-        quest_id = IrConfig.get_param('ai_quest_bridge.html_editor_quest_id')
+        quest_id = IrConfig.get_param('ai_coworker_bridge.html_editor_quest_id')
 
         if quest_id:
             try:
-                quest = request.env['ai.quest'].browse(int(quest_id))
+                quest = request.env['ai.coworker'].browse(int(quest_id))
                 if quest.exists():
                     # Build full prompt from conversation_history
                     full_prompt = self._build_quest_prompt(
@@ -72,7 +72,7 @@ class AIQuestHtmlEditorBridge(HTML_Editor):
         conversation_history format:
             [{role: 'system'|'user'|'assistant', content: '...'}, ...]
 
-        Returns a single string prompt suitable for ai.quest.run().
+        Returns a single string prompt suitable for ai.coworker.run().
         """
         parts = []
 

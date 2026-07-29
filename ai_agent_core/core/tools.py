@@ -362,7 +362,7 @@ def builtin_tools() -> list[Tool]:
         ),
         Tool(
             name="inventory_quests",
-            description="List all active ai.quest records with name, status, and init_type.",
+            description="List all active ai.coworker records with name, status, and init_type.",
             parameters={"type": "object", "properties": {}, "required": []},
             handler=_tool_inventory_quests,
             risk_level="safe",
@@ -420,7 +420,7 @@ def builtin_tools() -> list[Tool]:
         # ── Quest Builder: Execution tools (write, destructive) ──
         Tool(
             name="builder_create_quest",
-            description="Create a new ai.quest record. Params: name (required), description, init_types (list), is_supervisor (bool). Returns quest ID.",
+            description="Create a new ai.coworker record. Params: name (required), description, init_types (list), is_supervisor (bool). Returns quest ID.",
             parameters={"type": "object", "properties": {
                 "name": {"type": "string", "description": "Quest name"},
                 "description": {"type": "string", "description": "System prompt / quest description"},
@@ -433,7 +433,7 @@ def builtin_tools() -> list[Tool]:
         ),
         Tool(
             name="builder_update_quest",
-            description="Update an existing ai.quest. Params: quest_id (required), then any of: name, description, is_supervisor.",
+            description="Update an existing ai.coworker. Params: quest_id (required), then any of: name, description, is_supervisor.",
             parameters={"type": "object", "properties": {
                 "quest_id": {"type": "integer", "description": "Quest ID to update"},
                 "name": {"type": "string"},
@@ -1242,10 +1242,10 @@ def _tool_inventory_architecture(env, **kwargs):
         }
 
     # Init types
-    if hasattr(env["ai.quest.init_type"], "INIT_TYPE_SELECTION"):
+    if hasattr(env["ai.coworker.init_type"], "INIT_TYPE_SELECTION"):
         result["init_types"] = [
             {"key": k, "label": v}
-            for k, v in env["ai.quest.init_type"].INIT_TYPE_SELECTION
+            for k, v in env["ai.coworker.init_type"].INIT_TYPE_SELECTION
         ]
 
     # MODULE.md files from ai_* modules
@@ -1273,7 +1273,7 @@ def _tool_inventory_architecture(env, **kwargs):
 
 def _tool_inventory_quests(env, **kwargs):
     import json as _json
-    quests = env["ai.quest"].search([("active", "=", True)])
+    quests = env["ai.coworker"].search([("active", "=", True)])
     data = [{"id": q.id, "name": q.name, "status": q.status,
              "init_type": q.init_type, "is_supervisor": q.is_supervisor,
              "agent_count": q.agent_count}
@@ -1341,19 +1341,19 @@ def _tool_inventory_odoo_models(env, **kwargs):
 
 
 def _tool_builder_create_quest(env, name, description="", init_types="", is_supervisor=False, **kwargs):
-    """Create a new ai.quest. Returns quest ID."""
+    """Create a new ai.coworker. Returns quest ID."""
     vals = {
         "name": name,
         "description": description,
         "status": "active",
         "is_supervisor": bool(is_supervisor),
     }
-    quest = env["ai.quest"].create(vals)
+    quest = env["ai.coworker"].create(vals)
 
     # Configure init types
     if init_types:
         for itype in [t.strip() for t in init_types.split(",") if t.strip()]:
-            env["ai.quest.init_type"].create({
+            env["ai.coworker.init_type"].create({
                 "quest_id": quest.id,
                 "init_type": itype,
                 "active": True,
@@ -1363,8 +1363,8 @@ def _tool_builder_create_quest(env, name, description="", init_types="", is_supe
 
 
 def _tool_builder_update_quest(env, quest_id, **kwargs):
-    """Update an existing ai.quest. Only updates provided fields."""
-    quest = env["ai.quest"].browse(int(quest_id))
+    """Update an existing ai.coworker. Only updates provided fields."""
+    quest = env["ai.coworker"].browse(int(quest_id))
     if not quest.exists():
         return f"Error: Quest #{quest_id} not found"
     updates = {}
@@ -1420,19 +1420,19 @@ def _tool_builder_create_skill(env, name, recipe_text, category="general", trigg
 
 def _tool_builder_assign_agent(env, quest_id, agent_id, sequence=10, **kwargs):
     """Assign an agent to a quest."""
-    quest = env["ai.quest"].browse(int(quest_id))
+    quest = env["ai.coworker"].browse(int(quest_id))
     agent = env["ai.agent"].browse(int(agent_id))
     if not quest.exists():
         return f"Error: Quest #{quest_id} not found"
     if not agent.exists():
         return f"Error: Agent #{agent_id} not found"
-    existing = env["ai.quest.agent"].search([
+    existing = env["ai.coworker.agent"].search([
         ("quest_id", "=", quest.id),
         ("agent_id", "=", agent.id),
     ])
     if existing:
         return f"Agent '{agent.name}' already assigned to quest '{quest.name}'"
-    env["ai.quest.agent"].create({
+    env["ai.coworker.agent"].create({
         "quest_id": quest.id,
         "agent_id": agent.id,
         "sequence": int(sequence),
@@ -1443,7 +1443,7 @@ def _tool_builder_assign_agent(env, quest_id, agent_id, sequence=10, **kwargs):
 def _tool_builder_configure_init_type(env, quest_id, init_type, config="{}", **kwargs):
     """Configure an init type on a quest."""
     import json as _json
-    quest = env["ai.quest"].browse(int(quest_id))
+    quest = env["ai.coworker"].browse(int(quest_id))
     if not quest.exists():
         return f"Error: Quest #{quest_id} not found"
     config_data = _json.loads(config) if isinstance(config, str) else config
@@ -1462,7 +1462,7 @@ def _tool_builder_configure_init_type(env, quest_id, init_type, config="{}", **k
     if init_type == "web_ui":
         quest.write({"show_in_chat": True})
     # Let the init_type record auto-create resources (chat_user, alias, cron, etc.)
-    init_record = env["ai.quest.init_type"].create(vals)
+    init_record = env["ai.coworker.init_type"].create(vals)
     init_record._after_change()
     return f"Init type '{init_type}' configured for quest '{quest.name}'"
 
@@ -1538,7 +1538,7 @@ def _tool_builder_test_skill(env, skill_id, prompt, **kwargs):
     skill = env["ai.skill"].browse(int(skill_id))
     if not skill.exists():
         return f"Error: Skill #{skill_id} not found"
-    quest = env["ai.quest"].create({
+    quest = env["ai.coworker"].create({
         "name": f"Test: {skill.name}",
         "description": skill.recipe_text or skill.description or "",
         "init_type": "manual",

@@ -12,8 +12,8 @@ class DiscussChannel(models.Model):
         'channel_id', 'agent_id',
         string='AI Agents',
         help='AI agents that are visible members of this channel via Buzz workspaces.')
-    ai_quest_id = fields.Many2one(
-        'ai.quest', string='Buzz Quest',
+    ai_coworker_id = fields.Many2one(
+        'ai.coworker', string='Buzz Quest',
         help='The Buzz workspace quest linked to this channel, if any.')
 
     def _sync_ai_agent_members(self):

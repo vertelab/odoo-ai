@@ -29,7 +29,7 @@ class AIMemory(models.Model):
     agent_id = fields.Many2one('ai.agent', string='Agent')
 
     # Quest learning (quest-learning-memory)
-    quest_id = fields.Many2one('ai.quest', string='Quest',
+    quest_id = fields.Many2one('ai.coworker', string='Quest',
                                 help='The quest this memory belongs to')
     category = fields.Selection([
         ('preference', 'User Preference'),
@@ -38,7 +38,7 @@ class AIMemory(models.Model):
         ('pattern', 'Pattern'),
         ('feedback', 'Feedback'),
     ], string='Category')
-    source_thread_id = fields.Many2one('ai.quest.session', string='Source Thread',
+    source_thread_id = fields.Many2one('ai.coworker.session', string='Source Thread',
                                         help='Thread where this memory was extracted')
     consolidated = fields.Boolean('Consolidated', default=False,
                                    help='Included in system prompt after consolidation')
@@ -204,8 +204,8 @@ class AIMemory(models.Model):
         """Get embeddings instance from configured LLM or Bifrost fallback."""
         try:
             # Try quest's agent LLM first
-            if self.quest_id:
-                for agent_rel in self.quest_id.agent_ids:
+            if self.coworker_id:
+                for agent_rel in self.coworker_id.agent_ids:
                     agent = agent_rel.agent_id
                     if agent and hasattr(agent, 'ai_agent_llm_id'):
                         llm = agent.ai_agent_llm_id

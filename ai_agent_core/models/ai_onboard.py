@@ -56,7 +56,7 @@ class AIOnboardCandidate(models.Model):
     ], default='new')
 
     # Result if acted upon
-    resulting_quest_id = fields.Many2one('ai.quest', string='Created Quest')
+    resulting_coworker_id = fields.Many2one('ai.coworker', string='Created Quest')
     resulting_ticket_id = fields.Integer('Ticket ID')
     resulting_action_id = fields.Many2one('ir.actions.server', string='Created Action')
     resulting_nonconformity_id = fields.Integer('Nonconformity ID')
@@ -131,7 +131,7 @@ class AIOnboardCandidate(models.Model):
 
     def _scan_error_patterns(self):
         """Scan quest session errors for patterns."""
-        error_sessions = self.env['ai.quest.session'].search([
+        error_sessions = self.env['ai.coworker.session'].search([
             ('status', '=', 'error'),
             ('create_date', '>=', fields.Datetime.now() + ' - 30 days'),
         ])
@@ -187,19 +187,19 @@ class AIOnboardCandidate(models.Model):
                 })
 
     def action_create_quest(self):
-        """Create an ai.quest from this candidate."""
+        """Create an ai.coworker from this candidate."""
         self.ensure_one()
-        quest = self.env['ai.quest'].create({
+        quest = self.env['ai.coworker'].create({
             'name': f'ONBOARD: {self.description[:50]}',
             'init_type': 'manual',
             'description': self.description,
             'status': 'draft',
         })
-        self.resulting_quest_id = quest.id
+        self.resulting_coworker_id = quest.id
         self.status = 'created_quest'
         return {
             'type': 'ir.actions.act_window',
-            'res_model': 'ai.quest',
+            'res_model': 'ai.coworker',
             'res_id': quest.id,
             'view_mode': 'form',
             'target': 'current',

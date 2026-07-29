@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""ai.quest.session — standalone session model for agent runs."""
+"""ai.coworker.session — standalone session model for agent runs."""
 
 import json, logging, uuid
 from odoo import models, fields, api
@@ -8,12 +8,12 @@ _logger = logging.getLogger(__name__)
 
 
 class AIQuestSession(models.Model):
-    _name = 'ai.quest.session'
+    _name = 'ai.coworker.session'
     _description = 'AI Quest Session'
     _order = 'create_date desc'
 
     name = fields.Char(default=lambda self: str(uuid.uuid4())[:8])
-    quest_id = fields.Many2one('ai.quest', string='Quest', ondelete='cascade')
+    quest_id = fields.Many2one('ai.coworker', string='Quest', ondelete='cascade')
     skill_id = fields.Many2one('ai.skill', string='Skill',
         help='Skill being built/improved in this session')
     agent_id = fields.Many2one('ai.agent', string='Agent')
@@ -42,7 +42,7 @@ class AIQuestSession(models.Model):
     # Thread support
     thread_name = fields.Char('Thread Name')
     session_line_ids = fields.One2many(
-        'ai.quest.session.line', 'session_id', string='Messages')
+        'ai.coworker.session.line', 'session_id', string='Messages')
     line_count = fields.Integer('Messages', compute='_compute_line_count')
     active = fields.Boolean('Active', default=True)
 
@@ -54,7 +54,7 @@ class AIQuestSession(models.Model):
     def action_get_lines(self):
         return {
             'name': 'Messages', 'type': 'ir.actions.act_window',
-            'res_model': 'ai.quest.session.line', 'view_mode': 'list,form',
+            'res_model': 'ai.coworker.session.line', 'view_mode': 'list,form',
             'target': 'current',
             'domain': [('session_id', '=', self.id)],
             'context': {'default_session_id': self.id},
@@ -77,7 +77,7 @@ class AIQuestSession(models.Model):
                 sys_mult = ai_model.sys_multiplier
 
         # Create session line for token tracking
-        self.env['ai.quest.session.line'].create({
+        self.env['ai.coworker.session.line'].create({
             'session_id': self.id,
             'role': 'assistant',
             'content': f'Tokens: {input_t} in / {output_t} out',
@@ -95,7 +95,7 @@ class AIQuestSession(models.Model):
     # ── Durable Resume (OpenWorker-inspired) ──
     resumable = fields.Boolean('Resumable', default=True,
                                 help='Can this session be resumed after interruption?')
-    resumed_from_id = fields.Many2one('ai.quest.session', string='Resumed From',
+    resumed_from_id = fields.Many2one('ai.coworker.session', string='Resumed From',
                                        help='Parent session this was resumed from')
 
     def mark_interrupted(self):
@@ -108,7 +108,7 @@ class AIQuestSession(models.Model):
     def resume_session(self):
         """Create a new session that continues from this interrupted one.
 
-        Returns a new session with the same quest/agent/identity config,
+        Returns a new session with the same coworker/agent/identity config,
         linked via resumed_from_id. The calling code should re-run the
         AgentLoop with the history from this session.
         """
@@ -117,7 +117,7 @@ class AIQuestSession(models.Model):
             return None
 
         new_session = self.create({
-            'quest_id': self.quest_id.id,
+            'quest_id': self.coworker_id.id,
             'agent_id': self.agent_id.id,
             'identity_id': self.identity_id.id,
             'status': 'active',

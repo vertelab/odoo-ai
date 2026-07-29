@@ -3,10 +3,10 @@
     <!-- Cron: Daily memory consolidation (runs at 02:00) -->
     <record id="cron_memory_consolidation" model="ir.cron">
         <field name="name">AI: Daglig minneskonsolidering</field>
-        <field name="model_id" ref="model_ai_quest"/>
+        <field name="model_id" ref="model_ai_coworker"/>
         <field name="state">code</field>
         <field name="code"># Consolidate memories for all active quests with identities
-quests = env['ai.quest'].search([('status', '=', 'active'), ('identity_id', '!=', False)])
+quests = env['ai.coworker'].search([('status', '=', 'active'), ('identity_id', '!=', False)])
 for quest in quests:
     try:
         quest.consolidate_memories()

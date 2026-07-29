@@ -111,7 +111,7 @@ class AgentLoop:
         self.context_provider = context_provider
 
         # Observability: [(tool_name, result_preview), ...] per execution,
-        # read by callers (e.g. ai.quest.run) for session-line persistence
+        # read by callers (e.g. ai.coworker.run) for session-line persistence
         self.tool_history: list = []
 
         # Permission engine (optional — backwards compatible)

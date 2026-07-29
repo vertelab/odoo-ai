@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""ai.quest.init_type — multi-init-type support for ai.quest.
+"""ai.coworker.init_type — multi-init-type support for ai.coworker.
 
 One quest can have multiple active init types simultaneously.
 Each type has its own configuration fields.
@@ -23,12 +23,12 @@ INIT_TYPE_SELECTION = [
 
 
 class AIQuestInitType(models.Model):
-    _name = 'ai.quest.init_type'
+    _name = 'ai.coworker.init_type'
     _description = 'AI Quest Init Type'
     _order = 'sequence asc, id asc'
     _rec_name = 'display_name'
 
-    quest_id = fields.Many2one('ai.quest', required=True, ondelete='cascade',
+    quest_id = fields.Many2one('ai.coworker', required=True, ondelete='cascade',
                                 string='Quest')
     init_type = fields.Selection(INIT_TYPE_SELECTION, required=True,
                                   string='Initiation Type')
@@ -151,12 +151,12 @@ class AIQuestInitType(models.Model):
     def _ensure_mail_alias(self):
         """Create mail alias if not exists."""
         if not self.alias_name:
-            self.alias_name = self.quest_id.name.lower().replace(' ', '-')
+            self.alias_name = self.coworker_id.name.lower().replace(' ', '-')
         if not self.alias_id:
             alias = self.env['mail.alias'].create({
                 'alias_name': self.alias_name,
-                'alias_model_id': self.env['ir.model']._get('ai.quest.session').id,
-                'alias_defaults': {'ai_quest_id': self.quest_id.id},
+                'alias_model_id': self.env['ir.model']._get('ai.coworker.session').id,
+                'alias_defaults': {'ai_coworker_id': self.coworker_id.id},
                 'alias_contact': self.alias_contact,
             })
             self.alias_id = alias.id
@@ -164,7 +164,7 @@ class AIQuestInitType(models.Model):
     def _ensure_chat_user(self):
         """Create bot user for private chat if not exists."""
         if not self.chat_user_id:
-            quest = self.quest_id
+            quest = self.coworker_id
             user = self.env['res.users'].search([
                 ('name', '=', quest.name),
                 ('login', '=', 'bot_' + quest.name.lower().replace(' ', '_')),
@@ -181,7 +181,7 @@ class AIQuestInitType(models.Model):
         """Create Discuss channel if not exists."""
         if not self.channel_id:
             channel = self.env['discuss.channel'].create({
-                'name': self.quest_id.name,
+                'name': self.coworker_id.name,
             })
             self.channel_id = channel.id
 
@@ -189,25 +189,25 @@ class AIQuestInitType(models.Model):
         """Create ir.cron record if not exists."""
         if not self.cron_id:
             cron = self.env['ir.cron'].create({
-                'name': self.quest_id.name,
+                'name': self.coworker_id.name,
                 'model_id': self.env.ref('base.model_res_partner').id,
                 'state': 'code',
-                'code': f"env.ref('{self.quest_id._get_eid()}').action_run_scheduled()",
+                'code': f"env.ref('{self.coworker_id._get_eid()}').action_run_scheduled()",
                 'numbercall': -1,
             })
             self.cron_id = cron.id
 
     def _ensure_server_action(self):
         """Create server action and bind to models."""
-        if not self.server_action_id and self.quest_id.model_ids:
+        if not self.server_action_id and self.coworker_id.model_ids:
             action = self.env['ir.actions.server'].create({
-                'name': self.quest_id.name,
-                'model_id': self.quest_id.model_ids[0].id,
-                'binding_model_ids': [(6, 0, self.quest_id.model_ids.ids)],
+                'name': self.coworker_id.name,
+                'model_id': self.coworker_id.model_ids[0].id,
+                'binding_model_ids': [(6, 0, self.coworker_id.model_ids.ids)],
                 'binding_view_types': 'form,list',
                 'binding_type': 'action',
                 'state': 'code',
-                'code': f"env.ref('{self.quest_id._get_eid()}').server_action(records)",
+                'code': f"env.ref('{self.coworker_id._get_eid()}').server_action(records)",
             })
             self.server_action_id = action.id
 

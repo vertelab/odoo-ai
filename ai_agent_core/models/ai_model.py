@@ -120,6 +120,6 @@ class AIModel(models.Model):
 
     def _compute_session_line_count(self):
         for r in self:
-            r.session_line_count = self.env['ai.quest.session.line'].search_count([
+            r.session_line_count = self.env['ai.coworker.session.line'].search_count([
                 ('ai_llm_id', '=', r.id)
             ])

@@ -5,13 +5,13 @@
         <field name="name">ai.tool</field>
         <field name="model">ai.tool</field>
     </record>
-    <record id="model_ai_quest_run" model="ir.model">
-        <field name="name">ai.quest.run</field>
-        <field name="model">ai.quest.run</field>
+    <record id="model_ai_coworker_run" model="ir.model">
+        <field name="name">ai.coworker.run</field>
+        <field name="model">ai.coworker.run</field>
     </record>
-    <record id="model_ai_quest_session_line" model="ir.model">
-        <field name="name">ai.quest.session.line</field>
-        <field name="model">ai.quest.session.line</field>
+    <record id="model_ai_coworker_session_line" model="ir.model">
+        <field name="name">ai.coworker.session.line</field>
+        <field name="model">ai.coworker.session.line</field>
     </record>
 
     <!-- Access rights -->
@@ -25,9 +25,9 @@
         <field name="perm_unlink" eval="1"/>
     </record>
 
-    <record id="access_ai_quest_run" model="ir.model.access">
-        <field name="name">ai.quest.run</field>
-        <field name="model_id" ref="model_ai_quest_run"/>
+    <record id="access_ai_coworker_run" model="ir.model.access">
+        <field name="name">ai.coworker.run</field>
+        <field name="model_id" ref="model_ai_coworker_run"/>
         <field name="group_id" ref="base.group_user"/>
         <field name="perm_read" eval="1"/>
         <field name="perm_write" eval="1"/>
@@ -36,8 +36,8 @@
     </record>
 
     <record id="access_ai_session_line" model="ir.model.access">
-        <field name="name">ai.quest.session.line</field>
-        <field name="model_id" ref="model_ai_quest_session_line"/>
+        <field name="name">ai.coworker.session.line</field>
+        <field name="model_id" ref="model_ai_coworker_session_line"/>
         <field name="group_id" ref="base.group_user"/>
         <field name="perm_read" eval="1"/>
         <field name="perm_write" eval="1"/>

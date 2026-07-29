@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Tests for ai.quest Buzz workspace mode."""
+"""Tests for ai.coworker Buzz workspace mode."""
 
 from odoo.tests.common import TransactionCase
 from odoo.exceptions import ValidationError
@@ -33,7 +33,7 @@ class TestBuzzWorkspace(TransactionCase):
             'trigger_words': 'test,hello',
             'identity_id': self.identity.id,
         })
-        self.quest = self.env['ai.quest'].create({
+        self.quest = self.env['ai.coworker'].create({
             'name': 'Test Buzz Quest',
             'description': 'A test buzz workspace',
             'orchestration_mode': 'buzz',
@@ -42,13 +42,13 @@ class TestBuzzWorkspace(TransactionCase):
 
     def test_orchestration_mode_default(self):
         """New quests default to single mode."""
-        quest = self.env['ai.quest'].create({'name': 'Single Quest'})
+        quest = self.env['ai.coworker'].create({'name': 'Single Quest'})
         self.assertEqual(quest.orchestration_mode, 'single')
 
     def test_buzz_mode_creates_partner(self):
         """Adding an agent to a buzz quest creates a partner."""
         self.assertFalse(self.agent.partner_id)
-        self.env['ai.quest.agent'].create({
+        self.env['ai.coworker.agent'].create({
             'quest_id': self.quest.id,
             'agent_id': self.agent.id,
         })
@@ -57,7 +57,7 @@ class TestBuzzWorkspace(TransactionCase):
 
     def test_buzz_agent_joins_channel(self):
         """Agent partner becomes channel member in buzz mode."""
-        self.env['ai.quest.agent'].create({
+        self.env['ai.coworker.agent'].create({
             'quest_id': self.quest.id,
             'agent_id': self.agent.id,
         })
@@ -67,7 +67,7 @@ class TestBuzzWorkspace(TransactionCase):
 
     def test_buzz_route_mention(self):
         """@mention routes to the right agent."""
-        self.env['ai.quest.agent'].create({
+        self.env['ai.coworker.agent'].create({
             'quest_id': self.quest.id,
             'agent_id': self.agent.id,
         })
@@ -82,7 +82,7 @@ class TestBuzzWorkspace(TransactionCase):
 
     def test_buzz_route_trigger_word(self):
         """Trigger word routes to the right agent."""
-        self.env['ai.quest.agent'].create({
+        self.env['ai.coworker.agent'].create({
             'quest_id': self.quest.id,
             'agent_id': self.agent.id,
         })
@@ -97,7 +97,7 @@ class TestBuzzWorkspace(TransactionCase):
 
     def test_remove_agent_leaves_channel(self):
         """Removing agent from quest removes channel membership."""
-        rel = self.env['ai.quest.agent'].create({
+        rel = self.env['ai.coworker.agent'].create({
             'quest_id': self.quest.id,
             'agent_id': self.agent.id,
         })
@@ -113,17 +113,17 @@ class TestBuzzWorkspace(TransactionCase):
             'name': 'Second Buzz Channel',
             'channel_type': 'channel',
         })
-        quest2 = self.env['ai.quest'].create({
+        quest2 = self.env['ai.coworker'].create({
             'name': 'Second Buzz Quest',
             'orchestration_mode': 'buzz',
             'channel_id': channel2.id,
         })
-        self.env['ai.quest.agent'].create({
+        self.env['ai.coworker.agent'].create({
             'quest_id': self.quest.id,
             'agent_id': self.agent.id,
         })
         first_partner = self.agent.partner_id
-        self.env['ai.quest.agent'].create({
+        self.env['ai.coworker.agent'].create({
             'quest_id': quest2.id,
             'agent_id': self.agent.id,
         })
@@ -131,7 +131,7 @@ class TestBuzzWorkspace(TransactionCase):
 
     def test_agent_partner_has_badge_prefix(self):
         """Agent partner name gets robot emoji prefix."""
-        self.env['ai.quest.agent'].create({
+        self.env['ai.coworker.agent'].create({
             'quest_id': self.quest.id,
             'agent_id': self.agent.id,
         })
@@ -139,7 +139,7 @@ class TestBuzzWorkspace(TransactionCase):
 
     def test_agent_name_change_syncs_to_partner(self):
         """Changing agent name updates partner name."""
-        self.env['ai.quest.agent'].create({
+        self.env['ai.coworker.agent'].create({
             'quest_id': self.quest.id,
             'agent_id': self.agent.id,
         })
@@ -158,7 +158,7 @@ class TestBuzzWorkspace(TransactionCase):
 
     def test_dismiss_auto_agent(self):
         """Auto-created agent can be dismissed."""
-        rel = self.env['ai.quest.agent'].sudo().create({
+        rel = self.env['ai.coworker.agent'].sudo().create({
             'quest_id': self.quest.id,
             'agent_id': self.agent.id,
             'is_auto_created': True,
@@ -169,7 +169,7 @@ class TestBuzzWorkspace(TransactionCase):
 
     def test_channel_session_sync(self):
         """Channel message creates a shared web UI session line."""
-        self.env['ai.quest.agent'].create({
+        self.env['ai.coworker.agent'].create({
             'quest_id': self.quest.id,
             'agent_id': self.agent.id,
         })
@@ -182,7 +182,7 @@ class TestBuzzWorkspace(TransactionCase):
 
     def test_avatar_generation_fallback(self):
         """Avatar generation falls back gracefully when no image model exists."""
-        self.env['ai.quest.agent'].create({
+        self.env['ai.coworker.agent'].create({
             'quest_id': self.quest.id,
             'agent_id': self.agent.id,
         })

@@ -6,7 +6,7 @@ Design inspirerad av:
 - Hermes Agent: USER.md frozen snapshot i system prompt
 - odoomind: cross-graph mail ↔ Odoo-data via res.partner.email
 
-Minnet följer PERSONEN (res.users), inte en specifik ai.quest.
+Minnet följer PERSONEN (res.users), inte en specifik ai.coworker.
 Alla quests som användaren interagerar med kan använda samma minne.
 """
 
@@ -43,11 +43,11 @@ class AIPersonalMemory(models.Model):
         help='Company-level memory (policies, goals).')
 
     # Source tracking (VEM skapade minnet)
-    source_quest_id = fields.Many2one(
-        'ai.quest', string='Source Quest', index=True,
+    source_coworker_id = fields.Many2one(
+        'ai.coworker', string='Source Quest', index=True,
         help='Which quest created this memory.')
     source_session_id = fields.Many2one(
-        'ai.quest.session', string='Source Session', index=True,
+        'ai.coworker.session', string='Source Session', index=True,
         help='Which session created this memory.')
     source = fields.Selection([
         ('chat', 'Chat Conversation'),
@@ -175,7 +175,7 @@ class AIPersonalMemory(models.Model):
 
     @api.model
     def add_memory(self, user_id, content, category='fact', source='chat',
-                   quest_id=None, session_id=None, company_id=None,
+                   coworker_id=None, session_id=None, company_id=None,
                    importance='medium', entities=None, source_ref=None):
         """ADD-only: skapa ett nytt minne. Går inte att uppdatera i efterhand.
 
@@ -190,8 +190,8 @@ class AIPersonalMemory(models.Model):
             content (str): Markdown-text med minnet
             category (str): Typ av minne (fact, preference, etc.)
             source (str): Var kommer minnet ifrån
-            quest_id (int, optional): ai.quest.id
-            session_id (int, optional): ai.quest.session.id
+            quest_id (int, optional): ai.coworker.id
+            session_id (int, optional): ai.coworker.session.id
             company_id (int, optional): res.company.id
             importance (str): low, medium, high
             entities (list, optional): Förifyllda entities
@@ -224,7 +224,7 @@ class AIPersonalMemory(models.Model):
         memory = self.create({
             'user_id': user_id,
             'company_id': company_id,
-            'source_quest_id': quest_id,
+            'source_coworker_id': quest_id,
             'source_session_id': session_id,
             'source': source,
             'source_ref': source_ref,
@@ -249,7 +249,7 @@ class AIPersonalMemory(models.Model):
                         include_archived=False, explain=False):
         """Hybrid search över ALLA minnen för en användare.
 
-        Detta är kärnan: oavsett vilken ai.quest användaren pratar med,
+        Detta är kärnan: oavsett vilken ai.coworker användaren pratar med,
         returneras ALLA relevanta minnen för personen.
 
         Använder mem0s multi-signal retrieval:
@@ -438,7 +438,7 @@ class AIPersonalMemory(models.Model):
     def build_system_prompt_block(self, user_id, query=None, max_chars=2200):
         """Bygg en system prompt-block för en användare.
 
-        Detta anropas av ai.quest när den startar en session.
+        Detta anropas av ai.coworker när den startar en session.
         Resultatet är en "frozen snapshot" — ändras inte under sessionen.
 
         Format (Hermes-kompatibelt):
@@ -501,20 +501,20 @@ class AIPersonalMemory(models.Model):
         - ADD alla till ai.personal.memory
 
         Args:
-            session_id (int): ai.quest.session.id
+            session_id (int): ai.coworker.session.id
 
         Returns:
             int: Antal extraherade minnen
         """
-        session = self.env['ai.quest.session'].browse(session_id)
+        session = self.env['ai.coworker.session'].browse(session_id)
         if not session.exists():
             return 0
 
-        user_id = session.user_id.id or session.quest_id.user_id.id
+        user_id = session.user_id.id or session.coworker_id.user_id.id
         if not user_id:
             return 0
 
-        quest_id = session.quest_id.id
+        quest_id = session.coworker_id.id
 
         # Hämta session lines
         lines = session.session_line_ids.sorted('sequence')
@@ -559,7 +559,7 @@ class AIPersonalMemory(models.Model):
                 category=fact.get('category', 'fact'),
                 importance=fact.get('importance', 'medium'),
                 source='learning',
-                quest_id=quest_id,
+                coworker_id=coworker_id,
                 session_id=session_id,
             )
             count += 1
@@ -741,7 +741,7 @@ class AIPersonalMemory(models.Model):
         # 2. Uppdatera user_model på identity (per användare)
         users = self.env['res.users'].search([('active', '=', True)])
         for user in users:
-            personal_quest = user.personal_quest_id
+            personal_quest = user.personal_coworker_id
             if not personal_quest or not personal_quest.identity_id:
                 continue
 
@@ -840,7 +840,7 @@ class AIPersonalMemory(models.Model):
     def _embed_text(self, text):
         """Generera embedding via AI-provider.
 
-        Använder samma provider som ai.quest använder.
+        Använder samma provider som ai.coworker använder.
         OpenAI text-embedding-3-small (1536 dimensioner).
         Lagrar som PostgreSQL vector-literal: "[0.1,0.2,...]".
 
@@ -1111,7 +1111,7 @@ Return ONLY a JSON object: {{"memory": [{{"text": "...", "category": "fact|prefe
             if len(msgs) < 3:
                 continue
             user = self.env['res.users'].browse(uid)
-            quest = user.personal_quest_id
+            quest = user.personal_coworker_id
             identity = quest.identity_id if quest else None
 
             # LLM extraction

@@ -79,7 +79,7 @@
                     </group>
                     <group string="Usage">
                         <field name="agent_ids" widget="many2many_tags"/>
-                        <field name="quest_ids" widget="many2many_tags"/>
+                        <field name="coworker_ids" widget="many2many_tags"/>
                     </group>
                 </sheet>
             </form>

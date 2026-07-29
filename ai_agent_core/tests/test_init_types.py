@@ -10,12 +10,12 @@ from odoo.exceptions import UserError
 
 
 class TestQuestInitType(TransactionCase):
-    """Test ai.quest.init_type model (13.1)."""
+    """Test ai.coworker.init_type model (13.1)."""
 
     def setUp(self):
         super().setUp()
-        self.Quest = self.env['ai.quest']
-        self.InitType = self.env['ai.quest.init_type']
+        self.Quest = self.env['ai.coworker']
+        self.InitType = self.env['ai.coworker.init_type']
 
     def test_create_init_type(self):
         """Init type can be created and linked to quest."""
@@ -107,8 +107,8 @@ class TestModelIdsMigration(TransactionCase):
 
     def setUp(self):
         super().setUp()
-        self.Quest = self.env['ai.quest']
-        self.InitType = self.env['ai.quest.init_type']
+        self.Quest = self.env['ai.coworker']
+        self.InitType = self.env['ai.coworker.init_type']
 
     def test_model_ids_computed_to_model_id(self):
         """model_id is computed from first model_ids entry."""
@@ -159,7 +159,7 @@ class TestFAISS(TransactionCase):
     def setUp(self):
         super().setUp()
         self.Memory = self.env['ai.memory']
-        self.Quest = self.env['ai.quest']
+        self.Quest = self.env['ai.coworker']
 
     def test_create_faiss_memory(self):
         """FAISS index can be created and stored as attachment."""
@@ -213,7 +213,7 @@ class TestFAISS(TransactionCase):
     def test_get_quest_memories_no_faiss(self):
         """_get_quest_memories returns empty for quest without FAISS."""
         quest = self.Quest.create({'name': 'NoMem Quest', 'status': 'active'})
-        self.InitType = self.env['ai.quest.init_type']
+        self.InitType = self.env['ai.coworker.init_type']
         result = quest._get_quest_memories('test query')
         self.assertEqual(result, '')
 
@@ -223,8 +223,8 @@ class TestCallbacks(TransactionCase):
 
     def setUp(self):
         super().setUp()
-        self.Session = self.env['ai.quest.session']
-        self.Quest = self.env['ai.quest']
+        self.Session = self.env['ai.coworker.session']
+        self.Quest = self.env['ai.coworker']
 
     def test_callback_creates_session_line(self):
         """Callback creates a session line for audit trail."""
@@ -234,7 +234,7 @@ class TestCallbacks(TransactionCase):
             'status': 'active',
             'name': 'Test Session',
         })
-        line = self.env['ai.quest.session.line'].create({
+        line = self.env['ai.coworker.session.line'].create({
             'session_id': session.id,
             'sequence': 1,
             'role': 'assistant',
@@ -256,7 +256,7 @@ class TestCallbacks(TransactionCase):
             'status': 'active',
             'name': 'Zabbix: Disk > 90%',
         })
-        line = self.env['ai.quest.session.line'].create({
+        line = self.env['ai.coworker.session.line'].create({
             'session_id': session.id,
             'sequence': 1,
             'role': 'user',
@@ -273,7 +273,7 @@ class TestCallbacks(TransactionCase):
             'status': 'done',
             'name': 'Bifrost batch: batch-123',
         })
-        line = self.env['ai.quest.session.line'].create({
+        line = self.env['ai.coworker.session.line'].create({
             'session_id': session.id,
             'sequence': 1,
             'role': 'assistant',
@@ -294,10 +294,10 @@ class TestCallbacks(TransactionCase):
         att = self.env['ir.attachment'].create({
             'name': 'result.json',
             'datas': base64.b64encode(b'{"key": "value"}'),
-            'res_model': 'ai.quest.session',
+            'res_model': 'ai.coworker.session',
             'res_id': session.id,
         })
-        self.assertEqual(att.res_model, 'ai.quest.session')
+        self.assertEqual(att.res_model, 'ai.coworker.session')
         self.assertEqual(att.res_id, session.id)
 
 
@@ -306,8 +306,8 @@ class TestOpenAIAPI(TransactionCase):
 
     def setUp(self):
         super().setUp()
-        self.Quest = self.env['ai.quest']
-        self.InitType = self.env['ai.quest.init_type']
+        self.Quest = self.env['ai.coworker']
+        self.InitType = self.env['ai.coworker.init_type']
 
     def test_model_id_parsing(self):
         """Model name 'quest-42' maps to quest ID 42."""

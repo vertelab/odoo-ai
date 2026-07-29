@@ -10,8 +10,8 @@ _logger = logging.getLogger(__name__)
 class ResUsers(models.Model):
     _inherit = 'res.users'
 
-    personal_quest_id = fields.Many2one(
-        'ai.quest', string='AI Companion',
+    personal_coworker_id = fields.Many2one(
+        'ai.coworker', string='AI Companion',
         help='Personal AI quest for this user. Created automatically '
              'when personal companion is enabled.')
 
@@ -62,8 +62,8 @@ class ResUsers(models.Model):
     def _create_personal_companion(self, identity_template=None):
         """Create or get personal AI companion quest for this user."""
         self.ensure_one()
-        if self.personal_quest_id:
-            return self.personal_quest_id
+        if self.personal_coworker_id:
+            return self.personal_coworker_id
 
         # Get identity template from system settings
         if not identity_template:
@@ -82,7 +82,7 @@ class ResUsers(models.Model):
             identity_copy = identity_template.copy_for_user(self)
 
         # Create personal quest
-        quest = self.env['ai.quest'].create({
+        quest = self.env['ai.coworker'].create({
             'name': f"{self.name}'s AI Companion",
             'init_type': 'chat',
             'user_id': self.id,
@@ -92,7 +92,7 @@ class ResUsers(models.Model):
                           f"Learns from interactions and adapts over time.",
             'status': 'active',
         })
-        self.personal_quest_id = quest.id
+        self.personal_coworker_id = quest.id
         _logger.info('Created personal AI companion for %s: quest %s',
                      self.name, quest.id)
         return quest

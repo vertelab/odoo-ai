@@ -361,8 +361,8 @@ def post_init_hook(env):
     """Create Quest Builder and Skill Builder quests if they don't exist."""
 
     # Quest Builder
-    if not env['ai.quest'].search_count([('name', '=', 'Quest Builder')]):
-        env['ai.quest'].create({
+    if not env['ai.coworker'].search_count([('name', '=', 'Quest Builder')]):
+        env['ai.coworker'].create({
             'name': 'Quest Builder',
             'description': BUILDER_SYSTEM_PROMPT,
             'sub_description': 'AI that helps you build and configure quests',
@@ -378,8 +378,8 @@ def post_init_hook(env):
         _logger.info('Quest Builder already exists — skipping')
 
     # Skill Builder
-    if not env['ai.quest'].search_count([('name', '=', 'Skill Builder')]):
-        env['ai.quest'].create({
+    if not env['ai.coworker'].search_count([('name', '=', 'Skill Builder')]):
+        env['ai.coworker'].create({
             'name': 'Skill Builder',
             'description': SKILL_BUILDER_PROMPT,
             'sub_description': 'AI that helps you design and test skills',

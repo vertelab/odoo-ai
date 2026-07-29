@@ -4,7 +4,7 @@
     <!-- Cron: Generate monthly systemtoken summaries (runs 1st of each month at 03:00) -->
     <record id="cron_monthly_summary" model="ir.cron">
         <field name="name">AI: Generera månadssammanställning</field>
-        <field name="model_id" ref="model_ai_quest_monthly_summary"/>
+        <field name="model_id" ref="model_ai_coworker_monthly_summary"/>
         <field name="state">code</field>
         <field name="code">model.generate_monthly_summaries()</field>
         <field name="interval_number">1</field>

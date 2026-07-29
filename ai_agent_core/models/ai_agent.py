@@ -72,19 +72,19 @@ class AIAgent(models.Model):
     last_run = fields.Datetime()
 
     # Stats
-    quest_count = fields.Integer(compute='_compute_quest_count')
+    coworker_count = fields.Integer(compute='_compute_coworker_count')
 
-    def _compute_quest_count(self):
+    def _compute_coworker_count(self):
         for r in self:
-            r.quest_count = self.env['ai.quest.agent'].search_count([
+            r.coworker_count = self.env['ai.coworker.agent'].search_count([
                 ('agent_id', '=', r.id)
             ])
 
     def _compute_is_buzz_active(self):
         for r in self:
-            r.is_buzz_active = bool(self.env['ai.quest.agent'].search([
+            r.is_buzz_active = bool(self.env['ai.coworker.agent'].search([
                 ('agent_id', '=', r.id),
-                ('quest_id.orchestration_mode', '=', 'buzz'),
+                ('coworker_id.orchestration_mode', '=', 'buzz'),
             ], limit=1))
 
     def _ensure_partner(self, email_domain='ai.vertel.se'):
@@ -172,12 +172,12 @@ class AIAgent(models.Model):
         return {'type': 'ir.actions.act_window_close'}
 
     def action_get_quests(self):
-        quest_ids = self.env['ai.quest.agent'].search([
+        quest_ids = self.env['ai.coworker.agent'].search([
             ('agent_id', '=', self.id)
-        ]).mapped('quest_id').ids
+        ]).mapped("coworker_id").ids
         return {
             'name': 'Quests', 'type': 'ir.actions.act_window',
-            'res_model': 'ai.quest', 'view_mode': 'kanban,list,form',
+            'res_model': 'ai.coworker', 'view_mode': 'kanban,list,form',
             'target': 'current', 'domain': [('id', 'in', quest_ids)],
         }
 

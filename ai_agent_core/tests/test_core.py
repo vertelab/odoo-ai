@@ -919,7 +919,7 @@ class TestQuestAccessControl(unittest.TestCase):
         # Parse source to verify function exists (avoid Odoo import)
         import os
         path = os.path.join(
-            os.path.dirname(__file__), '..', 'models', 'ai_quest.py'
+            os.path.dirname(__file__), '..', 'models', 'ai_coworker.py'
         )
         path = os.path.abspath(path)
         with open(path) as f:
@@ -1028,7 +1028,7 @@ class TestQuestAccessControl(unittest.TestCase):
         # Parse the source to verify field definitions
         import os
         path = os.path.join(
-            os.path.dirname(__file__), '..', 'models', 'ai_quest.py'
+            os.path.dirname(__file__), '..', 'models', 'ai_coworker.py'
         )
         path = os.path.abspath(path)
         with open(path) as f:
@@ -1118,7 +1118,7 @@ class TestSystemtoken(unittest.TestCase):
         """T1.6: quest model source contains systemtoken fields."""
         import os
         path = os.path.join(
-            os.path.dirname(__file__), '..', 'models', 'ai_quest.py'
+            os.path.dirname(__file__), '..', 'models', 'ai_coworker.py'
         )
         path = os.path.abspath(path)
         with open(path) as f:
@@ -1173,7 +1173,7 @@ class TestSystemtoken(unittest.TestCase):
         """T2.2: quest model has cap enforcement methods."""
         import os
         path = os.path.join(
-            os.path.dirname(__file__), '..', 'models', 'ai_quest.py'
+            os.path.dirname(__file__), '..', 'models', 'ai_coworker.py'
         )
         path = os.path.abspath(path)
         with open(path) as f:
@@ -1216,7 +1216,7 @@ class TestSystemtoken(unittest.TestCase):
         """T2.7: quest get_billing_data returns expected fields."""
         import os
         path = os.path.join(
-            os.path.dirname(__file__), '..', 'models', 'ai_quest.py'
+            os.path.dirname(__file__), '..', 'models', 'ai_coworker.py'
         )
         path = os.path.abspath(path)
         with open(path) as f:
@@ -1232,7 +1232,7 @@ class TestSystemtoken(unittest.TestCase):
         """T3.5: AIQuestMonthlySummary model exists with generate_monthly_summaries."""
         import os
         path = os.path.join(
-            os.path.dirname(__file__), '..', 'models', 'ai_quest.py'
+            os.path.dirname(__file__), '..', 'models', 'ai_coworker.py'
         )
         path = os.path.abspath(path)
         with open(path) as f:

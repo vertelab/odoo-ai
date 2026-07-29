@@ -20,7 +20,7 @@ class AIKaizenReport(models.Model):
     _order = 'week_start desc'
     _inherit = ['mail.thread']
 
-    quest_id = fields.Many2one('ai.quest', required=True, ondelete='cascade',
+    quest_id = fields.Many2one('ai.coworker', required=True, ondelete='cascade',
                                 string='Quest')
     week_start = fields.Date('Week Starting', required=True)
     week_end = fields.Date('Week Ending', required=True)
@@ -63,16 +63,16 @@ class AIKaizenReport(models.Model):
     @api.depends('quest_id.name', 'week_start')
     def _compute_display_name(self):
         for r in self:
-            quest_name = r.quest_id.name if r.quest_id else '?'
+            quest_name = r.coworker_id.name if r.coworker_id else '?'
             week = r.week_start.isoformat() if r.week_start else '?'
             r.display_name = f'Kaizen: {quest_name} — vecka {week}'
 
     def generate_weekly_report(self, quest=None):
         """Cron: generate kaizen reports for all (or one) active quests."""
         if quest:
-            quests = quest
+            coworkers = quest
         else:
-            quests = self.env['ai.quest'].search([('status', '=', 'active')])
+            coworkers = self.env['ai.coworker'].search([('status', '=', 'active')])
 
         today = date.today()
         week_start = today - timedelta(days=today.weekday() + 7)  # Last Monday
@@ -97,7 +97,7 @@ class AIKaizenReport(models.Model):
         return created
 
     def _create_report_for_quest(self, quest, week_start, week_end):
-        """Create a single kaizen report for one quest."""
+        """Create a single kaizen report for one coworker."""
         # Gather data
         week_data = self._gather_week_data(quest, week_start, week_end)
         prev_data = self._gather_previous_week(quest, week_start)
@@ -116,7 +116,7 @@ class AIKaizenReport(models.Model):
 
         # Create report
         report = self.create({
-            'quest_id': quest.id,
+            'quest_id': coworker.id,
             'week_start': week_start,
             'week_end': week_end,
             'status': 'draft',
@@ -133,7 +133,7 @@ class AIKaizenReport(models.Model):
                     **f,
                 })
         except Exception as e:
-            _logger.warning('Kaizen analysis failed for %s: %s', quest.name, e)
+            _logger.warning('Kaizen analysis failed for %s: %s', coworker.name, e)
             # Still create the report even if analysis fails
 
         # Generate report text
@@ -142,7 +142,7 @@ class AIKaizenReport(models.Model):
 
         # Post to quest
         if quest:
-            quest.message_post(
+            coworker.message_post(
                 body=report.report_text,
                 message_type='notification',
             )
@@ -159,13 +159,13 @@ class AIKaizenReport(models.Model):
             # Append ONBOARD section to report
             onboard_text = _render_onboard_section(onboard_candidates)
             report.report_text = (report.report_text or '') + onboard_text
-            report.quest_id.message_post(
+            report.coworker_id.message_post(
                 body=onboard_text,
                 message_type='notification',
             )
 
         _logger.info('Kaizen report for %s: %d sessions, %d errors, %d findings',
-                     quest.name, week_data['session_count'],
+                     coworker.name, week_data['session_count'],
                      week_data['error_count'], len(report.finding_ids))
         return report
 
@@ -174,14 +174,14 @@ class AIKaizenReport(models.Model):
         week_start_dt = datetime.combine(week_start, datetime.min.time())
         week_end_dt = datetime.combine(week_end, datetime.max.time())
 
-        lines = self.env['ai.quest.session.line'].search([
-            ('session_id.quest_id', '=', quest.id),
+        lines = self.env['ai.coworker.session.line'].search([
+            ('session_id.coworker_id', '=', coworker.id),
             ('create_date', '>=', week_start_dt),
             ('create_date', '<=', week_end_dt),
         ])
 
-        sessions = self.env['ai.quest.session'].search([
-            ('quest_id', '=', quest.id),
+        sessions = self.env['ai.coworker.session'].search([
+            ('quest_id', '=', coworker.id),
             ('create_date', '>=', week_start_dt),
             ('create_date', '<=', week_end_dt),
         ])
@@ -190,7 +190,7 @@ class AIKaizenReport(models.Model):
 
         # Feedback from ai.memory
         feedback = self.env['ai.memory'].search([
-            ('quest_id', '=', quest.id),
+            ('quest_id', '=', coworker.id),
             ('category', '=', 'feedback'),
             ('create_date', '>=', week_start_dt),
             ('create_date', '<=', week_end_dt),
@@ -256,7 +256,7 @@ class AIKaizenReport(models.Model):
     def _render_report(self):
         """Render kaizen report as text."""
         self.ensure_one()
-        quest_name = self.quest_id.name
+        quest_name = self.coworker_id.name
 
         lines = [
             f"📊 **Kaizen-rapport: {quest_name}**",
@@ -332,7 +332,7 @@ class AIKaizenFinding(models.Model):
     def action_apply(self):
         """Apply the recommended fix."""
         self.ensure_one()
-        quest = self.report_id.quest_id
+        quest = self.report_id.coworker_id
 
         if self.category == 'skill_gap':
             # Try to add a skill

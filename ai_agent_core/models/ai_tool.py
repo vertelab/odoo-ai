@@ -87,8 +87,8 @@ class AITool(models.Model):
         'ai.agent', 'ai_agent_tool_custom_rel',
         'tool_id', 'agent_id', string='Used by Agents',
     )
-    quest_ids = fields.Many2many(
-        'ai.quest', 'ai_quest_tool_custom_rel',
+    coworker_ids = fields.Many2many(
+        'ai.coworker', 'ai_coworker_tool_custom_rel',
         'tool_id', 'quest_id', string='Used by Quests',
     )
 

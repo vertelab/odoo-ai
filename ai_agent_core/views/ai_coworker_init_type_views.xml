@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
     <!-- List view -->
-    <record id="ai_quest_init_type_list" model="ir.ui.view">
-        <field name="name">ai.quest.init_type.list</field>
-        <field name="model">ai.quest.init_type</field>
+    <record id="ai_coworker_init_type_list" model="ir.ui.view">
+        <field name="name">ai.coworker.init_type.list</field>
+        <field name="model">ai.coworker.init_type</field>
         <field name="arch" type="xml">
             <list string="Initiation Types" editable="bottom">
                 <field name="sequence" widget="handle"/>
@@ -21,9 +21,9 @@
     </record>
 
     <!-- Form view -->
-    <record id="ai_quest_init_type_form" model="ir.ui.view">
-        <field name="name">ai.quest.init_type.form</field>
-        <field name="model">ai.quest.init_type</field>
+    <record id="ai_coworker_init_type_form" model="ir.ui.view">
+        <field name="name">ai.coworker.init_type.form</field>
+        <field name="model">ai.coworker.init_type</field>
         <field name="arch" type="xml">
             <form>
                 <group>

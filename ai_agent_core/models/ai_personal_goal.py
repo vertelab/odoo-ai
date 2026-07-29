@@ -22,7 +22,7 @@ class AIPersonalGoal(models.Model):
         default=lambda self: self.env.user,
         help='The user who owns this goal.')
     quest_id = fields.Many2one(
-        'ai.quest', string='Suggested by Quest',
+        'ai.coworker', string='Suggested by Quest',
         help='The AI quest that suggested this goal.')
     okr_id = fields.Reference(
         selection='_selection_okr_targets',
@@ -147,8 +147,8 @@ class AIPersonalGoal(models.Model):
             result.append(('ai.company.memory', 'Company Memory'))
         if 'strategy.review' in self.env:
             result.append(('strategy.review', 'Strategy Review'))
-        if 'ai.quest.session' in self.env:
-            result.append(('ai.quest.session', 'Quest Session'))
+        if 'ai.coworker.session' in self.env:
+            result.append(('ai.coworker.session', 'Quest Session'))
         return result
 
     def action_accept(self):

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-ai.quest.skill — per-quest skill copy (fork model).
+ai.coworker.skill — per-quest skill copy (fork model).
 
 Each quest gets its own copy of a shared skill.
 The quest can independently improve its copy.
@@ -20,11 +20,11 @@ class AIQuestSkill(models.Model):
     Quest can independently improve its copy without
     affecting other quests using the same shared skill.
     """
-    _name = 'ai.quest.skill'
+    _name = 'ai.coworker.skill'
     _description = 'Quest Skill Copy'
     _order = 'sequence asc'
 
-    quest_id = fields.Many2one('ai.quest', required=True, ondelete='cascade',
+    quest_id = fields.Many2one('ai.coworker', required=True, ondelete='cascade',
                                 string='Quest')
     source_skill_id = fields.Many2one('ai.skill', string='Source Skill',
                                        readonly=True,
@@ -113,23 +113,23 @@ class AIQuestSkill(models.Model):
         if self.improvement_guidance:
             updates['improvement_guidance'] = (
                 (self.source_skill_id.improvement_guidance or '') +
-                f'\n[Quest: {self.quest_id.name}]\n{self.improvement_guidance}'
+                f'\n[Quest: {self.coworker_id.name}]\n{self.improvement_guidance}'
             )
         if self.success_cases:
             updates['success_cases'] = (
                 (self.source_skill_id.success_cases or '') +
-                f'\n[Quest: {self.quest_id.name}]\n{self.success_cases}'
+                f'\n[Quest: {self.coworker_id.name}]\n{self.success_cases}'
             )
         if updates:
             self.source_skill_id.write(updates)
             self.feedback_proposed = True
             self.feedback_notes = (
-                f'Proposed improvements from quest "{self.quest_id.name}" '
+                f'Proposed improvements from quest "{self.coworker_id.name}" '
                 f'on {fields.Datetime.now()}'
             )
             # Post message on shared skill
             self.source_skill_id.message_post(
-                body=f'📝 **Improvement proposed** from quest "{self.quest_id.name}"\n\n'
+                body=f'📝 **Improvement proposed** from quest "{self.coworker_id.name}"\n\n'
                      f'Version: {self.version}\n\n'
                      f'Guidance: {self.improvement_guidance or "None"}\n\n'
                      f'Cases: {self.success_cases or "None"}',

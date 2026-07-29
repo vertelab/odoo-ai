@@ -37,7 +37,7 @@
                 <field name="ai_role"/>
                 <field name="model_id"/>
                 <field name="status"/>
-                <field name="quest_count"/>
+                <field name="coworker_count"/>
             </list>
         </field>
     </record>

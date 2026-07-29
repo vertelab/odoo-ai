@@ -113,11 +113,11 @@ class AISkill(models.Model):
     def action_open_skill_builder(self):
         """Open Skill Builder chat for this skill."""
         self.ensure_one()
-        builder = self.env['ai.quest'].search(
+        builder = self.env['ai.coworker'].search(
             [('name', '=', 'Skill Builder')], limit=1)
         if not builder:
             return {'type': 'ir.actions.act_url', 'url': '/ai/chat', 'target': 'new'}
-        url = f'/ai/chat?quest_id={builder.id}'
+        url = f'/ai/chat?coworker_id={builder.id}'
         if self.id:
             url += f'&context_skill={self.id}'
         return {'type': 'ir.actions.act_url', 'url': url, 'target': 'new'}
