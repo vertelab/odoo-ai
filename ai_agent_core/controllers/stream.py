@@ -166,9 +166,11 @@ class AIStreamController(http.Controller):
             try:
                 session = request.env['ai.coworker.session'].browse(int(session_id))
                 if session.exists():
-                    # Inject quest memories into system prompt
-                    if quest and quest.identity_id:
-                        memories_text = _get_quest_memories(quest)
+                    # Inject quest + session memories into system prompt
+                    if quest:
+                        memories_text = _get_quest_memories(
+                            quest, session_id=session.id, query=prompt
+                        )
                         if memories_text:
                             system_prompt = (system_prompt + '\n\n' + memories_text).strip()
 
@@ -219,6 +221,9 @@ class AIStreamController(http.Controller):
         # generate(). Extract everything needed into plain values here.
         gen_is_supervisor = False
         gen_agents = []  # [{'name', 'description', 'model'}]
+        # Resolved provider + model for the post-teardown generator
+        gen_provider = None
+        gen_provider_model = None  # model name string for non-supervisor mode
         # DB identity for the post-teardown cursor (tool execution needs an
         # env, but `request.env` is unbound inside the SSE generator)
         gen_dbname = request.env.cr.dbname
@@ -240,6 +245,13 @@ class AIStreamController(http.Controller):
                             'description': agent.get_agent_name(),
                             'model': (agent.model_id.name if agent.model_id else model),
                         })
+                # Resolve provider from quest's agent chain
+                from odoo.addons.ai_agent_core.core.provider import ProviderFactory
+                provider_instance, provider_model = ProviderFactory.from_coworker(quest)
+                if provider_instance:
+                    gen_provider = provider_instance
+                    if provider_model:
+                        gen_provider_model = provider_model.name
             except Exception:
                 _logger.exception('Failed to extract quest data for streaming')
 
@@ -256,12 +268,11 @@ class AIStreamController(http.Controller):
                 asyncio.set_event_loop(loop)
                 try:
                     async def _stream(gen_env):
-                        from odoo.addons.ai_agent_core.core.provider import BifrostProvider
                         from odoo.addons.ai_agent_core.core.tools import ToolRegistry, builtin_tools, wrap_tools_with_env
                         from odoo.addons.ai_agent_core.core.loop import StreamingAgentLoop, AgentConfig
                         from odoo.addons.ai_agent_core.core.supervisor import StreamingSupervisorLoop, SupervisorConfig, SpecialistAgent
 
-                        provider = BifrostProvider(
+                        provider = gen_provider or BifrostProvider(
                             base_url="http://192.168.11.150:8080/v1",
                             virtual_key="opencode",
                         )
@@ -784,13 +795,12 @@ class AIStreamController(http.Controller):
         quests = request.env['ai.coworker'].search([
             ('status', '=', 'active'),
             ('active', '=', True),
+            ('init_type_ids.init_type', '=', 'powerbox'),
+            ('init_type_ids.active', '=', True),
             '|',
             ('model_ids.model', '=', model),
             ('model_ids', '=', False),  # No model restriction = available on all
         ], order='sequence asc, name asc')
-
-        # Deduplicate
-        quests = quests.sorted('sequence')
 
         return Response(json.dumps({
             "quests": [{
@@ -821,8 +831,11 @@ class AIStreamController(http.Controller):
                           content_type='application/json', status=400)
 
         quest = request.env['ai.coworker'].browse(int(coworker_id))
-        if not quest.exists() or quest.init_type != 'powerbox':
-            return Response(json.dumps({"error": "Quest not found or not powerbox"}),
+        if not quest.exists():
+            return Response(json.dumps({"error": "Quest not found"}),
+                          content_type='application/json', status=404)
+        if 'powerbox' not in quest.init_type_ids.filtered('active').mapped('init_type'):
+            return Response(json.dumps({"error": "Quest not configured as powerbox"}),
                           content_type='application/json', status=404)
 
         try:
@@ -896,6 +909,43 @@ class AIStreamController(http.Controller):
             "field": field_updated,
         }), content_type='application/json')
 
+    # === Session document API ===
+
+    @http.route('/ai/session/<int:session_id>/documents', type='http', auth='public',
+                methods=['GET'], csrf=False, sitemap=False)
+    def session_documents(self, session_id, **kw):
+        """List uploaded documents for a session."""
+        session = request.env['ai.coworker.session'].browse(session_id)
+        if not session.exists():
+            return Response(json.dumps({"documents": []}),
+                          content_type='application/json')
+
+        memories = request.env['ai.memory'].search([
+            ('session_id', '=', session.id),
+            ('archived', '=', False),
+        ])
+
+        return Response(json.dumps({
+            "documents": [{
+                "id": m.id,
+                "name": m.name or 'Dokument',
+                "content_preview": (m.content or '')[:200],
+                "memory_type": m.memory_type,
+                "tags": m.tags or '',
+                "can_remove": True,
+            } for m in memories]
+        }), content_type='application/json')
+
+    @http.route('/ai/memory/<int:memory_id>/archive', type='http', auth='public',
+                methods=['POST'], csrf=False, sitemap=False)
+    def memory_archive(self, memory_id, **kw):
+        """Archive a memory (soft delete)."""
+        memory = request.env['ai.memory'].browse(memory_id)
+        if memory.exists():
+            memory.archived = True
+        return Response(json.dumps({"status": "ok"}),
+                      content_type='application/json')
+
     @http.route('/ai/improve', type='http', auth='public',
                 methods=['POST'], csrf=False, sitemap=False)
     def improve_quest(self, **kw):
@@ -936,8 +986,13 @@ class AIStreamController(http.Controller):
     @http.route('/ai/upload', type='http', auth='public',
                 methods=['POST'], csrf=False, sitemap=False)
     def upload_document(self, **kw):
-        """Ladda upp dokument → RAG-minne (text eller FAISS)."""
+        """Ladda upp dokument → RAG-minne (text eller FAISS).
+
+        Accepts optional session_id to bind memory to a specific session.
+        Stores the original file as ir.attachment linked to the session.
+        """
         coworker_id = kw.get('coworker_id')
+        session_id = kw.get('session_id')
         memory_type = kw.get('memory_type', 'text')
         file_obj = request.httprequest.files.get('file')
         if not file_obj:
@@ -950,6 +1005,18 @@ class AIStreamController(http.Controller):
             return Response(json.dumps({"error": "Kunde ej extrahera text"}),
                           content_type='application/json', status=400)
         quest = request.env['ai.coworker'].browse(int(coworker_id)) if coworker_id else None
+        session = request.env['ai.coworker.session'].browse(int(session_id)) if session_id else None
+
+        # Store original file as ir.attachment linked to session
+        attachment = None
+        if session:
+            attachment = request.env['ir.attachment'].create({
+                'name': filename,
+                'datas': content,
+                'res_model': 'ai.coworker.session',
+                'res_id': session.id,
+                'mimetype': file_obj.content_type or 'application/octet-stream',
+            })
 
         if memory_type == 'faiss':
             # Create FAISS memory from uploaded document
@@ -960,6 +1027,8 @@ class AIStreamController(http.Controller):
                     'name': f'FAISS: {filename}',
                     'content': text[:2000],
                     'coworker_id': quest.id if quest else None,
+                    'session_id': session.id if session else None,
+                    'agent_id': quest.agent_ids[0].agent_id.id if quest and quest.agent_ids else None,
                     'category': 'fact',
                     'importance': 'medium',
                     'memory_type': 'faiss',
@@ -970,6 +1039,7 @@ class AIStreamController(http.Controller):
                     'status': 'ok', 'filename': filename,
                     'chars': len(text), 'chunks': chunk_count,
                     'memory_id': memory.id,
+                    'attachment_id': attachment.id if attachment else None,
                     'message': f"'{filename}' indexerat som FAISS ({chunk_count} chunks).",
                 }), content_type='application/json')
             except Exception as e:
@@ -984,6 +1054,7 @@ class AIStreamController(http.Controller):
                 'name': f'{filename} (del {i+1})' if len(chunks) > 1 else filename,
                 'content': chunk,
                 'coworker_id': quest.id if quest else None,
+                'session_id': session.id if session else None,
                 'category': 'fact',
                 'importance': 'medium',
                 'tags': f'uploaded,{filename}',
@@ -1014,11 +1085,17 @@ def _unregister_webui_handler(session_uuid: str):
     _webui_handlers.pop(session_uuid, None)
 
 
-def _get_quest_memories(quest) -> str:
-    """Get consolidated + FAISS memories for quest's system prompt."""
+def _get_quest_memories(quest, session_id=None, query=None) -> str:
+    """Get consolidated + FAISS + session memories for quest's system prompt.
+
+    Args:
+        quest: ai.coworker record
+        session_id: Optional session ID for session-level memories
+        query: Optional search query for FAISS vector search
+    """
     parts = []
     try:
-        # Consolidated text memories
+        # 1. Consolidated text memories
         memories = request.env['ai.memory'].search([
             ('coworker_id', '=', quest.id),
             ('consolidated', '=', True),
@@ -1030,7 +1107,39 @@ def _get_quest_memories(quest) -> str:
     except Exception:
         pass
 
-    # Only do FAISS search if we have a prompt to search against
+    try:
+        # 2. Agent-level FAISS memories
+        if query:
+            agent_memories = request.env['ai.memory'].search([
+                ('agent_id', 'in', quest.agent_ids.agent_id.ids),
+                ('archived', '=', False),
+                ('memory_type', '=', 'faiss'),
+            ])
+            for mem in agent_memories:
+                chunks = mem.search(query, k=3)
+                if chunks:
+                    parts.append("## Agent Knowledge\n" + '\n---\n'.join(chunks[:3]))
+    except Exception:
+        pass
+
+    try:
+        # 3. Session-level memories (uploaded documents)
+        if session_id:
+            session_memories = request.env['ai.memory'].search([
+                ('session_id', '=', int(session_id)),
+                ('archived', '=', False),
+                ('memory_type', '=', 'faiss'),
+            ])
+            for mem in session_memories:
+                if query:
+                    chunks = mem.search(query, k=3)
+                else:
+                    chunks = [mem.content[:500]] if mem.content else []
+                if chunks:
+                    parts.append("## Uploaded Documents\n" + '\n---\n'.join(chunks[:3]))
+    except Exception:
+        pass
+
     return "\n\n".join(parts) if parts else ""
 
 
@@ -1698,11 +1807,12 @@ class AIOpenAIAPI(http.Controller):
             # Non-streaming: run and return full response
             try:
                 import asyncio
-                from odoo.addons.ai_agent_core.core.provider import BifrostProvider
+                from odoo.addons.ai_agent_core.core.provider import ProviderFactory, BifrostProvider
                 from odoo.addons.ai_agent_core.core.tools import ToolRegistry, builtin_tools, wrap_tools_with_env
                 from odoo.addons.ai_agent_core.core.loop import AgentLoop, AgentConfig
 
-                provider = BifrostProvider(
+                provider_instance, provider_model = ProviderFactory.from_coworker(quest)
+                provider = provider_instance or BifrostProvider(
                     base_url='http://192.168.11.150:8080/v1',
                     virtual_key='opencode',
                 )
@@ -1754,6 +1864,14 @@ class AIOpenAIAPI(http.Controller):
 
         else:
             # Streaming SSE response
+            # Resolve provider before generator (post-teardown closure)
+            _gen_provider, _gen_pmodel = ProviderFactory.from_coworker(quest)
+            if not _gen_provider:
+                _gen_provider = BifrostProvider(
+                    base_url='http://192.168.11.150:8080/v1',
+                    virtual_key='opencode',
+                )
+
             def generate():
                 full_response = []
                 response_id = f'chatcmpl-{coworker_id}-{fields.Datetime.now().timestamp()}'
@@ -1761,14 +1879,10 @@ class AIOpenAIAPI(http.Controller):
 
                 try:
                     import asyncio
-                    from odoo.addons.ai_agent_core.core.provider import BifrostProvider
                     from odoo.addons.ai_agent_core.core.tools import ToolRegistry, builtin_tools, wrap_tools_with_env
                     from odoo.addons.ai_agent_core.core.loop import StreamingAgentLoop, AgentConfig
 
-                    provider = BifrostProvider(
-                        base_url='http://192.168.11.150:8080/v1',
-                        virtual_key='opencode',
-                    )
+                    provider = _gen_provider
                     from odoo import api as _api, registry as _registry
                     _gen_cr = _registry(_gen_dbname).cursor()
                     try:

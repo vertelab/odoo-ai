@@ -1,89 +1,100 @@
 <?xml version="1.0" encoding="utf-8"?>
-<odoo>
-    <!-- ── Demo: Personal Goals ── -->
-    <record id="demo_goal_1" model="ai.personal.goal">
-        <field name="name">Bemästra K3-redovisning</field>
-        <field name="user_id" ref="base.user_admin"/>
-        <field name="specific">Genomför BFN:s K3-utbildning och tillämpa på 3 klienter</field>
-        <field name="measurable">Utbildning klar, 3 K3-uppdrag godkända</field>
-        <field name="achievable">2h/vecka under 8 veckor</field>
-        <field name="relevant">Roll som redovisningskonsult — 3 klienter efterfrågar K3</field>
-        <field name="time_bound" eval="(datetime.now() + timedelta(days=60)).strftime('%Y-%m-%d')"/>
-        <field name="category">skill</field>
+<odoo noupdate="1">
+
+    <!-- DEMO: Kundsupport-Maja (mail + webhook + web_ui) -->
+
+    <record id="demo_coworker_support" model="ai.coworker">
+        <field name="name">Kundsupport-Maja</field>
+        <field name="description">Du ar Maja, en vänlig kundsupportagent.
+Svarar alltid pa svenska. Hjalpsam och loser kundens problem.</field>
         <field name="status">active</field>
-        <field name="progress">45.0</field>
-        <field name="source">ai_suggested</field>
-        <field name="streak_count">3</field>
-        <field name="nudge_count">2</field>
-        <field name="implementation_intention">Friday 09:00, at my desk</field>
-        <field name="auto_review_interval_days">7</field>
+        <field name="sequence">10</field>
+        <field name="channel_alias">maja</field>
+        <field name="response_mode">mention</field>
+        <field name="orchestration_mode">single</field>
     </record>
 
-    <record id="demo_goal_2" model="ai.personal.goal">
-        <field name="name">Förbättra Cypher-kunskaper</field>
-        <field name="user_id" ref="base.user_admin"/>
-        <field name="specific">Lär dig skriva effektiva Cypher-frågor för Odoo Mind-grafen</field>
-        <field name="measurable">10 godkända Cypher-frågor i graph.executor</field>
-        <field name="achievable">1 fråga per dag i 2 veckor</field>
-        <field name="relevant">Odoo Mind använder AGE-graf — Cypher är nyckelspråket</field>
-        <field name="time_bound" eval="(datetime.now() + timedelta(days=30)).strftime('%Y-%m-%d')"/>
-        <field name="category">skill</field>
-        <field name="status">proposed</field>
-        <field name="progress">0.0</field>
-        <field name="source">ai_suggested</field>
-        <field name="created_by_ai">True</field>
+    <record id="demo_support_init_mail" model="ai.coworker.init_type">
+        <field name="coworker_id" ref="demo_coworker_support"/>
+        <field name="init_type">mail</field>
+        <field name="active">True</field>
+        <field name="sequence">10</field>
+        <field name="alias_name">support</field>
     </record>
 
-    <!-- ── Demo: Personal Memory ── -->
-    <record id="demo_memory_1" model="ai.personal.memory">
-        <field name="user_id" ref="base.user_admin"/>
-        <field name="content">Föredrar korta, koncisa svar från AI-assistenten. Undvik långa markdown-tabeller.</field>
-        <field name="category">preference</field>
-        <field name="importance">high</field>
-        <field name="source">learning</field>
+    <record id="demo_support_init_webhook" model="ai.coworker.init_type">
+        <field name="coworker_id" ref="demo_coworker_support"/>
+        <field name="init_type">webhook</field>
+        <field name="active">True</field>
+        <field name="sequence">20</field>
     </record>
 
-    <record id="demo_memory_2" model="ai.personal.memory">
-        <field name="user_id" ref="base.user_admin"/>
-        <field name="content">Arbetar aktivt med K3-redovisning — högst prioriterat kompetensområde just nu.</field>
-        <field name="category">fact</field>
-        <field name="importance">medium</field>
-        <field name="source">session_extracted</field>
+    <record id="demo_support_init_web_ui" model="ai.coworker.init_type">
+        <field name="coworker_id" ref="demo_coworker_support"/>
+        <field name="init_type">web_ui</field>
+        <field name="active">True</field>
+        <field name="sequence">30</field>
+        <field name="show_in_chat">True</field>
     </record>
 
-    <record id="demo_memory_3" model="ai.personal.memory">
-        <field name="user_id" ref="base.user_admin"/>
-        <field name="content">Gillar att testa ny teknik. Använder Odoos AI-agent aktivt.</field>
-        <field name="category">preference</field>
-        <field name="importance">low</field>
-        <field name="source">chat</field>
+    <!-- DEMO: Orderanalys-Adam (server_action + cron) -->
+
+    <record id="demo_coworker_orders" model="ai.coworker">
+        <field name="name">Orderanalys-Adam</field>
+        <field name="description">Du ar Adam, en analytiker som granskar forsaljningsordrar.
+Analysera ordrar och identifiera problem som forseningar, stora rabatter,
+saknade dokument eller betalningsproblem.</field>
+        <field name="status">active</field>
+        <field name="sequence">20</field>
+        <field name="channel_alias">adam</field>
+        <field name="orchestration_mode">single</field>
     </record>
 
-    <!-- ── Demo: Company Memory ── -->
-    <record id="demo_company_memory_1" model="ai.company.memory">
-        <field name="company_id" ref="base.main_company"/>
-        <field name="content">## Strategy Q2 Review\n\nOKR-status: 3/5 objectives on track.\n- Expand German market: 🟢 60%\n- CSRD compliance framework: 🟡 35%\n- Odoo Mind graph integration: 🟢 80%</field>
-        <field name="category">management</field>
-        <field name="scope">public</field>
-        <field name="importance">high</field>
+    <record id="demo_orders_init_server" model="ai.coworker.init_type">
+        <field name="coworker_id" ref="demo_coworker_orders"/>
+        <field name="init_type">server_action</field>
+        <field name="active">True</field>
+        <field name="sequence">10</field>
+        <field name="server_action_use_wizard">True</field>
     </record>
 
-    <record id="demo_company_memory_2" model="ai.company.memory">
-        <field name="company_id" ref="base.main_company"/>
-        <field name="content">## Financial Summary — June\n\nLiquidity: 2.3 MSEK (stable)\nAR: 4.1 MSEK (30 days avg)\nAP: 1.8 MSEK (22 days avg)</field>
-        <field name="category">management</field>
-        <field name="scope">restricted</field>
-        <field name="importance">high</field>
+    <record id="demo_orders_init_cron" model="ai.coworker.init_type">
+        <field name="coworker_id" ref="demo_coworker_orders"/>
+        <field name="init_type">cron</field>
+        <field name="active">True</field>
+        <field name="sequence">20</field>
+        <field name="cron_interval_number">6</field>
+        <field name="cron_interval_type">hours</field>
+        <field name="filter_domain">[('state', '=', 'sale')]</field>
     </record>
 
-    <!-- ── Demo: Nudge Activity (via mail.activity) ── -->
-    <record id="demo_nudge_activity" model="mail.activity">
-        <field name="activity_type_id" ref="mail.mail_activity_data_todo"/>
-        <field name="user_id" ref="base.user_admin"/>
-        <field name="summary">Granska OKR-status inför mötet</field>
-        <field name="note">Strategy Q2 review — din avdelning har 2 OKR i gult läge.</field>
-        <field name="date_deadline" eval="(datetime.now() + timedelta(days=2)).strftime('%Y-%m-%d')"/>
-        <field name="res_model_id" ref="base.model_res_partner"/>
-        <field name="res_id">1</field>
+    <!-- DEMO: Webb-Gustav (web_ui + openai_api) -->
+
+    <record id="demo_coworker_web" model="ai.coworker">
+        <field name="name">Webb-Gustav</field>
+        <field name="description">Du ar Gustav, en allman assistent som kan hjalpa till med
+Odoo-relaterade fragor. Du har tillgang till dokumentation.</field>
+        <field name="status">active</field>
+        <field name="sequence">30</field>
+        <field name="channel_alias">gustav</field>
+        <field name="orchestration_mode">single</field>
     </record>
+
+    <record id="demo_web_init_ui" model="ai.coworker.init_type">
+        <field name="coworker_id" ref="demo_coworker_web"/>
+        <field name="init_type">web_ui</field>
+        <field name="active">True</field>
+        <field name="sequence">10</field>
+        <field name="show_in_chat">True</field>
+    </record>
+
+    <record id="demo_web_init_openai" model="ai.coworker.init_type">
+        <field name="coworker_id" ref="demo_coworker_web"/>
+        <field name="init_type">openai_api</field>
+        <field name="active">True</field>
+        <field name="sequence">20</field>
+        <field name="rate_limit_rpm">60</field>
+        <field name="rate_limit_tpm">200000</field>
+    </record>
+
 </odoo>

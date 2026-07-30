@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="ai_coworker_server_action_wizard_form" model="ir.ui.view">
+        <field name="name">ai.coworker.server.action.wizard.form</field>
+        <field name="model">ai.coworker.server.action.wizard</field>
+        <field name="arch" type="xml">
+            <form string="Run AI Coworker">
+                <header>
+                    <button name="action_run" string="Run"
+                            type="object"
+                            invisible="state != 'input'"
+                            class="btn-primary"/>
+                    <button name="action_close" string="Close"
+                            type="object"
+                            invisible="state not in ('done', 'error')"/>
+                </header>
+                <sheet>
+                    <group>
+                        <group string="Record">
+                            <field name="coworker_id" readonly="1"/>
+                            <field name="res_model_name" readonly="1"/>
+                        </group>
+                        <group string="Prompt" invisible="state != 'input'">
+                            <field name="prompt" nolabel="1"
+                                   placeholder="What should this agent do with this record? e.g. 'Summarize this order', 'Check for delivery delays'..."/>
+                        </group>
+                        <group string="Result" invisible="state not in ('done', 'error')">
+                            <field name="result" nolabel="1" readonly="1"/>
+                            <field name="state" invisible="1"/>
+                        </group>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="ai_coworker_server_action_wizard_action" model="ir.actions.act_window">
+        <field name="name">Run AI Coworker</field>
+        <field name="res_model">ai.coworker.server.action.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+</odoo>

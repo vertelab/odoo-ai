@@ -213,6 +213,17 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);overflow:hid
 .chat-embedded .chat-header strong{font-size:12px}
 .chat-embedded .messages{padding:8px 12px}
 .chat-embedded .chat-input-area{padding:8px 12px}
+
+/* Document chips */
+.documents-section{padding:8px 16px 0;border-top:1px solid var(--border)}
+.documents-header{display:flex;align-items:center;justify-content:space-between;font-size:12px;color:var(--text-muted);margin-bottom:4px}
+.documents-toggle{background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:14px;padding:2px 6px;border-radius:4px}
+.documents-toggle:hover{background:rgba(128,128,128,0.15)}
+.documents-list{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:4px}
+.document-chip{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;background:var(--bg-input);border:1px solid var(--border);border-radius:12px;font-size:11px;color:var(--text);max-width:200px}
+.document-chip .doc-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+.document-chip .doc-remove{background:none;border:none;color:var(--danger);cursor:pointer;font-size:14px;padding:0 2px;line-height:1;border-radius:50%}
+.document-chip .doc-remove:hover{background:rgba(255,0,0,0.1)}
 </style>
 </head>
 <body>
@@ -292,6 +303,15 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);overflow:hid
                 <button class="btn-approve" onclick="respondInterrupt(true)">Svara</button>
             </div>
         </div>
+    </div>
+
+    <!-- Document chips for uploaded files -->
+    <div class="documents-section" id="documents-section" style="display:none">
+        <div class="documents-header">
+            <span>📄 Dokument</span>
+            <button class="documents-toggle" onclick="toggleDocuments()">−</button>
+        </div>
+        <div class="documents-list" id="documents-list"></div>
     </div>
 
     <div class="chat-input-area">
@@ -683,6 +703,8 @@ function selectThread(id,name){
         var msgs=document.getElementById('messages');msgs.innerHTML='';
         // Hide welcome screen
         var wel=document.getElementById('welcome-screen');if(wel)wel.style.display='none';
+        // Load session documents
+        loadSessionDocuments();
         if(!data.messages||!data.messages.length){
             msgs.innerHTML='<div class="message system">Denna tråd har inga meddelanden än.</div>';
         }else{
@@ -1062,12 +1084,72 @@ function uploadFile(input){
     document.getElementById('messages').appendChild(a);scrollBottom();
     var fd=new FormData();fd.append('file',file);
     if(activeQuestId)fd.append('quest_id',activeQuestId);
+    if(activeSessionId)fd.append('session_id',activeSessionId);
+    fd.append('memory_type','faiss');
     fetch('/ai/upload',{method:'POST',body:fd})
     .then(function(r){return r.json()}).then(function(d){
-        a.innerHTML='✅ '+esc(d.message||d.error||'Okant');
+        if(d.status==='ok'){
+            a.innerHTML='✅ '+esc(d.message||'Okant');
+            loadSessionDocuments();
+        }else{
+            a.innerHTML='❌ '+esc(d.error||'Okant');
+        }
+        scrollBottom()
+    }).catch(function(e){
+        a.innerHTML='❌ Nätverksfel';
         scrollBottom()
     });
     input.value=''
+}
+
+function loadSessionDocuments(){
+    var ds=document.getElementById('documents-section');
+    var dl=document.getElementById('documents-list');
+    if(!activeSessionId){ds.style.display='none';return}
+    fetch('/ai/session/'+activeSessionId+'/documents')
+    .then(function(r){return r.json()}).then(function(d){
+        if(d.documents&&d.documents.length>0){
+            dl.innerHTML='';
+            d.documents.forEach(function(doc){
+                var chip=document.createElement('span');
+                chip.className='document-chip';
+                chip.innerHTML='<span>📄</span><span class="doc-name">'+esc(doc.name)+'</span>';
+                if(doc.can_remove){
+                    var rm=document.createElement('button');
+                    rm.className='doc-remove';rm.innerHTML='×';
+                    rm.onclick=function(){removeDocument(doc.id,chip)};
+                    chip.appendChild(rm)
+                }
+                dl.appendChild(chip)
+            });
+            ds.style.display='block'
+        }else{
+            ds.style.display='none'
+        }
+    }).catch(function(){ds.style.display='none'})
+}
+
+function removeDocument(memoryId,chipEl){
+    fetch('/ai/memory/'+memoryId+'/archive',{method:'POST'})
+    .then(function(r){return r.json()}).then(function(d){
+        if(d.status==='ok'){
+            chipEl.remove();
+            var dl=document.getElementById('documents-list');
+            if(!dl.children.length){
+                document.getElementById('documents-section').style.display='none'
+            }
+        }
+    }).catch(function(e){console.warn('Remove failed',e)})
+}
+
+function toggleDocuments(){
+    var dl=document.getElementById('documents-list');
+    var btn=document.querySelector('.documents-toggle');
+    if(dl.style.display==='none'){
+        dl.style.display='flex';btn.innerHTML='−'
+    }else{
+        dl.style.display='none';btn.innerHTML='+'
+    }
 }
 
 // Close modal on click outside

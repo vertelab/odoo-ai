@@ -194,6 +194,55 @@ print(f"Accuracy: {run.accuracy:.1%}")
 print(f"Cost: ${run.total_cost:.4f}")
 ```
 
+## Init Types
+
+Each `ai.coworker` can have multiple active init types that determine HOW
+the coworker is triggered. All 10 init types are auto-seeded on creation.
+
+| Init Type | Trigger | Handler | Key Config |
+|-----------|---------|---------|------------|
+| `web_ui` | `/ai/chat` web UI | SSE streaming | `show_in_chat` |
+| `chat` | Discuss private chat | `chat()` | `response_mode`, `chat_user_id` |
+| `channel` | Discuss channel | `chat()` | `response_mode`, `channel_ids` |
+| `mail` | Incoming email | `mail()` | `alias_name` |
+| `cron` | Scheduled action | `cron()` | `cron_interval_number/type` |
+| `server_action` | Button in form/list | `server_action()` | `server_action_use_wizard` |
+| `powerbox` | `/` in text fields | `powerbox()` | `model_ids` binding |
+| `webhook` | `POST /ai/webhook/<id>` | Webhook controller | `webhook_secret` |
+| `openai_api` | `POST /ai/openai/<id>/v1/...` | OpenAI API controller | API key, rate limits |
+| `manual` | Programmatic `run()` | `run()` | None |
+
+### Response Modes (chat/channel)
+
+- `always` — Respond to every message
+- `mention` — Only respond when @mentioned (**default**)
+- `trigger` — Only on matching trigger words
+
+### Channel Reply Modes
+
+- `public` — Reply in channel (**default**)
+- `private` — Reply as direct message
+- `thread` — Reply as thread
+
+### Provider Factory
+
+Providers are resolved via the chain:
+`ai.coworker → ai.agent → ai.model → ai.provider`
+
+`ProviderFactory` in `core/provider.py`:
+- `from_coworker(coworker)` — from first agent
+- `from_agent_rel(agent_rel)` — from specific agent
+- `from_supervisor_agents(coworker)` — all agents
+- `get_default_provider()` — via `ai_agent_core.default_model_id`
+
+Supports: `bifrost`, `openai`, `anthropic`, `openrouter`, `deepseek`, `custom`
+
+### Memory Architecture
+
+- **Agent-level**: Permanent RAG on `ai.agent.rag_memory_ids` (handbooks, websites)
+- **Session-level**: Ad-hoc uploaded docs in chat thread, injected into system prompt
+- Both tiers support FAISS vector search
+
 ## Configuration
 
 ```python

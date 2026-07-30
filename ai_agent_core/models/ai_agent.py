@@ -53,8 +53,10 @@ class AIAgent(models.Model):
     tool_ids = fields.One2many('ai.agent.tool', 'agent_id', string='Tools')
 
     # Memories (FAISS/pgvector RAG)
-    memory_ids = fields.One2many('ai.agent.memory', 'agent_id', string='Memories',
-                                  help='FAISS/pgvector knowledge bases available to this agent')
+    memory_ids = fields.One2many('ai.agent.memory', 'agent_id', string='Skill Memories',
+                                  help='Skill-specific memories linked to this agent')
+    rag_memory_ids = fields.One2many('ai.memory', 'agent_id', string='RAG Knowledge',
+                                      help='Permanent FAISS/pgvector knowledge bases (handbooks, websites)')
 
     # Model (points to ai.model — handles both Bifrost and Direct)
     model_id = fields.Many2one('ai.model', string='Model',

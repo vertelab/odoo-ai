@@ -41,6 +41,8 @@ class AIQuestSession(models.Model):
 
     # Thread support
     thread_name = fields.Char('Thread Name')
+    memory_ids = fields.One2many('ai.memory', 'session_id', string='Session Memories',
+        help='Uploaded documents and FAISS memories for this session')
     session_line_ids = fields.One2many(
         'ai.coworker.session.line', 'session_id', string='Messages')
     line_count = fields.Integer('Messages', compute='_compute_line_count')

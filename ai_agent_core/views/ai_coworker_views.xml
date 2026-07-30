@@ -178,134 +178,148 @@
                                    string="Objects"/>
                         </button>
                     </div>
-                    <div class="oe_title">
-                        <h1><field name="name" placeholder="Quest Name"/></h1>
-                        <field name="sub_description" placeholder="Short description"/>
+
+                    <!-- Titel + bild → bild till höger -->
+                    <div class="oe_title d-flex align-items-start">
+                        <div class="flex-grow-1 pe-3">
+                            <h1><field name="name" placeholder="Quest Name"/></h1>
+                            <field name="sub_description" placeholder="Short description"/>
+                        </div>
+                        <div class="flex-shrink-0">
+                            <field name="partner_image_128" widget="image" class="oe_avatar"/>
+                        </div>
                     </div>
-                    <group col="4">
-                        <field name="orchestration_mode" widget="radio"/>
-                        <field name="model_ids" widget="many2many_tags"/>
-                        <field name="identity_id"/>
-                        <field name="tag_ids" widget="many2many_tags"/>
+
+                    <!-- Två kolumner under subtitle -->
+                    <group col="2">
+                        <group string="Settings">
+                            <field name="orchestration_mode" widget="radio"/>
+                            <field name="identity_id"/>
+                            <field name="tag_ids" widget="many2many_tags"/>
+                            <field name="group_ids" widget="many2many_tags"/>
+                        </group>
+                        <group string="Configuration">
+                            <field name="active_init_types" widget="many2many_tags"
+                                   options="{'no_create': True, 'no_open': True}"/>
+                            <field name="model_ids" widget="many2many_tags"/>
+                            <field name="debug"/>
+                            <field name="partner_id"/>
+                        </group>
                     </group>
+
+                    <!-- Init type config fields — syns bara när respektive typ är aktiv -->
+                    <group col="2" string="Init Type Config"
+                           invisible="not has_web_ui and not has_chat and not has_channel
+                                      and not has_mail and not has_cron
+                                      and not has_server_action and not has_powerbox
+                                      and not has_controller and not has_webhook and not has_openai_api">
+                        <field name="has_web_ui" invisible="1"/>
+                        <field name="has_chat" invisible="1"/>
+                        <field name="has_channel" invisible="1"/>
+                        <field name="has_mail" invisible="1"/>
+                        <field name="has_cron" invisible="1"/>
+                        <field name="has_server_action" invisible="1"/>
+                        <field name="has_powerbox" invisible="1"/>
+                        <field name="has_controller" invisible="1"/>
+                        <field name="has_webhook" invisible="1"/>
+                        <field name="has_openai_api" invisible="1"/>
+                        <group>
+                            <!-- Chat / Channel -->
+                            <field name="chat_user_id"
+                                   invisible="not has_chat and not has_channel" readonly="1"/>
+                            <!-- Chat config (configured via init_type records) -->
+                            <field name="response_mode"
+                                   invisible="not has_chat and not has_channel"/>
+                            <field name="channel_reply_mode"
+                                   invisible="not has_channel"/>
+                            <field name="allow_trigger_words"
+                                   invisible="not has_chat and not has_channel"/>
+                            <field name="chat_trigger_words"
+                                   invisible="(not has_chat and not has_channel) or not allow_trigger_words"/>
+                        </group>
+                        <group>
+                            <!-- Mail -->
+                            <field name="alias_name" invisible="not has_mail" string="Email Alias"/>
+                            <!-- Cron -->
+                            <field name="cron_id" invisible="not has_cron"/>
+                            <field name="cron_interval_number" invisible="not has_cron"/>
+                            <field name="cron_interval_type" invisible="not has_cron"/>
+                            <field name="filter_domain" invisible="not has_cron"/>
+                            <field name="notify_on_completion" invisible="not has_cron"/>
+                            <field name="notify_target" invisible="not has_cron or not notify_on_completion"/>
+                            <field name="auto_allowed_tools" invisible="not has_cron"/>
+                            <field name="auto_allowed_commands" invisible="not has_cron"/>
+                            <!-- Server Action -->
+                            <field name="server_action_id" invisible="not has_server_action"/>
+                            <field name="server_action_use_wizard" invisible="not has_server_action"/>
+                            <!-- OpenAI API -->
+                            <field name="api_key_attachment_id" invisible="not has_openai_api"/>
+                        </group>
+                    </group>
+
                     <notebook>
                         <page string="Description">
                             <field name="description" widget="text" nolabel="1"
                                    placeholder="System prompt / quest purpose..."/>
                         </page>
-                        <page string="Initiation Types">
-                            <field name="has_web_ui" invisible="1"/>
-                            <field name="has_chat" invisible="1"/>
-                            <field name="has_channel" invisible="1"/>
-                            <field name="has_mail" invisible="1"/>
-                            <field name="has_cron" invisible="1"/>
-                            <field name="has_server_action" invisible="1"/>
-                            <field name="has_openai_api" invisible="1"/>
-                            <group string="Active Types">
-                                <field name="active_init_types" widget="many2many_tags"
-                                       options="{'no_create': True, 'no_open': True}"/>
-                            </group>
-                            <group string="Configuration" col="2">
-                                <!-- Web UI -->
-                                <field name="debug" invisible="not has_web_ui"/>
-                                <!-- Mail -->
-                                <field name="alias_name" invisible="not has_mail"
-                                       string="Email Alias"/>
-                                <!-- Chat & Channel -->
-                                <field name="chat_user_id" invisible="not has_chat and not has_channel"
-                                       readonly="1"/>
-                                <field name="channel_id" invisible="not has_channel"/>
-                                <!-- Buzz workspace settings -->
-                                <field name="allow_auto_create_agents"
-                                       invisible="orchestration_mode != 'buzz'"/>
-                                <field name="max_auto_agents"
-                                       invisible="orchestration_mode != 'buzz'"/>
-                                <field name="agent_creator_prompt"
-                                       invisible="orchestration_mode != 'buzz'"/>
-                                <field name="allow_trigger_words" invisible="not has_chat and not has_channel"/>
-                                <field name="chat_trigger_words"
-                                       invisible="(not has_chat and not has_channel) or not allow_trigger_words"/>
-                                <!-- Cron -->
-                                <field name="cron_id" invisible="not has_cron"/>
-                                <field name="filter_domain" invisible="not has_cron"/>
-                                <field name="notify_on_completion" invisible="not has_cron"/>
-                                <field name="notify_target" invisible="not has_cron or not notify_on_completion"/>
-                                <field name="auto_allowed_tools" invisible="not has_cron"/>
-                                <field name="auto_allowed_commands" invisible="not has_cron"/>
-                                <!-- Server Action -->
-                                <field name="server_action_id" invisible="not has_server_action"/>
-                                <!-- OpenAI API -->
-                                <field name="api_key_attachment_id" invisible="not has_openai_api"/>
-                            </group>
-                        </page>
-                        <page string="Agents">
-                            <field name="skill_ids" widget="many2many_tags"
-                                   string="Quest Skills (pipeline)"/>
-                            <button name="%(action_ai_coworker_buzz_agent_wizard)d"
-                                    type="action" string="Create Buzz Agent"
-                                    class="btn-primary"
-                                    invisible="orchestration_mode != 'buzz'"/>
-                            <field name="agent_ids">
-                                <list editable="bottom">
-                                    <field name="sequence" widget="handle"/>
-                                    <field name="agent_id"/>
-                                    <field name="role" optional="show"/>
-                                    <field name="is_auto_created" optional="hide"/>
-                                    <button name="action_dismiss_auto_agent" type="object"
-                                            string="Dismiss" icon="fa-trash"
-                                            confirm="Remove this auto-created agent?"
-                                            invisible="not is_auto_created"/>
-                                </list>
-                            </field>
-                        </page>
+
                         <page string="Context">
-                            <group string="Context Injection">
-                                <field name="context_injection_enabled"/>
-                                <field name="context_max_fields"
-                                       invisible="not context_injection_enabled"/>
-                                <field name="context_include_chatter"
-                                       invisible="not context_injection_enabled"/>
-                                <field name="context_chatter_limit"
-                                       invisible="not context_injection_enabled or not context_include_chatter"/>
-                            </group>
-                            <group>
-                                <field name="use_chat_history"/>
-                                <field name="use_company_info"/>
-                                <field name="use_personal_info"/>
-                                <field name="use_personal_lang"/>
-                                <field name="use_time_context"/>
+                            <group col="2">
+                                <group string="Context Injection">
+                                    <field name="context_injection_enabled"/>
+                                    <field name="context_max_fields"
+                                           invisible="not context_injection_enabled"/>
+                                    <field name="context_include_chatter"
+                                           invisible="not context_injection_enabled"/>
+                                    <field name="context_chatter_limit"
+                                           invisible="not context_injection_enabled or not context_include_chatter"/>
+                                </group>
+                                <group>
+                                    <group string="Odoo Mind">
+                                        <field name="use_chat_history"/>
+                                        <field name="use_time_context"/>
+                                        <field name="inject_nudging"/>
+                                        <field name="inject_company_memory"/>
+                                        <field name="company_memory_categories" widget="many2many_tags"/>
+                                    </group>
+                                    <group string="Company Info">
+                                        <field name="use_company_info"/>
+                                    </group>
+                                    <group string="Personal Info">
+                                        <field name="use_personal_info"/>
+                                        <field name="use_personal_lang"/>
+                                    </group>
+                                </group>
                             </group>
                         </page>
-                        <page string="Access">
-                            <group string="Access Control">
-                                <field name="show_in_chat"/>
-                                <field name="group_ids" widget="many2many_tags"/>
-                                <field name="user_ids" widget="many2many_tags"/>
-                            </group>
-                        </page>
+
                         <page string="Budget">
-                            <group string="Månadstak (Systemtokens)">
-                                <field name="monthly_cap_mtokens"
-                                    help="0 = obegränsat. Tak i miljoner systemtokens.\nVid 80%: varning. Vid 100%: agenten pausas."/>
-                                <field name="session_line_count" readonly="1"
-                                    string="Förbrukat denna månad"/>
-                                <field name="started_mtokens" readonly="1"
-                                    string="Påbörjade M-tokens"/>
-                            </group>
-                            <group string="All-time totals">
-                                <field name="total_sys_tokens" readonly="1"
-                                    string="Totalt systemtokens"/>
-                                <field name="total_input_tokens" readonly="1"/>
-                                <field name="total_output_tokens" readonly="1"/>
-                                <field name="last_month_sys_tokens" readonly="1"
-                                    string="Förra månaden"/>
-                            </group>
-                            <group string="Status">
-                                <field name="cap_warning_sent" readonly="1"
-                                    invisible="not cap_warning_sent"/>
-                                <field name="cap_exhausted" readonly="1"
-                                    invisible="not cap_exhausted"
-                                    widget="boolean_toggle"/>
+                            <group col="2">
+                                <group string="Månadstak (Systemtokens)">
+                                    <field name="monthly_cap_mtokens"
+                                        help="0 = obegränsat. Tak i miljoner systemtokens.\nVid 80%: varning. Vid 100%: agenten pausas."/>
+                                    <field name="session_line_count" readonly="1"
+                                        string="Förbrukat denna månad"/>
+                                    <field name="started_mtokens" readonly="1"
+                                        string="Påbörjade M-tokens"/>
+                                </group>
+                                <group>
+                                    <group string="All-time totals">
+                                        <field name="total_sys_tokens" readonly="1"
+                                            string="Totalt systemtokens"/>
+                                        <field name="total_input_tokens" readonly="1"/>
+                                        <field name="total_output_tokens" readonly="1"/>
+                                        <field name="last_month_sys_tokens" readonly="1"
+                                            string="Förra månaden"/>
+                                    </group>
+                                    <group string="Status">
+                                        <field name="cap_warning_sent" readonly="1"
+                                            invisible="not cap_warning_sent"/>
+                                        <field name="cap_exhausted" readonly="1"
+                                            invisible="not cap_exhausted"
+                                            widget="boolean_toggle"/>
+                                    </group>
+                                </group>
                             </group>
                         </page>
                     </notebook>

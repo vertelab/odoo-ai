@@ -7,6 +7,9 @@ Each type has its own configuration fields.
 
 from odoo import models, fields, api, _
 from odoo.exceptions import UserError
+import logging
+
+_logger = logging.getLogger(__name__)
 
 
 INIT_TYPE_SELECTION = [
@@ -17,7 +20,9 @@ INIT_TYPE_SELECTION = [
     ('cron', 'Scheduled Action'),
     ('server_action', 'Server Action'),
     ('powerbox', 'Powerbox'),
+    ('controller', 'Controller (legacy)'),
     ('manual', 'Manual'),
+    ('webhook', 'Webhook'),
     ('openai_api', 'OpenAI API'),
 ]
 
@@ -50,6 +55,12 @@ class AIQuestInitType(models.Model):
         help='When enabled, this quest appears in the /ai/chat interface.')
 
     # ── chat specific ──
+    response_mode = fields.Selection([
+        ('always', 'Always Respond'),
+        ('mention', 'Only on @mention'),
+        ('trigger', 'Trigger words only'),
+    ], default='mention', string='Response Mode',
+        help='How this quest responds in chat/channel messages')
     chat_user_id = fields.Many2one('res.users', string='Chat Bot User',
         readonly=True,
         help='Auto-created bot user for private Discuss chat')
@@ -60,8 +71,17 @@ class AIQuestInitType(models.Model):
         help='Comma-separated words that trigger the bot response')
 
     # ── channel specific ──
-    channel_id = fields.Many2one('discuss.channel', string='Channel',
-        help='Discuss channel where the bot participates')
+    channel_ids = fields.Many2many('discuss.channel', 'ai_coworker_init_type_channel_rel',
+        'init_type_id', 'channel_id', string='Channels',
+        help='Discuss channels where the bot participates')
+    channel_id = fields.Many2one('discuss.channel', string='Channel (legacy)',
+        help='Legacy single-channel field — kept for compatibility')
+    channel_reply_mode = fields.Selection([
+        ('public', 'Public (in channel)'),
+        ('private', 'Private (direct message)'),
+        ('thread', 'Thread reply'),
+    ], default='public', string='Reply Mode',
+        help='How the bot responds in channel messages')
 
     # ── mail specific ──
     alias_name = fields.Char('Email Alias',
@@ -80,10 +100,23 @@ class AIQuestInitType(models.Model):
         ondelete='cascade')
     filter_domain = fields.Char('Record Filter',
         help='Domain applied to cron-triggered records')
+    cron_interval_number = fields.Integer('Interval', default=1,
+        help='How often to run (1 = every interval)')
+    cron_interval_type = fields.Selection([
+        ('minutes', 'Minutes'),
+        ('hours', 'Hours'),
+        ('days', 'Days'),
+        ('weeks', 'Weeks'),
+        ('months', 'Months'),
+    ], default='hours', string='Interval Unit')
 
     # ── server_action specific ──
     server_action_id = fields.Many2one('ir.actions.server',
         string='Server Action', ondelete='cascade')
+    server_action_use_wizard = fields.Boolean('Show Prompt Wizard',
+        default=False,
+        help='If enabled, a wizard pops up to let the user enter a prompt before executing')
+
 
     # ── openai_api specific ──
     api_key_attachment_id = fields.Many2one('ir.attachment',
@@ -98,14 +131,17 @@ class AIQuestInitType(models.Model):
         # Clear fields that don't belong to the new type
         type_fields = {
             'web_ui': [],
-            'chat': ['use_chat_history', 'chat_history_limit',
+            'chat': ['response_mode', 'use_chat_history', 'chat_history_limit',
                      'allow_trigger_words', 'chat_trigger_words'],
-            'channel': ['channel_id', 'allow_trigger_words', 'chat_trigger_words'],
+            'channel': ['response_mode', 'channel_id', 'channel_ids', 'channel_reply_mode',
+                     'allow_trigger_words', 'chat_trigger_words'],
             'mail': ['alias_name', 'alias_id', 'alias_contact'],
-            'cron': ['cron_id', 'filter_domain'],
-            'server_action': ['server_action_id'],
+            'cron': ['cron_id', 'filter_domain', 'cron_interval_number', 'cron_interval_type'],
+            'server_action': ['server_action_id', 'server_action_use_wizard'],
             'powerbox': [],
             'manual': [],
+            'webhook': [],
+            'controller': [],
             'openai_api': ['api_key_attachment_id', 'rate_limit_rpm', 'rate_limit_tpm'],
         }
         all_specific = set()
@@ -130,6 +166,11 @@ class AIQuestInitType(models.Model):
         res = super().write(vals)
         if 'init_type' in vals or 'active' in vals:
             self._after_change()
+        # Deactivate cron when cron init_type is turned off
+        if vals.get('active') is False or vals.get('active') == False:
+            for record in self:
+                if record.init_type == 'cron' and record.cron_id:
+                    record.cron_id.active = False
         return res
 
     def _after_change(self):
@@ -145,6 +186,10 @@ class AIQuestInitType(models.Model):
                 record._ensure_cron()
             elif record.init_type == 'server_action' and record.active:
                 record._ensure_server_action()
+            elif record.init_type == 'powerbox' and record.active:
+                record._ensure_powerbox()
+            elif record.init_type == 'webhook' and record.active:
+                record._ensure_webhook()
 
     # ── Resource auto-creation ──
 
@@ -166,40 +211,122 @@ class AIQuestInitType(models.Model):
         if not self.chat_user_id:
             quest = self.coworker_id
             user = self.env['res.users'].search([
-                ('name', '=', coworker.name),
-                ('login', '=', 'bot_' + coworker.name.lower().replace(' ', '_')),
+                ('name', '=', quest.name),
+                ('login', '=', 'bot_' + quest.name.lower().replace(' ', '_')),
             ], limit=1)
             if not user:
                 user = self.env['res.users'].with_context(
                     no_reset_password=True).create({
-                        'name': coworker.name,
-                        'login': 'bot_' + coworker.name.lower().replace(' ', '_'),
+                        'name': quest.name,
+                        'login': 'bot_' + quest.name.lower().replace(' ', '_'),
                     })
             self.chat_user_id = user.id
 
     def _ensure_channel(self):
-        """Create Discuss channel if not exists."""
-        if not self.channel_id:
+        """Create Discuss channel if not exists and add to channel_ids.
+
+        Also syncs the coworker into each channel's ai_coworker_ids
+        so @mention routing works.
+        """
+        if not self.channel_ids:
             channel = self.env['discuss.channel'].create({
                 'name': self.coworker_id.name,
             })
-            self.channel_id = channel.id
+            self.channel_ids = [(4, channel.id)]
+        # Keep legacy channel_id in sync for backward compat
+        if not self.channel_id and self.channel_ids:
+            self.channel_id = self.channel_ids[0].id
+
+        # Sync coworker into channel's ai_coworker_ids for @mention routing
+        coworker = self.coworker_id
+        for channel in self.channel_ids:
+            if coworker not in channel.ai_coworker_ids:
+                channel.write({'ai_coworker_ids': [(4, coworker.id)]})
+                _logger.info(
+                    "Added coworker %s to channel %s ai_coworker_ids",
+                    coworker.name, channel.name,
+                )
+        channel._sync_ai_coworker_members()
 
     def _ensure_cron(self):
-        """Create ir.cron record if not exists."""
-        if not self.cron_id:
-            cron = self.env['ir.cron'].create({
-                'name': self.coworker_id.name,
-                'model_id': self.env.ref('base.model_res_partner').id,
-                'state': 'code',
-                'code': f"env.ref('{self.coworker_id._get_eid()}').action_run_scheduled()",
-                'numbercall': -1,
-            })
-            self.cron_id = cron.id
+        """Create ir.cron record if not exists, using interval from config."""
+        try:
+            if not self.cron_id:
+                # Determine target model from coworker's model_ids, fallback to res.partner
+                try:
+                    model_id = self.env.ref('base.model_res_partner').id
+                except Exception:
+                    model_id = False
+                if self.coworker_id and self.coworker_id.model_ids:
+                    model_id = self.coworker_id.model_ids[0].id
+
+                if model_id:
+                    cron = self.env['ir.cron'].create({
+                        'name': self.coworker_id.name,
+                        'model_id': model_id,
+                        'state': 'code',
+                        'code': f"env.ref('{self.coworker_id._get_eid()}').action_run_scheduled()",
+                        'numbercall': -1,
+                        'interval_number': self.cron_interval_number or 1,
+                        'interval_type': self.cron_interval_type or 'hours',
+                        'active': True,
+                    })
+                    self.cron_id = cron.id
+            else:
+                # Update existing cron with current interval values
+                self.cron_id.write({
+                    'interval_number': self.cron_interval_number or 1,
+                    'interval_type': self.cron_interval_type or 'hours',
+                })
+        except Exception as e:
+            _logger.warning('Failed to ensure cron for %s: %s',
+                          self.coworker_id.name if self.coworker_id else '?', e)
+
+    def _ensure_powerbox(self):
+        """Ensure powerbox init_type has model_ids configured."""
+        coworker = self.coworker_id
+        if not self.coworker_id.model_ids:
+            _logger.info(
+                "Powerbox init_type for %s has no model_ids — "
+                "configure models on the coworker to enable powerbox",
+                coworker.name,
+            )
+
+    def _ensure_webhook(self):
+        """Ensure webhook is configured — generate secret if missing."""
+        coworker = self.coworker_id
+        if not coworker.webhook_secret:
+            import secrets
+            coworker.webhook_secret = secrets.token_hex(16)
+            _logger.info(
+                "Auto-generated webhook secret for coworker %s",
+                coworker.name,
+            )
 
     def _ensure_server_action(self):
-        """Create server action and bind to models."""
+        """Create server action and bind to models.
+
+        If wizard mode is enabled, the server action opens a wizard
+        instead of running the agent directly.
+        """
         if not self.server_action_id and self.coworker_id.model_ids:
+            if self.server_action_use_wizard:
+                # Wizard mode: open the prompt wizard
+                code = (
+                    "action = env['ir.actions.act_window']._for_xml_id("
+                    f"'ai_agent_core.ai_coworker_server_action_wizard_action')\n"
+                    "action['context'] = dict(env.context,\n"
+                    "    default_coworker_id=" + str(self.coworker_id.id) + ",\n"
+                    "    default_res_model='" + str(self.coworker_id.model_ids[0].model) + "',\n"
+                    "    default_res_id=records[0].id if records else False,\n"
+                    "    default_res_model_name=records[0].display_name if records else '',\n"
+                    ")\n"
+                    "return action"
+                )
+            else:
+                # Direct mode: run immediately
+                code = f"env.ref('{self.coworker_id._get_eid()}').server_action(records)"
+
             action = self.env['ir.actions.server'].create({
                 'name': self.coworker_id.name,
                 'model_id': self.coworker_id.model_ids[0].id,
@@ -207,7 +334,7 @@ class AIQuestInitType(models.Model):
                 'binding_view_types': 'form,list',
                 'binding_type': 'action',
                 'state': 'code',
-                'code': f"env.ref('{self.coworker_id._get_eid()}').server_action(records)",
+                'code': code,
             })
             self.server_action_id = action.id
 
@@ -216,6 +343,13 @@ class AIQuestInitType(models.Model):
         for record in self:
             if record.chat_user_id and record.chat_user_id.login.startswith('bot_'):
                 record.chat_user_id.active = False
+            if record.channel_ids:
+                # Remove coworker from channel's ai_coworker_ids
+                coworker = record.coworker_id
+                for ch in record.channel_ids:
+                    if coworker in ch.ai_coworker_ids:
+                        ch.write({'ai_coworker_ids': [(3, coworker.id)]})
+                record.channel_ids.write({'active': False})
             if record.channel_id:
                 record.channel_id.active = False
             if record.cron_id:

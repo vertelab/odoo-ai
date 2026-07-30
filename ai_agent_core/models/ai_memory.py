@@ -38,6 +38,8 @@ class AIMemory(models.Model):
         ('pattern', 'Pattern'),
         ('feedback', 'Feedback'),
     ], string='Category')
+    session_id = fields.Many2one('ai.coworker.session', string='Session',
+                                   help='Session this memory belongs to (for session-level RAG)')
     source_thread_id = fields.Many2one('ai.coworker.session', string='Source Thread',
                                         help='Thread where this memory was extracted')
     consolidated = fields.Boolean('Consolidated', default=False,

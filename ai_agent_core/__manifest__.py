@@ -12,7 +12,7 @@
 
 {
     'name': 'odoo-ai: AI Agent Core',
-    'version': '1.5',
+    'version': '1.6',
     'summary': 'Standalone AI agent engine — SSE streaming, provider management, identity, skills, tools',
     'category': 'AI Orchestration',
     'description': """
@@ -38,6 +38,9 @@
         'mail',
         'html_editor',
     ],
+    'demo': [
+        'demo/demo_data.xml',
+    ],
     'data': [
         'security/ir.model.access.csv',
         'data/identity_templates.xml',
@@ -57,6 +60,7 @@
         'views/ai_provider_views.xml',
         'views/ai_model_views.xml',
         'views/ai_coworker_buzz_agent_wizard_views.xml',
+        'views/server_action_wizard_views.xml',
         'views/ai_coworker_views.xml',
         'views/ai_agent_views.xml',
         'views/ai_identity_views.xml',

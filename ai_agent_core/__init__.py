@@ -5,5 +5,6 @@ from . import hooks
 try:
     from . import controllers
     from . import models
+    from . import wizards
 except (ImportError, AssertionError):
     pass

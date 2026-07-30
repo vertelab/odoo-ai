@@ -14,15 +14,10 @@ def _quest_is_accessible(quest, user):
         return True
     if quest.user_id and quest.user_id.id == user.id:
         return True
-    if not quest.show_in_chat:
-        return False
     if quest.group_ids:
         user_grp = set(user.groups_id.ids)
         quest_grp = set(quest.group_ids.ids)
         if not (user_grp & quest_grp):
-            return False
-    if quest.user_ids:
-        if user.id not in quest.user_ids.ids:
             return False
     return True
 
@@ -35,7 +30,9 @@ INIT_TYPES = [
     ('cron', 'Scheduled Action'),
     ('server_action', 'Server Action'),
     ('powerbox', 'Powerbox'),
+    ('controller', 'Controller'),
     ('manual', 'Manual'),
+    ('webhook', 'Webhook'),
     ('openai_api', 'OpenAI API'),
 ]
 
@@ -173,12 +170,29 @@ class AIQuest(models.Model):
                 }
             }
     cron_id = fields.Many2one('ir.cron', string='Scheduled Action', ondelete='cascade')
+    cron_interval_number = fields.Integer('Interval', default=1)
+    cron_interval_type = fields.Selection([
+        ('minutes', 'Minutes'), ('hours', 'Hours'),
+        ('days', 'Days'), ('weeks', 'Weeks'), ('months', 'Months'),
+    ], default='hours', string='Interval Unit')
     server_action_id = fields.Many2one('ir.actions.server', string='Server Action', ondelete='cascade')
+    server_action_use_wizard = fields.Boolean('Show Prompt Wizard', default=False)
 
     channel_id = fields.Many2one('discuss.channel', string='Channel')
     chat_user_id = fields.Many2one('res.users', string='Chat Bot User', readonly=True)
     allow_trigger_words = fields.Boolean('Use Activation Words')
     chat_trigger_words = fields.Text('Activation Words')
+
+    response_mode = fields.Selection([
+        ('always', 'Always Respond'),
+        ('mention', 'Only on @mention'),
+        ('trigger', 'Trigger words only'),
+    ], default='mention', string='Response Mode')
+    channel_reply_mode = fields.Selection([
+        ('public', 'Public (in channel)'),
+        ('private', 'Private (direct message)'),
+        ('thread', 'Thread reply'),
+    ], default='public', string='Reply Mode')
 
     use_chat_history = fields.Boolean(default=True)
     use_company_info = fields.Boolean(default=True)
@@ -215,14 +229,12 @@ class AIQuest(models.Model):
     is_favorite = fields.Boolean('Favorite')
 
     # Access Control (quest-access-control)
-    show_in_chat = fields.Boolean('Show in Web Chat', default=True)
     alias_name = fields.Char('Email Alias',
         help='Local part of the email address')
     api_key_attachment_id = fields.Many2one('ir.attachment',
         string='API Key',
         help='API key for OpenAI-compatible endpoint access')
     group_ids = fields.Many2many('res.groups', 'ai_coworker_group_rel', 'coworker_id', 'group_id', string='Access Groups')
-    user_ids = fields.Many2many('res.users', 'ai_coworker_user_rel', 'coworker_id', 'user_id', string='Access Users')
 
     # Core loop migration
     use_core_loop = fields.Boolean('Use Core Loop', default=False)
@@ -478,7 +490,18 @@ class AIQuest(models.Model):
     has_cron = fields.Boolean(compute='_compute_init_type_flags', store=True)
     has_server_action = fields.Boolean(compute='_compute_init_type_flags', store=True)
     has_powerbox = fields.Boolean(compute='_compute_init_type_flags', store=True)
+    has_controller = fields.Boolean(compute='_compute_init_type_flags', store=True)
     has_openai_api = fields.Boolean(compute='_compute_init_type_flags', store=True)
+    has_webhook = fields.Boolean(compute='_compute_init_type_flags', store=True)
+
+    # ── Webhook config ──
+    webhook_secret = fields.Char('Webhook Secret',
+        readonly=True,
+        help='Shared secret for webhook init_type. Auto-generated. '
+             'External systems send this in Authorization: Bearer header')
+    max_webhook_payload_size = fields.Integer('Max Payload Size (bytes)',
+        default=1048576,
+        help='Maximum allowed payload size for webhook requests (default 1MB)')
 
     @api.depends('init_type_ids', 'init_type_ids.active', 'init_type_ids.init_type')
     def _compute_active_init_types(self):
@@ -526,6 +549,8 @@ class AIQuest(models.Model):
             r.has_cron = 'cron' in active_types
             r.has_server_action = 'server_action' in active_types
             r.has_powerbox = 'powerbox' in active_types
+            r.has_controller = 'controller' in active_types
+            r.has_webhook = 'webhook' in active_types
             r.has_openai_api = 'openai_api' in active_types
 
     @api.depends('model_ids')
@@ -704,12 +729,12 @@ class AIQuest(models.Model):
         if self._check_quest_error():
             return None
 
-        # Check trigger words
+        # Response mode check (backward compat — _route_message() already filters)
         active_init = self.init_type_ids.filtered(
             lambda it: it.init_type in ('chat', 'channel') and it.active)
-        if active_init:
+        if active_init and active_init[0].response_mode == 'trigger':
             trigger_words = active_init[0].chat_trigger_words or ''
-            if active_init[0].allow_trigger_words and trigger_words:
+            if trigger_words:
                 msg_lower = (message.body or '').lower()
                 triggers = [w.strip().lower() for w in trigger_words.split(',')]
                 if not any(t in msg_lower for t in triggers):
@@ -1098,21 +1123,56 @@ class AIQuest(models.Model):
 
     def _route_message(self, message):
         """Route an incoming discuss message to this coworker for AI processing.
-        
-        Creates a session and session line, then triggers the agent loop.
+
+        Checks response_mode, then calls chat() to process through AgentLoop
+        and post a response.
         Falls back to _buzz_route_message if in buzz mode.
         """
         self.ensure_one()
-        if self.is_supervisor and self.agent_ids:
+        if self._get_effective_orchestration_mode() == 'buzz':
             return self._buzz_route_message(message)
-        # Non-buzz mode: simple route to the coworker's chat
-        session = self._buzz_ensure_channel_session()
-        self.env['ai.coworker.session.line'].create({
-            'session_id': session.id,
-            'sequence': len(session.session_line_ids) + 1,
-            'role': 'user',
-            'content': message.body or '',
-        })
+
+        from odoo.tools.mail import html2plaintext
+
+        # Find the active chat/channel init_type for this coworker
+        active_init = self.init_type_ids.filtered(
+            lambda it: it.init_type in ('chat', 'channel') and it.active
+        )
+        if not active_init:
+            _logger.warning(
+                "No active chat/channel init_type for coworker %s",
+                self.name,
+            )
+            return None
+
+        init = active_init[0]
+
+        # Check response_mode
+        if init.response_mode == 'mention':
+            # Already matched by @mention in mail_message.py — proceed
+            pass
+        elif init.response_mode == 'trigger':
+            # Check trigger words
+            if not init.chat_trigger_words:
+                return None
+            msg_text = html2plaintext(message.body or '')
+            triggers = [w.strip().lower() for w in init.chat_trigger_words.split(',')]
+            if not any(t in msg_text.lower() for t in triggers):
+                return None
+        # 'always' — no check needed
+
+        # Get channel and bot user
+        channel = self.env['discuss.channel'].browse(message.res_id)
+        if not channel.exists():
+            return None
+
+        # Resolve bot user from chat init_type, or channel partners
+        bot_user = None
+        if init.init_type == 'chat' and init.chat_user_id:
+            bot_user = init.chat_user_id
+
+        # Process via chat() method (creates session, runs AgentLoop, posts response)
+        return self.chat(message, channel=channel, bot_user=bot_user)
 
     @api.model
     def _migrate_init_types(self):
@@ -1131,7 +1191,7 @@ class AIQuest(models.Model):
                 'active': quest.status == 'active',
             }
             if old_type == 'web_ui':
-                vals['show_in_chat'] = quest.show_in_chat
+                pass
             elif old_type == 'chat':
                 vals['chat_user_id'] = quest.chat_user_id.id if quest.chat_user_id else False
                 vals['use_chat_history'] = quest.use_chat_history
@@ -1151,7 +1211,48 @@ class AIQuest(models.Model):
 
         if created:
             _logger.info('Migration: Created %d ai.coworker.init_type records', created)
+        # Also seed any missing types for ALL quests
+        self._seed_all_init_types()
         return created
+
+    @api.model
+    def _seed_all_init_types(self):
+        """Seed ALL 9 init_type records for every quest that's missing any.
+        
+        This ensures all options (web_ui, chat, channel, mail, cron,
+        server_action, powerbox, manual, openai_api) are available
+        in the many2many_tags widget for every quest.
+        """
+        quests = self.search([])
+        seeded = 0
+        for quest in quests:
+            existing = set(
+                it.init_type for it in quest.init_type_ids
+            )
+            for itype, _label in INIT_TYPES:
+                if itype not in existing:
+                    self.env['ai.coworker.init_type'].create({
+                        'coworker_id': quest.id,
+                        'init_type': itype,
+                        'active': False,
+                    })
+                    seeded += 1
+        if seeded:
+            _logger.info('Seeded %d missing init_type records', seeded)
+        return seeded
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        records = super(AIQuest, self).create(vals_list)
+        for rec in records:
+            # Seed all 9 init types so the many2many_tags widget has options
+            for itype, _label in INIT_TYPES:
+                self.env['ai.coworker.init_type'].create({
+                    'coworker_id': rec.id,
+                    'init_type': itype,
+                    'active': itype == 'manual',
+                })
+        return records
 
     # ── Record Context Injection (ported from ai_agent_context) ──
 
@@ -1690,7 +1791,7 @@ class AIQuest(models.Model):
             })
 
             import asyncio
-            from odoo.addons.ai_agent_core.core.provider import BifrostProvider
+            from odoo.addons.ai_agent_core.core.provider import ProviderFactory, BifrostProvider
             from odoo.addons.ai_agent_core.core.tools import (
                 ToolRegistry, builtin_tools, planning_tools, TodoList,
                 wrap_tools_with_env,
@@ -1701,7 +1802,8 @@ class AIQuest(models.Model):
                 PermissionEngine, PermissionMode,
             )
 
-            provider = BifrostProvider(
+            provider_instance, provider_model = ProviderFactory.from_coworker(self)
+            provider = provider_instance or BifrostProvider(
                 base_url='http://192.168.11.150:8080/v1',
                 virtual_key='opencode',
             )
@@ -1862,13 +1964,14 @@ class AIQuest(models.Model):
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             try:
-                from odoo.addons.ai_agent_core.core.provider import BifrostProvider
+                from odoo.addons.ai_agent_core.core.provider import ProviderFactory, BifrostProvider
                 from odoo.addons.ai_agent_core.core.tools import (
                     ToolRegistry, builtin_tools, wrap_tools_with_env,
                 )
                 from odoo.addons.ai_agent_core.core.loop import AgentLoop, AgentConfig
 
-                provider = BifrostProvider(
+                provider_instance, provider_model = ProviderFactory.from_coworker(self)
+                provider = provider_instance or BifrostProvider(
                     base_url='http://192.168.11.150:8080/v1',
                     virtual_key='opencode',
                 )
@@ -2019,13 +2122,14 @@ class AIQuest(models.Model):
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             try:
-                from odoo.addons.ai_agent_core.core.provider import BifrostProvider
+                from odoo.addons.ai_agent_core.core.provider import ProviderFactory, BifrostProvider
                 from odoo.addons.ai_agent_core.core.tools import (
                     ToolRegistry, builtin_tools, wrap_tools_with_env,
                 )
                 from odoo.addons.ai_agent_core.core.loop import AgentLoop, AgentConfig
 
-                provider = BifrostProvider(
+                provider_instance, provider_model = ProviderFactory.from_coworker(self)
+                provider = provider_instance or BifrostProvider(
                     base_url='http://192.168.11.150:8080/v1',
                     virtual_key='opencode',
                 )

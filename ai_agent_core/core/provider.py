@@ -715,3 +715,176 @@ class DirectProvider(AIProvider):
                 "input_schema": fn.get("parameters", {"type": "object", "properties": {}}),
             })
         return result
+
+
+# ---------------------------------------------------------------------------
+# Provider Registry & Factory (PROV-007)
+# ---------------------------------------------------------------------------
+
+PROVIDER_REGISTRY = {
+    'bifrost': BifrostProvider,
+    'direct': DirectProvider,
+    'openai': DirectProvider,
+    'openrouter': DirectProvider,
+    'anthropic': DirectProvider,
+    'deepseek': DirectProvider,
+    'google': DirectProvider,
+    'cerebras': DirectProvider,
+    'groq': DirectProvider,
+    'custom': DirectProvider,
+}
+
+
+def resolve_provider_from_model(ai_model):
+    """Resolve a provider instance from an ai.model record.
+
+    Walks ai.model -> ai.provider to get base_url, api_key, provider_type,
+    then instantiates the correct provider class.
+
+    Args:
+        ai_model: An ai.model record (browse object)
+
+    Returns:
+        AIProvider instance configured with the provider's base_url and api_key
+    """
+    if not ai_model:
+        return None
+
+    provider = ai_model.provider_id
+    if not provider:
+        _logger.warning("Model %s has no provider configured", ai_model.name)
+        return None
+
+    provider_type = provider.provider_type or 'custom'
+    ProviderClass = PROVIDER_REGISTRY.get(provider_type)
+
+    if not ProviderClass:
+        _logger.warning(
+            "Unknown provider type '%s' for model %s. "
+            "Available: %s",
+            provider_type, ai_model.name,
+            ', '.join(PROVIDER_REGISTRY.keys()),
+        )
+        return None
+
+    base_url = provider.base_url or ''
+    api_key = provider.api_key or ''
+
+    # Handle provider-specific constructor params
+    if provider_type == 'bifrost':
+        # Bifrost uses virtual_key instead of api_key at contructor level
+        return ProviderClass(
+            base_url=base_url,
+            virtual_key=api_key or 'opencode',
+        )
+    elif provider_type == 'direct' or provider_type == 'custom':
+        # DirectProvider takes a Provider enum + api_key
+        provider_enum_name = (provider.provider_type or 'openai').upper()
+        provider_enum = getattr(Provider, provider_enum_name, Provider.OPENAI)
+        return ProviderClass(
+            provider=provider_enum,
+            api_key=api_key,
+        )
+    else:
+        # OpenAI-compatible (openai, anthropic, openrouter, deepseek, google, etc.)
+        return ProviderClass(
+            base_url=base_url,
+            api_key=api_key,
+        )
+
+
+def resolve_provider_from_coworker(coworker, agent_rel=None):
+    """Resolve provider from a coworker's agent chain.
+
+    Walks: ai.coworker -> ai.coworker.agent -> ai.agent -> ai.model -> ai.provider
+
+    Args:
+        coworker: An ai.coworker browse record
+        agent_rel: Optional specific ai.coworker.agent record.
+                   If None, uses the first agent.
+
+    Returns:
+        (AIProvider, ai.model) tuple, or (None, None) if unresolvable
+    """
+    if not coworker:
+        return None, None
+
+    if agent_rel:
+        agent = agent_rel.agent_id
+    elif coworker.agent_ids:
+        agent = coworker.agent_ids[0].agent_id
+    else:
+        return None, None
+
+    if not agent or not agent.model_id:
+        return None, None
+
+    provider = resolve_provider_from_model(agent.model_id)
+    return provider, agent.model_id
+
+
+def get_default_provider():
+    """Get the default provider from system parameters.
+
+    Uses ir.config_parameter 'ai_agent_core.default_model_id' to
+    look up an ai.model record. Returns (provider, model) or (None, None).
+    """
+    try:
+        from odoo.http import request
+
+        if not request:
+            return None, None
+        param = request.env['ir.config_parameter'].sudo().get_param(
+            'ai_agent_core.default_model_id'
+        )
+        if not param:
+            return None, None
+
+        model = request.env['ai.model'].sudo().browse(int(param))
+        if not model.exists():
+            return None, None
+
+        return resolve_provider_from_model(model), model
+    except Exception:
+        return None, None
+
+
+class ProviderFactory:
+    """Factory for creating provider instances from Odoo model records.
+
+    Usage:
+        provider, model = ProviderFactory.from_coworker(coworker)
+        provider, model = ProviderFactory.from_agent_rel(agent_rel)
+    """
+
+    @staticmethod
+    def from_coworker(coworker):
+        """Resolve provider from a coworker's first agent."""
+        return resolve_provider_from_coworker(coworker)
+
+    @staticmethod
+    def from_agent_rel(agent_rel):
+        """Resolve provider from a specific agent assignment."""
+        return resolve_provider_from_coworker(
+            agent_rel.coworker_id, agent_rel=agent_rel
+        )
+
+    @staticmethod
+    def from_model(ai_model):
+        """Resolve provider from an ai.model record directly."""
+        return resolve_provider_from_model(ai_model), ai_model
+
+    @staticmethod
+    def from_supervisor_agents(coworker):
+        """Resolve providers for all agents in supervisor mode.
+
+        Returns:
+            list of (ai.coworker.agent, AIProvider, ai.model) tuples
+        """
+        result = []
+        for agent_rel in coworker.agent_ids:
+            provider, model = resolve_provider_from_coworker(
+                coworker, agent_rel=agent_rel
+            )
+            result.append((agent_rel, provider, model))
+        return result

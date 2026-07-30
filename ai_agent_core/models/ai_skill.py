@@ -68,6 +68,12 @@ class AISkill(models.Model):
         ('pi_node', 'Pi Node.js Agent'),
     ], default='any')
 
+    # Required agents
+    requires_agent_ids = fields.Many2many('ai.agent', 'ai_skill_required_agent_rel',
+        'skill_id', 'agent_id', string='Required Agents',
+        help='Agents that must exist for this skill to function. '
+             'Auto-created when skill is activated on a coworker.')
+
     # Verify
     success_cases = fields.Text('Success Cases')
     failure_cases = fields.Text('Failure Cases')
