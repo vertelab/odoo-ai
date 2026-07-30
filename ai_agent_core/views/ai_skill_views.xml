@@ -192,4 +192,126 @@
             </form>
         </field>
     </record>
+
+    <!-- Inherited kanban with improved card layout (employee-style) -->
+    <record id="view_ai_skill_kanban_inherit" model="ir.ui.view">
+        <field name="name">ai.skill.kanban.inherit</field>
+        <field name="model">ai.skill</field>
+        <field name="inherit_id" ref="ai_agent_core.view_ai_skill_kanban"/>
+        <field name="priority">32</field>
+        <field name="arch" type="xml">
+            <!-- Add default_group_by on kanban root -->
+            <xpath expr="//kanban" position="attributes">
+                <attribute name="default_group_by">category</attribute>
+            </xpath>
+
+            <!-- Declare additional fields used in the new card template -->
+            <xpath expr="//kanban" position="inside">
+                <field name="name"/>
+                <field name="description"/>
+                <field name="github_url"/>
+                <field name="active"/>
+            </xpath>
+
+            <!-- Replace the entire card template -->
+            <xpath expr="//t[@t-name='card']" position="replace">
+                <t t-name="card">
+                    <div class="oe_kanban_card oe_kanban_global_click d-flex flex-row"
+                         t-att-class="{'border-danger border-2': !record.active.raw_value}">
+                        <!-- Inactive ribbon (web_ribbon widget) -->
+                        <widget name="web_ribbon" title="Inactive" bg_color="text-bg-danger" invisible="active"/>
+
+                        <!-- Avatar / image aside -->
+                        <aside class="o_kanban_aside_full">
+                            <t t-if="record.image_128.raw_value">
+                                <field name="image_128" widget="background_image"
+                                       options="{'preview_image': 'image_128'}"
+                                       class="d-block position-relative"/>
+                            </t>
+                            <t t-else="">
+                                <div class="d-flex align-items-center justify-content-center bg-100 bg-gradient"
+                                     style="min-height: 100px;">
+                                    <i class="fa fa-cog fa-3x text-secondary opacity-50"/>
+                                </div>
+                            </t>
+                        </aside>
+
+                        <!-- Main content -->
+                        <main class="ms-2 d-flex flex-column" style="min-width: 0;">
+                            <!-- Name -->
+                            <div class="d-flex align-items-start">
+                                <strong class="fs-5 o_text_overflow">
+                                    <field name="name"/>
+                                </strong>
+                            </div>
+
+                            <!-- Description (truncated to 2 lines) -->
+                            <div class="text-muted small mt-1"
+                                 style="max-height: 2.8em; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">
+                                <field name="description"/>
+                            </div>
+
+                            <!-- Footer with badges and meta -->
+                            <footer class="mt-auto pt-2">
+                                <div class="d-flex justify-content-between align-items-end w-100">
+                                    <!-- Left: badges -->
+                                    <div class="d-flex flex-wrap gap-1 align-items-center">
+                                        <!-- Category badge (colored) -->
+                                        <span t-if="record.category.raw_value"
+                                              class="badge" t-att-class="{
+                                                  'bg-success': record.category.raw_value == 'development',
+                                                  'bg-info': record.category.raw_value == 'infrastructure',
+                                                  'bg-warning text-dark': record.category.raw_value == 'accounting',
+                                                  'bg-primary': record.category.raw_value == 'communication',
+                                                  'bg-danger': record.category.raw_value == 'research',
+                                                  'bg-secondary': record.category.raw_value == 'general' || record.category.raw_value == 'analysis'
+                                              }">
+                                            <field name="category"/>
+                                        </span>
+
+                                        <!-- GitHub clickable badge -->
+                                        <a t-if="record.github_url.raw_value"
+                                           t-att-href="record.github_url.raw_value"
+                                           target="_blank"
+                                           class="badge bg-dark text-white text-decoration-none d-inline-flex align-items-center gap-1"
+                                           title="Open GitHub repository">
+                                            <i class="fa fa-github"/>
+                                            GitHub
+                                        </a>
+
+                                        <!-- Source type badge (dold om github, då GitHub-badge visas istället) -->
+                                        <span t-if="record.source_type.raw_value and record.source_type.raw_value != 'github'"
+                                              class="badge" t-att-class="{
+                                                  'bg-odoo': record.source_type.raw_value == 'odoo',
+                                                  'bg-info': record.source_type.raw_value == 'pi'
+                                              }">
+                                            <field name="source_type"/>
+                                        </span>
+
+                                        <!-- Compatibility badge -->
+                                        <span t-if="record.compatibility.raw_value"
+                                              class="badge bg-light text-dark border">
+                                            <field name="compatibility"/>
+                                        </span>
+                                    </div>
+
+                                    <!-- Right: version + use count -->
+                                    <div class="d-flex align-items-center text-muted small gap-2 flex-shrink-0">
+                                        <span t-if="record.version.raw_value">
+                                            v<field name="version"/>
+                                        </span>
+                                        <span t-if="record.use_count.raw_value"
+                                              class="text-nowrap">
+                                            <i class="fa fa-line-chart me-1"/>
+                                            <field name="use_count"/> uses
+                                        </span>
+                                    </div>
+                                </div>
+                            </footer>
+                        </main>
+                    </div>
+                </t>
+            </xpath>
+        </field>
+    </record>
 </odoo>
