@@ -6,32 +6,173 @@
         <field name="inherit_id" ref="base_setup.res_config_settings_view_form"/>
         <field name="arch" type="xml">
             <xpath expr="//form" position="inside">
-                <app data-string="AI API" string="AI API" name="ai_api">
-                    <setting id="ai_api_secret_setting">
-                        <field name="ai_api_secret" password="True"/>
-                        <div class="text-muted">
-                            Shared Bearer token for /ai/v1/* and /pi/callback.
-                            Falls back to the AI_AGENT_API_SECRET env variable.
-                        </div>
-                    </setting>
-                </app>
-                <app data-string="AI Companion" string="AI Companion" name="ai_companion">
-                    <setting id="ai_companion_setting">
-                        <field name="ai_personal_companion_enabled"/>
-                        <div class="text-muted">
-                            Creates a personal AI quest for each user.
-                        </div>
-                    </setting>
-                    <setting id="ai_companion_identity_setting"
-                             invisible="not ai_personal_companion_enabled">
-                        <field name="ai_personal_companion_identity_id"/>
-                    </setting>
-                </app>
-                <app data-string="Odoo Mind" string="Odoo Mind Graph" name="ai_mind_graph">
-                    <setting id="ai_graph_sync_batch">
-                        <label for="odoomind_sync_batch_size"/>
-                        <field name="odoomind_sync_batch_size"/>
-                    </setting>
+                <app data-string="AI Orkestrering" string="AI Orkestrering" name="ai_agent_core"
+                     groups="base.group_system">
+
+                    <!-- ════════════════════════════════════════════
+                         Företagsidentitet
+                         ════════════════════════════════════════════ -->
+                    <block title="Företagsidentitet">
+                        <setting>
+                            <div class="text-muted mb16">
+                                Företagets och dess medarbetares andra hjärna
+                            </div>
+                        </setting>
+                        <setting id="company_identity_mission" title="Mission">
+                            <div class="d-flex align-items-center">
+                                <span class="me-2">
+                                    <field name="company_mission" readonly="1" class="d-inline"
+                                           placeholder="Ingen mission satt"/>
+                                </span>
+                                <button type="action" name="%(base.action_res_company_form)d"
+                                        string="Redigera" icon="fa-pencil" class="oe_link"/>
+                            </div>
+                            <div class="text-muted small">
+                                Senast granskad:
+                                <field name="company_mission_last_review" class="d-inline"/>
+                            </div>
+                        </setting>
+                        <setting id="company_identity_values" title="Values">
+                            <div class="d-flex align-items-center">
+                                <span class="me-2">
+                                    <field name="company_values" readonly="1" class="d-inline"
+                                           placeholder="Inga values satta"/>
+                                </span>
+                                <button type="action" name="%(base.action_res_company_form)d"
+                                        string="Redigera" icon="fa-pencil" class="oe_link"/>
+                            </div>
+                            <div class="text-muted small">
+                                Senast granskad:
+                                <field name="company_values_last_review" class="d-inline"/>
+                            </div>
+                        </setting>
+                        <setting id="company_website" title="Webbplats">
+                            <field name="company_website_url" readonly="1" placeholder="Ingen webbplats konfigurerad"/>
+                            <div class="mt8">
+                                <button type="object" name="action_index_website"
+                                        string="🔍 Indexera webbplats" class="btn-primary"/>
+                                <button type="object" name="action_suggest_identity"
+                                        string="💡 Skapa förslag från webben" class="btn-secondary"/>
+                            </div>
+                            <div class="text-muted small" invisible="not company_website_rag_last_index">
+                                Senaste RAG-index:
+                                <field name="company_website_rag_last_index" class="d-inline"/>
+                            </div>
+                        </setting>
+                    </block>
+
+                    <!-- ════════════════════════════════════════════
+                         Odoo Mind Graph
+                         ════════════════════════════════════════════ -->
+                    <block title="Odoo Mind Graph">
+                        <setting id="ai_graph_sync_batch" title="Sync Batch Size">
+                            <field name="odoomind_sync_batch_size"/>
+                        </setting>
+                        <setting id="ai_graph_status" title="Status">
+                            <div class="text-muted">
+                                Synkronisera Odoo-modeller till AGE-grafen.
+                            </div>
+                            <button type="object" name="action_sync_graph_now"
+                                    string="Synka nu" icon="fa-refresh" class="btn-primary"/>
+                        </setting>
+                    </block>
+
+                    <!-- ════════════════════════════════════════════
+                         Company Memory
+                         ════════════════════════════════════════════ -->
+                    <block title="Company Memory">
+                        <setting id="company_memory_consolidation">
+                            <div class="text-muted">
+                                Företagsminne — indexerar partners, kunskap, webbplatser och strategi.
+                                Cron: Daglig konsolidering.
+                            </div>
+                        </setting>
+                    </block>
+
+                    <!-- ════════════════════════════════════════════
+                         Personal Memory
+                         ════════════════════════════════════════════ -->
+                    <block title="Personal Memory">
+                        <setting id="personal_memory_learning">
+                            <div class="text-muted">
+                                Personligt minne — lär från Discuss-konversationer och nudgar mål.
+                                Ersätter tidigare AI Companion.
+                            </div>
+                        </setting>
+                    </block>
+
+                    <!-- ════════════════════════════════════════════
+                         AI Coworker Memory
+                         ════════════════════════════════════════════ -->
+                    <block title="AI Coworker Memory">
+                        <setting id="coworker_memory">
+                            <div class="text-muted">
+                                Minne per AI-medarbetare — sessionshistorik, kaizen-förbättringar
+                                och personlig utveckling.
+                            </div>
+                        </setting>
+                    </block>
+
+                    <!-- ════════════════════════════════════════════
+                         AI API
+                         ════════════════════════════════════════════ -->
+                    <block title="AI API">
+                        <setting id="ai_api_secret_setting" title="API Secret">
+                            <field name="ai_api_secret" placeholder="Shared Bearer token"/>
+                            <div class="text-muted">
+                                Delas mellan /ai/v1/*, /pi/callback och externa system.
+                                Fallback till miljövariabeln AI_AGENT_API_SECRET.
+                            </div>
+                        </setting>
+                        <setting id="ai_api_default_provider" title="Default Provider">
+                            <field name="ai_api_default_provider_id"/>
+                        </setting>
+                        <setting id="ai_api_default_model" title="Default Model">
+                            <field name="ai_api_default_model_id"/>
+                        </setting>
+                    </block>
+
+                    <!-- ════════════════════════════════════════════
+                         Tool Executor (NATS)
+                         ════════════════════════════════════════════ -->
+                    <block title="Tool Executor (NATS)">
+                        <setting id="nats_retries" title="Max Retries">
+                            <field name="pi_nats_max_retries"/>
+                        </setting>
+                        <setting id="nats_restarts" title="Max Restarts">
+                            <field name="pi_nats_max_restarts"/>
+                        </setting>
+                        <setting id="nats_restart_window" title="Restart Window (minutes)">
+                            <field name="pi_nats_restart_window"/>
+                        </setting>
+                    </block>
+
+                    <!-- ════════════════════════════════════════════
+                         AI Agents
+                         ════════════════════════════════════════════ -->
+                    <block title="AI Agents">
+                        <setting id="agent_max_rounds" title="Max Loop Turns">
+                            <field name="ai_agent_max_rounds"/>
+                        </setting>
+                        <setting id="agent_tool_timeout" title="Tool Timeout (s)">
+                            <field name="ai_agent_tool_timeout"/>
+                        </setting>
+                        <setting id="agent_default_identity" title="Default Identity">
+                            <field name="ai_agent_default_identity_id"/>
+                        </setting>
+                    </block>
+
+                    <!-- ════════════════════════════════════════════
+                         Background Jobs
+                         ════════════════════════════════════════════ -->
+                    <block title="Background Jobs">
+                        <setting id="bg_jobs_list">
+                            <div class="text-muted">
+                                Schemalagda cron-jobb för AI Orkestrering.
+                                Hanteras via Inställningar → Tekniska → Schemalagda åtgärder.
+                            </div>
+                        </setting>
+                    </block>
                 </app>
             </xpath>
         </field>
