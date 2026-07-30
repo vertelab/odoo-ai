@@ -100,6 +100,7 @@ class AIQuest(models.Model):
         ('supervisor', 'Supervisor (Hidden Team)'),
         ('buzz', 'Buzz Workspace (Visible Team)'),
         ('linear', 'Linear Pipeline'),
+        ('conference', 'Conference (Best Answer)'),
         ('automation', 'Automation'),
     ], string='Orchestration Mode', default='single',
         help='How multiple agents collaborate in this quest. '
@@ -1449,11 +1450,13 @@ class AIQuest(models.Model):
         return False
 
     def _build_loop(self, provider, tools, model, system_prompt, max_rounds=10):
-        """Build AgentLoop or SupervisorLoop based on orchestration mode.
+        """Build AgentLoop or loop based on orchestration mode.
 
+        Supports: single, supervisor, buzz, linear, conference, automation.
         Returns a callable loop object with a `run(prompt)` async method.
         """
         from odoo.addons.ai_agent_core.core.loop import AgentLoop, AgentConfig
+        from odoo.addons.ai_agent_core.core.linear import LinearLoop
 
         # Inject record context into system prompt
         extra = self._extra_context() if self.context_injection_enabled else ''
@@ -1463,22 +1466,82 @@ class AIQuest(models.Model):
         mode = self._get_effective_orchestration_mode()
         if self.env.context.get('ai_single_agent_run'):
             mode = 'single'
-        if mode not in ('supervisor', 'buzz') or len(self.agent_ids) <= 1:
-            # Single agent — use standard AgentLoop
+
+        # ── Automation: single + AUTO permission ──
+        if mode == 'automation':
+            from odoo.addons.ai_agent_core.core.permission import PermissionMode
             return AgentLoop(
                 provider=provider, tools=tools,
                 config=AgentConfig(
                     model=model, system_prompt=system_prompt,
                     max_rounds=max_rounds,
+                    permission_mode='auto',
                 ),
             )
 
-        # Multi-agent supervisor / buzz mode
-        from odoo.addons.ai_agent_core.core.supervisor import (
-            SupervisorLoop, SupervisorConfig, SpecialistAgent,
+        # ── Linear: sequential pipeline ──
+        if mode == 'linear':
+            agents = self.agent_ids.sorted('sequence')
+            if not agents:
+                return AgentLoop(provider=provider, tools=tools,
+                    config=AgentConfig(model=model, system_prompt=system_prompt,
+                        max_rounds=max_rounds))
+            # Return a LinearLoop wrapper
+            return LinearLoop(
+                agents=agents, provider=provider, tools=tools,
+                base_model=model, base_system=system_prompt,
+                max_rounds=max_rounds)
+
+        # ── Single agent mode ──
+        if mode == 'single' or len(self.agent_ids) <= 1:
+            agent_rel = self.agent_ids[:1] if self.agent_ids else None
+            agent = agent_rel.agent_id if agent_rel else None
+            agent_model = agent.model_id.name if agent and agent.model_id else model
+            return AgentLoop(
+                provider=provider, tools=tools,
+                config=AgentConfig(
+                    model=agent_model, system_prompt=system_prompt,
+                    max_rounds=max_rounds,
+                ),
+            )
+
+        # ── Conference: all agents, best answer wins ──
+        if mode == 'conference':
+            from odoo.addons.ai_agent_core.core.supervisor import (
+                SupervisorLoop, SupervisorConfig, SpecialistAgent,
+            )
+            specialists = self._build_specialists(
+                provider, tools, model, system_prompt, max_rounds)
+            sl = SupervisorLoop(
+                router_provider=provider, agents=specialists,
+                config=SupervisorConfig(router_model=model))
+            # Wrap as callable that invokes conference
+            class ConferenceWrapper:
+                def __init__(self, sl, agents):
+                    self.sl = sl
+                    self.agents = agents
+                async def run(self, prompt, history=None):
+                    return await self.sl.conference(prompt, history)
+            return ConferenceWrapper(sl, specialists)
+
+        # ── Multi-agent modes (supervisor/buzz) ──
+        specialists = self._build_specialists(
+            provider, tools, model, system_prompt, max_rounds)
+
+        return SupervisorLoop(
+            router_provider=provider,
+            agents=specialists,
+            config=SupervisorConfig(
+                router_model=model,
+                max_rounds=3,
+            ),
         )
 
-        # Build quest-level orchestration context from quest skills
+    def _build_specialists(self, provider, tools, model, system_prompt, max_rounds=10):
+        """Build list of SpecialistAgent from agent_ids."""
+        from odoo.addons.ai_agent_core.core.loop import AgentLoop, AgentConfig
+        from odoo.addons.ai_agent_core.core.supervisor import SpecialistAgent
+
         quest_skill_context = ''
         if self.skill_ids:
             quest_skill_context = '\n\n## Quest Orchestration Skills\n'
@@ -1488,12 +1551,7 @@ class AIQuest(models.Model):
         specialists = []
         for agent_rel in self.agent_ids:
             agent = agent_rel.agent_id
-            agent_model = model
-            agent_system = system_prompt
-            # Get agent-specific model from model_id
-            if agent and agent.model_id and agent.model_id.name:
-                agent_model = agent.model_id.name
-            # Build agent context with role/goal/backstory + skills
+            agent_model = agent.model_id.name if agent and agent.model_id else model
             agent_skills_context = ''
             for skill in agent.skill_ids:
                 agent_skills_context += f'\n### Skill: {skill.name}\n{skill.recipe_text or skill.description or ""}\n'
@@ -1504,7 +1562,7 @@ class AIQuest(models.Model):
                 f"\n## Agent-Specific Skills\n{agent_skills_context}"
                 + system_prompt
             )
-            specialist = SpecialistAgent(
+            specialists.append(SpecialistAgent(
                 name=agent.name,
                 description=agent.get_agent_name(),
                 loop=AgentLoop(
@@ -1516,17 +1574,8 @@ class AIQuest(models.Model):
                     ),
                 ),
                 triggers=[],
-            )
-            specialists.append(specialist)
-
-        return SupervisorLoop(
-            router_provider=provider,
-            agents=specialists,
-            config=SupervisorConfig(
-                router_model=model,
-                max_rounds=3,
-            ),
-        )
+            ))
+        return specialists
 
     def _get_quest_memories(self, query: str, k: int = 3) -> str:
         """Search all FAISS memories for this quest and return context.

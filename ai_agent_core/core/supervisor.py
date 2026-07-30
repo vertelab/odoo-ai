@@ -94,6 +94,67 @@ class SupervisorLoop:
         if not self.config.default_agent:
             self.config.default_agent = agents[0].name
 
+    # ── Conference mode ──
+    async def conference(
+        self,
+        prompt: str,
+        history: Optional[list[Message]] = None,
+        mode: str = "confidence",
+    ) -> ChatResponse:
+        """Run all agents on same question, select best answer.
+
+        Args:
+            prompt: The user's question
+            history: Optional conversation history
+            mode: 'confidence' (default) | 'synthesis'
+        """
+        if len(self.agents) == 1:
+            agent = list(self.agents.values())[0]
+            return await agent.loop.run(prompt, history)
+
+        semaphore = asyncio.Semaphore(self.config.fan_out_concurrency)
+
+        async def run_agent(name, agent):
+            async with semaphore:
+                return name, await agent.loop.run(prompt, history)
+
+        tasks = [run_agent(name, a) for name, a in self.agents.items()]
+        results = await asyncio.gather(*tasks)
+
+        if mode == "synthesis":
+            return await self._conference_synthesis(prompt, results)
+        # Default: confidence-based selection
+        best = max(results, key=lambda r: r[1].output_tokens or 0)
+        total_in = sum(r.input_tokens for _, r in results)
+        total_out = sum(r.output_tokens for _, r in results)
+        return ChatResponse(
+            text=f"[Bästa svar från: {best[0]}]\n\n{best[1].text}",
+            input_tokens=total_in, output_tokens=total_out,
+            finish_reason="stop",
+        )
+
+    async def _conference_synthesis(self, prompt, results):
+        """Synthesize all answers into one."""
+        agent_outputs = "\n\n".join(
+            f"### {name}\n{resp.text}" for name, resp in results)
+        merge_prompt = (
+            f"Original: {prompt}\n\nResponses:\n{agent_outputs}\n\n"
+            f"Synthesize into ONE cohesive response.")
+        try:
+            response = await self.router_provider.chat(
+                model=self.config.router_model,
+                messages=[Message(role=Role.USER, content=merge_prompt)],
+                system_prompt="Merge answers.", temperature=0.3, max_tokens=2048,
+            )
+            total_in = sum(r.input_tokens for _, r in results) + response.input_tokens
+            total_out = sum(r.output_tokens for _, r in results) + response.output_tokens
+            return ChatResponse(text=response.text,
+                input_tokens=total_in, output_tokens=total_out,
+                finish_reason="stop")
+        except Exception as e:
+            _logger.warning("Conference synthesis failed: %s", e)
+            return results[0][1]
+
     async def run(
         self,
         prompt: str,
