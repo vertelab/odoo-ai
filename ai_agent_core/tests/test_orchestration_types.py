@@ -121,7 +121,7 @@ class TestSalesCoachScenario(TransactionCase):
         skill = self.Skill.create({
             'name': 'offert.flode',
             'description': 'Full offertprocess: CRM → offert → uppföljning',
-            'category': 'orchestration',
+            'category': 'general',
             'recipe_text': (
                 'Du är Säljcoachen. Hjälp säljteamet med offerter.\n'
                 '1. Hitta kund i CRM, produkter och priser\n'

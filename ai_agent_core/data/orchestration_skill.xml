@@ -5,7 +5,7 @@
         <record id="skill_orchestration_supervisor" model="ai.skill">
             <field name="name">orchestration.supervisor</field>
             <field name="description">Supervisor orchestration — delegate tasks to specialist agents, evaluate responses, iteratively refine questions, and synthesize final answers.</field>
-            <field name="category">orchestration</field>
+            <field name="category">general</field>
             <field name="recipe_text">
 You are a research supervisor. Your team has these specialists:
 

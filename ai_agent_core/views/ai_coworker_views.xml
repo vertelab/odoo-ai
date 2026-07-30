@@ -65,6 +65,7 @@
                                                       'bg-purple': record.orchestration_mode.raw_value == 'supervisor',
                                                       'bg-success': record.orchestration_mode.raw_value == 'buzz',
                                                       'bg-info': record.orchestration_mode.raw_value == 'linear',
+                                                      'bg-warning': record.orchestration_mode.raw_value == 'conference',
                                                       'bg-secondary': record.orchestration_mode.raw_value == 'automation'
                                                   }">
                                                 <field name="orchestration_mode"/>
