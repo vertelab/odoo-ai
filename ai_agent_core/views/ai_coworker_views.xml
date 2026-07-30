@@ -258,6 +258,30 @@
                         </group>
                     </group>
 
+                    <!-- Orchestration Type Config — syns baserat på vald mode -->
+                    <group col="2" string="Orchestration Config"
+                           invisible="orchestration_mode == 'single'">
+                        <group>
+                            <!-- Supervisor -->
+                            <field name="max_iterations" invisible="orchestration_mode != 'supervisor'"/>
+                            <field name="min_confidence" invisible="orchestration_mode != 'supervisor'"/>
+                            <!-- Buzz -->
+                            <field name="buzz_use_llm_router" invisible="orchestration_mode != 'buzz'"/>
+                            <field name="buzz_a2a_max_depth" invisible="orchestration_mode != 'buzz'"/>
+                            <field name="allow_auto_create_agents" invisible="orchestration_mode != 'buzz'"/>
+                            <field name="max_auto_agents" invisible="orchestration_mode != 'buzz'"/>
+                        </group>
+                        <group>
+                            <!-- Linear -->
+                            <field name="pass_full_history" invisible="orchestration_mode != 'linear'"/>
+                            <!-- Conference -->
+                            <!-- Automation -->
+                            <field name="notify_on_completion" invisible="orchestration_mode != 'automation'"/>
+                            <field name="auto_allowed_tools" invisible="orchestration_mode != 'automation'"/>
+                            <field name="auto_allowed_commands" invisible="orchestration_mode != 'automation'"/>
+                        </group>
+                    </group>
+
                     <notebook>
                         <page string="Description">
                             <field name="description" widget="text" nolabel="1"

@@ -126,6 +126,19 @@ class AIQuest(models.Model):
         'A2A Max Depth', default=3,
         help='Max agent-to-agent conversation depth in Buzz workspace.')
 
+    # ── Supervisor settings ──
+    max_iterations = fields.Integer(
+        'Max Iterations', default=3,
+        help='Maximum refinement rounds in supervisor task delegation.')
+    min_confidence = fields.Float(
+        'Min Confidence', default=0.8,
+        help='Minimum confidence threshold for supervisor evaluation phase.')
+
+    # ── Linear settings ──
+    pass_full_history = fields.Boolean(
+        'Pass Full History', default=False,
+        help='Pass all previous agent outputs as context to next agent in linear pipeline.')
+
     # ── Multi-surface shadow session for Buzz workspaces ──
     buzz_channel_session_id = fields.Many2one(
         'ai.coworker.session', string='Buzz Channel Session',
