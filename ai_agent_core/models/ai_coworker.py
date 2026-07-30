@@ -136,6 +136,11 @@ class AIQuest(models.Model):
             return 'supervisor'
         return 'single'
 
+    # Kanban images (related for efficient kanban display)
+    partner_image_128 = fields.Binary(related='partner_id.image_128',
+                                       string='Partner Image',
+                                       help='Avatar from channel partner')
+
     identity_id = fields.Many2one('ai.identity', string='Agent Identity',
         help='Select a template to create a personal copy for this quest. '
              'The copy evolves independently — template changes do NOT affect it.')

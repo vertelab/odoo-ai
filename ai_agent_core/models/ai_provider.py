@@ -53,6 +53,9 @@ class AIProvider(models.Model):
     model_ids = fields.One2many('ai.model', 'provider_id', string='Models')
     last_checked = fields.Datetime('Last Model Sync')
 
+    # Image
+    image_128 = fields.Binary(string='Image', attachment=True)
+
     # Config
     timeout = fields.Integer('Timeout (s)', default=120)
     retry_count = fields.Integer('Max Retries', default=3)

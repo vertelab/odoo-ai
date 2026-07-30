@@ -26,6 +26,11 @@ class AIModel(models.Model):
     # Provider
     provider_id = fields.Many2one('ai.provider', required=True, ondelete='cascade',
                                    string='Provider')
+
+    # Kanban image (related for efficient kanban display)
+    provider_image_128 = fields.Binary(related='provider_id.image_128',
+                                        string='Provider Image',
+                                        help='Avatar from provider')
     provider_type = fields.Selection(related='provider_id.provider_type', store=True)
     real_provider = fields.Char('Real Provider', compute='_compute_real_provider', store=True,
                                  help='For Bifrost models: the underlying upstream provider. '

@@ -28,6 +28,11 @@ class AIAgent(models.Model):
     identity_id = fields.Many2one('ai.identity', string='Identity',
                                    help='What personality/soul this agent has')
 
+    # Kanban images (related for efficient kanban display)
+    partner_image_128 = fields.Binary(related='partner_id.image_128',
+                                       string='Partner Image',
+                                       help='Avatar from channel partner')
+
     # ── Buzz workspace membership ──
     partner_id = fields.Many2one('res.partner', string='Channel Partner',
         help='Automatically created when this agent is used in a Buzz workspace. '

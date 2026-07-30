@@ -4,23 +4,84 @@
         <field name="name">ai.agent.kanban</field>
         <field name="model">ai.agent</field>
         <field name="arch" type="xml">
-            <kanban>
+            <kanban class="o_kanban_mobile" quick_create="false">
                 <field name="name"/>
                 <field name="ai_role"/>
+                <field name="description"/>
                 <field name="status"/>
+                <field name="model_id"/>
+                <field name="skill_ids"/>
+                <field name="coworker_count"/>
+                <field name="budget_limit"/>
+                <field name="budget_used"/>
+                <field name="active"/>
+                <field name="partner_image_128"/>
                 <templates>
                     <t t-name="card">
-                        <div class="oe_kanban_card">
-                            <div class="o_kanban_card_header">
-                                <strong><field name="name"/></strong>
-                            </div>
-                            <div class="o_kanban_card_content">
-                                <field name="ai_role" class="text-muted small"/>
-                            </div>
-                            <div class="o_kanban_card_footer">
-                                <field name="status" widget="badge"
-                                       decoration-success="status=='active'"/>
-                            </div>
+                        <div class="oe_kanban_card oe_kanban_global_click d-flex flex-row"
+                             t-att-class="{'border-danger border-2': !record.active.raw_value}">
+                            <!-- Inactive ribbon -->
+                            <widget name="web_ribbon" title="Inactive" bg_color="text-bg-danger" invisible="active"/>
+
+                            <!-- Image aside (partner → fallback) -->
+                            <aside class="o_kanban_aside_full">
+                                <t t-if="record.partner_image_128.raw_value">
+                                    <field name="partner_image_128" widget="background_image"
+                                           options="{'preview_image': 'partner_image_128'}" class="d-block position-relative"/>
+                                </t>
+                                <t t-else="">
+                                    <div class="d-flex align-items-center justify-content-center bg-100 bg-gradient"
+                                         style="min-height: 100px;">
+                                        <i class="fa fa-android fa-3x text-secondary opacity-50"/>
+                                    </div>
+                                </t>
+                            </aside>
+
+                            <!-- Main content -->
+                            <main class="ms-2 d-flex flex-column" style="min-width: 0;">
+                                <!-- Name + Role -->
+                                <div class="d-flex align-items-start">
+                                    <strong class="fs-5 o_text_overflow">
+                                        <field name="name"/>
+                                    </strong>
+                                </div>
+                                <div class="text-muted small mt-0" t-if="record.ai_role.raw_value">
+                                    <i class="fa fa-tag me-1"/><field name="ai_role"/>
+                                </div>
+
+                                <!-- Description (truncated to 2 lines) -->
+                                <div class="text-muted small mt-1"
+                                     style="max-height: 2.8em; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;"
+                                     t-if="record.description.raw_value">
+                                    <field name="description"/>
+                                </div>
+
+                                <!-- Footer -->
+                                <footer class="mt-auto pt-2">
+                                    <div class="d-flex justify-content-between align-items-end w-100">
+                                        <!-- Left: model + stats -->
+                                        <div class="d-flex flex-wrap gap-1 align-items-center">
+                                            <span t-if="record.model_id.raw_value" class="badge bg-light text-dark border small">
+                                                <i class="fa fa-microchip me-1"/><field name="model_id"/>
+                                            </span>
+                                            <span t-if="record.coworker_count.raw_value" class="badge bg-info small">
+                                                <i class="fa fa-users me-1"/><field name="coworker_count"/>
+                                            </span>
+                                            <span t-if="record.budget_limit.raw_value and record.budget_limit.raw_value > 0" class="badge bg-warning text-dark small">
+                                                <i class="fa fa-usd me-1"/><field name="budget_used"/> / <field name="budget_limit"/>
+                                            </span>
+                                        </div>
+
+                                        <!-- Right: status -->
+                                        <div class="d-flex align-items-center gap-2 flex-shrink-0">
+                                            <field name="status" widget="badge"
+                                                   decoration-success="status=='active'"
+                                                   decoration-warning="status=='draft'"
+                                                   decoration-danger="status=='error'"/>
+                                        </div>
+                                    </div>
+                                </footer>
+                            </main>
                         </div>
                     </t>
                 </templates>

@@ -4,44 +4,95 @@
         <field name="name">ai.model.kanban</field>
         <field name="model">ai.model</field>
         <field name="arch" type="xml">
-            <kanban class="o_kanban_mobile" quick_create="false">
+            <kanban class="o_kanban_mobile" quick_create="false" default_group_by="provider_id">
                 <field name="name"/>
                 <field name="display_name"/>
                 <field name="provider_id"/>
+                <field name="provider_type"/>
                 <field name="context_window"/>
                 <field name="status"/>
+                <field name="licence"/>
+                <field name="cost_input_1k"/>
+                <field name="cost_output_1k"/>
                 <field name="is_vision"/>
                 <field name="is_embedded"/>
                 <field name="is_asr"/>
                 <field name="is_text2image"/>
                 <field name="has_tools"/>
                 <field name="has_streaming"/>
+                <field name="active"/>
+                <field name="provider_image_128"/>
                 <templates>
                     <t t-name="card">
-                        <div class="oe_kanban_card">
-                            <div class="o_kanban_card_header">
-                                <strong><field name="display_name"/></strong>
-                            </div>
-                            <div class="o_kanban_card_content">
-                                <div class="text-muted small">
-                                    <field name="provider_id"/>
-                                    · <field name="context_window"/>K
-                                </div>
-                            </div>
-                            <div class="o_kanban_card_footer">
-                                <div class="d-flex justify-content-between align-items-center w-100">
-                                    <div>
-                                        <span class="fa fa-eye" t-if="record.is_vision.raw_value" title="Vision"/>
-                                        <span class="fa fa-cog" t-if="record.has_tools.raw_value" title="Tool Calling"/>
-                                        <span class="fa fa-comment" t-if="record.is_asr.raw_value" title="Speech-to-Text"/>
-                                        <span class="fa fa-file-photo-o" t-if="record.is_text2image.raw_value" title="Text-to-Image"/>
+                        <div class="oe_kanban_card oe_kanban_global_click d-flex flex-row">
+                            <!-- Image aside (provider → fallback) -->
+                            <aside class="o_kanban_aside_full">
+                                <t t-if="record.provider_image_128.raw_value">
+                                    <field name="provider_image_128" widget="background_image"
+                                           options="{'preview_image': 'provider_image_128'}" class="d-block position-relative"/>
+                                </t>
+                                <t t-else="">
+                                    <div class="d-flex align-items-center justify-content-center bg-100 bg-gradient"
+                                         style="min-height: 100px;">
+                                        <i class="fa fa-cogs fa-3x text-secondary opacity-50"/>
                                     </div>
-                                    <field name="status" widget="badge"
-                                           decoration-success="status=='active'"
-                                           decoration-warning="status=='beta'"
-                                           decoration-danger="status=='deprecated'"/>
+                                </t>
+                            </aside>
+
+                            <!-- Main content -->
+                            <main class="ms-2 d-flex flex-column" style="min-width: 0;">
+                                <!-- Display name -->
+                                <div class="d-flex align-items-start">
+                                    <strong class="fs-5 o_text_overflow">
+                                        <field name="display_name"/>
+                                    </strong>
                                 </div>
-                            </div>
+
+                                <!-- Provider + context window -->
+                                <div class="text-muted small mt-0">
+                                    <field name="provider_id"/>
+                                    · <field name="context_window"/>K context
+                                </div>
+
+                                <!-- Cost: input / output per 1K -->
+                                <div class="text-muted small" t-if="record.cost_input_1k.raw_value">
+                                    <i class="fa fa-usd me-1"/><field name="cost_input_1k"/> / <field name="cost_output_1k"/> per 1K
+                                </div>
+
+                                <!-- Footer -->
+                                <footer class="mt-auto pt-2">
+                                    <div class="d-flex justify-content-between align-items-end w-100">
+                                        <!-- Left: capability icons + badges -->
+                                        <div class="d-flex flex-wrap gap-1 align-items-center">
+                                            <!-- Capability icons -->
+                                            <span class="fa fa-eye text-success" t-if="record.is_vision.raw_value" title="Vision"/>
+                                            <span class="fa fa-cog text-primary" t-if="record.has_tools.raw_value" title="Tool Calling"/>
+                                            <span class="fa fa-comment text-info" t-if="record.is_asr.raw_value" title="Speech-to-Text"/>
+                                            <span class="fa fa-picture-o text-warning" t-if="record.is_text2image.raw_value" title="Text-to-Image"/>
+                                            <span class="fa fa-database text-secondary" t-if="record.is_embedded.raw_value" title="Embedding"/>
+                                            <span class="fa fa-bolt text-danger" t-if="record.has_streaming.raw_value" title="Streaming"/>
+
+                                            <!-- Cost badge: input / output -->
+                                            <span t-if="record.cost_input_1k.raw_value" class="badge bg-success small d-inline-flex align-items-center gap-1">
+                                                <i class="fa fa-usd"/><field name="cost_input_1k"/> / <field name="cost_output_1k"/>
+                                            </span>
+
+                                            <!-- Licence badge -->
+                                            <span t-if="record.licence.raw_value" class="badge bg-light text-dark border small">
+                                                <field name="licence"/>
+                                            </span>
+                                        </div>
+
+                                        <!-- Right: status -->
+                                        <div class="d-flex align-items-center gap-2 flex-shrink-0">
+                                            <field name="status" widget="badge"
+                                                   decoration-success="status=='active'"
+                                                   decoration-warning="status=='beta'"
+                                                   decoration-danger="status=='deprecated'"/>
+                                        </div>
+                                    </div>
+                                </footer>
+                            </main>
                         </div>
                     </t>
                 </templates>
