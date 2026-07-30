@@ -6,109 +6,152 @@
         <field name="inherit_id" ref="base_setup.res_config_settings_view_form"/>
         <field name="arch" type="xml">
             <xpath expr="//form" position="inside">
-                <app data-string="AI Orkestrering" string="AI Orkestrering" name="ai_agent_core"
+                <app data-string="AI Orkestrering" string="AI Orkestrering"
+                     name="ai_agent_core" data-icon="fa-microchip"
                      groups="base.group_system">
 
                     <!-- ════════════════════════════════════════════
                          Företagsidentitet
                          ════════════════════════════════════════════ -->
                     <block title="Företagsidentitet">
-                        <setting>
-                            <div class="text-muted mb16">
-                                Företagets och dess medarbetares andra hjärna
+
+                        <!-- Mission -->
+                        <setting id="company_mission_setting">
+                            <div class="d-flex align-items-center mb8">
+                                <span class="h5 mb0 me-2 fw-bold">Mission</span>
+                                <span class="text-muted small">— Företagets existensberättigande</span>
                             </div>
-                        </setting>
-                        <setting id="company_identity_mission" title="Mission">
-                            <div class="d-flex align-items-center">
-                                <span class="me-2">
-                                    <field name="company_mission" readonly="1" class="d-inline"
-                                           placeholder="Ingen mission satt"/>
+                            <div class="well well-sm mb8 p-2 bg-light rounded">
+                                <field name="company_mission" readonly="1"
+                                       placeholder="Ingen mission satt ännu..."
+                                       class="d-inline"/>
+                            </div>
+                            <div class="d-flex align-items-center gap-2">
+                                <button type="object" name="action_open_company"
+                                        string="✏️ Redigera" class="oe_link"/>
+                                <span class="text-muted small mx-2">|</span>
+                                <button type="object" name="action_suggest_mission"
+                                        string="💡 Skapa förslag från webben"
+                                        class="oe_link"/>
+                                <span class="text-muted small ms-3">
+                                    Senast: <field name="company_mission_last_review" class="d-inline"/>
                                 </span>
-                                <button type="action" name="%(base.action_res_company_form)d"
-                                        string="Redigera" icon="fa-pencil" class="oe_link"/>
-                            </div>
-                            <div class="text-muted small">
-                                Senast granskad:
-                                <field name="company_mission_last_review" class="d-inline"/>
                             </div>
                         </setting>
-                        <setting id="company_identity_values" title="Values">
-                            <div class="d-flex align-items-center">
-                                <span class="me-2">
-                                    <field name="company_values" readonly="1" class="d-inline"
-                                           placeholder="Inga values satta"/>
+
+                        <!-- Values -->
+                        <setting id="company_values_setting">
+                            <div class="d-flex align-items-center mb8">
+                                <span class="h5 mb0 me-2 fw-bold">Values</span>
+                                <span class="text-muted small">— Företagets kärnvärderingar</span>
+                            </div>
+                            <div class="well well-sm mb8 p-2 bg-light rounded">
+                                <field name="company_values" readonly="1"
+                                       placeholder="Inga values satta ännu..."
+                                       class="d-inline"/>
+                            </div>
+                            <div class="d-flex align-items-center gap-2">
+                                <button type="object" name="action_open_company"
+                                        string="✏️ Redigera" class="oe_link"/>
+                                <span class="text-muted small mx-2">|</span>
+                                <button type="object" name="action_suggest_values"
+                                        string="💡 Skapa förslag från webben"
+                                        class="oe_link"/>
+                                <span class="text-muted small ms-3">
+                                    Senast: <field name="company_values_last_review" class="d-inline"/>
                                 </span>
-                                <button type="action" name="%(base.action_res_company_form)d"
-                                        string="Redigera" icon="fa-pencil" class="oe_link"/>
-                            </div>
-                            <div class="text-muted small">
-                                Senast granskad:
-                                <field name="company_values_last_review" class="d-inline"/>
                             </div>
                         </setting>
-                        <setting id="company_website" title="Webbplats">
-                            <field name="company_website_url" readonly="1" placeholder="Ingen webbplats konfigurerad"/>
-                            <div class="mt8">
-                                <button type="object" name="action_index_website"
-                                        string="🔍 Indexera webbplats" class="btn-primary"/>
-                                <button type="object" name="action_suggest_identity"
-                                        string="💡 Skapa förslag från webben" class="btn-secondary"/>
+
+                        <!-- Webbplats -->
+                        <setting id="company_website_setting"
+                                 title="Webbplats för RAG">
+                            <div class="d-flex align-items-center gap-2 mb4">
+                                <span class="fw-bold me-2">URL:</span>
+                                <field name="company_website_url_edit"
+                                       placeholder="https://example.com"
+                                       class="w-50"/>
                             </div>
-                            <div class="text-muted small" invisible="not company_website_rag_last_index">
+                            <div class="text-muted small mb4" invisible="not company_website_rag_last_index">
                                 Senaste RAG-index:
                                 <field name="company_website_rag_last_index" class="d-inline"/>
                             </div>
-                        </setting>
-                    </block>
-
-                    <!-- ════════════════════════════════════════════
-                         Odoo Mind Graph
-                         ════════════════════════════════════════════ -->
-                    <block title="Odoo Mind Graph">
-                        <setting id="ai_graph_sync_batch" title="Sync Batch Size">
-                            <field name="odoomind_sync_batch_size"/>
-                        </setting>
-                        <setting id="ai_graph_status" title="Status">
-                            <div class="text-muted">
-                                Synkronisera Odoo-modeller till AGE-grafen.
-                            </div>
-                            <button type="object" name="action_sync_graph_now"
-                                    string="Synka nu" icon="fa-refresh" class="btn-primary"/>
-                        </setting>
-                    </block>
-
-                    <!-- ════════════════════════════════════════════
-                         Company Memory
-                         ════════════════════════════════════════════ -->
-                    <block title="Company Memory">
-                        <setting id="company_memory_consolidation">
-                            <div class="text-muted">
-                                Företagsminne — indexerar partners, kunskap, webbplatser och strategi.
-                                Cron: Daglig konsolidering.
+                            <div class="mt8">
+                                <button type="object" name="action_index_website"
+                                        string="🔍 Indexera webbplats" class="btn-primary"/>
                             </div>
                         </setting>
                     </block>
 
                     <!-- ════════════════════════════════════════════
-                         Personal Memory
+                         Odoo Mind
                          ════════════════════════════════════════════ -->
-                    <block title="Personal Memory">
-                        <setting id="personal_memory_learning">
-                            <div class="text-muted">
-                                Personligt minne — lär från Discuss-konversationer och nudgar mål.
-                                Ersätter tidigare AI Companion.
+                    <block title="Odoo Mind">
+                        <setting>
+                            <div class="text-muted mb8">
+                                Företagets och dess medarbetares andra hjärna
                             </div>
                         </setting>
-                    </block>
+                        <setting id="odoo_mind_graph_status" title="Graph Status">
+                            <div class="d-flex align-items-center gap-3">
+                                <span>Noder i grafen:
+                                    <field name="graph_node_count" class="d-inline fw-bold"/>
+                                </span>
+                                <span>Sync batch:
+                                    <field name="odoomind_sync_batch_size" class="d-inline"/>
+                                </span>
+                                <button type="object" name="action_sync_graph_now"
+                                        string="Synka nu" icon="fa-refresh"
+                                        class="btn-primary"/>
+                            </div>
+                        </setting>
 
-                    <!-- ════════════════════════════════════════════
-                         AI Coworker Memory
-                         ════════════════════════════════════════════ -->
-                    <block title="AI Coworker Memory">
-                        <setting id="coworker_memory">
-                            <div class="text-muted">
-                                Minne per AI-medarbetare — sessionshistorik, kaizen-förbättringar
-                                och personlig utveckling.
+                        <!-- Company Memory -->
+                        <setting id="company_memory_settings" title="Company Memory">
+                            <div class="d-flex align-items-center gap-3">
+                                <field name="company_memory_auto_extract"/>
+                                <label for="company_memory_auto_extract" string="Auto-extraction"/>
+                                <span>Konsolidering varje</span>
+                                <field name="company_memory_consolidation_days" class="d-inline"/>
+                                <span>dag(ar)</span>
+                            </div>
+                        </setting>
+
+                        <!-- Personal Memory -->
+                        <setting id="personal_memory_settings" title="Personal Memory">
+                            <div class="d-flex align-items-center gap-3">
+                                <field name="personal_memory_learning_enabled"/>
+                                <label for="personal_memory_learning_enabled" string="Lär från Discuss"/>
+                            </div>
+                            <div class="d-flex align-items-center gap-3 mt4">
+                                <field name="personal_memory_auto_nudge"/>
+                                <label for="personal_memory_auto_nudge" string="Auto-nudge"/>
+                                <span>varje</span>
+                                <field name="personal_memory_nudge_interval" class="d-inline"/>
+                                <span>dag(ar)</span>
+                            </div>
+                            <div class="d-flex align-items-center gap-3 mt4">
+                                <span>Konsolidering varje</span>
+                                <field name="personal_memory_consolidation_hours" class="d-inline"/>
+                                <span>timme/-ar</span>
+                            </div>
+                        </setting>
+
+                        <!-- AI Coworker Memory -->
+                        <setting id="coworker_memory_settings" title="AI Coworker Memory">
+                            <div class="d-flex align-items-center gap-3">
+                                <field name="coworker_memory_retention"/>
+                                <label for="coworker_memory_retention" string="Sessionsminne"/>
+                            </div>
+                            <div class="d-flex align-items-center gap-3 mt4">
+                                <span>Spara max</span>
+                                <field name="coworker_memory_retention_limit" class="d-inline"/>
+                                <span>sessioner</span>
+                            </div>
+                            <div class="d-flex align-items-center gap-3 mt4">
+                                <span>Glöm efter</span>
+                                <field name="coworker_memory_forget_days" class="d-inline"/>
+                                <span>dag(ar)</span>
                             </div>
                         </setting>
                     </block>
@@ -166,11 +209,9 @@
                          Background Jobs
                          ════════════════════════════════════════════ -->
                     <block title="Background Jobs">
-                        <setting id="bg_jobs_list">
-                            <div class="text-muted">
-                                Schemalagda cron-jobb för AI Orkestrering.
-                                Hanteras via Inställningar → Tekniska → Schemalagda åtgärder.
-                            </div>
+                        <setting id="bg_jobs_display">
+                            <field name="bg_status_summary" readonly="1"
+                                   class="font-monospace small"/>
                         </setting>
                     </block>
                 </app>
