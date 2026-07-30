@@ -256,3 +256,32 @@ class TestLinearLoopModule(TransactionCase):
         """SupervisorLoop has conference method."""
         from odoo.addons.ai_agent_core.core.supervisor import SupervisorLoop
         self.assertTrue(hasattr(SupervisorLoop, 'conference'))
+
+
+@tagged('orchestration', 'ai_core', 'buzz')
+class TestBuzzEnhanced(TransactionCase):
+    """Buzz enhanced features — LLM router, A2A config, per-agent resources."""
+
+    def setUp(self):
+        super().setUp()
+        self.Coworker = self.env['ai.coworker']
+
+    def test_buzz_llm_router_field(self):
+        """Buzz coworker has LLM router toggle."""
+        coworker = self.Coworker.create({
+            'name': 'Buzz Team',
+            'orchestration_mode': 'buzz',
+            'buzz_use_llm_router': True,
+            'buzz_a2a_max_depth': 5,
+        })
+        self.assertTrue(coworker.buzz_use_llm_router)
+        self.assertEqual(coworker.buzz_a2a_max_depth, 5)
+
+    def test_buzz_a2a_configurable(self):
+        """A2A max depth is configurable."""
+        coworker = self.Coworker.create({
+            'name': 'Buzz A2A Test',
+            'orchestration_mode': 'buzz',
+            'buzz_a2a_max_depth': 7,
+        })
+        self.assertEqual(coworker.buzz_a2a_max_depth, 7)

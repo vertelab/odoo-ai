@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+        <!-- Default orchestration skill for supervisor mode -->
+        <record id="skill_orchestration_supervisor" model="ai.skill">
+            <field name="name">orchestration.supervisor</field>
+            <field name="description">Supervisor orchestration — delegate tasks to specialist agents, evaluate responses, iteratively refine questions, and synthesize final answers.</field>
+            <field name="category">orchestration</field>
+            <field name="recipe_text">
+You are a research supervisor. Your team has these specialists:
+
+{agents}
+
+### Phase 1: Delegate
+Analyze the user request, break into sub-tasks. Assign each sub-task to the best specialist with a PRECISE question. Include only relevant context.
+
+### Phase 2: Evaluate
+Review each specialist's response. Check for:
+- Completeness: Did they answer the full question?
+- Consistency: Any contradictions with other answers?
+- Confidence: Is the answer clear or uncertain?
+
+### Phase 3: Refine (if needed, max {max_iterations} rounds)
+If gaps or contradictions found, formulate follow-up questions.
+Include context from previous rounds. Send to relevant specialists.
+
+### Phase 4: Synthesize
+Combine all answers into ONE cohesive final response.
+If a specialist has no relevant answer, skip it.
+            </field>
+            <field name="improvement_guidance">Default supervisor skill. Improve via kaizen feedback.</field>
+        </record>
+    </data>
+</odoo>

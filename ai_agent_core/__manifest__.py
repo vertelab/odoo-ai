@@ -51,6 +51,7 @@
         'data/cron_memory_consolidation.xml',
         'data/cron_scheduled_quests.xml',
         'data/cron_website_rag.xml',
+        'data/orchestration_skill.xml',
         'data/bridge_config.xml',
         'data/youtube_tools.xml',
         'data/browser_tools.xml',

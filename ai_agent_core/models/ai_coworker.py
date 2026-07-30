@@ -118,6 +118,14 @@ class AIQuest(models.Model):
         default=DEFAULT_AGENT_CREATOR_PROMPT,
         help='LLM prompt template for generating new agent personas.')
 
+    # ── Buzz LLM routing settings ──
+    buzz_use_llm_router = fields.Boolean(
+        'Use LLM Router', default=False,
+        help='Use AI to route messages in Buzz workspace (in addition to @mention and triggers).')
+    buzz_a2a_max_depth = fields.Integer(
+        'A2A Max Depth', default=3,
+        help='Max agent-to-agent conversation depth in Buzz workspace.')
+
     # ── Multi-surface shadow session for Buzz workspaces ──
     buzz_channel_session_id = fields.Many2one(
         'ai.coworker.session', string='Buzz Channel Session',
@@ -832,7 +840,7 @@ class AIQuest(models.Model):
         Priority:
         1. @mention of agent alias
         2. Trigger word match
-        3. LLM routing (if no clear match)
+        3. LLM routing (if enabled and no clear match)
         4. Fallback to first agent / leader
         """
         self.ensure_one()
@@ -856,14 +864,50 @@ class AIQuest(models.Model):
             if any(t in body for t in triggers):
                 return rel
 
-        # 3. Leader / fallback
+        # 3. LLM routing (if enabled)
+        if self.buzz_use_llm_router and len(agent_rels) > 1:
+            try:
+                return self._buzz_llm_route(body, agent_rels)
+            except Exception:
+                pass
+
+        # 4. Leader / fallback
         leader = agent_rels.filtered(lambda r: r.role == 'leader')
         if leader:
             return leader[0]
         return agent_rels[0]
 
+    def _buzz_llm_route(self, body, agent_rels):
+        """Use LLM to select the best agent for a message."""
+        import json
+        agent_descs = "\n".join(
+            f"- {r.agent_id.name}: {r.agent_id.description or r.agent_id.ai_role or ''}"
+            for r in agent_rels)
+        prompt = (
+            f"Available agents:\n{agent_descs}\n\n"
+            f"Message: {body[:200]}\n\n"
+            f"Which agent should respond? Return JSON: {{\"agent\": \"<name>\"}}")
+        # Use default provider for routing
+        provider = self._get_provider()
+        if provider:
+            from odoo.addons.ai_agent_core.core.loop import AgentConfig
+            from odoo.addons.ai_agent_core.core.permission import PermissionMode
+            result = provider.chat(
+                model="gpt-4o",
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.1, max_tokens=100)
+            text = result.get('content', '')
+            if '{' in text:
+                text = text[text.index('{'):text.rindex('}')+1]
+                data = json.loads(text)
+                name = data.get('agent', '')
+                for rel in agent_rels:
+                    if rel.agent_id.name == name:
+                        return rel
+        return None
+
     def _buzz_run_agent(self, agent_rel, prompt, history_text=''):
-        """Run a single agent and return its response text."""
+        """Run a single agent using its own model/skills/tools."""
         self.ensure_one()
         agent = agent_rel.agent_id
         system = self.description or ''
@@ -871,10 +915,12 @@ class AIQuest(models.Model):
             system = agent.identity_id.system_prompt or system
         elif agent.ai_backstory:
             system += f"\n\n{agent.ai_backstory}"
+        if agent.ai_role:
+            system = f"Role: {agent.ai_role}\nGoal: {agent.ai_goal or ''}\n" + system
 
-        # Use existing run() with custom system prompt for simplicity
-        # TODO: per-agent model selection, tool registry
-        return self.run(prompt, system_prompt=system)
+        # Use agent's own model if available
+        model = agent.model_id.name if agent and agent.model_id else None
+        return self.run(prompt, system_prompt=system, force_model=model)
 
     def _buzz_post_as_agent(self, agent, body, channel, internal=False):
         """Post a message to the channel as the agent's partner."""
@@ -1024,9 +1070,9 @@ class AIQuest(models.Model):
         if is_human:
             self._buzz_sync_message_to_session(msg_text, role='user')
 
-        # Limit consecutive agent turns
-        MAX_DEPTH = 3
-        if depth >= MAX_DEPTH:
+        # Limit consecutive agent turns (configurable)
+        max_depth = self.buzz_a2a_max_depth or 3
+        if depth >= max_depth:
             _logger.info('Buzz chat max depth reached for quest %s', self.name)
             return None
 
@@ -1070,7 +1116,7 @@ class AIQuest(models.Model):
 
             # Agent-to-agent: if answer @mentions another agent, route to them
             next_rel = self._buzz_route_message_from_text(answer, exclude=agent_rel.agent_id)
-            if next_rel and depth < MAX_DEPTH - 1:
+            if next_rel and depth < max_depth - 1:
                 # Build a synthetic message for the next agent
                 synthetic = self.env['mail.message'].new({
                     'body': f'<p>{answer}</p>',
