@@ -54,3 +54,107 @@ class Department(models.Model):
             'domain': [('department_id', '=', self.id)],
             'target': 'current',
         }
+
+    # ════════════════════════════════════════════
+    # Avdelningskontext + hälsa (tasks 7.5/7.6)
+    # ════════════════════════════════════════════
+    artifact_type_ids = fields.Many2many(
+        'ai.artifact.type', string='Kontext (artifact types)',
+        help='Avdelningens intressen — coworkerns company-scope-injektion '
+             'filtreras på dessa (Produktion → mrp + stock; Försäljning → '
+             'crm + sale.order). Ingen deklaration → allt injiceras.')
+
+    health = fields.Selection([
+        ('green', '🟢 Grön'),
+        ('yellow', '🟡 Gul'),
+        ('red', '🔴 Röd'),
+    ], string='Hälsa', compute='_compute_health', store=False,
+        help='Beräknad avdelningshälsa — aggregerad från coworkers '
+             '(heartbeat, status, session_line_count, objective_ids). '
+             'Gränsvärdena konfigureras i settings.')
+    health_reason = fields.Text(
+        string='Varför?', compute='_compute_health', store=False,
+        help='Detaljerad förklaring till hälsostatus.')
+
+    @api.depends('ai_coworker_ids.heartbeat_enabled',
+                 'ai_coworker_ids.status',
+                 'ai_coworker_ids.last_heartbeat',
+                 'ai_coworker_ids.session_line_count',
+                 'department_objective_ids')
+    def _compute_health(self):
+        """Beräkna avdelningshälsa (grön/gul/röd) från delmått.
+
+        Trösklar läses från settings (icp) — inte hårdkodade:
+        - health_heartbeat_stale_days (default 7)
+        - health_active_ratio (default 0.5)
+        - health_no_session_days (default 30)
+        - health_zero_tokens_days (default 30)
+        """
+        icp = self.env['ir.config_parameter'].sudo()
+        get = lambda k, d: int(icp.get_param('odoomind.okf.' + k, str(d)))
+        stale_days = get('health_heartbeat_stale_days', 7)
+        active_ratio = get('health_active_ratio', 50) / 100.0
+        no_session_days = get('health_no_session_days', 30)
+        zero_tokens_days = get('health_zero_tokens_days', 30)
+
+        from datetime import timedelta
+        now = fields.Datetime.now()
+        stale_before = now - timedelta(days=stale_days)
+        no_session_before = now - timedelta(days=no_session_days)
+        zero_before = now - timedelta(days=zero_tokens_days)
+
+        for dept in self:
+            coworkers = dept.ai_coworker_ids
+            if not coworkers:
+                dept.health = 'red'
+                dept.health_reason = 'Inga AI-medarbetare i avdelningen.'
+                continue
+
+            total = len(coworkers)
+            heartbeating = sum(
+                1 for c in coworkers
+                if c.status == 'active' and c.heartbeat_enabled
+                and c.last_heartbeat and c.last_heartbeat >= stale_before)
+            active_count = sum(1 for c in coworkers if c.status == 'active')
+            with_session = sum(
+                1 for c in coworkers
+                if c.session_line_ids and c.write_date and
+                c.write_date >= no_session_before)
+            with_tokens = sum(
+                1 for c in coworkers
+                if c.session_line_count and c.write_date and
+                c.write_date >= zero_before)
+            has_objective = bool(dept.department_objective_ids)
+
+            reasons = []
+            if heartbeating / total < active_ratio:
+                reasons.append(
+                    'Endast %d/%d heartbeatar (krav ≥ %d%%)'
+                    % (heartbeating, total, int(active_ratio * 100)))
+            if active_count == 0:
+                reasons.append('Inga coworkers med status=active')
+            if with_session == 0:
+                reasons.append('Ingen session på %d dagar' % no_session_days)
+            if with_tokens == 0:
+                reasons.append('0 tokens på %d dagar' % zero_tokens_days)
+            if not has_objective:
+                reasons.append('Inga avdelningsmål (OKR)')
+
+            if heartbeating / total >= active_ratio and active_count > 0 \
+                    and with_session > 0 and with_tokens > 0 and has_objective:
+                dept.health = 'green'
+            elif active_count == 0 or with_tokens == 0:
+                dept.health = 'red'
+            else:
+                dept.health = 'yellow'
+            dept.health_reason = '; '.join(reasons) if reasons else 'Allt ser bra ut.'
+
+    def _okf_context_domain(self):
+        """Domän för avdelningens kontexturval (task 7.5).
+
+        Returnerar artefakttyp-filter eller None (ingen deklaration → allt).
+        """
+        self.ensure_one()
+        if self.artifact_type_ids:
+            return [('artifact_type_id', 'in', self.artifact_type_ids.ids)]
+        return None

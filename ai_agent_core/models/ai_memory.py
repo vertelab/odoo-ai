@@ -47,6 +47,18 @@ class AIMemory(models.Model):
     archived = fields.Boolean('Archived', default=False,
                                help='Hidden from system prompt injection')
 
+    # OKF artifact type (registrerbar taxonomi, ersätter statiska selections)
+    artifact_type_id = fields.Many2one(
+        'ai.artifact.type', string='Artifact Type',
+        help='OKF artifact type (learning = memory kind, övriga = knowledge).'
+             ' Befintliga poster får default learning via data/init.')
+
+    # OKF dirty-flag (trigger-modell, task 5.1) — sätts av write()-hooken
+    # (microseconds, inget AI-arbete); lätt cron plockar upp och rensar.
+    okf_dirty = fields.Boolean(
+        'OKF Dirty', default=False,
+        help='Sätts av write()-hook; lätt cron (5 min) indexerar och rensar.')
+
     # Metadata
     tags = fields.Char('Tags', help='Comma-separated')
     importance = fields.Selection([
@@ -228,3 +240,60 @@ class AIMemory(models.Model):
         except Exception as e:
             _logger.warning('Embedding init failed: %s', e)
             return None
+
+    # ════════════════════════════════════════════
+    # OKF trigger-modell (task 5.1)
+    # ════════════════════════════════════════════
+    def write(self, vals):
+        """write()-hook: sätt okf_dirty utan AI-arbete."""
+        if vals.get('okf_dirty') is not True and not vals.get('consolidated'):
+            vals['okf_dirty'] = True
+        return super().write(vals)
+
+    @api.model
+    def _okf_cron_index_dirty(self):
+        """Lätt cron (task 5.2): plocka upp dirty-artefakter, indexera,
+        rensa dirty-flag. Tungt arbete görs HÄR, inte i write()."""
+        # ai.memory har en FAISS-hjälpmetod som skuggar ORM:ts search —
+        # använd _search för att komma åt ORM:en
+        dirty_ids = self._search([('okf_dirty', '=', True)], limit=50)
+        dirty = self.browse(dirty_ids)
+        if not dirty:
+            return 0
+        count = 0
+        for mem in dirty:
+            try:
+                atype = mem.artifact_type_id
+                # Sammanfattning = innehållet (tunt koncept; vid behov kan
+                # en AI-genererad summary läggas till här)
+                summary = mem.content or mem.name or ''
+                concept_key = 'ai.memory,%s' % mem.id
+                owner_coworker_id = mem.quest_id.id or None
+                owner_user_id = None
+                owner_company_id = None
+                if owner_coworker_id:
+                    pass  # coworker-scope
+                elif mem.identity_id:
+                    owner_user_id = mem.identity_id.user_id.id or None
+                # Företag om ingen ägare hittas
+                if not owner_coworker_id and not owner_user_id:
+                    owner_company_id = self.env.company.id
+
+                concept = self.env['ai.okf.concept']._okf_upsert(
+                    artifact_type=atype or 'learning',
+                    concept_key=concept_key,
+                    summary=summary,
+                    title=mem.name,
+                    source_ref=concept_key,
+                    owner_company_id=owner_company_id,
+                    owner_user_id=owner_user_id,
+                    owner_coworker_id=owner_coworker_id,
+                    generated_by='cron',
+                )
+                if concept:
+                    mem.write({'okf_dirty': False})
+                    count += 1
+            except Exception as e:
+                _logger.warning('OKF cron index failed for memory %s: %s',
+                                mem.id, e)
+        return count

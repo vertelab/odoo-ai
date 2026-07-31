@@ -42,4 +42,14 @@ from . import ai_onboarding
 from . import hr_employee
 from . import hr_department
 from . import hr_job
+from . import ai_artifact_type
+from . import ai_okf_concept
+from . import ai_access_resolver
+from . import okf_access_cache
+from . import ai_okf_dashboard
+from . import ai_okf_upload
+from . import ir_attachment
 
+from . import workspace_para
+from . import executive_summary
+from . import workspace_activity

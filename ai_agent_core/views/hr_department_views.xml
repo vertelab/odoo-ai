@@ -10,16 +10,34 @@
                 <field name="ai_manager_id" placeholder="Välj AI-chef..."
                     options="{'no_create': True}"/>
             </field>
+            <field name="name" position="after">
+                <field name="health" widget="badge"
+                       decoration-success="health == 'green'"
+                       decoration-warning="health == 'yellow'"
+                       decoration-danger="health == 'red'"/>
+            </field>
+            <xpath expr="//field[@name='manager_id']/.." position="after">
+                <group string="Odoo Mind-kontext">
+                    <field name="artifact_type_ids" widget="many2many_tags"
+                           options="{'no_create': True}"
+                           help="Avdelningens intressen — coworkerns company-scope-injektion filtreras på dessa."/>
+                    <field name="health_reason" readonly="1"/>
+                </group>
+            </xpath>
         </field>
     </record>
 
-    <!-- Inherit hr.department tree — add AI staff count -->
+    <!-- Inherit hr.department tree — add AI staff count + health -->
     <record id="hr_view_department_tree_inherit_ai" model="ir.ui.view">
         <field name="name">hr.department.tree.inherit.ai</field>
         <field name="model">hr.department</field>
         <field name="inherit_id" ref="hr.view_department_tree"/>
         <field name="arch" type="xml">
             <field name="manager_id" position="after">
+                <field name="health" widget="badge"
+                       decoration-success="health == 'green'"
+                       decoration-warning="health == 'yellow'"
+                       decoration-danger="health == 'red'"/>
                 <field name="total_ai_staff" string="🤖 AI-staff"/>
             </field>
         </field>

@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- ai.artifact.type views (OKF) -->
+
+    <record id="view_ai_artifact_type_tree" model="ir.ui.view">
+        <field name="name">ai.artifact.type.tree</field>
+        <field name="model">ai.artifact.type</field>
+        <field name="arch" type="xml">
+            <list string="Artifact Types">
+                <field name="name"/>
+                <field name="kind"/>
+                <field name="model_id"/>
+                <field name="bridge_module"/>
+                <field name="active"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_ai_artifact_type_form" model="ir.ui.view">
+        <field name="name">ai.artifact.type.form</field>
+        <field name="model">ai.artifact.type</field>
+        <field name="arch" type="xml">
+            <form string="Artifact Type">
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="name"/>
+                            <field name="kind"/>
+                            <field name="model_id"/>
+                            <field name="bridge_module"/>
+                            <field name="active"/>
+                        </group>
+                        <group>
+                            <field name="group_ids" widget="many2many_tags"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="OKF Contract">
+                            <field name="okf_contract" widget="json"/>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_ai_artifact_type_search" model="ir.ui.view">
+        <field name="name">ai.artifact.type.search</field>
+        <field name="model">ai.artifact.type</field>
+        <field name="arch" type="xml">
+            <search string="Artifact Types">
+                <field name="name"/>
+                <filter name="group_kind" string="Kind" context="{'group_by':'kind'}"/>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_ai_artifact_type" model="ir.actions.act_window">
+        <field name="name">Artifact Types</field>
+        <field name="res_model">ai.artifact.type</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="view_ai_artifact_type_search"/>
+    </record>
+</odoo>

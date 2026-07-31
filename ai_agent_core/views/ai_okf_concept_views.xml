@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- ai.okf.concept views (OKF) -->
+
+    <record id="view_ai_okf_concept_list" model="ir.ui.view">
+        <field name="name">ai.okf.concept.list</field>
+        <field name="model">ai.okf.concept</field>
+        <field name="arch" type="xml">
+            <list string="OKF Concepts" limit="80">
+                <field name="scope"/>
+                <field name="concept_key"/>
+                <field name="version"/>
+                <field name="title"/>
+                <field name="artifact_type_id"/>
+                <field name="status"/>
+                <field name="stale_after"/>
+                <field name="archived"/>
+                <field name="owner_company_id" optional="show"/>
+                <field name="owner_user_id" optional="show"/>
+                <field name="owner_coworker_id" optional="show"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_ai_okf_concept_form" model="ir.ui.view">
+        <field name="name">ai.okf.concept.form</field>
+        <field name="model">ai.okf.concept</field>
+        <field name="arch" type="xml">
+            <form string="OKF Concept">
+                <header>
+                    <button name="action_nudge_para" type="object"
+                            string="Organisera i PARA (AI)"
+                            class="btn-primary"
+                            invisible="not in_inbox"/>
+                </header>
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="title"/>
+                            <field name="scope"/>
+                            <field name="concept_key"/>
+                            <field name="version"/>
+                            <field name="supersedes_id"/>
+                            <field name="superseded_by_id"/>
+                            <field name="artifact_type_id"/>
+                            <field name="status"/>
+                            <field name="archived"/>
+                            <field name="in_inbox"/>
+                        </group>
+                        <group>
+                            <field name="owner_company_id"/>
+                            <field name="owner_user_id"/>
+                            <field name="owner_coworker_id"/>
+                            <field name="source_ref"/>
+                            <field name="stale_after"/>
+                            <field name="retention_purpose"/>
+                            <field name="retention_end"/>
+                            <field name="dirty"/>
+                        </group>
+                    </group>
+                    <group string="Workspace PARA"
+                           invisible="not in_inbox">
+                        <field name="para_ref_ids">
+                            <list>
+                                <field name="container_id"/>
+                            </list>
+                        </field>
+                    </group>
+                    <notebook>
+                        <page string="Summary">
+                            <field name="summary" widget="html"/>
+                            <field name="distill_html" widget="html"
+                                   readonly="1" nolabel="1"
+                                   invisible="not distill_html"/>
+                        </page>
+                        <page string="Distill (L2/L3)">
+                            <group>
+                                <field name="l2_summary_id" readonly="1"/>
+                                <field name="l3_summary_id" readonly="1"/>
+                            </group>
+                        </page>
+                        <page string="Attribution">
+                            <field name="attribution" widget="json"/>
+                        </page>
+                        <page string="Sources">
+                            <field name="sources" widget="json"/>
+                        </page>
+                        <page string="Metadata">
+                            <group>
+                                <field name="generated" widget="json"/>
+                                <field name="verified" widget="json"/>
+                                <field name="entities" widget="json"/>
+                            </group>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_ai_okf_concept_search" model="ir.ui.view">
+        <field name="name">ai.okf.concept.search</field>
+        <field name="model">ai.okf.concept</field>
+        <field name="arch" type="xml">
+            <search string="OKF Concepts">
+                <field name="title"/>
+                <field name="concept_key"/>
+                <field name="summary"/>
+                <filter name="group_scope" string="Scope" context="{'group_by':'scope'}"/>
+                <filter name="group_status" string="Status" context="{'group_by':'status'}"/>
+                <filter name="group_artifact" string="Artifact Type" context="{'group_by':'artifact_type_id'}"/>
+                <separator/>
+                <filter name="archived" string="Archived" domain="[('archived','=',True)]"/>
+                <filter name="not_archived" string="Not Archived" domain="[('archived','=',False)]"/>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_ai_okf_concept" model="ir.actions.act_window">
+        <field name="name">OKF Concepts</field>
+        <field name="res_model">ai.okf.concept</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="view_ai_okf_concept_search"/>
+        <field name="context">{'search_default_not_archived': 1}</field>
+    </record>
+
+    <!-- Meny under Configuration (endast admin) -->
+</odoo>

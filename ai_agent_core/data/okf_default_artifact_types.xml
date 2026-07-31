@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- ════════════════════════════════════════════
+         Default artifact types (OKF) — task 2.1
+         Åtta typer med kind-dimension:
+           knowledge: manual, website, document, email, note, knowledge, partner
+           memory:    learning
+         ════════════════════════════════════════════ -->
+
+    <record id="artifact_type_manual" model="ai.artifact.type">
+        <field name="name">manual</field>
+        <field name="kind">knowledge</field>
+        <field name="bridge_module">ai_agent_core</field>
+        <field name="okf_contract" eval="{'generated_by': 'process', 'stale_policy': 'fixed', 'stale_ttl_days': 365, 'retention_purpose': 'none', 'retention_days': 0}"/>
+    </record>
+
+    <record id="artifact_type_website" model="ai.artifact.type">
+        <field name="name">website</field>
+        <field name="kind">knowledge</field>
+        <field name="bridge_module">ai_agent_core</field>
+        <field name="okf_contract" eval="{'generated_by': 'process', 'stale_policy': 'source', 'stale_ttl_days': 7, 'retention_purpose': 'none', 'retention_days': 0}"/>
+    </record>
+
+    <record id="artifact_type_document" model="ai.artifact.type">
+        <field name="name">document</field>
+        <field name="kind">knowledge</field>
+        <field name="bridge_module">ai_agent_core</field>
+        <field name="okf_contract" eval="{'generated_by': 'process', 'stale_policy': 'source', 'stale_ttl_days': 0, 'retention_purpose': 'none', 'retention_days': 0}"/>
+    </record>
+
+    <record id="artifact_type_email" model="ai.artifact.type">
+        <field name="name">email</field>
+        <field name="kind">knowledge</field>
+        <field name="bridge_module">ai_agent_core</field>
+        <field name="okf_contract" eval="{'generated_by': 'process', 'stale_policy': 'source', 'stale_ttl_days': 0, 'retention_purpose': 'crm_lead', 'retention_days': 180}"/>
+    </record>
+
+    <record id="artifact_type_note" model="ai.artifact.type">
+        <field name="name">note</field>
+        <field name="kind">knowledge</field>
+        <field name="bridge_module">ai_agent_core</field>
+        <field name="okf_contract" eval="{'generated_by': 'human', 'stale_policy': 'fixed', 'stale_ttl_days': 365, 'retention_purpose': 'none', 'retention_days': 0}"/>
+    </record>
+
+    <record id="artifact_type_knowledge" model="ai.artifact.type">
+        <field name="name">knowledge</field>
+        <field name="kind">knowledge</field>
+        <field name="bridge_module">ai_agent_core</field>
+        <field name="okf_contract" eval="{'generated_by': 'ai', 'stale_policy': 'source', 'stale_ttl_days': 0, 'retention_purpose': 'none', 'retention_days': 0}"/>
+    </record>
+
+    <record id="artifact_type_learning" model="ai.artifact.type">
+        <field name="name">learning</field>
+        <field name="kind">memory</field>
+        <field name="bridge_module">ai_agent_core</field>
+        <field name="okf_contract" eval="{'generated_by': 'ai', 'stale_policy': 'fixed', 'stale_ttl_days': 0, 'retention_purpose': 'none', 'retention_days': 0}"/>
+    </record>
+
+    <record id="artifact_type_partner" model="ai.artifact.type">
+        <field name="name">partner</field>
+        <field name="kind">knowledge</field>
+        <field name="bridge_module">ai_agent_core</field>
+        <field name="model_id" ref="base.model_res_partner"/>
+        <field name="okf_contract" eval="{'generated_by': 'process', 'stale_policy': 'source', 'stale_ttl_days': 0, 'retention_purpose': 'crm_lead', 'retention_days': 180}"/>
+    </record>
+</odoo>

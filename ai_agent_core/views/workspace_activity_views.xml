@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- workspace.activity.suggestion views — Agenda-kort med snabbåtgärder -->
+    <record id="view_workspace_activity_suggestion_list" model="ir.ui.view">
+        <field name="name">workspace.activity.suggestion.list</field>
+        <field name="model">workspace.activity.suggestion</field>
+        <field name="arch" type="xml">
+            <list string="Agenda — Förslag och initiativ" multi_edit="0">
+                <field name="state" widget="badge"
+                       decoration-info="state == 'proposed'"
+                       decoration-success="state == 'accepted'"
+                       decoration-danger="state == 'rejected'"
+                       decoration-muted="state == 'done'"/>
+                <field name="suggestion_type" widget="badge" optional="hide"/>
+                <field name="summary"/>
+                <field name="source" widget="badge" optional="hide"/>
+                <field name="coworker_id" optional="hide"/>
+                <field name="user_id" optional="hide"/>
+                <field name="personal_goal_id" optional="show"/>
+                <field name="key_result_id" optional="show"/>
+                <field name="create_date" optional="hide"/>
+                <button name="action_accept" type="object" string="✓ Godkänn"
+                        class="btn-success btn-sm"
+                        icon="fa-check"
+                        invisible="state != 'proposed'"/>
+                <button name="action_reject" type="object" string="✕ Avvisa"
+                        class="btn-danger btn-sm"
+                        icon="fa-times"
+                        invisible="state != 'proposed'"/>
+                <button name="action_why" type="object" string="? Varför"
+                        class="btn-info btn-sm"
+                        icon="fa-question-circle"
+                        invisible="state != 'proposed'"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_workspace_activity_suggestion_form" model="ir.ui.view">
+        <field name="name">workspace.activity.suggestion.form</field>
+        <field name="model">workspace.activity.suggestion</field>
+        <field name="arch" type="xml">
+            <form string="Aktivitetsförslag">
+                <header>
+                    <button name="action_accept" type="object" string="Godkänn"
+                            class="btn-success"
+                            invisible="state != 'proposed'"/>
+                    <button name="action_reject" type="object" string="Avvisa"
+                            class="btn-danger"
+                            invisible="state != 'proposed'"/>
+                    <button name="action_reschedule" type="object"
+                            string="Omplanera" class="btn-secondary"
+                            invisible="state != 'proposed'"/>
+                    <field name="state" widget="statusbar"/>
+                </header>
+                <sheet>
+                    <div class="oe_title">
+                        <h1><field name="summary" placeholder="Förslag..."/></h1>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="user_id"/>
+                            <field name="coworker_id"/>
+                            <field name="source"/>
+                            <field name="suggestion_type"/>
+                        </group>
+                        <group>
+                            <field name="personal_goal_id"/>
+                            <field name="org_goal_id"/>
+                            <field name="key_result_id"/>
+                            <field name="result_ref" readonly="1"/>
+                        </group>
+                    </group>
+                    <field name="detail"/>
+                    <group string="Diff — före/efter (5.5d)">
+                        <group>
+                            <field name="diff_before" widget="json"
+                                   string="Före (fält som skrivs)"/>
+                        </group>
+                        <group>
+                            <field name="diff_after" widget="json"
+                                   string="Efter"/>
+                        </group>
+                    </group>
+                    <group string="Varför? — källkoncept (5.5c)">
+                        <field name="evidence_ids" widget="many2many_tags"/>
+                    </group>
+                    <group string="Mötets ankare (5.7)">
+                        <field name="meeting_anchor"
+                               widget="many2one_reference"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!-- Agenda-action: förslag (proposed) + GAP-generering -->
+    <record id="action_workspace_agenda_suggestions" model="ir.actions.act_window">
+        <field name="name">Agenda — Initiativ</field>
+        <field name="res_model">workspace.activity.suggestion</field>
+        <field name="view_mode">list,form</field>
+        <field name="domain">[('user_id', '=', uid), ('state', '=', 'proposed')]</field>
+    </record>
+
+    <!-- Server action: generera GAP-förslag (task 5.2) -->
+    <record id="action_workspace_generate_gap" model="ir.actions.server">
+        <field name="name">Generera aktivitetsförslag (GAP)</field>
+        <field name="model_id" ref="model_workspace_gap_engine"/>
+        <field name="state">code</field>
+        <field name="code">
+records = env['workspace.gap.engine'].suggest_for_user()
+action = {'type': 'ir.actions.client', 'tag': 'display_notification',
+          'params': {'title': '%d förslag skapade' % len(records),
+                     'type': 'success', 'sticky': False}}
+        </field>
+    </record>
+</odoo>

@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- ai.access.resolver views (OKF) -->
+
+    <record id="view_ai_access_resolver_list" model="ir.ui.view">
+        <field name="name">ai.access.resolver.list</field>
+        <field name="model">ai.access.resolver</field>
+        <field name="arch" type="xml">
+            <list string="Access Resolvers">
+                <field name="model_id"/>
+                <field name="source_kind"/>
+                <field name="follower_domain"/>
+                <field name="owner_domain"/>
+                <field name="active"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_ai_access_resolver_form" model="ir.ui.view">
+        <field name="name">ai.access.resolver.form</field>
+        <field name="model">ai.access.resolver</field>
+        <field name="arch" type="xml">
+            <form string="Access Resolver">
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="model_id"/>
+                            <field name="source_kind"/>
+                            <field name="active"/>
+                        </group>
+                        <group>
+                            <field name="follower_domain"/>
+                            <field name="owner_domain"/>
+                        </group>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_ai_access_resolver" model="ir.actions.act_window">
+        <field name="name">Access Resolvers</field>
+        <field name="res_model">ai.access.resolver</field>
+        <field name="view_mode">list,form</field>
+    </record>
+</odoo>

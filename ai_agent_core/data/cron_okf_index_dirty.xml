@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Cron: OKF lätt indexerare (var 5:e minut) — plockar upp dirty-artefakter
+         och gör det tunga arbetet (sammanfattning, upsert via _okf_upsert,
+         rensning av dirty-flag). Tungt arbete sker här, aldrig i write(). -->
+    <record id="cron_okf_index_dirty" model="ir.cron">
+        <field name="name">OKF: Indexera dirty-artefakter</field>
+        <field name="model_id" ref="model_ai_memory"/>
+        <field name="state">code</field>
+        <field name="code">env['ai.memory']._okf_cron_index_dirty()</field>
+        <field name="interval_number">5</field>
+        <field name="interval_type">minutes</field>
+        <field name="active" eval="True"/>
+        <field name="priority">5</field>
+    </record>
+</odoo>

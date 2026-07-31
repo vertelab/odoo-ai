@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Indexer-crons (tasks 7.3) — skriver ai.okf.concept.
+         Dagliga jobb; de ersätter de saknade metoderna i hooks.py
+         och skapas som datafiler istället (post_init körs ej vid
+         checkmodule-init på redan installerade moduler). -->
+
+    <record id="cron_company_memory_nightly" model="ir.cron">
+        <field name="name">Company Memory Nightly Consolidation</field>
+        <field name="model_id" ref="model_ai_company_memory"/>
+        <field name="state">code</field>
+        <field name="code">model.cron_nightly_consolidation()</field>
+        <field name="interval_number">1</field>
+        <field name="interval_type">days</field>
+        <field name="active" eval="True"/>
+        <field name="priority">5</field>
+    </record>
+
+    <record id="cron_company_memory_partners" model="ir.cron">
+        <field name="name">Company Memory Partner Customers</field>
+        <field name="model_id" ref="model_ai_company_memory"/>
+        <field name="state">code</field>
+        <field name="code">model.cron_index_partners()</field>
+        <field name="interval_number">1</field>
+        <field name="interval_type">days</field>
+        <field name="active" eval="True"/>
+        <field name="priority">5</field>
+    </record>
+
+    <record id="cron_company_memory_suppliers" model="ir.cron">
+        <field name="name">Company Memory Partner Suppliers</field>
+        <field name="model_id" ref="model_ai_company_memory"/>
+        <field name="state">code</field>
+        <field name="code">model.cron_index_suppliers()</field>
+        <field name="interval_number">1</field>
+        <field name="interval_type">days</field>
+        <field name="active" eval="True"/>
+        <field name="priority">5</field>
+    </record>
+
+    <record id="cron_company_memory_knowledge" model="ir.cron">
+        <field name="name">Company Memory Knowledge Articles</field>
+        <field name="model_id" ref="model_ai_company_memory"/>
+        <field name="state">code</field>
+        <field name="code">model.cron_index_knowledge()</field>
+        <field name="interval_number">1</field>
+        <field name="interval_type">days</field>
+        <field name="active" eval="True"/>
+        <field name="priority">5</field>
+    </record>
+
+    <record id="cron_company_memory_dms" model="ir.cron">
+        <field name="name">Company Memory DMS Documents</field>
+        <field name="model_id" ref="model_ai_company_memory"/>
+        <field name="state">code</field>
+        <field name="code">model.cron_index_dms()</field>
+        <field name="interval_number">1</field>
+        <field name="interval_type">days</field>
+        <field name="active" eval="True"/>
+        <field name="priority">5</field>
+    </record>
+
+    <record id="cron_company_memory_website" model="ir.cron">
+        <field name="name">Company Memory Website RAG</field>
+        <field name="model_id" ref="model_ai_company_memory"/>
+        <field name="state">code</field>
+        <field name="code">model.cron_index_website()</field>
+        <field name="interval_number">1</field>
+        <field name="interval_type">days</field>
+        <field name="active" eval="True"/>
+        <field name="priority">5</field>
+    </record>
+
+    <record id="cron_company_memory_strategy" model="ir.cron">
+        <field name="name">Company Memory Strategy</field>
+        <field name="model_id" ref="model_ai_company_memory"/>
+        <field name="state">code</field>
+        <field name="code">model.cron_index_strategy()</field>
+        <field name="interval_number">1</field>
+        <field name="interval_type">days</field>
+        <field name="active" eval="True"/>
+        <field name="priority">5</field>
+    </record>
+
+    <record id="cron_company_memory_mgmt_summary" model="ir.cron">
+        <field name="name">Company Memory Management Summary</field>
+        <field name="model_id" ref="model_ai_company_memory"/>
+        <field name="state">code</field>
+        <field name="code">model.cron_generate_management_summary()</field>
+        <field name="interval_number">1</field>
+        <field name="interval_type">days</field>
+        <field name="active" eval="True"/>
+        <field name="priority">5</field>
+    </record>
+</odoo>

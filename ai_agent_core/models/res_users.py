@@ -96,3 +96,22 @@ class ResUsers(models.Model):
         _logger.info('Created personal AI companion for %s: quest %s',
                      self.name, quest.id)
         return quest
+
+    # ════════════════════════════════════════════
+    # Offboarding — rätten att bli glömd (task 7.12)
+    # ════════════════════════════════════════════
+    def action_offboard_archive_personal_memory(self):
+        """Arkivera/radera användarens personliga koncept vid offboarding.
+
+        Rätt att bli glömd realiseras nu (inte bara i GDPR-modulen).
+        Company/coworker-koncept rörs inte — de tillhör företaget.
+        """
+        archived = self.env['ai.okf.concept'].search([
+            ('owner_user_id', '=', self.id),
+            ('archived', '=', False),
+        ])
+        if archived:
+            archived.write({'archived': True})
+            _logger.info('Offboarding: arkiverade %s personliga koncept '
+                         'för användare %s', len(archived), self.id)
+        return len(archived)

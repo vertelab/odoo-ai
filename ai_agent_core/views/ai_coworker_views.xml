@@ -195,9 +195,17 @@
                     <group col="2">
                         <group string="Settings">
                             <field name="orchestration_mode" widget="radio"/>
+                            <field name="injection_level" widget="radio"/>
                             <field name="identity_id"/>
                             <field name="tag_ids" widget="many2many_tags"/>
                             <field name="group_ids" widget="many2many_tags"/>
+                        </group>
+                        <group string="Autonomi-panel (gap C5/F4)">
+                            <field name="monthly_cap_mtokens"/>
+                            <field name="budget_kr_monthly"/>
+                            <field name="max_actions_per_day"/>
+                            <field name="hitl_threshold" widget="radio"/>
+                            <field name="heartbeat_enabled"/>
                         </group>
                         <group string="Configuration">
                             <field name="active_init_types" widget="many2many_tags"
@@ -286,6 +294,8 @@
                         <page string="Description">
                             <field name="description" widget="text" nolabel="1"
                                    placeholder="System prompt / quest purpose..."/>
+                            <field name="example_prompts" widget="text" nolabel="1"
+                                   placeholder="Exempel-prompts per roll (gap A1/A3)..."/>
                         </page>
 
                         <page string="Context">

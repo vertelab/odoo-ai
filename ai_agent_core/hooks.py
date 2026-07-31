@@ -194,13 +194,31 @@ def post_init_hook_personal_memory(cr, registry):
         from odoo.api import Environment, SUPERUSER_ID
         env = Environment(cr, SUPERUSER_ID, {})
         post_init_hook_org(env)
+        okf_init_default_artifact_types(env)
         env.flush_all()
         env.cr.commit()
     except Exception as e:
         _logger.warning('Org init failed (non-fatal): %s', e)
 
-GRILL_BLOCK = """
-## Interview protocol (GRILL)
+
+def okf_init_default_artifact_types(env):
+    """OKF-init: sätt default artifact_type 'learning' på befintliga
+    ai.memory-poster som saknar artifact_type_id (task 1.5). Idempotent."""
+    try:
+        learning = env.ref('ai_agent_core.artifact_type_learning',
+                           raise_if_not_found=False)
+        if not learning:
+            _logger.warning('OKF: learning artifact type saknas — hoppar default')
+            return
+        memories = env['ai.memory'].search([('artifact_type_id', '=', False)])
+        if memories:
+            memories.write({'artifact_type_id': learning.id})
+            _logger.info('OKF: satte default artifact_type learning på %s poster',
+                         len(memories))
+    except Exception as e:
+        _logger.warning('OKF-init default artifact types failed (non-fatal): %s', e)
+
+GRILL_BLOCK = """## Interview protocol (GRILL)
 
 Grill the user about the decisions — within a budget.
 

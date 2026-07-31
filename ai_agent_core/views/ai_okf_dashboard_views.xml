@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Odoo Mind Dashboard — admin-övervakning + manuella körningar (task 5.3) -->
+
+    <record id="view_ai_okf_dashboard_form" model="ir.ui.view">
+        <field name="name">ai.okf.dashboard.form</field>
+        <field name="model">ai.okf.dashboard</field>
+        <field name="arch" type="xml">
+            <form string="🧠 Odoo Mind Dashboard">
+                <sheet>
+                    <group>
+                        <group string="Systemstatus">
+                            <field name="graph_status"/>
+                            <field name="graph_version"/>
+                        </group>
+                        <group string="Minneslagring">
+                            <field name="concept_count" string="Koncept (totalt)"/>
+                            <field name="company_concept_count" string="🏢 Company-scope"/>
+                            <field name="personal_concept_count" string="👤 Personal-scope"/>
+                            <field name="coworker_concept_count" string="🤖 Coworker-scope"/>
+                            <field name="memory_count" string="Legacy ai.memory"/>
+                            <field name="dirty_count" string="Dirty (väntar)"/>
+                            <field name="superseded_count" string="Superseded versioner"/>
+                        </group>
+                    </group>
+
+                    <group string="Cron-jobb">
+                        <field name="cron_status" readonly="1" class="font-monospace small"/>
+                    </group>
+
+                    <group string="Manuella körningar">
+                        <div class="row">
+                            <div class="col-6">
+                                <button name="action_index_all" type="object"
+                                        string="🔄 Indexera allt"
+                                        class="btn-primary btn-block mb-2"/>
+                            </div>
+                            <div class="col-6">
+                                <button name="action_index_month" type="object"
+                                        string="📅 Indexera ändrade denna månad"
+                                        class="btn-secondary btn-block mb-2"/>
+                            </div>
+                            <div class="col-6">
+                                <button name="action_index_today" type="object"
+                                        string="⏱ Indexera ändrade idag"
+                                        class="btn-secondary btn-block mb-2"/>
+                            </div>
+                            <div class="col-6">
+                                <div class="d-flex align-items-center">
+                                    <button name="action_index_category" type="object"
+                                            string="🗂 Indexera per kategori"
+                                            class="btn-secondary me-2"/>
+                                </div>
+                            </div>
+                            <div class="col-12 mt-2">
+                                <field name="artifact_type_ids" widget="many2many_tags"
+                                       options="{'no_create': True}"/>
+                            </div>
+                        </div>
+                        <button name="action_migrate_legacy" type="object"
+                                string="🧬 Migrera legacy-data → OKF"
+                                class="btn-warning mt-2"/>
+                        <field name="run_result" readonly="1" class="mt-2"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_ai_okf_dashboard" model="ir.actions.act_window">
+        <field name="name">Odoo Mind Dashboard</field>
+        <field name="res_model">ai.okf.dashboard</field>
+        <field name="view_mode">form</field>
+        <field name="view_id" ref="view_ai_okf_dashboard_form"/>
+        <field name="target">inline</field>
+        <field name="help" type="html">
+            <p><strong>🧠 Odoo Mind Dashboard</strong></p>
+            <p>Administratörens övervakningsyta: graph, minne, cron-jobb
+            och manuella körningar.</p>
+            <p>💡 Manuella körningar använder samma
+            <code>_okf_upsert()</code>-path som cron — med tidsfönster
+            eller kategori-filter.</p>
+        </field>
+    </record>
+</odoo>

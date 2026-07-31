@@ -106,6 +106,16 @@ class AIQuest(models.Model):
         help='How multiple agents collaborate in this quest. '
              'Buzz makes agents visible as channel members.')
 
+    # ── Workspace Hermes injection level (D6) ──
+    injection_level = fields.Selection([
+        ('summary_only', 'Summary only (L3)'),
+        ('summary_and_key', 'Summary + Key concepts (L3+L1)'),
+        ('full', 'Full (L3+L1+L0)'),
+    ], string='Hermes Injection Level', default='summary_and_key',
+        help='How much of the OKF memory (L0-L3) is injected into the '
+             'system prompt for this coworker. summary_only is cheapest and '
+             'least noisy; full gives complete context at higher token cost.')
+
     # ── Buzz workspace settings ──
     allow_auto_create_agents = fields.Boolean(
         'Auto-create Agents', default=True,
@@ -235,6 +245,13 @@ class AIQuest(models.Model):
         string='Company Memory Categories',
         help='Limit company memory to specific categories.\n'
              'Leave empty to include all accessible categories.')
+    company_memory_artifact_types = fields.Many2many(
+        'ai.artifact.type',
+        'ai_coworker_company_memory_artifact_type_rel',
+        'coworker_id', 'artifact_type_id',
+        string='Company Memory Artifact Types (OKF)',
+        help='Limit OKF company memory to specific artifact types.\n'
+             'Leave empty to include all accessible types (task 7.2).')
     use_time_context = fields.Boolean(default=True)
     chat_history_limit = fields.Integer(default=10)
 
@@ -305,6 +322,30 @@ class AIQuest(models.Model):
         help='0 = unlimited. Cap in millions of systemtokens.')
     cap_warning_sent = fields.Boolean('Varning skickad')
     cap_exhausted = fields.Boolean('Tak överskridet')
+
+    # ── Autonomi-panel (gap C5/F4, task 8.6) ──
+    budget_kr_monthly = fields.Float(
+        'Budget (kr/mån)', default=0.0,
+        help='Autonomi-budget i kronor per månad. 0 = ingen explicit '
+             'kr-budget (endast mtokens-tak). Hårt stopp när budgeten är slut.')
+    max_actions_per_day = fields.Integer(
+        'Max åtgärder/dag', default=50,
+        help='Hårt stopp: antal express-actions per dag innan coworkern '
+             'måste vänta till nästa dygn.')
+    hitl_threshold = fields.Selection([
+        ('autonomous', 'Autonom (inga godkännanden)'),
+        ('high_risk', 'Endast högriskåtgärder kräver godkännande'),
+        ('always', 'Alltid godkännande (HITL)'),
+    ], string='HITL-tröskel', default='high_risk',
+        help='När krävs godkännande innan coworkern agerar. '
+             'Paperclip-approval-gates som default: högriskåtgärder '
+             '(skrivningar, externa anrop) kräver alltid HITL.')
+
+    # ── Coworker-katalog (gap A1/A3, task 8.7) ──
+    example_prompts = fields.Text(
+        'Exempel-prompts',
+        help='Exempel på hur användare kan be denna coworker om hjälp. '
+             'Visas i coworker-katalogen (per roll).')
 
     @api.constrains('monthly_cap_mtokens')
     def _check_monthly_cap(self):
@@ -1377,8 +1418,31 @@ class AIQuest(models.Model):
             except Exception as e:
                 _logger.debug('Personal memory injection failed: %s', e)
 
-        # Level 5: Company Memory (ai.company.memory)
-        if self.inject_company_memory and 'ai.company.memory' in self.env:
+        # Level 5: Company Memory — OKF-first (tasks 7.1/7.2/7.5)
+        if self.inject_company_memory and 'ai.okf.concept' in self.env:
+            try:
+                company_id = self.company_id.id or self.env.company.id
+                atype_ids = self.company_memory_artifact_types.ids \
+                    if self.company_memory_artifact_types else None
+                # Avdelningskontext (task 7.5): filtrera på avdelningens
+                # artifact types om de är deklarerade
+                dept_ctx = None
+                if self.department_id:
+                    dept_ctx = self.department_id._okf_context_domain()
+                if dept_ctx and not atype_ids:
+                    atype_ids = self.department_id.artifact_type_ids.ids
+                memory_block = self.env['ai.okf.concept'] \
+                    ._okf_build_system_prompt_block(
+                        'company', company_id, query=self.description,
+                        max_chars=2000, artifact_type_ids=atype_ids,
+                        include_level1=True,
+                        injection_level=self.injection_level)
+                if memory_block:
+                    parts.append(f"\n\n{memory_block}")
+            except Exception as e:
+                _logger.debug('OKF company memory injection failed: %s', e)
+        elif self.inject_company_memory and 'ai.company.memory' in self.env:
+            # Legacy-fallback (före OKF-migrering)
             try:
                 cat_ids = self.company_memory_categories.ids if self.company_memory_categories else None
                 company_id = self.company_id.id or self.env.company.id

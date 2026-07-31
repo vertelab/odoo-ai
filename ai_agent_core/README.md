@@ -277,12 +277,62 @@ class AgentConfig:
 | **Supervisor** | 100% | ✅ Routing + Fan-out + Merge |
 | **Sessions** (SESS-001..004) | 100% | ✅ Model + Lifecycle + Persistence |
 
+## Workspace (Odoo Mind Workspace)
+
+Workspace-lagret implementerar Second Brain-metodiken (CODE/PARA) som ett
+metodiklager ovanpå OKF-substratet — producerar resultat i Odoo Core.
+
+### Modeller
+
+- `workspace.para.container` + `workspace.para.ref` — PARA-behållare per
+  användare (project/area/resource/archive) med polymorfa referenser
+  (aldrig kopior). ADD-only-koncept placeras via refs, inte writes.
+- `workspace.activity.suggestion` — aktivitetsförslag i agendan (HITL-kort
+  med Godkänn/Avvisa/Omplanera/Varför, diff före/efter, mötets ankare).
+- `workspace.gap.engine` — GAP-analys (target−current från KR,
+  deadline−idag från SMART) + `build_agenda()` (query-byggare).
+- `executive.summary.interface` — distill-lager L2 (executive summary) /
+  L3 (synopsis), ADD-only versionering, generated_by (cron/nightly/
+  project_close).
+- `ai.okf.concept` — utökad med inbox (in_inbox), `create_from_mail()`
+  (res.partner find/create + eml-bilaga), `action_place_in_para()`,
+  `action_nudge_para()`, `render_attribution_html()` (klickbara källor +
+  osäker-flagga), `action_publish_to_company()/action_publish_to_channel()`.
+- `ai.coworker` — utökad med `injection_level` (L0-L3-styrning),
+  autonomi-panel (budget_kr_monthly, max_actions_per_day,
+  hitl_threshold) och `example_prompts` (katalog).
+
+### Vyer (menyn "Odoo Mind")
+
+Agenda · Inbox · Approvals · PARA · Search · Coworkers · Coworker-katalog
+
+### Flöden
+
+- **Capture**: mail → OKF-koncept (partner + eml-bilaga), inbox-vy.
+- **Organize**: inbox→PARA (manuell + auto för knowledge/archive + nudge).
+- **Distill**: L0→L1→L2→L3 löpande + vid projektavslut (lessons learned).
+- **Express**: förslag → Odoo-objekt via OpenWorker-gate (HITL) —
+  permission engine i `core/permission.py`.
+- **Publicera**: personligt→company explicit (ny company-kopia, attribution
+  behålls), → Discuss-kanal via message_post.
+
+### Referenser
+
+- Tiago Forte, *Building a Second Brain* (CODE + PARA)
+- Niklas Luhmann, *Zettelkasten* (koncept/attribution)
+- OpenWorker-mönster: PLAN-openworker-lessons.md (permission modes +
+  plan-before-action)
+
 ## Running Tests
 
 ```bash
 cd /usr/share/odoo-ai
 python3 -m unittest ai_agent_core.tests.test_core -v
+python3 -m unittest ai_agent_core.tests.test_openworker_gate -v
 ```
+
+Odoo-integrationstester (kräver DB): `checkmodule -d <db> -m ai_agent_core -t`
+(inkl. `tests/test_workspace.py`).
 
 ## Dependencies
 

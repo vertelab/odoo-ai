@@ -316,6 +316,24 @@ class AICompanyMemory(models.Model):
         Returns:
             str: Formatterad block eller tom sträng
         """
+        # ── OKF-first (tasks 7.1/7.4) ──
+        Okf = self.env['ai.okf.concept']
+        okf_count = Okf.search_count([
+            ('scope', '=', 'company'),
+            ('owner_company_id', '=', company_id),
+            ('archived', '=', False),
+            ('status', '!=', 'superseded'),
+        ])
+        if okf_count:
+            try:
+                return Okf._okf_build_system_prompt_block(
+                    'company', company_id, query=None,
+                    max_chars=max_chars, include_level1=False)
+            except Exception as e:
+                _logger.warning('OKF system prompt block failed, '
+                                'fallback till legacy: %s', e)
+
+        # ══ Legacy-fallback (före migrering) ══
         parts = []
 
         # Level 2: Management summary
@@ -397,3 +415,324 @@ class AICompanyMemory(models.Model):
             'Company memory consolidation: archived %d, embeddings %d',
             archived, emb_count)
         return {'archived': archived, 'embeddings': emb_count}
+
+
+    # ════════════════════════════════════════════
+    # OKF-INDEXERARE (tasks 7.3)
+    # Skriver ai.okf.concept med owner_company_id + attribution.
+    # Alla är idempotenta: _okf_upsert skapar ny version vid re-index.
+    # ════════════════════════════════════════════
+
+    @api.model
+    def _okf_company_id(self, company_id=None):
+        return company_id or self.env.company.id
+
+    def _okf_index_partner_batch(self, partners, company_id, kind_label):
+        """Indexera res.partner-rader till ai.okf.concept."""
+        Okf = self.env['ai.okf.concept']
+        company_id = self._okf_company_id(company_id)
+        n = 0
+        for p in partners:
+            try:
+                lines = []
+                if p.name:
+                    lines.append(f"- {p.name}")
+                if p.function:
+                    lines.append(f"- Roll: {p.function}")
+                if p.email:
+                    lines.append(f"- E-post: {p.email}")
+                if p.phone:
+                    lines.append(f"- Telefon: {p.phone}")
+                if p.comment:
+                    lines.append(f"- Kommentar: {p.comment}")
+                if p.industry_id:
+                    lines.append(f"- Bransch: {p.industry_id.name}")
+                if not lines:
+                    continue
+                summary = (f"### {kind_label}: {p.name}\n"
+                           + "\n".join(lines))
+                source_ref = f"res.partner,{p.id}"
+                Okf._okf_upsert(
+                    artifact_type='partner',
+                    concept_key=f"partner,{p.id}",
+                    summary=summary,
+                    title=f"{kind_label}: {p.name}",
+                    attribution=[{'line': 1,
+                                  'source_ref': source_ref}],
+                    source_ref=source_ref,
+                    owner_company_id=company_id,
+                    generated_by='cron_partner_indexer',
+                )
+                n += 1
+            except Exception as e:
+                _logger.warning('Partner indexering misslyckades för %s: %s',
+                                p.id, e)
+        return n
+
+    @api.model
+    def cron_index_partners(self, company_id=None, limit=None):
+        """Indexera kunder (customer_rank>0) → ai.okf.concept (task 7.3)."""
+        domain = [('customer_rank', '>', 0), ('active', '=', True)]
+        if limit:
+            partners = self.env['res.partner'].search(domain, limit=limit)
+        else:
+            partners = self.env['res.partner'].search(domain)
+        n = self._okf_index_partner_batch(
+            partners, company_id, 'Kund')
+        _logger.info('OKF partner-indexerare: %s kunder indexerade', n)
+        return {'kind': 'partner', 'indexed': n}
+
+    @api.model
+    def cron_index_suppliers(self, company_id=None, limit=None):
+        """Indexera leverantörer (supplier_rank>0) → OKF (task 7.3)."""
+        domain = [('supplier_rank', '>', 0), ('active', '=', True)]
+        if limit:
+            partners = self.env['res.partner'].search(domain, limit=limit)
+        else:
+            partners = self.env['res.partner'].search(domain)
+        n = self._okf_index_partner_batch(
+            partners, company_id, 'Leverantör')
+        _logger.info('OKF leverantörs-indexerare: %s leverantörer indexerade', n)
+        return {'kind': 'supplier', 'indexed': n}
+
+    @api.model
+    def cron_index_knowledge(self, company_id=None):
+        """Indexera kunskapsartiklar → OKF (task 7.3)."""
+        company_id = self._okf_company_id(company_id)
+        Okf = self.env['ai.okf.concept']
+        n = 0
+        # knowledge-modulen är inte installerad här — guard
+        for model_name, title_field, body_field in [
+            ('knowledge.article', 'title', 'body'),
+        ]:
+            if model_name not in self.env:
+                _logger.debug('OKF knowledge-indexerare: modellen %s '
+                              'saknas — hoppar över', model_name)
+                continue
+            Model = self.env[model_name]
+            if not hasattr(Model, 'search'):
+                continue
+            for art in Model.search([]):
+                try:
+                    title = getattr(art, title_field, '') or ''
+                    body = getattr(art, body_field, '') or ''
+                    if not body:
+                        continue
+                    source_ref = f"{model_name},{art.id}"
+                    Okf._okf_upsert(
+                        artifact_type='knowledge',
+                        concept_key=f"knowledge,{art.id}",
+                        summary=body,
+                        title=title or f"Kunskapsartikel {art.id}",
+                        attribution=[{'line': 1, 'source_ref': source_ref}],
+                        source_ref=source_ref,
+                        owner_company_id=company_id,
+                        generated_by='cron_knowledge_indexer',
+                    )
+                    n += 1
+                except Exception as e:
+                    _logger.warning('Knowledge-indexering misslyckades '
+                                    'för %s: %s', art.id, e)
+        _logger.info('OKF knowledge-indexerare: %s artiklar indexerade', n)
+        return {'kind': 'knowledge', 'indexed': n}
+
+    @api.model
+    def cron_index_dms(self, company_id=None):
+        """Indexera DMS-dokument → OKF (task 7.3).
+
+        I avsaknad av dms-modulen indexeras ir.attachment med text-typ
+        (pdf/docx/txt/md) som dokumentkoncept.
+        """
+        company_id = self._okf_company_id(company_id)
+        Okf = self.env['ai.okf.concept']
+        n = 0
+        if 'dms.file' in self.env:
+            Model = self.env['dms.file']
+            for doc in Model.search([]):
+                try:
+                    name = doc.name or f"DMS {doc.id}"
+                    content = getattr(doc, 'content', '') or ''
+                    if not content:
+                        continue
+                    source_ref = f"dms.file,{doc.id}"
+                    Okf._okf_upsert(
+                        artifact_type='document',
+                        concept_key=f"dms,{doc.id}",
+                        summary=content,
+                        title=name,
+                        attribution=[{'line': 1, 'source_ref': source_ref}],
+                        source_ref=source_ref,
+                        owner_company_id=company_id,
+                        generated_by='cron_dms_indexer',
+                    )
+                    n += 1
+                except Exception as e:
+                    _logger.warning('DMS-indexering misslyckades %s: %s',
+                                    doc.id, e)
+        else:
+            # Fallback: text-bilagor (ir.attachment) — begränsa till
+            # text-liknande mimetyper för att inte drunkna i binärfiler
+            _logger.info('OKF DMS-indexerare: dms.file saknas — '
+                         'indexerar ir.attachment (text)')
+            domain = [
+                ('mimetype', 'in',
+                 ['text/plain', 'text/markdown', 'text/csv',
+                  'application/pdf']),
+                ('res_model', 'in', [False, 'res.partner',
+                                     'crm.lead', 'sale.order']),
+            ]
+            docs = self.env['ir.attachment'].search(domain, limit=500)
+            for doc in docs:
+                try:
+                    content = ''
+                    try:
+                        content = doc._index() if hasattr(doc, '_index') \
+                            else doc.raw.decode('utf-8', errors='ignore')
+                    except Exception:
+                        pass
+                    if not content or len(content) < 20:
+                        continue
+                    source_ref = f"ir.attachment,{doc.id}"
+                    Okf._okf_upsert(
+                        artifact_type='document',
+                        concept_key=f"attachment,{doc.id}",
+                        summary=content[:4000],
+                        title=doc.name or f"Bilaga {doc.id}",
+                        attribution=[{'line': 1, 'source_ref': source_ref}],
+                        source_ref=source_ref,
+                        owner_company_id=company_id,
+                        generated_by='cron_dms_indexer',
+                    )
+                    n += 1
+                except Exception as e:
+                    _logger.warning('Attachment-indexering misslyckades '
+                                    '%s: %s', doc.id, e)
+        _logger.info('OKF DMS-indexerare: %s dokument indexerade', n)
+        return {'kind': 'dms', 'indexed': n}
+
+    @api.model
+    def cron_index_website(self, company_id=None):
+        """Indexera websidor (website_page) → OKF (task 7.3)."""
+        company_id = self._okf_company_id(company_id)
+        Okf = self.env['ai.okf.concept']
+        n = 0
+        if 'website.page' not in self.env:
+            _logger.debug('OKF website-indexerare: website.page saknas')
+            return {'kind': 'website', 'indexed': 0}
+        pages = self.env['website.page'].search([
+            ('is_published', '=', True),
+        ])
+        for page in pages:
+            try:
+                url = page.url or f"/page/{page.id}"
+                title = url
+                # Innehåll hämtas från den associerade ir.ui.view (arch_db)
+                content = ''
+                view = page.view_id if hasattr(page, 'view_id') else None
+                if view and hasattr(view, 'arch_db'):
+                    content = self._html_to_text(view.arch_db)
+                elif hasattr(page, 'body_arch'):
+                    content = self._html_to_text(page.body_arch)
+                if not content or len(content) < 20:
+                    continue
+                source_ref = f"website.page,{page.id}"
+                Okf._okf_upsert(
+                    artifact_type='website',
+                    concept_key=f"website,{page.id}",
+                    summary=content[:4000],
+                    title=title,
+                    attribution=[{'line': 1, 'source_ref': source_ref}],
+                    source_ref=source_ref,
+                    owner_company_id=company_id,
+                    generated_by='cron_website_indexer',
+                )
+                n += 1
+            except Exception as e:
+                _logger.warning('Website-indexering misslyckades %s: %s',
+                                page.id, e)
+        _logger.info('OKF website-indexerare: %s sidor indexerade', n)
+        return {'kind': 'website', 'indexed': n}
+
+    @api.model
+    def cron_index_strategy(self, company_id=None):
+        """Indexera strategi (legacy ai.company.memory strategy) → OKF.
+
+        Task 7.3 + 7.14: strategy-kategorin i den gamla tabellen läses
+        och skrivs till ai.okf.concept; gamla tabellen skrivs inte längre.
+        """
+        company_id = self._okf_company_id(company_id)
+        Okf = self.env['ai.okf.concept']
+        n = 0
+        legacy = self.search([
+            ('company_id', '=', company_id),
+            ('category', 'in', ['strategy']),
+        ])
+        for mem in legacy:
+            try:
+                key = f"strategy,{mem.id}"
+                source_ref = f"ai.company.memory,{mem.id}"
+                Okf._okf_upsert(
+                    artifact_type='strategy',
+                    concept_key=key,
+                    summary=mem.content or '',
+                    title=(mem.content or 'Strategi')[:80],
+                    attribution=[{'line': 1, 'source_ref': source_ref}],
+                    source_ref=source_ref,
+                    owner_company_id=company_id,
+                    generated_by='cron_strategy_indexer',
+                )
+                n += 1
+            except Exception as e:
+                _logger.warning('Strategi-indexering misslyckades %s: %s',
+                                mem.id, e)
+        _logger.info('OKF strategy-indexerare: %s strategier indexerade', n)
+        return {'kind': 'strategy', 'indexed': n}
+
+    @api.model
+    def cron_generate_management_summary(self, company_id=None):
+        """Generera management summary från OKF-koncept → Level 2.
+
+        Task 7.3/7.4: sammanfattningen skrivs som concept_key
+        'mgmt_summary' med artifact type 'mgmt_summary' så att
+        _okf_build_system_prompt_block hittar den först.
+        """
+        company_id = self._okf_company_id(company_id)
+        Okf = self.env['ai.okf.concept']
+        # Sammanställ befintliga koncept till en sammanfattning
+        concepts = Okf.search([
+            ('scope', '=', 'company'),
+            ('owner_company_id', '=', company_id),
+            ('archived', '=', False),
+            ('status', '!=', 'superseded'),
+        ], limit=200)
+        if not concepts:
+            return {'kind': 'management_summary', 'indexed': 0}
+
+        # Gruppera efter artifact type
+        by_type = {}
+        for c in concepts:
+            atype = c.artifact_type_id.name or 'övrigt'
+            by_type.setdefault(atype, []).append(c)
+
+        lines = []
+        for atype, items in sorted(by_type.items()):
+            lines.append(f"## {atype.title()}")
+            for c in items[:20]:
+                snippet = (c.summary or c.title or '')[:200].replace(
+                    '\n', ' ')
+                lines.append(f"- {snippet}")
+        summary = '\n'.join(lines)
+        source_ref = f"ai.company.memory,{company_id}"
+        Okf._okf_upsert(
+            artifact_type='mgmt_summary',
+            concept_key='mgmt_summary',
+            summary=summary,
+            title='Ledningssammanfattning (autogenererad)',
+            attribution=[{'line': 1, 'source_ref': source_ref}],
+            source_ref=source_ref,
+            owner_company_id=company_id,
+            generated_by='cron_mgmt_summary',
+        )
+        _logger.info('OKF management-summary genererad (%s koncept)',
+                     len(concepts))
+        return {'kind': 'management_summary', 'indexed': 1}

@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- ════════════════════════════════════════════
+         Access-resolvers (OKF) — task 4.5
+         Registrerar delningsmönster som ir.access/ir.rule inte uttrycker.
+         Resolver-domäner är AND-filter, aldrig breddare.
+
+         Core registrerar bara resolvers för sina egna källmodeller
+         (res.partner, ir.attachment). Bridges registrerar sina egna
+         (knowledge_joplin → knowledge.note, etc.) — registrerbarhet
+         är hela poängen.
+
+         Regler:
+         - Modeller med followers → follower_domain (message_partner_ids)
+         - Owner-baserade modeller → owner_domain
+         - Modeller utan delningsmönster → inga domäner (ren ORM-sök)
+         - website-RAG → source_kind=external_url (access via group_ids)
+         ════════════════════════════════════════════ -->
+
+    <!-- res.partner — followers (delade kontakter) -->
+    <record id="resolver_res_partner" model="ai.access.resolver">
+        <field name="model_id" ref="base.model_res_partner"/>
+        <field name="source_kind">odoo_record</field>
+        <field name="follower_domain">[('message_partner_ids','in',[{partner_id}])]</field>
+    </record>
+
+    <!-- ir.attachment — followers (uppladdade dokument i chatt) + website-RAG.
+         Website-artefaktens source_kind=external_url hanteras i resolver-
+         logiken (ingen ORM-lookup; access via artefakttypens group_ids). -->
+    <record id="resolver_ir_attachment" model="ai.access.resolver">
+        <field name="model_id" ref="base.model_ir_attachment"/>
+        <field name="source_kind">attachment</field>
+        <field name="follower_domain">[('message_partner_ids','in',[{partner_id}])]</field>
+    </record>
+</odoo>

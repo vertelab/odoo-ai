@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- ai.okf.upload views — uppladdningskö med progress-visualisering -->
+
+    <record id="view_ai_okf_upload_list" model="ir.ui.view">
+        <field name="name">ai.okf.upload.list</field>
+        <field name="model">ai.okf.upload</field>
+        <field name="arch" type="xml">
+            <list string="Uppladdningar" limit="80">
+                <field name="name"/>
+                <field name="state" widget="badge"
+                       decoration-success="state == 'done'"
+                       decoration-warning="state == 'working'"
+                       decoration-danger="state == 'error'"/>
+                <field name="owner_user_id"/>
+                <field name="coworker_id"/>
+                <field name="channel_id"/>
+                <field name="create_date"/>
+                <field name="error_message" optional="show"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_ai_okf_upload_form" model="ir.ui.view">
+        <field name="name">ai.okf.upload.form</field>
+        <field name="model">ai.okf.upload</field>
+        <field name="arch" type="xml">
+            <form string="Uppladdning">
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="name"/>
+                            <field name="attachment_id"/>
+                            <field name="state" widget="badge"/>
+                            <field name="retry_count"/>
+                        </group>
+                        <group>
+                            <field name="owner_user_id"/>
+                            <field name="owner_company_id"/>
+                            <field name="coworker_id"/>
+                            <field name="channel_id"/>
+                        </group>
+                    </group>
+                    <group string="Fel (mouse-over)" invisible="state != 'error'">
+                        <field name="error_message" readonly="1"/>
+                    </group>
+                    <group string="Normaliserad text (cache)">
+                        <field name="normalized_text" readonly="1"/>
+                    </group>
+                    <group string="Koncept">
+                        <field name="concept_ids"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_ai_okf_upload" model="ir.actions.act_window">
+        <field name="name">Uppladdningar (OKF)</field>
+        <field name="res_model">ai.okf.upload</field>
+        <field name="view_mode">list,form</field>
+    </record>
+</odoo>
