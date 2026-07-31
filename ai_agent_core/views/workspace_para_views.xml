@@ -1,0 +1,221 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- ============================================================ -->
+    <!-- Workspace PARA Container views                               -->
+    <!-- ============================================================ -->
+
+    <record id="view_workspace_para_container_tree" model="ir.ui.view">
+        <field name="name">workspace.para.container.tree</field>
+        <field name="model">workspace.para.container</field>
+        <field name="arch" type="xml">
+            <list string="PARA — Projects / Areas / Resources / Archives"
+                  multi_edit="0">
+                <field name="kind" widget="badge"
+                       decoration-info="kind == 'project'"
+                       decoration-success="kind == 'area'"
+                       decoration-muted="kind in ('resource','archive')"/>
+                <field name="state" widget="badge"
+                       decoration-warning="state == 'suggested'"/>
+                <field name="name"/>
+                <field name="parent_id" optional="show"/>
+                <field name="ref_count"/>
+                <field name="objective_id" optional="show"/>
+                <field name="is_projection" optional="hide"/>
+                <field name="sequence" optional="hide"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_workspace_para_container_form" model="ir.ui.view">
+        <field name="name">workspace.para.container.form</field>
+        <field name="model">workspace.para.container</field>
+        <field name="arch" type="xml">
+            <form string="PARA Container">
+                <header>
+                    <button name="action_accept_suggestion" type="object"
+                            string="Godkänn (HITL)" class="btn-success"
+                            invisible="state != 'suggested'"/>
+                    <button name="action_reject_suggestion" type="object"
+                            string="Avvisa" class="btn-danger"
+                            invisible="state != 'suggested'"/>
+                    <button name="action_close_project" type="object"
+                            string="Stäng projekt (lessons learned)"
+                            class="btn-secondary"
+                            invisible="kind != 'project'"/>
+                </header>
+                <sheet>
+                    <div class="oe_title">
+                        <h1><field name="name" placeholder="Container name..."/></h1>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="kind" widget="radio"
+                                   options="{'horizontal': true}"/>
+                            <field name="state"/>
+                            <field name="parent_id"/>
+                            <field name="sequence"/>
+                            <field name="is_projection"
+                                   readonly="is_projection"/>
+                            <field name="objective_id"
+                                   invisible="kind != 'project'"/>
+                        </group>
+                    </group>
+                    <group string="References (live, never copies)">
+                        <field name="ref_ids" readonly="0">
+                            <list string="References" editable="bottom">
+                                <field name="object_ref" widget="many2one_reference"/>
+                            </list>
+                        </field>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!-- ============================================================ -->
+    <!-- Workspace PARA Reference views                                -->
+    <!-- ============================================================ -->
+
+    <record id="view_workspace_para_ref_tree" model="ir.ui.view">
+        <field name="name">workspace.para.ref.tree</field>
+        <field name="model">workspace.para.ref</field>
+        <field name="arch" type="xml">
+            <list string="PARA References">
+                <field name="container_id"/>
+                <field name="object_ref" widget="many2one_reference"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- ============================================================ -->
+    <!-- Actions + Menu: Odoo Mind Workspace (separate surface)        -->
+    <!-- ============================================================ -->
+
+    <record id="action_workspace_para" model="ir.actions.act_window">
+        <field name="name">PARA</field>
+        <field name="res_model">workspace.para.container</field>
+        <field name="view_mode">list,form</field>
+        <field name="domain">[('user_id', '=', uid)]</field>
+        <field name="context">{'search_default_group_by_kind': 1}</field>
+    </record>
+
+    <record id="action_workspace_agenda" model="ir.actions.act_window">
+        <field name="name">Agenda</field>
+        <field name="res_model">ai.personal.goal</field>
+        <field name="view_mode">list,form</field>
+        <field name="domain">[('user_id', '=', uid), ('status', 'not in', ('cancelled',))]</field>
+        <field name="context">{'search_default_group_by_status': 1}</field>
+    </record>
+
+    <record id="action_workspace_inbox" model="ir.actions.act_window">
+        <field name="name">Inbox</field>
+        <field name="res_model">ai.okf.concept</field>
+        <field name="view_mode">list,form</field>
+        <field name="domain">[('in_inbox', '=', True)]</field>
+    </record>
+
+    <record id="action_workspace_approvals" model="ir.actions.act_window">
+        <field name="name">Approvals</field>
+        <field name="res_model">mail.activity</field>
+        <field name="view_mode">list,form</field>
+        <field name="domain">[('user_id', '=', uid), ('date_deadline', '>=', context_today)]</field>
+    </record>
+
+    <record id="action_workspace_search" model="ir.actions.act_window">
+        <field name="name">Search</field>
+        <field name="res_model">ai.okf.concept</field>
+        <field name="view_mode">list,form</field>
+        <field name="context">{'search_default_group_by_owner': 1}</field>
+    </record>
+
+    <!-- 7.2 Hybridsök över allt användaren har rätt att se (pgvector+tsvector) -->
+    <record id="action_workspace_search_hybrid" model="ir.actions.server">
+        <field name="name">Hybridsök (AI)</field>
+        <field name="model_id" ref="model_ai_okf_concept"/>
+        <field name="state">code</field>
+        <field name="code">
+# Sök över ALLA scopes (company+personal+coworker) med access-filtrering
+results = env['ai.okf.concept']._okf_search(
+    context.get('search_query') or 'senaste',
+    scope=None, limit=20, hybrid=True)
+action = env['ir.actions.act_window']._for_xml_id(
+    'ai_agent_core.action_workspace_search')
+action['domain'] = [('id', 'in', results.ids)]
+        </field>
+    </record>
+
+    <record id="action_workspace_coworkers" model="ir.actions.act_window">
+        <field name="name">Coworkers</field>
+        <field name="res_model">ai.coworker</field>
+        <field name="view_mode">kanban,list,form</field>
+        <field name="context">{'search_default_active': 1}</field>
+    </record>
+
+    <menuitem id="menu_workspace_root" name="Odoo Mind"
+              web_icon="mail_activity" sequence="40"/>
+    <menuitem id="menu_workspace_agenda" parent="menu_workspace_root"
+              action="action_workspace_agenda" sequence="10" name="Agenda"/>
+    <menuitem id="menu_workspace_agenda_suggestions"
+              parent="menu_workspace_agenda"
+              action="action_workspace_agenda_suggestions" sequence="1"
+              name="Initiativ"/>
+    <menuitem id="menu_workspace_generate_gap"
+              parent="menu_workspace_agenda"
+              action="action_workspace_generate_gap" sequence="2"
+              name="Generera förslag (GAP)"/>
+    <menuitem id="menu_workspace_inbox" parent="menu_workspace_root"
+              action="action_workspace_inbox" sequence="20" name="Inbox"/>
+    <menuitem id="menu_workspace_approvals" parent="menu_workspace_root"
+              action="action_workspace_approvals" sequence="30" name="Approvals"/>
+    <menuitem id="menu_workspace_para" parent="menu_workspace_root"
+              action="action_workspace_para" sequence="40" name="PARA"/>
+    <menuitem id="menu_workspace_search" parent="menu_workspace_root"
+              action="action_workspace_search" sequence="50" name="Search"/>
+    <menuitem id="menu_workspace_search_hybrid" parent="menu_workspace_search"
+              action="action_workspace_search_hybrid" sequence="1"
+              name="Hybridsök (AI)"/>
+    <menuitem id="menu_workspace_coworkers" parent="menu_workspace_root"
+              action="action_workspace_coworkers" sequence="60" name="Coworkers"/>
+
+    <!-- Server action: AI-föreslagna Areas (task 3.5) -->
+    <record id="action_workspace_suggest_areas" model="ir.actions.server">
+        <field name="name">Föreslå Areas (AI)</field>
+        <field name="model_id" ref="model_workspace_para_container"/>
+        <field name="state">code</field>
+        <field name="code">
+records = env['workspace.para.container'].suggest_areas()
+if records:
+    action = env['ir.actions.act_window']._for_xml_id(
+        'ai_agent_core.action_workspace_para')
+    action['domain'] = [('state', '=', 'suggested')]
+else:
+    action = {'type': 'ir.actions.client', 'tag': 'display_notification',
+              'params': {'title': 'Inga nya förslag', 'type': 'info',
+                         'message': 'Alla Areas är redan föreslagna.',
+                         'sticky': False}}
+        </field>
+    </record>
+
+    <menuitem id="menu_workspace_suggest_areas" parent="menu_workspace_para"
+              action="action_workspace_suggest_areas" sequence="99"
+              name="Föreslå Areas (AI)"/>
+
+    <!-- 8.7 Coworker-katalog (gap A1/A3): Hjälp/Assistant-sida -->
+    <record id="action_workspace_catalog" model="ir.actions.act_window">
+        <field name="name">Coworker-katalog</field>
+        <field name="res_model">ai.coworker</field>
+        <field name="view_mode">list,form</field>
+        <field name="domain">[('active', '=', True)]</field>
+        <field name="context">{'search_default_status': 'active'}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Här är dina AI-coworkers. Välj en för att se vad den gör och
+                hur du kan be den om hjälp (exempel-prompts per roll).
+            </p>
+        </field>
+    </record>
+
+    <menuitem id="menu_workspace_catalog" parent="menu_workspace_root"
+              action="action_workspace_catalog" sequence="70"
+              name="Coworker-katalog"/>
+</odoo>

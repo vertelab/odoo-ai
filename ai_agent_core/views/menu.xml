@@ -80,9 +80,9 @@
 
     <!-- ===== Root menu ===== -->
     <menuitem id="menu_ai_root" name="AI Orkestrering"
-              sequence="90" groups="base.group_user"/>
+              sequence="90" groups="ai_agent_core.group_ai_officer"/>
 
-    <!-- Dashboard + Onboarding -->
+    <!-- Dashboard + Onboarding (officer + admin) -->
     <menuitem id="menu_ai_orchestration_dashboard" name="Dashboard"
               parent="menu_ai_root" sequence="5"
               action="action_ai_orchestration_dashboard"/>
@@ -90,13 +90,16 @@
               parent="menu_ai_root" sequence="6"
               action="ir_action_server_start_onboarding"/>
 
-    <!-- Coworkers & Agents -->
+    <!-- Coworkers & Agents (officer + admin) -->
     <menuitem id="menu_ai_coworker" name="AI medarbetare" parent="menu_ai_root"
               sequence="10" action="action_ai_coworker"/>
     <menuitem id="menu_ai_agent" name="Agenter" parent="menu_ai_root"
               sequence="20" action="action_ai_agent"/>
-    <menuitem id="menu_ai_chat" name="AI Chat" parent="menu_ai_root"
-              sequence="90" action="action_ai_chat"/>
+
+    <!-- AI Chat — ligger i användarmenyn (längst upp till höger, bredvid
+         Documentation/Support/Preferences) via JS-registrering i
+         static/src/js/user_menu_ai_chat.js (Odoo 18 user_menuitems).
+         Alla användare har ai.group_user implicit via base.group_user. -->
 
     <!-- Organization submenu -->
     <menuitem id="menu_ai_organization" name="Organisation"
@@ -112,9 +115,10 @@
     <menuitem id="menu_ai_onboarding" name="Onboarding" parent="menu_ai_organization"
               sequence="50" action="action_ai_onboarding"/>
 
-    <!-- Configuration submenu -->
+    <!-- Configuration submenu (endast ai.group_admin — task 7.7) -->
     <menuitem id="menu_ai_configuration" name="Configuration"
-              parent="menu_ai_root" sequence="99"/>
+              parent="menu_ai_root" sequence="99"
+              groups="ai_agent_core.group_ai_admin"/>
 
     <menuitem id="menu_ai_settings" name="Inställningar" parent="menu_ai_configuration"
               sequence="10" action="action_ai_settings"/>
@@ -128,6 +132,18 @@
               sequence="40" action="action_ai_skill"/>
     <menuitem id="menu_ai_memory" name="Memory" parent="menu_ai_configuration"
               sequence="50" action="action_ai_memory"/>
+    <menuitem id="menu_ai_okf_concepts" name="OKF Concepts"
+              parent="menu_ai_configuration" sequence="55"
+              action="action_ai_okf_concept"/>
+    <menuitem id="menu_ai_access_resolvers" name="Access Resolvers"
+              parent="menu_ai_configuration" sequence="56"
+              action="action_ai_access_resolver"/>
+    <menuitem id="menu_ai_okf_uploads" name="Uppladdningar (OKF)"
+              parent="menu_ai_configuration" sequence="57"
+              action="action_ai_okf_upload"/>
+    <menuitem id="menu_ai_okf_dashboard" name="Odoo Mind Dashboard"
+              parent="menu_ai_configuration" sequence="8"
+              action="action_ai_okf_dashboard"/>
 
     <!-- Monthly Summary -->
     <menuitem id="menu_ai_monthly_summary" name="Monthly Summary"

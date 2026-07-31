@@ -154,6 +154,64 @@
                                 <span>dag(ar)</span>
                             </div>
                         </setting>
+
+                        <setting id="okf_budget_settings" title="Embedding-budget (OKF)"
+                                 help="Kostnaden belastar den coworker som utför indexeringen (session_line_count/started_mtokens).">
+                            <div class="d-flex align-items-center gap-3">
+                                <label for="company_memory_coworker_id" string="Company-minne indexeras av"/>
+                                <field name="company_memory_coworker_id"/>
+                            </div>
+                            <div class="d-flex align-items-center gap-3 mt4">
+                                <label for="personal_memory_coworker_id" string="Personligt minne indexeras av"/>
+                                <field name="personal_memory_coworker_id"/>
+                            </div>
+                        </setting>
+
+                        <setting id="okf_dept_health_settings" title="Avdelningshälsa-trösklar (OKF)"
+                                 help="Gränsvärdena för röd/gul/grön avdelningshälsa — inte hårdkodade.">
+                            <div class="d-flex align-items-center gap-3">
+                                <label for="health_heartbeat_stale_days" string="Heartbeat stale efter"/>
+                                <field name="health_heartbeat_stale_days" class="d-inline"/>
+                                <span>dagar</span>
+                            </div>
+                            <div class="d-flex align-items-center gap-3 mt4">
+                                <label for="health_active_ratio" string="Grön kräver ≥"/>
+                                <field name="health_active_ratio" class="d-inline"/>
+                                <span>% heartbeatar</span>
+                            </div>
+                            <div class="d-flex align-items-center gap-3 mt4">
+                                <label for="health_no_session_days" string="Gul/röd utan session efter"/>
+                                <field name="health_no_session_days" class="d-inline"/>
+                                <span>dagar</span>
+                            </div>
+                            <div class="d-flex align-items-center gap-3 mt4">
+                                <label for="health_zero_tokens_days" string="Röd vid 0 tokens efter"/>
+                                <field name="health_zero_tokens_days" class="d-inline"/>
+                                <span>dagar</span>
+                            </div>
+                        </setting>
+
+                        <setting id="okf_catalog_settings" title="OKF-katalog (artefakttyper, resolvers, koncept)"
+                                 help="Status för det registrerbara artefakt-lagret — öppna listorna för att hantera.">
+                            <div class="d-flex align-items-center gap-3">
+                                <field name="okf_artifact_type_count" class="d-inline"/>
+                                <span>artefakttyper</span>
+                                <button name="action_open_artifact_types" type="object"
+                                        string="Hantera" icon="fa-external-link" class="btn-link"/>
+                            </div>
+                            <div class="d-flex align-items-center gap-3 mt4">
+                                <field name="okf_resolver_count" class="d-inline"/>
+                                <span>aktiva access-resolvers</span>
+                                <button name="action_open_access_resolvers" type="object"
+                                        string="Hantera" icon="fa-external-link" class="btn-link"/>
+                            </div>
+                            <div class="d-flex align-items-center gap-3 mt4">
+                                <field name="okf_concept_count" class="d-inline"/>
+                                <span>koncept (ej arkiverade)</span>
+                                <button name="action_open_okf_concepts" type="object"
+                                        string="Visa" icon="fa-external-link" class="btn-link"/>
+                            </div>
+                        </setting>
                     </block>
 
                     <!-- ════════════════════════════════════════════
@@ -219,9 +277,31 @@
                     </block>
 
                     <block title="Background Jobs">
-                        <setting id="bg_jobs_display">
-                            <field name="bg_status_summary" readonly="1"
-                                   class="font-monospace small"/>
+                        <setting id="bg_jobs_display" string="Konfigurera indexerare">
+                            <field name="bg_cron_line_ids" widget="one2many">
+                                <form>
+                                    <group>
+                                        <field name="cron_id" readonly="1" force_save="1"/>
+                                        <field name="cron_name" readonly="1"/>
+                                        <field name="cron_active"/>
+                                        <field name="cron_interval_number"/>
+                                        <field name="cron_interval_type"/>
+                                        <field name="cron_lastcall" readonly="1"/>
+                                        <field name="cron_failure_count" readonly="1"/>
+                                        <field name="cron_code" readonly="1"/>
+                                        <button name="action_run_now" type="object"
+                                                string="Kör nu" icon="fa-play"/>
+                                    </group>
+                                </form>
+                                <list>
+                                    <field name="cron_name"/>
+                                    <field name="cron_active"/>
+                                    <field name="cron_interval_number"/>
+                                    <field name="cron_interval_type"/>
+                                    <field name="cron_lastcall"/>
+                                    <field name="cron_failure_count"/>
+                                </list>
+                            </field>
                         </setting>
                     </block>
                 </app>

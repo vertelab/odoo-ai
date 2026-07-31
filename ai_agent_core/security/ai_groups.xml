@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- ════════════════════════════════════════════
+         AI Orkestrering — rättighetsgrupper (beslut 14/21)
+         ════════════════════════════════════════════
+         Tre nivåer:
+           ai.group_user    — AI-användare (kan använda AI-funktioner, ser INTE menyn)
+           ai.group_officer — AI-officer (ser huvudmenyn + org-dashboard + coworkers + agents, INTE Configuration)
+           ai.group_admin   — AI-administratör (allt inkl. Configuration/Inställningar/Odoo Mind Dashboard)
+
+         Officer + admin ärver user. (Officer läggs till i task 7.7 tillsammans med menystyrning.)
+    -->
+
+    <record id="group_ai_user" model="res.groups">
+        <field name="name">AI-användare</field>
+        <field name="category_id" ref="base.module_category_hidden"/>
+        <field name="comment">AI-användare — kan använda AI-funktioner i systemet (chat, assistent, sök) men ser inte AI Orkestrering-menyn.</field>
+    </record>
+
+    <record id="group_ai_admin" model="res.groups">
+        <field name="name">AI-administratör</field>
+        <field name="category_id" ref="base.module_category_hidden"/>
+        <field name="comment">AI-administratör — ser Configuration, Inställningar och Odoo Mind Dashboard; hanterar konfiguration och manuella körningar.</field>
+        <field name="implied_ids" eval="[(4, ref('group_ai_user'))]"/>
+    </record>
+
+    <record id="group_ai_officer" model="res.groups">
+        <field name="name">AI-officer</field>
+        <field name="category_id" ref="base.module_category_hidden"/>
+        <field name="comment">AI-officer — ser huvudmenyn, org-dashboard, AI-medarbetare och Agenter, men INTE Configuration.</field>
+        <field name="implied_ids" eval="[(4, ref('group_ai_user'))]"/>
+    </record>
+
+    <!-- Alla användare får AI-användare (ai.group_user) automatiskt via
+         base.group_user → implied_ids (task 7.7). AI Chat-menyn syns då
+         för alla, utan att AI Orkestrering-menyn visas. -->
+    <record id="base.group_user" model="res.groups">
+        <field name="implied_ids" eval="[(4, ref('group_ai_user'))]"/>
+    </record>
+
+    <!-- Admins (base.group_system) är automatiskt AI-administratörer →
+         ser Configuration + Odoo Mind Dashboard utan manuellt gruppval. -->
+    <record id="base.group_system" model="res.groups">
+        <field name="implied_ids" eval="[(4, ref('group_ai_admin'))]"/>
+    </record>
+</odoo>

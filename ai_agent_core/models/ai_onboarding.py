@@ -203,7 +203,8 @@ class AIOnboarding(models.Model):
         self.ensure_one()
         questions = self._get_interview_questions()
         # Hoppa över frågor som redan besvarats
-        remaining = [q for q in questions if q['id'] not in self.answers]
+        answers = dict(self.answers or {})
+        remaining = [q for q in questions if q['id'] not in answers]
         self.write({
             'state': 'interviewing',
             'total_questions': len(remaining),

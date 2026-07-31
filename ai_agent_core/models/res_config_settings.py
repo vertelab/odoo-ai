@@ -17,9 +17,38 @@ BG_CRON_NAMES = [
     ('graph_sync', 'Odoo Mind Graph Sync'),
 ]
 
+# OKF-indexerare (task 7.3) — cron_name → (label, method)
+OKF_CRON_NAMES = [
+    ('Company Memory Nightly Consolidation', 'Daglig konsolidering'),
+    ('Company Memory Partner Customers', 'Kundindexerare'),
+    ('Company Memory Partner Suppliers', 'Leverantörsindexerare'),
+    ('Company Memory Knowledge Articles', 'Kunskapsindexerare'),
+    ('Company Memory DMS Documents', 'DMS-indexerare'),
+    ('Company Memory Website RAG', 'Webbindexerare'),
+    ('Company Memory Strategy', 'Strategiindexerare'),
+    ('Company Memory Management Summary', 'Ledningssammanfattning'),
+]
+
+OKF_CRON_METHODS = {
+    'Company Memory Nightly Consolidation': 'cron_nightly_consolidation',
+    'Company Memory Partner Customers': 'cron_index_partners',
+    'Company Memory Partner Suppliers': 'cron_index_suppliers',
+    'Company Memory Knowledge Articles': 'cron_index_knowledge',
+    'Company Memory DMS Documents': 'cron_index_dms',
+    'Company Memory Website RAG': 'cron_index_website',
+    'Company Memory Strategy': 'cron_index_strategy',
+    'Company Memory Management Summary': 'cron_generate_management_summary',
+}
+
 
 class ResConfigSettings(models.TransientModel):
     _inherit = 'res.config.settings'
+
+    # ─────────────────────────────────────────────
+    # Background Jobs — per-cron rader (task 7.15)
+    # ─────────────────────────────────────────────
+    bg_cron_line_ids = fields.One2many(
+        'ai.bg.cron.line', 'settings_id', string='Cron-rader')
 
     # ─────────────────────────────────────────────
     # AI API
@@ -146,6 +175,37 @@ class ResConfigSettings(models.TransientModel):
         config_parameter='odoomind.coworker_memory.forget_days',
         help='After how many days to forget old coworker sessions.')
 
+    # ── Embedding-budget per coworker (task 7.13) ──
+    company_memory_coworker_id = fields.Many2one(
+        'ai.coworker', string='Company Memory Coworker',
+        config_parameter='odoomind.okf.company_memory_coworker_id',
+        help='Vilken coworker indexerar company-minne — kostnaden belastar '
+             'den coworkerns budget (session_line_count/started_mtokens).')
+    personal_memory_coworker_id = fields.Many2one(
+        'ai.coworker', string='Personal Memory Coworker',
+        config_parameter='odoomind.okf.personal_memory_coworker_id',
+        help='Vilken coworker indexerar personligt minne — kostnaden '
+             'belastar den coworkerns budget. Web UI-uppladdning → '
+             'sessionens valda coworker.')
+
+    # ── Avdelningshälsa-trösklar (task 7.6) ──
+    health_heartbeat_stale_days = fields.Integer(
+        'Heartbeat stale (dagar)', default=7,
+        config_parameter='odoomind.okf.health_heartbeat_stale_days',
+        help='Heartbeat äldre än X dagar → misstänkt för avdelningshälsa.')
+    health_active_ratio = fields.Integer(
+        'Aktiv ratio (%)', default=50,
+        config_parameter='odoomind.okf.health_active_ratio',
+        help='≥ X% av coworkers heartbeatar → grön.')
+    health_no_session_days = fields.Integer(
+        'Ingen session (dagar)', default=30,
+        config_parameter='odoomind.okf.health_no_session_days',
+        help='Ingen session på X dagar → gul/röd.')
+    health_zero_tokens_days = fields.Integer(
+        'Noll tokens (dagar)', default=30,
+        config_parameter='odoomind.okf.health_zero_tokens_days',
+        help='0 tokens på X dagar → röd.')
+
     # ── Företagsidentitet (editable) ──
     company_website_url_edit = fields.Char(
         'Webbplats URL',
@@ -230,6 +290,17 @@ class ResConfigSettings(models.TransientModel):
                 f"{fail_mark} ({failures} fel)")
         res['bg_status_summary'] = '\n'.join(lines) if lines else 'Inga cron-jobb hittades'
 
+        # Background jobs — per-cron rader (task 7.15)
+        all_names = [c[1] for c in BG_CRON_NAMES] + \
+            [c[0] for c in OKF_CRON_NAMES]
+        crons = self.env['ir.cron'].search(
+            [('cron_name', 'in', all_names)], order='cron_name')
+        res['bg_cron_line_ids'] = [(0, 0, {
+            'cron_id': cron.id,
+            'cron_active': cron.active,
+            'cron_interval_number': cron.interval_number,
+            'cron_interval_type': cron.interval_type,
+        }) for cron in crons]
         # Auto-read config_parameter for new fields
         res['company_memory_auto_extract'] = get_param(
             'odoomind.company_memory.auto_extract', 'True') == 'True'
@@ -290,6 +361,15 @@ class ResConfigSettings(models.TransientModel):
                   str(self.heartbeat_enabled))
         set_param('ai_agent_core.heartbeat_interval',
                   str(self.heartbeat_interval))
+
+        # Spara per-cron rader → ir.cron (task 7.15)
+        for line in self.bg_cron_line_ids:
+            if line.cron_id:
+                line.cron_id.write({
+                    'active': line.cron_active,
+                    'interval_number': line.cron_interval_number,
+                    'interval_type': line.cron_interval_type,
+                })
 
     # ─────────────────────────────────────────────
     # Action methods
@@ -375,3 +455,111 @@ class ResConfigSettings(models.TransientModel):
         if cron:
             cron.write({'active': active})
         return True
+
+    # ─────────────────────────────────────────────
+    # OKF — artefakttyper + resolvers (task 9.4)
+    # ─────────────────────────────────────────────
+    okf_artifact_type_count = fields.Integer(
+        string='OKF-artefakttyper', compute='_compute_okf_counts',
+        readonly=True)
+    okf_resolver_count = fields.Integer(
+        string='OKF-access-resolvers', compute='_compute_okf_counts',
+        readonly=True)
+    okf_concept_count = fields.Integer(
+        string='OKF-koncept', compute='_compute_okf_counts',
+        readonly=True)
+
+    @api.depends()
+    def _compute_okf_counts(self):
+        for r in self:
+            r.okf_artifact_type_count = \
+                self.env['ai.artifact.type'].search_count([])
+            r.okf_resolver_count = \
+                self.env['ai.access.resolver'].search_count(
+                    [('active', '=', True)])
+            r.okf_concept_count = \
+                self.env['ai.okf.concept'].search_count(
+                    [('archived', '=', False)])
+
+    def action_open_artifact_types(self):
+        """Öppna OKF-artefakttyperna."""
+        return {
+            'type': 'ir.actions.act_window',
+            'name': 'OKF Artefakttyper',
+            'res_model': 'ai.artifact.type',
+            'view_mode': 'list,form',
+            'target': 'current',
+            'context': {'search_default_active': 1},
+        }
+
+    def action_open_access_resolvers(self):
+        """Öppna OKF-access-resolvarna."""
+        return {
+            'type': 'ir.actions.act_window',
+            'name': 'OKF Access Resolvers',
+            'res_model': 'ai.access.resolver',
+            'view_mode': 'list,form',
+            'target': 'current',
+            'context': {'search_default_active': 1},
+        }
+
+    def action_open_okf_concepts(self):
+        """Öppna OKF-koncepten (dashboard)."""
+        return {
+            'type': 'ir.actions.act_window',
+            'name': 'OKF Koncept',
+            'res_model': 'ai.okf.concept',
+            'view_mode': 'list,form',
+            'target': 'current',
+        }
+
+
+class AiBgCronLine(models.TransientModel):
+    """Per-cron konfigurationsrad i Background Jobs-blocket (task 7.15)."""
+    _name = 'ai.bg.cron.line'
+    _description = 'Background cron configuration line'
+
+    settings_id = fields.Many2one('res.config.settings', ondelete='cascade')
+    cron_id = fields.Many2one('ir.cron', string='Cron', required=True,
+                              ondelete='cascade')
+    cron_name = fields.Char(related='cron_id.cron_name', string='Namn',
+                            readonly=True)
+    cron_active = fields.Boolean(string='Aktiv', default=True)
+    cron_interval_number = fields.Integer(string='Intervall', default=1)
+    cron_interval_type = fields.Selection([
+        ('minutes', 'Minuter'),
+        ('hours', 'Timmar'),
+        ('days', 'Dagar'),
+        ('weeks', 'Veckor'),
+        ('months', 'Månader'),
+    ], string='Period', default='days')
+    cron_lastcall = fields.Datetime(related='cron_id.lastcall',
+                                    string='Senaste körning', readonly=True)
+    cron_failure_count = fields.Integer(related='cron_id.failure_count',
+                                        string='Fel', readonly=True)
+    cron_code = fields.Text(related='cron_id.code', string='Metod',
+                            readonly=True)
+
+    def action_run_now(self):
+        """Kör cron direkt (samma _okf_upsert()-väg som cron-metoden)."""
+        self.ensure_one()
+        if not self.cron_id:
+            return False
+        model_name = self.cron_id.model
+        code = self.cron_id.code
+        if model_name and code:
+            model = self.env[model_name]
+            if code.startswith('model.'):
+                method = code[len('model.'):]
+                if hasattr(model, method):
+                    getattr(model, method)()
+        self.cron_id._trigger(at=fields.Datetime.now())
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'title': 'Cron triggad',
+                'message': f'{self.cron_name} körs nu.',
+                'type': 'success',
+            }
+        }

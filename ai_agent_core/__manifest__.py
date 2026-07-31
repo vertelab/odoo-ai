@@ -2,7 +2,7 @@
 # Part of Odoo. See LICENSE file for full copyright and licensing details.
 {
     'name': 'odoo-ai: AI Agent Core',
-    'version': '1.8',
+    'version': '1.14',
     'summary': 'AI Agent Core — Org-stomme, heartbeat, onboarding, task-system',
     'category': 'AI Orchestration',
     'description': """
@@ -28,7 +28,19 @@
         'base_automation',
     ],
     'data': [
+        'security/ai_groups.xml',
         'security/ir.model.access.csv',
+        'data/okf_default_artifact_types.xml',
+        'data/okf_access_resolvers.xml',
+        'data/cron_okf_index_dirty.xml',
+        'data/cron_okf_process_uploads.xml',
+        'data/cron_company_memory_indexers.xml',
+        'data/okf_migrate_legacy.xml',
+        'views/ai_artifact_type_views.xml',
+        'views/ai_okf_concept_views.xml',
+        'views/ai_access_resolver_views.xml',
+        'views/ai_okf_dashboard_views.xml',
+        'views/ai_okf_upload_views.xml',
         'data/identity_templates.xml',
         'data/cron_monthly_summary.xml',
         'data/cron_bifrost_sync.xml',
@@ -36,6 +48,7 @@
         'data/cron_onboard.xml',
         'data/cron_memory_consolidation.xml',
         'data/cron_scheduled_quests.xml',
+        'data/cron_workspace_distill.xml',
         'data/cron_website_rag.xml',
         'data/cron_heartbeat.xml',
         'data/orchestration_skill.xml',
@@ -79,10 +92,14 @@
         'views/hr_employee_views.xml',
         'views/hr_department_views.xml',
         'views/hr_job_views.xml',
+        'views/workspace_activity_views.xml',
+        'views/workspace_para_views.xml',
+        'data/cron_workspace_gap.xml',
     ],
     'assets': {
         'web.assets_backend': [
             'ai_agent_core/static/src/js/powerbox.js',
+            'ai_agent_core/static/src/js/user_menu_ai_chat.js',
             'ai_agent_core/static/src/css/powerbox.css',
         ],
     },
