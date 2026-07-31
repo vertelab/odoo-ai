@@ -128,10 +128,15 @@ class AIKaizenReport(models.Model):
         try:
             findings = self._analyze_findings(quest, report, week_data)
             for f in findings:
-                self.env['ai.kaizen.finding'].create({
+                finding = self.env['ai.kaizen.finding'].create({
                     'report_id': report.id,
                     **f,
                 })
+                # HITL: propose orchestration skill improvement
+                try:
+                    report._generate_skill_suggestion(f)
+                except Exception as se:
+                    _logger.warning('Skill suggestion failed: %s', se)
         except Exception as e:
             _logger.warning('Kaizen analysis failed for %s: %s', coworker.name, e)
             # Still create the report even if analysis fails
@@ -253,6 +258,60 @@ class AIKaizenReport(models.Model):
 
         return findings
 
+    def _generate_skill_suggestion(self, finding):
+        """Generate an orchestration skill improvement suggestion (HITL).
+
+        Looks for the coworker's orchestration skill and proposes a
+        recipe_text update based on the finding. Stored as JSON on the
+        finding so the human can review and apply via action_apply_to_skill().
+        """
+        coworker = self.coworker_id
+        skill = None
+        for s in coworker.skill_ids:
+            if s.name and 'orchestration' in s.name.lower():
+                skill = s
+                break
+        if not skill:
+            return
+
+        import json
+        suggested_recipe = skill.recipe_text
+        notes = ''
+        ftext = (finding.get('finding') or '').lower()
+
+        # Heuristics: propose recipe additions based on finding category
+        if 'fel' in ftext or 'error' in ftext:
+            suggested_recipe += (
+                '\n\n## Felhantering\n'
+                '- Vid misslyckad delegation, försök en annan specialist eller återgå till användaren.\n'
+                '- Logga fel för kaizen-analys.'
+            )
+            notes = f"Lade till felhantering: {finding.get('finding', '')[:200]}"
+        elif 'kostnad' in ftext or 'cost' in ftext or 'token' in ftext:
+            suggested_recipe += (
+                '\n\n## Kostnadseffektivitet\n'
+                '- Delegera endast när specialisten tillför värde; annars svara direkt.\n'
+                '- Begränsa kontext per delegation.'
+            )
+            notes = f"Lade till kostnadsoptimering: {finding.get('finding', '')[:200]}"
+        elif 'feedback' in ftext or 'förbättring' in ftext:
+            notes = f"Feedback att beakta: {finding.get('finding', '')[:200]}"
+
+        if suggested_recipe != skill.recipe_text:
+            self.env['ai.kaizen.finding'].create({
+                'report_id': self.id,
+                'severity': 'low',
+                'category': 'skill_gap',
+                'finding': f"Föreslår förbättring av orchestration-skill '{skill.name}'",
+                'recommendation': 'Granska och applicera förslaget på skillen.',
+                'evidence': finding.get('evidence', ''),
+                'skill_suggestion': json.dumps({
+                    'skill_id': skill.id,
+                    'suggested_recipe': suggested_recipe,
+                    'notes': notes,
+                }),
+            })
+
     def _render_report(self):
         """Render kaizen report as text."""
         self.ensure_one()
@@ -316,6 +375,9 @@ class AIKaizenFinding(models.Model):
     finding = fields.Text('Finding', required=True)
     recommendation = fields.Text('Recommendation')
     evidence = fields.Text('Evidence')
+    # Orchestration skill suggestion (JSON: {skill_id, suggested_recipe, notes})
+    skill_suggestion = fields.Text('Skill Suggestion',
+        help='JSON: {skill_id, suggested_recipe, notes} for HITL skill update.')
     status = fields.Selection([
         ('pending', 'Pending'),
         ('approved', 'Approved'),
@@ -328,6 +390,27 @@ class AIKaizenFinding(models.Model):
 
     def action_reject(self):
         self.status = 'rejected'
+
+    def action_apply_to_skill(self):
+        """Apply approved skill suggestion to the orchestration skill (HITL)."""
+        self.ensure_one()
+        if self.status != 'approved':
+            raise ValueError('Only approved findings can be applied to skills.')
+        if not self.skill_suggestion:
+            return False
+        import json
+        try:
+            data = json.loads(self.skill_suggestion)
+        except json.JSONDecodeError:
+            return False
+        skill = self.env['ai.skill'].browse(data.get('skill_id', 0))
+        if not skill.exists():
+            return False
+        skill.action_apply_kaizen_suggestion(
+            suggested_recipe=data.get('suggested_recipe'),
+            notes=data.get('notes', '') or f'Kaizen finding: {self.finding[:200]}')
+        self.status = 'applied'
+        return True
 
     def action_apply(self):
         """Apply the recommended fix."""

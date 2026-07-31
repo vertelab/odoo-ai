@@ -324,3 +324,93 @@ class TestSpecialistTools(TransactionCase):
         result = asyncio.run(tool.execute(query="Räkna Q2", context="Q2 data"))
         self.assertIn("analyserat", result)
         self.assertIn("Räkna Q2", result)
+
+
+@tagged('orchestration', 'ai_core', 'kaizen_skill')
+class TestKaizenSkillSuggestion(TransactionCase):
+    """Kaizen → orchestration skill improvement (HITL)."""
+
+    def setUp(self):
+        super().setUp()
+        self.Coworker = self.env['ai.coworker']
+        self.Skill = self.env['ai.skill']
+        self.KaizenReport = self.env['ai.kaizen.report']
+
+    def test_skill_suggestion_generation(self):
+        """Kaizen finding with orchestration skill generates suggestion."""
+        skill = self.Skill.create({
+            'name': 'orchestration.supervisor',
+            'description': 'Supervisor orchestration',
+            'category': 'general',
+            'recipe_text': 'Delegera uppgifter till specialister.',
+            'version': 1,
+        })
+        coworker = self.Coworker.create({
+            'name': 'Kaizen Test Coworker',
+            'orchestration_mode': 'supervisor',
+            'skill_ids': [(4, skill.id)],
+        })
+        report = self.KaizenReport.create({
+            'coworker_id': coworker.id,
+            'week_start': '2026-07-20',
+            'week_end': '2026-07-26',
+            'session_count': 50,
+            'error_count': 10,
+        })
+        # Generate a skill suggestion for an error finding
+        report._generate_skill_suggestion({
+            'finding': '10 av 50 sessioner hade fel',
+            'evidence': 'Errors: 10/50',
+        })
+        suggestion_findings = self.env['ai.kaizen.finding'].search([
+            ('report_id', '=', report.id),
+            ('category', '=', 'skill_gap'),
+        ])
+        self.assertTrue(suggestion_findings)
+        f = suggestion_findings[0]
+        self.assertTrue(f.skill_suggestion)
+        import json
+        data = json.loads(f.skill_suggestion)
+        self.assertEqual(data['skill_id'], skill.id)
+        self.assertIn('Felhantering', data['suggested_recipe'])
+
+    def test_apply_skill_suggestion(self):
+        """Approved suggestion applied to skill increments version."""
+        skill = self.Skill.create({
+            'name': 'orchestration.test',
+            'description': 'Test skill',
+            'category': 'general',
+            'recipe_text': 'Gammalt recept',
+            'version': 1,
+        })
+        coworker = self.Coworker.create({
+            'name': 'Apply Test Coworker',
+            'orchestration_mode': 'supervisor',
+            'skill_ids': [(4, skill.id)],
+        })
+        report = self.KaizenReport.create({
+            'coworker_id': coworker.id,
+            'week_start': '2026-07-20',
+            'week_end': '2026-07-26',
+        })
+        import json
+        finding = self.env['ai.kaizen.finding'].create({
+            'report_id': report.id,
+            'severity': 'low',
+            'category': 'skill_gap',
+            'finding': 'Föreslår förbättring',
+            'skill_suggestion': json.dumps({
+                'skill_id': skill.id,
+                'suggested_recipe': 'Nytt recept med felhantering',
+                'notes': 'Test',
+            }),
+        })
+        # Cannot apply before approval
+        with self.assertRaises(ValueError):
+            finding.action_apply_to_skill()
+        # Approve and apply
+        finding.action_approve()
+        finding.action_apply_to_skill()
+        skill.invalidate_recordset()
+        self.assertEqual(skill.version, 2)
+        self.assertIn('felhantering', skill.recipe_text.lower())
