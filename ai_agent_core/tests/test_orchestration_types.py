@@ -285,3 +285,42 @@ class TestBuzzEnhanced(TransactionCase):
             'buzz_a2a_max_depth': 7,
         })
         self.assertEqual(coworker.buzz_a2a_max_depth, 7)
+
+
+@tagged('orchestration', 'ai_core', 'specialist_tools')
+class TestSpecialistTools(TransactionCase):
+    """Specialist agents as tools — async delegation."""
+
+    def test_specialist_tools_built(self):
+        """specialist_tools() creates one Tool per agent."""
+        from odoo.addons.ai_agent_core.core.tools import specialist_tools
+
+        class FakeLoop:
+            async def run(self, prompt, history=None):
+                return SimpleNamespace(text=f"svar: {prompt}")
+
+        from types import SimpleNamespace
+        tools = specialist_tools([
+            ("Finans", "Siffror, budget", FakeLoop()),
+            ("Marknad", "Kampanjer", FakeLoop()),
+        ])
+        self.assertEqual(len(tools), 2)
+        names = [t.name for t in tools]
+        self.assertIn('call_specialist_finans', names)
+        self.assertIn('call_specialist_marknad', names)
+
+    def test_specialist_tool_async_execution(self):
+        """Specialist tool executes async loop and returns text."""
+        from odoo.addons.ai_agent_core.core.tools import specialist_tools
+        from types import SimpleNamespace
+        import asyncio
+
+        class FakeLoop:
+            async def run(self, prompt, history=None):
+                return SimpleNamespace(text=f"analyserat: {prompt}")
+
+        tools = specialist_tools([("Analys", "Data", FakeLoop())])
+        tool = tools[0]
+        result = asyncio.run(tool.execute(query="Räkna Q2", context="Q2 data"))
+        self.assertIn("analyserat", result)
+        self.assertIn("Räkna Q2", result)

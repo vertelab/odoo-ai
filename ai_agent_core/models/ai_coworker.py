@@ -1594,6 +1594,33 @@ class AIQuest(models.Model):
                 skill_recipe = skill.recipe_text or skill.improvement_guidance or ''
                 break
 
+        # Skill-based supervisor: standard AgentLoop with specialist tools
+        if skill_recipe:
+            from odoo.addons.ai_agent_core.core.tools import specialist_tools
+            # Build specialist tools from the specialist loops
+            spec_tools = specialist_tools([
+                (s.name, s.description, s.loop) for s in specialists
+            ])
+            for t in spec_tools:
+                if t.name not in tools:
+                    tools.register(t)
+            # Build the supervisor agent prompt from skill recipe + specialist list
+            agent_descriptions = '\n'.join(
+                f"- **{s.name}**: {s.description}" for s in specialists)
+            supervisor_prompt = (
+                f"{skill_recipe}\n\n"
+                f"Available specialists (call via tools):\n{agent_descriptions}\n"
+                f"Delegera uppgifter genom att anropa rätt call_specialist_* verktyg.\n"
+                f"När alla delar är klara, sammanställ ett slutgiltigt svar."
+            )
+            return AgentLoop(
+                provider=provider, tools=tools,
+                config=AgentConfig(
+                    model=model, system_prompt=supervisor_prompt,
+                    max_rounds=max_rounds,
+                ),
+            )
+
         return SupervisorLoop(
             router_provider=provider,
             agents=specialists,

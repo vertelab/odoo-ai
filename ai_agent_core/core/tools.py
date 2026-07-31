@@ -1822,3 +1822,62 @@ def wrap_tools_with_env(tools, env):
 
         wrapped.append(dataclasses.replace(tool, handler=wh))
     return wrapped
+
+
+def specialist_tools(agents) -> list[Tool]:
+    """Build a Tool per specialist agent for supervisor delegation.
+
+    Each tool invokes the specialist's AgentLoop.run() with a query
+    (and optional context). Async native — runs in the same event loop.
+
+    Args:
+        agents: list of (name, description, loop) tuples
+                where loop has async run(prompt) -> ChatResponse
+
+    Returns:
+        list[Tool] ready for ToolRegistry
+    """
+    tools = []
+    for name, description, loop in agents:
+        safe_name = name.strip().lower().replace(' ', '_').replace('-', '_')
+        tool = Tool(
+            name=f"call_specialist_{safe_name}",
+            description=(
+                f"Delegera en uppgift till specialisten '{name}'. "
+                f"{description or ''} Använd denna för frågor som hör till "
+                f"denna specialists kompetens. Parametrar: query (uppgiften), "
+                f"context (relevant bakgrund, valfritt)."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Precis uppgift att utföra."
+                    },
+                    "context": {
+                        "type": "string",
+                        "description": "Relevant bakgrund för uppgiften (valfritt)."
+                    },
+                },
+                "required": ["query"],
+            },
+            risk_level="read_only",  # Delegation är i sig ingen skrivande handling
+            source="specialist",
+        )
+
+        async def _handler(_loop=loop, **kwargs):
+            query = kwargs.get("query", "")
+            context = kwargs.get("context", "")
+            prompt = f"{context}\n\n{query}" if context else query
+            try:
+                result = await _loop.run(prompt)
+                text = result.text if hasattr(result, 'text') else str(result)
+                return text[:8000] if text else "(tomt svar)"
+            except Exception as e:
+                return f"Specialist error: {e}"
+
+        # Replace handler (dataclass frozen? — replace)
+        from dataclasses import replace
+        tools.append(replace(tool, handler=_handler))
+    return tools
