@@ -113,6 +113,28 @@ class AISkill(models.Model):
         self.improvement_guidance = False
         self.improvement_references = False
 
+    def action_apply_kaizen_suggestion(self, suggested_recipe=None, notes=''):
+        """Apply a kaizen-approved improvement to this skill (HITL).
+
+        Called after a human approves a kaizen finding. Increments version
+        and stores improvement history.
+
+        Args:
+            suggested_recipe: optional new recipe_text to apply
+            notes: human notes about why the change was approved
+        """
+        self.ensure_one()
+        if suggested_recipe:
+            self.recipe_text = suggested_recipe
+        self.version += 1
+        self.last_improved = fields.Datetime.now()
+        if notes:
+            self.improvement_references = (
+                (self.improvement_references or '') + f'\n[{fields.Datetime.now()}] {notes}'
+            ).strip()
+        self.improvement_guidance = False
+        _logger.info('Skill %s improved to version %d', self.name, self.version)
+
     def action_use(self):
         self.use_count += 1
 

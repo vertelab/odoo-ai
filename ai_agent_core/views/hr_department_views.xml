@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Inherit hr.department form — add AI manager -->
+    <record id="hr_view_department_form_inherit_ai" model="ir.ui.view">
+        <field name="name">hr.department.form.inherit.ai</field>
+        <field name="model">hr.department</field>
+        <field name="inherit_id" ref="hr.view_department_form"/>
+        <field name="arch" type="xml">
+            <field name="manager_id" position="after">
+                <field name="ai_manager_id" placeholder="Välj AI-chef..."
+                    options="{'no_create': True}"/>
+            </field>
+        </field>
+    </record>
+
+    <!-- Inherit hr.department tree — add AI staff count -->
+    <record id="hr_view_department_tree_inherit_ai" model="ir.ui.view">
+        <field name="name">hr.department.tree.inherit.ai</field>
+        <field name="model">hr.department</field>
+        <field name="inherit_id" ref="hr.view_department_tree"/>
+        <field name="arch" type="xml">
+            <field name="manager_id" position="after">
+                <field name="total_ai_staff" string="🤖 AI-staff"/>
+            </field>
+        </field>
+    </record>
+</odoo>

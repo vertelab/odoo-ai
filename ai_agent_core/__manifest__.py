@@ -1,34 +1,21 @@
 # -*- coding: utf-8 -*-
-##############################################################################
-#
-#    Copyright (C) 2024- Vertel AB (<https://vertel.se>).
-#
-#    This program is free software: you can redistribute it and/or modify
-#    it under the terms of the GNU Affero General Public License as published
-#    by the Free Software Foundation, either version 3 of the License, or
-#    (at your option) any later version.
-#
-##############################################################################
-
+# Part of Odoo. See LICENSE file for full copyright and licensing details.
 {
     'name': 'odoo-ai: AI Agent Core',
-    'version': '1.6',
-    'summary': 'Standalone AI agent engine — SSE streaming, provider management, identity, skills, tools',
+    'version': '1.7',
+    'summary': 'AI Agent Core — Org-stomme, heartbeat, onboarding, task-system',
     'category': 'AI Orchestration',
     'description': """
         AI Agent Core — self-sufficient AI agent platform for Odoo.
         
-        Standalone module — does not require ai_agent.
-        If ai_agent is installed, integrates with existing quests.
-        
-        Features:
-        * Agent Loop (Buzz-inspired while-loop, no LangChain)
-        * BifrostProvider + DirectProvider (OpenAI, Anthropic, DeepSeek)
-        * SSE streaming + web chat UI
-        * Human-in-the-Loop (Discuss, WebUI, Auto handlers)
-        * Agent Identity (SOUL.md — personality, style, values)
-        * Skills system (reusable competencies with recipes)
-        * Taskless learning layer (detect, route, improve, verify)
+        Now includes organization layer:
+        * AI Organization Goals (OKR) — hierarchical with cascade
+        * AI Tasks — persistent with atomic checkout, blockers, work products
+        * Heartbeat system — proactive coworkers that wake and work
+        * AI CEO Onboarding — scans modules, interviews CEO, creates org
+        * AI Orchestration Dashboard — org chart with kanban, onboarding button
+        * Bridge Protocol — connect strategy, marketing, helpdesk modules
+        * hr integration — AI coworkers as hr.employees, AI department managers
     """,
     'author': 'Vertel AB',
     'website': 'https://vertel.se/apps/odoo-ai/ai_agent_core',
@@ -37,9 +24,7 @@
         'base',
         'mail',
         'html_editor',
-    ],
-    'demo': [
-        'demo/demo_data.xml',
+        'hr',
     ],
     'data': [
         'security/ir.model.access.csv',
@@ -51,11 +36,13 @@
         'data/cron_memory_consolidation.xml',
         'data/cron_scheduled_quests.xml',
         'data/cron_website_rag.xml',
+        'data/cron_heartbeat.xml',
         'data/orchestration_skill.xml',
         'data/bridge_config.xml',
         'data/youtube_tools.xml',
         'data/browser_tools.xml',
         'data/graph_base.xml',
+        'views/ai_orchestration_dashboard.xml',
         'views/ai_monthly_summary_views.xml',
         'views/menu.xml',
         'views/ai_provider_views.xml',
@@ -80,8 +67,16 @@
         'views/res_users_personal_memory_views.xml',
         'views/powerbox_templates.xml',
         'views/ai_session_views.xml',
-                        'views/res_config_settings_views.xml',
+        'views/res_config_settings_views.xml',
         'views/templates.xml',
+        'views/ai_org_goal_views.xml',
+        'views/ai_org_task_views.xml',
+        'views/ai_org_review_views.xml',
+        'views/ai_org_board_views.xml',
+        'views/ai_onboarding_views.xml',
+        'views/hr_employee_views.xml',
+        'views/hr_department_views.xml',
+        'views/hr_job_views.xml',
     ],
     'assets': {
         'web.assets_backend': [

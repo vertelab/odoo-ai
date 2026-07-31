@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="hr_view_job_form_inherit_ai" model="ir.ui.view">
+        <field name="name">hr.job.form.inherit.ai</field>
+        <field name="model">hr.job</field>
+        <field name="inherit_id" ref="hr.view_hr_job_form"/>
+        <field name="arch" type="xml">
+            <field name="description" position="after">
+                <field name="ai_coworker_ids"
+                    groups="hr.group_hr_user">
+                    <kanban>
+                        <field name="name"/>
+                        <field name="status"/>
+                        <templates>
+                            <t t-name="card">
+                                <div class="oe_kanban_card">
+                                    <strong><field name="name"/></strong>
+                                    <field name="status" widget="badge"/>
+                                </div>
+                            </t>
+                        </templates>
+                    </kanban>
+                </field>
+            </field>
+        </field>
+    </record>
+</odoo>

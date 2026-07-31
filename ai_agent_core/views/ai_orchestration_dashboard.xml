@@ -1,0 +1,142 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- AI Orchestration Dashboard — Kanban per hr.department (Odoo 18) -->
+
+    <record id="view_ai_orchestration_dashboard" model="ir.ui.view">
+        <field name="name">ai.orchestration.dashboard</field>
+        <field name="model">hr.department</field>
+        <field name="priority">99</field>
+        <field name="arch" type="xml">
+            <kanban class="o_kanban_mobile">
+                <field name="name"/>
+                <field name="manager_id"/>
+                <field name="ai_manager_id"/>
+                <field name="total_ai_staff"/>
+                <field name="ai_coworker_ids"/>
+                <templates>
+                    <t t-name="card">
+                        <div class="oe_kanban_card oe_kanban_global_click">
+                            <div class="o_kanban_card_header">
+                                <div class="o_kanban_card_header_title">
+                                    <strong><field name="name"/></strong>
+                                </div>
+                                <div class="o_kanban_card_header_right">
+                                    <t t-if="record.ai_manager_id.raw_value">
+                                        <span class="badge bg-info">🤖 <field name="ai_manager_id"/></span>
+                                    </t>
+                                    <t t-if="!record.ai_manager_id.raw_value and record.manager_id.raw_value">
+                                        <span class="badge bg-secondary">👤 <field name="manager_id"/></span>
+                                    </t>
+                                </div>
+                            </div>
+
+                            <div class="o_kanban_card_content">
+                                <div class="row mt-2">
+                                    <div class="col-12">
+                                        <span class="badge bg-primary me-1">
+                                            🤖 <t t-esc="record.total_ai_staff.raw_value or '0'"/> AI-medarbetare
+                                        </span>
+                                    </div>
+                                </div>
+
+                                <!-- Live AI Coworker sub-cards -->
+                                <t t-if="record.ai_coworker_ids.raw_value">
+                                    <t t-foreach="record.ai_coworker_ids.raw_value" t-as="coworker">
+                                        <div class="mt-2 p-2 border rounded bg-light">
+                                            <div class="d-flex justify-content-between align-items-center">
+                                                <span>
+                                                    <t t-if="coworker.heartbeat_enabled">
+                                                        <span class="text-success" title="Heartbeat aktiv">●</span>
+                                                    </t>
+                                                    <t t-if="!coworker.heartbeat_enabled">
+                                                        <span class="text-muted" title="Heartbeat avstängt">○</span>
+                                                    </t>
+                                                    <strong><t t-esc="coworker.name"/></strong>
+                                                </span>
+                                                <span class="badge bg-warning text-dark">
+                                                    <t t-esc="coworker.session_line_count or '0'"/> tokens
+                                                </span>
+                                            </div>
+                                            <div class="mt-1 small text-muted d-flex justify-content-between">
+                                                <span>
+                                                    <t t-if="coworker.status == 'active'">
+                                                        <span class="text-success">● Aktiv</span>
+                                                    </t>
+                                                    <t t-if="coworker.status == 'draft'">
+                                                        <span class="text-muted">○ Utkast</span>
+                                                    </t>
+                                                </span>
+                                                <span>
+                                                    <t t-if="coworker.last_heartbeat">
+                                                        💓 <t t-esc="coworker.last_heartbeat"/>
+                                                    </t>
+                                                    <t t-if="!coworker.last_heartbeat">
+                                                        ⏳ Väntar
+                                                    </t>
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </t>
+                                </t>
+                                <t t-if="!record.ai_coworker_ids.raw_value">
+                                    <div class="mt-2 text-muted small">
+                                        <i>Inga AI-medarbetare — starta onboarding!</i>
+                                    </div>
+                                </t>
+                            </div>
+
+                            <div class="o_kanban_card_footer">
+                                <i class="text-muted small">Klicka för att konfigurera</i>
+                            </div>
+                        </div>
+                    </t>
+                </templates>
+            </kanban>
+        </field>
+    </record>
+
+    <!-- Dashboard action -->
+    <record id="action_ai_orchestration_dashboard" model="ir.actions.act_window">
+        <field name="name">AI Orkestrering</field>
+        <field name="res_model">hr.department</field>
+        <field name="view_mode">kanban</field>
+        <field name="view_id" ref="view_ai_orchestration_dashboard"/>
+        <field name="help" type="html">
+            <p><strong>AI Orchestration Dashboard</strong></p>
+            <p>Här ser du hela din AI-organisation — avdelningar, AI-medarbetare, status och hälsa.</p>
+            <p>💡 Klicka på "🚀 Starta onboarding" i menyn för att bygga din organisation.</p>
+        </field>
+    </record>
+
+    <!-- Onboarding server action button -->
+    <record id="ir_action_server_start_onboarding" model="ir.actions.server">
+        <field name="name">🚀 Starta AI Onboarding</field>
+        <field name="model_id" ref="base.model_res_company"/>
+        <field name="state">code</field>
+        <field name="code">
+action = env['ai.onboarding'].create({
+    'ceo_user_id': env.user.id,
+}).action_start_interview()
+        </field>
+    </record>
+
+    <!-- Restart onboarding server action -->
+    <record id="ir_action_server_restart_onboarding" model="ir.actions.server">
+        <field name="name">🔄 Starta om onboarding</field>
+        <field name="model_id" ref="base.model_res_company"/>
+        <field name="state">code</field>
+        <field name="code">
+onboarding = env['ai.onboarding'].search([
+    ('ceo_user_id', '=', env.user.id),
+    ('state', 'in', ('completed', 'cancelled')),
+], order='create_date desc', limit=1)
+if onboarding:
+    onboarding.action_restart()
+    action = onboarding.action_start_interview()
+else:
+    action = env['ai.onboarding'].create({
+        'ceo_user_id': env.user.id,
+    }).action_start_interview()
+        </field>
+    </record>
+</odoo>

@@ -357,8 +357,68 @@ Output: "expected output"
 """.replace('{GRILL}', GRILL_BLOCK)
 
 
+def post_init_hook_org(env):
+    """Create default coworker + load templates for the organization layer."""
+    import os, json
+
+    # 1. Create default coworker if none exists
+    if not env['ai.coworker'].search_count([('is_default', '=', True)]):
+        agent = env['ai.agent'].create({
+            'name': 'Allmän assistent',
+            'ai_role': 'General purpose AI assistant',
+            'status': 'active',
+        })
+        coworker = env['ai.coworker'].create({
+            'name': 'Allmän',
+            'description': 'Allmän AI-assistent. Hjälper med frågor, '
+                          'styr upp organisationen, och tipsar om '
+                          'förbättringar via kaizen.',
+            'init_type': 'manual',
+            'status': 'active',
+            'heartbeat_enabled': True,
+            'inject_company_memory': True,
+            'inject_nudging': True,
+            'is_default': True,
+        })
+        env['ai.coworker.agent'].create({
+            'coworker_id': coworker.id,
+            'agent_id': agent.id,
+            'role': 'lead',
+        })
+        # Create init types
+        InitType = env['ai.coworker.init_type']
+        InitType.create({
+            'coworker_id': coworker.id,
+            'init_type': 'web_ui',
+            'active': True,
+        })
+        InitType.create({
+            'coworker_id': coworker.id,
+            'init_type': 'cron',
+            'active': True,
+            'cron_interval_number': 5,
+            'cron_interval_type': 'minutes',
+        })
+        _logger.info('Created default coworker: Allmän')
+    else:
+        _logger.info('Default coworker already exists — skipping')
+
+    # 2. Load templates from JSON files
+    try:
+        template_model = env['ai.org.template']
+        template_model.load_all_templates()
+        _logger.info('Templates loaded')
+    except Exception as e:
+        _logger.warning('Template loading skipped (non-fatal): %s', e)
+
+    _logger.info('post_init_hook_org complete')
+
+
 def post_init_hook(env):
     """Create Quest Builder and Skill Builder quests if they don't exist."""
+
+    # Run org init too
+    post_init_hook_org(env)
 
     # Quest Builder
     if not env['ai.coworker'].search_count([('name', '=', 'Quest Builder')]):

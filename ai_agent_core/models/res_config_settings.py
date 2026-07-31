@@ -164,6 +164,18 @@ class ResConfigSettings(models.TransientModel):
         related='company_id.website_rag_last_index', readonly=True)
 
     # ─────────────────────────────────────────────
+    # Heartbeat Settings
+    # ─────────────────────────────────────────────
+    heartbeat_enabled = fields.Boolean(
+        'Heartbeat Active', default=True,
+        help='Enable the AI heartbeat system that wakes coworkers '
+             'periodically to check for work.')
+    heartbeat_interval = fields.Integer(
+        'Heartbeat Interval (minutes)', default=5,
+        help='How often each active coworker wakes to check budget, '
+             'tasks, goals, and nudge needs.')
+
+    # ─────────────────────────────────────────────
     # Background Jobs — dynamic fields per cron
     # ─────────────────────────────────────────────
     bg_status_summary = fields.Text(
@@ -237,6 +249,10 @@ class ResConfigSettings(models.TransientModel):
             'odoomind.coworker_memory.retention_limit', '100'))
         res['coworker_memory_forget_days'] = int(get_param(
             'odoomind.coworker_memory.forget_days', '90'))
+        res['heartbeat_enabled'] = get_param(
+            'ai_agent_core.heartbeat_enabled', 'True') == 'True'
+        res['heartbeat_interval'] = int(get_param(
+            'ai_agent_core.heartbeat_interval', '5'))
 
         return res
 
@@ -270,15 +286,10 @@ class ResConfigSettings(models.TransientModel):
                   str(self.coworker_memory_retention_limit))
         set_param('odoomind.coworker_memory.forget_days',
                   str(self.coworker_memory_forget_days))
-
-    def set_values(self):
-        super().set_values()
-        # Save website URL to partner
-        company = self.env.company
-        if company.partner_id.website != self.company_website_url_edit:
-            company.partner_id.sudo().write({
-                'website': self.company_website_url_edit or False,
-            })
+        set_param('ai_agent_core.heartbeat_enabled',
+                  str(self.heartbeat_enabled))
+        set_param('ai_agent_core.heartbeat_interval',
+                  str(self.heartbeat_interval))
 
     # ─────────────────────────────────────────────
     # Action methods

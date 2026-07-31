@@ -283,3 +283,17 @@ class ResCompany(models.Model):
 
         except Exception as e:
             _logger.error('Identity suggestion failed: %s', e)
+
+    # ── Organization Goals (OKR) ──
+    company_objective_ids = fields.One2many(
+        'ai.org.goal', compute='_compute_company_objectives',
+        string='Företagsmål',
+        help='Mål på company-nivå (ai.org.goal level=company).')
+
+    @api.depends('company_objective_ids')
+    def _compute_company_objectives(self):
+        for company in self:
+            company.company_objective_ids = self.env['ai.org.goal'].search([
+                ('level', '=', 'company'),
+                ('company_id', '=', company.id),
+            ])

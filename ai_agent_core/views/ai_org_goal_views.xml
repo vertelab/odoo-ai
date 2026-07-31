@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_ai_org_goal_tree" model="ir.ui.view">
+        <field name="name">ai.org.goal.tree</field>
+        <field name="model">ai.org.goal</field>
+        <field name="arch" type="xml">
+            <list>
+                <field name="level" widget="badge"/>
+                <field name="name"/>
+                <field name="department_id" optional="show"/>
+                <field name="coworker_id" optional="show"/>
+                <field name="progress" widget="progressbar"/>
+                <field name="status" widget="badge"/>
+                <field name="deadline"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_ai_org_goal_form" model="ir.ui.view">
+        <field name="name">ai.org.goal.form</field>
+        <field name="model">ai.org.goal</field>
+        <field name="arch" type="xml">
+            <form>
+                <sheet>
+                    <div class="oe_button_box" name="button_box">
+                        <button name="action_activate" type="object"
+                            string="Activate" class="btn-primary"
+                            />
+                        <button name="action_complete" type="object"
+                            string="Complete" class="btn-success"
+                            />
+                        <button name="action_cancel" type="object"
+                            string="Cancel" class="btn-secondary"/>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="name"/>
+                            <field name="level" widget="badge"/>
+                            <field name="parent_id" options="{'no_create': True}"/>
+                            <field name="status" widget="badge"/>
+                        </group>
+                        <group>
+                            <field name="department_id" options="{'no_create': True}"/>
+                            <field name="coworker_id" options="{'no_create': True}"/>
+                            <field name="agent_id" options="{'no_create': True}"/>
+                            <field name="deadline"/>
+                        </group>
+                    </group>
+                    <group string="SMART">
+                        <field name="specific"/>
+                        <field name="measurable"/>
+                        <field name="achievable"/>
+                        <field name="relevant"/>
+                    </group>
+                    <notebook>
+                        <page string="Key Results">
+                            <field name="key_result_ids">
+                                <list editable="bottom">
+                                    <field name="name"/>
+                                    <field name="target_value"/>
+                                    <field name="current_value"/>
+                                    <field name="unit"/>
+                                    <field name="progress" widget="progressbar"/>
+                                </list>
+                            </field>
+                        </page>
+                        <page string="Description">
+                            <field name="description"/>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_ai_org_goal_kanban" model="ir.ui.view">
+        <field name="name">ai.org.goal.kanban</field>
+        <field name="model">ai.org.goal</field>
+        <field name="arch" type="xml">
+            <kanban class="o_kanban_mobile">
+                <field name="name"/>
+                <field name="level"/>
+                <field name="status"/>
+                <field name="progress"/>
+                <field name="deadline"/>
+                <templates>
+                    <t t-name="kanban-box">
+                        <div class="oe_kanban_card">
+                            <div class="oe_kanban_content">
+                                <div class="o_kanban_card_header">
+                                    <field name="level" widget="badge"/>
+                                    <field name="status" widget="badge"/>
+                                </div>
+                                <div class="mt-2">
+                                    <strong><field name="name"/></strong>
+                                </div>
+                                <div class="mt-2 text-muted">
+                                    Progress: <field name="progress" widget="progressbar"/>
+                                </div>
+                                <div class="mt-2 text-muted small">
+                                    Deadline: <field name="deadline"/>
+                                </div>
+                            </div>
+                        </div>
+                    </t>
+                </templates>
+            </kanban>
+        </field>
+    </record>
+
+    <record id="action_ai_org_goal" model="ir.actions.act_window">
+        <field name="name">Goals (OKR)</field>
+        <field name="res_model">ai.org.goal</field>
+        <field name="view_mode">kanban,list,form</field>
+        <field name="help" type="html">
+            <p>AI Organization Goals — hierarkiska mål med OKR-struktur.</p>
+        </field>
+    </record>
+</odoo>

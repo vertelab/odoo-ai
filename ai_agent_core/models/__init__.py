@@ -31,3 +31,15 @@ from . import ai_graph_node
 from . import ai_personal_goal
 from . import ai_company_identity
 from . import ai_discuss_learning
+from . import ai_org_goal
+from . import ai_org_key_result
+from . import ai_org_task
+from . import ai_org_review
+from . import ai_org_board
+from . import ai_org_template
+from . import ai_org_bridge
+from . import ai_onboarding
+from . import hr_employee
+from . import hr_department
+from . import hr_job
+

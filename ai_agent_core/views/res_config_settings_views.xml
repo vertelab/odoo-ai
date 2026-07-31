@@ -208,6 +208,16 @@
                     <!-- ════════════════════════════════════════════
                          Background Jobs
                          ════════════════════════════════════════════ -->
+                    <!-- ════════════════════════════════ Heartbeat Settings ════════════════════════════════ -->
+                    <block title="Heartbeat">
+                        <setting id="heartbeat_enabled" help="Slå på/av heartbeat för alla coworkers">
+                            <field name="heartbeat_enabled"/>
+                        </setting>
+                        <setting id="heartbeat_interval" help="Hur ofta coworkers vaknar och kollar läget">
+                            <field name="heartbeat_interval"/>
+                        </setting>
+                    </block>
+
                     <block title="Background Jobs">
                         <setting id="bg_jobs_display">
                             <field name="bg_status_summary" readonly="1"

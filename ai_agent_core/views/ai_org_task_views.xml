@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_ai_org_task_tree" model="ir.ui.view">
+        <field name="name">ai.org.task.tree</field>
+        <field name="model">ai.org.task</field>
+        <field name="arch" type="xml">
+            <list>
+                <field name="name"/>
+                <field name="coworker_id" optional="show"/>
+                <field name="status" widget="badge" decoration-danger="status == 'blocked'"
+                    decoration-warning="status == 'in_progress'"
+                    decoration-success="status == 'done'"/>
+                <field name="priority" widget="priority"/>
+                <field name="goal_id" optional="show"/>
+                <field name="checkout_lock" widget="boolean_fa"/>
+                <field name="create_date"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_ai_org_task_form" model="ir.ui.view">
+        <field name="name">ai.org.task.form</field>
+        <field name="model">ai.org.task</field>
+        <field name="arch" type="xml">
+            <form>
+                <sheet>
+                    <div class="oe_button_box" name="button_box">
+                        <button name="action_checkout" type="object"
+                            string="Checka ut" class="btn-primary"/>
+                        <button name="action_checkin" type="object"
+                            string="Checka in (klar)" class="btn-success"
+                            />
+                        <button name="action_cancel" type="object"
+                            string="Avbryt" class="btn-secondary"/>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="name"/>
+                            <field name="description"/>
+                            <field name="coworker_id" options="{'no_create': True}"/>
+                            <field name="status" widget="badge"/>
+                        </group>
+                        <group>
+                            <field name="priority" widget="priority"/>
+                            <field name="goal_id" options="{'no_create': True}"/>
+                            <field name="job_id" options="{'no_create': True}"/>
+                            <field name="source"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Work Products">
+                            <field name="work_product_ids" widget="many2many_binary"/>
+                        </page>
+                        <page string="Blockers">
+                            <field name="blocker_ids" options="{'no_create': True}"/>
+                        </page>
+                        <page string="Sessions">
+                            <field name="session_ids" readonly="1">
+                                <list>
+                                    <field name="name"/>
+                                    <field name="create_date"/>
+                                    <field name="status"/>
+                                </list>
+                            </field>
+                        </page>
+                        <page string="Result">
+                            <field name="result_summary"/>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_ai_org_task" model="ir.actions.act_window">
+        <field name="name">AI Tasks</field>
+        <field name="res_model">ai.org.task</field>
+        <field name="view_mode">list,form</field>
+    </record>
+</odoo>

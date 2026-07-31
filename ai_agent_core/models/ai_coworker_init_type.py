@@ -24,6 +24,7 @@ INIT_TYPE_SELECTION = [
     ('manual', 'Manual'),
     ('webhook', 'Webhook'),
     ('openai_api', 'OpenAI API'),
+    ('watch', 'Watch — Dataändring'),
 ]
 
 
@@ -125,6 +126,23 @@ class AIQuestInitType(models.Model):
     rate_limit_rpm = fields.Integer('Rate Limit (req/min)', default=30)
     rate_limit_tpm = fields.Integer('Rate Limit (tokens/min)', default=100000)
 
+    # ── watch specific ──
+    watch_model_id = fields.Many2one('ir.model', string='Watch Model',
+        help='Model to watch for data changes.')
+    watch_trigger = fields.Selection([
+        ('create', 'Create'),
+        ('write', 'Write'),
+        ('create_or_write', 'Create or Write'),
+        ('delete', 'Delete'),
+    ], string='Watch Trigger', default='create_or_write',
+        help='Which action triggers the coworker.')
+    watch_domain = fields.Char('Watch Domain',
+        help='Domain filter for which records trigger. '
+             'E.g. [("priority", ">", 5)]')
+    base_automation_id = fields.Many2one('base.automation',
+        string='Base Automation', readonly=True,
+        help='Auto-created base.automation record.')
+
     @api.onchange('init_type')
     def _onchange_init_type(self):
         """Reset type-specific fields when init_type changes."""
@@ -143,6 +161,7 @@ class AIQuestInitType(models.Model):
             'webhook': [],
             'controller': [],
             'openai_api': ['api_key_attachment_id', 'rate_limit_rpm', 'rate_limit_tpm'],
+            'watch': ['watch_model_id', 'watch_trigger', 'watch_domain', 'base_automation_id'],
         }
         all_specific = set()
         for fields_list in type_fields.values():

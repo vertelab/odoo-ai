@@ -12,6 +12,9 @@ class AIQuestSession(models.Model):
     _description = 'AI Quest Session'
     _order = 'create_date desc'
 
+    task_id = fields.Many2one('ai.org.task', string='Task',
+        help='Tasken som denna session arbetar på. Skapas automatiskt vid checkout.')
+
     name = fields.Char(default=lambda self: str(uuid.uuid4())[:8])
     coworker_id = fields.Many2one('ai.coworker', string='Coworker', ondelete='cascade')
     skill_id = fields.Many2one('ai.skill', string='Skill',

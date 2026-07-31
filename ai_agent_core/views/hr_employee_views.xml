@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Inherit hr.employee tree view — add AI indicator -->
+    <record id="hr_view_employee_tree_inherit_ai" model="ir.ui.view">
+        <field name="name">hr.employee.tree.inherit.ai</field>
+        <field name="model">hr.employee</field>
+        <field name="inherit_id" ref="hr.view_employee_tree"/>
+        <field name="arch" type="xml">
+            <field name="name" position="before">
+                <field name="is_ai" invisible="1"/>
+            </field>
+            <xpath expr="//field[@name='name']" position="after">
+                <field name="is_ai" widget="badge" 
+                    decoration-info="is_ai == True"
+                    invisible="not is_ai"/>
+            </xpath>
+        </field>
+    </record>
+
+    <!-- Inherit hr.employee kanban — show AI badge -->
+    <record id="hr_view_employee_kanban_inherit_ai" model="ir.ui.view">
+        <field name="name">hr.employee.kanban.inherit.ai</field>
+        <field name="model">hr.employee</field>
+        <field name="inherit_id" ref="hr.hr_kanban_view_employees"/>
+        <field name="arch" type="xml">
+            <xpath expr="//t[@t-name='card']//field[@name='name']" position="before">
+                <field name="is_ai" invisible="1"/>
+                <field name="ai_coworker_id" invisible="1"/>
+            </xpath>
+            <xpath expr="//t[@t-name='card']//field[@name='name']" position="after">
+                <t t-if="record.is_ai.raw_value">
+                    <span class="badge bg-info ms-1">AI</span>
+                    <t t-set="coworker" t-value="record.ai_coworker_id.raw_value"/>
+                    <t t-if="coworker">
+                        <div class="text-muted small">
+                            💓 <t t-esc="coworker.last_heartbeat or 'Väntar'"/>
+                        </div>
+                    </t>
+                </t>
+            </xpath>
+        </field>
+    </record>
+
+    <!-- Inherit hr.employee form — add AI config section -->
+    <record id="hr_view_employee_form_inherit_ai" model="ir.ui.view">
+        <field name="name">hr.employee.form.inherit.ai</field>
+        <field name="model">hr.employee</field>
+        <field name="inherit_id" ref="hr.view_employee_form"/>
+        <field name="arch" type="xml">
+            <field name="job_id" position="after">
+                <field name="is_ai" invisible="1"/>
+            </field>
+            <xpath expr="//page[@name='personal_information']" position="after">
+                <page string="AI Configuration" invisible="not is_ai">
+                    <group>
+                        <group>
+                            <field name="ai_coworker_id" options="{'no_create': True}"/>
+                        </group>
+                        <group>
+                            <button name="%(action_ai_coworker)d" type="action"
+                                string="Öppna i AI-coworker"
+                                class="btn-info"
+                                context="{'res_id': ai_coworker_id}"/>
+                        </group>
+                    </group>
+                </page>
+            </xpath>
+        </field>
+    </record>
+</odoo>

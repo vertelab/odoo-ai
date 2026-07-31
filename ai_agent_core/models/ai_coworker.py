@@ -1587,12 +1587,22 @@ class AIQuest(models.Model):
         specialists = self._build_specialists(
             provider, tools, model, system_prompt, max_rounds)
 
+        # Use orchestration.supervisor skill recipe if present
+        skill_recipe = ''
+        for skill in self.skill_ids:
+            if skill.name and 'orchestration' in skill.name.lower():
+                skill_recipe = skill.recipe_text or skill.improvement_guidance or ''
+                break
+
         return SupervisorLoop(
             router_provider=provider,
             agents=specialists,
             config=SupervisorConfig(
                 router_model=model,
+                skill_recipe=skill_recipe,
                 max_rounds=3,
+                max_iterations=self.max_iterations or 3,
+                min_confidence=self.min_confidence or 0.8,
             ),
         )
 
@@ -2329,6 +2339,157 @@ class AIQuest(models.Model):
             self.is_supervisor = True
         elif self.orchestration_mode and self.orchestration_mode != 'single':
             self.is_supervisor = False
+
+    # ── Org integration fields (ai-org-onboarding) ──
+
+    is_default = fields.Boolean(
+        'Default Coworker', default=False,
+        help='Systemets allmänna coworker — den som fanns från installation.')
+
+    employee_id = fields.Many2one(
+        'hr.employee', string='HR Employee',
+        help='Motswarande hr.employee för denna AI-coworker. '
+             'Gör att AI:n syns i personalvyn och kan vara chef.')
+
+    heartbeat_enabled = fields.Boolean(
+        'Heartbeat Active', default=True,
+        help='När True vaknar coworkern regelbundet för att checka '
+             'budget, tasks, mål och nudge-behov.')
+
+    department_id = fields.Many2one(
+        'hr.department', string='Department',
+        help='Avdelningen som denna AI-medarbetare tillhör.')
+
+    # ── Heartbeat ──
+
+    def _heartbeat(self):
+        """Single heartbeat tick: budget → tasks → goals → nudge.
+
+        Called periodically by _heartbeat_all().
+        Each coworker decides what to do based on current state.
+        """
+        self.ensure_one()
+
+        # 1. Check budget
+        warning, exhausted = self.check_cap()
+        if exhausted:
+            return  # No budget — sleep
+
+        # 2. Check for pending tasks
+        pending_tasks = self.env['ai.org.task'].search([
+            ('coworker_id', '=', self.id),
+            ('status', '=', 'todo'),
+            ('checkout_lock', '=', False),
+        ], order='priority desc, create_date asc', limit=1)
+
+        if pending_tasks:
+            # Check out and work on the task
+            _logger.info('Heartbeat %s: found pending task %s, checking out',
+                        self.name, pending_tasks.name)
+            task = pending_tasks[0]
+            task.action_checkout()
+            return
+
+        # 3. Check goals — proactive work
+        active_goals = self.env['ai.org.goal'].search([
+            ('coworker_id', '=', self.id),
+            ('status', '=', 'active'),
+            ('progress', '<', 100.0),
+        ], limit=1)
+
+        if active_goals:
+            _logger.info('Heartbeat %s: working on goal %s',
+                        self.name, active_goals.name)
+            # Create a session for proactive goal work
+            self.env['ai.coworker.session'].create({
+                'coworker_id': self.id,
+                'name': f'Goal: {active_goals.name[:50]}',
+                'status': 'active',
+            })
+            return
+
+        # 4. Nudge? (handled by kaizen/onboard separately)
+        # 5. Sleep until next heartbeat
+
+    @api.model
+    def _heartbeat_all(self):
+        """Called by ir.cron — iterate all active coworkers."""
+        from datetime import datetime, timedelta
+
+        # Check system setting
+        icp = self.env['ir.config_parameter'].sudo()
+        enabled = icp.get_param('ai_agent_core.heartbeat_enabled', 'True')
+        if enabled != 'True':
+            return
+
+        interval = int(icp.get_param('ai_agent_core.heartbeat_interval', '5'))
+
+        coworkers = self.search([
+            ('active', '=', True),
+            ('status', '=', 'active'),
+            ('heartbeat_enabled', '=', True),
+        ])
+
+        now = datetime.now()
+        for coworker in coworkers:
+            try:
+                # Check if enough time since last heartbeat
+                if coworker.last_heartbeat:
+                    last = coworker.last_heartbeat
+                    if last and isinstance(last, datetime):
+                        diff = (now - last).total_seconds() / 60
+                        if diff < interval:
+                            continue
+
+                coworker._heartbeat()
+                coworker.write({'last_heartbeat': now})
+            except Exception as e:
+                _logger.error('Heartbeat failed for %s: %s',
+                            coworker.name, e)
+
+    last_heartbeat = fields.Datetime('Last Heartbeat')
+
+    # ── Employee link ──
+
+    def _ensure_employee(self):
+        """Create or return hr.employee(is_ai=True) for this coworker.
+
+        Called automatically on create if not already linked.
+        Ensures AI coworkers appear in hr.employee views
+        alongside human employees.
+        """
+        self.ensure_one()
+        if self.employee_id:
+            return self.employee_id
+
+        if not self.name:
+            return False
+
+        alias = (self.channel_alias or self.name).lower().replace(' ', '-')[:20]
+        employee = self.env['hr.employee'].create({
+            'name': self.name,
+            'work_email': f'ai-{alias}-{self.id}@ai.internal',
+            'is_ai': True,
+            'ai_coworker_id': self.id,
+            'department_id': self.department_id.id if self.department_id else False,
+        })
+        self.write({'employee_id': employee.id})
+        _logger.info('Created hr.employee %s for coworker %s',
+                    employee.name, self.name)
+        return employee
+
+    @api.model
+    def create(self, vals):
+        record = super(AIQuest, self).create(vals)
+        # Auto-create hr.employee for new coworkers
+        if not vals.get('employee_id') and not vals.get('is_default'):
+            try:
+                record._ensure_employee()
+            except Exception as e:
+                _logger.warning('Could not create employee for %s: %s',
+                              record.name, e)
+        return record
+
 
 # ---------------------------------------------------------------------------
 # Helper functions

@@ -1,0 +1,169 @@
+{
+  "name": "Redovisningsbyrå",
+  "industry": "accounting",
+  "description": "Template för redovisnings- och revisionsbyråer med Accounting, HR, CRM.",
+  "detect_modules": ["account"],
+  "interview_questions": [
+    {
+      "module": "account",
+      "questions": [
+        {
+          "id": "account_moms",
+          "question": "Hanterar ni momsredovisning åt era kunder?",
+          "options": ["Ja", "Nej"],
+          "if_yes": "account_invoices"
+        },
+        {
+          "id": "account_invoices",
+          "question": "Skickar ni fakturor åt era kunder?",
+          "options": ["Ja, många", "Ja, några", "Nej"],
+          "if_yes": "account_bookkeeping"
+        },
+        {
+          "id": "account_bookkeeping",
+          "question": "Hur många kunder har ni löpande bokföring för?",
+          "options": ["0-50", "50-200", "200+"],
+          "if_none": "hr_employees"
+        }
+      ]
+    },
+    {
+      "module": "hr",
+      "questions": [
+        {
+          "id": "hr_employees",
+          "question": "Hur många anställda har ni?",
+          "options": ["1-5", "5-20", "20-50", "50+"]
+        },
+        {
+          "id": "hr_payroll",
+          "question": "Hanterar ni löner internt?",
+          "options": ["Ja", "Nej"]
+        }
+      ]
+    },
+    {
+      "module": "crm",
+      "questions": [
+        {
+          "id": "crm_leads",
+          "question": "Hur många leads får ni in per månad?",
+          "options": ["0-5", "5-20", "20-100", "100+"]
+        }
+      ]
+    }
+  ],
+  "proposal_generator": {
+    "account_moms": {
+      "Ja": {
+        "confidence": 0.9,
+        "coworkers": [
+          {
+            "name": "Moms-Magnus",
+            "mode": "single",
+            "description": "Momsredovisning och skattedeklaration",
+            "agent": {
+              "name": "Moms-specialist",
+              "skills": ["VAT", "BVAT"],
+              "tools": ["account_read"]
+            },
+            "goals": ["Automatisera momsredovisning"]
+          }
+        ]
+      }
+    },
+    "account_invoices": {
+      "Ja, många": {
+        "confidence": 0.8,
+        "coworkers": [
+          {
+            "name": "Faktura-Fia",
+            "mode": "single",
+            "description": "Kundfakturor och betalningspåminnelser",
+            "agent": {
+              "name": "Faktura-specialist",
+              "skills": ["invoice_management"],
+              "tools": ["account_read", "account_write", "mail"]
+            },
+            "goals": ["Effektivisera fakturahantering"]
+          }
+        ]
+      },
+      "Ja, några": {
+        "confidence": 0.5,
+        "coworkers": [
+          {
+            "name": "Faktura-Fia",
+            "mode": "single",
+            "description": "Kundfakturor",
+            "agent": {
+              "name": "Faktura-specialist",
+              "skills": ["invoice_management"],
+              "tools": ["account_read", "mail"]
+            },
+            "goals": ["Effektivisera fakturahantering"]
+          }
+        ]
+      }
+    },
+    "crm_leads": {
+      "5-20": {
+        "confidence": 0.5,
+        "coworkers": [
+          {
+            "name": "Lead-Lena",
+            "mode": "single",
+            "description": "Lead-uppföljning och offerthantering",
+            "agent": {
+              "skills": ["lead_management"],
+              "tools": ["crm_read", "mail"]
+            },
+            "goals": ["Förbättra lead-uppföljning"]
+          }
+        ]
+      },
+      "20-100": {
+        "confidence": 0.7,
+        "coworkers": [
+          {
+            "name": "Sälj-Sven",
+            "mode": "single",
+            "description": "Säljpipeline och offerthantering",
+            "agent": {
+              "skills": ["sales_pipeline", "lead_management"],
+              "tools": ["crm_read", "crm_write", "mail"]
+            },
+            "goals": ["Öka konverteringsgrad"]
+          }
+        ]
+      }
+    },
+    "hr_payroll": {
+      "Ja": {
+        "confidence": 0.7,
+        "coworkers": [
+          {
+            "name": "Löne-Lena",
+            "mode": "single",
+            "description": "Lönehantering och AGI",
+            "agent": {
+              "skills": ["payroll", "AGI"],
+              "tools": ["hr_read", "hr_write"]
+            },
+            "goals": ["Digitalisera lönehantering"]
+          }
+        ]
+      }
+    }
+  },
+  "default_goals": [
+    {
+      "name": "Digitalisera den löpande redovisningen",
+      "level": "company",
+      "key_results": [
+        {"name": "Andel automatiserade moment", "target": 80, "unit": "%"},
+        {"name": "Minskad handläggningstid", "target": 40, "unit": "%"}
+      ]
+    }
+  ]
+}

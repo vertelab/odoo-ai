@@ -1,0 +1,77 @@
+{
+  "name": "Konsultbolag",
+  "industry": "consulting",
+  "description": "Template för konsultbolag med Project, HR, Sale.",
+  "detect_modules": ["project"],
+  "interview_questions": [
+    {
+      "module": "project",
+      "questions": [
+        {
+          "id": "project_count",
+          "question": "Hur många aktiva projekt har ni samtidigt?",
+          "options": ["1-5", "5-20", "20+"]
+        },
+        {
+          "id": "project_timesheets",
+          "question": "Använder ni tidrapportering?",
+          "options": ["Ja", "Nej"]
+        }
+      ]
+    },
+    {
+      "module": "sale",
+      "questions": [
+        {
+          "id": "sale_offers",
+          "question": "Skickar ni offerter ofta?",
+          "options": ["Ja, varje vecka", "Ibland", "Sällan"]
+        }
+      ]
+    }
+  ],
+  "proposal_generator": {
+    "project_count": {
+      "5-20": {
+        "confidence": 0.7,
+        "coworkers": [
+          {
+            "name": "Projekt-Petter",
+            "mode": "single",
+            "description": "Projektuppföljning och rapportgenerering",
+            "agent": {
+              "skills": ["project_management"],
+              "tools": ["project_read", "project_write", "mail"]
+            },
+            "goals": ["Förbättra projektuppföljning"]
+          }
+        ]
+      },
+      "20+": {
+        "confidence": 0.8,
+        "coworkers": [
+          {
+            "name": "Projekt-Petter",
+            "mode": "supervisor",
+            "description": "Projektportfölj och resursplanering",
+            "agent": {
+              "skills": ["project_management", "resource_planning"],
+              "tools": ["project_read", "project_write", "hr_read", "mail"]
+            },
+            "goals": ["Optimera resursutnyttjande"]
+          }
+        ]
+      }
+    }
+  },
+  "default_goals": [
+    {
+      "name": "Effektivisera projektleverans",
+      "level": "company",
+      "key_results": [
+        {"name": "Projekt i tid", "target": 90, "unit": "%"},
+        {"name": "Kundnöjdhet", "target": 4.5, "unit": "/5"}
+      ]
+    }
+  ]
+}

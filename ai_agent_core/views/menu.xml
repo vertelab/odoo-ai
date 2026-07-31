@@ -44,24 +44,73 @@
         <field name="res_model">ai.memory</field>
         <field name="view_mode">list,form</field>
     </record>
-
     <record id="action_ai_chat" model="ir.actions.act_url">
         <field name="name">AI Chat</field>
         <field name="url">/ai/chat</field>
         <field name="target">self</field>
     </record>
 
+    <!-- ===== New Org Actions ===== -->
+    <record id="action_ai_org_goal" model="ir.actions.act_window">
+        <field name="name">Goals (OKR)</field>
+        <field name="res_model">ai.org.goal</field>
+        <field name="view_mode">kanban,list,form</field>
+    </record>
+    <record id="action_ai_org_task" model="ir.actions.act_window">
+        <field name="name">AI Tasks</field>
+        <field name="res_model">ai.org.task</field>
+        <field name="view_mode">list,form</field>
+    </record>
+    <record id="action_ai_org_review" model="ir.actions.act_window">
+        <field name="name">AI Performance Reviews</field>
+        <field name="res_model">ai.org.review</field>
+        <field name="view_mode">list,form</field>
+    </record>
+    <record id="action_ai_org_board" model="ir.actions.act_window">
+        <field name="name">AI Board</field>
+        <field name="res_model">ai.org.board</field>
+        <field name="view_mode">list,form</field>
+    </record>
+    <record id="action_ai_onboarding" model="ir.actions.act_window">
+        <field name="name">Onboarding</field>
+        <field name="res_model">ai.onboarding</field>
+        <field name="view_mode">list,form</field>
+        <field name="context">{'default_ceo_user_id': uid}</field>
+    </record>
+
     <!-- ===== Root menu ===== -->
     <menuitem id="menu_ai_root" name="AI Orkestrering"
               sequence="90" groups="base.group_user"/>
 
-    <!-- Main items -->
+    <!-- Dashboard + Onboarding -->
+    <menuitem id="menu_ai_orchestration_dashboard" name="Dashboard"
+              parent="menu_ai_root" sequence="5"
+              action="action_ai_orchestration_dashboard"/>
+    <menuitem id="menu_ai_start_onboarding" name="🚀 Starta onboarding"
+              parent="menu_ai_root" sequence="6"
+              action="ir_action_server_start_onboarding"/>
+
+    <!-- Coworkers & Agents -->
     <menuitem id="menu_ai_coworker" name="AI medarbetare" parent="menu_ai_root"
               sequence="10" action="action_ai_coworker"/>
     <menuitem id="menu_ai_agent" name="Agenter" parent="menu_ai_root"
               sequence="20" action="action_ai_agent"/>
     <menuitem id="menu_ai_chat" name="AI Chat" parent="menu_ai_root"
               sequence="90" action="action_ai_chat"/>
+
+    <!-- Organization submenu -->
+    <menuitem id="menu_ai_organization" name="Organisation"
+              parent="menu_ai_root" sequence="30"/>
+    <menuitem id="menu_ai_org_goal" name="Mål (OKR)" parent="menu_ai_organization"
+              sequence="10" action="action_ai_org_goal"/>
+    <menuitem id="menu_ai_org_task" name="Tasks" parent="menu_ai_organization"
+              sequence="20" action="action_ai_org_task"/>
+    <menuitem id="menu_ai_org_review" name="Reviews" parent="menu_ai_organization"
+              sequence="30" action="action_ai_org_review"/>
+    <menuitem id="menu_ai_org_board" name="Board" parent="menu_ai_organization"
+              sequence="40" action="action_ai_org_board"/>
+    <menuitem id="menu_ai_onboarding" name="Onboarding" parent="menu_ai_organization"
+              sequence="50" action="action_ai_onboarding"/>
 
     <!-- Configuration submenu -->
     <menuitem id="menu_ai_configuration" name="Configuration"
@@ -79,7 +128,6 @@
               sequence="40" action="action_ai_skill"/>
     <menuitem id="menu_ai_memory" name="Memory" parent="menu_ai_configuration"
               sequence="50" action="action_ai_memory"/>
-
 
     <!-- Monthly Summary -->
     <menuitem id="menu_ai_monthly_summary" name="Monthly Summary"

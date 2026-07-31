@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_ai_org_review_tree" model="ir.ui.view">
+        <field name="name">ai.org.review.tree</field>
+        <field name="model">ai.org.review</field>
+        <field name="arch" type="xml">
+            <list>
+                <field name="agent_id"/>
+                <field name="period"/>
+                <field name="period_start"/>
+                <field name="period_end"/>
+                <field name="score" widget="badge"
+                    decoration-success="score in ('4','5')"
+                    decoration-warning="score == '3'"
+                    decoration-danger="score in ('1','2')"/>
+                <field name="recommendation"/>
+                <field name="state"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_ai_org_review_form" model="ir.ui.view">
+        <field name="name">ai.org.review.form</field>
+        <field name="model">ai.org.review</field>
+        <field name="arch" type="xml">
+            <form>
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="agent_id" options="{'no_create': True}"/>
+                            <field name="reviewer_id" options="{'no_create': True}"/>
+                            <field name="human_reviewer_id" options="{'no_create': True}"/>
+                        </group>
+                        <group>
+                            <field name="period"/>
+                            <field name="period_start"/>
+                            <field name="period_end"/>
+                            <field name="score"/>
+                            <field name="recommendation"/>
+                            <field name="state"/>
+                        </group>
+                    </group>
+                    <group string="Review Content">
+                        <field name="accomplishments"/>
+                        <field name="challenges"/>
+                        <field name="areas_for_improvement"/>
+                    </group>
+                    <group string="Goals This Period">
+                        <field name="goal_ids" options="{'no_create': True}"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_ai_org_review" model="ir.actions.act_window">
+        <field name="name">AI Performance Reviews</field>
+        <field name="res_model">ai.org.review</field>
+        <field name="view_mode">list,form</field>
+    </record>
+</odoo>

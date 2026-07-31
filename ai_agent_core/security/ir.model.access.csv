@@ -37,3 +37,14 @@ access_ai_tool,ai.tool,model_ai_tool,base.group_user,1,1,1,1
 access_ai_personal_goal_user,ai.personal.goal.user,model_ai_personal_goal,base.group_user,1,1,1,1
 access_discuss_learning_user,discuss.learning.user,model_discuss_learning,base.group_user,1,0,0,0
 access_company_identity_user,company.identity.evolution.user,model_company_identity_evolution,base.group_user,1,0,0,0
+access_ai_org_goal_user,ai.org.goal.user,model_ai_org_goal,base.group_user,1,1,1,1
+access_ai_org_key_result_user,ai.org.key_result.user,model_ai_org_key_result,base.group_user,1,1,1,1
+access_ai_org_task_user,ai.org.task.user,model_ai_org_task,base.group_user,1,1,1,1
+access_ai_org_review_user,ai.org.review.user,model_ai_org_review,base.group_user,1,1,1,1
+access_ai_org_board_user,ai.org.board.user,model_ai_org_board,base.group_user,1,1,1,1
+access_ai_org_board_decision_user,ai.org.board.decision.user,model_ai_org_board_decision,base.group_user,1,1,1,1
+access_ai_org_template_user,ai.org.template.user,model_ai_org_template,base.group_user,1,0,0,0
+access_ai_org_template_admin,ai.org.template.admin,model_ai_org_template,base.group_system,1,1,1,1
+access_ai_org_bridge_user,ai.org.bridge.user,model_ai_org_bridge,base.group_user,1,0,0,0
+access_ai_onboarding_user,ai.onboarding.user,model_ai_onboarding,base.group_user,1,0,0,0
+access_ai_onboarding_admin,ai.onboarding.admin,model_ai_onboarding,base.group_system,1,1,1,1
