@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_ai_onboarding_wizard_form" model="ir.ui.view">
+        <field name="name">ai.onboarding.wizard.form</field>
+        <field name="model">ai.onboarding.wizard</field>
+        <field name="arch" type="xml">
+            <form string="🚀 AI Onboarding">
+                <field name="onboarding_id" invisible="1"/>
+                <field name="state" invisible="1"/>
+                <field name="current_question_id" invisible="1"/>
+
+                <!-- QUESTIONS STEP -->
+                <group invisible="state != 'questions'">
+                    <group>
+                        <field name="question_index" string="Fråga"/>
+                        <field name="total_questions" string="Totalt"/>
+                    </group>
+                    <group>
+                        <field name="detected_modules_text" readonly="1"
+                            nolabel="1" placeholder="Installerade moduler..."/>
+                    </group>
+                </group>
+
+                <group invisible="state != 'questions'">
+                    <group string="Installerade moduler" class="bg-100 p-3">
+                        <field name="detected_modules_text" readonly="1"/>
+                        <field name="website_summary" readonly="1"/>
+                    </group>
+                    <group string="Intervju" class="bg-100 p-3">
+                        <div>
+                            <strong><field name="current_question" class="fs-5"/></strong>
+                        </div>
+                        <div class="mt-2 text-muted">
+                            <field name="question_options" readonly="1"/>
+                        </div>
+                        <field name="answer" placeholder="Ditt svar..."
+                            autofocus="1"/>
+                        <button name="action_submit_answer" type="object"
+                            string="Nästa →" class="btn-primary mt-3"/>
+                    </group>
+                </group>
+
+                <!-- PROPOSAL STEP -->
+                <group invisible="state != 'proposal'">
+                    <group>
+                        <field name="proposal_text" readonly="1"
+                            class="p-3 bg-100" nolabel="1"/>
+                    </group>
+                    <group>
+                        <field name="adjustment" placeholder="Justeringar (valfritt)..."/>
+                        <button name="action_confirm_proposal" type="object"
+                            string="✅ Skapa organisationen" class="btn-success"/>
+                    </group>
+                </group>
+
+                <!-- DONE STEP -->
+                <group invisible="state != 'done'">
+                    <group>
+                        <field name="created_summary" readonly="1" nolabel="1"/>
+                        <p class="text-success mt-3">
+                            🚀 Din AI-organisation är redo! Heartbeats startar.
+                        </p>
+                        <button name="action_close" type="object"
+                            string="Stäng" class="btn-primary"/>
+                    </group>
+                </group>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_ai_onboarding_wizard" model="ir.actions.act_window">
+        <field name="name">🚀 AI Onboarding</field>
+        <field name="res_model">ai.onboarding.wizard</field>
+        <field name="view_mode">form</field>
+        <field name="target">new</field>
+    </record>
+</odoo>

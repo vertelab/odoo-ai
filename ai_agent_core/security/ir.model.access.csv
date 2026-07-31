@@ -48,3 +48,4 @@ access_ai_org_template_admin,ai.org.template.admin,model_ai_org_template,base.gr
 access_ai_org_bridge_user,ai.org.bridge.user,model_ai_org_bridge,base.group_user,1,0,0,0
 access_ai_onboarding_user,ai.onboarding.user,model_ai_onboarding,base.group_user,1,0,0,0
 access_ai_onboarding_admin,ai.onboarding.admin,model_ai_onboarding,base.group_system,1,1,1,1
+access_ai_onboarding_wizard_user,ai.onboarding.wizard.user,model_ai_onboarding_wizard,base.group_user,1,1,1,1

@@ -97,4 +97,37 @@ Odoo-relaterade fragor. Du har tillgang till dokumentation.</field>
         <field name="rate_limit_tpm">200000</field>
     </record>
 
+    <!-- DEMO: Order-Vakten (watch — reagerar på orderändringar) -->
+
+    <record id="demo_coworker_order_watch" model="ai.coworker">
+        <field name="name">Order-Vakten</field>
+        <field name="description">Du ar Order-Vakten, en vakt som overvakar forsaljningsordrar.
+Nar en ny order skapas eller en order andras, granskar du den och agerar:
+- Stor order (over 10000): gratulera och foresla uppfoljning
+- Avbokad order: undersok varfor och foresla atgard
+- Problem (saknade dokument, stora rabatter): flagga for handlaggare</field>
+        <field name="status">active</field>
+        <field name="sequence">40</field>
+        <field name="channel_alias">ordervakten</field>
+        <field name="orchestration_mode">single</field>
+    </record>
+
+    <record id="demo_order_watch_init_watch" model="ai.coworker.init_type">
+        <field name="coworker_id" ref="demo_coworker_order_watch"/>
+        <field name="init_type">watch</field>
+        <field name="active">True</field>
+        <field name="sequence">10</field>
+        <field name="watch_model_id" ref="sale.model_sale_order"/>
+        <field name="watch_trigger">create_or_write</field>
+        <field name="watch_domain">[('state', '=', 'sale')]</field>
+    </record>
+
+    <record id="demo_order_watch_init_web_ui" model="ai.coworker.init_type">
+        <field name="coworker_id" ref="demo_coworker_order_watch"/>
+        <field name="init_type">web_ui</field>
+        <field name="active">True</field>
+        <field name="sequence">20</field>
+        <field name="show_in_chat">True</field>
+    </record>
+
 </odoo>

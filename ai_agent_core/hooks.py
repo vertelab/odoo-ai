@@ -189,6 +189,16 @@ def post_init_hook_personal_memory(cr, registry):
         except Exception as e:
             _logger.warning('Could not create cron %s: %s', name, e)
 
+    # ── Org init (default coworker + templates) ──
+    try:
+        from odoo.api import Environment, SUPERUSER_ID
+        env = Environment(cr, SUPERUSER_ID, {})
+        post_init_hook_org(env)
+        env.flush_all()
+        env.cr.commit()
+    except Exception as e:
+        _logger.warning('Org init failed (non-fatal): %s', e)
+
 GRILL_BLOCK = """
 ## Interview protocol (GRILL)
 
@@ -355,7 +365,6 @@ Output: "expected output"
 - Don't execute without user approval
 - Keep recipes lean — remove what doesn't pull its weight
 """.replace('{GRILL}', GRILL_BLOCK)
-
 
 def post_init_hook_org(env):
     """Create default coworker + load templates for the organization layer."""

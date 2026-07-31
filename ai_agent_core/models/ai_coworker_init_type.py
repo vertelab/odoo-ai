@@ -209,8 +209,105 @@ class AIQuestInitType(models.Model):
                 record._ensure_powerbox()
             elif record.init_type == 'webhook' and record.active:
                 record._ensure_webhook()
+            elif record.init_type == 'watch' and record.active:
+                record._ensure_watch()
 
     # ── Resource auto-creation ──
+
+    def _ensure_watch(self):
+        """Create/update base.automation for watch init_type.
+
+        The base.automation watches a model for data changes and
+        triggers the coworker via a linked server action.
+        """
+        if not self.watch_model_id or not self.active:
+            return
+
+        trigger_map = {
+            'create': 'on_create_or_write',
+            'write': 'on_create_or_write',
+            'create_or_write': 'on_create_or_write',
+            'delete': 'on_unlink',
+        }
+        trigger = trigger_map.get(self.watch_trigger, 'on_create_or_write')
+        auto_name = f'AI Watch: {self.coworker_id.name} on {self.watch_model_id.name}'
+
+        try:
+            if not self.base_automation_id:
+                # Create base.automation
+                automation = self.env['base.automation'].create({
+                    'name': auto_name,
+                    'model_id': self.watch_model_id.id,
+                    'trigger': trigger,
+                    'filter_domain': self.watch_domain or '',
+                    'active': True,
+                })
+                # Create the linked server action
+                action = self.env['ir.actions.server'].create({
+                    'name': auto_name,
+                    'model_id': self.watch_model_id.id,
+                    'base_automation_id': automation.id,
+                    'state': 'code',
+                    'code': (
+                        "records = env['ai.coworker.init_type']"
+                        f".browse({self.id})._trigger_watch(records)\n"
+                    ),
+                })
+                self.base_automation_id = automation.id
+                _logger.info('Created base_automation %s for watch init', auto_name)
+            else:
+                # Update existing automation
+                self.base_automation_id.write({
+                    'name': auto_name,
+                    'model_id': self.watch_model_id.id,
+                    'trigger': trigger,
+                    'filter_domain': self.watch_domain or '',
+                    'active': True,
+                })
+        except Exception as e:
+            _logger.warning('Failed to ensure watch for %s: %s',
+                          self.coworker_id.name if self.coworker_id else '?', e)
+
+    def _trigger_watch(self, records):
+        """Called by base_automation when watched data changes.
+
+        Creates a session and runs the coworker with the changed record
+        as context.
+        """
+        self.ensure_one()
+        coworker = self.coworker_id
+        if not coworker or not records:
+            return
+
+        # Budget check before acting
+        try:
+            warning, exhausted = coworker.check_cap()
+            if exhausted:
+                _logger.info('Watch %s skipped: budget exhausted', coworker.name)
+                return
+        except Exception:
+            pass
+
+        for record in records[:3]:  # Max 3 records per trigger
+            try:
+                session = self.env['ai.coworker.session'].create({
+                    'coworker_id': coworker.id,
+                    'name': f'Watch: {record._name} {record.id}',
+                    'status': 'active',
+                    'user_id': self.env.ref('base.user_root').id,
+                })
+                prompt = (
+                    f'A data change was detected on record '
+                    f'{record.display_name or record.id} ({record._name}).\n'
+                    f'Review the record and take appropriate action.\n\n'
+                    f'Record details:\n{record.name or record.display_name or record.id}'
+                )
+                coworker.run(session=session, prompt=prompt, record=record)
+                _logger.info('Watch %s: processed %s %s',
+                            coworker.name, record._name, record.id)
+            except Exception as e:
+                _logger.error('Watch processing failed for %s: %s',
+                            coworker.name, e)
 
     def _ensure_mail_alias(self):
         """Create mail alias if not exists."""
@@ -375,4 +472,6 @@ class AIQuestInitType(models.Model):
                 record.cron_id.active = False
             if record.server_action_id:
                 record.server_action_id.active = False
+            if record.base_automation_id:
+                record.base_automation_id.active = False
         return super().unlink()
