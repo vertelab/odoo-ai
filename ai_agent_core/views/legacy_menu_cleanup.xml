@@ -14,7 +14,7 @@
          ===================================================================== -->
 
     <!-- Configuration-barn (ai_agent.menu_ai_agent_configuration) -->
-    <delete model="ir.ui.menu" id="ai_agent_config_settings_menu"/>
+    <delete model="ir.ui.menu" id="ai_agent.ai_agent_config_settings_menu"/>
     <delete model="ir.ui.menu" id="ai_agent.menu_product_product"/>
     <delete model="ir.ui.menu" id="ai_agent.menu_ai_quest_session"/>
     <delete model="ir.ui.menu" id="ai_agent.menu_ai_session_object"/>
