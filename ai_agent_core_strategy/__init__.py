@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
-"""Post-install hook: create strategy skills, agents, and quests.
+"""Post-install hook: create strategy skills, agents, and coworkers.
 
 Pattern: same as ai_agent_core_academic — thin module, post_init_hook creates
-ai.skill, ai.agent, and ai.quest records. Agents interact with strategy models
-via XML-RPC (not Python imports) to avoid circular dependencies.
+ai.skill, ai.agent, and ai.coworker records. Agents interact with strategy
+models via XML-RPC (not Python imports) to avoid circular dependencies.
 """
 
 import logging
@@ -964,7 +964,7 @@ def post_init_hook(env):
     ])
 
     # ── 4. Create "Strategy Composer" quest (powerbox) ──
-    composer = env['ai.quest'].create({
+    composer = env['ai.coworker'].create({
         'name': 'Strategy Composer',
         'description': (
             'AI-powered business plan generator. Trigger from any strategy '
@@ -991,8 +991,8 @@ def post_init_hook(env):
         (agent_map['agent_executor'], 5),
     ]
     for agent, seq in quest_agents:
-        env['ai.quest.agent'].create({
-            'quest_id': composer.id,
+        env['ai.coworker.agent'].create({
+            'coworker_id': composer.id,
             'agent_id': agent.id,
             'sequence': seq,
         })
@@ -1000,7 +1000,7 @@ def post_init_hook(env):
     _logger.info('Created quest "%s" with %d agents', composer.name, len(quest_agents))
 
     # ── 5. Create "Strategy Advisor" quest (chat) ──
-    advisor = env['ai.quest'].create({
+    advisor = env['ai.coworker'].create({
         'name': 'Strategy Advisor',
         'description': (
             'Free-form strategy consultant. Ask any strategy question — '
@@ -1022,8 +1022,8 @@ def post_init_hook(env):
         (agent_map['agent_strategist'], 1),
         (agent_map['agent_executor'], 2),
     ]:
-        env['ai.quest.agent'].create({
-            'quest_id': advisor.id,
+        env['ai.coworker.agent'].create({
+            'coworker_id': advisor.id,
             'agent_id': agent.id,
             'sequence': seq,
         })
@@ -1032,7 +1032,7 @@ def post_init_hook(env):
 
     # ── 6. Create "Strategy Review" quest (manual, cron-ready) ──
     # Cron config can be added later via ir.actions.server + ir.cron.
-    review = env['ai.quest'].create({
+    review = env['ai.coworker'].create({
         'name': 'Strategy Review',
         'description': (
             'Weekly strategy kaizen. Reviews all active strategic plans, '
@@ -1049,8 +1049,8 @@ def post_init_hook(env):
     })
 
     # Review uses executor only (synthesizes everything)
-    env['ai.quest.agent'].create({
-        'quest_id': review.id,
+    env['ai.coworker.agent'].create({
+        'coworker_id': review.id,
         'agent_id': agent_map['agent_executor'].id,
         'sequence': 1,
     })
@@ -1060,7 +1060,7 @@ def post_init_hook(env):
     meeting_model = env['ir.model'].search([('model', '=', 'strategy.meeting')], limit=1)
     model_ids = [(6, 0, [meeting_model.id])] if meeting_model else []
 
-    meeting_prep = env['ai.quest'].create({
+    meeting_prep = env['ai.coworker'].create({
         'name': 'Meeting Prep',
         'description': (
             'Prepare a strategic meeting with AI-generated agenda briefs. '
@@ -1075,15 +1075,15 @@ def post_init_hook(env):
         'use_time_context': True,
         'model_ids': model_ids,
     })
-    env['ai.quest.agent'].create({
-        'quest_id': meeting_prep.id,
+    env['ai.coworker.agent'].create({
+        'coworker_id': meeting_prep.id,
         'agent_id': agent_map['agent_board_secretary'].id,
         'sequence': 1,
     })
     _logger.info('Created quest "%s"', meeting_prep.name)
 
     # ── 8. Create "Meeting Minutes" quest (powerbox) ──
-    meeting_minutes = env['ai.quest'].create({
+    meeting_minutes = env['ai.coworker'].create({
         'name': 'Meeting Minutes',
         'description': (
             'Generate structured meeting minutes from a completed meeting. '
@@ -1097,15 +1097,15 @@ def post_init_hook(env):
         'use_time_context': True,
         'model_ids': model_ids,
     })
-    env['ai.quest.agent'].create({
-        'quest_id': meeting_minutes.id,
+    env['ai.coworker.agent'].create({
+        'coworker_id': meeting_minutes.id,
         'agent_id': agent_map['agent_board_secretary'].id,
         'sequence': 1,
     })
     _logger.info('Created quest "%s"', meeting_minutes.name)
 
     # ── 9. Create "Meeting Secretary" quest (cron, daily) ──
-    meeting_secretary = env['ai.quest'].create({
+    meeting_secretary = env['ai.coworker'].create({
         'name': 'Meeting Secretary',
         'description': (
             'Daily check of open decisions and governance items. '
@@ -1119,8 +1119,8 @@ def post_init_hook(env):
         'use_chat_history': False,
         'use_time_context': True,
     })
-    env['ai.quest.agent'].create({
-        'quest_id': meeting_secretary.id,
+    env['ai.coworker.agent'].create({
+        'coworker_id': meeting_secretary.id,
         'agent_id': agent_map['agent_board_secretary'].id,
         'sequence': 1,
     })
