@@ -1,110 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <!-- AI Orchestration Dashboard — Kanban per hr.department (Odoo 18) -->
+    <!-- AI Orchestration Dashboard — hr.department kanban (ärvd standardvy)
 
-    <record id="view_ai_orchestration_dashboard" model="ir.ui.view">
-        <field name="name">ai.orchestration.dashboard</field>
-        <field name="model">hr.department</field>
-        <field name="priority">99</field>
-        <field name="arch" type="xml">
-            <kanban class="o_kanban_mobile">
-                <field name="name"/>
-                <field name="manager_id"/>
-                <field name="ai_manager_id"/>
-                <field name="total_ai_staff"/>
-                <field name="ai_coworker_ids"/>
-                <templates>
-                    <t t-name="card">
-                        <div class="oe_kanban_card oe_kanban_global_click">
-                            <div class="o_kanban_card_header">
-                                <div class="o_kanban_card_header_title">
-                                    <strong><field name="name"/></strong>
-                                </div>
-                                <div class="o_kanban_card_header_right">
-                                    <t t-if="record.ai_manager_id.raw_value">
-                                        <span class="badge bg-info">🤖 <field name="ai_manager_id"/></span>
-                                    </t>
-                                    <t t-if="!record.ai_manager_id.raw_value and record.manager_id.raw_value">
-                                        <span class="badge bg-secondary">👤 <field name="manager_id"/></span>
-                                    </t>
-                                </div>
-                            </div>
-
-                            <div class="o_kanban_card_content">
-                                <div class="row mt-2">
-                                    <div class="col-12">
-                                        <span class="badge bg-primary me-1">
-                                            🤖 <t t-esc="record.total_ai_staff.raw_value or '0'"/> AI-medarbetare
-                                        </span>
-                                    </div>
-                                </div>
-
-                                <!-- Live AI Coworker sub-cards -->
-                                <t t-if="record.ai_coworker_ids.raw_value">
-                                    <t t-foreach="record.ai_coworker_ids.raw_value" t-as="coworker">
-                                        <div class="mt-2 p-2 border rounded bg-light">
-                                            <div class="d-flex justify-content-between align-items-center">
-                                                <span>
-                                                    <t t-if="coworker.heartbeat_enabled">
-                                                        <span class="text-success" title="Heartbeat aktiv">●</span>
-                                                    </t>
-                                                    <t t-if="!coworker.heartbeat_enabled">
-                                                        <span class="text-muted" title="Heartbeat avstängt">○</span>
-                                                    </t>
-                                                    <strong><t t-esc="coworker.name"/></strong>
-                                                </span>
-                                                <span class="badge bg-warning text-dark">
-                                                    <t t-esc="coworker.session_line_count or '0'"/> tokens
-                                                </span>
-                                            </div>
-                                            <div class="mt-1 small text-muted d-flex justify-content-between">
-                                                <span>
-                                                    <t t-if="coworker.status == 'active'">
-                                                        <span class="text-success">● Aktiv</span>
-                                                    </t>
-                                                    <t t-if="coworker.status == 'draft'">
-                                                        <span class="text-muted">○ Utkast</span>
-                                                    </t>
-                                                </span>
-                                                <span>
-                                                    <t t-if="coworker.last_heartbeat">
-                                                        💓 <t t-esc="coworker.last_heartbeat"/>
-                                                    </t>
-                                                    <t t-if="!coworker.last_heartbeat">
-                                                        ⏳ Väntar
-                                                    </t>
-                                                </span>
-                                            </div>
-                                        </div>
-                                    </t>
-                                </t>
-                                <t t-if="!record.ai_coworker_ids.raw_value">
-                                    <div class="mt-2 text-muted small">
-                                        <i>Inga AI-medarbetare — starta onboarding!</i>
-                                    </div>
-                                </t>
-                            </div>
-
-                            <div class="o_kanban_card_footer">
-                                <i class="text-muted small">Klicka för att konfigurera</i>
-                            </div>
-                        </div>
-                    </t>
-                </templates>
-            </kanban>
-        </field>
-    </record>
+         Sedan change ai-orchestration-tidy-up använder dashboarden samma
+         ärvda vy som HR (hr.hr_department_view_kanban + inherit
+         hr_department_kanban_inherit_ai i hr_department_views.xml).
+         Den egna custom-kanbanen (view_ai_orchestration_dashboard) är borttagen
+         — en källa till sanning. -->
 
     <!-- Dashboard action -->
     <record id="action_ai_orchestration_dashboard" model="ir.actions.act_window">
         <field name="name">AI Orkestrering</field>
         <field name="res_model">hr.department</field>
         <field name="view_mode">kanban</field>
-        <field name="view_id" ref="view_ai_orchestration_dashboard"/>
         <field name="help" type="html">
             <p><strong>AI Orchestration Dashboard</strong></p>
             <p>Här ser du hela din AI-organisation — avdelningar, AI-medarbetare, status och hälsa.</p>
-            <p>💡 Klicka på "🚀 Starta onboarding" i menyn för att bygga din organisation.</p>
+            <p>💡 Kugghjulet på varje kort: "🚀 Starta onboarding" bygger organisationen, "🔄 Starta om" kör om intervjun.</p>
         </field>
     </record>
 

@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- =====================================================================
+         Legacy ai_agent-menyrensning (change ai-orchestration-tidy-up, c)
+
+         Tar bort ALLA menyer från den gamla ai_agent-modulen. Modulen är inte
+         installerad i nuvarande miljöer — dessa <delete> är defensiva: om
+         ai_agent någonsin installeras ska dess menyer inte skräpa i UI:t.
+         Föräldrar först efter barn så att inga ir_model_data-rader blir
+         överblivna.
+
+         Moderna motsvarigheter finns under ai_agent_core Configuration:
+         Skills, Tools, Memory, Session (+ Odoo Mind Dashboard, Inställningar).
+         ===================================================================== -->
+
+    <!-- Configuration-barn (ai_agent.menu_ai_agent_configuration) -->
+    <delete model="ir.ui.menu" id="ai_agent_config_settings_menu"/>
+    <delete model="ir.ui.menu" id="ai_agent.menu_product_product"/>
+    <delete model="ir.ui.menu" id="ai_agent.menu_ai_quest_session"/>
+    <delete model="ir.ui.menu" id="ai_agent.menu_ai_session_object"/>
+    <delete model="ir.ui.menu" id="ai_agent.menu_ai_quest_session_message"/>
+    <delete model="ir.ui.menu" id="ai_agent.menu_ai_quest_session_line"/>
+    <delete model="ir.ui.menu" id="ai_agent.menu_ai_agent_llm"/>
+    <delete model="ir.ui.menu" id="ai_agent.menu_ai_llm_attribute_value"/>
+    <delete model="ir.ui.menu" id="ai_agent.menu_ai_tool"/>
+    <delete model="ir.ui.menu" id="ai_agent.menu_ai_memory"/>
+
+    <!-- Mellannivå -->
+    <delete model="ir.ui.menu" id="ai_agent.menu_ai_agent_configuration"/>
+    <delete model="ir.ui.menu" id="ai_agent.menu_ai_agent_menu_menu"/>
+    <delete model="ir.ui.menu" id="ai_agent.menu_ai_quest"/>
+    <delete model="ir.ui.menu" id="ai_agent.menu_ai_agent_menu"/>
+
+    <!-- Root (sist) -->
+    <delete model="ir.ui.menu" id="ai_agent.menu_ai_agent_root"/>
+</odoo>

@@ -42,4 +42,111 @@
             </field>
         </field>
     </record>
+    <!-- Inherit hr.department kanban — AI info + onboarding (change ai-orchestration-tidy-up, a+b) -->
+    <!-- En källa till sanning: HR:s standardkanban ärvas, AI-dashboarden pekar om till samma vy -->
+    <record id="hr_department_kanban_inherit_ai" model="ir.ui.view">
+        <field name="name">hr.department.kanban.inherit.ai</field>
+        <field name="model">hr.department</field>
+        <field name="inherit_id" ref="hr.hr_department_view_kanban"/>
+        <field name="arch" type="xml">
+            <!-- Fält som kanban-korten behöver läsa -->
+            <field name="active" position="after">
+                <field name="ai_manager_id"/>
+                <field name="total_ai_staff"/>
+                <field name="health"/>
+                <field name="ai_coworker_ids"/>
+            </field>
+
+            <!-- AI-chef + hälsa i kort-headern -->
+            <field name="manager_id" position="after">
+                <div class="d-flex gap-1 mt-1 ms-2" groups="ai_agent_core.group_ai_officer">
+                    <t t-if="record.ai_manager_id.raw_value">
+                        <span class="badge bg-info">🤖 <field name="ai_manager_id"/></span>
+                    </t>
+                    <t t-if="!record.ai_manager_id.raw_value and record.manager_id.raw_value">
+                        <span class="badge bg-secondary">👤 <field name="manager_id"/></span>
+                    </t>
+                    <field name="health" widget="badge"
+                           decoration-success="health == 'green'"
+                           decoration-warning="health == 'yellow'"
+                           decoration-danger="health == 'red'"/>
+                </div>
+            </field>
+
+            <!-- AI-staff-knapp (kanban_primary_right) -->
+            <div name="kanban_primary_right" position="inside">
+                <button class="btn btn-outline-primary w-100"
+                        name="action_get_ai_staff" type="object"
+                        groups="ai_agent_core.group_ai_officer">
+                    🤖 <field name="total_ai_staff"/> AI-medarbetare
+                </button>
+            </div>
+
+            <!-- AI-coworker sub-kort (kanban_card_lower_content) -->
+            <div name="kanban_card_lower_content" position="inside">
+                <div class="mt-2" groups="ai_agent_core.group_ai_officer">
+                    <t t-if="record.ai_coworker_ids.raw_value">
+                        <t t-foreach="record.ai_coworker_ids.raw_value" t-as="coworker">
+                            <div class="mt-1 p-2 border rounded bg-light">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <span>
+                                        <t t-if="coworker.heartbeat_enabled">
+                                            <span class="text-success" title="Heartbeat aktiv">●</span>
+                                        </t>
+                                        <t t-if="!coworker.heartbeat_enabled">
+                                            <span class="text-muted" title="Heartbeat avstängt">○</span>
+                                        </t>
+                                        <strong><t t-esc="coworker.name"/></strong>
+                                    </span>
+                                    <span class="badge bg-warning text-dark">
+                                        <t t-esc="coworker.session_line_count or '0'"/> tokens
+                                    </span>
+                                </div>
+                                <div class="mt-1 small text-muted d-flex justify-content-between">
+                                    <span>
+                                        <t t-if="coworker.status == 'active'">
+                                            <span class="text-success">● Aktiv</span>
+                                        </t>
+                                        <t t-if="coworker.status == 'draft'">
+                                            <span class="text-muted">○ Utkast</span>
+                                        </t>
+                                    </span>
+                                    <span>
+                                        <t t-if="coworker.last_heartbeat">
+                                            💓 <t t-esc="coworker.last_heartbeat"/>
+                                        </t>
+                                        <t t-if="!coworker.last_heartbeat">
+                                            ⏳ Väntar
+                                        </t>
+                                    </span>
+                                </div>
+                            </div>
+                        </t>
+                    </t>
+                    <t t-if="!record.ai_coworker_ids.raw_value">
+                        <div class="mt-2 text-muted small">
+                            <i>Inga AI-medarbetare — starta onboarding!</i>
+                        </div>
+                    </t>
+                </div>
+            </div>
+
+            <!-- Onboarding i kugghjulsmenyn -->
+            <xpath expr="//div[hasclass('o_kanban_card_manage_settings')]" position="after">
+                <div class="row" groups="ai_agent_core.group_ai_officer">
+                    <div class="col-12">
+                        <h5 role="menuitem" class="o_kanban_card_manage_title">
+                            <span>AI-organisation</span>
+                        </h5>
+                        <a role="menuitem" type="action"
+                           name="ir_action_server_start_onboarding"
+                           class="dropdown-item">🚀 Starta onboarding</a>
+                        <a role="menuitem" type="action"
+                           name="ir_action_server_restart_onboarding"
+                           class="dropdown-item">🔄 Starta om</a>
+                    </div>
+                </div>
+            </xpath>
+        </field>
+    </record>
 </odoo>

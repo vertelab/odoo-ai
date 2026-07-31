@@ -193,6 +193,50 @@ async def _tool_fetch_url(url: str = "") -> str:
         return f"Fetch error: {e}"
 
 
+def ai_tool_records_to_tools(records, env=None) -> list[Tool]:
+    """Convert ai.tool records to executable core Tool objects.
+
+    Change ai-orchestration-tidy-up 7.5: buzz-agenter ska kunna köra med
+    EGNA tools (via identity_id.tool_ids / ai.tool) istället för att bara
+    ärva coworkerns hela verktygssats. Varje tool exekveras genom
+    ai.tool._execute_tool() (sandboxad Python-kod).
+    """
+    import json as _json
+    tools = []
+    for record in records:
+        try:
+            params = _json.loads(record.parameters or '{}') or {}
+        except Exception:
+            params = {}
+        schema = {
+            'type': 'object',
+            'properties': params.get('properties', {}) if isinstance(params, dict) else {},
+            'required': params.get('required', []) if isinstance(params, dict) else [],
+        }
+
+        async def _handler(_rec=record, **kwargs):
+            try:
+                return _rec._execute_tool(kwargs)
+            except Exception as e:
+                return f'Tool {_rec.name} failed: {e}'
+
+        tools.append(Tool(
+            name=record.name,
+            description=record.description or record.name,
+            parameters=schema,
+            handler=_handler,
+            risk_level=record.risk_level or 'read_only',
+            executor=record.executor or 'local',
+            capabilities=(
+                [c.strip() for c in record.capabilities.split(',') if c.strip()]
+                if record.capabilities else []),
+            nats_subject=record.nats_subject or 'pi.task.do',
+            nats_skills=record.nats_skills or '',
+            nats_timeout=record.nats_timeout or 30,
+        ))
+    return tools
+
+
 def builtin_tools() -> list[Tool]:
     """Return built-in test tools for development."""
     return [

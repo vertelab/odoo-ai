@@ -31,13 +31,6 @@ _logger = logging.getLogger(__name__)
 @dataclass
 class SupervisorConfig:
     """Configuration for a SupervisorLoop."""
-    router_model: str = "gpt-4o"           # Model for routing decisions
-    router_system_prompt: str = (          # How the router selects agents
-        "You are a routing assistant. Given a user request and a list of available agents, "
-        "choose the best agent to handle the request. Respond with ONLY a JSON object: "
-        '{"agent": "<name>", "reason": "<brief explanation>"} or '
-        '{"agents": ["<name1>", "<name2>"], "reason": "<explanation>"} for multi-agent tasks.'
-    )
     # Orchestration skill recipe (overrides defaults when provided)
     skill_recipe: str = ""                # recipe_text from orchestration.supervisor skill
     max_rounds: int = 3                    # Max routing attempts before fallback
@@ -46,6 +39,13 @@ class SupervisorConfig:
     fan_out_concurrency: int = 3           # Max parallel agents in fan-out mode
     max_iterations: int = 3                # Max refinement rounds in task delegation
     min_confidence: float = 0.8            # Confidence threshold for evaluation
+    router_model: str = ""                 # Model för routing ('' → caller/provider)
+    router_system_prompt: str = (          # How the router selects agents
+        "You are a routing assistant. Given a user request and a list of available agents, "
+        "choose the best agent to handle the request. Respond with ONLY a JSON object: "
+        '{"agent": "<name>", "reason": "<brief explanation>"} or '
+        '{"agents": ["<name1>", "<name2>"], "reason": "<explanation>"} for multi-agent tasks.'
+    )
 
 
 @dataclass
@@ -107,57 +107,14 @@ class SupervisorLoop:
     ) -> ChatResponse:
         """Run all agents on same question, select best answer.
 
-        Args:
-            prompt: The user's question
-            history: Optional conversation history
-            mode: 'confidence' (default) | 'synthesis'
+        Delegerar till core.ConferenceLoop (change ai-orchestration-tidy-up 6.3).
+        mode: 'confidence' (default) | 'majority' | 'synthesis'.
         """
-        if len(self.agents) == 1:
-            agent = list(self.agents.values())[0]
-            return await agent.loop.run(prompt, history)
-
-        semaphore = asyncio.Semaphore(self.config.fan_out_concurrency)
-
-        async def run_agent(name, agent):
-            async with semaphore:
-                return name, await agent.loop.run(prompt, history)
-
-        tasks = [run_agent(name, a) for name, a in self.agents.items()]
-        results = await asyncio.gather(*tasks)
-
-        if mode == "synthesis":
-            return await self._conference_synthesis(prompt, results)
-        # Default: confidence-based selection
-        best = max(results, key=lambda r: r[1].output_tokens or 0)
-        total_in = sum(r.input_tokens for _, r in results)
-        total_out = sum(r.output_tokens for _, r in results)
-        return ChatResponse(
-            text=f"[Bästa svar från: {best[0]}]\n\n{best[1].text}",
-            input_tokens=total_in, output_tokens=total_out,
-            finish_reason="stop",
-        )
-
-    async def _conference_synthesis(self, prompt, results):
-        """Synthesize all answers into one."""
-        agent_outputs = "\n\n".join(
-            f"### {name}\n{resp.text}" for name, resp in results)
-        merge_prompt = (
-            f"Original: {prompt}\n\nResponses:\n{agent_outputs}\n\n"
-            f"Synthesize into ONE cohesive response.")
-        try:
-            response = await self.router_provider.chat(
-                model=self.config.router_model,
-                messages=[Message(role=Role.USER, content=merge_prompt)],
-                system_prompt="Merge answers.", temperature=0.3, max_tokens=2048,
-            )
-            total_in = sum(r.input_tokens for _, r in results) + response.input_tokens
-            total_out = sum(r.output_tokens for _, r in results) + response.output_tokens
-            return ChatResponse(text=response.text,
-                input_tokens=total_in, output_tokens=total_out,
-                finish_reason="stop")
-        except Exception as e:
-            _logger.warning("Conference synthesis failed: %s", e)
-            return results[0][1]
+        from odoo.addons.ai_agent_core.core.conference import ConferenceLoop
+        loop = ConferenceLoop(
+            self.router_provider, list(self.agents.values()),
+            self.config, mechanism=mode)
+        return await loop.run(prompt, history)
 
     async def run(
         self,
@@ -395,61 +352,24 @@ class SupervisorLoop:
         return self.config.router_system_prompt
 
     async def _route(self, prompt: str) -> dict:
-        """Ask the router LLM which agent(s) should handle this prompt."""
-        agent_descriptions = "\n".join(
-            f"- **{a.name}**: {a.description}"
-            + (f" Triggers: {', '.join(a.triggers)}" if a.triggers else "")
+        """Ask the router LLM which agent(s) should handle this prompt.
+
+        Delar router-logik med buzz via core.router.LLMRouter
+        (change ai-orchestration-tidy-up 6.4). Fallback: nyckelords-matchning.
+        """
+        from odoo.addons.ai_agent_core.core.router import LLMRouter
+        router = LLMRouter(self.router_provider, self.config.router_model)
+        agents = [
+            {'name': a.name, 'description': a.description,
+             'triggers': a.triggers}
             for a in self.agents.values()
+        ]
+        agent_descriptions = "\n".join(
+            f"- **{a.name}**: {a.description}" for a in self.agents.values())
+        return await router.route(
+            prompt, agents,
+            system_prompt=self._effective_router_prompt(agent_descriptions),
         )
-
-        router_prompt = (
-            f"Available agents:\n{agent_descriptions}\n\n"
-            f"User request: {prompt}\n\n"
-            f"Which agent(s) should handle this? Respond with JSON only."
-        )
-
-        try:
-            response = await asyncio.wait_for(
-                self.router_provider.chat(
-                    model=self.config.router_model,
-                    messages=[Message(role=Role.USER, content=router_prompt)],
-                    system_prompt=self._effective_router_prompt(agent_descriptions),
-                    temperature=0.1,
-                    max_tokens=256,
-                ),
-                timeout=30,
-            )
-
-            # Parse JSON from response
-            text = (response.text or "").strip()
-            # Extract JSON block if wrapped in markdown
-            if "```" in text:
-                text = text.split("```")[1]
-                if text.startswith("json"):
-                    text = text[4:]
-                text = text.strip()
-            return json.loads(text)
-
-        except (json.JSONDecodeError, asyncio.TimeoutError, Exception) as e:
-            _logger.warning("Router failed: %s — using keyword matching fallback", e)
-            return self._keyword_route(prompt)
-
-    def _keyword_route(self, prompt: str) -> dict:
-        """Fallback routing: match trigger keywords."""
-        prompt_lower = prompt.lower()
-        best_agent = self.config.default_agent
-        best_score = 0
-
-        for agent in self.agents.values():
-            score = sum(
-                1 for kw in agent.triggers
-                if kw.lower() in prompt_lower
-            )
-            if score > best_score:
-                best_score = score
-                best_agent = agent.name
-
-        return {"agent": best_agent, "reason": "keyword match"}
 
     async def _fan_out(
         self,

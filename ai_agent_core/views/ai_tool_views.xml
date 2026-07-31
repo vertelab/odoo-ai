@@ -8,9 +8,9 @@
     </record>
 
     <!-- Menu item -->
-    <menuitem id="menu_ai_tool" name="Custom Tools"
+    <menuitem id="menu_ai_tool" name="Tools"
               parent="menu_ai_configuration" action="action_ai_tool"
-              sequence="35"/>
+              sequence="25"/>
 
     <!-- Tool list view -->
     <record id="view_ai_tool_tree" model="ir.ui.view">

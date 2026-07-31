@@ -44,6 +44,37 @@ class ResUsers(models.Model):
         for r in self:
             r.personal_memory_count = len(r.personal_memory_ids)
 
+    # ── Personal Goals (ai.personal.goal) ──
+    personal_goal_ids = fields.One2many(
+        'ai.personal.goal', 'user_id',
+        string='Personal Goals',
+        help='Alla personliga mål för denna användare.')
+
+    personal_goal_count = fields.Integer(
+        string='Goal Count',
+        compute='_compute_personal_goal_count',
+        help='Antal personliga mål för denna användare.')
+
+    @api.depends('personal_goal_ids')
+    def _compute_personal_goal_count(self):
+        for r in self:
+            r.personal_goal_count = len(r.personal_goal_ids)
+
+    def action_open_personal_goals(self):
+        """Smartknapp: öppna användarens egna mål (Min Profil)."""
+        self.ensure_one()
+        return {
+            'name': 'Personal Goals',
+            'type': 'ir.actions.act_window',
+            'res_model': 'ai.personal.goal',
+            'view_mode': 'list,form',
+            'target': 'current',
+            'domain': [('user_id', '=', self.id)],
+            'context': {
+                'default_user_id': self.id,
+            },
+        }
+
     def action_open_personal_memory(self):
         """Smart button: öppna användarens personliga minnen."""
         self.ensure_one()

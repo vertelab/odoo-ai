@@ -12,7 +12,7 @@
 
     <!-- Menu: Configuration → AI → Graph Definitions -->
     <menuitem id="menu_ai_graph" name="Odoo Mind Graph"
-              parent="menu_ai_configuration" sequence="40"
+              parent="menu_ai_configuration" sequence="65"
               action="action_graph_node_definition"/>
 
     <!-- Tree view -->

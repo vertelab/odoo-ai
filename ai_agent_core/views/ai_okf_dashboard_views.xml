@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <!-- Odoo Mind Dashboard — admin-övervakning + manuella körningar (task 5.3) -->
+    <!-- Odoo Mind Dashboard — admin-övervakning + manuella körningar
+         (change ai-orchestration-tidy-up, g): en rad per kategori med
+         hälsa, räkningar, indexer-uppgifter och kör-knappar. -->
 
     <record id="view_ai_okf_dashboard_form" model="ir.ui.view">
         <field name="name">ai.okf.dashboard.form</field>
@@ -28,40 +30,69 @@
                         <field name="cron_status" readonly="1" class="font-monospace small"/>
                     </group>
 
-                    <group string="Manuella körningar">
-                        <div class="row">
-                            <div class="col-6">
-                                <button name="action_index_all" type="object"
-                                        string="🔄 Indexera allt"
-                                        class="btn-primary btn-block mb-2"/>
-                            </div>
-                            <div class="col-6">
-                                <button name="action_index_month" type="object"
-                                        string="📅 Indexera ändrade denna månad"
-                                        class="btn-secondary btn-block mb-2"/>
-                            </div>
-                            <div class="col-6">
-                                <button name="action_index_today" type="object"
-                                        string="⏱ Indexera ändrade idag"
-                                        class="btn-secondary btn-block mb-2"/>
-                            </div>
-                            <div class="col-6">
-                                <div class="d-flex align-items-center">
-                                    <button name="action_index_category" type="object"
-                                            string="🗂 Indexera per kategori"
-                                            class="btn-secondary me-2"/>
+                    <notebook>
+                        <page name="categories" string="Kategorier">
+                            <group string="Hälsa per kategori (artefakttyp)">
+                                <field name="line_ids" nolabel="1">
+                                    <list>
+                                        <field name="health" widget="badge"
+                                               decoration-success="health == 'green'"
+                                               decoration-warning="health == 'yellow'"
+                                               decoration-danger="health == 'red'"
+                                               string="Hälsa"/>
+                                        <field name="name" string="Kategori"/>
+                                        <field name="kind"/>
+                                        <field name="concept_count"/>
+                                        <field name="dirty_count"/>
+                                        <field name="superseded_count" optional="hide"/>
+                                        <field name="stale_count" optional="hide"/>
+                                        <field name="node_count" optional="hide" string="AGE-noder"/>
+                                        <field name="size_estimate" optional="hide" string="Storlek"/>
+                                        <field name="last_run" optional="hide"/>
+                                        <field name="health_reason" string="Orsak" optional="show"/>
+                                        <field name="indexer_tasks" string="Indexer-uppgifter" optional="hide"/>
+                                        <button name="action_index_dirty" type="object"
+                                                string="Indexera dirty"
+                                                class="btn-primary"
+                                                icon="fa-play"/>
+                                        <button name="action_index_all" type="object"
+                                                string="Allt" class="btn-secondary"/>
+                                        <button name="action_index_month" type="object"
+                                                string="Månad" class="btn-secondary"/>
+                                        <button name="action_index_today" type="object"
+                                                string="Idag" class="btn-secondary"/>
+                                    </list>
+                                </field>
+                            </group>
+                        </page>
+                        <page name="manual_runs" string="Manuella körningar (globalt)">
+                            <group>
+                                <div class="row">
+                                    <div class="col-6">
+                                        <button name="action_index_all" type="object"
+                                                string="🔄 Indexera allt"
+                                                class="btn-primary btn-block mb-2"/>
+                                    </div>
+                                    <div class="col-6">
+                                        <button name="action_index_month" type="object"
+                                                string="📅 Indexera ändrade denna månad"
+                                                class="btn-secondary btn-block mb-2"/>
+                                    </div>
+                                    <div class="col-6">
+                                        <button name="action_index_today" type="object"
+                                                string="⏱ Indexera ändrade idag"
+                                                class="btn-secondary btn-block mb-2"/>
+                                    </div>
+                                    <div class="col-12 mt-2">
+                                        <button name="action_migrate_legacy" type="object"
+                                                string="🧬 Migrera legacy-data → OKF"
+                                                class="btn-warning"/>
+                                    </div>
                                 </div>
-                            </div>
-                            <div class="col-12 mt-2">
-                                <field name="artifact_type_ids" widget="many2many_tags"
-                                       options="{'no_create': True}"/>
-                            </div>
-                        </div>
-                        <button name="action_migrate_legacy" type="object"
-                                string="🧬 Migrera legacy-data → OKF"
-                                class="btn-warning mt-2"/>
-                        <field name="run_result" readonly="1" class="mt-2"/>
-                    </group>
+                                <field name="run_result" readonly="1" class="mt-2"/>
+                            </group>
+                        </page>
+                    </notebook>
                 </sheet>
             </form>
         </field>
@@ -77,7 +108,8 @@
             <p><strong>🧠 Odoo Mind Dashboard</strong></p>
             <p>Administratörens övervakningsyta: graph, minne, cron-jobb
             och manuella körningar.</p>
-            <p>💡 Manuella körningar använder samma
+            <p>💡 Varje kategori har hälsa (🟢/🟡/🔴) och egna kör-knappar.
+            Manuella körningar använder samma
             <code>_okf_upsert()</code>-path som cron — med tidsfönster
             eller kategori-filter.</p>
         </field>

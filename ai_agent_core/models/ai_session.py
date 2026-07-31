@@ -30,6 +30,15 @@ class AIQuestSession(models.Model):
     config_json = fields.Text('Configuration')
     history_json = fields.Text('Message History')
 
+    # Buzz session summary (change ai-orchestration-tidy-up 7.4)
+    summary = fields.Text(
+        'Session Summary',
+        help='LLM-genererad sammanfattning av konversationen — injiceras som '
+             'kontext till nya agenter när tröskeln passeras.')
+    summary_message_count = fields.Integer(
+        'Summary Message Count', default=0,
+        help='Antal meddelanden vid senaste sammanfattningen.')
+
     token_input = fields.Integer('Input Tokens', default=0)
     token_output = fields.Integer('Output Tokens', default=0)
     cost_estimated = fields.Float('Cost (USD)', default=0.0)

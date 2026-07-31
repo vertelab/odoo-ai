@@ -93,7 +93,11 @@ class AIQuest(models.Model):
 
     agent_ids = fields.One2many('ai.coworker.agent', 'coworker_id', string='Agents')
     agent_count = fields.Integer(compute='_compute_agent_count')
-    is_supervisor = fields.Boolean('Supervisor Mode')
+    is_supervisor = fields.Boolean(
+        'Supervisor Mode', readonly=True,
+        help='DEPRECATED (change ai-orchestration-tidy-up 6.5): använd '
+             'orchestration_mode="supervisor" istället. Fältet synkas bakåt '
+             'från orchestration_mode och är inte längre redigerbart.')
 
     orchestration_mode = fields.Selection([
         ('single', 'Single Agent'),
@@ -105,6 +109,15 @@ class AIQuest(models.Model):
     ], string='Orchestration Mode', default='single',
         help='How multiple agents collaborate in this quest. '
              'Buzz makes agents visible as channel members.')
+
+    conference_mechanism = fields.Selection([
+        ('confidence', 'Confidence (högst vinner)'),
+        ('majority', 'Majoritet (röstning)'),
+        ('synthesis', 'Syntes (LLM slår samman)'),
+    ], string='Conference-mekanism', default='confidence',
+        help='Hur konferensläget väljer bästa svar (change '
+             'ai-orchestration-tidy-up 7.3). Kan överridas per-anrop via '
+             'context-nyckeln conference_mechanism.')
 
     # ── Workspace Hermes injection level (D6) ──
     injection_level = fields.Selection([
@@ -164,6 +177,31 @@ class AIQuest(models.Model):
         if self.is_supervisor:
             return 'supervisor'
         return 'single'
+
+    def _ensure_orchestration_skill(self):
+        """Se till att orchestration.supervisor-skillen är kopplad.
+
+        Change ai-orchestration-tidy-up 6.1: skill-baserad supervisor är
+        DEFAULT. Om coworkern är i supervisor-läge utan orchestration-skill
+        kopplas standard-skillen automatiskt istället för att falla tillbaka
+        till den hårdkodade SupervisorLoop-vägen.
+
+        Returnerar recipe_text för den aktiva skillen ('' om ingen).
+        """
+        self.ensure_one()
+        skill = self.skill_ids.filtered(
+            lambda s: s.name and 'orchestration' in (s.name or '').lower())
+        if skill:
+            return skill[0].recipe_text or skill[0].improvement_guidance or ''
+        default = self.env['ai.skill'].sudo().search(
+            [('name', '=', 'orchestration.supervisor')], limit=1)
+        if default:
+            self.sudo().write({'skill_ids': [(4, default.id, 0)]})
+            _logger.info(
+                'Auto-kopplade orchestration.supervisor till coworker %s',
+                self.name)
+            return default.recipe_text or default.improvement_guidance or ''
+        return ''
 
     # Kanban images (related for efficient kanban display)
     partner_image_128 = fields.Binary(related='partner_id.image_128',
@@ -932,36 +970,53 @@ class AIQuest(models.Model):
         return agent_rels[0]
 
     def _buzz_llm_route(self, body, agent_rels):
-        """Use LLM to select the best agent for a message."""
-        import json
-        agent_descs = "\n".join(
-            f"- {r.agent_id.name}: {r.agent_id.description or r.agent_id.ai_role or ''}"
-            for r in agent_rels)
-        prompt = (
-            f"Available agents:\n{agent_descs}\n\n"
-            f"Message: {body[:200]}\n\n"
-            f"Which agent should respond? Return JSON: {{\"agent\": \"<name>\"}}")
-        # Use default provider for routing
-        provider = self._get_provider()
-        if provider:
-            from odoo.addons.ai_agent_core.core.loop import AgentConfig
-            from odoo.addons.ai_agent_core.core.permission import PermissionMode
-            result = provider.chat(
-                model="gpt-4o",
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.1, max_tokens=100)
-            text = result.get('content', '')
-            if '{' in text:
-                text = text[text.index('{'):text.rindex('}')+1]
-                data = json.loads(text)
-                name = data.get('agent', '')
-                for rel in agent_rels:
-                    if rel.agent_id.name == name:
-                        return rel
+        """Use LLM to select the best agent for a message.
+
+        Change ai-orchestration-tidy-up 7.6: använder coworkerns modell
+        (ProviderFactory + shared LLMRouter) — inte hårdkodad gpt-4o.
+        """
+        import asyncio
+        from odoo.addons.ai_agent_core.core.router import LLMRouter
+        from odoo.addons.ai_agent_core.core.provider import ProviderFactory
+
+        provider, model = ProviderFactory.from_coworker(self)
+        if not provider:
+            return None
+
+        agents = [
+            {'name': r.agent_id.name,
+             'description': r.agent_id.description or r.agent_id.ai_role or '',
+             'triggers': []}
+            for r in agent_rels
+        ]
+        router = LLMRouter(provider, model or '')
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                decision = loop.run_until_complete(
+                    router.route(body, agents, max_tokens=100))
+            finally:
+                loop.close()
+        except Exception as e:
+            _logger.warning('Buzz LLM route failed: %s', e)
+            return None
+
+        name = ((decision or {}).get('agent')
+                or ((decision or {}).get('agents') or [None])[0])
+        for rel in agent_rels:
+            if rel.agent_id.name == name:
+                return rel
         return None
 
     def _buzz_run_agent(self, agent_rel, prompt, history_text=''):
-        """Run a single agent using its own model/skills/tools."""
+        """Run a single agent using its own model/skills/tools (7.5).
+
+        Change ai-orchestration-tidy-up:
+          - 7.4: injicerar session summary som kontext
+          - 7.5: agentens EGNA tools/skills (via force_agent i run())
+          - fix: force_model var inte stött av run() → TypeError
+        """
         self.ensure_one()
         agent = agent_rel.agent_id
         system = self.description or ''
@@ -972,9 +1027,19 @@ class AIQuest(models.Model):
         if agent.ai_role:
             system = f"Role: {agent.ai_role}\nGoal: {agent.ai_goal or ''}\n" + system
 
+        # Session summary som kontext (7.4)
+        summary_ctx = ''
+        if self.buzz_channel_session_id \
+                and self.buzz_channel_session_id.summary:
+            summary_ctx = (
+                "\n\n## Sammanfattning av tidigare konversation\n"
+                f"{self.buzz_channel_session_id.summary}")
+
         # Use agent's own model if available
         model = agent.model_id.name if agent and agent.model_id else None
-        return self.run(prompt, system_prompt=system, force_model=model)
+        return self.run(
+            prompt, system_prompt=system + summary_ctx,
+            force_model=model, force_agent=agent)
 
     def _buzz_post_as_agent(self, agent, body, channel, internal=False):
         """Post a message to the channel as the agent's partner."""
@@ -1098,12 +1163,80 @@ class AIQuest(models.Model):
         prefix = ''
         if agent and role == 'assistant':
             prefix = f'[{agent.name}] '
-        return self.env['ai.coworker.session.line'].sudo().create({
+        line = self.env['ai.coworker.session.line'].sudo().create({
             'session_id': session.id,
             'sequence': seq,
             'role': role,
             'content': f'{prefix}{body}'[:4000],
         })
+        # Generera sammanfattning vid tröskeln (change 7.4)
+        self._buzz_maybe_summarize_session(session)
+        return line
+
+    def _buzz_maybe_summarize_session(self, session=None):
+        """Generera session summary när tröskeln passeras (7.4).
+
+        Tröskeln (antal meddelanden) är konfigurerbar via
+        ir.config_parameter ai_agent_core.buzz_summary_threshold (default 50).
+        Sammanfattningen injiceras som kontext till nya agenter via
+        _buzz_run_agent istället för hela råhistoriken.
+        """
+        self.ensure_one()
+        if self.orchestration_mode != 'buzz':
+            return False
+        session = session or self._buzz_ensure_channel_session()
+        threshold = int(self.env['ir.config_parameter'].sudo().get_param(
+            'ai_agent_core.buzz_summary_threshold', '50') or 50)
+        total = len(session.session_line_ids)
+        if total < threshold:
+            return False
+        # Sammanfatta igen först när minst hälften av tröskeln nya
+        # meddelanden tillkommit sedan förra sammanfattningen.
+        if session.summary_message_count and \
+                total - session.summary_message_count < max(threshold // 2, 1):
+            return False
+
+        lines = session.session_line_ids.sorted('sequence')
+        transcript = '\n'.join(
+            f"[{ln.role}] {ln.content[:500]}" for ln in lines[-threshold * 2:])
+        prompt = (
+            f"Sammanfatta följande konversation i ett Buzz-team. "
+            f"Fånga: ämnen, beslut, öppna frågor och agenternas roller. "
+            f"Skriv på svenska, max 300 ord.\n\n{transcript}")
+        try:
+            import asyncio
+            from odoo.addons.ai_agent_core.core.provider import ProviderFactory
+            from odoo.addons.ai_agent_core.core.loop import AgentLoop, AgentConfig
+            provider, model = ProviderFactory.from_coworker(self)
+            if not provider:
+                return False
+            loop = AgentLoop(
+                provider=provider,
+                config=AgentConfig(
+                    model=model or '',
+                    system_prompt='Du sammanfattar konversationer.',
+                    max_rounds=1))
+
+            async def _run():
+                resp = await loop.run(prompt)
+                return resp.text if hasattr(resp, 'text') else str(resp)
+
+            evloop = asyncio.new_event_loop()
+            asyncio.set_event_loop(evloop)
+            try:
+                summary = evloop.run_until_complete(_run())
+            finally:
+                evloop.close()
+            session.sudo().write({
+                'summary': summary[:4000],
+                'summary_message_count': total,
+            })
+            _logger.info('Buzz session %s sammanfattad (%d meddelanden)',
+                         session.id, total)
+            return True
+        except Exception as e:
+            _logger.warning('Buzz session summary failed: %s', e)
+            return False
 
     def _buzz_chat(self, message, channel, msg_text, history_ctx='', depth=0):
         """Handle a channel message in buzz workspace mode."""
@@ -1628,35 +1761,44 @@ class AIQuest(models.Model):
                 ),
             )
 
-        # ── Conference: all agents, best answer wins ──
+        # ── Conference: all agents answer, best answer wins ──
         if mode == 'conference':
-            from odoo.addons.ai_agent_core.core.supervisor import (
-                SupervisorLoop, SupervisorConfig, SpecialistAgent,
-            )
+            from odoo.addons.ai_agent_core.core.conference import ConferenceLoop
+            from odoo.addons.ai_agent_core.core.supervisor import SupervisorConfig
+
+            mechanism = (self.env.context.get('conference_mechanism')
+                         or self.conference_mechanism or 'confidence')
+
+            # Be agenterna svara med {answer, confidence} när mekanismen
+            # kräver det (confidence/majority) — riktig confidence (7.1)
+            conf_suffix = ''
+            if mechanism in ('confidence', 'majority'):
+                conf_suffix = (
+                    '\n\nDu är i konferensläge. Svara med JSON: '
+                    '{"answer": "...", "confidence": 0.0-1.0}. '
+                    'Håll answer-delen komplett och användbar.')
             specialists = self._build_specialists(
-                provider, tools, model, system_prompt, max_rounds)
-            sl = SupervisorLoop(
+                provider, tools, model,
+                system_prompt + conf_suffix, max_rounds)
+            return ConferenceLoop(
                 router_provider=provider, agents=specialists,
-                config=SupervisorConfig(router_model=model))
-            # Wrap as callable that invokes conference
-            class ConferenceWrapper:
-                def __init__(self, sl, agents):
-                    self.sl = sl
-                    self.agents = agents
-                async def run(self, prompt, history=None):
-                    return await self.sl.conference(prompt, history)
-            return ConferenceWrapper(sl, specialists)
+                config=SupervisorConfig(router_model=model),
+                mechanism=mechanism,
+            )
 
         # ── Multi-agent modes (supervisor/buzz) ──
         specialists = self._build_specialists(
             provider, tools, model, system_prompt, max_rounds)
 
-        # Use orchestration.supervisor skill recipe if present
-        skill_recipe = ''
-        for skill in self.skill_ids:
-            if skill.name and 'orchestration' in skill.name.lower():
-                skill_recipe = skill.recipe_text or skill.improvement_guidance or ''
-                break
+        # Skill-baserad supervisor är DEFAULT (change ai-orchestration-tidy-up
+        # 6.1): koppla orchestration.supervisor automatiskt om den saknas.
+        skill_recipe = self._ensure_orchestration_skill() if mode == 'supervisor' else ''
+        if mode != 'supervisor':
+            # Buzz m.fl. — behåll eventuell explicit kopplad orchestration-skill
+            for skill in self.skill_ids:
+                if skill.name and 'orchestration' in skill.name.lower():
+                    skill_recipe = skill.recipe_text or skill.improvement_guidance or ''
+                    break
 
         # Skill-based supervisor: standard AgentLoop with specialist tools
         if skill_recipe:
@@ -2128,7 +2270,8 @@ class AIQuest(models.Model):
         except Exception as e:
             _logger.warning('Failed to send completion notification: %s', e)
 
-    def run(self, prompt, system_prompt=None):
+    def run(self, prompt, system_prompt=None, force_model=None,
+            force_agent=None):
         """Run quest synchronously and return AI response text.
 
         Designed for bridge integrations (html_editor, mail, etc.)
@@ -2137,28 +2280,39 @@ class AIQuest(models.Model):
         Args:
             prompt: The user prompt to send
             system_prompt: Optional override for system prompt
+            force_model: Optional model override (buzz agentens egen modell, 7.5)
+            force_agent: Optional ai.agent — kör med agentens EGNA
+                         skills + tools (identity-bound ai.tool, 7.5)
 
         Returns:
             str: AI response text (plain text, no markdown rendering)
         """
         self.ensure_one()
 
-        # Resolve model from agents or use default
-        model = 'cerebras/gpt-oss-120b'
-        for qa in self.agent_ids:
-            agent = qa.agent_id
-            if agent.provider_type == 'direct' and agent.direct_model:
-                model = agent.direct_model
-                break
-            elif agent.bifrost_model:
-                model = agent.bifrost_model
-                break
+        # Resolve model — force_model (7.5) → agent-modell → standard
+        model = force_model or 'cerebras/gpt-oss-120b'
+        if not force_model:
+            for qa in self.agent_ids:
+                agent = qa.agent_id
+                if agent.provider_type == 'direct' and agent.direct_model:
+                    model = agent.direct_model
+                    break
+                elif agent.bifrost_model:
+                    model = agent.bifrost_model
+                    break
 
         # Build system prompt
         if system_prompt is None:
             system_prompt = self.description or ''
             if self.identity_id:
                 system_prompt = self.identity_id.system_prompt or system_prompt
+
+        # Agentens EGNA skills i systemprompten (7.5)
+        if force_agent and force_agent.skill_ids:
+            skill_ctx = '\n\n## Agent Skills\n' + '\n'.join(
+                f'### {s.name}\n{s.recipe_text or s.description or ""}'
+                for s in force_agent.skill_ids)
+            system_prompt = (system_prompt or '') + skill_ctx
 
         # Create session for tracking
         session = self.env['ai.coworker.session'].create({
@@ -2186,6 +2340,14 @@ class AIQuest(models.Model):
                 )
                 tools = ToolRegistry()
                 tools.register_many(wrap_tools_with_env(builtin_tools(), self.env))
+
+                # Agentens EGNA tools (7.5): identity-bundna ai.tool-record
+                if force_agent and force_agent.identity_id \
+                        and force_agent.identity_id.tool_ids:
+                    from odoo.addons.ai_agent_core.core.tools import (
+                        ai_tool_records_to_tools)
+                    tools.register_many(ai_tool_records_to_tools(
+                        force_agent.identity_id.tool_ids, self.env))
 
                 loop_obj = self._build_loop(
                     provider=provider, tools=tools,

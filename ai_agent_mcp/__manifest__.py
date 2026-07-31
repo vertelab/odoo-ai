@@ -32,7 +32,7 @@
     'website': "https://vertel.se/apps/odoo-ai/ai_agent",
     'images': ["static/description/banner.png"],  # 560x280
     "license": "AGPL-3",
-    "depends": ["fastapi", "ai_agent"],
+    "depends": ["fastapi", "ai_agent", "ai_agent_core"],
     'external_dependencies': {
         'python': ['fastapi-mcp']
     },

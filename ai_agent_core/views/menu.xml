@@ -82,13 +82,10 @@
     <menuitem id="menu_ai_root" name="AI Orkestrering"
               sequence="90" groups="ai_agent_core.group_ai_officer"/>
 
-    <!-- Dashboard + Onboarding (officer + admin) -->
+    <!-- Dashboard ligger under Organisation (officer + admin) -->
     <menuitem id="menu_ai_orchestration_dashboard" name="Dashboard"
-              parent="menu_ai_root" sequence="5"
+              parent="menu_ai_organization" sequence="5"
               action="action_ai_orchestration_dashboard"/>
-    <menuitem id="menu_ai_start_onboarding" name="🚀 Starta onboarding"
-              parent="menu_ai_root" sequence="6"
-              action="ir_action_server_start_onboarding"/>
 
     <!-- Coworkers & Agents (officer + admin) -->
     <menuitem id="menu_ai_coworker" name="AI medarbetare" parent="menu_ai_root"
@@ -101,9 +98,9 @@
          static/src/js/user_menu_ai_chat.js (Odoo 18 user_menuitems).
          Alla användare har ai.group_user implicit via base.group_user. -->
 
-    <!-- Organization submenu -->
+    <!-- Organization submenu (först under root) -->
     <menuitem id="menu_ai_organization" name="Organisation"
-              parent="menu_ai_root" sequence="30"/>
+              parent="menu_ai_root" sequence="5"/>
     <menuitem id="menu_ai_org_goal" name="Mål (OKR)" parent="menu_ai_organization"
               sequence="10" action="action_ai_org_goal"/>
     <menuitem id="menu_ai_org_task" name="Tasks" parent="menu_ai_organization"
@@ -121,32 +118,36 @@
               groups="ai_agent_core.group_ai_admin"/>
 
     <menuitem id="menu_ai_settings" name="Inställningar" parent="menu_ai_configuration"
-              sequence="10" action="action_ai_settings"/>
+              sequence="1" action="action_ai_settings"/>
+    <menuitem id="menu_ai_personal_goals_all" name="Personal Goals (alla)"
+              parent="menu_ai_configuration" sequence="2"
+              groups="ai_agent_core.group_ai_admin"
+              action="action_ai_personal_goal"/>
     <menuitem id="menu_ai_identity" name="Identiteter" parent="menu_ai_configuration"
-              sequence="15" action="action_ai_identity"/>
+              sequence="5" action="action_ai_identity"/>
     <menuitem id="menu_ai_provider" name="Providers" parent="menu_ai_configuration"
-              sequence="20" action="action_ai_provider"/>
+              sequence="10" action="action_ai_provider"/>
     <menuitem id="menu_ai_model" name="Models" parent="menu_ai_configuration"
-              sequence="30" action="action_ai_model"/>
+              sequence="15" action="action_ai_model"/>
     <menuitem id="menu_ai_skill_menu" name="Skills" parent="menu_ai_configuration"
-              sequence="40" action="action_ai_skill"/>
+              sequence="20" action="action_ai_skill"/>
     <menuitem id="menu_ai_memory" name="Memory" parent="menu_ai_configuration"
-              sequence="50" action="action_ai_memory"/>
+              sequence="30" action="action_ai_memory"/>
     <menuitem id="menu_ai_okf_concepts" name="OKF Concepts"
-              parent="menu_ai_configuration" sequence="55"
+              parent="menu_ai_configuration" sequence="40"
               action="action_ai_okf_concept"/>
     <menuitem id="menu_ai_access_resolvers" name="Access Resolvers"
-              parent="menu_ai_configuration" sequence="56"
+              parent="menu_ai_configuration" sequence="45"
               action="action_ai_access_resolver"/>
     <menuitem id="menu_ai_okf_uploads" name="Uppladdningar (OKF)"
-              parent="menu_ai_configuration" sequence="57"
+              parent="menu_ai_configuration" sequence="50"
               action="action_ai_okf_upload"/>
     <menuitem id="menu_ai_okf_dashboard" name="Odoo Mind Dashboard"
-              parent="menu_ai_configuration" sequence="8"
+              parent="menu_ai_configuration" sequence="55"
               action="action_ai_okf_dashboard"/>
 
     <!-- Monthly Summary -->
     <menuitem id="menu_ai_monthly_summary" name="Monthly Summary"
-              parent="menu_ai_configuration" sequence="70"
+              parent="menu_ai_configuration" sequence="60"
               action="ai_monthly_summary_action"/>
 </odoo>

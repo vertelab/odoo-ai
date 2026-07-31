@@ -18,6 +18,15 @@
                             <span class="o_stat_text">Memories</span>
                         </div>
                     </button>
+                    <button name="action_open_personal_goals"
+                            type="object"
+                            class="oe_stat_button"
+                            icon="fa-bullseye">
+                        <div class="o_stat_info">
+                            <field name="personal_goal_count"/>
+                            <span class="o_stat_text">Mål</span>
+                        </div>
+                    </button>
                 </div>
             </field>
         </record>

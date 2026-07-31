@@ -195,6 +195,8 @@
                     <group col="2">
                         <group string="Settings">
                             <field name="orchestration_mode" widget="radio"/>
+                            <field name="conference_mechanism"
+                                   invisible="orchestration_mode != 'conference'"/>
                             <field name="injection_level" widget="radio"/>
                             <field name="identity_id"/>
                             <field name="tag_ids" widget="many2many_tags"/>
