@@ -17,9 +17,12 @@ from odoo import http, fields, api
 from odoo.http import request, Response
 
 # Import access control helper (quest-access-control change)
+# Fånga ALLA undantag: vid tidig import (stream.py → ai_coworker → models)
+# kan AssertionError uppstå (base_sparse_field ej laddad), vilket annars
+# dödar hela controllers-paketet (openai_api/webhook/stream = /ai/* 404).
 try:
     from odoo.addons.ai_agent_core.models.ai_coworker import _quest_is_accessible
-except ImportError:
+except Exception:
     _quest_is_accessible = None
 
 _logger = logging.getLogger(__name__)

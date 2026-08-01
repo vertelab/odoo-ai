@@ -16,7 +16,7 @@
                     <group col="2">
                         <field name="active" widget="boolean_toggle"/>
                         <field name="connection_ok" widget="boolean_fa_icon"
-                               attrs="{'invisible': [('connection_ok', '=', False)]}"/>
+                               invisible="not connection_ok"/>
                     </group>
                     <group string="Anslutning">
                         <field name="url"/>
@@ -37,7 +37,7 @@
     </record>
 
     <menuitem id="menu_ai_zabbix"
-              parent="ai_agent_core.menu_ai_orchestration_root"
+              parent="ai_agent_core.menu_ai_root"
               action="ai_zabbix_config_action"
               sequence="90"/>
 </odoo>

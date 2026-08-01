@@ -546,6 +546,12 @@ class AIQuest(models.Model):
              'Available to ALL agents in this quest. '
              'These provide the overall coordination framework '
              'and take priority over agent-level skills.')
+
+    # ── Coworker EGNA tools (D5) ──
+    tool_ids = fields.Many2many('ai.tool', 'ai_coworker_tool_custom_rel',
+        'coworker_id', 'tool_id', string='Tools',
+        help='Custom ai.tool records available to this coworker in run(). '
+             'Linked to coworker_ids on ai.tool.')
     last_run = fields.Datetime()
 
     # ── Automation / Scheduled Run (OpenWorker-inspired) ──
@@ -2348,6 +2354,16 @@ class AIQuest(models.Model):
                         ai_tool_records_to_tools)
                     tools.register_many(ai_tool_records_to_tools(
                         force_agent.identity_id.tool_ids, self.env))
+
+                # Coworkerns EGNA tools (D5 drift): ai.tool-poster kopplade
+                # via coworker_ids — tillgängliga i run() för alla initeringar
+                # (openai_api, webhook, web_ui, cron …)
+                custom_tools = self.tool_ids.filtered(lambda t: t.active)
+                if custom_tools:
+                    from odoo.addons.ai_agent_core.core.tools import (
+                        ai_tool_records_to_tools)
+                    tools.register_many(ai_tool_records_to_tools(
+                        custom_tools, self.env))
 
                 loop_obj = self._build_loop(
                     provider=provider, tools=tools,

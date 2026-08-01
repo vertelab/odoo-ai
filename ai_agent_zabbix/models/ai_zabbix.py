@@ -111,6 +111,60 @@ class AIZabbixConfig(models.Model):
             self.connection_ok = False
             raise UserError(_('Zabbix test failed: %s') % str(e))
 
+    # ── Read-only query-metoder (Zabbix Analyst-tools, drift-ai-coworkers 3.2) ──
+
+    def _zabbix_problems(self, limit=20):
+        """Aktiva problem (triggers i PROBLEM-status)."""
+        self.ensure_one()
+        result = self._zabbix_call("problem.get", {
+            "output": ["eventid", "objectid", "severity", "clock", "name"],
+            "recent": True,
+            "sortfield": ["eventid"],
+            "sortorder": "DESC",
+            "limit": limit,
+        }) or []
+        return [{
+            "event_id": p.get("eventid"),
+            "trigger_id": p.get("objectid"),
+            "severity": p.get("severity"),
+            "clock": p.get("clock"),
+            "name": p.get("name"),
+        } for p in result]
+
+    def _zabbix_hosts(self, limit=50):
+        """Värdar med status."""
+        self.ensure_one()
+        result = self._zabbix_call("host.get", {
+            "output": ["hostid", "host", "name", "status", "available"],
+            "limit": limit,
+        }) or []
+        return [{
+            "host_id": h.get("hostid"),
+            "host": h.get("host"),
+            "name": h.get("name"),
+            "status": h.get("status"),
+            "available": h.get("available"),
+        } for h in result]
+
+    def _zabbix_alerts(self, limit=20):
+        """Senaste händelser (events)."""
+        self.ensure_one()
+        result = self._zabbix_call("event.get", {
+            "output": ["eventid", "objectid", "source", "severity", "clock", "value", "name"],
+            "sortfield": ["clock"],
+            "sortorder": "DESC",
+            "limit": limit,
+        }) or []
+        return [{
+            "event_id": e.get("eventid"),
+            "trigger_id": e.get("objectid"),
+            "source": e.get("source"),
+            "severity": e.get("severity"),
+            "clock": e.get("clock"),
+            "value": e.get("value"),
+            "name": e.get("name"),
+        } for e in result]
+
     def notify_cap_exceeded(self, quest):
         """Send Zabbix event when quest cap is exceeded.
 
