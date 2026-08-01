@@ -318,22 +318,26 @@ class AIPersonalMemory(models.Model):
         # ════════════════════════════════════════
         bm25_scores = {}
         try:
-            self.env.cr.execute("""
-                SELECT id,
-                       ts_rank(search_vector,
-                               plainto_tsquery('swedish', %s)) AS bm25_score
-                FROM ai_personal_memory
-                WHERE user_id = %s
-                  AND archived = %s
-                  AND search_vector @@ plainto_tsquery('swedish', %s)
-                ORDER BY bm25_score DESC
-                LIMIT %s
-            """, (query, user_id, include_archived, query, limit * 4))
-            bm25_results = self.env.cr.dictfetchall()
-            bm25_scores = {
-                r['id']: self._normalize_bm25(r['bm25_score'])
-                for r in bm25_results if r['bm25_score']
-            }
+            # savepoint: ett ev. SQL-fel (t.ex. saknad search_vector-kolumn i
+            # DB:er som inte kört migrationen) abortar annars hela transaktionen
+            # → alla efterföljande queries kraschar med InFailedSqlTransaction.
+            with self.env.cr.savepoint():
+                self.env.cr.execute("""
+                    SELECT id,
+                           ts_rank(search_vector,
+                                   plainto_tsquery('swedish', %s)) AS bm25_score
+                    FROM ai_personal_memory
+                    WHERE user_id = %s
+                      AND archived = %s
+                      AND search_vector @@ plainto_tsquery('swedish', %s)
+                    ORDER BY bm25_score DESC
+                    LIMIT %s
+                """, (query, user_id, include_archived, query, limit * 4))
+                bm25_results = self.env.cr.dictfetchall()
+                bm25_scores = {
+                    r['id']: self._normalize_bm25(r['bm25_score'])
+                    for r in bm25_results if r['bm25_score']
+                }
         except Exception as e:
             _logger.warning('BM25 search failed: %s', e)
 

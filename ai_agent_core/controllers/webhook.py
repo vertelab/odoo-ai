@@ -89,7 +89,6 @@ class AIWebhookController(http.Controller):
             coworker.sudo().run(
                 session=session,
                 prompt=json.dumps(payload, indent=2),
-                message_body=json.dumps(payload),
             )
             session.mark_done('stop')
         except Exception as e:

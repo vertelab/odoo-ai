@@ -2277,10 +2277,10 @@ class AIQuest(models.Model):
             _logger.warning('Failed to send completion notification: %s', e)
 
     def run(self, prompt, system_prompt=None, force_model=None,
-            force_agent=None):
+            force_agent=None, session=None):
         """Run quest synchronously and return AI response text.
 
-        Designed for bridge integrations (html_editor, mail, etc.)
+        Designed for bridge integrations (html_editor, mail, webhook, etc.)
         where a simple prompt→response flow is needed.
 
         Args:
@@ -2289,6 +2289,9 @@ class AIQuest(models.Model):
             force_model: Optional model override (buzz agentens egen modell, 7.5)
             force_agent: Optional ai.agent — kör med agentens EGNA
                          skills + tools (identity-bound ai.tool, 7.5)
+            session: Optional existing ai.coworker.session to reuse
+                     (webhook flow keeps its own event-tracked session);
+                     a new session is created when omitted.
 
         Returns:
             str: AI response text (plain text, no markdown rendering)
@@ -2320,8 +2323,8 @@ class AIQuest(models.Model):
                 for s in force_agent.skill_ids)
             system_prompt = (system_prompt or '') + skill_ctx
 
-        # Create session for tracking
-        session = self.env['ai.coworker.session'].create({
+        # Create session for tracking (reuse provided session when given)
+        session = session or self.env['ai.coworker.session'].create({
             'coworker_id': self.id,
             'status': 'active',
             'user_id': self.env.user.id,
