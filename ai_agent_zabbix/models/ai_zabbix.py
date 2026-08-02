@@ -44,8 +44,10 @@ class AIZabbixConfig(models.Model):
             "method": method,
             "params": params or {},
             "id": 1,
-            "auth": self.api_token,
         }
+        # apiinfo.version must NOT receive auth; all other methods require it
+        if method != 'apiinfo.version':
+            payload["auth"] = self.api_token
         data = json.dumps(payload).encode()
         req = urllib.request.Request(
             self.url,
