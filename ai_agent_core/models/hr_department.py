@@ -55,6 +55,34 @@ class Department(models.Model):
             'target': 'current',
         }
 
+    def action_open_ai_goals(self):
+        """Öppna OKR (ai.org.goal) för avdelningen."""
+        self.ensure_one()
+        return {
+            'name': _('Mål (OKR): %s') % self.name,
+            'type': 'ir.actions.act_window',
+            'res_model': 'ai.org.goal',
+            'view_mode': 'kanban,list,form',
+            'domain': [('department_id', '=', self.id)],
+            'target': 'current',
+        }
+
+    def action_open_ai_tasks(self):
+        """Öppna AI-tasks (ai.org.task) kopplade till avdelningen.
+
+        Tasks knyts till avdelning via goal_id.department_id eller
+        job_id.department_id (computed fält department_id på ai.org.task).
+        """
+        self.ensure_one()
+        return {
+            'name': _('AI Tasks: %s') % self.name,
+            'type': 'ir.actions.act_window',
+            'res_model': 'ai.org.task',
+            'view_mode': 'list,form',
+            'domain': [('department_id', '=', self.id)],
+            'target': 'current',
+        }
+
     # ════════════════════════════════════════════
     # Avdelningskontext + hälsa (tasks 7.5/7.6)
     # ════════════════════════════════════════════

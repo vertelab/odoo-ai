@@ -87,6 +87,18 @@ class AIOrgTask(models.Model):
     # HR-koppling
     job_id = fields.Many2one('hr.job', string='Job Position',
         help='Roll i organisationen som denna task tillhör.')
+    department_id = fields.Many2one(
+        'hr.department', string='Department',
+        compute='_compute_department', store=True,
+        help='Avdelning — härleds från målet (goal_id) eller rollen (job_id). '
+             'Gör att Tasks kan knytas till en avdelning i org-dashboarden.')
+
+    @api.depends('goal_id.department_id', 'job_id.department_id')
+    def _compute_department(self):
+        for rec in self:
+            rec.department_id = (
+                rec.goal_id.department_id or rec.job_id.department_id
+            )
 
     # Resultat
     result_summary = fields.Text('Result Summary')

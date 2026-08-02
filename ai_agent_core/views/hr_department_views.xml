@@ -128,6 +128,14 @@
                             <i>Inga AI-medarbetare — starta onboarding!</i>
                         </div>
                     </t>
+
+                    <!-- Snabbliänkar: Tasks + OKR för avdelningen (som Time Off requests på hr.employee) -->
+                    <div class="mt-2 d-flex flex-wrap gap-2" groups="ai_agent_core.group_ai_officer">
+                        <button class="btn btn-sm btn-outline-secondary"
+                                type="object" name="action_open_ai_tasks">📋 Tasks</button>
+                        <button class="btn btn-sm btn-outline-secondary"
+                                type="object" name="action_open_ai_goals">🎯 OKR</button>
+                    </div>
                 </div>
             </div>
 

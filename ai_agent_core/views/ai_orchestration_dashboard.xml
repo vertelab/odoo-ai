@@ -12,7 +12,7 @@
     <record id="action_ai_orchestration_dashboard" model="ir.actions.act_window">
         <field name="name">AI Orkestrering</field>
         <field name="res_model">hr.department</field>
-        <field name="view_mode">kanban</field>
+        <field name="view_mode">kanban,list,form</field>
         <field name="help" type="html">
             <p><strong>AI Orchestration Dashboard</strong></p>
             <p>Här ser du hela din AI-organisation — avdelningar, AI-medarbetare, status och hälsa.</p>
