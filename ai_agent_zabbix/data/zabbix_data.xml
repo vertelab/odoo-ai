@@ -1,0 +1,247 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo noupdate="1">
+    <!-- ════════════════════════════════════════════
+         Zabbix AI-brygga (ai_agent_zabbix)
+         ────────────────────────────────────────────
+         Zabbix-specialister + tools + skills + OKF-minne
+         för infrastrukturen. Konfiguration (URL + token)
+         sätts i Odoo-UI:t / ai.zabbix.config — ingen
+         Salt-hårdkoppling. Mönster: social_ai.
+         ════════════════════════════════════════════ -->
+
+    <!-- ── OKF-artefakttyp för infrastruktur-minne ── -->
+    <record id="artifact_type_zabbix_infrastructure" model="ai.artifact.type">
+        <field name="name">zabbix-infrastructure</field>
+        <field name="kind">knowledge</field>
+        <field name="bridge_module">ai_agent_zabbix</field>
+        <field name="okf_contract" eval="{'generated_by': 'process', 'stale_policy': 'fixed', 'stale_ttl_days': 90, 'retention_purpose': 'none', 'retention_days': 0}"/>
+    </record>
+
+    <!-- ════════════════════════════════════════════
+         Tools (ai.tool) — lokal exekvering, env tillgänglig
+         ════════════════════════════════════════════ -->
+
+    <!-- zabbix_problems -->
+    <record id="tool_zabbix_problems" model="ai.tool">
+        <field name="name">zabbix_problems</field>
+        <field name="description">Hämta aktiva problem (triggers i PROBLEM-status) från Zabbix. Returnerar JSON med event_id, trigger_id, severity (0-5), clock (timestamp) och name. Severity: 0=info, 1=info, 2=varning, 3=medel, 4=hög, 5=kritisk.</field>
+        <field name="risk_level">safe</field>
+        <field name="active">True</field>
+        <field name="parameters">{"type": "object", "properties": {"limit": {"type": "integer", "description": "Max antal problem (default 20)"}}, "required": []}</field>
+        <field name="code">async def execute(limit=20):
+    import json
+    cfg = env['ai.zabbix.config'].search([('active', '=', True)], limit=1)
+    if not cfg:
+        return json.dumps({"error": "Zabbix är inte konfigurerat. Skapa ai.zabbix.config med URL + API-token (Settings → Technical → AI Orkestrering)."})
+    try:
+        return json.dumps(cfg._zabbix_problems(limit=limit), indent=2, default=str)
+    except Exception as e:
+        return json.dumps({"error": f"Zabbix-fel: {e}"})</field>
+    </record>
+
+    <!-- zabbix_hosts -->
+    <record id="tool_zabbix_hosts" model="ai.tool">
+        <field name="name">zabbix_hosts</field>
+        <field name="description">Hämta värdar (hosts) från Zabbix med status. Returnerar JSON med host_id, host, name, status (0=monitored, 1=unmonitored) och available (0=unknown, 1=available, 2=unavailable).</field>
+        <field name="risk_level">safe</field>
+        <field name="active">True</field>
+        <field name="parameters">{"type": "object", "properties": {"limit": {"type": "integer", "description": "Max antal värdar (default 50)"}}, "required": []}</field>
+        <field name="code">async def execute(limit=50):
+    import json
+    cfg = env['ai.zabbix.config'].search([('active', '=', True)], limit=1)
+    if not cfg:
+        return json.dumps({"error": "Zabbix är inte konfigurerat."})
+    try:
+        return json.dumps(cfg._zabbix_hosts(limit=limit), indent=2, default=str)
+    except Exception as e:
+        return json.dumps({"error": f"Zabbix-fel: {e}"})</field>
+    </record>
+
+    <!-- zabbix_alerts -->
+    <record id="tool_zabbix_alerts" model="ai.tool">
+        <field name="name">zabbix_alerts</field>
+        <field name="description">Hämta senaste händelser (events) från Zabbix. Returnerar JSON med event_id, trigger_id, severity, clock, value (0=OK, 1=PROBLEM) och name.</field>
+        <field name="risk_level">safe</field>
+        <field name="active">True</field>
+        <field name="parameters">{"type": "object", "properties": {"limit": {"type": "integer", "description": "Max antal händelser (default 20)"}}, "required": []}</field>
+        <field name="code">async def execute(limit=20):
+    import json
+    cfg = env['ai.zabbix.config'].search([('active', '=', True)], limit=1)
+    if not cfg:
+        return json.dumps({"error": "Zabbix är inte konfigurerat."})
+    try:
+        return json.dumps(cfg._zabbix_alerts(limit=limit), indent=2, default=str)
+    except Exception as e:
+        return json.dumps({"error": f"Zabbix-fel: {e}"})</field>
+    </record>
+
+    <!-- zabbix_add_infrastructure_memory — OKF-koncept för Zabbix-specialisten -->
+    <record id="tool_zabbix_add_infrastructure_memory" model="ai.tool">
+        <field name="name">zabbix_add_infrastructure_memory</field>
+        <field name="description">Skapa eller uppdatera ett OKF-koncept (minne) om infrastrukturen för Zabbix-specialisten. Använd när användaren berättar om värdar, tjänster, arkitektur, nätverk, miljöer eller hur system hänger ihop — så att Zabbix Analyst kan sätta larm i rätt kontext. Content sparas som summary med attribution. ADD-only: ny version skapas vid uppdatering av samma concept_key.</field>
+        <field name="risk_level">write</field>
+        <field name="active">True</field>
+        <field name="parameters">{"type": "object", "properties": {"title": {"type": "string", "description": "Kort titel/nyckel för konceptet, t.ex. 'Prod-miljöer' eller 'Host: scalinq'"}, "content": {"type": "string", "description": "Kunskap om infrastrukturen som ska sparas (markdown)"}, "source_ref": {"type": "string", "description": "Valfri källreferens, t.ex. 'res.partner,42' eller en URL"}}, "required": ["title", "content"]}</field>
+        <field name="code">async def execute(title="", content="", source_ref=""):
+    import json
+    coworker = env['ai.coworker'].search([('name', '=', 'Zabbix Analyst')], limit=1)
+    if not coworker:
+        return json.dumps({"error": "Zabbix Analyst-coworkern finns inte."})
+    try:
+        concept_key = f"zabbix-infra-{title.strip().lower().replace(' ', '-')[:80]}"
+        concept = env['ai.okf.concept'].sudo()._okf_upsert(
+            artifact_type='zabbix-infrastructure',
+            concept_key=concept_key,
+            title=title.strip(),
+            summary=content.strip(),
+            source_ref=source_ref or f'ai.coworker,{coworker.id}',
+            attribution=[{"line": 1, "source_ref": source_ref or f'ai.coworker,{coworker.id}'}],
+            owner_coworker_id=coworker.id,
+            generated_by='ai',
+            status='stable',
+        )
+        return json.dumps({"ok": True, "concept_id": concept.id, "concept_key": concept_key, "version": concept.version})
+    except Exception as e:
+        return json.dumps({"error": f"Kunde inte spara minne: {e}"})</field>
+    </record>
+
+    <!-- ════════════════════════════════════════════
+         Skill — Zabbix-analys
+         ════════════════════════════════════════════ -->
+    <record id="skill_zabbix_analyst" model="ai.skill">
+        <field name="name">zabbix.analyst</field>
+        <field name="description">Analysera Zabbix-problem, värdar och larm. Använd när användaren frågar om övervakning, drift, larm, problem, triggers eller infrastruktur.</field>
+        <field name="category">drift</field>
+        <field name="trigger_keywords">zabbix, larm, problem, trigger, host, övervakning, drift, severity, incident</field>
+        <field name="recipe_text">
+# Zabbix Analyst
+
+Du hjälper användare att förstå och agera på Zabbix-övervakningen.
+
+## Process
+
+1. **Hämta data först** — anropa alltid zabbix_problems / zabbix_hosts / zabbix_alerts innan du svarar. Gissa aldrig.
+2. **Prioritera efter severity** — kritisk (5) > hög (4) > medel (3) > varning (2). Beskriv vad som är allvarligast först.
+3. **Sätt i kontext** — använd ditt infrastruktur-minne (OKF-koncept via zabbix_add_infrastructure_memory eller systemprompt) för att förklara vilken tjänst/värd ett larm påverkar.
+4. **Föreslå nästa steg** — konkreta åtgärder (kolla tjänsten, omstart, disk, nätverk) med rimlighet.
+5. **Lär in ny kunskap** — när användaren berättar om infrastrukturen (värdar, tjänster, arkitektur), föreslå/skapa ett minne med zabbix_add_infrastructure_memory.
+
+## Output-format
+
+- Kort sammanfattning (1–3 meningar) av läget.
+- Lista över aktiva problem med severity-badge och host.
+- Rekommendation per problem.
+
+## Regler
+
+- Läsverktyg (problems/hosts/alerts) är alltid tillåtna — HITL krävs inte för läsning.
+- Skapa aldrig åtgärder mot affärssystemet utan godkännande.
+- Om Zabbix inte är konfigurerat: förklara att ai.zabbix.config saknar URL/API-token.
+        </field>
+    </record>
+
+    <!-- ════════════════════════════════════════════
+         Coworkers
+         ════════════════════════════════════════════ -->
+
+    <!-- Zabbix Analyst — Web UI -->
+    <record id="coworker_zabbix_analyst" model="ai.coworker">
+        <field name="name">Zabbix Analyst</field>
+        <field name="sub_description">Zabbix-övervakning — problem, värdar, larm och infrastruktur</field>
+        <field name="description">
+Du är Zabbix Analyst — en AI-coworker som hjälper användare att förstå
+och agera på Zabbix-övervakningen (zabbix.vertel.se).
+
+Du har tillgång till:
+- zabbix_problems — aktiva problem (triggers i PROBLEM-status)
+- zabbix_hosts — värdar med status
+- zabbix_alerts — senaste händelser
+- zabbix_add_infrastructure_memory — spara kunskap om infrastrukturen
+  (värdar, tjänster, arkitektur, miljöer) som OKF-koncept så att du kan
+  sätta larm i rätt kontext framöver.
+
+Arbetssätt:
+1. Hämta alltid data via tools innan du svarar — gissa aldrig.
+2. Prioritera efter severity (5=kritisk … 2=varning).
+3. Använd infrastruktur-minnet för att förklara vad ett larm påverkar.
+4. Föreslå konkreta nästa steg per problem.
+5. Lär in ny infrastruktur-kunskap när användaren delar den.
+
+HITL-policy: läsning (problems/hosts/alerts) är direkt tillåten.
+Skapa aldrig åtgärder i affärssystemet utan godkännande.
+        </field>
+        <field name="status">active</field>
+        <field name="orchestration_mode">single</field>
+        <field name="injection_level">full</field>
+        <field name="hitl_threshold">always</field>
+        <field name="tool_ids" eval="[(6, 0, [
+            ref('tool_zabbix_problems'),
+            ref('tool_zabbix_hosts'),
+            ref('tool_zabbix_alerts'),
+            ref('tool_zabbix_add_infrastructure_memory'),
+        ])]"/>
+        <field name="skill_ids" eval="[(6, 0, [ref('skill_zabbix_analyst')])]"/>
+        <field name="example_prompts">
+- "Vilka problem är aktiva i Zabbix just nu?"
+- "Sammanfatta kritiska larm och föreslå åtgärder"
+- "Vilka värdar övervakas? Är alla uppe?"
+- "Lär dig: scalinq körs på gw0.vertel.se med Odoo 18 och Postgres 16"
+        </field>
+    </record>
+    <record id="coworker_zabbix_analyst_init_webui" model="ai.coworker.init_type">
+        <field name="coworker_id" ref="coworker_zabbix_analyst"/>
+        <field name="init_type">web_ui</field>
+        <field name="active">True</field>
+        <field name="show_in_chat">True</field>
+        <field name="sequence">10</field>
+    </record>
+
+    <!-- Zabbix Alert Handler — webhook (mottagare av Zabbix-alerts) -->
+    <record id="coworker_zabbix_alert_handler" model="ai.coworker">
+        <field name="name">Zabbix Alert Handler</field>
+        <field name="sub_description">Tar emot Zabbix-alerts via webhook och bedömer dem</field>
+        <field name="description">
+Du är Zabbix Alert Handler — en AI-coworker som tar emot larm från
+Zabbix via webhook (POST /ai/webhook/&lt;coworker_id&gt; med Bearer-secret).
+
+Du får en JSON-payload med host, trigger_name, severity, status, event_id
+och relaterad data. Din uppgift:
+1. Bedöm allvaret (severity: info/warning/average/high/disaster → 0-5).
+2. Beskriv vad som hänt och vad som troligen påverkas (använd
+   infrastruktur-minnet).
+3. Föreslå nästa steg (undersök, omstart, eskalera).
+4. Vid status=OK (recovery): bekräfta att larmet är återställt.
+
+HITL-policy: du skapar inga åtgärder direkt — svar och bedömning
+loggas i sessionen för spårbarhet.
+        </field>
+        <field name="status">active</field>
+        <field name="orchestration_mode">single</field>
+        <field name="injection_level">full</field>
+        <field name="hitl_threshold">always</field>
+        <field name="tool_ids" eval="[(6, 0, [ref('tool_zabbix_problems')])]"/>
+        <field name="example_prompts">
+- "Zabbix larm: host=gw0.vertel.se trigger='Disk > 90%' severity=high status=PROBLEM"
+        </field>
+    </record>
+    <record id="coworker_zabbix_alert_handler_init_webhook" model="ai.coworker.init_type">
+        <field name="coworker_id" ref="coworker_zabbix_alert_handler"/>
+        <field name="init_type">webhook</field>
+        <field name="active">True</field>
+        <field name="sequence">10</field>
+    </record>
+
+    <!-- ════════════════════════════════════════════
+         Standardkonfiguration (URL endast).
+         API-token sätts i Odoo-UI:t eller via databasen —
+         aldrig hårdkodat i modulen (ingen Salt-koppling).
+         ════════════════════════════════════════════ -->
+    <record id="zabbix_config_default" model="ai.zabbix.config">
+        <field name="name">Zabbix</field>
+        <field name="url">https://zabbix.vertel.se/api_jsonrpc.php</field>
+        <field name="api_token"></field>
+        <field name="timeout">30</field>
+        <field name="verify_ssl">False</field>
+        <field name="active">True</field>
+    </record>
+</odoo>
