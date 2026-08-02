@@ -128,7 +128,7 @@
       <p class="o_view_nocontent_smiling_face">Create and manage trending published material from LinkedIn and YouTube.</p>
     </field>
   </record>
-  <menuitem id="menu_ai_trend" name="AI Trend" parent="ai_agent_core.menu_ai_configuration" action="action_ai_trend" sequence="62" />
+  <menuitem id="menu_ai_trend" name="AI Trend" parent="ai_agent.menu_ai_agent_configuration" action="action_ai_trend" sequence="10" />
   
     <record id="action_ai_trend_from_memory" model="ir.actions.act_window">
     <field name="name">AI Trends</field>

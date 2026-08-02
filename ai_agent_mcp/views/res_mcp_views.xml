@@ -133,6 +133,6 @@
             <p class="o_view_nocontent_smiling_face">Create or upload MCP-resources.</p>
         </field>
     </record>
-    <menuitem id="menu_res_mcp_root" name="MCP Resources" parent="ai_agent_core.menu_ai_configuration" sequence="65" />
+    <menuitem id="menu_res_mcp_root" name="MCP Resources" parent="ai_agent.menu_ai_agent_configuration" sequence="10" />
     <menuitem id="menu_res_mcp_resources" name="Remote Resources" parent="menu_res_mcp_root" action="action_res_mcp" sequence="10" />
 </odoo>

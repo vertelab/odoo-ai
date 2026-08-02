@@ -24,7 +24,6 @@
     'maintainer': 'Vertel AB',
     'depends': [
         'ai_agent_pgvector',
-        'ai_agent_core',
     ],
     'data': [
         'security/ir.model.access.csv',
