@@ -144,10 +144,11 @@ class TestLineage(TransactionCase):
         self.assertIn('session_to_suggestion', kinds)
         self.assertIn('concept_evidence', kinds,
                       'bakåt borde nå konceptet via concept_evidence')
-        # Kedjan når konceptet
-        to_refs = [e['to_ref'] for e in chain]
-        self.assertTrue(any(f'workspace.activity.suggestion,{sugg.id}' == t
-                            for t in to_refs))
+        # Kedjan når förslaget (via to_model/to_id — Reference kan returnera
+        # recordset, därför jämför vi sökfälten)
+        self.assertTrue(any(
+            e['to_model'] == 'workspace.activity.suggestion'
+            and e['to_id'] == sugg.id for e in chain))
 
     def test_get_lineage_forward(self):
         """Framåt: källa (koncept) → förslag → åtgärd."""

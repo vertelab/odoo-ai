@@ -152,6 +152,10 @@ class AILineageLink(models.Model):
                     'kind': edge.kind,
                     'from_ref': edge.from_ref,
                     'to_ref': edge.to_ref,
+                    'from_model': edge.from_model,
+                    'from_id': edge.from_id,
+                    'to_model': edge.to_model,
+                    'to_id': edge.to_id,
                     'note': edge.note,
                     'create_date': edge.create_date,
                 })
