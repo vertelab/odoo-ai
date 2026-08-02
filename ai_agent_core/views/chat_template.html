@@ -32,7 +32,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);overflow:hid
 .sidebar-header{padding:12px 16px;font-size:16px;font-weight:700;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;justify-content:space-between}
 .sidebar-header-left{display:flex;align-items:center;gap:8px}
 .sidebar-actions{display:flex;gap:4px}
-.sidebar-btn{background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:18px;padding:4px 6px;border-radius:6px;transition:background .15s,color .15s}
+.sidebar-btn{background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:18px;padding:4px 6px;border-radius:6px;transition:background .15s,color .15s;text-decoration:none;display:inline-flex;align-items:center;justify-content:center}
 .sidebar-btn:hover{background:rgba(128,128,128,0.15);color:var(--text)}
 .new-thread-btn{width:calc(100% - 16px);padding:10px;margin:8px;background:var(--accent);color:#fff;border:none;border-radius:var(--radius);cursor:pointer;font-size:14px;font-weight:600;transition:background .15s;box-sizing:border-box}
 .new-thread-btn:hover{background:var(--accent-hover)}
@@ -58,14 +58,6 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);overflow:hid
 /* Pinned section header */
 .pinned-header{font-size:11px;color:var(--accent);padding:6px 12px 2px;text-transform:uppercase;letter-spacing:1px;display:none}
 .pinned-header.visible{display:block}
-
-/* Quest section */
-.quest-section{margin-top:8px;border-top:1px solid var(--border);padding-top:8px}
-.quest-section-title{font-size:11px;color:var(--text-muted);padding:4px 12px;text-transform:uppercase;letter-spacing:1px}
-.quest-item{padding:8px 12px;border-radius:var(--radius);cursor:pointer;margin-bottom:1px;font-size:13px;transition:background .15s;display:flex;align-items:center;gap:8px}
-.quest-item:hover{background:rgba(128,128,128,0.1)}
-.quest-item.active{background:rgba(128,128,128,0.15)}
-.quest-icon{font-size:14px}
 
 /* === CHAT MAIN === */
 .chat-main{flex:1;display:flex;flex-direction:column;min-width:0}
@@ -236,6 +228,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);overflow:hid
     <div class="sidebar-header">
         <div class="sidebar-header-left"><span>🤖</span> AI Chat</div>
         <div class="sidebar-actions">
+            <a class="sidebar-btn" href="/web" title="Tillbaka till backend">🏠</a>
             <button class="sidebar-btn" onclick="toggleSidebar()" title="Stäng">✕</button>
         </div>
     </div>
@@ -244,9 +237,6 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);overflow:hid
     <div class="pinned-header" id="pinned-header">📌 Fästa trådar</div>
     <div class="thread-list" id="thread-list">
         <!-- THREAD_ITEMS -->
-    </div>
-    <div class="quest-section">
-        <div class="quest-section-title">Trådar</div>
     </div>
 </div>
 

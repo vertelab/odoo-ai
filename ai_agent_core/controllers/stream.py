@@ -369,9 +369,11 @@ class AIStreamController(http.Controller):
         """Render standalone AI chat interface with threads, theme, and responsive design."""
         user = request.env.user
 
-        # Load quests that have a web_ui init type (filtered by access)
+        # Load quests that have a web_ui init type (filtered by access).
+        # Only ACTIVE coworkers (soft-delete flag) with status='active' —
+        # otherwise archived/duplicate coworkers leak into the selector.
         quests = request.env['ai.coworker'].sudo().search(
-            [('status', '=', 'active')],
+            [('status', '=', 'active'), ('active', '=', True)],
             order='sequence asc, name asc',
         )
         accessible_quests = []
