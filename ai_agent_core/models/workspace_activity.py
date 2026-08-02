@@ -147,13 +147,13 @@ class WorkspaceActivitySuggestion(models.Model):
                 'session_to_suggestion',
                 f'ai.coworker.session,{session_id}',
                 f'workspace.activity.suggestion,{suggestion.id}')
-        # Lineage: concept_evidence för källkoncepten
+        # Lineage: concept_evidence (källa → förslag: konceptet stödjer förslaget)
         if evidence_ids and 'ai.lineage.link' in self.env:
             for cid in evidence_ids:
                 self.env['ai.lineage.link']._add_edge(
                     'concept_evidence',
-                    f'workspace.activity.suggestion,{suggestion.id}',
-                    f'ai.okf.concept,{cid}')
+                    f'ai.okf.concept,{cid}',
+                    f'workspace.activity.suggestion,{suggestion.id}')
         return suggestion
 
     def write(self, vals):
@@ -166,14 +166,14 @@ class WorkspaceActivitySuggestion(models.Model):
                     if cmd and cmd[0] == 4:
                         self.env['ai.lineage.link']._add_edge(
                             'concept_evidence',
-                            f'workspace.activity.suggestion,{rec.id}',
-                            f'ai.okf.concept,{cmd[1]}')
+                            f'ai.okf.concept,{cmd[1]}',
+                            f'workspace.activity.suggestion,{rec.id}')
                     elif cmd and cmd[0] == 6:
                         for cid in cmd[2]:
                             self.env['ai.lineage.link']._add_edge(
                                 'concept_evidence',
-                                f'workspace.activity.suggestion,{rec.id}',
-                                f'ai.okf.concept,{cid}')
+                                f'ai.okf.concept,{cid}',
+                                f'workspace.activity.suggestion,{rec.id}')
         return res
 
     # ── 5.5b Snabbåtgärder i agendan ──

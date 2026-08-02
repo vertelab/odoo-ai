@@ -3,13 +3,14 @@
 
 Körs med:
     odoo --config /etc/odoo/odoo.conf -d scalinq -u ai_agent_core \
-         --test-enable --stop-after-init --test-tags ai_lineage
+         --test-enable --test-tags /ai_agent_core:TestLineage \
+         --stop-after-init --workers 0
 
 Bevisar:
 - concept_injected-edge skapas vid OKF-injektion (med session i kontext)
 - session_to_suggestion-edge skapas vid _create_suggestion
 - suggestion_to_action-edge skapas vid action_accept/_materialize
-- concept_evidence skapas vid skapande + write-spegling
+- concept_evidence skapas vid skapande + write-spegling (källa → förslag)
 - _get_lineage() bakåt ger full kedja till källa; framåt alla åtgärder
 - edge-skapande kastar aldrig (try/except)
 """
@@ -34,19 +35,22 @@ class TestLineage(TransactionCase):
             'user_id': self.env.user.id,
             'name': 'Lineage test session',
         })
-        # Testkoncept (company-scope)
+        # Testkoncept (company-scope, strategy-typ för injektion)
+        strat = self.env['ai.artifact.type'].search(
+            [('name', '=', 'strategy')], limit=1)
         self.concept = self.env['ai.okf.concept'].create({
             'scope': 'company',
             'owner_company_id': self.env.company.id,
-            'artifact_type_id': self.env['ai.artifact.type'].search(
-                [('name', '=', 'learning')], limit=1).id,
+            'artifact_type_id': strat.id or self.env['ai.artifact.type'].search(
+                [], limit=1).id,
             'concept_key': 'lineage-test-concept',
-            'summary': 'Testkoncept för lineage',
+            'summary': 'Testkoncept för lineage — strategisk inriktning',
             'status': 'stable',
         })
 
     def _edge_count(self, **domain):
-        return self.Lineage.search_count(domain)
+        # search_count tar en domän-lista
+        return self.Lineage.search_count([(k, '=', v) for k, v in domain.items()])
 
     # ── concept_injected ────────────────────────────────────────────────
 
@@ -54,21 +58,17 @@ class TestLineage(TransactionCase):
         """Injektion med session i kontext skapar concept_injected-edge."""
         Okf = self.env['ai.okf.concept'].with_context(
             ai_lineage_session_id=self.session.id)
-        # Anropa injektionen — konceptet ska injiceras som mgmt/strategy
-        # (använd artifact type som matchar): byt till 'strategy'-typ så det
-        # hamnar i Level 3-strategi-blocket
-        self.concept.artifact_type_id = self.env['ai.artifact.type'].search(
-            [('name', '=', 'strategy')], limit=1).id
         block = Okf._okf_build_system_prompt_block(
             'company', self.env.company.id, query='lineage',
             include_level1=True, injection_level='summary_and_key')
-        self.assertTrue(block, 'Injektionen borde producera en block')
+        # Konceptet har strategy-typ → ska finnas i Level 3-blocket
         n = self._edge_count(
             kind='concept_injected',
             from_model='ai.coworker.session', from_id=self.session.id,
             to_model='ai.okf.concept', to_id=self.concept.id)
         self.assertGreaterEqual(n, 1,
-                                'concept_injected-edge borde finnas')
+                                'concept_injected-edge borde finnas '
+                                '(injektion med session i kontext)')
 
     # ── session_to_suggestion + concept_evidence ────────────────────────
 
@@ -85,15 +85,15 @@ class TestLineage(TransactionCase):
         self.assertEqual(n, 1, 'session_to_suggestion-edge borde finnas')
 
     def test_concept_evidence_created_at_suggestion(self):
-        """evidence_ids vid skapande skapar concept_evidence-edges."""
+        """evidence_ids vid skapande skapar concept_evidence (källa → förslag)."""
         sugg = self.Sugg._create_suggestion(
             'Förslag med bevis', session_id=self.session.id,
             user=self.env.user, coworker_id=self.coworker.id,
             evidence_ids=[self.concept.id])
         n = self._edge_count(
             kind='concept_evidence',
-            from_model='workspace.activity.suggestion', from_id=sugg.id,
-            to_model='ai.okf.concept', to_id=self.concept.id)
+            from_model='ai.okf.concept', from_id=self.concept.id,
+            to_model='workspace.activity.suggestion', to_id=sugg.id)
         self.assertEqual(n, 1, 'concept_evidence-edge borde finnas')
 
     # ── suggestion_to_action ────────────────────────────────────────────
@@ -123,14 +123,14 @@ class TestLineage(TransactionCase):
         sugg.write({'evidence_ids': [(4, self.concept.id, 0)]})
         n = self._edge_count(
             kind='concept_evidence',
-            from_model='workspace.activity.suggestion', from_id=sugg.id,
-            to_model='ai.okf.concept', to_id=self.concept.id)
+            from_model='ai.okf.concept', from_id=self.concept.id,
+            to_model='workspace.activity.suggestion', to_id=sugg.id)
         self.assertEqual(n, 1, 'write-spegling borde skapa edge')
 
     # ── _get_lineage ────────────────────────────────────────────────────
 
     def test_get_lineage_backward(self):
-        """Bakåt: åtgärd → förslag → session → koncept."""
+        """Bakåt: åtgärd → förslag → session + koncept (källa)."""
         sugg = self.Sugg._create_suggestion(
             'Boka möte', suggestion_type='calendar.event',
             session_id=self.session.id, user=self.env.user,
@@ -142,14 +142,15 @@ class TestLineage(TransactionCase):
         kinds = {e['kind'] for e in chain}
         self.assertIn('suggestion_to_action', kinds)
         self.assertIn('session_to_suggestion', kinds)
-        self.assertIn('concept_evidence', kinds)
-        # Kedjan borde nå konceptet (via concept_evidence)
-        from_refs = [e['from_ref'] for e in chain]
-        self.assertTrue(any(f'workspace.activity.suggestion,{sugg.id}' == f
-                            for f in from_refs))
+        self.assertIn('concept_evidence', kinds,
+                      'bakåt borde nå konceptet via concept_evidence')
+        # Kedjan når konceptet
+        to_refs = [e['to_ref'] for e in chain]
+        self.assertTrue(any(f'workspace.activity.suggestion,{sugg.id}' == t
+                            for t in to_refs))
 
     def test_get_lineage_forward(self):
-        """Framåt: källa (koncept) → alla åtgärder."""
+        """Framåt: källa (koncept) → förslag → åtgärd."""
         sugg = self.Sugg._create_suggestion(
             'Boka möte', suggestion_type='calendar.event',
             session_id=self.session.id, user=self.env.user,
@@ -160,6 +161,8 @@ class TestLineage(TransactionCase):
             'ai.okf.concept', self.concept.id, direction='forward')
         self.assertTrue(any(e['kind'] == 'concept_evidence' for e in chain),
                         'framåt borde inkludera concept_evidence till förslaget')
+        self.assertTrue(any(e['kind'] == 'suggestion_to_action' for e in chain),
+                        'framåt borde nå åtgärden via suggestion_to_action')
 
     # ── edge-skapande kastar aldrig ─────────────────────────────────────
 
