@@ -4,7 +4,7 @@
         <field name="name">ai.lineage.link.list</field>
         <field name="model">ai.lineage.link</field>
         <field name="arch" type="xml">
-            <list string="AI Lineage" editable="false">
+            <list string="AI Lineage">
                 <field name="kind"/>
                 <field name="from_ref" string="Från"/>
                 <field name="to_ref" string="Till"/>
