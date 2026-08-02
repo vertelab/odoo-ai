@@ -236,6 +236,11 @@ class AIStreamController(http.Controller):
         gen_dbname = request.env.cr.dbname
         gen_uid = request.env.uid
         gen_context = dict(request.env.context)
+        # Custom tools (ai.tool via coworker.tool_ids) — fångas som plain
+        # values och laddas in i _stream() via gen_env.
+        gen_coworker_id = quest.id if quest and quest.exists() else None
+        gen_custom_tool_ids = list(
+            quest.tool_ids.filtered('active').ids) if quest and quest.exists() else []
         # NATS executor config (tool-executor-nats)
         nats_api_secret = request.env['ir.config_parameter'].sudo().get_param(
             'ai_agent_core.api_secret', '')
@@ -285,6 +290,13 @@ class AIStreamController(http.Controller):
                         )
                         tools = ToolRegistry()
                         tools.register_many(wrap_tools_with_env(builtin_tools(), gen_env))
+                        # Custom tools (ai.tool kopplade till coworkern) —
+                        # t.ex. zabbix_problems för Zabbix Analyst.
+                        if gen_custom_tool_ids:
+                            custom_tools = gen_env['ai.tool'].browse(gen_custom_tool_ids)
+                            if custom_tools:
+                                tools.register_many(
+                                    wrap_tools_with_env(custom_tools, gen_env))
 
                         if gen_is_supervisor and len(gen_agents) > 1:
                             # Build supervisor with streaming
