@@ -59,11 +59,11 @@
                     </group>
                     <group string="Node Properties">
                         <field name="node_properties" widget="code"
-                               options="{'mode': 'json'}"/>
+                               options="{'mode': 'javascript'}"/>
                     </group>
                     <group string="Edge Definitions">
                         <field name="edge_definitions" widget="code"
-                               options="{'mode': 'json'}"/>
+                               options="{'mode': 'javascript'}"/>
                     </group>
                 </sheet>
             </form>

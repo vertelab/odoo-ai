@@ -74,7 +74,7 @@
                     </group>
                     <group string="Parameters (JSON Schema)">
                         <field name="parameters" widget="code"
-                               options="{'mode': 'json'}"
+                               options="{'mode': 'javascript'}"
                                placeholder='{"type": "object", "properties": {...}}'/>
                     </group>
                     <group string="Usage">
