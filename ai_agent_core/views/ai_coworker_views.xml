@@ -218,13 +218,16 @@
 
                     <!-- Initiering: kryssrutor per typ (many2many_checkboxes).
                          Visar endast DENNA medarbetares rader (domain på
-                         coworker_id). Rader skapas/aktiveras automatiskt via
-                         _inverse_active_init_types + _ensure_all_init_types —
-                         ingen manuell radhantering. En av varje typ. -->
+                         coworker_id). active_test=False så även inaktiva
+                         (avkryssade) typer syns som kryssrutor. Rader skapas/
+                         aktiveras automatiskt via _inverse_active_init_types
+                         + _ensure_all_init_types — ingen manuell hantering.
+                         En av varje typ. -->
                     <group string="Initiering (init types)">
                         <field name="active_init_types"
                                widget="many2many_checkboxes"
                                domain="[('coworker_id', '=', id)]"
+                               context="{'active_test': False}"
                                options="{'no_create': True, 'no_open': True}"
                                nolabel="1"/>
                     </group>
