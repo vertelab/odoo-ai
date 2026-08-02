@@ -153,29 +153,16 @@
          (endast ai.group_admin). De operativa menyerna (Dashboard, AI
          medarbetare, Agenter) ligger kvar i rotmenyn AI Orkestrering. -->
 
-    <!-- Personal Memories -->
-    <menuitem id="menu_ai_personal_memory_tech" name="Personal Memories"
-              parent="menu_ai_technical_root" sequence="30"
-              groups="ai_agent_core.group_ai_admin"
-              action="action_ai_personal_memory"/>
+    <!-- Personal Memories / Company Memory / Odoo Mind Graph definieras i
+         respektive views-fil (ai_personal_memory_views.xml,
+         ai_company_memory_views.xml, ai_graph_node_views.xml) med parent
+         menu_ai_technical_root — inga dubbletter här. -->
 
     <!-- Personal Goals (alla) -->
     <menuitem id="menu_ai_personal_goals_tech" name="Personal Goals"
               parent="menu_ai_technical_root" sequence="40"
               groups="ai_agent_core.group_ai_admin"
               action="action_ai_personal_goal"/>
-
-    <!-- Company Memory -->
-    <menuitem id="menu_ai_company_memory_tech" name="Company Memory"
-              parent="menu_ai_technical_root" sequence="50"
-              groups="ai_agent_core.group_ai_admin"
-              action="action_ai_company_memory"/>
-
-    <!-- Odoo Mind Graph -->
-    <menuitem id="menu_ai_graph_tech" name="Odoo Mind Graph"
-              parent="menu_ai_technical_root" sequence="60"
-              groups="ai_agent_core.group_ai_admin"
-              action="action_graph_node_definition"/>
 
     <!-- Uppladdningar (OKF) — flyttad från Configuration -->
     <menuitem id="menu_ai_okf_uploads" name="Uppladdningar (OKF)"

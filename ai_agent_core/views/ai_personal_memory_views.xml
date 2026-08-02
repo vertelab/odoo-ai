@@ -94,7 +94,7 @@
         <!-- Menu -->
         <menuitem id="menu_ai_personal_memory"
                   name="Personal Memories"
-                  parent="menu_ai_configuration"
+                  parent="menu_ai_technical_root" sequence="30"
                   action="action_ai_personal_memory"
                   sequence="90"/>
 
