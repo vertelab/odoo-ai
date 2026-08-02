@@ -84,8 +84,7 @@
         <menuitem id="menu_ai_company_memory"
                   name="Company Memory"
                   parent="menu_ai_technical_root" sequence="50"
-                  action="action_ai_company_memory"
-                  sequence="91"/>
+                  action="action_ai_company_memory"/>
 
     </data>
 </odoo>

@@ -95,8 +95,7 @@
         <menuitem id="menu_ai_personal_memory"
                   name="Personal Memories"
                   parent="menu_ai_technical_root" sequence="30"
-                  action="action_ai_personal_memory"
-                  sequence="90"/>
+                  action="action_ai_personal_memory"/>
 
     </data>
 </odoo>
