@@ -1702,8 +1702,50 @@ class AIQuest(models.Model):
                     return obj.object_id
         return None
 
+    def _ensure_agent(self):
+        """Auto-create a default agent (and assignment) when the coworker
+        has none.
+
+        Implements the coworker-agent-bridge rule (coworker = shell,
+        agent = brain): a coworker in single mode has exactly 1 agent.
+        Without an agent the chat/channel/cron runs silently fail
+        ('You must assign at least one agent') — this prevents that.
+        """
+        for rec in self:
+            if rec.agent_ids:
+                continue
+            default_model_id = rec.env['ir.config_parameter'].sudo().get_param(
+                'ai_agent_core.default_model_id', '365')
+            model = rec.env['ai.model'].browse(int(default_model_id))
+            if not model.exists():
+                model = rec.env['ai.model'].search(
+                    [('provider_type', '=', 'bifrost')],
+                    order='id asc', limit=1)
+            agent = rec.env['ai.agent'].sudo().create({
+                'name': rec.name or 'Default Agent',
+                'description': f'Default agent for {rec.name or "coworker"}.',
+                'model_id': model.id if model else False,
+                'status': 'active',
+                'sequence': 10,
+            })
+            rec.env['ai.coworker.agent'].sudo().create({
+                'coworker_id': rec.id,
+                'agent_id': agent.id,
+                'sequence': 10,
+                'role': 'member',
+            })
+            _logger.info('Auto-created default agent %s for coworker %s',
+                         agent.name, rec.name)
+        return True
+
     def _check_quest_error(self):
-        """Check quest configuration before running."""
+        """Check quest configuration before running.
+
+        Auto-creates a default agent when the coworker has none so chat /
+        channel / cron runs do not silently return None.
+        """
+        if not self.agent_ids:
+            self._ensure_agent()
         if not self.agent_ids:
             return _('You must assign at least one agent to the quest')
         inactive = self.agent_ids.filtered(lambda a: a.agent_id and a.agent_id.status != 'active')
