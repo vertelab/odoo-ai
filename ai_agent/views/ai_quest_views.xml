@@ -149,7 +149,7 @@
                                 <field name="description" />
                             </page>
                             <page string="Code" id="code" invisible="not has_code">
-                                <field name="code" widget="ace" options="{'mode': 'python','theme': 'solarized_dark', 'tabSize': 4, 'showGutter': true}"/>
+                                <field name="code" widget="ace" options="{'mode': 'python','theme': 'monokai', 'tabSize': 4, 'showGutter': true}"/>
                             </page>
                                 <page string="Supervisor" id="supervisor" attrs="{'invisible': [('is_supervisor', '=', False)]}">
                                     <group>
