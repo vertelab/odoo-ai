@@ -37,7 +37,7 @@
     </record>
 
     <menuitem id="menu_ai_zabbix"
-              parent="ai_agent_core.menu_ai_root"
+              parent="ai_agent_core.menu_ai_configuration"
               action="ai_zabbix_config_action"
-              sequence="90"/>
+              sequence="45"/>
 </odoo>

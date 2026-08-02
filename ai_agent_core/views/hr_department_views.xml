@@ -157,4 +157,43 @@
             </xpath>
         </field>
     </record>
+
+    <!-- AI-specifik hierarchy-vy för hr.department (lånar utseende från
+         hr_org_chart.hr_department_hierarchy_view + visar AI-info). -->
+    <record id="hr_department_hierarchy_view_ai" model="ir.ui.view">
+        <field name="name">hr.department.view.hierarchy.ai</field>
+        <field name="model">hr.department</field>
+        <field name="arch" type="xml">
+            <hierarchy child_field="child_ids" draggable="1">
+                <field name="name"/>
+                <field name="color"/>
+                <field name="health"/>
+                <field name="total_ai_staff"/>
+                <templates>
+                    <t t-name="hierarchy-box">
+                        <div t-attf-class="o_hierarchy_node_header d-flex justify-content-center align-items-center o_hierarchy_node_color_{{ record.color.raw_value }}">
+                            <field name="name"/>
+                        </div>
+                        <div class="o_hierarchy_node_body d-flex flex-column">
+                            <field name="manager_id" class="pt-1 ps-1" widget="many2one_avatar_employee"/>
+                            <t t-if="record.ai_manager_id.raw_value">
+                                <span class="badge bg-info mt-1 ms-1">🤖 <field name="ai_manager_id"/></span>
+                            </t>
+                            <div class="d-flex align-items-center gap-2 mt-1 ms-1">
+                                <span class="badge bg-warning text-dark">🤖 <field name="total_ai_staff"/> AI</span>
+                                <field name="health" widget="badge"
+                                       decoration-success="health == 'green'"
+                                       decoration-warning="health == 'yellow'"
+                                       decoration-danger="health == 'red'"/>
+                            </div>
+                            <div class="d-flex gap-2 mt-1 ms-1" groups="ai_agent_core.group_ai_officer">
+                                <button class="btn btn-link p-0" type="object" name="action_open_ai_tasks">📋 Tasks</button>
+                                <button class="btn btn-link p-0" type="object" name="action_open_ai_goals">🎯 OKR</button>
+                            </div>
+                        </div>
+                    </t>
+                </templates>
+            </hierarchy>
+        </field>
+    </record>
 </odoo>

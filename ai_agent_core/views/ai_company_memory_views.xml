@@ -83,7 +83,7 @@
         <!-- Menu -->
         <menuitem id="menu_ai_company_memory"
                   name="Company Memory"
-                  parent="menu_ai_technical_root" sequence="50"
+                  parent="menu_ai_technical_config" sequence="50"
                   action="action_ai_company_memory"/>
 
     </data>

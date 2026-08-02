@@ -89,9 +89,20 @@
               parent="base.menu_custom" sequence="90"
               groups="ai_agent_core.group_ai_admin"/>
 
+    <!-- Technical-Organisation: Review + Onboarding (övriga ligger i rot-Organisation) -->
+    <menuitem id="menu_ai_technical_org" name="Organisation"
+              parent="menu_ai_technical_root" sequence="10"
+              groups="ai_agent_core.group_ai_admin"/>
+
+    <!-- Technical-Configuration: tekniska AI-menyer (Personal/Company Memory,
+         Graph, Uploads, Access Resolvers, Personal Goals) -->
+    <menuitem id="menu_ai_technical_config" name="Configuration"
+              parent="menu_ai_technical_root" sequence="20"
+              groups="ai_agent_core.group_ai_admin"/>
+
     <!-- Dashboard ligger direkt under root (Organisation flyttas till Technical) -->
     <menuitem id="menu_ai_orchestration_dashboard" name="Dashboard"
-              parent="menu_ai_root" sequence="5"
+              parent="menu_ai_organization" sequence="5"
               action="action_ai_orchestration_dashboard"/>
 
     <!-- Coworkers & Agents (officer + admin) -->
@@ -105,23 +116,25 @@
          static/src/js/user_menu_ai_chat.js (Odoo 18 user_menuitems).
          Alla användare har ai.group_user implicit via base.group_user. -->
 
-    <!-- Organization submenu — flyttad till Settings → Technical → AI Orkestrering -->
+    <!-- Organization submenu — i rotmenyn. Dashboard/Mål/Tasks/Board här;
+         Reviews + Onboarding ligger under Technical → AI Orkestrering →
+         Organisation (menu_ai_technical_org). -->
     <menuitem id="menu_ai_organization" name="Organisation"
-              parent="menu_ai_technical_root" sequence="10"/>
+              parent="menu_ai_root" sequence="5"/>
     <menuitem id="menu_ai_org_goal" name="Mål (OKR)" parent="menu_ai_organization"
               sequence="10" action="action_ai_org_goal"/>
     <menuitem id="menu_ai_org_task" name="Tasks" parent="menu_ai_organization"
               sequence="20" action="action_ai_org_task"/>
-    <menuitem id="menu_ai_org_review" name="Reviews" parent="menu_ai_organization"
+    <menuitem id="menu_ai_org_review" name="Reviews" parent="menu_ai_technical_org"
               sequence="30" action="action_ai_org_review"/>
     <menuitem id="menu_ai_org_board" name="Board" parent="menu_ai_organization"
               sequence="40" action="action_ai_org_board"/>
-    <menuitem id="menu_ai_onboarding" name="Onboarding" parent="menu_ai_organization"
+    <menuitem id="menu_ai_onboarding" name="Onboarding" parent="menu_ai_technical_org"
               sequence="50" action="action_ai_onboarding"/>
 
-    <!-- Configuration submenu (endast ai.group_admin) — flyttad till Technical -->
+    <!-- Configuration submenu (endast ai.group_admin) — i rotmenyn -->
     <menuitem id="menu_ai_configuration" name="Configuration"
-              parent="menu_ai_technical_root" sequence="20"
+              parent="menu_ai_root" sequence="99"
               groups="ai_agent_core.group_ai_admin"/>
 
     <menuitem id="menu_ai_settings" name="Inställningar" parent="menu_ai_configuration"
@@ -153,6 +166,12 @@
          (endast ai.group_admin). De operativa menyerna (Dashboard, AI
          medarbetare, Agenter) ligger kvar i rotmenyn AI Orkestrering. -->
 
+    <!-- Inställningar (teknisk kopia av action_ai_settings) -->
+    <menuitem id="menu_ai_tech_settings" name="Inställningar"
+              parent="menu_ai_technical_config" sequence="1"
+              groups="ai_agent_core.group_ai_admin"
+              action="action_ai_settings"/>
+
     <!-- Personal Memories / Company Memory / Odoo Mind Graph definieras i
          respektive views-fil (ai_personal_memory_views.xml,
          ai_company_memory_views.xml, ai_graph_node_views.xml) med parent
@@ -160,19 +179,19 @@
 
     <!-- Personal Goals (alla) -->
     <menuitem id="menu_ai_personal_goals_tech" name="Personal Goals"
-              parent="menu_ai_technical_root" sequence="40"
+              parent="menu_ai_technical_config" sequence="10"
               groups="ai_agent_core.group_ai_admin"
               action="action_ai_personal_goal"/>
 
-    <!-- Uppladdningar (OKF) — flyttad från Configuration -->
+    <!-- Uppladdningar (OKF) -->
     <menuitem id="menu_ai_okf_uploads" name="Uppladdningar (OKF)"
-              parent="menu_ai_technical_root" sequence="70"
+              parent="menu_ai_technical_config" sequence="30"
               groups="ai_agent_core.group_ai_admin"
               action="action_ai_okf_upload"/>
 
-    <!-- Access Resolvers — flyttad från Configuration -->
+    <!-- Access Resolvers -->
     <menuitem id="menu_ai_access_resolvers" name="Access Resolvers"
-              parent="menu_ai_technical_root" sequence="80"
+              parent="menu_ai_technical_config" sequence="40"
               groups="ai_agent_core.group_ai_admin"
               action="action_ai_access_resolver"/>
 </odoo>
