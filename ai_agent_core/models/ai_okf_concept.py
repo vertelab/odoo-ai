@@ -1164,6 +1164,7 @@ class AIOkfConcept(models.Model):
             ], order='version desc')
 
         parts = []
+        injected_ids = []  # för lineage: koncept som faktiskt injiceras
         budget = max_chars
         mgmt_block = self._format_concept_block(
             mgmt_concepts._latest_per_key(), budget // 2, 'MANAGEMENT SUMMARY',
@@ -1171,6 +1172,7 @@ class AIOkfConcept(models.Model):
         if mgmt_block:
             parts.append(mgmt_block)
             budget -= len(mgmt_block)
+            injected_ids.extend(mgmt_concepts._latest_per_key().ids)
 
         # Level 3 — Strategy
         strategy_concepts = self.search(domain + [
@@ -1185,6 +1187,7 @@ class AIOkfConcept(models.Model):
             user=user)
         if strategy_block:
             parts.append(strategy_block)
+            injected_ids.extend(strategy_concepts._latest_per_key().ids)
 
         # Level 1 — Indexerad data via _okf_search
         want_l1 = injection_level in ('summary_and_key', 'full')
@@ -1198,6 +1201,7 @@ class AIOkfConcept(models.Model):
                     user=user)
                 if l1_block:
                     parts.append(l1_block)
+                    injected_ids.extend(search_results.ids)
 
         # Level 0 — Råmaterial (endast full)
         if injection_level == 'full':
@@ -1210,6 +1214,17 @@ class AIOkfConcept(models.Model):
                     user=user)
                 if raw_block:
                     parts.append(raw_block)
+                    injected_ids.extend(raw._latest_per_key().ids)
+
+        # Lineage: concept_injected (session → koncept) när sessionen känd
+        session_id = self.env.context.get('ai_lineage_session_id')
+        if session_id and injected_ids and 'ai.lineage.link' in self.env:
+            Lineage = self.env['ai.lineage.link']
+            for cid in dict.fromkeys(injected_ids):
+                Lineage._add_edge(
+                    'concept_injected',
+                    f'ai.coworker.session,{session_id}',
+                    f'ai.okf.concept,{cid}')
 
         if not parts:
             return ''

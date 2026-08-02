@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="view_ai_lineage_link_list" model="ir.ui.view">
+        <field name="name">ai.lineage.link.list</field>
+        <field name="model">ai.lineage.link</field>
+        <field name="arch" type="xml">
+            <list string="AI Lineage" editable="false">
+                <field name="kind"/>
+                <field name="from_ref" string="Från"/>
+                <field name="to_ref" string="Till"/>
+                <field name="note" optional="hide"/>
+                <field name="create_date" string="Skapad"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_ai_lineage_link_form" model="ir.ui.view">
+        <field name="name">ai.lineage.link.form</field>
+        <field name="model">ai.lineage.link</field>
+        <field name="arch" type="xml">
+            <form string="AI Lineage Edge" create="false" edit="false">
+                <group>
+                    <group>
+                        <field name="kind"/>
+                        <field name="from_ref" string="Från"/>
+                        <field name="to_ref" string="Till"/>
+                    </group>
+                    <group>
+                        <field name="from_model"/>
+                        <field name="from_id"/>
+                        <field name="to_model"/>
+                        <field name="to_id"/>
+                        <field name="note"/>
+                        <field name="create_date" readonly="1"/>
+                    </group>
+                </group>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_ai_lineage_link" model="ir.actions.act_window">
+        <field name="name">AI Lineage</field>
+        <field name="res_model">ai.lineage.link</field>
+        <field name="view_mode">list,form</field>
+    </record>
+</odoo>

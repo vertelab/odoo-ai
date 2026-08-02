@@ -34,6 +34,9 @@ class WorkspaceActivitySuggestion(models.Model):
     user_id = fields.Many2one('res.users', string='User', required=True,
         default=lambda self: self.env.user)
     coworker_id = fields.Many2one('ai.coworker', string='Suggested by')
+    session_id = fields.Many2one(
+        'ai.coworker.session', string='Session',
+        help='Coworker-session som producerade förslaget (lineage).')
     source = fields.Selection([
         ('gap_okr', 'OKR GAP'),
         ('smart_deadline', 'SMART Deadline'),
@@ -112,15 +115,20 @@ class WorkspaceActivitySuggestion(models.Model):
     @api.model
     def _create_suggestion(self, summary, suggestion_type='mail.activity',
                            source='coworker', user=None, coworker_id=None,
+                           session_id=None,
                            personal_goal_id=None, org_goal_id=None,
                            key_result_id=None, detail=None, diff_before=None,
                            diff_after=None, evidence_ids=None,
                            meeting_anchor=None):
-        """Create a proposed suggestion (task 5.3: HITL-kort)."""
+        """Create a proposed suggestion (task 5.3: HITL-kort).
+
+        Loggar lineage-edge session_to_suggestion (session → förslag).
+        """
         user = user or self.env.user
-        return self.create({
+        suggestion = self.create({
             'user_id': user.id,
             'coworker_id': coworker_id,
+            'session_id': session_id,
             'summary': summary,
             'detail': detail,
             'suggestion_type': suggestion_type,
@@ -133,11 +141,48 @@ class WorkspaceActivitySuggestion(models.Model):
             'evidence_ids': [(6, 0, evidence_ids or [])],
             'meeting_anchor': meeting_anchor,
         })
+        # Lineage: session → förslag
+        if session_id and 'ai.lineage.link' in self.env:
+            self.env['ai.lineage.link']._add_edge(
+                'session_to_suggestion',
+                f'ai.coworker.session,{session_id}',
+                f'workspace.activity.suggestion,{suggestion.id}')
+        # Lineage: concept_evidence för källkoncepten
+        if evidence_ids and 'ai.lineage.link' in self.env:
+            for cid in evidence_ids:
+                self.env['ai.lineage.link']._add_edge(
+                    'concept_evidence',
+                    f'workspace.activity.suggestion,{suggestion.id}',
+                    f'ai.okf.concept,{cid}')
+        return suggestion
+
+    def write(self, vals):
+        """Spegla nya evidence_ids som concept_evidence-edges (ADD-only)."""
+        res = super().write(vals)
+        if vals.get('evidence_ids') and 'ai.lineage.link' in self.env:
+            for rec in self:
+                for cmd in vals['evidence_ids']:
+                    # (4, id, 0) = link; (6, 0, ids) = replace-all
+                    if cmd and cmd[0] == 4:
+                        self.env['ai.lineage.link']._add_edge(
+                            'concept_evidence',
+                            f'workspace.activity.suggestion,{rec.id}',
+                            f'ai.okf.concept,{cmd[1]}')
+                    elif cmd and cmd[0] == 6:
+                        for cid in cmd[2]:
+                            self.env['ai.lineage.link']._add_edge(
+                                'concept_evidence',
+                                f'workspace.activity.suggestion,{rec.id}',
+                                f'ai.okf.concept,{cid}')
+        return res
 
     # ── 5.5b Snabbåtgärder i agendan ──
 
     def action_accept(self):
-        """Acceptera förslaget (task 5.3 + 5.5b): skapar riktigt objekt."""
+        """Acceptera förslaget (task 5.3 + 5.5b): skapar riktigt objekt.
+
+        Loggar lineage-edge suggestion_to_action (förslag → Odoo-objekt).
+        """
         for rec in self:
             result = rec._materialize()
             rec.write({
@@ -146,6 +191,13 @@ class WorkspaceActivitySuggestion(models.Model):
                 'active': False,
                 'result_ref': result,
             })
+            # Lineage: förslag → skapat Odoo-objekt (result = 'res_model,id')
+            if result and 'ai.lineage.link' in self.env:
+                self.env['ai.lineage.link']._add_edge(
+                    'suggestion_to_action',
+                    f'workspace.activity.suggestion,{rec.id}',
+                    result,
+                    note=f'Godkänt av {rec.user_id.name}')
         return True
 
     def action_reject(self):
@@ -172,22 +224,59 @@ class WorkspaceActivitySuggestion(models.Model):
         }
 
     def action_why(self):
-        """5.5c 'Varför?'-vy (B1): öppnar källorna bakom slutsatsen."""
+        """5.5c 'Varför?'-vy (B1) — visar HELA lineage-kedjan.
+
+        Kedja: åtgärd ← förslag ← session ← injicerade koncept ← källor
+        (via evidence/concept_evidence + session_to_suggestion +
+        suggestion_to_action + concept_injected).
+        """
         self.ensure_one()
-        if not self.evidence_ids:
+        Lineage = self.env.get('ai.lineage.link')
+        edge_ids = []
+        if Lineage:
+            # Alla edges som rör förslaget (bakåt: session→förslag,
+            # concept_evidence; framåt: förslag→åtgärd)
+            edges = Lineage.search([
+                ('from_model', '=', 'workspace.activity.suggestion'),
+                ('from_id', '=', self.id),
+            ])
+            edges |= Lineage.search([
+                ('to_model', '=', 'workspace.activity.suggestion'),
+                ('to_id', '=', self.id),
+            ])
+            # Plus koncept_injected för förslagets session (kontexten)
+            if self.session_id:
+                edges |= Lineage.search([
+                    ('kind', '=', 'concept_injected'),
+                    ('from_model', '=', 'ai.coworker.session'),
+                    ('from_id', '=', self.session_id.id),
+                ])
+            edge_ids = edges.ids
+
+        if not edge_ids:
+            # Fallback till gamla beteendet: visa källkoncepten
+            if not self.evidence_ids:
+                return {
+                    'type': 'ir.actions.client',
+                    'tag': 'display_notification',
+                    'params': {'title': 'Ingen lineage',
+                               'message': 'Detta förslag har inga kopplade källkoncept eller edges.',
+                               'type': 'info', 'sticky': False},
+                }
             return {
-                'type': 'ir.actions.client',
-                'tag': 'display_notification',
-                'params': {'title': 'Inga källkoncept',
-                           'message': 'Detta förslag har inga kopplade källkoncept.',
-                           'type': 'info', 'sticky': False},
+                'type': 'ir.actions.act_window',
+                'name': 'Varför? — källkoncept',
+                'res_model': 'ai.okf.concept',
+                'view_mode': 'list,form',
+                'domain': [('id', 'in', self.evidence_ids.ids)],
             }
         return {
             'type': 'ir.actions.act_window',
-            'name': 'Varför? — källkoncept',
-            'res_model': 'ai.okf.concept',
+            'name': 'Varför? — lineage-kedja',
+            'res_model': 'ai.lineage.link',
             'view_mode': 'list,form',
-            'domain': [('id', 'in', self.evidence_ids.ids)],
+            'domain': [('id', 'in', edge_ids)],
+            'help': 'Kedjan: ÅTGÄRD ← FÖRSLAG ← SESSION ← KONCEPT ← KÄLLA',
         }
 
     # ── Materialisering: förslag → riktigt Odoo-objekt ──

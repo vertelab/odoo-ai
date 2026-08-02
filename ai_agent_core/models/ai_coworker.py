@@ -2407,6 +2407,10 @@ class AIQuest(models.Model):
                     tools.register_many(ai_tool_records_to_tools(
                         custom_tools, self.env))
 
+                # Lineage: gör sessionen känd för OKF-injektionen så att
+                # concept_injected-edges loggas (ai_lineage_session_id).
+                self = self.with_context(ai_lineage_session_id=session.id)
+
                 loop_obj = self._build_loop(
                     provider=provider, tools=tools,
                     model=model, system_prompt=system_prompt, max_rounds=10,

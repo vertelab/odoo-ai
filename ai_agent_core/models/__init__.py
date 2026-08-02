@@ -38,6 +38,7 @@ from . import ai_org_review
 from . import ai_org_board
 from . import ai_org_template
 from . import ai_org_bridge
+from . import ai_lineage
 from . import ai_onboarding
 from . import hr_employee
 from . import hr_department

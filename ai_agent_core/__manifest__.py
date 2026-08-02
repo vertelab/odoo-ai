@@ -58,6 +58,7 @@
         'data/graph_base.xml',
         'views/hr_department_views.xml',
         'views/ai_orchestration_dashboard.xml',
+        'views/ai_lineage_views.xml',
         'views/ai_monthly_summary_views.xml',
         'views/menu.xml',
         'views/ai_provider_views.xml',
