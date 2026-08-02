@@ -111,7 +111,7 @@
     <record id="skill_zabbix_analyst" model="ai.skill">
         <field name="name">zabbix.analyst</field>
         <field name="description">Analysera Zabbix-problem, värdar och larm. Använd när användaren frågar om övervakning, drift, larm, problem, triggers eller infrastruktur.</field>
-        <field name="category">drift</field>
+        <field name="category">infrastructure</field>
         <field name="trigger_keywords">zabbix, larm, problem, trigger, host, övervakning, drift, severity, incident</field>
         <field name="recipe_text">
 # Zabbix Analyst
