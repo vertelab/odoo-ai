@@ -25,6 +25,13 @@ try:
 except Exception:
     _quest_is_accessible = None
 
+# Import providers at module level so every handler (SSE stream, OpenAI API,
+# webhook) can construct BifrostProvider/DirectProvider without NameError.
+try:
+    from odoo.addons.ai_agent_core.core.provider import BifrostProvider, ProviderFactory, DirectProvider
+except Exception:
+    BifrostProvider = ProviderFactory = DirectProvider = None
+
 _logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------

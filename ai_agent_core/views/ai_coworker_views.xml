@@ -293,6 +293,19 @@
                     </group>
 
                     <notebook>
+                        <page string="Agenter" name="agents">
+                            <field name="agent_ids">
+                                <list editable="bottom">
+                                    <field name="sequence" widget="handle"/>
+                                    <field name="agent_id" string="Agent"/>
+                                    <field name="agent_model_id" string="Modell"/>
+                                    <field name="agent_tools_display" string="Tools"/>
+                                    <field name="agent_memories_display" string="Memories"/>
+                                    <field name="role"/>
+                                </list>
+                            </field>
+                        </page>
+
                         <page string="Description">
                             <field name="description" widget="text" nolabel="1"
                                    placeholder="System prompt / quest purpose..."/>

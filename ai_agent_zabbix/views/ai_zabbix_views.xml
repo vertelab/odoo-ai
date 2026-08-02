@@ -15,7 +15,7 @@
                     </div>
                     <group col="2">
                         <field name="active" widget="boolean_toggle"/>
-                        <field name="connection_ok" widget="boolean_fa_icon"
+                        <field name="connection_ok"
                                invisible="not connection_ok"/>
                     </group>
                     <group string="Anslutning">

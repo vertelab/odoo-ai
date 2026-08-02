@@ -2953,6 +2953,29 @@ class AIQuestAgent(models.Model):
         'Auto-created', default=False,
         help='True if this agent was created automatically by the quest.')
 
+    # Display fields for the coworker form Agents tab (like legacy ai_agent)
+    agent_model_id = fields.Many2one(
+        'ai.model', related='agent_id.model_id', string='Model', store=False,
+        help='Agent model shown on the assignment row.')
+    agent_tools_display = fields.Char(
+        'Tools', compute='_compute_agent_display', store=False,
+        help='Comma-separated tool names of the assigned agent.')
+    agent_memories_display = fields.Char(
+        'Memories', compute='_compute_agent_display', store=False,
+        help='Comma-separated memory names of the assigned agent.')
+
+    @api.depends('agent_id.tool_ids.name', 'agent_id.memory_ids.memory_id.name',
+                 'agent_id.rag_memory_ids.name')
+    def _compute_agent_display(self):
+        for rec in self:
+            tools = rec.agent_id.tool_ids.mapped('name')
+            memories = (
+                rec.agent_id.memory_ids.mapped('memory_id.name')
+                + rec.agent_id.rag_memory_ids.mapped('name')
+            )
+            rec.agent_tools_display = ', '.join([t for t in tools if t])
+            rec.agent_memories_display = ', '.join([m for m in memories if m])
+
     @api.model_create_multi
     def create(self, vals_list):
         records = super(AIQuestAgent, self).create(vals_list)
