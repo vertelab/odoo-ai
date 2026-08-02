@@ -56,6 +56,7 @@
         'data/youtube_tools.xml',
         'data/browser_tools.xml',
         'data/graph_base.xml',
+        'views/hr_department_views.xml',
         'views/ai_orchestration_dashboard.xml',
         'views/ai_monthly_summary_views.xml',
         'views/menu.xml',
