@@ -216,26 +216,17 @@
                         </group>
                     </group>
 
-                    <!-- Initiering: editbar lista av init_type-rader (ersätter
-                         den förvirrande active_init_types M2M-taggen med
-                         no_create — här kan man lägga till/ta bort typer). -->
-                    <group string="Initiering (init types)" col="2">
-                        <field name="init_type_ids" nolabel="1">
-                            <list editable="bottom">
-                                <field name="init_type" required="1"/>
-                                <field name="active"/>
-                                <field name="show_in_chat"
-                                       invisible="init_type!='web_ui'"/>
-                                <field name="alias_name"
-                                       invisible="init_type!='mail'"/>
-                                <field name="channel_id"
-                                       invisible="init_type!='channel'"/>
-                                <field name="cron_id"
-                                       invisible="init_type!='cron'"/>
-                                <field name="server_action_id"
-                                       invisible="init_type!='server_action'"/>
-                            </list>
-                        </field>
+                    <!-- Initiering: kryssrutor per typ (many2many_checkboxes).
+                         Visar endast DENNA medarbetares rader (domain på
+                         coworker_id). Rader skapas/aktiveras automatiskt via
+                         _inverse_active_init_types + _ensure_all_init_types —
+                         ingen manuell radhantering. En av varje typ. -->
+                    <group string="Initiering (init types)">
+                        <field name="active_init_types"
+                               widget="many2many_checkboxes"
+                               domain="[('coworker_id', '=', id)]"
+                               options="{'no_create': True, 'no_open': True}"
+                               nolabel="1"/>
                     </group>
 
                     <!-- Init type config fields — syns bara när respektive typ är aktiv -->

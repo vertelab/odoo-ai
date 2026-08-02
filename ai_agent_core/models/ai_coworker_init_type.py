@@ -12,20 +12,10 @@ import logging
 _logger = logging.getLogger(__name__)
 
 
-INIT_TYPE_SELECTION = [
-    ('web_ui', 'Web Chat UI'),
-    ('chat', 'Discuss — Private Chat'),
-    ('channel', 'Discuss — Team Channel'),
-    ('mail', 'Incoming Mail'),
-    ('cron', 'Scheduled Action'),
-    ('server_action', 'Server Action'),
-    ('powerbox', 'Powerbox'),
-    ('controller', 'Controller (legacy)'),
-    ('manual', 'Manual'),
-    ('webhook', 'Webhook'),
-    ('openai_api', 'OpenAI API'),
-    ('watch', 'Watch — Dataändring'),
-]
+# En enda källa för init-type-valen: INIT_TYPES i ai_coworker.py.
+# (controller är borttagen — legacy.) ai_coworker importeras före
+# ai_coworker_init_type i models/__init__.py, så detta är inte cirkulärt.
+from .ai_coworker import INIT_TYPES as INIT_TYPE_SELECTION
 
 
 class AIQuestInitType(models.Model):

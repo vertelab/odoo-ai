@@ -30,10 +30,10 @@ INIT_TYPES = [
     ('cron', 'Scheduled Action'),
     ('server_action', 'Server Action'),
     ('powerbox', 'Powerbox'),
-    ('controller', 'Controller'),
     ('manual', 'Manual'),
     ('webhook', 'Webhook'),
     ('openai_api', 'OpenAI API'),
+    ('watch', 'Watch — Dataändring'),
 ]
 
 DEFAULT_AGENT_CREATOR_PROMPT = """You are a creative director designing AI agents for a Swedish workplace.
@@ -1484,15 +1484,28 @@ class AIQuest(models.Model):
     @api.model_create_multi
     def create(self, vals_list):
         records = super(AIQuest, self).create(vals_list)
-        for rec in records:
-            # Seed all 9 init types so the many2many_tags widget has options
-            for itype, _label in INIT_TYPES:
-                self.env['ai.coworker.init_type'].create({
-                    'coworker_id': rec.id,
-                    'init_type': itype,
-                    'active': itype == 'manual',
-                })
+        # Seed sker i create() nedan (rad ~2803) via _ensure_all_init_types —
+        # denna model_create_multi skuggas av den senare @api.model create.
         return records
+
+    def _ensure_all_init_types(self):
+        """Skapa en komplett init_type-rad-uppsättning (en per INIT_TYPES-typ)
+        för medarbetaren om rader saknas. Idempotent.
+
+        Gör att many2many_checkboxes med domain [('coworker_id','=',id)] kan
+        visa varje typ som en kryssruta — användaren väljer en av varje,
+        rader skapas/aktiveras automatiskt av _inverse_active_init_types.
+        """
+        for rec in self:
+            existing = {it.init_type for it in rec.init_type_ids}
+            for itype, _label in INIT_TYPES:
+                if itype not in existing:
+                    self.env['ai.coworker.init_type'].create({
+                        'coworker_id': rec.id,
+                        'init_type': itype,
+                        'active': itype == 'manual',
+                        'sequence': 10,
+                    })
 
     # ── Record Context Injection (ported from ai_agent_context) ──
 
@@ -2796,6 +2809,13 @@ class AIQuest(models.Model):
     @api.model
     def create(self, vals):
         record = super(AIQuest, self).create(vals)
+        # Seed alla init_type-rader (en per typ) så UI:t
+        # (many2many_checkboxes) kan visa varje typ som kryssruta.
+        try:
+            record._ensure_all_init_types()
+        except Exception as e:
+            _logger.warning('Could not seed init types for %s: %s',
+                          record.name, e)
         # Auto-create hr.employee for new coworkers
         if not vals.get('employee_id') and not vals.get('is_default'):
             try:
