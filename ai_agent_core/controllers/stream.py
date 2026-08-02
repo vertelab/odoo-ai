@@ -111,10 +111,7 @@ class AIStreamController(http.Controller):
                     # Get model from quest's agents (ai_agent_core fields)
                     for qa in quest.agent_ids:
                         agent = qa.agent_id
-                        if agent.provider_type == 'direct' and agent.direct_model:
-                            model = agent.direct_model
-                            break
-                        elif agent.model_id:
+                        if agent.model_id:
                             model = agent.model_id.name
                             break
             except Exception:

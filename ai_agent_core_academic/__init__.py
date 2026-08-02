@@ -100,12 +100,14 @@ def post_init_hook(env):
 
     # Create agents linked to the skill
     agents = {}
+    _default_model = env['ai.model'].search(
+        [('name', '=', 'cerebras/gpt-oss-120b')], limit=1)
     for xmlid, name, desc in AGENTS:
         agent = env['ai.agent'].create({
             'name': name,
             'description': desc,
             'provider_type': 'bifrost',
-            'bifrost_model': 'cerebras/gpt-oss-120b',
+            'model_id': _default_model.id if _default_model else False,
             'status': 'active',
             'skill_ids': [(4, skill.id)],
         })

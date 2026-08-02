@@ -1331,7 +1331,7 @@ def _tool_inventory_agents(env, **kwargs):
     data = []
     for a in agents:
         skills = [s.name for s in a.skill_ids]
-        model_name = a.bifrost_model or a.direct_model or "none"
+        model_name = a.model_id.name if a.model_id else "none"
         data.append({"id": a.id, "name": a.name, "model": model_name,
                      "provider_type": a.provider_type, "skills": skills})
     return _json.dumps(data, indent=2)

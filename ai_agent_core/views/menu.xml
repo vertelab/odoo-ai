@@ -166,11 +166,7 @@
          (endast ai.group_admin). De operativa menyerna (Dashboard, AI
          medarbetare, Agenter) ligger kvar i rotmenyn AI Orkestrering. -->
 
-    <!-- Inställningar (teknisk kopia av action_ai_settings) -->
-    <menuitem id="menu_ai_tech_settings" name="Inställningar"
-              parent="menu_ai_technical_config" sequence="1"
-              groups="ai_agent_core.group_ai_admin"
-              action="action_ai_settings"/>
+    <!-- Inställningar finns i rotmenyns Configuration — ingen teknisk kopia. -->
 
     <!-- Personal Memories / Company Memory / Odoo Mind Graph definieras i
          respektive views-fil (ai_personal_memory_views.xml,

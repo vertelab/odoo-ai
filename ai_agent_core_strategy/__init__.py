@@ -942,12 +942,16 @@ def post_init_hook(env):
     # ── 2. Create agents ──
     _logger.info('Creating %d strategy agents...', len(_AGENTS))
     agent_map = {}
+    _models_by_name = {}
     for xmlid, name, desc, model, skill_xmlids in _AGENTS:
+        if model not in _models_by_name:
+            _models_by_name[model] = env['ai.model'].search(
+                [('name', '=', model)], limit=1).id or False
         agent = env['ai.agent'].create({
             'name': name,
             'description': desc,
             'provider_type': 'bifrost',
-            'bifrost_model': model,
+            'model_id': _models_by_name[model],
             'status': 'active',
             'skill_ids': [(6, 0, [skill_map[s].id for s in skill_xmlids])],
         })

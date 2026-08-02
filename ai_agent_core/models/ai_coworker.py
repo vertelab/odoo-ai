@@ -2345,11 +2345,8 @@ class AIQuest(models.Model):
         if not force_model:
             for qa in self.agent_ids:
                 agent = qa.agent_id
-                if agent.provider_type == 'direct' and agent.direct_model:
-                    model = agent.direct_model
-                    break
-                elif agent.bifrost_model:
-                    model = agent.bifrost_model
+                if agent.model_id and agent.model_id.name:
+                    model = agent.model_id.name
                     break
 
         # Build system prompt
