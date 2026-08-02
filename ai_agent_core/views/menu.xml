@@ -86,7 +86,7 @@
          Deklareras här (före Organisation/Configuration) eftersom XML
          laddas sekventiellt — parent måste finnas före barn. -->
     <menuitem id="menu_ai_technical_root" name="AI Orkestrering"
-              parent="base.menu_technical" sequence="90"
+              parent="base.menu_custom" sequence="90"
               groups="ai_agent_core.group_ai_admin"/>
 
     <!-- Dashboard ligger direkt under root (Organisation flyttas till Technical) -->
