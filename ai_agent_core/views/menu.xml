@@ -82,6 +82,13 @@
     <menuitem id="menu_ai_root" name="AI Orkestrering"
               sequence="90" groups="ai_agent_core.group_ai_officer"/>
 
+    <!-- Teknisk uppsättning under Settings → Technical (admin).
+         Deklareras här (före Organisation/Configuration) eftersom XML
+         laddas sekventiellt — parent måste finnas före barn. -->
+    <menuitem id="menu_ai_technical_root" name="AI Orkestrering"
+              parent="base.menu_technical" sequence="90"
+              groups="ai_agent_core.group_ai_admin"/>
+
     <!-- Dashboard ligger direkt under root (Organisation flyttas till Technical) -->
     <menuitem id="menu_ai_orchestration_dashboard" name="Dashboard"
               parent="menu_ai_root" sequence="5"
@@ -145,9 +152,6 @@
     <!-- Teknisk uppsättning: avancerade AI-menyer under Settings → Technical
          (endast ai.group_admin). De operativa menyerna (Dashboard, AI
          medarbetare, Agenter) ligger kvar i rotmenyn AI Orkestrering. -->
-    <menuitem id="menu_ai_technical_root" name="AI Orkestrering"
-              parent="base.menu_technical" sequence="90"
-              groups="ai_agent_core.group_ai_admin"/>
 
     <!-- Personal Memories -->
     <menuitem id="menu_ai_personal_memory_tech" name="Personal Memories"
