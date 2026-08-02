@@ -59,7 +59,6 @@
         'views/ai_orchestration_dashboard.xml',
         'views/ai_monthly_summary_views.xml',
         'views/menu.xml',
-        'views/legacy_menu_cleanup.xml',
         'views/ai_provider_views.xml',
         'views/ai_model_views.xml',
         'views/ai_coworker_buzz_agent_wizard_views.xml',
