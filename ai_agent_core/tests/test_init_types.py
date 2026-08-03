@@ -379,7 +379,7 @@ class TestOpenAIAPI(TransactionCase):
         # Filter by openai_api init type
         api_quests = self.Quest.search([('status', '=', 'active')])
         api_ids = {q.id for q in api_quests if any(
-            it.init_type == 'openai_api' and it.active
+            it.init_type == 'openai_api' and it.enabled
             for it in q.init_type_ids
         )}
         self.assertIn(quest1.id, api_ids)

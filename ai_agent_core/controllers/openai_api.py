@@ -69,7 +69,7 @@ class AIOpenAPIController(http.Controller):
 
         # Find openai_api init_type and validate key
         oai_init = coworker.init_type_ids.filtered(
-            lambda it: it.init_type == 'openai_api' and it.active
+            lambda it: it.init_type == 'openai_api' and it.enabled
         )
         if not oai_init:
             return self._error(404, "OpenAI API not configured for this coworker")

@@ -880,11 +880,11 @@ class AIQuest(models.Model):
         """Allow manual override of channel_alias."""
         pass  # Value is stored directly
 
-    @api.depends('init_type_ids')
+    @api.depends('init_type_ids', 'init_type_ids.enabled')
     def _compute_init_type(self):
-        """Keep legacy init_type in sync: first active init type."""
+        """Keep legacy init_type in sync: first enabled init type."""
         for r in self:
-            active = r.init_type_ids.filtered('active')
+            active = r.init_type_ids.filtered('enabled')
             r.init_type = active[0].init_type if active else 'manual'
 
     @api.depends('agent_ids')

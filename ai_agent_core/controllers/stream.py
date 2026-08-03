@@ -400,7 +400,7 @@ class AIStreamController(http.Controller):
         web_ui_quests = []
         for q in accessible_quests:
             web_ui_init = q.init_type_ids.filtered(
-                lambda it: it.init_type == 'web_ui' and it.active and it.show_in_chat
+                lambda it: it.init_type == 'web_ui' and it.enabled and it.show_in_chat
             )
             if web_ui_init:
                 web_ui_quests.append(q)
@@ -817,7 +817,7 @@ class AIStreamController(http.Controller):
             ('status', '=', 'active'),
             ('active', '=', True),
             ('init_type_ids.init_type', '=', 'powerbox'),
-            ('init_type_ids.active', '=', True),
+            ('init_type_ids.enabled', '=', True),
             '|',
             ('model_ids.model', '=', model),
             ('model_ids', '=', False),  # No model restriction = available on all
@@ -855,7 +855,7 @@ class AIStreamController(http.Controller):
         if not quest.exists():
             return Response(json.dumps({"error": "Quest not found"}),
                           content_type='application/json', status=404)
-        if 'powerbox' not in quest.init_type_ids.filtered('active').mapped('init_type'):
+        if 'powerbox' not in quest.init_type_ids.filtered('enabled').mapped('init_type'):
             return Response(json.dumps({"error": "Quest not configured as powerbox"}),
                           content_type='application/json', status=404)
 
