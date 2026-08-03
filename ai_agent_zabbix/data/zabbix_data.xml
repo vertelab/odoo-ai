@@ -191,7 +191,7 @@ Skapa aldrig åtgärder i affärssystemet utan godkännande.
     <record id="coworker_zabbix_analyst_init_webui" model="ai.coworker.init_type">
         <field name="coworker_id" ref="coworker_zabbix_analyst"/>
         <field name="init_type">web_ui</field>
-        <field name="active">True</field>
+        <field name="enabled">True</field>
         <field name="show_in_chat">True</field>
         <field name="sequence">10</field>
     </record>
@@ -227,7 +227,7 @@ loggas i sessionen för spårbarhet.
     <record id="coworker_zabbix_alert_handler_init_webhook" model="ai.coworker.init_type">
         <field name="coworker_id" ref="coworker_zabbix_alert_handler"/>
         <field name="init_type">webhook</field>
-        <field name="active">True</field>
+        <field name="enabled">True</field>
         <field name="sequence">10</field>
     </record>
 

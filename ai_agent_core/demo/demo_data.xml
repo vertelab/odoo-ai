@@ -17,7 +17,7 @@ Svarar alltid pa svenska. Hjalpsam och loser kundens problem.</field>
     <record id="demo_support_init_mail" model="ai.coworker.init_type">
         <field name="coworker_id" ref="demo_coworker_support"/>
         <field name="init_type">mail</field>
-        <field name="active">True</field>
+        <field name="enabled">True</field>
         <field name="sequence">10</field>
         <field name="alias_name">support</field>
     </record>
@@ -25,14 +25,14 @@ Svarar alltid pa svenska. Hjalpsam och loser kundens problem.</field>
     <record id="demo_support_init_webhook" model="ai.coworker.init_type">
         <field name="coworker_id" ref="demo_coworker_support"/>
         <field name="init_type">webhook</field>
-        <field name="active">True</field>
+        <field name="enabled">True</field>
         <field name="sequence">20</field>
     </record>
 
     <record id="demo_support_init_web_ui" model="ai.coworker.init_type">
         <field name="coworker_id" ref="demo_coworker_support"/>
         <field name="init_type">web_ui</field>
-        <field name="active">True</field>
+        <field name="enabled">True</field>
         <field name="sequence">30</field>
         <field name="show_in_chat">True</field>
     </record>
@@ -53,7 +53,7 @@ saknade dokument eller betalningsproblem.</field>
     <record id="demo_orders_init_server" model="ai.coworker.init_type">
         <field name="coworker_id" ref="demo_coworker_orders"/>
         <field name="init_type">server_action</field>
-        <field name="active">True</field>
+        <field name="enabled">True</field>
         <field name="sequence">10</field>
         <field name="server_action_use_wizard">True</field>
     </record>
@@ -61,7 +61,7 @@ saknade dokument eller betalningsproblem.</field>
     <record id="demo_orders_init_cron" model="ai.coworker.init_type">
         <field name="coworker_id" ref="demo_coworker_orders"/>
         <field name="init_type">cron</field>
-        <field name="active">True</field>
+        <field name="enabled">True</field>
         <field name="sequence">20</field>
         <field name="cron_interval_number">6</field>
         <field name="cron_interval_type">hours</field>
@@ -83,7 +83,7 @@ Odoo-relaterade fragor. Du har tillgang till dokumentation.</field>
     <record id="demo_web_init_ui" model="ai.coworker.init_type">
         <field name="coworker_id" ref="demo_coworker_web"/>
         <field name="init_type">web_ui</field>
-        <field name="active">True</field>
+        <field name="enabled">True</field>
         <field name="sequence">10</field>
         <field name="show_in_chat">True</field>
     </record>
@@ -91,7 +91,7 @@ Odoo-relaterade fragor. Du har tillgang till dokumentation.</field>
     <record id="demo_web_init_openai" model="ai.coworker.init_type">
         <field name="coworker_id" ref="demo_coworker_web"/>
         <field name="init_type">openai_api</field>
-        <field name="active">True</field>
+        <field name="enabled">True</field>
         <field name="sequence">20</field>
         <field name="rate_limit_rpm">60</field>
         <field name="rate_limit_tpm">200000</field>
@@ -115,7 +115,7 @@ Nar en ny order skapas eller en order andras, granskar du den och agerar:
     <record id="demo_order_watch_init_watch" model="ai.coworker.init_type">
         <field name="coworker_id" ref="demo_coworker_order_watch"/>
         <field name="init_type">watch</field>
-        <field name="active">True</field>
+        <field name="enabled">True</field>
         <field name="sequence">10</field>
         <field name="watch_model_id" ref="sale.model_sale_order"/>
         <field name="watch_trigger">create_or_write</field>
@@ -125,7 +125,7 @@ Nar en ny order skapas eller en order andras, granskar du den och agerar:
     <record id="demo_order_watch_init_web_ui" model="ai.coworker.init_type">
         <field name="coworker_id" ref="demo_coworker_order_watch"/>
         <field name="init_type">web_ui</field>
-        <field name="active">True</field>
+        <field name="enabled">True</field>
         <field name="sequence">20</field>
         <field name="show_in_chat">True</field>
     </record>
