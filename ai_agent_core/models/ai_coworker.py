@@ -683,9 +683,9 @@ class AIQuest(models.Model):
     def _get_active_init(self, itype):
         """Returnera den aktiva init_type-raden för en typ (eller tom recordset)."""
         return self.init_type_ids.filtered(
-            lambda it: it.init_type == itype and it.active)[:1]
+            lambda it: it.init_type == itype and it.enabled)[:1]
 
-    @api.depends('init_type_ids', 'init_type_ids.active',
+    @api.depends('init_type_ids', 'init_type_ids.enabled',
                  'init_type_ids.init_type', 'init_type_ids.watch_model_id',
                  'init_type_ids.watch_trigger', 'init_type_ids.watch_domain',
                  'init_type_ids.base_automation_id', 'init_type_ids.alias_contact',
@@ -733,10 +733,10 @@ class AIQuest(models.Model):
         for rec in self:
             rec.webhook_url = f'/ai/webhook/{rec.id}' if rec.id else ''
 
-    @api.depends('init_type_ids', 'init_type_ids.active', 'init_type_ids.init_type')
+    @api.depends('init_type_ids', 'init_type_ids.enabled', 'init_type_ids.init_type')
     def _compute_active_init_types(self):
         for r in self:
-            r.active_init_types = r.init_type_ids.filtered('active')
+            r.active_init_types = r.init_type_ids.filtered('enabled')
 
     def _inverse_active_init_types(self):
         for r in self:
@@ -751,20 +751,20 @@ class AIQuest(models.Model):
                 self.env['ai.coworker.init_type'].create({
                     'coworker_id': r.id,
                     'init_type': itype,
-                    'active': True,
+                    'enabled': True,
                 })
 
             # ACTIVATE existing that should be active
             to_activate = wanted_types & current_types
             for itype in to_activate:
-                if itype in current_map and not current_map[itype].active:
-                    current_map[itype].active = True
+                if itype in current_map and not current_map[itype].enabled:
+                    current_map[itype].enabled = True
 
             # DEACTIVATE existing that should not be active
             to_deactivate = current_types - wanted_types
             for itype in to_deactivate:
-                if itype in current_map and current_map[itype].active:
-                    current_map[itype].active = False
+                if itype in current_map and current_map[itype].enabled:
+                    current_map[itype].enabled = False
 
     @api.onchange('active_init_types')
     def _onchange_active_init_types(self):
@@ -773,11 +773,11 @@ class AIQuest(models.Model):
         if self:
             self._compute_init_type_flags()
 
-    @api.depends('init_type_ids.init_type', 'init_type_ids.active')
+    @api.depends('init_type_ids.init_type', 'init_type_ids.enabled')
     def _compute_init_type_flags(self):
         for r in self:
             active_types = set(
-                it.init_type for it in r.init_type_ids if it.active
+                it.init_type for it in r.init_type_ids if it.enabled
             )
             r.has_web_ui = 'web_ui' in active_types
             r.has_chat = 'chat' in active_types
@@ -969,7 +969,7 @@ class AIQuest(models.Model):
 
         # Response mode check (backward compat — _route_message() already filters)
         active_init = self.init_type_ids.filtered(
-            lambda it: it.init_type in ('chat', 'channel') and it.active)
+            lambda it: it.init_type in ('chat', 'channel') and it.enabled)
         if active_init and active_init[0].response_mode == 'trigger':
             trigger_words = active_init[0].chat_trigger_words or ''
             if trigger_words:
@@ -1049,7 +1049,7 @@ class AIQuest(models.Model):
             return None
 
         cron_init = self.init_type_ids.filtered(
-            lambda it: it.init_type == 'cron' and it.active)
+            lambda it: it.init_type == 'cron' and it.enabled)
         if cron_init and cron_init[0].filter_domain:
             try:
                 from odoo.tools.safe_eval import safe_eval
@@ -1507,7 +1507,7 @@ class AIQuest(models.Model):
 
         # Find the active chat/channel init_type for this coworker
         active_init = self.init_type_ids.filtered(
-            lambda it: it.init_type in ('chat', 'channel') and it.active
+            lambda it: it.init_type in ('chat', 'channel') and it.enabled
         )
         if not active_init:
             _logger.warning(

@@ -28,7 +28,7 @@ class AIQuestInitType(models.Model):
                                 string='Quest')
     init_type = fields.Selection(INIT_TYPE_SELECTION, required=True,
                                   string='Initiation Type')
-    active = fields.Boolean(default=True)
+    enabled = fields.Boolean('Enabled', default=True)
     sequence = fields.Integer(default=10)
 
     # Display name shows the function, not the quest name
@@ -38,7 +38,7 @@ class AIQuestInitType(models.Model):
     def _compute_display_name(self):
         for r in self:
             label = dict(INIT_TYPE_SELECTION).get(r.init_type, r.init_type)
-            status = ' (aktiv)' if r.active else ''
+            status = ' (aktiv)' if r.enabled else ''
             r.display_name = label + status
 
     # ── web_ui specific ──
@@ -173,10 +173,10 @@ class AIQuestInitType(models.Model):
 
     def write(self, vals):
         res = super().write(vals)
-        if 'init_type' in vals or 'active' in vals:
+        if 'init_type' in vals or 'enabled' in vals:
             self._after_change()
         # Deactivate cron when cron init_type is turned off
-        if vals.get('active') is False or vals.get('active') == False:
+        if vals.get('enabled') is False or vals.get('enabled') == False:
             for record in self:
                 if record.init_type == 'cron' and record.cron_id:
                     record.cron_id.active = False
@@ -185,21 +185,21 @@ class AIQuestInitType(models.Model):
     def _after_change(self):
         """Auto-create/update resources when init types change."""
         for record in self:
-            if record.init_type == 'mail' and record.active:
+            if record.init_type == 'mail' and record.enabled:
                 record._ensure_mail_alias()
-            elif record.init_type == 'chat' and record.active:
+            elif record.init_type == 'chat' and record.enabled:
                 record._ensure_chat_user()
-            elif record.init_type == 'channel' and record.active:
+            elif record.init_type == 'channel' and record.enabled:
                 record._ensure_channel()
-            elif record.init_type == 'cron' and record.active:
+            elif record.init_type == 'cron' and record.enabled:
                 record._ensure_cron()
-            elif record.init_type == 'server_action' and record.active:
+            elif record.init_type == 'server_action' and record.enabled:
                 record._ensure_server_action()
-            elif record.init_type == 'powerbox' and record.active:
+            elif record.init_type == 'powerbox' and record.enabled:
                 record._ensure_powerbox()
-            elif record.init_type == 'webhook' and record.active:
+            elif record.init_type == 'webhook' and record.enabled:
                 record._ensure_webhook()
-            elif record.init_type == 'watch' and record.active:
+            elif record.init_type == 'watch' and record.enabled:
                 record._ensure_watch()
 
     # ── Resource auto-creation ──
@@ -210,7 +210,7 @@ class AIQuestInitType(models.Model):
         The base.automation watches a model for data changes and
         triggers the coworker via a linked server action.
         """
-        if not self.watch_model_id or not self.active:
+        if not self.watch_model_id or not self.enabled:
             return
 
         trigger_map = {

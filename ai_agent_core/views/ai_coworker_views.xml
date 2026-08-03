@@ -229,7 +229,6 @@
                         <field name="active_init_types"
                                widget="many2many_checkboxes"
                                domain="[('coworker_id', '=', id)]"
-                               context="{'active_test': False}"
                                options="{'no_create': True, 'no_open': True}"
                                nolabel="1"/>
                     </group>

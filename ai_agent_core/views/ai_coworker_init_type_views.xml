@@ -8,7 +8,7 @@
             <list string="Initiation Types" editable="bottom">
                 <field name="sequence" widget="handle"/>
                 <field name="init_type" required="1"/>
-                <field name="active"/>
+                <field name="enabled"/>
                 <field name="show_in_chat" invisible="init_type!='web_ui'"/>
                 <field name="alias_name" invisible="init_type!='mail'"/>
                 <field name="channel_id" invisible="init_type!='channel'"/>
@@ -29,7 +29,7 @@
                 <group>
                     <field name="coworker_id" invisible="1"/>
                     <field name="init_type" required="1"/>
-                    <field name="active"/>
+                    <field name="enabled"/>
                     <field name="sequence"/>
                 </group>
                 <group string="Web UI Settings"
