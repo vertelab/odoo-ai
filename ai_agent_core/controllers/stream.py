@@ -7,6 +7,7 @@ Uses real BifrostProvider + StreamingAgentLoop (no mock).
 """
 
 import asyncio
+import base64
 import json
 import logging
 import threading
@@ -1718,70 +1719,171 @@ class AIOpenAIAPI(http.Controller):
     to interact with Odoo quests.
     """
 
-    def _check_api_key(self):
-        """Validate API key from Authorization header.
+    @http.route('/ai/v1/_refresh_token', type='http', auth='user',
+                methods=['POST'], csrf=False, sitemap=False)
+    def refresh_gateway_token(self, **kw):
+        """Admin endpoint: generate new gateway token, redirect back to settings."""
+        import secrets
+        company = request.env.company.sudo()
+        company.write({'ai_gateway_token': secrets.token_hex(32)})
+        return request.redirect('/web#action=%s&model=res.config.settings' % (
+            request.env.ref('ai_agent_core.res_config_settings_view_form').id))
 
-        Phase 1: Shared secret from system parameter / env (see
-                 ``_get_callback_secret``).
-        Phase 2: Per-quest keys from ai.coworker.init_type.openai_api.
+    def _check_api_key(self, coworker=None):
+        """Validate API key from Authorization header — multi-company.
+
+        1. Gateway token — söker ALLA bolag. Match = rätt företag + dess coworkers.
+        2. Global secret (backward compat).
+        3. Per-coworker key.
         """
         auth = request.httprequest.headers.get('Authorization', '')
         if not auth.startswith('Bearer '):
             return None
         key = auth[7:]
-        if key != _get_callback_secret():
-            return None
-        return True
+
+        # 1. Gateway token — multi-company: sök alla bolag efter matchande token
+        company = request.env['res.company'].sudo().search(
+            [('ai_gateway_token', '=', key)], limit=1)
+        if company:
+            # Sätt rätt företag i kontexten så att list_models etc filtrerar rätt
+            request.env.company = company
+            return True
+
+        # 2. Global secret (backward compat)
+        if key == _get_callback_secret():
+            return True
+
+        # 3. Per-coworker key
+        if coworker:
+            oai_init = coworker.init_type_ids.filtered(
+                lambda it: it.init_type == 'openai_api' and it.enabled
+            )
+            if oai_init and oai_init[0].api_key_attachment_id:
+                stored = base64.b64decode(
+                    oai_init[0].api_key_attachment_id.datas or b''
+                ).decode('utf-8', errors='ignore').strip()
+                if key == stored:
+                    return True
+
+        return None
 
     @http.route('/ai/v1/models', type='http', auth='public',
                 methods=['GET'], csrf=False, sitemap=False)
     def list_models(self, **kw):
-        """List quests available via OpenAI API."""
+        """GET /ai/v1/models — Lista AI coworkers med API aktiverat."""
         if not self._check_api_key():
             return Response(json.dumps({'error': {'message': 'Unauthorized', 'type': 'authentication_error'}}),
                           status=401, content_type='application/json')
 
-        quests = request.env['ai.coworker'].sudo().search([('status', '=', 'active')])
         models = []
+        quests = request.env['ai.coworker'].sudo().search(
+            [('status', '=', 'active'), ('active', '=', True)],
+            order='sequence asc, name asc')
+
         for q in quests:
+            oai = q.init_type_ids.filtered(
+                lambda it: it.init_type == 'openai_api' and it.enabled)
+            if not oai:
+                continue
+            alias = self._coworker_alias(q)
             models.append({
-                'id': f'quest-{q.id}',
+                'id': alias,
                 'object': 'model',
                 'created': int(q.create_date.timestamp()) if q.create_date else 0,
                 'owned_by': 'vertel',
+                'description': q.sub_description or (q.description[:200] if q.description else ''),
             })
 
         return Response(json.dumps({'object': 'list', 'data': models}),
                       content_type='application/json')
 
-    @http.route('/ai/v1/chat/completions', type='http', auth='public',
-                methods=['POST'], csrf=False, sitemap=False)
-    def chat_completions(self, **kw):
-        """OpenAI-compatible chat completions with SSE streaming."""
+    @http.route('/ai/v1/<string:coworker>/models', type='http', auth='public',
+                methods=['GET'], csrf=False, sitemap=False)
+    def coworker_models(self, coworker, **kw):
+        """GET /ai/v1/<coworker>/models — Lista modellen för en specifik coworker."""
         if not self._check_api_key():
             return Response(json.dumps({'error': {'message': 'Unauthorized', 'type': 'authentication_error'}}),
                           status=401, content_type='application/json')
 
+        quest = self._resolve_coworker(coworker)
+        if not quest:
+            return Response(json.dumps({'error': {'message': f"Coworker '{coworker}' not found"}}),
+                          status=404, content_type='application/json')
+
+        return Response(json.dumps({'object': 'list', 'data': [{
+            'id': self._coworker_alias(quest),
+            'object': 'model',
+            'owned_by': 'vertel',
+        }]}), content_type='application/json')
+
+    @http.route('/ai/v1/<string:coworker>/chat/completions', type='http', auth='public',
+                methods=['POST'], csrf=False, sitemap=False)
+    def coworker_chat(self, coworker, **kw):
+        """POST /ai/v1/<coworker>/chat/completions — Coworker i URL:en."""
+        return self._handle_chat(coworker, **kw)
+
+    @http.route('/ai/v1/chat/completions', type='http', auth='public',
+                methods=['POST'], csrf=False, sitemap=False)
+    def chat_completions(self, **kw):
+        """POST /ai/v1/chat/completions — Coworker i body (model-fältet).
+        
+        Detta är standard OpenAI-formatet. Pi skickar hit med model=<alias>.
+        """
         body = json.loads(request.httprequest.data or '{}')
-        model = body.get('model', '')
+        coworker = body.get('model', '')
+        if not coworker:
+            return Response(json.dumps({'error': {'message': 'Missing model', 'type': 'invalid_request_error'}}),
+                          status=400, content_type='application/json')
+        return self._handle_chat(coworker, **kw)
+
+    def _handle_chat(self, coworker, **kw):
+        body = json.loads(request.httprequest.data or '{}')
         messages = body.get('messages', [])
         stream = body.get('stream', True)
 
-        # Parse quest ID from model (format: quest-42)
-        if not model.startswith('quest-'):
-            return Response(json.dumps({'error': {'message': f'Model {model} not found', 'type': 'invalid_request_error'}}),
-                          status=404, content_type='application/json')
+        quest = self._resolve_coworker(coworker)
+        if not quest:
+            return Response(json.dumps({'error': {
+                'message': f"Coworker '{coworker}' not found. See /ai/v1/models",
+                'type': 'invalid_request_error'
+            }}), status=404, content_type='application/json')
 
-        try:
-            coworker_id = int(model.replace('quest-', ''))
-        except ValueError:
-            return Response(json.dumps({'error': {'message': f'Invalid model: {model}', 'type': 'invalid_request_error'}}),
-                          status=400, content_type='application/json')
+        # Kräv att openai_api är aktiverat för denna coworker
+        oai = quest.init_type_ids.filtered(
+            lambda it: it.init_type == 'openai_api' and it.enabled)
+        if not oai:
+            return Response(json.dumps({'error': {
+                'message': f"Coworker '{coworker}' has no API access. Enable openai_api init type.",
+                'type': 'invalid_request_error'
+            }}), status=403, content_type='application/json')
 
-        quest = request.env['ai.coworker'].sudo().browse(coworker_id)
-        if not quest.exists():
-            return Response(json.dumps({'error': {'message': f'Quest {coworker_id} not found', 'type': 'invalid_request_error'}}),
-                          status=404, content_type='application/json')
+        # Auth: global secret first, then per-coworker key
+        if not self._check_api_key(coworker=quest):
+            return Response(json.dumps({'error': {'message': 'Unauthorized', 'type': 'authentication_error'}}),
+                          status=401, content_type='application/json')
+
+        return self._run_coworker_chat(quest, messages, body.get('model', coworker), stream)
+
+    # ── Coworker helpers ──────────────────────────────────────────────
+
+    @staticmethod
+    def _coworker_alias(quest):
+        """Get a URL-safe alias for a coworker."""
+        alias = (quest.channel_alias or '').strip()
+        if alias:
+            return alias
+        return ''.join(
+            c if c.isalnum() or c in '-_' else '-'
+            for c in quest.name
+        ).strip('-').lower() or f'coworker-{quest.id}'
+
+    def _run_coworker_chat(self, quest, messages, model_ref, stream):
+        """Execute a chat completion through a coworker's agent chain."""
+        # ── Imports (must be at method level for both sync + stream paths) ──
+        import asyncio
+        from odoo.addons.ai_agent_core.core.provider import ProviderFactory, BifrostProvider
+        from odoo.addons.ai_agent_core.core.tools import ToolRegistry, builtin_tools, wrap_tools_with_env
+        from odoo.addons.ai_agent_core.core.loop import AgentLoop, AgentConfig, StreamingAgentLoop
 
         # Extract last user message
         user_messages = [m for m in messages if m.get('role') == 'user']
@@ -1814,24 +1916,17 @@ class AIOpenAIAPI(http.Controller):
                     model_name = llm.model_name
                     break
 
-        # NATS executor config (tool-executor-nats)
+        coworker_id = quest.id
         _nats_api_secret = request.env['ir.config_parameter'].sudo().get_param(
             'ai_agent_core.api_secret', '')
         _nats_max_retries = int(request.env['ir.config_parameter'].sudo().get_param(
             'pi.nats.max_retries', '3'))
-        # DB identity for the post-teardown cursor in the SSE generator
         _gen_dbname = request.env.cr.dbname
         _gen_uid = request.env.uid
         _gen_context = dict(request.env.context)
 
         if not stream:
-            # Non-streaming: run and return full response
             try:
-                import asyncio
-                from odoo.addons.ai_agent_core.core.provider import ProviderFactory, BifrostProvider
-                from odoo.addons.ai_agent_core.core.tools import ToolRegistry, builtin_tools, wrap_tools_with_env
-                from odoo.addons.ai_agent_core.core.loop import AgentLoop, AgentConfig
-
                 provider_instance, provider_model = ProviderFactory.from_coworker(quest)
                 provider = provider_instance or BifrostProvider(
                     base_url='http://192.168.11.150:8080/v1',
@@ -1864,7 +1959,7 @@ class AIOpenAIAPI(http.Controller):
                     'id': response_id,
                     'object': 'chat.completion',
                     'created': int(fields.Datetime.now().timestamp()),
-                    'model': model,
+                    'model': model_ref,
                     'choices': [{
                         'index': 0,
                         'message': {'role': 'assistant', 'content': response_text},
@@ -1884,8 +1979,7 @@ class AIOpenAIAPI(http.Controller):
                 }), status=500, content_type='application/json')
 
         else:
-            # Streaming SSE response
-            # Resolve provider before generator (post-teardown closure)
+            # Streaming SSE
             _gen_provider, _gen_pmodel = ProviderFactory.from_coworker(quest)
             if not _gen_provider:
                 _gen_provider = BifrostProvider(
@@ -1899,10 +1993,6 @@ class AIOpenAIAPI(http.Controller):
                 created = int(fields.Datetime.now().timestamp())
 
                 try:
-                    import asyncio
-                    from odoo.addons.ai_agent_core.core.tools import ToolRegistry, builtin_tools, wrap_tools_with_env
-                    from odoo.addons.ai_agent_core.core.loop import StreamingAgentLoop, AgentConfig
-
                     provider = _gen_provider
                     from odoo import api as _api, registry as _registry
                     _gen_cr = _registry(_gen_dbname).cursor()
@@ -1929,9 +2019,9 @@ class AIOpenAIAPI(http.Controller):
                         async for event in loop.run_stream(prompt):
                             if event.type == 'token':
                                 full_response.append(event.token)
-                                yield f'data: {json.dumps({"id": response_id, "object": "chat.completion.chunk", "created": created, "model": model, "choices": [{"index": 0, "delta": {"content": event.token}}]})}\n\n'
+                                yield f'data: {json.dumps({"id": response_id, "object": "chat.completion.chunk", "created": created, "model": model_ref, "choices": [{"index": 0, "delta": {"content": event.token}}]})}\n\n'
                             elif event.type == 'done':
-                                yield f'data: {json.dumps({"id": response_id, "object": "chat.completion.chunk", "created": created, "model": model, "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]})}\n\n'
+                                yield f'data: {json.dumps({"id": response_id, "object": "chat.completion.chunk", "created": created, "model": model_ref, "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]})}\n\n'
                                 yield 'data: [DONE]\n\n'
                             elif event.type == 'error':
                                 yield f'data: {json.dumps({"error": {"message": event.message}})}\n\n'
@@ -1974,3 +2064,58 @@ class AIOpenAIAPI(http.Controller):
                     'X-Accel-Buffering': 'no',
                 }
             )
+
+    # ── Coworker resolution ───────────────────────────────────────────
+
+    def _resolve_coworker(self, model_id):
+        """Resolve a coworker from a model identifier.
+
+        Supports:
+          - quest-<ID>   (backward compat)
+          - channel_alias (e.g. 'redovisning')
+          - name slug     (e.g. 'bokslut-britta')
+        """
+        coworker = request.env['ai.coworker'].sudo()
+
+        # 1. quest-<ID> format
+        if model_id.startswith('quest-'):
+            try:
+                qid = int(model_id.replace('quest-', ''))
+                q = coworker.browse(qid)
+                if q.exists() and q.status == 'active' and q.active:
+                    return q
+            except ValueError:
+                pass
+
+        # 2. Exact channel_alias match
+        q = coworker.search([
+            ('channel_alias', '=', model_id),
+            ('status', '=', 'active'),
+            ('active', '=', True),
+        ], limit=1)
+        if q:
+            return q
+
+        # 3. Name slug match (sanitized name)
+        domain = [('status', '=', 'active'), ('active', '=', True)]
+        all_coworkers = coworker.search(domain)
+        for c in all_coworkers:
+            name_slug = ''.join(
+                ch if ch.isalnum() or ch in '-_' else '-'
+                for ch in c.name
+            ).strip('-').lower()
+            if name_slug == model_id.lower():
+                return c
+
+        return None
+
+    # ── (stub — proxy borttagen, ersatt av _resolve_coworker ovan) ──
+
+    def _chat_completion_model_proxy(self, body, model_name, messages, stream):
+        """Deprecated — använd _resolve_coworker + ordinarie AgentLoop."""
+        return Response(json.dumps({
+            'error': {
+                'message': 'Use a coworker name (not a model name). See /ai/v1/models',
+                'type': 'invalid_request_error'
+            }
+        }), status=400, content_type='application/json')

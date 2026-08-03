@@ -60,6 +60,20 @@ class ResConfigSettings(models.TransientModel):
              '/pi/callback endpoints. If empty, falls back to the '
              'AI_AGENT_API_SECRET environment variable.')
 
+    ai_gateway_token = fields.Char(
+        'AI Gateway Token',
+        help='Företagets Bearer token för /ai/v1/*. Auto-genereras. '
+             'Använd Refresh-knappen för att byta ut den.')
+
+    def action_refresh_gateway_token(self):
+        """Generate a new gateway token immediately."""
+        import secrets
+        self.env.cr.execute(
+            "UPDATE res_company SET ai_gateway_token = %s WHERE id = %s",
+            [secrets.token_hex(32), self.env.company.id]
+        )
+        return {'type': 'ir.actions.client', 'tag': 'reload'}
+
     ai_api_default_provider_id = fields.Many2one(
         'ai.provider', string='Default Provider',
         config_parameter='ai_agent_core.default_provider_id',
@@ -261,10 +275,16 @@ class ResConfigSettings(models.TransientModel):
     @api.model
     def get_values(self):
         res = super().get_values()
+        # Ensure gateway token exists (runs outside compute, writes are allowed)
+        self.env.company.sudo()._ensure_gateway_token()
         company = self.env.company
 
         # Website URL from partner
         res['company_website_url_edit'] = company.partner_id.website or ''
+
+        # Gateway token — ensure exists + populate settings field
+        company.sudo()._ensure_gateway_token()
+        res['ai_gateway_token'] = company.sudo().ai_gateway_token or ''
 
         # Compute graph node count
         try:
@@ -385,6 +405,16 @@ class ResConfigSettings(models.TransientModel):
                 'sticky': False,
                 'type': type,
             }
+        }
+
+    def action_refresh_gateway_token(self):
+        """Generate a new gateway token — old one stops working immediately."""
+        import secrets
+        self.env['ir.config_parameter'].sudo().set_param(
+            'ai_agent_core.gateway_token', secrets.token_hex(32))
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'reload',
         }
 
     def action_open_company(self):

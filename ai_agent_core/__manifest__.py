@@ -36,6 +36,7 @@
         'data/cron_okf_process_uploads.xml',
         'data/cron_company_memory_indexers.xml',
         'data/okf_migrate_legacy.xml',
+        'data/gateway_token_actions.xml',
         'views/ai_artifact_type_views.xml',
         'views/ai_okf_concept_views.xml',
         'views/ai_access_resolver_views.xml',
