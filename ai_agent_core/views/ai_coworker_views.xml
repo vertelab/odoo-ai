@@ -325,6 +325,19 @@
 
                     <notebook>
                         <page string="Agenter" name="agents">
+                            <!-- Info om synlighet beroende på orchestration mode -->
+                            <div class="alert alert-info" role="alert"
+                                 invisible="orchestration_mode not in ('supervisor','buzz')">
+                                <t t-if="orchestration_mode == 'supervisor'">
+                                    🔒 <b>Agenterna är dolda</b> — supervisorn delegerar till
+                                    specialisterna i bakgrunden och syntetiserar svaret.
+                                </t>
+                                <t t-else="">
+                                    👥 <b>Agenterna är synliga i kanalen</b> (buzz) — egna
+                                    identiteter, alias och @-nämningar. Ledaragenten tar emot
+                                    meddelanden som inte matchar @mention eller trigger-ord.
+                                </t>
+                            </div>
                             <field name="agent_ids">
                                 <list editable="bottom">
                                     <field name="sequence" widget="handle"/>
@@ -332,7 +345,12 @@
                                     <field name="agent_model_id" string="Modell"/>
                                     <field name="agent_tools_display" string="Tools"/>
                                     <field name="agent_memories_display" string="Memories"/>
-                                    <field name="role"/>
+                                    <!-- Rollen är bara relevant i team-lägen (buzz/supervisor/
+                                         linear/conference); single och automation har en agent
+                                         utan roll. -->
+                                    <field name="role"
+                                           invisible="orchestration_mode in ('single', 'automation')"
+                                           string="Roll"/>
                                 </list>
                             </field>
                         </page>
