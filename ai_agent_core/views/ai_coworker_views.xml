@@ -323,16 +323,15 @@
                         <page string="Agenter" name="agents">
                             <!-- Info om synlighet beroende på orchestration mode -->
                             <div class="alert alert-info" role="alert"
-                                 invisible="orchestration_mode not in ('supervisor','buzz')">
-                                <t t-if="orchestration_mode == 'supervisor'">
-                                    🔒 <b>Agenterna är dolda</b> — supervisorn delegerar till
-                                    specialisterna i bakgrunden och syntetiserar svaret.
-                                </t>
-                                <t t-else="">
-                                    👥 <b>Agenterna är synliga i kanalen</b> (buzz) — egna
-                                    identiteter, alias och @-nämningar. Ledaragenten tar emot
-                                    meddelanden som inte matchar @mention eller trigger-ord.
-                                </t>
+                                 invisible="orchestration_mode != 'supervisor'">
+                                🔒 <b>Agenterna är dolda</b> — supervisorn delegerar till
+                                specialisterna i bakgrunden och syntetiserar svaret.
+                            </div>
+                            <div class="alert alert-info" role="alert"
+                                 invisible="orchestration_mode != 'buzz'">
+                                👥 <b>Agenterna är synliga i kanalen</b> (buzz) — egna
+                                identiteter, alias och @-nämningar. Ledaragenten tar emot
+                                meddelanden som inte matchar @mention eller trigger-ord.
                             </div>
                             <field name="agent_ids">
                                 <list editable="bottom">
