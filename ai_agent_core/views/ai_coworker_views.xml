@@ -219,28 +219,23 @@
                     </group>
 
                     <!-- Initiering: kryssrutor per typ (many2many_checkboxes).
-                         Visar endast DENNA medarbetares rader (domain på
-                         coworker_id). active_test=False så även inaktiva
-                         (avkryssade) typer syns som kryssrutor. Rader skapas/
-                         aktiveras automatiskt via _inverse_active_init_types
-                         + _ensure_all_init_types — ingen manuell hantering.
-                         En av varje typ. -->
+                         När en typ kryssas visas dess inställningar direkt
+                         under kryssrutorna (Typinställningar). -->
                     <group string="Initiering (init types)">
                         <field name="active_init_types"
                                widget="many2many_checkboxes"
                                domain="[('coworker_id', '=', id)]"
                                options="{'no_create': True, 'no_open': True}"
                                nolabel="1"/>
-                    </group>
 
-                    <!-- Init type config fields — syns när respektive typ är IKRYSSAD
-                         (has_*-flaggor). Varje typ visar sina nödvändiga inställningar. -->
-                    <group col="2" string="Typinställningar"
-                           invisible="not has_web_ui and not has_chat and not has_channel
-                                      and not has_mail and not has_cron
-                                      and not has_server_action and not has_powerbox
-                                      and not has_webhook and not has_openai_api
-                                      and not has_watch">
+                        <!-- Typinställningar — visas direkt under kryssrutorna
+                             för de typer som är IKRYSSADE (has_*-flaggor). -->
+                        <group col="2" string="Typinställningar"
+                               invisible="not has_web_ui and not has_chat and not has_channel
+                                          and not has_mail and not has_cron
+                                          and not has_server_action and not has_powerbox
+                                          and not has_webhook and not has_openai_api
+                                          and not has_watch">
                         <field name="has_web_ui" invisible="1"/>
                         <field name="has_chat" invisible="1"/>
                         <field name="has_channel" invisible="1"/>
@@ -297,6 +292,7 @@
                             <field name="model_ids" invisible="not has_powerbox"
                                    widget="many2many_tags" string="Powerbox-modeller"/>
                         </group>
+                    </group>
                     </group>
 
                     <!-- Orchestration Type Config — syns baserat på vald mode -->
