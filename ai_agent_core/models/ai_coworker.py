@@ -110,6 +110,30 @@ class AIQuest(models.Model):
         help='How multiple agents collaborate in this quest. '
              'Buzz makes agents visible as channel members.')
 
+    orchestration_mode_help = fields.Char(
+        'Orchestration Mode — förklaring',
+        compute='_compute_orchestration_mode_help', store=False, readonly=True,
+        help='Kort beskrivning av vald orchestrationsläge (endast info).')
+
+    @api.depends('orchestration_mode')
+    def _compute_orchestration_mode_help(self):
+        help_text = {
+            'single': 'En agent sköter allt — enkel assistent eller specialist.',
+            'supervisor': 'En dold supervisor delegerar till specialister och '
+                          'syntetiserar svaret (osynligt team).',
+            'buzz': 'Synligt team i en Discuss-kanal — agenter med egna '
+                    'identiteter som @nämns och samarbetar.',
+            'linear': 'Sekventiell pipeline — varje agents svar blir nästa '
+                      'agents prompt (sorterat på sequence).',
+            'conference': 'Alla agenter får samma fråga — bästa svaret vinner '
+                          '(majoritet, confidence eller syntes).',
+            'automation': 'Schemalagd, headless exekvering utan mänsklig '
+                          'interaktion (AUTO-permission).',
+        }
+        for rec in self:
+            rec.orchestration_mode_help = help_text.get(
+                rec.orchestration_mode, '')
+
     conference_mechanism = fields.Selection([
         ('confidence', 'Confidence (högst vinner)'),
         ('majority', 'Majoritet (röstning)'),
@@ -590,17 +614,17 @@ class AIQuest(models.Model):
              'Each type lights up its own configuration below.')
 
     # Computed boolean flags for UI visibility
-    has_web_ui = fields.Boolean(compute='_compute_init_type_flags', store=True)
-    has_chat = fields.Boolean(compute='_compute_init_type_flags', store=True)
-    has_channel = fields.Boolean(compute='_compute_init_type_flags', store=True)
-    has_mail = fields.Boolean(compute='_compute_init_type_flags', store=True)
-    has_cron = fields.Boolean(compute='_compute_init_type_flags', store=True)
-    has_server_action = fields.Boolean(compute='_compute_init_type_flags', store=True)
-    has_powerbox = fields.Boolean(compute='_compute_init_type_flags', store=True)
-    has_controller = fields.Boolean(compute='_compute_init_type_flags', store=True)
-    has_openai_api = fields.Boolean(compute='_compute_init_type_flags', store=True)
-    has_webhook = fields.Boolean(compute='_compute_init_type_flags', store=True)
-    has_watch = fields.Boolean(compute='_compute_init_type_flags', store=True)
+    has_web_ui = fields.Boolean(compute='_compute_init_type_flags', store=False)
+    has_chat = fields.Boolean(compute='_compute_init_type_flags', store=False)
+    has_channel = fields.Boolean(compute='_compute_init_type_flags', store=False)
+    has_mail = fields.Boolean(compute='_compute_init_type_flags', store=False)
+    has_cron = fields.Boolean(compute='_compute_init_type_flags', store=False)
+    has_server_action = fields.Boolean(compute='_compute_init_type_flags', store=False)
+    has_powerbox = fields.Boolean(compute='_compute_init_type_flags', store=False)
+    has_controller = fields.Boolean(compute='_compute_init_type_flags', store=False)
+    has_openai_api = fields.Boolean(compute='_compute_init_type_flags', store=False)
+    has_webhook = fields.Boolean(compute='_compute_init_type_flags', store=False)
+    has_watch = fields.Boolean(compute='_compute_init_type_flags', store=False)
     show_in_chat = fields.Boolean(
         'Visa i Web Chat', default=True,
         compute='_compute_init_type_fields', inverse='_inverse_init_type_fields',
@@ -741,6 +765,13 @@ class AIQuest(models.Model):
             for itype in to_deactivate:
                 if itype in current_map and current_map[itype].active:
                     current_map[itype].active = False
+
+    @api.onchange('active_init_types')
+    def _onchange_active_init_types(self):
+        """Recomputa has_*-flaggorna direkt när användaren kryssar en typ,
+        så att Typinställningarna för den typen visas utan sidladdning."""
+        if self:
+            self._compute_init_type_flags()
 
     @api.depends('init_type_ids.init_type', 'init_type_ids.active')
     def _compute_init_type_flags(self):
