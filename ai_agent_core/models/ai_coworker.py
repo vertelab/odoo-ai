@@ -3211,6 +3211,10 @@ class AIQuestAgent(models.Model):
     is_auto_created = fields.Boolean(
         'Auto-created', default=False,
         help='True if this agent was created automatically by the quest.')
+    orchestration_mode = fields.Selection(
+        related='coworker_id.orchestration_mode', string='Orchestration Mode',
+        store=False, readonly=True,
+        help='Ärvd från coworkern — för att dölja roll-kolumnen i team-lägen.')
 
     # Display fields for the coworker form Agents tab (like legacy ai_agent)
     agent_model_id = fields.Many2one(
