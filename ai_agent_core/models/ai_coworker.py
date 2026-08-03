@@ -704,7 +704,7 @@ class AIQuest(models.Model):
             if webui:
                 webui.show_in_chat = rec.show_in_chat
 
-    @api.depends('id')
+    @api.depends()
     def _compute_webhook_url(self):
         for rec in self:
             rec.webhook_url = f'/ai/webhook/{rec.id}' if rec.id else ''
