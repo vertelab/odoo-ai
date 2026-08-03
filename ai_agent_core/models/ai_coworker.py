@@ -600,6 +600,12 @@ class AIQuest(models.Model):
     has_controller = fields.Boolean(compute='_compute_init_type_flags', store=True)
     has_openai_api = fields.Boolean(compute='_compute_init_type_flags', store=True)
     has_webhook = fields.Boolean(compute='_compute_init_type_flags', store=True)
+    has_watch = fields.Boolean(compute='_compute_init_type_flags', store=True)
+    show_in_chat = fields.Boolean(
+        'Visa i Web Chat', default=True,
+        compute='_compute_init_type_fields', inverse='_inverse_init_type_fields',
+        store=False,
+        help='Visas i /ai/chat (init_type web_ui).')
 
     # ── Webhook config ──
     webhook_secret = fields.Char('Webhook Secret',
@@ -609,6 +615,99 @@ class AIQuest(models.Model):
     max_webhook_payload_size = fields.Integer('Max Payload Size (bytes)',
         default=1048576,
         help='Maximum allowed payload size for webhook requests (default 1MB)')
+    webhook_url = fields.Char('Webhook URL',
+        compute='_compute_webhook_url', store=False, readonly=True,
+        help='URL som externa system (t.ex. Zabbix) POST:ar till.')
+
+    # ── Per-typ-konfiguration genom aktiva init_type-rader (watch, mail,
+    #    openai_api) — computed + inverse skriver tillbaka till raden. ──
+    watch_model_id = fields.Many2one(
+        'ir.model', string='Watch Model',
+        compute='_compute_init_type_fields', inverse='_inverse_init_type_fields',
+        store=False, help='Model att bevaka för dataändringar.')
+    watch_trigger = fields.Selection([
+        ('create', 'Create'),
+        ('write', 'Write'),
+        ('create_or_write', 'Create or Write'),
+        ('delete', 'Delete'),
+    ], string='Watch Trigger', default='create_or_write',
+        compute='_compute_init_type_fields', inverse='_inverse_init_type_fields',
+        store=False, help='Vilken händelse väcker medarbetaren.')
+    watch_domain = fields.Char('Watch Domain',
+        compute='_compute_init_type_fields', inverse='_inverse_init_type_fields',
+        store=False, help='Domänfilter för vilka records som triggar, '
+             't.ex. [("priority", ">", 5)]')
+    base_automation_id = fields.Many2one(
+        'base.automation', string='Base Automation', readonly=True,
+        compute='_compute_init_type_fields', store=False,
+        help='Auto-skapad base.automation (länk).')
+    alias_contact = fields.Selection([
+        ('everyone', 'Everyone'),
+        ('partners', 'Authenticated Partners'),
+        ('followers', 'Followers only'),
+        ('employees', 'Authenticated Employees'),
+    ], default='everyone', string='Accept Emails From',
+        compute='_compute_init_type_fields', inverse='_inverse_init_type_fields',
+        store=False)
+    rate_limit_rpm = fields.Integer('Rate Limit (req/min)', default=30,
+        compute='_compute_init_type_fields', inverse='_inverse_init_type_fields',
+        store=False)
+    rate_limit_tpm = fields.Integer('Rate Limit (tokens/min)', default=100000,
+        compute='_compute_init_type_fields', inverse='_inverse_init_type_fields',
+        store=False)
+
+    def _get_active_init(self, itype):
+        """Returnera den aktiva init_type-raden för en typ (eller tom recordset)."""
+        return self.init_type_ids.filtered(
+            lambda it: it.init_type == itype and it.active)[:1]
+
+    @api.depends('init_type_ids', 'init_type_ids.active',
+                 'init_type_ids.init_type', 'init_type_ids.watch_model_id',
+                 'init_type_ids.watch_trigger', 'init_type_ids.watch_domain',
+                 'init_type_ids.base_automation_id', 'init_type_ids.alias_contact',
+                 'init_type_ids.rate_limit_rpm', 'init_type_ids.rate_limit_tpm',
+                 'init_type_ids.show_in_chat')
+    def _compute_init_type_fields(self):
+        for rec in self:
+            watch = rec._get_active_init('watch')
+            rec.watch_model_id = watch.watch_model_id if watch else False
+            rec.watch_trigger = watch.watch_trigger if watch else 'create_or_write'
+            rec.watch_domain = watch.watch_domain if watch else False
+            rec.base_automation_id = watch.base_automation_id if watch else False
+            mail = rec._get_active_init('mail')
+            rec.alias_contact = mail.alias_contact if mail else 'everyone'
+            oa = rec._get_active_init('openai_api')
+            rec.rate_limit_rpm = oa.rate_limit_rpm if oa else 30
+            rec.rate_limit_tpm = oa.rate_limit_tpm if oa else 100000
+            webui = rec._get_active_init('web_ui')
+            rec.show_in_chat = webui.show_in_chat if webui else True
+
+    def _inverse_init_type_fields(self):
+        for rec in self:
+            watch = rec._get_active_init('watch')
+            if watch:
+                watch.write({
+                    'watch_model_id': rec.watch_model_id.id if rec.watch_model_id else False,
+                    'watch_trigger': rec.watch_trigger,
+                    'watch_domain': rec.watch_domain,
+                })
+            mail = rec._get_active_init('mail')
+            if mail:
+                mail.alias_contact = rec.alias_contact
+            oa = rec._get_active_init('openai_api')
+            if oa:
+                oa.write({
+                    'rate_limit_rpm': rec.rate_limit_rpm,
+                    'rate_limit_tpm': rec.rate_limit_tpm,
+                })
+            webui = rec._get_active_init('web_ui')
+            if webui:
+                webui.show_in_chat = rec.show_in_chat
+
+    @api.depends('id')
+    def _compute_webhook_url(self):
+        for rec in self:
+            rec.webhook_url = f'/ai/webhook/{rec.id}' if rec.id else ''
 
     @api.depends('init_type_ids', 'init_type_ids.active', 'init_type_ids.init_type')
     def _compute_active_init_types(self):
@@ -658,6 +757,7 @@ class AIQuest(models.Model):
             r.has_powerbox = 'powerbox' in active_types
             r.has_controller = 'controller' in active_types
             r.has_webhook = 'webhook' in active_types
+            r.has_watch = 'watch' in active_types
             r.has_openai_api = 'openai_api' in active_types
 
     @api.depends('model_ids')
