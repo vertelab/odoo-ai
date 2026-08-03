@@ -218,78 +218,78 @@
                         </group>
                     </group>
 
-                    <!-- Initiering: kryssrutor per typ (many2many_checkboxes).
-                         När en typ kryssas visas dess inställningar direkt
-                         under kryssrutorna (Typinställningar). -->
+                    <!-- Initiering: en kryssruta per typ (vanliga Boolean-fält).
+                         När en typ kryssas visas dess inställningar direkt under
+                         (invisible = not init_<typ>). -->
                     <group string="Initiering (init types)">
-                        <field name="active_init_types"
-                               widget="many2many_checkboxes"
-                               domain="[('coworker_id', '=', id)]"
-                               options="{'no_create': True, 'no_open': True}"
-                               nolabel="1"/>
+                        <group>
+                            <field name="init_web_ui"/>
+                            <field name="init_chat"/>
+                            <field name="init_channel"/>
+                            <field name="init_mail"/>
+                            <field name="init_cron"/>
+                            <field name="init_server_action"/>
+                        </group>
+                        <group>
+                            <field name="init_powerbox"/>
+                            <field name="init_manual"/>
+                            <field name="init_webhook"/>
+                            <field name="init_openai_api"/>
+                            <field name="init_watch"/>
+                        </group>
 
                         <!-- Typinställningar — visas direkt under kryssrutorna
-                             för de typer som är IKRYSSADE (has_*-flaggor). -->
+                             för de typer som är IKRYSSADE. -->
                         <group col="2" string="Typinställningar"
-                               invisible="not has_web_ui and not has_chat and not has_channel
-                                          and not has_mail and not has_cron
-                                          and not has_server_action and not has_powerbox
-                                          and not has_webhook and not has_openai_api
-                                          and not has_watch">
-                        <field name="has_web_ui" invisible="1"/>
-                        <field name="has_chat" invisible="1"/>
-                        <field name="has_channel" invisible="1"/>
-                        <field name="has_mail" invisible="1"/>
-                        <field name="has_cron" invisible="1"/>
-                        <field name="has_server_action" invisible="1"/>
-                        <field name="has_powerbox" invisible="1"/>
-                        <field name="has_webhook" invisible="1"/>
-                        <field name="has_openai_api" invisible="1"/>
-                        <field name="has_watch" invisible="1"/>
+                               invisible="not init_web_ui and not init_chat and not init_channel
+                                          and not init_mail and not init_cron
+                                          and not init_server_action and not init_powerbox
+                                          and not init_webhook and not init_openai_api
+                                          and not init_watch">
                         <group>
                             <!-- Web Chat UI -->
                             <field name="show_in_chat"
-                                   invisible="not has_web_ui" string="Visa i Web Chat"/>
+                                   invisible="not init_web_ui" string="Visa i Web Chat"/>
                             <!-- Chat / Channel -->
                             <field name="channel_id"
-                                   invisible="not has_channel" string="Discuss-kanal"/>
+                                   invisible="not init_channel" string="Discuss-kanal"/>
                             <field name="response_mode"
-                                   invisible="not has_chat and not has_channel"
+                                   invisible="not init_chat and not init_channel"
                                    string="Svarar när"/>
                             <field name="channel_reply_mode"
-                                   invisible="not has_channel" string="Svarsläge"/>
+                                   invisible="not init_channel" string="Svarsläge"/>
                             <field name="chat_trigger_words"
-                                   invisible="(not has_chat and not has_channel) or response_mode != 'trigger'"
+                                   invisible="(not init_chat and not init_channel) or response_mode != 'trigger'"
                                    string="Aktiveringsord (kommaseparerade)"/>
                             <!-- Mail -->
-                            <field name="alias_name" invisible="not has_mail" string="Mail-adress (alias)"/>
-                            <field name="alias_contact" invisible="not has_mail" string="Ta emot mail från"/>
+                            <field name="alias_name" invisible="not init_mail" string="Mail-adress (alias)"/>
+                            <field name="alias_contact" invisible="not init_mail" string="Ta emot mail från"/>
                             <!-- Webhook -->
-                            <field name="webhook_url" invisible="not has_webhook" string="Webhook URL" readonly="1"/>
-                            <field name="webhook_secret" invisible="not has_webhook" string="API-nyckel (secret)"/>
-                            <field name="max_webhook_payload_size" invisible="not has_webhook" string="Max payload (bytes)"/>
+                            <field name="webhook_url" invisible="not init_webhook" string="Webhook URL" readonly="1"/>
+                            <field name="webhook_secret" invisible="not init_webhook" string="API-nyckel (secret)"/>
+                            <field name="max_webhook_payload_size" invisible="not init_webhook" string="Max payload (bytes)"/>
                             <!-- Watch -->
-                            <field name="watch_model_id" invisible="not has_watch" string="Bevaka modell"/>
-                            <field name="watch_trigger" invisible="not has_watch" string="Trigger"/>
-                            <field name="watch_domain" invisible="not has_watch" string="Domän (filter)"/>
-                            <field name="base_automation_id" invisible="not has_watch" string="Base Automation" readonly="1"/>
+                            <field name="watch_model_id" invisible="not init_watch" string="Bevaka modell"/>
+                            <field name="watch_trigger" invisible="not init_watch" string="Trigger"/>
+                            <field name="watch_domain" invisible="not init_watch" string="Domän (filter)"/>
+                            <field name="base_automation_id" invisible="not init_watch" string="Base Automation" readonly="1"/>
                         </group>
                         <group>
                             <!-- Cron -->
-                            <field name="cron_id" invisible="not has_cron" string="Schedule (ir.cron)"/>
-                            <field name="cron_interval_number" invisible="not has_cron" string="Intervall"/>
-                            <field name="cron_interval_type" invisible="not has_cron" string="Intervalltyp"/>
-                            <field name="filter_domain" invisible="not has_cron" string="Filter (domän)"/>
-                            <field name="notify_on_completion" invisible="not has_cron" string="Notifiera vid klar"/>
+                            <field name="cron_id" invisible="not init_cron" string="Schedule (ir.cron)"/>
+                            <field name="cron_interval_number" invisible="not init_cron" string="Intervall"/>
+                            <field name="cron_interval_type" invisible="not init_cron" string="Intervalltyp"/>
+                            <field name="filter_domain" invisible="not init_cron" string="Filter (domän)"/>
+                            <field name="notify_on_completion" invisible="not init_cron" string="Notifiera vid klar"/>
                             <!-- Server Action -->
-                            <field name="server_action_id" invisible="not has_server_action" string="Server Action"/>
-                            <field name="server_action_use_wizard" invisible="not has_server_action" string="Visa prompt-wizard"/>
+                            <field name="server_action_id" invisible="not init_server_action" string="Server Action"/>
+                            <field name="server_action_use_wizard" invisible="not init_server_action" string="Visa prompt-wizard"/>
                             <!-- OpenAI API -->
-                            <field name="api_key_attachment_id" invisible="not has_openai_api" string="API-nyckel (bilaga)"/>
-                            <field name="rate_limit_rpm" invisible="not has_openai_api" string="Rate limit (req/min)"/>
-                            <field name="rate_limit_tpm" invisible="not has_openai_api" string="Rate limit (tok/min)"/>
+                            <field name="api_key_attachment_id" invisible="not init_openai_api" string="API-nyckel (bilaga)"/>
+                            <field name="rate_limit_rpm" invisible="not init_openai_api" string="Rate limit (req/min)"/>
+                            <field name="rate_limit_tpm" invisible="not init_openai_api" string="Rate limit (tok/min)"/>
                             <!-- Powerbox -->
-                            <field name="model_ids" invisible="not has_powerbox"
+                            <field name="model_ids" invisible="not init_powerbox"
                                    widget="many2many_tags" string="Powerbox-modeller"/>
                         </group>
                     </group>

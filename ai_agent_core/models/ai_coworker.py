@@ -685,6 +685,71 @@ class AIQuest(models.Model):
         return self.init_type_ids.filtered(
             lambda it: it.init_type == itype and it.enabled)[:1]
 
+    # ── Initiering: en Boolean per typ (kryssruta). Vanliga Boolean-fält
+    #    gör att invisible på konfig-fälten fungerar direkt i onchange —
+    #    mycket pålitligare än many2many_checkboxes + computed has_*.
+    init_web_ui = fields.Boolean('Web Chat UI',
+        compute='_compute_init_booleans', inverse='_inverse_init_booleans')
+    init_chat = fields.Boolean('Discuss — Private Chat',
+        compute='_compute_init_booleans', inverse='_inverse_init_booleans')
+    init_channel = fields.Boolean('Discuss — Team Channel',
+        compute='_compute_init_booleans', inverse='_inverse_init_booleans')
+    init_mail = fields.Boolean('Incoming Mail',
+        compute='_compute_init_booleans', inverse='_inverse_init_booleans')
+    init_cron = fields.Boolean('Scheduled Action',
+        compute='_compute_init_booleans', inverse='_inverse_init_booleans')
+    init_server_action = fields.Boolean('Server Action',
+        compute='_compute_init_booleans', inverse='_inverse_init_booleans')
+    init_powerbox = fields.Boolean('Powerbox',
+        compute='_compute_init_booleans', inverse='_inverse_init_booleans')
+    init_manual = fields.Boolean('Manual',
+        compute='_compute_init_booleans', inverse='_inverse_init_booleans')
+    init_webhook = fields.Boolean('Webhook',
+        compute='_compute_init_booleans', inverse='_inverse_init_booleans')
+    init_openai_api = fields.Boolean('OpenAI API',
+        compute='_compute_init_booleans', inverse='_inverse_init_booleans')
+    init_watch = fields.Boolean('Watch — Dataändring',
+        compute='_compute_init_booleans', inverse='_inverse_init_booleans')
+
+    _INIT_BOOLEAN_MAP = [
+        ('init_web_ui', 'web_ui'), ('init_chat', 'chat'),
+        ('init_channel', 'channel'), ('init_mail', 'mail'),
+        ('init_cron', 'cron'), ('init_server_action', 'server_action'),
+        ('init_powerbox', 'powerbox'), ('init_manual', 'manual'),
+        ('init_webhook', 'webhook'), ('init_openai_api', 'openai_api'),
+        ('init_watch', 'watch'),
+    ]
+
+    @api.depends('init_type_ids', 'init_type_ids.enabled', 'init_type_ids.init_type')
+    def _compute_init_booleans(self):
+        for rec in self:
+            enabled = set(
+                it.init_type for it in rec.init_type_ids if it.enabled)
+            for field_name, itype in self._INIT_BOOLEAN_MAP:
+                rec[field_name] = itype in enabled
+
+    def _inverse_init_booleans(self):
+        for rec in self:
+            for field_name, itype in self._INIT_BOOLEAN_MAP:
+                rec._set_init_type(itype, bool(rec[field_name]))
+
+    def _set_init_type(self, itype, enabled):
+        """Aktivera/deaktivera en init_type-rad; skapa raden om den saknas."""
+        rec = self._get_active_init(itype)
+        if enabled and not rec:
+            row = self.init_type_ids.filtered(
+                lambda it: it.init_type == itype)[:1]
+            if row:
+                row.enabled = True
+            else:
+                row = self.env['ai.coworker.init_type'].create({
+                    'coworker_id': self.id,
+                    'init_type': itype,
+                    'enabled': True,
+                })
+        elif not enabled and rec:
+            rec.enabled = False
+
     @api.depends('init_type_ids', 'init_type_ids.enabled',
                  'init_type_ids.init_type', 'init_type_ids.watch_model_id',
                  'init_type_ids.watch_trigger', 'init_type_ids.watch_domain',
