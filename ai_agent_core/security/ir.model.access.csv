@@ -71,3 +71,5 @@ access_workspace_activity_sugg_admin,workspace.activity.suggestion.admin,model_w
 access_workspace_gap_engine,workspace.gap.engine,model_workspace_gap_engine,base.group_user,1,0,0,0
 access_ai_lineage_link_user,ai.lineage.link.user,model_ai_lineage_link,base.group_user,1,1,1,0
 access_ai_lineage_link_admin,ai.lineage.link.admin,model_ai_lineage_link,base.group_system,1,1,1,0
+access_ai_session_line_user,ai.coworker.session.line.user,model_ai_coworker_session_line,base.group_user,1,1,1,1
+access_ai_session_line_admin,ai.coworker.session.line.admin,model_ai_coworker_session_line,base.group_system,1,1,1,1

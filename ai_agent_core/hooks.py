@@ -6,12 +6,13 @@ import logging
 _logger = logging.getLogger(__name__)
 
 
-def post_init_hook_personal_memory(cr, registry):
-    """Post-install hook for ai.personal.memory.
+def post_init_hook_personal_memory(env):
+    """Post-install hook for ai.personal.memory (Odoo 18 — takes env).
     
     Skapar pgvector-kolumn, tsvector GENERATED COLUMN och index.
     Idempotent — körs endast om tabellen finns och kolumner saknas.
     """
+    cr = env.cr
     try:
         # 1. tsvector GENERATED COLUMN
         cr.execute("""
@@ -43,24 +44,34 @@ def post_init_hook_personal_memory(cr, registry):
             """)
             _logger.info('Created GIN index on search_vector')
         
-        # 3. pgvector-index (om pgvector finns installerat)
+        # 3. pgvector-index (endast om kolumnen är av typen vector)
         cr.execute("""
             SELECT 1 FROM pg_extension WHERE extname = 'vector'
         """)
         if cr.fetchone():
+            # Kontrollera att embedding-kolumnen är pgvector-typ, inte text
             cr.execute("""
-                SELECT 1 FROM pg_indexes
-                WHERE tablename = 'ai_personal_memory'
-                  AND indexname = 'idx_ai_personal_memory_embedding'
+                SELECT data_type FROM information_schema.columns
+                WHERE table_name = 'ai_personal_memory'
+                  AND column_name = 'embedding'
             """)
-            if not cr.fetchone():
+            emb_type = cr.fetchone()
+            if emb_type and emb_type[0] == 'USER-DEFINED':
                 cr.execute("""
-                    CREATE INDEX idx_ai_personal_memory_embedding
-                    ON ai_personal_memory
-                    USING ivfflat (embedding vector_cosine_ops)
-                    WITH (lists = 100)
+                    SELECT 1 FROM pg_indexes
+                    WHERE tablename = 'ai_personal_memory'
+                      AND indexname = 'idx_ai_personal_memory_embedding'
                 """)
-                _logger.info('Created ivfflat index on embedding')
+                if not cr.fetchone():
+                    cr.execute("""
+                        CREATE INDEX idx_ai_personal_memory_embedding
+                        ON ai_personal_memory
+                        USING ivfflat (embedding vector_cosine_ops)
+                        WITH (lists = 100)
+                    """)
+                    _logger.info('Created ivfflat index on embedding')
+            else:
+                _logger.info('embedding-kolumnen är inte pgvector-typ — hoppar ivfflat-index')
         
         # 4. B-tree-index för user_id
         cr.execute("""
@@ -112,18 +123,26 @@ def post_init_hook_personal_memory(cr, registry):
         """)
         if cr.fetchone():
             cr.execute("""
-                SELECT 1 FROM pg_indexes
-                WHERE tablename = 'ai_company_memory'
-                  AND indexname = 'idx_ai_company_memory_embedding'
+                SELECT data_type FROM information_schema.columns
+                WHERE table_name = 'ai_company_memory'
+                  AND column_name = 'embedding'
             """)
-            if not cr.fetchone():
+            emb_type = cr.fetchone()
+            if emb_type and emb_type[0] == 'USER-DEFINED':
                 cr.execute("""
-                    CREATE INDEX idx_ai_company_memory_embedding
-                    ON ai_company_memory
-                    USING ivfflat (embedding vector_cosine_ops)
-                    WITH (lists = 100)
+                    SELECT 1 FROM pg_indexes
+                    WHERE tablename = 'ai_company_memory'
+                      AND indexname = 'idx_ai_company_memory_embedding'
                 """)
-        
+                if not cr.fetchone():
+                    cr.execute("""
+                        CREATE INDEX idx_ai_company_memory_embedding
+                        ON ai_company_memory
+                        USING ivfflat (embedding vector_cosine_ops)
+                        WITH (lists = 100)
+                    """)
+            else:
+                _logger.info('company_memory embedding är inte pgvector-typ — hoppar ivfflat-index')        
         cr.execute("""
             SELECT 1 FROM pg_indexes
             WHERE tablename = 'ai_company_memory'
@@ -174,25 +193,32 @@ def post_init_hook_personal_memory(cr, registry):
     ]
     for name, code, hour, minute, priority in _CRONS:
         try:
-            cr.execute(
-                'SELECT id FROM ir_cron WHERE name = %s AND model = %s',
-                (name, 'ai.company.memory'))
-            if not cr.fetchone():
-                cr.execute("""
-                    INSERT INTO ir_cron (name, model, state, code, interval_number,
-                                         interval_type, numbercall, active, priority,
-                                         user_id, hour, minute)
-                    VALUES (%s, 'ai.company.memory', 'code', %s,
-                            1, 'days', -1, True, %s, 1, %s, %s)
-                """, (name, code, priority, hour, minute))
+            cron = env['ir.cron'].search([
+                ('cron_name', '=', name),
+                ('model_id.model', '=', 'ai.company.memory'),
+            ], limit=1)
+            if not cron:
+                model_id = env['ir.model']._get('ai.company.memory')
+                env['ir.cron'].create({
+                    'cron_name': name,
+                    'model_id': model_id.id,
+                    'state': 'code',
+                    'code': code,
+                    'interval_number': 1,
+                    'interval_type': 'days',
+                    'numbercall': -1,
+                    'active': True,
+                    'priority': priority,
+                    'user_id': env.ref('base.user_root').id,
+                    'hour': hour,
+                    'minute': minute,
+                })
                 _logger.info('Created cron: %s', name)
         except Exception as e:
             _logger.warning('Could not create cron %s: %s', name, e)
 
     # ── Org init (default coworker + templates) ──
     try:
-        from odoo.api import Environment, SUPERUSER_ID
-        env = Environment(cr, SUPERUSER_ID, {})
         post_init_hook_org(env)
         okf_init_default_artifact_types(env)
         env.flush_all()

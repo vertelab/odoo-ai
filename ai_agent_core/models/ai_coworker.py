@@ -115,6 +115,13 @@ class AIQuest(models.Model):
         compute='_compute_orchestration_mode_help', store=False, readonly=True,
         help='Kort beskrivning av vald orchestrationsläge (endast info).')
 
+    supervisor_model_id = fields.Many2one(
+        'ai.model',
+        string='Supervisor Model',
+        help='Modell som används av supervisorn/routern i Supervisor-, Buzz- '
+             'och Conference-lägen. Lämnas tomt används första agentens modell.',
+    )
+
     @api.depends('orchestration_mode')
     def _compute_orchestration_mode_help(self):
         help_text = {
@@ -1971,6 +1978,11 @@ class AIQuest(models.Model):
         from odoo.addons.ai_agent_core.core.loop import AgentLoop, AgentConfig
         from odoo.addons.ai_agent_core.core.linear import LinearLoop
 
+        # Supervisor model: explicit fält vinner, annars första agentens modell.
+        supervisor_model = (
+            self.supervisor_model_id.name
+            if self.supervisor_model_id else model)
+
         # Inject record context into system prompt
         extra = self._extra_context() if self.context_injection_enabled else ''
         if extra:
@@ -2039,7 +2051,7 @@ class AIQuest(models.Model):
                 system_prompt + conf_suffix, max_rounds)
             return ConferenceLoop(
                 router_provider=provider, agents=specialists,
-                config=SupervisorConfig(router_model=model),
+                config=SupervisorConfig(router_model=supervisor_model),
                 mechanism=mechanism,
             )
 
@@ -2079,7 +2091,7 @@ class AIQuest(models.Model):
             return AgentLoop(
                 provider=provider, tools=tools,
                 config=AgentConfig(
-                    model=model, system_prompt=supervisor_prompt,
+                    model=supervisor_model, system_prompt=supervisor_prompt,
                     max_rounds=max_rounds,
                 ),
             )
@@ -2088,7 +2100,7 @@ class AIQuest(models.Model):
             router_provider=provider,
             agents=specialists,
             config=SupervisorConfig(
-                router_model=model,
+                router_model=supervisor_model,
                 skill_recipe=skill_recipe,
                 max_rounds=3,
                 max_iterations=self.max_iterations or 3,

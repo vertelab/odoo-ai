@@ -197,6 +197,8 @@
                             <field name="orchestration_mode" widget="radio"/>
                             <field name="orchestration_mode_help" readonly="1"
                                    class="text-muted" nolabel="1"/>
+                            <field name="supervisor_model_id"
+                                   invisible="orchestration_mode not in ('supervisor', 'buzz', 'conference')"/>
                             <field name="conference_mechanism"
                                    invisible="orchestration_mode != 'conference'"/>
                             <field name="injection_level" widget="radio"/>

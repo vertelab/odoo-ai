@@ -46,11 +46,6 @@
         </record>
 
         <!-- Menu -->
-        <menuitem id="menu_ai_company_memory_category"
-                  name="Memory Categories"
-                  parent="menu_ai_configuration"
-                  action="action_ai_company_memory_category"
-                  sequence="92"/>
 
     </data>
 </odoo>

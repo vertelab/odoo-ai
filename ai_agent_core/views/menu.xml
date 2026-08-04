@@ -1,84 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <!-- ===== Actions (must be before menus) ===== -->
-    <record id="action_ai_provider" model="ir.actions.act_window">
-        <field name="name">Providers</field>
-        <field name="res_model">ai.provider</field>
-        <field name="view_mode">kanban,list,form</field>
-    </record>
-    <record id="action_ai_model" model="ir.actions.act_window">
-        <field name="name">Models</field>
-        <field name="res_model">ai.model</field>
-        <field name="view_mode">kanban,list,form</field>
-        <field name="context">{'search_default_group_provider': 1}</field>
-    </record>
-    <record id="action_ai_settings" model="ir.actions.act_window">
-        <field name="name">Inställningar</field>
-        <field name="res_model">res.config.settings</field>
-        <field name="view_mode">form</field>
-        <field name="target">inline</field>
-        <field name="context">{'module':'ai_agent_core'}</field>
-    </record>
-    <record id="action_ai_coworker" model="ir.actions.act_window">
-        <field name="name">AI medarbetare</field>
-        <field name="res_model">ai.coworker</field>
-        <field name="view_mode">kanban,list,form</field>
-    </record>
-    <record id="action_ai_agent" model="ir.actions.act_window">
-        <field name="name">Agenter</field>
-        <field name="res_model">ai.agent</field>
-        <field name="view_mode">kanban,list,form</field>
-    </record>
-    <record id="action_ai_identity" model="ir.actions.act_window">
-        <field name="name">Identiteter</field>
-        <field name="res_model">ai.identity</field>
-        <field name="view_mode">kanban,list,form</field>
-    </record>
-    <record id="action_ai_skill" model="ir.actions.act_window">
-        <field name="name">Skills</field>
-        <field name="res_model">ai.skill</field>
-        <field name="view_mode">kanban,list,form</field>
-    </record>
-    <record id="action_ai_memory" model="ir.actions.act_window">
-        <field name="name">Memory</field>
-        <field name="res_model">ai.memory</field>
-        <field name="view_mode">list,form</field>
-    </record>
-    <record id="action_ai_chat" model="ir.actions.act_url">
-        <field name="name">AI Chat</field>
-        <field name="url">/ai/chat</field>
-        <field name="target">self</field>
-    </record>
-
-    <!-- ===== New Org Actions ===== -->
-    <record id="action_ai_org_goal" model="ir.actions.act_window">
-        <field name="name">Goals (OKR)</field>
-        <field name="res_model">ai.org.goal</field>
-        <field name="view_mode">kanban,list,form</field>
-    </record>
-    <record id="action_ai_org_task" model="ir.actions.act_window">
-        <field name="name">AI Tasks</field>
-        <field name="res_model">ai.org.task</field>
-        <field name="view_mode">list,form</field>
-    </record>
-    <record id="action_ai_org_review" model="ir.actions.act_window">
-        <field name="name">AI Performance Reviews</field>
-        <field name="res_model">ai.org.review</field>
-        <field name="view_mode">list,form</field>
-    </record>
-    <record id="action_ai_org_board" model="ir.actions.act_window">
-        <field name="name">AI Board</field>
-        <field name="res_model">ai.org.board</field>
-        <field name="view_mode">list,form</field>
-    </record>
-    <record id="action_ai_onboarding" model="ir.actions.act_window">
-        <field name="name">Onboarding</field>
-        <field name="res_model">ai.onboarding</field>
-        <field name="view_mode">list,form</field>
-        <field name="context">{'default_ceo_user_id': uid}</field>
-    </record>
-
-    <!-- ===== Root menu ===== -->
+<!-- ===== Root menu ===== -->
     <menuitem id="menu_ai_root" name="AI Orkestrering"
               sequence="90" groups="ai_agent_core.group_ai_officer"/>
 
@@ -100,6 +22,13 @@
               parent="menu_ai_technical_root" sequence="20"
               groups="ai_agent_core.group_ai_admin"/>
 
+    <!-- Organization submenu — i rotmenyn. Dashboard/Mål/Tasks/Board här;
+         Reviews + Onboarding ligger under Technical → AI Orkestrering →
+         Organisation (menu_ai_technical_org). Deklareras här så att
+         efterföljande barn (Dashboard etc.) kan referera den. -->
+    <menuitem id="menu_ai_organization" name="Organisation"
+              parent="menu_ai_root" sequence="5"/>
+
     <!-- Dashboard ligger direkt under root (Organisation flyttas till Technical) -->
     <menuitem id="menu_ai_orchestration_dashboard" name="Dashboard"
               parent="menu_ai_organization" sequence="5"
@@ -115,12 +44,6 @@
          Documentation/Support/Preferences) via JS-registrering i
          static/src/js/user_menu_ai_chat.js (Odoo 18 user_menuitems).
          Alla användare har ai.group_user implicit via base.group_user. -->
-
-    <!-- Organization submenu — i rotmenyn. Dashboard/Mål/Tasks/Board här;
-         Reviews + Onboarding ligger under Technical → AI Orkestrering →
-         Organisation (menu_ai_technical_org). -->
-    <menuitem id="menu_ai_organization" name="Organisation"
-              parent="menu_ai_root" sequence="5"/>
     <menuitem id="menu_ai_org_goal" name="Mål (OKR)" parent="menu_ai_organization"
               sequence="10" action="action_ai_org_goal"/>
     <menuitem id="menu_ai_org_task" name="Tasks" parent="menu_ai_organization"
@@ -156,6 +79,19 @@
               parent="menu_ai_configuration" sequence="55"
               action="action_ai_okf_dashboard"/>
 
+    <!-- Tools / Session / Memory Categories — flyttade hit från sina
+         views-filer så att menu.xml (som laddas sist) har alla actions. -->
+    <menuitem id="menu_ai_tool" name="Tools"
+              parent="menu_ai_configuration" sequence="25"
+              action="action_ai_tool"/>
+    <menuitem id="menu_ai_session" name="Session"
+              parent="menu_ai_configuration" sequence="35"
+              groups="ai_agent_core.group_ai_admin"
+              action="action_ai_coworker_session"/>
+    <menuitem id="menu_ai_company_memory_category" name="Memory Categories"
+              parent="menu_ai_configuration" sequence="92"
+              action="action_ai_company_memory_category"/>
+
     <!-- Monthly Summary -->
     <menuitem id="menu_ai_monthly_summary" name="Monthly Summary"
               parent="menu_ai_configuration" sequence="60"
@@ -178,6 +114,19 @@
               parent="menu_ai_technical_config" sequence="10"
               groups="ai_agent_core.group_ai_admin"
               action="action_ai_personal_goal"/>
+
+    <!-- Personal Memories / Company Memory / Graph — flyttade hit från
+         sina respektive views-filer så att alla menyer ligger i menu.xml
+         (som laddas sist och därmed har alla actions tillgängliga). -->
+    <menuitem id="menu_ai_personal_memory" name="Personal Memories"
+              parent="menu_ai_technical_config" sequence="20"
+              action="action_ai_personal_memory"/>
+    <menuitem id="menu_ai_company_memory" name="Company Memory"
+              parent="menu_ai_technical_config" sequence="50"
+              action="action_ai_company_memory"/>
+    <menuitem id="menu_ai_graph" name="Odoo Mind Graph"
+              parent="menu_ai_technical_config" sequence="60"
+              action="action_graph_node_definition"/>
 
     <!-- Uppladdningar (OKF) -->
     <menuitem id="menu_ai_okf_uploads" name="Uppladdningar (OKF)"

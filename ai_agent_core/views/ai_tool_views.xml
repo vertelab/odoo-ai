@@ -7,11 +7,6 @@
         <field name="view_mode">list,form</field>
     </record>
 
-    <!-- Menu item -->
-    <menuitem id="menu_ai_tool" name="Tools"
-              parent="menu_ai_configuration" action="action_ai_tool"
-              sequence="25"/>
-
     <!-- Tool list view -->
     <record id="view_ai_tool_tree" model="ir.ui.view">
         <field name="name">ai.tool.list</field>

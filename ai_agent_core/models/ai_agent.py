@@ -49,8 +49,13 @@ class AIAgent(models.Model):
                                   'agent_id', 'skill_id', string='Skills',
                                   help='Task-specific skills this agent can perform')
 
-    # Tools
-    tool_ids = fields.One2many('ai.agent.tool', 'agent_id', string='Tools')
+    # Tools — M2M till globala ai.tool-record
+    tool_ids = fields.Many2many(
+        'ai.tool', 'ai_agent_tool_custom_rel',
+        'agent_id', 'tool_id', string='Tools',
+        help='Globala ai.tool-record kopplade till denna agent. '
+             'Lagra flera tools per agent. Speglar ai.tool.agent_ids.',
+    )
 
     # Memories (FAISS/pgvector RAG)
     memory_ids = fields.One2many('ai.agent.memory', 'agent_id', string='Skill Memories',

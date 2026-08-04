@@ -144,13 +144,7 @@
                             <field name="skill_ids" widget="many2many_tags"/>
                         </page>
                         <page string="Tools">
-                            <field name="tool_ids">
-                                <list editable="bottom">
-                                    <field name="sequence" widget="handle"/>
-                                    <field name="name"/>
-                                    <field name="risk_level"/>
-                                </list>
-                            </field>
+                            <field name="tool_ids" widget="many2many_tags"/>
                         </page>
                         <page string="Memories">
                             <field name="memory_ids">
