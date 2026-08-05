@@ -6,9 +6,7 @@
             <field name="model_id" ref="base.model_res_company"/>
             <field name="state">code</field>
             <field name="code">
-import secrets
-company = env.company.sudo()
-company.ai_gateway_token = secrets.token_hex(32)
+env.company.sudo().action_refresh_gateway_token()
             </field>
         </record>
     </data>

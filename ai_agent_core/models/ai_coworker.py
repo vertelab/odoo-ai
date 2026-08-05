@@ -3230,7 +3230,7 @@ class AIQuestAgent(models.Model):
 
     # Display fields for the coworker form Agents tab (like legacy ai_agent)
     agent_model_id = fields.Many2one(
-        'ai.model', related='agent_id.model_id', string='Model', store=False,
+        'ai.model', compute='_compute_agent_model_id', string='Model', store=False,
         help='Agent model shown on the assignment row.')
     agent_tools_display = fields.Char(
         'Tools', compute='_compute_agent_display', store=False,
@@ -3238,6 +3238,11 @@ class AIQuestAgent(models.Model):
     agent_memories_display = fields.Char(
         'Memories', compute='_compute_agent_display', store=False,
         help='Comma-separated memory names of the assigned agent.')
+
+    @api.depends('agent_id.model_id')
+    def _compute_agent_model_id(self):
+        for rec in self:
+            rec.agent_model_id = rec.agent_id.model_id
 
     @api.depends('agent_id.tool_ids.name', 'agent_id.memory_ids.memory_id.name',
                  'agent_id.rag_memory_ids.name')

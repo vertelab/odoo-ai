@@ -2,7 +2,9 @@
 <odoo>
 <!-- ===== Root menu ===== -->
     <menuitem id="menu_ai_root" name="AI Orkestrering"
-              sequence="90" groups="ai_agent_core.group_ai_officer"/>
+              sequence="90" groups="ai_agent_core.group_ai_officer"
+              action="action_ai_orchestration_dashboard"
+              web_icon="ai_agent_core,static/description/icon.png"/>
 
     <!-- Teknisk uppsättning under Settings → Technical (admin).
          Deklareras här (före Organisation/Configuration) eftersom XML
@@ -24,12 +26,11 @@
 
     <!-- Organization submenu — i rotmenyn. Dashboard/Mål/Tasks/Board här;
          Reviews + Onboarding ligger under Technical → AI Orkestrering →
-         Organisation (menu_ai_technical_org). Deklareras här så att
-         efterföljande barn (Dashboard etc.) kan referera den. -->
+         Organisation (menu_ai_technical_org). -->
     <menuitem id="menu_ai_organization" name="Organisation"
               parent="menu_ai_root" sequence="5"/>
 
-    <!-- Dashboard ligger direkt under root (Organisation flyttas till Technical) -->
+    <!-- Dashboard ligger under Organisation -->
     <menuitem id="menu_ai_orchestration_dashboard" name="Dashboard"
               parent="menu_ai_organization" sequence="5"
               action="action_ai_orchestration_dashboard"/>
