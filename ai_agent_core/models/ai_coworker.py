@@ -3010,7 +3010,7 @@ class AICoworker(models.Model):
     @api.model_create_multi
     def create(self, vals_list):
         records = super(AICoworker, self).create(vals_list)
-        for record in records:
+        for record, vals in zip(records, vals_list):
             # Seed alla init_type-rader (en per typ) så UI:t
             # (many2many_checkboxes) kan visa varje typ som kryssruta.
             try:
@@ -3019,7 +3019,7 @@ class AICoworker(models.Model):
                 _logger.warning('Could not seed init types for %s: %s',
                               record.name, e)
             # Auto-create hr.employee for new coworkers
-            if not vals_list.get('employee_id') and not vals_list.get('is_default'):
+            if not vals.get('employee_id') and not vals.get('is_default'):
                 try:
                     record._ensure_employee()
                 except Exception as e:
