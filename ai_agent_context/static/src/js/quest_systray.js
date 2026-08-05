@@ -112,17 +112,17 @@ export class QuestSystray extends Component {
                 name: contextInfo.recordName 
                     ? _t("Launch Quest for: %s", contextInfo.recordName)
                     : _t("Launch Quest"),
-                res_model: "ai.quest",
+                res_model: "ai.coworker",
                 views: [[false, "list"], [false, "form"]],
                 target: "current",
                 context: context,
             });
         } else {
-            // No record context - standard quest list
+            // No record context - standard coworker list
             this.action.doAction({
                 type: "ir.actions.act_window",
-                name: _t("AI Quests"),
-                res_model: "ai.quest",
+                name: _t("AI Coworkers"),
+                res_model: "ai.coworker",
                 views: [[false, "list"], [false, "form"]],
                 target: "current",
             });

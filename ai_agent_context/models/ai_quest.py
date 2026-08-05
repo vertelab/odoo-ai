@@ -14,31 +14,12 @@ _logger = logging.getLogger(__name__)
 
 
 class AIQuest(models.Model):
-    """Extend AI Quest with automatic record context injection.
-    
-    Injects three levels of context into the AI system prompt:
-    1. User view context — model/view the user is currently in
-    2. Record data — JSON of all non-binary fields
-    3. Chatter history — message thread (oldest → newest)
-    
-    Context is resolved from: env.context, session objects, discuss message,
-    discuss channel, and the quest's linked channel's ai_context_* fields.
-    """
-    _inherit = 'ai.quest'
+    """Extend AI Coworker with automatic record context injection."""
+    _inherit = 'ai.coworker'
 
-    context_injection_enabled = fields.Boolean(
-        string='Enable Record Context',
-        default=True,
-    )
-    context_max_fields = fields.Integer(
-        string='Max Context Fields', default=100,
-    )
-    context_include_chatter = fields.Boolean(
-        string='Include Chatter History', default=True,
-    )
-    context_chatter_limit = fields.Integer(
-        string='Chatter Message Limit', default=20,
-    )
+    # All context fields (context_injection_enabled, context_max_fields,
+    # context_include_chatter, context_chatter_limit) are defined in
+    # ai_agent_core.models.ai_coworker — we only add methods here.
 
     # ── _extra_context() — called by build_chain/build_supervisor ──────
 
@@ -116,7 +97,7 @@ class AIQuest(models.Model):
 
     def _get_channel_context(self):
         """Get user view context from quest's linked discuss channel."""
-        channel = self.channel_id or self.real_channel_id
+        channel = self.channel_id
         _logger.info("CTX-INJECT [_get_channel_context] channel_id=%s real_channel_id=%s",
                      self.channel_id, self.real_channel_id)
         if not channel:
@@ -136,10 +117,11 @@ class AIQuest(models.Model):
 
     # ── run() — auto-detect & inject record before graph builds ────────
 
-    def run(self, **kwargs):
-        """Auto-detect context record and inject before running the quest."""
-        _logger.info("CTX-INJECT [run] quest=%s enabled=%s kwargs_keys=%s",
-                     self.name, self.context_injection_enabled, list(kwargs.keys()))
+    def run(self, prompt=None, system_prompt=None, force_model=None,
+            force_agent=None, session=None, **kwargs):
+        """Auto-detect context record and inject before running."""
+        _logger.info("CTX-INJECT [run] coworker=%s enabled=%s",
+                     self.name, self.context_injection_enabled)
         if self.context_injection_enabled:
             record = self._detect_record(kwargs)
             _logger.info("CTX-INJECT [run] detected record=%s",
@@ -151,19 +133,21 @@ class AIQuest(models.Model):
                 )
                 kwargs['records'] = record
                 _logger.info("CTX-INJECT [run] injected record into kwargs+context")
-        return super().run(**kwargs)
+        return super().run(prompt=prompt, system_prompt=system_prompt,
+                          force_model=force_model, force_agent=force_agent,
+                          session=session, **kwargs)
 
     def _get_eval_context(self, action=None, kw=None):
-        """Extend eval_context with built record context.
-        
-        This ensures custom-code Quests (has_code=True) also get context,
-        not just non-code Quests that go through build_chain/supervisor.
-        """
-        ctx = super()._get_eval_context(action=action, kw=kw)
+        """Extend eval_context with built record context."""
+        # ai.coworker may not have _get_eval_context; use _extra_context instead
+        if hasattr(super(), '_get_eval_context'):
+            ctx = super()._get_eval_context(action=action, kw=kw)
+        else:
+            ctx = {}
         if self.context_injection_enabled:
             extra = self._extra_context()
             _logger.info("CTX-INJECT [_get_eval_context] extra_context_len=%d has_code=%s",
-                         len(extra) if extra else 0, self.has_code)
+                         len(extra) if extra else 0, getattr(self, 'has_code', False))
             if extra:
                 ctx['extra_context'] = extra
                 ctx['system_context'] = extra

@@ -89,12 +89,3 @@ class DiscussChannel(models.Model):
             self.ai_context_record_id = int(record_id)
         if view_type:
             self.ai_context_view_type = view_type
-
-    def send_ai_message(self, message):
-        """Log context values captured by message_post()."""
-        _logger.info(
-            "CTX-INJECT [send_ai] channel=%s model=%s record_id=%s view=%s",
-            self.uuid, self.ai_context_model,
-            self.ai_context_record_id, self.ai_context_view_type
-        )
-        return super().send_ai_message(message)
