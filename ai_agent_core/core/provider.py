@@ -278,12 +278,13 @@ class BifrostProvider(AIProvider):
             except httpx.HTTPStatusError as e:
                 _logger.error(
                     'Bifrost 400-debug: model=%s msgs=%d tools=%d system_len=%d '
-                    'roles=%s sample=%r',
+                    'roles=%s sample=%r ALLTOOLS=%s',
                     body.get('model'), len(body.get('messages', [])),
                     len(body.get('tools', [])),
                     len(body.get('system', '') or ''),
                     [m.get('role') for m in body.get('messages', [])][:20],
-                    (body.get('messages') or [{}])[0].get('content', '')[:60])
+                    (body.get('messages') or [{}])[0].get('content', '')[:60],
+                    [t.get('function', {}).get('name') for t in body.get('tools', [])])
                 raise httpx.HTTPStatusError(
                     f"{e} — Bifrost: {_detail}", request=e.request,
                     response=e.response) from e

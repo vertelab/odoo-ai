@@ -193,6 +193,22 @@ async def _tool_fetch_url(url: str = "") -> str:
         return f"Fetch error: {e}"
 
 
+def _sanitize_tool_name(name: str) -> str:
+    """Transliterera icke-ASCII-tecken i verktygsnamn.
+
+    Cerebras/Bifrost kan inte kompilera JSON-schema-grammatik för verktyg
+    med icke-ASCII-namn (t.ex. 'driftlarm_update_bedömning' → 400
+    'Failed to compile the JSON schema grammar').
+    """
+    import unicodedata
+    if name.isascii():
+        return name
+    normalized = unicodedata.normalize('NFKD', name)
+    ascii_name = ''.join(
+        c for c in normalized if not unicodedata.combining(c))
+    return ascii_name
+
+
 def ai_tool_records_to_tools(records, env=None) -> list[Tool]:
     """Convert ai.tool records to executable core Tool objects.
 
@@ -221,7 +237,7 @@ def ai_tool_records_to_tools(records, env=None) -> list[Tool]:
                 return f'Tool {_rec.name} failed: {e}'
 
         tools.append(Tool(
-            name=record.name,
+            name=_sanitize_tool_name(record.name),
             description=record.description or record.name,
             parameters=schema,
             handler=_handler,
