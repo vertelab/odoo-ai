@@ -49,7 +49,7 @@
     'images': ['static/description/banner.png'],
     'license': 'AGPL-3',
     'depends': [
-        'ai_agent',
+        'ai_agent_core',
         'mail',
     ],
     'data': [

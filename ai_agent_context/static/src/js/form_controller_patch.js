@@ -15,7 +15,7 @@ import { useEffect } from "@odoo/owl";
  */
 patch(FormController.prototype, {
     setup() {
-        super.setup();
+        this._super();
         useEffect(
             () => {
                 const onDataRequest = (event) => {
