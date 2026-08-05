@@ -304,17 +304,22 @@ class AIStreamController(http.Controller):
                         from odoo.addons.ai_agent_core.core.provider import Message, Role
 
                         # Konversationshistorik → Message-objekt (kontext mellan varv)
+                        # TOOL-rader hoppas över: de saknar assistant-tool_calls-
+                        # strukturen vid replay och ger 400 från providern.
                         _ROLE_MAP = {
                             'user': Role.USER, 'assistant': Role.ASSISTANT,
-                            'system': Role.SYSTEM, 'tool': Role.TOOL,
+                            'system': Role.SYSTEM,
                         }
                         history = []
                         for item in (gen_history or []):
                             content = item.get('content', '') or ''
                             if not content:
                                 continue
+                            role = item.get('role')
+                            if role == 'tool':
+                                continue  # implementeringsdetalj, ej konversation
                             history.append(Message(
-                                role=_ROLE_MAP.get(item.get('role'), Role.USER),
+                                role=_ROLE_MAP.get(role, Role.USER),
                                 content=content,
                             ))
                         # HITL: registrera WebUI-interrupt-handler för denna
@@ -336,8 +341,12 @@ class AIStreamController(http.Controller):
                         if gen_custom_tool_ids:
                             custom_tools = gen_env['ai.tool'].browse(gen_custom_tool_ids)
                             if custom_tools:
-                                tools.register_many(
-                                    wrap_tools_with_env(custom_tools, gen_env))
+                                from odoo.addons.ai_agent_core.core.tools import \
+                                    ai_tool_records_to_tools
+                                # Konvertera ai.tool-records → core Tools innan wrap
+                                tools.register_many(wrap_tools_with_env(
+                                    ai_tool_records_to_tools(
+                                        custom_tools, gen_env), gen_env))
 
                         def _make_loop(**kw):
                             """Bygg StreamingAgentLoop med interrupt-handler."""

@@ -248,7 +248,15 @@ class BifrostProvider(AIProvider):
         url = f"{self.base_url}{path}"
         _logger.debug("Bifrost %s %s", path, body.get("model", "?"))
         response = await client.post(url, json=body)
-        response.raise_for_status()
+        if response.is_error:
+            # Inkludera response-body i felet (t.ex. 400-detaljer från providern)
+            _detail = response.text[:500]
+            try:
+                response.raise_for_status()
+            except httpx.HTTPStatusError as e:
+                raise httpx.HTTPStatusError(
+                    f"{e} — Bifrost: {_detail}", request=e.request,
+                    response=e.response) from e
         return response.json()
 
     @DEFAULT_RETRY
@@ -262,8 +270,23 @@ class BifrostProvider(AIProvider):
         request = client.build_request('POST', url, json=body)
         response = await client.send(request, stream=True)
         if response.is_error:
+            await response.aread()  # läs body innan .text (streaming)
+            _detail = response.text[:500]
             await response.aclose()
-            response.raise_for_status()
+            try:
+                response.raise_for_status()
+            except httpx.HTTPStatusError as e:
+                _logger.error(
+                    'Bifrost 400-debug: model=%s msgs=%d tools=%d system_len=%d '
+                    'roles=%s sample=%r',
+                    body.get('model'), len(body.get('messages', [])),
+                    len(body.get('tools', [])),
+                    len(body.get('system', '') or ''),
+                    [m.get('role') for m in body.get('messages', [])][:20],
+                    (body.get('messages') or [{}])[0].get('content', '')[:60])
+                raise httpx.HTTPStatusError(
+                    f"{e} — Bifrost: {_detail}", request=e.request,
+                    response=e.response) from e
         return response
 
     async def _post_stream(self, path: str, body: dict):
