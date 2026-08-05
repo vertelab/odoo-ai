@@ -13,7 +13,7 @@ from odoo import models, fields, api, _
 _logger = logging.getLogger(__name__)
 
 
-class AIQuestSkill(models.Model):
+class AICoworkerSkill(models.Model):
     """A quest-specific copy of a shared skill.
 
     Forked from ai.skill when a quest starts using it.

@@ -7,7 +7,7 @@ Each line represents one message in a conversation thread.
 from odoo import models, fields, api
 
 
-class AIQuestSessionLine(models.Model):
+class AICoworkerSessionLine(models.Model):
     _name = 'ai.coworker.session.line'
     _description = 'Session Message Line'
     _order = 'session_id, sequence asc'

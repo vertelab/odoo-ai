@@ -52,7 +52,7 @@ Return ONLY a JSON object with these keys:
 Keep it professional but with personality."""
 
 
-class AIQuest(models.Model):
+class AICoworker(models.Model):
     _name = 'ai.coworker'
     _description = 'AI Quest'
     _inherit = ['mail.thread', 'mail.activity.mixin']
@@ -1684,13 +1684,6 @@ class AIQuest(models.Model):
             _logger.info('Seeded %d missing init_type records', seeded)
         return seeded
 
-    @api.model_create_multi
-    def create(self, vals_list):
-        records = super(AIQuest, self).create(vals_list)
-        # Seed sker i create() nedan (rad ~2803) via _ensure_all_init_types —
-        # denna model_create_multi skuggas av den senare @api.model create.
-        return records
-
     def _ensure_all_init_types(self):
         """Skapa en komplett init_type-rad-uppsättning (en per INIT_TYPES-typ)
         för medarbetaren om rader saknas. Idempotent.
@@ -2851,7 +2844,7 @@ class AIQuest(models.Model):
 
 
     def write(self, vals):
-        res = super(AIQuest, self).write(vals)
+        res = super(AICoworker, self).write(vals)
         if any(k in vals for k in ('orchestration_mode', 'channel_id', 'is_supervisor')):
             self._sync_buzz_agents_to_channel()
         return res
@@ -3014,24 +3007,25 @@ class AIQuest(models.Model):
                     employee.name, self.name)
         return employee
 
-    @api.model
-    def create(self, vals):
-        record = super(AIQuest, self).create(vals)
-        # Seed alla init_type-rader (en per typ) så UI:t
-        # (many2many_checkboxes) kan visa varje typ som kryssruta.
-        try:
-            record._ensure_all_init_types()
-        except Exception as e:
-            _logger.warning('Could not seed init types for %s: %s',
-                          record.name, e)
-        # Auto-create hr.employee for new coworkers
-        if not vals.get('employee_id') and not vals.get('is_default'):
+    @api.model_create_multi
+    def create(self, vals_list):
+        records = super(AICoworker, self).create(vals_list)
+        for record in records:
+            # Seed alla init_type-rader (en per typ) så UI:t
+            # (many2many_checkboxes) kan visa varje typ som kryssruta.
             try:
-                record._ensure_employee()
+                record._ensure_all_init_types()
             except Exception as e:
-                _logger.warning('Could not create employee for %s: %s',
+                _logger.warning('Could not seed init types for %s: %s',
                               record.name, e)
-        return record
+            # Auto-create hr.employee for new coworkers
+            if not vals_list.get('employee_id') and not vals_list.get('is_default'):
+                try:
+                    record._ensure_employee()
+                except Exception as e:
+                    _logger.warning('Could not create employee for %s: %s',
+                                  record.name, e)
+        return records
 
 
 # ---------------------------------------------------------------------------
@@ -3086,7 +3080,7 @@ def _extract_text(filename, content):
         return f'[Binary: {len(content)} bytes]'
 
 
-class AIQuestMonthlySummary(models.Model):
+class AICoworkerMonthlySummary(models.Model):
     """Monthly systemtoken summary for billing and reporting (T3.5)."""
     _name = 'ai.coworker.monthly_summary'
     _description = 'Monthly Quest Summary'
@@ -3205,7 +3199,7 @@ class AIQuestMonthlySummary(models.Model):
         return created
 
 
-class AIQuestAgent(models.Model):
+class AICoworkerAgent(models.Model):
     _name = 'ai.coworker.agent'
     _description = 'Quest Agent Assignment'
     _order = 'sequence asc'
@@ -3258,7 +3252,7 @@ class AIQuestAgent(models.Model):
 
     @api.model_create_multi
     def create(self, vals_list):
-        records = super(AIQuestAgent, self).create(vals_list)
+        records = super(AICoworkerAgent, self).create(vals_list)
         for rec in records:
             quest = rec.coworker_id
             if quest._get_effective_orchestration_mode() == 'buzz' and quest.channel_id:
@@ -3287,7 +3281,7 @@ class AIQuestAgent(models.Model):
                         ], limit=1)
                         if member:
                             member.unlink()
-        return super(AIQuestAgent, self).unlink()
+        return super(AICoworkerAgent, self).unlink()
 
     def action_dismiss_auto_agent(self):
         """Remove an auto-created agent from this quest and delete it if unused."""

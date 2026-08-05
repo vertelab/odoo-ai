@@ -1229,7 +1229,7 @@ class TestSystemtoken(unittest.TestCase):
         self.assertIn("'last_month_sys_tokens'", content)
 
     def test_monthly_summary_model_source(self):
-        """T3.5: AIQuestMonthlySummary model exists with generate_monthly_summaries."""
+        """T3.5: AICoworkerMonthlySummary model exists with generate_monthly_summaries."""
         import os
         path = os.path.join(
             os.path.dirname(__file__), '..', 'models', 'ai_coworker.py'
@@ -1237,7 +1237,7 @@ class TestSystemtoken(unittest.TestCase):
         path = os.path.abspath(path)
         with open(path) as f:
             content = f.read()
-        self.assertIn("class AIQuestMonthlySummary", content)
+        self.assertIn("class AICoworkerMonthlySummary", content)
         self.assertIn("generate_monthly_summaries", content)
         self.assertIn("model_breakdown", content)
         self.assertIn("total_sys_tokens", content)

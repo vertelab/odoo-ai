@@ -76,7 +76,7 @@ ai_agent_core/
 ├── models/                 # Odoo models (require Odoo runtime)
 │   ├── ai_provider.py      # ai.provider — LLM provider configuration
 │   ├── ai_model.py         # ai.model — individual models with capabilities
-│   ├── ai_quest.py         # ai.quest — standalone quests + AIQuestRun wizard
+│   ├── ai_quest.py         # ai.quest — standalone quests + AICoworkerRun wizard
 │   ├── ai_agent.py         # ai.agent — agents with identity, skills, tools, budget
 │   ├── ai_session.py       # ai.quest.session — extended with token tracking
 │   ├── ai_identity.py      # ai.identity — SOUL.md (personality, style, values)

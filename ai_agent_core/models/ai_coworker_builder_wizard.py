@@ -8,7 +8,7 @@ Contains an iframe loading /ai/chat with the Quest Builder quest.
 from odoo import models, fields, api
 
 
-class AIQuestBuilderWizard(models.TransientModel):
+class AICoworkerBuilderWizard(models.TransientModel):
     _name = 'ai.coworker.builder.wizard'
     _description = 'Quest Builder Wizard'
 

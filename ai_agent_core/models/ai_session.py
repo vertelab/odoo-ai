@@ -7,7 +7,7 @@ from odoo import models, fields, api
 _logger = logging.getLogger(__name__)
 
 
-class AIQuestSession(models.Model):
+class AICoworkerSession(models.Model):
     _name = 'ai.coworker.session'
     _description = 'AI Quest Session'
     _order = 'create_date desc'
