@@ -1,26 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <!-- Context info for ai.coworker.session form -->
-    <record id="view_ai_quest_session_form_inherit_context" model="ir.ui.view">
-        <field name="name">ai.coworker.session.form.inherit.context</field>
-        <field name="model">ai.coworker.session</field>
-        <field name="arch" type="xml">
-            <xpath expr="//sheet" position="inside">
-                <div class="alert alert-info" role="alert"
-                     invisible="not has_context">
-                    <strong>Record Context Available</strong>
-                    <field name="context_record_name"
-                           invisible="not context_record_name"/>
-                    <button type="object"
-                            name="action_view_context_record"
-                            string="View Record"
-                            class="btn btn-sm btn-secondary"
-                            invisible="not context_record_id"/>
-                </div>
-            </xpath>
-        </field>
-    </record>
-
     <!-- Extend ai.coworker.session tree to show context badge -->
     <record id="view_ai_quest_session_tree_inherit_context" model="ir.ui.view">
         <field name="name">ai.coworker.session.tree.inherit.context</field>
