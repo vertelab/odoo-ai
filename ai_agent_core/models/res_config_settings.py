@@ -45,6 +45,18 @@ class ResConfigSettings(models.TransientModel):
     _inherit = 'res.config.settings'
 
     # ─────────────────────────────────────────────
+    # PWA (mobilapp) — namn + ikon för hemskärmen
+    # ─────────────────────────────────────────────
+    pwa_name = fields.Char(
+        'PWA-namn',
+        config_parameter='ai_agent_core.pwa_name',
+        help='Namn på den installerade mobilappen. Tomt = "AI <företagsnamn>" '
+             'för chatten, företagsnamnet för Odoo-appen.')
+    pwa_icon = fields.Image(
+        related='company_id.pwa_icon', string='PWA-ikon', readonly=False,
+        help='Ikon på hemskärmen. Tomt = företagsloggan.')
+
+    # ─────────────────────────────────────────────
     # Background Jobs — per-cron rader (task 7.15)
     # ─────────────────────────────────────────────
     bg_cron_line_ids = fields.One2many(
@@ -475,6 +487,17 @@ class ResConfigSettings(models.TransientModel):
         return self._notify(
             'Graph synkad',
             'Odoo Mind Graph har synkroniserats.')
+
+    def action_index_personal_now(self):
+        """Kör nu: indexera personliga minneskällor (roll + mål)."""
+        try:
+            result = self.env['ai.okf.concept']._index_all_personal_sources()
+            return self._notify(
+                'Personliga minnen indexerade',
+                'Roller: %(roles)s · Mål: %(goals)s' % result)
+        except Exception as e:
+            return self._notify(
+                'Indexering misslyckades', str(e), type_='danger')
 
     def action_toggle_cron(self, cron_key, active):
         """Toggle a cron job on/off by its key in BG_CRON_NAMES."""

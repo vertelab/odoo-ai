@@ -160,6 +160,33 @@ class AICoworker(models.Model):
              'system prompt for this coworker. summary_only is cheapest and '
              'least noisy; full gives complete context at higher token cost.')
 
+    # ── Minne (agent-memory-governance: runtime-saning) ──
+    memory_scopes = fields.Many2many(
+        'ai.memory.scope', 'ai_coworker_memory_scope_rel',
+        'coworker_id', 'scope_id', string='Memory Scopes',
+        help='Vilka minnen (company/personal/coworker) injiceras för denna '
+             'AI Medarbetare. Seedas från identity vid skapande.')
+    memory_level = fields.Selection([
+        ('L0', 'L0 — Summary only'),
+        ('L1', 'L1 — Summary + key'),
+        ('L2', 'L2 — + strategi'),
+        ('L3', 'L3 — Full'),
+    ], string='Memory Level', default='L1',
+        help='Omfattning per scope (ärvs av kopplingar utan eget värde).')
+    memory_profile = fields.Selection([
+        ('hermes', 'Hermes — lärande rådgivare'),
+        ('balanced', 'Balanserad'),
+        ('session_only', 'Session-only'),
+    ], string='Memory Profile', default='balanced',
+        help='Snabbstart: fyller i scopes/nivå. Identity-memory_profile seedar '
+             'detta vid skapande.')
+    learning = fields.Selection([
+        ('active', 'Active — lär sig av samtal'),
+        ('passive', 'Passive — injicerar bara, lär sig inte'),
+    ], string='Learning', default='passive',
+        help='Om medarbetaren skriver OKF-koncept från samtal (Hermes-lärande). ')
+
+
     # ── Buzz workspace settings ──
     allow_auto_create_agents = fields.Boolean(
         'Auto-create Agents', default=True,
@@ -248,7 +275,7 @@ class AICoworker(models.Model):
     @api.onchange('identity_id')
     def _onchange_identity_id(self):
         """When user selects a template identity, auto-create a copy.
-        
+
         The copy lives independently — the quest's identity evolves
         separately from the original template. Same pattern as ai.coworker.skill.
         """
@@ -261,6 +288,7 @@ class AICoworker(models.Model):
                 'scope': self.identity_id.scope,
             })
             self.identity_id = copy.id
+            self._seed_memory_settings()
             return {
                 'warning': {
                     'title': 'Identity kopierad',
@@ -270,6 +298,57 @@ class AICoworker(models.Model):
                     ) % self.identity_id.name,
                 }
             }
+
+    def _seed_memory_settings(self):
+        """Seeda minnesinställningar från identity (agent-memory-governance 2.4).
+
+        - memory_profile + memory_scopes + memory_level från identitetens
+          memory_profile
+        - kopplingarnas block från agenternas egna identiteter
+        Idempotent: skriver bara tomma fält, inga duplikat.
+        """
+        self.ensure_one()
+        identity = self.identity_id
+        if not identity:
+            return
+        scope_model = self.env['ai.memory.scope']
+        code_to_scope = {s.code: s for s in scope_model.search([])}
+
+        # memory_profile från identity (om tom)
+        if not self.memory_profile and identity.memory_profile:
+            self.memory_profile = identity.memory_profile
+
+        # learning från identity (om tom)
+        if self.learning in (False, 'passive') and identity.learning == 'active':
+            self.learning = 'active'
+
+        # scopes från profilen
+        if not self.memory_scopes:
+            if identity.memory_profile == 'hermes':
+                codes = ('company', 'personal', 'coworker')
+                self.memory_level = self.memory_level or 'L1'
+            elif identity.memory_profile == 'balanced':
+                codes = ('company', 'coworker')
+                self.memory_level = self.memory_level or 'L1'
+            else:  # session_only
+                codes = ()
+                self.memory_level = self.memory_level or 'L0'
+            self.memory_scopes = [(6, 0, [
+                code_to_scope[c].id for c in codes if c in code_to_scope])]
+
+        # kopplingarnas block från agentidentiteter (om tomma)
+        for link in self.agent_ids:
+            agent_identity = link.agent_id.identity_id
+            if not agent_identity:
+                continue
+            if agent_identity.memory_profile == 'session_only':
+                for scope in ('personal', 'company', 'coworker'):
+                    if not getattr(link, 'block_%s' % scope):
+                        link.write({'block_%s' % scope: True})
+            elif agent_identity.memory_profile == 'balanced':
+                if not link.block_personal:
+                    link.block_personal = True
+
     cron_id = fields.Many2one('ir.cron', string='Scheduled Action', ondelete='cascade')
     cron_interval_number = fields.Integer('Interval', default=1)
     cron_interval_type = fields.Selection([
@@ -1677,7 +1756,7 @@ class AICoworker(models.Model):
                     self.env['ai.coworker.init_type'].create({
                         'coworker_id': quest.id,
                         'init_type': itype,
-                        'active': False,
+                        'enabled': itype in ('manual', 'web_ui'),
                     })
                     seeded += 1
         if seeded:
@@ -1699,112 +1778,143 @@ class AICoworker(models.Model):
                     self.env['ai.coworker.init_type'].create({
                         'coworker_id': rec.id,
                         'init_type': itype,
-                        'active': itype == 'manual',
+                        # Web-UI och manual aktiva som default; övriga
+                        # skapas avstängda men synliga i kryssrute-UI:t.
+                        'enabled': itype in ('manual', 'web_ui'),
                         'sequence': 10,
                     })
 
     # ── Record Context Injection (ported from ai_agent_context) ──
 
-    def _extra_context(self):
-        """Build extended system prompt with record data + chatter."""
-        res = super()._extra_context() if hasattr(super(), '_extra_context') else ''
-        if not self.context_injection_enabled:
-            return res
+    def _build_injection_prompt(self, user=None, agent=None, prompt='',
+                                record=None, max_chars=6000):
+        """Gemensam injiceringsfunktion (agent-memory-governance 3.x).
 
+        ENDA injiceringskällan (full refaktor): användare → rekordkontext →
+        minne (company/personal/coworker) → mission. Respekterar AI
+        Medarbetarens memory_scopes + kopplingens hårda block och nivåer.
+        Sessionhistorik hanteras av anroparen (history-parametern).
+
+        Args:
+            user: Aktuell användare (D2 — subjekt för personligt minne)
+            agent: Specifik agent (kopplingens block/level gäller)
+            record: Aktuell Odoo-post (powerbox/rekordkontext)
+            prompt: aktuell fråga (används som query för L1-sök)
+        """
+        user = user or self.env.user
         parts = []
+        budget = max_chars
 
-        # Level 1: User view context from channel
-        ch_ctx = self._get_channel_context()
-        if ch_ctx:
+        # 2. Aktuell användare — med TYDLIG instruktion så modellen aldrig
+        # frågar vem användaren är (antaganden-delen av Agent Identity).
+        if user and user.id and user.login and user.login != 'public':
+            partner = user.partner_id
+            company = user.company_id
+            user_parts = [
+                f"- Namn: {partner.name if partner else user.login}",
+                f"- Inloggning: {user.login}",
+                f"- E-post: {partner.email if partner and partner.email else '-'}",
+                f"- Företag: {company.name if company else '-'}",
+            ]
+            # Befattning från HR (personal-memory-sources)
+            try:
+                emp = self.env['hr.employee'].search([
+                    ('work_email', '=', user.login),
+                ] + ([('company_id', '=', company.id)] if company else []),
+                    limit=1)
+                if not emp and partner:
+                    emp = self.env['hr.employee'].search(
+                        [('work_contact_id', '=', partner.id)], limit=1)
+                if emp and emp.job_id:
+                    user_parts.append(f"- Befattning: {emp.job_id.name}")
+            except Exception:
+                pass
+            user_name = partner.name if partner else user.login
             parts.append(
-                f"\n\n## User Context\n"
-                f"The user is currently viewing: {ch_ctx['model']}"
-                + (f" (record ID: {ch_ctx['record_id']})" if ch_ctx.get('record_id') else "")
-                + (f" in {ch_ctx['view_type']} view.\n" if ch_ctx.get('view_type') else ".\n")
+                "## Aktuell användare\n"
+                f"Du pratar med {user_name} ({user.login}). "
+                f"Använd DENNA identitet för alla frågor om användaren — "
+                f"fråga ALDRIG användaren vem de är.\n"
+                + '\n'.join(user_parts)
             )
 
-        # Level 2 & 3: Record fields + chatter
-        record = self._get_ai_context_record() or self._get_session_context_record()
-        if record and record.exists():
+        # 3. Rekordkontext (L1-L3 från tidigare _extra_context) — aldrig
+        # avbryt hela injektionen; rekordkontext är best-effort.
+        if self.context_injection_enabled:
             try:
-                parts.append(
-                    f"\n\n## Current Record: {record._name} (ID: {record.id})\n"
-                    f"You are interacting within this Odoo record. "
-                    f"Use the field data below to answer questions about it.\n"
-                )
-                try:
+                ch_ctx = self._get_channel_context()
+                if ch_ctx:
+                    parts.append(
+                        f"## User Context\n"
+                        f"The user is currently viewing: {ch_ctx['model']}"
+                        + (f" (record ID: {ch_ctx['record_id']})" if ch_ctx.get('record_id') else "")
+                        + (f" in {ch_ctx['view_type']} view.\n" if ch_ctx.get('view_type') else ".\n")
+                    )
+                if record is None:
+                    record = self._get_ai_context_record() or self._get_session_context_record()
+                if record and record.exists():
+                    parts.append(
+                        f"## Current Record: {record._name} (ID: {record.id})\n"
+                        f"You are interacting within this Odoo record. "
+                        f"Use the field data below to answer questions about it.\n"
+                    )
                     json_data = record._ai_serialize_fields_data(
                         max_fields=self.context_max_fields)
                     parts.append(f"### Record Fields\n```json\n{json_data}\n```\n")
-                except Exception as e:
-                    _logger.warning('Field serialization failed: %s', e)
-
-                if self.context_include_chatter and hasattr(record, '_ai_serialize_messages_data'):
-                    try:
+                    if self.context_include_chatter and hasattr(
+                            record, '_ai_serialize_messages_data'):
                         chatter = record._ai_serialize_messages_data()
                         if chatter:
-                            lines = chatter.split('\n')
-                            if len(lines) > self.context_chatter_limit:
-                                lines = lines[-self.context_chatter_limit:]
-                                chatter = '\n'.join(lines) + "\n(older messages omitted)"
-                            parts.append(f"### Chatter History (oldest -> newest)\n{chatter}\n")
-                    except Exception as e:
-                        _logger.warning('Chatter failed: %s', e)
+                            clines = chatter.split('\n')
+                            if len(clines) > self.context_chatter_limit:
+                                clines = clines[-self.context_chatter_limit:]
+                                chatter = '\n'.join(clines) + \
+                                    "\n(older messages omitted)"
+                            parts.append(
+                                f"### Chatter History (oldest -> newest)\n{chatter}\n")
             except Exception as e:
-                _logger.error('Context injection failed: %s', e)
+                _logger.error('Rekordkontext misslyckades: %s', e)
 
-        # Level 4: Personal Memory (ai.personal.memory)
-        if self.user_id and 'ai.personal.memory' in self.env:
-            try:
-                memory_block = self.env['ai.personal.memory'].build_system_prompt_block(
-                    user_id=self.user_id.id,
-                    query=self.description,
-                    max_chars=2200,
-                )
-                if memory_block:
-                    parts.append(f"\n\n{memory_block}")
-            except Exception as e:
-                _logger.debug('Personal memory injection failed: %s', e)
+        # Kopplingens block + effektiva nivåer (agent = specifik, annars medarbetarnivå)
+        link = None
+        if agent:
+            link = self.agent_ids.filtered(lambda l: l.agent_id.id == agent.id)[:1]
+        scope_codes = set(self.memory_scopes.mapped('code'))
 
-        # Level 5: Company Memory — OKF-first (tasks 7.1/7.2/7.5)
-        if self.inject_company_memory and 'ai.okf.concept' in self.env:
-            try:
-                company_id = self.company_id.id or self.env.company.id
-                atype_ids = self.company_memory_artifact_types.ids \
-                    if self.company_memory_artifact_types else None
-                # Avdelningskontext (task 7.5): filtrera på avdelningens
-                # artifact types om de är deklarerade
-                dept_ctx = None
-                if self.department_id:
-                    dept_ctx = self.department_id._okf_context_domain()
-                if dept_ctx and not atype_ids:
-                    atype_ids = self.department_id.artifact_type_ids.ids
-                memory_block = self.env['ai.okf.concept'] \
-                    ._okf_build_system_prompt_block(
-                        'company', company_id, query=self.description,
-                        max_chars=2000, artifact_type_ids=atype_ids,
-                        include_level1=True,
-                        injection_level=self.injection_level)
-                if memory_block:
-                    parts.append(f"\n\n{memory_block}")
-            except Exception as e:
-                _logger.debug('OKF company memory injection failed: %s', e)
-        elif self.inject_company_memory and 'ai.company.memory' in self.env:
-            # Legacy-fallback (före OKF-migrering)
-            try:
-                cat_ids = self.company_memory_categories.ids if self.company_memory_categories else None
-                company_id = self.company_id.id or self.env.company.id
-                memory_block = self.env['ai.company.memory'].build_system_prompt_block(
-                    company_id=company_id,
-                    user_id=self.env.user.id,
-                    max_chars=2000,
-                )
-                if memory_block:
-                    parts.append(f"\n\n{memory_block}")
-            except Exception as e:
-                _logger.debug('Company memory injection failed: %s', e)
+        # 4-6. Minne per scope
+        if 'ai.okf.concept' in self.env and scope_codes:
+            company_id = self.company_id.id or self.env.company.id
+            for scope in ('company', 'personal', 'coworker'):
+                if scope not in scope_codes:
+                    continue
+                if link and getattr(link, 'block_%s' % scope, False):
+                    continue  # hårt block
+                level = self.memory_level or 'L1'
+                if link:
+                    level = link._effective_level(scope)
+                if scope == 'company':
+                    owner_id = company_id
+                elif scope == 'personal':
+                    owner_id = user.id
+                else:
+                    owner_id = self.id
+                try:
+                    block = self.env['ai.okf.concept']._okf_build_system_prompt_block(
+                        scope, owner_id, query=prompt or self.description,
+                        max_chars=min(budget // 2, 2000),
+                        injection_level={
+                            'L0': 'summary_only',
+                            'L1': 'summary_and_key',
+                            'L2': 'summary_and_key',
+                            'L3': 'full',
+                        }.get(level, 'summary_and_key'))
+                    if block:
+                        parts.append(block)
+                        budget -= len(block)
+                except Exception as e:
+                    _logger.debug('Injection block %s misslyckades: %s', scope, e)
 
-        # Level 6: Company Mission & Values (use_company_info)
+        # 6. Mission/values
         if self.use_company_info:
             company = self.env.user.company_id
             cinfo = []
@@ -1813,11 +1923,16 @@ class AICoworker(models.Model):
             if company.company_values:
                 cinfo.append(f"## Company Values\n{company.company_values}")
             if cinfo:
-                parts.append("\n\n" + "\n\n".join(cinfo))
+                parts.append("\n\n".join(cinfo))
 
-        if parts:
-            res += "\n".join(parts)
-        return res
+        return "\n\n".join(parts)
+
+    def _extra_context(self):
+        """Wrapper för bakåtkompatibilitet — ENDA injiceringskällan är
+        _build_injection_prompt (full refaktor)."""
+        res = super()._extra_context() if hasattr(super(), '_extra_context') else ''
+        inj = self._build_injection_prompt(user=self.env.user, prompt='')
+        return (res + '\n\n' + inj).strip() if inj else res
 
     def _detect_record(self, kwargs):
         """Detect context record from available sources."""
@@ -1946,6 +2061,329 @@ class AICoworker(models.Model):
             _logger.info('Auto-created default agent %s for coworker %s',
                          agent.name, rec.name)
         return True
+
+    def _visible_models(self, init_type=''):
+        """Return tillåtna modeller för en init_type, eller None = alla.
+
+        - chat/channel/web_ui → None (alla modeller)
+        - server_action/powerbox → model_ids-bundna modeller + aktuell kontext
+        - cron/mail/webhook → coworkerns tool-bindningar (modeller som
+          verktygen pekar på; utan bindning → None)
+        """
+        self.ensure_one()
+        if init_type in ('chat', 'channel', 'web_ui'):
+            return None
+        if init_type in ('server_action', 'powerbox'):
+            models = set(self.model_ids.mapped('model'))
+            # aktuell rekordkontext läggs till i run/powerbox via env.context
+            return models or None
+        if init_type in ('cron', 'mail', 'webhook', 'openai_api'):
+            models = set()
+            for tool in self.tool_ids.filtered('active'):
+                if tool.model_ids:
+                    models |= set(tool.model_ids.mapped('model'))
+            return models or None
+        return None  # manual → alla
+
+    def _ensure_default_coworker(self):
+        """Adoptera/skapa default-coworkern "Allmän assistent" (idempotent).
+
+        Anropas som <function> i data/default_coworker.xml vid varje
+        datainläsning (install OCH checkmodule --init). Migrations körs inte
+        av checkmodule (--init utan --update), så adoption av legacy-poster
+        ("Allmän" från hooks/migration 1.8) måste ske här.
+
+        Steg:
+        1. Behåll äldsta is_default-coworkern, avaktivera ev. duplikat
+        2. Byt namn "Allmän" → "Allmän assistent"
+        3. Bind xmlids (coworker, lead-agent, länk) via ir.model.data
+        4. Döp om lead-agenten "Allmän assistent" → "Allmän kärna"
+        5. Säkerställ web_ui-init aktiverad (chatten kräver enabled)
+        """
+        defaults = self.search([('is_default', '=', True)], order='id asc')
+        if not defaults:
+            return True  # data-XML skapar på ny installation
+
+        keep = defaults[0]
+        # 1. Avlägsna duplikat (t.ex. data-XML-kopia skapad före adoption)
+        for dup in defaults[1:]:
+            dup_agent_ids = dup.agent_ids.ids
+            dup.write({'active': False, 'is_default': False})
+            for agent in self.env['ai.agent'].sudo().browse(dup_agent_ids):
+                if not self.env['ai.coworker.agent'].search_count([
+                    ('agent_id', '=', agent.id),
+                    ('coworker_id.active', '=', True),
+                ]):
+                    agent.write({'active': False})
+            _logger.info('Adopterade bort duplikat-coworker %s (%s)',
+                         dup.id, dup.name)
+
+        # 2. Byt namn
+        if keep.name == 'Allmän':
+            keep.write({'name': 'Allmän assistent'})
+            _logger.info('Döpte om default-coworker → Allmän assistent')
+
+        # 3. Bind xmlids
+        IrModelData = self.env['ir.model.data'].sudo()
+
+        def _bind(name, model, res_id):
+            existing = IrModelData.search([
+                ('module', '=', 'ai_agent_core'), ('name', '=', name),
+            ], limit=1)
+            if existing:
+                if existing.res_id != res_id or existing.model != model:
+                    existing.write({'res_id': res_id, 'model': model})
+            else:
+                IrModelData.create({
+                    'module': 'ai_agent_core', 'name': name,
+                    'model': model, 'res_id': res_id, 'noupdate': True,
+                })
+
+        _bind('coworker_default_assistent', 'ai.coworker', keep.id)
+
+        # 4. Lead-agent + länk
+        link = self.env['ai.coworker.agent'].sudo().search([
+            ('coworker_id', '=', keep.id),
+        ], order='sequence, id asc', limit=1)
+        if link:
+            agent = link.agent_id
+            _bind('coworker_agent_default_core', 'ai.coworker.agent', link.id)
+            _bind('agent_default_core', 'ai.agent', agent.id)
+            if agent.name == 'Allmän assistent':
+                agent.write({'name': 'Allmän kärna'})
+                _logger.info('Döpte om lead-agent → Allmän kärna')
+
+        # 5. Säkerställ web_ui-init aktiverad
+        if not keep.init_type_ids.filtered(
+                lambda it: it.init_type == 'web_ui' and it.enabled):
+            self.env['ai.coworker.init_type'].sudo().create({
+                'coworker_id': keep.id,
+                'init_type': 'web_ui',
+                'enabled': True,
+                'show_in_chat': True,
+            })
+            _logger.info('Skapade web_ui-init för default-coworkern')
+
+        # 5b. Seeda minnesinställningar om tomma (default-coworkern skapades
+        # före memory-governance-featuren).
+        if not keep.memory_scopes:
+            keep._seed_memory_settings()
+            if not keep.memory_scopes:
+                scope_model = self.env['ai.memory.scope']
+                codes = {s.code: s for s in scope_model.search([])}
+                keep.memory_scopes = [(6, 0, [
+                    codes[c].id for c in ('company', 'personal', 'coworker')
+                    if c in codes])]
+
+        # 6. Supervisor-läge med 3 agenter (odoo-model-tools change):
+        #    kärna (lead) + Odoo-specialist + Research
+        if not keep.orchestration_mode or keep.orchestration_mode == 'single':
+            keep.write({'orchestration_mode': 'supervisor'})
+            _logger.info('Satte default-coworker → supervisor-läge')
+
+        Agent = self.env['ai.agent'].sudo()
+        CoworkerAgent = self.env['ai.coworker.agent'].sudo()
+
+        def _ensure_agent(xmlid, name, ai_role, description, skills=()):
+            """Hämta agent via xmlid; skapa om den saknas. Idempotent."""
+            existing = IrModelData.search([
+                ('module', '=', 'ai_agent_core'), ('name', '=', xmlid),
+            ], limit=1)
+            if existing and existing.res_id:
+                agent = Agent.browse(existing.res_id)
+                if agent.exists():
+                    return agent
+            agent = Agent.create({
+                'name': name,
+                'ai_role': ai_role,
+                'description': description,
+                'status': 'active',
+            })
+            _bind(xmlid, 'ai.agent', agent.id)
+            if skills:
+                found = self.env['ai.skill'].sudo().search(
+                    [('name', 'in', list(skills))])
+                if found:
+                    agent.write({'skill_ids': [(6, 0, found.ids)]})
+            _logger.info('Skapade agent %s (%s)', name, xmlid)
+            return agent
+
+        def _ensure_link(coworker, agent, role='member', sequence=20):
+            if not CoworkerAgent.search([
+                ('coworker_id', '=', coworker.id),
+                ('agent_id', '=', agent.id),
+            ], limit=1):
+                CoworkerAgent.create({
+                    'coworker_id': coworker.id,
+                    'agent_id': agent.id,
+                    'role': role,
+                    'sequence': sequence,
+                })
+                _logger.info('Länkade agent %s → coworker %s',
+                             agent.name, coworker.name)
+
+        # Odoo-specialist — affärsverktyg + odoo-core-skill
+        odoo_agent = _ensure_agent(
+            'agent_odoo_business', 'Odoo-specialist',
+            'Odoo Specialist',
+            'Affärsexpert på Odoo-modeller: söker, skapar och kör affärsflöden '
+            'via generiska modellverktyg och följer odoo-core-skillen.',
+            skills=('odoo-core',),
+        )
+        _ensure_link(keep, odoo_agent, role='member', sequence=20)
+
+        # Research — webb + youtube
+        research_agent = _ensure_agent(
+            'agent_research', 'Research',
+            'Web Research',
+            'Research-agent: söker information på webben, hämtar sidor och '
+            'bearbetar YouTube-innehåll via youtube-skills.',
+            skills=('youtube-transcript', 'youtube-search',
+                    'youtube-channels', 'youtube-playlist', 'youtube-full'),
+        )
+        _ensure_link(keep, research_agent, role='member', sequence=30)
+
+        return True
+
+    def _learn_from_session(self, session):
+        """Hermes-lärande (agent-memory-governance 4.x).
+
+        Vid learning=active: LLM-reflektion över sessionen → 1-3 koncept
+        → scope-routing + block → trust-gate → _okf_upsert (ADD-only,
+        attribution, lineage).
+        """
+        import json as _json
+        self.ensure_one()
+        if self.learning != 'active':
+            return 0
+        if not session or not session.session_line_ids:
+            return 0
+        if 'ai.okf.concept' not in self.env:
+            return 0
+
+        # Samla konversationen
+        lines = session.session_line_ids.sorted('sequence')
+        conversation = '\n'.join(
+            f"[{l.role}] {l.content[:500]}" for l in lines[-40:])
+        if not conversation.strip():
+            return 0
+
+        # 1. LLM-reflektion
+        concepts = self._extract_concepts_from_conversation(conversation)
+        if not concepts:
+            return 0
+
+        written = 0
+        for concept in concepts:
+            scope = concept.get('scope', 'personal')
+            summary = (concept.get('summary') or '').strip()[:1000]
+            if not summary or scope not in ('company', 'personal', 'coworker'):
+                continue
+            # 2. Scope-routing + block (lead-regeln = medarbetarens scopes)
+            scope_codes = set(self.memory_scopes.mapped('code'))
+            if scope not in scope_codes:
+                _logger.info('Lärande: scope %s ej aktivt — kasserat (%s)',
+                             scope, summary[:60])
+                self._record_learning_discard(session, scope, summary)
+                continue
+            # 3. Trust-gate
+            direct = self.hitl_threshold == 'autonomous' or (
+                self.hitl_threshold == 'high_risk' and scope == 'coworker')
+            if not direct:
+                self._record_learning_proposal(session, scope, summary)
+                continue
+            # 4. Skrivning via _okf_upsert
+            try:
+                if scope == 'company':
+                    owner = {'owner_company_id': self.company_id.id or self.env.company.id}
+                elif scope == 'personal':
+                    owner = {'owner_user_id': (session.user_id.id or self.env.user.id)}
+                else:
+                    owner = {'owner_coworker_id': self.id}
+                self.env['ai.okf.concept']._okf_upsert(
+                    'learning',
+                    concept_key=f'learned.{scope}.{session.id}.{len(summary[:40])}',
+                    summary=summary,
+                    title=summary[:80],
+                    source_ref=f'ai.coworker.session,{session.id}',
+                    attribution=[{
+                        'source': f'ai.coworker.session.line,{lines[-1].id}',
+                        'role': 'conversation',
+                    }],
+                    generated_by='learning',
+                    **owner,
+                )
+                written += 1
+            except Exception as e:
+                _logger.warning('Lärande-skrivning misslyckades: %s', e)
+        if written:
+            _logger.info('Lärde mig %d koncept från session %s',
+                         written, session.id)
+        return written
+
+    def _extract_concepts_from_conversation(self, conversation):
+        """LLM-reflektion: föreslå 1-3 bestående koncept."""
+        import json as _json
+        import asyncio
+        try:
+            from odoo.addons.ai_agent_core.core.provider import (
+                ProviderFactory, BifrostProvider)
+            from odoo.addons.ai_agent_core.core.loop import AgentLoop, AgentConfig
+
+            provider, _model = ProviderFactory.from_coworker(self)
+            provider = provider or BifrostProvider(
+                base_url='http://192.168.11.150:8080/v1',
+                virtual_key='opencode')
+            loop = AgentLoop(provider=provider, tools=[], config=AgentConfig(
+                model='cerebras/gpt-oss-120b', max_rounds=1, max_tokens=1500))
+            prompt = (
+                "Granska konversationen och extrahera 1-3 BESTÅENDE fakta "
+                "värda att minnas (inte småprat). Svara med JSON-lista: "
+                "[{\"summary\": \"kort fakta\", \"scope\": "
+                "\"personal|company|coworker\"}].\n\n"
+                f"Konversation:\n{conversation}"
+            )
+            result = asyncio.run(loop.run(prompt))
+            text = (result.text or '').strip()
+            # Ta bort ev. ```json-omslag
+            if '```' in text:
+                text = text.split('```')[1] if '```json' in text else text
+                text = text.replace('json', '', 1).strip()
+            data = _json.loads(text)
+            if isinstance(data, dict):
+                data = data.get('concepts', data.get('facts', []))
+            return data if isinstance(data, list) else []
+        except Exception as e:
+            _logger.warning('Reflektion misslyckades: %s', e)
+            return []
+
+    def _record_learning_discard(self, session, scope, summary):
+        """Blockerat/lärande-område → notera i approval-kön."""
+        try:
+            if 'workspace.activity.suggestion' not in self.env:
+                return
+            self.env['workspace.activity.suggestion']._create_suggestion(
+                summary=f"Lärande kasserat (blockerat {scope}): {summary[:60]}",
+                detail=f"Medarbetaren ville lära sig {summary} men scope {scope} "
+                       f"är inte aktivt/blockerat.",
+                source='coworker', coworker_id=self.id, session_id=session.id,
+            )
+        except Exception:
+            pass
+
+    def _record_learning_proposal(self, session, scope, summary):
+        """Trust-gate 'föreslå' → approval-kön."""
+        try:
+            if 'workspace.activity.suggestion' not in self.env:
+                return
+            self.env['workspace.activity.suggestion']._create_suggestion(
+                summary=f"Föreslå inlärning ({scope}): {summary[:60]}",
+                detail=summary,
+                suggestion_type='mail.activity', source='coworker',
+                coworker_id=self.id, session_id=session.id,
+            )
+        except Exception:
+            pass
 
     def _check_quest_error(self):
         """Check quest configuration before running.
@@ -2126,6 +2564,15 @@ class AICoworker(models.Model):
                 f"\n## Agent-Specific Skills\n{agent_skills_context}"
                 + system_prompt
             )
+            # Per-agent-injektion (agent-memory-governance 3.6): specialisten
+            # får bara de scopen kopplingens block/level tillåter.
+            try:
+                agent_inj = self._build_injection_prompt(
+                    user=self.env.user, agent=agent, prompt='')
+                if agent_inj:
+                    agent_system = (agent_system + '\n\n' + agent_inj).strip()
+            except Exception:
+                pass
             specialists.append(SpecialistAgent(
                 name=agent.name,
                 description=agent.get_agent_name(),
@@ -2450,6 +2897,33 @@ class AICoworker(models.Model):
             loop.interrupt_handler = interrupt
             loop.permission_engine = permissions
 
+            def _record_denial_as_suggestion(tool_name, args, reason):
+                """Async-yta (cron): nekade hårda stopp → workspace-approval-kö."""
+                try:
+                    if 'workspace.activity.suggestion' not in self.env:
+                        return
+                    target_user = self.user_id or session.user_id
+                    self.env['workspace.activity.suggestion']._create_suggestion(
+                        summary=f"Godkänn krävs: {tool_name}",
+                        detail=(
+                            f"Medarbetaren {self.name} ville köra {tool_name} "
+                            f"med {args} men nekades ({reason}). "
+                            f"Utför åtgärden manuellt eller via godkännande."
+                        ),
+                        suggestion_type='mail.activity',
+                        source='coworker',
+                        user=target_user,
+                        coworker_id=self.id,
+                        session_id=session.id if session else None,
+                    )
+                    _logger.info(
+                        'Rekorderade nekad %s som workspace-förslag för %s',
+                        tool_name, self.name)
+                except Exception as e:
+                    _logger.warning('Denial→suggestion misslyckades: %s', e)
+
+            loop.denial_callback = _record_denial_as_suggestion
+
             async def _run():
                 prompt = (
                     f"You are an automated agent. Your task:\n\n{self.description}"
@@ -2721,6 +3195,16 @@ class AICoworker(models.Model):
         self.ensure_one()
         if self.init_type != 'powerbox':
             _logger.warning('powerbox called on non-powerbox quest %s', self.name)
+
+        # Init-type-scoping (odoo-model-tools change 2.2): powerbox begränsas
+        # till model_ids-bundna modeller + aktuell rekordkontext.
+        scoped = self._visible_models('powerbox')
+        ctx = dict(self.env.context)
+        if res_model:
+            scoped = set(scoped or ()) | {res_model}
+        if scoped:
+            ctx['_ai_scoped_models'] = scoped
+        self = self.with_context(**ctx)
 
         # Resolve record
         if record is None and res_model and res_id:
@@ -3018,7 +3502,7 @@ class AICoworker(models.Model):
             except Exception as e:
                 _logger.warning('Could not seed init types for %s: %s',
                               record.name, e)
-            # Auto-create hr.employee for new coworkers
+            # Auto-create hr.employee for new coworkers (inte default)
             if not vals.get('employee_id') and not vals.get('is_default'):
                 try:
                     record._ensure_employee()
@@ -3217,6 +3701,35 @@ class AICoworkerAgent(models.Model):
     is_auto_created = fields.Boolean(
         'Auto-created', default=False,
         help='True if this agent was created automatically by the quest.')
+
+    # ── Hårda datablock (agent-memory-governance: per-par) ──
+    block_personal = fields.Boolean(
+        'Block personligt', default=False,
+        help='Hårt block: personligt minne når ALDRIG denna agent (i denna '
+             'AI Medarbetare). Ej förhandlingsbart av supervisor.')
+    block_company = fields.Boolean('Block företag', default=False)
+    block_coworker = fields.Boolean('Block medarbetarminne', default=False)
+    level_personal = fields.Selection(
+        [('L0', 'L0'), ('L1', 'L1'), ('L2', 'L2'), ('L3', 'L3')],
+        string='Nivå personligt', help='Tom = ärv från AI Medarbetaren.')
+    level_company = fields.Selection(
+        [('L0', 'L0'), ('L1', 'L1'), ('L2', 'L2'), ('L3', 'L3')],
+        string='Nivå företag', help='Tom = ärv från AI Medarbetaren.')
+    level_coworker = fields.Selection(
+        [('L0', 'L0'), ('L1', 'L1'), ('L2', 'L2'), ('L3', 'L3')],
+        string='Nivå medarbetare', help='Tom = ärv från AI Medarbetaren.')
+
+    def _effective_level(self, scope):
+        """Kopplingens effektiva nivå för scope (tom = ärv från coworker)."""
+        level_field = 'level_%s' % scope
+        own = getattr(self, level_field, None)
+        if own:
+            return own
+        return self.coworker_id.memory_level or 'L1'
+
+    def _blocked(self, scope):
+        """True om scopen är hårt blockerad för denna koppling."""
+        return bool(getattr(self, 'block_%s' % scope, False))
     orchestration_mode = fields.Selection(
         related='coworker_id.orchestration_mode', string='Orchestration Mode',
         store=False, readonly=True,

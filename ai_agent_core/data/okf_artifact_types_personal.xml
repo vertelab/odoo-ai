@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Artefakttyper för personliga minneskällor (agent-memory-governance 5.x) -->
+<odoo>
+    <data noupdate="1">
+        <record id="artifact_type_role" model="ai.artifact.type">
+            <field name="name">roll</field>
+            <field name="kind">memory</field>
+            <field name="model_id" ref="hr.model_hr_employee"/>
+            <field name="okf_contract" eval="{'sources': ['hr.employee'], 'generated_by': 'hr_indexer', 'stale_policy': 'source', 'ttl_days': 30, 'retention_purpose': 'none'}"/>
+        </record>
+        <record id="artifact_type_goal" model="ai.artifact.type">
+            <field name="name">mål</field>
+            <field name="kind">memory</field>
+            <field name="model_id" ref="base.model_res_users"/>
+            <field name="okf_contract" eval="{'sources': ['ai.personal.goal'], 'generated_by': 'goal_indexer', 'stale_policy': 'fixed', 'ttl_days': 30, 'retention_purpose': 'none'}"/>
+        </record>
+    </data>
+</odoo>

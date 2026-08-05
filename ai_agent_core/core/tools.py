@@ -621,6 +621,120 @@ def builtin_tools() -> list[Tool]:
             risk_level="destructive",
             source="builtin",
         ),
+
+        # ── Generic Odoo Model Tools (odoo-model-tools change) ──
+        Tool(
+            name="describe_model",
+            description="Return a model's schema: fields (type/readonly/computed), relations, available action_*/button_* methods, and capabilities (has_okf, has_graph, has_embedding). Use before searching or writing to a model.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "model": {"type": "string", "description": "Odoo model technical name, e.g. crm.lead"},
+                },
+                "required": ["model"],
+            },
+            handler=_tool_describe_model,
+            risk_level="read_only",
+            source="odoo_model",
+        ),
+        Tool(
+            name="odoo_search",
+            description="Search records via the ORM (search_read) with Odoo domain syntax. Returns id/name/display_name/create_date by default; pass fields to get more. Limit defaults to 20.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "model": {"type": "string"},
+                    "domain": {"type": "array", "description": "Odoo search domain syntax, e.g. [[\x27state\x27, \x27=\x27, \x27draft\x27]]", "items": {"type": "array"}},
+                    "fields": {"type": "array", "items": {"type": "string"}},
+                    "limit": {"type": "integer", "default": 20},
+                    "offset": {"type": "integer"},
+                    "order": {"type": "string"},
+                },
+                "required": ["model"],
+            },
+            handler=_tool_odoo_search,
+            risk_level="read_only",
+            source="odoo_model",
+        ),
+        Tool(
+            name="odoo_create",
+            description="Create a record via the ORM (affärslager) — defaults/onchange tillämpas. Returns id and display_name. Requires approval.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "model": {"type": "string"},
+                    "values": {"type": "object", "description": "Field values"},
+                },
+                "required": ["model", "values"],
+            },
+            handler=_tool_odoo_create,
+            risk_level="write",
+            source="odoo_model",
+        ),
+        Tool(
+            name="odoo_call_method",
+            description="Call a business method (action_*/button_*) on a record — e.g. action_confirm, action_post. Use instead of writing state directly. Requires approval (HITL) always.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "model": {"type": "string"},
+                    "id": {"type": "integer"},
+                    "method": {"type": "string", "description": "Method name, must start with action_ or button_ (or be whitelisted)"},
+                    "args": {"type": "object", "description": "Optional keyword arguments"},
+                },
+                "required": ["model", "id", "method"],
+            },
+            handler=_tool_odoo_call_method,
+            risk_level="execute",
+            source="odoo_model",
+        ),
+        Tool(
+            name="odoo_write",
+            description="Update safe fields on records. Never write state/move_type/journal_id/amount_* directly — use odoo_call_method for business flows. Requires approval.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "model": {"type": "string"},
+                    "ids": {"type": "array", "items": {"type": "integer"}},
+                    "values": {"type": "object"},
+                },
+                "required": ["model", "ids", "values"],
+            },
+            handler=_tool_odoo_write,
+            risk_level="write",
+            source="odoo_model",
+        ),
+        Tool(
+            name="odoo_unlink",
+            description="Delete records. USE WITH CAUTION — destructive, always requires human approval (hard stop).",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "model": {"type": "string"},
+                    "ids": {"type": "array", "items": {"type": "integer"}},
+                },
+                "required": ["model", "ids"],
+            },
+            handler=_tool_odoo_unlink,
+            risk_level="destructive",
+            source="odoo_model",
+        ),
+        Tool(
+            name="okf_search",
+            description="Search OKF knowledge concepts (ai.okf.concept) — hybrid vector + full-text search with access filtering. Use for knowledge about processes/context when OKF exists.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string"},
+                    "scope": {"type": "string", "enum": ["company", "personal", "coworker"]},
+                    "limit": {"type": "integer", "default": 10},
+                },
+                "required": ["query"],
+            },
+            handler=_tool_okf_search,
+            risk_level="read_only",
+            source="odoo_model",
+        ),
     ]
 
 
@@ -1042,218 +1156,279 @@ ODOO_TYPE_TO_JSON = {
 }
 
 
-def model_to_tools(model_name: str, env=None) -> list[Tool]:
-    """Generate OdooModelTools for a registered Odoo model.
+# ---------------------------------------------------------------------------
+# Generic Odoo Model Tools (odoo-model-tools change)
+# Ersätter den döda per-modell-generatorn (model_to_tools). Sex generiska
+# verktyg med modellen som parameter — kontextfönstret exploderar inte med
+# tusentals verktyg. Handlers tar `env` som första arg, injiceras av
+# wrap_tools_with_env.
+# ---------------------------------------------------------------------------
 
-    Creates tools: search_read, read, write, create, unlink
-    Each tool wraps Odoo ORM with the authenticated user's access rights.
-
-    Args:
-        model_name: Odoo model technical name (e.g. 'res.partner')
-        env: Odoo environment (for access rights)
-
-    Returns:
-        List of Tool instances for this model
-    """
-    model_display = model_name.replace('.', '_').replace('_', ' ').title()
-
-    tools = [
-        Tool(
-            name=f"search_read_{model_name.replace('.', '_')}",
-            description=(
-                f"Search and read {model_name} records. "
-                f"Returns matching records with specified fields. "
-                f"Domain uses Odoo domain syntax: [[('field', 'operator', 'value')]]."
-            ),
-            parameters={
-                "type": "object",
-                "properties": {
-                    "domain": {
-                        "type": "array",
-                        "description": f"Odoo search domain for {model_name}",
-                        "items": {"type": "array"},
-                    },
-                    "fields": {
-                        "type": "array",
-                        "description": "Field names to return (default: ['id', 'name'])",
-                        "items": {"type": "string"},
-                    },
-                    "limit": {
-                        "type": "integer",
-                        "description": "Maximum records to return (default: 100)",
-                        "default": 100,
-                    },
-                    "offset": {
-                        "type": "integer",
-                        "description": "Records to skip (for pagination)",
-                    },
-                    "order": {
-                        "type": "string",
-                        "description": "Sort order (e.g. 'name asc')",
-                    },
-                },
-            },
-            handler=_make_search_read_handler(model_name),
-            risk_level="read_only",
-            source="odoo_model",
-        ),
-        Tool(
-            name=f"read_{model_name.replace('.', '_')}",
-            description=f"Read specific {model_name} records by ID.",
-            parameters={
-                "type": "object",
-                "properties": {
-                    "ids": {
-                        "type": "array",
-                        "description": "Record IDs to read",
-                        "items": {"type": "integer"},
-                    },
-                    "fields": {
-                        "type": "array",
-                        "description": "Field names to return",
-                        "items": {"type": "string"},
-                    },
-                },
-                "required": ["ids"],
-            },
-            handler=_make_read_handler(model_name),
-            risk_level="read_only",
-            source="odoo_model",
-        ),
-        Tool(
-            name=f"write_{model_name.replace('.', '_')}",
-            description=f"Write values to {model_name} records.",
-            parameters={
-                "type": "object",
-                "properties": {
-                    "ids": {
-                        "type": "array",
-                        "description": "Record IDs to update",
-                        "items": {"type": "integer"},
-                    },
-                    "values": {
-                        "type": "object",
-                        "description": f"Field values to set on {model_name} records",
-                    },
-                },
-                "required": ["ids", "values"],
-            },
-            handler=_make_write_handler(model_name),
-            risk_level="write",
-            source="odoo_model",
-        ),
-        Tool(
-            name=f"create_{model_name.replace('.', '_')}",
-            description=f"Create a new {model_name} record.",
-            parameters={
-                "type": "object",
-                "properties": {
-                    "values": {
-                        "type": "object",
-                        "description": f"Field values for the new {model_name} record",
-                    },
-                },
-                "required": ["values"],
-            },
-            handler=_make_create_handler(model_name),
-            risk_level="write",
-            source="odoo_model",
-        ),
-        Tool(
-            name=f"unlink_{model_name.replace('.', '_')}",
-            description=f"Delete {model_name} records. USE WITH CAUTION.",
-            parameters={
-                "type": "object",
-                "properties": {
-                    "ids": {
-                        "type": "array",
-                        "description": "Record IDs to delete",
-                        "items": {"type": "integer"},
-                    },
-                },
-                "required": ["ids"],
-            },
-            handler=_make_unlink_handler(model_name),
-            risk_level="destructive",
-            source="odoo_model",
-        ),
-    ]
-    return tools
+# Fält som aldrig får skrivas direkt — affärsflöden går via metoder
+_ODOO_WRITE_DENYLIST = (
+    'state', 'move_type', 'journal_id', 'amount_',
+)
 
 
-def _make_search_read_handler(model_name: str):
-    async def handler(domain=None, fields=None, limit=100, offset=0, order=None):
+def _model_scope_error(env, model):
+    """Return error-sträng om modellen ligger utanför scopen (annars '')."""
+    scoped = env.context.get('_ai_scoped_models')
+    if scoped and model not in scoped:
+        return ('Model %s is not in the scoped models for this init type '
+                '(scoped: %s)' % (model, sorted(scoped)))
+    return ''
+
+
+def _tool_describe_model(env, model=''):
+    """Return model schema + capabilities (fält, relationer, action-metoder,
+    has_okf/has_graph/has_embedding)."""
+    import json as _json
+    if not model or model not in env.registry:
+        return _json.dumps({"error": f"Unknown model: {model}"})
+    _scope_err = _model_scope_error(env, model)
+    if _scope_err:
+        return _json.dumps({"error": _scope_err})
+    Model = env[model]
+    try:
+        fields_get = Model.fields_get()
+    except Exception as e:
+        return _json.dumps({"error": f"fields_get failed for {model}: {e}"})
+
+    fields = {}
+    for fname, finfo in fields_get.items():
+        field_obj = Model._fields.get(fname)
+        fields[fname] = {
+            'type': finfo.get('type'),
+            'string': finfo.get('string'),
+            'readonly': bool(finfo.get('readonly')),
+            'required': bool(finfo.get('required')),
+            'relation': finfo.get('relation'),
+            'computed': bool(getattr(field_obj, 'compute', False)),
+            'related': bool(getattr(field_obj, 'related', False)),
+        }
+    relations = {
+        fname: finfo.get('relation')
+        for fname, finfo in fields_get.items()
+        if finfo.get('type') in ('many2one', 'one2many', 'many2many')
+        and finfo.get('relation')
+    }
+    action_methods = sorted({
+        name for name in dir(Model)
+        if (name.startswith('action_') or name.startswith('button_'))
+        and not name.startswith('__')
+        and callable(getattr(Model, name, None))
+    })
+    has_okf = has_graph = has_embedding = False
+    try:
+        if 'ai.artifact.type' in env:
+            has_okf = env['ai.artifact.type'].search_count(
+                [('model_id.model', '=', model)]) > 0
+    except Exception:
+        pass
+    try:
+        if 'graph.node.definition' in env:
+            has_graph = env['graph.node.definition'].search_count(
+                [('model_id.model', '=', model)]) > 0
+    except Exception:
+        pass
+    try:
+        for field_obj in Model._fields.values():
+            ctype = getattr(field_obj, 'column_type', (None,))[0]
+            if ctype == 'vector' or getattr(field_obj, 'type', '') == 'vector':
+                has_embedding = True
+                break
+    except Exception:
+        pass
+
+    return _json.dumps({
+        'model': model,
+        'fields': fields,
+        'relations': relations,
+        'action_methods': action_methods,
+        'capabilities': {
+            'has_okf': has_okf,
+            'has_graph': has_graph,
+            'has_embedding': has_embedding,
+        },
+    }, default=str)
+
+
+def _tool_odoo_search(env, model='', domain=None, fields=None, limit=20,
+                      offset=0, order=None):
+    """Search records via ORM (search_read). Defaultfält id/name/
+    display_name/create_date, limit 10–20. html/text/binary exkluderas i
+    default men respekteras om explicit begärda."""
+    import json as _json
+    if not model or model not in env.registry:
+        return _json.dumps({"error": f"Unknown model: {model}"})
+    _scope_err = _model_scope_error(env, model)
+    if _scope_err:
+        return _json.dumps({"error": _scope_err})
+    Model = env[model]
+    default_fields = fields is None
+    if fields is None:
+        fields = ['id']
+        for fname in ('name', 'display_name', 'create_date'):
+            if fname in Model._fields:
+                fields.append(fname)
+    elif 'id' not in fields:
+        fields = ['id'] + list(fields)
+    if default_fields:
         try:
-            from odoo import api
-            # Use call_soon_threadsafe to run ORM in Odoo thread
-            import json
-            model = api.Environment.registry[model_name]
-            # Fallback: direct import for testing without Odoo
-            return json.dumps([{"error": "Odoo environment not available for testing"}])
-        except Exception as e:
-            return f"Error accessing model {model_name}: {e}"
-    return handler
+            fg = Model.fields_get(fields)
+        except Exception:
+            fg = {}
+        fields = [f for f in fields
+                  if fg.get(f, {}).get('type') not in ('html', 'text', 'binary')]
+    try:
+        records = Model.search_read(
+            domain or [], fields=fields, limit=limit or 20,
+            offset=offset or 0, order=order)
+    except Exception as e:
+        return _json.dumps({"error": f"search_read failed on {model}: {e}"})
+    return _json.dumps(records, default=str)
 
-def _make_read_handler(model_name: str):
-    async def handler(ids, fields=None):
+
+def _tool_odoo_create(env, model='', values=None):
+    """Create a record via ORM (affärslager). Returnerar id + display_name."""
+    import json as _json
+    if not model or model not in env.registry:
+        return _json.dumps({"error": f"Unknown model: {model}"})
+    _scope_err = _model_scope_error(env, model)
+    if _scope_err:
+        return _json.dumps({"error": _scope_err})
+    Model = env[model]
+    if not Model.check_access_rights('create', raise_exception=False):
+        return _json.dumps({"error": f"No create access on {model}"})
+    try:
+        rec = Model.create(dict(values or {}))
+    except Exception as e:
+        return _json.dumps({"error": f"create failed on {model}: {e}"})
+    return _json.dumps({
+        "ok": True, "id": rec.id,
+        "name": rec.display_name or rec.name or '',
+    }, default=str)
+
+
+def _tool_odoo_call_method(env, model='', id=None, method='', args=None):
+    """Anropa affärsmetod (action_*/button_* eller vitlista). HITL alltid."""
+    import json as _json
+    if not model or model not in env.registry:
+        return _json.dumps({"error": f"Unknown model: {model}"})
+    _scope_err = _model_scope_error(env, model)
+    if _scope_err:
+        return _json.dumps({"error": _scope_err})
+    if not method or method.startswith('_'):
+        return _json.dumps({"error": f"Method '{method}' is not allowed"})
+    if not (method.startswith('action_') or method.startswith('button_')):
         try:
-            import json
-            return json.dumps([{"error": "Odoo environment not available for testing"}])
-        except Exception as e:
-            return f"Error accessing model {model_name}: {e}"
-    return handler
-
-def _make_write_handler(model_name: str):
-    async def handler(ids, values):
-        try:
-            import json
-            return json.dumps({"error": "Odoo environment not available for testing"})
-        except Exception as e:
-            return f"Error accessing model {model_name}: {e}"
-    return handler
-
-def _make_create_handler(model_name: str):
-    async def handler(values):
-        try:
-            import json
-            return json.dumps({"error": "Odoo environment not available for testing"})
-        except Exception as e:
-            return f"Error accessing model {model_name}: {e}"
-    return handler
-
-def _make_unlink_handler(model_name: str):
-    async def handler(ids):
-        try:
-            import json
-            return json.dumps({"error": "Odoo environment not available for testing"})
-        except Exception as e:
-            return f"Error accessing model {model_name}: {e}"
-    return handler
+            whitelist = env['ir.config_parameter'].get_param(
+                'ai_agent_core.call_method_whitelist', '') or ''
+            allowed = {m.strip() for m in whitelist.split(',') if m.strip()}
+        except Exception:
+            allowed = set()
+        if method not in allowed:
+            return _json.dumps({
+                "error": f"Method '{method}' not allowed "
+                         f"(endast action_*/button_* eller vitlista)"})
+    Model = env[model]
+    rec = Model.browse(id)
+    if not rec.exists():
+        return _json.dumps({"error": f"{model} {id} not found"})
+    if not hasattr(rec, method) or not callable(getattr(rec, method)):
+        return _json.dumps({"error": f"Method '{method}' not found on {model}"})
+    try:
+        result = getattr(rec, method)(**(args or {}))
+    except Exception as e:
+        return _json.dumps({
+            "error": f"Method call {model}.{method} failed: {e}"})
+    return _json.dumps({"ok": True, "result": str(result)}, default=str)
 
 
-def register_model_tools(
-    registry: 'ToolRegistry',
-    model_names: list[str],
-    env=None,
-) -> int:
-    """Register Odoo model tools for given models.
+def _tool_odoo_write(env, model='', ids=None, values=None):
+    """Skriv säkra fält (skrivbara, icke-computed/related, utanför denylist).
+    Skriv aldrig state direkt — affärsflöden via odoo_call_method."""
+    import json as _json
+    if not model or model not in env.registry:
+        return _json.dumps({"error": f"Unknown model: {model}"})
+    _scope_err = _model_scope_error(env, model)
+    if _scope_err:
+        return _json.dumps({"error": _scope_err})
+    Model = env[model]
+    vals = dict(values or {})
+    if not vals:
+        return _json.dumps({"error": "values krävs"})
+    try:
+        fg = Model.fields_get(list(vals.keys()))
+    except Exception:
+        fg = {}
+    allowed = {}
+    rejected = []
+    for fname, fval in vals.items():
+        if fname in _ODOO_WRITE_DENYLIST or any(
+                fname.startswith(d) for d in _ODOO_WRITE_DENYLIST):
+            rejected.append(fname)
+            continue
+        finfo = fg.get(fname, {})
+        field_obj = Model._fields.get(fname)
+        if finfo.get('readonly') or getattr(field_obj, 'compute', False) \
+                or getattr(field_obj, 'related', False):
+            rejected.append(fname)
+            continue
+        allowed[fname] = fval
+    if rejected:
+        return _json.dumps({
+            "error": f"Icke tillåtna fält: {rejected}",
+            "hint": "Använd odoo_call_method för affärsflöden "
+                    "(state ändras via metoder)"})
+    recs = Model.browse(ids or [])
+    if not recs:
+        return _json.dumps({"error": f"Inga {model}-poster med ids={ids}"})
+    try:
+        recs.write(allowed)
+    except Exception as e:
+        return _json.dumps({"error": f"write failed on {model}: {e}"})
+    return _json.dumps({"ok": True, "ids": list(recs.ids)})
 
-    Args:
-        registry: ToolRegistry instance
-        model_names: List of Odoo model technical names
-        env: Odoo environment (required for production use)
 
-    Returns:
-        Number of tools registered
-    """
-    count = 0
-    for model_name in model_names:
-        tools = model_to_tools(model_name, env)
-        registry.register_many(tools)
-        count += len(tools)
-    return count
+def _tool_odoo_unlink(env, model='', ids=None):
+    """Radera poster. EXTERNAL-risk — HITL + hårt stopp i permission engine."""
+    import json as _json
+    if not model or model not in env.registry:
+        return _json.dumps({"error": f"Unknown model: {model}"})
+    _scope_err = _model_scope_error(env, model)
+    if _scope_err:
+        return _json.dumps({"error": _scope_err})
+    recs = env[model].browse(ids or [])
+    if not recs:
+        return _json.dumps({"error": f"Inga {model}-poster med ids={ids}"})
+    try:
+        recs.unlink()
+    except Exception as e:
+        return _json.dumps({"error": f"unlink failed on {model}: {e}"})
+    return _json.dumps({"ok": True, "deleted": list(recs.ids)})
 
 
+def _tool_okf_search(env, query='', scope='company', limit=10):
+    """Sök OKF-koncept via _okf_search (hybrid pgvector + tsvector + access)."""
+    import json as _json
+    if not query:
+        return _json.dumps({"error": "query krävs"})
+    if 'ai.okf.concept' not in env:
+        return _json.dumps({"error": "OKF inte tillgängligt"})
+    try:
+        kw = {'query': query, 'limit': limit or 10}
+        if scope in ('company', 'personal', 'coworker'):
+            kw['scope'] = scope
+        results = env['ai.okf.concept']._okf_search(**kw)
+        out = [{
+            'id': c.id, 'title': c.title,
+            'summary': (c.summary or '')[:500],
+            'concept_key': c.concept_key, 'scope': c.scope, 'status': c.status,
+        } for c in results]
+        return _json.dumps(out, default=str)
+    except Exception as e:
+        return _json.dumps({"error": f"okf_search failed: {e}"})
 # ---------------------------------------------------------------------------
 # Quest Builder Tool Handlers
 # ---------------------------------------------------------------------------

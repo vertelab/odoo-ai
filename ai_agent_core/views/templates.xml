@@ -1,6 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
     <data>
+        <!-- PWA: kundens apple-touch-icon även i backend (iOS "Lägg till på
+             hemskärmen" för /odoo-appen) -->
+        <template id="webclient_bootstrap_pwa_icon"
+                  inherit_id="web.webclient_bootstrap">
+            <xpath expr="//link[@rel='apple-touch-icon']" position="attributes">
+                <attribute name="href">/ai/icon-180.png</attribute>
+            </xpath>
+        </template>
+
         <template id="chat_ui" name="AI Chat">
             <t t-call="web.html_container">
                 <t t-set="head">

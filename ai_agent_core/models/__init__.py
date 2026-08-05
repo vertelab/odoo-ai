@@ -20,6 +20,7 @@ from . import ai_tag
 from . import ai_onboard
 from . import base_model
 from . import ai_memory_mixin
+from . import ai_memory_scope
 from . import ai_personal_memory
 from . import ai_company_memory
 from . import ai_company_memory_category

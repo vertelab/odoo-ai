@@ -345,3 +345,54 @@ Odoo-integrationstester (kräver DB): `checkmodule -d <db> -m ai_agent_core -t`
 ## License
 
 AGPL-3 — Vertel AB
+
+---
+
+## Skill-mall (affärsprocessguider) — odoo-model-tools
+
+Affärsprocess-skills (`ai.skill`) ska följa denna mall så att agenter vet
+*när*, *varför* och *hur* de interagerar med Odoo-modeller:
+
+```
+# Skill: <domän> — <beskrivning>
+## Scope            → moduler + modeller; INSTALL-CHECK:
+                     "uteslut sektioner vars modul inte är installerad
+                     (ir.module.module)"
+## <App>-sektion    → per app: modeller, affärsprocesser (steg + HITL),
+                     metodtabell (Metod/När/HITL)
+## Verktygshintar   → describe_model / odoo_search / okf_search / graph_query
+## Trigger-nyckelord → crm, offert, faktura, lager, …
+```
+
+Kodverifierade exempel: `data/skill_odoo_core.xml` (CRM-sektionen bygger på
+faktisk Odoo 18-kod: crm.lead state-maskin, convert_opportunity,
+action_set_won/lost m.fl.). Regler: skriv aldrig `state` direkt — anropa
+affärsmetoder (action_*/button_*) via `odoo_call_method`; HITL-policy per
+operation anges i skillen (affärs-HITL) + permission engine som backstop.
+
+## Bridge-repo-mönster för domänspecifika skills
+
+Domänspecifika skills (`<domän>_ai`) skapas i respektive bridge-repo som
+data-XML, enligt bridge-standarden:
+
+```
+odoo-<domän>/<domän>_ai/data/skills.xml
+  <record id="skill_<domän>_<x>" model="ai.skill">
+    <field name="name">…</field>
+    <field name="category">…</field>
+    <field name="recipe_text"><![CDATA[…]]></field>
+  </record>
+```
+
+- AI-förmågor (coworkers, skills) ligger ENBART i `_ai`-moduler — domän-core
+  är ren.
+- Skills kopplas till agenter via `ai.agent.skill_ids` (data-XML `ref`).
+- Install-check-instruktionen gör att sektioner för oinstallerade moduler
+  utesluts vid körning.
+
+## Deploy (odoo-model-tools)
+
+- Ändringar i ai_agent_core kräver **versionbump i __manifest__.py** + `sudo checkmodule -d <db> -m ai_agent_core` (checkmodule kör `--init` — migrations körs inte, så adoption av legacy-poster sker via `<function>` i data-XML).
+- Rene Python-ändringar (core/*.py, controllers): `sudo systemctl restart odoo` räcker.
+- Tester: `python3 -m unittest ai_agent_core.tests.test_core` (core) · `checkmodule -d <db> -m ai_agent_core -t` (Odoo-integration).
+- Känd begränsning: demo_data.xml (Order-Vakten) har ett befintligt ParseError — påverkar inte produktion.

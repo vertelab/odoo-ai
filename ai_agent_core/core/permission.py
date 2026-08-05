@@ -81,10 +81,17 @@ _RISK_LEVEL_TO_CLASS: dict[str, RiskClass] = {
 _ALWAYS_READ = {
     "calculator", "web_search", "fetch_url", "echo",
     "search_read", "read", "todo_write", "load_skill",
+    # Generic Odoo model tools (read-only)
+    "describe_model", "odoo_search", "okf_search", "graph_query",
 }
 
 # Tool name prefixes that indicate WRITE_LOCAL
 _WRITE_LOCAL_PREFIXES = ("write_", "create_")
+
+# Generic Odoo model tools by name (odoo-model-tools change)
+_ODOO_WRITE_TOOLS = {"odoo_create", "odoo_write"}
+_ODOO_EXEC_TOOLS = {"odoo_call_method"}
+_ODOO_EXTERNAL_TOOLS = {"odoo_unlink"}
 
 # Tool name prefixes that indicate EXTERNAL / destructive
 _EXTERNAL_PREFIXES = ("unlink_", "delete_")
@@ -120,6 +127,12 @@ def classify(
         return RiskClass.READ
     if tool_name in _EXEC_TOOLS or base_name in _EXEC_TOOLS:
         return RiskClass.EXEC
+    if tool_name in _ODOO_EXEC_TOOLS:
+        return RiskClass.EXEC
+    if tool_name in _ODOO_EXTERNAL_TOOLS:
+        return RiskClass.EXTERNAL
+    if tool_name in _ODOO_WRITE_TOOLS:
+        return RiskClass.WRITE_LOCAL
 
     # 2. Name prefix patterns
     if tool_name.startswith(_EXTERNAL_PREFIXES):
@@ -226,6 +239,24 @@ class PermissionEngine:
                 risk_level = metadata.risk_level
 
         risk = classify(tool_name, risk_level, metadata)
+
+        # -- Hårda stopp (odoo-model-tools 3.3) --
+        # odoo_call_method och odoo_unlink kräver ALLTID mänskligt
+        # godkännande — oavsett trust-ladder-steg eller auto-läge.
+        if tool_name in _ODOO_EXEC_TOOLS or tool_name in _ODOO_EXTERNAL_TOOLS:
+            if self.mode == PermissionMode.AUTO:
+                # Automation kan aldrig köra dessa utan människa → neka
+                return Decision(
+                    allowed=False,
+                    reason=(f"{tool_name} kräver alltid mänskligt godkännande "
+                            "(hårt stopp — ingen auto-approval)"),
+                )
+            return Decision(
+                allowed=True,
+                needs_user=True,
+                reason=(f"{tool_name} kräver alltid mänskligt godkännande "
+                        "(hårt stopp)"),
+            )
 
         # -- AUTO mode: everything allowed --
         if self.mode == PermissionMode.AUTO:

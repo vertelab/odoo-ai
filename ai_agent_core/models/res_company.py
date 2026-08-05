@@ -1,7 +1,10 @@
 # -*- coding: utf-8 -*-
 """res.company — Company memory integration."""
 
+import base64
+
 from odoo import models, fields, api
+from odoo.tools import file_open
 import logging
 
 _logger = logging.getLogger(__name__)
@@ -30,6 +33,50 @@ class ResCompany(models.Model):
     website_rag_last_index = fields.Datetime(
         'Website RAG Last Index', readonly=True, copy=False,
         help='When the website was last crawled for RAG.')
+
+    # ── PWA (mobilapp) branding ──
+    pwa_icon = fields.Image(
+        'PWA-ikon',
+        help='Ikon som visas på hemskärmen för den installerade AI-appen och '
+             'Odoo-appen. Lämnas tom används företagsloggan, därefter '
+             'modulikonen.')
+
+    def pwa_app_name(self, app='chat'):
+        """Resolve the PWA app name per branding chain.
+
+        Konfigurerat (ir.config_parameter ai_agent_core.pwa_name) →
+        default per app: 'AI <företagsnamn>' för chatten, företagsnamnet
+        för backend (respekterar web.web_app_name om det satts explicit).
+        """
+        self.ensure_one()
+        icp = self.env['ir.config_parameter'].sudo()
+        configured = (icp.get_param('ai_agent_core.pwa_name', '') or '').strip()
+        if configured:
+            return configured
+        if app == 'backend':
+            if icp.search_count([('key', '=', 'web.web_app_name')]):
+                return icp.get_param('web.web_app_name', 'Odoo')
+            return self.name or 'Odoo'
+        return ('AI ' + (self.name or '')).strip() or 'AI Chat'
+
+    def pwa_icon_bytes(self):
+        """Return the PWA icon source as raw bytes (PNG).
+
+        Upplösningskedja: konfigurerad ikon → res.company.logo → icon.png.
+        Returnerar None om ingen källa finns.
+        """
+        self.ensure_one()
+        for src in (self.pwa_icon, self.logo):
+            if src:
+                try:
+                    return base64.b64decode(src)
+                except Exception:
+                    continue
+        try:
+            with file_open('ai_agent_core/static/description/icon.png', 'rb') as f:
+                return f.read()
+        except Exception:
+            return None
 
     # ── Company Memory ──
     company_memory_ids = fields.One2many(

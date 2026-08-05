@@ -103,12 +103,17 @@ class AgentLoop:
         interrupt_handler=None,
         permission_engine: Optional[PermissionEngine] = None,
         context_provider: Optional[callable] = None,
+        denial_callback: Optional[callable] = None,
     ):
         self.provider = provider
         self.tools = tools
         self.config = config or AgentConfig()
         self.interrupt_handler = interrupt_handler
         self.context_provider = context_provider
+        # Async-ytor (cron/mail/webhook): kallas när ett verktyg nekas av
+        # permission engine (t.ex. hårt stopp) — kan dirigera till
+        # workspace-approval-kön.
+        self.denial_callback = denial_callback
 
         # Observability: [(tool_name, result_preview), ...] per execution,
         # read by callers (e.g. ai.coworker.run) for session-line persistence
@@ -426,6 +431,13 @@ class AgentLoop:
                             "Permission denied for '%s': %s",
                             tc.name, decision.reason,
                         )
+                        if self.denial_callback:
+                            try:
+                                self.denial_callback(
+                                    tc.name, tc.arguments, decision.reason)
+                            except Exception:
+                                _logger.warning(
+                                    'Denial callback failed', exc_info=True)
                         messages.append(Message(
                             role=Role.TOOL,
                             content=f"Tool '{tc.name}' was denied: {decision.reason}",

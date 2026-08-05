@@ -599,45 +599,72 @@ class TestSupervisorLoop(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Odoo Model Tools Tests
+# Odoo Model Tools Tests (odoo-model-tools change — ersätter död model_to_tools)
 # ---------------------------------------------------------------------------
 
 class TestModelTools(unittest.TestCase):
-    """Test OdooModelTools factory."""
+    """Test de generiska Odoo-modellverktygen (builtin_tools)."""
 
-    def test_model_to_tools_generates_five_tools(self):
-        from ai_agent_core.core.tools import model_to_tools
-        tools = model_to_tools("res.partner")
-        self.assertEqual(len(tools), 5)
+    def _generic_tools(self):
+        from ai_agent_core.core.tools import builtin_tools
+        tools = builtin_tools()
+        return {t.name: t for t in tools}
 
-        names = {t.name for t in tools}
-        self.assertIn("search_read_res_partner", names)
-        self.assertIn("read_res_partner", names)
-        self.assertIn("write_res_partner", names)
-        self.assertIn("create_res_partner", names)
-        self.assertIn("unlink_res_partner", names)
+    def test_generic_tools_registered(self):
+        tools = self._generic_tools()
+        expected = {
+            "describe_model", "odoo_search", "odoo_create",
+            "odoo_call_method", "odoo_write", "odoo_unlink", "okf_search",
+        }
+        missing = expected - set(tools)
+        self.assertFalse(missing, f"Saknade verktyg: {missing}")
 
-    def test_model_tool_risk_levels(self):
-        from ai_agent_core.core.tools import model_to_tools
-        tools = model_to_tools("res.partner")
+    def test_generic_tool_risk_levels(self):
+        tools = self._generic_tools()
+        self.assertEqual(tools["describe_model"].risk_level, "read_only")
+        self.assertEqual(tools["odoo_search"].risk_level, "read_only")
+        self.assertEqual(tools["okf_search"].risk_level, "read_only")
+        self.assertEqual(tools["odoo_create"].risk_level, "write")
+        self.assertEqual(tools["odoo_write"].risk_level, "write")
+        self.assertEqual(tools["odoo_call_method"].risk_level, "execute")
+        self.assertEqual(tools["odoo_unlink"].risk_level, "destructive")
 
-        risk_map = {t.name: t.risk_level for t in tools}
-        self.assertEqual(risk_map["search_read_res_partner"], "read_only")
-        self.assertEqual(risk_map["read_res_partner"], "read_only")
-        self.assertEqual(risk_map["write_res_partner"], "write")
-        self.assertEqual(risk_map["create_res_partner"], "write")
-        self.assertEqual(risk_map["unlink_res_partner"], "destructive")
-
-    def test_model_tools_to_openai(self):
-        from ai_agent_core.core.tools import model_to_tools
-        tools = model_to_tools("res.partner")
-
-        for tool in tools:
+    def test_generic_tools_to_openai(self):
+        tools = self._generic_tools()
+        for name, tool in tools.items():
+            if name not in ("describe_model", "odoo_search", "odoo_create",
+                            "odoo_call_method", "odoo_write", "odoo_unlink",
+                            "okf_search"):
+                continue
             openai_def = tool.to_openai()
             self.assertEqual(openai_def["type"], "function")
             self.assertIn("name", openai_def["function"])
             self.assertIn("description", openai_def["function"])
-            self.assertIn("parameters", openai_def["function"])
+
+    def test_permission_classification(self):
+        """Riskklassning av de generiska verktygen (task 5.1)."""
+        from ai_agent_core.core.permission import classify, RiskClass
+        cases = {
+            "describe_model": RiskClass.READ,
+            "odoo_search": RiskClass.READ,
+            "okf_search": RiskClass.READ,
+            "graph_query": RiskClass.READ,
+            "odoo_create": RiskClass.WRITE_LOCAL,
+            "odoo_write": RiskClass.WRITE_LOCAL,
+            "odoo_call_method": RiskClass.EXEC,
+            "odoo_unlink": RiskClass.EXTERNAL,
+        }
+        for name, expected in cases.items():
+            got = classify(name, risk_level="read_only")  # metadata ignoreras
+            self.assertEqual(got, expected, f"{name} → {got}, förväntat {expected}")
+
+    def test_write_denylist_membership(self):
+        """Denylist-fält ska nekas av odoo_write (task 5.1, enhetstest av regel)."""
+        from ai_agent_core.core.tools import _ODOO_WRITE_DENYLIST
+        self.assertIn("state", _ODOO_WRITE_DENYLIST)
+        self.assertIn("move_type", _ODOO_WRITE_DENYLIST)
+        self.assertIn("journal_id", _ODOO_WRITE_DENYLIST)
+        self.assertTrue(any(d.startswith("amount_") for d in _ODOO_WRITE_DENYLIST))
 
 
 # ---------------------------------------------------------------------------

@@ -1,0 +1,222 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Skill: odoo-core — affärsprocessguider för Odoo basappar.
+    Skapad från skill-odoo-core-draft.md (odoo-model-tools change).
+    Install-check: agenten utesluter sektioner vars modul inte är installerad.
+-->
+<odoo>
+    <data noupdate="1">
+        <record id="skill_odoo_core" model="ai.skill">
+            <field name="name">odoo-core</field>
+            <field name="category">general</field>
+            <field name="source_type">odoo</field>
+            <field name="description">Odoo basappar — affärsprocesser (CRM, försäljning, redovisning, lager, inköp, tillverkning, projekt m.fl.) med verktygshintar och HITL-policy per operation.</field>
+            <field name="trigger_keywords">crm, lead, opportunity, offert, försäljning, sale, faktura, bokföring, lager, inköp, inköpsorder, produktion, tillverkning, projekt, task, anställd, kontakt, kalender, möte, produkt, underhåll, fleet, event, enkät, utskick, helpdesk, ärende, field service, planering, kassa, reparation, leverans</field>
+            <field name="recipe_text"><![CDATA[
+# Skill: odoo-core — Odoo basappar
+
+## Scope
+
+Moduler: crm, hr, contacts, calendar, product, mail, portal, digest,
+         sale, account, stock, purchase, mrp, project, hr_expense,
+         hr_holidays, fleet, maintenance, event, survey, mass_mailing,
+         website, website_sale, helpdesk, fieldservice, planning,
+         point_of_sale, repair, delivery, loyalty
+
+⚠ INSTALL-CHECK: Uteslut alla sektioner vars modul inte är installerad.
+Kolla `odoo_search("ir.module.module", [("name","=","<modul>")])` →
+state=installed. Endast installerade moduler är relevanta.
+
+Regler som gäller alla appar:
+- Skriv ALDRIG `state` direkt — anropa affärsmetoderna (action_*/button_*)
+- Fält som är beräknade (computed) skrivs aldrig — kontrollera med
+  describe_model innan write
+- odoo_call_method kräver alltid HITL-godkännande
+- odoo_unlink kräver alltid godkännande (hårt stopp)
+
+---
+
+## CRM (modul: crm)
+
+Modeller: crm.lead (lead/opportunity via `type`), crm.stage (pipeline,
+`is_won`, `sequence`, `team_id`), crm.team (sales_team), crm.tag,
+crm.lost.reason
+
+### 1. Skapa lead
+- odoo_create("crm.lead", {name, expected_revenue?, priority?, team_id?})
+- → type=lead, stage=default, INGEN partner ännu (partner skapas vid konvertering)
+- HITL: nej
+
+### 2. Kvalificera / uppdatera
+- odoo_write → email, phone, tag_ids, priority, description, user_id, team_id
+- HITL: nej för fält; JA för att byta user_id (säljare) eller team_id
+
+### 3. Kontrollera duplikat (innan ny kund)
+- odoo_search("crm.lead", [("email_normalized","=",<email>)])
+- Finns aktiva träffar → koppla/återanvänd istället för att skapa ny
+- HITL: nej (read-only)
+
+### 4. Konvertera till opportunity
+- odoo_call_method("crm.lead", id, "convert_opportunity", {partner: <res.partner-id>})
+- → skapar/kopplar res.partner, type=opportunity, date_conversion sätts
+- Säljare/team kan anges samtidigt (user_ids/team_id, round-robin)
+- ⚠ Hoppar över inaktiva eller vunna (probability=100) leads
+- HITL: JA — alltid (skapar partner + byter typ)
+
+### 5. Flytta i pipeline
+- odoo_write → stage_id (välj bland crm.stage, gärna teamets stages)
+- ⚠ Att skriva en stage med is_won=True = VUNNEN (triggar won-logik)
+- ⚠ probability är beräknad — skriv den inte direkt
+- HITL: nej vid normal förflyttning
+
+### 6. Markera vunnen
+- odoo_call_method("crm.lead", id, "action_set_won")
+- → sätter rätt won-stage (sequence) + probability=100
+- HITL: JA
+
+### 7. Markera förlorad
+- odoo_call_method("crm.lead", id, "action_set_lost")
+- → ARKIVERAR leaden (active=False, probability=0)
+- HITL: JA — alltid
+
+### Metodtabell CRM
+| Metod | När | HITL |
+|-------|-----|------|
+| convert_opportunity(partner, user_ids?, team_id?) | lead → opp | alltid |
+| action_set_won() | aktiv opportunity | ja |
+| action_set_lost() | lead/opp | alltid |
+| action_schedule_meeting() | lead/opp | nej |
+| action_snooze() | lead/opp | nej |
+| action_show_potential_duplicates() | lead/opp | nej |
+
+---
+
+## Kontakter (modul: contacts)
+
+Modeller: res.partner, res.partner.title, res.country
+
+- Skapa kontakt: odoo_create("res.partner", {name, email, phone, company_type,
+  is_company, street, city, zip, country_id, vat, lang})
+- HITL: nej för skapande; JA vid radering (hårt stopp)
+- Företag: company_type=company, is_company=True; kontaktpersoner via parent_id
+
+---
+
+## HR (modul: hr)
+
+Modeller: hr.employee, hr.department, hr.job, hr.contract
+
+- Skapa anställd: odoo_create("hr.employee", {name, work_email, department_id,
+  job_id, company_id, gender?, birthday?, work_phone?, address_id?})
+- → kräver company_id
+- HITL: JA vid skapande av anställd (känslig personaldata)
+- Avdelningar: odoo_create("hr.department", {name, manager_id?, parent_id?})
+
+---
+
+## Kalender (modul: calendar)
+
+Modeller: calendar.event, calendar.alarm, calendar.attendee
+
+- Skapa möte: odoo_create("calendar.event", {name, start, stop, duration?,
+  partner_ids, user_id, location?, description?})
+- start/stop i ISO-format
+- HITL: JA vid inbjudan av andra användare; nej för eget möte
+
+---
+
+## Produkter (modul: product)
+
+Modeller: product.product, product.template, product.category
+
+- Skapa produkt: odoo_create("product.product", {name, list_price, categ_id,
+  type, uom_id?, default_code?, sale_ok?, purchase_ok?})
+- Uppdatera pris: odoo_write → list_price
+- HITL: nej för skapande/pris; JA vid radering
+
+---
+
+## Försäljning (modul: sale, sale_management) — VILANDE
+
+Modeller: sale.order, sale.order.line
+State: draft → sent → sale → done / cancel
+1. Skapa offert: odoo_create("sale.order", {partner_id, order_line}) → draft
+2. Skicka: odoo_call_method("sale.order", id, "action_quotation_send") → HITL: alltid
+3. Bekräfta: odoo_call_method("sale.order", id, "action_confirm") → HITL: ja
+4. Lås upp: action_unlock; Annullera: action_cancel → HITL: ja
+
+## Redovisning (modul: account) — VILANDE
+
+Modeller: account.move, account.move.line, account.journal
+State: draft → posted → cancel
+1. Skapa faktura: odoo_create("account.move", {move_type, partner_id,
+   invoice_line_ids}) → draft
+2. Bokför: odoo_call_method("account.move", id, "action_post") → HITL: alltid
+3. Återställ: button_draft; Registrera betalning: action_register_payment
+
+## Lager (modul: stock) — VILANDE
+
+Modeller: stock.picking, stock.move, stock.quant
+State: draft → confirmed → assigned → done / cancel
+1. Bekräfta: action_confirm (reserverar)
+2. Validera/leverera: button_validate → HITL: alltid (påverkar lager)
+3. Annullera: action_cancel → HITL: ja
+
+## Inköp (modul: purchase) — VILANDE
+
+Modeller: purchase.order, purchase.order.line
+State: draft(RFQ) → sent → to approve → purchase → done / cancel
+1. Skapa RFQ: odoo_create("purchase.order", {partner_id, order_line})
+2. Bekräfta: button_confirm → HITL: JA (bindande inköp)
+3. Godkänn först vid behov: button_approve
+
+## Tillverkning (modul: mrp) — VILANDE
+
+Modeller: mrp.production, mrp.bom
+State: draft → confirmed → progress → to_close → done / cancel
+1. Skapa: odoo_create("mrp.production", {product_id, product_qty, bom_id?})
+2. Bekräfta: action_confirm → HITL: ja
+3. Planera: button_plan; Klar: button_mark_done → HITL: alltid
+
+## Projekt (modul: project) — VILANDE
+
+Modeller: project.project, project.task
+Task-state: 01_in_progress → 02_changes_requested → 03_approved → closed
+1. Skapa projekt: odoo_create("project.project", {name, user_id?})
+2. Skapa task: odoo_create("project.task", {name, project_id, user_ids?,
+   date_deadline?, description?})
+- HITL: nej för skapande/uppdatering; ja vid radering
+
+---
+
+## Övriga appar (VILANDE — kortfattade)
+
+- Expenser (hr_expense): skapa → action_submit_sheet → action_approve (HITL ja)
+- Ledighet (hr_holidays): skapa → action_validate (HITL ja)
+- Fleet (fleet): fleet.vehicle skapande; HITL nej
+- Underhåll (maintenance): maintenance.request → action_start/action_done
+- Events (event): event.event → confirm; registration
+- Enkäter (survey): survey.survey → action_open
+- Utskick (mass_mailing): skapa → action_put_in_queue (HITL alltid)
+- Webbplats/eHandel (website/website_sale): sidor publiceras direkt (HITL ja)
+- Helpdesk: helpdesk.ticket; HITL ja vid lösning/stängning
+- Field Service: fieldservice.order; HITL ja vid tilldelning
+- Planering: planning.slot; HITL ja vid dubbelbokning
+- POS: pos.session; HITL ja vid stängning (Z-rapport)
+- Reparation (repair): repair.order; HITL ja vid statusändring
+- Leverans (delivery): carrier vid offert; spårning
+- Lojalitet (loyalty): poäng; HITL ja vid manuell justering
+
+---
+
+## Verktygshintar (generellt)
+
+- describe_model("<modell>") → fält, relationer, action-metoder, kapaciteter
+- odoo_search("<modell>", [("fält","=",värde)]) → hitta poster
+- odoo_create / odoo_write / odoo_call_method → utföra (HITL per tabell ovan)
+- okf_search → kunskap om processer/kontext (när OKF finns)
+- graph_query → relationer mellan poster (när graf finns)
+            ]]></field>
+        </record>
+    </data>
+</odoo>

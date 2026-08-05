@@ -342,6 +342,13 @@
                                     <field name="agent_model_id" string="Modell"/>
                                     <field name="agent_tools_display" string="Tools"/>
                                     <field name="agent_memories_display" string="Memories"/>
+                                    <!-- Hårda datablock (agent-memory-governance) -->
+                                    <field name="block_personal" string="🔒 Personligt"/>
+                                    <field name="block_company" string="🔒 Företag"/>
+                                    <field name="block_coworker" string="🔒 Medarbetare"/>
+                                    <field name="level_personal" string="Nivå pe"/>
+                                    <field name="level_company" string="Nivå co"/>
+                                    <field name="level_coworker" string="Nivå cw"/>
                                     <!-- Rollen är bara relevant i team-lägen (buzz/supervisor/
                                          linear/conference); single och automation har en agent
                                          utan roll. -->
@@ -377,6 +384,11 @@
                                         <field name="inject_nudging"/>
                                         <field name="inject_company_memory"/>
                                         <field name="company_memory_categories" widget="many2many_tags"/>
+                                    </group>
+                                    <group string="Minne &amp; tillgång (agent-memory-governance)">
+                                        <field name="memory_profile" widget="radio"/>
+                                        <field name="memory_scopes" widget="many2many_tags"/>
+                                        <field name="memory_level" widget="radio"/>
                                     </group>
                                     <group string="Company Info">
                                         <field name="use_company_info"/>

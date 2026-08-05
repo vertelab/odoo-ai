@@ -57,10 +57,12 @@ class AIStreamController(http.Controller):
                 content_type='application/json',
             )
 
-        # Resolve quest configuration
+        # Resolve quest configuration — frontend skickar quest_id (alias för coworker_id)
         model = "cerebras/gpt-oss-120b"
         system_prompt = ""
         quest = None
+        if not coworker_id:
+            coworker_id = kw.get('quest_id')
 
         if coworker_id:
             try:
@@ -167,6 +169,17 @@ class AIStreamController(http.Controller):
                     )
                 system_prompt = (system_prompt or '') + '\n'.join(skill_lines)
 
+        # Aktuell användare + minne via gemensam injiceringsfunktion
+        # (agent-memory-governance 3.x — D1/D2)
+        if quest and quest.exists():
+            try:
+                inj = quest._build_injection_prompt(
+                    user=request.env.user, prompt=prompt)
+                if inj:
+                    system_prompt = (system_prompt + '\n\n' + inj).strip()
+            except Exception as e:
+                _logger.warning('Injektion misslyckades: %s', e)
+
         # Load thread history if session_id provided
         session = None
         history_messages = []
@@ -237,6 +250,8 @@ class AIStreamController(http.Controller):
         gen_dbname = request.env.cr.dbname
         gen_uid = request.env.uid
         gen_context = dict(request.env.context)
+        # Konversationshistorik (session lines) — hoistas som plain values
+        gen_history = history_messages
         # Custom tools (ai.tool via coworker.tool_ids) — fångas som plain
         # values och laddas in i _stream() via gen_env.
         gen_coworker_id = quest.id if quest and quest.exists() else None
@@ -281,9 +296,34 @@ class AIStreamController(http.Controller):
                 asyncio.set_event_loop(loop)
                 try:
                     async def _stream(gen_env):
+                        import uuid as _uuid_mod
                         from odoo.addons.ai_agent_core.core.tools import ToolRegistry, builtin_tools, wrap_tools_with_env
                         from odoo.addons.ai_agent_core.core.loop import StreamingAgentLoop, AgentConfig
                         from odoo.addons.ai_agent_core.core.supervisor import StreamingSupervisorLoop, SupervisorConfig, SpecialistAgent
+                        from odoo.addons.ai_agent_core.core.interrupt import WebUIInterruptHandler
+                        from odoo.addons.ai_agent_core.core.provider import Message, Role
+
+                        # Konversationshistorik → Message-objekt (kontext mellan varv)
+                        _ROLE_MAP = {
+                            'user': Role.USER, 'assistant': Role.ASSISTANT,
+                            'system': Role.SYSTEM, 'tool': Role.TOOL,
+                        }
+                        history = []
+                        for item in (gen_history or []):
+                            content = item.get('content', '') or ''
+                            if not content:
+                                continue
+                            history.append(Message(
+                                role=_ROLE_MAP.get(item.get('role'), Role.USER),
+                                content=content,
+                            ))
+                        # HITL: registrera WebUI-interrupt-handler för denna
+                        # stream så att godkännanden (odoo_call_method,
+                        # odoo_write, odoo_unlink …) når användaren i chatten.
+                        session_uuid = str(_uuid_mod.uuid4())
+                        handler = WebUIInterruptHandler(session_uuid, env=gen_env)
+                        _register_webui_handler(session_uuid, handler)
+                        yield f"data: {json.dumps({'type': 'session', 'session_uuid': session_uuid})}\n\n"
 
                         provider = gen_provider or BifrostProvider(
                             base_url="http://192.168.11.150:8080/v1",
@@ -299,6 +339,15 @@ class AIStreamController(http.Controller):
                                 tools.register_many(
                                     wrap_tools_with_env(custom_tools, gen_env))
 
+                        def _make_loop(**kw):
+                            """Bygg StreamingAgentLoop med interrupt-handler."""
+                            cfg = dict(
+                                provider=provider, tools=tools,
+                                interrupt_handler=handler,
+                            )
+                            cfg.update(kw)
+                            return StreamingAgentLoop(**cfg)
+
                         if gen_is_supervisor and len(gen_agents) > 1:
                             # Build supervisor with streaming
                             specialists = []
@@ -306,8 +355,7 @@ class AIStreamController(http.Controller):
                                 specialists.append(SpecialistAgent(
                                     name=a['name'],
                                     description=a['description'],
-                                    loop=StreamingAgentLoop(
-                                        provider=provider, tools=tools,
+                                    loop=_make_loop(
                                         config=AgentConfig(
                                             model=a['model'],
                                             system_prompt=system_prompt,
@@ -322,9 +370,7 @@ class AIStreamController(http.Controller):
                                 config=SupervisorConfig(router_model=model),
                             )
                         else:
-                            loop_obj = StreamingAgentLoop(
-                                provider=provider,
-                                tools=tools,
+                            loop_obj = _make_loop(
                                 config=AgentConfig(
                                     model=model,
                                     system_prompt=system_prompt,
@@ -334,7 +380,15 @@ class AIStreamController(http.Controller):
                                 ),
                             )
 
-                        async for event in loop_obj.run_stream(prompt):
+                        async for event in loop_obj.run_stream(prompt, history=history):
+                            # Vidarebefordra pending HITL-interrupts som SSE
+                            pending = handler.get_pending()
+                            if pending:
+                                yield (f"data: {json.dumps({
+                                    'type': pending['type'],
+                                    **pending['data'],
+                                    'session_uuid': session_uuid,
+                                })}\n\n")
                             data = {"type": event.type}
                             if event.type == "token":
                                 data["token"] = event.token
@@ -348,6 +402,14 @@ class AIStreamController(http.Controller):
                             elif event.type in ("done", "error"):
                                 data["finish_reason"] = event.finish_reason
                             yield f"data: {json.dumps(data)}\n\n"
+                        pending = handler.get_pending()
+                        if pending:
+                            yield (f"data: {json.dumps({
+                                'type': pending['type'],
+                                **pending['data'],
+                                'session_uuid': session_uuid,
+                            })}\n\n")
+                        _unregister_webui_handler(session_uuid)
 
                     # Fresh cursor + env for the post-teardown phase:
                     # tool handlers run ORM calls while streaming.
@@ -406,11 +468,30 @@ class AIStreamController(http.Controller):
             if web_ui_init:
                 web_ui_quests.append(q)
 
+        # Default AI-medarbetare: is_default=True (annars första). Den visas
+        # förvald i dropdownen — data-driven via xmlid, ingen hårdkodning.
+        default_quest = next(
+            (q for q in web_ui_quests if q.is_default),
+            web_ui_quests[0] if web_ui_quests else None,
+        )
+
+        default_option = ''
         quest_items = ''
+        if default_quest:
+            default_option = (
+                f'<option value="{default_quest.id}" '
+                f'data-name="{escape(default_quest.name)}" selected>'
+                f'{escape(default_quest.name)}</option>'
+            )
         for q in web_ui_quests:
+            if default_quest and q.id == default_quest.id:
+                continue
             quest_items += (
                 f'<option value="{q.id}" data-name="{escape(q.name)}">{escape(q.name)}</option>'
             )
+
+        default_qid = str(default_quest.id) if default_quest else ''
+        default_qname = escape(default_quest.name) if default_quest else 'Allmän assistent'
 
         # Load user's threads (most recent 50)
         thread_items = ''
@@ -430,7 +511,11 @@ class AIStreamController(http.Controller):
                 )
 
         html = (_CHAT_HTML_v3
+                .replace('<!-- DEFAULT_OPTION -->', default_option)
                 .replace('<!-- QUEST_OPTIONS -->', quest_items)
+                .replace('<!-- WELCOME_TITLE -->', default_qname)
+                .replace('<!-- DEFAULT_QUEST_ID -->', default_qid)
+                .replace('<!-- DEFAULT_QUEST_NAME -->', default_qname)
                 .replace('<!-- THREAD_ITEMS -->', thread_items))
         # no-store: chat_template.html is inline JS — a cached page keeps
         # running stale frontend code after deploys (bit us in production)
@@ -579,14 +664,22 @@ class AIStreamController(http.Controller):
     @http.route('/ai/threads', type='http', auth='public',
                 methods=['GET'], csrf=False, sitemap=False)
     def thread_list(self, **kw):
-        """List user's threads."""
+        """List user's threads — filtrerat på vald coworker (coworker_id)."""
         user = request.env.user
         if not user or not user.id:
             return Response(json.dumps({"threads": []}), content_type='application/json')
-        sessions = request.env['ai.coworker.session'].sudo().search([
+        domain = [
             ('user_id', '=', user.id),
             ('active', '=', True),
-        ], order='write_date desc', limit=50)
+        ]
+        cw_id = kw.get('coworker_id')
+        if cw_id:
+            try:
+                domain.append(('coworker_id', '=', int(cw_id)))
+            except (ValueError, TypeError):
+                pass
+        sessions = request.env['ai.coworker.session'].sudo().search(
+            domain, order='write_date desc', limit=50)
         return Response(json.dumps({
             "threads": [{
                 "id": s.id,
@@ -608,7 +701,7 @@ class AIStreamController(http.Controller):
         name = body.get('name', 'Ny tråd')
         # Clean name: remove newlines, collapse spaces, trim, limit length
         name = ' '.join(str(name).split())[:50]
-        coworker_id = body.get('coworker_id')
+        coworker_id = body.get('coworker_id') or body.get('quest_id')
         skill_id = body.get('skill_id')
         # Builder context: the auto-init prompt ("Study this quest…") makes a
         # useless thread name — name the thread after the subject quest instead
@@ -646,6 +739,7 @@ class AIStreamController(http.Controller):
             "id": session.id,
             "name": session.thread_name or (session.name or ''),
             "coworker_id": session.coworker_id.id if session.coworker_id else None,
+            "coworker_name": session.coworker_id.name if session.coworker_id else None,
             "messages": [{
                 "role": l.role,
                 "content": l.content or '',
@@ -692,6 +786,7 @@ class AIStreamController(http.Controller):
         if not content.strip():
             return Response(json.dumps({"status": "ok"}), content_type='application/json')
         session = request.env['ai.coworker.session'].sudo().browse(thread_id)
+        quest = session.coworker_id if session else None
         if session.exists():
             next_seq = len(session.session_line_ids) + 1
 
@@ -728,9 +823,18 @@ class AIStreamController(http.Controller):
                 if quest.monthly_cap_mtokens:
                     quest.check_cap()
 
-                # Implicit identity learning (Hole 3)
-                if quest.identity_id and quest.identity_id.scope == 'personal':
-                    _implicit_learn(quest.identity_id, content)
+                # Hermes-lärande (agent-memory-governance 4.x): LLM-reflektion
+                # i bakgrunden när medarbetaren är aktivt lärande.
+                if quest and quest.learning == 'active' and role == 'assistant':
+                    try:
+                        import threading
+                        threading.Thread(
+                            target=quest._learn_from_session,
+                            args=(session,),
+                            daemon=True,
+                        ).start()
+                    except Exception:
+                        pass
 
                 # Proactive company mission evolution (Hole 9)
                 try:
@@ -755,9 +859,6 @@ class AIStreamController(http.Controller):
 
             _logger.info("Saved response to session %s: %d in/%d out tokens, model=%s",
                         thread_id, token_input, token_output, model_real or 'unknown')
-
-            # Trigger async memory extraction (T8)
-            _extract_memories_async(session, content)
 
             # Multi-surface: mirror assistant response to channel for buzz workspaces
             if quest and quest.orchestration_mode == 'buzz' and quest.channel_id and role == 'assistant':
@@ -1332,122 +1433,75 @@ def _chunk_text(text: str, max_chars: int = 2000) -> list:
     return [text[i:i + max_chars] for i in range(0, len(text), max_chars)]
 
 
-def _summarize_history(session, lines):
-    """T7.6: Summarize thread history when > 50 messages.
-    
-    Uses a simple approach: take first message as context,
-    last 5 messages as recent context, drop the middle.
-    This avoids an expensive LLM call for summarization.
+def _summarize_history(session, lines, max_chars=4000):
+    """T7.6: Sammanfatta lång sessionshistorik med LLM (tokenbudget).
+
+    Ersätter den gamla heuristiken (första+senaste, mitt kastad).
+    Kör en LLM-sammanfattning över de äldre raderna och sparar
+    sammanfattningen även som OKF coworker-koncept (session-summary)
+    så att nästa session kan återanvända den.
     """
     if len(lines) <= 50:
         return None
-    
-    first_msg = lines[0].content[:200] if lines and lines[0].content else 'Start'
-    recent = '\n'.join(
-        f"[{l.role}] {l.content[:100]}"
-        for l in lines[-5:]
-        if l.content
-    )
-    return (
-        f"[Tidigare konversation ({len(lines)} meddelanden) sammanfattad. "
-        f"Första meddelandet: {first_msg}. "
-        f"Senaste: {recent}]"
-    )
 
+    recent = lines[-20:]
+    to_summarize = lines[:-20]
+    conversation = '\n'.join(
+        f"[{l.role}] {l.content[:400]}"
+        for l in to_summarize if l.content
+    )[-8000:]  # tokenbudget: begränsa input
 
-def _extract_memories_async(session, assistant_content):
-    """T8.1-T8.4: Extract key facts from conversation as ai.memory.
-    
-    Runs asynchronously after each assistant response.
-    Uses heuristic extraction (fast, no LLM cost) + stores as ai.memory.
-    """
-    if not session or not assistant_content:
-        return
-
+    summary = None
+    quest = session.coworker_id if session else None
     try:
-        quest = session.coworker_id
-        if not quest:
-            return
-
-        memories = []
-        content_lower = assistant_content.lower()
-
-        # Heuristic extraction — fast, no API cost
-        if any(kw in content_lower for kw in ('svenska', 'swedish', 'bokföring', 'moms', 'redovisning')):
-            memories.append({
-                'fact': 'Användaren arbetar med svensk ekonomi/redovisning',
-                'category': 'preference',
-                'importance': 'medium',
-            })
-
-        if any(kw in content_lower for kw in ('csv', 'excel', 'export', 'ladda ner', 'fil')):
-            memories.append({
-                'fact': 'Användaren efterfrågar dataexport',
-                'category': 'fact',
-                'importance': 'low',
-            })
-
-        if len(assistant_content) < 200:
-            memories.append({
-                'fact': 'Kort svar gavs — användaren kan föredra koncisa svar',
-                'category': 'preference',
-                'importance': 'low',
-            })
-
-        # Store as ai.memory
-        for m in memories:
-            request.env['ai.memory'].sudo().create({
-                'name': m['fact'][:80],
-                'content': m['fact'],
-                'coworker_id': quest.id,
-                'category': m['category'],
-                'importance': m['importance'],
-                'source_thread_id': session.id,
-            })
-
-        if memories:
-            _logger.debug('Extracted %d memories from session %s',
-                         len(memories), session.id)
-
+        import asyncio
+        from odoo.addons.ai_agent_core.core.provider import (
+            ProviderFactory, BifrostProvider)
+        from odoo.addons.ai_agent_core.core.loop import AgentLoop, AgentConfig
+        provider, _m = ProviderFactory.from_coworker(quest) if quest else (None, None)
+        provider = provider or BifrostProvider(
+            base_url='http://192.168.11.150:8080/v1',
+            virtual_key='opencode')
+        loop = AgentLoop(provider=provider, tools=[], config=AgentConfig(
+            model='cerebras/gpt-oss-120b', max_rounds=1, max_tokens=2048))
+        prompt = (
+            "Sammanfatta konversationen. Behåll alla nyckelfakta, beslut "
+            "och kontext. Var koncis men komplett.\n\n" + conversation)
+        result = asyncio.run(loop.run(prompt))
+        summary = (result.text or '').strip()[:max_chars]
     except Exception as e:
-        _logger.debug('Memory extraction skipped: %s', e)
+        _logger.warning('LLM-sammanfattning misslyckades: %s', e)
 
+    if not summary:
+        # Fallback: heuristik (första + senaste) — behåller något
+        first_msg = lines[0].content[:200] if lines and lines[0].content else 'Start'
+        recent_txt = '\n'.join(
+            f"[{l.role}] {l.content[:100]}" for l in lines[-5:] if l.content)
+        summary = (
+            f"[Tidigare konversation ({len(lines)} meddelanden). "
+            f"Första: {first_msg}. Senaste: {recent_txt}]")
 
-def _implicit_learn(identity, assistant_content):
-    """Extract learnings from assistant response for identity (Hole 3).
-    
-    Looks for patterns in the assistant's response that indicate
-    user preferences or context. Very lightweight — no extra LLM call.
-    Uses simple heuristics rather than another API call to keep costs low.
-    """
-    if not identity or not assistant_content:
-        return
+    # Persist till OKF coworker-scope (session-summary) så nästa session
+    # kan återanvända den via coworker-minnesinjektion.
+    try:
+        if quest and 'ai.okf.concept' in request.env and quest.learning == 'active':
+            request.env['ai.okf.concept']._okf_upsert(
+                'learning',
+                concept_key=f'session.{session.id}.summary',
+                summary=summary[:1000],
+                title=f'Session {session.id} — sammanfattning',
+                source_ref=f'ai.coworker.session,{session.id}',
+                attribution=[{
+                    'source': f'ai.coworker.session,{session.id}',
+                    'role': 'summary',
+                }],
+                owner_coworker_id=quest.id,
+                generated_by='session_summary',
+            )
+    except Exception as e:
+        _logger.warning('Session-summary till OKF misslyckades: %s', e)
 
-    learnings = []
-    content_lower = assistant_content.lower()
-
-    # Heuristic: if assistant explains something in Swedish, user prefers Swedish
-    if any(word in content_lower for word in ('svenska', 'bokföring', 'moms', 'faktura',
-                                                'redovisning', 'deklaration')):
-        if 'swedish' not in (identity.user_model or '').lower():
-            learnings.append('Användaren arbetar med svensk ekonomi/redovisning')
-
-    # Heuristic: if assistant provides CSV/Excel exports, user wants structured data
-    if any(word in content_lower for word in ('csv', 'excel', 'export', 'fil', 'ladda ner')):
-        if 'strukturerad' not in (identity.user_model or '').lower():
-            learnings.append('Användaren efterfrågar ofta dataexport (CSV/Excel)')
-
-    # Heuristic: short response → user may prefer brevity
-    if len(assistant_content) < 300:
-        if 'kortfattad' not in (identity.style or '').lower():
-            # Only add if this pattern repeats (tracked via memory, not here)
-            pass  # Too aggressive for a single sample — let /learn handle this explicitly
-
-    if learnings:
-        new_model = (identity.user_model or '') + '\n' + '\n'.join(f'- {l}' for l in learnings)
-        identity.user_model = new_model[:4000]
-        _logger.info('Implicit learn: added %d facts to identity %s',
-                     len(learnings), identity.name)
+    return summary
 
 
 def _detect_and_suggest_mission(session_id, last_response, company_id, threshold=0.7):
