@@ -2,7 +2,7 @@
 # Part of Odoo. See LICENSE file for full copyright and licensing details.
 {
     'name': 'odoo-ai: Developer Coworker',
-    'version': '18.0.1.0',
+    'version': '18.0.1.1',
     'summary': 'AI coworker specialized in Odoo development — accessible via Pi API',
     'category': 'AI Orchestration',
     'description': """
