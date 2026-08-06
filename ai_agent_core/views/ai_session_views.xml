@@ -40,6 +40,15 @@
                            statusbar_visible="draft,active,done,error"/>
                 </header>
                 <sheet>
+                    <div class="oe_button_box" name="button_box">
+                        <button name="action_get_lines" type="object"
+                                class="oe_stat_button" icon="fa-comments">
+                            <div class="o_stat_info">
+                                <field name="line_count" widget="statinfo"
+                                       string="Meddelanden"/>
+                            </div>
+                        </button>
+                    </div>
                     <div class="oe_title">
                         <h1><field name="name" readonly="1"/></h1>
                         <field name="thread_name" placeholder="Trådnamn..."/>
@@ -67,16 +76,6 @@
                         </group>
                     </group>
                     <notebook>
-                        <page string="Meddelanden" name="messages">
-                            <field name="session_line_ids" readonly="1">
-                                <list>
-                                    <field name="create_date" readonly="1"/>
-                                    <field name="role"/>
-                                    <field name="content"/>
-                                    <field name="tool_name" optional="hide"/>
-                                </list>
-                            </field>
-                        </page>
                         <page string="Sammanfattning" name="summary">
                             <group>
                                 <field name="summary" readonly="1"/>
@@ -95,6 +94,21 @@
                      (message_new + _post_pending_reply postar här) -->
                 <chatter/>
             </form>
+        </field>
+    </record>
+
+    <record id="view_ai_session_line_list" model="ir.ui.view">
+        <field name="name">ai.coworker.session.line.list</field>
+        <field name="model">ai.coworker.session.line</field>
+        <field name="arch" type="xml">
+            <list string="Meddelanden">
+                <field name="create_date"/>
+                <field name="role" widget="badge"
+                       decoration-info="role=='assistant'"
+                       decoration-muted="role=='user'"/>
+                <field name="content"/>
+                <field name="tool_name" optional="hide"/>
+            </list>
         </field>
     </record>
 
