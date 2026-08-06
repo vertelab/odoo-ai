@@ -76,3 +76,5 @@ access_ai_session_line_admin,ai.coworker.session.line.admin,model_ai_coworker_se
 access_ai_memory_scope_user,ai.memory.scope,model_ai_memory_scope,base.group_user,1,1,1,1
 access_ai_tool_capability_user,ai.tool.capability,model_ai_tool_capability,base.group_user,1,1,1,1
 access_ai_tool_capability_admin,ai.tool.capability,model_ai_tool_capability,base.group_system,1,1,1,1
+access_ai_mail_test_wizard_user,ai.coworker.mail.test.wizard.user,model_ai_coworker_mail_test_wizard,base.group_user,1,1,1,1
+access_ai_mail_test_wizard_admin,ai.coworker.mail.test.wizard.admin,model_ai_coworker_mail_test_wizard,base.group_system,1,1,1,1
