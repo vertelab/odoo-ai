@@ -173,8 +173,34 @@ class AITool(models.Model):
             elif not rec.builtin_name:
                 rec.write({'builtin_name': bt.name})
                 marked += 1
+            # Bind xmlid (idempotent): tool_<sanitized name> i ai_agent_core.
+            # Gör att data-XML (default_coworker.xml m.fl.) kan referera
+            # verktygen med ref('tool_describe_model') etc.
+            self._bind_tool_xmlid(rec)
         _logger.info('Builtin tool seed: %d skapade, %d markerade', created, marked)
         return True
+
+    @api.model
+    def _bind_tool_xmlid(self, rec):
+        """Bind ai_agent_core.tool_<name> → ai.tool-post (idempotent)."""
+        import re as _re
+        xmlid_name = 'tool_' + _re.sub(r'[^a-zA-Z0-9_.-]', '_', rec.name)
+        IrModelData = self.env['ir.model.data'].sudo()
+        existing = IrModelData.search([
+            ('module', '=', 'ai_agent_core'),
+            ('name', '=', xmlid_name),
+        ], limit=1)
+        if existing:
+            if existing.model != rec._name or existing.res_id != rec.id:
+                existing.write({'model': rec._name, 'res_id': rec.id})
+        else:
+            IrModelData.create({
+                'module': 'ai_agent_core',
+                'name': xmlid_name,
+                'model': rec._name,
+                'res_id': rec.id,
+                'noupdate': True,
+            })
 
     @api.constrains('parameters')
     def _check_parameters_json(self):

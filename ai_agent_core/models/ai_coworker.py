@@ -2142,7 +2142,52 @@ class AICoworker(models.Model):
                                 it.id, e)
         _logger.info('ensure_init_resources: watch=%s mail=%s',
                      watch_count, mail_count)
+        # Adoption (explicit-agent-tools): seed-agenterna skapades i tidigare
+        # versioner utan tool_ids (odoo-verktyg registrerades implicit via
+        # builtin_tools()). Nu när verktyg måste anges EXPLICIT fylls
+        # saknade verktyg på idempotent för kända xmlid-agenterna.
+        try:
+            self._adopt_seed_agent_tools()
+        except Exception as e:
+            _logger.warning('adopt seed agent tools misslyckades: %s', e)
         return watch_count + mail_count
+
+    def _adopt_seed_agent_tools(self):
+        """Fyll på explicita tool_ids på kända seed-agenter (idempotent).
+
+        Gäller agenter skapade i tidigare versioner (data-XML noupdate)
+        som saknar tool_ids sedan verktygen blev explicita. Användarnas
+        egna anpassningar skrivs aldrig över — bara SAKNADE verktyg läggs till.
+        """
+        tool_by_name = {t.name: t for t in self.env['ai.tool'].search([])}
+
+        def _adopt(xmlid, names):
+            agent = self.env.ref(
+                'ai_agent_core.' + xmlid, raise_if_not_found=False)
+            if not agent:
+                return
+            recs = self.env['ai.tool'].browse([
+                tool_by_name[n].id for n in names
+                if n in tool_by_name])
+            missing = recs - agent.tool_ids
+            if missing:
+                agent.write({'tool_ids': [(4, t.id) for t in missing]})
+                _logger.info(
+                    'Adopterade verktyg på %s: %s',
+                    agent.name, missing.mapped('name'))
+
+        _adopt('agent_odoo_business', [
+            'describe_model', 'odoo_search', 'odoo_create',
+            'odoo_call_method', 'odoo_write', 'odoo_unlink', 'okf_search',
+        ])
+        _adopt('agent_research', ['web_search', 'fetch_url'])
+        _adopt('agent_invoice_partner', [
+            'describe_model', 'odoo_search', 'odoo_create',
+        ])
+        _adopt('agent_invoice_analyser', [
+            'describe_model', 'odoo_search', 'odoo_create',
+            'odoo_call_method', 'odoo_write',
+        ])
 
     def _ensure_all_init_types(self):
         """Skapa en komplett init_type-rad-uppsättning (en per INIT_TYPES-typ)
@@ -2567,14 +2612,35 @@ class AICoworker(models.Model):
         Agent = self.env['ai.agent'].sudo()
         CoworkerAgent = self.env['ai.coworker.agent'].sudo()
 
-        def _ensure_agent(xmlid, name, ai_role, description, skills=()):
-            """Hämta agent via xmlid; skapa om den saknas. Idempotent."""
+        def _ensure_agent(xmlid, name, ai_role, description, skills=(), tools=()):
+            """Hämta agent via xmlid; skapa om den saknas. Idempotent.
+
+            tools: lista av ai.tool-namn som binds EXPLICIT (explicit-agent-
+            tools). Används för att ge Odoo-specialisten/Research sina
+            verktyg även vid programmatisk skapelse/adoption.
+            """
             existing = IrModelData.search([
                 ('module', '=', 'ai_agent_core'), ('name', '=', xmlid),
             ], limit=1)
             if existing and existing.res_id:
                 agent = Agent.browse(existing.res_id)
                 if agent.exists():
+                    # Adoption (explicit-agent-tools): fyll på verktyg om
+                    # agenten saknar dem (befintliga installationer).
+                    if tools:
+                        found_tools = self.env['ai.tool'].sudo().search(
+                            [('name', 'in', list(tools))])
+                        missing = found_tools - agent.tool_ids
+                        if missing:
+                            agent.write({'tool_ids': [
+                                (4, t.id) for t in missing]})
+                    if skills:
+                        found = self.env['ai.skill'].sudo().search(
+                            [('name', 'in', list(skills))])
+                        missing_skills = found - agent.skill_ids
+                        if missing_skills:
+                            agent.write({'skill_ids': [
+                                (4, s.id) for s in missing_skills]})
                     return agent
             agent = Agent.create({
                 'name': name,
@@ -2588,6 +2654,11 @@ class AICoworker(models.Model):
                     [('name', 'in', list(skills))])
                 if found:
                     agent.write({'skill_ids': [(6, 0, found.ids)]})
+            if tools:
+                found_tools = self.env['ai.tool'].sudo().search(
+                    [('name', 'in', list(tools))])
+                if found_tools:
+                    agent.write({'tool_ids': [(6, 0, found_tools.ids)]})
             _logger.info('Skapade agent %s (%s)', name, xmlid)
             return agent
 
@@ -2612,6 +2683,9 @@ class AICoworker(models.Model):
             'Affärsexpert på Odoo-modeller: söker, skapar och kör affärsflöden '
             'via generiska modellverktyg och följer odoo-core-skillen.',
             skills=('odoo-core',),
+            tools=('describe_model', 'odoo_search', 'odoo_create',
+                   'odoo_call_method', 'odoo_write', 'odoo_unlink',
+                   'okf_search'),
         )
         _ensure_link(keep, odoo_agent, role='member', sequence=20)
 
@@ -2623,6 +2697,7 @@ class AICoworker(models.Model):
             'bearbetar YouTube-innehåll via youtube-skills.',
             skills=('youtube-transcript', 'youtube-search',
                     'youtube-channels', 'youtube-playlist', 'youtube-full'),
+            tools=('web_search', 'fetch_url'),
         )
         _ensure_link(keep, research_agent, role='member', sequence=30)
 
