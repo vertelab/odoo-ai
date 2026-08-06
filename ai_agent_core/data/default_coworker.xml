@@ -50,6 +50,17 @@
             <field name="description">Affärsexpert på Odoo-modeller: söker, skapar och kör affärsflöden via generiska modellverktyg och följer odoo-core-skillen.</field>
             <field name="status">active</field>
             <field name="skill_ids" eval="[(6, 0, [ref('skill_odoo_core')])]"/>
+            <!-- explicit-agent-tools: odoo-verktyg anges EXPLICIT här — de
+                 registreras inte längre implicit via builtin_tools(). -->
+            <field name="tool_ids" eval="[(6, 0, [
+                ref('tool_describe_model'),
+                ref('tool_odoo_search'),
+                ref('tool_odoo_create'),
+                ref('tool_odoo_call_method'),
+                ref('tool_odoo_write'),
+                ref('tool_odoo_unlink'),
+                ref('tool_okf_search'),
+            ])]"/>
         </record>
         <record id="coworker_agent_odoo_business" model="ai.coworker.agent">
             <field name="coworker_id" ref="coworker_default_assistent"/>
@@ -70,6 +81,11 @@
                 ref('skill_youtube_channels'),
                 ref('skill_youtube_playlist'),
                 ref('skill_youtube_full'),
+            ])]"/>
+            <!-- explicit-agent-tools: web-verktyg anges EXPLICIT här. -->
+            <field name="tool_ids" eval="[(6, 0, [
+                ref('tool_web_search'),
+                ref('tool_fetch_url'),
             ])]"/>
         </record>
         <record id="coworker_agent_research" model="ai.coworker.agent">

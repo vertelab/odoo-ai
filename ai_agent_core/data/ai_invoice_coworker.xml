@@ -51,6 +51,12 @@
             <field name="ai_goal">Hitta eller skapa rätt res.partner från mail-avsändaren.</field>
             <field name="status">active</field>
             <field name="skill_ids" eval="[(6, 0, [ref('skill_mail_partner')])]"/>
+            <!-- explicit-agent-tools: odoo-verktyg anges EXPLICIT här. -->
+            <field name="tool_ids" eval="[(6, 0, [
+                ref('tool_describe_model'),
+                ref('tool_odoo_search'),
+                ref('tool_odoo_create'),
+            ])]"/>
         </record>
 
         <record id="agent_invoice_analyser" model="ai.agent">
@@ -60,6 +66,14 @@
             <field name="ai_goal">Skapa en korrekt account.move (move_type=in_invoice) från fakturatexten.</field>
             <field name="status">active</field>
             <field name="skill_ids" eval="[(6, 0, [ref('skill_mail_invoice')])]"/>
+            <!-- explicit-agent-tools: odoo-verktyg anges EXPLICIT här. -->
+            <field name="tool_ids" eval="[(6, 0, [
+                ref('tool_describe_model'),
+                ref('tool_odoo_search'),
+                ref('tool_odoo_create'),
+                ref('tool_odoo_call_method'),
+                ref('tool_odoo_write'),
+            ])]"/>
         </record>
 
         <record id="coworker_agent_invoice_partner" model="ai.coworker.agent">
