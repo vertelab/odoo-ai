@@ -7,7 +7,6 @@
             <field name="name">DeepSeek</field>
             <field name="provider_type">deepseek</field>
             <field name="base_url">https://api.deepseek.com/v1</field>
-            <field name="api_key">sk-dbad40e7fb61423d84423a275745bf79</field>
             <field name="is_key_required" eval="True"/>
             <field name="timeout">120</field>
             <field name="retry_count">3</field>
