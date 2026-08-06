@@ -464,3 +464,42 @@ fastnar inte i HITL-kön. Datamedarbetaren *Faktura-Assistenten* är ett exempel
 > Kommande: bryt ut faktura-flödet till en egen modul (`account_invoice_ai`-
 > integration) när det är dags — logiken ligger idag i
 > `models/ai_session.py` (`_process_invoice_mail`, `_resolve_mail_partner`).
+
+## Incoming mail — konfigurations-checklista
+
+Mailen till `alias@coworker.vertel.se` kräver tre lager. Steg under **A** är
+gjorda av modulen/konfigurationen; **B** och **C** kräver mailserver/DNS.
+
+### A. Odoo (denna instans) — ✅ konfigurerat
+
+1. `mail.alias.domain` = `coworker.vertel.se` (alias-domänen)
+2. `res.company.alias_domain_id` → `coworker.vertel.se`
+3. `mail.catchall.domain` = `coworker.vertel.se`
+4. `mail.alias` per AI Medarbetare (auto-skapas av `_ensure_mail_alias`):
+   - `allman-assistent@`, `support@`, `faktura@` …
+   - `alias_model_id = ai.coworker.session`, `alias_defaults = {coworker_id: N}`
+5. `mail_action` per medarbetare (`reply` / `create_record` / `invoice_ai`)
+   + `mail_reply_delay`, `mail_find_partner`, `mail_invoice_agent_ids`
+6. ❗ **Inkommande mailserver (fetchmail)** — IMAP/POP mot central mailbox,
+   ELLER central postfix pipe/relay till Odoo mailgateway (se B/C)
+7. ❗ **Utgående mailserver (`ir.mail_server`)** — SMTP för AI-svar
+
+### B. Mailserver (central postfix — MAIL-servern, ej denna container)
+
+1. DNS: **MX** för `coworker.vertel.se` → mailservern
+2. Postfix accepterar `coworker.vertel.se`
+   (`virtual_alias_domains` eller `mydestination`)
+3. Routing `*@coworker.vertel.se` → luke18:s Odoo mailgateway, valfritt:
+   - **A** Transportmap: `coworker.vertel.se  relay:[luke18-ip]:25` + Odoo
+     lyssnar på port 25 (mailgateway `/mail/update`-routen)
+   - **B** Virtuell mailbox per alias + Odoo fetchmail (IMAP) — enkelt,
+     kräver bara en catchall-mailbox
+   - **C** Pipe: `"| /path/odoo-bin mailgateway -d luke18"` per alias
+
+### C. Verifiering
+
+- **Test-knappen** "→ Testa mail-flödet" på AI Medarbetaren (Initiering →
+  Mail) simulerar `message_new` med exempel-mail → kör `mail_action`-dispatchen
+  → skapar session + postar svar. Ingen riktig mailserver krävs.
+- När B är klart: skicka ett riktigt mail till `faktura@coworker.vertel.se` →
+  session skapas → Faktura-Assistenten svarar på tråden.
