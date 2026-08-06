@@ -567,13 +567,17 @@ class AICoworker(models.Model):
             mail_create_nosubscribe=True).message_new(
                 msg, {'coworker_id': self.id})
         return {
-            'type': 'ir.actions.client_notification',
-            'title': 'Mail-test klart',
-            'message': (
-                f'Simulerat mail → session {session.id} ({self.name}).\n'
-                'Öppna Odoo Mind → Sessions för att se resultatet.'
-            ),
-            'sticky': False,
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'title': 'Mail-test klart',
+                'message': (
+                    f'Simulerat mail → session {session.id} ({self.name}).\n'
+                    'Öppna Odoo Mind → Sessions för att se resultatet.'
+                ),
+                'sticky': False,
+                'type': 'info',
+            },
         }
     group_ids = fields.Many2many('res.groups', 'ai_coworker_group_rel', 'coworker_id', 'group_id', string='Access Groups')
 
@@ -3284,8 +3288,7 @@ class AICoworker(models.Model):
             import asyncio
             from odoo.addons.ai_agent_core.core.provider import ProviderFactory, BifrostProvider
             from odoo.addons.ai_agent_core.core.tools import (
-                ToolRegistry, builtin_tools, planning_tools, TodoList,
-                wrap_tools_with_env,
+                planning_tools, TodoList,
             )
             from odoo.addons.ai_agent_core.core.loop import AgentLoop, AgentConfig
             from odoo.addons.ai_agent_core.core.interrupt import AutoInterruptHandler
@@ -3298,8 +3301,9 @@ class AICoworker(models.Model):
                 base_url='http://192.168.11.150:8080/v1',
                 virtual_key='opencode',
             )
-            tools = ToolRegistry()
-            tools.register_many(wrap_tools_with_env(builtin_tools(), self.env))
+            # explicit-agent-tools: ENDAST settings-default + explicita
+            # tool_ids — inga interna builtins registreras implicit.
+            tools, tool_access_groups = self._session_tools(session=session)
 
             # Add planning tools
             todo = TodoList()
@@ -3456,6 +3460,86 @@ class AICoworker(models.Model):
             return u.groups_id.ids
         return self.group_ids.ids
 
+    def _session_tool_ids(self, access_groups=None, force_agent=None):
+        """Returnera deduplicerade ai.tool-ID:n för en session.
+
+        explicit-agent-tools: ENDAST settings-default + explicita verktyg —
+        inga interna builtins per default. Lämplig att anropa i request-
+        kontext och fånga som plain values (stream.py körs efter teardown).
+
+        Innehåller:
+        1. Settings-default (default_tool_ids — säkra kundverktyg)
+        2. Agenternas explicita tool_ids (inkl. identity-bundna) — alla
+           kopplade agenter + eventuell force_agent (buzz, 7.5)
+        3. Coworkerns explicita tool_ids
+
+        Args:
+            access_groups: lista av res.groups-ids för access-filtrering
+                (tool-access-groups). None → ingen filtrering.
+            force_agent: valfri ai.agent vars egna tool_ids inkluderas.
+        """
+        self.ensure_one()
+        ids = []
+
+        def _add(recs):
+            if access_groups is not None:
+                recs = recs._filter_by_access_groups(access_groups)
+            for t in recs:
+                if t.id not in ids:
+                    ids.append(t.id)
+
+        # 1. Settings-default (säkra verktyg)
+        default_names = self.env['ai.agent']._get_default_tool_names()
+        if default_names:
+            _add(self.env['ai.tool'].search([('name', 'in', default_names)]))
+
+        # 2. Agenternas explicita tool_ids (alla kopplade agenter + force_agent)
+        agent_recs = self.agent_ids.mapped('agent_id')
+        if force_agent:
+            agent_recs |= force_agent
+        for agent in agent_recs:
+            _add(agent.tool_ids.filtered('active'))
+            if agent.identity_id and agent.identity_id.tool_ids:
+                _add(agent.identity_id.tool_ids.filtered('active'))
+
+        # 3. Coworkerns explicita tool_ids
+        _add(self.tool_ids.filtered('active'))
+
+        return ids
+
+    def _session_tools(self, session=None, force_agent=None):
+        """Bygg ToolRegistry för en session (explicit-agent-tools).
+
+        Registrerar ENDAST:
+        1. Settings-default-verktyg (default_tool_ids — säkra kundverktyg:
+           calculator, web_search, fetch_url)
+        2. Agenternas explicita tool_ids (ai.agent.tool_ids — inkl. builtin-
+           poster som resolvas till riktiga handlers via builtin_name)
+        3. Coworkerns explicita tool_ids (custom tools)
+
+        NOT: registrerar INTE builtin_tools() implicit — inga interna
+        förmågor (odoo-verktyg, inventory, builder, NATS) hamnar i en
+        kundchatt default. Interna verktyg kräver explicit tool_ids.
+
+        Returns:
+            tuple (ToolRegistry, list[int]) — registry + access-grupper
+        """
+        from odoo.addons.ai_agent_core.core.tools import (
+            ToolRegistry, ai_tool_records_to_tools,
+        )
+        tool_access_groups = self._tool_access_group_ids(session=session)
+        tools = ToolRegistry()
+
+        # Explicit-agent-tools: ENDAST settings-default + explicita verktyg.
+        # _session_tool_ids() gör deduplicering + access-filtrering.
+        tool_ids = self._session_tool_ids(
+            access_groups=tool_access_groups, force_agent=force_agent)
+        if tool_ids:
+            tools.register_many(ai_tool_records_to_tools(
+                self.env['ai.tool'].browse(tool_ids), self.env))
+
+        return tools, tool_access_groups
+
     def run(self, prompt, system_prompt=None, force_model=None,
             force_agent=None, session=None):
         """Run quest synchronously and return AI response text.
@@ -3524,9 +3608,6 @@ class AICoworker(models.Model):
             asyncio.set_event_loop(loop)
             try:
                 from odoo.addons.ai_agent_core.core.provider import ProviderFactory, BifrostProvider
-                from odoo.addons.ai_agent_core.core.tools import (
-                    ToolRegistry, builtin_tools, wrap_tools_with_env,
-                )
                 from odoo.addons.ai_agent_core.core.loop import AgentLoop, AgentConfig
 
                 provider_instance, provider_model = ProviderFactory.from_coworker(self)
@@ -3534,35 +3615,10 @@ class AICoworker(models.Model):
                     base_url='http://192.168.11.150:8080/v1',
                     virtual_key='opencode',
                 )
-                tools = ToolRegistry()
-                tools.register_many(wrap_tools_with_env(builtin_tools(), self.env))
-
-                # Access-grupper (tool-access-groups): användarens grupper
-                # styr vilka verktyg som serialiseras — LLM:en ser ALDRIG
-                # otillåtna verktyg (och de kostar inga tokens).
-                tool_access_groups = self._tool_access_group_ids(session=session)
-
-                # Agentens EGNA tools (7.5): identity-bundna ai.tool-record
-                if force_agent and force_agent.identity_id \
-                        and force_agent.identity_id.tool_ids:
-                    from odoo.addons.ai_agent_core.core.tools import (
-                        ai_tool_records_to_tools)
-                    identity_tools = force_agent.identity_id.tool_ids
-                    tools.register_many(ai_tool_records_to_tools(
-                        identity_tools._filter_by_access_groups(
-                            tool_access_groups), self.env))
-
-                # Coworkerns EGNA tools (D5 drift): ai.tool-poster kopplade
-                # via coworker_ids — tillgängliga i run() för alla initeringar
-                # (openai_api, webhook, web_ui, cron …)
-                custom_tools = self.tool_ids.filtered(
-                    lambda t: t.active)._filter_by_access_groups(
-                        tool_access_groups)
-                if custom_tools:
-                    from odoo.addons.ai_agent_core.core.tools import (
-                        ai_tool_records_to_tools)
-                    tools.register_many(ai_tool_records_to_tools(
-                        custom_tools, self.env))
+                # explicit-agent-tools: ENDAST settings-default + explicita
+                # tool_ids — inga interna builtins registreras implicit.
+                tools, tool_access_groups = self._session_tools(
+                    session=session, force_agent=force_agent)
 
                 # Förmågeserialisering (spec 3.3/3.4): flat/enum/namespace per
                 # coworker. Medlemmarna är redan access-filtrerade (registret
@@ -3767,9 +3823,6 @@ class AICoworker(models.Model):
             asyncio.set_event_loop(loop)
             try:
                 from odoo.addons.ai_agent_core.core.provider import ProviderFactory, BifrostProvider
-                from odoo.addons.ai_agent_core.core.tools import (
-                    ToolRegistry, builtin_tools, wrap_tools_with_env,
-                )
                 from odoo.addons.ai_agent_core.core.loop import AgentLoop, AgentConfig
 
                 provider_instance, provider_model = ProviderFactory.from_coworker(self)
@@ -3777,8 +3830,9 @@ class AICoworker(models.Model):
                     base_url='http://192.168.11.150:8080/v1',
                     virtual_key='opencode',
                 )
-                tools = ToolRegistry()
-                tools.register_many(wrap_tools_with_env(builtin_tools(), self.env))
+                # explicit-agent-tools: ENDAST settings-default + explicita
+                # tool_ids — inga interna builtins registreras implicit.
+                tools, _tool_access_groups = self._session_tools(session=session)
 
                 loop_obj = self._build_loop(
                     provider=provider, tools=tools,

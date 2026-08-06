@@ -257,9 +257,12 @@ class AIStreamController(http.Controller):
         # den inloggade användarens grupper (tool-access-groups): LLM:en ser
         # aldrig verktyg vars res.groups användaren saknar.
         gen_coworker_id = quest.id if quest and quest.exists() else None
-        gen_custom_tool_ids = list(
-            quest.tool_ids.filtered('active')._filter_by_access_groups(
-                request.env.user.groups_id.ids).ids
+        # explicit-agent-tools: ENDAST settings-default + explicita verktyg
+        # (agent.tool_ids + coworker.tool_ids) — inga interna builtins per
+        # default. Fångas som plain values (generatorn körs efter teardown).
+        gen_tool_ids = list(
+            quest._session_tool_ids(
+                access_groups=request.env.user.groups_id.ids)
         ) if quest and quest.exists() else []
         # Användarens grupper för PermissionEngine (defense-in-depth)
         gen_user_group_ids = tuple(request.env.user.groups_id.ids)
@@ -303,7 +306,7 @@ class AIStreamController(http.Controller):
                 try:
                     async def _stream(gen_env):
                         import uuid as _uuid_mod
-                        from odoo.addons.ai_agent_core.core.tools import ToolRegistry, builtin_tools, wrap_tools_with_env
+                        from odoo.addons.ai_agent_core.core.tools import ToolRegistry, ai_tool_records_to_tools
                         from odoo.addons.ai_agent_core.core.loop import StreamingAgentLoop, AgentConfig
                         from odoo.addons.ai_agent_core.core.supervisor import StreamingSupervisorLoop, SupervisorConfig, SpecialistAgent
                         from odoo.addons.ai_agent_core.core.interrupt import WebUIInterruptHandler
@@ -340,19 +343,14 @@ class AIStreamController(http.Controller):
                             base_url="http://192.168.11.150:8080/v1",
                             virtual_key="opencode",
                         )
+                        # explicit-agent-tools: ENDAST settings-default +
+                        # explicita verktyg (gen_tool_ids). Inga builtins.
                         tools = ToolRegistry()
-                        tools.register_many(wrap_tools_with_env(builtin_tools(), gen_env))
-                        # Custom tools (ai.tool kopplade till coworkern) —
-                        # t.ex. zabbix_problems för Zabbix Analyst.
-                        if gen_custom_tool_ids:
-                            custom_tools = gen_env['ai.tool'].browse(gen_custom_tool_ids)
-                            if custom_tools:
-                                from odoo.addons.ai_agent_core.core.tools import \
-                                    ai_tool_records_to_tools
-                                # Konvertera ai.tool-records → core Tools innan wrap
-                                tools.register_many(wrap_tools_with_env(
-                                    ai_tool_records_to_tools(
-                                        custom_tools, gen_env), gen_env))
+                        if gen_tool_ids:
+                            tool_recs = gen_env['ai.tool'].browse(gen_tool_ids)
+                            if tool_recs:
+                                tools.register_many(ai_tool_records_to_tools(
+                                    tool_recs, gen_env))
 
                         def _make_loop(**kw):
                             """Bygg StreamingAgentLoop med interrupt-handler."""
@@ -1926,7 +1924,7 @@ class AIOpenAIAPI(http.Controller):
         # ── Imports (must be at method level for both sync + stream paths) ──
         import asyncio
         from odoo.addons.ai_agent_core.core.provider import ProviderFactory, BifrostProvider
-        from odoo.addons.ai_agent_core.core.tools import ToolRegistry, builtin_tools, wrap_tools_with_env
+        from odoo.addons.ai_agent_core.core.tools import ToolRegistry, ai_tool_records_to_tools
         from odoo.addons.ai_agent_core.core.loop import AgentLoop, AgentConfig, StreamingAgentLoop
 
         # Extract last user message
@@ -1961,6 +1959,11 @@ class AIOpenAIAPI(http.Controller):
                     break
 
         coworker_id = quest.id
+        # explicit-agent-tools: verktygs-ID:n fångas i request-kontext och
+        # används i generatorn (efter teardown). ENDAST settings-default +
+        # explicita verktyg — inga interna builtins per default.
+        _gen_tool_ids = list(quest._session_tool_ids(
+            access_groups=request.env.user.groups_id.ids))
         _nats_api_secret = request.env['ir.config_parameter'].sudo().get_param(
             'ai_agent_core.api_secret', '')
         _nats_max_retries = int(request.env['ir.config_parameter'].sudo().get_param(
@@ -1976,8 +1979,15 @@ class AIOpenAIAPI(http.Controller):
                     base_url='http://192.168.11.150:8080/v1',
                     virtual_key='opencode',
                 )
+                # explicit-agent-tools: ENDAST settings-default + explicita
+                # verktyg — inga interna builtins per default.
+                tool_ids = quest._session_tool_ids(
+                    access_groups=request.env.user.groups_id.ids)
                 tools = ToolRegistry()
-                tools.register_many(wrap_tools_with_env(builtin_tools(), request.env))
+                if tool_ids:
+                    tools.register_many(ai_tool_records_to_tools(
+                        request.env['ai.tool'].browse(tool_ids),
+                        request.env))
 
                 loop_obj = AgentLoop(
                     provider=provider, tools=tools,
@@ -2041,10 +2051,15 @@ class AIOpenAIAPI(http.Controller):
                     from odoo import api as _api, registry as _registry
                     _gen_cr = _registry(_gen_dbname).cursor()
                     try:
+                        _gen_env = _api.Environment(_gen_cr, _gen_uid, _gen_context)
                         tools = ToolRegistry()
-                        tools.register_many(wrap_tools_with_env(
-                            builtin_tools(),
-                            _api.Environment(_gen_cr, _gen_uid, _gen_context)))
+                        # explicit-agent-tools: ENDAST settings-default +
+                        # explicita verktyg — inga interna builtins per default.
+                        if _gen_tool_ids:
+                            tool_recs = _gen_env['ai.tool'].browse(_gen_tool_ids)
+                            if tool_recs:
+                                tools.register_many(ai_tool_records_to_tools(
+                                    tool_recs, _gen_env))
                     except Exception:
                         _gen_cr.close()
                         raise
