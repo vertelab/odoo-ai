@@ -81,10 +81,17 @@ _RISK_LEVEL_TO_CLASS: dict[str, RiskClass] = {
 _ALWAYS_READ = {
     "calculator", "web_search", "fetch_url", "echo",
     "search_read", "read", "todo_write", "load_skill",
+    # Generic Odoo model tools (read-only)
+    "describe_model", "odoo_search", "okf_search", "graph_query",
 }
 
 # Tool name prefixes that indicate WRITE_LOCAL
 _WRITE_LOCAL_PREFIXES = ("write_", "create_")
+
+# Generic Odoo model tools by name (odoo-model-tools change)
+_ODOO_WRITE_TOOLS = {"odoo_create", "odoo_write"}
+_ODOO_EXEC_TOOLS = {"odoo_call_method"}
+_ODOO_EXTERNAL_TOOLS = {"odoo_unlink"}
 
 # Tool name prefixes that indicate EXTERNAL / destructive
 _EXTERNAL_PREFIXES = ("unlink_", "delete_")
@@ -120,6 +127,12 @@ def classify(
         return RiskClass.READ
     if tool_name in _EXEC_TOOLS or base_name in _EXEC_TOOLS:
         return RiskClass.EXEC
+    if tool_name in _ODOO_EXEC_TOOLS:
+        return RiskClass.EXEC
+    if tool_name in _ODOO_EXTERNAL_TOOLS:
+        return RiskClass.EXTERNAL
+    if tool_name in _ODOO_WRITE_TOOLS:
+        return RiskClass.WRITE_LOCAL
 
     # 2. Name prefix patterns
     if tool_name.startswith(_EXTERNAL_PREFIXES):
@@ -199,6 +212,13 @@ class PermissionEngine:
     # CUSTOM mode: tools that are auto-allowed
     auto_allow_tools: set[str] = field(default_factory=set)
 
+    # Access-grupper (ai-tool-access-capabilities): Odoo group ids för den
+    # användare vars vägnar loopen körs. Verktyg vars group_ids inte korsar
+    # dessa nekas (defense-in-depth-lager; primärfiltrering sker vid
+    # registrering i ai.coworker.run()). Tom = ingen känd användare →
+    # gruppbundna verktyg nekas.
+    user_group_ids: set = field(default_factory=set)
+
     # Write tool names that require path scoping (from OpenWorker)
     _WRITE_TOOLS = {"write", "write_file", "create"}
     _SHELL_TOOLS = {"run_shell", "shell", "exec", "eval"}
@@ -226,6 +246,37 @@ class PermissionEngine:
                 risk_level = metadata.risk_level
 
         risk = classify(tool_name, risk_level, metadata)
+
+        # -- Access-grupper (ai-tool-access-capabilities) --
+        # Verktyg med group_ids kräver att användarens grupper korsar dem.
+        # Tom user_group_ids (ingen känd användare) → neka gruppbundna
+        # verktyg; obundna (tom group_ids) passerar.
+        if metadata and getattr(metadata, 'group_ids', None):
+            tool_groups = set(metadata.group_ids)
+            if tool_groups and not (self.user_group_ids & tool_groups):
+                return Decision(
+                    allowed=False,
+                    reason=(f"Tool '{tool_name}' requires an access group "
+                            "the current user lacks"),
+                )
+
+        # -- Hårda stopp (odoo-model-tools 3.3) --
+        # odoo_call_method och odoo_unlink kräver ALLTID mänskligt
+        # godkännande — oavsett trust-ladder-steg eller auto-läge.
+        if tool_name in _ODOO_EXEC_TOOLS or tool_name in _ODOO_EXTERNAL_TOOLS:
+            if self.mode == PermissionMode.AUTO:
+                # Automation kan aldrig köra dessa utan människa → neka
+                return Decision(
+                    allowed=False,
+                    reason=(f"{tool_name} kräver alltid mänskligt godkännande "
+                            "(hårt stopp — ingen auto-approval)"),
+                )
+            return Decision(
+                allowed=True,
+                needs_user=True,
+                reason=(f"{tool_name} kräver alltid mänskligt godkännande "
+                        "(hårt stopp)"),
+            )
 
         # -- AUTO mode: everything allowed --
         if self.mode == PermissionMode.AUTO:

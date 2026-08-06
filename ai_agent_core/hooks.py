@@ -6,158 +6,117 @@ import logging
 _logger = logging.getLogger(__name__)
 
 
-def post_init_hook_personal_memory(cr, registry):
-    """Post-install hook for ai.personal.memory.
+def post_init_hook_personal_memory(env):
+    """Post-install hook for ai.personal.memory (Odoo 18 — takes env).
     
     Skapar pgvector-kolumn, tsvector GENERATED COLUMN och index.
     Idempotent — körs endast om tabellen finns och kolumner saknas.
     """
+    cr = env.cr
+
+    # Verify required PostgreSQL extensions
     try:
-        # 1. tsvector GENERATED COLUMN
-        cr.execute("""
-            SELECT column_name FROM information_schema.columns
-            WHERE table_name = 'ai_personal_memory'
-              AND column_name = 'search_vector'
-        """)
-        if not cr.fetchone():
-            cr.execute("""
-                ALTER TABLE ai_personal_memory
-                ADD COLUMN search_vector tsvector
-                GENERATED ALWAYS AS (
-                    to_tsvector('swedish', coalesce(content, ''))
-                ) STORED
-            """)
-            _logger.info('Created search_vector column on ai_personal_memory')
-        
-        # 2. GIN-index för fulltext-sök
-        cr.execute("""
-            SELECT 1 FROM pg_indexes
-            WHERE tablename = 'ai_personal_memory'
-              AND indexname = 'idx_ai_personal_memory_fts'
-        """)
-        if not cr.fetchone():
-            cr.execute("""
-                CREATE INDEX idx_ai_personal_memory_fts
-                ON ai_personal_memory
-                USING GIN(search_vector)
-            """)
-            _logger.info('Created GIN index on search_vector')
-        
-        # 3. pgvector-index (om pgvector finns installerat)
-        cr.execute("""
-            SELECT 1 FROM pg_extension WHERE extname = 'vector'
-        """)
+        cr.execute("SELECT extname FROM pg_extension WHERE extname IN ('age', 'vector')")
+        installed = {r[0] for r in cr.fetchall()}
+        missing = {'age', 'vector'} - installed
+        if missing:
+            _logger.warning(
+                'Missing PostgreSQL extensions: %s. '
+                'Run: salt \'*\' state.apply postgres.age',
+                ', '.join(missing))
+        if 'age' not in installed:
+            _logger.warning('AGE extension missing — Odoo Mind graph disabled')
+        if 'vector' not in installed:
+            _logger.warning('vector extension missing — pgvector embeddings disabled')
+    except Exception as e:
+        _logger.warning('Extension check failed (non-fatal): %s', e)
+
+    # ════════════════════════════════════════════
+    # AI Personal Memory SQL (non-fatal — table may not exist yet)
+    # ════════════════════════════════════════════
+    try:
+        cr.execute("SELECT 1 FROM information_schema.tables WHERE table_name = 'ai_personal_memory' AND table_schema = 'public'")
         if cr.fetchone():
-            cr.execute("""
-                SELECT 1 FROM pg_indexes
-                WHERE tablename = 'ai_personal_memory'
-                  AND indexname = 'idx_ai_personal_memory_embedding'
-            """)
+            # tsvector GENERATED COLUMN
+            cr.execute("SELECT column_name FROM information_schema.columns WHERE table_name = 'ai_personal_memory' AND column_name = 'search_vector'")
             if not cr.fetchone():
-                cr.execute("""
-                    CREATE INDEX idx_ai_personal_memory_embedding
-                    ON ai_personal_memory
-                    USING ivfflat (embedding vector_cosine_ops)
-                    WITH (lists = 100)
-                """)
-                _logger.info('Created ivfflat index on embedding')
-        
-        # 4. B-tree-index för user_id
-        cr.execute("""
-            SELECT 1 FROM pg_indexes
-            WHERE tablename = 'ai_personal_memory'
-              AND indexname = 'idx_ai_personal_memory_user_id'
-        """)
-        if not cr.fetchone():
-            cr.execute("""
-                CREATE INDEX idx_ai_personal_memory_user_id
-                ON ai_personal_memory (user_id, create_date DESC)
-            """)
-            _logger.info('Created B-tree index on user_id')
+                cr.execute("ALTER TABLE ai_personal_memory ADD COLUMN search_vector tsvector GENERATED ALWAYS AS (to_tsvector('swedish', coalesce(content, ''))) STORED")
+                _logger.info('Created search_vector column on ai_personal_memory')
+
+            # GIN-index
+            cr.execute("SELECT 1 FROM pg_indexes WHERE tablename = 'ai_personal_memory' AND indexname = 'idx_ai_personal_memory_fts'")
+            if not cr.fetchone():
+                cr.execute("CREATE INDEX idx_ai_personal_memory_fts ON ai_personal_memory USING GIN(search_vector)")
+                _logger.info('Created GIN index on search_vector')
+
+            # pgvector-index (only if vector extension + column exists + type is vector)
+            cr.execute("SELECT 1 FROM pg_extension WHERE extname = 'vector'")
+            if cr.fetchone():
+                cr.execute("SELECT data_type FROM information_schema.columns WHERE table_name = 'ai_personal_memory' AND column_name = 'embedding'")
+                row = cr.fetchone()
+                if row and row[0] == 'USER-DEFINED':
+                    cr.execute("SELECT 1 FROM pg_indexes WHERE tablename = 'ai_personal_memory' AND indexname = 'idx_ai_personal_memory_embedding'")
+                    if not cr.fetchone():
+                        cr.execute("CREATE INDEX idx_ai_personal_memory_embedding ON ai_personal_memory USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100)")
+                        _logger.info('Created ivfflat index on embedding')
+
+            # B-tree-index
+            cr.execute("SELECT 1 FROM pg_indexes WHERE tablename = 'ai_personal_memory' AND indexname = 'idx_ai_personal_memory_user_id'")
+            if not cr.fetchone():
+                cr.execute("CREATE INDEX idx_ai_personal_memory_user_id ON ai_personal_memory (user_id, create_date DESC)")
+                _logger.info('Created B-tree index on user_id')
     except Exception as e:
         _logger.warning('SQL migration for ai.personal.memory failed (non-fatal): %s', e)
-    
+        cr.rollback()
+
     # ════════════════════════════════════════════
     # Company Memory SQL
     # ════════════════════════════════════════════
     try:
-        cr.execute("""
-            SELECT column_name FROM information_schema.columns
-            WHERE table_name = 'ai_company_memory'
-              AND column_name = 'search_vector'
-        """)
-        if not cr.fetchone():
-            cr.execute("""
-                ALTER TABLE ai_company_memory
-                ADD COLUMN search_vector tsvector
-                GENERATED ALWAYS AS (
-                    to_tsvector('swedish', coalesce(content, ''))
-                ) STORED
-            """)
-            _logger.info('Created search_vector on ai_company_memory')
-        
-        cr.execute("""
-            SELECT 1 FROM pg_indexes
-            WHERE tablename = 'ai_company_memory'
-              AND indexname = 'idx_ai_company_memory_fts'
-        """)
-        if not cr.fetchone():
-            cr.execute("""
-                CREATE INDEX idx_ai_company_memory_fts
-                ON ai_company_memory USING GIN(search_vector)
-            """)
-        
-        cr.execute("""
-            SELECT 1 FROM pg_extension WHERE extname = 'vector'
-        """)
+        cr.execute("SELECT 1 FROM information_schema.tables WHERE table_name = 'ai_company_memory' AND table_schema = 'public'")
         if cr.fetchone():
-            cr.execute("""
-                SELECT 1 FROM pg_indexes
-                WHERE tablename = 'ai_company_memory'
-                  AND indexname = 'idx_ai_company_memory_embedding'
-            """)
+            cr.execute("SELECT column_name FROM information_schema.columns WHERE table_name = 'ai_company_memory' AND column_name = 'search_vector'")
             if not cr.fetchone():
-                cr.execute("""
-                    CREATE INDEX idx_ai_company_memory_embedding
-                    ON ai_company_memory
-                    USING ivfflat (embedding vector_cosine_ops)
-                    WITH (lists = 100)
-                """)
-        
-        cr.execute("""
-            SELECT 1 FROM pg_indexes
-            WHERE tablename = 'ai_company_memory'
-              AND indexname = 'idx_ai_company_memory_company'
-        """)
-        if not cr.fetchone():
-            cr.execute("""
-                CREATE INDEX idx_ai_company_memory_company
-                ON ai_company_memory (company_id, create_date DESC)
-            """)
+                cr.execute("ALTER TABLE ai_company_memory ADD COLUMN search_vector tsvector GENERATED ALWAYS AS (to_tsvector('swedish', coalesce(content, ''))) STORED")
+                _logger.info('Created search_vector on ai_company_memory')
+
+            cr.execute("SELECT 1 FROM pg_indexes WHERE tablename = 'ai_company_memory' AND indexname = 'idx_ai_company_memory_fts'")
+            if not cr.fetchone():
+                cr.execute("CREATE INDEX idx_ai_company_memory_fts ON ai_company_memory USING GIN(search_vector)")
+
+            cr.execute("SELECT 1 FROM pg_extension WHERE extname = 'vector'")
+            if cr.fetchone():
+                cr.execute("SELECT data_type FROM information_schema.columns WHERE table_name = 'ai_company_memory' AND column_name = 'embedding'")
+                row = cr.fetchone()
+                if row and row[0] == 'USER-DEFINED':
+                    cr.execute("SELECT 1 FROM pg_indexes WHERE tablename = 'ai_company_memory' AND indexname = 'idx_ai_company_memory_embedding'")
+                    if not cr.fetchone():
+                        cr.execute("CREATE INDEX idx_ai_company_memory_embedding ON ai_company_memory USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100)")
+
+            cr.execute("SELECT 1 FROM pg_indexes WHERE tablename = 'ai_company_memory' AND indexname = 'idx_ai_company_memory_company'")
+            if not cr.fetchone():
+                cr.execute("CREATE INDEX idx_ai_company_memory_company ON ai_company_memory (company_id, create_date DESC)")
     except Exception as e:
         _logger.warning('SQL migration for ai.company.memory failed (non-fatal): %s', e)
+        cr.rollback()
 
     # ════════════════════════════════════════════
     # AGE Graph initialization (Odoo Mind)
     # ════════════════════════════════════════════
     try:
-        # 1. CREATE EXTENSION IF NOT EXISTS
-        cr.execute("CREATE EXTENSION IF NOT EXISTS age CASCADE")
-        _logger.info('AGE extension ensured')
-
-        # 2. Create graph if not exists
-        cr.execute("SELECT 1 FROM ag_catalog.ag_graph WHERE name = 'odoo_mind'")
-        if not cr.fetchone():
-            cr.execute("SELECT * FROM ag_catalog.create_graph('odoo_mind')")
-            _logger.info('Created odoo_mind graph')
+        cr.execute("SELECT 1 FROM pg_extension WHERE extname = 'age'")
+        if cr.fetchone():
+            cr.execute("SELECT 1 FROM ag_catalog.ag_graph WHERE name = 'odoo_mind'")
+            if not cr.fetchone():
+                cr.execute("SELECT * FROM ag_catalog.create_graph('odoo_mind')")
+                _logger.info('Created odoo_mind graph')
+            else:
+                _logger.info('odoo_mind graph already exists')
         else:
-            _logger.info('odoo_mind graph already exists')
+            _logger.info('AGE extension not installed — skipping graph init')
     except Exception as e:
-        _logger.warning(
-            'Odoo Mind graph initialization failed (non-fatal): %s', e)
-        _logger.warning(
-            'Apache AGE may not be installed. '
-            'Run: salt \'*\' state.apply postgres.age')
+        _logger.warning('Odoo Mind graph initialization failed (non-fatal): %s', e)
+        cr.rollback()
 
     # ════════════════════════════════════════════
     # Create company memory crons
@@ -174,25 +133,32 @@ def post_init_hook_personal_memory(cr, registry):
     ]
     for name, code, hour, minute, priority in _CRONS:
         try:
-            cr.execute(
-                'SELECT id FROM ir_cron WHERE name = %s AND model = %s',
-                (name, 'ai.company.memory'))
-            if not cr.fetchone():
-                cr.execute("""
-                    INSERT INTO ir_cron (name, model, state, code, interval_number,
-                                         interval_type, numbercall, active, priority,
-                                         user_id, hour, minute)
-                    VALUES (%s, 'ai.company.memory', 'code', %s,
-                            1, 'days', -1, True, %s, 1, %s, %s)
-                """, (name, code, priority, hour, minute))
+            cron = env['ir.cron'].search([
+                ('cron_name', '=', name),
+                ('model_id.model', '=', 'ai.company.memory'),
+            ], limit=1)
+            if not cron:
+                model_id = env['ir.model']._get('ai.company.memory')
+                env['ir.cron'].create({
+                    'cron_name': name,
+                    'model_id': model_id.id,
+                    'state': 'code',
+                    'code': code,
+                    'interval_number': 1,
+                    'interval_type': 'days',
+                    'numbercall': -1,
+                    'active': True,
+                    'priority': priority,
+                    'user_id': env.ref('base.user_root').id,
+                    'hour': hour,
+                    'minute': minute,
+                })
                 _logger.info('Created cron: %s', name)
         except Exception as e:
             _logger.warning('Could not create cron %s: %s', name, e)
 
     # ── Org init (default coworker + templates) ──
     try:
-        from odoo.api import Environment, SUPERUSER_ID
-        env = Environment(cr, SUPERUSER_ID, {})
         post_init_hook_org(env)
         okf_init_default_artifact_types(env)
         env.flush_all()
@@ -385,52 +351,15 @@ Output: "expected output"
 """.replace('{GRILL}', GRILL_BLOCK)
 
 def post_init_hook_org(env):
-    """Create default coworker + load templates for the organization layer."""
+    """Load templates for the organization layer.
+
+    Default-coworkern "Allmän assistent" definieras numera som data-XML
+    (data/default_coworker.xml) med xmlids; befintliga installationer
+    adopteras av migrations/1.21/pre-migrate.py.
+    """
     import os, json
 
-    # 1. Create default coworker if none exists
-    if not env['ai.coworker'].search_count([('is_default', '=', True)]):
-        agent = env['ai.agent'].create({
-            'name': 'Allmän assistent',
-            'ai_role': 'General purpose AI assistant',
-            'status': 'active',
-        })
-        coworker = env['ai.coworker'].create({
-            'name': 'Allmän',
-            'description': 'Allmän AI-assistent. Hjälper med frågor, '
-                          'styr upp organisationen, och tipsar om '
-                          'förbättringar via kaizen.',
-            'init_type': 'manual',
-            'status': 'active',
-            'heartbeat_enabled': True,
-            'inject_company_memory': True,
-            'inject_nudging': True,
-            'is_default': True,
-        })
-        env['ai.coworker.agent'].create({
-            'coworker_id': coworker.id,
-            'agent_id': agent.id,
-            'role': 'lead',
-        })
-        # Create init types
-        InitType = env['ai.coworker.init_type']
-        InitType.create({
-            'coworker_id': coworker.id,
-            'init_type': 'web_ui',
-            'active': True,
-        })
-        InitType.create({
-            'coworker_id': coworker.id,
-            'init_type': 'cron',
-            'active': True,
-            'cron_interval_number': 5,
-            'cron_interval_type': 'minutes',
-        })
-        _logger.info('Created default coworker: Allmän')
-    else:
-        _logger.info('Default coworker already exists — skipping')
-
-    # 2. Load templates from JSON files
+    # 1. Load templates from JSON files
     try:
         template_model = env['ai.org.template']
         template_model.load_all_templates()
@@ -486,9 +415,9 @@ def post_init_hook(env):
     # ════════════════════════════════════════════
     try:
         cr = env.cr
-        # 1. CREATE EXTENSION IF NOT EXISTS
-        cr.execute("CREATE EXTENSION IF NOT EXISTS age CASCADE")
-        _logger.info('AGE extension ensured')
+        # 1. AGE extension managed by SaltStack/DBA
+        # AGE extension handled by SaltStack/DBA — skipping
+        _logger.info('AGE extension skipped — managed by DBA')
 
         # 2. Create graph if not exists
         cr.execute("SELECT 1 FROM ag_catalog.ag_graph WHERE name = 'odoo_mind'")

@@ -4,6 +4,20 @@
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>
 <title>AI Chat</title>
+<!-- PWA: manifest + iOS-meta (installeras på hemskärmen) -->
+<link rel="manifest" href="/ai/manifest.webmanifest"/>
+<link rel="apple-touch-icon" href="/ai/icon-180.png"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="theme-color" content="#1a1a2e"/>
+<script>
+// PWA: registrera pass-through service worker (scope /ai/) för installerbarhet.
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function () {
+        navigator.serviceWorker.register('/ai/sw.js', { scope: '/ai/' }).catch(function () {});
+    });
+}
+</script>
 <style>
 /* === DARK THEME (default) === */
 :root, [data-theme="dark"] {
@@ -51,8 +65,6 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);overflow:hid
 .thread-pin.pinned{color:var(--accent);display:block}
 .thread-item:hover .thread-pin:not(.pinned){display:block}
 .thread-pin:hover{color:var(--accent)}
-.thread-delete{display:none;color:var(--danger);font-size:16px;cursor:pointer;padding:0 4px;flex-shrink:0}
-.thread-item:hover .thread-delete{display:block}
 .thread-time{font-size:11px;color:var(--text-muted);flex-shrink:0}
 
 /* Pinned section header */
@@ -247,7 +259,6 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);overflow:hid
         <label for="modal-thread-name">Namn</label>
         <input type="text" id="modal-thread-name" placeholder="Trådnamn..."/>
         <div class="btn-row">
-            <button class="btn-danger" id="modal-delete-btn" onclick="modalDeleteThread()">🗑 Radera</button>
             <button class="btn-secondary" onclick="closeThreadEditModal()">Avbryt</button>
             <button class="btn-primary" onclick="modalRenameThread()">Spara</button>
         </div>
@@ -260,7 +271,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);overflow:hid
         <button class="hamburger" onclick="toggleSidebar()" title="Meny">☰</button>
         <span>Chattar med</span>
         <select id="quest-selector" onchange="onQuestSelect()">
-            <option value="" data-name="default">Allmän assistent</option>
+            <!-- DEFAULT_OPTION -->
             <!-- QUEST_OPTIONS -->
         </select>
         <div class="model-selector" id="model-selector-container" style="display:none">
@@ -276,7 +287,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);overflow:hid
         <!-- Welcome screen shown initially -->
         <div class="welcome-screen" id="welcome-screen">
             <div class="welcome-icon">💬</div>
-            <div class="welcome-title">Allmän assistent</div>
+            <div class="welcome-title"><!-- WELCOME_TITLE --></div>
             <div class="welcome-desc">Ställ en fråga eller välj en agent i sidopanelen för att komma igång.</div>
         </div>
     </div>
@@ -345,7 +356,8 @@ function signalBuildComplete(questId,summary){
 }
 
 // === STATE ===
-var activeQuestId='',activeQuestName='default',activeSessionId='',activeThreadName='';
+var activeQuestId='<!-- DEFAULT_QUEST_ID -->',activeQuestName='<!-- DEFAULT_QUEST_NAME -->',activeSessionId='',activeThreadName='';
+var activeSessionCoworker=''; // coworker_id för den aktiva sessionen
 // Pre-select quest from URL params
 var urlQuestId=params.get('quest_id')||'';
 if(urlQuestId){activeQuestId=urlQuestId}
@@ -464,7 +476,7 @@ function updateWelcomeScreen(){
             el.appendChild(w);
             existing=w;
         }
-        var questName=activeQuestName||'Allmän assistent';
+        var questName=activeQuestName||'<!-- DEFAULT_QUEST_NAME -->';
         var desc='';
         if(activeQuestId){
             // Try to get description from quest item
@@ -523,7 +535,7 @@ function sendSuggestion(idx){
 var _origUpdateWelcome=updateWelcomeScreen;
 updateWelcomeScreen=function(){
     var qi=document.querySelector('.quest-item[data-id="'+activeQuestId+'"]');
-    var questName=activeQuestName||'Allmän assistent';
+    var questName=activeQuestName||'<!-- DEFAULT_QUEST_NAME -->';
     if(activeQuestId){
         var items={
             'Strategy Composer':[
@@ -593,14 +605,6 @@ function modalRenameThread(){
         closeThreadEditModal();loadThreads()
     })
 }
-function modalDeleteThread(){
-    if(!_modalThreadId)return;
-    if(!confirm('Radera denna tråd permanent?'))return;
-    fetch('/ai/threads/'+_modalThreadId,{method:'DELETE'}).then(function(){
-        if(activeSessionId==_modalThreadId){newThread()}
-        closeThreadEditModal();loadThreads()
-    })
-}
 // Allow Enter key in modal
 document.addEventListener('DOMContentLoaded',function(){
     document.getElementById('modal-thread-name').addEventListener('keydown',function(e){
@@ -630,7 +634,9 @@ function feedbackMessage(el,direction){
 // === THREADS ===
 function loadThreads(){
     var pinned=getPinnedThreads();
-    fetch('/ai/threads').then(function(r){return r.json()}).then(function(data){
+    var url='/ai/threads';
+    if(activeQuestId)url+='?coworker_id='+activeQuestId;
+    fetch(url).then(function(r){return r.json()}).then(function(data){
         var list=document.getElementById('thread-list');
         var pinnedHeader=document.getElementById('pinned-header');
         list.innerHTML='';
@@ -657,10 +663,8 @@ function loadThreads(){
             d.dataset.id=t.id;d.dataset.name=t.name||'';
             d.innerHTML='<span class="thread-pin'+(isPinned?' pinned':'')+'" title="'+(isPinned?'Ta bort fästning':'Fäst tråd')+'">📌</span>'
                 +'<span class="thread-name">'+esc(t.name||'Tråd')+'</span>'
-                +'<span class="thread-delete" title="Radera">×</span>'
                 +'<span class="thread-time">'+relTime(t.last_activity)+'</span>';
             d.querySelector('.thread-pin').addEventListener('click',function(e){e.stopPropagation();toggleThreadPin(t.id,d)});
-            d.querySelector('.thread-delete').addEventListener('click',function(e){e.stopPropagation();deleteThread(t.id,d)});
             d.addEventListener('click',function(){selectThread(t.id,t.name)});
             list.appendChild(d)
         });
@@ -668,7 +672,7 @@ function loadThreads(){
     })
 }
 function newThread(){
-    activeSessionId='';activeThreadName='';
+    activeSessionId='';activeSessionCoworker='';activeThreadName='';
     document.getElementById('active-thread-name').textContent='';
     document.getElementById('thread-edit-btn').style.display='none';
     removeImagePreview();
@@ -679,14 +683,15 @@ function newThread(){
 function selectThread(id,name){
     fetch('/ai/threads/'+id).then(function(r){return r.json()}).then(function(data){
         activeSessionId=id;activeThreadName=data.name||name||'';
+        activeSessionCoworker=data.coworker_id||'';
         document.getElementById('active-thread-name').textContent=data.name||'Tråd';
         document.getElementById('thread-edit-btn').style.display='inline-block';
-        // Restore quest
-        if(data.quest_id){
-            activeQuestId=data.quest_id;
-            document.getElementById('quest-selector').value=data.quest_id;
-            activeQuestName=data.quest_name||'';
-            fetchModels(activeQuestId);
+        // Restore quest/medarbetare (API:t returnerar coworker_id)
+        if(data.coworker_id){
+            activeQuestId=String(data.coworker_id);
+            document.getElementById('quest-selector').value=String(data.coworker_id);
+            activeQuestName=data.coworker_name||'';
+            fetchModels(activeQuestId);fetchSkills(activeQuestId);
         }else{
             hideModelSelector();
         }
@@ -734,13 +739,6 @@ function saveRename(id,name,el){
             if(activeSessionId==id){activeThreadName=name;
                 document.getElementById('active-thread-name').textContent=name}
         }
-        loadThreads()
-    })
-}
-function deleteThread(id,el){
-    if(!confirm('Radera denna tråd?'))return;
-    fetch('/ai/threads/'+id,{method:'DELETE'}).then(function(){
-        if(activeSessionId==id){newThread()}
         loadThreads()
     })
 }
@@ -834,10 +832,21 @@ function navigateSlashDropdown(dir){
 function onQuestSelect(){
     var sel=document.getElementById('quest-selector');
     var opt=sel.options[sel.selectedIndex];
-    activeQuestId=opt.value;
+    var newQ=opt.value;
+    activeQuestId=newQ;
     activeQuestName=opt.textContent;
+    // Står jag i en session för EN ANNAN medarbetare → tom start-vy
+    if(activeSessionId && activeSessionCoworker && String(activeSessionCoworker)!==newQ){
+        activeSessionId='';activeSessionCoworker='';activeThreadName='';
+        document.getElementById('active-thread-name').textContent='';
+        document.getElementById('thread-edit-btn').style.display='none';
+        var msgs=document.getElementById('messages');if(msgs)msgs.innerHTML='';
+        removeImagePreview&&removeImagePreview();
+    }
     if(activeQuestId){fetchModels(activeQuestId);fetchSkills(activeQuestId)}else{hideModelSelector()}
     if(!activeSessionId)updateWelcomeScreen();
+    // Sessions tillhör den valda medarbetaren — ladda om listan
+    loadThreads();
     if(window.innerWidth<=768){toggleSidebar()}
 }
 
@@ -985,7 +994,7 @@ function sendMessage(){
         var sbody=JSON.stringify({quest_id:activeQuestId||null,name:cleanName,skill_id:contextSkill?parseInt(contextSkill):null,context_quest:contextQuest||null});
         fetch('/ai/threads',{method:'POST',headers:{'Content-Type':'application/json'},body:sbody})
         .then(function(r){return r.json()}).then(function(d){
-            activeSessionId=d.id;activeThreadName=d.name;
+            activeSessionId=d.id;activeThreadName=d.name;activeSessionCoworker=activeQuestId||'';
             document.getElementById('active-thread-name').textContent=d.name;
             if(contextQuest||contextSkill)document.getElementById('thread-edit-btn').style.display='inline-block';
             doStream()
@@ -1007,9 +1016,10 @@ function startStream(prompt){
 function cancelStream(){if(currentEventSource){currentEventSource.close()}finishStream()}
 function handleStreamEvent(e){
     switch(e.type){
+        case'session':if(e.session_uuid){sessionUuid=e.session_uuid}break;
         case'token':currentAiMessage.innerHTML+=e.token;streamText+=e.token;tokenCount++;updateTokenInfo();break;
         case'tool_call_start':var a=document.createElement('div');a.className='agent-card';var n=e.tool_call?e.tool_call.name:'tool';a.innerHTML='<div class="agent-card-header"><span>🔧</span><span>'+esc(n)+'</span></div><div class="agent-card-body">Kör...</div>';currentAiMessage.appendChild(a);currentAgentCards[n]=a;break;
-        case'needs_approval':showInterruptDialog('Godkänn verktyg: '+esc(e.tool_call?e.tool_call.name:'?'),'tool_approval');break;
+        case'needs_approval':if(e.tool_name){showInterruptDialog('Godkänn verktyg: '+esc(e.tool_name)+(e.risk_level?' ('+esc(e.risk_level)+')':''),'tool_approval')}break;
         case'needs_input':showInterruptDialog(e.question||'Agenten behöver input','clarification');break;
         case'done':currentEventSource.close();finishStream();break;
         case'error':currentAiMessage.innerHTML+='<div style="color:var(--danger)">❌ '+esc(e.message)+'</div>';currentEventSource.close();finishStream();break

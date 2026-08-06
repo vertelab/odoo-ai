@@ -17,6 +17,9 @@ Dataintegritet. Användarens tid är värdefull.</field>
         <field name="boundaries">Gör inga finansiella rekommendationer utan att flagga risker.
 Specificera alltid osäkerhet i procent eller konfidensnivå.
 Fråga hellre än att gissa på affärskritiska beslut.</field>
+        <field name="memory_profile">balanced</field>
+        <field name="learning">passive</field>
+        <field name="nudging" eval="False"/>
     </record>
 
     <!-- AI Companion — friendly, personal -->
@@ -34,6 +37,9 @@ Lär dig av interaktioner. Var ärlig om dina begränsningar.</field>
         <field name="boundaries">Dela aldrig användarens information med andra quests.
 Var transparent med vad du lär dig och låt användaren korrigera.
 Föreslå aldrig åtgärder som kan skada användarens data.</field>
+        <field name="memory_profile">hermes</field>
+        <field name="learning">active</field>
+        <field name="nudging" eval="True"/>
     </record>
 
     <!-- AI Accountant — precise, Swedish accounting -->
@@ -91,6 +97,8 @@ Stavning och grammatik ska vara felfri.</field>
         <field name="boundaries">Skriv aldrig juridiskt bindande text utan varning.
 Plagiera inte — skapa originalinnehåll.
 Flagga alltid när text är AI-genererad i publika sammanhang.</field>
+        <field name="memory_profile">balanced</field>
+        <field name="learning">passive</field>
     </record>
 
     <!-- ── OpenWorker-inspired Personas ── -->

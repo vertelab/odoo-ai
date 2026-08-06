@@ -45,6 +45,18 @@ class ResConfigSettings(models.TransientModel):
     _inherit = 'res.config.settings'
 
     # ─────────────────────────────────────────────
+    # PWA (mobilapp) — namn + ikon för hemskärmen
+    # ─────────────────────────────────────────────
+    pwa_name = fields.Char(
+        'PWA-namn',
+        config_parameter='ai_agent_core.pwa_name',
+        help='Namn på den installerade mobilappen. Tomt = "AI <företagsnamn>" '
+             'för chatten, företagsnamnet för Odoo-appen.')
+    pwa_icon = fields.Image(
+        related='company_id.pwa_icon', string='PWA-ikon', readonly=False,
+        help='Ikon på hemskärmen. Tomt = företagsloggan.')
+
+    # ─────────────────────────────────────────────
     # Background Jobs — per-cron rader (task 7.15)
     # ─────────────────────────────────────────────
     bg_cron_line_ids = fields.One2many(
@@ -56,9 +68,9 @@ class ResConfigSettings(models.TransientModel):
     ai_api_secret = fields.Char(
         'AI API Secret',
         config_parameter='ai_agent_core.api_secret',
-        help='Shared Bearer token for the /ai/v1/* (OpenAI-compatible) and '
-             '/pi/callback endpoints. If empty, falls back to the '
-             'AI_AGENT_API_SECRET environment variable.')
+        help='Shared Bearer token for the /pi/callback endpoint. '
+             'If empty, falls back to the AI_AGENT_API_SECRET '
+             'environment variable.')
 
     ai_api_default_provider_id = fields.Many2one(
         'ai.provider', string='Default Provider',
@@ -105,6 +117,26 @@ class ResConfigSettings(models.TransientModel):
         'ai.identity', string='Default Identity',
         config_parameter='ai_agent_core.default_identity_id',
         help='Default identity template for new agents.')
+
+    # ─────────────────────────────────────────────
+    # Default Tools (explicit-agent-tools)
+    # ─────────────────────────────────────────────
+    # M2M → ai.tool, widget many2many_tags i AI Orkestrering. Persisteras som
+    # kommaseparerade verktygsnamn i ir.config_parameter (config_parameter
+    # stödjer bara skalärer). Default = SÄKRA kundvänliga verktyg — inga
+    # interna förmågor (odoo-verktyg, inventory, builder, NATS) per default.
+    # Interna verktyg läggs på agenten EXPLICIT via ai.agent.tool_ids.
+    DEFAULT_AGENT_TOOL_NAMES = [
+        'calculator',
+        'web_search',
+        'fetch_url',
+    ]
+
+    ai_default_tool_ids = fields.Many2many(
+        'ai.tool', string='Default Tools (nya agenter)',
+        help='Vilka verktyg nya agenter får som default när de skapas utan '
+             'explicita verktyg. Builtin-verktyg syns här efter seeding.',
+    )
 
     # ─────────────────────────────────────────────
     # Odoo Mind
@@ -261,6 +293,13 @@ class ResConfigSettings(models.TransientModel):
     @api.model
     def get_values(self):
         res = super().get_values()
+        # Säkerställ gateway-token (config-parametern); _ensure_gateway_token
+        # finns inte på res.company — skapa direkt om den saknas.
+        icp = self.env['ir.config_parameter'].sudo()
+        if not icp.get_param('ai_agent_core.gateway_token'):
+            import secrets
+            icp.set_param('ai_agent_core.gateway_token',
+                          secrets.token_hex(32))
         company = self.env.company
 
         # Website URL from partner
@@ -325,6 +364,16 @@ class ResConfigSettings(models.TransientModel):
         res['heartbeat_interval'] = int(get_param(
             'ai_agent_core.heartbeat_interval', '5'))
 
+        # Default Tools (explicit-agent-tools): kommaseparerade namn i
+        # ir.config_parameter → M2M-värde. Tom parameter → default-uppsättningen.
+        tool_param = get_param('ai_agent_core.default_tool_ids', '')
+        tool_names = [n.strip() for n in tool_param.split(',') if n.strip()]
+        if not tool_names:
+            tool_names = list(self.DEFAULT_AGENT_TOOL_NAMES)
+        tool_ids = self.env['ai.tool'].search(
+            [('name', 'in', tool_names)]).ids
+        res['ai_default_tool_ids'] = [(6, 0, tool_ids)]
+
         return res
 
     def set_values(self):
@@ -362,6 +411,10 @@ class ResConfigSettings(models.TransientModel):
         set_param('ai_agent_core.heartbeat_interval',
                   str(self.heartbeat_interval))
 
+        # Default Tools (explicit-agent-tools)
+        set_param('ai_agent_core.default_tool_ids',
+                  ','.join(self.ai_default_tool_ids.mapped('name')))
+
         # Spara per-cron rader → ir.cron (task 7.15)
         for line in self.bg_cron_line_ids:
             if line.cron_id:
@@ -385,6 +438,16 @@ class ResConfigSettings(models.TransientModel):
                 'sticky': False,
                 'type': type,
             }
+        }
+
+    def action_refresh_gateway_token(self):
+        """Generate a new gateway token — old one stops working immediately."""
+        import secrets
+        self.env['ir.config_parameter'].sudo().set_param(
+            'ai_agent_core.gateway_token', secrets.token_hex(32))
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'reload',
         }
 
     def action_open_company(self):
@@ -445,6 +508,17 @@ class ResConfigSettings(models.TransientModel):
         return self._notify(
             'Graph synkad',
             'Odoo Mind Graph har synkroniserats.')
+
+    def action_index_personal_now(self):
+        """Kör nu: indexera personliga minneskällor (roll + mål)."""
+        try:
+            result = self.env['ai.okf.concept']._index_all_personal_sources()
+            return self._notify(
+                'Personliga minnen indexerade',
+                'Roller: %(roles)s · Mål: %(goals)s' % result)
+        except Exception as e:
+            return self._notify(
+                'Indexering misslyckades', str(e), type_='danger')
 
     def action_toggle_cron(self, cron_key, active):
         """Toggle a cron job on/off by its key in BG_CRON_NAMES."""

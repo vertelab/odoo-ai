@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+
+        <!-- DeepSeek AI Provider -->
+        <record id="provider_deepseek" model="ai.provider">
+            <field name="name">DeepSeek</field>
+            <field name="provider_type">deepseek</field>
+            <field name="base_url">https://api.deepseek.com/v1</field>
+            <field name="is_key_required" eval="True"/>
+            <field name="timeout">120</field>
+            <field name="retry_count">3</field>
+            <field name="active" eval="True"/>
+            <field name="status">confirmed</field>
+        </record>
+
+    </data>
+</odoo>

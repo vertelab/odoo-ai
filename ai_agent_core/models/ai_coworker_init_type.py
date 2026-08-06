@@ -18,7 +18,7 @@ _logger = logging.getLogger(__name__)
 from .ai_coworker import INIT_TYPES as INIT_TYPE_SELECTION
 
 
-class AIQuestInitType(models.Model):
+class AICoworkerInitType(models.Model):
     _name = 'ai.coworker.init_type'
     _description = 'AI Quest Init Type'
     _order = 'sequence asc, id asc'
@@ -86,6 +86,23 @@ class AIQuestInitType(models.Model):
         ('employees', 'Authenticated Employees'),
     ], default='everyone', string='Accept Emails From')
 
+    # ── mail trigger-settings (inspirerat av Watch/base_trigger) ──
+    mail_action = fields.Selection([
+        ('reply', 'Svara på mailet'),
+        ('create_record', 'Skapa/uppdatera record'),
+        ('process', 'Processera med skills'),
+        ('invoice_ai', 'Leverantörsfaktura (AI)'),
+    ], string='Mail-åtgärd', default='reply',
+        help='Vad som sker när ett mail anländer till aliaset. process/invoice_ai '             'kör medarbetaren med mail+bilaga och låter dess skills styra.')
+    mail_reply_delay = fields.Integer('Svarsdröjsmål (min)', default=0,
+        help='0 = svara direkt. >0 = svaret postas efter dröjsmålet '
+             '(körs av cron).')
+    mail_target_model_id = fields.Many2one('ir.model', string='Målmodell',
+        help='För create_record: modellen som ska skapas/uppdateras.')
+    mail_find_partner = fields.Boolean(
+        'Hitta/skapa res.partner från avsändare', default=True,
+        help='Leverantörsfaktura: sök upp avsändarens res.partner och skapa '
+             'om den saknas.')
     # ── cron specific ──
     cron_id = fields.Many2one('ir.cron', string='Scheduled Action',
         ondelete='cascade')
@@ -110,24 +127,60 @@ class AIQuestInitType(models.Model):
 
 
     # ── openai_api specific ──
-    api_key_attachment_id = fields.Many2one('ir.attachment',
-        string='API Key',
-        help='Stored API key for OpenAI-compatible endpoint access')
     rate_limit_rpm = fields.Integer('Rate Limit (req/min)', default=30)
     rate_limit_tpm = fields.Integer('Rate Limit (tokens/min)', default=100000)
 
     # ── watch specific ──
+    # De flesta fälten är related till base_automation — ändringar skrivs
+    # direkt på base_automation-recorden ("referens-fält").
     watch_model_id = fields.Many2one('ir.model', string='Watch Model',
         help='Model to watch for data changes.')
-    watch_trigger = fields.Selection([
-        ('create', 'Create'),
-        ('write', 'Write'),
-        ('create_or_write', 'Create or Write'),
-        ('delete', 'Delete'),
-    ], string='Watch Trigger', default='create_or_write',
-        help='Which action triggers the coworker.')
+    watch_trigger = fields.Selection(
+        related='base_automation_id.trigger', readonly=False,
+        string='When updating',
+        help='Trigger-händelse — speglar base.automation.trigger.')
+    watch_trg_selection_field_id = fields.Many2one(
+        'ir.model.fields.selection', string='Trigger Field',
+        related='base_automation_id.trg_selection_field_id', readonly=False,
+        help='Selection-fält för on_state_set/on_priority_set.')
+    watch_trg_field_ref_model_name = fields.Char(
+        string='Trigger Field Model',
+        related='base_automation_id.trg_field_ref_model_name', readonly=True)
+    watch_trg_field_ref = fields.Many2oneReference(
+        string='Trigger Reference',
+        related='base_automation_id.trg_field_ref', readonly=False,
+        help='Fält-ref för on_stage_set/on_tag_set.')
+    watch_trg_date_id = fields.Many2one(
+        'ir.model.fields', string='Trigger Date',
+        related='base_automation_id.trg_date_id', readonly=False,
+        help='Datumfält för on_time-trigger.')
+    watch_trg_date_range = fields.Integer(
+        string='Delay after trigger date',
+        related='base_automation_id.trg_date_range', readonly=False)
+    watch_trg_date_range_type = fields.Selection(
+        related='base_automation_id.trg_date_range_type', readonly=False,
+        string='Delay type')
+    watch_trg_date_calendar_id = fields.Many2one(
+        'resource.calendar', string='Use Calendar',
+        related='base_automation_id.trg_date_calendar_id', readonly=False)
+    watch_filter_pre_domain = fields.Char(
+        string='Before Update Domain',
+        related='base_automation_id.filter_pre_domain', readonly=False)
+    watch_filter_domain = fields.Char(
+        string='Apply on',
+        related='base_automation_id.filter_domain', readonly=False)
+    watch_trigger_field_ids = fields.Many2many(
+        'ir.model.fields', string='When updating',
+        related='base_automation_id.trigger_field_ids', readonly=False,
+        help='Fält som bevakas — tomt = alla fält.')
+    watch_on_change_field_ids = fields.Many2many(
+        'ir.model.fields', string='When updating (on change)',
+        related='base_automation_id.on_change_field_ids', readonly=False)
+    watch_active = fields.Boolean(
+        string='Active', related='base_automation_id.active', readonly=False,
+        help='Avbockad = regeln göms och körs inte.')
     watch_domain = fields.Char('Watch Domain',
-        help='Domain filter for which records trigger. '
+        help='Domänfilter för vilka records som triggar. '
              'E.g. [("priority", ">", 5)]')
     base_automation_id = fields.Many2one('base.automation',
         string='Base Automation', readonly=True,
@@ -150,7 +203,7 @@ class AIQuestInitType(models.Model):
             'manual': [],
             'webhook': [],
             'controller': [],
-            'openai_api': ['api_key_attachment_id', 'rate_limit_rpm', 'rate_limit_tpm'],
+            'openai_api': ['rate_limit_rpm', 'rate_limit_tpm'],
             'watch': ['watch_model_id', 'watch_trigger', 'watch_domain', 'base_automation_id'],
         }
         all_specific = set()
@@ -173,7 +226,15 @@ class AIQuestInitType(models.Model):
 
     def write(self, vals):
         res = super().write(vals)
-        if 'init_type' in vals or 'enabled' in vals:
+        # Trigga _after_change även när modell/intervall ändras — så att
+        # ir.cron/server action/base_automation skapas/uppdateras direkt
+        # när användaren väljer modell (inte bara vid enabled-toggle).
+        _trigger_fields = {
+            'init_type', 'enabled', 'watch_model_id', 'watch_trigger',
+            'watch_domain', 'cron_interval_number', 'cron_interval_type',
+            'server_action_use_wizard',
+        }
+        if _trigger_fields & set(vals):
             self._after_change()
         # Deactivate cron when cron init_type is turned off
         if vals.get('enabled') is False or vals.get('enabled') == False:
@@ -210,17 +271,39 @@ class AIQuestInitType(models.Model):
         The base.automation watches a model for data changes and
         triggers the coworker via a linked server action.
         """
-        if not self.watch_model_id or not self.enabled:
+        if not self.enabled:
             return
+        if not self.watch_model_id:
+            # Fallback: coworker.model_ids[0] → res.partner (som cron)
+            if self.coworker_id and self.coworker_id.model_ids:
+                self.watch_model_id = self.coworker_id.model_ids[0].id
+            else:
+                try:
+                    self.watch_model_id = self.env.ref('base.model_res_partner').id
+                except Exception:
+                    _logger.warning('ensure watch: ingen målmodell för %s',
+                                    self.coworker_id.name)
+                    return
 
+        # Legacy-värden (create/write/create_or_write/delete) → base_automation-värden.
+        # Nya rader har redan base_automation.trigger-värden via related.
         trigger_map = {
             'create': 'on_create_or_write',
             'write': 'on_create_or_write',
             'create_or_write': 'on_create_or_write',
             'delete': 'on_unlink',
         }
-        trigger = trigger_map.get(self.watch_trigger, 'on_create_or_write')
-        auto_name = f'AI Watch: {self.coworker_id.name} on {self.watch_model_id.name}'
+        trigger = trigger_map.get(self.watch_trigger, self.watch_trigger or 'on_create_or_write')
+        auto_name = self.coworker_id.name  # samma namn som AI Medarbetaren
+
+        # Robust kod: bakar in init_type-id:t (inte coworker-id — den kan ändras).
+        # `action` finns INTE i eval-contexten vid base_automation-trigger.
+        code = (
+            "it = env['ai.coworker.init_type'].browse("
+            + str(self.id) + ")\n"
+            "if it and it.coworker_id and records:\n"
+            "    records = it.coworker_id._trigger_watch(records)\n"
+        )
 
         try:
             if not self.base_automation_id:
@@ -238,10 +321,7 @@ class AIQuestInitType(models.Model):
                     'model_id': self.watch_model_id.id,
                     'base_automation_id': automation.id,
                     'state': 'code',
-                    'code': (
-                        "records = env['ai.coworker.init_type']"
-                        f".browse({self.id})._trigger_watch(records)\n"
-                    ),
+                    'code': code,
                 })
                 self.base_automation_id = automation.id
                 _logger.info('Created base_automation %s for watch init', auto_name)
@@ -254,9 +334,58 @@ class AIQuestInitType(models.Model):
                     'filter_domain': self.watch_domain or '',
                     'active': True,
                 })
+                # Se till att kopplad server action finns (äldre rader saknar den)
+                action = self.base_automation_id.action_server_ids[:1]
+                if not action:
+                    action = self.env['ir.actions.server'].create({
+                        'name': auto_name,
+                        'model_id': self.watch_model_id.id,
+                        'base_automation_id': self.base_automation_id.id,
+                        'state': 'code',
+                        'code': code,
+                    })
+                    _logger.info('Created saknad server action %s för watch-init %s',
+                                 action.id, auto_name)
+                else:
+                    action.write({
+                        'name': auto_name,
+                        'model_id': self.watch_model_id.id,
+                        'code': code,
+                    })
         except Exception as e:
             _logger.warning('Failed to ensure watch for %s: %s',
                           self.coworker_id.name if self.coworker_id else '?', e)
+
+    def _ensure_watch_action(self):
+        """Säkerställ kopplad server action (kod som anropar rätt coworker).
+
+        Fungerar även när init-typen är avstängd — anropas av
+        _ensure_init_resources för att fixa äldre automationer.
+        """
+        if not self.base_automation_id or not self.coworker_id:
+            return False
+        auto_name = self.coworker_id.name
+        code = (
+            "it = env['ai.coworker.init_type'].browse("
+            + str(self.id) + ")\n"
+            "if it and it.coworker_id and records:\n"
+            "    records = it.coworker_id._trigger_watch(records)\n"
+        )
+        action = self.base_automation_id.action_server_ids[:1]
+        if not action:
+            action = self.env['ir.actions.server'].create({
+                'name': auto_name,
+                'model_id': self.watch_model_id.id
+                             or self.base_automation_id.model_id.id,
+                'base_automation_id': self.base_automation_id.id,
+                'state': 'code',
+                'code': code,
+            })
+            _logger.info('Created server action %s för watch-init %s',
+                         action.id, auto_name)
+        else:
+            action.write({'name': auto_name, 'code': code})
+        return True
 
     def _trigger_watch(self, records):
         """Called by base_automation when watched data changes.
@@ -300,17 +429,29 @@ class AIQuestInitType(models.Model):
                             coworker.name, e)
 
     def _ensure_mail_alias(self):
-        """Create mail alias if not exists."""
+        """Create/update mail alias.
+
+        Aliasset (alias@företagets-domän) pekar på ai.coworker.session och
+        sätter ai_coworker_id (= ai_agent) — inkommande mail kör medarbetaren
+        via message_new.
+        """
         if not self.alias_name:
-            self.alias_name = self.coworker_id.name.lower().replace(' ', '-')
+            self.alias_name = (
+                self.coworker_id.alias_name or self.coworker_id.name
+            ).lower().replace(' ', '-')
+        vals = {
+            'alias_name': self.alias_name,
+            'alias_model_id': self.env['ir.model']._get('ai.coworker.session').id,
+            'alias_defaults': {'coworker_id': self.coworker_id.id},
+            'alias_contact': self.alias_contact or 'everyone',
+        }
         if not self.alias_id:
-            alias = self.env['mail.alias'].create({
-                'alias_name': self.alias_name,
-                'alias_model_id': self.env['ir.model']._get('ai.coworker.session').id,
-                'alias_defaults': {'ai_coworker_id': self.coworker_id.id},
-                'alias_contact': self.alias_contact,
-            })
+            alias = self.env['mail.alias'].create(vals)
             self.alias_id = alias.id
+            _logger.info('Skapade mail-alias %s för %s',
+                         self.alias_name, self.coworker_id.name)
+        else:
+            self.alias_id.write(vals)
 
     def _ensure_chat_user(self):
         """Create bot user for private chat if not exists."""
@@ -355,31 +496,45 @@ class AIQuestInitType(models.Model):
         channel._sync_ai_coworker_members()
 
     def _ensure_cron(self):
-        """Create ir.cron record if not exists, using interval from config."""
+        """Create ir.cron for Odoo 18 (delegate till ir.actions.server).
+
+        Odoo 18: ir.cron saknar name/model_id/state/code/numbercall — istället
+        delegerar den till ir.actions.server (ir_actions_server_id, required).
+        cron_name beräknas från server action:ens namn → samma som coworkern.
+        """
         try:
             if not self.cron_id:
-                # Determine target model from coworker's model_ids, fallback to res.partner
+                # Bestäm målmodell: coworkerns model_ids, annars res.partner
                 try:
                     model_id = self.env.ref('base.model_res_partner').id
                 except Exception:
                     model_id = False
                 if self.coworker_id and self.coworker_id.model_ids:
                     model_id = self.coworker_id.model_ids[0].id
-
-                if model_id:
-                    cron = self.env['ir.cron'].create({
-                        'name': self.coworker_id.name,
-                        'model_id': model_id,
-                        'state': 'code',
-                        'code': f"env.ref('{self.coworker_id._get_eid()}').action_run_scheduled()",
-                        'numbercall': -1,
-                        'interval_number': self.cron_interval_number or 1,
-                        'interval_type': self.cron_interval_type or 'hours',
-                        'active': True,
-                    })
-                    self.cron_id = cron.id
+                if not model_id:
+                    _logger.warning('ensure cron: ingen målmodell för %s',
+                                    self.coworker_id.name)
+                    return
+                eid = self.coworker_id._get_eid()
+                # 1. ir.actions.server — bär namn + modell + kod
+                action = self.env['ir.actions.server'].create({
+                    'name': self.coworker_id.name,
+                    'model_id': model_id,
+                    'state': 'code',
+                    'code': f"env.ref('{eid}').action_run_scheduled()",
+                })
+                # 2. ir.cron — delegerar till server action (Odoo 18)
+                cron = self.env['ir.cron'].create({
+                    'ir_actions_server_id': action.id,
+                    'interval_number': self.cron_interval_number or 1,
+                    'interval_type': self.cron_interval_type or 'hours',
+                    'active': True,
+                })
+                self.cron_id = cron.id
+                _logger.info('Skapade ir.cron %s (server action %s)',
+                             cron.cron_name, action.id)
             else:
-                # Update existing cron with current interval values
+                # Uppdatera befintlig cron med aktuella intervall
                 self.cron_id.write({
                     'interval_number': self.cron_interval_number or 1,
                     'interval_type': self.cron_interval_type or 'hours',
@@ -415,19 +570,38 @@ class AIQuestInitType(models.Model):
         If wizard mode is enabled, the server action opens a wizard
         instead of running the agent directly.
         """
-        if not self.server_action_id and self.coworker_id.model_ids:
+        if not self.server_action_id:
+            # Bestäm målmodell: server_action_model_id → coworker.model_ids[0]
+            # → res.partner (som cron)
+            try:
+                model_id = self.env.ref('base.model_res_partner').id
+            except Exception:
+                model_id = False
+            model_rec = False
+            if self.coworker_id and self.coworker_id.server_action_model_id:
+                model_rec = self.coworker_id.server_action_model_id
+                model_id = model_rec.id
+            elif self.coworker_id and self.coworker_id.model_ids:
+                model_rec = self.coworker_id.model_ids[0]
+                model_id = model_rec.id
+            if not model_id:
+                _logger.warning(
+                    'ensure server action: ingen målmodell för %s',
+                    self.coworker_id.name)
+                return
             if self.server_action_use_wizard:
-                # Wizard mode: open the prompt wizard
+                # Wizard mode: open the prompt wizard.
+                # OBS: ingen `return` — server action-kod körs med exec-mode,
+                # Odoo fångar upp variabeln `action` automatiskt.
                 code = (
                     "action = env['ir.actions.act_window']._for_xml_id("
                     f"'ai_agent_core.ai_coworker_server_action_wizard_action')\n"
                     "action['context'] = dict(env.context,\n"
                     "    default_coworker_id=" + str(self.coworker_id.id) + ",\n"
-                    "    default_res_model='" + str(self.coworker_id.model_ids[0].model) + "',\n"
+                    "    default_res_model='" + str(model_rec.model if model_rec else 'res.partner') + "',\n"
                     "    default_res_id=records[0].id if records else False,\n"
                     "    default_res_model_name=records[0].display_name if records else '',\n"
                     ")\n"
-                    "return action"
                 )
             else:
                 # Direct mode: run immediately
@@ -435,14 +609,16 @@ class AIQuestInitType(models.Model):
 
             action = self.env['ir.actions.server'].create({
                 'name': self.coworker_id.name,
-                'model_id': self.coworker_id.model_ids[0].id,
-                'binding_model_ids': [(6, 0, self.coworker_id.model_ids.ids)],
+                'model_id': model_id,
+                'binding_model_id': model_id,
                 'binding_view_types': 'form,list',
                 'binding_type': 'action',
                 'state': 'code',
                 'code': code,
             })
             self.server_action_id = action.id
+            _logger.info('Skapade server action %s för %s',
+                         action.id, self.coworker_id.name)
 
     def unlink(self):
         """Clean up auto-created resources."""

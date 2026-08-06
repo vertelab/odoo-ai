@@ -13,7 +13,7 @@ from odoo import fields, tools
 _logger = logging.getLogger(__name__)
 
 try:
-    from pgvector import Vector
+    from pgvector.psycopg2.vector import Vector
 except ImportError:
     Vector = None
     _logger.warning('pgvector python-paket saknas — OKF-embedding fungerar inte')

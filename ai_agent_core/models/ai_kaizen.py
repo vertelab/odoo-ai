@@ -195,7 +195,7 @@ class AIKaizenReport(models.Model):
 
         # Feedback from ai.memory
         feedback = self.env['ai.memory'].search([
-            ('coworker_id', '=', coworker.id),
+            ('quest_id', '=', coworker.id),
             ('category', '=', 'feedback'),
             ('create_date', '>=', week_start_dt),
             ('create_date', '<=', week_end_dt),

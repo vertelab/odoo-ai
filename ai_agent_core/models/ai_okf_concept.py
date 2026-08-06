@@ -27,6 +27,74 @@ class AIOkfConcept(models.Model):
     _order = 'scope, concept_key, version desc'
     _rec_name = 'title'
 
+    def _auto_init(self):
+        """Skapa OKF SQL-hjälpfunktioner idempotent vid varje modulinladdning.
+
+        Migration 1.12 skapar dem också, men checkmodule kör --init och
+        migrations körs inte — därför behövs CREATE OR REPLACE här (test
+        test_okf_can_read_sql). SECURITY DEFINER + bara anrop via
+        autentiserade Odoo-metoder.
+        """
+        res = super()._auto_init()
+        self._create_okf_sql_functions()
+        return res
+
+    @api.model
+    def _create_okf_sql_functions(self):
+        """Idempotent: CREATE OR REPLACE ai_okf_can_read + ai_okf_is_follower."""
+        cr = self.env.cr
+        cr.execute("""
+            CREATE OR REPLACE FUNCTION ai_okf_can_read(p_user_id integer, p_model text)
+            RETURNS boolean
+            LANGUAGE plpgsql
+            SECURITY DEFINER
+            SET search_path = public
+            AS $$
+            DECLARE
+                v_model_id integer;
+                v_count integer;
+            BEGIN
+                SELECT id INTO v_model_id FROM ir_model WHERE model = p_model;
+                IF v_model_id IS NULL THEN
+                    RETURN FALSE;
+                END IF;
+                SELECT COUNT(*) INTO v_count
+                FROM ir_model_access a
+                WHERE a.model_id = v_model_id
+                  AND a.perm_read = TRUE
+                  AND (a.group_id IS NULL OR EXISTS (
+                      SELECT 1 FROM res_groups_users_rel g
+                      WHERE g.gid = a.group_id AND g.uid = p_user_id
+                  ));
+                RETURN v_count > 0;
+            END;
+            $$;
+        """)
+        cr.execute("""
+            CREATE OR REPLACE FUNCTION ai_okf_is_follower(p_user_id integer, p_model text, p_res_id integer)
+            RETURNS boolean
+            LANGUAGE plpgsql
+            SECURITY DEFINER
+            SET search_path = public
+            AS $$
+            DECLARE
+                v_partner_id integer;
+                v_count integer;
+            BEGIN
+                SELECT partner_id INTO v_partner_id FROM res_users WHERE id = p_user_id;
+                IF v_partner_id IS NULL THEN
+                    RETURN FALSE;
+                END IF;
+                SELECT COUNT(*) INTO v_count
+                FROM mail_followers f
+                WHERE f.res_model = p_model
+                  AND f.res_id = p_res_id
+                  AND f.partner_id = v_partner_id;
+                RETURN v_count > 0;
+            END;
+            $$;
+        """)
+
     # ── Tre ägar-scopes (exakt en ska vara satt) ──
     owner_company_id = fields.Many2one('res.company', string='Company')
     owner_user_id = fields.Many2one('res.users', string='User')
@@ -190,6 +258,98 @@ class AIOkfConcept(models.Model):
     # ════════════════════════════════════════════
     # _okf_upsert() — konventionen (task 2.4/5.4)
     # ════════════════════════════════════════════
+    # ════════════════════════════════════════════
+    # Personliga minneskällor (agent-memory-governance 5.x)
+    # HR-befattning + personliga mål → OKF personal-koncept
+    # ════════════════════════════════════════════
+
+    @api.model
+    def _index_user_role(self, user_id):
+        """HR-indexerare: hr.employee.job_id → OKF personal (roll)."""
+        user = self.env['res.users'].browse(user_id)
+        if not user.exists():
+            return 0
+        try:
+            emp = self.env['hr.employee'].search([
+                ('work_email', '=', user.login),
+            ], limit=1)
+            if not emp and user.partner_id:
+                emp = self.env['hr.employee'].search([
+                    ('work_contact_id', '=', user.partner_id.id)], limit=1)
+            if not emp or not emp.job_id:
+                return 0
+            dept = emp.department_id.name or ''
+            summary = f"{user.name} är {emp.job_id.name}"
+            if dept:
+                summary += f" på avdelningen {dept}"
+            self._okf_upsert(
+                'roll',
+                concept_key=f'user.{user.id}.role',
+                summary=summary,
+                title=f'Roll: {emp.job_id.name}',
+                source_ref=f'hr.employee,{emp.id}',
+                attribution=[{'source': f'hr.employee,{emp.id}', 'role': 'hr'}],
+                owner_user_id=user.id,
+                generated_by='hr_indexer',
+            )
+            return 1
+        except Exception as e:
+            _logger.warning('HR-indexerare misslyckades för %s: %s', user_id, e)
+            return 0
+
+    @api.model
+    def _index_user_goals(self, user_id):
+        """Mål-indexerare: ai.personal.goal → OKF personal (mål)."""
+        user = self.env['res.users'].browse(user_id)
+        if not user.exists():
+            return 0
+        goals = self.env['ai.personal.goal'].search([
+            ('user_id', '=', user.id),
+            ('active', '=', True),
+        ])
+        count = 0
+        for goal in goals:
+            summary = f"Mål: {goal.name}"
+            if goal.description:
+                summary += f" — {goal.description[:200]}"
+            try:
+                self._okf_upsert(
+                    'mål',
+                    concept_key=f'user.{user.id}.goal.{goal.id}',
+                    summary=summary,
+                    title=goal.name[:80],
+                    source_ref=f'ai.personal.goal,{goal.id}',
+                    attribution=[{
+                        'source': f'ai.personal.goal,{goal.id}',
+                        'role': 'goal',
+                    }],
+                    owner_user_id=user.id,
+                    generated_by='goal_indexer',
+                )
+                count += 1
+            except Exception as e:
+                _logger.warning('Mål-indexerare misslyckades för mål %s: %s',
+                                goal.id, e)
+        return count
+
+    @api.model
+    def _index_all_personal_sources(self):
+        """Cron: indexera roll + mål för alla aktiva användare."""
+        users = self.env['res.users'].search(
+            [('active', '=', True), ('share', '=', False)])
+        roles = goals = 0
+        for u in users:
+            try:
+                roles += self._index_user_role(u.id)
+            except Exception:
+                pass
+            try:
+                goals += self._index_user_goals(u.id)
+            except Exception:
+                pass
+        _logger.info('Personliga minneskällor: %d roller, %d mål', roles, goals)
+        return {'roles': roles, 'goals': goals}
+
     def _okf_upsert(self, artifact_type, concept_key, summary, title=None,
                     attribution=None, source_ref=None, sources=None,
                     owner_company_id=None, owner_user_id=None,
@@ -782,7 +942,10 @@ class AIOkfConcept(models.Model):
                 visible_set = set()
 
             # 3. Resolver-domäner (AND-filter, aldrig breddare)
-            resolver = self.env['ai.access.resolver'].search([
+            #    sudo(): resolvern är konfiguration — domänen model_id.model
+            #    triggar en ir.model-subquery som begränsade användare inte
+            #    får läsa (AccessError annars).
+            resolver = self.env['ai.access.resolver'].sudo().search([
                 ('model_id.model', '=', model_name),
                 ('active', '=', True),
             ], limit=1)

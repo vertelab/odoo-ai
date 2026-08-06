@@ -41,7 +41,7 @@ def _okf_vector_infrastructure(cr):
     try:
         cr.execute("SELECT 1 FROM pg_extension WHERE extname = 'vector'")
         if not cr.fetchone():
-            cr.execute("CREATE EXTENSION IF NOT EXISTS vector")
+            pass  # vector extension managed by SaltStack/DBA
             _logger.info('Created pgvector extension')
     except Exception as e:
         _logger.warning('pgvector extension unavailable (non-fatal): %s', e)

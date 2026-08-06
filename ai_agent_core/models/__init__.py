@@ -6,8 +6,10 @@ from . import ai_coworker
 from . import ai_coworker_buzz_agent_wizard
 from . import ai_agent
 from . import ai_session
+from . import ai_mail_test_wizard
 from . import ai_memory
 from . import ai_tool
+from . import ai_tool_capability
 from . import ai_coworker_skill
 from . import ai_identity
 from . import ai_skill
@@ -20,6 +22,7 @@ from . import ai_tag
 from . import ai_onboard
 from . import base_model
 from . import ai_memory_mixin
+from . import ai_memory_scope
 from . import ai_personal_memory
 from . import ai_company_memory
 from . import ai_company_memory_category

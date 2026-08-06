@@ -30,9 +30,93 @@
         </field>
     </record>
 
-    <!-- Session (admin) — moderna menyn; legacy ai_agent.menu_ai_quest_session tas bort -->
-    <menuitem id="menu_ai_session" name="Session"
-              parent="menu_ai_configuration" sequence="35"
-              groups="ai_agent_core.group_ai_admin"
-              action="action_ai_coworker_session"/>
+    <record id="view_ai_session_form" model="ir.ui.view">
+        <field name="name">ai.coworker.session.form</field>
+        <field name="model">ai.coworker.session</field>
+        <field name="arch" type="xml">
+            <form string="AI Session">
+                <header>
+                    <field name="status" widget="statusbar"
+                           statusbar_visible="draft,active,done,error"/>
+                </header>
+                <sheet>
+                    <div class="oe_button_box" name="button_box">
+                        <button name="action_get_lines" type="object"
+                                class="oe_stat_button" icon="fa-comments">
+                            <div class="o_stat_info">
+                                <field name="line_count" widget="statinfo"
+                                       string="Meddelanden"/>
+                            </div>
+                        </button>
+                        <button name="action_open_attachments" type="object"
+                                class="oe_stat_button" icon="fa-paperclip">
+                            <div class="o_stat_info">
+                                <field name="attachment_count" widget="statinfo"
+                                       string="Bilagor"/>
+                            </div>
+                        </button>
+                    </div>
+                    <div class="oe_title">
+                        <h1><field name="name" readonly="1"/></h1>
+                        <field name="thread_name" placeholder="Trådnamn..."/>
+                    </div>
+                    <group>
+                        <group>
+                            <field name="coworker_id" readonly="1"/>
+                            <field name="agent_id" readonly="1"/>
+                            <field name="skill_id" readonly="1"/>
+                            <field name="identity_id" readonly="1"/>
+                            <field name="user_id" readonly="1"/>
+                            <field name="company_id" readonly="1"/>
+                            <field name="task_id" readonly="1"/>
+                        </group>
+                        <group>
+                            <field name="create_date" readonly="1"/>
+                            <field name="end_date" readonly="1"/>
+                            <field name="round_count" readonly="1"/>
+                            <field name="finish_reason" readonly="1"/>
+                            <field name="token_input" readonly="1"/>
+                            <field name="token_output" readonly="1"/>
+                            <field name="cost_estimated" readonly="1"/>
+                            <field name="line_count" readonly="1"/>
+                            <field name="resumable" readonly="1"/>
+                        </group>
+                    </group>
+                    <notebook>
+                        <page string="Sammanfattning" name="summary">
+                            <group>
+                                <field name="summary" readonly="1"/>
+                                <field name="summary_message_count" readonly="1"/>
+                            </group>
+                        </page>
+                        <page string="Konfiguration" name="config">
+                            <group>
+                                <field name="config_json" readonly="1"/>
+                                <field name="history_json" readonly="1"/>
+                            </group>
+                        </page>
+                    </notebook>
+                </sheet>
+                <!-- Odoo 18 chatter: visar mail/meddelanden på tråden
+                     (message_new + _post_pending_reply postar här) -->
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_ai_session_line_list" model="ir.ui.view">
+        <field name="name">ai.coworker.session.line.list</field>
+        <field name="model">ai.coworker.session.line</field>
+        <field name="arch" type="xml">
+            <list string="Meddelanden">
+                <field name="create_date"/>
+                <field name="role" widget="badge"
+                       decoration-info="role=='assistant'"
+                       decoration-muted="role=='user'"/>
+                <field name="content"/>
+                <field name="tool_name" optional="hide"/>
+            </list>
+        </field>
+    </record>
+
 </odoo>

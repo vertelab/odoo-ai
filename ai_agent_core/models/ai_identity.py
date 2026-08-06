@@ -83,6 +83,22 @@ class AIIdentity(models.Model):
         ('sales', 'Sales'),
     ])
 
+    # ── Minnesprofil (agent-memory-governance: typens designintent) ──
+    memory_profile = fields.Selection([
+        ('hermes', 'Hermes — lärande rådgivare'),
+        ('balanced', 'Balanserad — företag + session'),
+        ('session_only', 'Session-only — bara konversationen'),
+    ], default='balanced', string='Memory Profile',
+       help='Typens designintent — seedar AI Medarbetarens minnesinställningar '
+            'vid skapande. Runtime-saningen bor på medarbetaren.')
+    learning = fields.Selection([
+        ('active', 'Active — lär sig av samtal'),
+        ('passive', 'Passive — injicerar bara, lär sig inte'),
+    ], default='passive', string='Learning',
+       help='Om medarbetare med denna identitet skriver OKF-koncept från samtal.')
+    nudging = fields.Boolean('Nudging', default=False,
+       help='Typens default för nudging (drivs av medarbetarens runtime).')
+
     # ── Persona (OpenWorker-inspired) ──
     family = fields.Selection([
         ('knowledge', 'Knowledge'),
@@ -115,7 +131,7 @@ class AIIdentity(models.Model):
         'System Prompt',
         compute='_compute_system_prompt',
         store=False,
-        help='Compiled from soul + user_model + skills. '
+        help='Compiled from soul + skills. '
              'Used as the agent\'s system prompt.',
     )
 
@@ -123,7 +139,7 @@ class AIIdentity(models.Model):
     use_count = fields.Integer('Times Used', default=0)
 
     @api.depends('name', 'personality', 'style', 'values', 'boundaries',
-                 'user_model_enabled', 'user_model', 'skill_ids')
+                 'skill_ids')
     def _compute_system_prompt(self):
         for rec in self:
             parts = [
@@ -141,13 +157,6 @@ class AIIdentity(models.Model):
                 "## Gränser",
                 rec.boundaries or '',
             ]
-
-            if rec.user_model_enabled and rec.user_model:
-                parts.extend([
-                    "",
-                    "## Om användaren",
-                    rec.user_model,
-                ])
 
             if rec.skill_ids:
                 parts.append("")

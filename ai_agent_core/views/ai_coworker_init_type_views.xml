@@ -9,7 +9,6 @@
                 <field name="sequence" widget="handle"/>
                 <field name="init_type" required="1"/>
                 <field name="enabled"/>
-                <field name="show_in_chat" invisible="init_type!='web_ui'"/>
                 <field name="alias_name" invisible="init_type!='mail'"/>
                 <field name="channel_id" invisible="init_type!='channel'"/>
                 <field name="cron_id" invisible="init_type!='cron'"
@@ -34,7 +33,6 @@
                 </group>
                 <group string="Web UI Settings"
                        invisible="init_type!='web_ui'">
-                    <field name="show_in_chat"/>
                 </group>
                 <group string="Chat Settings"
                        invisible="init_type!='chat'">
@@ -70,7 +68,6 @@
                 </group>
                 <group string="API Settings"
                        invisible="init_type!='openai_api'">
-                    <field name="api_key_attachment_id"/>
                     <field name="rate_limit_rpm"/>
                     <field name="rate_limit_tpm"/>
                 </group>

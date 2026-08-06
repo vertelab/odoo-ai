@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Memory scopes (agent-memory-governance) -->
+<odoo>
+    <data noupdate="1">
+        <record id="memory_scope_company" model="ai.memory.scope">
+            <field name="name">Företagets minne</field>
+            <field name="code">company</field>
+            <field name="sequence" eval="10"/>
+            <field name="description">OKF company-scope — företagskunskap</field>
+        </record>
+        <record id="memory_scope_personal" model="ai.memory.scope">
+            <field name="name">Personligt minne</field>
+            <field name="code">personal</field>
+            <field name="sequence" eval="20"/>
+            <field name="description">OKF personal-scope — användarens kunskap</field>
+        </record>
+        <record id="memory_scope_coworker" model="ai.memory.scope">
+            <field name="name">Medarbetarens minne</field>
+            <field name="code">coworker</field>
+            <field name="sequence" eval="30"/>
+            <field name="description">OKF coworker-scope — medarbetarens eget minne</field>
+        </record>
+    </data>
+</odoo>
