@@ -123,15 +123,13 @@ class ResConfigSettings(models.TransientModel):
     # ─────────────────────────────────────────────
     # M2M → ai.tool, widget many2many_tags i AI Orkestrering. Persisteras som
     # kommaseparerade verktygsnamn i ir.config_parameter (config_parameter
-    # stödjer bara skalärer). Default = de generiska Odoo-verktygen.
+    # stödjer bara skalärer). Default = SÄKRA kundvänliga verktyg — inga
+    # interna förmågor (odoo-verktyg, inventory, builder, NATS) per default.
+    # Interna verktyg läggs på agenten EXPLICIT via ai.agent.tool_ids.
     DEFAULT_AGENT_TOOL_NAMES = [
-        'describe_model',
-        'odoo_search',
-        'odoo_create',
-        'odoo_call_method',
-        'odoo_write',
-        'odoo_unlink',
-        'okf_search',
+        'calculator',
+        'web_search',
+        'fetch_url',
     ]
 
     default_tool_ids = fields.Many2many(
