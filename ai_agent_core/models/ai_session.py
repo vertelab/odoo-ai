@@ -2,6 +2,7 @@
 """ai.coworker.session — standalone session model for agent runs."""
 
 import json, logging, uuid
+from datetime import timedelta
 from odoo import models, fields, api
 
 _logger = logging.getLogger(__name__)
@@ -51,6 +52,13 @@ class AICoworkerSession(models.Model):
 
     user_id = fields.Many2one('res.users', default=lambda self: self.env.user)
     company_id = fields.Many2one('res.company', default=lambda self: self.env.company)
+
+    # Mail-svar med dröjsmål (mail-trigger): svarstexten postas av cron
+    # när reply_at passerats.
+    pending_reply = fields.Text('Pendande mail-svar',
+        help='Svarstext som postas av cron efter svarsdröjsmålet.')
+    reply_at = fields.Datetime('Svara efter',
+        help='Tidpunkt då det fördröjda svaret ska postas.')
 
     # Thread support
     thread_name = fields.Char('Thread Name')
@@ -125,8 +133,12 @@ class AICoworkerSession(models.Model):
         """Inkommande mail → skapa session + kör medarbetaren på mailinnehållet.
 
         Mailgateway anropar detta när mail anländer till aliaset
-        (alias@företagets-domän). alias_defaults sätter ai_coworker_id
-        (= ai_agent). Svaret postas som meddelande på sessionstråden.
+        (alias@företagets-domän). alias_defaults sätter coworker_id
+        (= ai_agent). Dispatcher baserat på mail-init:ens mail_action:
+        - reply: kör medarbetaren på body (ev. med dröjsmål)
+        - create_record: skapar/uppdaterar målmodellen
+        - invoice_ai: leverantörsfaktura-flöde (partner + OCR + account.move)
+        Svaret postas på sessionstråden.
         """
         defaults = dict(custom_values or {})
         # Stödjer både nytt (coworker_id) och gammalt (ai_coworker_id) alias-default
@@ -140,17 +152,41 @@ class AICoworkerSession(models.Model):
         if not coworker:
             session.name = subject
             return session
-        # Kör medarbetaren på mailinnehållet (återanvänd sessionen)
+
+        mail_its = coworker.init_type_ids.filtered(
+            lambda it: it.init_type == 'mail' and it.enabled)
+        mail_it = (mail_its.filtered(lambda it: it.mail_action != 'reply')[:1]
+                   or mail_its[:1])
+        action = mail_it.mail_action if mail_it else 'reply'
+        delay = mail_it.mail_reply_delay if mail_it else 0
+
         try:
-            prompt = f"{subject}\n\n{body}".strip()
-            reply = coworker.with_context(
-                _ai_context_model='ai.coworker.session',
-                _ai_context_id=session.id).run(prompt, session=session)
-            session.message_post(
-                body=reply or 'Klart — inget svar genererades.',
-                subtype_xmlid='mail.mt_comment',
-                message_type='comment',
-            )
+            if action == 'invoice_ai':
+                reply_text = session._process_invoice_mail(
+                    coworker, msg_dict, mail_it)
+            elif action == 'create_record':
+                reply_text = session._process_create_record(
+                    coworker, msg_dict, mail_it)
+            else:
+                prompt = f"{subject}\n\n{body}".strip()
+                reply = coworker.with_context(
+                    _ai_context_model='ai.coworker.session',
+                    _ai_context_id=session.id,
+                    _ai_auto_approve=True).run(prompt, session=session)
+                reply_text = reply or 'Klart — inget svar genererades.'
+
+            if delay and delay > 0:
+                session.pending_reply = reply_text
+                session.reply_at = fields.Datetime.now() + timedelta(
+                    minutes=delay)
+                _logger.info('Mail-svar fördröjt %s min för session %s',
+                             delay, session.id)
+            else:
+                session.message_post(
+                    body=reply_text,
+                    subtype_xmlid='mail.mt_comment',
+                    message_type='comment',
+                )
         except Exception as e:
             _logger.warning('mail-bearbetning misslyckades för session %s: %s',
                             session.id, e)
@@ -160,6 +196,204 @@ class AICoworkerSession(models.Model):
                 message_type='comment',
             )
         return session
+
+    def _post_pending_reply(self):
+        """Posta fördröjda mail-svar (anropas av cron). Idempotent."""
+        now = fields.Datetime.now()
+        due = self.search([
+            ('pending_reply', '!=', False),
+            ('reply_at', '!=', False),
+            ('reply_at', '<=', now),
+        ])
+        for session in due:
+            try:
+                session.message_post(
+                    body=session.pending_reply,
+                    subtype_xmlid='mail.mt_comment',
+                    message_type='comment',
+                )
+                session.write({'pending_reply': False, 'reply_at': False})
+                _logger.info('Fördröjt mail-svar postat för session %s',
+                             session.id)
+            except Exception as e:
+                _logger.warning('Kunde inte posta fördröjt svar %s: %s',
+                                session.id, e)
+        return len(due)
+
+    # ── Mail-trigger-flöden ──────────────────────────────────────────────
+
+    def _process_create_record(self, coworker, msg_dict, mail_it):
+        """Skapa/uppdatera ett record i målmodellen från mailinnehållet."""
+        subject = msg_dict.get('subject') or 'Inkommande mail'
+        body = msg_dict.get('body') or ''
+        target = mail_it.mail_target_model_id.model if mail_it and \
+            mail_it.mail_target_model_id else False
+        prompt = (
+            f'{subject}\n\n{body}'.strip()
+            + (f'\n\nSkapa/uppdatera ett record i modellen {target} '
+               'med odoo_search/odoo_create/odoo_write. Svara kort med vad '
+               'du gjorde och recordets id.' if target else '')
+        )
+        return coworker.with_context(
+            _ai_context_model='ai.coworker.session',
+            _ai_context_id=self.id,
+            _ai_auto_approve=True).run(prompt, session=self)
+
+    def _process_invoice_mail(self, coworker, msg_dict, mail_it):
+        """Leverantörsfaktura-flöde:
+
+        1. Avsändare → res.partner (sök direkt på email; om det saknas körs
+           Partner-analys-agenten som hittar/skapar).
+        2. OCR: extrahera texten ur faktura-bilagan (PDF/text).
+        3. Faktura-analys-agenten skapar en korrekt account.move
+           (leverantörsfaktura) med odoo_search/odoo_create/odoo_call_method.
+        """
+        partner = self._resolve_mail_partner(coworker, msg_dict, mail_it)
+        attach_text = self._attachment_text(msg_dict)
+
+        # Hitta faktura-agenten (den som inte är Partner-analysen — välj
+        # efter namn så M2M-ordningen inte spelar roll).
+        invoice_agent = False
+        if mail_it and mail_it.mail_invoice_agent_ids:
+            invoice_agent = mail_it.mail_invoice_agent_ids.filtered(
+                lambda a: 'faktura' in a.name.lower()
+                or 'invoice' in a.name.lower())[:1]
+
+        subject = msg_dict.get('subject') or ''
+        body = msg_dict.get('body') or ''
+        prompt = (
+            'Du är Faktura-analys-agenten. En leverantörsfaktura har kommit in '
+            'via mail. Ditt uppdrag: analysera fakturan och skapa en korrekt '
+            'account.move (leverantörsfaktura / vendor bill).\n\n'
+            f'Avsändare (res.partner): {partner.name if partner else "okänd"} '
+            f'(id={partner.id if partner else "?"}, email='
+            f'{partner.email or "?"})\n'
+            f'Mailämne: {subject}\n'
+            f'Mailtext:\n{body}\n\n'
+            f'Fakturatext (OCR/extraherad):\n{attach_text or "(ingen bilaga)"}\n\n'
+            'STEG:\n'
+            '1. Använd odoo_search för att hitta rätt journal '
+            '(account.journal, type=purchase) och skatte-id:n om det behövs.\n'
+            '2. Använd odoo_create för att skapa account.move med '
+            "move_type='in_invoice', partner_id, ref (fakturanummer), "
+            'invoice_date, invoice_date_due, invoice_line_ids '
+            '(name, quantity, price_unit, tax_ids, account_id).\n'
+            '3. Fyll i så mycket som möjligt från fakturatexten. '
+            'Vid osäkerhet, gissa rimligt och notera det.\n'
+            '4. Använd odoo_call_method (action_post) OM allt ser korrekt ut — '
+            'annars lämna i draft.\n\n'
+            'Svara kort: vad du skapade, account.move-id:t och beloppet.'
+        )
+
+        if invoice_agent:
+            reply = coworker.with_context(
+                _ai_context_model='ai.coworker.session',
+                _ai_context_id=self.id,
+                _ai_auto_approve=True).run(
+                    prompt, force_agent=invoice_agent, session=self)
+        else:
+            reply = coworker.with_context(
+                _ai_context_model='ai.coworker.session',
+                _ai_context_id=self.id,
+                _ai_auto_approve=True).run(prompt, session=self)
+
+        return (
+            f'Leverantörsfaktura bearbetad. Avsändare: '
+            f'{partner.name if partner else "okänd"}.\n{reply}'
+        )
+
+    def _resolve_mail_partner(self, coworker, msg_dict, mail_it):
+        """Hitta/skapa res.partner från avsändaren.
+
+        Sök först direkt på email-adressen (deterministiskt). Om det
+        saknas och mail_find_partner är på, kör Partner-analys-agenten som
+        hittar/skapar — sedan gör vi om direkt-sökningen (agenten har satt
+        email). Fallback: skapa partner deterministiskt från avsändaren.
+        """
+        email = (msg_dict.get('email_from') or msg_dict.get('from') or '')
+        # Extrahera ren email-adress: "Name <a@b.se>" → a@b.se
+        import re
+        m = re.search(r'[\w.+-]+@[\w.-]+', email)
+        clean_email = m.group(0) if m else ''
+        sender_name = ''
+        nm = re.match(r'^([^<]+)<', email or '')
+        if nm:
+            sender_name = nm.group(1).strip().strip('"\'')
+
+        partner = self.env['res.partner']
+        if clean_email:
+            partner = self.env['res.partner'].search(
+                ['|', ('email', '=', clean_email),
+                 ('email_normalized', '=', clean_email.lower())],
+                limit=1)
+        if not partner and mail_it and mail_it.mail_find_partner:
+            # Kör Partner-analys-agenten (efter namn, inte M2M-ordning)
+            partner_agent = False
+            if mail_it.mail_invoice_agent_ids:
+                partner_agent = mail_it.mail_invoice_agent_ids.filtered(
+                    lambda a: 'partner' in a.name.lower()
+                    or 'mail' in a.name.lower())[:1]
+            if partner_agent:
+                prompt = (
+                    'Du är Partner-analys-agenten. Analysera avsändaren av '
+                    'detta mail och hitta rätt res.partner i Odoo — skapa '
+                    'om den saknas.\n\n'
+                    f'Avsändare: {email or "okänd"}\n'
+                    f'Mailämne: {msg_dict.get("subject") or ""}\n'
+                    f'Mailtext: {(msg_dict.get("body") or "")[:1500]}\n\n'
+                    'STEG:\n'
+                    '1. odoo_search res.partner på email- eller företagsnamn.\n'
+                    '2. Hittas ingen → odoo_create res.partner med name '
+                    '(företagsnamn), email, is_company=True om det ser ut som '
+                    'ett företag.\n'
+                    '3. Svara kort med partner-id:t och namnet.'
+                )
+                try:
+                    coworker.with_context(
+                        _ai_context_model='ai.coworker.session',
+                        _ai_context_id=self.id,
+                        _ai_auto_approve=True).run(
+                            prompt, force_agent=partner_agent, session=self)
+                except Exception as e:
+                    _logger.warning('Partner-agent misslyckades: %s', e)
+                # Re-lookup efter agenten kört (den har satt email)
+                if clean_email:
+                    partner = self.env['res.partner'].search(
+                        ['|', ('email', '=', clean_email),
+                         ('email_normalized', '=', clean_email.lower())],
+                        limit=1)
+        if not partner and clean_email:
+            # Deterministisk fallback
+            partner = self.env['res.partner'].create({
+                'name': sender_name or clean_email.split('@')[0],
+                'email': clean_email,
+                'is_company': True,
+            })
+            _logger.info('Skapade res.partner %s (%s) från mail-avsändare',
+                         partner.id, clean_email)
+        return partner
+
+    def _attachment_text(self, msg_dict, max_chars=12000):
+        """Extrahera text ur mail-bilagor (PDF → text, eller råtext)."""
+        text_parts = []
+        att_ids = msg_dict.get('attachment_ids') or []
+        for att_id in att_ids:
+            try:
+                att = self.env['ir.attachment'].browse(att_id)
+                if att.mimetype == 'application/pdf':
+                    import io
+                    from pypdf import PdfReader
+                    reader = PdfReader(io.BytesIO(att.raw))
+                    page_text = '\n'.join(
+                        (p.extract_text() or '') for p in reader.pages)
+                    if page_text.strip():
+                        text_parts.append(page_text.strip())
+                elif att.mimetype and att.mimetype.startswith('text/'):
+                    text_parts.append(
+                        att.raw.decode('utf-8', errors='replace'))
+            except Exception as e:
+                _logger.warning('Kunde inte läsa bilaga %s: %s', att_id, e)
+        return '\n\n---\n\n'.join(text_parts)[:max_chars]
 
     def resume_session(self):
         """Create a new session that continues from this interrupted one.

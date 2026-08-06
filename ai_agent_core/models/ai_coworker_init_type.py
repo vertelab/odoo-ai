@@ -86,6 +86,26 @@ class AICoworkerInitType(models.Model):
         ('employees', 'Authenticated Employees'),
     ], default='everyone', string='Accept Emails From')
 
+    # ── mail trigger-settings (inspirerat av Watch/base_trigger) ──
+    mail_action = fields.Selection([
+        ('reply', 'Svara på mailet'),
+        ('create_record', 'Skapa/uppdatera record'),
+        ('invoice_ai', 'Leverantörsfaktura (AI)'),
+    ], string='Mail-åtgärd', default='reply',
+        help='Vad som sker när ett mail anländer till aliaset.')
+    mail_reply_delay = fields.Integer('Svarsdröjsmål (min)', default=0,
+        help='0 = svara direkt. >0 = svaret postas efter dröjsmålet '
+             '(körs av cron).')
+    mail_target_model_id = fields.Many2one('ir.model', string='Målmodell',
+        help='För create_record: modellen som ska skapas/uppdateras.')
+    mail_find_partner = fields.Boolean(
+        'Hitta/skapa res.partner från avsändare', default=True,
+        help='Leverantörsfaktura: sök upp avsändarens res.partner och skapa '
+             'om den saknas.')
+    mail_invoice_agent_ids = fields.Many2many(
+        'ai.agent', string='Faktura-agenter',
+        help='Agenter som analyserar mailet/fakturan (partner + invoice).')
+
     # ── cron specific ──
     cron_id = fields.Many2one('ir.cron', string='Scheduled Action',
         ondelete='cascade')
@@ -279,12 +299,12 @@ class AICoworkerInitType(models.Model):
         trigger = trigger_map.get(self.watch_trigger, self.watch_trigger or 'on_create_or_write')
         auto_name = self.coworker_id.name  # samma namn som AI Medarbetaren
 
-        # Robust kod: hittar rätt coworker via init_type → base_automation.
-        # `action` finns i eval-contexten (ir.actions.server).
+        # Robust kod: bakar in init_type-id:t (inte coworker-id — den kan ändras).
+        # `action` finns INTE i eval-contexten vid base_automation-trigger.
         code = (
-            "it = env['ai.coworker.init_type'].search("
-            "[('base_automation_id', '=', action.base_automation_id.id)], limit=1)\n"
-            "if it and it.coworker_id:\n"
+            "it = env['ai.coworker.init_type'].browse("
+            + str(self.id) + ")\n"
+            "if it and it.coworker_id and records:\n"
             "    records = it.coworker_id._trigger_watch(records)\n"
         )
 
@@ -338,6 +358,37 @@ class AICoworkerInitType(models.Model):
         except Exception as e:
             _logger.warning('Failed to ensure watch for %s: %s',
                           self.coworker_id.name if self.coworker_id else '?', e)
+
+    def _ensure_watch_action(self):
+        """Säkerställ kopplad server action (kod som anropar rätt coworker).
+
+        Fungerar även när init-typen är avstängd — anropas av
+        _ensure_init_resources för att fixa äldre automationer.
+        """
+        if not self.base_automation_id or not self.coworker_id:
+            return False
+        auto_name = self.coworker_id.name
+        code = (
+            "it = env['ai.coworker.init_type'].browse("
+            + str(self.id) + ")\n"
+            "if it and it.coworker_id and records:\n"
+            "    records = it.coworker_id._trigger_watch(records)\n"
+        )
+        action = self.base_automation_id.action_server_ids[:1]
+        if not action:
+            action = self.env['ir.actions.server'].create({
+                'name': auto_name,
+                'model_id': self.watch_model_id.id
+                             or self.base_automation_id.model_id.id,
+                'base_automation_id': self.base_automation_id.id,
+                'state': 'code',
+                'code': code,
+            })
+            _logger.info('Created server action %s för watch-init %s',
+                         action.id, auto_name)
+        else:
+            action.write({'name': auto_name, 'code': code})
+        return True
 
     def _trigger_watch(self, records):
         """Called by base_automation when watched data changes.
