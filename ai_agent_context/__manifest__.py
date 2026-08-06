@@ -20,7 +20,7 @@
 
 {
     'name': 'odoo-ai: Context Injection for AI Quests',
-    'version': '1.0',
+    'version': '1.1',
     'summary': 'Injects record data and chatter history as context into AI Quest sessions',
     'category': 'AI Orchestration',
     'description': """
@@ -37,7 +37,9 @@
         * Chatter history injection via _ai_serialize_messages_data()
         * Automatic context building on session creation via _build_record_context()
         * Works with existing chat, channel, powerbox, and manual Quest types
-        * Systray button integration for launching Quests from any form view
+        * Systray button with quest selector dialog for launching Quests from any form view
+        * Robust context capture from HTTP request, env.context, and explicit API
+        * JSONRPC endpoints for frontend context push and quest launch
         
         Ported patterns from Odoo Enterprise ai module:
         - models.py: _ai_serialize_fields_data(), _ai_initialise_context()

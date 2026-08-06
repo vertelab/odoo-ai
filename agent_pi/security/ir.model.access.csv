@@ -1,0 +1,6 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_pi_skill_category,pi.skill.category,model_pi_skill_category,base.group_user,1,1,1,1
+access_pi_skill,pi.skill,model_pi_skill,base.group_user,1,1,1,1
+access_pi_task,pi.task,model_pi_task,base.group_user,1,1,1,1
+access_pi_agent,pi.agent,model_pi_agent,base.group_user,1,1,1,1
+access_pi_artifact,pi.artifact,model_pi_artifact,base.group_user,1,1,1,1

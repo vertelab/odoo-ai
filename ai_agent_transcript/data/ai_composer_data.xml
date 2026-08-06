@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+
+        <!-- Default Powerbox Quest -->
+        <record id="ai_quest_powerbox_default" model="ai.quest">
+            <field name="name">Powerbox Assistant</field>
+            <field name="init_type">powerbox</field>
+            <field name="description">Default powerbox quest triggered from form views and editors.</field>
+            <field name="system_prompt">
+You are an AI assistant integrated into Odoo. You help users with their work by
+answering questions, drafting content, summarizing information, and performing
+other text-based tasks.
+
+When the user provides you with record context (as JSON), use that information
+to give accurate, context-aware responses. If the user asks about specific
+records, refer to the provided context.
+
+Always format your answers using Markdown. Be concise but thorough.
+            </field>
+            <field name="active" eval="True"/>
+        </record>
+
+        <!-- Default Powerbox Composers -->
+        
+        <!-- HTML Field Record: triggered from HTML field AI button -->
+        <record id="ai_composer_html_field" model="ai.composer">
+            <field name="name">HTML Field — AI Write</field>
+            <field name="interface_key">html_field_record</field>
+            <field name="ai_quest_id" ref="ai_quest_powerbox_default"/>
+            <field name="default_prompt">
+You are writing content in an Odoo HTML field. Your response will be inserted
+directly into the field. Write in a professional tone appropriate for business
+communication. Use Markdown formatting.
+            </field>
+            <field name="available_prompts">Write a summary
+Expand this text
+Make this more formal
+Translate to Swedish
+Fix grammar and spelling
+Write bullet points</field>
+            <field name="is_system_default" eval="True"/>
+        </record>
+
+        <!-- Mail Composer: triggered from email composer -->
+        <record id="ai_composer_mail" model="ai.composer">
+            <field name="name">Email Composer — AI Write</field>
+            <field name="interface_key">mail_composer</field>
+            <field name="ai_quest_id" ref="ai_quest_powerbox_default"/>
+            <field name="default_prompt">
+You are drafting an email in Odoo. Write in a professional, clear tone. 
+The email should be well-structured with appropriate greeting and closing.
+Use the provided record context to include relevant details.
+            </field>
+            <field name="available_prompts">Draft a follow-up email
+Write a polite reminder
+Respond to the customer
+Summarize the situation
+Write a thank-you note</field>
+            <field name="is_system_default" eval="True"/>
+        </record>
+
+        <!-- Text Selection Rewrite -->
+        <record id="ai_composer_text_select" model="ai.composer">
+            <field name="name">Text Selection — AI Rewrite</field>
+            <field name="interface_key">html_field_text_select</field>
+            <field name="ai_quest_id" ref="ai_quest_powerbox_default"/>
+            <field name="default_prompt">
+You are rewriting text selected by the user. Maintain the original meaning
+but improve clarity, tone, and structure. Use Markdown formatting.
+            </field>
+            <field name="available_prompts">Make more concise
+Make more formal
+Fix grammar only
+Translate to Swedish
+Rewrite as bullet points
+Expand with more detail</field>
+            <field name="is_system_default" eval="True"/>
+        </record>
+
+        <!-- Chatter AI Button -->
+        <record id="ai_composer_chatter" model="ai.composer">
+            <field name="name">Chatter — Ask AI</field>
+            <field name="interface_key">chatter_ai_button</field>
+            <field name="ai_quest_id" ref="ai_quest_powerbox_default"/>
+            <field name="default_prompt">
+You are assisting a user who is viewing an Odoo record. They may ask you to
+summarize the record, analyze the chatter history, suggest next steps, or
+answer questions about the data. Use the provided record context and chatter
+history to give accurate, context-aware answers.
+            </field>
+            <field name="available_prompts">Summarize this record
+What should I do next?
+Analyze the chatter history
+Suggest a reply to the customer
+What are the key dates?
+Find issues mentioned in the chatter</field>
+            <field name="is_system_default" eval="True"/>
+        </record>
+
+        <!-- Systray AI Button -->
+        <record id="ai_composer_systray" model="ai.composer">
+            <field name="name">Systray — Ask AI</field>
+            <field name="interface_key">systray_ai_button</field>
+            <field name="ai_quest_id" ref="ai_quest_powerbox_default"/>
+            <field name="default_prompt">
+You are a general AI assistant in Odoo. The user may ask you about anything
+related to their work. Be helpful, concise, and accurate. If you need more
+context from a specific record, ask the user to navigate to that record
+and invoke you from there.
+            </field>
+            <field name="available_prompts">How do I...?
+What is the status of...?
+Find records matching...
+Generate a report about...</field>
+            <field name="is_system_default" eval="True"/>
+        </record>
+
+        <!-- Voice Transcription Summarization -->
+        <record id="ai_composer_voice_transcript" model="ai.composer">
+            <field name="name">Voice Transcription — Summarize</field>
+            <field name="interface_key">voice_transcription_component</field>
+            <field name="ai_quest_id" ref="ai_quest_powerbox_default"/>
+            <field name="default_prompt">
+Summarize the transcript below. Extract key points, action items, and decisions.
+Be concise but thorough. Use Markdown formatting.
+            </field>
+            <field name="available_prompts">Summarize this call
+Extract action items
+Write meeting minutes
+Summarize this prospect call
+Write an email recap</field>
+            <field name="is_system_default" eval="True"/>
+        </record>
+
+    </data>
+</odoo>

@@ -1,0 +1,157 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="0">
+
+        <!-- ============================================================ -->
+        <!-- Providers                                                    -->
+        <!-- ============================================================ -->
+
+        <!-- OpenAI -->
+        <record id="provider_openai" model="llm.provider">
+            <field name="name">OpenAI</field>
+            <field name="provider_type">openai</field>
+            <field name="provider_label">OpenAI</field>
+            <field name="is_enabled" eval="True"/>
+        </record>
+
+        <!-- Anthropic -->
+        <record id="provider_anthropic" model="llm.provider">
+            <field name="name">Anthropic</field>
+            <field name="provider_type">anthropic</field>
+            <field name="provider_label">Anthropic</field>
+            <field name="is_enabled" eval="True"/>
+        </record>
+
+        <!-- Ollama (local) -->
+        <record id="provider_ollama" model="llm.provider">
+            <field name="name">Ollama</field>
+            <field name="provider_type">ollama</field>
+            <field name="provider_label">Ollama (Local)</field>
+            <field name="base_url">http://localhost:11434</field>
+            <field name="is_enabled" eval="True"/>
+        </record>
+
+        <!-- Mistral -->
+        <record id="provider_mistral" model="llm.provider">
+            <field name="name">Mistral AI</field>
+            <field name="provider_type">mistral</field>
+            <field name="provider_label">Mistral AI</field>
+            <field name="is_enabled" eval="True"/>
+        </record>
+
+        <!-- Berget AI — Swedish AI provider, OpenAI-compatible -->
+        <record id="provider_berget" model="llm.provider">
+            <field name="name">Berget AI</field>
+            <field name="provider_type">berget</field>
+            <field name="provider_label">Berget AI (Sverige)</field>
+            <field name="base_url">https://api.berget.ai/v1/</field>
+            <field name="is_enabled" eval="True"/>
+        </record>
+
+        <!-- Bifrost — AI Gateway (OpenAI-compatible) -->
+        <record id="provider_bifrost" model="llm.provider">
+            <field name="name">Bifrost Gateway</field>
+            <field name="provider_type">bifrost</field>
+            <field name="provider_label">Bifrost AI Gateway</field>
+            <field name="is_enabled" eval="True"/>
+        </record>
+
+        <!-- ============================================================ -->
+        <!-- Known models (fallback when provider API isn't reachable)    -->
+        <!-- ============================================================ -->
+
+        <!-- OpenAI models -->
+        <record id="model_gpt4o" model="llm.model">
+            <field name="name">gpt-4o</field>
+            <field name="provider_type">openai</field>
+            <field name="context_window">128000</field>
+            <field name="vision" eval="True"/>
+        </record>
+        <record id="model_gpt4o_mini" model="llm.model">
+            <field name="name">gpt-4o-mini</field>
+            <field name="provider_type">openai</field>
+            <field name="context_window">128000</field>
+            <field name="vision" eval="True"/>
+        </record>
+        <record id="model_gpt4_turbo" model="llm.model">
+            <field name="name">gpt-4-turbo</field>
+            <field name="provider_type">openai</field>
+            <field name="context_window">128000</field>
+            <field name="vision" eval="True"/>
+        </record>
+
+        <!-- Anthropic models -->
+        <record id="model_claude_sonnet_4" model="llm.model">
+            <field name="name">claude-sonnet-4-20250514</field>
+            <field name="provider_type">anthropic</field>
+            <field name="context_window">200000</field>
+            <field name="vision" eval="True"/>
+        </record>
+        <record id="model_claude_opus_4" model="llm.model">
+            <field name="name">claude-opus-4-20250514</field>
+            <field name="provider_type">anthropic</field>
+            <field name="context_window">200000</field>
+            <field name="vision" eval="True"/>
+        </record>
+        <record id="model_claude_haiku_35" model="llm.model">
+            <field name="name">claude-haiku-3-5-20241022</field>
+            <field name="provider_type">anthropic</field>
+            <field name="context_window">200000</field>
+        </record>
+
+        <!-- Berget AI models — Swedish infrastructure -->
+        <record id="model_berget_llama_33_70b" model="llm.model">
+            <field name="name">meta-llama/Llama-3.3-70B-Instruct</field>
+            <field name="provider_type">berget</field>
+            <field name="context_window">200000</field>
+        </record>
+        <record id="model_berget_llama_31_8b" model="llm.model">
+            <field name="name">meta-llama/Llama-3.1-8B-Instruct</field>
+            <field name="provider_type">berget</field>
+            <field name="context_window">200000</field>
+        </record>
+        <record id="model_berget_gemma_3_27b" model="llm.model">
+            <field name="name">google/gemma-3-27b-it</field>
+            <field name="provider_type">berget</field>
+            <field name="context_window">200000</field>
+        </record>
+        <record id="model_berget_mistral_small" model="llm.model">
+            <field name="name">mistralai/Mistral-Small-3.1-24B-Instruct-2503</field>
+            <field name="provider_type">berget</field>
+            <field name="context_window">200000</field>
+        </record>
+        <record id="model_berget_deepcoder" model="llm.model">
+            <field name="name">agentica-org/DeepCoder-14B-Preview</field>
+            <field name="provider_type">berget</field>
+            <field name="context_window">200000</field>
+        </record>
+        <record id="model_berget_deepseek_r1" model="llm.model">
+            <field name="name">unsloth/DeepSeek-R1-GGUF</field>
+            <field name="provider_type">berget</field>
+            <field name="context_window">200000</field>
+        </record>
+        <record id="model_berget_e5_large" model="llm.model">
+            <field name="name">intfloat/multilingual-e5-large-instruct</field>
+            <field name="provider_type">berget</field>
+            <field name="embedding" eval="True"/>
+        </record>
+        <record id="model_berget_whisper" model="llm.model">
+            <field name="name">KBLab/kb-whisper-large</field>
+            <field name="provider_type">berget</field>
+            <field name="asr" eval="True"/>
+        </record>
+
+        <!-- Mistral models -->
+        <record id="model_mistral_large" model="llm.model">
+            <field name="name">mistral-large-latest</field>
+            <field name="provider_type">mistral</field>
+            <field name="context_window">128000</field>
+        </record>
+        <record id="model_mistral_small" model="llm.model">
+            <field name="name">mistral-small-latest</field>
+            <field name="provider_type">mistral</field>
+            <field name="context_window">32000</field>
+        </record>
+
+    </data>
+</odoo>

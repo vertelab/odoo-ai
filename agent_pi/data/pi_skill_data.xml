@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+  <data noupdate="1">
+    <!-- ============================================================
+         Skill Categories
+         ============================================================ -->
+    <record id="skill_category_controller" model="pi.skill.category">
+      <field name="name">Controller</field>
+      <field name="technical_name">controller</field>
+      <field name="sequence">10</field>
+      <field name="description">Orchestration skills for the controller Pi agent</field>
+    </record>
+
+    <record id="skill_category_worker" model="pi.skill.category">
+      <field name="name">Worker</field>
+      <field name="technical_name">worker</field>
+      <field name="sequence">20</field>
+      <field name="description">Task execution skills for worker Pi agents</field>
+    </record>
+
+    <record id="skill_category_domain" model="pi.skill.category">
+      <field name="name">Domain</field>
+      <field name="technical_name">domain</field>
+      <field name="sequence">30</field>
+      <field name="description">Domain-specific skills for specialized tasks</field>
+    </record>
+
+    <!-- ============================================================
+         Controller Skill
+         ============================================================ -->
+    <record id="skill_controller" model="pi.skill">
+      <field name="name">Pi Agent Controller</field>
+      <field name="technical_name">pi-agent-controller</field>
+      <field name="category_id" ref="skill_category_controller"/>
+      <field name="sequence">10</field>
+      <field name="description">Orchestrates distributed Pi agents via NATS — can remotely start/stop agents on minions</field>
+      <field name="instruction"><![CDATA[
+# Pi Agent Controller
+
+You are an orchestrator for distributed Pi agents via NATS messaging.
+You can remotely start/stop Pi agents on minions via SSH.
+
+## Capabilities
+- `nats_subscribe("pi.task.new")` — Listen for new tasks from Odoo
+- `nats_publish("pi.task.assign.{agent}", payload)` — Dispatch tasks to workers
+- `nats_subscribe("pi.result.*")` — Listen for results
+- `pi_remote_start(hostname, skills)` — SSH → start Pi agent with skills
+- `pi_remote_stop(hostname)` — SSH → stop Pi agent
+- `pi_remote_status(hostname)` — SSH → check agent status
+- `pi_remote_deploy_skills(hostname, skills)` — SCP skills to minion
+
+## Workflow
+1. On startup: subscribe to `pi.task.new`
+2. When a task arrives:
+   a. Read `skill_ids` — what domain skills are needed?
+   b. Check agent registry — agents with matching skills, lowest load, idle preferred
+   c. If no suitable agent is online → `pi_remote_start(hostname, skills)`
+   d. If skills missing → `pi_remote_deploy_skills(hostname, skills)`
+   e. Publish `{task, skills}` to `pi.task.assign.{hostname}`
+3. When a result arrives on `pi.result.{task_id}`:
+   a. POST to Odoo `/pi/callback/<task_id>`
+4. Periodic health: `pi_remote_status(hostname)` for all agents, update Odoo
+      ]]></field>
+      <field name="example">A task needing quality-check-module with no online worker: controller deploys skills via SCP, starts worker via SSH, assigns task, collects result, stops worker.</field>
+    </record>
+
+    <!-- ============================================================
+         Worker Skill
+         ============================================================ -->
+    <record id="skill_worker" model="pi.skill">
+      <field name="name">Pi Agent Worker</field>
+      <field name="technical_name">pi-agent-worker</field>
+      <field name="category_id" ref="skill_category_worker"/>
+      <field name="sequence">10</field>
+      <field name="description">Executes tasks from the controller via NATS</field>
+      <field name="instruction"><![CDATA[
+# Pi Agent Worker
+
+You are a worker Pi agent that executes tasks from Odoo via NATS.
+
+## Capabilities
+- Standard Pi tools: read, write, edit, bash, grep, find, ls
+- `nats_subscribe("pi.task.assign.{your_name}")` — Listen for assigned tasks
+- `nats_publish("pi.result.{task_id}", payload)` — Publish results
+
+## Workflow
+1. On startup: subscribe to `pi.task.assign.{hostname}`
+2. When a task arrives:
+   a. Read the prompt + attached skills
+   b. Execute the task using Pi tools
+   c. Publish the result to `pi.result.{task_id}`
+3. Health: respond to `pi.health.ping` with system status (load, memory, version)
+
+## Result Format
+```json
+{
+  "task_id": 42,
+  "state": "done",
+  "result": "Task completed successfully",
+  "artifacts": [
+    {
+      "name": "screenshot.png",
+      "type": "image",
+      "content": "base64...",
+      "mimetype": "image/png"
+    }
+  ]
+}
+```
+      ]]></field>
+      <field name="example">Receive a task to scan a repo, read manifest files, take screenshots of views, and return results with artifacts.</field>
+    </record>
+  </data>
+</odoo>

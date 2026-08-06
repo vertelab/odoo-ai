@@ -1,0 +1,153 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+  <data>
+    <!-- PI.SKILL — Tree -->
+    <record id="view_pi_skill_tree" model="ir.ui.view">
+      <field name="name">pi.skill.tree</field>
+      <field name="model">pi.skill</field>
+      <field name="arch" type="xml">
+        <list string="Skills" default_order="category_id, sequence, name">
+          <button name="action_view" type="object" icon="fa-eye" string="View"/>
+          <field name="name"/>
+          <field name="technical_name"/>
+          <field name="category_id"/>
+          <field name="sequence"/>
+          <field name="active"/>
+        </list>
+      </field>
+    </record>
+
+    <!-- PI.SKILL — Form -->
+    <record id="view_pi_skill_form" model="ir.ui.view">
+      <field name="name">pi.skill.form</field>
+      <field name="model">pi.skill</field>
+      <field name="arch" type="xml">
+        <form string="Skill">
+          <sheet>
+            <div class="oe_title">
+              <h1><field name="name" placeholder="Skill Name" required="1"/></h1>
+              <h2><field name="technical_name" placeholder="technical_name"/></h2>
+            </div>
+            <group>
+              <group string="Info">
+                <field name="category_id"/>
+                <field name="sequence"/>
+                <field name="active"/>
+                <field name="color" widget="color_picker"/>
+              </group>
+              <group string="Relations">
+                <field name="agent_ids" widget="many2many_tags"/>
+                <field name="task_ids" widget="many2many_tags" readonly="1"/>
+              </group>
+            </group>
+            <group string="Description">
+              <field name="description" nolabel="1" placeholder="Short description of this skill..."/>
+            </group>
+            <notebook>
+              <page string="Instruction">
+                <field name="instruction" nolabel="1" widget="ace" options="{'mode': 'markdown'}" placeholder="# Skill Instruction&#10;&#10;Markdown prompt for the Pi agent..."/>
+              </page>
+              <page string="Example">
+                <field name="example" nolabel="1" placeholder="Example usage..."/>
+              </page>
+              <page string="Markdown (SKILL.md)">
+                <group string="Source">
+                  <field name="markdown_content" nolabel="1" widget="ace" options="{'mode': 'markdown'}"/>
+                </group>
+                <group string="Rendered Preview">
+                  <field name="markdown_rendered" nolabel="1"/>
+                </group>
+              </page>
+            </notebook>
+          </sheet>
+          <chatter/>
+        </form>
+      </field>
+    </record>
+
+    <!-- PI.SKILL — Search -->
+    <record id="view_pi_skill_search" model="ir.ui.view">
+      <field name="name">pi.skill.search</field>
+      <field name="model">pi.skill</field>
+      <field name="arch" type="xml">
+        <search string="Skills">
+          <field name="name"/>
+          <field name="technical_name"/>
+          <field name="instruction"/>
+          <separator/>
+          <filter name="active" string="Active" domain="[('active','=',True)]"/>
+          <filter name="inactive" string="Inactive" domain="[('active','=',False)]"/>
+          <separator/>
+          <group expand="0" string="Group By">
+            <filter name="group_category" string="Category" context="{'group_by':'category_id'}"/>
+          </group>
+        </search>
+      </field>
+    </record>
+
+    <!-- PI.SKILL.CATEGORY — Tree -->
+    <record id="view_pi_skill_category_tree" model="ir.ui.view">
+      <field name="name">pi.skill.category.tree</field>
+      <field name="model">pi.skill.category</field>
+      <field name="arch" type="xml">
+        <list string="Skill Categories" editable="top">
+          <field name="name"/>
+          <field name="technical_name"/>
+          <field name="sequence"/>
+          <field name="skill_count"/>
+          <field name="active"/>
+        </list>
+      </field>
+    </record>
+
+    <!-- PI.SKILL.CATEGORY — Form -->
+    <record id="view_pi_skill_category_form" model="ir.ui.view">
+      <field name="name">pi.skill.category.form</field>
+      <field name="model">pi.skill.category</field>
+      <field name="arch" type="xml">
+        <form string="Skill Category">
+          <sheet>
+            <div class="oe_title">
+              <h1><field name="name" placeholder="Category Name"/></h1>
+            </div>
+            <group>
+              <field name="technical_name"/>
+              <field name="sequence"/>
+              <field name="active"/>
+            </group>
+            <group string="Description">
+              <field name="description" nolabel="1"/>
+            </group>
+            <notebook>
+              <page string="Skills">
+                <field name="skill_ids">
+                  <list editable="bottom">
+                    <field name="name"/>
+                    <field name="technical_name"/>
+                    <field name="active"/>
+                  </list>
+                </field>
+              </page>
+            </notebook>
+          </sheet>
+        </form>
+      </field>
+    </record>
+
+    <!-- ACTIONS -->
+    <record id="action_pi_skill" model="ir.actions.act_window">
+      <field name="name">Skills</field>
+      <field name="res_model">pi.skill</field>
+      <field name="view_mode">list,form</field>
+      <field name="search_view_id" ref="view_pi_skill_search"/>
+    </record>
+
+    <record id="action_pi_skill_category" model="ir.actions.act_window">
+      <field name="name">Skill Categories</field>
+      <field name="res_model">pi.skill.category</field>
+      <field name="view_mode">list,form</field>
+    </record>
+
+    <!-- MENU: moved to res_config_settings_views.xml -->
+  </data>
+</odoo>

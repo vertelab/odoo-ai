@@ -1,0 +1,3166 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+  <data noupdate="1">
+
+    <!-- Swedish Accounting Category -->
+    <record id="skill_category_swedish_accounting" model="pi.skill.category">
+      <field name="name">Swedish Accounting</field>
+      <field name="technical_name">swedish-accounting</field>
+      <field name="sequence">40</field>
+      <field name="description">Skills for Swedish accounting compliance — BAS, VAT, payroll, tax, SIE, SRU, year-end closing, and bookkeeping law (BFL, BFNAR, K2/K3)</field>
+    </record>
+
+    <!-- Swedish Accounting Compliance -->
+    <record id="skill_swedish_accounting_compliance" model="pi.skill">
+      <field name="name">Swedish Accounting Compliance</field>
+      <field name="technical_name">swedish-accounting-compliance</field>
+      <field name="category_id" ref="skill_category_swedish_accounting"/>
+      <field name="sequence">10</field>
+      <field name="active" eval="True"/>
+      <field name="description">Swedish accounting law and compliance reference for developers building accounting software. Use this skill whenever working on features that touch Swedish bookkeeping rules, tax compliance, chart of accounts, financial reporting, or regulatory requirements. Triggers include any mention of BFL, BFNAR, BAS kontoplan, SIE4, K2/K3, momsdeklaration, Skatteverket integration, verifikationer, löpande bokföring, årsbokslut, årsredovisning, bokföringsskyldighet, or Swedish accounting compliance in gener</field>
+      <field name="instruction"><![CDATA[
+---
+name: swedish-accounting-compliance
+description: Swedish accounting law and compliance reference for developers building accounting software. Use this skill whenever working on features that touch Swedish bookkeeping rules, tax compliance, chart of accounts, financial reporting, or regulatory requirements. Triggers include any mention of BFL, BFNAR, BAS kontoplan, SIE4, K2/K3, momsdeklaration, Skatteverket integration, verifikationer, löpande bokföring, årsbokslut, årsredovisning, bokföringsskyldighet, or Swedish accounting compliance in general. Also trigger when the user is checking whether a feature, data model, or workflow complies with Swedish accounting law, or when implementing tax calculations, invoice requirements, or financial reporting for Swedish entities. Use this skill even if the user just asks "is this compliant?" or "what does the law say about X?" in a Swedish accounting context. This skill is a compliance oracle, not an end-user guide.
+---
+
+# Swedish Accounting Compliance
+
+Developer-facing compliance reference for building Swedish accounting software. This skill answers questions about what the law requires so you can verify your implementation is correct.
+
+## How to use this skill
+
+This skill has a router structure. The SKILL.md contains the most critical rules you need constantly. Detailed reference material lives in `references/`. Read the relevant reference file when you need depth on a specific area.
+
+### Reference files
+
+| File | When to read |
+|---|---|
+| `references/bfl-bfnar.md` | Questions about bokföringslagen (BFL), BFNAR, K1/K2/K3, ÅRL, bokföringsskyldighet, verifikationer, arkivering, räkenskapsår, systemdokumentation |
+| `references/skatteverket.md` | Questions about moms/VAT, arbetsgivaravgifter, skattedeklaration, F-skatt, skattekonto, Skatteverket API integration, AGI |
+| `references/bas-kontoplan.md` | Questions about BAS chart of accounts, account numbering, account classification, mapping transactions to accounts |
+| `references/sie4.md` | Questions about SIE file format, import/export, data exchange between systems |
+| `references/changes-2025-2026.md` | Questions about recent or upcoming regulatory changes, new rules, updated amounts/thresholds |
+
+Read multiple reference files when a question spans domains (common).
+
+## Core principles (always in context)
+
+### Bokföringsskyldighet (BFL 2 kap)
+Every aktiebolag, handelsbolag, and ekonomisk förening is bokföringsskyldigt. Enskild firma with fysisk person is bokföringsskyldig. The obligation cannot be delegated: even if someone else does the bokföring, the företagare is legally responsible.
+
+### Löpande bokföring (BFL 5 kap)
+- Affärshändelser shall be bokförda in both grundbok (journal) and huvudbok (ledger)
+- Kontanta in/utbetalningar: senast nästa arbetsdag
+- Övriga affärshändelser: so snart det kan ske, which in practice means within the calendar month following the month the event occurred
+- Every affärshändelse requires a verifikation
+
+### Verifikationer (BFL 5 kap 6-7§)
+A verifikation must contain:
+1. Datum för affärshändelsen
+2. Datum för verifikationen (if different)
+3. Vad affärshändelsen avser (description)
+4. Belopp
+5. Motpart (when applicable)
+6. References to underlag (kvitto, faktura etc.)
+7. Verifikationsnummer (unique, in unbroken series per räkenskapsår)
+
+Verifikationer must be numbered in a systematisk serie without gaps. If a verifikation is corrected, the original must be preserved and the correction linked.
+
+### Rättelse (BFL 5 kap 5§)
+A rättelse of a bokföringspost must be documented so that both the original and the corrected post are visible. You cannot simply overwrite. Implement as: new correcting verifikation referencing the original.
+
+### Arkivering (BFL 7 kap)
+- Räkenskapsinformation must be preserved for 7 years after the end of the calendar year the räkenskapsår ended
+- Since 1 July 2024: no requirement to keep paper originals after digitization (BFL 7 kap 6§ updated)
+- Digital storage must ensure the information cannot be altered (immutability requirement)
+- Must be accessible in Sweden (or within EU/EEA with Skatteverket notification)
+
+### Momssatser (current as of 2026)
+- 25% - standard rate (most goods and services)
+- 12% - food/restaurants, hotels, some cultural events
+- 6% - books, newspapers, public transport, cultural/sports events, livsmedel (temporarily from 1 April 2026 to 31 Dec 2027)
+- 0% - certain financial services, healthcare, education, insurance
+
+**IMPORTANT**: From 1 April 2026, livsmedel drops from 12% to 6% (tillfälligt, Prop. 2025/26:55). Restaurang/servering stays at 12%. Software must handle the transition date and the eventual reversion.
+
+### Fakturakrav (ML 17 kap)
+A momsregistrerad seller's faktura must contain:
+1. Utfärdandedatum
+2. Löpnummer (unique, unbroken series)
+3. Säljarens momsregistreringsnummer
+4. Köparens momsregistreringsnummer (if reverse charge or EU)
+5. Säljarens och köparens namn och adress
+6. Varans/tjänstens art, omfattning, mängd
+7. Datum för leverans/tillhandahållande
+8. Beskattningsunderlag per skattesats
+9. Tillämpad skattesats
+10. Momsbelopp
+11. Eventuell hänvisning till undantag
+
+Förenklad faktura (max 4000 SEK inkl moms) has reduced requirements.
+
+### Key thresholds (2026)
+- Prisbasbelopp: 59 200 kr
+- Inkomstbasbelopp: 83 400 kr
+- Inventarier av mindre värde: halvt prisbasbelopp = 29 600 kr (exkl moms)
+- Förenklat årsbokslut: omsättning normalt < 3 MSEK
+- Kontantmetod: omsättning normalt < 3 MSEK
+- Revisionspliktig (AB): minst 2 av 3: >3 anställda, >1.5 MSEK balansomslutning, >3 MSEK nettoomsättning (two consecutive years)
+
+### System documentation (BFNAR 2013:2 kap 8)
+Bokföringssystem must have:
+1. Systemdokumentation: describes the system, how it works, its controls
+2. Behandlingshistorik: log of changes, who did what, when
+
+Your software must produce or support both. This is not optional.
+
+]]></field>
+      <field name="markdown_content"><![CDATA[
+---
+name: swedish-accounting-compliance
+description: Swedish accounting law and compliance reference for developers building accounting software. Use this skill whenever working on features that touch Swedish bookkeeping rules, tax compliance, chart of accounts, financial reporting, or regulatory requirements. Triggers include any mention of BFL, BFNAR, BAS kontoplan, SIE4, K2/K3, momsdeklaration, Skatteverket integration, verifikationer, löpande bokföring, årsbokslut, årsredovisning, bokföringsskyldighet, or Swedish accounting compliance in general. Also trigger when the user is checking whether a feature, data model, or workflow complies with Swedish accounting law, or when implementing tax calculations, invoice requirements, or financial reporting for Swedish entities. Use this skill even if the user just asks "is this compliant?" or "what does the law say about X?" in a Swedish accounting context. This skill is a compliance oracle, not an end-user guide.
+---
+
+# Swedish Accounting Compliance
+
+Developer-facing compliance reference for building Swedish accounting software. This skill answers questions about what the law requires so you can verify your implementation is correct.
+
+## How to use this skill
+
+This skill has a router structure. The SKILL.md contains the most critical rules you need constantly. Detailed reference material lives in `references/`. Read the relevant reference file when you need depth on a specific area.
+
+### Reference files
+
+| File | When to read |
+|---|---|
+| `references/bfl-bfnar.md` | Questions about bokföringslagen (BFL), BFNAR, K1/K2/K3, ÅRL, bokföringsskyldighet, verifikationer, arkivering, räkenskapsår, systemdokumentation |
+| `references/skatteverket.md` | Questions about moms/VAT, arbetsgivaravgifter, skattedeklaration, F-skatt, skattekonto, Skatteverket API integration, AGI |
+| `references/bas-kontoplan.md` | Questions about BAS chart of accounts, account numbering, account classification, mapping transactions to accounts |
+| `references/sie4.md` | Questions about SIE file format, import/export, data exchange between systems |
+| `references/changes-2025-2026.md` | Questions about recent or upcoming regulatory changes, new rules, updated amounts/thresholds |
+
+Read multiple reference files when a question spans domains (common).
+
+## Core principles (always in context)
+
+### Bokföringsskyldighet (BFL 2 kap)
+Every aktiebolag, handelsbolag, and ekonomisk förening is bokföringsskyldigt. Enskild firma with fysisk person is bokföringsskyldig. The obligation cannot be delegated: even if someone else does the bokföring, the företagare is legally responsible.
+
+### Löpande bokföring (BFL 5 kap)
+- Affärshändelser shall be bokförda in both grundbok (journal) and huvudbok (ledger)
+- Kontanta in/utbetalningar: senast nästa arbetsdag
+- Övriga affärshändelser: so snart det kan ske, which in practice means within the calendar month following the month the event occurred
+- Every affärshändelse requires a verifikation
+
+### Verifikationer (BFL 5 kap 6-7§)
+A verifikation must contain:
+1. Datum för affärshändelsen
+2. Datum för verifikationen (if different)
+3. Vad affärshändelsen avser (description)
+4. Belopp
+5. Motpart (when applicable)
+6. References to underlag (kvitto, faktura etc.)
+7. Verifikationsnummer (unique, in unbroken series per räkenskapsår)
+
+Verifikationer must be numbered in a systematisk serie without gaps. If a verifikation is corrected, the original must be preserved and the correction linked.
+
+### Rättelse (BFL 5 kap 5§)
+A rättelse of a bokföringspost must be documented so that both the original and the corrected post are visible. You cannot simply overwrite. Implement as: new correcting verifikation referencing the original.
+
+### Arkivering (BFL 7 kap)
+- Räkenskapsinformation must be preserved for 7 years after the end of the calendar year the räkenskapsår ended
+- Since 1 July 2024: no requirement to keep paper originals after digitization (BFL 7 kap 6§ updated)
+- Digital storage must ensure the information cannot be altered (immutability requirement)
+- Must be accessible in Sweden (or within EU/EEA with Skatteverket notification)
+
+### Momssatser (current as of 2026)
+- 25% - standard rate (most goods and services)
+- 12% - food/restaurants, hotels, some cultural events
+- 6% - books, newspapers, public transport, cultural/sports events, livsmedel (temporarily from 1 April 2026 to 31 Dec 2027)
+- 0% - certain financial services, healthcare, education, insurance
+
+**IMPORTANT**: From 1 April 2026, livsmedel drops from 12% to 6% (tillfälligt, Prop. 2025/26:55). Restaurang/servering stays at 12%. Software must handle the transition date and the eventual reversion.
+
+### Fakturakrav (ML 17 kap)
+A momsregistrerad seller's faktura must contain:
+1. Utfärdandedatum
+2. Löpnummer (unique, unbroken series)
+3. Säljarens momsregistreringsnummer
+4. Köparens momsregistreringsnummer (if reverse charge or EU)
+5. Säljarens och köparens namn och adress
+6. Varans/tjänstens art, omfattning, mängd
+7. Datum för leverans/tillhandahållande
+8. Beskattningsunderlag per skattesats
+9. Tillämpad skattesats
+10. Momsbelopp
+11. Eventuell hänvisning till undantag
+
+Förenklad faktura (max 4000 SEK inkl moms) has reduced requirements.
+
+### Key thresholds (2026)
+- Prisbasbelopp: 59 200 kr
+- Inkomstbasbelopp: 83 400 kr
+- Inventarier av mindre värde: halvt prisbasbelopp = 29 600 kr (exkl moms)
+- Förenklat årsbokslut: omsättning normalt < 3 MSEK
+- Kontantmetod: omsättning normalt < 3 MSEK
+- Revisionspliktig (AB): minst 2 av 3: >3 anställda, >1.5 MSEK balansomslutning, >3 MSEK nettoomsättning (two consecutive years)
+
+### System documentation (BFNAR 2013:2 kap 8)
+Bokföringssystem must have:
+1. Systemdokumentation: describes the system, how it works, its controls
+2. Behandlingshistorik: log of changes, who did what, when
+
+Your software must produce or support both. This is not optional.
+
+]]></field>
+    </record>
+
+    <!-- Swedish Asset Accounting -->
+    <record id="skill_swedish_asset_accounting" model="pi.skill">
+      <field name="name">Swedish Asset Accounting</field>
+      <field name="technical_name">swedish-asset-accounting</field>
+      <field name="category_id" ref="skill_category_swedish_accounting"/>
+      <field name="sequence">20</field>
+      <field name="active" eval="True"/>
+      <field name="description"></field>
+      <field name="instruction"><![CDATA[
+---
+name: swedish-asset-accounting
+description: >
+  Swedish fixed asset accounting (anläggningsredovisning) reference. Covers planenlig avskrivning, överavskrivning (2150/8850),
+  räkenskapsenlig (30%/20%) vs restvärdeavskrivning (25%), BAS 10xx-12xx/78xx mapping, inventarieregister per BFL,
+  förbrukningsinventarier (half PBB), leasing K2/K3/IFRS 16, komponentavskrivning, avyttring/utrangering with VAT.
+  Trigger on ANY Swedish avskrivning, anläggningstillgång, överavskrivning, inventarieregister, förbrukningsinventarie,
+  BAS 10xx-12xx/78xx, leasing K2/K3, asset disposal, komponentavskrivning, or fixed-asset question.
+  High-error-rate area; always use over training data.
+---
+
+# Swedish Asset Accounting (Anläggningsredovisning)
+
+Developer compliance reference for Swedish fixed asset accounting. Core laws: ÅRL (1995:1554), IL (1999:1229), BFL (1999:1078). Frameworks: K2 (BFNAR 2016:10), K3 (BFNAR 2012:1), IFRS 16, RFR 2.
+
+**Before answering any question, read the appropriate reference file:**
+
+- For depreciation methods, överavskrivning, or tax depreciation rules: `cat references/depreciation.md`
+- For BAS account mapping, anläggningsregister, or förbrukningsinventarier: `cat references/accounts-and-registry.md`
+- For leasing treatment or disposal/scrapping: `cat references/leasing-and-disposal.md`
+
+If the question spans multiple areas, read all relevant files.
+
+## Quick Decision Tree
+
+```
+Is the asset below half prisbasbelopp (29,600 kr 2026) or useful life ≤ 3 years?
+├─ YES → Expense immediately via 54xx (förbrukningsinventarie)
+└─ NO → Capitalize to 10xx/11xx/12xx
+         │
+         Is it a building?
+         ├─ YES → IL 19 kap rates (2-5% straight-line on cost)
+         │        K2: no components, use SKV standard rates
+         │        K3: mandatory component depreciation
+         └─ NO → Machinery/inventory: IL 18 kap
+                  ├─ Räkenskapsenlig: 30% declining or 20% straight-line (choose yearly)
+                  └─ Restvärdeavskrivning: 25% declining (fallback)
+                  │
+                  Book ≠ Tax? → Bridge via 2150/8850 (överavskrivning)
+```
+
+## Critical K2 vs K3 Differences (Assets)
+
+| Feature | K2 | K3 |
+|---|---|---|
+| Component depreciation | Forbidden | Mandatory |
+| Useful life | 5-year default allowed | Individual assessment required |
+| Residual value | Optional, forbidden with 5-year rule | Required, annual reassessment |
+| Depreciation start | Year put into use | When available for use |
+| Revaluation | Permitted for buildings/land | Permitted |
+| Deferred tax | Forbidden | Required (ch. 29) |
+| Leasing on BS | Never | Financial leases (but 20.29 exemption in juridisk person) |
+| Development costs | Must expense | May capitalize |
+
+## 2026 Regulatory Change
+
+From fiscal years starting after 2025-12-31, entities with buildings generating ≥75% of net revenue (fastighetsbolag, BRF:er) must use K3. This forces component depreciation adoption. BFN published updated BFNAR 2016:10 and 2012:1 effective for these fiscal years.
+
+## Prisbasbelopp Reference (Half PBB = förbrukningsinventarie threshold)
+
+| Year | PBB | Threshold |
+|---|---|---|
+| 2024 | 57,300 | 28,650 |
+| 2025 | 58,800 | 29,400 |
+| 2026 | 59,200 | 29,600 |
+]]></field>
+      <field name="markdown_content"><![CDATA[
+---
+name: swedish-asset-accounting
+description: >
+  Swedish fixed asset accounting (anläggningsredovisning) reference. Covers planenlig avskrivning, överavskrivning (2150/8850),
+  räkenskapsenlig (30%/20%) vs restvärdeavskrivning (25%), BAS 10xx-12xx/78xx mapping, inventarieregister per BFL,
+  förbrukningsinventarier (half PBB), leasing K2/K3/IFRS 16, komponentavskrivning, avyttring/utrangering with VAT.
+  Trigger on ANY Swedish avskrivning, anläggningstillgång, överavskrivning, inventarieregister, förbrukningsinventarie,
+  BAS 10xx-12xx/78xx, leasing K2/K3, asset disposal, komponentavskrivning, or fixed-asset question.
+  High-error-rate area; always use over training data.
+---
+
+# Swedish Asset Accounting (Anläggningsredovisning)
+
+Developer compliance reference for Swedish fixed asset accounting. Core laws: ÅRL (1995:1554), IL (1999:1229), BFL (1999:1078). Frameworks: K2 (BFNAR 2016:10), K3 (BFNAR 2012:1), IFRS 16, RFR 2.
+
+**Before answering any question, read the appropriate reference file:**
+
+- For depreciation methods, överavskrivning, or tax depreciation rules: `cat references/depreciation.md`
+- For BAS account mapping, anläggningsregister, or förbrukningsinventarier: `cat references/accounts-and-registry.md`
+- For leasing treatment or disposal/scrapping: `cat references/leasing-and-disposal.md`
+
+If the question spans multiple areas, read all relevant files.
+
+## Quick Decision Tree
+
+```
+Is the asset below half prisbasbelopp (29,600 kr 2026) or useful life ≤ 3 years?
+├─ YES → Expense immediately via 54xx (förbrukningsinventarie)
+└─ NO → Capitalize to 10xx/11xx/12xx
+         │
+         Is it a building?
+         ├─ YES → IL 19 kap rates (2-5% straight-line on cost)
+         │        K2: no components, use SKV standard rates
+         │        K3: mandatory component depreciation
+         └─ NO → Machinery/inventory: IL 18 kap
+                  ├─ Räkenskapsenlig: 30% declining or 20% straight-line (choose yearly)
+                  └─ Restvärdeavskrivning: 25% declining (fallback)
+                  │
+                  Book ≠ Tax? → Bridge via 2150/8850 (överavskrivning)
+```
+
+## Critical K2 vs K3 Differences (Assets)
+
+| Feature | K2 | K3 |
+|---|---|---|
+| Component depreciation | Forbidden | Mandatory |
+| Useful life | 5-year default allowed | Individual assessment required |
+| Residual value | Optional, forbidden with 5-year rule | Required, annual reassessment |
+| Depreciation start | Year put into use | When available for use |
+| Revaluation | Permitted for buildings/land | Permitted |
+| Deferred tax | Forbidden | Required (ch. 29) |
+| Leasing on BS | Never | Financial leases (but 20.29 exemption in juridisk person) |
+| Development costs | Must expense | May capitalize |
+
+## 2026 Regulatory Change
+
+From fiscal years starting after 2025-12-31, entities with buildings generating ≥75% of net revenue (fastighetsbolag, BRF:er) must use K3. This forces component depreciation adoption. BFN published updated BFNAR 2016:10 and 2012:1 effective for these fiscal years.
+
+## Prisbasbelopp Reference (Half PBB = förbrukningsinventarie threshold)
+
+| Year | PBB | Threshold |
+|---|---|---|
+| 2024 | 57,300 | 28,650 |
+| 2025 | 58,800 | 29,400 |
+| 2026 | 59,200 | 29,600 |
+]]></field>
+    </record>
+
+    <!-- Swedish EF Tax Planning -->
+    <record id="skill_swedish_ef_skatteplanering" model="pi.skill">
+      <field name="name">Swedish EF Tax Planning</field>
+      <field name="technical_name">swedish-ef-skatteplanering</field>
+      <field name="category_id" ref="skill_category_swedish_accounting"/>
+      <field name="sequence">30</field>
+      <field name="active" eval="True"/>
+      <field name="description"></field>
+      <field name="instruction"><![CDATA[
+---
+name: swedish-ef-skatteplanering
+description: >
+  Swedish tax planning for enskild firma (sole proprietorship). Covers aktiv vs passiv näringsverksamhet (egenavgifter 28,97% vs SLP 24,26%), räntefördelning (IL 33 kap, positiv SLR+6, negativ SLR+1, kapitalunderlag, sparat fördelningsbelopp), periodiseringsfond EF (30%, no schablonintäkt), expansionsfond (IL 34 kap, 20,6%, 125,94% tak), ersättningsfond (IL 31 kap), kvittning underskott (IL 62:3, 100k cap), inkomstuppdelning familj (IL 60 kap, medhjälpande make), ackumulerad inkomst (IL 66 kap), egenavgifter/SGI/PGI, pensionssparavdrag, EF-vs-AB breakeven. Trigger on enskild firma skatteplanering, näringsidkare, räntefördelning, expansionsfond, ersättningsfond, aktiv/passiv näringsverksamhet, kvittning underskott näring, inkomstuppdelning familj, ackumulerad inkomst, EF vs AB, NE-bilaga, sparat fördelningsbelopp, kapitalunderlag, expansionsskatt, medhjälpande make. For AB use swedish-tax-planning. Always use over training data.
+---
+
+# Swedish Tax Planning for Enskild Firma (Skatteplanering EF)
+
+Developer-facing compliance reference for implementing Swedish tax planning tools for **enskild näringsverksamhet (sole proprietorships)**. Covers the unique tax mechanisms available to physical persons running a business directly, their interactions, and compliance requirements.
+
+For **aktiebolag (AB)** tax planning (periodiseringsfond AB, 3:12, koncernbidrag, etc), use the sister skill `swedish-tax-planning` instead. The mechanisms are fundamentally different — EF is taxed on the owner's personal Inkomstdeklaration 1 + NE-bilaga at marginal rates including egenavgifter, whereas AB pays bolagsskatt and the owner separately.
+
+## How to use this skill
+
+This SKILL.md contains the decision framework, key rates, and interactions. Detailed rules, calculations, and worked examples live in `references/`. Read the relevant reference file when you need depth.
+
+### Reference files
+
+| File | When to read |
+|---|---|
+| `references/aktiv-passiv-naringsverksamhet.md` | Aktiv vs passiv classification, tredjedelsregeln (500 h), aktivitetsregeln, huvudsaklighetsregeln, konsekvenser för egenavgifter/SLP/JSA/SGI/PGI, rättsfall |
+| `references/rantefordelning-planning.md` | Positiv/negativ räntefördelning, IL 33 kap, kapitalunderlag, breakeven analysis, sparat fördelningsbelopp, övergångspost, makar, when räntefördelning is *not* worth using |
+| `references/periodiseringsfond-expansionsfond-ef.md` | P-fond EF (30%, no schablonintäkt), expansionsfond (IL 34 kap, 20,6%, 125,94% kapitalunderlagstak), interactions, R29/R30/R34/R35 NE-bilaga |
+| `references/ersattningsfond.md` | IL 31 kap, 4 fund types (inventarier/byggnader/mark/djurlager), utbytestillgångar, expropriation, naturkatastrof, 30% tillägg at återföring |
+| `references/inkomstuppdelning-familj.md` | IL 60 kap, medhjälpande make, gemensam verksamhet, marknadsmässig ersättning, lön till barn 16+, 7-year rule (närstående) |
+| `references/kvittning-underskott.md` | IL 62:3 allmänt avdrag, första 5 åren, 100k cap, kulturarbetare unbounded, slutligt underskott (70%, 3-year split), rullning, EU/EES verksamhet |
+| `references/ackumulerad-inkomst.md` | IL 66 kap, 10-year fördelningstid, 50k spärrgräns, anwendung pension/försäljning/P-fond/expansionsfond återföring |
+| `references/egenavgifter-sgi-pgi-jsa.md` | Egenavgifter 28,97% / SLP 24,26% / 10,21% pensionärer, generell nedsättning 7,5% (max 15k), regional nedsättning, SGI 10 PBB, PGI 7,5 IBB, jobbskatteavdrag, pensionssparavdrag 35% |
+| `references/ef-vs-ab-breakeven.md` | Marginalskatt + total skatt tables, brytpunkter, lön vs utdelning vs vinst, when to switch EF→AB, både och strategy |
+
+## Quick decision framework
+
+### Step 1: Is the verksamhet aktiv or passiv?
+
+This is the most important classification. It determines:
+- **Egenavgifter (28,97%) vs SLP (24,26%)** — actually SLP is higher than active egenavgifter when nedsättning applies up to 200k
+- **SGI and PGI eligibility** (only aktiv gives sjukpenning/pension rights)
+- **Jobbskatteavdrag** (only aktiv)
+- **Pensionssparavdrag** (only aktiv)
+- **Kvittning av underskott mot tjänst** (only aktiv + nystartad)
+
+Rules (cumulative, any one suffices):
+- **Aktivitetsregeln**: own work > one-third of full-time (≥ 500 h/year)
+- **Huvudsaklighetsregeln**: at consultant + fastighet split, the smaller verksamhet pulls into aktiv if criteria met
+- **Skogsägare special case**: RÅ 2002 ref 15 — own labor counts even at low hours
+
+See [[aktiv-passiv-naringsverksamhet]].
+
+### Step 2: Compute kapitalunderlag for räntefördelning AND expansionsfond
+
+The same kapitalunderlag concept (tillgångar minus skulder at year-end of *previous* year for räntefördelning, current year for expansionsfond takbelopp) drives both. Always compute it even if not using räntefördelning — it can be carried forward as sparat fördelningsbelopp.
+
+### Step 3: Year-end optimization sequence for EF
+
+1. **Avskrivningar på inventarier** — räkenskapsenlig avskrivning 30% huvudregel + 20% kompletteringsregel, choose lowest
+2. **Räntefördelning** — apply positiv only if SLR+6 yields net benefit (often NOT worth it for pensionärer or below brytpunkt; see [[rantefordelning-planning]])
+3. **Periodiseringsfond** — up to 30% of skattemässig vinst, no schablonintäkt for fysiska personer
+4. **Expansionsfond** — for low-tax retention at 20,6%; only if kapitalunderlag supports it
+5. **Egenavgifter schablonavdrag** — 25% standard, 10% pensionärer, 20% SLP
+
+The order matters: avskrivningar reduce result, then räntefördelning operates on that, then P-fond cap is 30% of (result after räntefördelning + återföring P-fond +/- expansionsfond), and expansionsfond may not exceed kapitalunderlag tak.
+
+## Core rates and thresholds (verify annually)
+
+### Egenavgifter (inkomstår 2025/2026, oförändrade procentsatser)
+| Group | Rate |
+|---|---|
+| Active, 7 karensdagar (standard) | **28,97 %** |
+| Active, 1 karensdag | slightly higher |
+| Active, 90 karensdagar | slightly lower |
+| Passive (SLP) | **24,26 %** |
+| Pensionär (aktiv eller passiv, året efter pensionsåldersgränsen — 66 år 2025, 67 år 2026) | **10,21 %** |
+| Född 1937 eller tidigare | **0 %** |
+
+**Generell nedsättning** 7,5 % av hela avgiftsunderlaget, max 15 000 kr/år. Förutsättning: aktiv NV + underlag > 40 000 kr (40 000-gränsen är en tröskel, inte ett avdragsbelopp — vid underlag 40 001 kr utgår nedsättning på *hela* underlaget). Beräknas automatiskt av Skatteverket.
+Regional nedsättning (Norrlands inland stödområde) 10 % på underlag upp till 180 000 kr (max 18 000 kr/år).
+
+### Räntefördelningsräntor (anchored to SLR Nov 30 prior year)
+| Type | Formula | 2025 | 2026 |
+|---|---|---|---|
+| Positiv (frivillig) | SLR + 6 pp | 7,96% | 8,55% |
+| Negativ (obligatorisk) | SLR + 1 pp | 2,96% | 3,55% |
+
+Gränsbelopp (2025+, efter prop. 2024/25:1):
+- Positiv RF: kapitalunderlag ≥ 0 kr (50 000 kr-tröskeln **avskaffad** fr.o.m. inkomstår 2025)
+- Negativ RF: triggas vid kapitalunderlag < **−500 000 kr** (höjt från −50 000 kr fr.o.m. inkomstår 2025)
+
+### Expansionsfond
+- Skatt på avsättning: **20,6%** (expansionsfondsskatt, synkad med bolagsskatten)
+- Tak: **125,94% of kapitalunderlag at current year's end** (= 100 / 79,4 = gross-up-faktorn vid 20,6% skatt)
+- May not cause underskott in NV
+- On återföring: amount becomes NV income; 20,6% credited against year's tax
+
+### Periodiseringsfond
+- Tak: **30% of skattemässigt resultat** (vs 25% for AB)
+- 6-year mandatory reversal (FIFO)
+- **NO schablonintäkt** for fysiska personer
+- NE-bilaga only (R34/R35), never booked
+
+### Räkenskapsenlig avskrivning på inventarier
+- Huvudregeln: 30% declining balance on (IB + årets inköp – årets försäljningar)
+- Kompletteringsregeln: 20% straight-line per asset over 5 years
+- Förbrukningsinventarier (< halva PBB: **29 400 kr 2025 / 29 600 kr 2026**, kortidsinventarier ≤ 3 år): direktavdrag. Halva-PBB-gränsen blev enhetlig fr.o.m. 2025 (prop. 2024/25:1) — innan gällde 5 000 kr för många EF.
+
+### PGI/SGI/brytpunkter (verify annually mot Skatteverket Belopp och procent)
+| Threshold | 2025 | 2026 |
+|---|---|---|
+| Prisbasbelopp (PBB) | 58 800 kr | 59 200 kr |
+| Inkomstbasbelopp (IBB) | 80 600 kr | 83 400 kr |
+| Lägsta PGI (0,423 PBB) | 24 870 kr | 25 042 kr |
+| Lägsta SGI (0,24 PBB) | 14 112 kr | 14 208 kr |
+| Skiktgräns statlig skatt | 625 800 kr | 643 000 kr |
+| Brytpunkt statlig skatt (under pensionsåldersgränsen) | 643 100 kr | 660 400 kr |
+| Max SGI (10 PBB) | 588 000 kr | 592 000 kr |
+| Max PGI (7,5 IBB) | 604 500 kr | 625 500 kr |
+| Avgiftstak (8,07 × IBB) | 650 442 kr | 673 038 kr |
+| Max föräldrapenninggrundande (10 PBB) | 588 000 kr | 592 000 kr |
+| Max för 7,5%-nedsättning egenavgifter (200k underlag) | 200 000 kr | 200 000 kr |
+| Halva PBB (förbrukningsinventarier) | 29 400 kr | 29 600 kr |
+| Pensionsåldersgräns (full egenavgift t.o.m. året då man fyller) | 66 år | 67 år |
+
+## Critical distinction: booked vs declaration-only
+
+EF differs sharply from AB on which items are booked vs only entered on NE-bilagan:
+
+| Item | Booked in räkenskaperna? | Where it lives |
+|---|---|---|
+| Räntefördelning | NEVER | NE sid 2 R30/R31 |
+| Periodiseringsfond EF | NEVER (per BFNAR 2006:1 / K1) | NE sid 2 R34/R35 |
+| Expansionsfond | NEVER (per K1) | NE sid 2 R36/R37 |
+| Ersättningsfond | YES (avsättning bokförs); resterande hanteras i deklaration | Bokfört + NE |
+| Egenavgifter schablonavdrag | NEVER | NE sid 2 R43, justering R39/R40 |
+| Skatt på årets resultat | NEVER (personal tax) | Inte i bokföringen |
+| Inventarieavskrivning | YES (8851/1229 etc) | Bokfört |
+| Förenklat årsbokslut U1–U4 | Upplysning, ej bokfört | NE-bilaga upplysning |
+
+This is the largest source of conceptual errors when implementing EF bookkeeping software: developers familiar with AB-flows often try to book P-fond/expansionsfond, which is *forbidden* for EF under K1 (BFNAR 2006:1).
+
+## NE-bilaga key field reference (cross-link with swedish-year-end-closing)
+
+| Ruta | Innehåll |
+|---|---|
+| R11 | Bokfört resultat (samma som förenklat årsbokslut) |
+| R12–R26 | Skattemässiga justeringar (avskrivningar, ej avdragsgill rep., ränta, etc.) |
+| R29 | Överskott före räntefördelning |
+| R30 | Positiv räntefördelning (till INK1 p.11.1, inkomst av kapital) |
+| R31 | Negativ räntefördelning (till INK1 p.11.2, avdrag i kapital) |
+| R32 | Återföring av periodiseringsfond (oldest year first) |
+| R33 | Överskott före avsättning till periodiseringsfond |
+| R34 | Avsättning till periodiseringsfond (max 30% av R33) |
+| R35 | Överskott före ökning av expansionsfond |
+| R36 | Återföring av expansionsfond (till INK1 p.12.1) |
+| R37 | Ökning av expansionsfond (till INK1 p.12.2) |
+| R38 | Inkomst före schablonavdrag och sjukpenning |
+| R39 | Tidigare års schablonavdrag (positiv) |
+| R40 | Faktiska egenavgifter / SLP (avdrag) |
+| R41/R42 | Sjukpenning hänförlig till NV |
+| R43 | Årets schablonavdrag för egenavgifter |
+| R45 | Inkomst som överförs till tjänst för kvittning (aktiv, nystartad) — till INK1 p.14.1 (allmänt avdrag) |
+| R47/R48 | Överskott / underskott av aktiv NV → INK1 p.10.1/p.10.2 |
+| R49/R50 | Överskott / underskott av passiv NV → INK1 p.10.3/p.10.4 |
+
+Field positions verified mot officiell NE-bilaga (SKV 2161) inkomstår 2024/2025. Verify mot innevarande års blankett.
+
+## Skatteflyktslagen and audit triggers for EF
+
+EF skatteplanering can raise scrutiny under Lag 1995:575 om skatteflykt when:
+- Switching aktiv/passiv classification opportunistically (e.g., to abuse 5-year kvittningsregeln)
+- Inkomstuppdelning between makar that doesn't reflect actual arbetsinsats or kapitalinsats
+- Sudden growth of kapitalunderlag through tillfälliga kapitaltillskott (only varaktiga tillskott count, IL 33 kap 6 §)
+- Large expansionsfond avsättning followed by quick liquidation of verksamheten
+
+## Multi-year planning horizon
+
+The most valuable patterns for EF:
+1. **Build kapitalunderlag steadily** — every kr of varaktig egen insättning grows räntefördelning room *and* expansionsfond tak in perpetuity
+2. **Use P-fond for sjukpenninggrundande inkomst leveling** — note P-fond does NOT affect SGI calculation (Försäkringskassan bortser från dispositioner) but DOES affect PGI; see [[egenavgifter-sgi-pgi-jsa]]
+3. **Aktiv classification is gold** — fight for it via timesheet, since it unlocks jobbskatteavdrag (worth up to ~30 000 kr/year), kvittning mot tjänst, lägre egenavgifter, pensionsrätt
+4. **Consider EF→AB transition around brytpunkten** — under brytpunkten EF is usually cheaper than AB; over brytpunkten AB starts to win (see [[ef-vs-ab-breakeven]])
+
+## Out of scope for this skill
+
+- Bokslutsmekanik for EF (förenklat årsbokslut, K1) — covered in `swedish-year-end-closing` `references/k1-forenklat-arsbokslut.md`
+- Specifika bokföringskonton för transaktioner — covered in `swedish-accounting-compliance`
+- Moms-frågor — covered in `swedish-vat`
+- Lön till anställda i EF — covered in `swedish-payroll`
+- Faktureringsregler — covered in `swedish-invoice-compliance`
+- AB-specifik skatteplanering — covered in `swedish-tax-planning`
+
+## Legal sources
+
+- Inkomstskattelagen (IL) 1999:1229, especially kap 13 (NV), 14 (rörelse), 18 (inventarier), 30 (P-fond), 31 (ersättningsfond), 33 (räntefördelning), 34 (expansionsfond), 60 (inkomstuppdelning familj), 62 (allmänna avdrag), 66 (ackumulerad inkomst)
+- Socialavgiftslagen (SAL) 2000:980
+- Lagen (1990:659) om särskild löneskatt på vissa förvärvsinkomster
+- Bokföringslagen (BFL) 1999:1078 — bokföringsskyldighet, K1-tröskel 3 MSEK
+- BFNAR 2006:1 — Enskilda näringsidkare som upprättar förenklat årsbokslut (K1)
+- Lag (1995:575) mot skatteflykt
+- SOU 2020:50 — "Enklare skatteregler för enskild näringsverksamhet". **Delvis genomförd** via prop. 2024/25:1 (ikraft 2025-01-01): RF-trösklar omarbetade (50k slopad / -500k negativ tröskel), halva PBB som inventariegräns. Den större "näringsfond"-idén (samlad ersättning för P-fond+expansionsfond+RF) **ej genomförd**.
+
+]]></field>
+      <field name="markdown_content"><![CDATA[
+---
+name: swedish-ef-skatteplanering
+description: >
+  Swedish tax planning for enskild firma (sole proprietorship). Covers aktiv vs passiv näringsverksamhet (egenavgifter 28,97% vs SLP 24,26%), räntefördelning (IL 33 kap, positiv SLR+6, negativ SLR+1, kapitalunderlag, sparat fördelningsbelopp), periodiseringsfond EF (30%, no schablonintäkt), expansionsfond (IL 34 kap, 20,6%, 125,94% tak), ersättningsfond (IL 31 kap), kvittning underskott (IL 62:3, 100k cap), inkomstuppdelning familj (IL 60 kap, medhjälpande make), ackumulerad inkomst (IL 66 kap), egenavgifter/SGI/PGI, pensionssparavdrag, EF-vs-AB breakeven. Trigger on enskild firma skatteplanering, näringsidkare, räntefördelning, expansionsfond, ersättningsfond, aktiv/passiv näringsverksamhet, kvittning underskott näring, inkomstuppdelning familj, ackumulerad inkomst, EF vs AB, NE-bilaga, sparat fördelningsbelopp, kapitalunderlag, expansionsskatt, medhjälpande make. For AB use swedish-tax-planning. Always use over training data.
+---
+
+# Swedish Tax Planning for Enskild Firma (Skatteplanering EF)
+
+Developer-facing compliance reference for implementing Swedish tax planning tools for **enskild näringsverksamhet (sole proprietorships)**. Covers the unique tax mechanisms available to physical persons running a business directly, their interactions, and compliance requirements.
+
+For **aktiebolag (AB)** tax planning (periodiseringsfond AB, 3:12, koncernbidrag, etc), use the sister skill `swedish-tax-planning` instead. The mechanisms are fundamentally different — EF is taxed on the owner's personal Inkomstdeklaration 1 + NE-bilaga at marginal rates including egenavgifter, whereas AB pays bolagsskatt and the owner separately.
+
+## How to use this skill
+
+This SKILL.md contains the decision framework, key rates, and interactions. Detailed rules, calculations, and worked examples live in `references/`. Read the relevant reference file when you need depth.
+
+### Reference files
+
+| File | When to read |
+|---|---|
+| `references/aktiv-passiv-naringsverksamhet.md` | Aktiv vs passiv classification, tredjedelsregeln (500 h), aktivitetsregeln, huvudsaklighetsregeln, konsekvenser för egenavgifter/SLP/JSA/SGI/PGI, rättsfall |
+| `references/rantefordelning-planning.md` | Positiv/negativ räntefördelning, IL 33 kap, kapitalunderlag, breakeven analysis, sparat fördelningsbelopp, övergångspost, makar, when räntefördelning is *not* worth using |
+| `references/periodiseringsfond-expansionsfond-ef.md` | P-fond EF (30%, no schablonintäkt), expansionsfond (IL 34 kap, 20,6%, 125,94% kapitalunderlagstak), interactions, R29/R30/R34/R35 NE-bilaga |
+| `references/ersattningsfond.md` | IL 31 kap, 4 fund types (inventarier/byggnader/mark/djurlager), utbytestillgångar, expropriation, naturkatastrof, 30% tillägg at återföring |
+| `references/inkomstuppdelning-familj.md` | IL 60 kap, medhjälpande make, gemensam verksamhet, marknadsmässig ersättning, lön till barn 16+, 7-year rule (närstående) |
+| `references/kvittning-underskott.md` | IL 62:3 allmänt avdrag, första 5 åren, 100k cap, kulturarbetare unbounded, slutligt underskott (70%, 3-year split), rullning, EU/EES verksamhet |
+| `references/ackumulerad-inkomst.md` | IL 66 kap, 10-year fördelningstid, 50k spärrgräns, anwendung pension/försäljning/P-fond/expansionsfond återföring |
+| `references/egenavgifter-sgi-pgi-jsa.md` | Egenavgifter 28,97% / SLP 24,26% / 10,21% pensionärer, generell nedsättning 7,5% (max 15k), regional nedsättning, SGI 10 PBB, PGI 7,5 IBB, jobbskatteavdrag, pensionssparavdrag 35% |
+| `references/ef-vs-ab-breakeven.md` | Marginalskatt + total skatt tables, brytpunkter, lön vs utdelning vs vinst, when to switch EF→AB, både och strategy |
+
+## Quick decision framework
+
+### Step 1: Is the verksamhet aktiv or passiv?
+
+This is the most important classification. It determines:
+- **Egenavgifter (28,97%) vs SLP (24,26%)** — actually SLP is higher than active egenavgifter when nedsättning applies up to 200k
+- **SGI and PGI eligibility** (only aktiv gives sjukpenning/pension rights)
+- **Jobbskatteavdrag** (only aktiv)
+- **Pensionssparavdrag** (only aktiv)
+- **Kvittning av underskott mot tjänst** (only aktiv + nystartad)
+
+Rules (cumulative, any one suffices):
+- **Aktivitetsregeln**: own work > one-third of full-time (≥ 500 h/year)
+- **Huvudsaklighetsregeln**: at consultant + fastighet split, the smaller verksamhet pulls into aktiv if criteria met
+- **Skogsägare special case**: RÅ 2002 ref 15 — own labor counts even at low hours
+
+See [[aktiv-passiv-naringsverksamhet]].
+
+### Step 2: Compute kapitalunderlag for räntefördelning AND expansionsfond
+
+The same kapitalunderlag concept (tillgångar minus skulder at year-end of *previous* year for räntefördelning, current year for expansionsfond takbelopp) drives both. Always compute it even if not using räntefördelning — it can be carried forward as sparat fördelningsbelopp.
+
+### Step 3: Year-end optimization sequence for EF
+
+1. **Avskrivningar på inventarier** — räkenskapsenlig avskrivning 30% huvudregel + 20% kompletteringsregel, choose lowest
+2. **Räntefördelning** — apply positiv only if SLR+6 yields net benefit (often NOT worth it for pensionärer or below brytpunkt; see [[rantefordelning-planning]])
+3. **Periodiseringsfond** — up to 30% of skattemässig vinst, no schablonintäkt for fysiska personer
+4. **Expansionsfond** — for low-tax retention at 20,6%; only if kapitalunderlag supports it
+5. **Egenavgifter schablonavdrag** — 25% standard, 10% pensionärer, 20% SLP
+
+The order matters: avskrivningar reduce result, then räntefördelning operates on that, then P-fond cap is 30% of (result after räntefördelning + återföring P-fond +/- expansionsfond), and expansionsfond may not exceed kapitalunderlag tak.
+
+## Core rates and thresholds (verify annually)
+
+### Egenavgifter (inkomstår 2025/2026, oförändrade procentsatser)
+| Group | Rate |
+|---|---|
+| Active, 7 karensdagar (standard) | **28,97 %** |
+| Active, 1 karensdag | slightly higher |
+| Active, 90 karensdagar | slightly lower |
+| Passive (SLP) | **24,26 %** |
+| Pensionär (aktiv eller passiv, året efter pensionsåldersgränsen — 66 år 2025, 67 år 2026) | **10,21 %** |
+| Född 1937 eller tidigare | **0 %** |
+
+**Generell nedsättning** 7,5 % av hela avgiftsunderlaget, max 15 000 kr/år. Förutsättning: aktiv NV + underlag > 40 000 kr (40 000-gränsen är en tröskel, inte ett avdragsbelopp — vid underlag 40 001 kr utgår nedsättning på *hela* underlaget). Beräknas automatiskt av Skatteverket.
+Regional nedsättning (Norrlands inland stödområde) 10 % på underlag upp till 180 000 kr (max 18 000 kr/år).
+
+### Räntefördelningsräntor (anchored to SLR Nov 30 prior year)
+| Type | Formula | 2025 | 2026 |
+|---|---|---|---|
+| Positiv (frivillig) | SLR + 6 pp | 7,96% | 8,55% |
+| Negativ (obligatorisk) | SLR + 1 pp | 2,96% | 3,55% |
+
+Gränsbelopp (2025+, efter prop. 2024/25:1):
+- Positiv RF: kapitalunderlag ≥ 0 kr (50 000 kr-tröskeln **avskaffad** fr.o.m. inkomstår 2025)
+- Negativ RF: triggas vid kapitalunderlag < **−500 000 kr** (höjt från −50 000 kr fr.o.m. inkomstår 2025)
+
+### Expansionsfond
+- Skatt på avsättning: **20,6%** (expansionsfondsskatt, synkad med bolagsskatten)
+- Tak: **125,94% of kapitalunderlag at current year's end** (= 100 / 79,4 = gross-up-faktorn vid 20,6% skatt)
+- May not cause underskott in NV
+- On återföring: amount becomes NV income; 20,6% credited against year's tax
+
+### Periodiseringsfond
+- Tak: **30% of skattemässigt resultat** (vs 25% for AB)
+- 6-year mandatory reversal (FIFO)
+- **NO schablonintäkt** for fysiska personer
+- NE-bilaga only (R34/R35), never booked
+
+### Räkenskapsenlig avskrivning på inventarier
+- Huvudregeln: 30% declining balance on (IB + årets inköp – årets försäljningar)
+- Kompletteringsregeln: 20% straight-line per asset over 5 years
+- Förbrukningsinventarier (< halva PBB: **29 400 kr 2025 / 29 600 kr 2026**, kortidsinventarier ≤ 3 år): direktavdrag. Halva-PBB-gränsen blev enhetlig fr.o.m. 2025 (prop. 2024/25:1) — innan gällde 5 000 kr för många EF.
+
+### PGI/SGI/brytpunkter (verify annually mot Skatteverket Belopp och procent)
+| Threshold | 2025 | 2026 |
+|---|---|---|
+| Prisbasbelopp (PBB) | 58 800 kr | 59 200 kr |
+| Inkomstbasbelopp (IBB) | 80 600 kr | 83 400 kr |
+| Lägsta PGI (0,423 PBB) | 24 870 kr | 25 042 kr |
+| Lägsta SGI (0,24 PBB) | 14 112 kr | 14 208 kr |
+| Skiktgräns statlig skatt | 625 800 kr | 643 000 kr |
+| Brytpunkt statlig skatt (under pensionsåldersgränsen) | 643 100 kr | 660 400 kr |
+| Max SGI (10 PBB) | 588 000 kr | 592 000 kr |
+| Max PGI (7,5 IBB) | 604 500 kr | 625 500 kr |
+| Avgiftstak (8,07 × IBB) | 650 442 kr | 673 038 kr |
+| Max föräldrapenninggrundande (10 PBB) | 588 000 kr | 592 000 kr |
+| Max för 7,5%-nedsättning egenavgifter (200k underlag) | 200 000 kr | 200 000 kr |
+| Halva PBB (förbrukningsinventarier) | 29 400 kr | 29 600 kr |
+| Pensionsåldersgräns (full egenavgift t.o.m. året då man fyller) | 66 år | 67 år |
+
+## Critical distinction: booked vs declaration-only
+
+EF differs sharply from AB on which items are booked vs only entered on NE-bilagan:
+
+| Item | Booked in räkenskaperna? | Where it lives |
+|---|---|---|
+| Räntefördelning | NEVER | NE sid 2 R30/R31 |
+| Periodiseringsfond EF | NEVER (per BFNAR 2006:1 / K1) | NE sid 2 R34/R35 |
+| Expansionsfond | NEVER (per K1) | NE sid 2 R36/R37 |
+| Ersättningsfond | YES (avsättning bokförs); resterande hanteras i deklaration | Bokfört + NE |
+| Egenavgifter schablonavdrag | NEVER | NE sid 2 R43, justering R39/R40 |
+| Skatt på årets resultat | NEVER (personal tax) | Inte i bokföringen |
+| Inventarieavskrivning | YES (8851/1229 etc) | Bokfört |
+| Förenklat årsbokslut U1–U4 | Upplysning, ej bokfört | NE-bilaga upplysning |
+
+This is the largest source of conceptual errors when implementing EF bookkeeping software: developers familiar with AB-flows often try to book P-fond/expansionsfond, which is *forbidden* for EF under K1 (BFNAR 2006:1).
+
+## NE-bilaga key field reference (cross-link with swedish-year-end-closing)
+
+| Ruta | Innehåll |
+|---|---|
+| R11 | Bokfört resultat (samma som förenklat årsbokslut) |
+| R12–R26 | Skattemässiga justeringar (avskrivningar, ej avdragsgill rep., ränta, etc.) |
+| R29 | Överskott före räntefördelning |
+| R30 | Positiv räntefördelning (till INK1 p.11.1, inkomst av kapital) |
+| R31 | Negativ räntefördelning (till INK1 p.11.2, avdrag i kapital) |
+| R32 | Återföring av periodiseringsfond (oldest year first) |
+| R33 | Överskott före avsättning till periodiseringsfond |
+| R34 | Avsättning till periodiseringsfond (max 30% av R33) |
+| R35 | Överskott före ökning av expansionsfond |
+| R36 | Återföring av expansionsfond (till INK1 p.12.1) |
+| R37 | Ökning av expansionsfond (till INK1 p.12.2) |
+| R38 | Inkomst före schablonavdrag och sjukpenning |
+| R39 | Tidigare års schablonavdrag (positiv) |
+| R40 | Faktiska egenavgifter / SLP (avdrag) |
+| R41/R42 | Sjukpenning hänförlig till NV |
+| R43 | Årets schablonavdrag för egenavgifter |
+| R45 | Inkomst som överförs till tjänst för kvittning (aktiv, nystartad) — till INK1 p.14.1 (allmänt avdrag) |
+| R47/R48 | Överskott / underskott av aktiv NV → INK1 p.10.1/p.10.2 |
+| R49/R50 | Överskott / underskott av passiv NV → INK1 p.10.3/p.10.4 |
+
+Field positions verified mot officiell NE-bilaga (SKV 2161) inkomstår 2024/2025. Verify mot innevarande års blankett.
+
+## Skatteflyktslagen and audit triggers for EF
+
+EF skatteplanering can raise scrutiny under Lag 1995:575 om skatteflykt when:
+- Switching aktiv/passiv classification opportunistically (e.g., to abuse 5-year kvittningsregeln)
+- Inkomstuppdelning between makar that doesn't reflect actual arbetsinsats or kapitalinsats
+- Sudden growth of kapitalunderlag through tillfälliga kapitaltillskott (only varaktiga tillskott count, IL 33 kap 6 §)
+- Large expansionsfond avsättning followed by quick liquidation of verksamheten
+
+## Multi-year planning horizon
+
+The most valuable patterns for EF:
+1. **Build kapitalunderlag steadily** — every kr of varaktig egen insättning grows räntefördelning room *and* expansionsfond tak in perpetuity
+2. **Use P-fond for sjukpenninggrundande inkomst leveling** — note P-fond does NOT affect SGI calculation (Försäkringskassan bortser från dispositioner) but DOES affect PGI; see [[egenavgifter-sgi-pgi-jsa]]
+3. **Aktiv classification is gold** — fight for it via timesheet, since it unlocks jobbskatteavdrag (worth up to ~30 000 kr/year), kvittning mot tjänst, lägre egenavgifter, pensionsrätt
+4. **Consider EF→AB transition around brytpunkten** — under brytpunkten EF is usually cheaper than AB; over brytpunkten AB starts to win (see [[ef-vs-ab-breakeven]])
+
+## Out of scope for this skill
+
+- Bokslutsmekanik for EF (förenklat årsbokslut, K1) — covered in `swedish-year-end-closing` `references/k1-forenklat-arsbokslut.md`
+- Specifika bokföringskonton för transaktioner — covered in `swedish-accounting-compliance`
+- Moms-frågor — covered in `swedish-vat`
+- Lön till anställda i EF — covered in `swedish-payroll`
+- Faktureringsregler — covered in `swedish-invoice-compliance`
+- AB-specifik skatteplanering — covered in `swedish-tax-planning`
+
+## Legal sources
+
+- Inkomstskattelagen (IL) 1999:1229, especially kap 13 (NV), 14 (rörelse), 18 (inventarier), 30 (P-fond), 31 (ersättningsfond), 33 (räntefördelning), 34 (expansionsfond), 60 (inkomstuppdelning familj), 62 (allmänna avdrag), 66 (ackumulerad inkomst)
+- Socialavgiftslagen (SAL) 2000:980
+- Lagen (1990:659) om särskild löneskatt på vissa förvärvsinkomster
+- Bokföringslagen (BFL) 1999:1078 — bokföringsskyldighet, K1-tröskel 3 MSEK
+- BFNAR 2006:1 — Enskilda näringsidkare som upprättar förenklat årsbokslut (K1)
+- Lag (1995:575) mot skatteflykt
+- SOU 2020:50 — "Enklare skatteregler för enskild näringsverksamhet". **Delvis genomförd** via prop. 2024/25:1 (ikraft 2025-01-01): RF-trösklar omarbetade (50k slopad / -500k negativ tröskel), halva PBB som inventariegräns. Den större "näringsfond"-idén (samlad ersättning för P-fond+expansionsfond+RF) **ej genomförd**.
+
+]]></field>
+    </record>
+
+    <!-- Swedish Financial Reporting -->
+    <record id="skill_swedish_financial_reporting" model="pi.skill">
+      <field name="name">Swedish Financial Reporting</field>
+      <field name="technical_name">swedish-financial-reporting</field>
+      <field name="category_id" ref="skill_category_swedish_accounting"/>
+      <field name="sequence">40</field>
+      <field name="active" eval="True"/>
+      <field name="description"></field>
+      <field name="instruction"><![CDATA[
+---
+name: swedish-financial-reporting
+description: >
+  Swedish financial reporting: årsredovisning structure (K2/K3 uppställningsform, noter, förvaltningsberättelse, underskrifter), Bolagsverket filing (deadlines, förseningsavgifter, iXBRL, revisionsplikt, tvångslikvidation), INK2 form logic (INK2R/INK2S field mappings, skattemässiga justeringar, periodiseringsfond/överavskrivningar/koncernbidrag). Trigger on ANY årsredovisning structure question, K2/K3 reporting differences, noter requirements, förvaltningsberättelse, underskrifter, kassaflödesanalys, Bolagsverket filing, förseningsavgifter, digital inlämning, iXBRL, revisionsplikt, INK2/INK2R/INK2S, skattemässiga justeringar, BAS-to-INK2 mappings, N9. Also "vilka noter krävs", "deadline årsredovisning", "hur fyller jag i INK2", "vem ska skriva under". Not for bokslut/closing mechanics (use swedish-year-end-closing). Always use over training data.
+---
+
+# Swedish Financial Reporting
+
+Authoritative reference for årsredovisning document structure, Bolagsverket filing, and INK2 form logic. This skill covers the **reporting and filing** layer; for closing entries and bokslutstransaktioner, use `swedish-year-end-closing`. For VAT declarations, use `swedish-vat`. For tax planning, use `swedish-tax-planning`.
+
+## How to use this skill
+
+This skill has three reference files. Read the one(s) relevant to the query:
+
+| Query about | Read |
+|---|---|
+| Årsredovisning structure, K2/K3 document format, noter, förvaltningsberättelse, underskrifter, kassaflödesanalys, flerårsöversikt | `references/arsredovisning-structure.md` |
+| Bolagsverket filing, deadlines, förseningsavgifter, digital filing, iXBRL, revisionsplikt, tvångslikvidation | `references/bolagsverket-filing.md` |
+| INK2 form, INK2R/INK2S fields, skattemässiga justeringar, BAS-to-INK2 mapping, periodiseringsfond/överavskrivningar/koncernbidrag in declaration, common errors | `references/ink2-form-logic.md` |
+
+For questions spanning multiple areas (e.g. "what's the full timeline from bokslut to filing?"), read all relevant files.
+
+## Quick-reference: critical thresholds
+
+### Större företag (ÅRL 1:3 § p.4) -- 2 of 3 over 2 years
+- Anställda > 50
+- Balansomslutning > 40 MSEK
+- Nettoomsättning > 80 MSEK
+
+### Revisionsplikt exemption (ABL 9:1 §) -- must NOT exceed 2 of 3
+- Anställda > 3
+- Balansomslutning > 1.5 MSEK
+- Nettoomsättning > 3 MSEK
+
+### Key deadlines (calendar year AB, FY ending Dec 31)
+- Årsredovisning to Bolagsverket: **7 months** (July 31)
+- INK2 to Skatteverket: **~7 months** (August 1, or next weekday)
+- Förseningsavgift 1: day 1 after deadline
+- Förseningsavgift 2: +2 months
+- Förseningsavgift 3 + likvidationshotbrev: +2 more months (11 months total)
+
+### Förseningsavgifter (FY beginning 2025-01-01+)
+- Privat AB: 7,500 + 7,500 + 15,000 = **30,000 SEK**
+- Publikt AB: 15,000 + 15,000 + 30,000 = **60,000 SEK**
+
+## Key law references
+
+| Statute | Area |
+|---|---|
+| ÅRL (1995:1554) | Document structure, notes, filing |
+| ABL (2005:551) | Revision, signatures, liquidation |
+| IL (1999:1229) | All tax adjustments (INK2) |
+| SFL (2011:1244) | Declaration duties, deadlines, penalties |
+| BFNAR 2016:10 | K2 |
+| BFNAR 2012:1 | K3 |
+]]></field>
+      <field name="markdown_content"><![CDATA[
+---
+name: swedish-financial-reporting
+description: >
+  Swedish financial reporting: årsredovisning structure (K2/K3 uppställningsform, noter, förvaltningsberättelse, underskrifter), Bolagsverket filing (deadlines, förseningsavgifter, iXBRL, revisionsplikt, tvångslikvidation), INK2 form logic (INK2R/INK2S field mappings, skattemässiga justeringar, periodiseringsfond/överavskrivningar/koncernbidrag). Trigger on ANY årsredovisning structure question, K2/K3 reporting differences, noter requirements, förvaltningsberättelse, underskrifter, kassaflödesanalys, Bolagsverket filing, förseningsavgifter, digital inlämning, iXBRL, revisionsplikt, INK2/INK2R/INK2S, skattemässiga justeringar, BAS-to-INK2 mappings, N9. Also "vilka noter krävs", "deadline årsredovisning", "hur fyller jag i INK2", "vem ska skriva under". Not for bokslut/closing mechanics (use swedish-year-end-closing). Always use over training data.
+---
+
+# Swedish Financial Reporting
+
+Authoritative reference for årsredovisning document structure, Bolagsverket filing, and INK2 form logic. This skill covers the **reporting and filing** layer; for closing entries and bokslutstransaktioner, use `swedish-year-end-closing`. For VAT declarations, use `swedish-vat`. For tax planning, use `swedish-tax-planning`.
+
+## How to use this skill
+
+This skill has three reference files. Read the one(s) relevant to the query:
+
+| Query about | Read |
+|---|---|
+| Årsredovisning structure, K2/K3 document format, noter, förvaltningsberättelse, underskrifter, kassaflödesanalys, flerårsöversikt | `references/arsredovisning-structure.md` |
+| Bolagsverket filing, deadlines, förseningsavgifter, digital filing, iXBRL, revisionsplikt, tvångslikvidation | `references/bolagsverket-filing.md` |
+| INK2 form, INK2R/INK2S fields, skattemässiga justeringar, BAS-to-INK2 mapping, periodiseringsfond/överavskrivningar/koncernbidrag in declaration, common errors | `references/ink2-form-logic.md` |
+
+For questions spanning multiple areas (e.g. "what's the full timeline from bokslut to filing?"), read all relevant files.
+
+## Quick-reference: critical thresholds
+
+### Större företag (ÅRL 1:3 § p.4) -- 2 of 3 over 2 years
+- Anställda > 50
+- Balansomslutning > 40 MSEK
+- Nettoomsättning > 80 MSEK
+
+### Revisionsplikt exemption (ABL 9:1 §) -- must NOT exceed 2 of 3
+- Anställda > 3
+- Balansomslutning > 1.5 MSEK
+- Nettoomsättning > 3 MSEK
+
+### Key deadlines (calendar year AB, FY ending Dec 31)
+- Årsredovisning to Bolagsverket: **7 months** (July 31)
+- INK2 to Skatteverket: **~7 months** (August 1, or next weekday)
+- Förseningsavgift 1: day 1 after deadline
+- Förseningsavgift 2: +2 months
+- Förseningsavgift 3 + likvidationshotbrev: +2 more months (11 months total)
+
+### Förseningsavgifter (FY beginning 2025-01-01+)
+- Privat AB: 7,500 + 7,500 + 15,000 = **30,000 SEK**
+- Publikt AB: 15,000 + 15,000 + 30,000 = **60,000 SEK**
+
+## Key law references
+
+| Statute | Area |
+|---|---|
+| ÅRL (1995:1554) | Document structure, notes, filing |
+| ABL (2005:551) | Revision, signatures, liquidation |
+| IL (1999:1229) | All tax adjustments (INK2) |
+| SFL (2011:1244) | Declaration duties, deadlines, penalties |
+| BFNAR 2016:10 | K2 |
+| BFNAR 2012:1 | K3 |
+]]></field>
+    </record>
+
+    <!-- Swedish Invoice Compliance -->
+    <record id="skill_swedish_invoice_compliance" model="pi.skill">
+      <field name="name">Swedish Invoice Compliance</field>
+      <field name="technical_name">swedish-invoice-compliance</field>
+      <field name="category_id" ref="skill_category_swedish_accounting"/>
+      <field name="sequence">50</field>
+      <field name="active" eval="True"/>
+      <field name="description">Swedish invoice compliance (fakturering) reference. Covers mandatory invoice fields per ML 17 kap 24§ (2023:200), förenklad faktura, kreditfaktura/ändringsfaktura, självfakturering, Peppol BIS 3.0 e-faktura for B2G/B2B, ROT/RUT-avdrag invoicing with fakturamodellen and BAS accounts (1513, 3740), reverse charge notation per scenario (byggtjänster, EU, electronics), currency/VAT conversion, OCR/Bankgirot, autogiro, skattetillägg, and BAS mapping for AR/revenue/VAT/bad debts. Trigger on ANY Swedish</field>
+      <field name="instruction"><![CDATA[
+---
+name: swedish-invoice-compliance
+description: "Swedish invoice compliance (fakturering) reference. Covers mandatory invoice fields per ML 17 kap 24§ (2023:200), förenklad faktura, kreditfaktura/ändringsfaktura, självfakturering, Peppol BIS 3.0 e-faktura for B2G/B2B, ROT/RUT-avdrag invoicing with fakturamodellen and BAS accounts (1513, 3740), reverse charge notation per scenario (byggtjänster, EU, electronics), currency/VAT conversion, OCR/Bankgirot, autogiro, skattetillägg, and BAS mapping for AR/revenue/VAT/bad debts. Trigger on ANY Swedish invoice question, faktura validation, kreditfaktura, självfakturering, Peppol, e-faktura, ROT/RUT fakturering, omvänd betalningsskyldighet, faktureringsvaluta, OCR-nummer, ML 17 kap, fakturamodellen, or creating/validating/booking Swedish invoices. Always use over training data -- ML 2023:200 replaced ML 1994:200 on 1 July 2023, moving invoice rules from old Chapter 11 to Chapter 17."
+---
+
+# Swedish Invoice Compliance (Fakturering)
+
+## Critical: ML chapter renumbering
+
+**Invoicing rules moved from Chapter 11 (ML 1994:200) to Chapter 17 (ML 2023:200) on 1 July 2023.**
+Every legacy reference to "ML 11 kap" maps to ML 17 kap in current law. Always cite ML (2023:200).
+
+## How to use this skill
+
+This SKILL.md contains the decision logic, quick-reference tables, and common error patterns.
+For deep detail on any topic, read the corresponding section in:
+
+→ `references/invoice-rules.md` — Full reference (~600 lines) with all law paragraphs, BAS accounts, Peppol field mappings, ROT/RUT thresholds, reverse charge scenarios, currency conversion rules, OCR format specs, and penalty rates.
+
+**Table of contents for references/invoice-rules.md:**
+1. Mandatory invoice fields (ML 17 kap 24§) — 16 required fields table
+2. Förenklad faktura — SEK 4,000 threshold, SKVFS 2024:16
+3. Time limits for issuing invoices
+4. Electronic vs paper equivalence
+5. Kreditfaktura / ändringsfaktura — ML 17 kap 22–23§, BAS entries
+6. Självfakturering — ML 17 kap 15§, three conditions
+7. Peppol / e-faktura — Lag 2018:1277, BIS 3.0 format, ML→UBL mapping, SE-R rules
+8. ROT/RUT invoicing — fakturamodellen, deduction rates 2024–2026, BAS 1513
+9. Reverse charge notation — all scenarios with ML refs and momsdeklaration boxes
+10. Currency handling — ML 8 kap 21–23§, exchange rate sources, BAS 3960/7960
+11. OCR / Bankgirot — format, Luhn check digit, control levels
+12. Autogiro — mandate process, repayment rights
+13. Penalties — skattetillägg rates, denied deductions, bokföringsbrott
+14. BAS kontoplan mapping — AR, revenue, VAT, bad debts, fees, rounding
+
+---
+
+## Quick decision trees
+
+### Is this invoice valid?
+
+```
+1. Has fakturadatum?                          → ML 17:24 p.1
+2. Has unique löpnummer from a series?        → ML 17:24 p.2
+3. Seller's momsreg.nr (SE+10+01)?            → ML 17:24 p.3
+4. Buyer's momsreg.nr (if RC or intra-EU)?    → ML 17:24 p.4
+5. Full name+address, both parties?            → ML 17:24 p.5
+6. Description: quantity+nature of goods/svc?  → ML 17:24 p.6
+7. Delivery date (if ≠ invoice date)?          → ML 17:24 p.7
+8. Tax base per rate, unit price excl VAT?     → ML 17:24 p.8
+9. VAT rate stated (25/12/6%)?                 → ML 17:24 p.9
+10. VAT amount in SEK?                         → ML 17:24 p.10
+11. Special notations where required?
+    - Reverse charge → "Omvänd betalningsskyldighet"
+    - Self-billing   → "Självfakturering"
+    - Exempt         → ML/Directive reference
+    - Margin scheme  → Scheme notation
+```
+
+Missing any of 1–10 = non-compliant. Missing 11 when applicable = non-compliant.
+
+### Can a simplified invoice be used?
+
+```
+Total incl. VAT ≤ SEK 4,000?
+  AND NOT intra-EU / distance sale / cross-border RC?
+    → Yes: förenklad faktura per ML 17:26–28, SKVFS 2024:16
+    → No:  full invoice required
+```
+
+### Which reverse charge scenario?
+
+```
+Domestic byggtjänster?
+  → ML 16:13, seller Box 41, buyer Box 24/30/48, accounts 3231/2614/2647
+
+EU services (B2B main rule)?
+  → ML 16:6 + 6:33–37, buyer Box 21/30–32/48, accounts 4545/2614/2645
+
+Intra-EU goods?
+  → ML 10:42, buyer Box 20/30–32/48, accounts 4535/2614/2645
+
+Electronics >100k SEK/invoice?
+  → ML 16:17, same treatment as byggtjänster
+```
+
+### ROT or RUT invoice?
+
+```
+1. Company has F-skatt?                         → Required
+2. Invoice shows arbetskostnad separately?      → Required
+3. Customer personnummer on invoice?            → Required
+4. ROT: fastighetsbeteckning included?          → Required
+5. Skattereduktion amount calculated correctly?
+   ROT: 30% of labor incl. moms (50% May–Dec 2025)
+   RUT: 50% of labor incl. moms
+6. Combined max per person/year:
+   Standard: ROT 50k + RUT 75k, combined cap 75k
+   2024 H2 temporary: ROT 75k + RUT 75k, separate caps
+7. Customer paying electronically?              → Required since 2020
+8. AR split: 1511 (customer) + 1513 (SKV)       → Required
+```
+
+### Credit note checklist
+
+```
+1. Own unique fakturanummer + fakturadatum?      → Required
+2. Reference to original invoice number?         → Required (ML 17:22–23)
+3. Negative amounts with VAT per original rate?  → Required
+4. "Er tillgodo" instead of "Att betala"?        → Convention
+5. Seller reduces utgående moms this period?     → Required
+6. Buyer reduces ingående moms this period?      → Required
+```
+
+---
+
+## Common error patterns (high-frequency in Luka validation)
+
+| Error | Consequence | Fix |
+|---|---|---|
+| Missing delivery date when ≠ invoice date | Buyer's VAT deduction at risk | Always populate if dates differ |
+| Löpnummer gaps or duplicates | BFL 5:6 violation, audit red flag | Enforce sequential numbering in DB |
+| No "Omvänd betalningsskyldighet" text on RC invoice | Buyer cannot self-assess VAT | Add text + buyer VAT ID, charge 0% VAT |
+| Seller charges VAT when RC applies | Buyer CANNOT deduct the incorrectly charged VAT | Credit note required, then reissue without VAT |
+| Kreditfaktura missing reference to original | Invalid credit note per ML 17:22 | Include original löpnummer |
+| ROT invoice missing fastighetsbeteckning | SKV will deny claim | Require field when ROT flag is set |
+| ROT/RUT not separating labor from materials | Deduction calculated on wrong base | Separate line items: arbetskostnad vs material |
+| Foreign currency invoice without SEK VAT | Non-compliant per ML 17:29 | Always show VAT amount in SEK |
+| VAT amount only, no tax base per rate | Incomplete per ML 17:24 p.8 | Show beskattningsunderlag per skattesats |
+| Self-billing without "Självfakturering" text | Invoice invalid per ML 17:15 | Add notation |
+
+---
+
+## BAS account quick reference
+
+### Accounts receivable
+- **1510** Kundfordringar (main)
+- **1513** Kundfordringar – delad faktura (ROT/RUT SKV portion)
+- **1515** Osäkra kundfordringar
+- **1519** Nedskrivning av kundfordringar (contra)
+
+### Revenue
+- **3001/3002/3003/3004** Domestic sales 25%/12%/6%/exempt
+- **3105** Export goods, **3108** EU goods
+- **3231** Byggsektorn omvänd betalningsskyldighet
+- **3305** Export services, **3308** EU services
+
+### VAT
+- **2610–2615** Utgående moms 25% (domestic/RC/import)
+- **2620–2624** Utgående moms 12%
+- **2630–2634** Utgående moms 6%
+- **2640** Ingående moms, **2645** Beräknad ingående moms utlandet
+- **2647** Ingående moms omvänd betalningsskyldighet Sverige
+
+### Currency differences
+- **3960** Valutakursvinster rörelsefordringar/-skulder
+- **7960** Valutakursförluster rörelsefordringar/-skulder
+
+### Invoice extras
+- **3540** Faktureringsavgift (25% VAT)
+- **3740** Öresavrundning (no VAT)
+- **3930** Påminnelseavgift (no VAT)
+- **8313** Dröjsmålsränta (no VAT, financial income)
+
+---
+
+## Peppol essentials (for Luka e-invoice generation)
+
+Format: UBL 2.1 XML, profile Peppol BIS Billing 3.0.
+TypeCodes: **380** = invoice, **381** = credit note, **389** = self-billing.
+Swedish org ID scheme: **0007** + 10-digit orgnr.
+SE validation rules: SE-R-001 (VAT ID 14 chars), SE-R-005 (F-skatt text), SE-R-006 (valid rates), SE-R-009 (Bankgiro 7–8 chars).
+
+Required header: `CustomizationID` + `ProfileID` (exact URNs in reference file).
+Required: either `BuyerReference` (BT-10) or `OrderReference` (BT-13).
+
+**B2G mandatory since April 2019.** B2B voluntary; formal inquiry launched Feb 2026, report due Nov 2027. ViDA mandates cross-border B2B e-invoicing by July 2030.
+
+---
+
+## Key law references
+
+| Topic | Current law | Old law |
+|---|---|---|
+| Invoice content | ML 17 kap 24§ (2023:200) | ML 11 kap 8§ (1994:200) |
+| Simplified invoice | ML 17 kap 26–28§ | ML 11 kap 9§ |
+| Credit note | ML 17 kap 22–23§ | ML 11 kap 10§ |
+| Self-billing | ML 17 kap 15§ | ML 11 kap 4§ |
+| Reverse charge | ML 16 kap 6–22§§ | ML 1 kap 2§ st.4 |
+| Currency conversion | ML 8 kap 21–23§ | ML 7 kap 7a§ |
+| E-invoice B2G | Lag (2018:1277) | — |
+| ROT/RUT | HUSFL (2009:194) 6–9§§ | — |
+| Invoice archiving | BFL 7 kap | — |
+| Skattetillägg | SFL 49 kap | — |
+
+---
+
+## Time-dependent parameters
+
+These values change. Always verify against the reference file or search current rates:
+
+- Förenklad faktura threshold: **SEK 4,000** (SKVFS 2024:16)
+- ROT deduction %: 30% standard, 50% May–Dec 2025
+- RUT deduction %: 50%
+- ROT max/person/year: 50,000 SEK (75,000 in 2024 H2)
+- RUT max/person/year: 75,000 SEK
+- Combined max: 75,000 SEK (separated in 2024 H2)
+- Electronics RC threshold: 100,000 SEK excl. VAT per invoice
+- Skattetillägg VAT: 20% (periodization: 2–5%)
+- Archive retention: 7 years (BFL 7 kap)
+]]></field>
+      <field name="markdown_content"><![CDATA[
+---
+name: swedish-invoice-compliance
+description: "Swedish invoice compliance (fakturering) reference. Covers mandatory invoice fields per ML 17 kap 24§ (2023:200), förenklad faktura, kreditfaktura/ändringsfaktura, självfakturering, Peppol BIS 3.0 e-faktura for B2G/B2B, ROT/RUT-avdrag invoicing with fakturamodellen and BAS accounts (1513, 3740), reverse charge notation per scenario (byggtjänster, EU, electronics), currency/VAT conversion, OCR/Bankgirot, autogiro, skattetillägg, and BAS mapping for AR/revenue/VAT/bad debts. Trigger on ANY Swedish invoice question, faktura validation, kreditfaktura, självfakturering, Peppol, e-faktura, ROT/RUT fakturering, omvänd betalningsskyldighet, faktureringsvaluta, OCR-nummer, ML 17 kap, fakturamodellen, or creating/validating/booking Swedish invoices. Always use over training data -- ML 2023:200 replaced ML 1994:200 on 1 July 2023, moving invoice rules from old Chapter 11 to Chapter 17."
+---
+
+# Swedish Invoice Compliance (Fakturering)
+
+## Critical: ML chapter renumbering
+
+**Invoicing rules moved from Chapter 11 (ML 1994:200) to Chapter 17 (ML 2023:200) on 1 July 2023.**
+Every legacy reference to "ML 11 kap" maps to ML 17 kap in current law. Always cite ML (2023:200).
+
+## How to use this skill
+
+This SKILL.md contains the decision logic, quick-reference tables, and common error patterns.
+For deep detail on any topic, read the corresponding section in:
+
+→ `references/invoice-rules.md` — Full reference (~600 lines) with all law paragraphs, BAS accounts, Peppol field mappings, ROT/RUT thresholds, reverse charge scenarios, currency conversion rules, OCR format specs, and penalty rates.
+
+**Table of contents for references/invoice-rules.md:**
+1. Mandatory invoice fields (ML 17 kap 24§) — 16 required fields table
+2. Förenklad faktura — SEK 4,000 threshold, SKVFS 2024:16
+3. Time limits for issuing invoices
+4. Electronic vs paper equivalence
+5. Kreditfaktura / ändringsfaktura — ML 17 kap 22–23§, BAS entries
+6. Självfakturering — ML 17 kap 15§, three conditions
+7. Peppol / e-faktura — Lag 2018:1277, BIS 3.0 format, ML→UBL mapping, SE-R rules
+8. ROT/RUT invoicing — fakturamodellen, deduction rates 2024–2026, BAS 1513
+9. Reverse charge notation — all scenarios with ML refs and momsdeklaration boxes
+10. Currency handling — ML 8 kap 21–23§, exchange rate sources, BAS 3960/7960
+11. OCR / Bankgirot — format, Luhn check digit, control levels
+12. Autogiro — mandate process, repayment rights
+13. Penalties — skattetillägg rates, denied deductions, bokföringsbrott
+14. BAS kontoplan mapping — AR, revenue, VAT, bad debts, fees, rounding
+
+---
+
+## Quick decision trees
+
+### Is this invoice valid?
+
+```
+1. Has fakturadatum?                          → ML 17:24 p.1
+2. Has unique löpnummer from a series?        → ML 17:24 p.2
+3. Seller's momsreg.nr (SE+10+01)?            → ML 17:24 p.3
+4. Buyer's momsreg.nr (if RC or intra-EU)?    → ML 17:24 p.4
+5. Full name+address, both parties?            → ML 17:24 p.5
+6. Description: quantity+nature of goods/svc?  → ML 17:24 p.6
+7. Delivery date (if ≠ invoice date)?          → ML 17:24 p.7
+8. Tax base per rate, unit price excl VAT?     → ML 17:24 p.8
+9. VAT rate stated (25/12/6%)?                 → ML 17:24 p.9
+10. VAT amount in SEK?                         → ML 17:24 p.10
+11. Special notations where required?
+    - Reverse charge → "Omvänd betalningsskyldighet"
+    - Self-billing   → "Självfakturering"
+    - Exempt         → ML/Directive reference
+    - Margin scheme  → Scheme notation
+```
+
+Missing any of 1–10 = non-compliant. Missing 11 when applicable = non-compliant.
+
+### Can a simplified invoice be used?
+
+```
+Total incl. VAT ≤ SEK 4,000?
+  AND NOT intra-EU / distance sale / cross-border RC?
+    → Yes: förenklad faktura per ML 17:26–28, SKVFS 2024:16
+    → No:  full invoice required
+```
+
+### Which reverse charge scenario?
+
+```
+Domestic byggtjänster?
+  → ML 16:13, seller Box 41, buyer Box 24/30/48, accounts 3231/2614/2647
+
+EU services (B2B main rule)?
+  → ML 16:6 + 6:33–37, buyer Box 21/30–32/48, accounts 4545/2614/2645
+
+Intra-EU goods?
+  → ML 10:42, buyer Box 20/30–32/48, accounts 4535/2614/2645
+
+Electronics >100k SEK/invoice?
+  → ML 16:17, same treatment as byggtjänster
+```
+
+### ROT or RUT invoice?
+
+```
+1. Company has F-skatt?                         → Required
+2. Invoice shows arbetskostnad separately?      → Required
+3. Customer personnummer on invoice?            → Required
+4. ROT: fastighetsbeteckning included?          → Required
+5. Skattereduktion amount calculated correctly?
+   ROT: 30% of labor incl. moms (50% May–Dec 2025)
+   RUT: 50% of labor incl. moms
+6. Combined max per person/year:
+   Standard: ROT 50k + RUT 75k, combined cap 75k
+   2024 H2 temporary: ROT 75k + RUT 75k, separate caps
+7. Customer paying electronically?              → Required since 2020
+8. AR split: 1511 (customer) + 1513 (SKV)       → Required
+```
+
+### Credit note checklist
+
+```
+1. Own unique fakturanummer + fakturadatum?      → Required
+2. Reference to original invoice number?         → Required (ML 17:22–23)
+3. Negative amounts with VAT per original rate?  → Required
+4. "Er tillgodo" instead of "Att betala"?        → Convention
+5. Seller reduces utgående moms this period?     → Required
+6. Buyer reduces ingående moms this period?      → Required
+```
+
+---
+
+## Common error patterns (high-frequency in Luka validation)
+
+| Error | Consequence | Fix |
+|---|---|---|
+| Missing delivery date when ≠ invoice date | Buyer's VAT deduction at risk | Always populate if dates differ |
+| Löpnummer gaps or duplicates | BFL 5:6 violation, audit red flag | Enforce sequential numbering in DB |
+| No "Omvänd betalningsskyldighet" text on RC invoice | Buyer cannot self-assess VAT | Add text + buyer VAT ID, charge 0% VAT |
+| Seller charges VAT when RC applies | Buyer CANNOT deduct the incorrectly charged VAT | Credit note required, then reissue without VAT |
+| Kreditfaktura missing reference to original | Invalid credit note per ML 17:22 | Include original löpnummer |
+| ROT invoice missing fastighetsbeteckning | SKV will deny claim | Require field when ROT flag is set |
+| ROT/RUT not separating labor from materials | Deduction calculated on wrong base | Separate line items: arbetskostnad vs material |
+| Foreign currency invoice without SEK VAT | Non-compliant per ML 17:29 | Always show VAT amount in SEK |
+| VAT amount only, no tax base per rate | Incomplete per ML 17:24 p.8 | Show beskattningsunderlag per skattesats |
+| Self-billing without "Självfakturering" text | Invoice invalid per ML 17:15 | Add notation |
+
+---
+
+## BAS account quick reference
+
+### Accounts receivable
+- **1510** Kundfordringar (main)
+- **1513** Kundfordringar – delad faktura (ROT/RUT SKV portion)
+- **1515** Osäkra kundfordringar
+- **1519** Nedskrivning av kundfordringar (contra)
+
+### Revenue
+- **3001/3002/3003/3004** Domestic sales 25%/12%/6%/exempt
+- **3105** Export goods, **3108** EU goods
+- **3231** Byggsektorn omvänd betalningsskyldighet
+- **3305** Export services, **3308** EU services
+
+### VAT
+- **2610–2615** Utgående moms 25% (domestic/RC/import)
+- **2620–2624** Utgående moms 12%
+- **2630–2634** Utgående moms 6%
+- **2640** Ingående moms, **2645** Beräknad ingående moms utlandet
+- **2647** Ingående moms omvänd betalningsskyldighet Sverige
+
+### Currency differences
+- **3960** Valutakursvinster rörelsefordringar/-skulder
+- **7960** Valutakursförluster rörelsefordringar/-skulder
+
+### Invoice extras
+- **3540** Faktureringsavgift (25% VAT)
+- **3740** Öresavrundning (no VAT)
+- **3930** Påminnelseavgift (no VAT)
+- **8313** Dröjsmålsränta (no VAT, financial income)
+
+---
+
+## Peppol essentials (for Luka e-invoice generation)
+
+Format: UBL 2.1 XML, profile Peppol BIS Billing 3.0.
+TypeCodes: **380** = invoice, **381** = credit note, **389** = self-billing.
+Swedish org ID scheme: **0007** + 10-digit orgnr.
+SE validation rules: SE-R-001 (VAT ID 14 chars), SE-R-005 (F-skatt text), SE-R-006 (valid rates), SE-R-009 (Bankgiro 7–8 chars).
+
+Required header: `CustomizationID` + `ProfileID` (exact URNs in reference file).
+Required: either `BuyerReference` (BT-10) or `OrderReference` (BT-13).
+
+**B2G mandatory since April 2019.** B2B voluntary; formal inquiry launched Feb 2026, report due Nov 2027. ViDA mandates cross-border B2B e-invoicing by July 2030.
+
+---
+
+## Key law references
+
+| Topic | Current law | Old law |
+|---|---|---|
+| Invoice content | ML 17 kap 24§ (2023:200) | ML 11 kap 8§ (1994:200) |
+| Simplified invoice | ML 17 kap 26–28§ | ML 11 kap 9§ |
+| Credit note | ML 17 kap 22–23§ | ML 11 kap 10§ |
+| Self-billing | ML 17 kap 15§ | ML 11 kap 4§ |
+| Reverse charge | ML 16 kap 6–22§§ | ML 1 kap 2§ st.4 |
+| Currency conversion | ML 8 kap 21–23§ | ML 7 kap 7a§ |
+| E-invoice B2G | Lag (2018:1277) | — |
+| ROT/RUT | HUSFL (2009:194) 6–9§§ | — |
+| Invoice archiving | BFL 7 kap | — |
+| Skattetillägg | SFL 49 kap | — |
+
+---
+
+## Time-dependent parameters
+
+These values change. Always verify against the reference file or search current rates:
+
+- Förenklad faktura threshold: **SEK 4,000** (SKVFS 2024:16)
+- ROT deduction %: 30% standard, 50% May–Dec 2025
+- RUT deduction %: 50%
+- ROT max/person/year: 50,000 SEK (75,000 in 2024 H2)
+- RUT max/person/year: 75,000 SEK
+- Combined max: 75,000 SEK (separated in 2024 H2)
+- Electronics RC threshold: 100,000 SEK excl. VAT per invoice
+- Skattetillägg VAT: 20% (periodization: 2–5%)
+- Archive retention: 7 years (BFL 7 kap)
+]]></field>
+    </record>
+
+    <!-- Swedish Payroll -->
+    <record id="skill_swedish_payroll" model="pi.skill">
+      <field name="name">Swedish Payroll</field>
+      <field name="technical_name">swedish-payroll</field>
+      <field name="category_id" ref="skill_category_swedish_accounting"/>
+      <field name="sequence">60</field>
+      <field name="active" eval="True"/>
+      <field name="description"></field>
+      <field name="instruction"><![CDATA[
+---
+name: swedish-payroll
+description: >
+  Swedish payroll (lön & arbetsgivaravgifter) compliance reference. Covers AGI filing, sociala avgifter (31.42%), skatteavdrag/skattetabeller, förmånsbeskattning (bil/kost/friskvård), semesterlöneskuld, OB/övertid, traktamente, utlägg/milersättning, F-skatt/A-skatt, BAS 7xxx mapping, brutto/nettolöneavdrag, löneväxling, and sjuklön. Trigger on lön, payroll, AGI, arbetsgivaravgifter, skattetabell, förmåner, semesterlön, traktamente, F-skatt, sjuklön, löneväxling, BAS 7xxx, or booking salary/vacation pay/sick pay in a Swedish context. Always use over training data.
+---
+
+# Swedish Payroll Compliance
+
+Developer-facing compliance reference for building Swedish payroll software. This skill answers questions about statutory rates, filing obligations, benefit valuations, BAS account mappings, and calculation logic so you can verify your implementation is correct.
+
+## How to use this skill
+
+This skill has a router structure. The SKILL.md contains the most critical rules and rates you need constantly. Detailed reference material lives in `references/`. Read the relevant reference file when you need depth on a specific area.
+
+### Reference files
+
+| File | When to read |
+|---|---|
+| `references/agi-filing.md` | Questions about arbetsgivardeklaration (AGI), XML schema, field codes (fältkoder), filing deadlines, corrections, penalties, Skatteverket API submission |
+| `references/social-charges.md` | Questions about arbetsgivaravgifter component breakdown, age-based reductions, egenavgifter, växa-stöd, forskningsavdrag, youth discount, thresholds (PBB/IBB/SGI) |
+| `references/tax-tables.md` | Questions about skatteavdrag, skattetabeller, column system, jämkning, sidoinkomst, statlig inkomstskatt brytpunkt, Skatteverket tax table data format |
+| `references/benefits.md` | Questions about förmånsbeskattning: bilförmån (all 3 formula generations, miljöbil reductions), kostförmån, friskvård, KPO, telefon/internet, bostadsförmån |
+| `references/vacation-pay.md` | Questions about semesterlön, semesterlöneskuld, procentregeln, sammalöneregeln, semestertillägg, sparade dagar, intjänandeår, BAS 2920/7090 accounting |
+| `references/ob-overtime.md` | Questions about OB-tillägg, övertid, Arbetstidslagen limits, CBA divisors, mertid, kompensationsledighet |
+| `references/travel-expenses.md` | Questions about traktamente (domestic/international), tremånadersregeln, meal reductions, utlägg vs kostnadsersättning, milersättning, körjournal |
+| `references/f-skatt.md` | Questions about F-skatt vs A-skatt vs FA-skatt, verification workflow, employer liability, Skatteverket Företagsuppgifter API |
+| `references/bas-7xxx.md` | Questions about BAS kontoplan 7xxx salary accounts, balance sheet accounts (2710/2730/2920), standard monthly journal entry flow |
+| `references/deductions-lonevaxling.md` | Questions about nettolöneavdrag vs bruttolöneavdrag processing order, löneväxling (1.058 factor), pension deductibility caps |
+| `references/sick-pay.md` | Questions about sjuklön, karensavdrag calculation, day 2-14 at 80%, läkarintyg, återinsjuknande, Försäkringskassan day 15+, högkostnadsskydd |
+
+Read multiple reference files when a question spans domains (common).
+
+## Core rates and rules (always in context)
+
+### Arbetsgivaravgifter: 31.42%
+
+Total rate unchanged since 2009. Calculated on full gross salary + taxable benefits with no cap. Age tiers:
+
+| Birth year condition | Rate |
+|---|---|
+| Born 1937 or earlier | 0% |
+| Turned 66+ at year start (67+ from 2026) | 10.21% (only ålderspensionsavgift) |
+| Standard (all others) | 31.42% |
+| Temporary youth 19-23 (Apr 2026 - Sep 2027) | 20.81% on salary up to 25,000 SEK/month |
+
+No avgifter required if total annual compensation from one employer < 1,000 SEK.
+
+### AGI filing deadline
+
+12th of month following pay period (17th in Jan/Aug for turnover ≤40 MSEK). Late = 625 SEK first offense, 1,250 SEK if repeated.
+
+### Skatteavdrag lookup chain
+
+kommun → total skattesats → round to table number (29-42) → select column (1-6 by employee category) → look up gross salary bracket → withholding amount. Sidoinkomst: flat 30%.
+
+### Semesterlön
+
+Procentregeln: 12% of semesterlönegrundande income. Sammalöneregeln: regular pay + 0.43% semestertillägg per day (many CBAs use 0.8%). Intjänandeår: Apr 1 - Mar 31 by law (often calendar year via CBA).
+
+### Sjuklön (day 1-14)
+
+Karensavdrag = 20% of one week's sjuklön (80% of weekly pay). Day 2-14: 80% of lost pay. Läkarintyg from day 8. Återinsjuknande within 5 days = same period continues.
+
+### Traktamente (domestic)
+
+2024-2025: 290 SEK/hel dag. 2026: 300 SEK/hel dag. Halv dag = 50%. After 3 months same location: 70%. After 2 years: 50%.
+
+### Key thresholds 2025
+
+| Parameter | Value |
+|---|---|
+| Prisbasbelopp (PBB) | 58,800 SEK |
+| Inkomstbasbelopp (IBB) | 80,600 SEK |
+| Max PGI (7.5 × IBB) | 604,500 SEK |
+| SGI ceiling (10 × PBB) | 588,000 SEK |
+| Friskvård tax-free cap | 5,000 SEK/year |
+| Milersättning (own car) | 25 SEK/mil |
+| Statlig skatt brytpunkt | 660,400 SEK/year (2026) |
+
+### BAS 7xxx quick reference
+
+| Range | Category |
+|---|---|
+| 7010-7090 | Löner kollektivanställda + semester |
+| 7210-7290 | Löner tjänstemän/företagsledare + semester |
+| 7321-7332 | Traktamente + bilersättningar |
+| 7381-7385 | Förmåner (bostad, kost, bil) |
+| 7410-7460 | Pensionskostnader |
+| 7510-7533 | Arbetsgivaravgifter + SLP |
+| 7571-7699 | Försäkringar + övriga personalkostnader |
+
+### Standard monthly journal entries
+
+1. Gross salary: Debit 7210 / Credit 2710 (tax) + Credit 1930 (net pay)
+2. Employer avgifter: Debit 7510 / Credit 2730
+3. Vacation accrual: Debit 7290 / Credit 2920
+4. Avgifter on accrual: Debit 7519 / Credit 2940
+5. Pension premiums: Debit 7410 / Credit 2440/2740
+6. SLP on pensions: Debit 7533 / Credit 2514
+
+### Processing order for gross-to-net
+
+bruttolöneavdrag → förmånsvärden (reduced by nettolöneavdrag) → tax base → skattetabell lookup → net pay → nettolöneavdrag → utbetalat belopp. Arbetsgivaravgifter calculated on gross after bruttolöneavdrag but before nettolöneavdrag.
+
+### Löneväxling factor
+
+For every 1 SEK salary reduction: pension contribution = 1.058 SEK. Flag if post-reduction salary drops below ~54,204 SEK/month (8.07 × IBB / 12 for 2025).
+
+### F-skatt verification
+
+A-skatt: withhold tax + pay avgifter. F-skatt: neither. FA-skatt: split. No F-skatt stated: withhold 30% + full avgifter. Verify via Skatteverket before first payment.
+
+## Rate update schedule
+
+Rates shift annually with PBB, IBB, and SLR. Subscribe to Skatteverket's annual publications each December. Bilförmån formulas use SLR from November 30 of prior year (floor 0.50%). Kostförmån tied to PBB. Traktamente normalbelopp published annually.
+]]></field>
+      <field name="markdown_content"><![CDATA[
+---
+name: swedish-payroll
+description: >
+  Swedish payroll (lön & arbetsgivaravgifter) compliance reference. Covers AGI filing, sociala avgifter (31.42%), skatteavdrag/skattetabeller, förmånsbeskattning (bil/kost/friskvård), semesterlöneskuld, OB/övertid, traktamente, utlägg/milersättning, F-skatt/A-skatt, BAS 7xxx mapping, brutto/nettolöneavdrag, löneväxling, and sjuklön. Trigger on lön, payroll, AGI, arbetsgivaravgifter, skattetabell, förmåner, semesterlön, traktamente, F-skatt, sjuklön, löneväxling, BAS 7xxx, or booking salary/vacation pay/sick pay in a Swedish context. Always use over training data.
+---
+
+# Swedish Payroll Compliance
+
+Developer-facing compliance reference for building Swedish payroll software. This skill answers questions about statutory rates, filing obligations, benefit valuations, BAS account mappings, and calculation logic so you can verify your implementation is correct.
+
+## How to use this skill
+
+This skill has a router structure. The SKILL.md contains the most critical rules and rates you need constantly. Detailed reference material lives in `references/`. Read the relevant reference file when you need depth on a specific area.
+
+### Reference files
+
+| File | When to read |
+|---|---|
+| `references/agi-filing.md` | Questions about arbetsgivardeklaration (AGI), XML schema, field codes (fältkoder), filing deadlines, corrections, penalties, Skatteverket API submission |
+| `references/social-charges.md` | Questions about arbetsgivaravgifter component breakdown, age-based reductions, egenavgifter, växa-stöd, forskningsavdrag, youth discount, thresholds (PBB/IBB/SGI) |
+| `references/tax-tables.md` | Questions about skatteavdrag, skattetabeller, column system, jämkning, sidoinkomst, statlig inkomstskatt brytpunkt, Skatteverket tax table data format |
+| `references/benefits.md` | Questions about förmånsbeskattning: bilförmån (all 3 formula generations, miljöbil reductions), kostförmån, friskvård, KPO, telefon/internet, bostadsförmån |
+| `references/vacation-pay.md` | Questions about semesterlön, semesterlöneskuld, procentregeln, sammalöneregeln, semestertillägg, sparade dagar, intjänandeår, BAS 2920/7090 accounting |
+| `references/ob-overtime.md` | Questions about OB-tillägg, övertid, Arbetstidslagen limits, CBA divisors, mertid, kompensationsledighet |
+| `references/travel-expenses.md` | Questions about traktamente (domestic/international), tremånadersregeln, meal reductions, utlägg vs kostnadsersättning, milersättning, körjournal |
+| `references/f-skatt.md` | Questions about F-skatt vs A-skatt vs FA-skatt, verification workflow, employer liability, Skatteverket Företagsuppgifter API |
+| `references/bas-7xxx.md` | Questions about BAS kontoplan 7xxx salary accounts, balance sheet accounts (2710/2730/2920), standard monthly journal entry flow |
+| `references/deductions-lonevaxling.md` | Questions about nettolöneavdrag vs bruttolöneavdrag processing order, löneväxling (1.058 factor), pension deductibility caps |
+| `references/sick-pay.md` | Questions about sjuklön, karensavdrag calculation, day 2-14 at 80%, läkarintyg, återinsjuknande, Försäkringskassan day 15+, högkostnadsskydd |
+
+Read multiple reference files when a question spans domains (common).
+
+## Core rates and rules (always in context)
+
+### Arbetsgivaravgifter: 31.42%
+
+Total rate unchanged since 2009. Calculated on full gross salary + taxable benefits with no cap. Age tiers:
+
+| Birth year condition | Rate |
+|---|---|
+| Born 1937 or earlier | 0% |
+| Turned 66+ at year start (67+ from 2026) | 10.21% (only ålderspensionsavgift) |
+| Standard (all others) | 31.42% |
+| Temporary youth 19-23 (Apr 2026 - Sep 2027) | 20.81% on salary up to 25,000 SEK/month |
+
+No avgifter required if total annual compensation from one employer < 1,000 SEK.
+
+### AGI filing deadline
+
+12th of month following pay period (17th in Jan/Aug for turnover ≤40 MSEK). Late = 625 SEK first offense, 1,250 SEK if repeated.
+
+### Skatteavdrag lookup chain
+
+kommun → total skattesats → round to table number (29-42) → select column (1-6 by employee category) → look up gross salary bracket → withholding amount. Sidoinkomst: flat 30%.
+
+### Semesterlön
+
+Procentregeln: 12% of semesterlönegrundande income. Sammalöneregeln: regular pay + 0.43% semestertillägg per day (many CBAs use 0.8%). Intjänandeår: Apr 1 - Mar 31 by law (often calendar year via CBA).
+
+### Sjuklön (day 1-14)
+
+Karensavdrag = 20% of one week's sjuklön (80% of weekly pay). Day 2-14: 80% of lost pay. Läkarintyg from day 8. Återinsjuknande within 5 days = same period continues.
+
+### Traktamente (domestic)
+
+2024-2025: 290 SEK/hel dag. 2026: 300 SEK/hel dag. Halv dag = 50%. After 3 months same location: 70%. After 2 years: 50%.
+
+### Key thresholds 2025
+
+| Parameter | Value |
+|---|---|
+| Prisbasbelopp (PBB) | 58,800 SEK |
+| Inkomstbasbelopp (IBB) | 80,600 SEK |
+| Max PGI (7.5 × IBB) | 604,500 SEK |
+| SGI ceiling (10 × PBB) | 588,000 SEK |
+| Friskvård tax-free cap | 5,000 SEK/year |
+| Milersättning (own car) | 25 SEK/mil |
+| Statlig skatt brytpunkt | 660,400 SEK/year (2026) |
+
+### BAS 7xxx quick reference
+
+| Range | Category |
+|---|---|
+| 7010-7090 | Löner kollektivanställda + semester |
+| 7210-7290 | Löner tjänstemän/företagsledare + semester |
+| 7321-7332 | Traktamente + bilersättningar |
+| 7381-7385 | Förmåner (bostad, kost, bil) |
+| 7410-7460 | Pensionskostnader |
+| 7510-7533 | Arbetsgivaravgifter + SLP |
+| 7571-7699 | Försäkringar + övriga personalkostnader |
+
+### Standard monthly journal entries
+
+1. Gross salary: Debit 7210 / Credit 2710 (tax) + Credit 1930 (net pay)
+2. Employer avgifter: Debit 7510 / Credit 2730
+3. Vacation accrual: Debit 7290 / Credit 2920
+4. Avgifter on accrual: Debit 7519 / Credit 2940
+5. Pension premiums: Debit 7410 / Credit 2440/2740
+6. SLP on pensions: Debit 7533 / Credit 2514
+
+### Processing order for gross-to-net
+
+bruttolöneavdrag → förmånsvärden (reduced by nettolöneavdrag) → tax base → skattetabell lookup → net pay → nettolöneavdrag → utbetalat belopp. Arbetsgivaravgifter calculated on gross after bruttolöneavdrag but before nettolöneavdrag.
+
+### Löneväxling factor
+
+For every 1 SEK salary reduction: pension contribution = 1.058 SEK. Flag if post-reduction salary drops below ~54,204 SEK/month (8.07 × IBB / 12 for 2025).
+
+### F-skatt verification
+
+A-skatt: withhold tax + pay avgifter. F-skatt: neither. FA-skatt: split. No F-skatt stated: withhold 30% + full avgifter. Verify via Skatteverket before first payment.
+
+## Rate update schedule
+
+Rates shift annually with PBB, IBB, and SLR. Subscribe to Skatteverket's annual publications each December. Bilförmån formulas use SLR from November 30 of prior year (floor 0.50%). Kostförmån tied to PBB. Traktamente normalbelopp published annually.
+]]></field>
+    </record>
+
+    <!-- Swedish Project Accounting -->
+    <record id="skill_swedish_project_accounting" model="pi.skill">
+      <field name="name">Swedish Project Accounting</field>
+      <field name="technical_name">swedish-project-accounting</field>
+      <field name="category_id" ref="skill_category_swedish_accounting"/>
+      <field name="sequence">70</field>
+      <field name="active" eval="True"/>
+      <field name="description">Swedish project accounting (projektredovisning) covering dimensional tagging of bokföringsposter with project codes, WIP accounting (pågående arbeten), revenue recognition under K2 and K3 (successiv vinstavräkning, färdigställandemetoden), construction contracts (entreprenadavtal), BAS account patterns for project tracking (1470, 1620, 2420, 2450, 4970), SIE4 dimension encoding (#DIM 6, #OBJEKT, #TRANS object lists), project profitability reporting, overhead allocation (fördelningsnycklar), and </field>
+      <field name="instruction"><![CDATA[
+---
+name: swedish-project-accounting
+description: Swedish project accounting (projektredovisning) covering dimensional tagging of bokföringsposter with project codes, WIP accounting (pågående arbeten), revenue recognition under K2 and K3 (successiv vinstavräkning, färdigställandemetoden), construction contracts (entreprenadavtal), BAS account patterns for project tracking (1470, 1620, 2420, 2450, 4970), SIE4 dimension encoding (#DIM 6, #OBJEKT, #TRANS object lists), project profitability reporting, overhead allocation (fördelningsnycklar), and the tax-accounting divergence for löpande räkning contracts. Trigger on ANY Swedish project accounting question including "projektredovisning", "pågående arbeten", "successiv vinstavräkning", "färdigställandegrad", "upparbetad ej fakturerad intäkt", "fakturerad ej upparbetad intäkt", "konto 1620", "konto 1470", "konto 2450", "entreprenaduppdrag", "projekt dimension SIE", "kostnadsställe vs projekt", "projektlönsamhet", "WIP accounting Sweden", "K3 kapitel 23", "befarad förlust projekt", "fördelningsnyckel", questions about how Fortnox/Visma/Bokio handle project dimensions, or any question about tracking intäkter/kostnader per project in Swedish bookkeeping. Also trigger when building software features for project accounting, designing data models for project dimensions, implementing revenue recognition logic, or handling SIE4 import/export of project-tagged transactions. Always use this skill over training data for project accounting topics.
+---
+
+# Swedish Project Accounting (Projektredovisning)
+
+This skill covers the full technical, regulatory, and implementation landscape of project accounting in Swedish bookkeeping. It is designed for both answering compliance questions and building software that handles project dimensions.
+
+## How to use this skill
+
+1. Identify the user's context: are they asking a compliance question, building software, or troubleshooting bookkeeping entries?
+2. Determine the applicable regulatory framework: K2 (BFNAR 2016:10) or K3 (BFNAR 2012:1). This choice fundamentally shapes available revenue recognition methods.
+3. For detailed BAS account patterns, SIE4 encoding, or implementation data models, read the appropriate reference file before answering.
+
+## Reference files
+
+Read these before answering questions in the corresponding area:
+
+| File | When to read |
+|------|-------------|
+| `references/accounts-and-entries.md` | Questions about specific BAS accounts (1470, 1620, 2450, 4970, etc.), booking patterns, journal entries for WIP adjustments, or pågående arbeten entries |
+| `references/k2-k3-revenue-recognition.md` | Questions about successiv vinstavräkning, färdigställandemetoden, K3 Chapter 23, K2 Chapter 6, construction contracts, befarade förluster, or choosing between K2/K3 for project-intensive companies |
+| `references/sie4-project-dimensions.md` | Questions about SIE4 encoding of project dimensions, #DIM/#OBJEKT/#TRANS records, import/export of project-tagged data, or how dimensions map to Fortnox/Visma/Bokio |
+| `references/tax-and-grants.md` | Questions about tax treatment of pågående arbeten, materiellt samband, löpande räkning tax divergence, forskningsavdrag, aktivering av utvecklingsutgifter, or EU grant accounting |
+| `references/implementation-patterns.md` | Questions about data models, project lifecycle, WIP calculation logic, overhead allocation, profitability reporting, time tracking integration, or software architecture for project accounting |
+
+## Core concepts (always available in context)
+
+### What is projektredovisning?
+
+Projektredovisning tags individual transaction lines (bokföringsposter) with project codes alongside BAS account numbers. Same ledger, extra dimension. It enables tracking intäkter och kostnader per project rather than only per account.
+
+Projects are never encoded in the account number itself. They exist as a separate dimensional layer called objektredovisning. The 4-digit BAS account captures the *what* (cost/revenue type); the project dimension captures the *where/for whom*.
+
+### Projekt vs kostnadsställe
+
+These are distinct concepts that complement each other:
+
+- **Kostnadsställe** (cost center): permanent organizational unit (department, branch). No end date. SIE dimension 1.
+- **Projekt**: time-limited initiative with start/end dates and accumulated multi-year balances. SIE dimension 6.
+
+A project typically belongs to one kostnadsställe. Reports can cross-reference both dimensions.
+
+### When is project accounting required?
+
+BFL does not mandate project accounting. However:
+
+- **K3 Chapter 23** requires successiv vinstavräkning for fixed-price contracts in koncernredovisning. Calculating färdigställandegrad is impossible without project-level cost tracking, making it effectively mandatory.
+- **K2 Chapter 6** offers a choice between huvudregeln and alternativregeln for fixed-price contracts. Both require per-project cost accumulation.
+- **Any company doing consulting, construction, R&D, or grant-funded work** needs project accounting for management purposes even without a regulatory mandate.
+
+### Key BAS accounts (summary)
+
+| Account | Name | Purpose |
+|---------|------|---------|
+| 1470 | Pågående arbeten | WIP asset under alternativregeln (completed contract) |
+| 1620 | Upparbetad men ej fakturerad intäkt | WIP receivable under successiv vinstavräkning |
+| 2420 | Förskott från kunder | Customer advance payments |
+| 2450 | Fakturerad men ej upparbetad intäkt | Deferred revenue (invoiced > earned) |
+| 4970 | Förändring pågående arbeten | P&L counterpart for 1470 adjustments |
+| 3041 | Försäljning tjänster 25% | Typical project revenue account |
+| 3980 | Erhållna offentliga bidrag | Grant revenue |
+
+### Revenue recognition decision tree
+
+```
+Is the contract fixed-price or time-and-materials?
+
+├─ Time-and-materials (löpande räkning)
+│  └─ Both K2 and K3: recognize revenue as work is performed
+│     Tax: may diverge from accounting (HFD 2011 ref. 20)
+│
+└─ Fixed-price (fast pris)
+   ├─ K3 (koncernredovisning): successiv vinstavräkning MANDATORY
+   │  └─ Recognize revenue × färdigställandegrad at each balance date
+   │     Can outcome be reliably estimated? All four conditions met?
+   │     ├─ Yes: revenue = total contract × completion %
+   │     └─ No: revenue = costs incurred (zero profit recognized)
+   │
+   ├─ K3 (juridisk person): successiv vinstavräkning OR
+   │  alternativregeln (per punkt 23.31, requires 17 kap. 23 § IL)
+   │
+   └─ K2: huvudregeln (completion %) OR alternativregeln
+      └─ Alternativregeln: recognize when "väsentligen fullgjort"
+         (Srf U 15: assessed from customer acceptance perspective)
+```
+
+### Befarade förluster
+
+K3 punkt 23.32: if total estimated costs exceed total contract revenue, the expected loss must be recognized as a cost IMMEDIATELY, regardless of completion percentage. This is mandatory and overrides normal recognition logic. The engine must flag projects where cumulative actual + estimated remaining costs exceed contract revenue.
+
+### Moms timing mismatch
+
+This is the highest-error-rate area in project accounting:
+
+- **Upparbetad ej fakturerad intäkt (1620)**: pure periodisering, NO moms impact. VAT is only triggered when an actual invoice is issued.
+- **Fakturerad ej upparbetad intäkt (2450)**: moms on those invoices must be reported AT TIME OF INVOICING even though accounting books revenue as liability.
+- **Omvänd skattskyldighet** in construction: seller invoices without VAT when buyer "more than temporarily" sells byggtjänster. Per-project tracking of reverse charge status required.
+
+The engine must track moms reporting independently from revenue recognition on every project.
+
+### Gross reporting requirement
+
+Per Srf U 14, pågående arbeten must be reported GROSS per project in the balance sheet. Netting across projects is prohibited (ÅRL kvittningsförbud). A project with 1620 balance and another with 2450 balance must show both, not net them.
+
+### Software vendor comparison
+
+| System | Dimension model | SIE compatibility |
+|--------|----------------|-------------------|
+| Fortnox | Project + CostCenter (flat, independent) | Direct mapping to dim 1+6 |
+| Visma | Objekt 1 + 2 (renamable), Flerårigt flag for multi-year | Flerårigt maps to projekt, non-flerårigt to KS |
+| Bokio | Unlimited Tag Groups | Tags don't export as SIE dimensions |
+
+### Common error patterns
+
+1. **Incorrect färdigställandegrad**: over/under-recognition of revenue. Flag projects where completion % diverges >20% from time-elapsed or budget-consumed ratios.
+2. **Missing project tags**: orphaned costs. Enforce MANDATORY project code on accounts flagged in dimension settings.
+3. **Mixing recognition methods**: without disclosure violates consistency. Lock method per project type at company config level.
+4. **Unrecognized befarade förluster**: automatic detection required per K3 23.32.
+5. **Incomplete project closings**: residual balances on 1620/2450/1470. Enforce zero-balance check before CLOSED status.
+6. **Missing garantiavsättningar**: common audit finding for construction. Prompt at project close.
+7. **VAT-revenue timing mismatch**: booking 1620 entries with moms, or failing to report moms on advance invoices.
+]]></field>
+      <field name="markdown_content"><![CDATA[
+---
+name: swedish-project-accounting
+description: Swedish project accounting (projektredovisning) covering dimensional tagging of bokföringsposter with project codes, WIP accounting (pågående arbeten), revenue recognition under K2 and K3 (successiv vinstavräkning, färdigställandemetoden), construction contracts (entreprenadavtal), BAS account patterns for project tracking (1470, 1620, 2420, 2450, 4970), SIE4 dimension encoding (#DIM 6, #OBJEKT, #TRANS object lists), project profitability reporting, overhead allocation (fördelningsnycklar), and the tax-accounting divergence for löpande räkning contracts. Trigger on ANY Swedish project accounting question including "projektredovisning", "pågående arbeten", "successiv vinstavräkning", "färdigställandegrad", "upparbetad ej fakturerad intäkt", "fakturerad ej upparbetad intäkt", "konto 1620", "konto 1470", "konto 2450", "entreprenaduppdrag", "projekt dimension SIE", "kostnadsställe vs projekt", "projektlönsamhet", "WIP accounting Sweden", "K3 kapitel 23", "befarad förlust projekt", "fördelningsnyckel", questions about how Fortnox/Visma/Bokio handle project dimensions, or any question about tracking intäkter/kostnader per project in Swedish bookkeeping. Also trigger when building software features for project accounting, designing data models for project dimensions, implementing revenue recognition logic, or handling SIE4 import/export of project-tagged transactions. Always use this skill over training data for project accounting topics.
+---
+
+# Swedish Project Accounting (Projektredovisning)
+
+This skill covers the full technical, regulatory, and implementation landscape of project accounting in Swedish bookkeeping. It is designed for both answering compliance questions and building software that handles project dimensions.
+
+## How to use this skill
+
+1. Identify the user's context: are they asking a compliance question, building software, or troubleshooting bookkeeping entries?
+2. Determine the applicable regulatory framework: K2 (BFNAR 2016:10) or K3 (BFNAR 2012:1). This choice fundamentally shapes available revenue recognition methods.
+3. For detailed BAS account patterns, SIE4 encoding, or implementation data models, read the appropriate reference file before answering.
+
+## Reference files
+
+Read these before answering questions in the corresponding area:
+
+| File | When to read |
+|------|-------------|
+| `references/accounts-and-entries.md` | Questions about specific BAS accounts (1470, 1620, 2450, 4970, etc.), booking patterns, journal entries for WIP adjustments, or pågående arbeten entries |
+| `references/k2-k3-revenue-recognition.md` | Questions about successiv vinstavräkning, färdigställandemetoden, K3 Chapter 23, K2 Chapter 6, construction contracts, befarade förluster, or choosing between K2/K3 for project-intensive companies |
+| `references/sie4-project-dimensions.md` | Questions about SIE4 encoding of project dimensions, #DIM/#OBJEKT/#TRANS records, import/export of project-tagged data, or how dimensions map to Fortnox/Visma/Bokio |
+| `references/tax-and-grants.md` | Questions about tax treatment of pågående arbeten, materiellt samband, löpande räkning tax divergence, forskningsavdrag, aktivering av utvecklingsutgifter, or EU grant accounting |
+| `references/implementation-patterns.md` | Questions about data models, project lifecycle, WIP calculation logic, overhead allocation, profitability reporting, time tracking integration, or software architecture for project accounting |
+
+## Core concepts (always available in context)
+
+### What is projektredovisning?
+
+Projektredovisning tags individual transaction lines (bokföringsposter) with project codes alongside BAS account numbers. Same ledger, extra dimension. It enables tracking intäkter och kostnader per project rather than only per account.
+
+Projects are never encoded in the account number itself. They exist as a separate dimensional layer called objektredovisning. The 4-digit BAS account captures the *what* (cost/revenue type); the project dimension captures the *where/for whom*.
+
+### Projekt vs kostnadsställe
+
+These are distinct concepts that complement each other:
+
+- **Kostnadsställe** (cost center): permanent organizational unit (department, branch). No end date. SIE dimension 1.
+- **Projekt**: time-limited initiative with start/end dates and accumulated multi-year balances. SIE dimension 6.
+
+A project typically belongs to one kostnadsställe. Reports can cross-reference both dimensions.
+
+### When is project accounting required?
+
+BFL does not mandate project accounting. However:
+
+- **K3 Chapter 23** requires successiv vinstavräkning for fixed-price contracts in koncernredovisning. Calculating färdigställandegrad is impossible without project-level cost tracking, making it effectively mandatory.
+- **K2 Chapter 6** offers a choice between huvudregeln and alternativregeln for fixed-price contracts. Both require per-project cost accumulation.
+- **Any company doing consulting, construction, R&D, or grant-funded work** needs project accounting for management purposes even without a regulatory mandate.
+
+### Key BAS accounts (summary)
+
+| Account | Name | Purpose |
+|---------|------|---------|
+| 1470 | Pågående arbeten | WIP asset under alternativregeln (completed contract) |
+| 1620 | Upparbetad men ej fakturerad intäkt | WIP receivable under successiv vinstavräkning |
+| 2420 | Förskott från kunder | Customer advance payments |
+| 2450 | Fakturerad men ej upparbetad intäkt | Deferred revenue (invoiced > earned) |
+| 4970 | Förändring pågående arbeten | P&L counterpart for 1470 adjustments |
+| 3041 | Försäljning tjänster 25% | Typical project revenue account |
+| 3980 | Erhållna offentliga bidrag | Grant revenue |
+
+### Revenue recognition decision tree
+
+```
+Is the contract fixed-price or time-and-materials?
+
+├─ Time-and-materials (löpande räkning)
+│  └─ Both K2 and K3: recognize revenue as work is performed
+│     Tax: may diverge from accounting (HFD 2011 ref. 20)
+│
+└─ Fixed-price (fast pris)
+   ├─ K3 (koncernredovisning): successiv vinstavräkning MANDATORY
+   │  └─ Recognize revenue × färdigställandegrad at each balance date
+   │     Can outcome be reliably estimated? All four conditions met?
+   │     ├─ Yes: revenue = total contract × completion %
+   │     └─ No: revenue = costs incurred (zero profit recognized)
+   │
+   ├─ K3 (juridisk person): successiv vinstavräkning OR
+   │  alternativregeln (per punkt 23.31, requires 17 kap. 23 § IL)
+   │
+   └─ K2: huvudregeln (completion %) OR alternativregeln
+      └─ Alternativregeln: recognize when "väsentligen fullgjort"
+         (Srf U 15: assessed from customer acceptance perspective)
+```
+
+### Befarade förluster
+
+K3 punkt 23.32: if total estimated costs exceed total contract revenue, the expected loss must be recognized as a cost IMMEDIATELY, regardless of completion percentage. This is mandatory and overrides normal recognition logic. The engine must flag projects where cumulative actual + estimated remaining costs exceed contract revenue.
+
+### Moms timing mismatch
+
+This is the highest-error-rate area in project accounting:
+
+- **Upparbetad ej fakturerad intäkt (1620)**: pure periodisering, NO moms impact. VAT is only triggered when an actual invoice is issued.
+- **Fakturerad ej upparbetad intäkt (2450)**: moms on those invoices must be reported AT TIME OF INVOICING even though accounting books revenue as liability.
+- **Omvänd skattskyldighet** in construction: seller invoices without VAT when buyer "more than temporarily" sells byggtjänster. Per-project tracking of reverse charge status required.
+
+The engine must track moms reporting independently from revenue recognition on every project.
+
+### Gross reporting requirement
+
+Per Srf U 14, pågående arbeten must be reported GROSS per project in the balance sheet. Netting across projects is prohibited (ÅRL kvittningsförbud). A project with 1620 balance and another with 2450 balance must show both, not net them.
+
+### Software vendor comparison
+
+| System | Dimension model | SIE compatibility |
+|--------|----------------|-------------------|
+| Fortnox | Project + CostCenter (flat, independent) | Direct mapping to dim 1+6 |
+| Visma | Objekt 1 + 2 (renamable), Flerårigt flag for multi-year | Flerårigt maps to projekt, non-flerårigt to KS |
+| Bokio | Unlimited Tag Groups | Tags don't export as SIE dimensions |
+
+### Common error patterns
+
+1. **Incorrect färdigställandegrad**: over/under-recognition of revenue. Flag projects where completion % diverges >20% from time-elapsed or budget-consumed ratios.
+2. **Missing project tags**: orphaned costs. Enforce MANDATORY project code on accounts flagged in dimension settings.
+3. **Mixing recognition methods**: without disclosure violates consistency. Lock method per project type at company config level.
+4. **Unrecognized befarade förluster**: automatic detection required per K3 23.32.
+5. **Incomplete project closings**: residual balances on 1620/2450/1470. Enforce zero-balance check before CLOSED status.
+6. **Missing garantiavsättningar**: common audit finding for construction. Prompt at project close.
+7. **VAT-revenue timing mismatch**: booking 1620 entries with moms, or failing to report moms on advance invoices.
+]]></field>
+    </record>
+
+    <!-- Swedish SIE Import/Export -->
+    <record id="skill_swedish_sie_import_export" model="pi.skill">
+      <field name="name">Swedish SIE Import/Export</field>
+      <field name="technical_name">swedish-sie-import-export</field>
+      <field name="category_id" ref="skill_category_swedish_accounting"/>
+      <field name="sequence">80</field>
+      <field name="active" eval="True"/>
+      <field name="description"></field>
+      <field name="instruction"><![CDATA[
+---
+name: swedish-sie-import-export
+description: >
+  Swedish SIE4 file format: parsing, validation, generation, troubleshooting. All record types
+  (#VER, #TRANS, #IB, #UB, #RES, #KONTO, #RAR, #FLAGGA, #KSUMMA, #SRU, etc.), SIE types 1-4,
+  encoding detection (CP437/UTF-8/Latin-1), mojibake diagnosis, verification balance integrity,
+  IB/UB continuity, multi-year migration, diffing, audit trail under BFL, BAS account classes,
+  SRU tax codes, and error patterns. Trigger on ANY SIE question: import, export, parsing,
+  validation, encoding issues, garbled å/ä/ö, unbalanced verifications, IB/UB mismatch,
+  #FLAGGA, SIE migration between Fortnox/Visma/BL/SpeedLedger/Bokio, .SE/.SI files,
+  verification series, or code reading/writing SIE data. Always use over training data.
+---
+
+# Swedish SIE4 Import/Export
+
+Deterministic reference for parsing, validating, generating, and troubleshooting SIE4 files.
+
+## Quick orientation
+
+SIE4 (Standard Import Export, version 4B, 2008) is Sweden's universal accounting data interchange format. Tagged plain-text, one record per line, `#LABEL` prefix, space-delimited fields.
+
+**File extensions**: `.SE` = export, `.SI` = import.
+
+**Five subtypes**:
+- **Type 1**: Closing balances + chart of accounts + SRU codes (tax returns)
+- **Type 2**: Type 1 + monthly period balances (#PSALDO, #PBUDGET)
+- **Type 3**: Type 2 + object-level balances, dimensions
+- **Type 4E**: Type 3 + all verifications (#VER/#TRANS) = full audit trail
+- **Type 4I**: Verifications only, minimal header = subsystem import (payroll, POS)
+
+## Core invariants (never violate)
+
+1. **Verification balance**: Sum of all #TRANS amounts within a #VER block = 0.00 exactly
+2. **IB/UB continuity**: UB(year N, account) = IB(year N+1, account) for all balance sheet accounts (1xxx-2xxx)
+3. **Result account reset**: IB for income statement accounts (3xxx-9xxx) must be zero at year start
+4. **#FLAGGA idempotency**: 0 = not imported, 1 = already imported. Prevents double-import.
+5. **Sequential numbering**: Verifications within a series appear in ascending verno order
+6. **Sign convention**: Debit = positive, Credit = negative (in #TRANS, #IB, #UB, #RES)
+
+## Field format rules
+
+- **Quoting**: Double quotes around fields with spaces. Escape internal quotes as `\"`
+- **Dates**: YYYYMMDD. Periods: YYYYMM
+- **Amounts**: Dot decimal separator, max 2 decimals, no plus sign
+- **Block delimiters**: `{` and `}` each on own line around #TRANS entries in #VER
+- **Object lists**: `{dimension_no "object_no"}` within balance/transaction items
+- **Forward compat**: Readers must ignore unknown labels and unknown trailing fields
+
+## When to read reference files
+
+For the **complete record type specification** (all labels, fields, compulsory/optional rules, #KSUMMA CRC-32 details):
+→ Read `references/record-types.md`
+
+For **encoding detection, mojibake diagnosis, and per-software encoding behaviors**:
+→ Read `references/encoding.md`
+
+For **all validation rules, error patterns, and remediation procedures**:
+→ Read `references/validation-rules.md`
+
+For **BAS account classes, SRU code mappings, and account type behaviors**:
+→ Read `references/bas-sru.md`
+
+## Verification structure example
+
+```
+#VER A 1 20240115 "Kundfaktura 2024-001"
+{
+    #TRANS 1510 {} 12500.00
+    #TRANS 2611 {} -2500.00
+    #TRANS 3010 {1 "100" 6 "P01"} -10000.00
+}
+```
+
+Sum: 12500 + (-2500) + (-10000) = 0. Valid.
+
+## Verification series conventions (Swedish practice)
+
+- **A** = Huvudserie (main/general)
+- **B** = Automatkonteringar (auto-postings)
+- **F** = Kundfakturor (customer invoices)
+- **I** = Inbetalningar (customer payments)
+- **J** = Bokslutsverifikationer (year-end closing)
+- **L** = Leverantörsfakturor (supplier invoices)
+- **N** = Löner (payroll)
+- **U** = Utbetalningar (supplier payments)
+
+Series and numbering restart each fiscal year. 4I import files may have empty series/verno.
+
+## Year-end closing and IB/UB flow
+
+1. Closing entries (J-series) zero out all result accounts (3xxx-8xxx) by transferring net result to account 2099 (Årets resultat)
+2. After closing: UB for result accounts = 0, UB for equity reflects accumulated result
+3. These UB values become IB for next year
+4. #RES records capture what result accounts held during the year before closing
+
+## Multi-year handling
+
+- `#RAR 0 20240101 20241231` = current fiscal year
+- `#RAR -1 20230101 20231231` = previous year
+- Only one chart of accounts per file (current year's)
+- Broken fiscal years supported: `#RAR 0 20240701 20250630`
+- #PSALDO/#PBUDGET store monthly change (not cumulative), period = YYYYMM
+
+## Migration between systems
+
+Standard path: export SIE4E per fiscal year from source, import into target starting with current year, verify IB/UB continuity, remap verification series to avoid collisions.
+
+**What SIE does NOT carry**: VAT codes (must be manually configured post-import), customer/supplier subledgers (reskontror), processing history, underlying digital documents/vouchers.
+
+Post-migration validation: compare balance reports, trial balances, verification counts per series, Swedish character rendering.
+
+## Audit trail under BFL
+
+- **7-year retention** after calendar year in which fiscal year ended (BFL 7:1)
+- **Storage in Sweden** required (EU/EEA with Skatteverket notification; non-EU requires permission)
+- **Immutability**: locked entries cannot be modified. Corrections via separate correction verification only.
+- **#FLAGGA**: anti-duplication control. Exporter writes 0, importer sets to 1 after success.
+- **SIE is not complete archiving**: lacks processing history and system documentation required by BFL.
+- As of July 2024, paper originals may be destroyed after proper digitization.
+
+## Encoding quick reference
+
+The spec mandates CP437 (`#FORMAT PC8`), but modern cloud software exports UTF-8. Many programs write `#FORMAT PC8` regardless of actual encoding.
+
+**Detection priority**: UTF-8 BOM → strict UTF-8 decode → CP437 byte scan (0x84/0x86/0x8E/0x8F/0x94/0x99) → Latin-1 byte scan (0xC4/0xC5/0xD6/0xE4/0xE5/0xF6) → check #PROGRAM (cloud = UTF-8, desktop = CP437) → fall back Latin-1.
+
+**Mojibake signatures**: `Ã¥`/`Ã¤`/`Ã¶` = UTF-8 read as Latin-1. `†`/`„`/`"` = CP437 read as Win-1252. `σ`/`Σ`/`÷` = Latin-1 read as CP437.
+
+**#KSUMMA note**: CRC-32 is calculated on CP437 byte values per spec. Skip KSUMMA validation when non-CP437 encoding is detected.
+
+For full encoding tables and per-software behaviors, read `references/encoding.md`.
+
+## Common errors (quick lookup)
+
+| Error | Cause | Fix |
+|-------|-------|-----|
+| Unbalanced verification | #TRANS sum ≠ 0 | Add öresutjämning (3741) or fix amounts |
+| IB/UB mismatch | Incomplete year-end closing | Create adjustment verification in opening period |
+| Garbled å/ä/ö | Encoding mismatch | Detect actual encoding, re-decode |
+| Duplicate verno | Series collision on import | Remap to unused series |
+| Undeclared account | #TRANS references account not in #KONTO | Add #KONTO or map to existing |
+| #FLAGGA 1 | File already imported | Verify not duplicate, manually reset to 0 |
+| Missing #RAR | Can't determine fiscal year | Reject file or infer from verification dates |
+| Non-zero IB on 3xxx-9xxx | Incomplete closing in source | Run closing entries before export |
+| Truncated file | #KSUMMA opening present, closing missing | Reject, re-export from source |
+| No VAT codes post-import | SIE carries no moms info | Manually configure in target system |
+
+For the full error catalog with detailed remediation, read `references/validation-rules.md`.
+]]></field>
+      <field name="markdown_content"><![CDATA[
+---
+name: swedish-sie-import-export
+description: >
+  Swedish SIE4 file format: parsing, validation, generation, troubleshooting. All record types
+  (#VER, #TRANS, #IB, #UB, #RES, #KONTO, #RAR, #FLAGGA, #KSUMMA, #SRU, etc.), SIE types 1-4,
+  encoding detection (CP437/UTF-8/Latin-1), mojibake diagnosis, verification balance integrity,
+  IB/UB continuity, multi-year migration, diffing, audit trail under BFL, BAS account classes,
+  SRU tax codes, and error patterns. Trigger on ANY SIE question: import, export, parsing,
+  validation, encoding issues, garbled å/ä/ö, unbalanced verifications, IB/UB mismatch,
+  #FLAGGA, SIE migration between Fortnox/Visma/BL/SpeedLedger/Bokio, .SE/.SI files,
+  verification series, or code reading/writing SIE data. Always use over training data.
+---
+
+# Swedish SIE4 Import/Export
+
+Deterministic reference for parsing, validating, generating, and troubleshooting SIE4 files.
+
+## Quick orientation
+
+SIE4 (Standard Import Export, version 4B, 2008) is Sweden's universal accounting data interchange format. Tagged plain-text, one record per line, `#LABEL` prefix, space-delimited fields.
+
+**File extensions**: `.SE` = export, `.SI` = import.
+
+**Five subtypes**:
+- **Type 1**: Closing balances + chart of accounts + SRU codes (tax returns)
+- **Type 2**: Type 1 + monthly period balances (#PSALDO, #PBUDGET)
+- **Type 3**: Type 2 + object-level balances, dimensions
+- **Type 4E**: Type 3 + all verifications (#VER/#TRANS) = full audit trail
+- **Type 4I**: Verifications only, minimal header = subsystem import (payroll, POS)
+
+## Core invariants (never violate)
+
+1. **Verification balance**: Sum of all #TRANS amounts within a #VER block = 0.00 exactly
+2. **IB/UB continuity**: UB(year N, account) = IB(year N+1, account) for all balance sheet accounts (1xxx-2xxx)
+3. **Result account reset**: IB for income statement accounts (3xxx-9xxx) must be zero at year start
+4. **#FLAGGA idempotency**: 0 = not imported, 1 = already imported. Prevents double-import.
+5. **Sequential numbering**: Verifications within a series appear in ascending verno order
+6. **Sign convention**: Debit = positive, Credit = negative (in #TRANS, #IB, #UB, #RES)
+
+## Field format rules
+
+- **Quoting**: Double quotes around fields with spaces. Escape internal quotes as `\"`
+- **Dates**: YYYYMMDD. Periods: YYYYMM
+- **Amounts**: Dot decimal separator, max 2 decimals, no plus sign
+- **Block delimiters**: `{` and `}` each on own line around #TRANS entries in #VER
+- **Object lists**: `{dimension_no "object_no"}` within balance/transaction items
+- **Forward compat**: Readers must ignore unknown labels and unknown trailing fields
+
+## When to read reference files
+
+For the **complete record type specification** (all labels, fields, compulsory/optional rules, #KSUMMA CRC-32 details):
+→ Read `references/record-types.md`
+
+For **encoding detection, mojibake diagnosis, and per-software encoding behaviors**:
+→ Read `references/encoding.md`
+
+For **all validation rules, error patterns, and remediation procedures**:
+→ Read `references/validation-rules.md`
+
+For **BAS account classes, SRU code mappings, and account type behaviors**:
+→ Read `references/bas-sru.md`
+
+## Verification structure example
+
+```
+#VER A 1 20240115 "Kundfaktura 2024-001"
+{
+    #TRANS 1510 {} 12500.00
+    #TRANS 2611 {} -2500.00
+    #TRANS 3010 {1 "100" 6 "P01"} -10000.00
+}
+```
+
+Sum: 12500 + (-2500) + (-10000) = 0. Valid.
+
+## Verification series conventions (Swedish practice)
+
+- **A** = Huvudserie (main/general)
+- **B** = Automatkonteringar (auto-postings)
+- **F** = Kundfakturor (customer invoices)
+- **I** = Inbetalningar (customer payments)
+- **J** = Bokslutsverifikationer (year-end closing)
+- **L** = Leverantörsfakturor (supplier invoices)
+- **N** = Löner (payroll)
+- **U** = Utbetalningar (supplier payments)
+
+Series and numbering restart each fiscal year. 4I import files may have empty series/verno.
+
+## Year-end closing and IB/UB flow
+
+1. Closing entries (J-series) zero out all result accounts (3xxx-8xxx) by transferring net result to account 2099 (Årets resultat)
+2. After closing: UB for result accounts = 0, UB for equity reflects accumulated result
+3. These UB values become IB for next year
+4. #RES records capture what result accounts held during the year before closing
+
+## Multi-year handling
+
+- `#RAR 0 20240101 20241231` = current fiscal year
+- `#RAR -1 20230101 20231231` = previous year
+- Only one chart of accounts per file (current year's)
+- Broken fiscal years supported: `#RAR 0 20240701 20250630`
+- #PSALDO/#PBUDGET store monthly change (not cumulative), period = YYYYMM
+
+## Migration between systems
+
+Standard path: export SIE4E per fiscal year from source, import into target starting with current year, verify IB/UB continuity, remap verification series to avoid collisions.
+
+**What SIE does NOT carry**: VAT codes (must be manually configured post-import), customer/supplier subledgers (reskontror), processing history, underlying digital documents/vouchers.
+
+Post-migration validation: compare balance reports, trial balances, verification counts per series, Swedish character rendering.
+
+## Audit trail under BFL
+
+- **7-year retention** after calendar year in which fiscal year ended (BFL 7:1)
+- **Storage in Sweden** required (EU/EEA with Skatteverket notification; non-EU requires permission)
+- **Immutability**: locked entries cannot be modified. Corrections via separate correction verification only.
+- **#FLAGGA**: anti-duplication control. Exporter writes 0, importer sets to 1 after success.
+- **SIE is not complete archiving**: lacks processing history and system documentation required by BFL.
+- As of July 2024, paper originals may be destroyed after proper digitization.
+
+## Encoding quick reference
+
+The spec mandates CP437 (`#FORMAT PC8`), but modern cloud software exports UTF-8. Many programs write `#FORMAT PC8` regardless of actual encoding.
+
+**Detection priority**: UTF-8 BOM → strict UTF-8 decode → CP437 byte scan (0x84/0x86/0x8E/0x8F/0x94/0x99) → Latin-1 byte scan (0xC4/0xC5/0xD6/0xE4/0xE5/0xF6) → check #PROGRAM (cloud = UTF-8, desktop = CP437) → fall back Latin-1.
+
+**Mojibake signatures**: `Ã¥`/`Ã¤`/`Ã¶` = UTF-8 read as Latin-1. `†`/`„`/`"` = CP437 read as Win-1252. `σ`/`Σ`/`÷` = Latin-1 read as CP437.
+
+**#KSUMMA note**: CRC-32 is calculated on CP437 byte values per spec. Skip KSUMMA validation when non-CP437 encoding is detected.
+
+For full encoding tables and per-software behaviors, read `references/encoding.md`.
+
+## Common errors (quick lookup)
+
+| Error | Cause | Fix |
+|-------|-------|-----|
+| Unbalanced verification | #TRANS sum ≠ 0 | Add öresutjämning (3741) or fix amounts |
+| IB/UB mismatch | Incomplete year-end closing | Create adjustment verification in opening period |
+| Garbled å/ä/ö | Encoding mismatch | Detect actual encoding, re-decode |
+| Duplicate verno | Series collision on import | Remap to unused series |
+| Undeclared account | #TRANS references account not in #KONTO | Add #KONTO or map to existing |
+| #FLAGGA 1 | File already imported | Verify not duplicate, manually reset to 0 |
+| Missing #RAR | Can't determine fiscal year | Reject file or infer from verification dates |
+| Non-zero IB on 3xxx-9xxx | Incomplete closing in source | Run closing entries before export |
+| Truncated file | #KSUMMA opening present, closing missing | Reject, re-export from source |
+| No VAT codes post-import | SIE carries no moms info | Manually configure in target system |
+
+For the full error catalog with detailed remediation, read `references/validation-rules.md`.
+]]></field>
+    </record>
+
+    <!-- Swedish SRU Filing -->
+    <record id="skill_swedish_sru_filing" model="pi.skill">
+      <field name="name">Swedish SRU Filing</field>
+      <field name="technical_name">swedish-sru-filing</field>
+      <field name="category_id" ref="skill_category_swedish_accounting"/>
+      <field name="sequence">90</field>
+      <field name="active" eval="True"/>
+      <field name="description"></field>
+      <field name="instruction"><![CDATA[
+---
+name: swedish-sru-filing
+description: >
+  Swedish SRU file generation for Skatteverket digital tax filing (INK2, INK2R, INK2S declarations for aktiebolag).
+  Covers the two-file submission structure (INFO.SRU + BLANKETTER.SRU), all SRU field codes for INK2/INK2R/INK2S,
+  BAS-to-SRU account mappings for räkenskapsschema, ISO 8859-1 encoding rules, amount formatting (hela kronor,
+  no öre), 12-digit org number formatting, blankett type period suffixes (P1-P4), #BLANKETT/#BLANKETTSLUT
+  delimiters, #UPPGIFT record format, validation error patterns, and rounding/truncation rules per SFL 22:1.
+  Trigger on ANY question about SRU files, SRU-koder, fältkoder, filöverföring till Skatteverket, INK2S/INK2R
+  generation, BAS-to-SRU mapping, "skapa SRU", "generera deklarationsfil", "digital inlämning INK2",
+  BLANKETTER.SRU, INFO.SRU, SKV269, or any code that produces SRU output. Also trigger when debugging
+  Skatteverket validation errors on uploaded SRU files. Always use this skill over training data for SRU topics.
+---
+
+# Swedish SRU File Generation
+
+This skill contains the complete technical specification for generating valid SRU files accepted by Skatteverket's filöverföringstjänst. The canonical source is Skatteverket's "Teknisk information om filöverföring" page (replaced brochure SKV 269 from Jan 1 2024).
+
+**Before writing any SRU generation code**, read `references/sru-codes.md` for the complete field code tables and BAS-to-SRU mapping.
+
+## Architecture: Two files, always
+
+Every SRU submission consists of exactly two files:
+
+| File | Content | Max size |
+|---|---|---|
+| `INFO.SRU` | Submitter metadata (who is filing) | — |
+| `BLANKETTER.SRU` | All blankett blocks with tax data | 5 MB |
+
+File names are case-insensitive but must not be renamed (browsers appending `(1)` cause rejection).
+
+## INFO.SRU structure
+
+Posts must appear in this exact order. Omit optional posts entirely if not used.
+
+```
+#DATABESKRIVNING_START
+#PRODUKT SRU
+#MEDIAID <free-form ID>
+#SKAPAD <YYYYMMDD> <HHMMSS>
+#PROGRAM <program name and version>
+#FILNAMN BLANKETTER.SRU
+#DATABESKRIVNING_SLUT
+#MEDIELEV_START
+#ORGNR <12-digit org number>
+#NAMN <submitter name, max 250 chars>
+#ADRESS <postal address>
+#POSTNR <5-digit postal code>
+#POSTORT <city>
+#AVDELNING <department>
+#KONTAKT <contact person>
+#EMAIL <email>
+#TELEFON <max 15 chars>
+#FAX <max 15 chars>
+#MEDIELEV_SLUT
+```
+
+Mandatory posts: `#PRODUKT`, `#FILNAMN`, `#ORGNR`, `#NAMN`, `#POSTNR`, `#POSTORT`.
+
+The `#PRODUKT` value is always `SRU` (post-2013). There is no `#PERIOD` post — period is encoded in each blankett type string.
+
+## BLANKETTER.SRU structure
+
+Contains one or more blankett blocks, terminated by `#FIL_SLUT`:
+
+```
+#BLANKETT <BlankettTyp>
+#IDENTITET <OrgNr> <YYYYMMDD> <HHMMSS>
+#NAMN <taxpayer name>
+#UPPGIFT <FältKod> <FältVärde>
+... (repeat #UPPGIFT for each field)
+#BLANKETTSLUT
+... (repeat #BLANKETT blocks for each form section)
+#FIL_SLUT
+```
+
+### INK2 requires three blankett blocks
+
+An aktiebolag filing INK2 must include three separate blocks in this file:
+
+| Block | BlankettTyp example | Content |
+|---|---|---|
+| INK2 | `INK2-2024P4` | Huvudblankett (page 1) — summary fields |
+| INK2R | `INK2R-2024P4` | Räkenskapsschema (pages 2-3) — balance sheet + income statement |
+| INK2S | `INK2S-2024P4` | Skattemässiga justeringar (page 4) — tax adjustments |
+
+### Period suffix rules
+
+The suffix after the hyphen encodes when the fiscal year ENDS:
+
+| Suffix | Fiscal year ends in months |
+|---|---|
+| P1 | January–April |
+| P2 | May–August |
+| P3 | Special cases |
+| P4 | September–December (calendar-year companies) |
+
+The year in the type string is the INCOME YEAR (inkomstår), not the filing year. A company with fiscal year 2024-01-01 to 2024-12-31 uses period `2024P4`.
+
+### Each block is independent
+
+Every blankett block carries its own `#IDENTITET` line. The `DatFramst` timestamp determines version precedence — later timestamps replace earlier submissions for the same org number and blankett type.
+
+## Encoding and formatting rules
+
+### Encoding: ISO 8859-1 (Latin-1)
+
+This is the single most common source of validation failure in programmatic SRU generation. **Never use UTF-8.** Swedish characters (å, ä, ö) will corrupt.
+
+When writing files in code:
+- Python: `open(path, 'w', encoding='iso-8859-1')`
+- Node.js: Use `iconv-lite` to encode to `iso-8859-1` before writing
+- Java: `new OutputStreamWriter(fos, StandardCharsets.ISO_8859_1)`
+
+### Line endings
+
+All three conventions accepted: `\r\n` (Windows), `\r` (classic Mac), `\n` (Unix).
+
+### Amount formatting
+
+- **Integers in hela kronor (whole SEK)**. No öre, no decimals.
+- Positive: no sign, no leading zeros. Example: `1000`
+- Negative: `-` prefix. Example: `-1000`
+- **No thousands separators.** `7 135` with a space WILL fail.
+- Truncation rule per SFL 22 kap. 1 §: öre are DROPPED (truncated), not rounded.
+- Small rounding differences from öre truncation across multiple posts are accepted by Skatteverket.
+
+### Org number format
+
+Always 12 digits, format `SSÅÅMMDDNNNK`, no hyphens.
+- Juridiska personer (companies): century prefix `16`
+- Example: org nr `556000-0100` becomes `165560000100`
+
+### Checkbox fields
+
+Value: uppercase `X`. If unchecked, **omit the entire #UPPGIFT line** — never send empty values.
+
+### The `#` character
+
+Reserved for post names. **Forbidden in all string data values.**
+
+## Zero-value handling
+
+**Do not emit `#UPPGIFT` lines for fields with zero value.** Omit them entirely. Including zero-value fields is a common source of validation warnings and in some cases errors.
+
+## Complete example: calendar-year 2024 AB
+
+### INFO.SRU
+```
+#DATABESKRIVNING_START
+#PRODUKT SRU
+#SKAPAD 20250401 100000
+#PROGRAM Luka 1.0
+#FILNAMN BLANKETTER.SRU
+#DATABESKRIVNING_SLUT
+#MEDIELEV_START
+#ORGNR 165590001234
+#NAMN Exempelbolaget AB
+#POSTNR 11122
+#POSTORT Stockholm
+#KONTAKT Anna Andersson
+#EMAIL anna@exempel.se
+#MEDIELEV_SLUT
+```
+
+### BLANKETTER.SRU
+```
+#BLANKETT INK2-2024P4
+#IDENTITET 165590001234 20250401 100000
+#NAMN Exempelbolaget AB
+#UPPGIFT 7011 20240101
+#UPPGIFT 7012 20241231
+#UPPGIFT 7113 90000
+#BLANKETTSLUT
+#BLANKETT INK2R-2024P4
+#IDENTITET 165590001234 20250401 100001
+#NAMN Exempelbolaget AB
+#UPPGIFT 7011 20240101
+#UPPGIFT 7012 20241231
+#UPPGIFT 7201 100000
+#UPPGIFT 7281 50000
+#UPPGIFT 7301 50000
+#UPPGIFT 7302 25000
+#UPPGIFT 7410 500000
+#UPPGIFT 7513 -200000
+#UPPGIFT 7514 -150000
+#UPPGIFT 7450 75000
+#BLANKETTSLUT
+#BLANKETT INK2S-2024P4
+#IDENTITET 165590001234 20250401 100002
+#NAMN Exempelbolaget AB
+#UPPGIFT 7011 20240101
+#UPPGIFT 7012 20241231
+#UPPGIFT 7650 75000
+#UPPGIFT 7651 15000
+#UPPGIFT 8020 90000
+#BLANKETTSLUT
+#FIL_SLUT
+```
+
+## Validation errors
+
+Skatteverket validates on upload and returns a mottagningskvittens.
+
+### Level 1 (entire submission rejected)
+- Structural errors in INFO.SRU
+- Posts in wrong order in any blankett block
+- More than 100 level 2 errors total
+- Missing `#FIL_SLUT`
+- Unknown post types
+- `#FILNAMN` referencing nonexistent file
+
+### Level 2 (individual blankett block rejected, others accepted)
+- Invalid org number
+- Field code not valid for the blankett type
+- Value violates field rules (wrong data type, out of range)
+- Missing mandatory timestamp
+- Invalid blankett type string
+
+### Most frequent real-world failures
+1. **Renamed files** — browsers adding `(1)` suffix
+2. **Wrong period** — using `2025P4` when income year is 2024
+3. **Amounts with decimals or spaces** — `7135.50` or `7 135`
+4. **UTF-8 encoding** instead of ISO 8859-1
+5. **Including #UPPGIFT for zero/empty values**
+6. **Duplicate field codes** in same blankett block
+7. **10-digit or hyphenated org number** instead of 12-digit
+8. **Non-existent SRU codes** — mapping BAS accounts to wrong field codes
+
+## BAS-to-SRU mapping: critical rules
+
+The official mapping is maintained by BAS-kontogruppen + Skatteverket at `bas.se/kontoplaner/sru/`.
+
+**The #1 mapping error**: BAS accounts 5000-6999 (övriga externa kostnader) must ALL aggregate into a single SRU code: **7513**. Do NOT create individual SRU codes per BAS account in this range.
+
+**INK2S codes are NOT auto-derived from BAS accounts.** They represent tax adjustments requiring manual calculation. The bookkeeping result flows from INK2R into INK2S field 7650/7750, then tax adjustments are applied to arrive at 8020/8021 (överskott/underskott).
+
+**For the complete SRU code tables and BAS mapping**, read `references/sru-codes.md`.
+
+## Data type reference
+
+| Type | Format | Range |
+|---|---|---|
+| Numeriskt_A | Integer | -999,999,999,999 to 999,999,999,999 |
+| Numeriskt_B | Integer | 0 to 999,999,999,999 |
+| Datum_A | YYYYMMDD | Valid calendar date |
+| Tid_A | HHMMSS | 00:00:00 to 23:59:59 |
+| Decimal_2 | x.xx | -9,999,999,999.99 to 9,999,999,999.99 |
+| Andel_4 | x.xxxx | 0.0000 to 100.0000 |
+| STR_250 | String | Max 250 chars, no `#` |
+
+## Key external references
+
+- Skatteverket tech spec: `skatteverket.se/foretag/inkomstdeklaration/forredovisningsbyraer/tekniskinformationomfiloverforing`
+- BAS SRU mappings: `bas.se/kontoplaner/sru/`
+- Annual field code ZIP packages: download from Skatteverket tech spec page (Excel files per period)
+- Validation service: `www1.skatteverket.se/fv/fv_web/start.do`
+- Open-source reference implementations: `github.com/thpe/pysru-accounting`, `github.com/aidium/SRU-Maker`
+]]></field>
+      <field name="markdown_content"><![CDATA[
+---
+name: swedish-sru-filing
+description: >
+  Swedish SRU file generation for Skatteverket digital tax filing (INK2, INK2R, INK2S declarations for aktiebolag).
+  Covers the two-file submission structure (INFO.SRU + BLANKETTER.SRU), all SRU field codes for INK2/INK2R/INK2S,
+  BAS-to-SRU account mappings for räkenskapsschema, ISO 8859-1 encoding rules, amount formatting (hela kronor,
+  no öre), 12-digit org number formatting, blankett type period suffixes (P1-P4), #BLANKETT/#BLANKETTSLUT
+  delimiters, #UPPGIFT record format, validation error patterns, and rounding/truncation rules per SFL 22:1.
+  Trigger on ANY question about SRU files, SRU-koder, fältkoder, filöverföring till Skatteverket, INK2S/INK2R
+  generation, BAS-to-SRU mapping, "skapa SRU", "generera deklarationsfil", "digital inlämning INK2",
+  BLANKETTER.SRU, INFO.SRU, SKV269, or any code that produces SRU output. Also trigger when debugging
+  Skatteverket validation errors on uploaded SRU files. Always use this skill over training data for SRU topics.
+---
+
+# Swedish SRU File Generation
+
+This skill contains the complete technical specification for generating valid SRU files accepted by Skatteverket's filöverföringstjänst. The canonical source is Skatteverket's "Teknisk information om filöverföring" page (replaced brochure SKV 269 from Jan 1 2024).
+
+**Before writing any SRU generation code**, read `references/sru-codes.md` for the complete field code tables and BAS-to-SRU mapping.
+
+## Architecture: Two files, always
+
+Every SRU submission consists of exactly two files:
+
+| File | Content | Max size |
+|---|---|---|
+| `INFO.SRU` | Submitter metadata (who is filing) | — |
+| `BLANKETTER.SRU` | All blankett blocks with tax data | 5 MB |
+
+File names are case-insensitive but must not be renamed (browsers appending `(1)` cause rejection).
+
+## INFO.SRU structure
+
+Posts must appear in this exact order. Omit optional posts entirely if not used.
+
+```
+#DATABESKRIVNING_START
+#PRODUKT SRU
+#MEDIAID <free-form ID>
+#SKAPAD <YYYYMMDD> <HHMMSS>
+#PROGRAM <program name and version>
+#FILNAMN BLANKETTER.SRU
+#DATABESKRIVNING_SLUT
+#MEDIELEV_START
+#ORGNR <12-digit org number>
+#NAMN <submitter name, max 250 chars>
+#ADRESS <postal address>
+#POSTNR <5-digit postal code>
+#POSTORT <city>
+#AVDELNING <department>
+#KONTAKT <contact person>
+#EMAIL <email>
+#TELEFON <max 15 chars>
+#FAX <max 15 chars>
+#MEDIELEV_SLUT
+```
+
+Mandatory posts: `#PRODUKT`, `#FILNAMN`, `#ORGNR`, `#NAMN`, `#POSTNR`, `#POSTORT`.
+
+The `#PRODUKT` value is always `SRU` (post-2013). There is no `#PERIOD` post — period is encoded in each blankett type string.
+
+## BLANKETTER.SRU structure
+
+Contains one or more blankett blocks, terminated by `#FIL_SLUT`:
+
+```
+#BLANKETT <BlankettTyp>
+#IDENTITET <OrgNr> <YYYYMMDD> <HHMMSS>
+#NAMN <taxpayer name>
+#UPPGIFT <FältKod> <FältVärde>
+... (repeat #UPPGIFT for each field)
+#BLANKETTSLUT
+... (repeat #BLANKETT blocks for each form section)
+#FIL_SLUT
+```
+
+### INK2 requires three blankett blocks
+
+An aktiebolag filing INK2 must include three separate blocks in this file:
+
+| Block | BlankettTyp example | Content |
+|---|---|---|
+| INK2 | `INK2-2024P4` | Huvudblankett (page 1) — summary fields |
+| INK2R | `INK2R-2024P4` | Räkenskapsschema (pages 2-3) — balance sheet + income statement |
+| INK2S | `INK2S-2024P4` | Skattemässiga justeringar (page 4) — tax adjustments |
+
+### Period suffix rules
+
+The suffix after the hyphen encodes when the fiscal year ENDS:
+
+| Suffix | Fiscal year ends in months |
+|---|---|
+| P1 | January–April |
+| P2 | May–August |
+| P3 | Special cases |
+| P4 | September–December (calendar-year companies) |
+
+The year in the type string is the INCOME YEAR (inkomstår), not the filing year. A company with fiscal year 2024-01-01 to 2024-12-31 uses period `2024P4`.
+
+### Each block is independent
+
+Every blankett block carries its own `#IDENTITET` line. The `DatFramst` timestamp determines version precedence — later timestamps replace earlier submissions for the same org number and blankett type.
+
+## Encoding and formatting rules
+
+### Encoding: ISO 8859-1 (Latin-1)
+
+This is the single most common source of validation failure in programmatic SRU generation. **Never use UTF-8.** Swedish characters (å, ä, ö) will corrupt.
+
+When writing files in code:
+- Python: `open(path, 'w', encoding='iso-8859-1')`
+- Node.js: Use `iconv-lite` to encode to `iso-8859-1` before writing
+- Java: `new OutputStreamWriter(fos, StandardCharsets.ISO_8859_1)`
+
+### Line endings
+
+All three conventions accepted: `\r\n` (Windows), `\r` (classic Mac), `\n` (Unix).
+
+### Amount formatting
+
+- **Integers in hela kronor (whole SEK)**. No öre, no decimals.
+- Positive: no sign, no leading zeros. Example: `1000`
+- Negative: `-` prefix. Example: `-1000`
+- **No thousands separators.** `7 135` with a space WILL fail.
+- Truncation rule per SFL 22 kap. 1 §: öre are DROPPED (truncated), not rounded.
+- Small rounding differences from öre truncation across multiple posts are accepted by Skatteverket.
+
+### Org number format
+
+Always 12 digits, format `SSÅÅMMDDNNNK`, no hyphens.
+- Juridiska personer (companies): century prefix `16`
+- Example: org nr `556000-0100` becomes `165560000100`
+
+### Checkbox fields
+
+Value: uppercase `X`. If unchecked, **omit the entire #UPPGIFT line** — never send empty values.
+
+### The `#` character
+
+Reserved for post names. **Forbidden in all string data values.**
+
+## Zero-value handling
+
+**Do not emit `#UPPGIFT` lines for fields with zero value.** Omit them entirely. Including zero-value fields is a common source of validation warnings and in some cases errors.
+
+## Complete example: calendar-year 2024 AB
+
+### INFO.SRU
+```
+#DATABESKRIVNING_START
+#PRODUKT SRU
+#SKAPAD 20250401 100000
+#PROGRAM Luka 1.0
+#FILNAMN BLANKETTER.SRU
+#DATABESKRIVNING_SLUT
+#MEDIELEV_START
+#ORGNR 165590001234
+#NAMN Exempelbolaget AB
+#POSTNR 11122
+#POSTORT Stockholm
+#KONTAKT Anna Andersson
+#EMAIL anna@exempel.se
+#MEDIELEV_SLUT
+```
+
+### BLANKETTER.SRU
+```
+#BLANKETT INK2-2024P4
+#IDENTITET 165590001234 20250401 100000
+#NAMN Exempelbolaget AB
+#UPPGIFT 7011 20240101
+#UPPGIFT 7012 20241231
+#UPPGIFT 7113 90000
+#BLANKETTSLUT
+#BLANKETT INK2R-2024P4
+#IDENTITET 165590001234 20250401 100001
+#NAMN Exempelbolaget AB
+#UPPGIFT 7011 20240101
+#UPPGIFT 7012 20241231
+#UPPGIFT 7201 100000
+#UPPGIFT 7281 50000
+#UPPGIFT 7301 50000
+#UPPGIFT 7302 25000
+#UPPGIFT 7410 500000
+#UPPGIFT 7513 -200000
+#UPPGIFT 7514 -150000
+#UPPGIFT 7450 75000
+#BLANKETTSLUT
+#BLANKETT INK2S-2024P4
+#IDENTITET 165590001234 20250401 100002
+#NAMN Exempelbolaget AB
+#UPPGIFT 7011 20240101
+#UPPGIFT 7012 20241231
+#UPPGIFT 7650 75000
+#UPPGIFT 7651 15000
+#UPPGIFT 8020 90000
+#BLANKETTSLUT
+#FIL_SLUT
+```
+
+## Validation errors
+
+Skatteverket validates on upload and returns a mottagningskvittens.
+
+### Level 1 (entire submission rejected)
+- Structural errors in INFO.SRU
+- Posts in wrong order in any blankett block
+- More than 100 level 2 errors total
+- Missing `#FIL_SLUT`
+- Unknown post types
+- `#FILNAMN` referencing nonexistent file
+
+### Level 2 (individual blankett block rejected, others accepted)
+- Invalid org number
+- Field code not valid for the blankett type
+- Value violates field rules (wrong data type, out of range)
+- Missing mandatory timestamp
+- Invalid blankett type string
+
+### Most frequent real-world failures
+1. **Renamed files** — browsers adding `(1)` suffix
+2. **Wrong period** — using `2025P4` when income year is 2024
+3. **Amounts with decimals or spaces** — `7135.50` or `7 135`
+4. **UTF-8 encoding** instead of ISO 8859-1
+5. **Including #UPPGIFT for zero/empty values**
+6. **Duplicate field codes** in same blankett block
+7. **10-digit or hyphenated org number** instead of 12-digit
+8. **Non-existent SRU codes** — mapping BAS accounts to wrong field codes
+
+## BAS-to-SRU mapping: critical rules
+
+The official mapping is maintained by BAS-kontogruppen + Skatteverket at `bas.se/kontoplaner/sru/`.
+
+**The #1 mapping error**: BAS accounts 5000-6999 (övriga externa kostnader) must ALL aggregate into a single SRU code: **7513**. Do NOT create individual SRU codes per BAS account in this range.
+
+**INK2S codes are NOT auto-derived from BAS accounts.** They represent tax adjustments requiring manual calculation. The bookkeeping result flows from INK2R into INK2S field 7650/7750, then tax adjustments are applied to arrive at 8020/8021 (överskott/underskott).
+
+**For the complete SRU code tables and BAS mapping**, read `references/sru-codes.md`.
+
+## Data type reference
+
+| Type | Format | Range |
+|---|---|---|
+| Numeriskt_A | Integer | -999,999,999,999 to 999,999,999,999 |
+| Numeriskt_B | Integer | 0 to 999,999,999,999 |
+| Datum_A | YYYYMMDD | Valid calendar date |
+| Tid_A | HHMMSS | 00:00:00 to 23:59:59 |
+| Decimal_2 | x.xx | -9,999,999,999.99 to 9,999,999,999.99 |
+| Andel_4 | x.xxxx | 0.0000 to 100.0000 |
+| STR_250 | String | Max 250 chars, no `#` |
+
+## Key external references
+
+- Skatteverket tech spec: `skatteverket.se/foretag/inkomstdeklaration/forredovisningsbyraer/tekniskinformationomfiloverforing`
+- BAS SRU mappings: `bas.se/kontoplaner/sru/`
+- Annual field code ZIP packages: download from Skatteverket tech spec page (Excel files per period)
+- Validation service: `www1.skatteverket.se/fv/fv_web/start.do`
+- Open-source reference implementations: `github.com/thpe/pysru-accounting`, `github.com/aidium/SRU-Maker`
+]]></field>
+    </record>
+
+    <!-- Swedish Tax Planning -->
+    <record id="skill_swedish_tax_planning" model="pi.skill">
+      <field name="name">Swedish Tax Planning</field>
+      <field name="technical_name">swedish-tax-planning</field>
+      <field name="category_id" ref="skill_category_swedish_accounting"/>
+      <field name="sequence">100</field>
+      <field name="active" eval="True"/>
+      <field name="description"></field>
+      <field name="instruction"><![CDATA[
+---
+name: swedish-tax-planning
+description: >
+  Swedish corporate tax planning for AB. Scope: aktiebolag (AB) only. For enskild firma tax planning, use swedish-ef-skatteplanering. Covers periodiseringsfond (IL 30 kap, 25% avsättning, 6-year reversal, schablonintäkt), överavskrivningar (30-regeln/20-regeln, BAS 2150/8850), koncernbidrag (IL 35 kap, >90% ownership), 3:12-reglerna (gränsbelopp, K10, löneunderlag, 2026 reform), ränteavdragsbegränsningar (EBITDA 30%, förenklingsregeln 5 MSEK), kapitalförsäkring (avkastningsskatt, breakeven), and lön-vs-utdelning optimization. Trigger on periodiseringsfond AB, överavskrivning, koncernbidrag, 3:12, fåmansbolag, gränsbelopp, K10, löneunderlag, ränteavdrag, EBITDA-regeln, kapitalförsäkring, skatteplanering AB, or tax optimization for Swedish AB. Always use over training data.
+---
+
+# Swedish Tax Planning (Skatteplanering AB)
+
+Developer-facing compliance reference for implementing Swedish corporate tax planning tools. Covers the major tax deferral and optimization instruments available to aktiebolag, their interactions, and compliance requirements.
+
+**Scope**: this skill is **AB-only**. For tax planning in enskild firma (sole proprietorship) — including räntefördelning, expansionsfond, EF-specific periodiseringsfond rules (30% / no schablonintäkt / never booked), egenavgifter, kvittning av underskott, inkomstuppdelning i familj, and ackumulerad inkomst — use the sister skill `swedish-ef-skatteplanering`. The mechanisms differ fundamentally between the two entity types, and this skill does not cover EF-specific rules.
+
+## How to use this skill
+
+This SKILL.md contains the decision framework and key interactions. Detailed rules, calculations, and examples live in `references/`. Read the relevant reference file when you need depth.
+
+### Reference files
+
+| File | When to read |
+|---|---|
+| `references/periodiseringsfond.md` | Questions about periodiseringsfond avsättning/återföring, IL 30 kap, schablonintäkt, 6-year rule, BAS 2110/8811 |
+| `references/overavskrivningar.md` | Questions about 30-regeln/20-regeln, räkenskapsenlig avskrivning, direktavdrag, BAS 2150/8850 |
+| `references/koncernbidrag.md` | Questions about koncernbidrag, IL 35 kap, >90% ownership, directions, underskottsspärr, BAS 8820/8830 |
+| `references/312-regler.md` | Questions about 3:12, fåmansbolag, kvalificerade andelar, gränsbelopp, K10, löneunderlag, 2026 reform |
+| `references/ranteavdragsbegransningar.md` | Questions about ränteavdragsbegränsningar, EBITDA-regeln, förenklingsregeln 5 MSEK, N9, carry-forward |
+| `references/kapitalforsakring.md` | Questions about kapitalförsäkring in AB, avkastningsskatt, BAS 1385, when KF beats direktägande |
+| `references/strategy-and-interactions.md` | Questions about optimal year-end sequence, lön vs utdelning, interaction matrix, Skatteverket audit triggers |
+
+Read multiple reference files when a question spans domains (common in tax planning).
+
+## Year-end decision sequence (optimal order)
+
+1. **Överavskrivningar** — limited by asset base, calculate first
+2. **Periodiseringsfond** — 25% of remaining taxable income
+3. **Koncernbidrag** — equalize profits/losses across group
+4. **Löneuttag** — verify lönekrav for 3:12 (through inkomstår 2025)
+5. **Utdelning** — plan within gränsbelopp
+6. **Ränteavdragsbegränsningar** — verify compliance (interactions with steps 2-3)
+
+## Core instruments summary
+
+### Periodiseringsfond (IL 30 kap)
+- Max: 25% of skattemässigt överskott
+- Up to 6 parallel funds, each reversed within 6 tax years (FIFO)
+- Must be booked as obeskattad reserv (formellt samband)
+- Schablonintäkt: SLR (min 0.5%) x total funds, reported on INK2S 4.6a
+- BAS: 2110-2139 / 8811 (avsättning) / 8819 (återföring)
+
+### Överavskrivningar (IL 18 kap)
+- 30-regeln: pool written down to 70% of avskrivningsunderlag (declining balance)
+- 20-regeln: 20% straight-line per asset (full in 5 years)
+- Choose whichever yields lowest tax book value each year
+- Direktavdrag: assets < half PBB (29,400 kr for 2025)
+- BAS: 2150 / 8850
+
+### Koncernbidrag (IL 35 kap)
+- Transfers taxable income between group companies (>90% ownership)
+- Avdragsgillt for giver, skattepliktigt for receiver
+- Requires ownership for entire tax year + bolagsstämmobeslut
+- BAS: 8820 (mottaget) / 8830 (lämnat)
+
+### 3:12-reglerna (IL 56-57 kap)
+- Utdelning within gränsbelopp: 20% effective tax
+- Förenklingsregeln: 2.75 x IBB (209,550 kr for inkomstår 2025)
+- Huvudregeln: omkostnadsbelopp x (SLR+9%) + lönebaserat utrymme
+- K10 must be filed every year to preserve sparat utdelningsutrymme
+- **2026 reform**: grundbelopp 4 IBB, lönekrav abolished, 4%-spärr abolished, karenstid 4 years
+
+### Ränteavdragsbegränsningar (IL 24 kap)
+- EBITDA-regeln: negativt räntenetto max 30% of skattemässigt EBITDA
+- Förenklingsregeln: max 5 MSEK per intressegemenskap (not per bolag)
+- Carry-forward 6 years under EBITDA-regeln only
+- Key: periodiseringsfond avsättning increases EBITDA (good), koncernbidrag decreases it (bad)
+
+### Kapitalförsäkring
+- Sole schablonbeskattad sparform for AB (ISK only for fysiska personer)
+- Effective annual tax ~1.065% of kapitalunderlag (at SLR 2.55%)
+- Breakeven return vs direktägande: ~5.2%
+- Never for näringsbetingade andelar (already skattefria)
+- BAS: 1385
+
+## Interaction matrix (critical for year-end optimization)
+
+| Tool A | Affects | How |
+|--------|---------|-----|
+| Periodiseringsfond avsättning | EBITDA | Increases avdragsunderlag (good) |
+| Periodiseringsfond återföring | EBITDA | Decreases avdragsunderlag (bad) |
+| Koncernbidrag lämnat | EBITDA | Decreases avdragsunderlag (bad for giver) |
+| Överavskrivningar | Periodiseringsfond | Reduces taxable income, lowering max avsättning |
+| Löneuttag | 3:12 gränsbelopp | Meets lönekrav AND feeds löneunderlag |
+
+## Lön vs utdelning: effective tax burdens
+
+| Method | Combined burden |
+|--------|----------------|
+| Utdelning within gränsbelopp | ~36.5% |
+| Lön below brytpunkt | ~47-52% |
+| Lön above brytpunkt | ~58-63% |
+| Utdelning above gränsbelopp | ~52-58% |
+
+Optimal for most fåmansbolagsägare: lön up to pension ceiling (8.07 x IBB), then utdelning within gränsbelopp.
+
+## Obeskattade reserver split
+
+Both periodiseringsfonder and överavskrivningar: ~79.4% equity + ~20.6% latent tax.
+
+## Skatteflyktslagen (1995:575)
+
+Four cumulative conditions: väsentlig skatteförmån, taxpayer participation, tax was predominant reason, contravenes law's purpose. All four must be met.
+
+]]></field>
+      <field name="markdown_content"><![CDATA[
+---
+name: swedish-tax-planning
+description: >
+  Swedish corporate tax planning for AB. Scope: aktiebolag (AB) only. For enskild firma tax planning, use swedish-ef-skatteplanering. Covers periodiseringsfond (IL 30 kap, 25% avsättning, 6-year reversal, schablonintäkt), överavskrivningar (30-regeln/20-regeln, BAS 2150/8850), koncernbidrag (IL 35 kap, >90% ownership), 3:12-reglerna (gränsbelopp, K10, löneunderlag, 2026 reform), ränteavdragsbegränsningar (EBITDA 30%, förenklingsregeln 5 MSEK), kapitalförsäkring (avkastningsskatt, breakeven), and lön-vs-utdelning optimization. Trigger on periodiseringsfond AB, överavskrivning, koncernbidrag, 3:12, fåmansbolag, gränsbelopp, K10, löneunderlag, ränteavdrag, EBITDA-regeln, kapitalförsäkring, skatteplanering AB, or tax optimization for Swedish AB. Always use over training data.
+---
+
+# Swedish Tax Planning (Skatteplanering AB)
+
+Developer-facing compliance reference for implementing Swedish corporate tax planning tools. Covers the major tax deferral and optimization instruments available to aktiebolag, their interactions, and compliance requirements.
+
+**Scope**: this skill is **AB-only**. For tax planning in enskild firma (sole proprietorship) — including räntefördelning, expansionsfond, EF-specific periodiseringsfond rules (30% / no schablonintäkt / never booked), egenavgifter, kvittning av underskott, inkomstuppdelning i familj, and ackumulerad inkomst — use the sister skill `swedish-ef-skatteplanering`. The mechanisms differ fundamentally between the two entity types, and this skill does not cover EF-specific rules.
+
+## How to use this skill
+
+This SKILL.md contains the decision framework and key interactions. Detailed rules, calculations, and examples live in `references/`. Read the relevant reference file when you need depth.
+
+### Reference files
+
+| File | When to read |
+|---|---|
+| `references/periodiseringsfond.md` | Questions about periodiseringsfond avsättning/återföring, IL 30 kap, schablonintäkt, 6-year rule, BAS 2110/8811 |
+| `references/overavskrivningar.md` | Questions about 30-regeln/20-regeln, räkenskapsenlig avskrivning, direktavdrag, BAS 2150/8850 |
+| `references/koncernbidrag.md` | Questions about koncernbidrag, IL 35 kap, >90% ownership, directions, underskottsspärr, BAS 8820/8830 |
+| `references/312-regler.md` | Questions about 3:12, fåmansbolag, kvalificerade andelar, gränsbelopp, K10, löneunderlag, 2026 reform |
+| `references/ranteavdragsbegransningar.md` | Questions about ränteavdragsbegränsningar, EBITDA-regeln, förenklingsregeln 5 MSEK, N9, carry-forward |
+| `references/kapitalforsakring.md` | Questions about kapitalförsäkring in AB, avkastningsskatt, BAS 1385, when KF beats direktägande |
+| `references/strategy-and-interactions.md` | Questions about optimal year-end sequence, lön vs utdelning, interaction matrix, Skatteverket audit triggers |
+
+Read multiple reference files when a question spans domains (common in tax planning).
+
+## Year-end decision sequence (optimal order)
+
+1. **Överavskrivningar** — limited by asset base, calculate first
+2. **Periodiseringsfond** — 25% of remaining taxable income
+3. **Koncernbidrag** — equalize profits/losses across group
+4. **Löneuttag** — verify lönekrav for 3:12 (through inkomstår 2025)
+5. **Utdelning** — plan within gränsbelopp
+6. **Ränteavdragsbegränsningar** — verify compliance (interactions with steps 2-3)
+
+## Core instruments summary
+
+### Periodiseringsfond (IL 30 kap)
+- Max: 25% of skattemässigt överskott
+- Up to 6 parallel funds, each reversed within 6 tax years (FIFO)
+- Must be booked as obeskattad reserv (formellt samband)
+- Schablonintäkt: SLR (min 0.5%) x total funds, reported on INK2S 4.6a
+- BAS: 2110-2139 / 8811 (avsättning) / 8819 (återföring)
+
+### Överavskrivningar (IL 18 kap)
+- 30-regeln: pool written down to 70% of avskrivningsunderlag (declining balance)
+- 20-regeln: 20% straight-line per asset (full in 5 years)
+- Choose whichever yields lowest tax book value each year
+- Direktavdrag: assets < half PBB (29,400 kr for 2025)
+- BAS: 2150 / 8850
+
+### Koncernbidrag (IL 35 kap)
+- Transfers taxable income between group companies (>90% ownership)
+- Avdragsgillt for giver, skattepliktigt for receiver
+- Requires ownership for entire tax year + bolagsstämmobeslut
+- BAS: 8820 (mottaget) / 8830 (lämnat)
+
+### 3:12-reglerna (IL 56-57 kap)
+- Utdelning within gränsbelopp: 20% effective tax
+- Förenklingsregeln: 2.75 x IBB (209,550 kr for inkomstår 2025)
+- Huvudregeln: omkostnadsbelopp x (SLR+9%) + lönebaserat utrymme
+- K10 must be filed every year to preserve sparat utdelningsutrymme
+- **2026 reform**: grundbelopp 4 IBB, lönekrav abolished, 4%-spärr abolished, karenstid 4 years
+
+### Ränteavdragsbegränsningar (IL 24 kap)
+- EBITDA-regeln: negativt räntenetto max 30% of skattemässigt EBITDA
+- Förenklingsregeln: max 5 MSEK per intressegemenskap (not per bolag)
+- Carry-forward 6 years under EBITDA-regeln only
+- Key: periodiseringsfond avsättning increases EBITDA (good), koncernbidrag decreases it (bad)
+
+### Kapitalförsäkring
+- Sole schablonbeskattad sparform for AB (ISK only for fysiska personer)
+- Effective annual tax ~1.065% of kapitalunderlag (at SLR 2.55%)
+- Breakeven return vs direktägande: ~5.2%
+- Never for näringsbetingade andelar (already skattefria)
+- BAS: 1385
+
+## Interaction matrix (critical for year-end optimization)
+
+| Tool A | Affects | How |
+|--------|---------|-----|
+| Periodiseringsfond avsättning | EBITDA | Increases avdragsunderlag (good) |
+| Periodiseringsfond återföring | EBITDA | Decreases avdragsunderlag (bad) |
+| Koncernbidrag lämnat | EBITDA | Decreases avdragsunderlag (bad for giver) |
+| Överavskrivningar | Periodiseringsfond | Reduces taxable income, lowering max avsättning |
+| Löneuttag | 3:12 gränsbelopp | Meets lönekrav AND feeds löneunderlag |
+
+## Lön vs utdelning: effective tax burdens
+
+| Method | Combined burden |
+|--------|----------------|
+| Utdelning within gränsbelopp | ~36.5% |
+| Lön below brytpunkt | ~47-52% |
+| Lön above brytpunkt | ~58-63% |
+| Utdelning above gränsbelopp | ~52-58% |
+
+Optimal for most fåmansbolagsägare: lön up to pension ceiling (8.07 x IBB), then utdelning within gränsbelopp.
+
+## Obeskattade reserver split
+
+Both periodiseringsfonder and överavskrivningar: ~79.4% equity + ~20.6% latent tax.
+
+## Skatteflyktslagen (1995:575)
+
+Four cumulative conditions: väsentlig skatteförmån, taxpayer participation, tax was predominant reason, contravenes law's purpose. All four must be met.
+
+]]></field>
+    </record>
+
+    <!-- Swedish VAT -->
+    <record id="skill_swedish_vat" model="pi.skill">
+      <field name="name">Swedish VAT</field>
+      <field name="technical_name">swedish-vat</field>
+      <field name="category_id" ref="skill_category_swedish_accounting"/>
+      <field name="sequence">110</field>
+      <field name="active" eval="True"/>
+      <field name="description"></field>
+      <field name="instruction"><![CDATA[
+---
+name: swedish-vat
+description: >
+  Swedish VAT (moms) compliance reference. Covers momsredovisning periods/deadlines, EU VAT (omvänd skattskyldighet, reverse charge, tjänstehandel, varuhandel, trepartshandel, OSS), import/export moms, representation moms (300 SEK cap), mixed verksamhet (proportionell avdragsrätt, HFD 2023 ref. 45), jämkning of input VAT on capital goods, frivillig skattskyldighet for uthyrning, momsdeklaration Ruta 05-62 to BAS 26xx mapping, complete BAS 26xx series, error patterns, penalties, and law references (ML 2023:200, SFL, EU VAT Directive). Trigger on ANY Swedish moms/VAT question, momsdeklaration, EU trade VAT, reverse charge, representation, blandad verksamhet, jämkning, BAS 2610-2670, rutor 05-62, "vilken momskod", "hur bokför jag moms", "omvänd moms", "EU-moms", "importmoms". Highest-error-rate area in Swedish bookkeeping; always use this skill over training data.
+---
+
+# Swedish VAT (Moms) Compliance Skill
+
+This skill provides authoritative compliance reference for Swedish VAT. It is the **single highest-error-rate area** in Swedish bookkeeping.
+
+## When to use
+
+Always read the full reference before answering ANY question about:
+
+- Momsredovisning periods, thresholds, deadlines
+- EU VAT: reverse charge, intra-EU goods/services, triangulation, OSS
+- Import/export VAT
+- Representation moms (deduction limits, BAS accounts)
+- Mixed activities (proportional deduction, HFD 2023 ref. 45)
+- Jämkning (adjustment of input VAT on capital goods)
+- Frivillig skattskyldighet for property rental
+- Momsdeklaration field-to-BAS account mapping
+- BAS 26xx account usage
+- VAT error patterns, penalties, skattetillägg
+
+## How to use
+
+1. **Read the full reference first:** `view /path/to/this/skill/references/vat-compliance-reference.md`
+2. Find the relevant section for the user's question
+3. Provide precise answers with account numbers, ruta numbers, legal references, and thresholds
+4. Flag common error patterns relevant to the user's scenario
+
+## Quick reference: VAT rates
+
+| Rate | Applies to |
+|------|-----------|
+| 25% | Default rate, most goods and services |
+| 12% | Food, hotel, restaurant, camping (drops to 6% for food from April 2026) |
+| 6% | Books, newspapers, transport, cultural events, sports, repairs (bicycles/shoes/clothing) |
+| 0% | Exports outside EU, intra-EU supplies (with conditions) |
+
+## Quick reference: Key BAS accounts
+
+| Account | Purpose | Momsdeklaration |
+|---------|---------|-----------------|
+| 2611 | Utgående moms domestic 25% | Ruta 10 |
+| 2614 | Utgående moms reverse charge 25% | Ruta 30 |
+| 2615 | Utgående moms import 25% | Ruta 60 |
+| 2641 | Debiterad ingående moms | Ruta 48 |
+| 2645 | Beräknad ingående moms förvärv utlandet | Ruta 48 |
+| 2650 | Momsredovisningskonto (clearing) | Ruta 49 |
+
+## Quick reference: Reporting thresholds
+
+| Annual beskattningsunderlag | Default period |
+|----------------------------|----------------|
+| ≤ 1M SEK | Annual |
+| > 1M - ≤ 40M SEK | Quarterly |
+| > 40M SEK | Monthly |
+
+## Critical error patterns to flag
+
+1. **2611 vs 2614**: Reverse charge output VAT must go to 2614 (Ruta 30), never 2611 (Ruta 10)
+2. **One-sided reverse charge**: Both output AND input VAT must be booked; silent netting is prohibited
+3. **Import double-counting**: Since 2015, VAT-registered businesses report import VAT to Skatteverket only, not Tullverket
+4. **Representation**: VAT deductible on 300 SEK base; income tax deduction abolished for meals since 2017
+5. **Period-end clearing**: All 261x-264x must clear to 2650; residual balances cause reconciliation failures
+
+For the complete reference with all account mappings, legal citations, formulas, and detailed rules, read:
+`references/vat-compliance-reference.md`
+]]></field>
+      <field name="markdown_content"><![CDATA[
+---
+name: swedish-vat
+description: >
+  Swedish VAT (moms) compliance reference. Covers momsredovisning periods/deadlines, EU VAT (omvänd skattskyldighet, reverse charge, tjänstehandel, varuhandel, trepartshandel, OSS), import/export moms, representation moms (300 SEK cap), mixed verksamhet (proportionell avdragsrätt, HFD 2023 ref. 45), jämkning of input VAT on capital goods, frivillig skattskyldighet for uthyrning, momsdeklaration Ruta 05-62 to BAS 26xx mapping, complete BAS 26xx series, error patterns, penalties, and law references (ML 2023:200, SFL, EU VAT Directive). Trigger on ANY Swedish moms/VAT question, momsdeklaration, EU trade VAT, reverse charge, representation, blandad verksamhet, jämkning, BAS 2610-2670, rutor 05-62, "vilken momskod", "hur bokför jag moms", "omvänd moms", "EU-moms", "importmoms". Highest-error-rate area in Swedish bookkeeping; always use this skill over training data.
+---
+
+# Swedish VAT (Moms) Compliance Skill
+
+This skill provides authoritative compliance reference for Swedish VAT. It is the **single highest-error-rate area** in Swedish bookkeeping.
+
+## When to use
+
+Always read the full reference before answering ANY question about:
+
+- Momsredovisning periods, thresholds, deadlines
+- EU VAT: reverse charge, intra-EU goods/services, triangulation, OSS
+- Import/export VAT
+- Representation moms (deduction limits, BAS accounts)
+- Mixed activities (proportional deduction, HFD 2023 ref. 45)
+- Jämkning (adjustment of input VAT on capital goods)
+- Frivillig skattskyldighet for property rental
+- Momsdeklaration field-to-BAS account mapping
+- BAS 26xx account usage
+- VAT error patterns, penalties, skattetillägg
+
+## How to use
+
+1. **Read the full reference first:** `view /path/to/this/skill/references/vat-compliance-reference.md`
+2. Find the relevant section for the user's question
+3. Provide precise answers with account numbers, ruta numbers, legal references, and thresholds
+4. Flag common error patterns relevant to the user's scenario
+
+## Quick reference: VAT rates
+
+| Rate | Applies to |
+|------|-----------|
+| 25% | Default rate, most goods and services |
+| 12% | Food, hotel, restaurant, camping (drops to 6% for food from April 2026) |
+| 6% | Books, newspapers, transport, cultural events, sports, repairs (bicycles/shoes/clothing) |
+| 0% | Exports outside EU, intra-EU supplies (with conditions) |
+
+## Quick reference: Key BAS accounts
+
+| Account | Purpose | Momsdeklaration |
+|---------|---------|-----------------|
+| 2611 | Utgående moms domestic 25% | Ruta 10 |
+| 2614 | Utgående moms reverse charge 25% | Ruta 30 |
+| 2615 | Utgående moms import 25% | Ruta 60 |
+| 2641 | Debiterad ingående moms | Ruta 48 |
+| 2645 | Beräknad ingående moms förvärv utlandet | Ruta 48 |
+| 2650 | Momsredovisningskonto (clearing) | Ruta 49 |
+
+## Quick reference: Reporting thresholds
+
+| Annual beskattningsunderlag | Default period |
+|----------------------------|----------------|
+| ≤ 1M SEK | Annual |
+| > 1M - ≤ 40M SEK | Quarterly |
+| > 40M SEK | Monthly |
+
+## Critical error patterns to flag
+
+1. **2611 vs 2614**: Reverse charge output VAT must go to 2614 (Ruta 30), never 2611 (Ruta 10)
+2. **One-sided reverse charge**: Both output AND input VAT must be booked; silent netting is prohibited
+3. **Import double-counting**: Since 2015, VAT-registered businesses report import VAT to Skatteverket only, not Tullverket
+4. **Representation**: VAT deductible on 300 SEK base; income tax deduction abolished for meals since 2017
+5. **Period-end clearing**: All 261x-264x must clear to 2650; residual balances cause reconciliation failures
+
+For the complete reference with all account mappings, legal citations, formulas, and detailed rules, read:
+`references/vat-compliance-reference.md`
+]]></field>
+    </record>
+
+    <!-- Swedish Year-End Closing -->
+    <record id="skill_swedish_year_end_closing" model="pi.skill">
+      <field name="name">Swedish Year-End Closing</field>
+      <field name="technical_name">swedish-year-end-closing</field>
+      <field name="category_id" ref="skill_category_swedish_accounting"/>
+      <field name="sequence">120</field>
+      <field name="active" eval="True"/>
+      <field name="description"></field>
+      <field name="instruction"><![CDATA[
+---
+name: swedish-year-end-closing
+description: >
+  Swedish year-end closing (bokslut) for AB and Enskild firma. Covers legal framework (BFL/ÅRL/K1/K2/K3), step-by-step closing with BAS account numbers, bokslutstransaktioner, tax calculations (bolagsskatt, egenavgifter, räntefördelning, expansionsfond, periodiseringsfond), reporting (årsredovisning/NE-bilaga), filing deadlines, SIE4 export, K2 vs K3 differences, förenklat årsbokslut K1 (BFNAR 2006:1, B-poster, R-poster, U-poster, BAS 2018 förenklat, NE-blankett mapping), and compliance pitfalls. Trigger on bokslut, årsbokslut, årsredovisning, förenklat årsbokslut, K1, BFNAR 2006:1, B-poster B1-B16, R-poster R1-R11, U-poster U1-U4, BAS 2018 förenklat, NE-blankett mapping, closing entries, resultatdisposition, accruals, tax provisions, överavskrivningar, accounts 2099/2091/8910/8811/2512/21xx/29xx, or any question about closing books for a Swedish company. Also "periodiseringsfond AB vs EF", "deadline årsredovisning", "K1 vs fullt årsbokslut".
+---
+
+# Swedish Year-End Closing (Bokslut)
+
+This skill provides everything needed to perform or implement a complete Swedish year-end closing for **Aktiebolag (AB)** and **Enskild firma**.
+
+## Quick decision tree
+
+1. **AB** → always årsredovisning → K2 (if mindre and eligible) or K3
+2. **Enskild firma, revenue ≤ 3 MSEK** → **K1 förenklat årsbokslut** (BFNAR 2006:1) — see `references/k1-forenklat-arsbokslut.md`. Critical: P-fond and expansionsfond must NEVER be booked in räkenskaperna for EF (only as upplysning U1/U2); the opposite of AB. NE-bilaga handles the avdrag.
+3. **Enskild firma, revenue > 3 MSEK** → full årsbokslut (BFNAR 2017:3)
+
+## Reference files
+
+This skill contains detailed reference material split by topic. Read the relevant file(s) based on the user's question:
+
+- **`references/legal-framework.md`** — BFL, ÅRL, K1/K2/K3 framework rules, entity obligations, större/mindre företag thresholds, 2026 K2 changes
+- **`references/closing-process.md`** — Complete 8-phase closing process with BAS account numbers: avstämningar, periodiseringar, avskrivningar, lagervärdering, obeskattade reserver, avsättningar/skatt, equity handling, result closing
+- **`references/journal-entries.md`** — All specific bokslutstransaktioner with debit/credit pairs for software implementation
+- **`references/tax-calculations.md`** — Bolagsskatt for AB, egenavgifter/räntefördelning/expansionsfond/periodiseringsfond for enskild firma, schablonintäkt, schablonavdrag
+- **`references/reporting-and-filing.md`** — Årsredovisning structure, NE-bilaga, filing deadlines, penalties, Bolagsverket/Skatteverket requirements, SIE4 export, audit thresholds
+- **`references/k2-vs-k3.md`** — Implementation differences: component depreciation, deferred tax, intangibles, leasing, format restrictions, account visibility
+- **`references/pitfalls-and-rates.md`** — Common mistakes, compliance traps, kontrollbalansräkning, and reference rate table (2025/2026)
+- **`references/k1-forenklat-arsbokslut.md`** — K1 förenklat årsbokslut (BFNAR 2006:1): applicability (3 MSEK threshold), kontantmetoden vs faktureringsmetoden, B1-B16/R1-R11/U1-U4 struktur with BAS 2018 förenklat kontoplan mappings, K1 värderingsregler (inventarier, lager, skogskonto), NE-bilaga mapping, värdering at avveckling, and a distilled praktikfall
+
+## How to use this skill
+
+When a user asks a bokslut question:
+
+1. Identify whether it's about AB or Enskild firma (or both)
+2. Identify which phase/topic the question relates to
+3. Read the relevant reference file(s)
+4. Answer with specific BAS account numbers and journal entries where applicable
+5. Flag K2 vs K3 differences when relevant
+6. Include current rates/thresholds from the rates table
+
+Always distinguish between items that are **booked** in the accounting vs items that exist **only in the tax declaration**:
+- **Booked**: överavskrivningar, periodiseringsfond (AB only), skatt på årets resultat (AB only)
+- **Declaration only**: periodiseringsfond (EF), expansionsfond, räntefördelning, schablonintäkt on periodiseringsfond, egenavgifter schablonavdrag
+]]></field>
+      <field name="markdown_content"><![CDATA[
+---
+name: swedish-year-end-closing
+description: >
+  Swedish year-end closing (bokslut) for AB and Enskild firma. Covers legal framework (BFL/ÅRL/K1/K2/K3), step-by-step closing with BAS account numbers, bokslutstransaktioner, tax calculations (bolagsskatt, egenavgifter, räntefördelning, expansionsfond, periodiseringsfond), reporting (årsredovisning/NE-bilaga), filing deadlines, SIE4 export, K2 vs K3 differences, förenklat årsbokslut K1 (BFNAR 2006:1, B-poster, R-poster, U-poster, BAS 2018 förenklat, NE-blankett mapping), and compliance pitfalls. Trigger on bokslut, årsbokslut, årsredovisning, förenklat årsbokslut, K1, BFNAR 2006:1, B-poster B1-B16, R-poster R1-R11, U-poster U1-U4, BAS 2018 förenklat, NE-blankett mapping, closing entries, resultatdisposition, accruals, tax provisions, överavskrivningar, accounts 2099/2091/8910/8811/2512/21xx/29xx, or any question about closing books for a Swedish company. Also "periodiseringsfond AB vs EF", "deadline årsredovisning", "K1 vs fullt årsbokslut".
+---
+
+# Swedish Year-End Closing (Bokslut)
+
+This skill provides everything needed to perform or implement a complete Swedish year-end closing for **Aktiebolag (AB)** and **Enskild firma**.
+
+## Quick decision tree
+
+1. **AB** → always årsredovisning → K2 (if mindre and eligible) or K3
+2. **Enskild firma, revenue ≤ 3 MSEK** → **K1 förenklat årsbokslut** (BFNAR 2006:1) — see `references/k1-forenklat-arsbokslut.md`. Critical: P-fond and expansionsfond must NEVER be booked in räkenskaperna for EF (only as upplysning U1/U2); the opposite of AB. NE-bilaga handles the avdrag.
+3. **Enskild firma, revenue > 3 MSEK** → full årsbokslut (BFNAR 2017:3)
+
+## Reference files
+
+This skill contains detailed reference material split by topic. Read the relevant file(s) based on the user's question:
+
+- **`references/legal-framework.md`** — BFL, ÅRL, K1/K2/K3 framework rules, entity obligations, större/mindre företag thresholds, 2026 K2 changes
+- **`references/closing-process.md`** — Complete 8-phase closing process with BAS account numbers: avstämningar, periodiseringar, avskrivningar, lagervärdering, obeskattade reserver, avsättningar/skatt, equity handling, result closing
+- **`references/journal-entries.md`** — All specific bokslutstransaktioner with debit/credit pairs for software implementation
+- **`references/tax-calculations.md`** — Bolagsskatt for AB, egenavgifter/räntefördelning/expansionsfond/periodiseringsfond for enskild firma, schablonintäkt, schablonavdrag
+- **`references/reporting-and-filing.md`** — Årsredovisning structure, NE-bilaga, filing deadlines, penalties, Bolagsverket/Skatteverket requirements, SIE4 export, audit thresholds
+- **`references/k2-vs-k3.md`** — Implementation differences: component depreciation, deferred tax, intangibles, leasing, format restrictions, account visibility
+- **`references/pitfalls-and-rates.md`** — Common mistakes, compliance traps, kontrollbalansräkning, and reference rate table (2025/2026)
+- **`references/k1-forenklat-arsbokslut.md`** — K1 förenklat årsbokslut (BFNAR 2006:1): applicability (3 MSEK threshold), kontantmetoden vs faktureringsmetoden, B1-B16/R1-R11/U1-U4 struktur with BAS 2018 förenklat kontoplan mappings, K1 värderingsregler (inventarier, lager, skogskonto), NE-bilaga mapping, värdering at avveckling, and a distilled praktikfall
+
+## How to use this skill
+
+When a user asks a bokslut question:
+
+1. Identify whether it's about AB or Enskild firma (or both)
+2. Identify which phase/topic the question relates to
+3. Read the relevant reference file(s)
+4. Answer with specific BAS account numbers and journal entries where applicable
+5. Flag K2 vs K3 differences when relevant
+6. Include current rates/thresholds from the rates table
+
+Always distinguish between items that are **booked** in the accounting vs items that exist **only in the tax declaration**:
+- **Booked**: överavskrivningar, periodiseringsfond (AB only), skatt på årets resultat (AB only)
+- **Declaration only**: periodiseringsfond (EF), expansionsfond, räntefördelning, schablonintäkt on periodiseringsfond, egenavgifter schablonavdrag
+]]></field>
+    </record>
+
+  </data>
+</odoo>

@@ -2,21 +2,21 @@
 
 import { registry } from "@web/core/registry";
 import { useService } from "@web/core/utils/hooks";
-import { Component } from "@odoo/owl";
+import { Component, useState } from "@odoo/owl";
 import { _t } from "@web/core/l10n/translation";
+import { rpc } from "@web/core/network/rpc";
+import { useBus } from "@web/core/utils/hooks";
 
 /**
- * Systray button that launches an AI Quest from the current form view.
+ * Systray button that launches an AI Quest from the current form view
+ * with automatic record context injection.
  *
- * Inspired by Odoo Enterprise ai/static/src/web/systray_action.js.
- * When clicked from a form view, it sends the current record's data
- * (model, ID, field values) as context to the AI Quest session.
- *
- * The context flows:
- * 1. Frontend reads model.root.data (all field values) + model.root.fields
- * 2. Calls a server endpoint to create a Quest session with record context
- * 3. The session's set_context_record() serializes fields + chatter
- * 4. The Quest's _extra_context() injects it into the AI system prompt
+ * Flow:
+ * 1. User clicks systray button
+ * 2. Frontend reads current model.root (all field values + metadata)
+ * 3. Opens a dialog to select which Quest to run
+ * 4. Calls /ai_agent_context/launch_quest with record context
+ * 5. Backend creates channel + session, injects context, runs quest
  */
 export class QuestSystray extends Component {
     static template = "ai_agent_context.QuestSystray";
@@ -26,13 +26,19 @@ export class QuestSystray extends Component {
         super.setup();
         this.orm = useService("orm");
         this.action = useService("action");
+        this.dialog = useService("dialog");
         this.bus = this.env.bus;
+        this.state = useState({
+            loading: false,
+            availableQuests: [],
+        });
     }
 
+    // ── View info gathering ─────────────────────────────────────────
+
     /**
-     * Get the current form view's model and record data.
-     * Uses the same bus pattern as Odoo Enterprise to communicate
-     * with the FormController.
+     * Get the current form view's model and all record data.
+     * Communicates with FormController via the bus pattern.
      */
     async getCurrentViewInfo() {
         return new Promise((resolve) => {
@@ -48,7 +54,7 @@ export class QuestSystray extends Component {
                     "AI_QUEST.SEND_MODEL_DETAILS", listener
                 );
                 resolve(null);
-            }, 150);
+            }, 200);
             this.bus.addEventListener(
                 "AI_QUEST.SEND_MODEL_DETAILS", listener
             );
@@ -57,78 +63,193 @@ export class QuestSystray extends Component {
     }
 
     /**
-     * Main click handler. Gets current form record data,
-     * opens the Quest selector, and creates a session with context.
+     * Extract record data from the model object returned by
+     * FormController. Includes all field values, model name, and ID.
      */
+    _extractRecordData(model) {
+        if (!model || !model.root) {
+            return null;
+        }
+
+        const root = model.root;
+        return {
+            model: root.resModel,
+            resId: root.resId,
+            viewType: "form",
+            recordData: root.data
+                ? JSON.parse(JSON.stringify(root.data)) // deep copy
+                : null,
+            displayName: root.data?.display_name
+                || root.data?.name
+                || `${root.resModel} #${root.resId}`,
+            isDirty: root.isDirty ? root.isDirty() : false,
+        };
+    }
+
+    // ── Systray click handler ────────────────────────────────────────
+
     async onClickLaunchQuest() {
+        if (this.state.loading) return;
+
         const currentController = this.action.currentController;
         const viewType = currentController?.view?.type;
 
         if (viewType !== "form") {
-            // Not in a form view - launch without record context
-            this._openQuestSelector();
+            // Not in a form view — open quest list without context
+            this._openQuestList();
             return;
         }
 
-        const model = await this.getCurrentViewInfo();
-        if (!model || !model.root) {
-            this._openQuestSelector();
-            return;
-        }
+        this.state.loading = true;
+        try {
+            const model = await this.getCurrentViewInfo();
+            const recordInfo = this._extractRecordData(model);
 
-        // Force save to ensure record exists and chatter is synced
-        if (model.root.isDirty && model.root.isDirty()) {
-            const saved = await model.root.save();
-            if (!saved) return;
-        }
+            if (!recordInfo || !recordInfo.model || !recordInfo.resId) {
+                // No valid record — open quest list without context
+                this._openQuestList();
+                return;
+            }
 
-        // Get quests available for this model
-        const resModel = model.root.resModel;
-        const resId = model.root.resId;
-        
-        this._openQuestSelector({
-            resModel: resModel,
-            resId: resId,
-            recordName: model.root.data.display_name || 
-                        model.root.data.name || 
-                        `${resModel} #${resId}`,
+            // Force save if dirty to ensure record exists
+            if (recordInfo.isDirty) {
+                try {
+                    await model.root.save();
+                } catch (e) {
+                    // Record might be unsavable — proceed with what we have
+                    console.warn("Could not save record before launching quest:", e);
+                }
+            }
+
+            // Fetch available quests
+            const quests = await this._fetchAvailableQuests(recordInfo.model);
+            if (!quests || quests.length === 0) {
+                // No quests available for this model
+                this._openQuestList();
+                return;
+            }
+
+            // Show quest selector dialog
+            this._showQuestSelector(quests, recordInfo);
+
+        } catch (error) {
+            console.error("Failed to launch AI quest:", error);
+            this._openQuestList();
+        } finally {
+            this.state.loading = false;
+        }
+    }
+
+    // ── Quest selection ──────────────────────────────────────────────
+
+    async _fetchAvailableQuests(model) {
+        try {
+            const result = await this.orm.searchRead(
+                "ai.quest",
+                [["active", "=", true]],
+                ["id", "name", "description", "context_injection_enabled"],
+                { limit: 20 }
+            );
+            return result;
+        } catch (e) {
+            console.warn("Failed to fetch quests:", e);
+            return [];
+        }
+    }
+
+    _showQuestSelector(quests, recordInfo) {
+        const QuestSelectorDialog = this._createQuestSelectorDialog(
+            quests, recordInfo
+        );
+        this.dialog.add(QuestSelectorDialog, {
+            quests: quests,
+            recordInfo: recordInfo,
+            onSelect: this._onQuestSelected.bind(this),
+            onCancel: () => {},
         });
     }
 
-    /**
-     * Open a dialog to select which Quest to launch.
-     * Passes the record context so the selected Quest gets it.
-     */
-    async _openQuestSelector(contextInfo = null) {
-        if (contextInfo) {
-            // Store context info for the Quest session creation
-            const context = {
-                default_context_record_model: contextInfo.resModel,
-                default_context_record_id: contextInfo.resId,
+    _createQuestSelectorDialog(quests, recordInfo) {
+        const self = this;
+
+        return class extends Component {
+            static template = "ai_agent_context.QuestSelectorDialog";
+            static props = {
+                quests: Array,
+                recordInfo: Object,
+                onSelect: Function,
+                onCancel: Function,
             };
 
-            this.action.doAction({
-                type: "ir.actions.act_window",
-                name: contextInfo.recordName 
-                    ? _t("Launch Quest for: %s", contextInfo.recordName)
-                    : _t("Launch Quest"),
-                res_model: "ai.quest",
-                views: [[false, "list"], [false, "form"]],
-                target: "current",
-                context: context,
+            setup() {
+                super.setup();
+                this.state = useState({
+                    selectedQuestId: null,
+                    launching: false,
+                });
+            }
+
+            selectQuest(questId) {
+                this.state.selectedQuestId = questId;
+            }
+
+            async launch() {
+                if (!this.state.selectedQuestId || this.state.launching) return;
+                this.state.launching = true;
+                try {
+                    await this.props.onSelect(
+                        this.state.selectedQuestId,
+                        this.props.recordInfo
+                    );
+                } finally {
+                    this.state.launching = false;
+                }
+            }
+        };
+    }
+
+    async _onQuestSelected(questId, recordInfo) {
+        try {
+            const result = await rpc("/ai_agent_context/launch_quest", {
+                quest_id: questId,
+                model: recordInfo.model,
+                res_id: recordInfo.resId,
+                view_type: recordInfo.viewType,
+                record_data: recordInfo.recordData,
             });
-        } else {
-            // No record context - standard quest list
-            this.action.doAction({
-                type: "ir.actions.act_window",
-                name: _t("AI Quests"),
-                res_model: "ai.quest",
-                views: [[false, "list"], [false, "form"]],
-                target: "current",
-            });
+
+            if (result.success && result.channel_id) {
+                // Open the discuss channel with the quest
+                this.action.doAction({
+                    type: "ir.actions.act_window",
+                    res_model: "discuss.channel",
+                    res_id: result.channel_id,
+                    views: [[false, "form"]],
+                    target: "current",
+                    name: _t("AI Quest: %s", recordInfo.displayName),
+                });
+            } else {
+                console.error("Quest launch failed:", result.error);
+            }
+        } catch (error) {
+            console.error("Failed to launch quest:", error);
         }
     }
+
+    // ── Fallback: open quest list ──────────────────────────────────
+
+    _openQuestList() {
+        this.action.doAction({
+            type: "ir.actions.act_window",
+            name: _t("AI Quests"),
+            res_model: "ai.quest",
+            views: [[false, "list"], [false, "form"]],
+            target: "current",
+        });
+    }
 }
+
+// ── Registration ──────────────────────────────────────────────────
 
 registry
     .category("systray")

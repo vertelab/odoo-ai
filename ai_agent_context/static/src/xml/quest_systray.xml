@@ -1,14 +1,100 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <templates xml:space="preserve">
+
+    <!-- Systray button -->
     <t t-name="ai_agent_context.QuestSystray" owl="1">
         <button
             class="btn btn-secondary o_systray_quest_btn d-flex align-items-center"
             t-on-click="onClickLaunchQuest"
+            t-att-disabled="state.loading"
             title="Launch AI Quest with record context"
             aria-label="Launch AI Quest"
         >
-            <i class="fa fa-magic me-1"/>
-            <span class="d-none d-lg-inline">AI Quest</span>
+            <i t-attf-class="fa fa-lg me-1 {{ state.loading ? 'fa-spinner fa-spin' : 'fa-magic' }}"/>
+            <span class="d-none d-lg-inline">
+                <t t-if="state.loading">Loading...</t>
+                <t t-else="">AI Quest</t>
+            </span>
         </button>
     </t>
+
+    <!-- Quest selector dialog -->
+    <t t-name="ai_agent_context.QuestSelectorDialog" owl="1">
+        <div class="modal fade show d-block" tabindex="-1" role="dialog"
+             style="background: rgba(0,0,0,0.5);">
+            <div class="modal-dialog" role="document">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">
+                            Launch AI Quest for
+                            <strong t-esc="props.recordInfo.displayName"/>
+                        </h5>
+                        <button type="button" class="btn-close"
+                                t-on-click="() => props.onCancel()"
+                                aria-label="Close"/>
+                    </div>
+
+                    <div class="modal-body">
+                        <p class="text-muted mb-3">
+                            Select a quest to run. The AI will have access to
+                            this record's fields and chatter history as context.
+                        </p>
+
+                        <div class="list-group">
+                            <t t-foreach="props.quests" t-as="quest" t-key="quest.id">
+                                <button
+                                    type="button"
+                                    class="list-group-item list-group-item-action d-flex align-items-center"
+                                    t-att-class="state.selectedQuestId === quest.id
+                                        ? 'list-group-item active' : ''"
+                                    t-on-click="() => selectQuest(quest.id)"
+                                >
+                                    <div class="flex-grow-1">
+                                        <div class="fw-bold">
+                                            <t t-esc="quest.name"/>
+                                        </div>
+                                        <small class="d-block"
+                                               t-att-class="state.selectedQuestId === quest.id
+                                                   ? 'text-white opacity-75' : 'text-muted'">
+                                            <t t-esc="quest.description or ''"/>
+                                        </small>
+                                    </div>
+                                    <t t-if="quest.context_injection_enabled">
+                                        <span class="badge bg-success ms-2">
+                                            <i class="fa fa-magic me-1"/>
+                                            Context
+                                        </span>
+                                    </t>
+                                </button>
+                            </t>
+                        </div>
+
+                        <t t-if="!props.quests or props.quests.length === 0">
+                            <div class="alert alert-info mt-3">
+                                No quests available.
+                                <a href="#" t-on-click.prevent="() => props.onCancel()">
+                                    Create a quest first
+                                </a>
+                            </div>
+                        </t>
+                    </div>
+
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary"
+                                t-on-click="() => props.onCancel()">
+                            Cancel
+                        </button>
+                        <button type="button" class="btn btn-primary"
+                                t-on-click="launch"
+                                t-att-disabled="!state.selectedQuestId or state.launching">
+                            <i t-attf-class="fa me-1 {{ state.launching ? 'fa-spinner fa-spin' : 'fa-rocket' }}"/>
+                            <t t-if="state.launching">Launching...</t>
+                            <t t-else="">Launch Quest</t>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </t>
+
 </templates>

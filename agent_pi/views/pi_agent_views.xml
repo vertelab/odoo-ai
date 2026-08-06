@@ -1,0 +1,164 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+  <data>
+    <!-- PI.AGENT — Kanban -->
+    <record id="view_pi_agent_kanban" model="ir.ui.view">
+      <field name="name">pi.agent.kanban</field>
+      <field name="model">pi.agent</field>
+      <field name="arch" type="xml">
+        <kanban default_group_by="state" quick_create="false" class="o_kanban_small">
+          <field name="name"/>
+          <field name="hostname"/>
+          <field name="state"/>
+          <field name="agent_type"/>
+          <field name="task_count"/>
+          <field name="load_avg"/>
+          <field name="last_heartbeat"/>
+          <templates>
+            <t t-name="card">
+              <div class="oe_kanban_global_click">
+                <div class="o_kanban_record_top">
+                  <div class="o_kanban_record_headings">
+                    <strong class="o_kanban_record_title">
+                      <field name="name"/>
+                    </strong>
+                    <small><field name="hostname"/></small>
+                  </div>
+                </div>
+                <div class="o_kanban_record_body">
+                  <div>
+                    <span class="badge"><field name="agent_type"/></span>
+                    <t t-if="record.task_count.raw_value">
+                      Tasks: <field name="task_count"/>
+                    </t>
+                  </div>
+                  <div class="text-muted small">
+                    Load: <field name="load_avg"/> | Heartbeat: <field name="last_heartbeat" widget="relative"/>
+                  </div>
+                </div>
+              </div>
+            </t>
+          </templates>
+        </kanban>
+      </field>
+    </record>
+
+    <!-- PI.AGENT — Tree -->
+    <record id="view_pi_agent_tree" model="ir.ui.view">
+      <field name="name">pi.agent.tree</field>
+      <field name="model">pi.agent</field>
+      <field name="arch" type="xml">
+        <list string="Agents" editable="top">
+          <field name="name"/>
+          <field name="hostname"/>
+          <field name="agent_type"/>
+          <field name="state" widget="badge"
+            decoration-success="state=='idle'"
+            decoration-warning="state=='busy'"
+            decoration-danger="state in ('offline','error')"/>
+          <field name="task_count"/>
+          <field name="load_avg"/>
+          <field name="last_heartbeat" widget="relative"/>
+          <field name="pi_version" optional="hide"/>
+          <field name="nats_connected" optional="hide"/>
+          <field name="active" optional="hide"/>
+        </list>
+      </field>
+    </record>
+
+    <!-- PI.AGENT — Form -->
+    <record id="view_pi_agent_form" model="ir.ui.view">
+      <field name="name">pi.agent.form</field>
+      <field name="model">pi.agent</field>
+      <field name="arch" type="xml">
+        <form string="Agent">
+          <header>
+            <field name="state" widget="statusbar"
+              statusbar_visible="idle,busy,offline,error"/>
+          </header>
+          <sheet>
+            <div class="oe_button_box" name="button_box">
+              <button name="action_view_tasks" type="object"
+                class="oe_stat_button" icon="fa-tasks">
+                <div class="o_stat_info">
+                  <field name="task_count" widget="statinfo"/>
+                  <span>Active Tasks</span>
+                </div>
+              </button>
+            </div>
+            <div class="oe_title">
+              <h1><field name="name" placeholder="Agent Name"/></h1>
+              <h2><field name="hostname"/></h2>
+            </div>
+            <group>
+              <group string="Info">
+                <field name="agent_type"/>
+                <field name="active"/>
+                <field name="salt_minion_id"/>
+                <field name="model"/>
+              </group>
+              <group string="Health">
+                <field name="last_heartbeat"/>
+                <field name="load_avg"/>
+                <field name="memory_used"/>
+                <field name="pi_version"/>
+                <field name="nats_connected"/>
+              </group>
+            </group>
+            <group string="Capabilities">
+              <field name="skill_ids" widget="many2many_tags"/>
+            </group>
+            <group string="Tools (JSON)">
+              <field name="tools" nolabel="1"/>
+            </group>
+            <notebook>
+              <page string="Tasks">
+                <field name="task_ids">
+                  <list>
+                    <field name="name"/>
+                    <field name="state" widget="badge"/>
+                    <field name="priority" widget="priority"/>
+                    <field name="create_date"/>
+                  </list>
+                </field>
+              </page>
+            </notebook>
+          </sheet>
+          <chatter/>
+        </form>
+      </field>
+    </record>
+
+    <!-- PI.AGENT — Search -->
+    <record id="view_pi_agent_search" model="ir.ui.view">
+      <field name="name">pi.agent.search</field>
+      <field name="model">pi.agent</field>
+      <field name="arch" type="xml">
+        <search string="Agents">
+          <field name="name"/>
+          <field name="hostname"/>
+          <separator/>
+          <filter name="active" string="Active" domain="[('active','=',True)]"/>
+          <filter name="online" string="Online" domain="[('state','in',('idle','busy'))]"/>
+          <filter name="offline" string="Offline" domain="[('state','=','offline')]"/>
+          <filter name="error" string="Error" domain="[('state','=','error')]"/>
+          <separator/>
+          <group expand="0" string="Group By">
+            <filter name="group_state" string="State" context="{'group_by':'state'}"/>
+            <filter name="group_type" string="Type" context="{'group_by':'agent_type'}"/>
+          </group>
+        </search>
+      </field>
+    </record>
+
+    <!-- ACTIONS -->
+    <record id="action_pi_agent" model="ir.actions.act_window">
+      <field name="name">Agents</field>
+      <field name="res_model">pi.agent</field>
+      <field name="view_mode">kanban,list,form</field>
+      <field name="search_view_id" ref="view_pi_agent_search"/>
+    </record>
+
+    <!-- MENU: moved to res_config_settings_views.xml -->
+  </data>
+</odoo>

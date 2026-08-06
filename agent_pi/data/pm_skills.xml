@@ -1,0 +1,367 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+  <data noupdate="1">
+
+    <!-- Project Management Category -->
+    <record id="skill_category_project_mgmt" model="pi.skill.category">
+      <field name="name">Project Management</field>
+      <field name="technical_name">project-management</field>
+      <field name="sequence">50</field>
+      <field name="description">Skills for product management, agile workflows, Scrum, roadmapping, and stakeholder management</field>
+    </record>
+
+    <!-- Product Discovery -->
+    <record id="skill_pm_product_discovery" model="pi.skill">
+      <field name="name">Product Discovery</field>
+      <field name="technical_name">pm-product-discovery</field>
+      <field name="category_id" ref="skill_category_project_mgmt"/>
+      <field name="sequence">10</field>
+      <field name="active" eval="True"/>
+      <field name="description">Guide product discovery — user research, problem validation, opportunity sizing, and hypothesis testing</field>
+      <field name="instruction"><![CDATA[
+# Product Discovery
+
+Guide product discovery processes — user research, problem validation, opportunity sizing, and hypothesis testing.
+
+## When to Activate
+
+- Starting a new product initiative
+- Validating a feature idea
+- Exploring a new market opportunity
+- User research and persona development
+- Defining product-market fit hypotheses
+
+## Key Frameworks
+
+- Jobs-to-be-Done (JTBD)
+- Opportunity Solution Tree
+- Lean Canvas
+- User Story Mapping
+- Design Thinking
+
+## Deliverables
+
+- Problem statement
+- User personas
+- Opportunity assessment
+- Hypothesis backlog
+- Discovery findings report
+      ]]></field>
+      <field name="markdown_content"><![CDATA[
+# Product Discovery
+
+Guide product discovery processes — user research, problem validation, opportunity sizing, and hypothesis testing.
+      ]]></field>
+    </record>
+
+    <!-- Product Strategy -->
+    <record id="skill_pm_product_strategy" model="pi.skill">
+      <field name="name">Product Strategy</field>
+      <field name="technical_name">pm-product-strategy</field>
+      <field name="category_id" ref="skill_category_project_mgmt"/>
+      <field name="sequence">20</field>
+      <field name="active" eval="True"/>
+      <field name="description">Define product strategy — vision, OKRs, competitive analysis, market positioning, and portfolio decisions</field>
+      <field name="instruction"><![CDATA[
+# Product Strategy
+
+Define and maintain product strategy including vision, objectives, competitive analysis, and portfolio decisions.
+
+## Key Activities
+
+- Vision and mission definition
+- OKR setting and tracking
+- Competitive landscape analysis
+- Build vs. buy vs. partner decisions
+- Portfolio prioritization
+      ]]></field>
+      <field name="markdown_content"><![CDATA[
+# Product Strategy
+
+Define and maintain product strategy including vision, objectives, competitive analysis, and portfolio decisions.
+      ]]></field>
+    </record>
+
+    <!-- Roadmapping -->
+    <record id="skill_pm_roadmapping" model="pi.skill">
+      <field name="name">Roadmapping</field>
+      <field name="technical_name">pm-roadmapping</field>
+      <field name="category_id" ref="skill_category_project_mgmt"/>
+      <field name="sequence">30</field>
+      <field name="active" eval="True"/>
+      <field name="description">Create and maintain product roadmaps — now/next/later, timeline planning, dependency mapping</field>
+      <field name="instruction"><![CDATA[
+# Roadmapping
+
+Create and maintain product roadmaps that communicate the product direction.
+
+## Roadmap Types
+
+- Now / Next / Later
+- Timeline-based (quarterly)
+- Theme-based
+- Outcome-based
+
+## Key Elements
+
+- Strategic themes
+- Time horizons
+- Dependencies between initiatives
+- Confidence levels
+- Stakeholder communication plan
+      ]]></field>
+      <field name="markdown_content"><![CDATA[
+# Roadmapping
+
+Create and maintain product roadmaps that communicate the product direction.
+      ]]></field>
+    </record>
+
+    <!-- PRD Writing -->
+    <record id="skill_pm_prd_writing" model="pi.skill">
+      <field name="name">PRD Writing</field>
+      <field name="technical_name">pm-prd-writing</field>
+      <field name="category_id" ref="skill_category_project_mgmt"/>
+      <field name="sequence">40</field>
+      <field name="active" eval="True"/>
+      <field name="description">Write product requirement documents — problem statement, user stories, acceptance criteria, success metrics</field>
+      <field name="instruction"><![CDATA[
+# PRD Writing
+
+Write clear, actionable Product Requirement Documents.
+
+## PRD Structure
+
+1. Problem Statement
+2. User Stories (with acceptance criteria)
+3. Success Metrics
+4. Technical Considerations
+5. Dependencies
+6. Open Questions
+7. Timeline Estimate
+
+## Writing Guidelines
+
+- Start with the problem, not the solution
+- Use INVEST criteria for user stories
+- Define measurable success metrics
+- Include edge cases and error states
+      ]]></field>
+      <field name="markdown_content"><![CDATA[
+# PRD Writing
+
+Write clear, actionable Product Requirement Documents.
+      ]]></field>
+    </record>
+
+    <!-- Stakeholder Management -->
+    <record id="skill_pm_stakeholder_mgmt" model="pi.skill">
+      <field name="name">Stakeholder Management</field>
+      <field name="technical_name">pm-stakeholder-mgmt</field>
+      <field name="category_id" ref="skill_category_project_mgmt"/>
+      <field name="sequence">50</field>
+      <field name="active" eval="True"/>
+      <field name="description">Manage stakeholders — communication plans, expectation setting, escalation paths, RACI matrices</field>
+      <field name="instruction"><![CDATA[
+# Stakeholder Management
+
+Effectively manage product stakeholders through structured communication and engagement.
+
+## Key Tools
+
+- RACI Matrix
+- Stakeholder Map (influence vs. interest)
+- Communication Plan
+- Escalation Paths
+- Decision Log
+
+## Best Practices
+
+- Over-communicate to key stakeholders
+- Document decisions with rationale
+- Run regular steering committee updates
+- Maintain a risk and issue register
+      ]]></field>
+      <field name="markdown_content"><![CDATA[
+# Stakeholder Management
+
+Effectively manage product stakeholders through structured communication and engagement.
+      ]]></field>
+    </record>
+
+    <!-- Sprint Planning -->
+    <record id="skill_pm_sprint_planning" model="pi.skill">
+      <field name="name">Sprint Planning</field>
+      <field name="technical_name">pm-sprint-planning</field>
+      <field name="category_id" ref="skill_category_project_mgmt"/>
+      <field name="sequence">60</field>
+      <field name="active" eval="True"/>
+      <field name="description">Plan sprints — backlog refinement, velocity estimation, capacity planning, sprint goals</field>
+      <field name="instruction"><![CDATA[
+# Sprint Planning
+
+Facilitate effective sprint planning sessions.
+
+## Sprint Planning Agenda
+
+1. Review sprint goal and capacity
+2. Refine top backlog items
+3. Estimate effort (story points, t-shirt sizes)
+4. Commit to sprint scope
+5. Define sprint goal
+
+## Key Metrics
+
+- Team velocity (last 3-5 sprints average)
+- Capacity (accounting for holidays, PTO)
+- Carry-over from previous sprint
+      ]]></field>
+      <field name="markdown_content"><![CDATA[
+# Sprint Planning
+
+Facilitate effective sprint planning sessions.
+      ]]></field>
+    </record>
+
+    <!-- User Story Mapping -->
+    <record id="skill_pm_user_story_mapping" model="pi.skill">
+      <field name="name">User Story Mapping</field>
+      <field name="technical_name">pm-user-story-mapping</field>
+      <field name="category_id" ref="skill_category_project_mgmt"/>
+      <field name="sequence">70</field>
+      <field name="active" eval="True"/>
+      <field name="description">Create user story maps — user journey decomposition, epic breakdown, release slicing</field>
+      <field name="instruction"><![CDATA[
+# User Story Mapping
+
+Create visual maps of the user journey to plan releases and prioritize work.
+
+## Story Mapping Process
+
+1. Define the user's journey (backbone)
+2. Break down into activities and tasks
+3. Prioritize vertically (must-have → nice-to-have)
+4. Slice horizontally into releases
+5. Identify MVP scope
+
+## Deliverables
+
+- Story map (visual)
+- Release plan
+- MVP definition
+      ]]></field>
+      <field name="markdown_content"><![CDATA[
+# User Story Mapping
+
+Create visual maps of the user journey to plan releases and prioritize work.
+      ]]></field>
+    </record>
+
+    <!-- Prioritization -->
+    <record id="skill_pm_prioritization" model="pi.skill">
+      <field name="name">Prioritization</field>
+      <field name="technical_name">pm-prioritization</field>
+      <field name="category_id" ref="skill_category_project_mgmt"/>
+      <field name="sequence">80</field>
+      <field name="active" eval="True"/>
+      <field name="description">Prioritize features — RICE, ICE, MoSCoW, Kano model, value vs effort, cost of delay</field>
+      <field name="instruction"><![CDATA[
+# Prioritization
+
+Apply structured frameworks to prioritize features and initiatives.
+
+## Frameworks
+
+- **RICE**: Reach × Impact × Confidence ÷ Effort
+- **ICE**: Impact × Confidence × Ease
+- **MoSCoW**: Must / Should / Could / Won't
+- **Kano Model**: Basic / Performance / Delighter
+- **Cost of Delay**: Value lost per time unit
+
+## When to Use Each
+
+- RICE: Data-driven, quantifiable decisions
+- MoSCoW: Fixed-scope releases
+- Kano: Feature satisfaction analysis
+- Cost of Delay: Time-sensitive opportunities
+      ]]></field>
+      <field name="markdown_content"><![CDATA[
+# Prioritization
+
+Apply structured frameworks to prioritize features and initiatives.
+      ]]></field>
+    </record>
+
+    <!-- Retrospectives -->
+    <record id="skill_pm_retrospectives" model="pi.skill">
+      <field name="name">Retrospectives</field>
+      <field name="technical_name">pm-retrospectives</field>
+      <field name="category_id" ref="skill_category_project_mgmt"/>
+      <field name="sequence">90</field>
+      <field name="active" eval="True"/>
+      <field name="description">Facilitate retrospectives — start/stop/continue, 4Ls, sailboat, action item tracking</field>
+      <field name="instruction"><![CDATA[
+# Retrospectives
+
+Facilitate effective retrospectives that drive continuous improvement.
+
+## Retrospective Formats
+
+- **Start / Stop / Continue**: Simple, actionable
+- **4Ls**: Liked / Learned / Lacked / Longed for
+- **Sailboat**: What propelled us / What held us back
+- **Mad / Sad / Glad**: Emotion-focused
+
+## Facilitation Tips
+
+- Set the stage with check-in
+- Gather data before generating insights
+- Vote on top action items
+- Assign owners to each action
+- Review previous actions at start
+      ]]></field>
+      <field name="markdown_content"><![CDATA[
+# Retrospectives
+
+Facilitate effective retrospectives that drive continuous improvement.
+      ]]></field>
+    </record>
+
+    <!-- Agile Metrics -->
+    <record id="skill_pm_agile_metrics" model="pi.skill">
+      <field name="name">Agile Metrics</field>
+      <field name="technical_name">pm-agile-metrics</field>
+      <field name="category_id" ref="skill_category_project_mgmt"/>
+      <field name="sequence">100</field>
+      <field name="active" eval="True"/>
+      <field name="description">Track agile metrics — burndown, burnup, velocity, cycle time, lead time, CFD, throughput</field>
+      <field name="instruction"><![CDATA[
+# Agile Metrics
+
+Track and interpret agile metrics to improve team performance and predictability.
+
+## Key Metrics
+
+- **Burndown/Burnup**: Sprint progress tracking
+- **Velocity**: Story points completed per sprint
+- **Cycle Time**: Time from start to done per item
+- **Lead Time**: Time from request to delivery
+- **Cumulative Flow Diagram (CFD)**: WIP and bottlenecks
+- **Throughput**: Items completed per time period
+
+## Interpretation
+
+- Declining velocity → investigate blockers
+- Increasing cycle time → check WIP limits
+- CFD flatlining → bottleneck at specific stage
+- High variance → improve estimation or break down stories
+      ]]></field>
+      <field name="markdown_content"><![CDATA[
+# Agile Metrics
+
+Track and interpret agile metrics to improve team performance and predictability.
+      ]]></field>
+    </record>
+
+  </data>
+</odoo>
