@@ -132,7 +132,7 @@ class ResConfigSettings(models.TransientModel):
         'fetch_url',
     ]
 
-    default_tool_ids = fields.Many2many(
+    ai_default_tool_ids = fields.Many2many(
         'ai.tool', string='Default Tools (nya agenter)',
         help='Vilka verktyg nya agenter får som default när de skapas utan '
              'explicita verktyg. Builtin-verktyg syns här efter seeding.',
@@ -293,8 +293,13 @@ class ResConfigSettings(models.TransientModel):
     @api.model
     def get_values(self):
         res = super().get_values()
-        # Ensure gateway token exists (runs outside compute, writes are allowed)
-        self.env.company.sudo()._ensure_gateway_token()
+        # Säkerställ gateway-token (config-parametern); _ensure_gateway_token
+        # finns inte på res.company — skapa direkt om den saknas.
+        icp = self.env['ir.config_parameter'].sudo()
+        if not icp.get_param('ai_agent_core.gateway_token'):
+            import secrets
+            icp.set_param('ai_agent_core.gateway_token',
+                          secrets.token_hex(32))
         company = self.env.company
 
         # Website URL from partner
@@ -367,7 +372,7 @@ class ResConfigSettings(models.TransientModel):
             tool_names = list(self.DEFAULT_AGENT_TOOL_NAMES)
         tool_ids = self.env['ai.tool'].search(
             [('name', 'in', tool_names)]).ids
-        res['default_tool_ids'] = [(6, 0, tool_ids)]
+        res['ai_default_tool_ids'] = [(6, 0, tool_ids)]
 
         return res
 
@@ -408,7 +413,7 @@ class ResConfigSettings(models.TransientModel):
 
         # Default Tools (explicit-agent-tools)
         set_param('ai_agent_core.default_tool_ids',
-                  ','.join(self.default_tool_ids.mapped('name')))
+                  ','.join(self.ai_default_tool_ids.mapped('name')))
 
         # Spara per-cron rader → ir.cron (task 7.15)
         for line in self.bg_cron_line_ids:
