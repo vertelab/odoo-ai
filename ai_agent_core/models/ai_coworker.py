@@ -557,7 +557,7 @@ class AICoworker(models.Model):
 
         # Get active memories for this quest
         memories = self.env['ai.memory'].search([
-            ('coworker_id', '=', self.id),
+            ('quest_id', '=', self.id),
             ('archived', '=', False),
         ])
 
@@ -2188,8 +2188,10 @@ class AICoworker(models.Model):
                     if c in codes])]
 
         # 6. Supervisor-läge med 3 agenter (odoo-model-tools change):
-        #    kärna (lead) + Odoo-specialist + Research
-        if not keep.orchestration_mode or keep.orchestration_mode == 'single':
+        #    kärna (lead) + Odoo-specialist + Research. Uppgraderar även
+        #    legacy-defaults som hamnat i single/linear (test_seed_is_idempotent).
+        if not keep.orchestration_mode or keep.orchestration_mode in (
+                'single', 'linear'):
             keep.write({'orchestration_mode': 'supervisor'})
             _logger.info('Satte default-coworker → supervisor-läge')
 
@@ -2608,7 +2610,7 @@ class AICoworker(models.Model):
         """
         self.ensure_one()
         memories = self.env['ai.memory'].search([
-            ('coworker_id', '=', self.id),
+            ('quest_id', '=', self.id),
             ('archived', '=', False),
             ('memory_type', '=', 'faiss'),
         ])
@@ -2617,7 +2619,7 @@ class AICoworker(models.Model):
 
         results = []
         for mem in memories:
-            chunks = mem.search(query, k=k)
+            chunks = mem.faiss_search(query, k=k)
             if chunks:
                 results.extend(chunks)
 

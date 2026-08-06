@@ -1237,7 +1237,7 @@ def _get_quest_memories(quest, session_id=None, query=None) -> str:
     try:
         # 1. Consolidated text memories
         memories = request.env['ai.memory'].sudo().search([
-            ('coworker_id', '=', quest.id),
+            ('quest_id', '=', quest.id),
             ('consolidated', '=', True),
             ('archived', '=', False),
         ], limit=20)
@@ -1256,7 +1256,7 @@ def _get_quest_memories(quest, session_id=None, query=None) -> str:
                 ('memory_type', '=', 'faiss'),
             ])
             for mem in agent_memories:
-                chunks = mem.search(query, k=3)
+                chunks = mem.faiss_search(query, k=3)
                 if chunks:
                     parts.append("## Agent Knowledge\n" + '\n---\n'.join(chunks[:3]))
     except Exception:
@@ -1272,7 +1272,7 @@ def _get_quest_memories(quest, session_id=None, query=None) -> str:
             ])
             for mem in session_memories:
                 if query:
-                    chunks = mem.search(query, k=3)
+                    chunks = mem.faiss_search(query, k=3)
                 else:
                     chunks = [mem.content[:500]] if mem.content else []
                 if chunks:
