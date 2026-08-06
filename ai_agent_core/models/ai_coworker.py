@@ -516,10 +516,10 @@ class AICoworker(models.Model):
         }
 
     def action_test_mail_flow(self):
-        """Simulera ett inkommande mail för att validera mail-förmågorna.
+        """Öppna .eml-test-wizard:en för att testa mail-flödet med en fil.
 
-        Kör samma väg som mailgateway (message_new → mail_action-dispatch)
-        med ett exempel-mail. Öppnar den skapade sessionen.
+        Användaren laddar upp en .eml-fil; wizard:en parsar den, skapar en
+        session, lägger bilagor som bilagor + minnen och kör mail_action.
         """
         self.ensure_one()
         mail_it = self.init_type_ids.filtered(
@@ -528,52 +528,13 @@ class AICoworker(models.Model):
             raise UserError(
                 'Mail-initieringen saknar aktiv alias. Sätt på Mail i '
                 'Initiering och spara.')
-        sample = {
-            'reply': {
-                'subject': 'TEST: Hej assistenten',
-                'body': '<p>Hej! Kan du sammanfatta CRM-högen?</p>',
-                'from': 'test@example.com',
-            },
-            'create_record': {
-                'subject': 'TEST: Skapa kund',
-                'body': '<p>Hej! Vänligen skapa en ny partner: '
-                        'Acme Bygg AB, acme@bygg.se.</p>',
-                'from': 'admin@example.com',
-            },
-            'invoice_ai': {
-                'subject': 'TEST: Faktura 2026-001',
-                'body': '<p>Hej! Här är en testfaktura från Acme Bygg AB, '
-                        'totalt 12 400 kr inkl moms.</p>',
-                'from': 'billing@acme-bygg.se',
-            },
-            'process': {
-                'subject': 'TEST: Processa detta',
-                'body': '<p>Hej! Processera detta mail enligt dina skills.</p>',
-                'from': 'admin@example.com',
-            },
-        }
-        sample_msg = sample.get(mail_it.mail_action or 'reply', sample['reply'])
-        msg = {
-            'subject': sample_msg['subject'],
-            'body': sample_msg['body'],
-            'from': sample_msg['from'],
-            'attachment_ids': [],
-        }
-        session = self.env['ai.coworker.session'].with_context(
-            mail_create_nosubscribe=True).message_new(
-                msg, {'coworker_id': self.id})
         return {
-            'type': 'ir.actions.client',
-            'tag': 'display_notification',
-            'params': {
-                'title': 'Mail-test klart',
-                'message': (
-                    f'Simulerat mail → session {session.id} ({self.name}).\n'
-                    'Öppna Odoo Mind → Sessions för att se resultatet.'
-                ),
-                'sticky': False,
-                'type': 'info',
-            },
+            'name': 'Testa mail-flödet',
+            'type': 'ir.actions.act_window',
+            'res_model': 'ai.coworker.mail.test.wizard',
+            'view_mode': 'form',
+            'target': 'new',
+            'context': {'default_coworker_id': self.id},
         }
     group_ids = fields.Many2many('res.groups', 'ai_coworker_group_rel', 'coworker_id', 'group_id', string='Access Groups')
 
