@@ -123,7 +123,7 @@ class AICoworkerInitType(models.Model):
         string='When updating',
         help='Trigger-händelse — speglar base.automation.trigger.')
     watch_trg_selection_field_id = fields.Many2one(
-        'ir.model.fields', string='Trigger Field',
+        'ir.model.fields.selection', string='Trigger Field',
         related='base_automation_id.trg_selection_field_id', readonly=False,
         help='Selection-fält för on_state_set/on_priority_set.')
     watch_trg_field_ref_model_name = fields.Char(
