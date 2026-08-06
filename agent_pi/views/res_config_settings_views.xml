@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+  <data>
+    <!-- ResConfigSettings — NATS configuration -->
+    <record id="view_res_config_settings" model="ir.ui.view">
+      <field name="name">res.config.settings.pi</field>
+      <field name="model">res.config.settings</field>
+      <field name="inherit_id" ref="base.res_config_settings_view_form"/>
+      <field name="arch" type="xml">
+        <xpath expr="//form[hasclass('oe_form_configuration')]" position="inside">
+          <h2>Pi Agent / NATS</h2>
+          <div class="row mt16 o_settings_container" id="pi_nats_settings">
+            <div class="col-12 col-lg-6 o_setting_box">
+              <div class="o_setting_left_pane"/>
+              <div class="o_setting_right_pane">
+                <label for="pi_nats_url" string="NATS URL"/>
+                <div class="text-muted">
+                  NATS server connection URL
+                </div>
+                <field name="pi_nats_url"/>
+              </div>
+            </div>
+            <div class="col-12 col-lg-6 o_setting_box">
+              <div class="o_setting_left_pane">
+                <field name="pi_nats_jetstream_enabled"/>
+              </div>
+              <div class="o_setting_right_pane">
+                <label for="pi_nats_jetstream_enabled" string="JetStream"/>
+                <div class="text-muted">
+                  Enable JetStream for persisted, replayable messages with retry and dead-letter
+                </div>
+              </div>
+            </div>
+          </div>
+        </xpath>
+      </field>
+    </record>
+
+    <!-- ROOT MENU -->
+    <menuitem id="menu_pi_root"
+              name="Pi Agents"
+              sequence="90"
+              web_icon="agent_pi,static/description/icon.png">
+        <menuitem id="menu_pi_task"
+                  action="action_pi_task"
+                  sequence="10"/>
+        <menuitem id="menu_pi_agent"
+                  action="action_pi_agent"
+                  sequence="20"/>
+        <menuitem id="menu_pi_config"
+                  name="Configuration"
+                  sequence="90">
+            <menuitem id="menu_pi_skill_category"
+                      action="action_pi_skill_category"
+                      sequence="5"/>
+            <menuitem id="menu_pi_skill"
+                      action="action_pi_skill"
+                      sequence="10"/>
+        </menuitem>
+    </menuitem>
+  </data>
+</odoo>

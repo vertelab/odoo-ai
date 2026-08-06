@@ -1,0 +1,224 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+  <data>
+    <!-- PI.TASK — Kanban -->
+    <record id="view_pi_task_kanban" model="ir.ui.view">
+      <field name="name">pi.task.kanban</field>
+      <field name="model">pi.task</field>
+      <field name="arch" type="xml">
+        <kanban default_group_by="state" quick_create="false" class="o_kanban_small">
+          <progressbar field="state"
+            colors="{&quot;done&quot;: &quot;success&quot;, &quot;failed&quot;: &quot;danger&quot;, &quot;running&quot;: &quot;warning&quot;, &quot;queued&quot;: &quot;info&quot;}"/>
+          <field name="name"/>
+          <field name="state"/>
+          <field name="priority"/>
+          <field name="agent_id"/>
+          <field name="retry_count"/>
+          <field name="max_retries"/>
+          <field name="duration"/>
+          <templates>
+            <t t-name="card">
+              <div class="oe_kanban_global_click">
+                <div class="o_kanban_record_top">
+                  <div class="o_kanban_record_headings">
+                    <strong class="o_kanban_record_title">
+                      <field name="name"/>
+                    </strong>
+                  </div>
+                </div>
+                <div class="o_kanban_record_body">
+                  <div>
+                    <t t-if="record.priority.raw_value == '3'">🔴</t>
+                    <t t-if="record.priority.raw_value == '2'">🟠</t>
+                    <t t-if="record.priority.raw_value == '1'">🟡</t>
+                    <t t-if="record.priority.raw_value == '0'">🟢</t>
+                    Agent: <field name="agent_id"/>
+                  </div>
+                  <div t-if="record.retry_count.raw_value and record.retry_count.raw_value > 0" class="text-muted small">
+                    Retries: <field name="retry_count"/> / <field name="max_retries"/>
+                  </div>
+                </div>
+                <div class="o_kanban_record_bottom">
+                  <div class="oe_kanban_bottom_left">
+                    <t t-if="record.duration.raw_value">
+                      <field name="duration" widget="float_time"/>
+                    </t>
+                  </div>
+                </div>
+              </div>
+            </t>
+          </templates>
+        </kanban>
+      </field>
+    </record>
+
+    <!-- PI.TASK — Tree -->
+    <record id="view_pi_task_tree" model="ir.ui.view">
+      <field name="name">pi.task.tree</field>
+      <field name="model">pi.task</field>
+      <field name="arch" type="xml">
+        <list string="Tasks" editable="top" default_order="priority desc, create_date desc">
+          <field name="name"/>
+          <field name="state" widget="badge"
+            decoration-success="state=='done'"
+            decoration-danger="state=='failed'"
+            decoration-warning="state=='running'"
+            decoration-info="state=='queued'"/>
+          <field name="priority" widget="priority"/>
+          <field name="agent_id" optional="show"/>
+          <field name="retry_count" optional="hide"/>
+          <field name="duration" widget="float_time" optional="show"/>
+          <field name="create_date" optional="hide"/>
+          <button name="action_run" type="object" string="Run" icon="fa-play"
+            invisible="state not in ('draft', 'failed')"/>
+          <button name="action_retry" type="object" string="Retry" icon="fa-refresh"
+            invisible="state != 'failed'"/>
+        </list>
+      </field>
+    </record>
+
+    <!-- PI.TASK — Form -->
+    <record id="view_pi_task_form" model="ir.ui.view">
+      <field name="name">pi.task.form</field>
+      <field name="model">pi.task</field>
+      <field name="arch" type="xml">
+        <form string="Task">
+          <header>
+            <button name="action_run" type="object" string="Run" class="btn-primary"
+              invisible="state not in ('draft', 'failed')"/>
+            <button name="action_retry" type="object" string="Retry"
+              invisible="state != 'failed'"/>
+            <field name="state" widget="statusbar"
+              statusbar_visible="draft,queued,running,done,failed"/>
+          </header>
+          <sheet>
+            <div class="oe_button_box" name="button_box">
+              <button name="action_view_artifacts" type="object"
+                class="oe_stat_button" icon="fa-paperclip"
+                invisible="artifact_count == 0">
+                <div class="o_stat_info">
+                  <field name="artifact_count" widget="statinfo"/>
+                  <span>Artifacts</span>
+                </div>
+              </button>
+            </div>
+            <div class="oe_title">
+              <h1><field name="name" placeholder="Task Name" required="1"/></h1>
+            </div>
+            <group>
+              <group string="Task Info">
+                <field name="priority" widget="priority"/>
+                <field name="agent_id"/>
+                <field name="requested_agent_type"/>
+                <field name="skill_ids" widget="many2many_tags"/>
+                <field name="max_retries"/>
+                <field name="retry_count"/>
+              </group>
+              <group string="Result">
+                <field name="result_state" widget="badge"
+                  decoration-success="result_state=='success'"
+                  decoration-danger="result_state=='error'"/>
+                <field name="start_time"/>
+                <field name="end_time"/>
+                <field name="duration" widget="float_time"/>
+                <field name="nats_message_id" readonly="1"/>
+                <field name="nats_subject" readonly="1"/>
+              </group>
+            </group>
+            <notebook>
+              <page string="Prompt">
+                <field name="prompt" nolabel="1" widget="ace" options="{'mode': 'markdown'}"
+                  placeholder="# Task Prompt&#10;&#10;Instructions for the Pi agent..."/>
+              </page>
+              <page string="Result">
+                <field name="result" nolabel="1" readonly="1"
+                  placeholder="Result will appear here when the task completes..."/>
+              </page>
+              <page string="Artifacts" invisible="artifact_count == 0">
+                <field name="artifact_ids">
+                  <kanban>
+                    <field name="name"/>
+                    <field name="artifact_type"/>
+                    <templates>
+                      <t t-name="card">
+                        <div class="oe_kanban_global_click">
+                          <div class="o_kanban_record_top">
+                            <strong><field name="name"/></strong>
+                            <span class="badge"><field name="artifact_type"/></span>
+                          </div>
+                        </div>
+                      </t>
+                    </templates>
+                  </kanban>
+                </field>
+              </page>
+              <page string="Log">
+                <field name="log" nolabel="1" readonly="1"/>
+              </page>
+            </notebook>
+          </sheet>
+          <chatter/>
+        </form>
+      </field>
+    </record>
+
+    <!-- PI.TASK — Search -->
+    <record id="view_pi_task_search" model="ir.ui.view">
+      <field name="name">pi.task.search</field>
+      <field name="model">pi.task</field>
+      <field name="arch" type="xml">
+        <search string="Tasks">
+          <field name="name"/>
+          <field name="prompt"/>
+          <field name="result"/>
+          <separator/>
+          <filter name="draft" string="Draft" domain="[('state','=','draft')]"/>
+          <filter name="queued" string="Queued" domain="[('state','=','queued')]"/>
+          <filter name="running" string="Running" domain="[('state','=','running')]"/>
+          <filter name="done" string="Done" domain="[('state','=','done')]"/>
+          <filter name="failed" string="Failed" domain="[('state','=','failed')]"/>
+          <separator/>
+          <filter name="high_priority" string="High Priority"
+            domain="[('priority','>=','2')]"/>
+          <separator/>
+          <group expand="0" string="Group By">
+            <filter name="group_state" string="State" context="{'group_by':'state'}"/>
+            <filter name="group_agent" string="Agent" context="{'group_by':'agent_id'}"/>
+            <filter name="group_priority" string="Priority" context="{'group_by':'priority'}"/>
+          </group>
+        </search>
+      </field>
+    </record>
+
+    <!-- ACTIONS -->
+    <record id="action_pi_task" model="ir.actions.act_window">
+      <field name="name">Tasks</field>
+      <field name="res_model">pi.task</field>
+      <field name="view_mode">kanban,list,form</field>
+      <field name="search_view_id" ref="view_pi_task_search"/>
+    </record>
+
+    <record id="action_pi_task_kanban" model="ir.actions.act_window.view">
+      <field name="sequence" eval="1"/>
+      <field name="view_mode">kanban</field>
+      <field name="view_id" ref="view_pi_task_kanban"/>
+      <field name="act_window_id" ref="action_pi_task"/>
+    </record>
+
+    <record id="action_pi_task_tree" model="ir.actions.act_window.view">
+      <field name="sequence" eval="2"/>
+      <field name="view_mode">list</field>
+      <field name="view_id" ref="view_pi_task_tree"/>
+      <field name="act_window_id" ref="action_pi_task"/>
+    </record>
+
+    <record id="action_pi_task_form" model="ir.actions.act_window.view">
+      <field name="sequence" eval="3"/>
+      <field name="view_mode">form</field>
+      <field name="view_id" ref="view_pi_task_form"/>
+      <field name="act_window_id" ref="action_pi_task"/>
+    </record>
+
+    <!-- MENU: moved to res_config_settings_views.xml -->
+  </data>
+</odoo>

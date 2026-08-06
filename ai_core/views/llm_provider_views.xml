@@ -1,0 +1,241 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+
+        <!-- ============================================================ -->
+        <!-- Provider views                                              -->
+        <!-- ============================================================ -->
+
+        <record id="view_llm_provider_list" model="ir.ui.view">
+            <field name="name">llm.provider.list</field>
+            <field name="model">llm.provider</field>
+            <field name="arch" type="xml">
+                <list>
+                    <field name="name"/>
+                    <field name="provider_type"/>
+                    <field name="provider_label" optional="hide"/>
+                    <field name="base_url" optional="hide"/>
+                    <field name="is_enabled"/>
+                    <field name="last_health_status" widget="badge"
+                           decoration-success="last_health_status == 'ok'"
+                           decoration-danger="last_health_status == 'error'"/>
+                    <field name="last_health_check" optional="hide"/>
+                </list>
+            </field>
+        </record>
+
+        <record id="view_llm_provider_form" model="ir.ui.view">
+            <field name="name">llm.provider.form</field>
+            <field name="model">llm.provider</field>
+            <field name="arch" type="xml">
+                <form>
+                    <sheet>
+                        <div class="oe_button_box" name="button_box">
+                            <button name="action_check_health"
+                                    string="Check Health"
+                                    type="object"
+                                    class="oe_stat_button"
+                                    icon="fa-heartbeat"/>
+                            <button name="action_discover_models"
+                                    string="Discover"
+                                    type="object"
+                                    class="oe_stat_button"
+                                    icon="fa-search"/>
+                            <button name="action_view_models"
+                                    string="Models"
+                                    type="object"
+                                    class="oe_stat_button"
+                                    icon="fa-cubes"/>
+                        </div>
+                        <widget name="web_ribbon"
+                                title="Disabled"
+                                bg_color="bg-danger"
+                                invisible="is_enabled"/>
+                        <group>
+                            <group>
+                                <field name="name"/>
+                                <field name="provider_type"/>
+                                <field name="provider_label"/>
+                                <field name="is_enabled"/>
+                            </group>
+                            <group>
+                                <field name="base_url"
+                                       placeholder="e.g. https://api.berget.ai/v1/"/>
+                                <field name="api_key"
+                                       password="True"
+                                       placeholder="Leave empty to use odoo.conf"/>
+                            </group>
+                        </group>
+                        <group string="Health" colspan="4">
+                            <group>
+                                <field name="last_health_status" widget="badge"/>
+                                <field name="last_health_check"/>
+                            </group>
+                            <group>
+                                <field name="health_check_message" nolabel="1" colspan="2"/>
+                            </group>
+                        </group>
+                    </sheet>
+                </form>
+            </field>
+        </record>
+
+        <record id="action_llm_provider" model="ir.actions.act_window">
+            <field name="name">LLM Providers</field>
+            <field name="res_model">llm.provider</field>
+            <field name="view_mode">list,form</field>
+            <field name="view_id" ref="view_llm_provider_list"/>
+        </record>
+
+        <!-- ============================================================ -->
+        <!-- Model: search view                                           -->
+        <!-- ============================================================ -->
+
+        <record id="view_llm_model_search" model="ir.ui.view">
+            <field name="name">llm.model.search</field>
+            <field name="model">llm.model</field>
+            <field name="arch" type="xml">
+                <search>
+                    <field name="name"/>
+                    <field name="provider_type"/>
+                    <field name="license"/>
+                    <field name="active"/>
+                    <separator/>
+                    <filter name="group_provider" string="Provider"
+                            context="{'group_by':'provider_type'}"/>
+                    <filter name="group_license" string="License"
+                            context="{'group_by':'license'}"/>
+                    <separator/>
+                    <filter name="vision" string="Vision"
+                            domain="[('vision','=',True)]"/>
+                    <filter name="embedding" string="Embedding"
+                            domain="[('embedding','=',True)]"/>
+                    <filter name="asr" string="ASR"
+                            domain="[('asr','=',True)]"/>
+                </search>
+            </field>
+        </record>
+
+        <!-- ============================================================ -->
+        <!-- Model: list / form / action                                  -->
+        <!-- ============================================================ -->
+
+        <record id="view_llm_model_list" model="ir.ui.view">
+            <field name="name">llm.model.list</field>
+            <field name="model">llm.model</field>
+            <field name="arch" type="xml">
+                <list>
+                    <field name="name"/>
+                    <field name="provider_type"/>
+                    <field name="context_window_display"/>
+                    <field name="vision" optional="show"/>
+                    <field name="tools" optional="hide"/>
+                    <field name="streaming" optional="hide"/>
+                    <field name="embedding" optional="hide"/>
+                    <field name="asr" optional="hide"/>
+                    <field name="embedding_dimensions" optional="hide"/>
+                    <field name="license" optional="hide"/>
+                    <field name="created_date" optional="hide"/>
+                </list>
+            </field>
+        </record>
+
+        <record id="view_llm_model_form" model="ir.ui.view">
+            <field name="name">llm.model.form</field>
+            <field name="model">llm.model</field>
+            <field name="arch" type="xml">
+                <form>
+                    <sheet>
+                        <group>
+                            <group>
+                                <field name="name"/>
+                                <field name="provider_type"/>
+                                <field name="active"/>
+                            </group>
+                            <group>
+                                <field name="context_window"/>
+                                <field name="license"/>
+                                <field name="created_date"/>
+                            </group>
+                        </group>
+                        <group string="Capabilities">
+                            <group>
+                                <field name="vision"/>
+                                <field name="tools"/>
+                                <field name="streaming"/>
+                            </group>
+                            <group>
+                                <field name="embedding"/>
+                                <field name="asr"/>
+                                <field name="embedding_dimensions"/>
+                            </group>
+                        </group>
+                    </sheet>
+                </form>
+            </field>
+        </record>
+
+        <record id="action_llm_model" model="ir.actions.act_window">
+            <field name="name">LLM Models</field>
+            <field name="res_model">llm.model</field>
+            <field name="view_mode">list,form</field>
+            <field name="view_id" ref="view_llm_model_list"/>
+            <field name="search_view_id" ref="view_llm_model_search"/>
+        </record>
+
+        <!-- ============================================================ -->
+        <!-- Session Lines                                                -->
+        <!-- ============================================================ -->
+
+        <record id="view_llm_session_line_list" model="ir.ui.view">
+            <field name="name">llm.session.line.list</field>
+            <field name="model">llm.session.line</field>
+            <field name="arch" type="xml">
+                <list>
+                    <field name="create_date"/>
+                    <field name="provider_type"/>
+                    <field name="model_name"/>
+                    <field name="input_tokens"/>
+                    <field name="output_tokens"/>
+                    <field name="total_tokens"/>
+                    <field name="cost_usd" optional="hide"/>
+                    <field name="is_error"/>
+                </list>
+            </field>
+        </record>
+
+        <record id="action_llm_session_line" model="ir.actions.act_window">
+            <field name="name">Session Lines</field>
+            <field name="res_model">llm.session.line</field>
+            <field name="view_mode">list,form</field>
+        </record>
+
+        <!-- ============================================================ -->
+        <!-- Menus                                                        -->
+        <!-- ============================================================ -->
+
+        <menuitem id="menu_ai_root"
+                  name="AI Core"
+                  sequence="90"
+                  groups="base.group_user"/>
+
+        <menuitem id="menu_ai_providers"
+                  name="Providers"
+                  parent="menu_ai_root"
+                  sequence="10"
+                  action="action_llm_provider"/>
+
+        <menuitem id="menu_ai_models"
+                  name="Models"
+                  parent="menu_ai_root"
+                  sequence="20"
+                  action="action_llm_model"/>
+
+        <menuitem id="menu_ai_session_lines"
+                  name="Session Lines"
+                  parent="menu_ai_root"
+                  sequence="30"
+                  action="action_llm_session_line"/>
+
+    </data>
+</odoo>

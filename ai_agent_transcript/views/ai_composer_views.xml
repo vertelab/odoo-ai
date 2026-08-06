@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- AI Composer Tree View -->
+    <record id="view_ai_composer_tree" model="ir.ui.view">
+        <field name="name">ai.composer.tree</field>
+        <field name="model">ai.composer</field>
+        <field name="arch" type="xml">
+            <tree string="AI Composers" editable="bottom" create="1">
+                <field name="name"/>
+                <field name="interface_key" widget="badge" decoration-info="True"/>
+                <field name="focused_models" widget="many2many_tags"/>
+                <field name="ai_quest_id"/>
+                <field name="active" widget="boolean_toggle"/>
+            </tree>
+        </field>
+    </record>
+
+    <!-- AI Composer Form View -->
+    <record id="view_ai_composer_form" model="ir.ui.view">
+        <field name="name">ai.composer.form</field>
+        <field name="model">ai.composer</field>
+        <field name="arch" type="xml">
+            <form string="AI Composer">
+                <header>
+                    <field name="is_system_default" invisible="1"/>
+                </header>
+                <sheet>
+                    <div class="oe_title">
+                        <h1>
+                            <field name="name" placeholder="Rule Name"/>
+                        </h1>
+                        <group name="main" col="2">
+                            <field name="interface_key" required="1"/>
+                            <field name="ai_quest_id" required="1"/>
+                            <field name="focused_models" widget="many2many_tags"/>
+                            <field name="active" widget="boolean_toggle"/>
+                        </group>
+                    </div>
+                    <group name="prompts" string="Instructions &amp; Prompts">
+                        <field name="default_prompt"
+                               widget="ace"
+                               placeholder="Default instructions for the AI..."
+                               style="min-height: 150px;"/>
+                        <field name="available_prompts"
+                               placeholder="One prompt per line. These appear as quick-action buttons for users."
+                               style="min-height: 100px;"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!-- AI Composer Search View -->
+    <record id="view_ai_composer_search" model="ir.ui.view">
+        <field name="name">ai.composer.search</field>
+        <field name="model">ai.composer</field>
+        <field name="arch" type="xml">
+            <search string="AI Composers">
+                <field name="name"/>
+                <field name="interface_key"/>
+                <field name="focused_models"/>
+                <field name="ai_quest_id"/>
+                <filter name="active" string="Active" domain="[('active', '=', True)]"/>
+                <group string="Group By" name="groupby">
+                    <filter name="by_interface" string="Interface Key"
+                            context="{'group_by': 'interface_key'}"/>
+                    <filter name="by_quest" string="AI Quest"
+                            context="{'group_by': 'ai_quest_id'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <!-- AI Composer Action -->
+    <record id="action_ai_composer" model="ir.actions.act_window">
+        <field name="name">AI Composers</field>
+        <field name="res_model">ai.composer</field>
+        <field name="view_mode">tree,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Configure AI Powerbox rules
+            </p>
+            <p>
+                AI Composers map interface points (like HTML fields, email
+                composers, and chatter buttons) to AI Quests with custom
+                instructions and quick prompts.
+            </p>
+        </field>
+    </record>
+
+    <!-- Menu Entry under AI Agent configuration -->
+    <menuitem id="menu_ai_composer"
+              name="AI Composers"
+              sequence="30"
+              parent="ai_agent.ai_agent_menu_configuration"
+              action="action_ai_composer"/>
+
+</odoo>
