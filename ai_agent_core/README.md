@@ -204,7 +204,7 @@ the coworker is triggered. All 10 init types are auto-seeded on creation.
 | `web_ui` | `/ai/chat` web UI | SSE streaming | `show_in_chat` |
 | `chat` | Discuss private chat | `chat()` | `response_mode`, `chat_user_id` |
 | `channel` | Discuss channel | `chat()` | `response_mode`, `channel_ids` |
-| `mail` | Incoming email | `mail()` | `alias_name` |
+| `mail` | Incoming email | `message_new` (mail-trigger) | `alias_name`, `mail_action`, `mail_reply_delay`, `mail_find_partner` |
 | `cron` | Scheduled action | `cron()` | `cron_interval_number/type` |
 | `server_action` | Button in form/list | `server_action()` | `server_action_use_wizard` |
 | `powerbox` | `/` in text fields | `powerbox()` | `model_ids` binding |
@@ -437,3 +437,30 @@ både som verktyg och som enum-operation.
 - Rene Python-ändringar (core/*.py, controllers): `sudo systemctl restart odoo` räcker.
 - Tester: `python3 -m unittest ai_agent_core.tests.test_core` (core) · `checkmodule -d <db> -m ai_agent_core -t` (Odoo-integration).
 - Känd begränsning: demo_data.xml (Order-Vakten) har ett befintligt ParseError — påverkar inte produktion.
+
+## Mail-triggers (incoming mail actions)
+
+`mail`-initieringen kan göra mer än att bara svara. Via `mail_action` väljer man
+vad som sker när ett mail anländer till aliaset (`alias@företagets-mail-domän`):
+
+| mail_action | Beskrivning |
+|-------------|-------------|
+| `reply` | Köra medarbetaren på mailinnehållet och posta svaret på sessionstråden. |
+| `create_record` | Skapa/uppdatera ett record i `mail_target_model_id` från mailinnehållet. |
+| `invoice_ai` | Leverantörsfaktura-flöde: hitta/skapa `res.partner` från avsändaren → OCR-läs fakturan (pypdf) → skapa `account.move` (in_invoice) via Fakturaanalys-agenten. |
+
+Övriga inställningar:
+- `mail_reply_delay` (min): fördröjt svar — postas av cronen
+  *AI: Posta fördröjda mail-svar* (körs varje minut, `_post_pending_reply`).
+- `mail_find_partner` (invoice_ai): sök/skapa `res.partner` från avsändaren.
+- `mail_invoice_agent_ids` (invoice_ai): agenterna `Mail → Partner` och
+  `Fakturaanalys` (skapa fler via AI Medarbetare → Initiering → Mail).
+
+Flödet körs med `_ai_auto_approve`-kontext (AUTO-mode) — mailbearbetning är en
+tillitsfull automatisk kontext; `odoo_create`/`odoo_write`/`odoo_call_method`
+fastnar inte i HITL-kön. Datamedarbetaren *Faktura-Assistenten* är ett exempel
+(mail_action=invoice_ai, alias `faktura`).
+
+> Kommande: bryt ut faktura-flödet till en egen modul (`account_invoice_ai`-
+> integration) när det är dags — logiken ligger idag i
+> `models/ai_session.py` (`_process_invoice_mail`, `_resolve_mail_partner`).
