@@ -480,7 +480,7 @@ class AIStreamController(http.Controller):
         web_ui_quests = []
         for q in accessible_quests:
             web_ui_init = q.init_type_ids.filtered(
-                lambda it: it.init_type == 'web_ui' and it.enabled and it.show_in_chat
+                lambda it: it.init_type == 'web_ui' and it.enabled
             )
             if web_ui_init:
                 web_ui_quests.append(q)
