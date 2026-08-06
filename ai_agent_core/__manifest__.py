@@ -47,6 +47,7 @@
         'views/ai_okf_dashboard_views.xml',
         'views/ai_okf_upload_views.xml',
         'data/memory_scopes.xml',
+        'data/provider_deepseek.xml',
         'data/identity_templates.xml',
         'data/cron_monthly_summary.xml',
         'data/cron_bifrost_sync.xml',
