@@ -447,6 +447,31 @@ class AICoworker(models.Model):
         store=False, help='Local part of the email address — synkas med mail-init:en')
     alias_display = fields.Char('Mailadress', compute='_compute_alias_display',
         store=False, help='Full mailadress: alias@företagets-mail-domän')
+    # ── Mail trigger-settings (speglar mail-init:en) ──
+    mail_action = fields.Selection([
+        ('reply', 'Svara på mailet'),
+        ('create_record', 'Skapa/uppdatera record'),
+        ('invoice_ai', 'Leverantörsfaktura (AI)'),
+    ], string='Mail-åtgärd', default='reply',
+        compute='_compute_init_type_fields', inverse='_inverse_init_type_fields',
+        store=False)
+    mail_reply_delay = fields.Integer('Svarsdröjsmål (min)', default=0,
+        compute='_compute_init_type_fields', inverse='_inverse_init_type_fields',
+        store=False)
+    mail_target_model_id = fields.Many2one('ir.model', string='Målmodell',
+        compute='_compute_init_type_fields', inverse='_inverse_init_type_fields',
+        store=False)
+    mail_find_partner = fields.Boolean(
+        'Hitta/skapa res.partner från avsändare', default=True,
+        compute='_compute_init_type_fields', inverse='_inverse_init_type_fields',
+        store=False)
+    mail_invoice_agent_ids = fields.Many2many(
+        'ai.agent', string='Faktura-agenter',
+        compute='_compute_init_type_fields', inverse='_inverse_init_type_fields',
+        store=False)
+    mail_alias_ids = fields.One2many(
+        'mail.alias', compute='_compute_mail_aliases', string='Mail-alias',
+        store=False)
 
     @api.depends('alias_name')
     def _compute_alias_display(self):
@@ -464,6 +489,30 @@ class AICoworker(models.Model):
             rec.alias_display = (
                 f'{rec.alias_name}@{domain}'
                 if rec.alias_name and domain else rec.alias_name or False)
+
+    def _compute_mail_aliases(self):
+        for rec in self:
+            mail = rec.init_type_ids.filtered(
+                lambda it: it.init_type == 'mail')[:1]
+            rec.mail_alias_ids = mail.alias_id if mail else False
+
+    def action_open_mail_alias(self):
+        """Öppna mail-aliaset (mail.alias) för denna medarbetare."""
+        self.ensure_one()
+        mail = self.init_type_ids.filtered(
+            lambda it: it.init_type == 'mail')[:1]
+        if not mail or not mail.alias_id:
+            return {
+                'type': 'ir.actions.act_window_close',
+            }
+        return {
+            'name': 'Mail-alias',
+            'type': 'ir.actions.act_window',
+            'res_model': 'mail.alias',
+            'view_mode': 'form',
+            'res_id': mail.alias_id.id,
+            'target': 'new',
+        }
     group_ids = fields.Many2many('res.groups', 'ai_coworker_group_rel', 'coworker_id', 'group_id', string='Access Groups')
 
     # Core loop migration
@@ -966,6 +1015,11 @@ class AICoworker(models.Model):
                  'init_type_ids.watch_trigger', 'init_type_ids.watch_domain',
                  'init_type_ids.base_automation_id', 'init_type_ids.alias_contact',
                  'init_type_ids.alias_name', 'init_type_ids.alias_id.alias_name',
+                 'init_type_ids.mail_action',
+                 'init_type_ids.mail_reply_delay',
+                 'init_type_ids.mail_target_model_id',
+                 'init_type_ids.mail_find_partner',
+                 'init_type_ids.mail_invoice_agent_ids',
                  'init_type_ids.rate_limit_rpm', 'init_type_ids.rate_limit_tpm',
                  'init_type_ids.show_in_chat', 'init_type_ids.cron_id',
                  'init_type_ids.server_action_id',
@@ -1031,6 +1085,13 @@ class AICoworker(models.Model):
                                   or (mail.alias_id.alias_name
                                       if mail.alias_id else False)
                                   or False)
+            rec.mail_action = mail.mail_action if mail else 'reply'
+            rec.mail_reply_delay = mail.mail_reply_delay if mail else 0
+            rec.mail_target_model_id = (mail.mail_target_model_id
+                                        if mail else False)
+            rec.mail_find_partner = mail.mail_find_partner if mail else True
+            rec.mail_invoice_agent_ids = (mail.mail_invoice_agent_ids
+                                          if mail else False)
             oa = rec._get_active_init('openai_api')
             rec.rate_limit_rpm = oa.rate_limit_rpm if oa else 30
             rec.rate_limit_tpm = oa.rate_limit_tpm if oa else 100000
@@ -1072,6 +1133,13 @@ class AICoworker(models.Model):
             mail = rec._get_active_init('mail')
             if mail:
                 mail.alias_contact = rec.alias_contact
+                mail.mail_action = rec.mail_action
+                mail.mail_reply_delay = rec.mail_reply_delay
+                mail.mail_target_model_id = (rec.mail_target_model_id.id
+                                             if rec.mail_target_model_id else False)
+                mail.mail_find_partner = rec.mail_find_partner
+                mail.mail_invoice_agent_ids = [
+                    (6, 0, rec.mail_invoice_agent_ids.ids)]
                 if rec.alias_name:
                     mail.alias_name = rec.alias_name
                     if mail.enabled:
@@ -1984,16 +2052,27 @@ class AICoworker(models.Model):
         vid varje moduluppdatering (checkmodule --init kör inga migrationer).
         """
         watch_count = mail_count = 0
-        for it in self.env['ai.coworker.init_type'].search([('enabled', '=', True)]):
+        # Fixa server action-koden på ALLA watch base_automations (även om
+        # init-typen är avstängd — automationen kan fortfarande trigga).
+        for it in self.env['ai.coworker.init_type'].search([
+                ('init_type', '=', 'watch'),
+                ('base_automation_id', '!=', False)]):
             try:
-                if it.init_type == 'watch':
+                if it.enabled:
                     it._ensure_watch()
-                    watch_count += 1
-                elif it.init_type == 'mail':
-                    it._ensure_mail_alias()
-                    mail_count += 1
+                else:
+                    it._ensure_watch_action()
+                watch_count += 1
             except Exception as e:
-                _logger.warning('ensure_init_resources misslyckades för init %s: %s',
+                _logger.warning('ensure watch misslyckades för init %s: %s',
+                                it.id, e)
+        for it in self.env['ai.coworker.init_type'].search([
+                ('enabled', '=', True), ('init_type', '=', 'mail')]):
+            try:
+                it._ensure_mail_alias()
+                mail_count += 1
+            except Exception as e:
+                _logger.warning('ensure mail misslyckades för init %s: %s',
                                 it.id, e)
         _logger.info('ensure_init_resources: watch=%s mail=%s',
                      watch_count, mail_count)
@@ -3453,6 +3532,17 @@ class AICoworker(models.Model):
                 # anrop på andra vägar till gruppbundna verktyg nekas även om
                 # registreringsfiltret missat något (tool-access-groups 1.4).
                 if hasattr(loop_obj, 'permissions'):
+                    loop_obj.permissions.user_group_ids = set(tool_access_groups)
+
+                # Mail/webhook-flöden (tillitsfulla automatiska kontexter):
+                # kör med AUTO-mode så odoo_create/odoo_write/odoo_call_method
+                # inte fastnar i HITL-kön. Endast när context flaggan sätts av
+                # initierings-koden (aldrig från chat).
+                if self.env.context.get('_ai_auto_approve'):
+                    from odoo.addons.ai_agent_core.core.permission import (
+                        PermissionEngine, PermissionMode)
+                    loop_obj.permissions = PermissionEngine(
+                        mode=PermissionMode.AUTO)
                     loop_obj.permissions.user_group_ids = set(tool_access_groups)
 
                 async def _run():
