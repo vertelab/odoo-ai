@@ -25,12 +25,12 @@ class TestQuestInitType(TransactionCase):
         itype = self.InitType.create({
             'coworker_id': quest.id,
             'init_type': 'web_ui',
-            'active': True,
+            'enabled': True,
             'show_in_chat': True,
         })
         self.assertEqual(itype.coworker_id, quest)
         self.assertEqual(itype.init_type, 'web_ui')
-        self.assertTrue(itype.active)
+        self.assertTrue(itype.enabled)
         self.assertTrue(itype.show_in_chat)
 
     @unittest.skip("Needs rewrite: ai.coworker.create() auto-seeds all init_types")
@@ -189,7 +189,7 @@ class TestFAISS(TransactionCase):
         quest = self.Quest.create({'name': 'FAISS Test', 'status': 'active'})
         mem = self.Memory.create({
             'name': 'Test FAISS',
-            'coworker_id': quest.id,
+            'quest_id': quest.id,
             'memory_type': 'text',
             'category': 'fact',
             'content': 'Initial content',
@@ -229,7 +229,7 @@ class TestFAISS(TransactionCase):
             'name': 'Empty FAISS', 'quest_id': quest.id,
             'memory_type': 'faiss',
         })
-        results = mem.search('test query')
+        results = mem.faiss_search('test query')
         self.assertEqual(results, [])
         self.assertFalse(mem.load_faiss())
 
@@ -350,7 +350,7 @@ class TestOpenAIAPI(TransactionCase):
         self.InitType.create({
             'coworker_id': quest.id,
             'init_type': 'openai_api',
-            'active': True,
+            'enabled': True,
         })
         model = f'quest-{quest.id}'
         quest_id = int(model.replace('quest-', ''))
@@ -369,11 +369,11 @@ class TestOpenAIAPI(TransactionCase):
         """Only quests with openai_api init type appear in API models."""
         quest1 = self.Quest.create({'name': 'API Quest 1', 'status': 'active'})
         self.InitType.create({
-            'coworker_id': quest1.id, 'init_type': 'openai_api', 'active': True,
+            'coworker_id': quest1.id, 'init_type': 'openai_api', 'enabled': True,
         })
         quest2 = self.Quest.create({'name': 'No API Quest', 'status': 'active'})
         self.InitType.create({
-            'coworker_id': quest2.id, 'init_type': 'web_ui', 'active': True,
+            'coworker_id': quest2.id, 'init_type': 'web_ui', 'enabled': True,
         })
 
         # Filter by openai_api init type

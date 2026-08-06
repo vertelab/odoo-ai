@@ -27,6 +27,74 @@ class AIOkfConcept(models.Model):
     _order = 'scope, concept_key, version desc'
     _rec_name = 'title'
 
+    def _auto_init(self):
+        """Skapa OKF SQL-hjälpfunktioner idempotent vid varje modulinladdning.
+
+        Migration 1.12 skapar dem också, men checkmodule kör --init och
+        migrations körs inte — därför behövs CREATE OR REPLACE här (test
+        test_okf_can_read_sql). SECURITY DEFINER + bara anrop via
+        autentiserade Odoo-metoder.
+        """
+        res = super()._auto_init()
+        self._create_okf_sql_functions()
+        return res
+
+    @api.model
+    def _create_okf_sql_functions(self):
+        """Idempotent: CREATE OR REPLACE ai_okf_can_read + ai_okf_is_follower."""
+        cr = self.env.cr
+        cr.execute("""
+            CREATE OR REPLACE FUNCTION ai_okf_can_read(p_user_id integer, p_model text)
+            RETURNS boolean
+            LANGUAGE plpgsql
+            SECURITY DEFINER
+            SET search_path = public
+            AS $$
+            DECLARE
+                v_model_id integer;
+                v_count integer;
+            BEGIN
+                SELECT id INTO v_model_id FROM ir_model WHERE model = p_model;
+                IF v_model_id IS NULL THEN
+                    RETURN FALSE;
+                END IF;
+                SELECT COUNT(*) INTO v_count
+                FROM ir_model_access a
+                WHERE a.model_id = v_model_id
+                  AND a.perm_read = TRUE
+                  AND (a.group_id IS NULL OR EXISTS (
+                      SELECT 1 FROM res_groups_users_rel g
+                      WHERE g.gid = a.group_id AND g.uid = p_user_id
+                  ));
+                RETURN v_count > 0;
+            END;
+            $$;
+        """)
+        cr.execute("""
+            CREATE OR REPLACE FUNCTION ai_okf_is_follower(p_user_id integer, p_model text, p_res_id integer)
+            RETURNS boolean
+            LANGUAGE plpgsql
+            SECURITY DEFINER
+            SET search_path = public
+            AS $$
+            DECLARE
+                v_partner_id integer;
+                v_count integer;
+            BEGIN
+                SELECT partner_id INTO v_partner_id FROM res_users WHERE id = p_user_id;
+                IF v_partner_id IS NULL THEN
+                    RETURN FALSE;
+                END IF;
+                SELECT COUNT(*) INTO v_count
+                FROM mail_followers f
+                WHERE f.res_model = p_model
+                  AND f.res_id = p_res_id
+                  AND f.partner_id = v_partner_id;
+                RETURN v_count > 0;
+            END;
+            $$;
+        """)
+
     # ── Tre ägar-scopes (exakt en ska vara satt) ──
     owner_company_id = fields.Many2one('res.company', string='Company')
     owner_user_id = fields.Many2one('res.users', string='User')
@@ -874,7 +942,10 @@ class AIOkfConcept(models.Model):
                 visible_set = set()
 
             # 3. Resolver-domäner (AND-filter, aldrig breddare)
-            resolver = self.env['ai.access.resolver'].search([
+            #    sudo(): resolvern är konfiguration — domänen model_id.model
+            #    triggar en ir.model-subquery som begränsade användare inte
+            #    får läsa (AccessError annars).
+            resolver = self.env['ai.access.resolver'].sudo().search([
                 ('model_id.model', '=', model_name),
                 ('active', '=', True),
             ], limit=1)
