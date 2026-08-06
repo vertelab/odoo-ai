@@ -240,7 +240,6 @@
                                      <field name="mail_reply_delay" invisible="not init_mail" string=" → Svarsdröjsmål (min)"/>
                                      <field name="mail_target_model_id" invisible="not init_mail or mail_action != 'create_record'" string=" → Målmodell"/>
                                      <field name="mail_find_partner" invisible="not init_mail or mail_action != 'invoice_ai'" string=" → Hitta/skapa res.partner"/>
-                                     <field name="mail_invoice_agent_ids" widget="many2many_tags" invisible="not init_mail or mail_action != 'invoice_ai'" string=" → Faktura-agenter"/>
                                   <!-- Cron -->
                                     <field name="init_cron"/>
                                     <field name="cron_id" invisible="not init_cron" string="→ Schedule (ir.cron)" options="{'no_create': True}"/>

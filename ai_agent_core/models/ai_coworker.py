@@ -466,10 +466,6 @@ class AICoworker(models.Model):
         'Hitta/skapa res.partner från avsändare', default=True,
         compute='_compute_init_type_fields', inverse='_inverse_init_type_fields',
         store=False)
-    mail_invoice_agent_ids = fields.Many2many(
-        'ai.agent', string='Faktura-agenter',
-        compute='_compute_init_type_fields', inverse='_inverse_init_type_fields',
-        store=False)
     mail_alias_ids = fields.One2many(
         'mail.alias', compute='_compute_mail_aliases', string='Mail-alias',
         store=False)
@@ -1085,7 +1081,6 @@ class AICoworker(models.Model):
                  'init_type_ids.mail_reply_delay',
                  'init_type_ids.mail_target_model_id',
                  'init_type_ids.mail_find_partner',
-                 'init_type_ids.mail_invoice_agent_ids',
                  'init_type_ids.rate_limit_rpm', 'init_type_ids.rate_limit_tpm',
                  'init_type_ids.show_in_chat', 'init_type_ids.cron_id',
                  'init_type_ids.server_action_id',
@@ -1156,8 +1151,6 @@ class AICoworker(models.Model):
             rec.mail_target_model_id = (mail.mail_target_model_id
                                         if mail else False)
             rec.mail_find_partner = mail.mail_find_partner if mail else True
-            rec.mail_invoice_agent_ids = (mail.mail_invoice_agent_ids
-                                          if mail else False)
             oa = rec._get_active_init('openai_api')
             rec.rate_limit_rpm = oa.rate_limit_rpm if oa else 30
             rec.rate_limit_tpm = oa.rate_limit_tpm if oa else 100000
@@ -1204,8 +1197,6 @@ class AICoworker(models.Model):
                 mail.mail_target_model_id = (rec.mail_target_model_id.id
                                              if rec.mail_target_model_id else False)
                 mail.mail_find_partner = rec.mail_find_partner
-                mail.mail_invoice_agent_ids = [
-                    (6, 0, rec.mail_invoice_agent_ids.ids)]
                 if rec.alias_name:
                     mail.alias_name = rec.alias_name
                     if mail.enabled:
@@ -2300,6 +2291,22 @@ class AICoworker(models.Model):
                                 f"### Chatter History (oldest -> newest)\n{chatter}\n")
             except Exception as e:
                 _logger.error('Rekordkontext misslyckades: %s', e)
+
+        # Session-minnen (bilagor/minnen knutna till sessionen — t.ex.
+        # .eml-testets bilagor) injiceras så agenterna ser dem.
+        sess = self._get_ai_context_record()
+        if not sess or sess._name != 'ai.coworker.session':
+            sess = False
+        if sess and sess.memory_ids:
+            mem_parts = []
+            for m in sess.memory_ids.filtered(lambda x: not x.archived):
+                if m.content:
+                    mem_parts.append(
+                        f"### {m.name or 'Bilaga/minne'}\n{m.content}")
+            if mem_parts:
+                parts.append(
+                    '## Session-bilagor/minnen (tillgängliga för dig)\n'
+                    + '\n\n'.join(mem_parts))
 
         # Kopplingens block + effektiva nivåer (agent = specifik, annars medarbetarnivå)
         link = None

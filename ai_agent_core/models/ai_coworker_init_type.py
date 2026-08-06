@@ -103,10 +103,6 @@ class AICoworkerInitType(models.Model):
         'Hitta/skapa res.partner från avsändare', default=True,
         help='Leverantörsfaktura: sök upp avsändarens res.partner och skapa '
              'om den saknas.')
-    mail_invoice_agent_ids = fields.Many2many(
-        'ai.agent', string='Faktura-agenter',
-        help='Agenter som analyserar mailet/fakturan (partner + invoice).')
-
     # ── cron specific ──
     cron_id = fields.Many2one('ir.cron', string='Scheduled Action',
         ondelete='cascade')

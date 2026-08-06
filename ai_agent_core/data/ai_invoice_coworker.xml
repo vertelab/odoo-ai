@@ -99,10 +99,6 @@
             <field name="alias_contact">everyone</field>
             <field name="mail_action">invoice_ai</field>
             <field name="mail_find_partner" eval="True"/>
-            <field name="mail_invoice_agent_ids" eval="[(6, 0, [
-                ref('agent_invoice_partner'),
-                ref('agent_invoice_analyser'),
-            ])]"/>
         </record>
 
         <!-- web_ui (visas i chat) -->
