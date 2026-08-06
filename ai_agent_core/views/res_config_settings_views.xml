@@ -220,21 +220,6 @@
                          AI API
                          ════════════════════════════════════════════ -->
                     <block title="AI API">
-                        <setting id="ai_gateway_token_setting" title="Gateway Token (företag)">
-                            <div style="max-width: 400px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; user-select: all; cursor: text; font-family: monospace;">
-                                <field name="ai_gateway_token" placeholder="Auto-genereras vid första användning"/>
-                            </div>
-                            <div class="text-muted">
-                                Företagets Bearer token för OpenAI API (/ai/v1/*).
-                                Per-coworker nycklar kan också användas.
-                            </div>
-                            <div class="mt8">
-                                <button name="action_refresh_gateway_token"
-                                        string="Refresh" type="object"
-                                        class="btn-warning"
-                                        confirm="Är du säker? Den gamla token slutar fungera omedelbart."/>
-                            </div>
-                        </setting>
                         <setting id="ai_api_default_provider" title="Default Provider">
                             <field name="ai_api_default_provider_id"/>
                         </setting>

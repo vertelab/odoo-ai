@@ -331,40 +331,6 @@ class ResCompany(models.Model):
         except Exception as e:
             _logger.error('Identity suggestion failed: %s', e)
 
-    # ── AI Gateway Token ──
-    ai_gateway_token = fields.Char(
-        'AI Gateway Token',
-        help='Bearer token för OpenAI-kompatibel API (/ai/v1/*). '
-             'Auto-genereras vid första användning. Använd Refresh för att byta.',
-        copy=False)
-
-    def _ensure_gateway_token(self):
-        """Generate a gateway token if none exists."""
-        for company in self:
-            if not company.ai_gateway_token:
-                company.ai_gateway_token = self._generate_gateway_token()
-
-    @api.model
-    def _generate_gateway_token(self):
-        """Generate a cryptographically random gateway token."""
-        import secrets
-        return secrets.token_hex(32)
-
-    def action_refresh_gateway_token(self):
-        """Generate a new gateway token (old one is invalidated immediately)."""
-        self.ensure_one()
-        self.ai_gateway_token = self._generate_gateway_token()
-        return {
-            'type': 'ir.actions.client',
-            'tag': 'display_notification',
-            'params': {
-                'title': 'Token uppdaterad',
-                'message': 'Den gamla token:en är nu ogiltig. Uppdatera alla klienter.',
-                'type': 'warning',
-                'sticky': True,
-            }
-        }
-
     # ── Organization Goals (OKR) ──
     company_objective_ids = fields.One2many(
         'ai.org.goal', compute='_compute_company_objectives',

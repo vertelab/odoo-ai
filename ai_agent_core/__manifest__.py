@@ -39,7 +39,6 @@
         'data/cron_okf_process_uploads.xml',
         'data/cron_company_memory_indexers.xml',
         'data/okf_migrate_legacy.xml',
-        'data/gateway_token_actions.xml',
         'data/skill_odoo_core.xml',
         'data/default_coworker.xml',
         'views/ai_artifact_type_views.xml',

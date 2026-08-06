@@ -110,9 +110,6 @@ class AICoworkerInitType(models.Model):
 
 
     # ── openai_api specific ──
-    api_key_attachment_id = fields.Many2one('ir.attachment',
-        string='API Key',
-        help='Stored API key for OpenAI-compatible endpoint access')
     rate_limit_rpm = fields.Integer('Rate Limit (req/min)', default=30)
     rate_limit_tpm = fields.Integer('Rate Limit (tokens/min)', default=100000)
 
@@ -150,7 +147,7 @@ class AICoworkerInitType(models.Model):
             'manual': [],
             'webhook': [],
             'controller': [],
-            'openai_api': ['api_key_attachment_id', 'rate_limit_rpm', 'rate_limit_tpm'],
+            'openai_api': ['rate_limit_rpm', 'rate_limit_tpm'],
             'watch': ['watch_model_id', 'watch_trigger', 'watch_domain', 'base_automation_id'],
         }
         all_specific = set()

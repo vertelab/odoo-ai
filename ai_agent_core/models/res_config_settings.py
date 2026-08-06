@@ -68,23 +68,9 @@ class ResConfigSettings(models.TransientModel):
     ai_api_secret = fields.Char(
         'AI API Secret',
         config_parameter='ai_agent_core.api_secret',
-        help='Shared Bearer token for the /ai/v1/* (OpenAI-compatible) and '
-             '/pi/callback endpoints. If empty, falls back to the '
-             'AI_AGENT_API_SECRET environment variable.')
-
-    ai_gateway_token = fields.Char(
-        'AI Gateway Token',
-        help='Företagets Bearer token för /ai/v1/*. Auto-genereras. '
-             'Använd Refresh-knappen för att byta ut den.')
-
-    def action_refresh_gateway_token(self):
-        """Generate a new gateway token immediately."""
-        import secrets
-        self.env.cr.execute(
-            "UPDATE res_company SET ai_gateway_token = %s WHERE id = %s",
-            [secrets.token_hex(32), self.env.company.id]
-        )
-        return {'type': 'ir.actions.client', 'tag': 'reload'}
+        help='Shared Bearer token for the /pi/callback endpoint. '
+             'If empty, falls back to the AI_AGENT_API_SECRET '
+             'environment variable.')
 
     ai_api_default_provider_id = fields.Many2one(
         'ai.provider', string='Default Provider',
@@ -293,10 +279,6 @@ class ResConfigSettings(models.TransientModel):
 
         # Website URL from partner
         res['company_website_url_edit'] = company.partner_id.website or ''
-
-        # Gateway token — ensure exists + populate settings field
-        company.sudo()._ensure_gateway_token()
-        res['ai_gateway_token'] = company.sudo().ai_gateway_token or ''
 
         # Compute graph node count
         try:

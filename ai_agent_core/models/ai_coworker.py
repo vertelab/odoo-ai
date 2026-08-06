@@ -418,9 +418,6 @@ class AICoworker(models.Model):
     # Access Control (quest-access-control)
     alias_name = fields.Char('Email Alias',
         help='Local part of the email address')
-    api_key_attachment_id = fields.Many2one('ir.attachment',
-        string='API Key',
-        help='API key for OpenAI-compatible endpoint access')
     group_ids = fields.Many2many('res.groups', 'ai_coworker_group_rel', 'coworker_id', 'group_id', string='Access Groups')
 
     # Core loop migration
