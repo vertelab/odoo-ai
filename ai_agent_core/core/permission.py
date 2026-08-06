@@ -212,6 +212,13 @@ class PermissionEngine:
     # CUSTOM mode: tools that are auto-allowed
     auto_allow_tools: set[str] = field(default_factory=set)
 
+    # Access-grupper (ai-tool-access-capabilities): Odoo group ids för den
+    # användare vars vägnar loopen körs. Verktyg vars group_ids inte korsar
+    # dessa nekas (defense-in-depth-lager; primärfiltrering sker vid
+    # registrering i ai.coworker.run()). Tom = ingen känd användare →
+    # gruppbundna verktyg nekas.
+    user_group_ids: set = field(default_factory=set)
+
     # Write tool names that require path scoping (from OpenWorker)
     _WRITE_TOOLS = {"write", "write_file", "create"}
     _SHELL_TOOLS = {"run_shell", "shell", "exec", "eval"}
@@ -239,6 +246,19 @@ class PermissionEngine:
                 risk_level = metadata.risk_level
 
         risk = classify(tool_name, risk_level, metadata)
+
+        # -- Access-grupper (ai-tool-access-capabilities) --
+        # Verktyg med group_ids kräver att användarens grupper korsar dem.
+        # Tom user_group_ids (ingen känd användare) → neka gruppbundna
+        # verktyg; obundna (tom group_ids) passerar.
+        if metadata and getattr(metadata, 'group_ids', None):
+            tool_groups = set(metadata.group_ids)
+            if tool_groups and not (self.user_group_ids & tool_groups):
+                return Decision(
+                    allowed=False,
+                    reason=(f"Tool '{tool_name}' requires an access group "
+                            "the current user lacks"),
+                )
 
         # -- Hårda stopp (odoo-model-tools 3.3) --
         # odoo_call_method och odoo_unlink kräver ALLTID mänskligt

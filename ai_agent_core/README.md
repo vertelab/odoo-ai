@@ -390,6 +390,47 @@ odoo-<domän>/<domän>_ai/data/skills.xml
 - Install-check-instruktionen gör att sektioner för oinstallerade moduler
   utesluts vid körning.
 
+## AI-tool-beskrivningsmall (ai-tool-access-capabilities)
+
+`ai.tool.description` är det kontrakt LLM:en läser vid verktygsval. Skriv den
+som en strukturerad mall (AI-beskrivning), inte en enradare:
+
+```
+syfte:    vad verktyget uppnår (inte bara vad det gör)
+när:      när det ska användas (symptom, villkor)
+när inte: när det INTE ska användas — peka på rätt verktyg
+          ("föredra state.show_sls före state.apply")
+exempel:  realistiskt anrop med parametrar
+output:   förväntad resultatform
+guardrail: om verktyget kräver godkännande — nämn det (informativt)
+```
+
+Guardrails är ALDRIG advisory: enforcement sker strukturellt via
+`risk_level` (destructive/execute → alltid HITL) + PermissionEngine. En
+skill (`ai.skill.recipe_text`) får beskriva arbetsmönster och HITL-policy,
+men kan aldrig upphäva eller ersätta motorns grindar.
+
+## Access-grupper och förmågeserialisering (ai-tool-access-capabilities)
+
+**Access (`ai.tool.group_ids`, M2M `res.groups`):** vem som får använda
+verktyget. Tom = obegränsat (HITL via risk_level gäller ändå). Två lager:
+1) filtrering vid registrering (`ai.coworker.run()`, stream-chatten) —
+LLM:en ser aldrig otillåtna verktyg; 2) PermissionEngine nekar gruppbundna
+verktyg utan korsning (defense-in-depth). Icke-interaktiv (cron/webhook/mail)
+= coworkerns egna `group_ids` som access-grund.
+
+**Förmågor (`ai.tool.capability`):** serialiseringsenhet — namn +
+AI-beskrivning + medlemmar. Separerad från access: `group_ids` styr *vem*,
+förmågan styr *vad LLM:en ser*. Läge per coworker (`serialize_capabilities`):
+- `flat` (default) — individuella verktyg
+- `enum` — en Tool per förmåga med operation-enum (max 8 operationer; fler
+  delas). Minimal kontext, bra för små modeller.
+- `namespace` — individuella verktyg behålls (parallellitet) + förmågans
+  beskrivning i systemprompten.
+
+Access-filtrering sker ALLTID före serialisering — otillåten medlem saknas
+både som verktyg och som enum-operation.
+
 ## Deploy (odoo-model-tools)
 
 - Ändringar i ai_agent_core kräver **versionbump i __manifest__.py** + `sudo checkmodule -d <db> -m ai_agent_core` (checkmodule kör `--init` — migrations körs inte, så adoption av legacy-poster sker via `<function>` i data-XML).

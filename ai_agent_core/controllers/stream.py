@@ -253,10 +253,16 @@ class AIStreamController(http.Controller):
         # Konversationshistorik (session lines) — hoistas som plain values
         gen_history = history_messages
         # Custom tools (ai.tool via coworker.tool_ids) — fångas som plain
-        # values och laddas in i _stream() via gen_env.
+        # values och laddas in i _stream() via gen_env. Access-filtreras mot
+        # den inloggade användarens grupper (tool-access-groups): LLM:en ser
+        # aldrig verktyg vars res.groups användaren saknar.
         gen_coworker_id = quest.id if quest and quest.exists() else None
         gen_custom_tool_ids = list(
-            quest.tool_ids.filtered('active').ids) if quest and quest.exists() else []
+            quest.tool_ids.filtered('active')._filter_by_access_groups(
+                request.env.user.groups_id.ids).ids
+        ) if quest and quest.exists() else []
+        # Användarens grupper för PermissionEngine (defense-in-depth)
+        gen_user_group_ids = tuple(request.env.user.groups_id.ids)
         # NATS executor config (tool-executor-nats)
         nats_api_secret = request.env['ir.config_parameter'].sudo().get_param(
             'ai_agent_core.api_secret', '')
@@ -371,6 +377,7 @@ class AIStreamController(http.Controller):
                                             max_rounds=10,
                                             nats_api_secret=nats_api_secret,
                                             nats_max_retries=nats_max_retries,
+                                            user_group_ids=gen_user_group_ids,
                                         ),
                                     ),
                                 ))
@@ -386,6 +393,7 @@ class AIStreamController(http.Controller):
                                     max_rounds=10,
                                     nats_api_secret=nats_api_secret,
                                     nats_max_retries=nats_max_retries,
+                                    user_group_ids=gen_user_group_ids,
                                 ),
                             )
 

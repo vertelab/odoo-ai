@@ -43,6 +43,11 @@ class Tool:
     nats_skills: str = ""
     nats_timeout: int = 30
 
+    # Access-grupper (ai-tool-access-capabilities): Odoo group ids som får
+    # använda verktyget. Tom = obegränsat. PermissionEngine nekar anrop när
+    # användarens grupper inte korsar dessa (defense-in-depth).
+    group_ids: List[int] = field(default_factory=list)
+
     # Risk level thresholds for approval (HITL-005)
     RISK_LEVELS = {
         "safe": 0,
@@ -246,11 +251,162 @@ def ai_tool_records_to_tools(records, env=None) -> list[Tool]:
             capabilities=(
                 [c.strip() for c in record.capabilities.split(',') if c.strip()]
                 if record.capabilities else []),
+            group_ids=list(record.group_ids.ids) if record.group_ids else [],
             nats_subject=record.nats_subject or 'pi.task.do',
             nats_skills=record.nats_skills or '',
             nats_timeout=record.nats_timeout or 30,
         ))
     return tools
+
+
+# ---------------------------------------------------------------------------
+# Capability-serialisering (ai-tool-access-capabilities)
+# ---------------------------------------------------------------------------
+# En förmåga (ai.tool.capability) = namn + AI-beskrivning + medlemmar.
+# Access (group_ids) filtreras INNAN dessa funktioner anropas (spec 3.5) —
+# medlemmarna i registryn är redan tillåtna för användaren.
+# ---------------------------------------------------------------------------
+
+# Max operationer per enum-tool (spec: 5–8; fler → delas eller namespace).
+CAPABILITY_ENUM_MAX_OPS = 8
+
+
+def _capability_enum_schema(members):
+    """Bygg JSON-schema för ett enum-tool: operation + alla medlemmars
+    parametrar (best-effort-merge; required hålls till operation — villkorade
+    parametrar beskrivs i text, inte i schema, för små modellers skull)."""
+    properties = {
+        'operation': {
+            'type': 'string',
+            'enum': [m.name for m in members],
+            'description': 'Operation att utföra. Välj exakt en av enumen.',
+        },
+    }
+    for m in members:
+        for k, v in (m.parameters or {}).get('properties', {}).items():
+            properties.setdefault(k, v)
+    return {
+        'type': 'object',
+        'properties': properties,
+        'required': ['operation'],
+    }
+
+
+def _capability_enum_description(cap_name, cap_desc, members):
+    """Samlad AI-beskrivning med per-operation-rader (guardrails informativa)."""
+    lines = [f"{cap_name}: {cap_desc or ''}".strip(), '', 'Operationer:']
+    for m in members:
+        op_desc = (m.description or m.name).replace('\n', ' ')
+        lines.append(f'- {m.name}: {op_desc}')
+    return '\n'.join(lines)
+
+
+def capability_enum_tool(cap_name, cap_desc, members):
+    """Bygg EN Tool per förmåga med operation-enum (spec 3.3).
+
+    members: list[Tool] — redan access-filtrerade medlemmar.
+    Risk = max av medlemmarnas risk (destruktiv medlem → HITL på hela).
+    group_ids lämnas tomma: verktyget existerar bara efter access-filtrering.
+    """
+    if len(members) > CAPABILITY_ENUM_MAX_OPS:
+        raise ValueError(
+            f"Capability '{cap_name}' has {len(members)} operations "
+            f"> {CAPABILITY_ENUM_MAX_OPS} — dela förmågan eller använd "
+            'namespace-läge (spec tool-capability-serialization).')
+
+    by_name = {m.name: m for m in members}
+    max_risk = max(
+        (Tool.RISK_LEVELS.get(m.risk_level, 1) for m in members),
+        default=1)
+    risk_level = next(
+        (r for r, lvl in sorted(
+            Tool.RISK_LEVELS.items(), key=lambda kv: kv[1], reverse=True)
+         if lvl <= max_risk), 'read_only')
+
+    async def _handler(_by_name=by_name, **kwargs):
+        op = kwargs.pop('operation', None)
+        member = _by_name.get(op)
+        if member is None:
+            return (f"Error: unknown operation '{op}' for capability "
+                    f"'{cap_name}'")
+        try:
+            return await member.execute(**kwargs)
+        except Exception as e:
+            return f"Tool error ({cap_name}/{op}): {e}"
+
+    return Tool(
+        name=cap_name,
+        description=_capability_enum_description(cap_name, cap_desc, members),
+        parameters=_capability_enum_schema(members),
+        handler=_handler,
+        risk_level=risk_level,
+        source='capability',
+        executor='local',
+        capabilities=['capability'],
+    )
+
+
+def capability_namespace_prompt(capabilities):
+    """Systemprompt-suffix för namespace-läge (spec 3.4): individuella verktyg
+    behålls, förmågans samlade beskrivning injiceras för att styra valet.
+
+    capabilities: list[dict] med name/description/member_names.
+    """
+    if not capabilities:
+        return ''
+    lines = ['', '## Förmågor (capabilities)', '']
+    for cap in capabilities:
+        lines.append(f'### {cap["name"]}')
+        lines.append(cap.get('description') or '')
+        members = cap.get('member_names') or []
+        if members:
+            lines.append('Medlemmar: ' + ', '.join(members))
+        lines.append('')
+    return '\n'.join(lines).rstrip()
+
+
+def apply_capability_serialization(registry, capabilities, mode):
+    """Applicera förmågeserialisering på ett ToolRegistry (spec 3.3/3.4).
+
+    Args:
+        registry: ToolRegistry med redan access-filtrerade verktyg.
+        capabilities: list[dict] med name/description/member_names —
+                      member_names är verktygsnamn i registryn.
+        mode: 'flat' (no-op) | 'enum' | 'namespace'.
+
+    Returns:
+        prompt_suffix: str — namespace-prompt att lägga i systemprompten
+                       (tom för flat/enum).
+    """
+    if mode == 'flat' or not capabilities:
+        return ''
+
+    if mode == 'namespace':
+        return capability_namespace_prompt(capabilities)
+
+    if mode == 'enum':
+        for cap in capabilities:
+            members = [
+                registry.get(n) for n in cap.get('member_names') or []
+                if registry.get(n) is not None]
+            if not members:
+                continue
+            if len(members) > CAPABILITY_ENUM_MAX_OPS:
+                # Dela i ≤8-operationers enheter (spec 3.3 scenario).
+                for i in range(0, len(members), CAPABILITY_ENUM_MAX_OPS):
+                    chunk = members[i:i + CAPABILITY_ENUM_MAX_OPS]
+                    name = f"{cap['name']}_{i // CAPABILITY_ENUM_MAX_OPS + 1}"
+                    registry.register(capability_enum_tool(
+                        name, cap.get('description', ''), chunk))
+            else:
+                registry.register(capability_enum_tool(
+                    cap['name'], cap.get('description', ''), members))
+            # Ta bort individuella medlemmar — LLM:en ser bara enheterna.
+            for m in members:
+                registry._tools.pop(m.name, None)
+        return ''
+
+    return ''
 
 
 def builtin_tools() -> list[Tool]:

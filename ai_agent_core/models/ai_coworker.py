@@ -4,6 +4,7 @@
 import json, logging, re, uuid, base64
 from odoo import models, fields, api, _
 from odoo.exceptions import UserError
+from odoo import SUPERUSER_ID
 
 _logger = logging.getLogger(__name__)
 
@@ -659,6 +660,20 @@ class AICoworker(models.Model):
         'coworker_id', 'tool_id', string='Tools',
         help='Custom ai.tool records available to this coworker in run(). '
              'Linked to coworker_ids on ai.tool.')
+
+    # Serialiseringsläge för förmågor (ai-tool-access-capabilities):
+    # flat = individuella verktyg (default, dagens beteende); enum = en Tool
+    # per förmåga med operation-enum; namespace = individuella verktyg +
+    # förmågans beskrivning i systemprompten. Separat från access (group_ids).
+    serialize_capabilities = fields.Selection([
+        ('flat', 'Flat (individuella verktyg)'),
+        ('enum', 'Enum (förmåga → ett verktyg med operation-enum)'),
+        ('namespace', 'Namespace (verktyg + förmågans beskrivning)'),
+    ], default='flat', string='Serialize Capabilities',
+        help='Hur ai.tool.capability-förmågor serialiseras till LLM:en. '
+             'enum = minimal kontext (bra för små modeller); namespace = '
+             'parallellitet + samlad beskrivning. Access (group_ids) gäller '
+             'oavsett — filtrering sker före serialisering.')
     last_run = fields.Datetime()
 
     # ── Automation / Scheduled Run (OpenWorker-inspired) ──
@@ -3003,6 +3018,25 @@ class AICoworker(models.Model):
         except Exception as e:
             _logger.warning('Failed to send completion notification: %s', e)
 
+    def _tool_access_group_ids(self, session=None, access_user=None):
+        """Effective Odoo group ids that gate tool access (tool-access-groups).
+
+        - access_user explicit → den användarens grupper
+        - session med riktig (icke-superuser, icke-public) användare →
+          session.user_id.groups_id
+        - annars (cron/webhook/mail, sudo-skapade sessioner) → coworkerns
+          egna group_ids (icke-interaktiv policy)
+        """
+        self.ensure_one()
+        if access_user:
+            return access_user.groups_id.ids
+        u = session and session.user_id
+        if (u and u.id != SUPERUSER_ID
+                and (u.has_group('base.group_user')
+                     or u.has_group('base.group_portal'))):
+            return u.groups_id.ids
+        return self.group_ids.ids
+
     def run(self, prompt, system_prompt=None, force_model=None,
             force_agent=None, session=None):
         """Run quest synchronously and return AI response text.
@@ -3074,23 +3108,59 @@ class AICoworker(models.Model):
                 tools = ToolRegistry()
                 tools.register_many(wrap_tools_with_env(builtin_tools(), self.env))
 
+                # Access-grupper (tool-access-groups): användarens grupper
+                # styr vilka verktyg som serialiseras — LLM:en ser ALDRIG
+                # otillåtna verktyg (och de kostar inga tokens).
+                tool_access_groups = self._tool_access_group_ids(session=session)
+
                 # Agentens EGNA tools (7.5): identity-bundna ai.tool-record
                 if force_agent and force_agent.identity_id \
                         and force_agent.identity_id.tool_ids:
                     from odoo.addons.ai_agent_core.core.tools import (
                         ai_tool_records_to_tools)
+                    identity_tools = force_agent.identity_id.tool_ids
                     tools.register_many(ai_tool_records_to_tools(
-                        force_agent.identity_id.tool_ids, self.env))
+                        identity_tools._filter_by_access_groups(
+                            tool_access_groups), self.env))
 
                 # Coworkerns EGNA tools (D5 drift): ai.tool-poster kopplade
                 # via coworker_ids — tillgängliga i run() för alla initeringar
                 # (openai_api, webhook, web_ui, cron …)
-                custom_tools = self.tool_ids.filtered(lambda t: t.active)
+                custom_tools = self.tool_ids.filtered(
+                    lambda t: t.active)._filter_by_access_groups(
+                        tool_access_groups)
                 if custom_tools:
                     from odoo.addons.ai_agent_core.core.tools import (
                         ai_tool_records_to_tools)
                     tools.register_many(ai_tool_records_to_tools(
                         custom_tools, self.env))
+
+                # Förmågeserialisering (spec 3.3/3.4): flat/enum/namespace per
+                # coworker. Medlemmarna är redan access-filtrerade (registret
+                # innehåller bara tillåtna verktyg) — otillåtna medlemmar
+                # saknas både som tool och som operation (spec 3.5).
+                cap_prompt_suffix = ''
+                if self.serialize_capabilities != 'flat':
+                    from odoo.addons.ai_agent_core.core.tools import (
+                        apply_capability_serialization, _sanitize_tool_name)
+                    cap_recs = self.env['ai.tool.capability'].search([
+                        ('active', '=', True)])
+                    capabilities = []
+                    for cap in cap_recs:
+                        member_names = [
+                            _sanitize_tool_name(t.name)
+                            for t in cap.member_ids
+                            if _sanitize_tool_name(t.name) in tools]
+                        if member_names:
+                            capabilities.append({
+                                'name': cap.name,
+                                'description': cap.description,
+                                'member_names': member_names,
+                            })
+                    cap_prompt_suffix = apply_capability_serialization(
+                        tools, capabilities, self.serialize_capabilities)
+                    if cap_prompt_suffix:
+                        system_prompt = (system_prompt or '') + cap_prompt_suffix
 
                 # Lineage: gör sessionen känd för OKF-injektionen så att
                 # concept_injected-edges loggas (ai_lineage_session_id).
@@ -3100,6 +3170,12 @@ class AICoworker(models.Model):
                     provider=provider, tools=tools,
                     model=model, system_prompt=system_prompt, max_rounds=10,
                 )
+
+                # PermissionEngine får användarens grupper (defense-in-depth):
+                # anrop på andra vägar till gruppbundna verktyg nekas även om
+                # registreringsfiltret missat något (tool-access-groups 1.4).
+                if hasattr(loop_obj, 'permissions'):
+                    loop_obj.permissions.user_group_ids = set(tool_access_groups)
 
                 async def _run():
                     return await loop_obj.run(prompt)
