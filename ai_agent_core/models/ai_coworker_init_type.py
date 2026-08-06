@@ -279,6 +279,15 @@ class AICoworkerInitType(models.Model):
         trigger = trigger_map.get(self.watch_trigger, self.watch_trigger or 'on_create_or_write')
         auto_name = self.coworker_id.name  # samma namn som AI Medarbetaren
 
+        # Robust kod: hittar rätt coworker via init_type → base_automation.
+        # `action` finns i eval-contexten (ir.actions.server).
+        code = (
+            "it = env['ai.coworker.init_type'].search("
+            "[('base_automation_id', '=', action.base_automation_id.id)], limit=1)\n"
+            "if it and it.coworker_id:\n"
+            "    records = it.coworker_id._trigger_watch(records)\n"
+        )
+
         try:
             if not self.base_automation_id:
                 # Create base.automation
@@ -295,10 +304,7 @@ class AICoworkerInitType(models.Model):
                     'model_id': self.watch_model_id.id,
                     'base_automation_id': automation.id,
                     'state': 'code',
-                    'code': (
-                        "records = env['ai.coworker']"
-                        f".browse({self.coworker_id.id})._trigger_watch(records)\n"
-                    ),
+                    'code': code,
                 })
                 self.base_automation_id = automation.id
                 _logger.info('Created base_automation %s for watch init', auto_name)
@@ -311,6 +317,24 @@ class AICoworkerInitType(models.Model):
                     'filter_domain': self.watch_domain or '',
                     'active': True,
                 })
+                # Se till att kopplad server action finns (äldre rader saknar den)
+                action = self.base_automation_id.action_server_ids[:1]
+                if not action:
+                    action = self.env['ir.actions.server'].create({
+                        'name': auto_name,
+                        'model_id': self.watch_model_id.id,
+                        'base_automation_id': self.base_automation_id.id,
+                        'state': 'code',
+                        'code': code,
+                    })
+                    _logger.info('Created saknad server action %s för watch-init %s',
+                                 action.id, auto_name)
+                else:
+                    action.write({
+                        'name': auto_name,
+                        'model_id': self.watch_model_id.id,
+                        'code': code,
+                    })
         except Exception as e:
             _logger.warning('Failed to ensure watch for %s: %s',
                           self.coworker_id.name if self.coworker_id else '?', e)
@@ -357,17 +381,29 @@ class AICoworkerInitType(models.Model):
                             coworker.name, e)
 
     def _ensure_mail_alias(self):
-        """Create mail alias if not exists."""
+        """Create/update mail alias.
+
+        Aliasset (alias@företagets-domän) pekar på ai.coworker.session och
+        sätter ai_coworker_id (= ai_agent) — inkommande mail kör medarbetaren
+        via message_new.
+        """
         if not self.alias_name:
-            self.alias_name = self.coworker_id.name.lower().replace(' ', '-')
+            self.alias_name = (
+                self.coworker_id.alias_name or self.coworker_id.name
+            ).lower().replace(' ', '-')
+        vals = {
+            'alias_name': self.alias_name,
+            'alias_model_id': self.env['ir.model']._get('ai.coworker.session').id,
+            'alias_defaults': {'coworker_id': self.coworker_id.id},
+            'alias_contact': self.alias_contact or 'everyone',
+        }
         if not self.alias_id:
-            alias = self.env['mail.alias'].create({
-                'alias_name': self.alias_name,
-                'alias_model_id': self.env['ir.model']._get('ai.coworker.session').id,
-                'alias_defaults': {'ai_coworker_id': self.coworker_id.id},
-                'alias_contact': self.alias_contact,
-            })
+            alias = self.env['mail.alias'].create(vals)
             self.alias_id = alias.id
+            _logger.info('Skapade mail-alias %s för %s',
+                         self.alias_name, self.coworker_id.name)
+        else:
+            self.alias_id.write(vals)
 
     def _ensure_chat_user(self):
         """Create bot user for private chat if not exists."""

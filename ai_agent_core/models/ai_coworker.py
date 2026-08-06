@@ -444,6 +444,18 @@ class AICoworker(models.Model):
     # Access Control (quest-access-control)
     alias_name = fields.Char('Email Alias',
         help='Local part of the email address')
+    alias_display = fields.Char('Mailadress', compute='_compute_alias_display',
+        store=False, help='Full mailadress: alias@företagets-domän')
+
+    @api.depends('alias_name')
+    def _compute_alias_display(self):
+        domain = (self.env['ir.config_parameter'].sudo().get_param(
+            'mail.catchall.domain')
+            or self.env.company.website or '')
+        for rec in self:
+            rec.alias_display = (
+                f'{rec.alias_name}@{domain}'
+                if rec.alias_name and domain else rec.alias_name or False)
     group_ids = fields.Many2many('res.groups', 'ai_coworker_group_rel', 'coworker_id', 'group_id', string='Access Groups')
 
     # Core loop migration
@@ -1045,6 +1057,10 @@ class AICoworker(models.Model):
             mail = rec._get_active_init('mail')
             if mail:
                 mail.alias_contact = rec.alias_contact
+                if rec.alias_name:
+                    mail.alias_name = rec.alias_name
+                    if mail.enabled:
+                        mail._ensure_mail_alias()
             oa = rec._get_active_init('openai_api')
             if oa:
                 oa.write({
@@ -1940,6 +1956,33 @@ class AICoworker(models.Model):
         if seeded:
             _logger.info('Seeded %d missing init_type records', seeded)
         return seeded
+
+    @api.model
+    def _ensure_init_resources(self, records=None):
+        """Säkerställ att alla aktiva init-types har sina resurser.
+
+        - watch: base_automation + kopplad server action (kod som anropar
+          rätt ai.coworker via _trigger_watch)
+        - mail: mail.alias som pekar på ai.coworker.session
+
+        Idempotent — anropas av <function> i data/ensure_init_resources.xml
+        vid varje moduluppdatering (checkmodule --init kör inga migrationer).
+        """
+        watch_count = mail_count = 0
+        for it in self.env['ai.coworker.init_type'].search([('enabled', '=', True)]):
+            try:
+                if it.init_type == 'watch':
+                    it._ensure_watch()
+                    watch_count += 1
+                elif it.init_type == 'mail':
+                    it._ensure_mail_alias()
+                    mail_count += 1
+            except Exception as e:
+                _logger.warning('ensure_init_resources misslyckades för init %s: %s',
+                                it.id, e)
+        _logger.info('ensure_init_resources: watch=%s mail=%s',
+                     watch_count, mail_count)
+        return watch_count + mail_count
 
     def _ensure_all_init_types(self):
         """Skapa en komplett init_type-rad-uppsättning (en per INIT_TYPES-typ)

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Säkerställ init-resurser vid varje moduluppdatering.
+         checkmodule-init kör inga migrationer → adoption via funktion. -->
+    <function model="ai.coworker" name="_ensure_init_resources"
+              eval="[obj()]"/>
+</odoo>

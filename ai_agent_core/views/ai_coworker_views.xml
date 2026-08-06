@@ -228,6 +228,7 @@
                                   <!-- Mail -->
                                     <field name="init_mail"/>
                                      <field name="alias_name" invisible="not init_mail" string=" → Mail-adress (alias)"/>
+                                     <field name="alias_display" invisible="not init_mail" readonly="1" string=" → Full mailadress"/>
                                      <field name="alias_contact" invisible="not init_mail" string=" → Ta emot mail från"/>
                                   <!-- Cron -->
                                     <field name="init_cron"/>
