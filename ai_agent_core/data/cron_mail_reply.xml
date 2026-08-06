@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Fördröjda mail-svar: cron som postar pendande svar när reply_at passerats. -->
+    <record id="ir_actions_server_mail_reply_due" model="ir.actions.server">
+        <field name="name">AI: Posta fördröjda mail-svar</field>
+        <field name="model_id" ref="model_ai_coworker_session"/>
+        <field name="state">code</field>
+        <field name="code">
+model._post_pending_reply()
+        </field>
+    </record>
+
+    <record id="cron_mail_reply_due" model="ir.cron">
+        <field name="name">AI: Posta fördröjda mail-svar</field>
+        <field name="cron_name">AI: Posta fördröjda mail-svar</field>
+        <field name="ir_actions_server_id" ref="ir_actions_server_mail_reply_due"/>
+        <field name="interval_number">1</field>
+        <field name="interval_type">minutes</field>
+        <field name="active">True</field>
+    </record>
+</odoo>

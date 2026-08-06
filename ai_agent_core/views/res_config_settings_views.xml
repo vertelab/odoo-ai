@@ -79,6 +79,8 @@
                             <div class="mt8">
                                 <button type="object" name="action_index_website"
                                         string="🔍 Indexera webbplats" class="btn-primary"/>
+                                <button type="object" name="action_index_personal_now"
+                                        string="👤 Indexera personliga minnen nu" class="btn-secondary"/>
                             </div>
                         </setting>
                     </block>
@@ -218,18 +220,33 @@
                          AI API
                          ════════════════════════════════════════════ -->
                     <block title="AI API">
-                        <setting id="ai_api_secret_setting" title="API Secret">
-                            <field name="ai_api_secret" placeholder="Shared Bearer token"/>
-                            <div class="text-muted">
-                                Delas mellan /ai/v1/*, /pi/callback och externa system.
-                                Fallback till miljövariabeln AI_AGENT_API_SECRET.
-                            </div>
-                        </setting>
                         <setting id="ai_api_default_provider" title="Default Provider">
                             <field name="ai_api_default_provider_id"/>
                         </setting>
                         <setting id="ai_api_default_model" title="Default Model">
                             <field name="ai_api_default_model_id"/>
+                        </setting>
+                    </block>
+
+                    <!-- ════════════════════════════════════════════
+                         PWA (mobilapp)
+                         ════════════════════════════════════════════ -->
+                    <block title="PWA (Mobilapp)">
+                        <setting id="pwa_settings" title="App-namn och ikon"
+                                 help="Används för den installerade AI-chatten och Odoo-appen på hemskärmen (Android + iPhone).">
+                            <div class="d-flex align-items-center gap-3">
+                                <label for="pwa_name" string="App-namn"/>
+                                <field name="pwa_name" placeholder="Tomt = AI + företagsnamn"/>
+                            </div>
+                            <div class="d-flex align-items-center gap-3 mt4">
+                                <label for="pwa_icon" string="Ikon"/>
+                                <field name="pwa_icon" widget="image" class="oe_avatar"/>
+                                <span class="text-muted small">Lämna tomt för företagsloggan.</span>
+                            </div>
+                            <div class="text-muted small mt8">
+                                Installeras via menyn → "Installera appar", eller direkt på
+                                <a href="/ai/install" target="_blank">/ai/install</a>.
+                            </div>
                         </setting>
                     </block>
 
@@ -260,6 +277,12 @@
                         </setting>
                         <setting id="agent_default_identity" title="Default Identity">
                             <field name="ai_agent_default_identity_id"/>
+                        </setting>
+                        <setting id="agent_default_tools"
+                                 title="Default Tools (nya agenter)"
+                                 help="Vilka verktyg nya agenter får när de skapas utan explicita verktyg. Builtin-verktyg (describe_model, odoo_search m.fl.) syns här efter moduluppdatering.">
+                            <field name="ai_default_tool_ids" widget="many2many_tags"
+                                   options="{'no_create_edit': True}"/>
                         </setting>
                     </block>
 

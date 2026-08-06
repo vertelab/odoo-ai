@@ -26,7 +26,7 @@ class TestWebhook(TransactionCase):
         self.init_type = self.InitType.create({
             'coworker_id': self.coworker.id,
             'init_type': 'webhook',
-            'active': True,
+            'enabled': True,
         })
         # Trigger _ensure_webhook
         self.init_type._ensure_webhook()
@@ -59,7 +59,7 @@ class TestWebhook(TransactionCase):
         itype = self.InitType.create({
             'coworker_id': coworker2.id,
             'init_type': 'webhook',
-            'active': True,
+            'enabled': True,
         })
         # Secret should be auto-generated via _after_change -> _ensure_webhook
         self.assertTrue(coworker2.webhook_secret)
@@ -81,7 +81,7 @@ class TestPowerboxMigration(TransactionCase):
         self.init_type = self.InitType.create({
             'coworker_id': self.coworker.id,
             'init_type': 'powerbox',
-            'active': True,
+            'enabled': True,
         })
 
     def test_powerbox_init_type_ids_filter(self):
@@ -89,18 +89,18 @@ class TestPowerboxMigration(TransactionCase):
         powerbox_types = self.InitType.search([
             ('coworker_id', '=', self.coworker.id),
             ('init_type', '=', 'powerbox'),
-            ('active', '=', True),
+            ('enabled', '=', True),
         ])
         self.assertTrue(powerbox_types)
         self.assertEqual(powerbox_types[0].init_type, 'powerbox')
 
     def test_powerbox_not_active_not_found(self):
         """Inactive powerbox init_type is not found."""
-        self.init_type.active = False
+        self.init_type.enabled = False
         powerbox_types = self.InitType.search([
             ('coworker_id', '=', self.coworker.id),
             ('init_type', '=', 'powerbox'),
-            ('active', '=', True),
+            ('enabled', '=', True),
         ])
         self.assertFalse(powerbox_types)
 
@@ -123,7 +123,7 @@ class TestChatResponseMode(TransactionCase):
         itype = self.InitType.create({
             'coworker_id': self.coworker.id,
             'init_type': 'chat',
-            'active': True,
+            'enabled': True,
         })
         self.assertEqual(itype.response_mode, 'mention')
 
@@ -132,7 +132,7 @@ class TestChatResponseMode(TransactionCase):
         itype = self.InitType.create({
             'coworker_id': self.coworker.id,
             'init_type': 'chat',
-            'active': True,
+            'enabled': True,
             'response_mode': 'always',
         })
         self.assertEqual(itype.response_mode, 'always')
@@ -142,7 +142,7 @@ class TestChatResponseMode(TransactionCase):
         itype = self.InitType.create({
             'coworker_id': self.coworker.id,
             'init_type': 'channel',
-            'active': True,
+            'enabled': True,
             'response_mode': 'trigger',
             'chat_trigger_words': 'help,support,question',
         })
@@ -154,7 +154,7 @@ class TestChatResponseMode(TransactionCase):
         itype = self.InitType.create({
             'coworker_id': self.coworker.id,
             'init_type': 'channel',
-            'active': True,
+            'enabled': True,
         })
         self.assertEqual(itype.channel_reply_mode, 'public')
 
@@ -178,7 +178,7 @@ class TestCronInterval(TransactionCase):
         itype = self.InitType.create({
             'coworker_id': self.coworker.id,
             'init_type': 'cron',
-            'active': False,
+            'enabled': False,
         })
         itype.invalidate_recordset()
         self.assertEqual(itype.cron_interval_number, 1)
@@ -189,7 +189,7 @@ class TestCronInterval(TransactionCase):
         itype = self.InitType.create({
             'coworker_id': self.coworker.id,
             'init_type': 'cron',
-            'active': False,
+            'enabled': False,
             'cron_interval_number': 30,
             'cron_interval_type': 'minutes',
         })
@@ -216,7 +216,7 @@ class TestServerActionWizard(TransactionCase):
         itype = self.InitType.create({
             'coworker_id': self.coworker.id,
             'init_type': 'server_action',
-            'active': True,
+            'enabled': True,
         })
         self.assertFalse(itype.server_action_use_wizard)
 
@@ -225,7 +225,7 @@ class TestServerActionWizard(TransactionCase):
         itype = self.InitType.create({
             'coworker_id': self.coworker.id,
             'init_type': 'server_action',
-            'active': True,
+            'enabled': True,
             'server_action_use_wizard': True,
         })
         self.assertTrue(itype.server_action_use_wizard)
@@ -390,7 +390,7 @@ class TestCoworkerDataModel(TransactionCase):
         self.InitType.create({
             'coworker_id': coworker.id,
             'init_type': 'webhook',
-            'active': True,
+            'enabled': True,
         })
         coworker._compute_init_type_flags()
         self.assertTrue(coworker.has_webhook)

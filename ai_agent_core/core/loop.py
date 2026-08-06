@@ -61,6 +61,11 @@ class AgentConfig:
     permission_mode: str = "interactive"  # discuss | plan | interactive | auto | custom
     max_clarifications: int = 3  # max proactive questions per turn (HITL-007)
 
+    # Access-grupper (ai-tool-access-capabilities): Odoo group ids för den
+    # användare vars vägnar loopen körs — PermissionEngine nekar gruppbundna
+    # verktyg utan korsning (defense-in-depth).
+    user_group_ids: tuple = ()
+
     # NATS executor config (tool-executor-nats)
     nats_api_secret: str = ""  # api_secret for Pi-agent verification
     nats_max_retries: int = 3  # retries before giving up on NATS tool
@@ -103,12 +108,17 @@ class AgentLoop:
         interrupt_handler=None,
         permission_engine: Optional[PermissionEngine] = None,
         context_provider: Optional[callable] = None,
+        denial_callback: Optional[callable] = None,
     ):
         self.provider = provider
         self.tools = tools
         self.config = config or AgentConfig()
         self.interrupt_handler = interrupt_handler
         self.context_provider = context_provider
+        # Async-ytor (cron/mail/webhook): kallas när ett verktyg nekas av
+        # permission engine (t.ex. hårt stopp) — kan dirigera till
+        # workspace-approval-kön.
+        self.denial_callback = denial_callback
 
         # Observability: [(tool_name, result_preview), ...] per execution,
         # read by callers (e.g. ai.coworker.run) for session-line persistence
@@ -124,6 +134,8 @@ class AgentLoop:
             except ValueError:
                 mode = PermissionMode.INTERACTIVE
             self.permissions = PermissionEngine(mode=mode)
+            if self.config.user_group_ids:
+                self.permissions.user_group_ids = set(self.config.user_group_ids)
 
         # Cancellation support (LOOP-005)
         self._cancel_event = asyncio.Event()
@@ -426,6 +438,13 @@ class AgentLoop:
                             "Permission denied for '%s': %s",
                             tc.name, decision.reason,
                         )
+                        if self.denial_callback:
+                            try:
+                                self.denial_callback(
+                                    tc.name, tc.arguments, decision.reason)
+                            except Exception:
+                                _logger.warning(
+                                    'Denial callback failed', exc_info=True)
                         messages.append(Message(
                             role=Role.TOOL,
                             content=f"Tool '{tc.name}' was denied: {decision.reason}",

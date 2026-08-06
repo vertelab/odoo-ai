@@ -7,20 +7,18 @@
         <field name="view_mode">list,form</field>
     </record>
 
-    <!-- Menu item -->
-    <menuitem id="menu_ai_tool" name="Tools"
-              parent="menu_ai_configuration" action="action_ai_tool"
-              sequence="25"/>
-
     <!-- Tool list view -->
     <record id="view_ai_tool_tree" model="ir.ui.view">
         <field name="name">ai.tool.list</field>
         <field name="model">ai.tool</field>
         <field name="arch" type="xml">
-            <list string="AI Tools" editable="bottom">
+            <list string="AI Tools">
                 <field name="name"/>
+                <field name="builtin_name" string="Builtin" widget="badge"
+                       optional="show" decoration-info="builtin_name != False"/>
                 <field name="executor"/>
                 <field name="risk_level" widget="badge"/>
+                <field name="group_ids" widget="many2many_tags" string="Access Groups" optional="show"/>
                 <field name="call_count" string="Calls"/>
                 <field name="error_count" string="Errors"/>
                 <field name="active" invisible="1"/>
@@ -48,10 +46,12 @@
                         <group>
                             <field name="description"
                                    placeholder="What this tool does (shown to LLM)..."/>
+                            <field name="builtin_name" readonly="1"/>
                             <field name="risk_level"/>
                             <field name="executor"/>
                             <field name="capabilities"
                                    placeholder='["browser", "infra"]'/>
+                            <field name="group_ids" widget="many2many_tags"/>
                         </group>
                         <group>
                             <field name="call_count"/>
@@ -103,6 +103,47 @@
         </field>
     </record>
 
+
+    <!-- Capability action + views (ai-tool-access-capabilities) -->
+    <record id="action_ai_tool_capability" model="ir.actions.act_window">
+        <field name="name">Capabilities</field>
+        <field name="res_model">ai.tool.capability</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+    <record id="view_ai_tool_capability_tree" model="ir.ui.view">
+        <field name="name">ai.tool.capability.list</field>
+        <field name="model">ai.tool.capability</field>
+        <field name="arch" type="xml">
+            <list string="Capabilities" editable="bottom">
+                <field name="name"/>
+                <field name="member_ids" widget="many2many_tags" string="Tools"/>
+                <field name="active" invisible="1"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_ai_tool_capability_form" model="ir.ui.view">
+        <field name="name">ai.tool.capability.form</field>
+        <field name="model">ai.tool.capability</field>
+        <field name="arch" type="xml">
+            <form string="Capability">
+                <header>
+                    <field name="active" widget="boolean_toggle"/>
+                </header>
+                <sheet>
+                    <div class="oe_title">
+                        <h1><field name="name" placeholder="Capability Name"/></h1>
+                    </div>
+                    <group>
+                        <field name="description"
+                               placeholder="syfte / när / när inte / exempel / output / guardrail"/>
+                        <field name="member_ids" widget="many2many_tags"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
 
 
 </odoo>

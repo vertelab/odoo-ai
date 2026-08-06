@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- ===== Actions (must be before menus) ===== -->
+    <record id="action_ai_provider" model="ir.actions.act_window">
+        <field name="name">Providers</field>
+        <field name="res_model">ai.provider</field>
+        <field name="view_mode">kanban,list,form</field>
+    </record>
+    <record id="action_ai_model" model="ir.actions.act_window">
+        <field name="name">Models</field>
+        <field name="res_model">ai.model</field>
+        <field name="view_mode">kanban,list,form</field>
+        <field name="context">{'search_default_group_provider': 1}</field>
+    </record>
+    <record id="action_ai_settings" model="ir.actions.act_window">
+        <field name="name">Inställningar</field>
+        <field name="res_model">res.config.settings</field>
+        <field name="view_mode">form</field>
+        <field name="target">inline</field>
+        <field name="context">{'module':'ai_agent_core'}</field>
+    </record>
+    <record id="action_ai_coworker" model="ir.actions.act_window">
+        <field name="name">AI medarbetare</field>
+        <field name="res_model">ai.coworker</field>
+        <field name="view_mode">kanban,list,form</field>
+    </record>
+    <record id="action_ai_agent" model="ir.actions.act_window">
+        <field name="name">Agenter</field>
+        <field name="res_model">ai.agent</field>
+        <field name="view_mode">kanban,list,form</field>
+    </record>
+    <record id="action_ai_identity" model="ir.actions.act_window">
+        <field name="name">Identiteter</field>
+        <field name="res_model">ai.identity</field>
+        <field name="view_mode">kanban,list,form</field>
+    </record>
+    <record id="action_ai_skill" model="ir.actions.act_window">
+        <field name="name">Skills</field>
+        <field name="res_model">ai.skill</field>
+        <field name="view_mode">kanban,list,form</field>
+    </record>
+    <record id="action_ai_memory" model="ir.actions.act_window">
+        <field name="name">Memory</field>
+        <field name="res_model">ai.memory</field>
+        <field name="view_mode">list,form</field>
+    </record>
+    <record id="action_ai_chat" model="ir.actions.act_url">
+        <field name="name">AI Chat</field>
+        <field name="url">/ai/chat</field>
+        <field name="target">self</field>
+    </record>
+
+    <!-- ===== New Org Actions ===== -->
+    <record id="action_ai_org_goal" model="ir.actions.act_window">
+        <field name="name">Goals (OKR)</field>
+        <field name="res_model">ai.org.goal</field>
+        <field name="view_mode">kanban,list,form</field>
+    </record>
+    <record id="action_ai_org_task" model="ir.actions.act_window">
+        <field name="name">AI Tasks</field>
+        <field name="res_model">ai.org.task</field>
+        <field name="view_mode">list,form</field>
+    </record>
+    <record id="action_ai_org_review" model="ir.actions.act_window">
+        <field name="name">AI Performance Reviews</field>
+        <field name="res_model">ai.org.review</field>
+        <field name="view_mode">list,form</field>
+    </record>
+    <record id="action_ai_org_board" model="ir.actions.act_window">
+        <field name="name">AI Board</field>
+        <field name="res_model">ai.org.board</field>
+        <field name="view_mode">list,form</field>
+    </record>
+    <record id="action_ai_onboarding" model="ir.actions.act_window">
+        <field name="name">Onboarding</field>
+        <field name="res_model">ai.onboarding</field>
+        <field name="view_mode">list,form</field>
+        <field name="context">{'default_ceo_user_id': uid}</field>
+    </record>
+</odoo>

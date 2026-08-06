@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <!-- Extend ai.quest form to add context injection settings -->
+    <!-- Extend ai.coworker form to add context injection settings -->
     <record id="view_ai_quest_form_inherit_context" model="ir.ui.view">
-        <field name="name">ai.quest.form.inherit.context</field>
-        <field name="model">ai.quest</field>
-        <field name="inherit_id" ref="ai_agent.ai_quest_form"/>
+        <field name="name">ai.coworker.form.inherit.context</field>
+        <field name="model">ai.coworker</field>
+        <field name="inherit_id" ref="ai_agent_core.ai_coworker_form"/>
         <field name="arch" type="xml">
             <xpath expr="//notebook" position="before">
                 <group string="Record Context Injection" col="2">

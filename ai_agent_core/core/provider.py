@@ -248,16 +248,56 @@ class BifrostProvider(AIProvider):
         url = f"{self.base_url}{path}"
         _logger.debug("Bifrost %s %s", path, body.get("model", "?"))
         response = await client.post(url, json=body)
-        response.raise_for_status()
+        if response.is_error:
+            # Inkludera response-body i felet (t.ex. 400-detaljer från providern)
+            _detail = response.text[:500]
+            try:
+                response.raise_for_status()
+            except httpx.HTTPStatusError as e:
+                raise httpx.HTTPStatusError(
+                    f"{e} — Bifrost: {_detail}", request=e.request,
+                    response=e.response) from e
         return response.json()
+
+    @DEFAULT_RETRY
+    async def _stream_open(self, url: str, body: dict):
+        """Öppna streaming-anrop med retry (429/5xx/connect).
+
+        Returnerar en öppen httpx-response redo att itereras. Vid statusfel
+        stängs anslutningen innan raise, så retry får en fräsch request.
+        """
+        client = await self._get_client()
+        request = client.build_request('POST', url, json=body)
+        response = await client.send(request, stream=True)
+        if response.is_error:
+            await response.aread()  # läs body innan .text (streaming)
+            _detail = response.text[:500]
+            await response.aclose()
+            try:
+                response.raise_for_status()
+            except httpx.HTTPStatusError as e:
+                _logger.error(
+                    'Bifrost 400-debug: model=%s msgs=%d tools=%d system_len=%d '
+                    'roles=%s sample=%r ALLTOOLS=%s',
+                    body.get('model'), len(body.get('messages', [])),
+                    len(body.get('tools', [])),
+                    len(body.get('system', '') or ''),
+                    [m.get('role') for m in body.get('messages', [])][:20],
+                    (body.get('messages') or [{}])[0].get('content', '')[:60],
+                    [t.get('function', {}).get('name') for t in body.get('tools', [])])
+                raise httpx.HTTPStatusError(
+                    f"{e} — Bifrost: {_detail}", request=e.request,
+                    response=e.response) from e
+        return response
 
     async def _post_stream(self, path: str, body: dict):
         client = await self._get_client()
         url = f"{self.base_url}{path}"
         body["stream"] = True
         _logger.debug("Bifrost stream %s %s", path, body.get("model", "?"))
-        async with client.stream("POST", url, json=body) as response:
-            response.raise_for_status()
+        response = await self._stream_open(url, body)
+        # httpx 0.28: Response saknar __aenter__ — stäng explicit i finally
+        try:
             async for line in response.aiter_lines():
                 if line.startswith("data: "):
                     data_str = line[6:]
@@ -268,6 +308,8 @@ class BifrostProvider(AIProvider):
                         yield json.loads(data_str)
                     except json.JSONDecodeError:
                         continue
+        finally:
+            await response.aclose()
 
     @staticmethod
     def _build_openai_body(

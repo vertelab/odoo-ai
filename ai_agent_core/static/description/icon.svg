@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#16213e"/>
+      <stop offset="1" stop-color="#1a1a2e"/>
+    </linearGradient>
+    <linearGradient id="bolt" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ff6b81"/>
+      <stop offset="1" stop-color="#e94560"/>
+    </linearGradient>
+  </defs>
+  <!-- Bakgrund: rundad mörk platta (matchar chat-appens tema) -->
+  <rect x="4" y="4" width="120" height="120" rx="26" fill="url(#bg)" stroke="#2a2a4a" stroke-width="3"/>
+  <!-- Chatbubbla -->
+  <path d="M34 38 h60 a10 10 0 0 1 10 10 v30 a10 10 0 0 1 -10 10 h-34 l-14 14 v-14 h-12 a10 10 0 0 1 -10 -10 v-30 a10 10 0 0 1 10 -10 z"
+        fill="#ffffff" opacity="0.96"/>
+  <!-- Blixt/spark (AI) i accentfärg -->
+  <path d="M72 46 L52 68 h12 L56 86 L78 62 h-13 z" fill="url(#bolt)"/>
+</svg>

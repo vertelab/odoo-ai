@@ -28,7 +28,7 @@
         ==========================
         
         Inspired by Odoo Enterprise AI, this module adds automatic context
-        injection to ai_agent Quests. When a Quest is triggered from a record
+        injection to AI Coworkers. When a Quest is triggered from a record
         form, the record's field values and chatter history are automatically
         serialized and included in the AI's system prompt.
         
@@ -51,7 +51,7 @@
     'images': ['static/description/banner.png'],
     'license': 'AGPL-3',
     'depends': [
-        'ai_agent',
+        'ai_agent_core',
         'mail',
     ],
     'data': [

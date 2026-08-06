@@ -182,8 +182,12 @@ class AIMemory(models.Model):
             _logger.error('FAISS load failed for memory %s: %s', self.name, e)
             return None
 
-    def search(self, query: str, k: int = 3) -> list[str]:
+    def faiss_search(self, query: str, k: int = 3) -> list[str]:
         """Search FAISS index for similar documents.
+
+        NOTE: heter faiss_search (inte search) — annars skuggar metoden
+        ORM:ts sökmetod och alla env['ai.memory'].search([domain])-anrop
+        träffar fel (ai-memory-shadowing-fix).
 
         Args:
             query: Search query string
@@ -218,8 +222,8 @@ class AIMemory(models.Model):
         """Get embeddings instance from configured LLM or Bifrost fallback."""
         try:
             # Try quest's agent LLM first
-            if self.coworker_id:
-                for agent_rel in self.coworker_id.agent_ids:
+            if self.quest_id:
+                for agent_rel in self.quest_id.agent_ids:
                     agent = agent_rel.agent_id
                     if agent and hasattr(agent, 'ai_agent_llm_id'):
                         llm = agent.ai_agent_llm_id

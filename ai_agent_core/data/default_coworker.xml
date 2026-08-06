@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Default AI-medarbetare: "Allmän assistent"
+
+    Definieras som data-XML (noupdate) så att den har stabila xmlids:
+    - coworker_default_assistent   → refereras av chat-UI som default
+    - agent_default_core           → hjärnan (agent), "Allmän kärna"
+    - coworker_agent_default_core  → länk coworker ↔ agent
+
+    Init-types (web_ui m.fl.) skapas av ai.coworker.create()
+    (_ensure_all_init_types) — de behöver inga xmlids.
+
+    Adoption av legacy-poster ("Allmän" från hooks/migration 1.8) görs av
+    _ensure_default_coworker — anropas av <function> NEDANFÖR noupdate-
+    blocket, eftersom funktioner i noupdate-block inte körs vid uppdatering
+    (endast vid install).
+-->
+<odoo>
+    <data noupdate="1">
+
+        <record id="coworker_default_assistent" model="ai.coworker">
+            <field name="name">Allmän assistent</field>
+            <field name="description">Allmän AI-assistent. Hjälper med frågor, styr upp organisationen, och tipsar om förbättringar via kaizen.</field>
+            <field name="init_type">manual</field>
+            <field name="status">active</field>
+            <field name="heartbeat_enabled" eval="True"/>
+            <field name="inject_company_memory" eval="True"/>
+            <field name="inject_nudging" eval="True"/>
+            <field name="is_default" eval="True"/>
+        </record>
+
+        <record id="agent_default_core" model="ai.agent">
+            <field name="name">Allmän kärna</field>
+            <field name="ai_role">General purpose AI assistant</field>
+            <field name="description">Kärnagent för den allmänna assistenten — svarar på frågor, styr upp organisationen och delegerar till specialister.</field>
+            <field name="status">active</field>
+        </record>
+
+        <record id="coworker_agent_default_core" model="ai.coworker.agent">
+            <field name="coworker_id" ref="coworker_default_assistent"/>
+            <field name="agent_id" ref="agent_default_core"/>
+            <field name="role">leader</field>
+            <field name="sequence" eval="10"/>
+        </record>
+
+        <!-- Odoo-specialist (affärsverktyg + odoo-core-skill) -->
+        <record id="agent_odoo_business" model="ai.agent">
+            <field name="name">Odoo-specialist</field>
+            <field name="ai_role">Odoo Specialist</field>
+            <field name="description">Affärsexpert på Odoo-modeller: söker, skapar och kör affärsflöden via generiska modellverktyg och följer odoo-core-skillen.</field>
+            <field name="status">active</field>
+            <field name="skill_ids" eval="[(6, 0, [ref('skill_odoo_core')])]"/>
+            <!-- explicit-agent-tools: odoo-verktyg anges EXPLICIT här — de
+                 registreras inte längre implicit via builtin_tools(). -->
+            <field name="tool_ids" eval="[(6, 0, [
+                ref('tool_describe_model'),
+                ref('tool_odoo_search'),
+                ref('tool_odoo_create'),
+                ref('tool_odoo_call_method'),
+                ref('tool_odoo_write'),
+                ref('tool_odoo_unlink'),
+                ref('tool_okf_search'),
+            ])]"/>
+        </record>
+        <record id="coworker_agent_odoo_business" model="ai.coworker.agent">
+            <field name="coworker_id" ref="coworker_default_assistent"/>
+            <field name="agent_id" ref="agent_odoo_business"/>
+            <field name="role">member</field>
+            <field name="sequence" eval="20"/>
+        </record>
+
+        <!-- Research (webb + youtube) -->
+        <record id="agent_research" model="ai.agent">
+            <field name="name">Research</field>
+            <field name="ai_role">Web Research</field>
+            <field name="description">Research-agent: söker information på webben, hämtar sidor och bearbetar YouTube-innehåll via youtube-skills.</field>
+            <field name="status">active</field>
+            <field name="skill_ids" eval="[(6, 0, [
+                ref('skill_youtube_transcript'),
+                ref('skill_youtube_search'),
+                ref('skill_youtube_channels'),
+                ref('skill_youtube_playlist'),
+                ref('skill_youtube_full'),
+            ])]"/>
+            <!-- explicit-agent-tools: web-verktyg anges EXPLICIT här. -->
+            <field name="tool_ids" eval="[(6, 0, [
+                ref('tool_web_search'),
+                ref('tool_fetch_url'),
+            ])]"/>
+        </record>
+        <record id="coworker_agent_research" model="ai.coworker.agent">
+            <field name="coworker_id" ref="coworker_default_assistent"/>
+            <field name="agent_id" ref="agent_research"/>
+            <field name="role">member</field>
+            <field name="sequence" eval="30"/>
+        </record>
+
+    </data>
+
+    <!-- Adoption av legacy-poster + städning av duplikat. Körs vid BÅDE
+         init och update (utanför noupdate-block). obj() = tom recordset
+         → anropar modellmetoden utan specifika rader. -->
+    <function model="ai.coworker" name="_ensure_default_coworker" eval="[obj()]"/>
+
+</odoo>

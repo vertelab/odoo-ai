@@ -49,8 +49,13 @@ class AIAgent(models.Model):
                                   'agent_id', 'skill_id', string='Skills',
                                   help='Task-specific skills this agent can perform')
 
-    # Tools
-    tool_ids = fields.One2many('ai.agent.tool', 'agent_id', string='Tools')
+    # Tools — M2M till globala ai.tool-record
+    tool_ids = fields.Many2many(
+        'ai.tool', 'ai_agent_tool_custom_rel',
+        'agent_id', 'tool_id', string='Tools',
+        help='Globala ai.tool-record kopplade till denna agent. '
+             'Lagra flera tools per agent. Speglar ai.tool.agent_ids.',
+    )
 
     # Memories (FAISS/pgvector RAG)
     memory_ids = fields.One2many('ai.agent.memory', 'agent_id', string='Skill Memories',
@@ -187,6 +192,47 @@ class AIAgent(models.Model):
             'res_model': 'ai.coworker', 'view_mode': 'kanban,list,form',
             'target': 'current', 'domain': [('id', 'in', quest_ids)],
         }
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        """Skapa agenter — applicera default-verktyg (explicit-agent-tools).
+
+        Om en ny agent skapas utan explicita tool_ids, får den
+        default_tool_ids från Settings → AI Orkestrering (describe_model,
+        odoo_search m.fl.). Befintliga agenter rörs aldrig; agenter med
+        egna verktyg respekteras.
+        """
+        default_names = self._get_default_tool_names()
+        if default_names:
+            default_tools = self.env['ai.tool'].search(
+                [('name', 'in', default_names)])
+            if default_tools:
+                for vals in vals_list:
+                    if 'tool_ids' not in vals:
+                        vals['tool_ids'] = [(6, 0, default_tools.ids)]
+        return super(AIAgent, self).create(vals_list)
+
+    @api.model
+    def _get_default_tool_names(self):
+        """Returnera default-verktygsnamnen från Settings (ir.config_parameter).
+
+        Tom/parameter saknas → DEFAULT_AGENT_TOOL_NAMES från res.config.settings.
+        """
+        param = self.env['ir.config_parameter'].sudo().get_param(
+            'ai_agent_core.default_tool_ids', '')
+        names = [n.strip() for n in param.split(',') if n.strip()]
+        if names:
+            return names
+        # Fallback: samma lista som settings-fältets default.
+        try:
+            from .res_config_settings import ResConfigSettings
+            return list(ResConfigSettings.DEFAULT_AGENT_TOOL_NAMES)
+        except Exception:
+            return [
+                'describe_model', 'odoo_search', 'odoo_create',
+                'odoo_call_method', 'odoo_write', 'odoo_unlink',
+                'okf_search',
+            ]
 
     def write(self, vals):
         res = super(AIAgent, self).write(vals)

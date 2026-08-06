@@ -76,7 +76,7 @@ ai_agent_core/
 ├── models/                 # Odoo models (require Odoo runtime)
 │   ├── ai_provider.py      # ai.provider — LLM provider configuration
 │   ├── ai_model.py         # ai.model — individual models with capabilities
-│   ├── ai_quest.py         # ai.quest — standalone quests + AIQuestRun wizard
+│   ├── ai_quest.py         # ai.quest — standalone quests + AICoworkerRun wizard
 │   ├── ai_agent.py         # ai.agent — agents with identity, skills, tools, budget
 │   ├── ai_session.py       # ai.quest.session — extended with token tracking
 │   ├── ai_identity.py      # ai.identity — SOUL.md (personality, style, values)
@@ -204,7 +204,7 @@ the coworker is triggered. All 10 init types are auto-seeded on creation.
 | `web_ui` | `/ai/chat` web UI | SSE streaming | `show_in_chat` |
 | `chat` | Discuss private chat | `chat()` | `response_mode`, `chat_user_id` |
 | `channel` | Discuss channel | `chat()` | `response_mode`, `channel_ids` |
-| `mail` | Incoming email | `mail()` | `alias_name` |
+| `mail` | Incoming email | `message_new` (mail-trigger) | `alias_name`, `mail_action`, `mail_reply_delay`, `mail_find_partner` |
 | `cron` | Scheduled action | `cron()` | `cron_interval_number/type` |
 | `server_action` | Button in form/list | `server_action()` | `server_action_use_wizard` |
 | `powerbox` | `/` in text fields | `powerbox()` | `model_ids` binding |
@@ -345,3 +345,171 @@ Odoo-integrationstester (kräver DB): `checkmodule -d <db> -m ai_agent_core -t`
 ## License
 
 AGPL-3 — Vertel AB
+
+---
+
+## Skill-mall (affärsprocessguider) — odoo-model-tools
+
+Affärsprocess-skills (`ai.skill`) ska följa denna mall så att agenter vet
+*när*, *varför* och *hur* de interagerar med Odoo-modeller:
+
+```
+# Skill: <domän> — <beskrivning>
+## Scope            → moduler + modeller; INSTALL-CHECK:
+                     "uteslut sektioner vars modul inte är installerad
+                     (ir.module.module)"
+## <App>-sektion    → per app: modeller, affärsprocesser (steg + HITL),
+                     metodtabell (Metod/När/HITL)
+## Verktygshintar   → describe_model / odoo_search / okf_search / graph_query
+## Trigger-nyckelord → crm, offert, faktura, lager, …
+```
+
+Kodverifierade exempel: `data/skill_odoo_core.xml` (CRM-sektionen bygger på
+faktisk Odoo 18-kod: crm.lead state-maskin, convert_opportunity,
+action_set_won/lost m.fl.). Regler: skriv aldrig `state` direkt — anropa
+affärsmetoder (action_*/button_*) via `odoo_call_method`; HITL-policy per
+operation anges i skillen (affärs-HITL) + permission engine som backstop.
+
+## Bridge-repo-mönster för domänspecifika skills
+
+Domänspecifika skills (`<domän>_ai`) skapas i respektive bridge-repo som
+data-XML, enligt bridge-standarden:
+
+```
+odoo-<domän>/<domän>_ai/data/skills.xml
+  <record id="skill_<domän>_<x>" model="ai.skill">
+    <field name="name">…</field>
+    <field name="category">…</field>
+    <field name="recipe_text"><![CDATA[…]]></field>
+  </record>
+```
+
+- AI-förmågor (coworkers, skills) ligger ENBART i `_ai`-moduler — domän-core
+  är ren.
+- Skills kopplas till agenter via `ai.agent.skill_ids` (data-XML `ref`).
+- Install-check-instruktionen gör att sektioner för oinstallerade moduler
+  utesluts vid körning.
+
+## AI-tool-beskrivningsmall (ai-tool-access-capabilities)
+
+`ai.tool.description` är det kontrakt LLM:en läser vid verktygsval. Skriv den
+som en strukturerad mall (AI-beskrivning), inte en enradare:
+
+```
+syfte:    vad verktyget uppnår (inte bara vad det gör)
+när:      när det ska användas (symptom, villkor)
+när inte: när det INTE ska användas — peka på rätt verktyg
+          ("föredra state.show_sls före state.apply")
+exempel:  realistiskt anrop med parametrar
+output:   förväntad resultatform
+guardrail: om verktyget kräver godkännande — nämn det (informativt)
+```
+
+Guardrails är ALDRIG advisory: enforcement sker strukturellt via
+`risk_level` (destructive/execute → alltid HITL) + PermissionEngine. En
+skill (`ai.skill.recipe_text`) får beskriva arbetsmönster och HITL-policy,
+men kan aldrig upphäva eller ersätta motorns grindar.
+
+## Access-grupper och förmågeserialisering (ai-tool-access-capabilities)
+
+**Access (`ai.tool.group_ids`, M2M `res.groups`):** vem som får använda
+verktyget. Tom = obegränsat (HITL via risk_level gäller ändå). Två lager:
+1) filtrering vid registrering (`ai.coworker.run()`, stream-chatten) —
+LLM:en ser aldrig otillåtna verktyg; 2) PermissionEngine nekar gruppbundna
+verktyg utan korsning (defense-in-depth). Icke-interaktiv (cron/webhook/mail)
+= coworkerns egna `group_ids` som access-grund.
+
+**Förmågor (`ai.tool.capability`):** serialiseringsenhet — namn +
+AI-beskrivning + medlemmar. Separerad från access: `group_ids` styr *vem*,
+förmågan styr *vad LLM:en ser*. Läge per coworker (`serialize_capabilities`):
+- `flat` (default) — individuella verktyg
+- `enum` — en Tool per förmåga med operation-enum (max 8 operationer; fler
+  delas). Minimal kontext, bra för små modeller.
+- `namespace` — individuella verktyg behålls (parallellitet) + förmågans
+  beskrivning i systemprompten.
+
+Access-filtrering sker ALLTID före serialisering — otillåten medlem saknas
+både som verktyg och som enum-operation.
+
+## Deploy (odoo-model-tools)
+
+- Ändringar i ai_agent_core kräver **versionbump i __manifest__.py** + `sudo checkmodule -d <db> -m ai_agent_core` (checkmodule kör `--init` — migrations körs inte, så adoption av legacy-poster sker via `<function>` i data-XML).
+- Rene Python-ändringar (core/*.py, controllers): `sudo systemctl restart odoo` räcker.
+- Tester: `python3 -m unittest ai_agent_core.tests.test_core` (core) · `checkmodule -d <db> -m ai_agent_core -t` (Odoo-integration).
+- Känd begränsning: demo_data.xml (Order-Vakten) har ett befintligt ParseError — påverkar inte produktion.
+
+## Mail-triggers (incoming mail actions)
+
+`mail`-initieringen kan göra mer än att bara svara. Via `mail_action` väljer man
+vad som sker när ett mail anländer till aliaset (`alias@företagets-mail-domän`):
+
+| mail_action | Beskrivning |
+|-------------|-------------|
+| `reply` | Köra medarbetaren på mailinnehållet och posta svaret på sessionstråden. |
+| `create_record` | Skapa/uppdatera ett record i `mail_target_model_id` från mailinnehållet. |
+| `process` | Generisk: kör medarbetaren med mail + bilaga som kontext — dess **skills** styr beteendet. |
+| `invoice_ai` | Preset = `process` med faktura-kontext (leverantörsfaktura). |
+
+Alla åtgärder (utom `create_record`-målet) är generiska: medarbetaren körs
+EN gång och kapaciteterna lever som **skills** på dess agenter
+(`ai.coworker.agent` → `ai.agent.skill_ids`) — inga agenter-på-agenter.
+För leverantörsfakturor:
+- Skill *Mail: Hitta/skapa res.partner* — avsändaren → `res.partner`
+  (deterministisk email-sökning först, LLM skapar via skill om den saknas)
+- Skill *Mail: Leverantörsfaktura → account.move* — OCR (pypdf) → skapa
+  `account.move` (in_invoice) med odoo_search/odoo_create/odoo_call_method
+
+Övriga inställningar:
+- `mail_reply_delay` (min): fördröjt svar — postas av cronen
+  *AI: Posta fördröjda mail-svar* (körs varje minut, `_post_pending_reply`).
+- `mail_find_partner` (invoice_ai): sök/skapa `res.partner` från avsändaren.
+- Inga separata agenter — kapaciteterna sitter på medarbetarens egna
+  agenter (Agenter-fliken → `ai.coworker.agent` → `ai.agent.skill_ids`).
+
+Flödet körs med `_ai_auto_approve`-kontext (AUTO-mode) — mailbearbetning är en
+tillitsfull automatisk kontext; `odoo_create`/`odoo_write`/`odoo_call_method`
+fastnar inte i HITL-kön. Datamedarbetaren *Faktura-Assistenten* är ett exempel
+(mail_action=invoice_ai, alias `faktura`).
+
+> Kommande: bryt ut faktura-flödet till en egen modul (`account_invoice_ai`-
+> integration) när det är dags — logiken ligger idag i
+> `models/ai_session.py` (`_process_invoice_mail`, `_resolve_mail_partner`).
+
+## Incoming mail — konfigurations-checklista
+
+Mailen till `alias@coworker.vertel.se` kräver tre lager. Steg under **A** är
+gjorda av modulen/konfigurationen; **B** och **C** kräver mailserver/DNS.
+
+### A. Odoo (denna instans) — ✅ konfigurerat
+
+1. `mail.alias.domain` = `coworker.vertel.se` (alias-domänen)
+2. `res.company.alias_domain_id` → `coworker.vertel.se`
+3. `mail.catchall.domain` = `coworker.vertel.se`
+4. `mail.alias` per AI Medarbetare (auto-skapas av `_ensure_mail_alias`):
+   - `allman-assistent@`, `support@`, `faktura@` …
+   - `alias_model_id = ai.coworker.session`, `alias_defaults = {coworker_id: N}`
+5. `mail_action` per medarbetare (`reply` / `create_record` / `invoice_ai`)
+   + `mail_reply_delay`, `mail_find_partner`
+6. ❗ **Inkommande mailserver (fetchmail)** — IMAP/POP mot central mailbox,
+   ELLER central postfix pipe/relay till Odoo mailgateway (se B/C)
+7. ❗ **Utgående mailserver (`ir.mail_server`)** — SMTP för AI-svar
+
+### B. Mailserver (central postfix — MAIL-servern, ej denna container)
+
+1. DNS: **MX** för `coworker.vertel.se` → mailservern
+2. Postfix accepterar `coworker.vertel.se`
+   (`virtual_alias_domains` eller `mydestination`)
+3. Routing `*@coworker.vertel.se` → luke18:s Odoo mailgateway, valfritt:
+   - **A** Transportmap: `coworker.vertel.se  relay:[luke18-ip]:25` + Odoo
+     lyssnar på port 25 (mailgateway `/mail/update`-routen)
+   - **B** Virtuell mailbox per alias + Odoo fetchmail (IMAP) — enkelt,
+     kräver bara en catchall-mailbox
+   - **C** Pipe: `"| /path/odoo-bin mailgateway -d luke18"` per alias
+
+### C. Verifiering
+
+- **Test-knappen** "→ Testa mail-flödet" på AI Medarbetaren (Initiering →
+  Mail) simulerar `message_new` med exempel-mail → kör `mail_action`-dispatchen
+  → skapar session + postar svar. Ingen riktig mailserver krävs.
+- När B är klart: skicka ett riktigt mail till `faktura@coworker.vertel.se` →
+  session skapas → Faktura-Assistenten svarar på tråden.

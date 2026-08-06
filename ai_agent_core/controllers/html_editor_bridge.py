@@ -17,7 +17,7 @@ from odoo.addons.html_editor.controllers.main import HTML_Editor
 _logger = logging.getLogger(__name__)
 
 
-class AIQuestHtmlEditorBridge(HTML_Editor):
+class AICoworkerHtmlEditorBridge(HTML_Editor):
     """Override generate_text to route through ai.coworker when configured."""
 
     @http.route(["/web_editor/generate_text", "/html_editor/generate_text"],

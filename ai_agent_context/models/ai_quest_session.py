@@ -18,7 +18,7 @@ class AIQuestSession(models.Model):
     When a session is created with a record reference, the session
     automatically stores the record and pre-builds context for the AI.
     """
-    _inherit = 'ai.quest.session'
+    _inherit = 'ai.coworker.session'
 
     context_record_model = fields.Char(
         string='Context Record Model',
@@ -122,17 +122,17 @@ class AIQuestSession(models.Model):
 
     @api.model
     def quest_init(self, quest, record=None, **kwargs):
-        """Extended quest_init that automatically sets context from a record.
-        
-        If a record is provided, it will be stored as the session's context
-        record, making its fields and chatter available to the AI agent.
-        
-        :param quest: The AI Quest to initialize a session for
-        :param record: Optional record to use as context
-        :param kwargs: Additional parameters passed to original quest_init
-        :return: New AIQuestSession record
-        """
-        session = super().quest_init(quest, **kwargs)
+        """Extended quest_init that automatically sets context from a record."""
+        # ai.coworker.session may not have quest_init; create session directly
+        if hasattr(super(), 'quest_init'):
+            session = super().quest_init(quest, **kwargs)
+        else:
+            session = self.create({
+                'coworker_id': quest.id,
+                'status': 'active',
+                'name': quest.name or 'Session',
+                **kwargs
+            })
 
         if record and record.exists():
             session.set_context_record(record)

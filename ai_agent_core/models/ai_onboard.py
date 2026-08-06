@@ -14,6 +14,8 @@ Findings are stored as ai.onboard.candidate and presented at kaizen time.
 
 import json
 import logging
+from datetime import timedelta
+
 from odoo import models, fields, api, _
 
 _logger = logging.getLogger(__name__)
@@ -81,10 +83,10 @@ class AIOnboardCandidate(models.Model):
              ('active', '=', True)],
              'partners utan telefon', 'cleanup', 0.4),
             ('account.move', [('state', '=', 'draft'),
-             ('invoice_date', '<', fields.Date.today() + ' - 90 days')],
+             ('invoice_date', '<', fields.Date.today() - timedelta(days=90))],
              'utkast-fakturor äldre än 90 dagar', 'cleanup', 0.8),
             ('sale.order', [('state', '=', 'draft'),
-             ('create_date', '<', fields.Date.today() + ' - 30 days')],
+             ('create_date', '<', fields.Date.today() - timedelta(days=30))],
              'utkast-ordrar äldre än 30 dagar', 'cleanup', 0.6),
         ]
 

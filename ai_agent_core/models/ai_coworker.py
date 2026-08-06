@@ -4,6 +4,7 @@
 import json, logging, re, uuid, base64
 from odoo import models, fields, api, _
 from odoo.exceptions import UserError
+from odoo import SUPERUSER_ID
 
 _logger = logging.getLogger(__name__)
 
@@ -52,7 +53,7 @@ Return ONLY a JSON object with these keys:
 Keep it professional but with personality."""
 
 
-class AIQuest(models.Model):
+class AICoworker(models.Model):
     _name = 'ai.coworker'
     _description = 'AI Quest'
     _inherit = ['mail.thread', 'mail.activity.mixin']
@@ -115,6 +116,13 @@ class AIQuest(models.Model):
         compute='_compute_orchestration_mode_help', store=False, readonly=True,
         help='Kort beskrivning av vald orchestrationsläge (endast info).')
 
+    supervisor_model_id = fields.Many2one(
+        'ai.model',
+        string='Supervisor Model',
+        help='Modell som används av supervisorn/routern i Supervisor-, Buzz- '
+             'och Conference-lägen. Lämnas tomt används första agentens modell.',
+    )
+
     @api.depends('orchestration_mode')
     def _compute_orchestration_mode_help(self):
         help_text = {
@@ -152,6 +160,33 @@ class AIQuest(models.Model):
         help='How much of the OKF memory (L0-L3) is injected into the '
              'system prompt for this coworker. summary_only is cheapest and '
              'least noisy; full gives complete context at higher token cost.')
+
+    # ── Minne (agent-memory-governance: runtime-saning) ──
+    memory_scopes = fields.Many2many(
+        'ai.memory.scope', 'ai_coworker_memory_scope_rel',
+        'coworker_id', 'scope_id', string='Memory Scopes',
+        help='Vilka minnen (company/personal/coworker) injiceras för denna '
+             'AI Medarbetare. Seedas från identity vid skapande.')
+    memory_level = fields.Selection([
+        ('L0', 'L0 — Summary only'),
+        ('L1', 'L1 — Summary + key'),
+        ('L2', 'L2 — + strategi'),
+        ('L3', 'L3 — Full'),
+    ], string='Memory Level', default='L1',
+        help='Omfattning per scope (ärvs av kopplingar utan eget värde).')
+    memory_profile = fields.Selection([
+        ('hermes', 'Hermes — lärande rådgivare'),
+        ('balanced', 'Balanserad'),
+        ('session_only', 'Session-only'),
+    ], string='Memory Profile', default='balanced',
+        help='Snabbstart: fyller i scopes/nivå. Identity-memory_profile seedar '
+             'detta vid skapande.')
+    learning = fields.Selection([
+        ('active', 'Active — lär sig av samtal'),
+        ('passive', 'Passive — injicerar bara, lär sig inte'),
+    ], string='Learning', default='passive',
+        help='Om medarbetaren skriver OKF-koncept från samtal (Hermes-lärande). ')
+
 
     # ── Buzz workspace settings ──
     allow_auto_create_agents = fields.Boolean(
@@ -241,7 +276,7 @@ class AIQuest(models.Model):
     @api.onchange('identity_id')
     def _onchange_identity_id(self):
         """When user selects a template identity, auto-create a copy.
-        
+
         The copy lives independently — the quest's identity evolves
         separately from the original template. Same pattern as ai.coworker.skill.
         """
@@ -254,6 +289,7 @@ class AIQuest(models.Model):
                 'scope': self.identity_id.scope,
             })
             self.identity_id = copy.id
+            self._seed_memory_settings()
             return {
                 'warning': {
                     'title': 'Identity kopierad',
@@ -263,13 +299,89 @@ class AIQuest(models.Model):
                     ) % self.identity_id.name,
                 }
             }
-    cron_id = fields.Many2one('ir.cron', string='Scheduled Action', ondelete='cascade')
+
+    def _seed_memory_settings(self):
+        """Seeda minnesinställningar från identity (agent-memory-governance 2.4).
+
+        - memory_profile + memory_scopes + memory_level från identitetens
+          memory_profile
+        - kopplingarnas block från agenternas egna identiteter
+        Idempotent: skriver bara tomma fält, inga duplikat.
+        """
+        self.ensure_one()
+        identity = self.identity_id
+        if not identity:
+            return
+        scope_model = self.env['ai.memory.scope']
+        code_to_scope = {s.code: s for s in scope_model.search([])}
+
+        # memory_profile från identity (om tom)
+        if not self.memory_profile and identity.memory_profile:
+            self.memory_profile = identity.memory_profile
+
+        # learning från identity (om tom)
+        if self.learning in (False, 'passive') and identity.learning == 'active':
+            self.learning = 'active'
+
+        # scopes från profilen
+        if not self.memory_scopes:
+            if identity.memory_profile == 'hermes':
+                codes = ('company', 'personal', 'coworker')
+                self.memory_level = self.memory_level or 'L1'
+            elif identity.memory_profile == 'balanced':
+                codes = ('company', 'coworker')
+                self.memory_level = self.memory_level or 'L1'
+            else:  # session_only
+                codes = ()
+                self.memory_level = self.memory_level or 'L0'
+            self.memory_scopes = [(6, 0, [
+                code_to_scope[c].id for c in codes if c in code_to_scope])]
+
+        # kopplingarnas block från agentidentiteter (om tomma)
+        for link in self.agent_ids:
+            agent_identity = link.agent_id.identity_id
+            if not agent_identity:
+                continue
+            if agent_identity.memory_profile == 'session_only':
+                for scope in ('personal', 'company', 'coworker'):
+                    if not getattr(link, 'block_%s' % scope):
+                        link.write({'block_%s' % scope: True})
+            elif agent_identity.memory_profile == 'balanced':
+                if not link.block_personal:
+                    link.block_personal = True
+
+    cron_id = fields.Many2one('ir.cron', string='Scheduled Action',
+        compute='_compute_init_type_fields', inverse='_inverse_init_type_fields',
+        store=False, ondelete='cascade',
+        help='Länkad ir.cron — auto-skapas av _ensure_cron när Cron är ikryssad.')
     cron_interval_number = fields.Integer('Interval', default=1)
     cron_interval_type = fields.Selection([
         ('minutes', 'Minutes'), ('hours', 'Hours'),
         ('days', 'Days'), ('weeks', 'Weeks'), ('months', 'Months'),
     ], default='hours', string='Interval Unit')
-    server_action_id = fields.Many2one('ir.actions.server', string='Server Action', ondelete='cascade')
+    # Domain-widget för cron-filter (mönster från ai.memory: model_id + model_name)
+    cron_model_id = fields.Many2one('ir.model', string='Cron-modell',
+        help='Modellen som cron-filter:et (filter_domain) byggs mot.')
+    cron_model_name = fields.Char(
+        related='cron_model_id.model', string='Cron Model Name',
+        readonly=True, store=True)
+    cron_automation_id = fields.Many2one(
+        'ir.cron', string='Schedule Action', readonly=True,
+        compute='_compute_init_type_fields', store=False,
+        help='Auto-skapad ir.cron för Cron-initieringen (readonly).')
+    server_action_automation_id = fields.Many2one(
+        'ir.actions.server', string='Server Action (automation)', readonly=True,
+        compute='_compute_init_type_fields', store=False,
+        help='Auto-skapad ir.actions.server för Server Action-initieringen (readonly).')
+    server_action_model_id = fields.Many2one('ir.model', string='Server Action-modell',
+        help='Modellen som server action:en binder till (som cron_model_id).')
+    server_action_model_name = fields.Char(
+        related='server_action_model_id.model', string='Server Action Model Name',
+        readonly=True, store=True)
+    server_action_id = fields.Many2one('ir.actions.server', string='Server Action',
+        compute='_compute_init_type_fields', inverse='_inverse_init_type_fields',
+        store=False, ondelete='cascade',
+        help='Länkad ir.actions.server — auto-skapas när Server Action är ikryssad.')
     server_action_use_wizard = fields.Boolean('Show Prompt Wizard', default=False)
 
     channel_id = fields.Many2one('discuss.channel', string='Channel')
@@ -331,10 +443,99 @@ class AIQuest(models.Model):
 
     # Access Control (quest-access-control)
     alias_name = fields.Char('Email Alias',
-        help='Local part of the email address')
-    api_key_attachment_id = fields.Many2one('ir.attachment',
-        string='API Key',
-        help='API key for OpenAI-compatible endpoint access')
+        compute='_compute_init_type_fields', inverse='_inverse_init_type_fields',
+        store=False, help='Local part of the email address — synkas med mail-init:en')
+    alias_display = fields.Char('Mailadress', compute='_compute_alias_display',
+        store=False, help='Full mailadress: alias@företagets-mail-domän')
+    # ── Mail trigger-settings (speglar mail-init:en) ──
+    mail_action = fields.Selection([
+        ('reply', 'Svara på mailet'),
+        ('create_record', 'Skapa/uppdatera record'),
+        ('process', 'Processera med skills'),
+        ('invoice_ai', 'Leverantörsfaktura (AI)'),
+    ], string='Mail-åtgärd', default='reply',
+        compute='_compute_init_type_fields', inverse='_inverse_init_type_fields',
+        store=False)
+    mail_reply_delay = fields.Integer('Svarsdröjsmål (min)', default=0,
+        compute='_compute_init_type_fields', inverse='_inverse_init_type_fields',
+        store=False)
+    mail_target_model_id = fields.Many2one('ir.model', string='Målmodell',
+        compute='_compute_init_type_fields', inverse='_inverse_init_type_fields',
+        store=False)
+    mail_find_partner = fields.Boolean(
+        'Hitta/skapa res.partner från avsändare', default=True,
+        compute='_compute_init_type_fields', inverse='_inverse_init_type_fields',
+        store=False)
+    mail_alias_ids = fields.One2many(
+        'mail.alias', compute='_compute_mail_aliases', string='Mail-alias',
+        store=False)
+
+    @api.depends('alias_name')
+    def _compute_alias_display(self):
+        # Företagets MAIL-domän — i första hand alias-domänen på själva
+        # mail.alias, sedan mail.catchall.domain → company.alias_domain_name
+        # → domänen i företagets email (info@example.com → example.com).
+        for rec in self:
+            mail = rec.init_type_ids.filtered(
+                lambda it: it.init_type == 'mail')[:1]
+            alias = mail.alias_id if mail else False
+            company = rec.company_id or self.env.company
+            domain = (
+                (alias.alias_domain if alias else False)
+                or self.env['ir.config_parameter'].sudo().get_param(
+                    'mail.catchall.domain')
+                or company.alias_domain_name
+                or (company.email or '').split('@')[-1] or ''
+            )
+            rec.alias_display = (
+                f'{rec.alias_name}@{domain}'
+                if rec.alias_name and domain else rec.alias_name or False)
+
+    def _compute_mail_aliases(self):
+        for rec in self:
+            mail = rec.init_type_ids.filtered(
+                lambda it: it.init_type == 'mail')[:1]
+            rec.mail_alias_ids = mail.alias_id if mail else False
+
+    def action_open_mail_alias(self):
+        """Öppna mail-aliaset (mail.alias) för denna medarbetare."""
+        self.ensure_one()
+        mail = self.init_type_ids.filtered(
+            lambda it: it.init_type == 'mail')[:1]
+        if not mail or not mail.alias_id:
+            return {
+                'type': 'ir.actions.act_window_close',
+            }
+        return {
+            'name': 'Mail-alias',
+            'type': 'ir.actions.act_window',
+            'res_model': 'mail.alias',
+            'view_mode': 'form',
+            'res_id': mail.alias_id.id,
+            'target': 'new',
+        }
+
+    def action_test_mail_flow(self):
+        """Öppna .eml-test-wizard:en för att testa mail-flödet med en fil.
+
+        Användaren laddar upp en .eml-fil; wizard:en parsar den, skapar en
+        session, lägger bilagor som bilagor + minnen och kör mail_action.
+        """
+        self.ensure_one()
+        mail_it = self.init_type_ids.filtered(
+            lambda it: it.init_type == 'mail' and it.enabled)[:1]
+        if not mail_it or not mail_it.alias_id:
+            raise UserError(
+                'Mail-initieringen saknar aktiv alias. Sätt på Mail i '
+                'Initiering och spara.')
+        return {
+            'name': 'Testa mail-flödet',
+            'type': 'ir.actions.act_window',
+            'res_model': 'ai.coworker.mail.test.wizard',
+            'view_mode': 'form',
+            'target': 'new',
+            'context': {'default_coworker_id': self.id},
+        }
     group_ids = fields.Many2many('res.groups', 'ai_coworker_group_rel', 'coworker_id', 'group_id', string='Access Groups')
 
     # Core loop migration
@@ -473,7 +674,7 @@ class AIQuest(models.Model):
 
         # Get active memories for this quest
         memories = self.env['ai.memory'].search([
-            ('coworker_id', '=', self.id),
+            ('quest_id', '=', self.id),
             ('archived', '=', False),
         ])
 
@@ -576,6 +777,20 @@ class AIQuest(models.Model):
         'coworker_id', 'tool_id', string='Tools',
         help='Custom ai.tool records available to this coworker in run(). '
              'Linked to coworker_ids on ai.tool.')
+
+    # Serialiseringsläge för förmågor (ai-tool-access-capabilities):
+    # flat = individuella verktyg (default, dagens beteende); enum = en Tool
+    # per förmåga med operation-enum; namespace = individuella verktyg +
+    # förmågans beskrivning i systemprompten. Separat från access (group_ids).
+    serialize_capabilities = fields.Selection([
+        ('flat', 'Flat (individuella verktyg)'),
+        ('enum', 'Enum (förmåga → ett verktyg med operation-enum)'),
+        ('namespace', 'Namespace (verktyg + förmågans beskrivning)'),
+    ], default='flat', string='Serialize Capabilities',
+        help='Hur ai.tool.capability-förmågor serialiseras till LLM:en. '
+             'enum = minimal kontext (bra för små modeller); namespace = '
+             'parallellitet + samlad beskrivning. Access (group_ids) gäller '
+             'oavsett — filtrering sker före serialisering.')
     last_run = fields.Datetime()
 
     # ── Automation / Scheduled Run (OpenWorker-inspired) ──
@@ -649,14 +864,82 @@ class AIQuest(models.Model):
         'ir.model', string='Watch Model',
         compute='_compute_init_type_fields', inverse='_inverse_init_type_fields',
         store=False, help='Model att bevaka för dataändringar.')
+    watch_model_name = fields.Char(
+        related='watch_model_id.model', string='Watch Model Name',
+        readonly=True, store=False)
+    # Speglar base_automation.trigger — samma värden.
     watch_trigger = fields.Selection([
-        ('create', 'Create'),
-        ('write', 'Write'),
-        ('create_or_write', 'Create or Write'),
-        ('delete', 'Delete'),
-    ], string='Watch Trigger', default='create_or_write',
+        ('on_stage_set', 'Stage is set to'),
+        ('on_user_set', 'User is set'),
+        ('on_tag_set', 'Tag is added'),
+        ('on_state_set', 'State is set to'),
+        ('on_priority_set', 'Priority is set to'),
+        ('on_archive', 'On archived'),
+        ('on_unarchive', 'On unarchived'),
+        ('on_create_or_write', 'On save'),
+        ('on_create', 'On creation'),
+        ('on_write', 'On update'),
+        ('on_unlink', 'On deletion'),
+        ('on_change', 'On UI change'),
+        ('on_time', 'Based on date field'),
+        ('on_time_created', 'After creation'),
+        ('on_time_updated', 'After last update'),
+        ('on_webhook', 'On webhook'),
+    ], string='When updating', default='on_create_or_write',
         compute='_compute_init_type_fields', inverse='_inverse_init_type_fields',
         store=False, help='Vilken händelse väcker medarbetaren.')
+    watch_trg_selection_field_id = fields.Many2one(
+        'ir.model.fields.selection', string='Trigger Field',
+        compute='_compute_init_type_fields', inverse='_inverse_init_type_fields',
+        store=False, help='Selection-fält för on_state_set/on_priority_set.')
+    watch_trg_field_ref_model_name = fields.Char(
+        string='Trigger Field Model',
+        compute='_compute_init_type_fields', store=False,
+        readonly=True)
+    watch_trg_field_ref = fields.Many2oneReference(
+        string='Trigger Reference',
+        compute='_compute_init_type_fields', inverse='_inverse_init_type_fields',
+        store=False, help='Fält-ref för on_stage_set/on_tag_set.')
+    watch_trg_date_id = fields.Many2one(
+        'ir.model.fields', string='Trigger Date',
+        compute='_compute_init_type_fields', inverse='_inverse_init_type_fields',
+        store=False, help='Datumfält för on_time-trigger.')
+    watch_trg_date_range = fields.Integer(
+        string='Delay after trigger date',
+        compute='_compute_init_type_fields', inverse='_inverse_init_type_fields',
+        store=False)
+    watch_trg_date_range_type = fields.Selection([
+        ('minutes', 'Minutes'),
+        ('hour', 'Hours'),
+        ('day', 'Days'),
+        ('month', 'Months'),
+    ], string='Delay type',
+        compute='_compute_init_type_fields', inverse='_inverse_init_type_fields',
+        store=False)
+    watch_trg_date_calendar_id = fields.Many2one(
+        'resource.calendar', string='Use Calendar',
+        compute='_compute_init_type_fields', inverse='_inverse_init_type_fields',
+        store=False)
+    watch_filter_pre_domain = fields.Char(
+        string='Before Update Domain',
+        compute='_compute_init_type_fields', inverse='_inverse_init_type_fields',
+        store=False)
+    watch_filter_domain = fields.Char(
+        string='Apply on',
+        compute='_compute_init_type_fields', inverse='_inverse_init_type_fields',
+        store=False)
+    watch_trigger_field_ids = fields.Many2many(
+        'ir.model.fields', string='When updating',
+        compute='_compute_init_type_fields', inverse='_inverse_init_type_fields',
+        store=False, help='Fält som bevakas — tomt = alla fält.')
+    watch_on_change_field_ids = fields.Many2many(
+        'ir.model.fields', string='When updating (on change)',
+        compute='_compute_init_type_fields', inverse='_inverse_init_type_fields',
+        store=False)
+    watch_active = fields.Boolean(
+        string='Active',
+        compute='_compute_init_type_fields', inverse='_inverse_init_type_fields',
+        store=False, help='Avbockad = regeln göms och körs inte.')
     watch_domain = fields.Char('Watch Domain',
         compute='_compute_init_type_fields', inverse='_inverse_init_type_fields',
         store=False, help='Domänfilter för vilka records som triggar, '
@@ -754,17 +1037,81 @@ class AIQuest(models.Model):
                  'init_type_ids.init_type', 'init_type_ids.watch_model_id',
                  'init_type_ids.watch_trigger', 'init_type_ids.watch_domain',
                  'init_type_ids.base_automation_id', 'init_type_ids.alias_contact',
+                 'init_type_ids.alias_name', 'init_type_ids.alias_id.alias_name',
+                 'init_type_ids.mail_action',
+                 'init_type_ids.mail_reply_delay',
+                 'init_type_ids.mail_target_model_id',
+                 'init_type_ids.mail_find_partner',
                  'init_type_ids.rate_limit_rpm', 'init_type_ids.rate_limit_tpm',
-                 'init_type_ids.show_in_chat')
+                 'init_type_ids.show_in_chat', 'init_type_ids.cron_id',
+                 'init_type_ids.server_action_id',
+                 'init_type_ids.watch_trg_selection_field_id',
+                 'init_type_ids.watch_trg_field_ref',
+                 'init_type_ids.watch_trg_field_ref_model_name',
+                 'init_type_ids.watch_trg_date_id',
+                 'init_type_ids.watch_trg_date_range',
+                 'init_type_ids.watch_trg_date_range_type',
+                 'init_type_ids.watch_trg_date_calendar_id',
+                 'init_type_ids.watch_filter_pre_domain',
+                 'init_type_ids.watch_filter_domain',
+                 'init_type_ids.watch_trigger_field_ids',
+                 'init_type_ids.watch_on_change_field_ids',
+                 'init_type_ids.watch_active')
     def _compute_init_type_fields(self):
         for rec in self:
             watch = rec._get_active_init('watch')
             rec.watch_model_id = watch.watch_model_id if watch else False
-            rec.watch_trigger = watch.watch_trigger if watch else 'create_or_write'
+            rec.watch_trigger = (watch.watch_trigger
+                                 if watch else 'on_create_or_write')
             rec.watch_domain = watch.watch_domain if watch else False
-            rec.base_automation_id = watch.base_automation_id if watch else False
+            rec.watch_trg_selection_field_id = (
+                watch.watch_trg_selection_field_id if watch else False)
+            rec.watch_trg_field_ref = watch.watch_trg_field_ref if watch else False
+            rec.watch_trg_field_ref_model_name = (
+                watch.watch_trg_field_ref_model_name if watch else False)
+            rec.watch_trg_date_id = watch.watch_trg_date_id if watch else False
+            rec.watch_trg_date_range = (watch.watch_trg_date_range
+                                        if watch else False)
+            rec.watch_trg_date_range_type = (watch.watch_trg_date_range_type
+                                             if watch else False)
+            rec.watch_trg_date_calendar_id = (watch.watch_trg_date_calendar_id
+                                              if watch else False)
+            rec.watch_filter_pre_domain = (watch.watch_filter_pre_domain
+                                           if watch else False)
+            rec.watch_filter_domain = watch.watch_filter_domain if watch else False
+            rec.watch_trigger_field_ids = (watch.watch_trigger_field_ids
+                                           if watch else False)
+            rec.watch_on_change_field_ids = (watch.watch_on_change_field_ids
+                                             if watch else False)
+            rec.watch_active = watch.watch_active if watch else True
+            # Länkade resurser visas oavsett enabled-status (rader kan finnas
+            # även om init-typen är avstängd).
+            watch_any = rec.init_type_ids.filtered(
+                lambda it: it.init_type == 'watch')[:1]
+            rec.base_automation_id = (watch_any.base_automation_id
+                                      if watch_any else False)
+            cron_any = rec.init_type_ids.filtered(
+                lambda it: it.init_type == 'cron')[:1]
+            rec.cron_id = cron_any.cron_id if cron_any else False
+            rec.cron_automation_id = cron_any.cron_id if cron_any else False
+            sa_any = rec.init_type_ids.filtered(
+                lambda it: it.init_type == 'server_action')[:1]
+            rec.server_action_id = sa_any.server_action_id if sa_any else False
+            rec.server_action_automation_id = (sa_any.server_action_id
+                                               if sa_any else False)
             mail = rec._get_active_init('mail')
             rec.alias_contact = mail.alias_contact if mail else 'everyone'
+            rec.alias_name = False
+            if mail:
+                rec.alias_name = (mail.alias_name
+                                  or (mail.alias_id.alias_name
+                                      if mail.alias_id else False)
+                                  or False)
+            rec.mail_action = mail.mail_action if mail else 'reply'
+            rec.mail_reply_delay = mail.mail_reply_delay if mail else 0
+            rec.mail_target_model_id = (mail.mail_target_model_id
+                                        if mail else False)
+            rec.mail_find_partner = mail.mail_find_partner if mail else True
             oa = rec._get_active_init('openai_api')
             rec.rate_limit_rpm = oa.rate_limit_rpm if oa else 30
             rec.rate_limit_tpm = oa.rate_limit_tpm if oa else 100000
@@ -779,10 +1126,42 @@ class AIQuest(models.Model):
                     'watch_model_id': rec.watch_model_id.id if rec.watch_model_id else False,
                     'watch_trigger': rec.watch_trigger,
                     'watch_domain': rec.watch_domain,
+                    'watch_trg_selection_field_id': rec.watch_trg_selection_field_id.id if rec.watch_trg_selection_field_id else False,
+                    'watch_trg_field_ref': rec.watch_trg_field_ref.id if rec.watch_trg_field_ref else False,
+                    'watch_trg_date_id': rec.watch_trg_date_id.id if rec.watch_trg_date_id else False,
+                    'watch_trg_date_range': rec.watch_trg_date_range,
+                    'watch_trg_date_range_type': rec.watch_trg_date_range_type,
+                    'watch_trg_date_calendar_id': rec.watch_trg_date_calendar_id.id if rec.watch_trg_date_calendar_id else False,
+                    'watch_filter_pre_domain': rec.watch_filter_pre_domain,
+                    'watch_filter_domain': rec.watch_filter_domain,
+                    'watch_trigger_field_ids': [(6, 0, rec.watch_trigger_field_ids.ids)] if rec.watch_trigger_field_ids else [(5, 0, 0)],
+                    'watch_on_change_field_ids': [(6, 0, rec.watch_on_change_field_ids.ids)] if rec.watch_on_change_field_ids else [(5, 0, 0)],
+                    'watch_active': rec.watch_active,
                 })
+                # Skapa/uppdatera base_automation direkt när modellen ändras
+                if watch.enabled and rec.watch_model_id:
+                    watch._ensure_watch()
+            cron = rec._get_active_init('cron')
+            if cron:
+                cron.cron_id = rec.cron_id
+            sa = rec._get_active_init('server_action')
+            if sa:
+                sa.server_action_id = rec.server_action_id
+                # Skapa/uppdatera server action direkt när modellen ändras
+                if sa.enabled and (rec.server_action_model_id or rec.model_ids):
+                    sa._ensure_server_action()
             mail = rec._get_active_init('mail')
             if mail:
                 mail.alias_contact = rec.alias_contact
+                mail.mail_action = rec.mail_action
+                mail.mail_reply_delay = rec.mail_reply_delay
+                mail.mail_target_model_id = (rec.mail_target_model_id.id
+                                             if rec.mail_target_model_id else False)
+                mail.mail_find_partner = rec.mail_find_partner
+                if rec.alias_name:
+                    mail.alias_name = rec.alias_name
+                    if mail.enabled:
+                        mail._ensure_mail_alias()
             oa = rec._get_active_init('openai_api')
             if oa:
                 oa.write({
@@ -954,7 +1333,9 @@ class AIQuest(models.Model):
                     'model': 'ai.coworker',
                     'res_id': self.id,
                 })
-        return eid.complete_name if hasattr(eid, 'complete_name') else '%s.%s' % (eid.module, eid.name)
+                # eid är nu en record → bygg xmlid
+                return eid.complete_name or '%s.%s' % (eid.module, eid.name)
+        return eid  # eid är redan en xmlid-sträng från get_external_id()
 
     def server_action(self, records):
         """Run quest as a server action triggered from Odoo UI.
@@ -1670,19 +2051,95 @@ class AIQuest(models.Model):
                     self.env['ai.coworker.init_type'].create({
                         'coworker_id': quest.id,
                         'init_type': itype,
-                        'active': False,
+                        'enabled': itype in ('manual', 'web_ui'),
                     })
                     seeded += 1
         if seeded:
             _logger.info('Seeded %d missing init_type records', seeded)
         return seeded
 
-    @api.model_create_multi
-    def create(self, vals_list):
-        records = super(AIQuest, self).create(vals_list)
-        # Seed sker i create() nedan (rad ~2803) via _ensure_all_init_types —
-        # denna model_create_multi skuggas av den senare @api.model create.
-        return records
+    @api.model
+    def _ensure_init_resources(self, records=None):
+        """Säkerställ att alla aktiva init-types har sina resurser.
+
+        - watch: base_automation + kopplad server action (kod som anropar
+          rätt ai.coworker via _trigger_watch)
+        - mail: mail.alias som pekar på ai.coworker.session
+
+        Idempotent — anropas av <function> i data/ensure_init_resources.xml
+        vid varje moduluppdatering (checkmodule --init kör inga migrationer).
+        """
+        watch_count = mail_count = 0
+        # Fixa server action-koden på ALLA watch base_automations (även om
+        # init-typen är avstängd — automationen kan fortfarande trigga).
+        for it in self.env['ai.coworker.init_type'].search([
+                ('init_type', '=', 'watch'),
+                ('base_automation_id', '!=', False)]):
+            try:
+                if it.enabled:
+                    it._ensure_watch()
+                else:
+                    it._ensure_watch_action()
+                watch_count += 1
+            except Exception as e:
+                _logger.warning('ensure watch misslyckades för init %s: %s',
+                                it.id, e)
+        for it in self.env['ai.coworker.init_type'].search([
+                ('enabled', '=', True), ('init_type', '=', 'mail')]):
+            try:
+                it._ensure_mail_alias()
+                mail_count += 1
+            except Exception as e:
+                _logger.warning('ensure mail misslyckades för init %s: %s',
+                                it.id, e)
+        _logger.info('ensure_init_resources: watch=%s mail=%s',
+                     watch_count, mail_count)
+        # Adoption (explicit-agent-tools): seed-agenterna skapades i tidigare
+        # versioner utan tool_ids (odoo-verktyg registrerades implicit via
+        # builtin_tools()). Nu när verktyg måste anges EXPLICIT fylls
+        # saknade verktyg på idempotent för kända xmlid-agenterna.
+        try:
+            self._adopt_seed_agent_tools()
+        except Exception as e:
+            _logger.warning('adopt seed agent tools misslyckades: %s', e)
+        return watch_count + mail_count
+
+    def _adopt_seed_agent_tools(self):
+        """Fyll på explicita tool_ids på kända seed-agenter (idempotent).
+
+        Gäller agenter skapade i tidigare versioner (data-XML noupdate)
+        som saknar tool_ids sedan verktygen blev explicita. Användarnas
+        egna anpassningar skrivs aldrig över — bara SAKNADE verktyg läggs till.
+        """
+        tool_by_name = {t.name: t for t in self.env['ai.tool'].search([])}
+
+        def _adopt(xmlid, names):
+            agent = self.env.ref(
+                'ai_agent_core.' + xmlid, raise_if_not_found=False)
+            if not agent:
+                return
+            recs = self.env['ai.tool'].browse([
+                tool_by_name[n].id for n in names
+                if n in tool_by_name])
+            missing = recs - agent.tool_ids
+            if missing:
+                agent.write({'tool_ids': [(4, t.id) for t in missing]})
+                _logger.info(
+                    'Adopterade verktyg på %s: %s',
+                    agent.name, missing.mapped('name'))
+
+        _adopt('agent_odoo_business', [
+            'describe_model', 'odoo_search', 'odoo_create',
+            'odoo_call_method', 'odoo_write', 'odoo_unlink', 'okf_search',
+        ])
+        _adopt('agent_research', ['web_search', 'fetch_url'])
+        _adopt('agent_invoice_partner', [
+            'describe_model', 'odoo_search', 'odoo_create',
+        ])
+        _adopt('agent_invoice_analyser', [
+            'describe_model', 'odoo_search', 'odoo_create',
+            'odoo_call_method', 'odoo_write',
+        ])
 
     def _ensure_all_init_types(self):
         """Skapa en komplett init_type-rad-uppsättning (en per INIT_TYPES-typ)
@@ -1699,112 +2156,159 @@ class AIQuest(models.Model):
                     self.env['ai.coworker.init_type'].create({
                         'coworker_id': rec.id,
                         'init_type': itype,
-                        'active': itype == 'manual',
+                        # Web-UI och manual aktiva som default; övriga
+                        # skapas avstängda men synliga i kryssrute-UI:t.
+                        'enabled': itype in ('manual', 'web_ui'),
                         'sequence': 10,
                     })
 
     # ── Record Context Injection (ported from ai_agent_context) ──
 
-    def _extra_context(self):
-        """Build extended system prompt with record data + chatter."""
-        res = super()._extra_context() if hasattr(super(), '_extra_context') else ''
-        if not self.context_injection_enabled:
-            return res
+    def _build_injection_prompt(self, user=None, agent=None, prompt='',
+                                record=None, max_chars=6000):
+        """Gemensam injiceringsfunktion (agent-memory-governance 3.x).
 
+        ENDA injiceringskällan (full refaktor): användare → rekordkontext →
+        minne (company/personal/coworker) → mission. Respekterar AI
+        Medarbetarens memory_scopes + kopplingens hårda block och nivåer.
+        Sessionhistorik hanteras av anroparen (history-parametern).
+
+        Args:
+            user: Aktuell användare (D2 — subjekt för personligt minne)
+            agent: Specifik agent (kopplingens block/level gäller)
+            record: Aktuell Odoo-post (powerbox/rekordkontext)
+            prompt: aktuell fråga (används som query för L1-sök)
+        """
+        user = user or self.env.user
         parts = []
+        budget = max_chars
 
-        # Level 1: User view context from channel
-        ch_ctx = self._get_channel_context()
-        if ch_ctx:
+        # 2. Aktuell användare — med TYDLIG instruktion så modellen aldrig
+        # frågar vem användaren är (antaganden-delen av Agent Identity).
+        if user and user.id and user.login and user.login != 'public':
+            partner = user.partner_id
+            company = user.company_id
+            user_parts = [
+                f"- Namn: {partner.name if partner else user.login}",
+                f"- Inloggning: {user.login}",
+                f"- E-post: {partner.email if partner and partner.email else '-'}",
+                f"- Företag: {company.name if company else '-'}",
+            ]
+            # Befattning från HR (personal-memory-sources)
+            try:
+                emp = self.env['hr.employee'].search([
+                    ('work_email', '=', user.login),
+                ] + ([('company_id', '=', company.id)] if company else []),
+                    limit=1)
+                if not emp and partner:
+                    emp = self.env['hr.employee'].search(
+                        [('work_contact_id', '=', partner.id)], limit=1)
+                if emp and emp.job_id:
+                    user_parts.append(f"- Befattning: {emp.job_id.name}")
+            except Exception:
+                pass
+            user_name = partner.name if partner else user.login
             parts.append(
-                f"\n\n## User Context\n"
-                f"The user is currently viewing: {ch_ctx['model']}"
-                + (f" (record ID: {ch_ctx['record_id']})" if ch_ctx.get('record_id') else "")
-                + (f" in {ch_ctx['view_type']} view.\n" if ch_ctx.get('view_type') else ".\n")
+                "## Aktuell användare\n"
+                f"Du pratar med {user_name} ({user.login}). "
+                f"Använd DENNA identitet för alla frågor om användaren — "
+                f"fråga ALDRIG användaren vem de är.\n"
+                + '\n'.join(user_parts)
             )
 
-        # Level 2 & 3: Record fields + chatter
-        record = self._get_ai_context_record() or self._get_session_context_record()
-        if record and record.exists():
+        # 3. Rekordkontext (L1-L3 från tidigare _extra_context) — aldrig
+        # avbryt hela injektionen; rekordkontext är best-effort.
+        if self.context_injection_enabled:
             try:
-                parts.append(
-                    f"\n\n## Current Record: {record._name} (ID: {record.id})\n"
-                    f"You are interacting within this Odoo record. "
-                    f"Use the field data below to answer questions about it.\n"
-                )
-                try:
+                ch_ctx = self._get_channel_context()
+                if ch_ctx:
+                    parts.append(
+                        f"## User Context\n"
+                        f"The user is currently viewing: {ch_ctx['model']}"
+                        + (f" (record ID: {ch_ctx['record_id']})" if ch_ctx.get('record_id') else "")
+                        + (f" in {ch_ctx['view_type']} view.\n" if ch_ctx.get('view_type') else ".\n")
+                    )
+                if record is None:
+                    record = self._get_ai_context_record() or self._get_session_context_record()
+                if record and record.exists():
+                    parts.append(
+                        f"## Current Record: {record._name} (ID: {record.id})\n"
+                        f"You are interacting within this Odoo record. "
+                        f"Use the field data below to answer questions about it.\n"
+                    )
                     json_data = record._ai_serialize_fields_data(
                         max_fields=self.context_max_fields)
                     parts.append(f"### Record Fields\n```json\n{json_data}\n```\n")
-                except Exception as e:
-                    _logger.warning('Field serialization failed: %s', e)
-
-                if self.context_include_chatter and hasattr(record, '_ai_serialize_messages_data'):
-                    try:
+                    if self.context_include_chatter and hasattr(
+                            record, '_ai_serialize_messages_data'):
                         chatter = record._ai_serialize_messages_data()
                         if chatter:
-                            lines = chatter.split('\n')
-                            if len(lines) > self.context_chatter_limit:
-                                lines = lines[-self.context_chatter_limit:]
-                                chatter = '\n'.join(lines) + "\n(older messages omitted)"
-                            parts.append(f"### Chatter History (oldest -> newest)\n{chatter}\n")
-                    except Exception as e:
-                        _logger.warning('Chatter failed: %s', e)
+                            clines = chatter.split('\n')
+                            if len(clines) > self.context_chatter_limit:
+                                clines = clines[-self.context_chatter_limit:]
+                                chatter = '\n'.join(clines) + \
+                                    "\n(older messages omitted)"
+                            parts.append(
+                                f"### Chatter History (oldest -> newest)\n{chatter}\n")
             except Exception as e:
-                _logger.error('Context injection failed: %s', e)
+                _logger.error('Rekordkontext misslyckades: %s', e)
 
-        # Level 4: Personal Memory (ai.personal.memory)
-        if self.user_id and 'ai.personal.memory' in self.env:
-            try:
-                memory_block = self.env['ai.personal.memory'].build_system_prompt_block(
-                    user_id=self.user_id.id,
-                    query=self.description,
-                    max_chars=2200,
-                )
-                if memory_block:
-                    parts.append(f"\n\n{memory_block}")
-            except Exception as e:
-                _logger.debug('Personal memory injection failed: %s', e)
+        # Session-minnen (bilagor/minnen knutna till sessionen — t.ex.
+        # .eml-testets bilagor) injiceras så agenterna ser dem.
+        sess = self._get_ai_context_record()
+        if not sess or sess._name != 'ai.coworker.session':
+            sess = False
+        if sess and sess.memory_ids:
+            mem_parts = []
+            for m in sess.memory_ids.filtered(lambda x: not x.archived):
+                if m.content:
+                    mem_parts.append(
+                        f"### {m.name or 'Bilaga/minne'}\n{m.content}")
+            if mem_parts:
+                parts.append(
+                    '## Session-bilagor/minnen (tillgängliga för dig)\n'
+                    + '\n\n'.join(mem_parts))
 
-        # Level 5: Company Memory — OKF-first (tasks 7.1/7.2/7.5)
-        if self.inject_company_memory and 'ai.okf.concept' in self.env:
-            try:
-                company_id = self.company_id.id or self.env.company.id
-                atype_ids = self.company_memory_artifact_types.ids \
-                    if self.company_memory_artifact_types else None
-                # Avdelningskontext (task 7.5): filtrera på avdelningens
-                # artifact types om de är deklarerade
-                dept_ctx = None
-                if self.department_id:
-                    dept_ctx = self.department_id._okf_context_domain()
-                if dept_ctx and not atype_ids:
-                    atype_ids = self.department_id.artifact_type_ids.ids
-                memory_block = self.env['ai.okf.concept'] \
-                    ._okf_build_system_prompt_block(
-                        'company', company_id, query=self.description,
-                        max_chars=2000, artifact_type_ids=atype_ids,
-                        include_level1=True,
-                        injection_level=self.injection_level)
-                if memory_block:
-                    parts.append(f"\n\n{memory_block}")
-            except Exception as e:
-                _logger.debug('OKF company memory injection failed: %s', e)
-        elif self.inject_company_memory and 'ai.company.memory' in self.env:
-            # Legacy-fallback (före OKF-migrering)
-            try:
-                cat_ids = self.company_memory_categories.ids if self.company_memory_categories else None
-                company_id = self.company_id.id or self.env.company.id
-                memory_block = self.env['ai.company.memory'].build_system_prompt_block(
-                    company_id=company_id,
-                    user_id=self.env.user.id,
-                    max_chars=2000,
-                )
-                if memory_block:
-                    parts.append(f"\n\n{memory_block}")
-            except Exception as e:
-                _logger.debug('Company memory injection failed: %s', e)
+        # Kopplingens block + effektiva nivåer (agent = specifik, annars medarbetarnivå)
+        link = None
+        if agent:
+            link = self.agent_ids.filtered(lambda l: l.agent_id.id == agent.id)[:1]
+        scope_codes = set(self.memory_scopes.mapped('code'))
 
-        # Level 6: Company Mission & Values (use_company_info)
+        # 4-6. Minne per scope
+        if 'ai.okf.concept' in self.env and scope_codes:
+            company_id = self.company_id.id or self.env.company.id
+            for scope in ('company', 'personal', 'coworker'):
+                if scope not in scope_codes:
+                    continue
+                if link and getattr(link, 'block_%s' % scope, False):
+                    continue  # hårt block
+                level = self.memory_level or 'L1'
+                if link:
+                    level = link._effective_level(scope)
+                if scope == 'company':
+                    owner_id = company_id
+                elif scope == 'personal':
+                    owner_id = user.id
+                else:
+                    owner_id = self.id
+                try:
+                    block = self.env['ai.okf.concept']._okf_build_system_prompt_block(
+                        scope, owner_id, query=prompt or self.description,
+                        max_chars=min(budget // 2, 2000),
+                        injection_level={
+                            'L0': 'summary_only',
+                            'L1': 'summary_and_key',
+                            'L2': 'summary_and_key',
+                            'L3': 'full',
+                        }.get(level, 'summary_and_key'))
+                    if block:
+                        parts.append(block)
+                        budget -= len(block)
+                except Exception as e:
+                    _logger.debug('Injection block %s misslyckades: %s', scope, e)
+
+        # 6. Mission/values
         if self.use_company_info:
             company = self.env.user.company_id
             cinfo = []
@@ -1813,11 +2317,16 @@ class AIQuest(models.Model):
             if company.company_values:
                 cinfo.append(f"## Company Values\n{company.company_values}")
             if cinfo:
-                parts.append("\n\n" + "\n\n".join(cinfo))
+                parts.append("\n\n".join(cinfo))
 
-        if parts:
-            res += "\n".join(parts)
-        return res
+        return "\n\n".join(parts)
+
+    def _extra_context(self):
+        """Wrapper för bakåtkompatibilitet — ENDA injiceringskällan är
+        _build_injection_prompt (full refaktor)."""
+        res = super()._extra_context() if hasattr(super(), '_extra_context') else ''
+        inj = self._build_injection_prompt(user=self.env.user, prompt='')
+        return (res + '\n\n' + inj).strip() if inj else res
 
     def _detect_record(self, kwargs):
         """Detect context record from available sources."""
@@ -1947,6 +2456,361 @@ class AIQuest(models.Model):
                          agent.name, rec.name)
         return True
 
+    def _visible_models(self, init_type=''):
+        """Return tillåtna modeller för en init_type, eller None = alla.
+
+        - chat/channel/web_ui → None (alla modeller)
+        - server_action/powerbox → model_ids-bundna modeller + aktuell kontext
+        - cron/mail/webhook → coworkerns tool-bindningar (modeller som
+          verktygen pekar på; utan bindning → None)
+        """
+        self.ensure_one()
+        if init_type in ('chat', 'channel', 'web_ui'):
+            return None
+        if init_type in ('server_action', 'powerbox'):
+            models = set(self.model_ids.mapped('model'))
+            # aktuell rekordkontext läggs till i run/powerbox via env.context
+            return models or None
+        if init_type in ('cron', 'mail', 'webhook', 'openai_api'):
+            models = set()
+            for tool in self.tool_ids.filtered('active'):
+                if tool.model_ids:
+                    models |= set(tool.model_ids.mapped('model'))
+            return models or None
+        return None  # manual → alla
+
+    def _ensure_default_coworker(self):
+        """Adoptera/skapa default-coworkern "Allmän assistent" (idempotent).
+
+        Anropas som <function> i data/default_coworker.xml vid varje
+        datainläsning (install OCH checkmodule --init). Migrations körs inte
+        av checkmodule (--init utan --update), så adoption av legacy-poster
+        ("Allmän" från hooks/migration 1.8) måste ske här.
+
+        Steg:
+        1. Behåll äldsta is_default-coworkern, avaktivera ev. duplikat
+        2. Byt namn "Allmän" → "Allmän assistent"
+        3. Bind xmlids (coworker, lead-agent, länk) via ir.model.data
+        4. Döp om lead-agenten "Allmän assistent" → "Allmän kärna"
+        5. Säkerställ web_ui-init aktiverad (chatten kräver enabled)
+        """
+        defaults = self.search([('is_default', '=', True)], order='id asc')
+        if not defaults:
+            return True  # data-XML skapar på ny installation
+
+        keep = defaults[0]
+        # 1. Avlägsna duplikat (t.ex. data-XML-kopia skapad före adoption)
+        for dup in defaults[1:]:
+            dup_agent_ids = dup.agent_ids.ids
+            dup.write({'active': False, 'is_default': False})
+            for agent in self.env['ai.agent'].sudo().browse(dup_agent_ids):
+                if not self.env['ai.coworker.agent'].search_count([
+                    ('agent_id', '=', agent.id),
+                    ('coworker_id.active', '=', True),
+                ]):
+                    agent.write({'active': False})
+            _logger.info('Adopterade bort duplikat-coworker %s (%s)',
+                         dup.id, dup.name)
+
+        # 2. Byt namn
+        if keep.name == 'Allmän':
+            keep.write({'name': 'Allmän assistent'})
+            _logger.info('Döpte om default-coworker → Allmän assistent')
+
+        # 3. Bind xmlids
+        IrModelData = self.env['ir.model.data'].sudo()
+
+        def _bind(name, model, res_id):
+            existing = IrModelData.search([
+                ('module', '=', 'ai_agent_core'), ('name', '=', name),
+            ], limit=1)
+            if existing:
+                if existing.res_id != res_id or existing.model != model:
+                    existing.write({'res_id': res_id, 'model': model})
+            else:
+                IrModelData.create({
+                    'module': 'ai_agent_core', 'name': name,
+                    'model': model, 'res_id': res_id, 'noupdate': True,
+                })
+
+        _bind('coworker_default_assistent', 'ai.coworker', keep.id)
+
+        # 4. Lead-agent + länk
+        link = self.env['ai.coworker.agent'].sudo().search([
+            ('coworker_id', '=', keep.id),
+        ], order='sequence, id asc', limit=1)
+        if link:
+            agent = link.agent_id
+            _bind('coworker_agent_default_core', 'ai.coworker.agent', link.id)
+            _bind('agent_default_core', 'ai.agent', agent.id)
+            if agent.name == 'Allmän assistent':
+                agent.write({'name': 'Allmän kärna'})
+                _logger.info('Döpte om lead-agent → Allmän kärna')
+
+        # 5. Säkerställ web_ui-init aktiverad
+        if not keep.init_type_ids.filtered(
+                lambda it: it.init_type == 'web_ui' and it.enabled):
+            self.env['ai.coworker.init_type'].sudo().create({
+                'coworker_id': keep.id,
+                'init_type': 'web_ui',
+                'enabled': True,
+                'show_in_chat': True,
+            })
+            _logger.info('Skapade web_ui-init för default-coworkern')
+
+        # 5b. Seeda minnesinställningar om tomma (default-coworkern skapades
+        # före memory-governance-featuren).
+        if not keep.memory_scopes:
+            keep._seed_memory_settings()
+            if not keep.memory_scopes:
+                scope_model = self.env['ai.memory.scope']
+                codes = {s.code: s for s in scope_model.search([])}
+                keep.memory_scopes = [(6, 0, [
+                    codes[c].id for c in ('company', 'personal', 'coworker')
+                    if c in codes])]
+
+        # 6. Supervisor-läge med 3 agenter (odoo-model-tools change):
+        #    kärna (lead) + Odoo-specialist + Research. Uppgraderar även
+        #    legacy-defaults som hamnat i single/linear (test_seed_is_idempotent).
+        if not keep.orchestration_mode or keep.orchestration_mode in (
+                'single', 'linear'):
+            keep.write({'orchestration_mode': 'supervisor'})
+            _logger.info('Satte default-coworker → supervisor-läge')
+
+        Agent = self.env['ai.agent'].sudo()
+        CoworkerAgent = self.env['ai.coworker.agent'].sudo()
+
+        def _ensure_agent(xmlid, name, ai_role, description, skills=(), tools=()):
+            """Hämta agent via xmlid; skapa om den saknas. Idempotent.
+
+            tools: lista av ai.tool-namn som binds EXPLICIT (explicit-agent-
+            tools). Används för att ge Odoo-specialisten/Research sina
+            verktyg även vid programmatisk skapelse/adoption.
+            """
+            existing = IrModelData.search([
+                ('module', '=', 'ai_agent_core'), ('name', '=', xmlid),
+            ], limit=1)
+            if existing and existing.res_id:
+                agent = Agent.browse(existing.res_id)
+                if agent.exists():
+                    # Adoption (explicit-agent-tools): fyll på verktyg om
+                    # agenten saknar dem (befintliga installationer).
+                    if tools:
+                        found_tools = self.env['ai.tool'].sudo().search(
+                            [('name', 'in', list(tools))])
+                        missing = found_tools - agent.tool_ids
+                        if missing:
+                            agent.write({'tool_ids': [
+                                (4, t.id) for t in missing]})
+                    if skills:
+                        found = self.env['ai.skill'].sudo().search(
+                            [('name', 'in', list(skills))])
+                        missing_skills = found - agent.skill_ids
+                        if missing_skills:
+                            agent.write({'skill_ids': [
+                                (4, s.id) for s in missing_skills]})
+                    return agent
+            agent = Agent.create({
+                'name': name,
+                'ai_role': ai_role,
+                'description': description,
+                'status': 'active',
+            })
+            _bind(xmlid, 'ai.agent', agent.id)
+            if skills:
+                found = self.env['ai.skill'].sudo().search(
+                    [('name', 'in', list(skills))])
+                if found:
+                    agent.write({'skill_ids': [(6, 0, found.ids)]})
+            if tools:
+                found_tools = self.env['ai.tool'].sudo().search(
+                    [('name', 'in', list(tools))])
+                if found_tools:
+                    agent.write({'tool_ids': [(6, 0, found_tools.ids)]})
+            _logger.info('Skapade agent %s (%s)', name, xmlid)
+            return agent
+
+        def _ensure_link(coworker, agent, role='member', sequence=20):
+            if not CoworkerAgent.search([
+                ('coworker_id', '=', coworker.id),
+                ('agent_id', '=', agent.id),
+            ], limit=1):
+                CoworkerAgent.create({
+                    'coworker_id': coworker.id,
+                    'agent_id': agent.id,
+                    'role': role,
+                    'sequence': sequence,
+                })
+                _logger.info('Länkade agent %s → coworker %s',
+                             agent.name, coworker.name)
+
+        # Odoo-specialist — affärsverktyg + odoo-core-skill
+        odoo_agent = _ensure_agent(
+            'agent_odoo_business', 'Odoo-specialist',
+            'Odoo Specialist',
+            'Affärsexpert på Odoo-modeller: söker, skapar och kör affärsflöden '
+            'via generiska modellverktyg och följer odoo-core-skillen.',
+            skills=('odoo-core',),
+            tools=('describe_model', 'odoo_search', 'odoo_create',
+                   'odoo_call_method', 'odoo_write', 'odoo_unlink',
+                   'okf_search'),
+        )
+        _ensure_link(keep, odoo_agent, role='member', sequence=20)
+
+        # Research — webb + youtube
+        research_agent = _ensure_agent(
+            'agent_research', 'Research',
+            'Web Research',
+            'Research-agent: söker information på webben, hämtar sidor och '
+            'bearbetar YouTube-innehåll via youtube-skills.',
+            skills=('youtube-transcript', 'youtube-search',
+                    'youtube-channels', 'youtube-playlist', 'youtube-full'),
+            tools=('web_search', 'fetch_url'),
+        )
+        _ensure_link(keep, research_agent, role='member', sequence=30)
+
+        return True
+
+    def _learn_from_session(self, session):
+        """Hermes-lärande (agent-memory-governance 4.x).
+
+        Vid learning=active: LLM-reflektion över sessionen → 1-3 koncept
+        → scope-routing + block → trust-gate → _okf_upsert (ADD-only,
+        attribution, lineage).
+        """
+        import json as _json
+        self.ensure_one()
+        if self.learning != 'active':
+            return 0
+        if not session or not session.session_line_ids:
+            return 0
+        if 'ai.okf.concept' not in self.env:
+            return 0
+
+        # Samla konversationen
+        lines = session.session_line_ids.sorted('sequence')
+        conversation = '\n'.join(
+            f"[{l.role}] {l.content[:500]}" for l in lines[-40:])
+        if not conversation.strip():
+            return 0
+
+        # 1. LLM-reflektion
+        concepts = self._extract_concepts_from_conversation(conversation)
+        if not concepts:
+            return 0
+
+        written = 0
+        for concept in concepts:
+            scope = concept.get('scope', 'personal')
+            summary = (concept.get('summary') or '').strip()[:1000]
+            if not summary or scope not in ('company', 'personal', 'coworker'):
+                continue
+            # 2. Scope-routing + block (lead-regeln = medarbetarens scopes)
+            scope_codes = set(self.memory_scopes.mapped('code'))
+            if scope not in scope_codes:
+                _logger.info('Lärande: scope %s ej aktivt — kasserat (%s)',
+                             scope, summary[:60])
+                self._record_learning_discard(session, scope, summary)
+                continue
+            # 3. Trust-gate
+            direct = self.hitl_threshold == 'autonomous' or (
+                self.hitl_threshold == 'high_risk' and scope == 'coworker')
+            if not direct:
+                self._record_learning_proposal(session, scope, summary)
+                continue
+            # 4. Skrivning via _okf_upsert
+            try:
+                if scope == 'company':
+                    owner = {'owner_company_id': self.company_id.id or self.env.company.id}
+                elif scope == 'personal':
+                    owner = {'owner_user_id': (session.user_id.id or self.env.user.id)}
+                else:
+                    owner = {'owner_coworker_id': self.id}
+                self.env['ai.okf.concept']._okf_upsert(
+                    'learning',
+                    concept_key=f'learned.{scope}.{session.id}.{len(summary[:40])}',
+                    summary=summary,
+                    title=summary[:80],
+                    source_ref=f'ai.coworker.session,{session.id}',
+                    attribution=[{
+                        'source': f'ai.coworker.session.line,{lines[-1].id}',
+                        'role': 'conversation',
+                    }],
+                    generated_by='learning',
+                    **owner,
+                )
+                written += 1
+            except Exception as e:
+                _logger.warning('Lärande-skrivning misslyckades: %s', e)
+        if written:
+            _logger.info('Lärde mig %d koncept från session %s',
+                         written, session.id)
+        return written
+
+    def _extract_concepts_from_conversation(self, conversation):
+        """LLM-reflektion: föreslå 1-3 bestående koncept."""
+        import json as _json
+        import asyncio
+        try:
+            from odoo.addons.ai_agent_core.core.provider import (
+                ProviderFactory, BifrostProvider)
+            from odoo.addons.ai_agent_core.core.loop import AgentLoop, AgentConfig
+
+            provider, _model = ProviderFactory.from_coworker(self)
+            provider = provider or BifrostProvider(
+                base_url='http://192.168.11.150:8080/v1',
+                virtual_key='opencode')
+            loop = AgentLoop(provider=provider, tools=[], config=AgentConfig(
+                model='cerebras/gpt-oss-120b', max_rounds=1, max_tokens=1500))
+            prompt = (
+                "Granska konversationen och extrahera 1-3 BESTÅENDE fakta "
+                "värda att minnas (inte småprat). Svara med JSON-lista: "
+                "[{\"summary\": \"kort fakta\", \"scope\": "
+                "\"personal|company|coworker\"}].\n\n"
+                f"Konversation:\n{conversation}"
+            )
+            result = asyncio.run(loop.run(prompt))
+            text = (result.text or '').strip()
+            # Ta bort ev. ```json-omslag
+            if '```' in text:
+                text = text.split('```')[1] if '```json' in text else text
+                text = text.replace('json', '', 1).strip()
+            data = _json.loads(text)
+            if isinstance(data, dict):
+                data = data.get('concepts', data.get('facts', []))
+            return data if isinstance(data, list) else []
+        except Exception as e:
+            _logger.warning('Reflektion misslyckades: %s', e)
+            return []
+
+    def _record_learning_discard(self, session, scope, summary):
+        """Blockerat/lärande-område → notera i approval-kön."""
+        try:
+            if 'workspace.activity.suggestion' not in self.env:
+                return
+            self.env['workspace.activity.suggestion']._create_suggestion(
+                summary=f"Lärande kasserat (blockerat {scope}): {summary[:60]}",
+                detail=f"Medarbetaren ville lära sig {summary} men scope {scope} "
+                       f"är inte aktivt/blockerat.",
+                source='coworker', coworker_id=self.id, session_id=session.id,
+            )
+        except Exception:
+            pass
+
+    def _record_learning_proposal(self, session, scope, summary):
+        """Trust-gate 'föreslå' → approval-kön."""
+        try:
+            if 'workspace.activity.suggestion' not in self.env:
+                return
+            self.env['workspace.activity.suggestion']._create_suggestion(
+                summary=f"Föreslå inlärning ({scope}): {summary[:60]}",
+                detail=summary,
+                suggestion_type='mail.activity', source='coworker',
+                coworker_id=self.id, session_id=session.id,
+            )
+        except Exception:
+            pass
+
     def _check_quest_error(self):
         """Check quest configuration before running.
 
@@ -1970,6 +2834,11 @@ class AIQuest(models.Model):
         """
         from odoo.addons.ai_agent_core.core.loop import AgentLoop, AgentConfig
         from odoo.addons.ai_agent_core.core.linear import LinearLoop
+
+        # Supervisor model: explicit fält vinner, annars första agentens modell.
+        supervisor_model = (
+            self.supervisor_model_id.name
+            if self.supervisor_model_id else model)
 
         # Inject record context into system prompt
         extra = self._extra_context() if self.context_injection_enabled else ''
@@ -2039,7 +2908,7 @@ class AIQuest(models.Model):
                 system_prompt + conf_suffix, max_rounds)
             return ConferenceLoop(
                 router_provider=provider, agents=specialists,
-                config=SupervisorConfig(router_model=model),
+                config=SupervisorConfig(router_model=supervisor_model),
                 mechanism=mechanism,
             )
 
@@ -2079,7 +2948,7 @@ class AIQuest(models.Model):
             return AgentLoop(
                 provider=provider, tools=tools,
                 config=AgentConfig(
-                    model=model, system_prompt=supervisor_prompt,
+                    model=supervisor_model, system_prompt=supervisor_prompt,
                     max_rounds=max_rounds,
                 ),
             )
@@ -2088,7 +2957,7 @@ class AIQuest(models.Model):
             router_provider=provider,
             agents=specialists,
             config=SupervisorConfig(
-                router_model=model,
+                router_model=supervisor_model,
                 skill_recipe=skill_recipe,
                 max_rounds=3,
                 max_iterations=self.max_iterations or 3,
@@ -2121,6 +2990,15 @@ class AIQuest(models.Model):
                 f"\n## Agent-Specific Skills\n{agent_skills_context}"
                 + system_prompt
             )
+            # Per-agent-injektion (agent-memory-governance 3.6): specialisten
+            # får bara de scopen kopplingens block/level tillåter.
+            try:
+                agent_inj = self._build_injection_prompt(
+                    user=self.env.user, agent=agent, prompt='')
+                if agent_inj:
+                    agent_system = (agent_system + '\n\n' + agent_inj).strip()
+            except Exception:
+                pass
             specialists.append(SpecialistAgent(
                 name=agent.name,
                 description=agent.get_agent_name(),
@@ -2144,7 +3022,7 @@ class AIQuest(models.Model):
         """
         self.ensure_one()
         memories = self.env['ai.memory'].search([
-            ('coworker_id', '=', self.id),
+            ('quest_id', '=', self.id),
             ('archived', '=', False),
             ('memory_type', '=', 'faiss'),
         ])
@@ -2153,7 +3031,7 @@ class AIQuest(models.Model):
 
         results = []
         for mem in memories:
-            chunks = mem.search(query, k=k)
+            chunks = mem.faiss_search(query, k=k)
             if chunks:
                 results.extend(chunks)
 
@@ -2341,6 +3219,58 @@ class AIQuest(models.Model):
         '</svg>'
     )
 
+    def _trigger_watch(self, records):
+        """Anropas av base_automation när bevakad data ändras.
+
+        Hämtar watch-init_type:en, filtrerar records på watch_domain och
+        kör medarbetaren med den ändrade posten som kontext.
+        """
+        self.ensure_one()
+        if not records:
+            return
+        watch = self._get_active_init('watch')
+        if not watch:
+            _logger.warning('_trigger_watch: ingen aktiv watch-init för %s',
+                            self.name)
+            return
+        # Filtrera på watch_domain ("Apply on" — Odoo 18 base_automation
+        # stödjer inte filter_domain för on_create_or_write, så vi filtrerar här)
+        filtered = records
+        if watch.watch_domain:
+            try:
+                from odoo.tools.safe_eval import safe_eval
+                filtered = records.filtered_domain(
+                    safe_eval(watch.watch_domain))
+            except Exception as e:
+                _logger.warning('watch_domain-filtrering misslyckades: %s', e)
+        if not filtered:
+            return
+        # Budget check
+        try:
+            _warn, exhausted = self.check_cap()
+            if exhausted:
+                _logger.info('Watch %s skippad: budget slut', self.name)
+                return
+        except Exception:
+            pass
+        for record in filtered[:3]:
+            try:
+                session = self.env['ai.coworker.session'].create({
+                    'coworker_id': self.id,
+                    'name': f'Watch: {record._name} {record.id}',
+                    'status': 'active',
+                    'user_id': self.env.ref('base.user_root').id,
+                })
+                prompt = (
+                    f'En dataändring upptäcktes på record '
+                    f'{record.display_name or record.id} ({record._name}).\n'
+                    f'Granska recordet och agera lämpligt.\n'
+                )
+                self.with_context(_ai_context_model=record._name,
+                                  _ai_context_id=record.id).run(prompt)
+            except Exception as e:
+                _logger.warning('Watch-körning misslyckades: %s', e)
+
     def action_run_scheduled(self):
         """Run this quest as a scheduled automation.
 
@@ -2401,8 +3331,7 @@ class AIQuest(models.Model):
             import asyncio
             from odoo.addons.ai_agent_core.core.provider import ProviderFactory, BifrostProvider
             from odoo.addons.ai_agent_core.core.tools import (
-                ToolRegistry, builtin_tools, planning_tools, TodoList,
-                wrap_tools_with_env,
+                planning_tools, TodoList,
             )
             from odoo.addons.ai_agent_core.core.loop import AgentLoop, AgentConfig
             from odoo.addons.ai_agent_core.core.interrupt import AutoInterruptHandler
@@ -2415,8 +3344,9 @@ class AIQuest(models.Model):
                 base_url='http://192.168.11.150:8080/v1',
                 virtual_key='opencode',
             )
-            tools = ToolRegistry()
-            tools.register_many(wrap_tools_with_env(builtin_tools(), self.env))
+            # explicit-agent-tools: ENDAST settings-default + explicita
+            # tool_ids — inga interna builtins registreras implicit.
+            tools, tool_access_groups = self._session_tools(session=session)
 
             # Add planning tools
             todo = TodoList()
@@ -2444,6 +3374,33 @@ class AIQuest(models.Model):
             )
             loop.interrupt_handler = interrupt
             loop.permission_engine = permissions
+
+            def _record_denial_as_suggestion(tool_name, args, reason):
+                """Async-yta (cron): nekade hårda stopp → workspace-approval-kö."""
+                try:
+                    if 'workspace.activity.suggestion' not in self.env:
+                        return
+                    target_user = self.user_id or session.user_id
+                    self.env['workspace.activity.suggestion']._create_suggestion(
+                        summary=f"Godkänn krävs: {tool_name}",
+                        detail=(
+                            f"Medarbetaren {self.name} ville köra {tool_name} "
+                            f"med {args} men nekades ({reason}). "
+                            f"Utför åtgärden manuellt eller via godkännande."
+                        ),
+                        suggestion_type='mail.activity',
+                        source='coworker',
+                        user=target_user,
+                        coworker_id=self.id,
+                        session_id=session.id if session else None,
+                    )
+                    _logger.info(
+                        'Rekorderade nekad %s som workspace-förslag för %s',
+                        tool_name, self.name)
+                except Exception as e:
+                    _logger.warning('Denial→suggestion misslyckades: %s', e)
+
+            loop.denial_callback = _record_denial_as_suggestion
 
             async def _run():
                 prompt = (
@@ -2527,6 +3484,105 @@ class AIQuest(models.Model):
         except Exception as e:
             _logger.warning('Failed to send completion notification: %s', e)
 
+    def _tool_access_group_ids(self, session=None, access_user=None):
+        """Effective Odoo group ids that gate tool access (tool-access-groups).
+
+        - access_user explicit → den användarens grupper
+        - session med riktig (icke-superuser, icke-public) användare →
+          session.user_id.groups_id
+        - annars (cron/webhook/mail, sudo-skapade sessioner) → coworkerns
+          egna group_ids (icke-interaktiv policy)
+        """
+        self.ensure_one()
+        if access_user:
+            return access_user.groups_id.ids
+        u = session and session.user_id
+        if (u and u.id != SUPERUSER_ID
+                and (u.has_group('base.group_user')
+                     or u.has_group('base.group_portal'))):
+            return u.groups_id.ids
+        return self.group_ids.ids
+
+    def _session_tool_ids(self, access_groups=None, force_agent=None):
+        """Returnera deduplicerade ai.tool-ID:n för en session.
+
+        explicit-agent-tools: ENDAST settings-default + explicita verktyg —
+        inga interna builtins per default. Lämplig att anropa i request-
+        kontext och fånga som plain values (stream.py körs efter teardown).
+
+        Innehåller:
+        1. Settings-default (default_tool_ids — säkra kundverktyg)
+        2. Agenternas explicita tool_ids (inkl. identity-bundna) — alla
+           kopplade agenter + eventuell force_agent (buzz, 7.5)
+        3. Coworkerns explicita tool_ids
+
+        Args:
+            access_groups: lista av res.groups-ids för access-filtrering
+                (tool-access-groups). None → ingen filtrering.
+            force_agent: valfri ai.agent vars egna tool_ids inkluderas.
+        """
+        self.ensure_one()
+        ids = []
+
+        def _add(recs):
+            if access_groups is not None:
+                recs = recs._filter_by_access_groups(access_groups)
+            for t in recs:
+                if t.id not in ids:
+                    ids.append(t.id)
+
+        # 1. Settings-default (säkra verktyg)
+        default_names = self.env['ai.agent']._get_default_tool_names()
+        if default_names:
+            _add(self.env['ai.tool'].search([('name', 'in', default_names)]))
+
+        # 2. Agenternas explicita tool_ids (alla kopplade agenter + force_agent)
+        agent_recs = self.agent_ids.mapped('agent_id')
+        if force_agent:
+            agent_recs |= force_agent
+        for agent in agent_recs:
+            _add(agent.tool_ids.filtered('active'))
+            if agent.identity_id and agent.identity_id.tool_ids:
+                _add(agent.identity_id.tool_ids.filtered('active'))
+
+        # 3. Coworkerns explicita tool_ids
+        _add(self.tool_ids.filtered('active'))
+
+        return ids
+
+    def _session_tools(self, session=None, force_agent=None):
+        """Bygg ToolRegistry för en session (explicit-agent-tools).
+
+        Registrerar ENDAST:
+        1. Settings-default-verktyg (default_tool_ids — säkra kundverktyg:
+           calculator, web_search, fetch_url)
+        2. Agenternas explicita tool_ids (ai.agent.tool_ids — inkl. builtin-
+           poster som resolvas till riktiga handlers via builtin_name)
+        3. Coworkerns explicita tool_ids (custom tools)
+
+        NOT: registrerar INTE builtin_tools() implicit — inga interna
+        förmågor (odoo-verktyg, inventory, builder, NATS) hamnar i en
+        kundchatt default. Interna verktyg kräver explicit tool_ids.
+
+        Returns:
+            tuple (ToolRegistry, list[int]) — registry + access-grupper
+        """
+        from odoo.addons.ai_agent_core.core.tools import (
+            ToolRegistry, ai_tool_records_to_tools,
+        )
+        tool_access_groups = self._tool_access_group_ids(session=session)
+        tools = ToolRegistry()
+
+        # Explicit-agent-tools: ENDAST settings-default + explicita verktyg.
+        # _session_tool_ids() gör deduplicering + access-filtrering.
+        tool_ids = self._session_tool_ids(
+            access_groups=tool_access_groups, force_agent=force_agent)
+        if tool_ids:
+            tools.register_many(ai_tool_records_to_tools(
+                self.env['ai.tool'].browse(tool_ids), self.env))
+
+        return tools, tool_access_groups
+
     def run(self, prompt, system_prompt=None, force_model=None,
             force_agent=None, session=None):
         """Run quest synchronously and return AI response text.
@@ -2570,6 +3626,16 @@ class AIQuest(models.Model):
                 f'### {s.name}\n{s.recipe_text or s.description or ""}'
                 for s in force_agent.skill_ids)
             system_prompt = (system_prompt or '') + skill_ctx
+        # Ingen force_agent (generisk körning — mail, webhook, chat):
+        # aggregera medarbetarens egna + teamets agenters skills så
+        # kapaciteter lever som skills/instruktioner, INTE som sub-agenter.
+        if not force_agent:
+            skill_recs = self.skill_ids | self.agent_ids.agent_id.skill_ids
+            if skill_recs:
+                skill_ctx = '\n\n## Skills (följ dessa vid behov)\n' + '\n'.join(
+                    f'### {s.name}\n{s.recipe_text or s.description or ""}'
+                    for s in skill_recs)
+                system_prompt = (system_prompt or '') + skill_ctx
 
         # Create session for tracking (reuse provided session when given)
         session = session or self.env['ai.coworker.session'].create({
@@ -2585,9 +3651,6 @@ class AIQuest(models.Model):
             asyncio.set_event_loop(loop)
             try:
                 from odoo.addons.ai_agent_core.core.provider import ProviderFactory, BifrostProvider
-                from odoo.addons.ai_agent_core.core.tools import (
-                    ToolRegistry, builtin_tools, wrap_tools_with_env,
-                )
                 from odoo.addons.ai_agent_core.core.loop import AgentLoop, AgentConfig
 
                 provider_instance, provider_model = ProviderFactory.from_coworker(self)
@@ -2595,26 +3658,37 @@ class AIQuest(models.Model):
                     base_url='http://192.168.11.150:8080/v1',
                     virtual_key='opencode',
                 )
-                tools = ToolRegistry()
-                tools.register_many(wrap_tools_with_env(builtin_tools(), self.env))
+                # explicit-agent-tools: ENDAST settings-default + explicita
+                # tool_ids — inga interna builtins registreras implicit.
+                tools, tool_access_groups = self._session_tools(
+                    session=session, force_agent=force_agent)
 
-                # Agentens EGNA tools (7.5): identity-bundna ai.tool-record
-                if force_agent and force_agent.identity_id \
-                        and force_agent.identity_id.tool_ids:
+                # Förmågeserialisering (spec 3.3/3.4): flat/enum/namespace per
+                # coworker. Medlemmarna är redan access-filtrerade (registret
+                # innehåller bara tillåtna verktyg) — otillåtna medlemmar
+                # saknas både som tool och som operation (spec 3.5).
+                cap_prompt_suffix = ''
+                if self.serialize_capabilities != 'flat':
                     from odoo.addons.ai_agent_core.core.tools import (
-                        ai_tool_records_to_tools)
-                    tools.register_many(ai_tool_records_to_tools(
-                        force_agent.identity_id.tool_ids, self.env))
-
-                # Coworkerns EGNA tools (D5 drift): ai.tool-poster kopplade
-                # via coworker_ids — tillgängliga i run() för alla initeringar
-                # (openai_api, webhook, web_ui, cron …)
-                custom_tools = self.tool_ids.filtered(lambda t: t.active)
-                if custom_tools:
-                    from odoo.addons.ai_agent_core.core.tools import (
-                        ai_tool_records_to_tools)
-                    tools.register_many(ai_tool_records_to_tools(
-                        custom_tools, self.env))
+                        apply_capability_serialization, _sanitize_tool_name)
+                    cap_recs = self.env['ai.tool.capability'].search([
+                        ('active', '=', True)])
+                    capabilities = []
+                    for cap in cap_recs:
+                        member_names = [
+                            _sanitize_tool_name(t.name)
+                            for t in cap.member_ids
+                            if _sanitize_tool_name(t.name) in tools]
+                        if member_names:
+                            capabilities.append({
+                                'name': cap.name,
+                                'description': cap.description,
+                                'member_names': member_names,
+                            })
+                    cap_prompt_suffix = apply_capability_serialization(
+                        tools, capabilities, self.serialize_capabilities)
+                    if cap_prompt_suffix:
+                        system_prompt = (system_prompt or '') + cap_prompt_suffix
 
                 # Lineage: gör sessionen känd för OKF-injektionen så att
                 # concept_injected-edges loggas (ai_lineage_session_id).
@@ -2624,6 +3698,23 @@ class AIQuest(models.Model):
                     provider=provider, tools=tools,
                     model=model, system_prompt=system_prompt, max_rounds=10,
                 )
+
+                # PermissionEngine får användarens grupper (defense-in-depth):
+                # anrop på andra vägar till gruppbundna verktyg nekas även om
+                # registreringsfiltret missat något (tool-access-groups 1.4).
+                if hasattr(loop_obj, 'permissions'):
+                    loop_obj.permissions.user_group_ids = set(tool_access_groups)
+
+                # Mail/webhook-flöden (tillitsfulla automatiska kontexter):
+                # kör med AUTO-mode så odoo_create/odoo_write/odoo_call_method
+                # inte fastnar i HITL-kön. Endast när context flaggan sätts av
+                # initierings-koden (aldrig från chat).
+                if self.env.context.get('_ai_auto_approve'):
+                    from odoo.addons.ai_agent_core.core.permission import (
+                        PermissionEngine, PermissionMode)
+                    loop_obj.permissions = PermissionEngine(
+                        mode=PermissionMode.AUTO)
+                    loop_obj.permissions.user_group_ids = set(tool_access_groups)
 
                 async def _run():
                     return await loop_obj.run(prompt)
@@ -2717,6 +3808,16 @@ class AIQuest(models.Model):
         if self.init_type != 'powerbox':
             _logger.warning('powerbox called on non-powerbox quest %s', self.name)
 
+        # Init-type-scoping (odoo-model-tools change 2.2): powerbox begränsas
+        # till model_ids-bundna modeller + aktuell rekordkontext.
+        scoped = self._visible_models('powerbox')
+        ctx = dict(self.env.context)
+        if res_model:
+            scoped = set(scoped or ()) | {res_model}
+        if scoped:
+            ctx['_ai_scoped_models'] = scoped
+        self = self.with_context(**ctx)
+
         # Resolve record
         if record is None and res_model and res_id:
             record = self.env[res_model].browse(int(res_id)).exists()
@@ -2765,9 +3866,6 @@ class AIQuest(models.Model):
             asyncio.set_event_loop(loop)
             try:
                 from odoo.addons.ai_agent_core.core.provider import ProviderFactory, BifrostProvider
-                from odoo.addons.ai_agent_core.core.tools import (
-                    ToolRegistry, builtin_tools, wrap_tools_with_env,
-                )
                 from odoo.addons.ai_agent_core.core.loop import AgentLoop, AgentConfig
 
                 provider_instance, provider_model = ProviderFactory.from_coworker(self)
@@ -2775,8 +3873,9 @@ class AIQuest(models.Model):
                     base_url='http://192.168.11.150:8080/v1',
                     virtual_key='opencode',
                 )
-                tools = ToolRegistry()
-                tools.register_many(wrap_tools_with_env(builtin_tools(), self.env))
+                # explicit-agent-tools: ENDAST settings-default + explicita
+                # tool_ids — inga interna builtins registreras implicit.
+                tools, _tool_access_groups = self._session_tools(session=session)
 
                 loop_obj = self._build_loop(
                     provider=provider, tools=tools,
@@ -2839,7 +3938,7 @@ class AIQuest(models.Model):
 
 
     def write(self, vals):
-        res = super(AIQuest, self).write(vals)
+        res = super(AICoworker, self).write(vals)
         if any(k in vals for k in ('orchestration_mode', 'channel_id', 'is_supervisor')):
             self._sync_buzz_agents_to_channel()
         return res
@@ -3002,24 +4101,25 @@ class AIQuest(models.Model):
                     employee.name, self.name)
         return employee
 
-    @api.model
-    def create(self, vals):
-        record = super(AIQuest, self).create(vals)
-        # Seed alla init_type-rader (en per typ) så UI:t
-        # (many2many_checkboxes) kan visa varje typ som kryssruta.
-        try:
-            record._ensure_all_init_types()
-        except Exception as e:
-            _logger.warning('Could not seed init types for %s: %s',
-                          record.name, e)
-        # Auto-create hr.employee for new coworkers
-        if not vals.get('employee_id') and not vals.get('is_default'):
+    @api.model_create_multi
+    def create(self, vals_list):
+        records = super(AICoworker, self).create(vals_list)
+        for record, vals in zip(records, vals_list):
+            # Seed alla init_type-rader (en per typ) så UI:t
+            # (many2many_checkboxes) kan visa varje typ som kryssruta.
             try:
-                record._ensure_employee()
+                record._ensure_all_init_types()
             except Exception as e:
-                _logger.warning('Could not create employee for %s: %s',
+                _logger.warning('Could not seed init types for %s: %s',
                               record.name, e)
-        return record
+            # Auto-create hr.employee for new coworkers (inte default)
+            if not vals.get('employee_id') and not vals.get('is_default'):
+                try:
+                    record._ensure_employee()
+                except Exception as e:
+                    _logger.warning('Could not create employee for %s: %s',
+                                  record.name, e)
+        return records
 
 
 # ---------------------------------------------------------------------------
@@ -3074,7 +4174,7 @@ def _extract_text(filename, content):
         return f'[Binary: {len(content)} bytes]'
 
 
-class AIQuestMonthlySummary(models.Model):
+class AICoworkerMonthlySummary(models.Model):
     """Monthly systemtoken summary for billing and reporting (T3.5)."""
     _name = 'ai.coworker.monthly_summary'
     _description = 'Monthly Quest Summary'
@@ -3193,7 +4293,7 @@ class AIQuestMonthlySummary(models.Model):
         return created
 
 
-class AIQuestAgent(models.Model):
+class AICoworkerAgent(models.Model):
     _name = 'ai.coworker.agent'
     _description = 'Quest Agent Assignment'
     _order = 'sequence asc'
@@ -3211,6 +4311,35 @@ class AIQuestAgent(models.Model):
     is_auto_created = fields.Boolean(
         'Auto-created', default=False,
         help='True if this agent was created automatically by the quest.')
+
+    # ── Hårda datablock (agent-memory-governance: per-par) ──
+    block_personal = fields.Boolean(
+        'Block personligt', default=False,
+        help='Hårt block: personligt minne når ALDRIG denna agent (i denna '
+             'AI Medarbetare). Ej förhandlingsbart av supervisor.')
+    block_company = fields.Boolean('Block företag', default=False)
+    block_coworker = fields.Boolean('Block medarbetarminne', default=False)
+    level_personal = fields.Selection(
+        [('L0', 'L0'), ('L1', 'L1'), ('L2', 'L2'), ('L3', 'L3')],
+        string='Nivå personligt', help='Tom = ärv från AI Medarbetaren.')
+    level_company = fields.Selection(
+        [('L0', 'L0'), ('L1', 'L1'), ('L2', 'L2'), ('L3', 'L3')],
+        string='Nivå företag', help='Tom = ärv från AI Medarbetaren.')
+    level_coworker = fields.Selection(
+        [('L0', 'L0'), ('L1', 'L1'), ('L2', 'L2'), ('L3', 'L3')],
+        string='Nivå medarbetare', help='Tom = ärv från AI Medarbetaren.')
+
+    def _effective_level(self, scope):
+        """Kopplingens effektiva nivå för scope (tom = ärv från coworker)."""
+        level_field = 'level_%s' % scope
+        own = getattr(self, level_field, None)
+        if own:
+            return own
+        return self.coworker_id.memory_level or 'L1'
+
+    def _blocked(self, scope):
+        """True om scopen är hårt blockerad för denna koppling."""
+        return bool(getattr(self, 'block_%s' % scope, False))
     orchestration_mode = fields.Selection(
         related='coworker_id.orchestration_mode', string='Orchestration Mode',
         store=False, readonly=True,
@@ -3218,7 +4347,7 @@ class AIQuestAgent(models.Model):
 
     # Display fields for the coworker form Agents tab (like legacy ai_agent)
     agent_model_id = fields.Many2one(
-        'ai.model', related='agent_id.model_id', string='Model', store=False,
+        'ai.model', compute='_compute_agent_model_id', string='Model', store=False,
         help='Agent model shown on the assignment row.')
     agent_tools_display = fields.Char(
         'Tools', compute='_compute_agent_display', store=False,
@@ -3226,6 +4355,11 @@ class AIQuestAgent(models.Model):
     agent_memories_display = fields.Char(
         'Memories', compute='_compute_agent_display', store=False,
         help='Comma-separated memory names of the assigned agent.')
+
+    @api.depends('agent_id.model_id')
+    def _compute_agent_model_id(self):
+        for rec in self:
+            rec.agent_model_id = rec.agent_id.model_id
 
     @api.depends('agent_id.tool_ids.name', 'agent_id.memory_ids.memory_id.name',
                  'agent_id.rag_memory_ids.name')
@@ -3241,7 +4375,7 @@ class AIQuestAgent(models.Model):
 
     @api.model_create_multi
     def create(self, vals_list):
-        records = super(AIQuestAgent, self).create(vals_list)
+        records = super(AICoworkerAgent, self).create(vals_list)
         for rec in records:
             quest = rec.coworker_id
             if quest._get_effective_orchestration_mode() == 'buzz' and quest.channel_id:
@@ -3270,7 +4404,7 @@ class AIQuestAgent(models.Model):
                         ], limit=1)
                         if member:
                             member.unlink()
-        return super(AIQuestAgent, self).unlink()
+        return super(AICoworkerAgent, self).unlink()
 
     def action_dismiss_auto_agent(self):
         """Remove an auto-created agent from this quest and delete it if unused."""

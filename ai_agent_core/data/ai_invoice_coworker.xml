@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+
+        <!-- ── Skills: kapaciteterna lever som skills/instruktioner på
+             medarbetarens agenter — INTE som force-körda sub-agenter ── -->
+
+        <record id="skill_mail_partner" model="ai.skill">
+            <field name="name">Mail: Hitta/skapa res.partner</field>
+            <field name="category">communication</field>
+            <field name="description">Hitta eller skapa rätt res.partner från avsändaren av ett mail.</field>
+            <field name="recipe_text">När ett mail kommer in och du ska identifiera avsändaren som en res.partner:
+1. Extrahera email-adressen och avsändarnamnet från mailet.
+2. odoo_search res.partner med domain [('email','=',&lt;email&gt;)] — kontrollera också email_normalized.
+3. Hittas ingen: sök på företagsnamn ([('name','ilike',&lt;namn&gt;)]) och is_company=True.
+4. Hittas fortfarande ingen: odoo_create res.partner med name (helst företagsnamn), email, is_company=True om det ser ut som ett företag.
+5. Returnera partner-id:t och namnet i ditt svar.
+</field>
+        </record>
+
+        <record id="skill_mail_invoice" model="ai.skill">
+            <field name="name">Mail: Leverantörsfaktura → account.move</field>
+            <field name="category">accounting</field>
+            <field name="description">Analysera en leverantörsfaktura (mail + bilaga) och skapa en korrekt account.move (in_invoice).</field>
+            <field name="recipe_text">När en leverantörsfaktura kommer in via mail:
+1. Identifiera partnern (se skill: Mail: Hitta/skapa res.partner).
+2. Analysera fakturatexten/bilagan: leverantör, fakturanummer (ref), faktura- och förfallodatum, valuta, moms, rader (name, quantity, price_unit, account_id, tax_ids) och totalbelopp.
+3. odoo_search account.journal med domain [('type','=','purchase')] för att hitta inköpsjournalen.
+4. odoo_create account.move med move_type='in_invoice', partner_id, journal_id, ref, invoice_date, invoice_date_due, invoice_line_ids.
+5. Fyll i så mycket som möjligt; vid osäkerhet gissa rimligt och notera i beskrivningen.
+6. Om allt ser korrekt ut: odoo_call_method action_post på movet. Annars lämna i draft.
+7. Svara kort: move-id, leverantör, belopp och status.
+</field>
+        </record>
+
+        <!-- ── AI Medarbetare: Faktura-Assistenten (single mode; skills
+             aggregeras i systemprompten av run()) ── -->
+        <record id="coworker_invoice_assistant" model="ai.coworker">
+            <field name="name">Faktura-Assistenten</field>
+            <field name="description">Du är Faktura-Assistenten på ekonomiavdelningen. Du tar emot leverantörsfakturor via mail, identifierar avsändaren (res.partner), läser fakturan (OCR) och skapar korrekta leverantörsfakturor (account.move) i Odoo. Du är noggrann med belopp, datum, moms och referensnummer.</field>
+            <field name="status">active</field>
+            <field name="orchestration_mode">single</field>
+            <field name="heartbeat_enabled" eval="True"/>
+            <field name="auto_allowed_tools">["odoo_search", "odoo_create", "odoo_write", "describe_model", "odoo_call_method"]</field>
+        </record>
+
+        <record id="agent_invoice_partner" model="ai.agent">
+            <field name="name">Mail → Partner</field>
+            <field name="ai_role">Mail Sender Analyst</field>
+            <field name="description">Analyserar avsändaren av ett inkommande mail och hittar/skapar rätt res.partner (via skill: Mail: Hitta/skapa res.partner).</field>
+            <field name="ai_goal">Hitta eller skapa rätt res.partner från mail-avsändaren.</field>
+            <field name="status">active</field>
+            <field name="skill_ids" eval="[(6, 0, [ref('skill_mail_partner')])]"/>
+            <!-- explicit-agent-tools: odoo-verktyg anges EXPLICIT här. -->
+            <field name="tool_ids" eval="[(6, 0, [
+                ref('tool_describe_model'),
+                ref('tool_odoo_search'),
+                ref('tool_odoo_create'),
+            ])]"/>
+        </record>
+
+        <record id="agent_invoice_analyser" model="ai.agent">
+            <field name="name">Fakturaanalys</field>
+            <field name="ai_role">Invoice Analyst</field>
+            <field name="description">Analyserar leverantörsfakturor (OCR-text/bilaga) och skapar korrekta account.move via skill: Mail: Leverantörsfaktura → account.move.</field>
+            <field name="ai_goal">Skapa en korrekt account.move (move_type=in_invoice) från fakturatexten.</field>
+            <field name="status">active</field>
+            <field name="skill_ids" eval="[(6, 0, [ref('skill_mail_invoice')])]"/>
+            <!-- explicit-agent-tools: odoo-verktyg anges EXPLICIT här. -->
+            <field name="tool_ids" eval="[(6, 0, [
+                ref('tool_describe_model'),
+                ref('tool_odoo_search'),
+                ref('tool_odoo_create'),
+                ref('tool_odoo_call_method'),
+                ref('tool_odoo_write'),
+            ])]"/>
+        </record>
+
+        <record id="coworker_agent_invoice_partner" model="ai.coworker.agent">
+            <field name="coworker_id" ref="coworker_invoice_assistant"/>
+            <field name="agent_id" ref="agent_invoice_partner"/>
+            <field name="role">member</field>
+            <field name="sequence" eval="10"/>
+        </record>
+        <record id="coworker_agent_invoice_analyser" model="ai.coworker.agent">
+            <field name="coworker_id" ref="coworker_invoice_assistant"/>
+            <field name="agent_id" ref="agent_invoice_analyser"/>
+            <field name="role">member</field>
+            <field name="sequence" eval="20"/>
+        </record>
+
+        <!-- Mail-initiering: leverantörsfaktura-flöde -->
+        <record id="coworker_invoice_init_mail" model="ai.coworker.init_type">
+            <field name="coworker_id" ref="coworker_invoice_assistant"/>
+            <field name="init_type">mail</field>
+            <field name="enabled" eval="True"/>
+            <field name="sequence" eval="10"/>
+            <field name="alias_name">faktura</field>
+            <field name="alias_contact">everyone</field>
+            <field name="mail_action">invoice_ai</field>
+            <field name="mail_find_partner" eval="True"/>
+        </record>
+
+        <!-- web_ui (visas i chat) -->
+        <record id="coworker_invoice_init_webui" model="ai.coworker.init_type">
+            <field name="coworker_id" ref="coworker_invoice_assistant"/>
+            <field name="init_type">web_ui</field>
+            <field name="enabled" eval="True"/>
+            <field name="sequence" eval="20"/>
+        </record>
+
+    </data>
+</odoo>

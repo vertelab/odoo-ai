@@ -25,7 +25,15 @@ google-auth-httplib2
 google-auth-oauthlib
 pydub
 langchain_postgres
+langchain_openai
 pgvector
+numpy
+langchain_text_splitters
+markupsafe
+pydantic
+tenacity
+requests
+fastapi-mcp
 
 # ai_agent_core — document upload support
 python-docx

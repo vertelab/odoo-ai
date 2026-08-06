@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Personliga minneskällor: HR-roll + mål (agent-memory-governance 5.x) -->
+<odoo>
+    <data noupdate="1">
+        <record id="cron_personal_memory_index" model="ir.cron">
+            <field name="name">AI: Indexera personliga minneskällor (roll + mål)</field>
+            <field name="model_id" ref="model_ai_okf_concept"/>
+            <field name="state">code</field>
+            <field name="code">model._index_all_personal_sources()</field>
+            <field name="interval_number">24</field>
+            <field name="interval_type">hours</field>
+            <field name="active">True</field>
+        </record>
+    </data>
+</odoo>

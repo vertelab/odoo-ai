@@ -58,3 +58,12 @@
     font-size: 13px;
     z-index: 1060;
 }
+
+/* Gateway Token — truncate but selectable */
+.o_field_token_truncate input {
+    text-overflow: ellipsis;
+    overflow: hidden;
+    white-space: nowrap;
+    user-select: all;
+    cursor: text;
+}

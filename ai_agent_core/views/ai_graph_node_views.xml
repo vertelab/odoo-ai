@@ -11,10 +11,6 @@
     </record>
 
     <!-- Menu: Technical → AI Orkestrering → Odoo Mind Graph -->
-    <menuitem id="menu_ai_graph" name="Odoo Mind Graph"
-              parent="menu_ai_technical_config" sequence="60"
-              action="action_graph_node_definition"/>
-
     <!-- Tree view -->
     <record id="view_graph_node_definition_tree" model="ir.ui.view">
         <field name="name">graph.node.definition.tree</field>
