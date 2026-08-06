@@ -350,13 +350,38 @@ class AICoworker(models.Model):
                 if not link.block_personal:
                     link.block_personal = True
 
-    cron_id = fields.Many2one('ir.cron', string='Scheduled Action', ondelete='cascade')
+    cron_id = fields.Many2one('ir.cron', string='Scheduled Action',
+        compute='_compute_init_type_fields', inverse='_inverse_init_type_fields',
+        store=False, ondelete='cascade',
+        help='Länkad ir.cron — auto-skapas av _ensure_cron när Cron är ikryssad.')
     cron_interval_number = fields.Integer('Interval', default=1)
     cron_interval_type = fields.Selection([
         ('minutes', 'Minutes'), ('hours', 'Hours'),
         ('days', 'Days'), ('weeks', 'Weeks'), ('months', 'Months'),
     ], default='hours', string='Interval Unit')
-    server_action_id = fields.Many2one('ir.actions.server', string='Server Action', ondelete='cascade')
+    # Domain-widget för cron-filter (mönster från ai.memory: model_id + model_name)
+    cron_model_id = fields.Many2one('ir.model', string='Cron-modell',
+        help='Modellen som cron-filter:et (filter_domain) byggs mot.')
+    cron_model_name = fields.Char(
+        related='cron_model_id.model', string='Cron Model Name',
+        readonly=True, store=True)
+    cron_automation_id = fields.Many2one(
+        'ir.cron', string='Schedule Action', readonly=True,
+        compute='_compute_init_type_fields', store=False,
+        help='Auto-skapad ir.cron för Cron-initieringen (readonly).')
+    server_action_automation_id = fields.Many2one(
+        'ir.actions.server', string='Server Action (automation)', readonly=True,
+        compute='_compute_init_type_fields', store=False,
+        help='Auto-skapad ir.actions.server för Server Action-initieringen (readonly).')
+    server_action_model_id = fields.Many2one('ir.model', string='Server Action-modell',
+        help='Modellen som server action:en binder till (som cron_model_id).')
+    server_action_model_name = fields.Char(
+        related='server_action_model_id.model', string='Server Action Model Name',
+        readonly=True, store=True)
+    server_action_id = fields.Many2one('ir.actions.server', string='Server Action',
+        compute='_compute_init_type_fields', inverse='_inverse_init_type_fields',
+        store=False, ondelete='cascade',
+        help='Länkad ir.actions.server — auto-skapas när Server Action är ikryssad.')
     server_action_use_wizard = fields.Boolean('Show Prompt Wizard', default=False)
 
     channel_id = fields.Many2one('discuss.channel', string='Channel')
@@ -747,14 +772,82 @@ class AICoworker(models.Model):
         'ir.model', string='Watch Model',
         compute='_compute_init_type_fields', inverse='_inverse_init_type_fields',
         store=False, help='Model att bevaka för dataändringar.')
+    watch_model_name = fields.Char(
+        related='watch_model_id.model', string='Watch Model Name',
+        readonly=True, store=False)
+    # Speglar base_automation.trigger — samma värden.
     watch_trigger = fields.Selection([
-        ('create', 'Create'),
-        ('write', 'Write'),
-        ('create_or_write', 'Create or Write'),
-        ('delete', 'Delete'),
-    ], string='Watch Trigger', default='create_or_write',
+        ('on_stage_set', 'Stage is set to'),
+        ('on_user_set', 'User is set'),
+        ('on_tag_set', 'Tag is added'),
+        ('on_state_set', 'State is set to'),
+        ('on_priority_set', 'Priority is set to'),
+        ('on_archive', 'On archived'),
+        ('on_unarchive', 'On unarchived'),
+        ('on_create_or_write', 'On save'),
+        ('on_create', 'On creation'),
+        ('on_write', 'On update'),
+        ('on_unlink', 'On deletion'),
+        ('on_change', 'On UI change'),
+        ('on_time', 'Based on date field'),
+        ('on_time_created', 'After creation'),
+        ('on_time_updated', 'After last update'),
+        ('on_webhook', 'On webhook'),
+    ], string='When updating', default='on_create_or_write',
         compute='_compute_init_type_fields', inverse='_inverse_init_type_fields',
         store=False, help='Vilken händelse väcker medarbetaren.')
+    watch_trg_selection_field_id = fields.Many2one(
+        'ir.model.fields', string='Trigger Field',
+        compute='_compute_init_type_fields', inverse='_inverse_init_type_fields',
+        store=False, help='Selection-fält för on_state_set/on_priority_set.')
+    watch_trg_field_ref_model_name = fields.Char(
+        string='Trigger Field Model',
+        compute='_compute_init_type_fields', store=False,
+        readonly=True)
+    watch_trg_field_ref = fields.Many2oneReference(
+        string='Trigger Reference',
+        compute='_compute_init_type_fields', inverse='_inverse_init_type_fields',
+        store=False, help='Fält-ref för on_stage_set/on_tag_set.')
+    watch_trg_date_id = fields.Many2one(
+        'ir.model.fields', string='Trigger Date',
+        compute='_compute_init_type_fields', inverse='_inverse_init_type_fields',
+        store=False, help='Datumfält för on_time-trigger.')
+    watch_trg_date_range = fields.Integer(
+        string='Delay after trigger date',
+        compute='_compute_init_type_fields', inverse='_inverse_init_type_fields',
+        store=False)
+    watch_trg_date_range_type = fields.Selection([
+        ('minutes', 'Minutes'),
+        ('hours', 'Hours'),
+        ('days', 'Days'),
+        ('months', 'Months'),
+    ], string='Delay type',
+        compute='_compute_init_type_fields', inverse='_inverse_init_type_fields',
+        store=False)
+    watch_trg_date_calendar_id = fields.Many2one(
+        'resource.calendar', string='Use Calendar',
+        compute='_compute_init_type_fields', inverse='_inverse_init_type_fields',
+        store=False)
+    watch_filter_pre_domain = fields.Char(
+        string='Before Update Domain',
+        compute='_compute_init_type_fields', inverse='_inverse_init_type_fields',
+        store=False)
+    watch_filter_domain = fields.Char(
+        string='Apply on',
+        compute='_compute_init_type_fields', inverse='_inverse_init_type_fields',
+        store=False)
+    watch_trigger_field_ids = fields.Many2many(
+        'ir.model.fields', string='When updating',
+        compute='_compute_init_type_fields', inverse='_inverse_init_type_fields',
+        store=False, help='Fält som bevakas — tomt = alla fält.')
+    watch_on_change_field_ids = fields.Many2many(
+        'ir.model.fields', string='When updating (on change)',
+        compute='_compute_init_type_fields', inverse='_inverse_init_type_fields',
+        store=False)
+    watch_active = fields.Boolean(
+        string='Active',
+        compute='_compute_init_type_fields', inverse='_inverse_init_type_fields',
+        store=False, help='Avbockad = regeln göms och körs inte.')
     watch_domain = fields.Char('Watch Domain',
         compute='_compute_init_type_fields', inverse='_inverse_init_type_fields',
         store=False, help='Domänfilter för vilka records som triggar, '
@@ -853,14 +946,62 @@ class AICoworker(models.Model):
                  'init_type_ids.watch_trigger', 'init_type_ids.watch_domain',
                  'init_type_ids.base_automation_id', 'init_type_ids.alias_contact',
                  'init_type_ids.rate_limit_rpm', 'init_type_ids.rate_limit_tpm',
-                 'init_type_ids.show_in_chat')
+                 'init_type_ids.show_in_chat', 'init_type_ids.cron_id',
+                 'init_type_ids.server_action_id',
+                 'init_type_ids.watch_trg_selection_field_id',
+                 'init_type_ids.watch_trg_field_ref',
+                 'init_type_ids.watch_trg_field_ref_model_name',
+                 'init_type_ids.watch_trg_date_id',
+                 'init_type_ids.watch_trg_date_range',
+                 'init_type_ids.watch_trg_date_range_type',
+                 'init_type_ids.watch_trg_date_calendar_id',
+                 'init_type_ids.watch_filter_pre_domain',
+                 'init_type_ids.watch_filter_domain',
+                 'init_type_ids.watch_trigger_field_ids',
+                 'init_type_ids.watch_on_change_field_ids',
+                 'init_type_ids.watch_active')
     def _compute_init_type_fields(self):
         for rec in self:
             watch = rec._get_active_init('watch')
             rec.watch_model_id = watch.watch_model_id if watch else False
-            rec.watch_trigger = watch.watch_trigger if watch else 'create_or_write'
+            rec.watch_trigger = (watch.watch_trigger
+                                 if watch else 'on_create_or_write')
             rec.watch_domain = watch.watch_domain if watch else False
-            rec.base_automation_id = watch.base_automation_id if watch else False
+            rec.watch_trg_selection_field_id = (
+                watch.watch_trg_selection_field_id if watch else False)
+            rec.watch_trg_field_ref = watch.watch_trg_field_ref if watch else False
+            rec.watch_trg_field_ref_model_name = (
+                watch.watch_trg_field_ref_model_name if watch else False)
+            rec.watch_trg_date_id = watch.watch_trg_date_id if watch else False
+            rec.watch_trg_date_range = (watch.watch_trg_date_range
+                                        if watch else False)
+            rec.watch_trg_date_range_type = (watch.watch_trg_date_range_type
+                                             if watch else False)
+            rec.watch_trg_date_calendar_id = (watch.watch_trg_date_calendar_id
+                                              if watch else False)
+            rec.watch_filter_pre_domain = (watch.watch_filter_pre_domain
+                                           if watch else False)
+            rec.watch_filter_domain = watch.watch_filter_domain if watch else False
+            rec.watch_trigger_field_ids = (watch.watch_trigger_field_ids
+                                           if watch else False)
+            rec.watch_on_change_field_ids = (watch.watch_on_change_field_ids
+                                             if watch else False)
+            rec.watch_active = watch.watch_active if watch else True
+            # Länkade resurser visas oavsett enabled-status (rader kan finnas
+            # även om init-typen är avstängd).
+            watch_any = rec.init_type_ids.filtered(
+                lambda it: it.init_type == 'watch')[:1]
+            rec.base_automation_id = (watch_any.base_automation_id
+                                      if watch_any else False)
+            cron_any = rec.init_type_ids.filtered(
+                lambda it: it.init_type == 'cron')[:1]
+            rec.cron_id = cron_any.cron_id if cron_any else False
+            rec.cron_automation_id = cron_any.cron_id if cron_any else False
+            sa_any = rec.init_type_ids.filtered(
+                lambda it: it.init_type == 'server_action')[:1]
+            rec.server_action_id = sa_any.server_action_id if sa_any else False
+            rec.server_action_automation_id = (sa_any.server_action_id
+                                               if sa_any else False)
             mail = rec._get_active_init('mail')
             rec.alias_contact = mail.alias_contact if mail else 'everyone'
             oa = rec._get_active_init('openai_api')
@@ -877,7 +1018,30 @@ class AICoworker(models.Model):
                     'watch_model_id': rec.watch_model_id.id if rec.watch_model_id else False,
                     'watch_trigger': rec.watch_trigger,
                     'watch_domain': rec.watch_domain,
+                    'watch_trg_selection_field_id': rec.watch_trg_selection_field_id.id if rec.watch_trg_selection_field_id else False,
+                    'watch_trg_field_ref': rec.watch_trg_field_ref.id if rec.watch_trg_field_ref else False,
+                    'watch_trg_date_id': rec.watch_trg_date_id.id if rec.watch_trg_date_id else False,
+                    'watch_trg_date_range': rec.watch_trg_date_range,
+                    'watch_trg_date_range_type': rec.watch_trg_date_range_type,
+                    'watch_trg_date_calendar_id': rec.watch_trg_date_calendar_id.id if rec.watch_trg_date_calendar_id else False,
+                    'watch_filter_pre_domain': rec.watch_filter_pre_domain,
+                    'watch_filter_domain': rec.watch_filter_domain,
+                    'watch_trigger_field_ids': [(6, 0, rec.watch_trigger_field_ids.ids)] if rec.watch_trigger_field_ids else [(5, 0, 0)],
+                    'watch_on_change_field_ids': [(6, 0, rec.watch_on_change_field_ids.ids)] if rec.watch_on_change_field_ids else [(5, 0, 0)],
+                    'watch_active': rec.watch_active,
                 })
+                # Skapa/uppdatera base_automation direkt när modellen ändras
+                if watch.enabled and rec.watch_model_id:
+                    watch._ensure_watch()
+            cron = rec._get_active_init('cron')
+            if cron:
+                cron.cron_id = rec.cron_id
+            sa = rec._get_active_init('server_action')
+            if sa:
+                sa.server_action_id = rec.server_action_id
+                # Skapa/uppdatera server action direkt när modellen ändras
+                if sa.enabled and (rec.server_action_model_id or rec.model_ids):
+                    sa._ensure_server_action()
             mail = rec._get_active_init('mail')
             if mail:
                 mail.alias_contact = rec.alias_contact
@@ -1052,7 +1216,9 @@ class AICoworker(models.Model):
                     'model': 'ai.coworker',
                     'res_id': self.id,
                 })
-        return eid.complete_name if hasattr(eid, 'complete_name') else '%s.%s' % (eid.module, eid.name)
+                # eid är nu en record → bygg xmlid
+                return eid.complete_name or '%s.%s' % (eid.module, eid.name)
+        return eid  # eid är redan en xmlid-sträng från get_external_id()
 
     def server_action(self, records):
         """Run quest as a server action triggered from Odoo UI.
@@ -2806,6 +2972,58 @@ class AICoworker(models.Model):
         '<circle cx="345.04" cy="265.03" r="26.41" fill="#ffffff"/>'
         '</svg>'
     )
+
+    def _trigger_watch(self, records):
+        """Anropas av base_automation när bevakad data ändras.
+
+        Hämtar watch-init_type:en, filtrerar records på watch_domain och
+        kör medarbetaren med den ändrade posten som kontext.
+        """
+        self.ensure_one()
+        if not records:
+            return
+        watch = self._get_active_init('watch')
+        if not watch:
+            _logger.warning('_trigger_watch: ingen aktiv watch-init för %s',
+                            self.name)
+            return
+        # Filtrera på watch_domain ("Apply on" — Odoo 18 base_automation
+        # stödjer inte filter_domain för on_create_or_write, så vi filtrerar här)
+        filtered = records
+        if watch.watch_domain:
+            try:
+                from odoo.tools.safe_eval import safe_eval
+                filtered = records.filtered_domain(
+                    safe_eval(watch.watch_domain))
+            except Exception as e:
+                _logger.warning('watch_domain-filtrering misslyckades: %s', e)
+        if not filtered:
+            return
+        # Budget check
+        try:
+            _warn, exhausted = self.check_cap()
+            if exhausted:
+                _logger.info('Watch %s skippad: budget slut', self.name)
+                return
+        except Exception:
+            pass
+        for record in filtered[:3]:
+            try:
+                session = self.env['ai.coworker.session'].create({
+                    'coworker_id': self.id,
+                    'name': f'Watch: {record._name} {record.id}',
+                    'status': 'active',
+                    'user_id': self.env.ref('base.user_root').id,
+                })
+                prompt = (
+                    f'En dataändring upptäcktes på record '
+                    f'{record.display_name or record.id} ({record._name}).\n'
+                    f'Granska recordet och agera lämpligt.\n'
+                )
+                self.with_context(_ai_context_model=record._name,
+                                  _ai_context_id=record.id).run(prompt)
+            except Exception as e:
+                _logger.warning('Watch-körning misslyckades: %s', e)
 
     def action_run_scheduled(self):
         """Run this quest as a scheduled automation.

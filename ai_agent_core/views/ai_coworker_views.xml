@@ -151,281 +151,263 @@
         <field name="name">ai.coworker.form</field>
         <field name="model">ai.coworker</field>
         <field name="arch" type="xml">
-            <form>
+            <form string="AI Medarbetare">
                 <header>
-                    <button name="action_open_builder" type="object"
-                            string="🤖 Build with AI" class="btn-primary"/>
-                    <field name="status" widget="statusbar"
-                           statusbar_visible="active,done"/>
+                    <button name="action_open_builder" type="object" string="🤖 Build with AI" class="btn-primary"/>
+                    <field name="status" widget="statusbar" statusbar_visible="draft,active,done"/>
                 </header>
-                <sheet string="AI Quest">
+                <sheet string="AI Medarbetare">
                     <div class="oe_button_box" name="button_box">
-                        <button name="action_get_agents" class="oe_stat_button"
-                                type="object" icon="fa-users">
+                        <button name="action_get_agents" class="oe_stat_button" type="object" icon="fa-users">
                             <field name="agent_count" widget="statinfo"/>
                         </button>
-                        <button name="action_get_sessions" class="oe_stat_button"
-                                type="object" icon="fa-flag-checkered">
+                        <button name="action_get_sessions" class="oe_stat_button" type="object" icon="fa-flag-checkered">
                             <field name="session_count" widget="statinfo"/>
                         </button>
-                        <button name="action_get_session_lines" class="oe_stat_button"
-                                type="object" icon="fa-money">
-                            <field name="session_line_count" widget="statinfo"
-                                   string="Tokens"/>
+                        <button name="action_get_session_lines" class="oe_stat_button" type="object" icon="fa-money">
+                            <field name="session_line_count" widget="statinfo" string="Tokens"/>
                         </button>
-                        <button name="action_get_session_objects" class="oe_stat_button"
-                                type="object" icon="fa-puzzle-piece">
-                            <field name="session_object_count" widget="statinfo"
-                                   string="Objects"/>
+                        <button name="action_get_session_objects" class="oe_stat_button" type="object" icon="fa-puzzle-piece">
+                            <field name="session_object_count" widget="statinfo" string="Objects"/>
                         </button>
                     </div>
 
-                    <!-- Titel + bild → bild till höger -->
                     <div class="oe_title d-flex align-items-start">
                         <div class="flex-grow-1 pe-3">
-                            <h1><field name="name" placeholder="Quest Name"/></h1>
-                            <field name="sub_description" placeholder="Short description"/>
+                            <h1><field name="name" placeholder="Namn på AI Medarbetare"/></h1>
+                            <field name="sub_description" placeholder="Kort beskrivning"/>
                         </div>
                         <div class="flex-shrink-0">
                             <field name="partner_image_128" widget="image" class="oe_avatar"/>
                         </div>
                     </div>
 
-                    <!-- Två kolumner under subtitle -->
-                    <group col="2">
-                        <group string="Settings">
-                            <field name="orchestration_mode" widget="radio"/>
-                            <field name="orchestration_mode_help" readonly="1"
-                                   class="text-muted" nolabel="1"/>
-                            <field name="supervisor_model_id"
-                                   invisible="orchestration_mode not in ('supervisor', 'buzz', 'conference')"/>
-                            <field name="conference_mechanism"
-                                   invisible="orchestration_mode != 'conference'"/>
-                            <field name="injection_level" widget="radio"/>
+                    <group>
+                        <group string="Allmänt">
                             <field name="identity_id"/>
-                            <field name="tag_ids" widget="many2many_tags"/>
-                            <field name="group_ids" widget="many2many_tags"/>
-                        </group>
-                        <group string="Autonomi-panel (gap C5/F4)">
-                            <field name="monthly_cap_mtokens"/>
-                            <field name="budget_kr_monthly"/>
-                            <field name="max_actions_per_day"/>
-                            <field name="hitl_threshold" widget="radio"/>
+                            <field name="orchestration_mode" widget="radio"/>
+                            <field name="orchestration_mode_help" readonly="1" class="text-muted" nolabel="1"/>
+                            <field name="supervisor_model_id" invisible="orchestration_mode not in ('supervisor', 'buzz', 'conference')"/>
+                            <field name="conference_mechanism" invisible="orchestration_mode != 'conference'"/>
+                            <field name="max_iterations" invisible="orchestration_mode not in ('supervisor', 'buzz', 'linear', 'conference')"/>
+                            <field name="min_confidence" invisible="orchestration_mode not in ('supervisor', 'buzz', 'conference')"/>
+                            <field name="department_id"/>
+                            <field name="is_default"/>
                             <field name="heartbeat_enabled"/>
                         </group>
-                        <group string="Configuration">
-                            <field name="model_ids" widget="many2many_tags"/>
-                            <field name="debug"/>
-                            <field name="partner_id"/>
-                        </group>
-                    </group>
-
-                    <!-- Initiering: en kryssruta per typ (vanliga Boolean-fält).
-                         När en typ kryssas visas dess inställningar direkt under
-                         (invisible = not init_<typ>). -->
-                    <group string="Initiering (init types)">
-                        <group>
-                            <field name="init_web_ui"/>
-                            <field name="init_chat"/>
-                            <field name="init_channel"/>
-                            <field name="init_mail"/>
-                            <field name="init_cron"/>
-                            <field name="init_server_action"/>
-                        </group>
-                        <group>
-                            <field name="init_powerbox"/>
-                            <field name="init_manual"/>
-                            <field name="init_webhook"/>
-                            <field name="init_openai_api"/>
-                            <field name="init_watch"/>
-                        </group>
-
-                        <!-- Typinställningar — visas direkt under kryssrutorna
-                             för de typer som är IKRYSSADE. -->
-                        <group col="2" string="Typinställningar"
-                               invisible="not init_web_ui and not init_chat and not init_channel
-                                          and not init_mail and not init_cron
-                                          and not init_server_action and not init_powerbox
-                                          and not init_webhook and not init_openai_api
-                                          and not init_watch">
-                        <group>
-                            <!-- Web Chat UI -->
-                            <field name="show_in_chat"
-                                   invisible="not init_web_ui" string="Visa i Web Chat"/>
-                            <!-- Chat / Channel -->
-                            <field name="channel_id"
-                                   invisible="not init_channel" string="Discuss-kanal"/>
-                            <field name="response_mode"
-                                   invisible="not init_chat and not init_channel"
-                                   string="Svarar när"/>
-                            <field name="channel_reply_mode"
-                                   invisible="not init_channel" string="Svarsläge"/>
-                            <field name="chat_trigger_words"
-                                   invisible="(not init_chat and not init_channel) or response_mode != 'trigger'"
-                                   string="Aktiveringsord (kommaseparerade)"/>
-                            <!-- Mail -->
-                            <field name="alias_name" invisible="not init_mail" string="Mail-adress (alias)"/>
-                            <field name="alias_contact" invisible="not init_mail" string="Ta emot mail från"/>
-                            <!-- Webhook -->
-                            <field name="webhook_url" invisible="not init_webhook" string="Webhook URL" readonly="1"/>
-                            <field name="webhook_secret" invisible="not init_webhook" string="API-nyckel (secret)"/>
-                            <field name="max_webhook_payload_size" invisible="not init_webhook" string="Max payload (bytes)"/>
-                            <!-- Watch -->
-                            <field name="watch_model_id" invisible="not init_watch" string="Bevaka modell"/>
-                            <field name="watch_trigger" invisible="not init_watch" string="Trigger"/>
-                            <field name="watch_domain" invisible="not init_watch" string="Domän (filter)"/>
-                            <field name="base_automation_id" invisible="not init_watch" string="Base Automation" readonly="1"/>
-                        </group>
-                        <group>
-                            <!-- Cron -->
-                            <field name="cron_id" invisible="not init_cron" string="Schedule (ir.cron)"/>
-                            <field name="cron_interval_number" invisible="not init_cron" string="Intervall"/>
-                            <field name="cron_interval_type" invisible="not init_cron" string="Intervalltyp"/>
-                            <field name="filter_domain" invisible="not init_cron" string="Filter (domän)"/>
-                            <field name="notify_on_completion" invisible="not init_cron" string="Notifiera vid klar"/>
-                            <!-- Server Action -->
-                            <field name="server_action_id" invisible="not init_server_action" string="Server Action"/>
-                            <field name="server_action_use_wizard" invisible="not init_server_action" string="Visa prompt-wizard"/>
-                            <!-- OpenAI API -->
-                            <field name="rate_limit_rpm" invisible="not init_openai_api" string="Rate limit (req/min)"/>
-                            <field name="rate_limit_tpm" invisible="not init_openai_api" string="Rate limit (tok/min)"/>
-                            <!-- Powerbox -->
-                            <field name="model_ids" invisible="not init_powerbox"
-                                   widget="many2many_tags" string="Powerbox-modeller"/>
-                        </group>
-                    </group>
-                    </group>
-
-                    <!-- Orchestration Type Config — syns baserat på vald mode -->
-                    <group col="2" string="Orchestration Config"
-                           invisible="orchestration_mode == 'single'">
-                        <group>
-                            <!-- Supervisor -->
-                            <field name="max_iterations" invisible="orchestration_mode != 'supervisor'"/>
-                            <field name="min_confidence" invisible="orchestration_mode != 'supervisor'"/>
-                            <!-- Buzz -->
-                            <field name="buzz_use_llm_router" invisible="orchestration_mode != 'buzz'"/>
-                            <field name="buzz_a2a_max_depth" invisible="orchestration_mode != 'buzz'"/>
-                            <field name="allow_auto_create_agents" invisible="orchestration_mode != 'buzz'"/>
-                            <field name="max_auto_agents" invisible="orchestration_mode != 'buzz'"/>
-                        </group>
-                        <group>
-                            <!-- Linear -->
-                            <field name="pass_full_history" invisible="orchestration_mode != 'linear'"/>
-                            <!-- Conference -->
-                            <!-- Automation -->
-                            <field name="notify_on_completion" invisible="orchestration_mode != 'automation'"/>
-                            <field name="auto_allowed_tools" invisible="orchestration_mode != 'automation'"/>
-                            <field name="auto_allowed_commands" invisible="orchestration_mode != 'automation'"/>
+                        <group string="Budget &amp; HITL">
+                            <field name="hitl_threshold" widget="radio"/>
+                            <field name="budget_kr_monthly"/>
+                            <field name="monthly_cap_mtokens"/>
+                            <field name="active" widget="boolean_toggle"/>
+                            <field name="last_heartbeat" readonly="1"/>
                         </group>
                     </group>
 
                     <notebook>
+                        <page string="Description" name="description">
+                            <group string="Beskrivning">
+                                <field name="description" widget="html"/>
+                                <field name="agent_creator_prompt"/>
+                                <field name="example_prompts"/>
+                            </group>
+                        </page>
+
+                        <page string="Initiering" name="initiering">
+                            <group>
+                                <group>
+                                    <field name="init_web_ui"/>
+                                    <field name="init_chat"/>
+                                    
+                                  <!-- Channel -->  
+                                    <field name="init_channel"/>
+                                    <field name="channel_id" invisible="not init_channel" string=" → Discuss-kanal"/>
+                                        <field name="response_mode" invisible="not init_chat and not init_channel" string=" → Svarar när"/>
+                                        <field name="channel_reply_mode" invisible="not init_channel" string=" → Svarsläge"/>
+                                        <field name="chat_trigger_words" invisible="init_channel or response_mode != 'trigger'" string=" → Aktiveringsord"/>
+                                  <!-- Mail -->
+                                    <field name="init_mail"/>
+                                     <field name="alias_name" invisible="not init_mail" string=" → Mail-adress (alias)"/>
+                                     <field name="alias_contact" invisible="not init_mail" string=" → Ta emot mail från"/>
+                                  <!-- Cron -->
+                                    <field name="init_cron"/>
+                                    <field name="cron_id" invisible="not init_cron" string="→ Schedule (ir.cron)" options="{'no_create': True}"/>
+                                    <field name="cron_interval_number" invisible="not init_cron" string="→ Intervall"/>
+                                    <field name="cron_interval_type" invisible="not init_cron" string="→ Intervalltyp"/>
+                                    <field name="cron_model_id" invisible="not init_cron" string="→ Modell att filtrera"/>
+                                    <field name="cron_model_name" invisible="1"/>
+                                    <field name="filter_domain" widget="domain" options="{'model': 'cron_model_name'}" invisible="not init_cron" string="→ Filter (domän)"/>
+                                    <field name="cron_automation_id" invisible="not init_cron" string="→ Schedule Action" readonly="1"/>
+                                    
+                                  <!-- Server Action -->
+                                    <field name="init_server_action"/>
+                                    <field name="server_action_id" invisible="not init_server_action" string="→ Server Action" options="{'no_create': True}"/>
+                                    <field name="server_action_model_id" invisible="not init_server_action" string="→ Server Action-modell"/>
+                                    <field name="server_action_model_name" invisible="1"/>
+                                    <field name="server_action_use_wizard" invisible="not init_server_action" string="→ Visa prompt-wizard"/>
+                                    <field name="server_action_automation_id" invisible="not init_server_action" string="→ Server Action (automation)" readonly="1"/>
+                                </group>
+                                <group>
+									<!-- Powerbox -->
+                                    <field name="init_powerbox"/>
+                                    <field name="model_ids" invisible="not init_powerbox" widget="many2many_tags" string=" → Powerbox-modeller"/>
+                                    <field name="init_manual"/>
+                                    
+                                    <!-- Webhook -->
+                                    <field name="init_webhook"/>
+                                        <field name="webhook_url" invisible="not init_webhook" string=" → Webhook URL" readonly="1"/>
+                                        <field name="webhook_secret" invisible="not init_webhook" string=" → API-nyckel (secret)"/>
+                                    <!-- OpenAI API -->
+                                    <field name="init_openai_api"/>
+                                        <field name="rate_limit_rpm" invisible="not init_openai_api" string=" → Rate limit (req/min)"/>
+                                        <field name="rate_limit_tpm" invisible="not init_openai_api" string=" → Rate limit (tok/min)"/>
+                                    <!-- Watch — kopia av base_automation-formuläret (minus notepad/Notes) -->
+                                    <field name="init_watch"/>
+                                    <field name="watch_model_name" invisible="1"/>
+                                    <field name="watch_model_id" invisible="not init_watch" string=" → Apply on (modell)" options="{'no_create': True}"/>
+                                    <label for="watch_trigger" string="When updating" invisible="not init_watch"/>
+                                    <div invisible="not init_watch">
+                                        <field name="watch_trigger" class="oe_inline me-3" options="{'no_open': True, 'no_create': True}"/>
+                                        <field name="watch_trg_selection_field_id" placeholder="Select a value..." class="oe_inline"
+                                            options="{'no_open': True, 'no_create': True}"
+                                            invisible="watch_trigger not in ['on_state_set', 'on_priority_set']"
+                                            required="watch_trigger in ['on_state_set', 'on_priority_set']"
+                                        />
+                                        <field name="watch_trg_field_ref" placeholder="Select a value..." class="oe_inline"
+                                            options="{'no_open': True, 'no_create': True}"
+                                            invisible="watch_trigger not in ['on_stage_set', 'on_tag_set']"
+                                            required="watch_trigger in ['on_stage_set', 'on_tag_set']"
+                                        />
+                                        <field name="watch_trg_field_ref_model_name" invisible="1"/>
+                                        <field name="watch_trg_date_id" class="oe_inline" string="Date Field"
+                                            options="{'no_open': True, 'no_create': True}"
+                                            invisible="watch_trigger != 'on_time'"
+                                            required="watch_trigger in ['on_time', 'on_time_created', 'on_time_updated']"
+                                        />
+                                    </div>
+                                    <label for="watch_trg_date_range" string="Delay" invisible="watch_trigger not in ['on_time', 'on_time_created', 'on_time_updated'] or not init_watch"/>
+                                    <div class="d-flex flex-row gap-2" invisible="watch_trigger not in ['on_time', 'on_time_created', 'on_time_updated'] or not init_watch">
+                                        <field name="watch_trg_date_range" class="oe_inline" required="watch_trigger in ['on_time', 'on_time_created', 'on_time_updated']"/>
+                                        <field name="watch_trg_date_range_type" class="oe_inline" required="watch_trigger in ['on_time', 'on_time_created', 'on_time_updated']"/>
+                                        <span invisible="watch_trigger != 'on_time_created'">after creation</span>
+                                        <span invisible="watch_trigger != 'on_time_updated'">after last update</span>
+                                        <span invisible="watch_trigger != 'on_time'">after</span>
+                                        <field name="watch_trg_date_id" class="oe_inline" string="Date Field" placeholder="Select a date field..."
+                                            options="{'no_open': True, 'no_create': True}"
+                                            context="{'hide_model': 1}"
+                                            invisible="watch_trigger != 'on_time'"
+                                            required="watch_trigger in ['on_time', 'on_time_created', 'on_time_updated']"/>
+                                    </div>
+                                    <field name="watch_trg_date_calendar_id" class="oe_inline"
+                                        options="{'no_open': True, 'no_create': True}"
+                                        invisible="not watch_trg_date_id or watch_trg_date_range_type != 'day' or not init_watch"/>
+                                    <field name="watch_filter_pre_domain" widget="domain"
+                                        options="{'model': 'watch_model_name', 'in_dialog': True}"
+                                        invisible="watch_trigger in ['on_create', 'on_unlink', 'on_change', 'on_webhook', 'on_time', 'on_time_created', 'on_time_updated'] or not init_watch"
+                                        string=" → Before Update Domain"/>
+                                    <field name="watch_filter_domain" widget="domain"
+                                        options="{'model': 'watch_model_name', 'in_dialog': True}"
+                                        invisible="watch_trigger in ['on_change', 'on_webhook'] or not init_watch"
+                                        string=" → Apply on (domän)"/>
+                                    <field name="watch_trigger_field_ids" string=" → When updating (fält)" placeholder="Select fields..."
+                                        options="{'no_open': True, 'no_create': True}"
+                                        domain="[('model_id', '=', watch_model_id),('store','=',True)]"
+                                        context="{'hide_model': 1}"
+                                        invisible="watch_trigger != 'on_create_or_write' or not init_watch" widget="many2many_tags"/>
+                                    <field name="watch_on_change_field_ids" string=" → When updating (on change)" placeholder="Select fields..."
+                                        options="{'no_open': True, 'no_create': True}"
+                                        domain="[('model_id', '=', watch_model_id)]"
+                                        context="{'hide_model': 1}"
+                                        invisible="watch_trigger != 'on_change' or not init_watch" widget="many2many_tags"/>
+                                    <field name="watch_active" widget="boolean_toggle" invisible="not init_watch" string=" → Aktiv (kör regel)"/>
+                                    <field name="watch_domain" widget="domain" options="{'model': 'watch_model_name'}" invisible="not init_watch" string="→ Domän (filter i koden)"/>
+                                    <field name="base_automation_id" invisible="not init_watch" string="→ Base Automation" readonly="1"/>
+                                </group>
+
+                                
+                            </group>
+                        </page>
+
+                        <page string="Odoo Mind" name="odoo_mind">
+                            <group string="Minnesprofil">
+                                <field name="memory_profile" widget="radio"/>
+                                <field name="memory_scopes" widget="many2many_tags"/>
+                                <field name="memory_level" widget="radio"/>
+                                <field name="learning" widget="radio"/>
+                            </group>
+                            <group string="Hermes Injection Level">
+                                <field name="injection_level" widget="radio"/>
+                            </group>
+                            <group string="Företagsminne" invisible="'Företagets minne' in memory_scopes" >
+                                <field name="inject_company_memory"/>
+                                <field name="company_memory_artifact_types" widget="many2many_tags"/>
+                                <field name="company_memory_categories" widget="many2many_tags"/>
+                            </group>
+                            <group string="Personligt &amp; Mission">
+                                <field name="use_personal_info"/>
+                                <field name="use_personal_lang"/>
+                                <field name="use_company_info"/>
+                                <field name="inject_nudging"/>
+                            </group>
+                            <group string="Rekordkontext">
+                                <field name="context_injection_enabled"/>
+                                <field name="context_max_fields"/>
+                                <field name="context_include_chatter"/>
+                                <field name="context_chatter_limit"/>
+                                <field name="use_chat_history"/>
+                                <field name="chat_history_limit"/>
+                                <field name="use_time_context"/>
+                            </group>
+                        </page>
+
                         <page string="Agenter" name="agents">
-                            <!-- Info om synlighet beroende på orchestration mode -->
-                            <div class="alert alert-info" role="alert"
-                                 invisible="orchestration_mode != 'supervisor'">
-                                🔒 <b>Agenterna är dolda</b> — supervisorn delegerar till
-                                specialisterna i bakgrunden och syntetiserar svaret.
-                            </div>
-                            <div class="alert alert-info" role="alert"
-                                 invisible="orchestration_mode != 'buzz'">
-                                👥 <b>Agenterna är synliga i kanalen</b> (buzz) — egna
-                                identiteter, alias och @-nämningar. Ledaragenten tar emot
-                                meddelanden som inte matchar @mention eller trigger-ord.
-                            </div>
                             <field name="agent_ids">
                                 <list editable="bottom">
                                     <field name="sequence" widget="handle"/>
-                                    <field name="agent_id" string="Agent"/>
-                                    <field name="agent_model_id" string="Modell"/>
-                                    <field name="agent_tools_display" string="Tools"/>
-                                    <field name="agent_memories_display" string="Memories"/>
-                                    <!-- Hårda datablock (agent-memory-governance) -->
+                                    <field name="agent_id"/>
+                                    <field name="agent_model_id"/>
                                     <field name="block_personal" string="🔒 Personligt"/>
                                     <field name="block_company" string="🔒 Företag"/>
                                     <field name="block_coworker" string="🔒 Medarbetare"/>
                                     <field name="level_personal" string="Nivå pe"/>
                                     <field name="level_company" string="Nivå co"/>
                                     <field name="level_coworker" string="Nivå cw"/>
-                                    <!-- Rollen är bara relevant i team-lägen (buzz/supervisor/
-                                         linear/conference); single och automation har en agent
-                                         utan roll. -->
-                                    <field name="role"
-                                           invisible="orchestration_mode in ('single', 'automation')"
-                                           string="Roll"/>
+                                    <field name="role"/>
                                 </list>
                             </field>
                         </page>
 
-                        <page string="Description">
-                            <field name="description" widget="text" nolabel="1"
-                                   placeholder="System prompt / quest purpose..."/>
-                            <field name="example_prompts" widget="text" nolabel="1"
-                                   placeholder="Exempel-prompts per roll (gap A1/A3)..."/>
-                        </page>
-
-                        <page string="Context">
-                            <group col="2">
-                                <group string="Context Injection">
-                                    <field name="context_injection_enabled"/>
-                                    <field name="context_max_fields"
-                                           invisible="not context_injection_enabled"/>
-                                    <field name="context_include_chatter"
-                                           invisible="not context_injection_enabled"/>
-                                    <field name="context_chatter_limit"
-                                           invisible="not context_injection_enabled or not context_include_chatter"/>
+                        <page string="Skills &amp; Tools" name="skills_tools">
+                            <group>
+                                <group string="Skills">
+                                    <field name="skill_ids" widget="many2many_tags"/>
                                 </group>
-                                <group>
-                                    <group string="Odoo Mind">
-                                        <field name="use_chat_history"/>
-                                        <field name="use_time_context"/>
-                                        <field name="inject_nudging"/>
-                                        <field name="inject_company_memory"/>
-                                        <field name="company_memory_categories" widget="many2many_tags"/>
-                                    </group>
-                                    <group string="Minne &amp; tillgång (agent-memory-governance)">
-                                        <field name="memory_profile" widget="radio"/>
-                                        <field name="memory_scopes" widget="many2many_tags"/>
-                                        <field name="memory_level" widget="radio"/>
-                                    </group>
-                                    <group string="Company Info">
-                                        <field name="use_company_info"/>
-                                    </group>
-                                    <group string="Personal Info">
-                                        <field name="use_personal_info"/>
-                                        <field name="use_personal_lang"/>
-                                    </group>
+                                <group string="Verktyg">
+                                    <field name="tool_ids" widget="many2many_tags"/>
                                 </group>
                             </group>
                         </page>
 
-                        <page string="Budget">
-                            <group col="2">
-                                <group string="Månadstak (Systemtokens)">
-                                    <field name="monthly_cap_mtokens"
-                                        help="0 = obegränsat. Tak i miljoner systemtokens.\nVid 80%: varning. Vid 100%: agenten pausas."/>
-                                    <field name="session_line_count" readonly="1"
-                                        string="Förbrukat denna månad"/>
-                                    <field name="started_mtokens" readonly="1"
-                                        string="Påbörjade M-tokens"/>
-                                </group>
-                                <group>
-                                    <group string="All-time totals">
-                                        <field name="total_sys_tokens" readonly="1"
-                                            string="Totalt systemtokens"/>
-                                        <field name="total_input_tokens" readonly="1"/>
-                                        <field name="total_output_tokens" readonly="1"/>
-                                        <field name="last_month_sys_tokens" readonly="1"
-                                            string="Förra månaden"/>
-                                    </group>
-                                    <group string="Status">
-                                        <field name="cap_warning_sent" readonly="1"
-                                            invisible="not cap_warning_sent"/>
-                                        <field name="cap_exhausted" readonly="1"
-                                            invisible="not cap_exhausted"
-                                            widget="boolean_toggle"/>
-                                    </group>
+<!--
+                        <page string="Sessions" name="sessions">
+                            <field name="session_ids">
+                                <list>
+                                    <field name="name"/>
+                                    <field name="status"/>
+                                    <field name="token_input" sum="1"/>
+                                    <field name="token_output" sum="1"/>
+                                    <field name="write_date"/>
+                                </list>
+                            </field>
+                        </page>
+-->
+
+                        <page string="Åtkomst" name="access">
+                            <group>
+                                <group string="Användare &amp; grupper">
+                                    <field name="group_ids" widget="many2many_tags"/>
+                                    <field name="user_id"/>
+                                    <field name="company_id"/>
                                 </group>
                             </group>
                         </page>
@@ -436,3 +418,4 @@
         </field>
     </record>
 </odoo>
+

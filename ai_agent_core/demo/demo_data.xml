@@ -117,9 +117,9 @@ Nar en ny order skapas eller en order andras, granskar du den och agerar:
         <field name="init_type">watch</field>
         <field name="enabled">True</field>
         <field name="sequence">10</field>
-        <field name="watch_model_id" ref="sale.model_sale_order"/>
-        <field name="watch_trigger">create_or_write</field>
-        <field name="watch_domain">[('state', '=', 'sale')]</field>
+        <field name="watch_model_id" ref="base.model_res_partner"/>
+        <field name="watch_trigger">on_create_or_write</field>
+        <field name="watch_domain">[('active', '=', True)]</field>
     </record>
 
     <record id="demo_order_watch_init_web_ui" model="ai.coworker.init_type">
