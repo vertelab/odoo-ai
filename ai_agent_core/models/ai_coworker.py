@@ -797,7 +797,7 @@ class AICoworker(models.Model):
         compute='_compute_init_type_fields', inverse='_inverse_init_type_fields',
         store=False, help='Vilken händelse väcker medarbetaren.')
     watch_trg_selection_field_id = fields.Many2one(
-        'ir.model.fields', string='Trigger Field',
+        'ir.model.fields.selection', string='Trigger Field',
         compute='_compute_init_type_fields', inverse='_inverse_init_type_fields',
         store=False, help='Selection-fält för on_state_set/on_priority_set.')
     watch_trg_field_ref_model_name = fields.Char(
@@ -818,9 +818,9 @@ class AICoworker(models.Model):
         store=False)
     watch_trg_date_range_type = fields.Selection([
         ('minutes', 'Minutes'),
-        ('hours', 'Hours'),
-        ('days', 'Days'),
-        ('months', 'Months'),
+        ('hour', 'Hours'),
+        ('day', 'Days'),
+        ('month', 'Months'),
     ], string='Delay type',
         compute='_compute_init_type_fields', inverse='_inverse_init_type_fields',
         store=False)
