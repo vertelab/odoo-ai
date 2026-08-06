@@ -134,11 +134,7 @@ class AICoworkerSession(models.Model):
 
         Mailgateway anropar detta när mail anländer till aliaset
         (alias@företagets-domän). alias_defaults sätter coworker_id
-        (= ai_agent). Dispatcher baserat på mail-init:ens mail_action:
-        - reply: kör medarbetaren på body (ev. med dröjsmål)
-        - create_record: skapar/uppdaterar målmodellen
-        - invoice_ai: leverantörsfaktura-flöde (partner + OCR + account.move)
-        Svaret postas på sessionstråden.
+        (= ai_agent). Skapar sessionen och delegerar till _dispatch_mail.
         """
         defaults = dict(custom_values or {})
         # Stödjer både nytt (coworker_id) och gammalt (ai_coworker_id) alias-default
@@ -146,13 +142,23 @@ class AICoworkerSession(models.Model):
                        or defaults.get('ai_coworker_id'))
         coworker = self.env['ai.coworker'].browse(coworker_id)
         subject = msg_dict.get('subject') or 'Inkommande mail'
-        body = msg_dict.get('body') or ''
         # Mailgateway förväntar sig att message_new skapar recordet
         session = self.with_context(mail_create_nosubscribe=True).create(defaults)
         if not coworker:
             session.name = subject
             return session
+        if subject:
+            session.name = subject[:80]
+        return session._dispatch_mail(coworker, msg_dict)
 
+    def _dispatch_mail(self, coworker, msg_dict):
+        """Dispatch ett mail till rätt mail_action och posta svaret.
+
+        Anropas av message_new (mailgateway) och mail-test-wizard:en (efter
+        att bilagor lagts som minnen på sessionen).
+        """
+        subject = msg_dict.get('subject') or ''
+        body = msg_dict.get('body') or ''
         mail_its = coworker.init_type_ids.filtered(
             lambda it: it.init_type == 'mail' and it.enabled)
         mail_it = (mail_its.filtered(lambda it: it.mail_action != 'reply')[:1]
@@ -162,40 +168,40 @@ class AICoworkerSession(models.Model):
 
         try:
             if action in ('invoice_ai', 'process'):
-                reply_text = session._process_mail_generic(
+                reply_text = self._process_mail_generic(
                     coworker, msg_dict)
             elif action == 'create_record':
-                reply_text = session._process_create_record(
+                reply_text = self._process_create_record(
                     coworker, msg_dict, mail_it)
             else:
                 prompt = f"{subject}\n\n{body}".strip()
                 reply = coworker.with_context(
                     _ai_context_model='ai.coworker.session',
-                    _ai_context_id=session.id,
+                    _ai_context_id=self.id,
                     _ai_auto_approve=True).run(prompt, session=session)
                 reply_text = reply or 'Klart — inget svar genererades.'
 
             if delay and delay > 0:
-                session.pending_reply = reply_text
-                session.reply_at = fields.Datetime.now() + timedelta(
+                self.pending_reply = reply_text
+                self.reply_at = fields.Datetime.now() + timedelta(
                     minutes=delay)
                 _logger.info('Mail-svar fördröjt %s min för session %s',
-                             delay, session.id)
+                             delay, self.id)
             else:
-                session.message_post(
+                self.message_post(
                     body=reply_text,
                     subtype_xmlid='mail.mt_comment',
                     message_type='comment',
                 )
         except Exception as e:
             _logger.warning('mail-bearbetning misslyckades för session %s: %s',
-                            session.id, e)
-            session.message_post(
+                            self.id, e)
+            self.message_post(
                 body=f'Fel vid bearbetning av mailet: {e}',
                 subtype_xmlid='mail.mt_comment',
                 message_type='comment',
             )
-        return session
+        return self
 
     def _post_pending_reply(self):
         """Posta fördröjda mail-svar (anropas av cron). Idempotent."""
@@ -298,18 +304,43 @@ class AICoworkerSession(models.Model):
         return email, name
 
     def _resolve_mail_partner(self, msg_dict):
-        """Hitta res.partner från avsändaren (deterministiskt, via email).
+        """Hitta/skapa res.partner från avsändaren (inbyggd, robust).
 
-        Hittas ingen returneras False — LLM:en skapar partnern via
-        skill:en 'Mail: Hitta/skapa res.partner' under körningen.
+        1. Email-sökning (email / email_normalized)
+        2. Namn-sökning (exakt, sedan ilike — företagsnamn)
+        3. Deterministisk skapelse (is_company=True, leverantörs-mail)
+
+        Används av mail-flödet; LLM:en behöver inte skapa partnern.
         """
-        email, _name = self._sender_from_msg(msg_dict)
-        if not email:
-            return self.env['res.partner']
-        return self.env['res.partner'].search(
-            ['|', ('email', '=', email),
-             ('email_normalized', '=', email.lower())],
-            limit=1)
+        email, name = self._sender_from_msg(msg_dict)
+        partner = self.env['res.partner']
+        if email:
+            partner = self.env['res.partner'].search(
+                ['|', ('email', '=', email),
+                 ('email_normalized', '=', email.lower())],
+                limit=1)
+        if not partner and name:
+            partner = self.env['res.partner'].search(
+                [('name', '=', name)], limit=1)
+            if not partner:
+                partner = self.env['res.partner'].search(
+                    [('name', 'ilike', name)], limit=1)
+        if not partner:
+            partner = self.env['res.partner'].create({
+                'name': name or (email.split('@')[0]
+                                 if email else 'Okänd avsändare'),
+                'email': email or False,
+                'is_company': True,
+            })
+            _logger.info('Skapade res.partner %s (%s) från mail-avsändare',
+                         partner.id, email or name)
+        elif partner.email != email and email:
+            # Uppdatera email om den saknades/förändrats
+            try:
+                partner.write({'email': email})
+            except Exception:
+                pass
+        return partner
 
     def _attachment_text(self, msg_dict, max_chars=12000):
         """Extrahera text ur mail-bilagor (PDF → text, eller råtext)."""
