@@ -443,15 +443,23 @@ class AICoworker(models.Model):
 
     # Access Control (quest-access-control)
     alias_name = fields.Char('Email Alias',
-        help='Local part of the email address')
+        compute='_compute_init_type_fields', inverse='_inverse_init_type_fields',
+        store=False, help='Local part of the email address — synkas med mail-init:en')
     alias_display = fields.Char('Mailadress', compute='_compute_alias_display',
-        store=False, help='Full mailadress: alias@företagets-domän')
+        store=False, help='Full mailadress: alias@företagets-mail-domän')
 
     @api.depends('alias_name')
     def _compute_alias_display(self):
-        domain = (self.env['ir.config_parameter'].sudo().get_param(
-            'mail.catchall.domain')
-            or self.env.company.website or '')
+        # Företagets MAIL-domän — inte webbadressen.
+        # Prioritet: mail.catchall.domain → alias_domain_name → domänen i
+        # företagets email (info@example.com → example.com).
+        company = self.env.company
+        domain = (
+            self.env['ir.config_parameter'].sudo().get_param(
+                'mail.catchall.domain')
+            or company.alias_domain_name
+            or (company.email or '').split('@')[-1] or ''
+        )
         for rec in self:
             rec.alias_display = (
                 f'{rec.alias_name}@{domain}'
@@ -957,6 +965,7 @@ class AICoworker(models.Model):
                  'init_type_ids.init_type', 'init_type_ids.watch_model_id',
                  'init_type_ids.watch_trigger', 'init_type_ids.watch_domain',
                  'init_type_ids.base_automation_id', 'init_type_ids.alias_contact',
+                 'init_type_ids.alias_name', 'init_type_ids.alias_id.alias_name',
                  'init_type_ids.rate_limit_rpm', 'init_type_ids.rate_limit_tpm',
                  'init_type_ids.show_in_chat', 'init_type_ids.cron_id',
                  'init_type_ids.server_action_id',
@@ -1016,6 +1025,12 @@ class AICoworker(models.Model):
                                                if sa_any else False)
             mail = rec._get_active_init('mail')
             rec.alias_contact = mail.alias_contact if mail else 'everyone'
+            rec.alias_name = False
+            if mail:
+                rec.alias_name = (mail.alias_name
+                                  or (mail.alias_id.alias_name
+                                      if mail.alias_id else False)
+                                  or False)
             oa = rec._get_active_init('openai_api')
             rec.rate_limit_rpm = oa.rate_limit_rpm if oa else 30
             rec.rate_limit_tpm = oa.rate_limit_tpm if oa else 100000
