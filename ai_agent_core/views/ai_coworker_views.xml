@@ -287,7 +287,6 @@
                             <field name="server_action_id" invisible="not init_server_action" string="Server Action"/>
                             <field name="server_action_use_wizard" invisible="not init_server_action" string="Visa prompt-wizard"/>
                             <!-- OpenAI API -->
-                            <field name="api_key_attachment_id" invisible="not init_openai_api" string="API-nyckel (bilaga)"/>
                             <field name="rate_limit_rpm" invisible="not init_openai_api" string="Rate limit (req/min)"/>
                             <field name="rate_limit_tpm" invisible="not init_openai_api" string="Rate limit (tok/min)"/>
                             <!-- Powerbox -->

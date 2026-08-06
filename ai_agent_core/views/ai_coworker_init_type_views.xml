@@ -70,7 +70,6 @@
                 </group>
                 <group string="API Settings"
                        invisible="init_type!='openai_api'">
-                    <field name="api_key_attachment_id"/>
                     <field name="rate_limit_rpm"/>
                     <field name="rate_limit_tpm"/>
                 </group>

@@ -1782,51 +1782,24 @@ class AIOpenAIAPI(http.Controller):
     to interact with Odoo quests.
     """
 
-    @http.route('/ai/v1/_refresh_token', type='http', auth='user',
-                methods=['POST'], csrf=False, sitemap=False)
-    def refresh_gateway_token(self, **kw):
-        """Admin endpoint: generate new gateway token, redirect back to settings."""
-        import secrets
-        company = request.env.company.sudo()
-        company.write({'ai_gateway_token': secrets.token_hex(32)})
-        return request.redirect('/web#action=%s&model=res.config.settings' % (
-            request.env.ref('ai_agent_core.res_config_settings_view_form').id))
-
-    def _check_api_key(self, coworker=None):
-        """Validate API key from Authorization header — multi-company.
-
-        1. Gateway token — söker ALLA bolag. Match = rätt företag + dess coworkers.
-        2. Global secret (backward compat).
-        3. Per-coworker key.
+    def _check_api_key(self):
+        """Validate API key from Authorization header using Odoo's built-in
+        res.users.apikeys. Maps the key to a user and sets request.uid
+        so the AI runs with that user's permissions.
         """
         auth = request.httprequest.headers.get('Authorization', '')
         if not auth.startswith('Bearer '):
             return None
         key = auth[7:]
 
-        # 1. Gateway token — multi-company: sök alla bolag efter matchande token
-        company = request.env['res.company'].sudo().search(
-            [('ai_gateway_token', '=', key)], limit=1)
-        if company:
-            # Sätt rätt företag i kontexten så att list_models etc filtrerar rätt
-            request.env.company = company
-            return True
-
-        # 2. Global secret (backward compat)
-        if key == _get_callback_secret():
-            return True
-
-        # 3. Per-coworker key
-        if coworker:
-            oai_init = coworker.init_type_ids.filtered(
-                lambda it: it.init_type == 'openai_api' and it.enabled
-            )
-            if oai_init and oai_init[0].api_key_attachment_id:
-                stored = base64.b64decode(
-                    oai_init[0].api_key_attachment_id.datas or b''
-                ).decode('utf-8', errors='ignore').strip()
-                if key == stored:
-                    return True
+        try:
+            user_id = request.env['res.users.apikeys'].sudo()._check_credentials(
+                scope='rpc', key=key)
+            if user_id:
+                request.update_env(user=user_id)
+                return request.env.user
+        except Exception:
+            pass
 
         return None
 
@@ -1920,8 +1893,8 @@ class AIOpenAIAPI(http.Controller):
                 'type': 'invalid_request_error'
             }}), status=403, content_type='application/json')
 
-        # Auth: global secret first, then per-coworker key
-        if not self._check_api_key(coworker=quest):
+        # Auth: validate user API key
+        if not self._check_api_key():
             return Response(json.dumps({'error': {'message': 'Unauthorized', 'type': 'authentication_error'}}),
                           status=401, content_type='application/json')
 

@@ -57,30 +57,33 @@ class AIOpenAPIController(http.Controller):
 
         Supports both streaming and non-streaming responses.
         """
-        # Auth
+        # Auth — validate user API key and set request user
         auth_header = request.httprequest.headers.get('Authorization', '')
         if not auth_header.startswith('Bearer '):
             return self._error(401, "Invalid API key")
 
         api_key = auth_header[7:]
+        try:
+            user_id = request.env['res.users.apikeys'].sudo()._check_credentials(
+                scope='rpc', key=api_key)
+            if user_id:
+                request.update_env(user=user_id)
+            else:
+                return self._error(401, "Invalid API key")
+        except Exception:
+            return self._error(401, "Invalid API key")
+
+        # Find coworker
         coworker = request.env['ai.coworker'].sudo().browse(coworker_id)
         if not coworker.exists():
             return self._error(404, "Coworker not found")
 
-        # Find openai_api init_type and validate key
+        # Verify coworker has openai_api enabled
         oai_init = coworker.init_type_ids.filtered(
             lambda it: it.init_type == 'openai_api' and it.enabled
         )
         if not oai_init:
             return self._error(404, "OpenAI API not configured for this coworker")
-
-        # Validate API key from attachment
-        if oai_init[0].api_key_attachment_id:
-            stored_key = base64.b64decode(
-                oai_init[0].api_key_attachment_id.datas or b''
-            ).decode('utf-8', errors='ignore').strip()
-            if api_key != stored_key:
-                return self._error(401, "Invalid API key")
 
         # Parse request body
         try:
