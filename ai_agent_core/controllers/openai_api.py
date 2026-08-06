@@ -73,13 +73,15 @@ class AIOpenAPIController(http.Controller):
         except Exception:
             return self._error(401, "Invalid API key")
 
-        # Find coworker
-        coworker = request.env['ai.coworker'].sudo().browse(coworker_id)
+        # Find coworker WITHOUT sudo — request.env.user is the API-authenticated
+        # user (set via request.update_env above). Using .sudo() would discard
+        # the user identity and make _build_injection_prompt() see SUPERUSER.
+        coworker = request.env['ai.coworker'].browse(coworker_id)
         if not coworker.exists():
             return self._error(404, "Coworker not found")
 
-        # Verify coworker has openai_api enabled
-        oai_init = coworker.init_type_ids.filtered(
+        # Verify coworker has openai_api enabled (sudo for init_type_ids read access)
+        oai_init = coworker.sudo().init_type_ids.filtered(
             lambda it: it.init_type == 'openai_api' and it.enabled
         )
         if not oai_init:
@@ -126,24 +128,39 @@ class AIOpenAPIController(http.Controller):
         # Build prompt from messages
         prompt = self._messages_to_prompt(messages)
 
+        # Build system prompt with user identity and memory injection
+        # (same pattern as stream.py — agent-memory-governance 3.x).
+        # Uses request.env.user (the API-authenticated user, not SUPERUSER)
+        # so the coworker knows who it's talking to.
+        system_prompt = coworker.description or ''
+        try:
+            injection = coworker._build_injection_prompt(
+                user=request.env.user, prompt=prompt)
+            if injection:
+                system_prompt = (system_prompt + '\n\n' + injection).strip()
+        except Exception as e:
+            _logger.warning('OpenAI API injection failed: %s', e)
+
         if stream:
             return self._handle_stream(
-                coworker, prompt, model, temperature, max_tokens,
-                tools, estimated_tokens,
+                coworker, prompt, system_prompt, model, temperature,
+                max_tokens, tools, estimated_tokens,
             )
         else:
             return self._handle_sync(
-                coworker, prompt, model, temperature, max_tokens,
-                tools, estimated_tokens,
+                coworker, prompt, system_prompt, model, temperature,
+                max_tokens, tools, estimated_tokens,
             )
 
-    def _handle_sync(self, coworker, prompt, model, temperature,
-                     max_tokens, tools, estimated_tokens):
+    def _handle_sync(self, coworker, prompt, system_prompt, model,
+                     temperature, max_tokens, tools, estimated_tokens):
         """Handle non-streaming request — run AgentLoop and return JSON."""
         try:
-            result = coworker.sudo().run(
+            # Run WITHOUT sudo — coworker.env carries the API-authenticated
+            # user so session.user_id is correct (not SUPERUSER).
+            result = coworker.run(
                 prompt=prompt,
-                system_prompt=coworker.description or '',
+                system_prompt=system_prompt,
             )
 
             response_text = result.text if hasattr(result, 'text') else str(result or '')
@@ -171,17 +188,19 @@ class AIOpenAPIController(http.Controller):
             _logger.error('OpenAI API sync error: %s', e, exc_info=True)
             return self._error(500, str(e))
 
-    def _handle_stream(self, coworker, prompt, model, temperature,
-                       max_tokens, tools, estimated_tokens):
+    def _handle_stream(self, coworker, prompt, system_prompt, model,
+                       temperature, max_tokens, tools, estimated_tokens):
         """Handle streaming request — SSE response."""
         response_id = f'chatcmpl-{coworker.id}-{int(time.time())}'
         created = int(time.time())
 
         def generate():
             try:
-                result = coworker.sudo().run(
+                # Run WITHOUT sudo — coworker.env carries the API-authenticated
+                # user so session.user_id is correct (not SUPERUSER).
+                result = coworker.run(
                     prompt=prompt,
-                    system_prompt=coworker.description or '',
+                    system_prompt=system_prompt,
                 )
                 response_text = result.text if hasattr(result, 'text') else str(result or '')
 
