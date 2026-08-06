@@ -11,6 +11,7 @@ import logging
 
 from odoo import models, fields, api, _
 from odoo.exceptions import UserError
+from odoo import SUPERUSER_ID
 
 _logger = logging.getLogger(__name__)
 
@@ -38,7 +39,11 @@ class AITool(models.Model):
     active = fields.Boolean(default=True)
     description = fields.Text(
         'Description', required=True,
-        help='What this tool does. Shown to the LLM for tool selection.',
+        help=('AI-beskrivning — det kontrakt LLM:en läser vid verktygsval. '
+              'Använd mallen: syfte / när / när inte (peka på rätt verktyg) / '
+              'exempel / output / guardrail. Guardrails är informativa här — '
+              'enforcement sker via risk_level + PermissionEngine, aldrig '
+              'via text.'),
     )
     code = fields.Text(
         'Code', required=False,  # Not required for NATS-executor tools
@@ -65,6 +70,17 @@ class AITool(models.Model):
         default='[]',
         help='What capabilities this tool requires. E.g. ["browser"], ["infra"]. '
              'For future capability-based skill filtering.',
+    )
+
+    # Access-grupper (ai-tool-access-capabilities): vilka Odoo-grupper får
+    # använda verktyget. Tom = obegränsat för alla som når coworkern — HITL
+    # via risk_level gäller oavsett. Moduler skapar nya res.groups i XML.
+    group_ids = fields.Many2many(
+        'res.groups', 'ai_tool_res_group_rel',
+        'tool_id', 'group_id', string='Access Groups',
+        help='Odoo-grupper (res.groups) som får använda detta verktyg. '
+             'Tom = obegränsat; HITL via risk_level gäller ändå. '
+             'Moduler skapar nya grupper i XML vid behov.',
     )
 
     # NATS executor config (when executor="nats")
@@ -117,6 +133,17 @@ class AITool(models.Model):
                         raise UserError(_('Parameters must include "type" field'))
                 except json.JSONDecodeError:
                     raise UserError(_('Parameters must be valid JSON'))
+
+    def _filter_by_access_groups(self, group_ids):
+        """Return only tools accessible to the given Odoo group ids.
+
+        A tool is accessible when its group_ids is empty (unrestricted) or
+        intersects the caller's groups. An empty basis (no known user)
+        yields only unrestricted tools — group-bound tools are denied.
+        """
+        gids = set(group_ids or [])
+        return self.filtered(
+            lambda t: not t.group_ids or bool(gids & set(t.group_ids.ids)))
 
     def action_test(self):
         """Test the tool by executing it with empty/default parameters."""

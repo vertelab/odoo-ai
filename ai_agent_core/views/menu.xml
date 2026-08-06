@@ -85,6 +85,9 @@
     <menuitem id="menu_ai_tool" name="Tools"
               parent="menu_ai_configuration" sequence="25"
               action="action_ai_tool"/>
+    <menuitem id="menu_ai_tool_capability" name="Capabilities"
+              parent="menu_ai_configuration" sequence="26"
+              action="action_ai_tool_capability"/>
     <menuitem id="menu_ai_session" name="Session"
               parent="menu_ai_configuration" sequence="35"
               groups="ai_agent_core.group_ai_admin"

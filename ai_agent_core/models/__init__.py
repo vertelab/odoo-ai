@@ -8,6 +8,7 @@ from . import ai_agent
 from . import ai_session
 from . import ai_memory
 from . import ai_tool
+from . import ai_tool_capability
 from . import ai_coworker_skill
 from . import ai_identity
 from . import ai_skill
