@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Seeda ai.tool-poster för alla inbyggda verktyg (explicit-agent-tools).
+         Körs vid BÅDE init och update (utanför noupdate-block) — idempotent
+         via _ensure_builtin_tool_records() (namnbaserad, skyddar
+         bridge-poster). -->
+    <function model="ai.tool" name="_ensure_builtin_tool_records"
+              eval="[obj()]"/>
+</odoo>

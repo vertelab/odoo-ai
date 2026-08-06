@@ -278,6 +278,12 @@
                         <setting id="agent_default_identity" title="Default Identity">
                             <field name="ai_agent_default_identity_id"/>
                         </setting>
+                        <setting id="agent_default_tools"
+                                 title="Default Tools (nya agenter)"
+                                 help="Vilka verktyg nya agenter får när de skapas utan explicita verktyg. Builtin-verktyg (describe_model, odoo_search m.fl.) syns här efter moduluppdatering.">
+                            <field name="default_tool_ids" widget="many2many_tags"
+                                   options="{'no_create_edit': True}"/>
+                        </setting>
                     </block>
 
                     <!-- ════════════════════════════════════════════

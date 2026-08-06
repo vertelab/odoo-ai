@@ -119,6 +119,28 @@ class ResConfigSettings(models.TransientModel):
         help='Default identity template for new agents.')
 
     # ─────────────────────────────────────────────
+    # Default Tools (explicit-agent-tools)
+    # ─────────────────────────────────────────────
+    # M2M → ai.tool, widget many2many_tags i AI Orkestrering. Persisteras som
+    # kommaseparerade verktygsnamn i ir.config_parameter (config_parameter
+    # stödjer bara skalärer). Default = de generiska Odoo-verktygen.
+    DEFAULT_AGENT_TOOL_NAMES = [
+        'describe_model',
+        'odoo_search',
+        'odoo_create',
+        'odoo_call_method',
+        'odoo_write',
+        'odoo_unlink',
+        'okf_search',
+    ]
+
+    default_tool_ids = fields.Many2many(
+        'ai.tool', string='Default Tools (nya agenter)',
+        help='Vilka verktyg nya agenter får som default när de skapas utan '
+             'explicita verktyg. Builtin-verktyg syns här efter seeding.',
+    )
+
+    # ─────────────────────────────────────────────
     # Odoo Mind
     # ─────────────────────────────────────────────
     odoomind_sync_batch_size = fields.Integer(
@@ -339,6 +361,16 @@ class ResConfigSettings(models.TransientModel):
         res['heartbeat_interval'] = int(get_param(
             'ai_agent_core.heartbeat_interval', '5'))
 
+        # Default Tools (explicit-agent-tools): kommaseparerade namn i
+        # ir.config_parameter → M2M-värde. Tom parameter → default-uppsättningen.
+        tool_param = get_param('ai_agent_core.default_tool_ids', '')
+        tool_names = [n.strip() for n in tool_param.split(',') if n.strip()]
+        if not tool_names:
+            tool_names = list(self.DEFAULT_AGENT_TOOL_NAMES)
+        tool_ids = self.env['ai.tool'].search(
+            [('name', 'in', tool_names)]).ids
+        res['default_tool_ids'] = [(6, 0, tool_ids)]
+
         return res
 
     def set_values(self):
@@ -375,6 +407,10 @@ class ResConfigSettings(models.TransientModel):
                   str(self.heartbeat_enabled))
         set_param('ai_agent_core.heartbeat_interval',
                   str(self.heartbeat_interval))
+
+        # Default Tools (explicit-agent-tools)
+        set_param('ai_agent_core.default_tool_ids',
+                  ','.join(self.default_tool_ids.mapped('name')))
 
         # Spara per-cron rader → ir.cron (task 7.15)
         for line in self.bg_cron_line_ids:

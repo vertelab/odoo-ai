@@ -37,6 +37,18 @@ class AITool(models.Model):
 
     name = fields.Char('Tool Name', required=True)
     active = fields.Boolean(default=True)
+
+    # Builtin-verktyg (explicit-agent-tools): när satt är posten den synliga
+    # representationen av ett inbyggt verktyg från core/tools.py
+    # (builtin_tools()). Konvertering till runtime-verktyg hämtar den riktiga
+    # Python-handlern — ingen sandbox-kod. Sätts idempotent av
+    # _ensure_builtin_tool_records() vid varje moduluppdatering.
+    builtin_name = fields.Char(
+        'Builtin Name', readonly=True,
+        help='Namnet på det inbyggda verktyget (core/tools.py) som denna post '
+             'representerar. Tomt för custom-verktyg med egen kod. När satt '
+             'används den riktiga handlern vid körning.',
+    )
     description = fields.Text(
         'Description', required=True,
         help=('AI-beskrivning — det kontrakt LLM:en läser vid verktygsval. '
@@ -120,6 +132,49 @@ class AITool(models.Model):
     _sql_constraints = [
         ('name_unique', 'unique(name)', 'Tool name must be unique!'),
     ]
+
+    @api.model
+    def _ensure_builtin_tool_records(self, records=None):
+        """Seeda ai.tool-poster för alla inbyggda verktyg (idempotent).
+
+        Körs via data-XML (<function>) vid varje modul-init OCH -update.
+        - Saknas post → skapas med builtin_name + metadata från core.
+        - Finns post (t.ex. bridge-post browser_navigate) → sätts bara
+          builtin_name om den saknas; befintlig konfiguration skrivs inte över.
+        - Ingen code sätts — runtime-resolution använder den riktiga handlern.
+        """
+        from ..core.tools import builtin_tools
+        _logger.info('Seeding builtin tool records (explicit-agent-tools)')
+        existing = {t.name: t for t in self.search([])}
+        created, marked = 0, 0
+        for bt in builtin_tools():
+            rec = existing.get(bt.name)
+            if not rec:
+                try:
+                    # Savepoint isolerar create → en eventuell UniqueViolation
+                    # (konkurrerande modulreload) dödar inte transaktionen.
+                    with self.env.cr.savepoint():
+                        self.create({
+                            'name': bt.name,
+                            'builtin_name': bt.name,
+                            'description': bt.description or bt.name,
+                            'parameters': json.dumps(bt.parameters),
+                            'risk_level': bt.risk_level or 'read_only',
+                            'executor': bt.executor or 'local',
+                            'capabilities': json.dumps(bt.capabilities or []),
+                            'active': True,
+                        })
+                    created += 1
+                except Exception:
+                    # Konkurrerande seedning har skapat posten — ok.
+                    if self.search_count([('name', '=', bt.name)]):
+                        continue
+                    raise
+            elif not rec.builtin_name:
+                rec.write({'builtin_name': bt.name})
+                marked += 1
+        _logger.info('Builtin tool seed: %d skapade, %d markerade', created, marked)
+        return True
 
     @api.constrains('parameters')
     def _check_parameters_json(self):
@@ -245,9 +300,21 @@ class AITool(models.Model):
 
         Returns a Tool dataclass instance compatible with the core loop.
         For NATS-executor tools, handler is None (execution via NATS).
+        For builtin tools (builtin_name set), returns the real builtin Tool
+        with its Python handler (explicit-agent-tools).
         """
         from ..core.tools import Tool
         import json
+
+        # Builtin-verktyg: hämta den riktiga handlern från core.
+        if self.builtin_name:
+            from ..core.tools import builtin_tools
+            for bt in builtin_tools():
+                if bt.name == self.builtin_name:
+                    return bt
+            _logger.warning(
+                'Builtin tool %s not found in builtin_tools() — faller '
+                'tillbaka på custom-konvertering', self.builtin_name)
 
         params = json.loads(self.parameters) if self.parameters else {
             "type": "object", "properties": {}, "required": []

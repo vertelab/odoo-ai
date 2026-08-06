@@ -451,6 +451,7 @@ class AICoworker(models.Model):
     mail_action = fields.Selection([
         ('reply', 'Svara på mailet'),
         ('create_record', 'Skapa/uppdatera record'),
+        ('process', 'Processera med skills'),
         ('invoice_ai', 'Leverantörsfaktura (AI)'),
     ], string='Mail-åtgärd', default='reply',
         compute='_compute_init_type_fields', inverse='_inverse_init_type_fields',
@@ -548,6 +549,11 @@ class AICoworker(models.Model):
                 'body': '<p>Hej! Här är en testfaktura från Acme Bygg AB, '
                         'totalt 12 400 kr inkl moms.</p>',
                 'from': 'billing@acme-bygg.se',
+            },
+            'process': {
+                'subject': 'TEST: Processa detta',
+                'body': '<p>Hej! Processera detta mail enligt dina skills.</p>',
+                'from': 'admin@example.com',
             },
         }
         sample_msg = sample.get(mail_it.mail_action or 'reply', sample['reply'])
@@ -3493,6 +3499,16 @@ class AICoworker(models.Model):
                 f'### {s.name}\n{s.recipe_text or s.description or ""}'
                 for s in force_agent.skill_ids)
             system_prompt = (system_prompt or '') + skill_ctx
+        # Ingen force_agent (generisk körning — mail, webhook, chat):
+        # aggregera medarbetarens egna + teamets agenters skills så
+        # kapaciteter lever som skills/instruktioner, INTE som sub-agenter.
+        if not force_agent:
+            skill_recs = self.skill_ids | self.agent_ids.agent_id.skill_ids
+            if skill_recs:
+                skill_ctx = '\n\n## Skills (följ dessa vid behov)\n' + '\n'.join(
+                    f'### {s.name}\n{s.recipe_text or s.description or ""}'
+                    for s in skill_recs)
+                system_prompt = (system_prompt or '') + skill_ctx
 
         # Create session for tracking (reuse provided session when given)
         session = session or self.env['ai.coworker.session'].create({
