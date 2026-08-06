@@ -9,6 +9,7 @@ _logger = logging.getLogger(__name__)
 
 class AICoworkerSession(models.Model):
     _name = 'ai.coworker.session'
+    _inherit = ['mail.thread']
     _description = 'AI Quest Session'
     _order = 'create_date desc'
 
@@ -118,6 +119,47 @@ class AICoworkerSession(models.Model):
         self.finish_reason = 'interrupted'
         self.end_date = fields.Datetime.now()
         _logger.info('Session %s marked interrupted (resumable)', self.name)
+
+    @api.model
+    def message_new(self, msg_dict, custom_values=None):
+        """Inkommande mail → skapa session + kör medarbetaren på mailinnehållet.
+
+        Mailgateway anropar detta när mail anländer till aliaset
+        (alias@företagets-domän). alias_defaults sätter ai_coworker_id
+        (= ai_agent). Svaret postas som meddelande på sessionstråden.
+        """
+        defaults = dict(custom_values or {})
+        # Stödjer både nytt (coworker_id) och gammalt (ai_coworker_id) alias-default
+        coworker_id = (defaults.get('coworker_id')
+                       or defaults.get('ai_coworker_id'))
+        coworker = self.env['ai.coworker'].browse(coworker_id)
+        subject = msg_dict.get('subject') or 'Inkommande mail'
+        body = msg_dict.get('body') or ''
+        # Mailgateway förväntar sig att message_new skapar recordet
+        session = self.with_context(mail_create_nosubscribe=True).create(defaults)
+        if not coworker:
+            session.name = subject
+            return session
+        # Kör medarbetaren på mailinnehållet (återanvänd sessionen)
+        try:
+            prompt = f"{subject}\n\n{body}".strip()
+            reply = coworker.with_context(
+                _ai_context_model='ai.coworker.session',
+                _ai_context_id=session.id).run(prompt, session=session)
+            session.message_post(
+                body=reply or 'Klart — inget svar genererades.',
+                subtype_xmlid='mail.mt_comment',
+                message_type='comment',
+            )
+        except Exception as e:
+            _logger.warning('mail-bearbetning misslyckades för session %s: %s',
+                            session.id, e)
+            session.message_post(
+                body=f'Fel vid bearbetning av mailet: {e}',
+                subtype_xmlid='mail.mt_comment',
+                message_type='comment',
+            )
+        return session
 
     def resume_session(self):
         """Create a new session that continues from this interrupted one.
