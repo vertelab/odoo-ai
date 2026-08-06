@@ -475,17 +475,21 @@ class AICoworker(models.Model):
 
     @api.depends('alias_name')
     def _compute_alias_display(self):
-        # Företagets MAIL-domän — inte webbadressen.
-        # Prioritet: mail.catchall.domain → alias_domain_name → domänen i
-        # företagets email (info@example.com → example.com).
-        company = self.env.company
-        domain = (
-            self.env['ir.config_parameter'].sudo().get_param(
-                'mail.catchall.domain')
-            or company.alias_domain_name
-            or (company.email or '').split('@')[-1] or ''
-        )
+        # Företagets MAIL-domän — i första hand alias-domänen på själva
+        # mail.alias, sedan mail.catchall.domain → company.alias_domain_name
+        # → domänen i företagets email (info@example.com → example.com).
         for rec in self:
+            mail = rec.init_type_ids.filtered(
+                lambda it: it.init_type == 'mail')[:1]
+            alias = mail.alias_id if mail else False
+            company = rec.company_id or self.env.company
+            domain = (
+                (alias.alias_domain if alias else False)
+                or self.env['ir.config_parameter'].sudo().get_param(
+                    'mail.catchall.domain')
+                or company.alias_domain_name
+                or (company.email or '').split('@')[-1] or ''
+            )
             rec.alias_display = (
                 f'{rec.alias_name}@{domain}'
                 if rec.alias_name and domain else rec.alias_name or False)
@@ -512,6 +516,58 @@ class AICoworker(models.Model):
             'view_mode': 'form',
             'res_id': mail.alias_id.id,
             'target': 'new',
+        }
+
+    def action_test_mail_flow(self):
+        """Simulera ett inkommande mail för att validera mail-förmågorna.
+
+        Kör samma väg som mailgateway (message_new → mail_action-dispatch)
+        med ett exempel-mail. Öppnar den skapade sessionen.
+        """
+        self.ensure_one()
+        mail_it = self.init_type_ids.filtered(
+            lambda it: it.init_type == 'mail' and it.enabled)[:1]
+        if not mail_it or not mail_it.alias_id:
+            raise UserError(
+                'Mail-initieringen saknar aktiv alias. Sätt på Mail i '
+                'Initiering och spara.')
+        sample = {
+            'reply': {
+                'subject': 'TEST: Hej assistenten',
+                'body': '<p>Hej! Kan du sammanfatta CRM-högen?</p>',
+                'from': 'test@example.com',
+            },
+            'create_record': {
+                'subject': 'TEST: Skapa kund',
+                'body': '<p>Hej! Vänligen skapa en ny partner: '
+                        'Acme Bygg AB, acme@bygg.se.</p>',
+                'from': 'admin@example.com',
+            },
+            'invoice_ai': {
+                'subject': 'TEST: Faktura 2026-001',
+                'body': '<p>Hej! Här är en testfaktura från Acme Bygg AB, '
+                        'totalt 12 400 kr inkl moms.</p>',
+                'from': 'billing@acme-bygg.se',
+            },
+        }
+        sample_msg = sample.get(mail_it.mail_action or 'reply', sample['reply'])
+        msg = {
+            'subject': sample_msg['subject'],
+            'body': sample_msg['body'],
+            'from': sample_msg['from'],
+            'attachment_ids': [],
+        }
+        session = self.env['ai.coworker.session'].with_context(
+            mail_create_nosubscribe=True).message_new(
+                msg, {'coworker_id': self.id})
+        return {
+            'type': 'ir.actions.client_notification',
+            'title': 'Mail-test klart',
+            'message': (
+                f'Simulerat mail → session {session.id} ({self.name}).\n'
+                'Öppna Odoo Mind → Sessions för att se resultatet.'
+            ),
+            'sticky': False,
         }
     group_ids = fields.Many2many('res.groups', 'ai_coworker_group_rel', 'coworker_id', 'group_id', string='Access Groups')
 

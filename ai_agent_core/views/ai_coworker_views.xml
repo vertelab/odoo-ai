@@ -233,6 +233,9 @@
                                      <button name="action_open_mail_alias" type="object"
                                          string=" → Öppna mail-alias" icon="fa-envelope-o"
                                          invisible="not init_mail" class="btn-link p-0"/>
+                                     <button name="action_test_mail_flow" type="object"
+                                         string=" → Testa mail-flödet" icon="fa-paper-plane-o"
+                                         invisible="not init_mail" class="btn-link p-0"/>
                                      <field name="mail_action" invisible="not init_mail" string=" → Mail-åtgärd"/>
                                      <field name="mail_reply_delay" invisible="not init_mail" string=" → Svarsdröjsmål (min)"/>
                                      <field name="mail_target_model_id" invisible="not init_mail or mail_action != 'create_record'" string=" → Målmodell"/>
