@@ -447,14 +447,24 @@ vad som sker när ett mail anländer till aliaset (`alias@företagets-mail-domä
 |-------------|-------------|
 | `reply` | Köra medarbetaren på mailinnehållet och posta svaret på sessionstråden. |
 | `create_record` | Skapa/uppdatera ett record i `mail_target_model_id` från mailinnehållet. |
-| `invoice_ai` | Leverantörsfaktura-flöde: hitta/skapa `res.partner` från avsändaren → OCR-läs fakturan (pypdf) → skapa `account.move` (in_invoice) via Fakturaanalys-agenten. |
+| `process` | Generisk: kör medarbetaren med mail + bilaga som kontext — dess **skills** styr beteendet. |
+| `invoice_ai` | Preset = `process` med faktura-kontext (leverantörsfaktura). |
+
+Alla åtgärder (utom `create_record`-målet) är generiska: medarbetaren körs
+EN gång och kapaciteterna lever som **skills** på dess agenter
+(`ai.coworker.agent` → `ai.agent.skill_ids`) — inga agenter-på-agenter.
+För leverantörsfakturor:
+- Skill *Mail: Hitta/skapa res.partner* — avsändaren → `res.partner`
+  (deterministisk email-sökning först, LLM skapar via skill om den saknas)
+- Skill *Mail: Leverantörsfaktura → account.move* — OCR (pypdf) → skapa
+  `account.move` (in_invoice) med odoo_search/odoo_create/odoo_call_method
 
 Övriga inställningar:
 - `mail_reply_delay` (min): fördröjt svar — postas av cronen
   *AI: Posta fördröjda mail-svar* (körs varje minut, `_post_pending_reply`).
 - `mail_find_partner` (invoice_ai): sök/skapa `res.partner` från avsändaren.
-- `mail_invoice_agent_ids` (invoice_ai): agenterna `Mail → Partner` och
-  `Fakturaanalys` (skapa fler via AI Medarbetare → Initiering → Mail).
+- `mail_invoice_agent_ids` (invoice_ai/process): medarbetarens agenter med
+  faktura-skills (`Mail → Partner`, `Fakturaanalys`).
 
 Flödet körs med `_ai_auto_approve`-kontext (AUTO-mode) — mailbearbetning är en
 tillitsfull automatisk kontext; `odoo_create`/`odoo_write`/`odoo_call_method`
