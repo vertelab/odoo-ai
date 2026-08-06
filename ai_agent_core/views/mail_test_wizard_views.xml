@@ -6,21 +6,20 @@
         <field name="arch" type="xml">
             <form string="Testa mail-flödet">
                 <header>
-                    <button name="action_run" string="Testa mail-flödet"
-                            type="object" class="btn-primary"
-                            invisible="state != 'input'"/>
                     <button name="action_close" string="Stäng"
                             type="object" invisible="state != 'done'"/>
                 </header>
                 <sheet>
                     <group invisible="state != 'input'">
                         <group string="Mail-test">
-                            <field name="coworker_id"
-                                   options="{'no_create': True}"/>
+                            <field name="coworker_id" invisible="1"/>
                             <field name="eml_file" filename="eml_filename"
                                    widget="binary"
                                    help="Ladda upp en .eml-fil (mail) som startar mail-testflödet. Bilagor i filen läggs som bilagor + minnen på sessionen."/>
                             <field name="eml_filename" invisible="1"/>
+                            <button name="action_run" string="Testa mail-flödet"
+                                    type="object" class="btn-primary"
+                                    invisible="state != 'input'"/>
                         </group>
                     </group>
                     <group invisible="state != 'done'">

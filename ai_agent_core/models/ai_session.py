@@ -67,12 +67,37 @@ class AICoworkerSession(models.Model):
     session_line_ids = fields.One2many(
         'ai.coworker.session.line', 'session_id', string='Messages')
     line_count = fields.Integer('Messages', compute='_compute_line_count')
+    attachment_ids = fields.One2many(
+        'ir.attachment', compute='_compute_attachment_ids',
+        string='Bilagor', store=False)
+    attachment_count = fields.Integer(
+        'Bilagor', compute='_compute_attachment_ids')
     active = fields.Boolean('Active', default=True)
 
     @api.depends('session_line_ids')
     def _compute_line_count(self):
         for r in self:
             r.line_count = len(r.session_line_ids)
+
+    def _compute_attachment_ids(self):
+        for r in self:
+            r.attachment_ids = self.env['ir.attachment'].search([
+                ('res_model', '=', 'ai.coworker.session'),
+                ('res_id', '=', r.id),
+            ])
+            r.attachment_count = len(r.attachment_ids)
+
+    def action_open_attachments(self):
+        """Öppna sessionens bilagor (ir.attachment)."""
+        return {
+            'name': 'Bilagor',
+            'type': 'ir.actions.act_window',
+            'res_model': 'ir.attachment',
+            'view_mode': 'list,form',
+            'target': 'current',
+            'domain': [('res_model', '=', 'ai.coworker.session'),
+                       ('res_id', '=', self.id)],
+        }
 
     def action_get_lines(self):
         return {
