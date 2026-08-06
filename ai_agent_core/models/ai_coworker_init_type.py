@@ -90,9 +90,10 @@ class AICoworkerInitType(models.Model):
     mail_action = fields.Selection([
         ('reply', 'Svara på mailet'),
         ('create_record', 'Skapa/uppdatera record'),
+        ('process', 'Processera med skills'),
         ('invoice_ai', 'Leverantörsfaktura (AI)'),
     ], string='Mail-åtgärd', default='reply',
-        help='Vad som sker när ett mail anländer till aliaset.')
+        help='Vad som sker när ett mail anländer till aliaset. process/invoice_ai '             'kör medarbetaren med mail+bilaga och låter dess skills styra.')
     mail_reply_delay = fields.Integer('Svarsdröjsmål (min)', default=0,
         help='0 = svara direkt. >0 = svaret postas efter dröjsmålet '
              '(körs av cron).')

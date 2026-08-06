@@ -161,8 +161,8 @@ class AICoworkerSession(models.Model):
         delay = mail_it.mail_reply_delay if mail_it else 0
 
         try:
-            if action == 'invoice_ai':
-                reply_text = session._process_invoice_mail(
+            if action in ('invoice_ai', 'process'):
+                reply_text = session._process_mail_generic(
                     coworker, msg_dict, mail_it)
             elif action == 'create_record':
                 reply_text = session._process_create_record(
@@ -239,139 +239,77 @@ class AICoworkerSession(models.Model):
             _ai_context_id=self.id,
             _ai_auto_approve=True).run(prompt, session=self)
 
-    def _process_invoice_mail(self, coworker, msg_dict, mail_it):
-        """Leverantörsfaktura-flöde:
+    def _process_mail_generic(self, coworker, msg_dict, mail_it):
+        """Generiskt mail-flöde (process/invoice_ai) — körs av coworkern själv.
 
-        1. Avsändare → res.partner (sök direkt på email; om det saknas körs
-           Partner-analys-agenten som hittar/skapar).
-        2. OCR: extrahera texten ur faktura-bilagan (PDF/text).
-        3. Faktura-analys-agenten skapar en korrekt account.move
-           (leverantörsfaktura) med odoo_search/odoo_create/odoo_call_method.
+        Kapaciteterna lever som SKILLS på medarbetarens agenter (inte som
+        force-körda sub-agenter) — t.ex.:
+        1. Skill 'Mail: Hitta/skapa res.partner' — avsändaren → partner
+        2. Skill 'Mail: Leverantörsfaktura → account.move' — OCR + skapa move
+        Medarbetaren körs EN gång med mail + bilagetext som kontext.
         """
-        partner = self._resolve_mail_partner(coworker, msg_dict, mail_it)
+        # Deterministisk snabb-sök av partner (sparar ett verktygsanrop);
+        # hittas ingen skapar LLM:en via skill:en.
+        partner = self._resolve_mail_partner(msg_dict)
+
         attach_text = self._attachment_text(msg_dict)
-
-        # Hitta faktura-agenten (den som inte är Partner-analysen — välj
-        # efter namn så M2M-ordningen inte spelar roll).
-        invoice_agent = False
-        if mail_it and mail_it.mail_invoice_agent_ids:
-            invoice_agent = mail_it.mail_invoice_agent_ids.filtered(
-                lambda a: 'faktura' in a.name.lower()
-                or 'invoice' in a.name.lower())[:1]
-
+        email, sender_name = self._sender_from_msg(msg_dict)
         subject = msg_dict.get('subject') or ''
         body = msg_dict.get('body') or ''
         prompt = (
-            'Du är Faktura-analys-agenten. En leverantörsfaktura har kommit in '
-            'via mail. Ditt uppdrag: analysera fakturan och skapa en korrekt '
-            'account.move (leverantörsfaktura / vendor bill).\n\n'
-            f'Avsändare (res.partner): {partner.name if partner else "okänd"} '
-            f'(id={partner.id if partner else "?"}, email='
-            f'{partner.email or "?"})\n'
+            'En leverantörsfaktura har kommit in via mail. Bearbeta den '
+            'enligt dina skills.\n\n'
+            f'Avsändare: {email or "okänd"} '
+            f'({sender_name or "okänt namn"})\n'
+            f'Hittad res.partner: {partner.name if partner else "ingen — "}'
+            f'{"hitta/skapa via din partner-skill" if not partner else ""} '
+            f'(id={partner.id if partner else "?"})\n'
             f'Mailämne: {subject}\n'
             f'Mailtext:\n{body}\n\n'
-            f'Fakturatext (OCR/extraherad):\n{attach_text or "(ingen bilaga)"}\n\n'
-            'STEG:\n'
-            '1. Använd odoo_search för att hitta rätt journal '
-            '(account.journal, type=purchase) och skatte-id:n om det behövs.\n'
-            '2. Använd odoo_create för att skapa account.move med '
-            "move_type='in_invoice', partner_id, ref (fakturanummer), "
-            'invoice_date, invoice_date_due, invoice_line_ids '
-            '(name, quantity, price_unit, tax_ids, account_id).\n'
-            '3. Fyll i så mycket som möjligt från fakturatexten. '
-            'Vid osäkerhet, gissa rimligt och notera det.\n'
-            '4. Använd odoo_call_method (action_post) OM allt ser korrekt ut — '
-            'annars lämna i draft.\n\n'
+            f'Fakturatext (OCR/extraherad bilaga):\n'
+            f'{attach_text or "(ingen bilaga — analysera mailtexten)"}\n\n'
+            'STEG (följ dina skills):\n'
+            '1. Hitta/skapa res.partner för avsändaren (odoo_search/odoo_create).\n'
+            '2. Skapa account.move (move_type=in_invoice) med rätt partner, '
+            'journal (type=purchase), ref (fakturanummer), datum, skatter och '
+            'rader från fakturatexten.\n'
+            '3. Använd odoo_call_method (action_post) OM allt ser korrekt ut '
+            '— annars lämna i draft.\n'
             'Svara kort: vad du skapade, account.move-id:t och beloppet.'
         )
-
-        if invoice_agent:
-            reply = coworker.with_context(
-                _ai_context_model='ai.coworker.session',
-                _ai_context_id=self.id,
-                _ai_auto_approve=True).run(
-                    prompt, force_agent=invoice_agent, session=self)
-        else:
-            reply = coworker.with_context(
-                _ai_context_model='ai.coworker.session',
-                _ai_context_id=self.id,
-                _ai_auto_approve=True).run(prompt, session=self)
-
+        reply = coworker.with_context(
+            _ai_context_model='ai.coworker.session',
+            _ai_context_id=self.id,
+            _ai_auto_approve=True).run(prompt, session=self)
         return (
             f'Leverantörsfaktura bearbetad. Avsändare: '
-            f'{partner.name if partner else "okänd"}.\n{reply}'
+            f'{partner.name if partner else sender_name or email or "okänd"}.\n'
+            f'{reply}'
         )
 
-    def _resolve_mail_partner(self, coworker, msg_dict, mail_it):
-        """Hitta/skapa res.partner från avsändaren.
-
-        Sök först direkt på email-adressen (deterministiskt). Om det
-        saknas och mail_find_partner är på, kör Partner-analys-agenten som
-        hittar/skapar — sedan gör vi om direkt-sökningen (agenten har satt
-        email). Fallback: skapa partner deterministiskt från avsändaren.
-        """
-        email = (msg_dict.get('email_from') or msg_dict.get('from') or '')
-        # Extrahera ren email-adress: "Name <a@b.se>" → a@b.se
+    def _sender_from_msg(self, msg_dict):
+        """Extrahera (email, namn) ur From-header: 'Namn <a@b.se>'."""
         import re
-        m = re.search(r'[\w.+-]+@[\w.-]+', email)
-        clean_email = m.group(0) if m else ''
-        sender_name = ''
-        nm = re.match(r'^([^<]+)<', email or '')
-        if nm:
-            sender_name = nm.group(1).strip().strip('"\'')
+        raw = msg_dict.get('email_from') or msg_dict.get('from') or ''
+        m = re.search(r'[\w.+-]+@[\w.-]+', raw)
+        email = m.group(0) if m else ''
+        nm = re.match(r'^([^<]+)<', raw or '')
+        name = nm.group(1).strip().strip('"\'') if nm else ''
+        return email, name
 
-        partner = self.env['res.partner']
-        if clean_email:
-            partner = self.env['res.partner'].search(
-                ['|', ('email', '=', clean_email),
-                 ('email_normalized', '=', clean_email.lower())],
-                limit=1)
-        if not partner and mail_it and mail_it.mail_find_partner:
-            # Kör Partner-analys-agenten (efter namn, inte M2M-ordning)
-            partner_agent = False
-            if mail_it.mail_invoice_agent_ids:
-                partner_agent = mail_it.mail_invoice_agent_ids.filtered(
-                    lambda a: 'partner' in a.name.lower()
-                    or 'mail' in a.name.lower())[:1]
-            if partner_agent:
-                prompt = (
-                    'Du är Partner-analys-agenten. Analysera avsändaren av '
-                    'detta mail och hitta rätt res.partner i Odoo — skapa '
-                    'om den saknas.\n\n'
-                    f'Avsändare: {email or "okänd"}\n'
-                    f'Mailämne: {msg_dict.get("subject") or ""}\n'
-                    f'Mailtext: {(msg_dict.get("body") or "")[:1500]}\n\n'
-                    'STEG:\n'
-                    '1. odoo_search res.partner på email- eller företagsnamn.\n'
-                    '2. Hittas ingen → odoo_create res.partner med name '
-                    '(företagsnamn), email, is_company=True om det ser ut som '
-                    'ett företag.\n'
-                    '3. Svara kort med partner-id:t och namnet.'
-                )
-                try:
-                    coworker.with_context(
-                        _ai_context_model='ai.coworker.session',
-                        _ai_context_id=self.id,
-                        _ai_auto_approve=True).run(
-                            prompt, force_agent=partner_agent, session=self)
-                except Exception as e:
-                    _logger.warning('Partner-agent misslyckades: %s', e)
-                # Re-lookup efter agenten kört (den har satt email)
-                if clean_email:
-                    partner = self.env['res.partner'].search(
-                        ['|', ('email', '=', clean_email),
-                         ('email_normalized', '=', clean_email.lower())],
-                        limit=1)
-        if not partner and clean_email:
-            # Deterministisk fallback
-            partner = self.env['res.partner'].create({
-                'name': sender_name or clean_email.split('@')[0],
-                'email': clean_email,
-                'is_company': True,
-            })
-            _logger.info('Skapade res.partner %s (%s) från mail-avsändare',
-                         partner.id, clean_email)
-        return partner
+    def _resolve_mail_partner(self, msg_dict):
+        """Hitta res.partner från avsändaren (deterministiskt, via email).
+
+        Hittas ingen returneras False — LLM:en skapar partnern via
+        skill:en 'Mail: Hitta/skapa res.partner' under körningen.
+        """
+        email, _name = self._sender_from_msg(msg_dict)
+        if not email:
+            return self.env['res.partner']
+        return self.env['res.partner'].search(
+            ['|', ('email', '=', email),
+             ('email_normalized', '=', email.lower())],
+            limit=1)
 
     def _attachment_text(self, msg_dict, max_chars=12000):
         """Extrahera text ur mail-bilagor (PDF → text, eller råtext)."""

@@ -14,6 +14,8 @@
         <field name="arch" type="xml">
             <list string="AI Tools" editable="bottom">
                 <field name="name"/>
+                <field name="builtin_name" string="Builtin" widget="badge"
+                       optional="show" decoration-info="builtin_name != False"/>
                 <field name="executor"/>
                 <field name="risk_level" widget="badge"/>
                 <field name="group_ids" widget="many2many_tags" string="Access Groups" optional="show"/>
@@ -44,6 +46,7 @@
                         <group>
                             <field name="description"
                                    placeholder="What this tool does (shown to LLM)..."/>
+                            <field name="builtin_name" readonly="1"/>
                             <field name="risk_level"/>
                             <field name="executor"/>
                             <field name="capabilities"

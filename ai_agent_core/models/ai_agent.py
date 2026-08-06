@@ -193,6 +193,47 @@ class AIAgent(models.Model):
             'target': 'current', 'domain': [('id', 'in', quest_ids)],
         }
 
+    @api.model_create_multi
+    def create(self, vals_list):
+        """Skapa agenter — applicera default-verktyg (explicit-agent-tools).
+
+        Om en ny agent skapas utan explicita tool_ids, får den
+        default_tool_ids från Settings → AI Orkestrering (describe_model,
+        odoo_search m.fl.). Befintliga agenter rörs aldrig; agenter med
+        egna verktyg respekteras.
+        """
+        default_names = self._get_default_tool_names()
+        if default_names:
+            default_tools = self.env['ai.tool'].search(
+                [('name', 'in', default_names)])
+            if default_tools:
+                for vals in vals_list:
+                    if 'tool_ids' not in vals:
+                        vals['tool_ids'] = [(6, 0, default_tools.ids)]
+        return super(AIAgent, self).create(vals_list)
+
+    @api.model
+    def _get_default_tool_names(self):
+        """Returnera default-verktygsnamnen från Settings (ir.config_parameter).
+
+        Tom/parameter saknas → DEFAULT_AGENT_TOOL_NAMES från res.config.settings.
+        """
+        param = self.env['ir.config_parameter'].sudo().get_param(
+            'ai_agent_core.default_tool_ids', '')
+        names = [n.strip() for n in param.split(',') if n.strip()]
+        if names:
+            return names
+        # Fallback: samma lista som settings-fältets default.
+        try:
+            from .res_config_settings import ResConfigSettings
+            return list(ResConfigSettings.DEFAULT_AGENT_TOOL_NAMES)
+        except Exception:
+            return [
+                'describe_model', 'odoo_search', 'odoo_create',
+                'odoo_call_method', 'odoo_write', 'odoo_unlink',
+                'okf_search',
+            ]
+
     def write(self, vals):
         res = super(AIAgent, self).write(vals)
         if 'name' in vals and self.partner_id:
