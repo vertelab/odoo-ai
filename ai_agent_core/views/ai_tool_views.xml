@@ -12,7 +12,7 @@
         <field name="name">ai.tool.list</field>
         <field name="model">ai.tool</field>
         <field name="arch" type="xml">
-            <list string="AI Tools" editable="bottom">
+            <list string="AI Tools">
                 <field name="name"/>
                 <field name="builtin_name" string="Builtin" widget="badge"
                        optional="show" decoration-info="builtin_name != False"/>
