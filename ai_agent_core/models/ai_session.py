@@ -163,7 +163,7 @@ class AICoworkerSession(models.Model):
         try:
             if action in ('invoice_ai', 'process'):
                 reply_text = session._process_mail_generic(
-                    coworker, msg_dict, mail_it)
+                    coworker, msg_dict)
             elif action == 'create_record':
                 reply_text = session._process_create_record(
                     coworker, msg_dict, mail_it)
@@ -239,7 +239,7 @@ class AICoworkerSession(models.Model):
             _ai_context_id=self.id,
             _ai_auto_approve=True).run(prompt, session=self)
 
-    def _process_mail_generic(self, coworker, msg_dict, mail_it):
+    def _process_mail_generic(self, coworker, msg_dict):
         """Generiskt mail-flöde (process/invoice_ai) — körs av coworkern själv.
 
         Kapaciteterna lever som SKILLS på medarbetarens agenter (inte som

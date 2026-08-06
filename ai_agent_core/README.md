@@ -463,8 +463,8 @@ För leverantörsfakturor:
 - `mail_reply_delay` (min): fördröjt svar — postas av cronen
   *AI: Posta fördröjda mail-svar* (körs varje minut, `_post_pending_reply`).
 - `mail_find_partner` (invoice_ai): sök/skapa `res.partner` från avsändaren.
-- `mail_invoice_agent_ids` (invoice_ai/process): medarbetarens agenter med
-  faktura-skills (`Mail → Partner`, `Fakturaanalys`).
+- Inga separata agenter — kapaciteterna sitter på medarbetarens egna
+  agenter (Agenter-fliken → `ai.coworker.agent` → `ai.agent.skill_ids`).
 
 Flödet körs med `_ai_auto_approve`-kontext (AUTO-mode) — mailbearbetning är en
 tillitsfull automatisk kontext; `odoo_create`/`odoo_write`/`odoo_call_method`
@@ -489,7 +489,7 @@ gjorda av modulen/konfigurationen; **B** och **C** kräver mailserver/DNS.
    - `allman-assistent@`, `support@`, `faktura@` …
    - `alias_model_id = ai.coworker.session`, `alias_defaults = {coworker_id: N}`
 5. `mail_action` per medarbetare (`reply` / `create_record` / `invoice_ai`)
-   + `mail_reply_delay`, `mail_find_partner`, `mail_invoice_agent_ids`
+   + `mail_reply_delay`, `mail_find_partner`
 6. ❗ **Inkommande mailserver (fetchmail)** — IMAP/POP mot central mailbox,
    ELLER central postfix pipe/relay till Odoo mailgateway (se B/C)
 7. ❗ **Utgående mailserver (`ir.mail_server`)** — SMTP för AI-svar
