@@ -1469,9 +1469,7 @@ class AICoworker(models.Model):
         })
 
         try:
-            result = self.run(session=session, message=message,
-                            message_body=msg_text, prompt=msg_text,
-                            channel=channel, bot_user=bot_user)
+            result = self.run(prompt=msg_text, session=session)
             if session and channel:
                 last_line = session.session_line_ids.sorted('sequence', reverse=True)[:1]
                 if last_line and last_line.role == 'assistant' and last_line.content:
