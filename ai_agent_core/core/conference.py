@@ -151,7 +151,9 @@ class ConferenceLoop:
             f"Original: {prompt}\n\nResponses:\n{agent_outputs}\n\n"
             f"Synthesize into ONE cohesive response.")
         try:
-            model = getattr(self.config, 'router_model', '') or 'cerebras/gpt-oss-120b'
+            from odoo.addons.ai_agent_core.core.provider import get_default_model_name
+            model = (getattr(self.config, 'router_model', '')
+                     or get_default_model_name() or 'cerebras/gpt-oss-120b')
             response = await self.router_provider.chat(
                 model=model,
                 messages=[Message(role=Role.USER, content=merge_prompt)],
