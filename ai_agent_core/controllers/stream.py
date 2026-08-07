@@ -2135,9 +2135,13 @@ class AIOpenAIAPI(http.Controller):
                     access_groups=request.env.user.groups_id.ids)
                 tools = ToolRegistry()
                 if tool_ids:
+                    # API-vägen (/ai/v1): NATS-verktyg kräver en lyssnande
+                    # Pi-agent — uteslut dem så LLM:n inte bränner rundor på
+                    # 30-60s timeouts (snabba svar).
+                    tool_recs = tool_env['ai.tool'].browse(tool_ids)
                     tools.register_many(ai_tool_records_to_tools(
-                        tool_env['ai.tool'].browse(tool_ids),
-                        tool_env))
+                        tool_recs.filtered(
+                            lambda t: t.executor != 'nats'), tool_env))
 
                 loop_obj = AgentLoop(
                     provider=provider, tools=tools,
@@ -2237,9 +2241,13 @@ class AIOpenAIAPI(http.Controller):
                         ))
                         tools = ToolRegistry()
                         # explicit-agent-tools: ENDAST settings-default +
-                        # explicita verktyg — inga interna builtins per default.
+                        # explicita verktyg — inga interna builtins per
+                        # default. NATS-verktyg utesluts (kräver lyssnande
+                        # Pi-agent; annars 30-60s timeouts per anrop).
                         if _gen_tool_ids:
                             tool_recs = _gen_env['ai.tool'].browse(_gen_tool_ids)
+                            tool_recs = tool_recs.filtered(
+                                lambda t: t.executor != 'nats')
                             if tool_recs:
                                 tools.register_many(ai_tool_records_to_tools(
                                     tool_recs, _gen_env))
