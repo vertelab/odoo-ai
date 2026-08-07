@@ -1526,6 +1526,48 @@ class AICoworker(models.Model):
         if not msg_text.strip():
             return None
 
+        # ── Snabbspår: frågan redan besvarad (samma eller annan session) ──
+        try:
+            cached = _find_cached_answer(self, msg_text)
+        except Exception:
+            cached = None
+        if cached:
+            answer, source_session_id = cached
+            _logger.info('Cache-träff: "%s" → session %s (snabb svar)',
+                         msg_text[:50], source_session_id)
+            # Skapa session-line för spårning + posta svaret direkt
+            sess = self.env['ai.coworker.session'].create({
+                'coworker_id': self.id, 'status': 'active',
+                'name': f'Chat: {msg_text[:50]}',
+                'user_id': bot_user.id if bot_user else 1,
+            })
+            self.env['ai.coworker.session.line'].create({
+                'session_id': sess.id, 'sequence': 1,
+                'role': 'user', 'content': msg_text[:4000],
+            })
+            self.env['ai.coworker.session.line'].create({
+                'session_id': sess.id, 'sequence': 2,
+                'role': 'assistant', 'content': answer[:4000],
+            })
+            sess.status = 'done'
+            if channel:
+                author_id = (
+                    bot_user.partner_id.id
+                    if bot_user and bot_user.partner_id
+                    else self.partner_id.id)
+                body_html = answer[:4000]
+                try:
+                    import markdown
+                    body_html = markdown.markdown(body_html, extensions=['extra'])
+                    from markupsafe import Markup
+                    body_html = Markup(body_html)
+                except Exception:
+                    pass
+                channel.message_post(
+                    body=body_html, author_id=author_id,
+                    message_type='comment', subtype_xmlid='mail.mt_comment')
+            return answer
+
         # ── Buzz workspace branch ──
         if self._get_effective_orchestration_mode() == 'buzz':
             return self._buzz_chat(message, channel, msg_text, history_ctx)
@@ -4355,6 +4397,58 @@ class AICoworker(models.Model):
 # ---------------------------------------------------------------------------
 # Helper functions
 # ---------------------------------------------------------------------------
+
+
+
+def _normalize_question(text):
+    """Normalisera en fråga för jämförelse (gemener, rensa skräp)."""
+    import re
+    t = (text or '').lower()
+    t = re.sub(r'@[a-zåäö0-9_-]+', '', t)          # @nämningar
+    t = re.sub(r'\[\d\]\s*/odoo/[^\s]+', '', t)  # Odoo-mention-länkar
+    t = re.sub(r'[^a-zåäö0-9\s]+', ' ', t)          # skiljetecken
+    t = re.sub(r'\s+', ' ', t).strip()
+    return t
+
+
+def _questions_match(a, b):
+    """True om två normaliserade frågor är samma/nästan samma."""
+    if not a or not b:
+        return False
+    if a == b:
+        return True
+    # Frågor med ≥3 ord: ≥70 % gemensamma ord (ordningen spelar ingen roll)
+    wa, wb = set(a.split()), set(b.split())
+    if len(wa) >= 3 and len(wb) >= 3:
+        inter = len(wa & wb)
+        return inter / min(len(wa), len(wb)) >= 0.7
+    return False
+
+
+def _find_cached_answer(coworker, question):
+    """Hitta ett tidigare svar på samma fråga (samma + andra sessioner).
+
+    Går igenom medarbetarens sessioner (senaste först), kopplar varje
+    user-fråga till nästa assistant-svar och matchar mot frågan.
+    Returnerar (svarstext, session_id) eller None.
+    """
+    q = _normalize_question(question)
+    if len(q) < 4:
+        return None
+    sessions = coworker.env['ai.coworker.session'].search([
+        ('coworker_id', '=', coworker.id),
+    ], order='create_date desc', limit=30)
+    for sess in sessions:
+        lines = sess.session_line_ids.sorted('sequence')
+        user_q = None
+        for line in lines:
+            if line.role == 'user':
+                user_q = _normalize_question(line.content or '')
+            elif line.role == 'assistant' and user_q and line.content:
+                if _questions_match(user_q, q):
+                    return line.content, sess.id
+                user_q = None
+    return None
 
 
 def _strip_narration(text):
