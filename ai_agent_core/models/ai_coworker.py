@@ -4481,6 +4481,90 @@ def _find_cached_answer(coworker, question):
 def _strip_narration(text):
     """Ta bort narrering/inre dialog som läckt ut i ett svar.
 
+    Rader som ser ut som process-beskrivning ("Bra fråga!", "Tyvärr kunde
+    min webbsökning…", "Låt mig…", "Notering:…") tas bort — kvar blir
+    det slutgiltiga svaret. Den inre dialogen finns kvar i sessionen.
+    """
+    import re
+    if not text:
+        return text
+    lines = text.split('\n')
+    # Narreringsmönster: öppningsfraser, process-beskrivningar, meta-noter
+    narration_re = re.compile(
+        r'^(bra fråga|bra frågor|tack för frågan|intressant fråga|kul fråga|'
+        r'tyvärr|jag (har|ska|tänker|vill|fick|kan|vet|tror|hoppas)|'
+        r'let me|let\'?s|låt mig|i (got|have|now|will|just|know|think)|'
+        r'nu (har|vet|fick)|since (the|my|this|the specialists)|'
+        r'because (the|my)|notering:|note:|i\'?ll|this (gives|is)|'
+        r'the specialists|därför (hämtade|valde)|jag försökte|i tried|'
+        r'i\'?ll synthesize|men jag|här är|här har|svaret på|'
+        r'sammanfattning(?:en)?:|kort sagt:|viktigt att notera:|'
+        r'min rekommendation:)',
+        re.I)
+    # Hitta starten på det riktiga svaret: första raden som INTE är narrering
+    # och som ser ut som innehåll (rubrik, lista eller substantiell paragraf).
+    start = 0
+    for i, line in enumerate(lines):
+        s = line.strip()
+        if not s:
+            start = i + 1
+            continue
+        low = s.lower()
+        if narration_re.match(low):
+            start = i + 1
+            continue
+        # Raden är innehåll → börja här
+        start = i
+        break
+    body = '\n'.join(lines[start:]).strip()
+    # Ta bort efterföljande meta-not (Notering:/Note:/OBS:/Min rekommendation:)
+    body = re.sub(
+        r'\n+\s*(?:Notering|Note|OBS|Min rekommendation|Jag försökte|I tried)'
+        r'[^\n]*(?:\n[^\n]*){0,4}$',
+        '', body, flags=re.I)
+    return body.strip() or text.strip()
+
+
+def _find_cached_answer(coworker, question):
+    """Hitta ett tidigare svar på samma fråga (samma + andra sessioner).
+
+    Går igenom medarbetarens sessioner (senaste först), kopplar varje
+    user-fråga till nästa assistant-svar och matchar mot frågan.
+    Returnerar (svarstext, session_id) eller None.
+    """
+    q = _normalize_question(question)
+    if len(q) < 4:
+        return None
+    sessions = coworker.env['ai.coworker.session'].search([
+        ('coworker_id', '=', coworker.id),
+    ], order='create_date desc', limit=30)
+    best = None
+    best_score = 0.0
+    for sess in sessions:
+        lines = sess.session_line_ids.sorted('sequence')
+        user_q = None
+        for line in lines:
+            if line.role == 'user':
+                user_q = _normalize_question(line.content or '')
+            elif line.role == 'assistant' and user_q and line.content:
+                # Hoppa över fel/tomma svar (max rounds, no response, Error:)
+                if _is_error_answer(line.content):
+                    user_q = None
+                    continue
+                score = _question_score(user_q, q)
+                # Bästa matchningen vinner — inte den nyaste sessionen.
+                # (Annars kunde 'vad kostar 3090' matcha en nyare Strix Halo-
+                # fråga med lägre poäng.)
+                if score >= 0.5 and score > best_score:
+                    best_score = score
+                    best = (line.content, sess.id)
+                user_q = None
+    return best
+
+
+def _strip_narration(text):
+    """Ta bort narrering/inre dialog som läckt ut i ett svar.
+
     Rader som ser ut som process-beskrivning ("Låt mig…", "I got…",
     "Since the specialists…", "Notering:…") tas bort — kvar blir
     det slutgiltiga svaret. Den inre dialogen finns kvar i sessionen.
