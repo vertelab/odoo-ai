@@ -242,7 +242,8 @@ class IntelligentRouter:
         )
 
         # Pick cheapest capable model from available
-        model = "cerebras/gpt-oss-120b"  # default
+        from odoo.addons.ai_agent_core.core.provider import get_default_model_name
+        model = get_default_model_name() or "cerebras/gpt-oss-120b"  # default
         if env_info and env_info.available_models:
             # Prefer cheapest model
             models = sorted(

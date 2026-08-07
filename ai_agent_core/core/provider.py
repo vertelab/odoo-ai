@@ -654,6 +654,16 @@ def get_default_provider():
         return None, None
 
 
+def get_default_model_name():
+    """Namnet på default-modellen (ai_agent_core.default_model_id).
+
+    Används som fallback när en agent saknar modell — aldrig hårdkodade
+    leverantörsnamn. Returnerar '' om ingen default är konfigurerad.
+    """
+    _provider, model = get_default_provider()
+    return model.name if model else ''
+
+
 class ProviderFactory:
     """Factory for creating provider instances from Odoo model records.
 

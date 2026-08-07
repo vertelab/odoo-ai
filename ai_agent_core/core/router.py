@@ -108,7 +108,8 @@ class LLMRouter:
             dict: {"agent": name} or {"agents": [names]} or {} on failure
         """
         router_prompt = self.build_prompt(prompt, agents)
-        model = self.model or 'cerebras/gpt-oss-120b'
+        from odoo.addons.ai_agent_core.core.provider import get_default_model_name
+        model = self.model or get_default_model_name() or 'cerebras/gpt-oss-120b'
         try:
             response = await asyncio.wait_for(
                 self.provider.chat(

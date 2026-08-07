@@ -1816,8 +1816,11 @@ def _tool_builder_update_quest(env, coworker_id, **kwargs):
     return f"Quest #{coworker.id} updated: {list(updates.keys())}"
 
 
-def _tool_builder_create_agent(env, name, description="", model="cerebras/gpt-oss-120b", skills="", **kwargs):
+def _tool_builder_create_agent(env, name, description="", model="", skills="", **kwargs):
     """Create a new ai.agent. Returns agent ID."""
+    if not model:
+        from odoo.addons.ai_agent_core.core.provider import get_default_model_name
+        model = get_default_model_name() or 'cerebras/gpt-oss-120b'
     vals = {
         "name": name,
         "description": description,

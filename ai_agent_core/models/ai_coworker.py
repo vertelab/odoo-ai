@@ -2951,13 +2951,16 @@ class AICoworker(models.Model):
         import asyncio
         try:
             from odoo.addons.ai_agent_core.core.provider import (
-                ProviderFactory, get_default_provider)
+                ProviderFactory, get_default_provider, get_default_model_name)
             from odoo.addons.ai_agent_core.core.loop import AgentLoop, AgentConfig
 
-            provider, _model = ProviderFactory.from_coworker(self)
-            provider = provider or get_default_provider()[0] 
+            provider, provider_model = ProviderFactory.from_coworker(self)
+            if not provider:
+                provider, provider_model = get_default_provider()
+            model_name = (provider_model and provider_model.name) \
+                or get_default_model_name() or 'cerebras/gpt-oss-120b'
             loop = AgentLoop(provider=provider, tools=[], config=AgentConfig(
-                model='cerebras/gpt-oss-120b', max_rounds=1, max_tokens=1500))
+                model=model_name, max_rounds=1, max_tokens=1500))
             prompt = (
                 "Granska konversationen och extrahera 1-3 BESTÅENDE fakta "
                 "värda att minnas (inte småprat). Svara med JSON-lista: "
@@ -3512,11 +3515,14 @@ class AICoworker(models.Model):
             system_prompt = self.identity_id.system_prompt or system_prompt
 
         # Get model from first agent or default
-        model = 'cerebras/gpt-oss-120b'
+        model = ''
         for agent_rel in self.agent_ids:
             if agent_rel.agent_id.model_id:
                 model = agent_rel.agent_id.model_id.name
                 break
+        if not model:
+            from odoo.addons.ai_agent_core.core.provider import get_default_model_name
+            model = get_default_model_name() or 'cerebras/gpt-oss-120b'
 
         try:
             # Create session
@@ -3821,7 +3827,8 @@ class AICoworker(models.Model):
         self.ensure_one()
 
         # Resolve model — force_model (7.5) → agent-modell → standard
-        model = force_model or 'cerebras/gpt-oss-120b'
+        from odoo.addons.ai_agent_core.core.provider import get_default_model_name
+        model = force_model or get_default_model_name() or 'cerebras/gpt-oss-120b'
         if not force_model:
             for qa in self.agent_ids:
                 agent = qa.agent_id
@@ -4110,7 +4117,8 @@ class AICoworker(models.Model):
         })
 
         # Get model from first agent
-        model = 'cerebras/gpt-oss-120b'  # default
+        from odoo.addons.ai_agent_core.core.provider import get_default_model_name
+        model = get_default_model_name() or 'cerebras/gpt-oss-120b'  # default
         system_prompt = self.description or ''
         if self.identity_id:
             system_prompt = self.identity_id.system_prompt or system_prompt

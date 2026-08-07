@@ -59,7 +59,8 @@ class AIStreamController(http.Controller):
             )
 
         # Resolve quest configuration — frontend skickar quest_id (alias för coworker_id)
-        model = "cerebras/gpt-oss-120b"
+        from odoo.addons.ai_agent_core.core.provider import get_default_model_name
+        model = get_default_model_name() or "cerebras/gpt-oss-120b"
         system_prompt = ""
         quest = None
         if not coworker_id:
@@ -1485,12 +1486,16 @@ def _summarize_history(session, lines, max_chars=4000):
     quest = session.coworker_id if session else None
     try:
         import asyncio
-        from odoo.addons.ai_agent_core.core.provider import ProviderFactory, get_default_provider
+        from odoo.addons.ai_agent_core.core.provider import (
+            ProviderFactory, get_default_provider, get_default_model_name)
         from odoo.addons.ai_agent_core.core.loop import AgentLoop, AgentConfig
-        provider, _m = ProviderFactory.from_coworker(quest) if quest else (None, None)
-        provider = provider or get_default_provider()[0] 
+        provider, provider_model = ProviderFactory.from_coworker(quest) if quest else (None, None)
+        if not provider:
+            provider, provider_model = get_default_provider()
+        model_name = (provider_model and provider_model.name) \
+            or get_default_model_name() or 'cerebras/gpt-oss-120b'
         loop = AgentLoop(provider=provider, tools=[], config=AgentConfig(
-            model='cerebras/gpt-oss-120b', max_rounds=1, max_tokens=2048))
+            model=model_name, max_rounds=1, max_tokens=2048))
         prompt = (
             "Sammanfatta konversationen. Behåll alla nyckelfakta, beslut "
             "och kontext. Var koncis men komplett.\n\n" + conversation)
@@ -1918,14 +1923,16 @@ class AIOpenAIAPI(http.Controller):
         if history_context:
             system_prompt += f'\n\n## Previous conversation\n{history_context}'
 
-        # Get model from quest's first agent
-        model_name = 'cerebras/gpt-oss-120b'
+        # Get model from quest's first agent (model_id — inte legacy ai_agent_llm)
+        model_name = ''
         for agent_rel in quest.agent_ids:
-            if agent_rel.agent_id and hasattr(agent_rel.agent_id, 'ai_agent_llm_id'):
-                llm = agent_rel.agent_id.ai_agent_llm_id
-                if llm and llm.model_name:
-                    model_name = llm.model_name
-                    break
+            if agent_rel.agent_id and agent_rel.agent_id.model_id \
+                    and agent_rel.agent_id.model_id.name:
+                model_name = agent_rel.agent_id.model_id.name
+                break
+        if not model_name:
+            from odoo.addons.ai_agent_core.core.provider import get_default_model_name
+            model_name = get_default_model_name() or 'cerebras/gpt-oss-120b'
 
         coworker_id = quest.id
         # explicit-agent-tools: verktygs-ID:n fångas i request-kontext och
