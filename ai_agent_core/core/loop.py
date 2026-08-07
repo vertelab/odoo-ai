@@ -852,3 +852,14 @@ class StreamingAgentLoop(AgentLoop):
                         # Done — return final text
                         yield event
                         return
+
+        # max_rounds nådd utan done från provider:n — säkerställ att klienten
+        # får ackumulerad text + done (annars stängs SSE utan done → frontend
+        # visar 'Anslutningen bröts' och svaret går förlorat).
+        if text_buffer.strip():
+            yield TokenEvent(type="token", token=text_buffer)
+        yield TokenEvent(
+            type="done",
+            finish_reason="max_rounds",
+            token=text_buffer or "",
+        )
