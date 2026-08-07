@@ -469,6 +469,9 @@ class AICoworker(models.Model):
     mail_alias_ids = fields.One2many(
         'mail.alias', compute='_compute_mail_aliases', string='Mail-alias',
         store=False)
+    manual_call_instructions = fields.Html(
+        'Anropsinstruktioner (manual)',
+        compute='_compute_manual_call_instructions', store=False)
 
     @api.depends('alias_name')
     def _compute_alias_display(self):
@@ -496,6 +499,42 @@ class AICoworker(models.Model):
             mail = rec.init_type_ids.filtered(
                 lambda it: it.init_type == 'mail')[:1]
             rec.mail_alias_ids = mail.alias_id if mail else False
+
+    def _compute_manual_call_instructions(self):
+        """Instruktioner för att anropa medarbetaren från kod (init manual)."""
+        for rec in self:
+            eid = rec.id
+            code = (
+                '# Exempel 1 — enkel körning (session skapas automatiskt)\n'
+                'result = env["ai.coworker"].browse(__EID__).run("Din fråga här")\n'
+                '\n'
+                '# Exempel 2 — med egen session (spåras i Odoo Mind)\n'
+                'sess = env["ai.coworker.session"].create({\n'
+                '    "coworker_id": __EID__,\n'
+                '    "status": "active",\n'
+                '    "name": "Min uppgift",\n'
+                '})\n'
+                'result = env["ai.coworker"].browse(__EID__).run("Din fråga här", session=sess)\n'
+                '\n'
+                '# Exempel 3 — server action-kod (körs på valda records)\n'
+                'coworker = env["ai.coworker"].browse(__EID__)\n'
+                'coworker = coworker.with_context(_ai_context_model=records._name, _ai_context_id=records.id)\n'
+                'coworker.run("Analysera " + records.display_name)\n'
+                '\n'
+                '# OBS: för verktyg som skriver (odoo_create/odoo_write) i automatiserade flöden:\n'
+                'result = env["ai.coworker"].browse(__EID__).with_context(_ai_auto_approve=True).run("Din fråga")\n'
+            )
+            code = code.replace('__EID__', str(eid))
+            escaped = code.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+            rec.manual_call_instructions = (
+                '<div style="font-size:13px;line-height:1.5">'
+                + f'<p><strong>Anropa {rec.name} från kod</strong> — använd ett av exemplen nedan:</p>'
+                + '<pre style="background:#f5f5f5;padding:8px;border-radius:4px;font-size:12px;overflow:auto"><code>'
+                + escaped + '</code></pre>'
+                + f'<p><strong>Alternativ anropsväg:</strong> generisk webhook '
+                f'<code>POST /ai/webhook/{eid}</code> med Authorization: Bearer &lt;webhook_secret&gt; och JSON-payload.</p>'
+                + '</div>'
+            )
 
     def action_open_mail_alias(self):
         """Öppna mail-aliaset (mail.alias) för denna medarbetare."""
