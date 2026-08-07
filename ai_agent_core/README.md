@@ -22,10 +22,10 @@ Standalone AI agent engine for Odoo. Buzz-inspired architecture.
 │  ┌──────────▼──────────────────────────────────────────────────┐     │
 │  │                    Provider Layer                             │     │
 │  │  ┌─────────────────┐  ┌──────────────────────────────────┐   │     │
-│  │  │ BifrostProvider  │  │ DirectProvider                    │   │     │
-│  │  │ (gateway via     │  │ (native OpenAI, Anthropic,        │   │     │
-│  │  │  OpenAI API)     │  │  DeepSeek, Google, Cerebras, Groq)│   │     │
-│  │  └─────────────────┘  └──────────────────────────────────┘   │     │
+│  ┌─────────────────────────────────────────────────────┐   │     │
+│  │ AIProvider (EN klass — all skillnad är record-data)  │   │     │
+│  │ base_url + api_key + is_bifrost + api_style           │   │     │
+│  └─────────────────────────────────────────────────────┘   │     │
 │  │  BudgetEnforcingProvider (PAPER-004)                         │     │
 │  └─────────────────────────────────────────────────────────────┘     │
 │                                                                      │
@@ -61,7 +61,7 @@ Standalone AI agent engine for Odoo. Buzz-inspired architecture.
 ```
 ai_agent_core/
 ├── core/                   # Pure Python (no Odoo dependency)
-│   ├── provider.py         # AIProvider ABC + BifrostProvider + DirectProvider (703 lines)
+│   ├── provider.py         # AIProvider — enda provider-klassen (datadriven) (703 lines)
 │   ├── loop.py             # AgentLoop: while-loop, parallel tools, cancel, clarify (565 lines)
 │   ├── supervisor.py       # SupervisorLoop: router LLM + keyword fallback + fan-out (330 lines)
 │   ├── tools.py            # Tool + ToolRegistry + OdooModelTools + MCP (596 lines)
@@ -96,11 +96,12 @@ ai_agent_core/
 ### 1. Python-only (no Odoo)
 
 ```python
-from ai_agent_core.core.provider import BifrostProvider
+from ai_agent_core.core.provider import AIProvider
 from ai_agent_core.core.tools import ToolRegistry, builtin_tools
 from ai_agent_core.core.loop import AgentLoop, AgentConfig
 
-provider = BifrostProvider(virtual_key="opencode")
+provider = AIProvider(base_url="http://192.168.11.150:8080/v1",
+                      api_key="opencode", is_bifrost=True)
 tools = ToolRegistry()
 tools.register_many(builtin_tools())
 
@@ -235,7 +236,20 @@ Providers are resolved via the chain:
 - `from_supervisor_agents(coworker)` — all agents
 - `get_default_provider()` — via `ai_agent_core.default_model_id`
 
-Supports: `bifrost`, `openai`, `anthropic`, `openrouter`, `deepseek`, `custom`
+**EN klass — `AIProvider` (18.0.1.112+).** All skillnad mellan leverantörer
+lagras på `ai.provider`-recordet, aldrig i koden:
+- `base_url` — endpoint (gateway, självhostad, native)
+- `api_key` — nyckel på recordet (fylls i via UI — ingen pillar/env)
+- `is_bifrost` — bool: `X-Virtual-Key`-headern (Bifrost-gateway)
+- `api_style` — `openai` (`/chat/completions`) | `anthropic` (`/v1/messages`)
+
+Standard-providers finns som datafiler (`data/provider_*.xml`, noupdate=1)
+med tom api_key: openai, anthropic, deepseek, google, cerebras, groq,
+ollama, openrouter, bifrost. `ai.model` har fälten `provider` (rename av
+`provider_id`) och `source_provider` (origin, utan logik än).
+
+Supports: `bifrost`, `openai`, `anthropic`, `openrouter`, `deepseek`,
+`google`, `cerebras`, `groq`, `ollama`, `custom`
 
 ### Memory Architecture
 
@@ -339,8 +353,8 @@ Odoo-integrationstester (kräver DB): `checkmodule -d <db> -m ai_agent_core -t`
 - `httpx` — async HTTP client
 - `tenacity` — retry logic
 - Odoo 18+ (for models and controllers)
-- Bifrost LLM Gateway (for `BifrostProvider`)
-- Salt pillar (for API keys in `DirectProvider`)
+- Bifrost LLM Gateway (via `AIProvider` med `is_bifrost=True`)
+- API keys på `ai.provider`-recordet (fylls i via UI — ingen pillar)
 
 ## License
 
