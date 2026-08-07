@@ -40,6 +40,19 @@ class MailMessage(models.Model):
             if rec.author_id and rec.author_id.id in bot_partner_ids:
                 continue
             body_low = rec.body.lower()
+            # DM (privat chat): hitta medarbetaren vars bot-partner är i kanalen
+            if channel.channel_type == 'chat':
+                member_partner_ids = set(
+                    channel.channel_member_ids.mapped('partner_id').ids)
+                for init in self.env['ai.coworker.init_type'].search([
+                        ('init_type', '=', 'chat'),
+                        ('enabled', '=', True),
+                        ('chat_user_id', '!=', False)]):
+                    bot = init.chat_user_id
+                    if bot.partner_id and bot.partner_id.id in member_partner_ids:
+                        init.coworker_id._route_message(rec)
+                        break
+                continue
             for coworker in channel.ai_coworker_ids:
                 mentions = []
                 if coworker.channel_alias:
