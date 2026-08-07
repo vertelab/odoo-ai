@@ -3632,6 +3632,17 @@ class AICoworker(models.Model):
         # 3. Coworkerns explicita tool_ids
         _add(self.sudo().tool_ids.filtered('active'))
 
+        # NATS-verktyg kräver NATS-paketet + en NATS-server (Pi-agentmesh).
+        # När NATS inte är tillgängligt exponeras de INTE — annars ser LLM:en
+        # verktyg som alltid misslyckas (opålitliga resultat, bortkastade rundor).
+        if ids:
+            try:
+                import nats  # noqa: F401
+            except ImportError:
+                nats_tool_ids = self.env['ai.tool'].sudo().search(
+                    [('executor', '=', 'nats')]).ids
+                ids = [i for i in ids if i not in nats_tool_ids]
+
         return ids
 
     def _session_tools(self, session=None, force_agent=None):
