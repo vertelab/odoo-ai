@@ -263,6 +263,7 @@
                                     <field name="init_powerbox"/>
                                     <field name="model_ids" invisible="not init_powerbox" widget="many2many_tags" string=" → Powerbox-modeller"/>
                                     <field name="init_manual"/>
+                                    <field name="manual_call_instructions" invisible="not init_manual" nolabel="1"/>
                                     
                                     <!-- Webhook -->
                                     <field name="init_webhook"/>
