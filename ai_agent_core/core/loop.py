@@ -598,9 +598,18 @@ class AgentLoop:
         tool_start = time.time()
         _logger.debug("Executing tool: %s", tool_call.name)
 
+        # Normalisera argument: vissa LLM:er nestlar allt under en
+        # 'arguments'-nyckel → execute(**{"arguments": {...}}) kraschar.
+        args = tool_call.arguments
+        if isinstance(args, dict) and 'arguments' in args and \
+                set(args.keys()) == {'arguments'}:
+            args = args['arguments']
+        if not isinstance(args, dict):
+            args = {}
+
         try:
             execute_task = asyncio.create_task(
-                tool.execute(**tool_call.arguments)
+                tool.execute(**args)
             )
             cancel_task = asyncio.create_task(self._cancel_event.wait())
 
