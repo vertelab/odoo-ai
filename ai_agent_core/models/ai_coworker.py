@@ -1594,7 +1594,10 @@ class AICoworker(models.Model):
         })
 
         try:
-            result = self.run(prompt=msg_text, session=session)
+            # Single-mode: DM/kanal ska svara snabbt — supervisor gör 4+ LLM-
+            # anrop (router + specialister + syntes) som fastnar i rate-limit.
+            result = self.with_context(
+                ai_single_agent_run=True).run(prompt=msg_text, session=session)
             if session and channel:
                 # Sista ASSISTANT-raden (sista raden kan vara en tool-rad)
                 last_line = session.session_line_ids.filtered(
@@ -4417,11 +4420,11 @@ def _questions_match(a, b):
         return False
     if a == b:
         return True
-    # Frågor med ≥3 ord: ≥70 % gemensamma ord (ordningen spelar ingen roll)
+    # Frågor med ≥3 ord: ≥50 % gemensamma ord (ordningen spelar ingen roll)
     wa, wb = set(a.split()), set(b.split())
     if len(wa) >= 3 and len(wb) >= 3:
         inter = len(wa & wb)
-        return inter / min(len(wa), len(wb)) >= 0.7
+        return inter / min(len(wa), len(wb)) >= 0.5
     return False
 
 
