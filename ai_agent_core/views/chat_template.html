@@ -174,6 +174,18 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);overflow:hid
 /* Token info */
 .token-info{font-size:11px;color:var(--text-muted);padding:2px 16px 4px;text-align:right}
 
+/* Snurrande hjul (medan agenten jobbar) */
+.ai-spinner-wrap{display:flex;align-items:center;gap:8px;padding:6px 2px;color:var(--text-muted);font-size:13px}
+.ai-spinner{width:16px;height:16px;border:2px solid var(--text-muted);border-top-color:transparent;border-radius:50%;animation:ai-spin .7s linear infinite;flex:none}
+@keyframes ai-spin{to{transform:rotate(360deg)}}
+
+/* Debug/resonemang + käll-lista (utfällbar) */
+.ai-debug,.ai-sources{margin-top:6px;font-size:12px;color:var(--text-muted)}
+.ai-debug summary,.ai-sources summary{cursor:pointer;user-select:none;opacity:.85}
+.ai-debug-body{white-space:pre-wrap;background:rgba(128,128,128,.08);border-radius:6px;padding:6px 8px;margin-top:4px;max-height:200px;overflow:auto}
+.ai-sources-body{display:flex;flex-direction:column;gap:2px;margin-top:4px}
+.ai-sources-body a{color:var(--accent, #4f8cff);word-break:break-all}
+
 /* Hamburger */
 .hamburger{display:none;background:none;border:none;color:var(--text);font-size:22px;cursor:pointer;padding:2px 8px}
 
@@ -291,7 +303,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);overflow:hid
             <div class="welcome-desc">Ställ en fråga eller välj en agent i sidopanelen för att komma igång.</div>
         </div>
     </div>
-    <div class="token-info" id="token-info"></div>
+    <div class="token-info" id="token-info" style="display:none"></div>
 
     <!-- Interrupt dialog -->
     <div class="interrupt-dialog" id="interrupt-dialog">
@@ -331,7 +343,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);overflow:hid
         <button id="cancel-btn" onclick="cancelStream()" class="cancel-btn">Avbryt</button>
     </div>
     <div class="systemtoken-status" id="systemtoken-status" style="display:none;font-size:11px;color:var(--text-muted);padding-top:4px;text-align:right">
-        Session: <span id="sys-tokens">0</span> systemtokens
+        Session: <span id="sys-tokens">0</span> tokens
     </div>
     </div>
 </div>
@@ -362,6 +374,8 @@ var activeSessionCoworker=''; // coworker_id för den aktiva sessionen
 var urlQuestId=params.get('quest_id')||'';
 if(urlQuestId){activeQuestId=urlQuestId}
 var currentAiMessage=null,currentAgentCards={},streaming=!1,currentEventSource=null,tokenCount=0;
+var currentAnswerEl=null,currentDebugEl=null,currentSourcesEl=null,currentSpinnerEl=null;
+var currentDebugText='',currentSources=[];
 var sessionUuid='';
 // Model selector state
 var availableModels=[],selectedModel='',hasVisionModel=!1;
@@ -980,7 +994,16 @@ function sendMessage(){
     document.getElementById('messages').appendChild(a);scrollBottom();
 
     currentAiMessage=document.createElement('div');currentAiMessage.className='message ai';
+    currentAiMessage.innerHTML='<div class="ai-answer"></div>'
+        +'<div class="ai-spinner-wrap" style="display:none"><div class="ai-spinner"></div><span>Bearbetar…</span></div>'
+        +'<details class="ai-debug" style="display:none"><summary>🧠 Resonemang</summary><div class="ai-debug-body"></div></details>'
+        +'<details class="ai-sources" style="display:none"><summary>🔗 källor</summary><div class="ai-sources-body"></div></details>';
     document.getElementById('messages').appendChild(currentAiMessage);
+    currentAnswerEl=currentAiMessage.querySelector('.ai-answer');
+    currentSpinnerEl=currentAiMessage.querySelector('.ai-spinner-wrap');
+    currentDebugEl=currentAiMessage.querySelector('.ai-debug');
+    currentSourcesEl=currentAiMessage.querySelector('.ai-sources');
+    currentDebugText='';currentSources=[];
     currentAgentCards={};scrollBottom();
 
     // Auto-create thread if needed, then stream.
@@ -1026,12 +1049,21 @@ function cancelStream(){if(currentEventSource){currentEventSource.close()}finish
 function handleStreamEvent(e){
     switch(e.type){
         case'session':if(e.session_uuid){sessionUuid=e.session_uuid}break;
-        case'token':currentAiMessage.innerHTML+=e.token;streamText+=e.token;tokenCount++;updateTokenInfo();break;
-        case'tool_call_start':var a=document.createElement('div');a.className='agent-card';var n=e.tool_call?e.tool_call.name:'tool';a.innerHTML='<div class="agent-card-header"><span>🔧</span><span>'+esc(n)+'</span></div><div class="agent-card-body">Kör...</div>';currentAiMessage.appendChild(a);currentAgentCards[n]=a;break;
+        case'token':if(currentAnswerEl){currentAnswerEl.innerHTML+=e.token}else if(currentAiMessage){currentAiMessage.innerHTML+=e.token}
+            streamText+=e.token;tokenCount++;
+            if(currentSpinnerEl)currentSpinnerEl.style.display='none';updateTokenInfo();break;
+        case'debug':currentDebugText+=(e.token||'');
+            if(currentDebugEl){currentDebugEl.style.display='';currentDebugEl.querySelector('.ai-debug-body').textContent=currentDebugText}
+            if(currentSpinnerEl)currentSpinnerEl.style.display='none';break;
+        case'source':if(e.token&&currentSources.indexOf(e.token)<0)currentSources.push(e.token);
+            if(currentSourcesEl){currentSourcesEl.style.display='';var sb=currentSourcesEl.querySelector('.ai-sources-body');sb.innerHTML=currentSources.map(function(u){return'<a href="'+esc(u)+'" target="_blank" rel="noopener">'+esc(u)+'</a>'}).join('')}
+            break;
+        case'tool_call_start':var a=document.createElement('div');a.className='agent-card';var n=e.tool_call?e.tool_call.name:'tool';a.innerHTML='<div class="agent-card-header"><span>🔧</span><span>'+esc(n)+'</span></div><div class="agent-card-body">Kör…</div>';currentAiMessage.appendChild(a);currentAgentCards[n]=a;
+            if(currentSpinnerEl)currentSpinnerEl.style.display='flex';break;
         case'needs_approval':if(e.tool_name){showInterruptDialog('Godkänn verktyg: '+esc(e.tool_name)+(e.risk_level?' ('+esc(e.risk_level)+')':''),'tool_approval')}break;
         case'needs_input':showInterruptDialog(e.question||'Agenten behöver input','clarification');break;
-        case'done':currentEventSource.close();finishStream();break;
-        case'error':currentAiMessage.innerHTML+='<div style="color:var(--danger)">❌ '+esc(e.message)+'</div>';currentEventSource.close();finishStream();break
+        case'done':if(currentSpinnerEl)currentSpinnerEl.style.display='none';currentEventSource.close();finishStream();break;
+        case'error':if(currentAiMessage){currentAiMessage.innerHTML+='<div style="color:var(--danger)">❌ '+esc(e.message)+'</div>'}currentEventSource.close();finishStream();break
     }scrollBottom()
 }
 function showInterruptDialog(question,type){document.getElementById('interrupt-question').textContent=question;document.getElementById('interrupt-dialog').classList.add('active');document.getElementById('interrupt-response').focus();window._interruptType=type}
@@ -1047,22 +1079,31 @@ function respondInterrupt(approved){
 }
 function finishStream(){
     if(currentAiMessage){
-        // Save/render only the streamed TEXT — textContent includes rendered
-        // tool-call badges ("🔧nameKör...") which polluted session history.
+        // Save/render only the streamed TEXT (answer) — narrering ligger i
+        // debug-panelen och visas inte i svaret till användaren.
         var txt=streamText.trim();
-        if(!txt&&!currentAiMessage.textContent.trim()){
+        var answerEl=currentAnswerEl||currentAiMessage;
+        if(!txt&&!currentAiMessage.textContent.trim()&&!currentDebugText){
             currentAiMessage.innerHTML='<em style="color:var(--text-muted)">(inget svar)</em>'
         }else{
+            // Rensa progress-kort (🔧 Kör…) — ersätts av svaret
+            var cards=currentAiMessage.querySelectorAll('.agent-card');
+            cards.forEach(function(c){c.remove()});
             // Render markdown + wrap with message actions (badges were
             // progress indicators; the final text replaces them)
-            if(txt){currentAiMessage.innerHTML=addMessageActions(md2html(txt))}
-            // Save assistant response
+            if(txt&&answerEl){answerEl.innerHTML=addMessageActions(md2html(txt))}
+            if(currentSpinnerEl)currentSpinnerEl.style.display='none';
+            // Save assistant response (svar + debug + källor)
             if(activeSessionId&&txt){
                 var estInput=Math.round(txt.length/4);
                 var estOutput=txt.length;
                 fetch('/ai/threads/'+activeSessionId+'/respond',{method:'POST',headers:{'Content-Type':'application/json'},
-                    body:JSON.stringify({content:txt,token_input:estInput,token_output:tokenCount,model_real:selectedModel||'web-chat'})})
+                    body:JSON.stringify({content:txt,token_input:estInput,token_output:tokenCount,model_real:selectedModel||'web-chat',debug:currentDebugText||'',sources:currentSources})})
                     .then(r=>r.json()).then(d=>{updateSystemtokenDisplay()})
+            }else if(activeSessionId&&currentDebugText){
+                // Inget svar men debug finns — spara debug ändå
+                fetch('/ai/threads/'+activeSessionId+'/respond',{method:'POST',headers:{'Content-Type':'application/json'},
+                    body:JSON.stringify({content:'(inget svar)',token_input:0,token_output:tokenCount,model_real:selectedModel||'web-chat',debug:currentDebugText||'',sources:currentSources})})
             }
         }
     }
@@ -1071,6 +1112,8 @@ function finishStream(){
     document.getElementById('prompt-input').focus();
     removeImagePreview();
     currentAiMessage=null;currentAgentCards={};currentEventSource=null;
+    currentAnswerEl=null;currentDebugEl=null;currentSourcesEl=null;currentSpinnerEl=null;
+    currentDebugText='';currentSources=[];
     if(activeSessionId)loadThreads()
 }
 function relTime(ts){

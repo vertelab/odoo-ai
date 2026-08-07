@@ -24,6 +24,11 @@ class AICoworkerSessionLine(models.Model):
         ('system', 'System'),
     ], required=True, default='user')
     content = fields.Text('Message Content')
+    debug_info = fields.Text('Debug/Resonemang',
+        help='Agentens resonemang/narrering (visas inte i svaret till '
+             'användaren, men sparas här för granskning).')
+    source_urls = fields.Text('Käll-URL:er',
+        help='URL:er som agenten använde (en per rad).')
     tool_calls = fields.Text('Tool Calls (JSON)')
     tool_name = fields.Char('Tool Name')
     token_input = fields.Integer('Input Tokens', default=0)

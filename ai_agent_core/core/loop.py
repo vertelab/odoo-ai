@@ -771,6 +771,7 @@ class StreamingAgentLoop(AgentLoop):
 
             # Stream from provider
             text_buffer = ""
+            round_tokens: list[str] = []
             tool_calls_seen: list[dict] = []
 
             async for event in self.provider.chat_stream(
@@ -782,8 +783,10 @@ class StreamingAgentLoop(AgentLoop):
                 max_tokens=self.config.max_tokens,
             ):
                 if event.type == "token":
+                    # Buffra rundans text — först vid done vet vi om det är
+                    # narrering (debug) eller slutgiltigt svar (token).
                     text_buffer += event.token
-                    yield event
+                    round_tokens.append(event.token)
 
                 elif event.type == "tool_call_start":
                     tool_calls_seen.append({
@@ -800,7 +803,12 @@ class StreamingAgentLoop(AgentLoop):
 
                 elif event.type == "done":
                     if tool_calls_seen:
-                        # Execute tools
+                        # Rundans text var NARRERING (agentens resonemang) —
+                        # sänd som debug, inte som svar till användaren.
+                        if text_buffer.strip():
+                            yield TokenEvent(
+                                type="debug", token=text_buffer.strip())
+                        # Exekvera verktygen och samla källor
                         assistant_msg = Message(
                             role=Role.ASSISTANT,
                             content=text_buffer,
@@ -840,16 +848,22 @@ class StreamingAgentLoop(AgentLoop):
                                 tool_call_id=tc["id"],
                                 name=tc["name"],
                             ))
+                            # Samla käll-URL:er (web_search/fetch_url-resultat)
+                            for url in self._extract_source_urls(result, tc):
+                                yield TokenEvent(type="source", token=url)
 
                         tool_calls_seen = []
                         text_buffer = ""
+                        round_tokens = []
                         # break (inte continue!) — continue skulle bara hämta
                         # nästa event ur samma stream; en dubbel-done från
                         # providern skulle då avsluta loopen innan runda 2.
                         break  # → while-loopen startar nästa runda
 
                     else:
-                        # Done — return final text
+                        # SLUTGILTIGT SVAR — strömma den buffrade texten
+                        for t in round_tokens:
+                            yield TokenEvent(type="token", token=t)
                         yield event
                         return
 
@@ -880,3 +894,21 @@ class StreamingAgentLoop(AgentLoop):
         except Exception:
             pass
         yield TokenEvent(type="done", finish_reason="max_rounds")
+
+    @staticmethod
+    def _extract_source_urls(result: str, tc: dict) -> list[str]:
+        """Extrahera käll-URL:er ur ett verktygsresultat + verktygsargument.
+
+        Används för att visa en utfällbar käll-lista i chatten och för att
+        spara källorna på sessionens meddelande.
+        """
+        import re
+        urls = set()
+        for m in re.findall(r'https?://[^\s\)\]"\']+', result or ''):
+            u = m.rstrip('.,;:')
+            if u.startswith(('http://', 'https://')):
+                urls.add(u)
+        args = tc.get('arguments') or {}
+        if isinstance(args, dict) and args.get('url'):
+            urls.add(str(args['url']))
+        return sorted(urls)
