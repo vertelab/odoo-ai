@@ -994,12 +994,21 @@ function sendMessage(){
         var sbody=JSON.stringify({quest_id:activeQuestId||null,name:cleanName,skill_id:contextSkill?parseInt(contextSkill):null,context_quest:contextQuest||null});
         fetch('/ai/threads',{method:'POST',headers:{'Content-Type':'application/json'},body:sbody})
         .then(function(r){return r.json()}).then(function(d){
+            if(!d.id){showChatError(d.error||'Kunde inte skapa tråden');return}
             activeSessionId=d.id;activeThreadName=d.name;activeSessionCoworker=activeQuestId||'';
             document.getElementById('active-thread-name').textContent=d.name;
             if(contextQuest||contextSkill)document.getElementById('thread-edit-btn').style.display='inline-block';
             doStream()
-        })
+        }).catch(function(err){showChatError('Kunde inte skapa tråden: '+(err&&err.message?err.message:err))})
     } else {doStream()}
+}
+function showChatError(msg){
+    if(!currentAiMessage){currentAiMessage=document.createElement('div');currentAiMessage.className='message ai';document.getElementById('messages').appendChild(currentAiMessage)}
+    currentAiMessage.innerHTML+='<div style="color:var(--danger)">❌ '+esc(msg)+'</div>';
+    currentEventSource=null;streaming=false;
+    var t=document.getElementById('send-btn');if(t)t.style.display='inline-block';
+    var c=document.getElementById('cancel-btn');if(c)c.style.display='none';
+    scrollBottom()
 }
 var streamText='';
 function startStream(prompt){
@@ -1011,7 +1020,7 @@ function startStream(prompt){
     if(contextQuest)url+='&context_quest='+contextQuest;
     currentEventSource=new EventSource(url);
     currentEventSource.onmessage=function(e){try{var t=JSON.parse(e.data);handleStreamEvent(t)}catch(e){}};
-    currentEventSource.onerror=function(){if(streaming){currentEventSource.close();finishStream()}}
+    currentEventSource.onerror=function(){if(streaming){currentEventSource.close();showChatError('Anslutningen till AI-servern bröts — försök igen.')}}
 }
 function cancelStream(){if(currentEventSource){currentEventSource.close()}finishStream()}
 function handleStreamEvent(e){

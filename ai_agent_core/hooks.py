@@ -6,6 +6,32 @@ import logging
 _logger = logging.getLogger(__name__)
 
 
+def pre_init_hook_check_conflicts(env):
+    """Förhindra installation om inkompatibel modul (ai_agent) är installerad.
+
+    ai_agent (legacy) och ai_agent_core definierar samma modeller och xmlids
+    (ai.tool, view_ai_tool_tree/view_ai_tool_form, action_ai_tool m.fl.) och
+    kan inte köras samtidigt. Odoo 18-kärnan läser inte manifest-nyckeln
+    'conflicts', så spärren implementeras som pre_init_hook.
+    """
+    cr = env.cr
+    cr.execute(
+        "SELECT state FROM ir_module_module WHERE name = 'ai_agent'")
+    row = cr.fetchone()
+    if row and row[0] in ('installed', 'to upgrade', 'to remove'):
+        _logger.error(
+            'ai_agent_core installation blocked: ai_agent är installerad '
+            '(state=%s). Modulerna är inkompatibla — avinstallera ai_agent '
+            'innan du installerar ai_agent_core.', row[0])
+        from odoo.exceptions import UserError
+        raise UserError(
+            'ai_agent_core kan inte installeras samtidigt som ai_agent.\n\n'
+            'De definierar samma modeller/vyer (ai.tool, view_ai_tool_*,\n'
+            'action_ai_tool) och är inkompatibla. Avinstallera ai_agent '
+            'först (Appar → ai_agent → Avinstallera).'
+        )
+
+
 def post_init_hook_personal_memory(env):
     """Post-install hook for ai.personal.memory (Odoo 18 — takes env).
     

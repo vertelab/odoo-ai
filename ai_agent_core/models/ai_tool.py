@@ -389,3 +389,14 @@ class AITool(models.Model):
             executor="local",
             capabilities=caps,
         )
+
+    def action_open_form(self):
+        """Öppna verktygets formulär (från listan)."""
+        self.ensure_one()
+        return {
+            'type': 'ir.actions.act_window',
+            'res_model': 'ai.tool',
+            'view_mode': 'form',
+            'res_id': self.id,
+            'target': 'current',
+        }

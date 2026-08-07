@@ -2,7 +2,7 @@
 # Part of Odoo. See LICENSE file for full copyright and licensing details.
 {
     'name': 'odoo-ai: AI Agent Core',
-    'version': '18.0.1.83',
+    'version': '18.0.1.87',
     'summary': 'AI Agent Core — Org-stomme, heartbeat, onboarding, task-system',
     'category': 'AI Orchestration',
     'description': """
@@ -20,6 +20,10 @@
     'author': 'Vertel AB',
     'website': 'https://vertel.se/apps/odoo-ai/ai_agent_core',
     'license': 'AGPL-3',
+    # ai_agent (legacy) definierar samma modeller/xmlids (ai.tool,
+    # view_ai_tool_*) och är inkompatibel. Odoo 18 läser inte denna nyckel,
+    # men den dokumenterar avsikten; faktisk spärr = pre_init_hook.
+    'conflicts': ['ai_agent'],
     'depends': [
         'base',
         'mail',
@@ -124,4 +128,5 @@
         'demo/demo_data.xml',
     ],
     'post_init_hook': 'post_init_hook_personal_memory',
+    'pre_init_hook': 'pre_init_hook_check_conflicts',
 }

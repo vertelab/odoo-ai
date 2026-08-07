@@ -22,6 +22,8 @@
                 <field name="call_count" string="Calls"/>
                 <field name="error_count" string="Errors"/>
                 <field name="active" invisible="1"/>
+                <button name="action_open_form" type="object" string="Visa"
+                        icon="fa-eye"/>
             </list>
         </field>
     </record>
