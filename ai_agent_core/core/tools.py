@@ -159,20 +159,48 @@ async def _tool_calculator(expression: str) -> str:
 
 
 async def _tool_web_search(query: str = "") -> str:
-    """Search the web using DuckDuckGo. Returns top 5 results."""
+    """Search the web. Uses DuckDuckGo (DDGS); fallback till HTML-scrape
+    om cert-laddning misslyckas (odoo-användaren saknar läsrätt till
+    /usr/local/share/ca-certificates/mycacert.crt)."""
     if not query or not query.strip():
         return "Error: query is required"
+    # 1. DDGS (primärt)
     try:
         from duckduckgo_search import DDGS
         results = list(DDGS().text(query, max_results=5))
-        if not results:
-            return "No results found."
-        return "\n".join(
-            f"{i+1}. {r.get('title','?')}\n   {r.get('body','')[:200]}\n   {r.get('href','')}"
-            for i, r in enumerate(results)
-        )
+        if results:
+            return "\n".join(
+                f"{i+1}. {r.get('title','?')}\n   {r.get('body','')[:200]}\n   {r.get('href','')}"
+                for i, r in enumerate(results)
+            )
     except ImportError:
-        return "Error: duckduckgo_search not installed. Run: pip install duckduckgo-search"
+        pass
+    except Exception:
+        pass
+    # 2. HTML-scrape (fallback — kringgår cert-problemet)
+    try:
+        import httpx, html as html_mod
+        from urllib.parse import quote_plus
+        url = 'https://html.duckduckgo.com/html/?q=' + quote_plus(query)
+        async with httpx.AsyncClient(timeout=15, verify=False) as client:
+            r = await client.get(url, headers={
+                'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64; rv:126.0) Gecko/20100101 Firefox/126.0'})
+            r.raise_for_status()
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(r.text, 'html.parser')
+        results = []
+        for res in soup.select('.result')[:5]:
+            a = res.select_one('.result__a')
+            s = res.select_one('.result__snippet')
+            if a:
+                title = html_mod.unescape(a.get_text(strip=True))
+                href = a.get('href', '')
+                snippet = html_mod.unescape(
+                    s.get_text(strip=True)) if s else ''
+                results.append(f"{len(results)+1}. {title}\n   {snippet[:200]}\n   {href}")
+        if results:
+            return "\n".join(results)
+        return "No results found."
     except Exception as e:
         return f"Search error: {e}"
 
@@ -183,9 +211,14 @@ async def _tool_fetch_url(url: str = "") -> str:
         return "Error: url is required"
     try:
         import httpx
-        async with httpx.AsyncClient(timeout=15) as client:
-            r = await client.get(url, headers={'User-Agent': 'Odoo-AI/1.0'})
-            r.raise_for_status()
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                r = await client.get(url, headers={'User-Agent': 'Odoo-AI/1.0'})
+        except Exception:
+            # Cert-fallback (odoo-användaren kan inte läsa mycacert.crt)
+            async with httpx.AsyncClient(timeout=15, verify=False) as client:
+                r = await client.get(url, headers={'User-Agent': 'Odoo-AI/1.0'})
+        r.raise_for_status()
         from bs4 import BeautifulSoup
         soup = BeautifulSoup(r.text, 'html.parser')
         for tag in soup(['script', 'style', 'nav', 'footer', 'header']):

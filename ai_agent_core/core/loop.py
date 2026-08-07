@@ -853,13 +853,30 @@ class StreamingAgentLoop(AgentLoop):
                         yield event
                         return
 
-        # max_rounds nådd utan done från provider:n — säkerställ att klienten
-        # får ackumulerad text + done (annars stängs SSE utan done → frontend
-        # visar 'Anslutningen bröts' och svaret går förlorat).
-        if text_buffer.strip():
-            yield TokenEvent(type="token", token=text_buffer)
-        yield TokenEvent(
-            type="done",
-            finish_reason="max_rounds",
-            token=text_buffer or "",
-        )
+        # max_rounds nådd: gör ett sista anrop UTAN verktyg så användaren
+        # alltid får ett sammanfattande svar (tidigare: tomt avslut → klienten
+        # visade bara narreringen utan slutsats).
+        try:
+            async for event in self.provider.chat_stream(
+                model=self.config.model,
+                messages=messages + [Message(
+                    role=Role.USER,
+                    content=(
+                        'Sammanfatta nu ditt bästa svar på användarens fråga '
+                        'ovan. Svara direkt med slutsatsen/resultatet — inga '
+                        'verktyg. Om du saknar tillräcklig data, säg det '
+                        'ärligt och ge det du vet.'
+                    ),
+                )],
+                system_prompt=self.config.system_prompt,
+                temperature=self.config.temperature,
+                max_tokens=self.config.max_tokens,
+            ):
+                if event.type == "token":
+                    yield event
+                elif event.type == "done":
+                    yield event
+                    return
+        except Exception:
+            pass
+        yield TokenEvent(type="done", finish_reason="max_rounds")
