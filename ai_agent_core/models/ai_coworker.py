@@ -1454,7 +1454,11 @@ class AICoworker(models.Model):
         if self._get_effective_orchestration_mode() == 'buzz':
             return self._buzz_chat(message, channel, msg_text, history_ctx)
 
-        full_system = (self.description or '')
+        full_system = (
+            f"Today is {fields.Date.today().isoformat()}. "
+            "Your knowledge has a cutoff — use available tools for current info.\n\n"
+            + (self.description or '')
+        )
         if history_ctx:
             full_system += f'\n\n## Recent conversation\n{history_ctx}'
 
@@ -3617,7 +3621,11 @@ class AICoworker(models.Model):
 
         # Build system prompt
         if system_prompt is None:
-            system_prompt = self.description or ''
+            system_prompt = (
+                f"Today is {fields.Date.today().isoformat()}. "
+                "Your knowledge has a cutoff — use available tools for current info.\n\n"
+                + (self.description or '')
+            )
             if self.identity_id:
                 system_prompt = self.identity_id.system_prompt or system_prompt
 
@@ -4418,3 +4426,25 @@ class AICoworkerAgent(models.Model):
             if not self.env['ai.coworker.agent'].search_count([('agent_id', '=', agent.id)]):
                 agent.sudo().unlink()
         return {'type': 'ir.actions.act_window_close'}
+
+
+def _run_learn_in_env(dbname, quest_id, session_id):
+    """Kör _learn_from_session i bakgrunden med EGEN DB-cursor/env.
+
+    stream.py:s tidigare tråd använde requestens recordset efter att
+    requesten avslutats → stängd cursor → tyst krasch ('Task was destroyed
+    but it is pending'). Här skapas en färsk environment per tråd.
+    """
+    try:
+        from odoo.api import Environment
+        from odoo.modules.registry import Registry
+        registry = Registry(dbname)
+        with registry.cursor() as cr:
+            env = Environment(cr, SUPERUSER_ID, {})
+            quest = env['ai.coworker'].browse(quest_id)
+            session = env['ai.coworker.session'].browse(session_id)
+            if quest.exists() and session.exists():
+                quest._learn_from_session(session)
+    except Exception as e:
+        _logger.warning('Bakgrundslärande misslyckades: %s', e)
+

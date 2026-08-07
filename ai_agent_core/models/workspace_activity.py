@@ -30,6 +30,8 @@ class WorkspaceActivitySuggestion(models.Model):
     _order = 'priority desc, create_date asc'
     _rec_name = 'summary'
 
+    priority = fields.Integer('Prioritet', default=10)
+
     # ── Ägare + ursprung ──
     user_id = fields.Many2one('res.users', string='User', required=True,
         default=lambda self: self.env.user)

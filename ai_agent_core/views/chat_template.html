@@ -690,6 +690,7 @@ function newThread(){
     document.getElementById('active-thread-name').textContent='';
     document.getElementById('thread-edit-btn').style.display='none';
     removeImagePreview();
+    document.getElementById('messages').innerHTML='';
     updateWelcomeScreen();
     loadThreads();
     if(window.innerWidth<=768){toggleSidebar()}
@@ -1036,6 +1037,7 @@ function showChatError(msg){
 var streamText='';
 function startStream(prompt){
     streamText='';
+    if(currentSpinnerEl)currentSpinnerEl.style.display='flex';
     var url='/ai/stream?prompt='+encodeURIComponent(prompt);
     if(activeQuestId)url+='&quest_id='+activeQuestId;
     if(activeSessionId)url+='&session_id='+activeSessionId;
@@ -1054,7 +1056,7 @@ function handleStreamEvent(e){
             if(currentSpinnerEl)currentSpinnerEl.style.display='none';updateTokenInfo();break;
         case'debug':currentDebugText+=(e.token||'');
             if(currentDebugEl){currentDebugEl.style.display='';currentDebugEl.querySelector('.ai-debug-body').textContent=currentDebugText}
-            if(currentSpinnerEl)currentSpinnerEl.style.display='none';break;
+            break;
         case'source':if(e.token&&currentSources.indexOf(e.token)<0)currentSources.push(e.token);
             if(currentSourcesEl){currentSourcesEl.style.display='';var sb=currentSourcesEl.querySelector('.ai-sources-body');sb.innerHTML=currentSources.map(function(u){return'<a href="'+esc(u)+'" target="_blank" rel="noopener">'+esc(u)+'</a>'}).join('')}
             break;
