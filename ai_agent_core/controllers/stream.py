@@ -2115,6 +2115,7 @@ class AIOpenAIAPI(http.Controller):
                 _sess = _find_or_create_session(request.env)
                 try:
                     _sess._session_capture_context()
+                    _sess._session_auto_capture(prompt)
                 except Exception as e:
                     _logger.warning('session capture failed: %s', e)
                 system_prompt = (system_prompt or '') + \
@@ -2142,7 +2143,7 @@ class AIOpenAIAPI(http.Controller):
                     provider=provider, tools=tools,
                     config=AgentConfig(
                         model=model_name, system_prompt=system_prompt,
-                        max_rounds=10,
+                        max_rounds=6,
                         nats_api_secret=_nats_api_secret,
                         nats_max_retries=_nats_max_retries,
                     ),
@@ -2223,6 +2224,7 @@ class AIOpenAIAPI(http.Controller):
                         _sess = _find_or_create_session(_gen_env)
                         try:
                             _sess._session_capture_context()
+                            _sess._session_auto_capture(prompt)
                         except Exception as e:
                             _logger.warning('session capture failed: %s', e)
                         _gen_sys_prompt = (system_prompt or '') + \
@@ -2249,7 +2251,7 @@ class AIOpenAIAPI(http.Controller):
                         provider=provider, tools=tools,
                         config=AgentConfig(
                             model=model_name, system_prompt=_gen_sys_prompt,
-                            max_rounds=10,
+                            max_rounds=6,
                             nats_api_secret=_nats_api_secret,
                             nats_max_retries=_nats_max_retries,
                         ),

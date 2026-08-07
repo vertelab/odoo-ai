@@ -90,6 +90,17 @@ class AICoworkerSession(models.Model):
         """
         return self
 
+    def _session_auto_capture(self, prompt):
+        """Domän-ren hook: deterministisk kontextfångst ur användarens
+        prompt (t.ex. 'task 36779' → task/projekt/kund).
+
+        Kallas av openai_api-vägen efter att sessionen skapats/återfunnits
+        OCH efter _session_capture_context, innan LLM-körningen. Bryggor
+        (t.ex. project_ai) override:ar med regex/heuristik — core förblir
+        domän-rent. Default: ingen åtgärd.
+        """
+        return self
+
     def _apply_cost_context_strategy(self):
         """Anropa coworkerns resolver-strategi för att härleda partner_id
         (och ev. domänfält) ur sessionens nuvarande kontext.
