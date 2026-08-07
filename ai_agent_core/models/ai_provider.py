@@ -23,7 +23,6 @@ PROVIDER_TYPES = [
     ('ollama', 'Ollama'),
     ('openrouter', 'OpenRouter'),
     ('bifrost', 'Bifrost Gateway'),
-    ('openrouter', 'OpenRouter'),
     ('custom', 'Custom (OpenAI-compatible)'),
 ]
 
@@ -41,6 +40,19 @@ class AIProvider(models.Model):
     api_key = fields.Char('API Key')
     is_key_required = fields.Boolean(default=True)
 
+    # Datadrivna skillnader (fix-provider-resolution): allt som skiljer en
+    # provider från en annan lagras på recordet — aldrig hårdkodat i koden.
+    # Ingen pillar/env-koppling: api_key ligger på recordet, fylls i via UI.
+    is_bifrost = fields.Boolean(
+        'Bifrost-gateway',
+        help='Använd X-Virtual-Key-headern (Bifrost LLM Gateway).',
+        default=False,
+    )
+    api_style = fields.Selection([
+        ('openai', 'OpenAI-kompatibel (/chat/completions)'),
+        ('anthropic', 'Anthropic (/v1/messages)'),
+    ], default='openai', string='API-stil')
+
     # Status
     status = fields.Selection([
         ('draft', 'Draft'),
@@ -50,7 +62,7 @@ class AIProvider(models.Model):
 
     # Stats
     model_count = fields.Integer(compute='_compute_model_count')
-    model_ids = fields.One2many('ai.model', 'provider_id', string='Models')
+    model_ids = fields.One2many('ai.model', 'provider', string='Models')
     last_checked = fields.Datetime('Last Model Sync')
 
     # Image
@@ -64,6 +76,32 @@ class AIProvider(models.Model):
     def _compute_model_count(self):
         for r in self:
             r.model_count = len(r.model_ids)
+
+    # -- Datadrivna flaggor (fix-provider-resolution) --
+    @api.onchange('provider_type')
+    def _onchange_provider_type(self):
+        """Sätt datadrivna flaggor (is_bifrost/api_style) när
+        provider_type ändras. Överskrivs av action_discover vid auto-detection.
+        """
+        if not self.provider_type:
+            return
+        flags = self._flags_from_type(self.provider_type)
+        self.is_bifrost = flags['is_bifrost']
+        self.api_style = flags['api_style']
+
+    @staticmethod
+    def _flags_from_type(provider_type: str) -> dict:
+        """Default-flaggorna för en provider_type (data-nära, i modellen).
+
+        Bifrost → X-Virtual-Key-header; anthropic → /v1/messages;
+        övriga → bearer/openai.
+        """
+        type_lower = (provider_type or '').lower()
+        if type_lower == 'bifrost':
+            return {'is_bifrost': True, 'api_style': 'openai'}
+        if type_lower == 'anthropic':
+            return {'is_bifrost': False, 'api_style': 'anthropic'}
+        return {'is_bifrost': False, 'api_style': 'openai'}
 
     # -- Actions --
     def action_fetch_models(self):
@@ -144,13 +182,13 @@ class AIProvider(models.Model):
         """
         existing = self.env['ai.model'].search([
             ('name', '=', model_id),
-            ('provider_id', '=', self.id),
+            ('provider', '=', self.id),
         ], limit=1)
 
         vals = {
             'name': model_id,
             'display_name': display_name or model_id,
-            'provider_id': self.id,
+            'provider': self.id,
             'status': 'active',
         }
 
@@ -219,7 +257,7 @@ class AIProvider(models.Model):
         """
         self.ensure_one()
         models = self.env['ai.model'].search([
-            ('provider_id', '=', self.id),
+            ('provider', '=', self.id),
             ('sys_multiplier', '=', 1.0),  # only untouched defaults
         ])
         count = 0
@@ -239,8 +277,8 @@ class AIProvider(models.Model):
             'res_model': 'ai.model',
             'view_mode': 'list,kanban,form',
             'target': 'current',
-            'domain': [('provider_id', '=', self.id)],
-            'context': {'default_provider_id': self.id},
+            'domain': [('provider', '=', self.id)],
+            'context': {'default_provider': self.id},
         }
 
     def action_test_connection(self):
@@ -314,16 +352,15 @@ class AIProviderWizard(models.TransientModel):
             vals['provider_type'] = 'ollama'
             vals['base_url'] = 'http://localhost:11434/v1'
             vals['is_key_required'] = False
-        elif 'bifrost' in name_lower or '192.168.11.150' in url_lower:
-            vals['provider_type'] = 'bifrost'
-            vals['base_url'] = 'http://192.168.11.150:8080/v1'
-            vals['is_key_required'] = False
-        elif 'berget' in url_lower or 'berget' in name_lower:
-            vals['provider_type'] = 'custom'
-            vals['base_url'] = 'https://berget.ai/v1'
         elif self.url:
             vals['provider_type'] = 'custom'
             vals['base_url'] = self.url.rstrip('/') + '/v1' if '/v1' not in self.url else self.url
+
+        # Datadrivna flaggor (is_bifrost/api_style) från typen
+        flags = self.env['ai.provider']._flags_from_type(
+            vals.get('provider_type', 'custom'))
+        vals['is_bifrost'] = flags['is_bifrost']
+        vals['api_style'] = flags['api_style']
 
         provider = self.env['ai.provider'].create(vals)
 

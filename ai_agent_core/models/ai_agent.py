@@ -141,7 +141,7 @@ class AIAgent(models.Model):
                 _logger.info('No text2image model available for avatar generation; using fallback')
                 return False
 
-            provider = model.provider_id
+            provider = model.provider
             if not provider or not provider.base_url:
                 return False
 

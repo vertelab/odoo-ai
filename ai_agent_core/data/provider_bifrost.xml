@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+
+        <!-- Bifrost LLM Gateway — X-Virtual-Key, nyckel via env (pillar) -->
+        <record id="provider_bifrost" model="ai.provider">
+            <field name="name">Bifrost</field>
+            <field name="provider_type">bifrost</field>
+            <field name="base_url">http://192.168.11.150:8080/v1</field>
+            <field name="is_bifrost" eval="True"/>
+            <field name="api_style">openai</field>
+            <field name="is_key_required" eval="False"/>
+            <field name="timeout">120</field>
+            <field name="retry_count">3</field>
+            <field name="active" eval="True"/>
+            <field name="status">confirmed</field>
+        </record>
+
+    </data>
+</odoo>

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+
+        <!-- Ollama (självhostad) AI Provider — ingen nyckel krävs -->
+        <record id="provider_ollama" model="ai.provider">
+            <field name="name">Ollama</field>
+            <field name="provider_type">ollama</field>
+            <field name="base_url">http://localhost:11434/v1</field>
+            <field name="api_style">openai</field>
+            <field name="is_key_required" eval="False"/>
+            <field name="timeout">120</field>
+            <field name="retry_count">3</field>
+            <field name="active" eval="True"/>
+            <field name="status">confirmed</field>
+        </record>
+
+    </data>
+</odoo>

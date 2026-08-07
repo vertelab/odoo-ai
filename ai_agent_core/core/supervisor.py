@@ -61,9 +61,9 @@ class SupervisorLoop:
     """A thin router that selects specialist agents for user prompts.
 
     Usage:
-        router_provider = BifrostProvider()
+        router_provider = AIProvider(base_url='...', is_bifrost=True)
         specialist = AgentLoop(
-            provider=BifrostProvider(),
+            provider=AIProvider(base_url='...', is_bifrost=True),
             tools=analyst_tools,
             config=AgentConfig(model="claude-sonnet-4"),
         )
