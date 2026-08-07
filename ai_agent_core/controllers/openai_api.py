@@ -158,10 +158,21 @@ class AIOpenAPIController(http.Controller):
         try:
             # Run WITHOUT sudo — coworker.env carries the API-authenticated
             # user so session.user_id is correct (not SUPERUSER).
+            _session = coworker.env['ai.coworker.session'].create({
+                'coworker_id': coworker.id, 'status': 'active',
+                'name': (prompt or 'API')[:50],
+                'user_id': coworker.env.user.id,
+            })
             result = coworker.run(
                 prompt=prompt,
                 system_prompt=system_prompt,
+                session=_session,
             )
+            # Personligt lärande (OpenAI API-yta)
+            try:
+                coworker._maybe_learn_async(_session.id)
+            except Exception:
+                pass
 
             response_text = result.text if hasattr(result, 'text') else str(result or '')
             input_t = getattr(result, 'input_tokens', estimated_tokens)
@@ -193,6 +204,11 @@ class AIOpenAPIController(http.Controller):
         """Handle streaming request — SSE response."""
         response_id = f'chatcmpl-{coworker.id}-{int(time.time())}'
         created = int(time.time())
+        _session = coworker.env['ai.coworker.session'].create({
+            'coworker_id': coworker.id, 'status': 'active',
+            'name': (prompt or 'API')[:50],
+            'user_id': coworker.env.user.id,
+        })
 
         def generate():
             try:
@@ -201,7 +217,13 @@ class AIOpenAPIController(http.Controller):
                 result = coworker.run(
                     prompt=prompt,
                     system_prompt=system_prompt,
+                    session=_session,
                 )
+                # Personligt lärande (OpenAI API-yta)
+                try:
+                    coworker._maybe_learn_async(_session.id)
+                except Exception:
+                    pass
                 response_text = result.text if hasattr(result, 'text') else str(result or '')
 
                 # Stream token by token

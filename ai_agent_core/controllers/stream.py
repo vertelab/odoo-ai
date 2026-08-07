@@ -864,14 +864,7 @@ class AIStreamController(http.Controller):
                 # skapar EGEN DB-cursor/env (requestens stängs efter svar).
                 if quest and quest.learning == 'active' and role == 'assistant':
                     try:
-                        import threading
-                        from odoo.addons.ai_agent_core.models.ai_coworker import (
-                            _run_learn_in_env)
-                        threading.Thread(
-                            target=_run_learn_in_env,
-                            args=(request.env.cr.dbname, quest.id, session.id),
-                            daemon=True,
-                        ).start()
+                        quest._maybe_learn_async(session.id)
                     except Exception:
                         pass
 
