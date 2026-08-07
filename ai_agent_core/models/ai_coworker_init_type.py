@@ -20,7 +20,7 @@ from .ai_coworker import INIT_TYPES as INIT_TYPE_SELECTION
 
 class AICoworkerInitType(models.Model):
     _name = 'ai.coworker.init_type'
-    _description = 'AI Quest Init Type'
+    _description = 'AI Medarbetare — Initiering'
     _order = 'sequence asc, id asc'
     _rec_name = 'display_name'
 

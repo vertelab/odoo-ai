@@ -6,6 +6,7 @@ from . import ai_coworker
 from . import ai_coworker_buzz_agent_wizard
 from . import ai_agent
 from . import ai_session
+from . import ai_coworker_error
 from . import ai_mail_test_wizard
 from . import ai_memory
 from . import ai_tool

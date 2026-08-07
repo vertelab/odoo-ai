@@ -110,7 +110,7 @@
         <field name="name">ai.coworker.list</field>
         <field name="model">ai.coworker</field>
         <field name="arch" type="xml">
-            <list string="AI Quests">
+            <list string="AI Medarbetare">
                 <field name="name"/>
                 <field name="init_type"/>
                 <field name="status" widget="badge"
@@ -128,7 +128,7 @@
         <field name="name">ai.coworker.search</field>
         <field name="model">ai.coworker</field>
         <field name="arch" type="xml">
-            <search string="Search Quests">
+            <search string="Sök medarbetare">
                 <field name="name"/>
                 <field name="description"/>
                 <field name="tag_ids"/>
