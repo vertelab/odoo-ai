@@ -412,6 +412,8 @@ class AIStreamController(http.Controller):
                             if event.type == "token":
                                 data["token"] = event.token
                                 full_response.append(event.token)
+                            elif event.type in ("debug", "source", "tool_progress"):
+                                data["token"] = event.token
                             elif event.type == "tool_call_start":
                                 if event.tool_call:
                                     data["tool_call"] = {
@@ -802,6 +804,8 @@ class AIStreamController(http.Controller):
         model_real = body.get('model_real', '')
         token_input = body.get('token_input', 0)
         token_output = body.get('token_output', 0)
+        debug_info = body.get('debug', '')
+        sources = body.get('sources') or []
         if not content.strip():
             return Response(json.dumps({"status": "ok"}), content_type='application/json')
         session = request.env['ai.coworker.session'].sudo().browse(thread_id)
@@ -822,6 +826,9 @@ class AIStreamController(http.Controller):
                 'sequence': next_seq,
                 'role': role,
                 'content': content,
+                'debug_info': debug_info,
+                'source_urls': '\n'.join(
+                    str(s) for s in sources if str(s).startswith('http')),
                 'token_input': token_input,
                 'token_output': token_output,
                 'model_real': model_real,

@@ -119,4 +119,33 @@
         </field>
     </record>
 
+    <record id="view_ai_session_line_form" model="ir.ui.view">
+        <field name="name">ai.coworker.session.line.form</field>
+        <field name="model">ai.coworker.session.line</field>
+        <field name="arch" type="xml">
+            <form string="Meddelande">
+                <sheet>
+                    <group>
+                        <field name="session_id" readonly="1"/>
+                        <field name="role" readonly="1"/>
+                        <field name="create_date" readonly="1"/>
+                    </group>
+                    <notebook>
+                        <page string="Innehåll" name="content">
+                            <field name="content" readonly="1"/>
+                        </page>
+                        <page string="Resonemang (debug)" name="debug"
+                              invisible="not debug_info">
+                            <field name="debug_info" readonly="1"/>
+                        </page>
+                        <page string="Källor" name="sources"
+                              invisible="not source_urls">
+                            <field name="source_urls" readonly="1"/>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
 </odoo>
