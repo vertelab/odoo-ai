@@ -13,8 +13,6 @@ def _quest_is_accessible(quest, user):
     """Check if a user can access a quest via the web chat."""
     if user.has_group('base.group_system'):
         return True
-    if quest.user_id and quest.user_id.id == user.id:
-        return True
     if quest.group_ids:
         user_grp = set(user.groups_id.ids)
         quest_grp = set(quest.group_ids.ids)
@@ -437,7 +435,6 @@ class AICoworker(models.Model):
 
     debug = fields.Boolean('Debug Mode')
 
-    user_id = fields.Many2one('res.users', default=lambda self: self.env.user)
     company_id = fields.Many2one('res.company', default=lambda self: self.env.company)
     is_favorite = fields.Boolean('Favorite')
 

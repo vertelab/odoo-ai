@@ -118,7 +118,6 @@
                        decoration-warning="status=='draft'"/>
                 <field name="agent_count"/>
                 <field name="session_count"/>
-                <field name="user_id"/>
                 <field name="company_id" groups="base.group_multi_company"/>
             </list>
         </field>
@@ -418,7 +417,6 @@
                             <group>
                                 <group string="Användare &amp; grupper">
                                     <field name="group_ids" widget="many2many_tags"/>
-                                    <field name="user_id"/>
                                     <field name="company_id"/>
                                 </group>
                             </group>
