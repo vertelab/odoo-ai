@@ -1704,49 +1704,6 @@ class PICallbackController(http.Controller):
         _logger.info('Callback received for session %d: state=%s', task_id, state)
         return {'status': 'ok', 'session_id': session.id}
 
-    @http.route('/pi/zabbix/webhook', type='json', auth='public',
-                methods=['POST'], csrf=False, sitemap=False)
-    def zabbix_webhook(self, **kw):
-        """Receive Zabbix alert webhooks.
-
-        Body: {host, trigger, severity, ...}
-        Creates an ai.coworker.session for the designated infrastructure quest.
-        """
-        if not self._check_callback_auth():
-            return {'error': 'Unauthorized', 'status': 403}
-
-        body = json.loads(request.httprequest.data or '{}')
-        host = body.get('host', 'unknown')
-        trigger = body.get('trigger', '')
-        severity = body.get('severity', 'warning')
-
-        # Find infrastructure quest (first active quest with 'cron' or 'manual' type)
-        quest = request.env['ai.coworker'].sudo().search(
-            [('status', '=', 'active')], limit=1, order='sequence asc')
-        if not quest:
-            return {'error': 'No active quest found', 'status': 404}
-
-        # Create session with alert context
-        session = request.env['ai.coworker.session'].sudo().create({
-            'coworker_id': quest.id,
-            'name': f'Zabbix: {trigger[:100]}',
-            'status': 'active',
-            'user_id': request.env.ref('base.user_root', raise_if_not_found=False).id or 1,
-        })
-
-        # Save alert as session line
-        prompt = f'⚠️ Zabbix Alert [{severity.upper()}]\nHost: {host}\nTrigger: {trigger}\n\nPlease analyze this alert and recommend actions.'
-        request.env['ai.coworker.session.line'].sudo().create({
-            'session_id': session.id,
-            'sequence': 1,
-            'role': 'user',
-            'content': prompt,
-        })
-
-        _logger.info('Zabbix webhook: host=%s trigger=%s → session=%d',
-                    host, trigger, session.id)
-        return {'status': 'ok', 'session_id': session.id}
-
     @http.route('/pi/bifrost/batch/callback', type='json', auth='public',
                 methods=['POST'], csrf=False, sitemap=False)
     def bifrost_batch_callback(self, **kw):
