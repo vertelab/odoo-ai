@@ -100,6 +100,8 @@ class AIOpenAPIController(http.Controller):
         temperature = body.get('temperature', 0.7)
         max_tokens = body.get('max_tokens', 4096)
         user_ident = body.get('user', '')
+        pi_session_id = (body.get('pi_session_id') or '').strip()
+        session_id = int(body.get('session_id') or 0)
 
         if not messages:
             return self._error(400, "Missing messages")
@@ -145,24 +147,129 @@ class AIOpenAPIController(http.Controller):
             return self._handle_stream(
                 coworker, prompt, system_prompt, model, temperature,
                 max_tokens, tools, estimated_tokens,
+                pi_session_id=pi_session_id, session_id=session_id,
             )
         else:
             return self._handle_sync(
                 coworker, prompt, system_prompt, model, temperature,
                 max_tokens, tools, estimated_tokens,
+                pi_session_id=pi_session_id, session_id=session_id,
             )
 
+    def _find_or_create_session(self, coworker, prompt, pi_session_id='',
+                                session_id=0):
+        """Hitta/skapa session via pi_session_id (Pi) eller återanvänd
+        session_id (session-cost-context 3.1). Sätter context-nycklarna så
+        verktyg (cost_context_get/set) når sessionen."""
+        Sess = coworker.env['ai.coworker.session']
+        sess = Sess.browse(0)
+        if session_id:
+            sess = Sess.browse(int(session_id))
+            if not sess.exists():
+                sess = Sess.browse(0)
+        if not sess and pi_session_id:
+            sess = Sess.search([('pi_session_id', '=', pi_session_id)],
+                               limit=1)
+        if not sess:
+            sess = Sess.create({
+                'coworker_id': coworker.id, 'status': 'active',
+                'name': (prompt or 'API')[:50],
+                'user_id': coworker.env.user.id,
+                'pi_session_id': pi_session_id or False,
+            })
+        # Domän-ren hook: bryggor fångar domänkontext
+        try:
+            sess._session_capture_context()
+        except Exception as e:
+            _logger.warning('session capture failed: %s', e)
+        return sess
+
+    def _session_context_env(self, coworker, sess):
+        """Coworker med context-nycklar som pekar på sessionen (verktyg)."""
+        return coworker.with_context(
+            _ai_context_model='ai.coworker.session',
+            _ai_context_id=sess.id,
+            ai_lineage_session_id=sess.id,
+        )
+
+    def _cost_context_prompt_block(self, coworker, sess):
+        """Bygg kostnadskontext-blocket (D9) för systemprompten.
+
+        Injiceras endast för openai_api-körningar. Innehåller aktuell
+        session-kontext + coworkerns konfigurerade frågetext +
+        "fråga en gång"-instruktion. Tyst no-op vid fel.
+        """
+        try:
+            oai = coworker.sudo().init_type_ids.filtered(
+                lambda it: it.init_type == 'openai_api' and it.enabled)
+            if not oai:
+                return ''
+            cc = []
+            if 'project_id' in sess._fields and sess.project_id:
+                cc.append(f'projekt: {sess.project_id.name} '
+                          f'(id={sess.project_id.id})')
+            if 'task_id' in sess._fields and sess.task_id:
+                cc.append(f'uppgift: {sess.task_id.name} '
+                          f'(id={sess.task_id.id})')
+            if sess.partner_id:
+                cc.append(f'kund: {sess.partner_id.name} '
+                          f'(id={sess.partner_id.id})')
+            confirmed = sess.cost_context_confirmed
+            question = (coworker.cost_context_question or '').strip()
+            block = (
+                '\n\n## Kostnadskontext\n'
+                'Aktuell kontext: '
+                f'{chr(44).join(cc) if cc else "ingen (saknas)"}'
+                f'. Bekräftad: {"ja" if confirmed else "nej"}.\n'
+            )
+            if not confirmed:
+                block += (
+                    'Alla sessioner är kostnadsbärande arbete. Om '
+                    'kostnadskontext saknas: ställ frågan nedan till '
+                    'användaren, EN gång per session.\n'
+                    + (f'Fråga: "{question}"\n' if question else
+                       'Fråga: "Vilket projekt gäller detta arbete? '
+                       '(eller kund om projekt saknas)"\n')
+                    + 'När användaren svarat: bekräfta att kostnaden '
+                      'belastar projektet/kunden och anropa '
+                      'cost_context_set (kolla först med cost_context_get). '
+                      'Ställ ALDRIG om frågan när cost_context_confirmed '
+                      'är satt.\n'
+                )
+            else:
+                block += 'Fråga inte om kostnadskontext igen.\n'
+            return block
+        except Exception as e:
+            _logger.warning('cost-context injection failed: %s', e)
+            return ''
+
+    def _cost_context_payload(self, sess):
+        return {
+            'project_id': (
+                sess.project_id.id
+                if 'project_id' in sess._fields and sess.project_id
+                else None),
+            'task_id': (
+                sess.task_id.id
+                if 'task_id' in sess._fields and sess.task_id
+                else None),
+            'partner_id': sess.partner_id.id if sess.partner_id else None,
+            'cost_context_confirmed': sess.cost_context_confirmed,
+        }
+
     def _handle_sync(self, coworker, prompt, system_prompt, model,
-                     temperature, max_tokens, tools, estimated_tokens):
+                     temperature, max_tokens, tools, estimated_tokens,
+                     pi_session_id='', session_id=0):
         """Handle non-streaming request — run AgentLoop and return JSON."""
         try:
             # Run WITHOUT sudo — coworker.env carries the API-authenticated
             # user so session.user_id is correct (not SUPERUSER).
-            _session = coworker.env['ai.coworker.session'].create({
-                'coworker_id': coworker.id, 'status': 'active',
-                'name': (prompt or 'API')[:50],
-                'user_id': coworker.env.user.id,
-            })
+            _session = self._find_or_create_session(
+                coworker, prompt, pi_session_id=pi_session_id,
+                session_id=session_id)
+            coworker = self._session_context_env(coworker, _session)
+            system_prompt = (system_prompt or '') + \
+                self._cost_context_prompt_block(coworker, _session)
             result = coworker.run(
                 prompt=prompt,
                 system_prompt=system_prompt,
@@ -193,6 +300,8 @@ class AIOpenAPIController(http.Controller):
                     'completion_tokens': output_t,
                     'total_tokens': input_t + output_t,
                 },
+                'session_id': _session.id,
+                'cost_context': self._cost_context_payload(_session),
             }), content_type='application/json')
 
         except Exception as e:
@@ -200,15 +309,17 @@ class AIOpenAPIController(http.Controller):
             return self._error(500, str(e))
 
     def _handle_stream(self, coworker, prompt, system_prompt, model,
-                       temperature, max_tokens, tools, estimated_tokens):
+                       temperature, max_tokens, tools, estimated_tokens,
+                       pi_session_id='', session_id=0):
         """Handle streaming request — SSE response."""
         response_id = f'chatcmpl-{coworker.id}-{int(time.time())}'
         created = int(time.time())
-        _session = coworker.env['ai.coworker.session'].create({
-            'coworker_id': coworker.id, 'status': 'active',
-            'name': (prompt or 'API')[:50],
-            'user_id': coworker.env.user.id,
-        })
+        _session = self._find_or_create_session(
+            coworker, prompt, pi_session_id=pi_session_id,
+            session_id=session_id)
+        coworker = self._session_context_env(coworker, _session)
+        system_prompt = (system_prompt or '') + \
+            self._cost_context_prompt_block(coworker, _session)
 
         def generate():
             try:
@@ -233,6 +344,8 @@ class AIOpenAPIController(http.Controller):
                     yield f'data: {json.dumps({"id": response_id, "object": "chat.completion.chunk", "created": created, "model": model or "default", "choices": [{"index": 0, "delta": {"content": chunk}}]})}\n\n'
 
                 yield f'data: {json.dumps({"id": response_id, "object": "chat.completion.chunk", "created": created, "model": model or "default", "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]})}\n\n'
+                # Session-info (session-cost-context 3.3) — före [DONE]
+                yield f'data: {json.dumps({"session_id": _session.id, "cost_context": self._cost_context_payload(_session)})}\n\n'
                 yield 'data: [DONE]\n\n'
 
             except Exception as e:

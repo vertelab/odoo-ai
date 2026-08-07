@@ -1832,6 +1832,57 @@ class AIOpenAIAPI(http.Controller):
             'owned_by': 'vertel',
         }]}), content_type='application/json')
 
+    @http.route('/ai/v1/sessions/lookup', type='http', auth='public',
+                methods=['POST'], csrf=False, sitemap=False)
+    def session_lookup(self, **kw):
+        """POST /ai/v1/sessions/lookup — find-or-create session via pi_session_id.
+
+        Body: {"pi_session_id": "<uuid>",
+               "copy_from_pi_session_id": "<käll-uuid>"}   (copy_from valfritt)
+        Auth: Bearer API-nyckel (samma mönster som övriga /ai/v1/*).
+        Svar: {session_id, project_id, task_id, partner_id,
+               cost_context_confirmed}
+
+        Idempotent: samma pi_session_id → samma session. Vid
+        copy_from_pi_session_id (fork) skapas en NY session med kontexten
+        (project/task/partner + bekräftelse) kopierad från källsessionen.
+        """
+        if not self._check_api_key():
+            return Response(json.dumps({
+                'error': {'message': 'Unauthorized',
+                          'type': 'authentication_error'}}),
+                status=401, content_type='application/json')
+        try:
+            body = json.loads(request.httprequest.data or '{}')
+        except json.JSONDecodeError:
+            return Response(json.dumps({
+                'error': {'message': 'Invalid JSON',
+                          'type': 'invalid_request_error'}}),
+                status=400, content_type='application/json')
+        pi_session_id = (body.get('pi_session_id') or '').strip()
+        if not pi_session_id:
+            return Response(json.dumps({
+                'error': {'message': 'Missing pi_session_id',
+                          'type': 'invalid_request_error'}}),
+                status=400, content_type='application/json')
+        copy_from = (body.get('copy_from_pi_session_id') or '').strip()
+
+        Session = request.env['ai.coworker.session'].sudo()
+        session, _created = Session._lookup_or_create_pi_session(
+            pi_session_id, copy_from_pi_session_id=copy_from)
+
+        def _field_id(name):
+            return (session[name].id
+                    if name in session._fields and session[name] else None)
+
+        return Response(json.dumps({
+            'session_id': session.id,
+            'project_id': _field_id('project_id'),
+            'task_id': _field_id('task_id'),
+            'partner_id': session.partner_id.id if session.partner_id else None,
+            'cost_context_confirmed': session.cost_context_confirmed,
+        }), content_type='application/json')
+
     @http.route('/ai/v1/<string:coworker>/chat/completions', type='http', auth='public',
                 methods=['POST'], csrf=False, sitemap=False)
     def coworker_chat(self, coworker, **kw):
@@ -1878,7 +1929,11 @@ class AIOpenAIAPI(http.Controller):
             return Response(json.dumps({'error': {'message': 'Unauthorized', 'type': 'authentication_error'}}),
                           status=401, content_type='application/json')
 
-        return self._run_coworker_chat(quest, messages, body.get('model', coworker), stream)
+        return self._run_coworker_chat(
+            quest, messages, body.get('model', coworker), stream,
+            pi_session_id=body.get('pi_session_id', ''),
+            session_id=body.get('session_id', 0),
+        )
 
     # ── Coworker helpers ──────────────────────────────────────────────
 
@@ -1893,7 +1948,8 @@ class AIOpenAIAPI(http.Controller):
             for c in quest.name
         ).strip('-').lower() or f'coworker-{quest.id}'
 
-    def _run_coworker_chat(self, quest, messages, model_ref, stream):
+    def _run_coworker_chat(self, quest, messages, model_ref, stream,
+                           pi_session_id='', session_id=0):
         """Execute a chat completion through a coworker's agent chain."""
         # ── Imports (must be at method level for both sync + stream paths) ──
         import asyncio
@@ -1923,8 +1979,113 @@ class AIOpenAIAPI(http.Controller):
         if history_context:
             system_prompt += f'\n\n## Previous conversation\n{history_context}'
 
+
+        # ── Session (session-cost-context 3.1) ──────────────────────────────
+        # Hitta/skapa session via pi_session_id (Pi) eller återanvänd
+        # session_id. Sync-vägen gör det i request-transaktionen; stream-vägen
+        # i generatorn (egen cursor så den nya sessionen syns).
+        def _find_or_create_session(env):
+            Sess = env['ai.coworker.session']
+            sess = Sess.browse(0)
+            if session_id:
+                sess = Sess.browse(int(session_id))
+                if not sess.exists():
+                    sess = Sess.browse(0)
+            if not sess and pi_session_id:
+                sess = Sess.search(
+                    [('pi_session_id', '=', pi_session_id)], limit=1)
+            if not sess:
+                sess = Sess.create({
+                    'coworker_id': quest.id,
+                    'status': 'active',
+                    'name': (prompt or 'API')[:80],
+                    'user_id': env.user.id,
+                    'pi_session_id': pi_session_id or False,
+                })
+            return sess
+
+        def _cost_context_prompt_block(sess):
+            """Bygg kostnadskontext-blocket (D9) för systemprompten.
+
+            Injiceras endast för openai_api-körningar. Innehåller aktuell
+            session-kontext + coworkerns konfigurerade frågetext +
+            "fråga en gång"-instruktion. Tyst no-op vid fel.
+            """
+            try:
+                has_openai = bool(quest.init_type_ids.filtered(
+                    lambda it: it.init_type == 'openai_api' and it.enabled))
+                if not has_openai:
+                    return ''
+                cc = []
+                if 'project_id' in sess._fields and sess.project_id:
+                    cc.append(f'projekt: {sess.project_id.name} '
+                              f'(id={sess.project_id.id})')
+                if 'task_id' in sess._fields and sess.task_id:
+                    cc.append(f'uppgift: {sess.task_id.name} '
+                              f'(id={sess.task_id.id})')
+                if sess.partner_id:
+                    cc.append(f'kund: {sess.partner_id.name} '
+                              f'(id={sess.partner_id.id})')
+                confirmed = sess.cost_context_confirmed
+                question = (quest.cost_context_question or '').strip()
+                block = (
+                    '\n\n## Kostnadskontext\n'
+                    'Aktuell kontext: '
+                    f'{chr(44).join(cc) if cc else "ingen (saknas)"}'
+                    f'. Bekräftad: {"ja" if confirmed else "nej"}.\n'
+                )
+                if not confirmed:
+                    block += (
+                        'Alla sessioner är kostnadsbärande arbete. Om '
+                        'kostnadskontext saknas: ställ frågan nedan till '
+                        'användaren, EN gång per session.\n'
+                        + (f'Fråga: "{question}"\n' if question else
+                           'Fråga: "Vilket projekt gäller detta arbete? '
+                           '(eller kund om projekt saknas)"\n')
+                        + 'När användaren svarat: bekräfta att kostnaden '
+                          'belastar projektet/kunden och anropa '
+                          'cost_context_set (kolla först med '
+                          'cost_context_get). Ställ ALDRIG om frågan när '
+                          'cost_context_confirmed är satt.\n'
+                    )
+                else:
+                    block += 'Fråga inte om kostnadskontext igen.\n'
+                return block
+            except Exception as e:
+                _logger.warning('cost-context injection failed: %s', e)
+                return ''
+
+        def _persist_session(env, sess, response_text, input_t, output_t,
+                             model_real='', tool_history=None):
+            """Persistera körningen till sessionen (session-cost-context 3.2)."""
+            try:
+                Line = env['ai.coworker.session.line']
+                Line.create({
+                    'session_id': sess.id, 'role': 'user',
+                    'content': (prompt or '')[:2000], 'sequence': 1,
+                })
+                Line.create({
+                    'session_id': sess.id, 'role': 'assistant',
+                    'content': response_text,
+                    'token_input': input_t, 'token_output': output_t,
+                    'model_real': model_real or '', 'sequence': 2,
+                })
+                for i, (t_name, t_preview) in enumerate(tool_history or []):
+                    Line.create({
+                        'session_id': sess.id, 'role': 'tool',
+                        'tool_name': t_name, 'content': t_preview,
+                        'sequence': 10 + i,
+                    })
+                sess.write({
+                    'token_input': (sess.token_input or 0) + input_t,
+                    'token_output': (sess.token_output or 0) + output_t,
+                })
+            except Exception as e:
+                _logger.warning('session persist failed: %s', e)
+
         # Get model from quest's first agent (model_id — inte legacy ai_agent_llm)
         model_name = ''
+
         for agent_rel in quest.agent_ids:
             if agent_rel.agent_id and agent_rel.agent_id.model_id \
                     and agent_rel.agent_id.model_id.name:
@@ -1950,6 +2111,21 @@ class AIOpenAIAPI(http.Controller):
 
         if not stream:
             try:
+                # Session i request-transaktionen (sync)
+                _sess = _find_or_create_session(request.env)
+                try:
+                    _sess._session_capture_context()
+                except Exception as e:
+                    _logger.warning('session capture failed: %s', e)
+                system_prompt = (system_prompt or '') + \
+                    _cost_context_prompt_block(_sess)
+                tool_env = request.env(context=dict(
+                    request.env.context,
+                    _ai_context_model='ai.coworker.session',
+                    _ai_context_id=_sess.id,
+                    ai_lineage_session_id=_sess.id,
+                ))
+
                 provider_instance, provider_model = ProviderFactory.from_coworker(quest)
                 provider = provider_instance or get_default_provider()[0] 
                 # explicit-agent-tools: ENDAST settings-default + explicita
@@ -1959,8 +2135,8 @@ class AIOpenAIAPI(http.Controller):
                 tools = ToolRegistry()
                 if tool_ids:
                     tools.register_many(ai_tool_records_to_tools(
-                        request.env['ai.tool'].browse(tool_ids),
-                        request.env))
+                        tool_env['ai.tool'].browse(tool_ids),
+                        tool_env))
 
                 loop_obj = AgentLoop(
                     provider=provider, tools=tools,
@@ -1981,12 +2157,31 @@ class AIOpenAIAPI(http.Controller):
 
                 response_text = response.text if hasattr(response, 'text') else str(response)
                 response_id = f'chatcmpl-{coworker_id}-{fields.Datetime.now().timestamp()}'
+                _persist_session(
+                    tool_env, _sess, response_text,
+                    getattr(response, 'input_tokens', 0),
+                    getattr(response, 'output_tokens', 0),
+                    model_ref, getattr(loop_obj, 'tool_history', []))
+                cost_ctx = {
+                    'project_id': (
+                        _sess.project_id.id
+                        if 'project_id' in _sess._fields and _sess.project_id
+                        else None),
+                    'task_id': (
+                        _sess.task_id.id
+                        if 'task_id' in _sess._fields and _sess.task_id
+                        else None),
+                    'partner_id': _sess.partner_id.id if _sess.partner_id else None,
+                    'cost_context_confirmed': _sess.cost_context_confirmed,
+                }
 
                 return Response(json.dumps({
                     'id': response_id,
                     'object': 'chat.completion',
                     'created': int(fields.Datetime.now().timestamp()),
                     'model': model_ref,
+                    'session_id': _sess.id,
+                    'cost_context': cost_ctx,
                     'choices': [{
                         'index': 0,
                         'message': {'role': 'assistant', 'content': response_text},
@@ -2022,6 +2217,22 @@ class AIOpenAIAPI(http.Controller):
                     _gen_cr = _registry(_gen_dbname).cursor()
                     try:
                         _gen_env = _api.Environment(_gen_cr, _gen_uid, _gen_context)
+                        # Session (session-cost-context 3.1): skapas i
+                        # generatorns egen cursor så den är synlig (och kan
+                        # committas). Injicera kostnadskontext i prompten.
+                        _sess = _find_or_create_session(_gen_env)
+                        try:
+                            _sess._session_capture_context()
+                        except Exception as e:
+                            _logger.warning('session capture failed: %s', e)
+                        _gen_sys_prompt = (system_prompt or '') + \
+                            _cost_context_prompt_block(_sess)
+                        _gen_env = _api.Environment(_gen_cr, _gen_uid, dict(
+                            _gen_context,
+                            _ai_context_model='ai.coworker.session',
+                            _ai_context_id=_sess.id,
+                            ai_lineage_session_id=_sess.id,
+                        ))
                         tools = ToolRegistry()
                         # explicit-agent-tools: ENDAST settings-default +
                         # explicita verktyg — inga interna builtins per default.
@@ -2037,7 +2248,7 @@ class AIOpenAIAPI(http.Controller):
                     loop = StreamingAgentLoop(
                         provider=provider, tools=tools,
                         config=AgentConfig(
-                            model=model_name, system_prompt=system_prompt,
+                            model=model_name, system_prompt=_gen_sys_prompt,
                             max_rounds=10,
                             nats_api_secret=_nats_api_secret,
                             nats_max_retries=_nats_max_retries,
@@ -2051,6 +2262,11 @@ class AIOpenAIAPI(http.Controller):
                                 yield f'data: {json.dumps({"id": response_id, "object": "chat.completion.chunk", "created": created, "model": model_ref, "choices": [{"index": 0, "delta": {"content": event.token}}]})}\n\n'
                             elif event.type == 'done':
                                 yield f'data: {json.dumps({"id": response_id, "object": "chat.completion.chunk", "created": created, "model": model_ref, "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]})}\n\n'
+                                # Session-info (session-cost-context 3.3) —
+                                # emitteras före [DONE] för klienter som
+                                # Pi-extensionen (testbryggan ignorerar
+                                # events utan choices).
+                                yield f'data: {json.dumps({"session_id": _sess.id, "cost_context": {"project_id": _sess.project_id.id if "project_id" in _sess._fields and _sess.project_id else None, "task_id": _sess.task_id.id if "task_id" in _sess._fields and _sess.task_id else None, "partner_id": _sess.partner_id.id if _sess.partner_id else None, "cost_context_confirmed": _sess.cost_context_confirmed}})}\n\n'
                                 yield 'data: [DONE]\n\n'
                             elif event.type == 'error':
                                 yield f'data: {json.dumps({"error": {"message": event.message}})}\n\n'
@@ -2068,6 +2284,11 @@ class AIOpenAIAPI(http.Controller):
                     finally:
                         aloop.close()
                     try:
+                        _persist_session(
+                            _gen_env, _sess, ''.join(full_response),
+                            len(prompt) // 4,
+                            len(''.join(full_response)) // 4,
+                            model_ref, [])
                         _gen_cr.commit()
                     finally:
                         _gen_cr.close()
