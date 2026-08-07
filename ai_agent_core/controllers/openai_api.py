@@ -180,6 +180,7 @@ class AIOpenAPIController(http.Controller):
         # Domän-ren hook: bryggor fångar domänkontext
         try:
             sess._session_capture_context()
+            sess._session_auto_capture(prompt)
         except Exception as e:
             _logger.warning('session capture failed: %s', e)
         return sess
