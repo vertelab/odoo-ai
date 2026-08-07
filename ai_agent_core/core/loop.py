@@ -508,6 +508,34 @@ class AgentLoop:
             "Max rounds (%d) exceeded — input=%d output=%d tokens, elapsed=%.1fs",
             self.config.max_rounds, total_input_tokens, total_output_tokens, elapsed,
         )
+        # Gör ett sista anrop UTAN verktyg så användaren alltid får ett
+        # sammanfattande svar (inte bara '(max rounds exceeded — stopping)').
+        try:
+            synth_messages = messages + [Message(
+                role=Role.USER,
+                content=(
+                    'Sammanfatta nu ditt bästa svar på användarens fråga '
+                    'ovan. Svara direkt med slutsatsen/resultatet — inga '
+                    'verktyg. Om du saknar tillräcklig data, säg det '
+                    'ärligt och ge det du vet.'
+                ),
+            )]
+            synth = await self.provider.chat(
+                model=self.config.model,
+                messages=synth_messages,
+                system_prompt=self.config.system_prompt,
+                temperature=self.config.temperature,
+                max_tokens=self.config.max_tokens,
+            )
+            if synth and synth.text:
+                return ChatResponse(
+                    text=synth.text,
+                    input_tokens=total_input_tokens + synth.input_tokens,
+                    output_tokens=total_output_tokens + synth.output_tokens,
+                    finish_reason="max_rounds",
+                )
+        except Exception:
+            pass
         return ChatResponse(
             text="(max rounds exceeded — stopping)",
             input_tokens=total_input_tokens,
