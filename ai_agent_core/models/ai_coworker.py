@@ -1509,6 +1509,19 @@ class AICoworker(models.Model):
         except Exception:
             msg_text = message.body or ''
 
+        # Ta bort @mention av botten själv (annars tolkar agenten
+        # "@allmän assistent" som en del av frågan)
+        try:
+            for token in (self.channel_alias or '', self.name or ''):
+                if token:
+                    msg_text = re.sub(
+                        r'@' + re.escape(token), '', msg_text, flags=re.I)
+        except Exception:
+            pass
+        # Rensa rester av @mention-HTML/Odoo-länkar ([1] /odoo/res.partner/N)
+        msg_text = re.sub(r'\[\d\]\s*/odoo/[^\s]+', '', msg_text)
+        msg_text = msg_text.strip()
+
         if not msg_text.strip():
             return None
 
@@ -1519,6 +1532,9 @@ class AICoworker(models.Model):
         full_system = (
             f"Today is {fields.Date.today().isoformat()}. "
             "Your knowledge has a cutoff — use available tools for current info.\n\n"
+            "SVARA DIREKT MED DET SLUTGILTIGA SVARET — inkludera INGEN "
+            "narrering/inre dialog (inga 'Låt mig…', 'Jag ska…', "
+            "'Sammanställer…').\n\n"
             + (self.description or '')
         )
         if history_ctx:
@@ -1544,13 +1560,20 @@ class AICoworker(models.Model):
                 if last_line and last_line.content:
                     # Posta med BOTENS partner som author — annars blir
                     # svaret författat av människan → routas om → oändlig
-                    # recursion.
+                    # recursion. Markdown → HTML (rich text i Odoo).
                     author_id = (
                         bot_user.partner_id.id
                         if bot_user and bot_user.partner_id
                         else self.partner_id.id)
+                    body_html = last_line.content[:4000]
+                    try:
+                        import markdown
+                        body_html = markdown.markdown(
+                            body_html, extensions=['extra'])
+                    except Exception:
+                        pass
                     channel.message_post(
-                        body=f'<p>{last_line.content[:4000]}</p>',
+                        body=body_html,
                         author_id=author_id,
                         message_type='comment', subtype_xmlid='mail.mt_comment')
             # Personligt lärande (kanal-flödet) — samma pipeline som web-chatten
