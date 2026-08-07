@@ -347,7 +347,11 @@ class AIStreamController(http.Controller):
                         # explicita verktyg (gen_tool_ids). Inga builtins.
                         tools = ToolRegistry()
                         if gen_tool_ids:
-                            tool_recs = gen_env['ai.tool'].browse(gen_tool_ids)
+                            # sudo-läsning: offentlig chatt-användare saknar
+                            # ai.tool-access; gruppfiltreringen av gen_tool_ids
+                            # skedde redan (access-gating).
+                            tool_recs = gen_env['ai.tool'].sudo().browse(
+                                gen_tool_ids)
                             if tool_recs:
                                 tools.register_many(ai_tool_records_to_tools(
                                     tool_recs, gen_env))

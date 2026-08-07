@@ -2473,7 +2473,7 @@ class AICoworker(models.Model):
             return models or None
         if init_type in ('cron', 'mail', 'webhook', 'openai_api'):
             models = set()
-            for tool in self.tool_ids.filtered('active'):
+            for tool in self.sudo().tool_ids.filtered('active'):
                 if tool.model_ids:
                     models |= set(tool.model_ids.mapped('model'))
             return models or None
@@ -3532,21 +3532,24 @@ class AICoworker(models.Model):
                     ids.append(t.id)
 
         # 1. Settings-default (säkra verktyg)
+        # sudo-läsning: offentlig chatt-användare har ingen ai.tool-access,
+        # men behörighet styrs av access_groups-filtreringen nedan.
         default_names = self.env['ai.agent']._get_default_tool_names()
         if default_names:
-            _add(self.env['ai.tool'].search([('name', 'in', default_names)]))
+            _add(self.env['ai.tool'].sudo().search(
+                [('name', 'in', default_names)]))
 
         # 2. Agenternas explicita tool_ids (alla kopplade agenter + force_agent)
         agent_recs = self.agent_ids.mapped('agent_id')
         if force_agent:
             agent_recs |= force_agent
         for agent in agent_recs:
-            _add(agent.tool_ids.filtered('active'))
+            _add(agent.sudo().tool_ids.filtered('active'))
             if agent.identity_id and agent.identity_id.tool_ids:
-                _add(agent.identity_id.tool_ids.filtered('active'))
+                _add(agent.identity_id.sudo().tool_ids.filtered('active'))
 
         # 3. Coworkerns explicita tool_ids
-        _add(self.tool_ids.filtered('active'))
+        _add(self.sudo().tool_ids.filtered('active'))
 
         return ids
 
