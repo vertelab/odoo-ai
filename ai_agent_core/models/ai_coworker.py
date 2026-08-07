@@ -1455,8 +1455,10 @@ class AICoworker(models.Model):
         try:
             result = self.run(prompt=prompt, session=session)
             if result and session:
-                last_line = session.session_line_ids.sorted('sequence', reverse=True)[:1]
-                if last_line and last_line.role == 'assistant' and last_line.content:
+                last_line = session.session_line_ids.filtered(
+                    lambda l: l.role == 'assistant'
+                ).sorted('sequence', reverse=True)[:1]
+                if last_line and last_line.content:
                     _send_mail_reply(mail_message, last_line.content[:4000], self)
             return result
         except Exception as e:
@@ -1535,8 +1537,11 @@ class AICoworker(models.Model):
         try:
             result = self.run(prompt=msg_text, session=session)
             if session and channel:
-                last_line = session.session_line_ids.sorted('sequence', reverse=True)[:1]
-                if last_line and last_line.role == 'assistant' and last_line.content:
+                # Sista ASSISTANT-raden (sista raden kan vara en tool-rad)
+                last_line = session.session_line_ids.filtered(
+                    lambda l: l.role == 'assistant'
+                ).sorted('sequence', reverse=True)[:1]
+                if last_line and last_line.content:
                     channel.message_post(
                         body=f'<p>{last_line.content[:4000]}</p>',
                         message_type='comment', subtype_xmlid='mail.mt_comment')
