@@ -23,11 +23,12 @@ class AIModel(models.Model):
     display_name = fields.Char('Display Name', compute='_compute_display_name', store=True)
     active = fields.Boolean(default=True)
 
-    # Provider — fältet heter `provider` (renamed från provider_id) +
-    # `source_provider` (ursprung, t.ex. uppströms bakom en gateway).
+    # Provider — fältet heter `provider` (renamed från provider_id; data
+    # kopieras i migration 18.0.1.112 — oldname stöds inte i detta Odoo-bygge)
+    # + `source_provider` (ursprung, t.ex. uppströms bakom en gateway).
     # Inga logik på de nya fälten än — de läggs bara till i datamodellen.
     provider = fields.Many2one('ai.provider', required=True, ondelete='cascade',
-                                string='Provider', oldname='provider_id')
+                                string='Provider')
     source_provider = fields.Many2one('ai.provider', string='Source Provider',
                                        help='Origin provider (e.g. upstream behind a gateway).')
 
