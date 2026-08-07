@@ -4414,18 +4414,21 @@ def _normalize_question(text):
     return t
 
 
-def _questions_match(a, b):
-    """True om två normaliserade frågor är samma/nästan samma."""
+def _question_score(a, b):
+    """Likhetspoäng 0-1 mellan två normaliserade frågor."""
     if not a or not b:
-        return False
+        return 0.0
     if a == b:
-        return True
-    # Frågor med ≥3 ord: ≥50 % gemensamma ord (ordningen spelar ingen roll)
+        return 1.0
     wa, wb = set(a.split()), set(b.split())
     if len(wa) >= 3 and len(wb) >= 3:
-        inter = len(wa & wb)
-        return inter / min(len(wa), len(wb)) >= 0.5
-    return False
+        return (len(wa & wb) / min(len(wa), len(wb)))
+    return 0.0
+
+
+def _questions_match(a, b):
+    """True om två normaliserade frågor är samma/nästan samma (≥50 %)."""
+    return _question_score(a, b) >= 0.5
 
 
 def _find_cached_answer(coworker, question):
@@ -4441,6 +4444,8 @@ def _find_cached_answer(coworker, question):
     sessions = coworker.env['ai.coworker.session'].search([
         ('coworker_id', '=', coworker.id),
     ], order='create_date desc', limit=30)
+    best = None
+    best_score = 0.0
     for sess in sessions:
         lines = sess.session_line_ids.sorted('sequence')
         user_q = None
@@ -4448,10 +4453,15 @@ def _find_cached_answer(coworker, question):
             if line.role == 'user':
                 user_q = _normalize_question(line.content or '')
             elif line.role == 'assistant' and user_q and line.content:
-                if _questions_match(user_q, q):
-                    return line.content, sess.id
+                score = _question_score(user_q, q)
+                # Bästa matchningen vinner — inte den nyaste sessionen.
+                # (Annars kunde 'vad kostar 3090' matcha en nyare Strix Halo-
+                # fråga med lägre poäng.)
+                if score >= 0.5 and score > best_score:
+                    best_score = score
+                    best = (line.content, sess.id)
                 user_q = None
-    return None
+    return best
 
 
 def _strip_narration(text):
