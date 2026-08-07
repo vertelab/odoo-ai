@@ -1542,8 +1542,16 @@ class AICoworker(models.Model):
                     lambda l: l.role == 'assistant'
                 ).sorted('sequence', reverse=True)[:1]
                 if last_line and last_line.content:
+                    # Posta med BOTENS partner som author — annars blir
+                    # svaret författat av människan → routas om → oändlig
+                    # recursion.
+                    author_id = (
+                        bot_user.partner_id.id
+                        if bot_user and bot_user.partner_id
+                        else self.partner_id.id)
                     channel.message_post(
                         body=f'<p>{last_line.content[:4000]}</p>',
+                        author_id=author_id,
                         message_type='comment', subtype_xmlid='mail.mt_comment')
             # Personligt lärande (kanal-flödet) — samma pipeline som web-chatten
             try:
