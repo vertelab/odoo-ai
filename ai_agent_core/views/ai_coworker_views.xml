@@ -208,7 +208,7 @@
                         <page string="Description" name="description">
                             <group string="Beskrivning">
                                 <field name="description" widget="html"/>
-                                <field name="agent_creator_prompt"/>
+                                <field name="agent_creator_prompt" invisible="orchestration_mode != 'buzz'"/>
                                 <field name="example_prompts"/>
                             </group>
                         </page>
