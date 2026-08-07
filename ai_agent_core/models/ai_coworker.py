@@ -67,6 +67,26 @@ class AICoworker(models.Model):
         store=True)
     description = fields.Text(help='System prompt / medarbetarens syfte')
     sub_description = fields.Char('Short Description')
+
+    # ── Kostnadskontext (session-cost-context, D9) ──────────────────────
+    # Inställningar på coworkern: exakta frågan i dialogen + nyckel till
+    # en registrerad resolver-strategi (hur res.partner hittas). Generiska
+    # (domän-rent); strategierna registreras av bryggor (t.ex.
+    # "project_partner" i project_ai). Alla openai_api-sessioner är
+    # kostnadsbärande arbete — coworkern begär kontexten en gång per
+    # session.
+    cost_context_question = fields.Text(
+        'Fråga för kostnadskontext',
+        help='Exakta frågan som coworkern ställer i dialogen när '
+             'kostnadskontext saknas, t.ex. "Vilket projekt gäller detta '
+             'arbete? (eller kund om projekt saknas)". Injiceras i '
+             'systemprompten vid openai_api-körningar.')
+    cost_context_partner_strategy = fields.Char(
+        'Partner-strategi (kostnadskontext)',
+        help='Nyckel till registrerad resolver-strategi som hittar '
+             'res.partner för sessionen, t.ex. "project_partner" '
+             '(registreras av project_ai). Framtida coworkers med andra '
+             'Odoo-modeller kan få egna strategier utan ändring i kärnan.')
     active = fields.Boolean(default=True)
     color = fields.Integer(default=lambda self: __import__('random').randint(1, 11))
 
