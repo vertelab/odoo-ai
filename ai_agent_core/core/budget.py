@@ -206,7 +206,7 @@ class BudgetEnforcingProvider:
     (no wasted API call).
 
     Usage:
-        provider = BifrostProvider()
+        provider = AIProvider(base_url='...', is_bifrost=True)
         budget = BudgetTracker(limit=50.0)
         enforcing = BudgetEnforcingProvider(provider, budget)
 

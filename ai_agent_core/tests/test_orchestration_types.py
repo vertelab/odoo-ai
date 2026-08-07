@@ -28,7 +28,7 @@ class TestAlternativB(TransactionCase):
         })
         self.model = self.Model.create({
             'name': 'gpt-4o-test',
-            'provider_id': self.provider.id,
+            'provider': self.provider.id,
         })
 
         # Create test agents

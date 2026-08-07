@@ -3,7 +3,7 @@
 SSE Streaming Controller for AI.Quest responses.
 
 Token-by-token streaming via Server-Sent Events.
-Uses real BifrostProvider + StreamingAgentLoop (no mock).
+Uses real AIProvider + StreamingAgentLoop (no mock).
 """
 
 import asyncio
@@ -27,11 +27,12 @@ except Exception:
     _quest_is_accessible = None
 
 # Import providers at module level so every handler (SSE stream, OpenAI API,
-# webhook) can construct BifrostProvider/DirectProvider without NameError.
+# webhook) can construct AIProvider without NameError.
 try:
-    from odoo.addons.ai_agent_core.core.provider import BifrostProvider, ProviderFactory, DirectProvider
+    from odoo.addons.ai_agent_core.core.provider import (
+        ProviderFactory, get_default_provider)
 except Exception:
-    BifrostProvider = ProviderFactory = DirectProvider = None
+    ProviderFactory = get_default_provider = None
 
 _logger = logging.getLogger(__name__)
 
@@ -349,10 +350,7 @@ class AIStreamController(http.Controller):
                         _register_webui_handler(session_uuid, handler)
                         yield f"data: {json.dumps({'type': 'session', 'session_uuid': session_uuid})}\n\n"
 
-                        provider = gen_provider or BifrostProvider(
-                            base_url="http://192.168.11.150:8080/v1",
-                            virtual_key="opencode",
-                        )
+                        provider = gen_provider or get_default_provider()[0] 
                         # explicit-agent-tools: ENDAST settings-default +
                         # explicita verktyg (gen_tool_ids). Inga builtins.
                         tools = ToolRegistry()
@@ -1487,13 +1485,10 @@ def _summarize_history(session, lines, max_chars=4000):
     quest = session.coworker_id if session else None
     try:
         import asyncio
-        from odoo.addons.ai_agent_core.core.provider import (
-            ProviderFactory, BifrostProvider)
+        from odoo.addons.ai_agent_core.core.provider import ProviderFactory, get_default_provider
         from odoo.addons.ai_agent_core.core.loop import AgentLoop, AgentConfig
         provider, _m = ProviderFactory.from_coworker(quest) if quest else (None, None)
-        provider = provider or BifrostProvider(
-            base_url='http://192.168.11.150:8080/v1',
-            virtual_key='opencode')
+        provider = provider or get_default_provider()[0] 
         loop = AgentLoop(provider=provider, tools=[], config=AgentConfig(
             model='cerebras/gpt-oss-120b', max_rounds=1, max_tokens=2048))
         prompt = (
@@ -1897,7 +1892,7 @@ class AIOpenAIAPI(http.Controller):
         """Execute a chat completion through a coworker's agent chain."""
         # ── Imports (must be at method level for both sync + stream paths) ──
         import asyncio
-        from odoo.addons.ai_agent_core.core.provider import ProviderFactory, BifrostProvider
+        from odoo.addons.ai_agent_core.core.provider import ProviderFactory, get_default_provider
         from odoo.addons.ai_agent_core.core.tools import ToolRegistry, ai_tool_records_to_tools
         from odoo.addons.ai_agent_core.core.loop import AgentLoop, AgentConfig, StreamingAgentLoop
 
@@ -1949,10 +1944,7 @@ class AIOpenAIAPI(http.Controller):
         if not stream:
             try:
                 provider_instance, provider_model = ProviderFactory.from_coworker(quest)
-                provider = provider_instance or BifrostProvider(
-                    base_url='http://192.168.11.150:8080/v1',
-                    virtual_key='opencode',
-                )
+                provider = provider_instance or get_default_provider()[0] 
                 # explicit-agent-tools: ENDAST settings-default + explicita
                 # verktyg — inga interna builtins per default.
                 tool_ids = quest._session_tool_ids(
@@ -2010,10 +2002,7 @@ class AIOpenAIAPI(http.Controller):
             # Streaming SSE
             _gen_provider, _gen_pmodel = ProviderFactory.from_coworker(quest)
             if not _gen_provider:
-                _gen_provider = BifrostProvider(
-                    base_url='http://192.168.11.150:8080/v1',
-                    virtual_key='opencode',
-                )
+                _gen_provider = get_default_provider()[0] 
 
             def generate():
                 full_response = []

@@ -4,10 +4,10 @@
         <field name="name">ai.model.kanban</field>
         <field name="model">ai.model</field>
         <field name="arch" type="xml">
-            <kanban class="o_kanban_mobile" quick_create="false" default_group_by="provider_id">
+            <kanban class="o_kanban_mobile" quick_create="false" default_group_by="provider">
                 <field name="name"/>
                 <field name="display_name"/>
-                <field name="provider_id"/>
+                <field name="provider"/>
                 <field name="provider_type"/>
                 <field name="context_window"/>
                 <field name="status"/>
@@ -50,7 +50,7 @@
 
                                 <!-- Provider + context window -->
                                 <div class="text-muted small mt-0">
-                                    <field name="provider_id"/>
+                                    <field name="provider"/>
                                     · <field name="context_window"/>K context
                                 </div>
 
@@ -106,7 +106,7 @@
         <field name="arch" type="xml">
             <list string="Models" decoration-danger="status=='deprecated'" multi_edit="1">
                 <field name="name"/>
-                <field name="provider_id"/>
+                <field name="provider"/>
                 <field name="real_provider" optional="show"/>
                 <field name="context_window"/>
                 <field name="max_output_tokens" optional="hide"/>
@@ -129,7 +129,7 @@
         <field name="arch" type="xml">
             <search string="Search Models">
                 <field name="name"/>
-                <field name="provider_id"/>
+                <field name="provider"/>
                 <filter string="Active" name="active" domain="[('status','=','active')]"/>
                 <filter string="Vision" name="vision" domain="[('is_vision','=',True)]"/>
                 <filter string="Tool Calling" name="tools" domain="[('has_tools','=',True)]"/>
@@ -137,7 +137,7 @@
                 <separator/>
                 <filter string="Archived" name="inactive" domain="[('active','=',False)]"/>
                 <group expand="0" string="Group By">
-                    <filter string="Provider" name="group_provider" context="{'group_by':'provider_id'}"/>
+                    <filter string="Provider" name="group_provider" context="{'group_by':'provider'}"/>
                     <filter string="Status" name="group_status" context="{'group_by':'status'}"/>
                 </group>
             </search>
@@ -154,7 +154,7 @@
                     <field name="active" invisible="1"/>
                     <div class="oe_title">
                         <h1><field name="display_name"/></h1>
-                        <h2><field name="provider_id"/></h2>
+                        <h2><field name="provider"/></h2>
                     </div>
                     <group col="2">
                         <field name="name"/>

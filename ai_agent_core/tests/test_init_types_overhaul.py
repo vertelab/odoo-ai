@@ -245,13 +245,21 @@ class TestServerActionWizard(TransactionCase):
 class TestProviderFactory(TransactionCase):
     """Test provider factory resolves providers correctly."""
 
-    def test_provider_registry_populated(self):
-        """PROVIDER_REGISTRY has all expected provider types."""
-        from odoo.addons.ai_agent_core.core.provider import PROVIDER_REGISTRY
-        self.assertIn('bifrost', PROVIDER_REGISTRY)
-        self.assertIn('openai', PROVIDER_REGISTRY)
-        self.assertIn('anthropic', PROVIDER_REGISTRY)
-        self.assertIn('custom', PROVIDER_REGISTRY)
+    def test_resolve_returns_aiprovider(self):
+        """Resolver returnerar AIProvider (inget PROVIDER_REGISTRY längre)."""
+        from odoo.addons.ai_agent_core.core.provider import (
+            AIProvider, resolve_provider_from_model)
+        provider = self.env['ai.provider'].create({
+            'name': 'Registry Test',
+            'provider_type': 'custom',
+            'base_url': 'https://test.example.com/v1',
+        })
+        ai_model = self.env['ai.model'].create({
+            'name': 'registry-test-model',
+            'provider': provider.id,
+        })
+        result = resolve_provider_from_model(ai_model)
+        self.assertIsInstance(result, AIProvider)
 
     def test_resolve_from_coworker_no_agents(self):
         """resolve_provider_from_coworker returns (None, None) when no agents."""
@@ -274,11 +282,11 @@ class TestProviderFactory(TransactionCase):
         })
         ai_model = self.env['ai.model'].create({
             'name': 'test-model',
-            'provider_id': provider.id,
+            'provider': provider.id,
         })
         from odoo.addons.ai_agent_core.core.provider import resolve_provider_from_model
         result = resolve_provider_from_model(ai_model)
-        # Should return a provider instance (DirectProvider with custom type)
+        # Should return a provider instance (AIProvider, datadriven)
         self.assertIsNotNone(result)
 
 

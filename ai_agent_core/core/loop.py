@@ -87,7 +87,7 @@ class AgentLoop:
     - Context summarization when token budget exceeded (LOOP-004)
 
     Usage:
-        provider = BifrostProvider()
+        provider = AIProvider(base_url='...', is_bifrost=True)
         tools = ToolRegistry()
         tools.register_many(builtin_tools())
 

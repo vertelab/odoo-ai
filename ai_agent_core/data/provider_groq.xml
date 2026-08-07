@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+
+        <!-- Groq AI Provider — api_key TOM, nyckel via env (pillar) -->
+        <record id="provider_groq" model="ai.provider">
+            <field name="name">Groq</field>
+            <field name="provider_type">groq</field>
+            <field name="base_url">https://api.groq.com/openai/v1</field>
+            <field name="api_style">openai</field>
+            <field name="is_key_required" eval="True"/>
+            <field name="timeout">120</field>
+            <field name="retry_count">3</field>
+            <field name="active" eval="True"/>
+            <field name="status">confirmed</field>
+        </record>
+
+    </data>
+</odoo>

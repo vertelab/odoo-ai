@@ -16,27 +16,31 @@ class AIModel(models.Model):
     _name = 'ai.model'
     _description = 'AI Model'
     _inherit = ['mail.thread', 'mail.activity.mixin']
-    _order = 'provider_id, name asc'
+    _order = 'provider, name asc'
 
     name = fields.Char('Model ID', required=True,
                         help='The model identifier, e.g. gpt-4o, claude-sonnet-4-20250514')
     display_name = fields.Char('Display Name', compute='_compute_display_name', store=True)
     active = fields.Boolean(default=True)
 
-    # Provider
-    provider_id = fields.Many2one('ai.provider', required=True, ondelete='cascade',
-                                   string='Provider')
+    # Provider — fältet heter `provider` (renamed från provider_id) +
+    # `source_provider` (ursprung, t.ex. uppströms bakom en gateway).
+    # Inga logik på de nya fälten än — de läggs bara till i datamodellen.
+    provider = fields.Many2one('ai.provider', required=True, ondelete='cascade',
+                                string='Provider', oldname='provider_id')
+    source_provider = fields.Many2one('ai.provider', string='Source Provider',
+                                       help='Origin provider (e.g. upstream behind a gateway).')
 
     # Kanban image (related for efficient kanban display)
-    provider_image_128 = fields.Binary(related='provider_id.image_128',
+    provider_image_128 = fields.Binary(related='provider.image_128',
                                         string='Provider Image',
                                         help='Avatar from provider')
-    provider_type = fields.Selection(related='provider_id.provider_type', store=True)
+    provider_type = fields.Selection(related='provider.provider_type', store=True)
     real_provider = fields.Char('Real Provider', compute='_compute_real_provider', store=True,
                                  help='For Bifrost models: the underlying upstream provider. '
                                       'For others: same as provider name.')
 
-    @api.depends('name', 'provider_id.name', 'provider_id.provider_type')
+    @api.depends('name', 'provider.name', 'provider.provider_type')
     def _compute_real_provider(self):
         """Extract real upstream provider from model name.
         
@@ -45,7 +49,7 @@ class AIModel(models.Model):
         The real provider is the last segment before the actual model name.
         """
         for r in self:
-            if r.provider_id.provider_type == 'bifrost' and '/' in (r.name or ''):
+            if r.provider.provider_type == 'bifrost' and '/' in (r.name or ''):
                 parts = r.name.split('/')
                 # Last part is the model name, the one before is the upstream provider
                 if len(parts) >= 2:
@@ -53,9 +57,9 @@ class AIModel(models.Model):
                     upstream = '/'.join(parts[:-1])
                     r.real_provider = upstream
                 else:
-                    r.real_provider = r.provider_id.name
+                    r.real_provider = r.provider.name
             else:
-                r.real_provider = r.provider_id.name
+                r.real_provider = r.provider.name
 
     # Capabilities
     is_vision = fields.Boolean('Vision', help='Supports image input')
@@ -109,10 +113,10 @@ class AIModel(models.Model):
     # Tags
     tag_ids = fields.Many2many('ai.tag', string='Tags')
 
-    @api.depends('name', 'provider_id.name')
+    @api.depends('name', 'provider.name')
     def _compute_display_name(self):
         for r in self:
-            r.display_name = f"{r.name} ({r.provider_id.name})" if r.provider_id else r.name
+            r.display_name = f"{r.name} ({r.provider.name})" if r.provider else r.name
 
     @api.depends('status')
     def _compute_status_color(self):

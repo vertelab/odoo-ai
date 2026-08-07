@@ -1761,7 +1761,7 @@ def _tool_inventory_models(env, **kwargs):
     data = [{"id": m.id, "name": m.name, "display_name": m.display_name,
              "is_vision": m.is_vision, "has_streaming": m.has_streaming,
              "context_window": m.context_window,
-             "provider": m.provider_id.name if m.provider_id else "unknown"}
+             "provider": m.provider.name if m.provider else "unknown"}
             for m in models]
     return _json.dumps(data, indent=2)
 

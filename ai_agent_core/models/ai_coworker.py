@@ -2951,13 +2951,11 @@ class AICoworker(models.Model):
         import asyncio
         try:
             from odoo.addons.ai_agent_core.core.provider import (
-                ProviderFactory, BifrostProvider)
+                ProviderFactory, get_default_provider)
             from odoo.addons.ai_agent_core.core.loop import AgentLoop, AgentConfig
 
             provider, _model = ProviderFactory.from_coworker(self)
-            provider = provider or BifrostProvider(
-                base_url='http://192.168.11.150:8080/v1',
-                virtual_key='opencode')
+            provider = provider or get_default_provider()[0] 
             loop = AgentLoop(provider=provider, tools=[], config=AgentConfig(
                 model='cerebras/gpt-oss-120b', max_rounds=1, max_tokens=1500))
             prompt = (
@@ -3531,7 +3529,8 @@ class AICoworker(models.Model):
             })
 
             import asyncio
-            from odoo.addons.ai_agent_core.core.provider import ProviderFactory, BifrostProvider
+            from odoo.addons.ai_agent_core.core.provider import (
+                ProviderFactory, get_default_provider)
             from odoo.addons.ai_agent_core.core.tools import (
                 planning_tools, TodoList,
             )
@@ -3542,10 +3541,7 @@ class AICoworker(models.Model):
             )
 
             provider_instance, provider_model = ProviderFactory.from_coworker(self)
-            provider = provider_instance or BifrostProvider(
-                base_url='http://192.168.11.150:8080/v1',
-                virtual_key='opencode',
-            )
+            provider = provider_instance or get_default_provider()[0] 
             # explicit-agent-tools: ENDAST settings-default + explicita
             # tool_ids — inga interna builtins registreras implicit.
             tools, tool_access_groups = self._session_tools(session=session)
@@ -3873,14 +3869,12 @@ class AICoworker(models.Model):
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             try:
-                from odoo.addons.ai_agent_core.core.provider import ProviderFactory, BifrostProvider
+                from odoo.addons.ai_agent_core.core.provider import (
+                ProviderFactory, get_default_provider)
                 from odoo.addons.ai_agent_core.core.loop import AgentLoop, AgentConfig
 
                 provider_instance, provider_model = ProviderFactory.from_coworker(self)
-                provider = provider_instance or BifrostProvider(
-                    base_url='http://192.168.11.150:8080/v1',
-                    virtual_key='opencode',
-                )
+                provider = provider_instance or get_default_provider()[0] 
                 # explicit-agent-tools: ENDAST settings-default + explicita
                 # tool_ids — inga interna builtins registreras implicit.
                 tools, tool_access_groups = self._session_tools(
@@ -4126,14 +4120,12 @@ class AICoworker(models.Model):
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             try:
-                from odoo.addons.ai_agent_core.core.provider import ProviderFactory, BifrostProvider
+                from odoo.addons.ai_agent_core.core.provider import (
+                ProviderFactory, get_default_provider)
                 from odoo.addons.ai_agent_core.core.loop import AgentLoop, AgentConfig
 
                 provider_instance, provider_model = ProviderFactory.from_coworker(self)
-                provider = provider_instance or BifrostProvider(
-                    base_url='http://192.168.11.150:8080/v1',
-                    virtual_key='opencode',
-                )
+                provider = provider_instance or get_default_provider()[0] 
                 # explicit-agent-tools: ENDAST settings-default + explicita
                 # tool_ids — inga interna builtins registreras implicit.
                 tools, _tool_access_groups = self._session_tools(session=session)

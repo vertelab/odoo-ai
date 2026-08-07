@@ -250,7 +250,7 @@ class EnvironmentDetector:
             models = env['ai.model'].search([('status', '=', 'active')])
             return [
                 ProviderInfo(
-                    provider_name=m.provider_id.name,
+                    provider_name=m.provider.name,
                     model_id=m.name,
                     capabilities={
                         "vision": m.is_vision,
