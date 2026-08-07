@@ -4194,17 +4194,67 @@ class AICoworker(models.Model):
             return False
 
         alias = (self.channel_alias or self.name).lower().replace(' ', '-')[:20]
+        # Om ingen avdelning angivits — försök gissa en lämplig hr.department
+        dept_id = self.department_id.id if self.department_id else \
+            self._guess_department()
+        if dept_id and not self.department_id:
+            self.write({'department_id': dept_id})
         employee = self.env['hr.employee'].create({
             'name': self.name,
             'work_email': f'ai-{alias}-{self.id}@ai.internal',
             'is_ai': True,
             'ai_coworker_id': self.id,
-            'department_id': self.department_id.id if self.department_id else False,
+            'department_id': dept_id or False,
         })
         self.write({'employee_id': employee.id})
         _logger.info('Created hr.employee %s for coworker %s',
                     employee.name, self.name)
         return employee
+
+    def _guess_department(self):
+        """Försök koppla en lämplig hr.department från namn/beskrivning.
+
+        Prioritet: (1) avdelningsnamnet finns i medarbetarens namn,
+        (2) gemensamt nyckelord (ekonomi/faktura, support, drift/IT …).
+        """
+        try:
+            if 'hr.department' not in self.env or not self.env['hr.department'].search_count([]):
+                return False
+            name_low = (self.name or '').lower()
+            desc_low = (self.description or '').lower()
+            text = name_low + ' ' + desc_low
+            # 1. Direkt: avdelningsnamnet finns i medarbetarens namn
+            for dept in self.env['hr.department'].search([]):
+                d = (dept.name or '').strip().lower()
+                if d and len(d) > 2 and d in name_low:
+                    return dept.id
+            # 2. Nyckelordskategorier
+            categories = [
+                (['ekonomi', 'redovisning', 'faktura', 'invoice', 'account', 'leverantörsfaktura'],
+                 ['ekonomi', 'account', 'redovisning', 'faktura']),
+                (['sälj', 'försäljning', 'sales', 'order', 'försälj'],
+                 ['sälj', 'sales', 'försäljning']),
+                (['marknad', 'marketing', 'marknadsföring'],
+                 ['marknad', 'marketing']),
+                (['support', 'helpdesk', 'kundservice', 'kundsupport', 'service'],
+                 ['support', 'helpdesk', 'service']),
+                (['drift', 'infrastruktur', 'infrastructure', 'server', 'nätverk', 'teknisk', 'it-', 'it '],
+                 ['drift', 'infrastruktur', 'it', 'teknisk', 'teknik']),
+                (['ledning', 'management', 'chef', 'executive'],
+                 ['ledning', 'management', 'chef']),
+                (['utveckling', 'development', 'programmering', 'kod'],
+                 ['utveckling', 'development', 'programmering', 'r&d']),
+            ]
+            for keywords, dept_kws in categories:
+                if any(kw in text for kw in keywords):
+                    for dept in self.env['hr.department'].search([]):
+                        d = (dept.name or '').lower()
+                        if any(kw in d for kw in dept_kws):
+                            return dept.id
+            return False
+        except Exception as e:
+            _logger.warning('Department-guess misslyckades: %s', e)
+            return False
 
     @api.model_create_multi
     def create(self, vals_list):
