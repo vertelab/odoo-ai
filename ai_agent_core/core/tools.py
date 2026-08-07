@@ -1004,6 +1004,7 @@ async def _ensure_nats_connection(timeout: float = 5.0):
     """Get or create the NATS connection. Returns (connection, error_string)."""
     global _nats_connection
     import os
+    import asyncio
 
     if _nats_connection is not None and not _nats_connection.is_closed:
         return _nats_connection, None
@@ -1012,7 +1013,6 @@ async def _ensure_nats_connection(timeout: float = 5.0):
     try:
         from nats import connect as nats_connect
         nats_url = os.environ.get('NATS_URL', 'nats://localhost:4222')
-        import asyncio
         _nats_connection = await asyncio.wait_for(
             nats_connect(nats_url), timeout=timeout
         )
@@ -1052,9 +1052,9 @@ async def nats_request_reply(
         if err:
             return err
 
+    import asyncio
     try:
         data = json_mod.dumps(payload).encode()
-        import asyncio
         response = await asyncio.wait_for(
             conn.request(subject, data, timeout=timeout),
             timeout=timeout + 1.0,  # Slight buffer for NATS timeout propagation
