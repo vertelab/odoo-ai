@@ -1963,7 +1963,7 @@ class AIOpenAIAPI(http.Controller):
             return Response(json.dumps({'error': {'message': 'No user message provided', 'type': 'invalid_request_error'}}),
                           status=400, content_type='application/json')
 
-        prompt = user_messages[-1].get('content', '')
+        prompt = user_messages[-1].get('content') or ''
         system_prompt = quest.description or ''
 
         # Inject conversation history as context
@@ -1972,7 +1972,7 @@ class AIOpenAIAPI(http.Controller):
             history_lines = []
             for m in messages[:-1]:
                 role = m.get('role', 'user')
-                content = m.get('content', '')
+                content = m.get('content') or ''
                 history_lines.append(f'[{role}] {content[:500]}')
             history_context = '\n'.join(history_lines[-20:])
 
