@@ -23,19 +23,32 @@ class MailMessage(models.Model):
                 vals['ai_buzz_internal'] = True
         records = super(MailMessage, self).create(vals_list)
 
-        # @mention-router: kolla om meddelandet innehåller @alias
+        # @mention-router: kolla om meddelandet innehåller @alias ELLER
+        # medarbetarens/partnerns namn (normaliserat) — så "@allmän assistent"
+        # och "@allmn" båda fungerar. Riktiga användare routas; botens EGNA
+        # meddelanden hoppas över (loop-skydd).
         for rec in records:
             if rec.model != 'discuss.channel' or not rec.body:
                 continue
-            if rec.author_id and rec.author_id.user_ids:
-                continue  # Skip messages from real users to avoid loops
             channel = self.env['discuss.channel'].browse(rec.res_id)
             if not channel.exists():
                 continue
+            # Botens egna partners (för loop-skydd) — deras meddelanden routas inte
+            bot_partner_ids = {
+                c.partner_id.id for c in channel.ai_coworker_ids
+                if c.partner_id}
+            if rec.author_id and rec.author_id.id in bot_partner_ids:
+                continue
+            body_low = rec.body.lower()
             for coworker in channel.ai_coworker_ids:
-                if not coworker.channel_alias:
-                    continue
-                if f'@{coworker.channel_alias}' in rec.body:
+                mentions = []
+                if coworker.channel_alias:
+                    mentions.append(f'@{coworker.channel_alias}')
+                if coworker.name:
+                    mentions.append('@' + coworker.name.lower())
+                if coworker.partner_id and coworker.partner_id.name:
+                    mentions.append('@' + coworker.partner_id.name.lower())
+                if any(m in body_low for m in mentions if m):
                     coworker._route_message(rec)
                     break  # Only route to first matching coworker
 

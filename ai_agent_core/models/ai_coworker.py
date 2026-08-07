@@ -504,27 +504,36 @@ class AICoworker(models.Model):
         """Instruktioner för att anropa medarbetaren från kod (init manual)."""
         for rec in self:
             eid = rec.id
+            # Föredra external-id (xmlid) — läsbar + stabil; fallback browse(id)
+            ref = ''
+            try:
+                ext = rec.get_external_id().get(rec.id)
+                if ext:
+                    ref = f"env.ref('{ext}')"
+            except Exception:
+                pass
+            ref = ref or f"env['ai.coworker'].browse({eid})"
             code = (
                 '# Exempel 1 — enkel körning (session skapas automatiskt)\n'
-                'result = env["ai.coworker"].browse(__EID__).run("Din fråga här")\n'
+                f'result = {ref}.run("Din fråga här")\n'
                 '\n'
                 '# Exempel 2 — med egen session (spåras i Odoo Mind)\n'
                 'sess = env["ai.coworker.session"].create({\n'
-                '    "coworker_id": __EID__,\n'
+                f'    "coworker_id": {eid},\n'
                 '    "status": "active",\n'
                 '    "name": "Min uppgift",\n'
                 '})\n'
-                'result = env["ai.coworker"].browse(__EID__).run("Din fråga här", session=sess)\n'
+                f'result = {ref}.run("Din fråga här", session=sess)\n'
                 '\n'
                 '# Exempel 3 — server action-kod (körs på valda records)\n'
-                'coworker = env["ai.coworker"].browse(__EID__)\n'
+                f'coworker = {ref}\n'
                 'coworker = coworker.with_context(_ai_context_model=records._name, _ai_context_id=records.id)\n'
                 'coworker.run("Analysera " + records.display_name)\n'
                 '\n'
                 '# OBS: för verktyg som skriver (odoo_create/odoo_write) i automatiserade flöden:\n'
-                'result = env["ai.coworker"].browse(__EID__).with_context(_ai_auto_approve=True).run("Din fråga")\n'
+                f'result = {ref}.with_context(_ai_auto_approve=True).run("Din fråga")\n'
             )
-            code = code.replace('__EID__', str(eid))
+
             escaped = code.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
             rec.manual_call_instructions = (
                 '<div style="font-size:13px;line-height:1.5">'
