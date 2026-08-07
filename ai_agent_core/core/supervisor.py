@@ -288,14 +288,17 @@ class SupervisorLoop:
             f"Original request: {original}\n\n"
             f"All agent responses:\n{outputs}\n\n"
             f"Synthesize these into ONE cohesive final answer. "
-            f"Skip irrelevant parts, resolve contradictions."
+            f"Skip irrelevant parts, resolve contradictions. "
+            f"Respond with ONLY the final answer directly — NO narration, "
+            f"NO meta-commentary (no 'Let me', 'I got', 'Notering:', "
+            f"'Since the specialists', 'Jag försökte'). Output clean Markdown."
         )
         try:
             response = await asyncio.wait_for(
                 self.router_provider.chat(
                     model=self.config.router_model,
                     messages=[Message(role=Role.USER, content=synth_prompt)],
-                    system_prompt="You synthesize multi-agent responses.",
+                    system_prompt="You synthesize multi-agent responses. Answer directly with ONLY the final result — no narration or meta." ,
                     temperature=0.3, max_tokens=2048,
                 ), timeout=60)
             total_in = sum(r.input_tokens for _, _, r, _ in all_results) + response.input_tokens
