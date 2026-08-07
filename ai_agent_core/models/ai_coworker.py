@@ -4431,6 +4431,16 @@ def _questions_match(a, b):
     return _question_score(a, b) >= 0.5
 
 
+def _is_error_answer(text):
+    """True om ett assistant-svar ser ut som ett fel/tomt svar."""
+    t = (text or '').strip().lower()
+    if not t:
+        return True
+    return t.startswith(('(max rounds', '(no response', '(inget svar',
+                         'error:', 'fetch error:', 'search error:',
+                         '(cancelled)'))
+
+
 def _find_cached_answer(coworker, question):
     """Hitta ett tidigare svar på samma fråga (samma + andra sessioner).
 
@@ -4453,6 +4463,10 @@ def _find_cached_answer(coworker, question):
             if line.role == 'user':
                 user_q = _normalize_question(line.content or '')
             elif line.role == 'assistant' and user_q and line.content:
+                # Hoppa över fel/tomma svar (max rounds, no response, Error:)
+                if _is_error_answer(line.content):
+                    user_q = None
+                    continue
                 score = _question_score(user_q, q)
                 # Bästa matchningen vinner — inte den nyaste sessionen.
                 # (Annars kunde 'vad kostar 3090' matcha en nyare Strix Halo-
