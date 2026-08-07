@@ -790,8 +790,9 @@ class AICoworker(models.Model):
                 f'Agenten är nu pausad. Höj taket för att återaktivera.'
             )
 
-        # Post via message_post (mail.thread)
-        self.message_post(body=msg, message_type='notification')
+        # Post via message_post (mail.thread) — markdown → HTML så **fetstil**
+        # och tabeller renderas korrekt.
+        self.message_post(body=self._md_to_html(msg), message_type='notification')
         _logger.info('Cap %s for quest "%s": %d/%d (%.0f%%)',
                     level, self.name, used, cap, pct)
 
@@ -1558,6 +1559,8 @@ class AICoworker(models.Model):
                     lambda l: l.role == 'assistant'
                 ).sorted('sequence', reverse=True)[:1]
                 if last_line and last_line.content:
+                    # Rensa narrering/inre dialog som läckt ut i svaret
+                    reply_text = _strip_narration(last_line.content[:4000])
                     # Posta med BOTENS partner som author — annars blir
                     # svaret författat av människan → routas om → oändlig
                     # recursion. Markdown → HTML (rich text i Odoo).
@@ -1565,7 +1568,7 @@ class AICoworker(models.Model):
                         bot_user.partner_id.id
                         if bot_user and bot_user.partner_id
                         else self.partner_id.id)
-                    body_html = last_line.content[:4000]
+                    body_html = reply_text or last_line.content[:4000]
                     try:
                         import markdown
                         body_html = markdown.markdown(
@@ -1738,12 +1741,33 @@ class AICoworker(models.Model):
         self.ensure_one()
         if not agent.partner_id or not channel:
             return None
+        # Markdown → HTML (rich text i Odoo). 'extra' ger tabell-stöd.
+        body_html = self._md_to_html(body)
         return channel.sudo().with_context(ai_buzz_internal=internal).message_post(
-            body=f'<p>{body}</p>',
+            body=body_html,
             message_type='comment',
             subtype_xmlid='mail.mt_comment',
             author_id=agent.partner_id.id,
         )
+
+    @api.model
+    def _md_to_html(self, text):
+        """Konvertera markdown → HTML med tabell-stöd (extensions=['extra']).
+
+        Returnerar Markup-objekt så Odoo renderar som HTML (inte escaped).
+        Används av chat/buzz/powerbox-vägarna för rik text (fetstil, tabeller).
+        """
+        text = text or ''
+        try:
+            import markdown
+            text = markdown.markdown(text, extensions=['extra'])
+        except Exception:
+            pass
+        try:
+            from markupsafe import Markup
+            return Markup(text)
+        except Exception:
+            return text
 
     def _buzz_auto_agent_count(self):
         """Count auto-created agents in this quest."""
@@ -1974,7 +1998,7 @@ class AICoworker(models.Model):
                 # Post suggestion or limit message as quest (bot_user)
                 if channel:
                     channel.message_post(
-                        body=f'<p>{result["message"]}</p>',
+                        body=self._md_to_html(result["message"]),
                         message_type='comment', subtype_xmlid='mail.mt_comment')
                 return None
 
@@ -3117,7 +3141,11 @@ class AICoworker(models.Model):
                 f"Goal: {agent.ai_goal or ''}\n"
                 f"{quest_skill_context}"
                 f"\n## Agent-Specific Skills\n{agent_skills_context}"
-                + system_prompt
+                # Observera: quest-beskrivningen läggs INTE här — annars
+                # överstyrs specialistens roll av "Du är en allmän assistent"
+                # → specialisterna svarade bara med generiska hälsningar.
+                "\nUtför uppgiften du får. Svara direkt med resultatet — "
+                "ingen narrering ('Låt mig', 'I will', 'Jag ska')."
             )
             # Per-agent-injektion (agent-memory-governance 3.6): specialisten
             # får bara de scopen kopplingens block/level tillåter.
@@ -3603,13 +3631,16 @@ class AICoworker(models.Model):
             )
             # Try posting to a discuss channel by ID or name
             target = self.notify_target.strip()
+            # Markdown → HTML så **fetstil** och tabeller renderas i kanalen.
+            msg_html = self._md_to_html(msg)
             if target.isdigit():
                 channel = self.env['discuss.channel'].browse(int(target))
                 if channel.exists():
-                    channel.message_post(body=msg, message_type='notification')
+                    channel.message_post(
+                        body=msg_html, message_type='notification')
             else:
                 # Post via quest's own message_post (mail.thread)
-                self.message_post(body=msg, message_type='notification')
+                self.message_post(body=msg_html, message_type='notification')
         except Exception as e:
             _logger.warning('Failed to send completion notification: %s', e)
 
@@ -4072,7 +4103,9 @@ class AICoworker(models.Model):
                 answer = response.text
                 answer = re.sub(
                     r'<think>.*?</think>', '', answer, flags=re.DOTALL)
-                return markdown.markdown(answer) if markdown else answer
+                # 'extra' ger tabell-stöd (konsistent med chat()-vägen)
+                return markdown.markdown(
+                    answer, extensions=['extra']) if markdown else answer
 
             # Fallback: return raw text
             return str(response) if response else ''
@@ -4322,6 +4355,42 @@ class AICoworker(models.Model):
 # ---------------------------------------------------------------------------
 # Helper functions
 # ---------------------------------------------------------------------------
+
+
+def _strip_narration(text):
+    """Ta bort narrering/inre dialog som läckt ut i ett svar.
+
+    Rader som ser ut som process-beskrivning ("Låt mig…", "I got…",
+    "Since the specialists…", "Notering:…") tas bort — kvar blir
+    det slutgiltiga svaret. Den inre dialogen finns kvar i sessionen.
+    """
+    import re
+    if not text:
+        return text
+    lines = text.split('\n')
+    narration_re = re.compile(
+        r'^(i (got|have|now|will|just|know)|let me|let\'?s|låt mig|'
+        r'jag (har|ska|tänker|vill|fick|kan|vet)|nu (har|vet|fick)|'
+        r'since (the|my|this|the specialists)|because (the|my)|'
+        r'notering:|note:|i\'?ll|this (gives|is)|the specialists|'
+        r'därför (hämtade|valde)|jag försökte|i tried|i\'ll synthesize)',
+        re.I)
+    start = 0
+    for i, line in enumerate(lines):
+        s = line.strip()
+        if not s:
+            continue
+        if narration_re.match(s):
+            start = i + 1
+        else:
+            break
+    body = '\n'.join(lines[start:]).strip()
+    # Ta bort efterföljande meta-not (Notering:/Note:/OBS: …)
+    body = re.sub(
+        r'\n+\s*(?:Notering|Note|OBS|Jag försökte|I tried)[^\n]*(?:\n[^\n]*){0,4}$',
+        '', body, flags=re.I)
+    return body.strip() or text.strip()
+
 
 def _send_mail_reply(mail_message, reply_text, quest):
     """Send AI response as email reply."""
