@@ -272,14 +272,18 @@ def ai_tool_records_to_tools(records, env=None) -> list[Tool]:
         # Builtin-verktyg (explicit-agent-tools): returnera den riktiga
         # builtin Tool med dess Python-handler. group_ids från posten
         # behålls så access-kontroll fungerar som för custom-verktyg.
+        # Handlern kräver env → wrappa med wrap_tools_with_env (annars
+        # "missing 1 required positional argument 'env'" vid exekvering).
         if record.builtin_name:
             bt = next(
                 (t for t in builtin_tools()
                  if t.name == record.builtin_name), None)
             if bt:
                 import dataclasses
+                wrapped = wrap_tools_with_env([bt], env)[0] if env else bt
                 tools.append(dataclasses.replace(
-                    bt, group_ids=list(record.group_ids.ids)
+                    wrapped,
+                    group_ids=list(record.group_ids.ids)
                     if record.group_ids else []))
                 continue
         try:
