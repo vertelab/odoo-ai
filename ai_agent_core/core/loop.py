@@ -53,7 +53,7 @@ class AgentConfig:
     max_tokens: int = 4096
     max_rounds: int = 20  # max loop iterations per turn
     max_context_tokens: int = 128_000  # trigger summarization at this threshold
-    tool_timeout: float = 30.0  # seconds per tool execution
+    tool_timeout: float = 15.0  # seconds per tool execution
     llm_timeout: float = 120.0  # seconds per LLM call
     max_tool_result_chars: int = 8000  # truncate large tool results
     max_parallel_tools: int = 5  # max concurrent tool executions (LOOP-007)
