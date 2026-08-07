@@ -181,7 +181,9 @@ async def _tool_web_search(query: str = "") -> str:
     try:
         import httpx, html as html_mod
         from urllib.parse import quote_plus
-        url = 'https://html.duckduckgo.com/html/?q=' + quote_plus(query)
+        # kl=wt-wt = worldwide (annars regionlåst till t.ex. franska sidor)
+        url = ('https://html.duckduckgo.com/html/?q=' + quote_plus(query)
+               + '&kl=wt-wt&l=wt-wt')
         async with httpx.AsyncClient(timeout=15, verify=False) as client:
             r = await client.get(url, headers={
                 'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64; rv:126.0) Gecko/20100101 Firefox/126.0'})
@@ -189,7 +191,8 @@ async def _tool_web_search(query: str = "") -> str:
         from bs4 import BeautifulSoup
         soup = BeautifulSoup(r.text, 'html.parser')
         results = []
-        for res in soup.select('.result')[:5]:
+        seen_urls = set()
+        for res in soup.select('.result')[:8]:
             a = res.select_one('.result__a')
             s = res.select_one('.result__snippet')
             if a:
@@ -197,7 +200,15 @@ async def _tool_web_search(query: str = "") -> str:
                 href = a.get('href', '')
                 snippet = html_mod.unescape(
                     s.get_text(strip=True)) if s else ''
+                # Filtrera bort uppenbart irrelevanta utbildnings/mis-sidor
+                if not title or len(title) < 3:
+                    continue
+                if href in seen_urls:
+                    continue
+                seen_urls.add(href)
                 results.append(f"{len(results)+1}. {title}\n   {snippet[:200]}\n   {href}")
+            if len(results) >= 5:
+                break
         if results:
             return "\n".join(results)
         return "No results found."
@@ -2277,6 +2288,9 @@ def specialist_tools(agents) -> list[Tool]:
     tools = []
     for name, description, loop in agents:
         safe_name = name.strip().lower().replace(' ', '_').replace('-', '_')
+        # Sanitera icke-ASCII (t.ex. 'allmän_kärna' → 'allman_karna') —
+        # Bifrost nekar verktygsnamn som inte matchar ^[a-zA-Z0-9_-]+$
+        safe_name = _sanitize_tool_name(safe_name)
         tool = Tool(
             name=f"call_specialist_{safe_name}",
             description=(

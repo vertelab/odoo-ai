@@ -186,3 +186,24 @@ class Department(models.Model):
         if self.artifact_type_ids:
             return [('artifact_type_id', 'in', self.artifact_type_ids.ids)]
         return None
+
+    # ── Hierarkisk vy: fold/unfold + tasks/OKR (ai-orchestration-dashboard) ──
+    fold = fields.Boolean('Fold (hierarki)',
+        help='True = grenen är hopfälld i den hierarkiska vyn.')
+    ai_task_count = fields.Integer(
+        'AI Tasks', compute='_compute_ai_counts',
+        help='Antal ai.org.task kopplade till avdelningen.')
+    ai_goal_count = fields.Integer(
+        'OKR', compute='_compute_ai_counts',
+        help='Antal ai.org.goal kopplade till avdelningen.')
+
+    @api.depends('department_objective_ids')
+    def _compute_ai_counts(self):
+        Task = self.env['ai.org.task']
+        for dept in self:
+            dept.ai_goal_count = len(dept.department_objective_ids)
+            try:
+                dept.ai_task_count = Task.search_count(
+                    [('department_id', '=', dept.id)])
+            except Exception:
+                dept.ai_task_count = 0
