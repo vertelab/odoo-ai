@@ -1572,6 +1572,12 @@ class AICoworker(models.Model):
                             body_html, extensions=['extra'])
                     except Exception:
                         pass
+                    # Markup (inte str) → Odoo renderar som HTML, inte escaped
+                    try:
+                        from markupsafe import Markup
+                        body_html = Markup(body_html)
+                    except Exception:
+                        pass
                     channel.message_post(
                         body=body_html,
                         author_id=author_id,
