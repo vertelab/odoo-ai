@@ -33,10 +33,17 @@ class MailMessage(models.Model):
             channel = self.env['discuss.channel'].browse(rec.res_id)
             if not channel.exists():
                 continue
-            # Botens egna partners (för loop-skydd) — deras meddelanden routas inte
+            # Botens egna partners (för loop-skydd) — deras meddelanden routas
+            # inte. Inkluderar BÅDE medarbetarens partner OCH bot-användarens
+            # partner (chat-initieringen), som kan vara olika.
             bot_partner_ids = {
                 c.partner_id.id for c in channel.ai_coworker_ids
                 if c.partner_id}
+            for c in channel.ai_coworker_ids:
+                for init in c.init_type_ids.filtered(
+                        lambda i: i.init_type == 'chat' and i.chat_user_id):
+                    if init.chat_user_id.partner_id:
+                        bot_partner_ids.add(init.chat_user_id.partner_id.id)
             if rec.author_id and rec.author_id.id in bot_partner_ids:
                 continue
             body_low = rec.body.lower()
@@ -49,9 +56,14 @@ class MailMessage(models.Model):
                         ('enabled', '=', True),
                         ('chat_user_id', '!=', False)]):
                     bot = init.chat_user_id
-                    if bot.partner_id and bot.partner_id.id in member_partner_ids:
-                        init.coworker_id._route_message(rec)
+                    if not (bot.partner_id
+                            and bot.partner_id.id in member_partner_ids):
+                        continue
+                    # Loop-skydd: botens EGNA meddelanden routas inte
+                    if rec.author_id and rec.author_id.id == bot.partner_id.id:
                         break
+                    init.coworker_id._route_message(rec)
+                    break
                 continue
             for coworker in channel.ai_coworker_ids:
                 mentions = []
