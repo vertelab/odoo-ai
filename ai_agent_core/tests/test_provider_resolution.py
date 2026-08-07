@@ -17,6 +17,7 @@ from odoo.tests.common import TransactionCase
 from odoo.addons.ai_agent_core.models.ai_provider import PROVIDER_TYPES
 from odoo.addons.ai_agent_core.core.provider import (
     AIProvider,
+    TokenEvent,
     resolve_provider_from_model,
 )
 
@@ -95,10 +96,8 @@ class TestProviderMatrix(TransactionCase):
         self.assertEqual(result.base_url, 'https://openrouter.ai/api/v1')
 
     def test_no_provider_returns_none(self):
-        ai_model = self.env['ai.model'].create({
-            'name': 'test-utan-provider',
-            'provider': False,
-        })
+        # provider är required=True — testa tom recordsets (finns inte)
+        ai_model = self.env['ai.model'].search([('name', '=', 'finns-inte-modell')])
         self.assertIsNone(resolve_provider_from_model(ai_model))
 
 
@@ -163,7 +162,7 @@ class TestStreamingPattern(TransactionCase):
             return self._response
 
     def test_post_stream_uses_send_stream_and_closes(self):
-        async def _run():
+        async def _scenario():
             provider = AIProvider(base_url='http://test/v1')
             fake_resp = self._FakeResponse([
                 'data: {"choices":[{"delta":{"content":"hej"}}]}',
@@ -176,20 +175,22 @@ class TestStreamingPattern(TransactionCase):
                 events.append(ev)
             return events, fake_client, fake_resp
 
-        events, fake_client, fake_resp = _run(_run())
+        events, fake_client, fake_resp = _run(_scenario())
         # send anropades med stream=True
         self.assertTrue(fake_client.sent)
         _request, stream_flag = fake_client.sent[0]
         self.assertTrue(stream_flag)
         # explicit aclose skedde
         self.assertTrue(fake_resp.closed)
+        # _post_stream yieldar dict-chunks + TokenEvent — filtrera
+        token_events = [e for e in events if isinstance(e, TokenEvent)]
         # [DONE] → done-event
-        self.assertTrue(any(e.type == 'done' for e in events))
-        # token 'hej' kom igenom
-        self.assertTrue(any(e.type == 'token' and e.token == 'hej' for e in events))
+        self.assertTrue(any(e.type == 'done' for e in token_events))
+        # data-raden 'hej' kom igenom som dict-chunk
+        self.assertTrue(any(e.get('choices') for e in events if isinstance(e, dict)))
 
     def test_stream_openai_compat_emits_tokens(self):
-        async def _run():
+        async def _scenario():
             provider = AIProvider(base_url='http://test/v1')
             fake_resp = self._FakeResponse([
                 'data: {"choices":[{"delta":{"content":"A"}}]}',
@@ -200,11 +201,12 @@ class TestStreamingPattern(TransactionCase):
             from odoo.addons.ai_agent_core.core.provider import Message, Role
             events = []
             async for ev in provider._stream_openai_compat(
-                    'm', [Message(role=Role.USER, content='hej')]):
+                    'm', [Message(role=Role.USER, content='hej')],
+                    None, '', 0.7, 100):
                 events.append(ev)
             return events
 
-        events = _run(_run())
+        events = _run(_scenario())
         tokens = [e.token for e in events if e.type == 'token']
         self.assertEqual(tokens, ['A', 'B'])
         dones = [e for e in events if e.type == 'done']

@@ -828,21 +828,7 @@ def builtin_tools() -> list[Tool]:
             risk_level="safe",
             source="builtin",
         ),
-        Tool(
-            name="builder_create_skill",
-            description="Save a skill permanently. Params: name (required), recipe_text, category, trigger_keywords, description.",
-            parameters={"type": "object", "properties": {
-                "name": {"type": "string"},
-                "recipe_text": {"type": "string"},
-                "category": {"type": "string"},
-                "trigger_keywords": {"type": "string"},
-                "description": {"type": "string"},
-            }, "required": ["name", "recipe_text"]},
-            handler=_tool_builder_create_skill,
-            risk_level="destructive",
-            source="builtin",
-        ),
-        Tool(
+                Tool(
             name="builder_improve_skill",
             description="Update a skill based on user feedback. Params: skill_id, feedback, field.",
             parameters={"type": "object", "properties": {

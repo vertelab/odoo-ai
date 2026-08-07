@@ -154,7 +154,7 @@ class AITool(models.Model):
                     # Savepoint isolerar create → en eventuell UniqueViolation
                     # (konkurrerande modulreload) dödar inte transaktionen.
                     with self.env.cr.savepoint():
-                        self.create({
+                        rec = self.create({
                             'name': bt.name,
                             'builtin_name': bt.name,
                             'description': bt.description or bt.name,
