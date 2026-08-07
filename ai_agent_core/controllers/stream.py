@@ -180,6 +180,16 @@ class AIStreamController(http.Controller):
             except Exception as e:
                 _logger.warning('Injektion misslyckades: %s', e)
 
+        # Aktuellt datum — LLM:en har kunskaps-cutoff och behöver veta "idag"
+        # för tidssensitiv information (priser, release-datum, valuta, …).
+        from datetime import date as _date
+        system_prompt = (
+            f"Today is {_date.today().isoformat()}. "
+            "Your knowledge has a cutoff — use web_search/fetch_url for "
+            "current, up-to-date information.\n\n"
+            + (system_prompt or '')
+        ).strip()
+
         # Load thread history if session_id provided
         session = None
         history_messages = []
@@ -850,13 +860,16 @@ class AIStreamController(http.Controller):
                     quest.check_cap()
 
                 # Hermes-lärande (agent-memory-governance 4.x): LLM-reflektion
-                # i bakgrunden när medarbetaren är aktivt lärande.
+                # i bakgrunden när medarbetaren är aktivt lärande. Tråden
+                # skapar EGEN DB-cursor/env (requestens stängs efter svar).
                 if quest and quest.learning == 'active' and role == 'assistant':
                     try:
                         import threading
+                        from odoo.addons.ai_agent_core.models.ai_coworker import (
+                            _run_learn_in_env)
                         threading.Thread(
-                            target=quest._learn_from_session,
-                            args=(session,),
+                            target=_run_learn_in_env,
+                            args=(request.env.cr.dbname, quest.id, session.id),
                             daemon=True,
                         ).start()
                     except Exception:
