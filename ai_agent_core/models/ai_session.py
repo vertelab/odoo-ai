@@ -11,7 +11,7 @@ _logger = logging.getLogger(__name__)
 class AICoworkerSession(models.Model):
     _name = 'ai.coworker.session'
     _inherit = ['mail.thread']
-    _description = 'AI Quest Session'
+    _description = 'AI Session'
     _order = 'create_date desc'
 
     task_id = fields.Many2one('ai.org.task', string='Task',

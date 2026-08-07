@@ -148,7 +148,7 @@ class AIPersonalGoal(models.Model):
         if 'strategy.review' in self.env:
             result.append(('strategy.review', 'Strategy Review'))
         if 'ai.coworker.session' in self.env:
-            result.append(('ai.coworker.session', 'Quest Session'))
+            result.append(('ai.coworker.session', 'AI Session'))
         return result
 
     def action_accept(self):

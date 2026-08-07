@@ -53,7 +53,7 @@ Keep it professional but with personality."""
 
 class AICoworker(models.Model):
     _name = 'ai.coworker'
-    _description = 'AI Quest'
+    _description = 'AI Medarbetare'
     _inherit = ['mail.thread', 'mail.activity.mixin']
     _order = 'sequence asc, name asc'
 
@@ -65,7 +65,7 @@ class AICoworker(models.Model):
              'E.g. "redovisning" enables @redovisning in channels.',
         compute='_compute_channel_alias', inverse='_inverse_channel_alias',
         store=True)
-    description = fields.Text(help='System prompt / quest purpose')
+    description = fields.Text(help='System prompt / medarbetarens syfte')
     sub_description = fields.Char('Short Description')
     active = fields.Boolean(default=True)
     color = fields.Integer(default=lambda self: __import__('random').randint(1, 11))
@@ -82,7 +82,7 @@ class AICoworker(models.Model):
     # ── Multi-model binding ──
     model_ids = fields.Many2many('ir.model', 'ai_coworker_model_rel',
         'coworker_id', 'model_id', string='Target Models',
-        help='Models this quest can work with. For powerbox quests, '
+        help='Modeller denna medarbetare kan arbeta med. För powerbox, '
              'the slash command only appears on records of these models.')
     model_id = fields.Many2one('ir.model', string='Target Model (primary)',
         compute='_compute_model_id', store=True, readonly=False,
@@ -189,7 +189,7 @@ class AICoworker(models.Model):
     # ── Buzz workspace settings ──
     allow_auto_create_agents = fields.Boolean(
         'Auto-create Agents', default=True,
-        help='Allow this quest to proactively create new agents when needed.')
+        help='Tillåt medarbetaren att proaktivt skapa nya agenter när det behövs.')
     max_auto_agents = fields.Integer(
         'Max Auto-created Agents', default=5,
         help='Hard limit on agents created automatically by this quest.')
@@ -603,7 +603,7 @@ class AICoworker(models.Model):
     session_line_ids = fields.One2many(
         'ai.coworker.session.line', related='session_ids.session_line_ids',
         string='Session Lines',
-        help='All message lines from all sessions of this quest')
+        help='Alla meddelanderader från alla sessioner för denna medarbetare')
     session_line_count = fields.Integer(
         'Systemtokens (månad)', compute='_compute_session_line_count',
         help='Total systemtokens consumed this calendar month')
@@ -781,7 +781,7 @@ class AICoworker(models.Model):
                 f'⚠️ **Varning: AI-medarbetaren "{self.name}" har använt {pct}% '
                 f'av månadstaket.**\n\n'
                 f'Förbrukat: {mtokens}M av {self.monthly_cap_mtokens}M systemtokens.\n'
-                f'Du kan höja taket i quest-inställningarna.'
+                f'Du kan höja taket i medarbetarens inställningar.'
             )
         else:
             msg = (
@@ -845,7 +845,7 @@ class AICoworker(models.Model):
     ], string='Last Run Status',
        help='Result of the last scheduled run')
     run_count = fields.Integer('Run Count', default=0,
-                                help='Number of times this quest has been run via cron')
+                                help='Antal gånger medarbetaren körts via cron')
     notify_on_completion = fields.Boolean('Notify on Completion',
                                            help='Send a notification when a scheduled run completes')
     notify_target = fields.Char('Notify Target',
@@ -864,14 +864,14 @@ class AICoworker(models.Model):
     # ── Multi-init-type (replaces single init_type) ──
     init_type_ids = fields.One2many('ai.coworker.init_type', 'coworker_id',
         string='Initiation Types',
-        help='Multiple ways this quest can be triggered.')
+        help='Flera sätt medarbetaren kan triggas.')
     # Computed Many2many for many2many_tags widget in form
     active_init_types = fields.Many2many(
         'ai.coworker.init_type', 'ai_coworker_init_type_active_rel',
         'coworker_id', 'init_type_id',
         string='Active Initiation Types',
         compute='_compute_active_init_types', inverse='_inverse_active_init_types',
-        help='Select which ways this quest can be triggered. '
+        help='Välj hur denna medarbetare kan triggas. '
              'Each type lights up its own configuration below.')
 
     # Computed boolean flags for UI visibility
@@ -1360,7 +1360,7 @@ class AICoworker(models.Model):
         self.ensure_one()
         if not self.name:
             from odoo.exceptions import ValidationError
-            raise ValidationError(_('Set a name for this quest'))
+            raise ValidationError(_('Sätt ett namn för denna medarbetare'))
         eid = list(self.get_external_id().values())[0]
         if not eid:
             import re
@@ -3018,7 +3018,7 @@ class AICoworker(models.Model):
         if not self.agent_ids:
             self._ensure_agent()
         if not self.agent_ids:
-            return _('You must assign at least one agent to the quest')
+            return _('Du måste koppla minst en agent till medarbetaren')
         inactive = self.agent_ids.filtered(lambda a: a.agent_id and a.agent_id.status != 'active')
         if inactive:
             return _('Check status on agents: %s') % ', '.join(inactive.mapped('agent_id.name'))
@@ -3986,6 +3986,44 @@ class AICoworker(models.Model):
                     'content': t_preview,
                     'sequence': 10 + i,
                 })
+
+            # ── Fel-loggning (ai.coworker.error) ──
+            # Skanna verktygshistoriken + resultatet för fel så de kan
+            # triageras och lösas vart efter (inte bara narreras bort).
+            try:
+                if 'ai.coworker.error' in self.env:
+                    err_model = self.env['ai.coworker.error']
+                    for t_name, t_preview in getattr(
+                            loop_obj, 'tool_history', []):
+                        low = (t_preview or '').strip().lower()
+                        if low.startswith(('error:', 'search error:',
+                                           'fetch error:', 'no results found',
+                                           'nats ')):
+                            etype = ('search_error'
+                                     if t_name == 'web_search'
+                                     else 'tool_error')
+                            err_model.create({
+                                'session_id': session.id,
+                                'error_type': etype,
+                                'tool_name': t_name,
+                                'message': str(t_preview)[:1000],
+                            })
+                    # Provider/max_rounds-fel ur resultatet
+                    res_low = (result_text or '').strip().lower()
+                    if res_low.startswith(('error: llm call failed',
+                                           '(max rounds',
+                                           '(no response',
+                                           '(inget svar')):
+                        etype = ('max_rounds'
+                                 if res_low.startswith('(max rounds')
+                                 else 'provider_error')
+                        err_model.create({
+                            'session_id': session.id,
+                            'error_type': etype,
+                            'message': str(result_text)[:1000],
+                        })
+            except Exception:
+                pass
 
             # Update session and quest totals
             session.write({

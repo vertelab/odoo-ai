@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="action_ai_coworker_error" model="ir.actions.act_window">
+        <field name="name">AI Fel</field>
+        <field name="res_model">ai.coworker.error</field>
+        <field name="view_mode">list,form</field>
+        <field name="help" type="html">
+            <p>Fel som uppstått under AI-medarbetarnas körningar — verktygsfel,
+               sökfel, provider-fel och max_rounds. Markera som lösta när de är åtgärdade.</p>
+        </field>
+    </record>
+
+    <record id="view_ai_coworker_error_list" model="ir.ui.view">
+        <field name="name">ai.coworker.error.list</field>
+        <field name="model">ai.coworker.error</field>
+        <field name="arch" type="xml">
+            <list string="AI Fel">
+                <field name="create_date"/>
+                <field name="coworker_id"/>
+                <field name="session_id"/>
+                <field name="error_type" widget="badge"
+                       decoration-danger="error_type in ('tool_error','search_error','provider_error')"
+                       decoration-warning="error_type == 'max_rounds'"/>
+                <field name="tool_name"/>
+                <field name="message"/>
+                <field name="resolved" widget="boolean_toggle"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_ai_coworker_error_form" model="ir.ui.view">
+        <field name="name">ai.coworker.error.form</field>
+        <field name="model">ai.coworker.error</field>
+        <field name="arch" type="xml">
+            <form string="AI Fel">
+                <header>
+                    <button name="action_mark_resolved" type="object"
+                            string="Markera som löst" class="btn-primary"
+                            invisible="resolved"/>
+                </header>
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="coworker_id" readonly="1"/>
+                            <field name="session_id" readonly="1"/>
+                            <field name="error_type"/>
+                            <field name="tool_name"/>
+                        </group>
+                        <group>
+                            <field name="create_date" readonly="1"/>
+                            <field name="resolved"/>
+                        </group>
+                    </group>
+                    <group string="Felmeddelande">
+                        <field name="message" readonly="1"/>
+                    </group>
+                    <group string="Kontext" invisible="not context">
+                        <field name="context" readonly="1"/>
+                    </group>
+                    <group string="Lösning" invisible="not resolved">
+                        <field name="resolution"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!-- Meny under Odoo Mind -->
+    <record id="menu_ai_coworker_error" model="ir.ui.menu">
+        <field name="name">AI Fel</field>
+        <field name="parent_id" ref="menu_workspace_root"/>
+        <field name="action" ref="action_ai_coworker_error"/>
+        <field name="sequence" eval="95"/>
+    </record>
+</odoo>
