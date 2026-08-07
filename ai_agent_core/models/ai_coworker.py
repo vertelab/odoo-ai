@@ -1349,7 +1349,22 @@ class AICoworker(models.Model):
             raise UserError(self._check_quest_error())
         
         record = records[0] if records else None
-        result = self.run(records=records, record=record)
+        session = self.env['ai.coworker.session'].create({
+            'coworker_id': self.id, 'status': 'active',
+            'name': f'Server action: {records._name}'
+                    f'{(" " + str(record.display_name)) if record else ""}'[:80],
+            'user_id': self.env.user.id,
+        })
+        prompt = (
+            f'Du har anropats som server action på {records._name}. '
+            f'Hantera/analysera record(s): '
+            + (', '.join(str(r.display_name or r.id)
+                         for r in records[:10]) or '')
+        )
+        result = self.with_context(
+            _ai_context_model=records._name,
+            _ai_context_id=record.id if record else False,
+        ).run(prompt=prompt, session=session)
         return result
 
     # ── Mail (init_type='mail') ──
@@ -1393,7 +1408,7 @@ class AICoworker(models.Model):
 
         prompt = body_text[:4000] + att_context
         try:
-            result = self.run(session=session, message_body=prompt, mail=mail_message, prompt=prompt)
+            result = self.run(prompt=prompt, session=session)
             if result and session:
                 last_line = session.session_line_ids.sorted('sequence', reverse=True)[:1]
                 if last_line and last_line.role == 'assistant' and last_line.content:
@@ -1480,6 +1495,11 @@ class AICoworker(models.Model):
                     channel.message_post(
                         body=f'<p>{last_line.content[:4000]}</p>',
                         message_type='comment', subtype_xmlid='mail.mt_comment')
+            # Personligt lärande (kanal-flödet) — samma pipeline som web-chatten
+            try:
+                self._maybe_learn_async(session.id)
+            except Exception:
+                pass
             return result
         except Exception as e:
             _logger.error('Chat failed for quest %s: %s', self.name, e)
@@ -2672,6 +2692,26 @@ class AICoworker(models.Model):
         _ensure_link(keep, research_agent, role='member', sequence=30)
 
         return True
+
+    def _maybe_learn_async(self, session_id):
+        """Trigg personligt lärande i bakgrunden (om learning=active).
+
+        Används av web-chat, kanal och OpenAI API. Tråden skapar EGEN
+        DB-cursor/env via _run_learn_in_env (request:ens stängs efter svar).
+        """
+        try:
+            if self.learning != 'active' or not session_id:
+                return False
+            import threading
+            dbname = self._cr.dbname
+            threading.Thread(
+                target=_run_learn_in_env,
+                args=(dbname, self.id, session_id),
+                daemon=True,
+            ).start()
+            return True
+        except Exception:
+            return False
 
     def _learn_from_session(self, session):
         """Hermes-lärande (agent-memory-governance 4.x).

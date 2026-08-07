@@ -421,7 +421,10 @@ class AICoworkerInitType(models.Model):
                     f'Review the record and take appropriate action.\n\n'
                     f'Record details:\n{record.name or record.display_name or record.id}'
                 )
-                coworker.run(session=session, prompt=prompt, record=record)
+                coworker.with_context(
+                    _ai_context_model=record._name,
+                    _ai_context_id=record.id,
+                ).run(session=session, prompt=prompt)
                 _logger.info('Watch %s: processed %s %s',
                             coworker.name, record._name, record.id)
             except Exception as e:
