@@ -2662,13 +2662,15 @@ class AICoworker(models.Model):
                 if partner:
                     today_start = datetime.combine(now.date(), datetime.min.time())
                     today_end = today_start + timedelta(days=1)
+                    # Sök på partner_ids utan datumfilter (calendar.event.start
+                    # har tz-konvertering som gör ORM-datumjämförelse opålitlig),
+                    # filtrera sedan i Python.
                     events = self.env['calendar.event'].sudo().search([
-                        '|',
                         ('partner_ids', 'in', partner.id),
-                        ('user_id', '=', user.id),
-                        ('start', '>=', today_start),
-                        ('start', '<', today_end),
-                    ], order='start asc', limit=5)
+                    ], limit=20)
+                    events = events.filtered(
+                        lambda ev: ev.start
+                        and today_start <= ev.start < today_end)[:5]
                     if events:
                         event_lines = []
                         for ev in events:

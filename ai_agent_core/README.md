@@ -621,3 +621,41 @@ social-kanal) kan ärva. Avslaget → räknaren nollställs.
 - Smartknapp i **Min profil** (res.users) — mina öppna godkännanden.
 - Integritet: `ir.rule` — användare ser bara requests där hen är
   godkännare; admin ser allt.
+
+## Channel-adapter-kontraktet (`core/channel.py`)
+
+Kanal-neutralt kontrakt för agenter som processar inkommande items
+(mail idag, social media i framtiden). Extraherat ur mail-hjälpredan
+(`user_mail_ai`) — ingen befintlig kod migreras i denna change.
+
+```python
+from ai_agent_core.core.channel import (
+    NormalizedItem, ChannelAdapter, ItemProcessor,
+    channel_registry, process_item, satisfies_adapter,
+)
+
+class MyMailAdapter:            # uppfyller ChannelAdapter (duck-typing)
+    def fetch_new(self, user, since=None): ...
+    def normalize(self, raw): ...
+    def dispose(self, item, disposition): ...
+    def draft_outbound(self, user, item, content): ...
+    def send_outbound(self, user, item, content): ...
+
+class MyProcessor:              # uppfyller ItemProcessor
+    async def classify(self, item): ...
+    def dispose(self, item, disposition): ...
+    def hitl(self, item, action_type, context): ...
+    def nudge(self, item, message): ...
+    def remember(self, item): ...
+
+channel_registry.register('mail', adapter=MyMailAdapter(),
+                          processor=MyProcessor())
+await process_item(item)   # klassificering → disposition → HITL → nudge → minne
+```
+
+- **Dispositioner:** `create | link | draft | nudge | handoff`.
+- **HITL-gate:** `create`/`link`/`handoff` med `hitl_required=True` väntar på
+  godkännande (ai.coworker.hitl) innan dispose; annars `waiting_hitl`.
+- **Referensimplementation:** `user_mail_ai` uppfyller kontraktet
+  strukturellt (ingen migrering — kontraktet reflekterar befintlig kod).
+- `satisfies_adapter(obj)` / `satisfies_processor(obj)` — strukturell koll.
