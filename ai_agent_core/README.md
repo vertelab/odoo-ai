@@ -574,3 +574,50 @@ gjorda av modulen/konfigurationen; **B** och **C** kräver mailserver/DNS.
   → skapar session + postar svar. Ingen riktig mailserver krävs.
 - När B är klart: skicka ett riktigt mail till `faktura@coworker.vertel.se` →
   session skapas → Faktura-Assistenten svarar på tråden.
+
+## HITL-requests — `ai.coworker.hitl` (record-baserad HITL)
+
+Konversations-HITL (interrupt-handlers) gäller *i sessionen*. För asynkrona
+köer och utåtgående handlingar finns **`ai.coworker.hitl`**: bestående,
+granskningsbara godkännandebegäranden med livscykel, aktivitet i klockan
+och trust-ladder-inlärning.
+
+### API för coworkers
+
+```python
+hitl = coworker._request_hitl(
+    action_type='promote_mail',      # t.ex. send_reply, social_publish
+    summary='Koppla in mail i Ticket #1234?',
+    context={'model': 'helpdesk.ticket', 'res_id': 1234},  # JSON-payload
+    risk_level='high',               # safe | high | destructive
+    user_id=approver.id,             # godkännaren (default: env.user)
+)
+# → record med state='asked' + mail.activity (todo) i godkännarens klocka
+#   + Odoo-notis (bell). Dubblettskydd: samma (coworker, action_type,
+#   context-hash) med öppen 'asked' returnerar befintlig request.
+```
+
+### Livscykel
+
+`asked → approved | rejected | expired` (cron, default 7 dagar,
+`ai_agent_core.hitl_expire_days`). Beslut sker i formen (Godkänn/Avslå)
+eller via `action_approve()` / `action_reject()` — endast godkännaren
+eller admin. Beslutet stänger aktiviteten och loggas med `decided_by`,
+`decided_at` och chatter.
+
+### Trust-ladder
+
+Efter N godkända liknande requests (default 3,
+`ai_agent_core.hitl_trust_n`) skapas ett **auto-förslag**
+(`action_type='auto_proposal'`): "vill du att jag gör detta automatiskt
+nästa gång?". Godkänt → standing-rule-rad (JSON på recordet) + hook
+`_on_standing_rule_created(rule)` som domänkonsumenter (mail-regelmodell,
+social-kanal) kan ärva. Avslaget → räknaren nollställs.
+
+### UI
+
+- Meny: AI Orkestrering → Organisation → **Godkännanden (HITL)**.
+- Smartknapp på **ai.coworker**-formen (öppna HITL för medarbetaren).
+- Smartknapp i **Min profil** (res.users) — mina öppna godkännanden.
+- Integritet: `ir.rule` — användare ser bara requests där hen är
+  godkännare; admin ser allt.

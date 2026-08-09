@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Utgångna HITL-requests: asked → expired (decision=timeout) -->
+    <record id="ir_actions_server_hitl_expire" model="ir.actions.server">
+        <field name="name">AI: Expire stale HITL requests</field>
+        <field name="model_id" ref="model_ai_coworker_hitl"/>
+        <field name="state">code</field>
+        <field name="code">
+model._expire_stale()
+        </field>
+    </record>
+
+    <record id="cron_hitl_expire" model="ir.cron">
+        <field name="name">AI: Expire stale HITL requests</field>
+        <field name="cron_name">AI: Expire stale HITL requests</field>
+        <field name="ir_actions_server_id" ref="ir_actions_server_hitl_expire"/>
+        <field name="interval_number">1</field>
+        <field name="interval_type">days</field>
+        <field name="active">True</field>
+    </record>
+</odoo>

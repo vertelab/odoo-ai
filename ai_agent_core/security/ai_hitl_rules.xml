@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Integritet: en användare ser bara HITL-requests där hen är
+         godkännare. Admin (group_system) går förbi regeln. -->
+    <record id="ai_coworker_hitl_approver_rule" model="ir.rule">
+        <field name="name">ai.coworker.hitl: godkännare ser egna</field>
+        <field name="model_id" ref="model_ai_coworker_hitl"/>
+        <field name="domain_force">[('user_id', '=', user.id)]</field>
+        <field name="groups" eval="[(4, ref('base.group_user'))]"/>
+        <field name="perm_read" eval="True"/>
+        <field name="perm_write" eval="True"/>
+        <field name="perm_create" eval="True"/>
+        <field name="perm_unlink" eval="False"/>
+    </record>
+</odoo>

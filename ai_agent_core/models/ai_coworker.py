@@ -2610,6 +2610,128 @@ class AICoworker(models.Model):
 
         return "\n\n".join(parts)
 
+    def _build_time_schedule_block(self, user=None):
+        """Tid- och schemakontext (agent-memory-governance D8b).
+
+        Bygger ett kompakt block med:
+        - Aktuell tid (datum, veckodag, veckonummer, tidszon)
+        - Användarens möten idag (calendar.event via partner_id, max 5)
+        - Användarens arbetsschema (hr.employee → hr.contract →
+          resource.calendar → attendances)
+        - Förfallande todo (mail.activity, max 5)
+
+        Best-effort: tyst no-op vid fel. Returnerar '' om inget att visa.
+        """
+        self.ensure_one()
+        user = user or self.env.user
+        if not user or not user.id or user.login == 'public':
+            return ''
+
+        from datetime import date, datetime, timedelta
+        parts = []
+
+        # ── Aktuell tid ──
+        now = datetime.now()
+        try:
+            tz_name = user.tz or self.env.user.tz or 'Europe/Stockholm'
+            from pytz import timezone
+            now = datetime.now(timezone(tz_name))
+        except Exception:
+            pass
+        weekday_sv = ['måndag', 'tisdag', 'onsdag', 'torsdag',
+                      'fredag', 'lördag', 'söndag'][now.weekday()]
+        iso_week = now.isocalendar()[1]
+        time_parts = [
+            f'- Nu: {now.strftime("%Y-%m-%d %H:%M")} ({weekday_sv}, v{iso_week})',
+        ]
+
+        # ── Möten idag (calendar.event via partner_id) ──
+        try:
+            if 'calendar.event' in self.env:
+                partner = user.partner_id
+                if partner:
+                    today_start = datetime.combine(now.date(), datetime.min.time())
+                    today_end = today_start + timedelta(days=1)
+                    events = self.env['calendar.event'].sudo().search([
+                        ('partner_ids', 'in', partner.id),
+                        ('start', '>=', today_start),
+                        ('start', '<', today_end),
+                    ], order='start asc', limit=5)
+                    if events:
+                        event_lines = []
+                        for ev in events:
+                            start_sv = ev.start.strftime('%H:%M') if ev.start else '?'
+                            ev_name = ev.name or '(namnlöst)'
+                            event_lines.append(f'- {start_sv}: {ev_name}')
+                        time_parts.append('\nDina möten idag:')
+                        time_parts.extend(event_lines)
+        except Exception as e:
+            _logger.debug('Calendar block failed: %s', e)
+
+        # ── Arbetsschema (hr.employee → contract → resource.calendar) ──
+        try:
+            if 'hr.employee' in self.env:
+                emp = self.env['hr.employee'].sudo().search([
+                    ('work_email', '=', user.login),
+                ] + ([('company_id', '=', user.company_id.id)]
+                     if user.company_id else []),
+                    limit=1)
+                if not emp and partner:
+                    emp = self.env['hr.employee'].sudo().search(
+                        [('work_contact_id', '=', partner.id)], limit=1)
+                if emp:
+                    contract = self.env['hr.contract'].sudo().search([
+                        ('employee_id', '=', emp.id),
+                        ('active', '=', True),
+                        ('state', 'in', ('open', 'draft')),
+                    ], limit=1)
+                    if contract and contract.resource_calendar_id:
+                        cal = contract.resource_calendar_id
+                        cal_info = [f'- Schema: {cal.name or "Arbetsschema"}']
+                        today_idx = str(now.weekday())
+                        attendances = self.env['resource.calendar.attendance'].sudo().search([
+                            ('calendar_id', '=', cal.id),
+                            ('dayofweek', '=', today_idx),
+                            ('display_type', '!=', 'line_section'),
+                        ], order='hour_from asc')
+                        if attendances:
+                            day_times = []
+                            for att in attendances:
+                                if att.day_period in ('morning', 'afternoon'):
+                                    day_times.append(
+                                        f'{att.hour_from:.0f}-{att.hour_to:.0f}')
+                            if day_times:
+                                cal_info.append(
+                                    f'- Arbetstid idag: {", ".join(day_times)}')
+                        time_parts.append('\n' + '\n'.join(cal_info))
+        except Exception as e:
+            _logger.debug('Work schedule block failed: %s', e)
+
+        # ── Förfallande todo (mail.activity) ──
+        try:
+            if 'mail.activity' in self.env:
+                today = date.today()
+                activities = self.env['mail.activity'].sudo().search([
+                    ('user_id', '=', user.id),
+                    ('active', '=', True),
+                    ('date_deadline', '<=', today),
+                ], order='date_deadline asc', limit=5)
+                if activities:
+                    act_lines = ['\nDina uppgifter (todo):']
+                    for act in activities:
+                        dl = act.date_deadline
+                        dl_str = dl.strftime('%Y-%m-%d') if dl else 'ingen deadline'
+                        summary = act.summary or '(aktivitet)'
+                        act_lines.append(f'- ⚠ {summary} (förfaller {dl_str})')
+                    time_parts.extend(act_lines)
+        except Exception as e:
+            _logger.debug('Activity block failed: %s', e)
+
+        if len(time_parts) <= 1:
+            return ''  # Bara tiden — inget schema/möten att visa
+
+        return '## Tid och schema\n' + '\n'.join(time_parts)
+
     def _extra_context(self):
         """Wrapper för bakåtkompatibilitet — ENDA injiceringskällan är
         _build_injection_prompt (full refaktor)."""
