@@ -162,6 +162,8 @@ class AITool(models.Model):
                             'risk_level': bt.risk_level or 'read_only',
                             'executor': bt.executor or 'local',
                             'capabilities': json.dumps(bt.capabilities or []),
+                            'nats_subject': bt.nats_subject or 'pi.task.do',
+                            'nats_skills': bt.nats_skills or '',
                             'active': True,
                         })
                     created += 1
@@ -173,6 +175,15 @@ class AITool(models.Model):
             elif not rec.builtin_name:
                 rec.write({'builtin_name': bt.name})
                 marked += 1
+            # Korrigera NATS-subject om posten har kvar default-värdet
+            # (pi.task.do) men builtin definierar ett specifikt subject.
+            # Bridge-poster med anpassad konfiguration skrivs inte över.
+            if rec.executor == 'nats' and bt.nats_subject:
+                if rec.nats_subject in (False, None, '', 'pi.task.do') \
+                        and bt.nats_subject != 'pi.task.do':
+                    rec.write({'nats_subject': bt.nats_subject})
+                if rec.nats_skills in (False, None, '') and bt.nats_skills:
+                    rec.write({'nats_skills': bt.nats_skills})
             # Bind xmlid (idempotent): tool_<sanitized name> i ai_agent_core.
             # Gör att data-XML (default_coworker.xml m.fl.) kan referera
             # verktygen med ref('tool_describe_model') etc.
