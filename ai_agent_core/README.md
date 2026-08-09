@@ -253,6 +253,52 @@ Supports: `bifrost`, `openai`, `anthropic`, `openrouter`, `deepseek`,
 
 ### Memory Architecture
 
+Odoo Mind har ett flerskiktat minnessystem:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    MINNESLAGER                              │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│  OKF (Open Knowledge Format) — tunt indexlager              │
+│  ─────────────────────────────────────────                  │
+│  ai.okf.concept: metadata + summary + source_ref            │
+│  PgVector 1024d embedding för semantisk sökning              │
+│  Scope: company | personal | coworker                       │
+│  ADD-only versionering (aldrig skriv över)                  │
+│                                                              │
+│  Vektorlagret                                                │
+│  ────────────                                                │
+│  ai.embedding: attachment chunks → pgvector (ivfflat)       │
+│  ai.memory: FAISS + pgvector för dokumentchunks             │
+│                                                              │
+│  Graflagret (Apache AGE)                                     │
+│  ─────────────────────────                                  │
+│  graph.node.definition: Odoo-modeller → AGE-noder           │
+│  graph.executor: Cypher-queries (read_only validering)      │
+│  res.partner som universell nyckel mellan modeller          │
+│                                                              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Memory Governance (agent-memory-governance)
+
+**Identitet → AI Medarbetare → Agent-koppling**
+
+| Nivå | Modell | Ansvar |
+|------|--------|--------|
+| Identity | `ai.identity` | Designintent: persona, memory_profile (hermes/balanced/session_only) |
+| AI Medarbetare | `ai.coworker` | Runtime-saning: memory_scopes, memory_level, learning, sökstrategi |
+| Agent-koppling | `ai.coworker.agent` | Hårda block: block_personal/company/coworker, level per scope (ärv) |
+
+**Injektionsordning:** tid/schema → roll → användare → multi_source_recall → företag → personligt → medarbetare → mission → rekord → session
+
+**Multi-source recall:** OKF (pgvector) + ai.memory (FAISS) + AGE graph (Cypher) + Knowledge (ts_rank) + Mail/Chatter (ts_rank) + Discuss inkorg (ts_rank) + Calendar (ts_rank + tid) + Activities (ts_rank + förfallo)
+
+**Sökstrategier:** precision | balanced | recall | detective — styr vikter och tröskelvärden för hybrid scoring.
+
+**Pi-agent-brygga:** Externa källor (graphify, OCA-repos) nås via NATS tool-execution — inte injektion.
+
 - **Agent-level**: Permanent RAG on `ai.agent.rag_memory_ids` (handbooks, websites)
 - **Session-level**: Ad-hoc uploaded docs in chat thread, injected into system prompt
 - Both tiers support FAISS vector search

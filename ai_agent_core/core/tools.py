@@ -579,6 +579,51 @@ def builtin_tools() -> list[Tool]:
             source="builtin",
         ),
         Tool(
+            name="graphify_search",
+            description="Search graphify-indexed repositories (OCA modules, internal repos). "
+                        "Use when user asks 'does OCA have a module for...' or 'has anyone solved this?'. "
+                        "Returns module names, descriptions, relevance scores. Delegates to Pi-agent via NATS.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Search query"},
+                    "repos": {"type": "array", "items": {"type": "string"}, "description": "Repo filter, e.g. ['oca/*']"},
+                    "limit": {"type": "integer", "description": "Max results (default 5)"},
+                },
+                "required": ["query"],
+            },
+            handler=None,
+            risk_level="read_only",
+            source="builtin",
+            executor="nats",
+            capabilities=["graphify", "external-search"],
+            nats_subject="pi.skill.graphify.search",
+            nats_skills="graphify",
+        ),
+        Tool(
+            name="pi_unified_recall",
+            description="Multi-source search across Odoo Mind AND external sources (graphify, filesystem). "
+                        "Use for comprehensive knowledge — both internal Odoo data and external systems. "
+                        "Returns ranked, attributed results. Delegates to Pi-agent via NATS.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Search query"},
+                    "sources": {"type": "array", "items": {"type": "string"}, "description": "Sources: 'internal', 'graphify', 'filesystem', or 'all'"},
+                    "strategy": {"type": "string", "enum": ["precision", "balanced", "recall", "detective"], "description": "Search strategy"},
+                    "limit": {"type": "integer", "description": "Max results (default 10)"},
+                },
+                "required": ["query"],
+            },
+            handler=None,
+            risk_level="read_only",
+            source="builtin",
+            executor="nats",
+            capabilities=["unified-recall", "external-search"],
+            nats_subject="pi.skill.unified.recall",
+            nats_skills="odoo-unified",
+        ),
+        Tool(
             name="echo",
             description="Echo back the message. Useful for testing.",
             parameters={

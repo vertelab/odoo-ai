@@ -60,6 +60,7 @@ def post_init_hook_personal_memory(env):
     # ════════════════════════════════════════════
     # AI Personal Memory SQL (non-fatal — table may not exist yet)
     # ════════════════════════════════════════════
+    cr.execute('SAVEPOINT pre_personal_memory_sql')
     try:
         cr.execute("SELECT 1 FROM information_schema.tables WHERE table_name = 'ai_personal_memory' AND table_schema = 'public'")
         if cr.fetchone():
@@ -93,11 +94,15 @@ def post_init_hook_personal_memory(env):
                 _logger.info('Created B-tree index on user_id')
     except Exception as e:
         _logger.warning('SQL migration for ai.personal.memory failed (non-fatal): %s', e)
-        cr.rollback()
+        try:
+            cr.execute('ROLLBACK TO SAVEPOINT pre_personal_memory_sql')
+        except Exception:
+            cr.rollback()
 
     # ════════════════════════════════════════════
     # Company Memory SQL
     # ════════════════════════════════════════════
+    cr.execute('SAVEPOINT pre_company_memory_sql')
     try:
         cr.execute("SELECT 1 FROM information_schema.tables WHERE table_name = 'ai_company_memory' AND table_schema = 'public'")
         if cr.fetchone():
@@ -124,11 +129,15 @@ def post_init_hook_personal_memory(env):
                 cr.execute("CREATE INDEX idx_ai_company_memory_company ON ai_company_memory (company_id, create_date DESC)")
     except Exception as e:
         _logger.warning('SQL migration for ai.company.memory failed (non-fatal): %s', e)
-        cr.rollback()
+        try:
+            cr.execute('ROLLBACK TO SAVEPOINT pre_company_memory_sql')
+        except Exception:
+            cr.rollback()
 
     # ════════════════════════════════════════════
     # AGE Graph initialization (Odoo Mind)
     # ════════════════════════════════════════════
+    cr.execute('SAVEPOINT pre_age_init')
     try:
         cr.execute("SELECT 1 FROM pg_extension WHERE extname = 'age'")
         if cr.fetchone():
@@ -142,7 +151,10 @@ def post_init_hook_personal_memory(env):
             _logger.info('AGE extension not installed — skipping graph init')
     except Exception as e:
         _logger.warning('Odoo Mind graph initialization failed (non-fatal): %s', e)
-        cr.rollback()
+        try:
+            cr.execute('ROLLBACK TO SAVEPOINT pre_age_init')
+        except Exception:
+            cr.rollback()
 
     # ════════════════════════════════════════════
     # Create company memory crons

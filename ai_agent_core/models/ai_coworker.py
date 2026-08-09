@@ -3064,6 +3064,9 @@ class AICoworker(models.Model):
         if extra:
             system_prompt = (system_prompt or '') + extra
 
+        # NATS user context (pi-agent-memory-bridge D5)
+        nats_ctx = self._get_nats_user_context()
+
         mode = self._get_effective_orchestration_mode()
         if self.env.context.get('ai_single_agent_run'):
             mode = 'single'
@@ -3077,6 +3080,7 @@ class AICoworker(models.Model):
                     model=model, system_prompt=system_prompt,
                     max_rounds=max_rounds,
                     permission_mode='auto',
+                    nats_user_context=nats_ctx,
                 ),
             )
 
@@ -3183,6 +3187,23 @@ class AICoworker(models.Model):
                 min_confidence=self.min_confidence or 0.8,
             ),
         )
+
+    def _get_nats_user_context(self):
+        """Build user context dict for NATS tool execution (pi-agent-memory-bridge D5).
+
+        Returns dict with user_id, company_id, coworker_id, and optionally
+        session_id from context. Used by _build_loop to pass to AgentConfig.
+        """
+        sess_id = self.env.context.get('_ai_context_id')
+        sess_model = self.env.context.get('_ai_context_model', '')
+        ctx = {
+            'user_id': self.env.user.id,
+            'company_id': self.env.company.id,
+            'coworker_id': self.id,
+        }
+        if sess_model == 'ai.coworker.session' and sess_id:
+            ctx['session_id'] = sess_id
+        return ctx
 
     def _build_specialists(self, provider, tools, model, system_prompt, max_rounds=10):
         """Build list of SpecialistAgent from agent_ids."""

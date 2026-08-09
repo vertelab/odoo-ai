@@ -69,7 +69,7 @@
             <field name="sequence" eval="20"/>
         </record>
 
-        <!-- Research (webb + youtube) -->
+        <!-- Research (webb + youtube) — kräver ai_skill_youtube + web-verktygsmoduler
         <record id="agent_research" model="ai.agent">
             <field name="name">Research</field>
             <field name="ai_role">Web Research</field>
@@ -82,7 +82,6 @@
                 ref('skill_youtube_playlist'),
                 ref('skill_youtube_full'),
             ])]"/>
-            <!-- explicit-agent-tools: web-verktyg anges EXPLICIT här. -->
             <field name="tool_ids" eval="[(6, 0, [
                 ref('tool_web_search'),
                 ref('tool_fetch_url'),
@@ -94,6 +93,7 @@
             <field name="role">member</field>
             <field name="sequence" eval="30"/>
         </record>
+        -->
 
     </data>
 
