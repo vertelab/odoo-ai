@@ -2663,7 +2663,9 @@ class AICoworker(models.Model):
                     today_start = datetime.combine(now.date(), datetime.min.time())
                     today_end = today_start + timedelta(days=1)
                     events = self.env['calendar.event'].sudo().search([
+                        '|',
                         ('partner_ids', 'in', partner.id),
+                        ('user_id', '=', user.id),
                         ('start', '>=', today_start),
                         ('start', '<', today_end),
                     ], order='start asc', limit=5)
