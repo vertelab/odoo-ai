@@ -2505,6 +2505,16 @@ class AICoworker(models.Model):
                 + '\n'.join(user_parts)
             )
 
+        # 2b. Tid- och schemakontext (agent-memory-governance D8b)
+        # Aktuell tid + användarens möten (calendar.event) + arbetsschema
+        # (hr.employee → contract → resource.calendar). Best-effort.
+        try:
+            time_block = self._build_time_schedule_block(user)
+            if time_block:
+                parts.append(time_block)
+        except Exception as e:
+            _logger.warning('Tid/schema-block misslyckades: %s', e)
+
         # 3. Rekordkontext (L1-L3 från tidigare _extra_context) — aldrig
         # avbryt hela injektionen; rekordkontext är best-effort.
         if self.context_injection_enabled:
