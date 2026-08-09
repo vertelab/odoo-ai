@@ -764,7 +764,7 @@ class AICoworker(models.Model):
                     f'Budgeten öppnas automatiskt vid månadsskifte eller '
                     f'när taket höjs.'
                 ),
-                user_id=self.user_id.id or self.env.uid,
+                user_id=self.env.uid or self.create_uid.id,
             )
         except Exception:
             _logger.warning('Budget activity_schedule failed', exc_info=True)
