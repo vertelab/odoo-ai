@@ -221,19 +221,16 @@ class TestBudgetHardCap(common.TransactionCase):
     # ── 7.6 Döda fält borta ──
 
     def test_dead_fields_removed(self):
-        """Döda fält borta — budget_kr_monthly är deprecated (bridge-komp)."""
+        """Döda fält borta (bridge-moduler uppdaterade → fält bort)."""
         Coworker = self.env['ai.coworker']
+        self.assertNotIn('budget_kr_monthly', Coworker._fields)
+        self.assertNotIn('max_actions_per_day', Coworker._fields)
         self.assertNotIn('cap_exhausted', Coworker._fields)
         self.assertNotIn('cap_warning_sent', Coworker._fields)
         self.assertNotIn('reset_cap', Coworker._fields)
-        # budget_kr_monthly + max_actions_per_day behålls som deprecated
-        # (bridge-moduler refererar dem i data-XML)
-        self.assertIn('budget_kr_monthly', Coworker._fields)
-        self.assertIn('max_actions_per_day', Coworker._fields)
 
         Session = self.env['ai.coworker.session']
-        # cost_estimated behålls som deprecated (project_ai refererar)
-        self.assertIn('cost_estimated', Session._fields)
+        self.assertNotIn('cost_estimated', Session._fields)
 
         Agent = self.env['ai.agent']
         self.assertNotIn('budget_used', Agent._fields)

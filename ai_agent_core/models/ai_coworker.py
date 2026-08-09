@@ -662,22 +662,6 @@ class AICoworker(models.Model):
         help='Månad då budget-notis/aktivitet senast skickades — en gång '
              'per månad, ingen reset behövs.')
 
-    # Deprecated (budget-hard-cap D8): budget_kr_monthly behålls som
-    # deprecated-fält eftersom 12+ bridge-moduler (marketing_ai,
-    # project_ai, social_ai m.fl.) refererar det i data-XML. Ingen logik
-    # använder det — systemtokens är enda budgetvaluta. Vid nästa
-    # bryggmodul-uppdatering tas fältet bort helt.
-    budget_kr_monthly = fields.Float(
-        'Budget (kr/mån) — DEPRECATED', default=0.0,
-        help='DEPRECATED: använd monthly_cap_mtokens (systemtokens). '
-             'Behålls för bakåtkompatibilitet med bridge-moduler — ingen '
-             'logik använder detta fält.')
-    max_actions_per_day = fields.Integer(
-        'Max åtgärder/dag — DEPRECATED', default=50,
-        help='DEPRECATED: begravd (budget-hard-cap D8). Behålls för '
-             'bakåtkompatibilitet med bridge-moduler — ingen logik '
-             'använder detta fält.')
-
     # Autonomi-panel (gap C5/F4, task 8.6) — endast systemtokens som valuta
     # (budget-hard-cap D8: budget_kr_monthly + max_actions_per_day begravda)
     hitl_threshold = fields.Selection([
