@@ -196,8 +196,9 @@
                         </group>
                         <group string="Budget &amp; HITL">
                             <field name="hitl_threshold" widget="radio"/>
-                            <field name="budget_kr_monthly"/>
                             <field name="monthly_cap_mtokens"/>
+                            <field name="budget_warning" readonly="1"/>
+                            <field name="budget_exhausted" readonly="1"/>
                             <field name="active" widget="boolean_toggle"/>
                             <field name="last_heartbeat" readonly="1"/>
                         </group>

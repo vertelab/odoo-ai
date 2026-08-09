@@ -73,9 +73,8 @@ class AIAgent(models.Model):
     max_tokens = fields.Integer(default=4096)
     max_rounds = fields.Integer(default=10)
 
-    # Budget
-    budget_limit = fields.Float('Monthly Budget (USD)', default=0)
-    budget_used = fields.Float('Used This Month', default=0)
+    # Budget (budget-hard-cap D8: budget_limit/budget_used i USD begravda —
+    # systemtokens är enda valuta, hanteras på ai.coworker)
 
     # Status
     status = fields.Selection([

@@ -1153,8 +1153,10 @@ class TestSystemtoken(unittest.TestCase):
         self.assertIn("session_line_count", content)
         self.assertIn("started_mtokens", content)
         self.assertIn("monthly_cap_mtokens", content)
-        self.assertIn("cap_warning_sent", content)
-        self.assertIn("cap_exhausted", content)
+        self.assertIn("budget_exhausted", content)
+        self.assertIn("budget_warning", content)
+        self.assertIn("cap_notified_month", content)
+        self.assertIn("_compute_budget_state", content)
         self.assertIn("_compute_session_line_count", content)
         self.assertIn("_compute_started_mtokens", content)
 
@@ -1206,7 +1208,9 @@ class TestSystemtoken(unittest.TestCase):
         with open(path) as f:
             content = f.read()
         self.assertIn("check_cap", content)
-        self.assertIn("reset_cap", content)
+        self.assertIn("_notify_budget_once", content)
+        self.assertIn("_create_budget_activity", content)
+        self.assertIn("_unlock_budget_activities", content)
         self.assertIn("_notify_cap", content)
         self.assertIn("get_billing_data", content)
         self.assertIn("action_monthly_overview", content)
@@ -1251,7 +1255,8 @@ class TestSystemtoken(unittest.TestCase):
         self.assertIn("'started_mtokens'", content)
         self.assertIn("'session_line_count'", content)
         self.assertIn("'monthly_cap_mtokens'", content)
-        self.assertIn("'cap_exhausted'", content)
+        self.assertIn("'budget_exhausted'", content)
+        self.assertIn("'budget_warning'", content)
         self.assertIn("'total_sys_tokens'", content)
         self.assertIn("'last_month_sys_tokens'", content)
 

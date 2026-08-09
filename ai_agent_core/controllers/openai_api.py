@@ -87,6 +87,19 @@ class AIOpenAPIController(http.Controller):
         if not oai_init:
             return self._error(404, "OpenAI API not configured for this coworker")
 
+        # Budgetcheck (budget-hard-cap D4): hårt stopp — 429 + OpenAI-
+        # kompatibel felstruktur. Notis en gång per månad.
+        coworker._unlock_budget_activities()
+        if coworker.budget_exhausted:
+            coworker.check_cap()
+            return self._error(
+                429,
+                'Budget slut: AI-medarbetaren har nått månadstaket. '
+                'Höj taket i inställningarna eller vänta till nästa månad.',
+                error_type='insufficient_quota',
+                code='budget_exhausted',
+            )
+
         # Parse request body
         try:
             body = json.loads(request.httprequest.data or '{}')
@@ -383,11 +396,15 @@ class AIOpenAPIController(http.Controller):
                 parts.append(f'[Assistant]\n{content}')
         return '\n\n'.join(parts)
 
-    def _error(self, status, message, retry_after=None):
+    def _error(self, status, message, retry_after=None, error_type="error",
+               code=None):
         headers = {'Content-Type': 'application/json'}
         if retry_after:
             headers['Retry-After'] = str(int(retry_after))
+        error = {"message": message, "type": error_type}
+        if code:
+            error["code"] = code
         return Response(
-            json.dumps({"error": {"message": message, "type": "error"}}),
+            json.dumps({"error": error}),
             status=status, headers=headers,
         )

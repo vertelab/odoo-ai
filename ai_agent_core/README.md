@@ -359,8 +359,9 @@ metodiklager ovanpå OKF-substratet — producerar resultat i Odoo Core.
   `action_nudge_para()`, `render_attribution_html()` (klickbara källor +
   osäker-flagga), `action_publish_to_company()/action_publish_to_channel()`.
 - `ai.coworker` — utökad med `injection_level` (L0-L3-styrning),
-  autonomi-panel (budget_kr_monthly, max_actions_per_day,
-  hitl_threshold) och `example_prompts` (katalog).
+  budget i systemtokens (`monthly_cap_mtokens` + deterministisk
+  `budget_exhausted`/`budget_warning`), `hitl_threshold` och
+  `example_prompts` (katalog).
 
 ### Vyer (menyn "Odoo Mind")
 

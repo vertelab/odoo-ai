@@ -77,6 +77,20 @@ class AIStreamController(http.Controller):
                             status=403,
                             content_type='application/json',
                         )
+                    # Budgetcheck (budget-hard-cap D4): web-UI visar budget slut
+                    quest._unlock_budget_activities()
+                    if quest.budget_exhausted:
+                        quest.check_cap()
+                        return Response(
+                            json.dumps({
+                                "error": "budget_exhausted",
+                                "message": "Budget slut: AI-medarbetaren har nått "
+                                           "månadstaket. Höj taket i inställningarna "
+                                           "eller vänta till nästa månad.",
+                            }),
+                            status=402,
+                            content_type='application/json',
+                        )
                     if quest.description:
                         system_prompt = quest.description
                     # Inject skill context for Skill Builder (sudo needed — public users can't read ai.skill)

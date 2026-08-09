@@ -110,6 +110,13 @@ class AITool(models.Model):
         help='Max seconds to wait for Pi-agent reply.',
     )
 
+    # Systemtoken-kostnad per anrop (budget-hard-cap D6)
+    sys_token_cost = fields.Integer(
+        'Systemtoken-kostnad per anrop', default=500,
+        help='Fast minimikostnad i systemtokens per tool-anrop. Läggs '
+             'direkt på tool-raden (token_sys). Global per tool.',
+    )
+
     # Relations
     agent_ids = fields.Many2many(
         'ai.agent', 'ai_agent_tool_custom_rel',

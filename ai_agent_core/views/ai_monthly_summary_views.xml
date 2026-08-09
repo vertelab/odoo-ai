@@ -14,7 +14,8 @@
                 <field name="total_output_tokens" optional="hide"/>
                 <field name="session_count"/>
                 <field name="monthly_cap_mtokens" optional="hide"/>
-                <field name="cap_exhausted_count" optional="hide"/>
+                <field name="budget_exhausted" optional="hide"/>
+                <field name="budget_warning" optional="hide"/>
             </list>
         </field>
     </record>

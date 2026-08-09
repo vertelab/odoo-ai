@@ -59,7 +59,15 @@ class AICoworkerSession(models.Model):
 
     token_input = fields.Integer('Input Tokens', default=0)
     token_output = fields.Integer('Output Tokens', default=0)
-    cost_estimated = fields.Float('Cost (USD)', default=0.0)
+    token_sys = fields.Integer(
+        'Systemtokens', compute='_compute_token_sys', store=False,
+        help='Summan av alla session lines systemtokens (budget-hard-cap D7).')
+
+    @api.depends('session_line_ids.token_sys')
+    def _compute_token_sys(self):
+        """Sessionens totala systemtoken-förbrukning (Σ lines)."""
+        for r in self:
+            r.token_sys = sum(l.token_sys or 0 for l in r.session_line_ids)
 
     # ── Kostnadskontext (session-cost-context) ──────────────────────────
     # Generiska fält (domän-rent): pi_session_id kopplar sessionen 1:1 till

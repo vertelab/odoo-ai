@@ -24,7 +24,7 @@
                        decoration-warning="status=='active'"/>
                 <field name="token_input" optional="hide"/>
                 <field name="token_output" optional="hide"/>
-                <field name="cost_estimated" optional="hide"/>
+                <field name="token_sys" optional="hide"/>
                 <field name="create_date"/>
             </list>
         </field>
@@ -77,7 +77,7 @@
                             <field name="finish_reason" readonly="1"/>
                             <field name="token_input" readonly="1"/>
                             <field name="token_output" readonly="1"/>
-                            <field name="cost_estimated" readonly="1"/>
+                            <field name="token_sys" readonly="1"/>
                             <field name="line_count" readonly="1"/>
                             <field name="resumable" readonly="1"/>
                         </group>

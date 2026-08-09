@@ -644,22 +644,26 @@ class AICoworker(models.Model):
         compute='_compute_last_month', store=False,
         help='Systemtokens consumed last calendar month')
 
-    # Cap enforcement (Horisont 2)
+    # Cap enforcement (Horisont 2) — deterministisk spärr (budget-hard-cap D1)
     monthly_cap_mtokens = fields.Integer(
         'Månadstak (M systemtokens)', default=0,
         help='0 = unlimited. Cap in millions of systemtokens.')
-    cap_warning_sent = fields.Boolean('Varning skickad')
-    cap_exhausted = fields.Boolean('Tak överskridet')
+    budget_warning = fields.Boolean(
+        'Budgetvarning', compute='_compute_budget_state', store=False,
+        help='True när session_line_count >= cap × 0.8 (deterministiskt, '
+             'härlett från data).')
+    budget_exhausted = fields.Boolean(
+        'Budget slut', compute='_compute_budget_state', store=False,
+        help='True när session_line_count >= monthly_cap_mtokens × 1M '
+             '(deterministiskt, härlett från create_date på session lines — '
+             'ny månad eller höjd budget öppnar automatiskt).')
+    cap_notified_month = fields.Char(
+        'Budget notifierad månad (YYYY-MM)',
+        help='Månad då budget-notis/aktivitet senast skickades — en gång '
+             'per månad, ingen reset behövs.')
 
-    # ── Autonomi-panel (gap C5/F4, task 8.6) ──
-    budget_kr_monthly = fields.Float(
-        'Budget (kr/mån)', default=0.0,
-        help='Autonomi-budget i kronor per månad. 0 = ingen explicit '
-             'kr-budget (endast mtokens-tak). Hårt stopp när budgeten är slut.')
-    max_actions_per_day = fields.Integer(
-        'Max åtgärder/dag', default=50,
-        help='Hårt stopp: antal express-actions per dag innan coworkern '
-             'måste vänta till nästa dygn.')
+    # Autonomi-panel (gap C5/F4, task 8.6) — endast systemtokens som valuta
+    # (budget-hard-cap D8: budget_kr_monthly + max_actions_per_day begravda)
     hitl_threshold = fields.Selection([
         ('autonomous', 'Autonom (inga godkännanden)'),
         ('high_risk', 'Endast högriskåtgärder kräver godkännande'),
@@ -680,48 +684,101 @@ class AICoworker(models.Model):
         for r in self:
             if r.monthly_cap_mtokens < 0:
                 raise UserError(_('Månadstak får inte vara negativt'))
-            if r.monthly_cap_mtokens > 0 and r.started_mtokens > r.monthly_cap_mtokens:
-                raise UserError(_(
-                    'Kan inte sätta taket till %dM — redan förbrukat %dM denna månad'
-                ) % (r.monthly_cap_mtokens, r.started_mtokens))
+
+    @api.depends('session_line_count', 'monthly_cap_mtokens')
+    def _compute_budget_state(self):
+        """Deterministisk budgetspärr (budget-hard-cap D1).
+
+        Härleds från session_line_count (Σ token_sys i aktuell månad via
+        create_date) och monthly_cap_mtokens. Inget cron-beroende — ny månad
+        eller höjd budget öppnar automatiskt (compute räknar om).
+        """
+        for r in self:
+            cap = r.monthly_cap_mtokens * 1_000_000 if r.monthly_cap_mtokens else 0
+            r.budget_warning = bool(cap) and r.session_line_count >= cap * 0.8
+            r.budget_exhausted = bool(cap) and r.session_line_count >= cap
 
     def check_cap(self):
-        """Check if quest has exceeded its monthly cap. Returns (warning, exhausted).
-        
-        Called after session lines are created. Posts discuss notification at 80%.
-        Hard stop at 100%.
+        """Check budget state. Returns (warning, exhausted).
+
+        Bakåtkompatibel wrapper — läser deterministiska compute-fält och
+        triggar notiser en gång per månad. Hårt stopp vid exhausted.
         """
         self.ensure_one()
-        if not self.monthly_cap_mtokens:
-            return False, False  # No cap set
-
-        cap_tokens = self.monthly_cap_mtokens * 1_000_000
-        used = self.session_line_count
-
-        warning = used >= cap_tokens * 0.8
-        exhausted = used >= cap_tokens
-
-        if warning and not self.cap_warning_sent:
-            self.cap_warning_sent = True
-            self._notify_cap('warning', used, cap_tokens)
-
-        if exhausted and not self.cap_exhausted:
-            self.cap_exhausted = True
-            self._notify_cap('exhausted', used, cap_tokens)
-
+        warning = self.budget_warning
+        exhausted = self.budget_exhausted
+        if warning or exhausted:
+            self._notify_budget_once()
         return warning, exhausted
 
-    def reset_cap(self):
-        """Reset cap flags — called when user increases cap."""
+    def _notify_budget_once(self):
+        """Skicka budget-notis + mail.activity en gång per månad (D2/D3).
+
+        Månads-nycklad via cap_notified_month (YYYY-MM). Anropas från
+        körningsvägarna (inte från compute — compute får inte skriva).
+        """
         self.ensure_one()
-        if not self.monthly_cap_mtokens:
-            self.cap_warning_sent = False
-            self.cap_exhausted = False
-            return
+        month = fields.Date.today().strftime('%Y-%m')
+        if self.cap_notified_month == month:
+            return  # redan notifierad denna månad
         cap_tokens = self.monthly_cap_mtokens * 1_000_000
-        used = self.session_line_count
-        self.cap_warning_sent = used >= cap_tokens * 0.8
-        self.cap_exhausted = used >= cap_tokens
+        if self.budget_exhausted:
+            self._notify_cap('exhausted', self.session_line_count, cap_tokens)
+            self._create_budget_activity()
+        elif self.budget_warning:
+            self._notify_cap('warning', self.session_line_count, cap_tokens)
+        self.cap_notified_month = month
+
+    def _create_budget_activity(self):
+        """Skapa mail.activity på ai.coworkern (en öppen åt gången, D3).
+
+        Default-typ todo (mail.mail_activity_data_todo). user_id = ägaren
+        (den som kan höja budgeten). Ingen deadline — budgeten öppnas
+        automatiskt vid månadsskifte eller höjd budget.
+        """
+        self.ensure_one()
+        existing = self.env['mail.activity'].search([
+            ('res_model', '=', 'ai.coworker'),
+            ('res_id', '=', self.id),
+            ('activity_type_id.name', '=', 'Todo'),
+            ('done', '=', False),
+        ], limit=1)
+        if existing:
+            return existing
+        try:
+            return self.activity_schedule(
+                'mail.mail_activity_data_todo',
+                summary='Budget slut: höj månadstaket för %s' % self.name,
+                note=(
+                    f'Förbrukat {self.started_mtokens}M av '
+                    f'{self.monthly_cap_mtokens}M systemtokens. '
+                    f'Budgeten öppnas automatiskt vid månadsskifte eller '
+                    f'när taket höjs.'
+                ),
+                user_id=self.user_id.id or self.env.uid,
+            )
+        except Exception:
+            _logger.warning('Budget activity_schedule failed', exc_info=True)
+
+    def _unlock_budget_activities(self):
+        """Stäng öppna budget-aktiviteter + nollställ notis-månad (D5).
+
+        Anropas från körningsvägarna innan en körning startar — idempotent.
+        Gör inget om budgeten fortfarande är slut.
+        """
+        self.ensure_one()
+        if self.budget_exhausted:
+            return
+        activities = self.env['mail.activity'].search([
+            ('res_model', '=', 'ai.coworker'),
+            ('res_id', '=', self.id),
+            ('activity_type_id.name', '=', 'Todo'),
+            ('done', '=', False),
+        ])
+        if activities:
+            activities.action_done()
+        if self.cap_notified_month:
+            self.cap_notified_month = False
 
     def consolidate_memories(self):
         """T9.1-T9.5: Daily memory consolidation.
@@ -2022,6 +2079,27 @@ class AICoworker(models.Model):
     def _buzz_chat(self, message, channel, msg_text, history_ctx='', depth=0):
         """Handle a channel message in buzz workspace mode."""
         self.ensure_one()
+
+        # Budgetcheck (budget-hard-cap D4): DM/channel — gul triangel via
+        # chatter-notis med felmeddelande i mouseover. Tyst no-op för
+        # agent-till-agent-meddelanden (depth > 0) — bara användarmeddelanden
+        # får budget-svar.
+        if depth == 0:
+            self._unlock_budget_activities()
+            if self.budget_exhausted:
+                self.check_cap()
+                _logger.info('Buzz chat skippad för %s: budget slut', self.name)
+                if channel:
+                    channel.message_post(
+                        body=self._md_to_html(
+                            '⚠️ **Budget slut**: AI-medarbetaren har nått '
+                            'månadstaket. Höj taket i inställningarna eller '
+                            'vänta till nästa månad.'
+                        ),
+                        message_type='notification',
+                        subtype_xmlid='mail.mt_note',
+                    )
+                return None
 
         # Avoid responding to our own agents (prevents loops)
         author_partner = message.author_id
@@ -3438,7 +3516,8 @@ class AICoworker(models.Model):
             'started_mtokens': self.started_mtokens,
             'session_line_count': self.session_line_count,
             'monthly_cap_mtokens': self.monthly_cap_mtokens,
-            'cap_exhausted': self.cap_exhausted,
+            'budget_exhausted': self.budget_exhausted,
+            'budget_warning': self.budget_warning,
             'status': self.status,
             # All-time totals
             'total_sys_tokens': self.total_sys_tokens,
@@ -3912,6 +3991,15 @@ class AICoworker(models.Model):
             'name': prompt[:80] if prompt else 'Quest run',
         })
 
+        # Budgetcheck (budget-hard-cap D4): hårt stopp innan LLM-körning.
+        # Notis/aktivitet en gång per månad; upplåsning vid höjd budget/ny månad.
+        self._unlock_budget_activities()
+        if self.budget_exhausted:
+            self.check_cap()  # triggar notis en gång per månad
+            _logger.info('run() skippad för %s: budget slut', self.name)
+            return 'Budget slut: AI-medarbetaren har nått månadstaket. ' \
+                   'Höj taket i inställningarna eller vänta till nästa månad.'
+
         try:
             import asyncio
             loop = asyncio.new_event_loop()
@@ -4019,14 +4107,27 @@ class AICoworker(models.Model):
             })
             # Persist tool executions recorded by the loop (observability
             # + lets tests assert expect_tools via session lines)
+            # Systemtoken-kostnad per tool-anrop (budget-hard-cap D6):
+            # token_input = tool.sys_token_cost, multiplier=1.0 → compute
+            # ger token_sys = sys_token_cost direkt.
             for i, (t_name, t_preview) in enumerate(
                     getattr(loop_obj, 'tool_history', [])):
+                tool_cost = 500  # default (ai.tool.sys_token_cost)
+                try:
+                    tool_rec = self.env['ai.tool'].search(
+                        [('name', '=', t_name)], limit=1)
+                    if tool_rec:
+                        tool_cost = tool_rec.sys_token_cost
+                except Exception:
+                    pass
                 self.env['ai.coworker.session.line'].create({
                     'session_id': session.id,
                     'role': 'tool',
                     'tool_name': t_name,
                     'content': t_preview,
                     'sequence': 10 + i,
+                    'token_input': tool_cost,
+                    'sys_multiplier': 1.0,
                 })
 
             # ── Fel-loggning (ai.coworker.error) ──
@@ -4156,6 +4257,14 @@ class AICoworker(models.Model):
             'status': 'active',
             'user_id': self.env.user.id,
         })
+
+        # Budgetcheck (budget-hard-cap D4): powerbox returnerar budget slut
+        self._unlock_budget_activities()
+        if self.budget_exhausted:
+            self.check_cap()
+            _logger.info('powerbox skippad för %s: budget slut', self.name)
+            return 'Budget slut: AI-medarbetaren har nått månadstaket. ' \
+                   'Höj taket i inställningarna eller vänta till nästa månad.'
 
         # Get model from first agent
         from odoo.addons.ai_agent_core.core.provider import get_default_model_name
@@ -4751,7 +4860,8 @@ class AICoworkerMonthlySummary(models.Model):
 
     # Cap info at time of summary
     monthly_cap_mtokens = fields.Integer('Cap (M tokens)')
-    cap_exhausted_count = fields.Integer('Times Cap Exhausted')
+    budget_exhausted = fields.Boolean('Budget Slut')
+    budget_warning = fields.Boolean('Budgetvarning')
 
     # Cost
     estimated_cost_usd = fields.Float('Est. Provider Cost (USD)')
@@ -4835,7 +4945,7 @@ class AICoworkerMonthlySummary(models.Model):
                 'session_count': sessions,
                 'model_breakdown': json.dumps(model_data),
                 'monthly_cap_mtokens': quest.monthly_cap_mtokens,
-                'cap_exhausted_count': 1 if quest.cap_exhausted else 0,
+                'budget_exhausted': quest.budget_exhausted,
             })
             created += 1
 
