@@ -28,10 +28,10 @@
                 <header>
                     <button name="action_approve" type="object"
                             string="Godkänn" class="oe_highlight"
-                            attrs="{'invisible': [('state', '!=', 'asked')]}"/>
+                            invisible="state != 'asked'"/>
                     <button name="action_reject" type="object"
                             string="Avslå"
-                            attrs="{'invisible': [('state', '!=', 'asked')]}"/>
+                            invisible="state != 'asked'"/>
                     <field name="state" widget="statusbar"
                            statusbar_visible="asked,approved,rejected,expired"/>
                 </header>
@@ -49,7 +49,7 @@
                             <field name="decided_by"/>
                             <field name="decided_at"/>
                             <field name="standing_rule" readonly="1" nolabel="0"
-                                   attrs="{'invisible': [('standing_rule', '=', False)]}"/>
+                                   invisible="standing_rule == False"/>
                         </group>
                     </group>
                     <group string="Förfrågan">

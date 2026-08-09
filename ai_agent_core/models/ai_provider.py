@@ -143,6 +143,7 @@ class AIProvider(models.Model):
                 'name': self._config_get('ai_provider_name', 'AI Provider (config)'),
                 'provider_type': 'custom',
                 'base_url': endpoint,
+                'api_key': api_key,
                 'api_style': 'openai',
                 'is_key_required': bool(api_key),
                 'auto_sync': True,
