@@ -685,18 +685,27 @@ class AICoworker(models.Model):
             if r.monthly_cap_mtokens < 0:
                 raise UserError(_('Månadstak får inte vara negativt'))
 
-    @api.depends('session_line_count', 'monthly_cap_mtokens')
+    @api.depends('session_ids.session_line_ids.token_sys',
+                 'session_ids.session_line_ids.create_date',
+                 'monthly_cap_mtokens')
     def _compute_budget_state(self):
         """Deterministisk budgetspärr (budget-hard-cap D1).
 
-        Härleds från session_line_count (Σ token_sys i aktuell månad via
-        create_date) och monthly_cap_mtokens. Inget cron-beroende — ny månad
-        eller höjd budget öppnar automatiskt (compute räknar om).
+        Beräknar Σ token_sys direkt från session_ids (inte via det related
+        fältet session_line_ids som inte triggar compute korrekt). Ny månad
+        eller höjd budget öppnar automatiskt — inget cron-beroende.
         """
+        from datetime import date as _date
+        today = _date.today()
+        month_start = _date(today.year, today.month, 1)
         for r in self:
+            total = 0
+            for line in r.session_ids.session_line_ids:
+                if line.create_date and line.create_date.date() >= month_start:
+                    total += line.token_sys or 0
             cap = r.monthly_cap_mtokens * 1_000_000 if r.monthly_cap_mtokens else 0
-            r.budget_warning = bool(cap) and r.session_line_count >= cap * 0.8
-            r.budget_exhausted = bool(cap) and r.session_line_count >= cap
+            r.budget_warning = bool(cap) and total >= cap * 0.8
+            r.budget_exhausted = bool(cap) and total >= cap
 
     def check_cap(self):
         """Check budget state. Returns (warning, exhausted).
@@ -4084,8 +4093,8 @@ class AICoworker(models.Model):
             model_real = getattr(response, 'model', '')
             sys_mult = 1.0
             if model_real:
-                ai_model = self.env['ai.model'].search(
-                    [('name', 'ilike', model_real)], limit=1)
+                ai_model = self.env['ai.model']._resolve_from_real(
+                    model_real, self)
                 if ai_model:
                     sys_mult = ai_model.sys_multiplier
 
@@ -4307,8 +4316,8 @@ class AICoworker(models.Model):
                 model_real = getattr(response, 'model', '')
                 sys_mult = 1.0
                 if model_real:
-                    ai_model = self.env['ai.model'].search(
-                        [('name', 'ilike', model_real)], limit=1)
+                    ai_model = self.env['ai.model']._resolve_from_real(
+                        model_real, self)
                     if ai_model:
                         sys_mult = ai_model.sys_multiplier
 

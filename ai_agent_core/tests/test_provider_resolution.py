@@ -260,3 +260,179 @@ class TestProviderDataFiles(TransactionCase):
         self.assertIn('is_bifrost" eval="True"', bifrost)
         anthropic = open(os.path.join(data_dir, 'provider_anthropic.xml')).read()
         self.assertIn('api_style">anthropic', anthropic)
+
+
+class TestModelOffering(TransactionCase):
+    """provider-model-offering: SKU-modell — api_name, source_provider-logik,
+    UNIQUE (name, provider), display_name."""
+
+    def _make_provider(self, name, ptype='custom', is_bifrost=False, **kw):
+        return self.env['ai.provider'].create({
+            'name': name,
+            'provider_type': ptype,
+            'base_url': f'https://{name.lower().replace(" ", "-")}.example.com/v1',
+            'is_bifrost': is_bifrost,
+            **kw,
+        })
+
+    def test_get_api_name_fallback(self):
+        """Gammalt record utan api_name → name; med api_name → api_name."""
+        provider = self._make_provider('Dir Provider')
+        m = self.env['ai.model'].create({'name': 'deepseek-chat', 'provider': provider.id})
+        self.assertEqual(m._get_api_name(), 'deepseek-chat')
+        m.api_name = 'deepseek/deepseek-chat'
+        self.assertEqual(m._get_api_name(), 'deepseek/deepseek-chat')
+
+    def test_get_maker_gateway_vs_direct(self):
+        """source_provider satt = tillverkare; tomt = provider."""
+        bifrost = self._make_provider('Bifrost', ptype='bifrost', is_bifrost=True)
+        deepseek = self._make_provider('DeepSeek', ptype='deepseek')
+        m_gw = self.env['ai.model'].create({
+            'name': 'deepseek-flash', 'api_name': 'deepseek/deepseek-flash',
+            'provider': bifrost.id, 'source_provider': deepseek.id,
+        })
+        self.assertEqual(m_gw._get_maker(), deepseek)
+        m_dir = self.env['ai.model'].create({
+            'name': 'deepseek-chat', 'provider': deepseek.id,
+        })
+        self.assertEqual(m_dir._get_maker(), deepseek)
+
+    def test_real_provider_derived_from_maker(self):
+        bifrost = self._make_provider('Bifrost', ptype='bifrost', is_bifrost=True)
+        deepseek = self._make_provider('DeepSeek', ptype='deepseek')
+        m = self.env['ai.model'].create({
+            'name': 'deepseek-flash', 'api_name': 'deepseek/deepseek-flash',
+            'provider': bifrost.id, 'source_provider': deepseek.id,
+        })
+        self.assertEqual(m.real_provider, 'DeepSeek')
+        m2 = self.env['ai.model'].create({
+            'name': 'deepseek-chat', 'provider': deepseek.id,
+        })
+        self.assertEqual(m2.real_provider, 'DeepSeek')
+
+    def test_unique_name_provider(self):
+        provider = self._make_provider('Dir Provider')
+        self.env['ai.model'].create({'name': 'deepseek-chat', 'provider': provider.id})
+        with self.cr.savepoint():
+            with self.assertRaises(Exception):
+                self.env['ai.model'].create(
+                    {'name': 'deepseek-chat', 'provider': provider.id})
+        # samma namn, annan provider → tillåtet (olika SKU:er)
+        provider2 = self._make_provider('Annan Provider')
+        self.env['ai.model'].create({'name': 'deepseek-chat', 'provider': provider2.id})
+
+    def test_display_name_format(self):
+        provider = self._make_provider('Bifrost', ptype='bifrost', is_bifrost=True)
+        m = self.env['ai.model'].create({'name': 'deepseek-flash', 'provider': provider.id})
+        self.assertEqual(m.display_name, '[Bifrost] deepseek-flash')
+
+
+class TestImportCanonicalization(TransactionCase):
+    """Import från gateway: maker-upplösning, kanoniskt namn, source_provider."""
+
+    def _gateway(self):
+        return self.env['ai.provider'].create({
+            'name': 'Bifrost', 'provider_type': 'bifrost',
+            'base_url': 'http://gw:8080/v1', 'is_bifrost': True,
+        })
+
+    def _direct(self, name, ptype):
+        return self.env['ai.provider'].create({
+            'name': name, 'provider_type': ptype,
+            'base_url': f'https://{name.lower()}.example.com/v1',
+        })
+
+    def test_nested_path_anthropic(self):
+        """openrouter/anthropic/claude-sonnet-4 → maker Anthropic (inte OpenRouter)."""
+        bifrost = self._gateway()
+        self._direct('Anthropic', 'anthropic')
+        bifrost._import_model('openrouter/anthropic/claude-sonnet-4')
+        m = self.env['ai.model'].search([('provider', '=', bifrost.id)], limit=1)
+        self.assertEqual(m.name, 'claude-sonnet-4')
+        self.assertEqual(m.api_name, 'openrouter/anthropic/claude-sonnet-4')
+        self.assertEqual(m.source_provider.name, 'Anthropic')
+
+    def test_nested_path_google(self):
+        """google/gemini/gemini-2.5-flash → maker Google (inte gemini)."""
+        bifrost = self._gateway()
+        self._direct('Google', 'google')
+        bifrost._import_model('google/gemini/gemini-2.5-flash')
+        m = self.env['ai.model'].search([('provider', '=', bifrost.id)], limit=1)
+        self.assertEqual(m.name, 'gemini/gemini-2.5-flash')
+        self.assertEqual(m.source_provider.name, 'Google')
+
+    def test_direct_import_no_source(self):
+        """Direkt provider: name = api_name, source_provider tom."""
+        deepseek = self._direct('DeepSeek', 'deepseek')
+        deepseek._import_model('deepseek-chat')
+        m = self.env['ai.model'].search([('provider', '=', deepseek.id)], limit=1)
+        self.assertEqual(m.name, 'deepseek-chat')
+        self.assertEqual(m.api_name, 'deepseek-chat')
+        self.assertFalse(m.source_provider)
+
+    def test_import_idempotent(self):
+        bifrost = self._gateway()
+        self._direct('DeepSeek', 'deepseek')
+        bifrost._import_model('deepseek/deepseek-flash')
+        bifrost._import_model('deepseek/deepseek-flash')
+        models = self.env['ai.model'].search([('provider', '=', bifrost.id)])
+        self.assertEqual(len(models), 1)
+
+    def test_unknown_maker_fallback_gateway(self):
+        """Okänd tillverkare bakom gateway → find-or-create label-record."""
+        bifrost = self._gateway()
+        bifrost._import_model('oklab/ok-1')
+        m = self.env['ai.model'].search([('provider', '=', bifrost.id)], limit=1)
+        self.assertEqual(m.name, 'ok-1')
+        self.assertEqual(m.api_name, 'oklab/ok-1')
+        self.assertEqual(m.source_provider.name, 'Oklab')
+
+
+class TestResolveFromReal(TransactionCase):
+    """_resolve_from_real: kanal-medvetet — aldrig ilike+limit=1 på name."""
+
+    def test_prefers_coworker_agent_models(self):
+        """3 record delar kanoniskt name — coworkerns agent vinner."""
+        bifrost = self.env['ai.provider'].create({
+            'name': 'Bifrost', 'provider_type': 'bifrost', 'is_bifrost': True,
+        })
+        berget = self.env['ai.provider'].create({
+            'name': 'Berget AI', 'provider_type': 'custom',
+        })
+        deepseek = self.env['ai.provider'].create({
+            'name': 'DeepSeek', 'provider_type': 'deepseek',
+        })
+        m_bifrost = self.env['ai.model'].create({
+            'name': 'deepseek-flash', 'api_name': 'deepseek/deepseek-flash',
+            'provider': bifrost.id, 'source_provider': deepseek.id,
+        })
+        m_berget = self.env['ai.model'].create({
+            'name': 'deepseek-flash', 'api_name': 'deepseek/deepseek-flash',
+            'provider': berget.id, 'source_provider': deepseek.id,
+        })
+        agent = self.env['ai.agent'].create({
+            'name': 'Ag', 'model_id': m_berget.id,
+        })
+        coworker = self.env['ai.coworker'].create({'name': 'Cw'})
+        self.env['ai.coworker.agent'].create({
+            'coworker_id': coworker.id, 'agent_id': agent.id,
+        })
+        resolved = self.env['ai.model']._resolve_from_real('deepseek-flash', coworker)
+        self.assertEqual(resolved.id, m_berget.id)
+
+    def test_exact_fallback_returns_one(self):
+        """Utan coworker: exakt match på name/api_name — returnerar ett record."""
+        p1 = self.env['ai.provider'].create({'name': 'P1', 'provider_type': 'custom'})
+        p2 = self.env['ai.provider'].create({'name': 'P2', 'provider_type': 'custom'})
+        p3 = self.env['ai.provider'].create({'name': 'P3', 'provider_type': 'custom'})
+        m1 = self.env['ai.model'].create({'name': 'deepseek-flash', 'provider': p1.id})
+        self.env['ai.model'].create({'name': 'deepseek-flash', 'provider': p2.id})
+        m3 = self.env['ai.model'].create({
+            'name': 'deepseek-flash', 'api_name': 'deepseek/deepseek-flash',
+            'provider': p3.id,
+        })
+        resolved = self.env['ai.model']._resolve_from_real('deepseek-flash')
+        self.assertIn(resolved.id, [m1.id, m3.id])
+        # api_name-match fungerar också
+        resolved2 = self.env['ai.model']._resolve_from_real('deepseek/deepseek-flash')
+        self.assertEqual(resolved2.id, m3.id)

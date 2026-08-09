@@ -58,6 +58,25 @@ class AIModel(models.Model):
         self.ensure_one()
         return self.source_provider or self.provider
 
+    @api.model
+    def _resolve_from_real(self, model_real, quest=None):
+        """Find ai.model from a wire/display model name — kanal-medvetet.
+
+        Föredrar modeller från coworkerns agenter (record-id), sedan exakt
+        match på api_name/name. Aldrig ilike+limit=1 på name ensamt —
+        kanoniskt namn delas av flera record över kanaler.
+        """
+        if not model_real:
+            return self.browse()
+        if quest and quest.agent_ids:
+            matched = quest.agent_ids.agent_id.model_id.filtered(
+                lambda m: m and (m.name == model_real or m.api_name == model_real))
+            if matched:
+                return matched[:1]
+        return self.search([
+            '|', ('name', '=', model_real), ('api_name', '=', model_real),
+        ], limit=1)
+
     @api.depends('source_provider.name', 'provider.name')
     def _compute_real_provider(self):
         """Real provider = tillverkaren (source_provider eller provider)."""

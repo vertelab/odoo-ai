@@ -241,11 +241,11 @@ class AICoworkerSession(models.Model):
         self.token_input += input_t
         self.token_output += output_t
 
-        # Look up sys_multiplier from ai.model
+        # Look up sys_multiplier from ai.model (kanal-medvetet)
         sys_mult = 1.0
         if model_real:
-            ai_model = self.env['ai.model'].search(
-                [('name', 'ilike', model_real)], limit=1)
+            ai_model = self.env['ai.model']._resolve_from_real(
+                model_real, self.coworker_id)
             if ai_model:
                 sys_mult = ai_model.sys_multiplier
 

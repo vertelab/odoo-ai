@@ -683,9 +683,9 @@ class AIStreamController(http.Controller):
                             continue
                         ai_model = agent.model_id
                         model_name = ai_model.name
-                        if model_name in seen:
+                        if ai_model.id in seen:
                             continue
-                        seen.add(model_name)
+                        seen.add(ai_model.id)
                         models.append({
                             'name': model_name,
                             'display_name': ai_model.display_name or model_name,
@@ -877,11 +877,12 @@ class AIStreamController(http.Controller):
         if session.exists():
             next_seq = len(session.session_line_ids) + 1
 
-            # Resolve sys_multiplier from ai.model if model_real is provided
+            # Resolve sys_multiplier from ai.model if model_real is provided.
+            # Kanal-medvetet via _resolve_from_real (record-id/coworker-agenter).
             sys_mult = 1.0
             if model_real:
-                ai_model = request.env['ai.model'].sudo().search(
-                    [('name', 'ilike', model_real)], limit=1)
+                ai_model = request.env['ai.model']._resolve_from_real(
+                    model_real, quest)
                 if ai_model:
                     sys_mult = ai_model.sys_multiplier
 
