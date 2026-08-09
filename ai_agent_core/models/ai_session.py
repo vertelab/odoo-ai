@@ -69,6 +69,15 @@ class AICoworkerSession(models.Model):
         for r in self:
             r.token_sys = sum(l.token_sys or 0 for l in r.session_line_ids)
 
+    # Deprecated (budget-hard-cap D8): cost_estimated behålls som
+    # deprecated-fält (project_ai/session_views.xml refererar det).
+    # Ingen logik använder det — systemtokens är enda valuta.
+    cost_estimated = fields.Float(
+        'Cost (USD) — DEPRECATED', default=0.0,
+        help='DEPRECATED: använd token_sys (systemtokens). Behålls för '
+             'bakåtkompatibilitet med bridge-moduler — ingen logik använder '
+             'detta fält.')
+
     # ── Kostnadskontext (session-cost-context) ──────────────────────────
     # Generiska fält (domän-rent): pi_session_id kopplar sessionen 1:1 till
     # en Pi-session (UUID). partner_id/cost_context_confirmed är grunden för
