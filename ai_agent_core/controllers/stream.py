@@ -308,13 +308,37 @@ class AIStreamController(http.Controller):
                             'description': agent.get_agent_name(),
                             'model': (agent.model_id._get_api_name() if agent.model_id else model),
                         })
-                # Resolve provider from quest's agent chain
-                from odoo.addons.ai_agent_core.core.provider import ProviderFactory
+                # Resolve provider from quest's agent chain.
+                # Coworker = skal, agent = hjärna: en coworker utan agent
+                # (eller agent utan modell) ger ingen provider → chatten
+                # kraschade med 'NoneType' ... chat_stream. Auto-skapa
+                # default-agenten (samma som _check_quest_error/_ensure_agent
+                # gör i andra kanaler) och fallbacka till default-providern.
+                from odoo.addons.ai_agent_core.core.provider import (
+                    ProviderFactory, get_default_provider)
+                if not quest.agent_ids:
+                    try:
+                        quest._ensure_agent()
+                    except Exception:
+                        _logger.exception('Failed to auto-create default agent')
                 provider_instance, provider_model = ProviderFactory.from_coworker(quest)
                 if provider_instance:
                     gen_provider = provider_instance
                     if provider_model:
                         gen_provider_model = provider_model._get_api_name()
+                else:
+                    # Fallback till default-provider MÅSTE fångas här (innan
+                    # teardown). get_default_provider() inuti generatorn
+                    # returnerar alltid (None, None) — `request` är borta
+                    # då, vilket gav 'NoneType' ... chat_stream.
+                    try:
+                        default_provider, default_model = get_default_provider()
+                        if default_provider:
+                            gen_provider = default_provider
+                            if default_model and not gen_provider_model:
+                                gen_provider_model = default_model._get_api_name()
+                    except Exception:
+                        _logger.exception('Failed to resolve default provider')
             except Exception:
                 _logger.exception('Failed to extract quest data for streaming')
 
@@ -365,7 +389,24 @@ class AIStreamController(http.Controller):
                         _register_webui_handler(session_uuid, handler)
                         yield f"data: {json.dumps({'type': 'session', 'session_uuid': session_uuid})}\n\n"
 
-                        provider = gen_provider or get_default_provider()[0] 
+                        provider = gen_provider
+                        if provider is None:
+                            # Defense-in-depth: fallbacken fångades i
+                            # request-kontexten ovan. Här inne (efter
+                            # teardown) finns inget `request` att fallbacka
+                            # med — ge ett tydligt fel istället för
+                            # AttributeError.
+                            _logger.error(
+                                'No AI provider resolvable for quest %s',
+                                gen_coworker_id)
+                            yield ("data: " + json.dumps({
+                                'type': 'error',
+                                'message': ('Ingen AI-leverantör konfigurerad '
+                                            'för denna medarbetare. Kontrollera '
+                                            'agentens modell eller '
+                                            'ai_agent_core.default_model_id.'),
+                            }) + "\n\n")
+                            return
                         # explicit-agent-tools: ENDAST settings-default +
                         # explicita verktyg (gen_tool_ids). Inga builtins.
                         tools = ToolRegistry()
@@ -2141,8 +2182,21 @@ class AIOpenAIAPI(http.Controller):
                     ai_lineage_session_id=_sess.id,
                 ))
 
+                # Coworker = skal, agent = hjärna: auto-skapa default-agenten
+                # om medarbetaren saknar agent (samma som _ensure_agent i
+                # chat/channel/cron-vägar) så providern aldrig blir None.
+                if not quest.agent_ids:
+                    try:
+                        quest._ensure_agent()
+                    except Exception:
+                        _logger.exception('Failed to auto-create default agent')
                 provider_instance, provider_model = ProviderFactory.from_coworker(quest)
-                provider = provider_instance or get_default_provider()[0] 
+                provider = provider_instance or get_default_provider()[0]
+                if provider is None:
+                    raise ValueError(
+                        'Ingen AI-leverantör konfigurerad för medarbetaren. '
+                        'Kontrollera agentens modell eller '
+                        'ai_agent_core.default_model_id.')
                 # explicit-agent-tools: ENDAST settings-default + explicita
                 # verktyg — inga interna builtins per default.
                 tool_ids = quest._session_tool_ids(
