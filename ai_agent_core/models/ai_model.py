@@ -18,19 +18,27 @@ class AIModel(models.Model):
     _inherit = ['mail.thread', 'mail.activity.mixin']
     _order = 'provider, name asc'
 
-    name = fields.Char('Model ID', required=True,
-                        help='The model identifier, e.g. gpt-4o, claude-sonnet-4-20250514')
+    name = fields.Char('Model Name', required=True,
+                        help='Canonical model identity, e.g. gpt-4o, claude-sonnet-4, deepseek-flash. '
+                             'Same for all channels serving the same model.')
+    api_name = fields.Char('API Name',
+                            help='Model id sent on the wire to the channel (e.g. '
+                                 'deepseek/deepseek-flash via Bifrost, deepseek-chat via '
+                                 'DeepSeek direct). Empty = fallback to name.')
     display_name = fields.Char('Display Name', compute='_compute_display_name', store=True)
     active = fields.Boolean(default=True)
 
     # Provider — fältet heter `provider` (renamed från provider_id; data
     # kopieras i migration 18.0.1.112 — oldname stöds inte i detta Odoo-bygge)
     # + `source_provider` (ursprung, t.ex. uppströms bakom en gateway).
-    # Inga logik på de nya fälten än — de läggs bara till i datamodellen.
+    # Logik: source_provider satt = tillverkaren/uppströms bakom en gateway
+    # (sätts vid import); tomt = provider är tillverkaren (direktkoppling).
     provider = fields.Many2one('ai.provider', required=True, ondelete='cascade',
-                                string='Provider')
+                                string='Provider',
+                                help='Channel/connection we call (carries base_url, api_key).')
     source_provider = fields.Many2one('ai.provider', string='Source Provider',
-                                       help='Origin provider (e.g. upstream behind a gateway).')
+                                       help='Maker/upstream behind a gateway. Empty = '
+                                            'provider is the maker (direct connection).')
 
     # Kanban image (related for efficient kanban display)
     provider_image_128 = fields.Binary(related='provider.image_128',
@@ -38,29 +46,24 @@ class AIModel(models.Model):
                                         help='Avatar from provider')
     provider_type = fields.Selection(related='provider.provider_type', store=True)
     real_provider = fields.Char('Real Provider', compute='_compute_real_provider', store=True,
-                                 help='For Bifrost models: the underlying upstream provider. '
-                                      'For others: same as provider name.')
+                                 help='The maker (source_provider or provider).')
 
-    @api.depends('name', 'provider.name', 'provider.provider_type')
+    def _get_api_name(self):
+        """Wire id: api_name, fallback till name (bakåtkompatibelt)."""
+        self.ensure_one()
+        return self.api_name or self.name
+
+    def _get_maker(self):
+        """Tillverkaren: source_provider om satt, annars provider (direktkoppling)."""
+        self.ensure_one()
+        return self.source_provider or self.provider
+
+    @api.depends('source_provider.name', 'provider.name')
     def _compute_real_provider(self):
-        """Extract real upstream provider from model name.
-        
-        Bifrost models have names like 'openrouter/anthropic/claude-sonnet-4'
-        where the first segments indicate the upstream routing path.
-        The real provider is the last segment before the actual model name.
-        """
+        """Real provider = tillverkaren (source_provider eller provider)."""
         for r in self:
-            if r.provider.provider_type == 'bifrost' and '/' in (r.name or ''):
-                parts = r.name.split('/')
-                # Last part is the model name, the one before is the upstream provider
-                if len(parts) >= 2:
-                    # Collect all parts except the last (model name) as upstream path
-                    upstream = '/'.join(parts[:-1])
-                    r.real_provider = upstream
-                else:
-                    r.real_provider = r.provider.name
-            else:
-                r.real_provider = r.provider.name
+            maker = r.source_provider or r.provider
+            r.real_provider = maker.name if maker else ''
 
     # Capabilities
     is_vision = fields.Boolean('Vision', help='Supports image input')
@@ -87,6 +90,11 @@ class AIModel(models.Model):
         help='How many systemtokens 1 real token costs. 1.0 = DeepSeek, 5.0 = GPT-4o, 6.0 = Claude. Includes Vertel margin.')
     provider_cost_1M = fields.Float('Provider $/1M tokens',
         help='What the provider actually charges per 1M tokens. For admin insight only.')
+
+    _sql_constraints = [
+        ('name_provider_uniq', 'UNIQUE(name, provider)',
+         'A model (name) can only exist once per provider (channel).'),
+    ]
 
     # Status
     status = fields.Selection([
@@ -117,7 +125,7 @@ class AIModel(models.Model):
     @api.depends('name', 'provider.name')
     def _compute_display_name(self):
         for r in self:
-            r.display_name = f"{r.name} ({r.provider.name})" if r.provider else r.name
+            r.display_name = f"[{r.provider.name}] {r.name}" if r.provider else r.name
 
     @api.depends('status')
     def _compute_status_color(self):

@@ -661,7 +661,8 @@ def get_default_model_name():
     leverantörsnamn. Returnerar '' om ingen default är konfigurerad.
     """
     _provider, model = get_default_provider()
-    return model.name if model else ''
+    # Wire-semantik: api_name om satt, annars name (bakåtkompatibelt).
+    return (model.api_name or model.name) if model else ''
 
 
 class ProviderFactory:

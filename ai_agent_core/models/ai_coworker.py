@@ -741,7 +741,7 @@ class AICoworker(models.Model):
             ('res_model', '=', 'ai.coworker'),
             ('res_id', '=', self.id),
             ('activity_type_id.name', '=', 'Todo'),
-            ('done', '=', False),
+            ('active', '=', True),
         ], limit=1)
         if existing:
             return existing
@@ -773,7 +773,7 @@ class AICoworker(models.Model):
             ('res_model', '=', 'ai.coworker'),
             ('res_id', '=', self.id),
             ('activity_type_id.name', '=', 'Todo'),
-            ('done', '=', False),
+            ('active', '=', True),
         ])
         if activities:
             activities.action_done()
@@ -1806,7 +1806,7 @@ class AICoworker(models.Model):
              'triggers': []}
             for r in agent_rels
         ]
-        router = LLMRouter(provider, model or '')
+        router = LLMRouter(provider, model._get_api_name() if model else '')
         try:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
@@ -1853,7 +1853,7 @@ class AICoworker(models.Model):
                 f"{self.buzz_channel_session_id.summary}")
 
         # Use agent's own model if available
-        model = agent.model_id.name if agent and agent.model_id else None
+        model = agent.model_id._get_api_name() if agent and agent.model_id else None
         return self.run(
             prompt, system_prompt=system + summary_ctx,
             force_model=model, force_agent=agent)
@@ -3055,7 +3055,7 @@ class AICoworker(models.Model):
             provider, provider_model = ProviderFactory.from_coworker(self)
             if not provider:
                 provider, provider_model = get_default_provider()
-            model_name = (provider_model and provider_model.name) \
+            model_name = (provider_model and provider_model._get_api_name()) \
                 or get_default_model_name() or 'cerebras/gpt-oss-120b'
             loop = AgentLoop(provider=provider, tools=[], config=AgentConfig(
                 model=model_name, max_rounds=1, max_tokens=1500))
@@ -3179,7 +3179,7 @@ class AICoworker(models.Model):
         if mode == 'single' or len(self.agent_ids) <= 1:
             agent_rel = self.agent_ids[:1] if self.agent_ids else None
             agent = agent_rel.agent_id if agent_rel else None
-            agent_model = agent.model_id.name if agent and agent.model_id else model
+            agent_model = agent.model_id._get_api_name() if agent and agent.model_id else model
             return AgentLoop(
                 provider=provider, tools=tools,
                 config=AgentConfig(
@@ -3297,7 +3297,7 @@ class AICoworker(models.Model):
         specialists = []
         for agent_rel in self.agent_ids:
             agent = agent_rel.agent_id
-            agent_model = agent.model_id.name if agent and agent.model_id else model
+            agent_model = agent.model_id._get_api_name() if agent and agent.model_id else model
             agent_skills_context = ''
             for skill in agent.skill_ids:
                 agent_skills_context += f'\n### Skill: {skill.name}\n{skill.recipe_text or skill.description or ""}\n'
@@ -3638,7 +3638,7 @@ class AICoworker(models.Model):
         model = ''
         for agent_rel in self.agent_ids:
             if agent_rel.agent_id.model_id:
-                model = agent_rel.agent_id.model_id.name
+                model = agent_rel.agent_id.model_id._get_api_name()
                 break
         if not model:
             from odoo.addons.ai_agent_core.core.provider import get_default_model_name
@@ -3953,7 +3953,7 @@ class AICoworker(models.Model):
             for qa in self.agent_ids:
                 agent = qa.agent_id
                 if agent.model_id and agent.model_id.name:
-                    model = agent.model_id.name
+                    model = agent.model_id._get_api_name()
                     break
 
         # Build system prompt

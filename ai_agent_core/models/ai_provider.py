@@ -129,11 +129,13 @@ class AIProvider(models.Model):
 
     def _fetch_models_from_api(self):
         """Fetch models from provider's /v1/models endpoint.
-        
+
         Bifrost returns models in format "provider/model_name"
         (e.g., "openrouter/anthropic/claude-sonnet-4").
         These are upstream provider names — the provider IS Bifrost,
         the prefix is the upstream routing hint.
+        Importen kanonicaliserar: name = identitet (prefix-strippat),
+        api_name = full path (wire), source_provider = tillverkaren.
         """
         self.ensure_one()
         url = self.base_url.rstrip('/') + '/models'
@@ -160,35 +162,80 @@ class AIProvider(models.Model):
             model_id = m.get('id', '')
             if not model_id or model_id.startswith('ft:'):
                 continue
-            
-            # For Bifrost: model IDs look like "openrouter/anthropic/claude-sonnet-4"
-            # Store the full Bifrost path, but use simplified name for display
-            display_name = model_id
-            if self.provider_type == 'bifrost' and '/' in model_id:
-                # Bifrost routing: upstream_provider/actual_model
-                # Keep full path for use, extract simple name for display
-                parts = model_id.split('/')
-                display_name = parts[-1] if len(parts) > 1 else model_id
-            
-            self._import_model(model_id, display_name)
+            self._import_model(model_id)
             count += 1
         return count
 
-    def _import_model(self, model_id: str, display_name: str = ''):
-        """Create or update ai.model from provider data.
-        
+    # -- Maker-upplösning (provider-model-offering) --
+
+    def _is_gateway(self) -> bool:
+        """Är denna provider en gateway/återförsäljare (inte tillverkare)?"""
+        return self.provider_type in ('bifrost', 'openrouter') or bool(self.is_bifrost)
+
+    def _resolve_maker(self, model_id: str):
+        """Resolve maker (tillverkare) + kanoniskt namn från ett model-id.
+
+        Längsta prefix-match mot kända DIREKTA provider-record (gateways
+        exkluderas — annars matchar 'openrouter' i
+        'openrouter/anthropic/claude-sonnet-4' felaktigt). Fallback för
+        gateways: näst sista segmentet (find-or-create label-record).
+
+        Returns:
+            (maker_or_False, canonical_name)
+        """
+        if '/' not in (model_id or ''):
+            return False, model_id
+        parts = model_id.split('/')
+        gateway_types = ('bifrost', 'openrouter')
+        known = self.env['ai.provider'].search([
+            ('provider_type', 'not in', list(gateway_types)),
+            ('is_bifrost', '=', False),
+        ])
+        # Längst prefix först
+        for i in range(len(parts) - 1, 0, -1):
+            prefix = '/'.join(parts[:i]).lower()
+            for p in known:
+                if p.name and p.name.lower() == prefix:
+                    return p, '/'.join(parts[i:])
+        # Fallback (bara för gateways): sista segmentet före modellnamnet
+        if self._is_gateway() and len(parts) >= 2:
+            maker_name = parts[-2]
+            maker = self.env['ai.provider'].search(
+                [('name', 'ilike', maker_name)], limit=1)
+            if not maker:
+                maker = self.env['ai.provider'].create({
+                    'name': maker_name.capitalize(),
+                    'provider_type': 'custom',
+                    'is_key_required': False,
+                    'status': 'draft',
+                })
+            return maker, parts[-1]
+        return False, model_id
+
+    def _import_model(self, model_id: str):
+        """Create or update ai.model from provider data (kanonicaliserat).
+
+        - name = kanoniskt identitetsnamn (prefix-strippat)
+        - api_name = full path (wire-id)
+        - source_provider = tillverkare (gateway) / tom (direkt)
+        - find-or-update på (name, provider) — UNIQUE-safe, idempotent
         For NEW models: sets default sys_multiplier based on model name heuristics.
         For EXISTING models: preserves manually set sys_multiplier.
         """
+        maker, canonical = self._resolve_maker(model_id)
+        name = canonical or model_id
+        source_provider = maker.id if maker and maker.id != self.id else False
+
         existing = self.env['ai.model'].search([
-            ('name', '=', model_id),
+            ('name', '=', name),
             ('provider', '=', self.id),
         ], limit=1)
 
         vals = {
-            'name': model_id,
-            'display_name': display_name or model_id,
+            'name': name,
+            'api_name': model_id,
             'provider': self.id,
+            'source_provider': source_provider,
             'status': 'active',
         }
 

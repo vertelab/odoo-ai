@@ -136,7 +136,7 @@ class TestBudgetHardCap(common.TransactionCase):
         activities = self.env['mail.activity'].search([
             ('res_model', '=', 'ai.coworker'),
             ('res_id', '=', coworker.id),
-            ('done', '=', False),
+            ('active', '=', True),
         ])
         self.assertEqual(len(activities), 1,
                          'Endast en öppen aktivitet ska finnas')
@@ -160,7 +160,7 @@ class TestBudgetHardCap(common.TransactionCase):
         activities = self.env['mail.activity'].search([
             ('res_model', '=', 'ai.coworker'),
             ('res_id', '=', coworker.id),
-            ('done', '=', False),
+            ('active', '=', True),
         ])
         self.assertEqual(len(activities), 0,
                          'Aktiviteten ska vara stängd efter upplåsning')

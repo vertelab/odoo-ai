@@ -131,7 +131,7 @@ class AIStreamController(http.Controller):
                     for qa in quest.agent_ids:
                         agent = qa.agent_id
                         if agent.model_id:
-                            model = agent.model_id.name
+                            model = agent.model_id._get_api_name()
                             break
             except Exception:
                 pass
@@ -306,7 +306,7 @@ class AIStreamController(http.Controller):
                         gen_agents.append({
                             'name': agent.name,
                             'description': agent.get_agent_name(),
-                            'model': (agent.model_id.name if agent.model_id else model),
+                            'model': (agent.model_id._get_api_name() if agent.model_id else model),
                         })
                 # Resolve provider from quest's agent chain
                 from odoo.addons.ai_agent_core.core.provider import ProviderFactory
@@ -314,7 +314,7 @@ class AIStreamController(http.Controller):
                 if provider_instance:
                     gen_provider = provider_instance
                     if provider_model:
-                        gen_provider_model = provider_model.name
+                        gen_provider_model = provider_model._get_api_name()
             except Exception:
                 _logger.exception('Failed to extract quest data for streaming')
 
@@ -1506,7 +1506,7 @@ def _summarize_history(session, lines, max_chars=4000):
         provider, provider_model = ProviderFactory.from_coworker(quest) if quest else (None, None)
         if not provider:
             provider, provider_model = get_default_provider()
-        model_name = (provider_model and provider_model.name) \
+        model_name = (provider_model and provider_model._get_api_name()) \
             or get_default_model_name() or 'cerebras/gpt-oss-120b'
         loop = AgentLoop(provider=provider, tools=[], config=AgentConfig(
             model=model_name, max_rounds=1, max_tokens=2048))
@@ -2103,7 +2103,7 @@ class AIOpenAIAPI(http.Controller):
         for agent_rel in quest.agent_ids:
             if agent_rel.agent_id and agent_rel.agent_id.model_id \
                     and agent_rel.agent_id.model_id.name:
-                model_name = agent_rel.agent_id.model_id.name
+                model_name = agent_rel.agent_id.model_id._get_api_name()
                 break
         if not model_name:
             from odoo.addons.ai_agent_core.core.provider import get_default_model_name

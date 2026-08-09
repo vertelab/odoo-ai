@@ -251,7 +251,7 @@ class EnvironmentDetector:
             return [
                 ProviderInfo(
                     provider_name=m.provider.name,
-                    model_id=m.name,
+                    model_id=m._get_api_name(),
                     capabilities={
                         "vision": m.is_vision,
                         "tools": m.has_tools,
