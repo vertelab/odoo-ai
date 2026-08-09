@@ -275,8 +275,14 @@ class AITool(models.Model):
             self.error_count += 1
             raise UserError(_('Tool test failed: %s') % str(e))
 
-    def _execute_tool(self, kwargs: dict) -> str:
-        """Execute the tool code with given parameters."""
+    async def _execute_tool_async(self, kwargs: dict) -> str:
+        """Execute the tool code with given parameters (async variant).
+
+        Anropas från AgentLoop (async-kontext). Await:ar execute-funktionen
+        direkt på den körande loopen — undviker deadlock med
+        run_coroutine_threadsafe mot samma loop (30s timeout per tool-call).
+        """
+        import asyncio, inspect
         self.ensure_one()
 
         # Sandboxed environment
@@ -311,20 +317,11 @@ class AITool(models.Model):
             if not callable(execute_func):
                 raise UserError(_('"execute" must be a function'))
 
-            # Call synchronously (Odoo is sync)
-            import asyncio
-            try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    # We're in an async context — use run_coroutine_threadsafe
-                    result = asyncio.run_coroutine_threadsafe(
-                        execute_func(**kwargs), loop
-                    ).result(timeout=30)
-                else:
-                    result = loop.run_until_complete(execute_func(**kwargs))
-            except RuntimeError:
-                # No running loop — create one
-                result = asyncio.run(execute_func(**kwargs))
+            # Await directly — vi är redan i AgentLoop:ens asyncio-loop.
+            if inspect.iscoroutinefunction(execute_func):
+                result = await execute_func(**kwargs)
+            else:
+                result = execute_func(**kwargs)
 
             self.call_count += 1
             self.last_called = fields.Datetime.now()
@@ -338,6 +335,25 @@ class AITool(models.Model):
             self.error_count += 1
             _logger.error("Tool '%s' execution failed: %s", self.name, e, exc_info=True)
             raise UserError(_('Tool execution failed: %s') % str(e))
+
+    def _execute_tool(self, kwargs: dict) -> str:
+        """Execute the tool code with given parameters (sync variant).
+
+        Används av testmetoden (ingen körande asyncio-loop). Kör
+        coroutinen i en fristående loop via asyncio.run().
+        """
+        import asyncio
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            pass
+        else:
+            # Vi är i en async-kontext — anropa async-varianten direkt.
+            raise UserError(
+                _('Use _execute_tool_async in async context'))
+
+        import asyncio
+        return asyncio.run(self._execute_tool_async(kwargs))
 
     def to_core_tool(self, env=None):
         """Convert to core.tools.Tool for use in AgentLoop.

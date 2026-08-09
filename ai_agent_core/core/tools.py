@@ -298,7 +298,7 @@ def ai_tool_records_to_tools(records, env=None) -> list[Tool]:
 
         async def _handler(_rec=record, **kwargs):
             try:
-                return _rec._execute_tool(kwargs)
+                return await _rec._execute_tool_async(kwargs)
             except Exception as e:
                 return f'Tool {_rec.name} failed: {e}'
 

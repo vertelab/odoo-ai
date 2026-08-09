@@ -2068,7 +2068,14 @@ class AIOpenAIAPI(http.Controller):
             "fråga en gång"-instruktion. Tyst no-op vid fel.
             """
             try:
-                has_openai = bool(quest.init_type_ids.filtered(
+                # OBS (streaming): använder sess.coworker_id (sessionens
+                # egen cursor) i stället för closure-variabeln quest —
+                # request.cursor är stängd när generatorn körs efter
+                # teardown.
+                cw = sess.coworker_id if (
+                    'coworker_id' in sess._fields and sess.coworker_id
+                ) else quest
+                has_openai = bool(cw.init_type_ids.filtered(
                     lambda it: it.init_type == 'openai_api' and it.enabled))
                 if not has_openai:
                     return ''
@@ -2083,7 +2090,7 @@ class AIOpenAIAPI(http.Controller):
                     cc.append(f'kund: {sess.partner_id.name} '
                               f'(id={sess.partner_id.id})')
                 confirmed = sess.cost_context_confirmed
-                question = (quest.cost_context_question or '').strip()
+                question = (cw.cost_context_question or '').strip()
                 block = (
                     '\n\n## Kostnadskontext\n'
                     'Aktuell kontext: '
