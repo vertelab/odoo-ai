@@ -130,6 +130,10 @@ class ResConfigSettings(models.TransientModel):
         'calculator',
         'web_search',
         'fetch_url',
+        'youtube_get_transcript',
+        'youtube_search',
+        'youtube_channel',
+        'youtube_playlist',
     ]
 
     ai_default_tool_ids = fields.Many2many(

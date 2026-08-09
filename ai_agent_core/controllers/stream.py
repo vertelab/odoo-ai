@@ -441,6 +441,8 @@ class AIStreamController(http.Controller):
                                             model=a['model'],
                                             system_prompt=system_prompt,
                                             max_rounds=10,
+                                            # Långa tool-resultat (YouTube-transkript ≈ 24k tecken) får plats
+                                            max_tool_result_chars=40000,
                                             nats_api_secret=nats_api_secret,
                                             nats_max_retries=nats_max_retries,
                                             user_group_ids=gen_user_group_ids,
@@ -457,6 +459,8 @@ class AIStreamController(http.Controller):
                                     model=model,
                                     system_prompt=system_prompt,
                                     max_rounds=10,
+                                    # Långa tool-resultat (YouTube-transkript ≈ 24k tecken) får plats
+                                    max_tool_result_chars=40000,
                                     nats_api_secret=nats_api_secret,
                                     nats_max_retries=nats_max_retries,
                                     user_group_ids=gen_user_group_ids,
