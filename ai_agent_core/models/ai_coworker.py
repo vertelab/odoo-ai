@@ -746,10 +746,12 @@ class AICoworker(models.Model):
         automatiskt vid månadsskifte eller höjd budget.
         """
         self.ensure_one()
+        todo_type = self.env.ref('mail.mail_activity_data_todo',
+                                raise_if_not_found=False)
         existing = self.env['mail.activity'].search([
             ('res_model', '=', 'ai.coworker'),
             ('res_id', '=', self.id),
-            ('activity_type_id.name', '=', 'Todo'),
+            ('activity_type_id', '=', todo_type.id if todo_type else False),
             ('active', '=', True),
         ], limit=1)
         if existing:
@@ -778,10 +780,12 @@ class AICoworker(models.Model):
         self.ensure_one()
         if self.budget_exhausted:
             return
+        todo_type = self.env.ref('mail.mail_activity_data_todo',
+                                raise_if_not_found=False)
         activities = self.env['mail.activity'].search([
             ('res_model', '=', 'ai.coworker'),
             ('res_id', '=', self.id),
-            ('activity_type_id.name', '=', 'Todo'),
+            ('activity_type_id', '=', todo_type.id if todo_type else False),
             ('active', '=', True),
         ])
         if activities:
