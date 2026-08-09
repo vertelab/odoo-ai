@@ -2857,13 +2857,11 @@ class AICoworker(models.Model):
         for rec in self:
             if rec.agent_ids:
                 continue
-            default_model_id = rec.env['ir.config_parameter'].sudo().get_param(
-                'ai_agent_core.default_model_id', '365')
-            model = rec.env['ai.model'].browse(int(default_model_id))
-            if not model.exists():
-                model = rec.env['ai.model'].search(
-                    [('provider_type', '=', 'bifrost')],
-                    order='id asc', limit=1)
+            # Datadrivet modellval (bifrost-client-provisioning D5):
+            # default från inställningar → billigaste aktiva modellen.
+            # Aldrig hårdkodat record-id — saknas allt är det en felsituation
+            # som syns via chat-guarden (ProviderError) + chatter-aktivitet.
+            model = rec._resolve_default_model()
             agent = rec.env['ai.agent'].sudo().create({
                 'name': rec.name or 'Default Agent',
                 'description': f'Default agent for {rec.name or "coworker"}.',
@@ -2877,8 +2875,66 @@ class AICoworker(models.Model):
                 'sequence': 10,
                 'role': 'member',
             })
-            _logger.info('Auto-created default agent %s for coworker %s',
-                         agent.name, rec.name)
+            if model:
+                rec._activity_check_model_assignment(model)
+            _logger.info('Auto-created default agent %s for coworker %s'
+                         ' (model=%s)', agent.name, rec.name,
+                         model.name if model else 'INGEN')
+        return True
+
+    def _resolve_default_model(self):
+        """Default-modellen för en coworker utan agent-modell.
+
+        uteslutande datadrivet: 1) ai_agent_core.default_model_id
+        2) billigaste aktiva modellen (get_cheapest_model).
+        Returnerar ai.model-record eller tom records.
+        """
+        self.ensure_one()
+        default_model_id = self.env['ir.config_parameter'].sudo().get_param(
+            'ai_agent_core.default_model_id', '')
+        if default_model_id and default_model_id.isdigit():
+            model = self.env['ai.model'].browse(int(default_model_id))
+            if model.exists():
+                return model
+        try:
+            from odoo.addons.ai_agent_core.core.provider import get_cheapest_model
+            model = get_cheapest_model()
+            if model:
+                return model
+        except Exception:
+            pass
+        return self.env['ai.model'].browse()
+
+    def _activity_check_model_assignment(self, model):
+        """Skapa chatter-aktivitet (mail.activity, TODO) när modellen
+        auto-tilldelades (billigaste) — HITL: någon ska granska valet.
+
+        Idempotent: max en öppen aktivitet per coworker med samma summary.
+        """
+        self.ensure_one()
+        summary = ("Kontrollera modellval — agenten saknade konfigurerad modell, "
+                   f"billigaste valdes automatiskt ({model.name}).")
+        existing = self.env['mail.activity'].sudo().search_count([
+            ('res_model', '=', 'ai.coworker'),
+            ('res_id', '=', self.id),
+            ('done', '=', False),
+            ('summary', '=', summary),
+        ])
+        if existing:
+            return False
+        activity_type = self.env.ref('mail.mail_activity_data_todo', raise_if_not_found=False)
+        if not activity_type:
+            return False
+        self.env['mail.activity'].sudo().create({
+            'res_model': 'ai.coworker',
+            'res_id': self.id,
+            'activity_type_id': activity_type.id,
+            'summary': summary,
+            'note': ('Modellen tilldelades automatiskt eftersom agenten saknade '
+                     'konfigurerad modell. Granska och sätt rätt modell på agenten.'),
+        })
+        _logger.info('Aktivitet skapad: modellval för coworker %s (auto-tilldelad %s)',
+                     self.name, model.name)
         return True
 
     def _visible_models(self, init_type=''):
@@ -3205,7 +3261,7 @@ class AICoworker(models.Model):
             if not provider:
                 provider, provider_model = get_default_provider()
             model_name = (provider_model and provider_model._get_api_name()) \
-                or get_default_model_name() or 'cerebras/gpt-oss-120b'
+                or get_default_model_name()
             loop = AgentLoop(provider=provider, tools=[], config=AgentConfig(
                 model=model_name, max_rounds=1, max_tokens=1500))
             prompt = (
@@ -3791,7 +3847,7 @@ class AICoworker(models.Model):
                 break
         if not model:
             from odoo.addons.ai_agent_core.core.provider import get_default_model_name
-            model = get_default_model_name() or 'cerebras/gpt-oss-120b'
+            model = get_default_model_name()
 
         try:
             # Create session
@@ -4097,7 +4153,7 @@ class AICoworker(models.Model):
 
         # Resolve model — force_model (7.5) → agent-modell → standard
         from odoo.addons.ai_agent_core.core.provider import get_default_model_name
-        model = force_model or get_default_model_name() or 'cerebras/gpt-oss-120b'
+        model = force_model or get_default_model_name()
         if not force_model:
             for qa in self.agent_ids:
                 agent = qa.agent_id
@@ -4417,7 +4473,7 @@ class AICoworker(models.Model):
 
         # Get model from first agent
         from odoo.addons.ai_agent_core.core.provider import get_default_model_name
-        model = get_default_model_name() or 'cerebras/gpt-oss-120b'  # default
+        model = get_default_model_name()  # default
         system_prompt = self.description or ''
         if self.identity_id:
             system_prompt = self.identity_id.system_prompt or system_prompt

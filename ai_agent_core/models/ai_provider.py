@@ -60,6 +60,15 @@ class AIProvider(models.Model):
         ('error', 'Error'),
     ], default='draft')
 
+    # Config-styrd (bifrost-client-provisioning): providern provisioneras via
+    # odoo.conf (ai_provider_endpoint/api_key/list) och synkas automatiskt av
+    # cron — generiskt, ingen Bifrost-hårdkodning i modulen.
+    auto_sync = fields.Boolean(
+        'Config-styrd (auto-sync)',
+        help='Provisionerad via odoo.conf — cron synkar modeller automatiskt.',
+        default=False,
+    )
+
     # Stats
     model_count = fields.Integer(compute='_compute_model_count')
     model_ids = fields.One2many('ai.model', 'provider', string='Models')
@@ -102,6 +111,74 @@ class AIProvider(models.Model):
         if type_lower == 'anthropic':
             return {'is_bifrost': False, 'api_style': 'anthropic'}
         return {'is_bifrost': False, 'api_style': 'openai'}
+
+    # -- Config-styrd provisionering (bifrost-client-provisioning) --
+    # Läser odoo.conf (ai_provider_*) — mönster user_scim (odoo_config.get +
+    # ir.config_parameter-fallback). Generiska nyckelnamn: modulen vet inget
+    # om Bifrost; Salt mappar pillar → dessa nycklar.
+
+    @staticmethod
+    def _config_get(key: str, default: str = ''):
+        try:
+            from odoo.tools import config as odoo_config
+            return odoo_config.get(key, '') or default
+        except Exception:
+            return default
+
+    @api.model
+    def _reconcile_from_config(self):
+        """Find-or-create provider från odoo.conf-params (idempotent).
+
+        Generisk OpenAI-kompatibel provider (Bearer) — auto_sync=True,
+        status=confirmed. Returnerar (provider_or_False, changed: bool).
+        """
+        endpoint = self._config_get('ai_provider_endpoint')
+        if not endpoint:
+            return self.browse(), False
+        endpoint = endpoint.rstrip('/')
+        api_key = self._config_get('ai_provider_api_key')
+        provider = self.search([('base_url', '=', endpoint)], limit=1)
+        if not provider:
+            provider = self.create({
+                'name': self._config_get('ai_provider_name', 'AI Provider (config)'),
+                'provider_type': 'custom',
+                'base_url': endpoint,
+                'api_style': 'openai',
+                'is_key_required': bool(api_key),
+                'auto_sync': True,
+                'status': 'confirmed',
+            })
+            _logger.info('Provider skapad från config: %s (%s)', provider.name, endpoint)
+            return provider, True
+        vals = {}
+        if provider.api_key != api_key:
+            vals['api_key'] = api_key
+        if not provider.auto_sync:
+            vals['auto_sync'] = True
+        if provider.status != 'confirmed':
+            vals['status'] = 'confirmed'
+        if vals:
+            provider.write(vals)
+        return provider, bool(vals)
+
+    @api.model
+    def _apply_default_model_from_config(self):
+        """Sätt ai_agent_core.default_model_id från ai_default_model (name/api_name)."""
+        default_model = self._config_get('ai_default_model')
+        if not default_model:
+            return False
+        model = self.env['ai.model'].sudo().search([
+            '|', ('name', '=', default_model), ('api_name', '=', default_model),
+        ], limit=1)
+        if not model:
+            return False
+        param = self.env['ir.config_parameter'].sudo().get_param(
+            'ai_agent_core.default_model_id')
+        if str(model.id) != param:
+            self.env['ir.config_parameter'].sudo().set_param(
+                'ai_agent_core.default_model_id', model.id)
+            return True
+        return False
 
     # -- Actions --
     def action_fetch_models(self):

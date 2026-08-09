@@ -48,6 +48,7 @@
                 <field name="provider_type"/>
                 <field name="base_url" optional="hide"/>
                 <field name="model_count"/>
+                <field name="auto_sync" optional="show"/>
                 <field name="last_checked"/>
                 <field name="status" widget="badge"/>
             </list>
@@ -108,6 +109,7 @@
                     <group string="Advanced">
                         <field name="timeout"/>
                         <field name="retry_count"/>
+                        <field name="auto_sync"/>
                         <field name="last_checked"/>
                     </group>
                 </sheet>

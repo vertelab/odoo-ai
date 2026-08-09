@@ -772,7 +772,7 @@ def builtin_tools() -> list[Tool]:
             parameters={"type": "object", "properties": {
                 "name": {"type": "string", "description": "Agent name"},
                 "description": {"type": "string", "description": "Agent description / role"},
-                "model": {"type": "string", "description": "Bifrost model, e.g. cerebras/gpt-oss-120b or anthropic/claude-sonnet-4"},
+                "model": {"type": "string", "description": "AI model name (e.g. cheap, moderate, deepseek/deepseek-chat)"},
                 "skills": {"type": "string", "description": "Comma-separated skill names to assign (must exist)"},
             }, "required": ["name"]},
             handler=_tool_builder_create_agent,
@@ -1865,7 +1865,7 @@ def _tool_builder_create_agent(env, name, description="", model="", skills="", *
     """Create a new ai.agent. Returns agent ID."""
     if not model:
         from odoo.addons.ai_agent_core.core.provider import get_default_model_name
-        model = get_default_model_name() or 'cerebras/gpt-oss-120b'
+        model = get_default_model_name()
     vals = {
         "name": name,
         "description": description,

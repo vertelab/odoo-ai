@@ -436,3 +436,166 @@ class TestResolveFromReal(TransactionCase):
         # api_name-match fungerar också
         resolved2 = self.env['ai.model']._resolve_from_real('deepseek/deepseek-flash')
         self.assertEqual(resolved2.id, m3.id)
+
+
+class TestConfigProvisioning(TransactionCase):
+    """bifrost-client-provisioning: config-styrd provider + default-modell."""
+
+    def setUp(self):
+        super().setUp()
+        from odoo.tools import config as odoo_config
+        self._odoo_config = odoo_config
+        self._saved = {
+            k: odoo_config.get(k) for k in (
+                'ai_provider_endpoint', 'ai_provider_api_key',
+                'ai_provider_name', 'ai_default_model')
+        }
+
+    def tearDown(self):
+        for k, v in self._saved.items():
+            if v is None:
+                self._odoo_config.pop(k, None)
+            else:
+                self._odoo_config[k] = v
+        super().tearDown()
+
+    def _set(self, **kw):
+        for k, v in kw.items():
+            self._odoo_config[k] = v
+
+    def test_reconcile_creates_provider(self):
+        self._set(ai_provider_endpoint='http://192.168.11.150:8081/v1',
+                  ai_provider_api_key='bf-vk-test')
+        provider, changed = self.env['ai.provider']._reconcile_from_config()
+        self.assertTrue(provider)
+        self.assertTrue(changed)
+        self.assertEqual(provider.base_url, 'http://192.168.11.150:8081/v1')
+        self.assertEqual(provider.api_key, 'bf-vk-test')
+        self.assertTrue(provider.auto_sync)
+        self.assertEqual(provider.status, 'confirmed')
+        self.assertEqual(provider.provider_type, 'custom')
+        self.assertFalse(provider.is_bifrost)
+
+    def test_reconcile_idempotent(self):
+        self._set(ai_provider_endpoint='http://gw:8081/v1',
+                  ai_provider_api_key='bf-vk-test')
+        p1, _c = self.env['ai.provider']._reconcile_from_config()
+        p2, changed2 = self.env['ai.provider']._reconcile_from_config()
+        self.assertEqual(p1.id, p2.id)
+        self.assertFalse(changed2)
+        self.assertEqual(
+            self.env['ai.provider'].search_count(
+                [('base_url', '=', 'http://gw:8081/v1')]), 1)
+
+    def test_reconcile_no_config_returns_empty(self):
+        provider, changed = self.env['ai.provider']._reconcile_from_config()
+        self.assertFalse(provider)
+        self.assertFalse(changed)
+
+    def test_apply_default_model_from_config(self):
+        provider = self.env['ai.provider'].create({
+            'name': 'P', 'provider_type': 'custom',
+            'base_url': 'http://x/v1',
+        })
+        model = self.env['ai.model'].create({
+            'name': 'cheap', 'api_name': 'cheap', 'provider': provider.id,
+        })
+        self._set(ai_default_model='cheap')
+        applied = self.env['ai.provider']._apply_default_model_from_config()
+        self.assertTrue(applied)
+        self.assertEqual(
+            self.env['ir.config_parameter'].sudo().get_param(
+                'ai_agent_core.default_model_id'), str(model.id))
+        # idempotent
+        applied2 = self.env['ai.provider']._apply_default_model_from_config()
+        self.assertFalse(applied2)
+
+
+class TestModelSelection(TransactionCase):
+    """model-selection: billigaste-modellen + aktivitet + felsituation."""
+
+    def test_cheapest_model(self):
+        from odoo.addons.ai_agent_core.core.provider import get_cheapest_model
+        p = self.env['ai.provider'].create({
+            'name': 'P', 'provider_type': 'custom', 'base_url': 'http://x/v1',
+        })
+        expensive = self.env['ai.model'].create({
+            'name': 'frontier-models', 'provider': p.id,
+            'sys_multiplier': 6.0, 'status': 'active',
+        })
+        cheap = self.env['ai.model'].create({
+            'name': 'cheap', 'provider': p.id,
+            'sys_multiplier': 1.0, 'status': 'active',
+        })
+        self.env['ai.model'].create({
+            'name': 'inaktiv', 'provider': p.id,
+            'sys_multiplier': 0.1, 'status': 'active', 'active': False,
+        })
+        chosen = get_cheapest_model()
+        self.assertEqual(chosen.id, cheap.id)
+
+    def test_cheapest_tie_break(self):
+        from odoo.addons.ai_agent_core.core.provider import get_cheapest_model
+        p = self.env['ai.provider'].create({
+            'name': 'P', 'provider_type': 'custom', 'base_url': 'http://x/v1',
+        })
+        a = self.env['ai.model'].create({
+            'name': 'a', 'provider': p.id, 'sys_multiplier': 1.0,
+            'cost_input_1k': 0.5, 'status': 'active',
+        })
+        b = self.env['ai.model'].create({
+            'name': 'b', 'provider': p.id, 'sys_multiplier': 1.0,
+            'cost_input_1k': 0.1, 'status': 'active',
+        })
+        chosen = get_cheapest_model()
+        self.assertEqual(chosen.id, b.id)
+
+    def test_activity_idempotent(self):
+        coworker = self.env['ai.coworker'].create({'name': 'Cw'})
+        p = self.env['ai.provider'].create({
+            'name': 'P', 'provider_type': 'custom', 'base_url': 'http://x/v1',
+        })
+        model = self.env['ai.model'].create({
+            'name': 'cheap', 'provider': p.id, 'status': 'active',
+        })
+        self.assertTrue(coworker._activity_check_model_assignment(model))
+        self.assertFalse(coworker._activity_check_model_assignment(model))
+        activities = self.env['mail.activity'].sudo().search([
+            ('res_model', '=', 'ai.coworker'), ('res_id', '=', coworker.id),
+            ('done', '=', False),
+        ])
+        self.assertEqual(len(activities), 1)
+
+    def test_resolve_default_model_no_hardcode(self):
+        """_ensure_agent utan default och utan modeller → agent utan model_id,
+        ingen hårdkodad '365'."""
+        coworker = self.env['ai.coworker'].create({'name': 'Cw2'})
+        coworker._ensure_agent()
+        agent = coworker.agent_ids[0].agent_id
+        self.assertFalse(agent.model_id)
+
+    def test_chat_without_model_raises(self):
+        from odoo.addons.ai_agent_core.core.provider import (
+            AIProvider, ProviderError)
+        provider = AIProvider(base_url='http://x/v1')
+        with self.assertRaises(ProviderError):
+            _run(provider.chat(
+                model='', messages=[]))
+
+    def test_no_hardcoded_fallbacks(self):
+        import os
+        import odoo.addons.ai_agent_core as mod_pkg
+        root = os.path.dirname(mod_pkg.__file__)
+        banned = ['cerebras/gpt-oss-120b', "'365'"]
+        hits = []
+        for dirpath, _dirs, files in os.walk(root):
+            if 'tests' in dirpath or '.git' in dirpath:
+                continue
+            for fname in files:
+                if not fname.endswith('.py'):
+                    continue
+                path = os.path.join(dirpath, fname)
+                for i, line in enumerate(open(path, encoding='utf-8'), 1):
+                    if any(b in line for b in banned):
+                        hits.append(f'{path}:{i}')
+        self.assertEqual(hits, [])

@@ -60,7 +60,7 @@ class AIStreamController(http.Controller):
 
         # Resolve quest configuration — frontend skickar quest_id (alias för coworker_id)
         from odoo.addons.ai_agent_core.core.provider import get_default_model_name
-        model = get_default_model_name() or "cerebras/gpt-oss-120b"
+        model = get_default_model_name()
         system_prompt = ""
         quest = None
         if not coworker_id:
@@ -1549,7 +1549,7 @@ def _summarize_history(session, lines, max_chars=4000):
         if not provider:
             provider, provider_model = get_default_provider()
         model_name = (provider_model and provider_model._get_api_name()) \
-            or get_default_model_name() or 'cerebras/gpt-oss-120b'
+            or get_default_model_name()
         loop = AgentLoop(provider=provider, tools=[], config=AgentConfig(
             model=model_name, max_rounds=1, max_tokens=2048))
         prompt = (
@@ -2156,7 +2156,7 @@ class AIOpenAIAPI(http.Controller):
                 break
         if not model_name:
             from odoo.addons.ai_agent_core.core.provider import get_default_model_name
-            model_name = get_default_model_name() or 'cerebras/gpt-oss-120b'
+            model_name = get_default_model_name()
 
         coworker_id = quest.id
         # explicit-agent-tools: verktygs-ID:n fångas i request-kontext och
