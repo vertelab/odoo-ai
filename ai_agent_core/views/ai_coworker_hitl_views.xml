@@ -100,10 +100,6 @@
         <field name="context">{'search_default_asked': 1}</field>
     </record>
 
-    <menuitem id="menu_ai_hitl" name="Godkännanden (HITL)"
-              parent="menu_ai_organization" sequence="30"
-              action="ai_coworker_hitl_action"
-              groups="ai_agent_core.group_ai_officer"/>
 
     <!-- ── Smartknapp på ai.coworker-formen ── -->
     <record id="ai_coworker_form_inherit_hitl" model="ir.ui.view">
