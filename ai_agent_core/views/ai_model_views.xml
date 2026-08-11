@@ -149,51 +149,98 @@
         <field name="model">ai.model</field>
         <field name="arch" type="xml">
             <form>
+                <header>
+                    <field name="status" widget="statusbar"
+                           statusbar_visible="active,beta,deprecated" clickable="True"/>
+                </header>
                 <sheet>
-                    <div class="oe_button_box" name="button_box"/>
-                    <field name="active" invisible="1"/>
-                    <div class="oe_title">
-                        <h1><field name="display_name"/></h1>
-                        <h2><field name="provider"/></h2>
+                    <!-- D2: Stat-buttons (mönster från gamla ai.agent.llm-formen) -->
+                    <div class="oe_button_box" name="button_box">
+                        <button name="action_open_llms" type="object"
+                                class="oe_stat_button" icon="fa-microchip">
+                            <div class="o_stat_info">
+                                <span class="o_stat_text">LLM-instanser</span>
+                                <span class="o_stat_value"><field name="llm_count" widget="statinfo"/></span>
+                            </div>
+                        </button>
+                        <button name="action_open_session_lines" type="object"
+                                class="oe_stat_button" icon="fa-comments">
+                            <div class="o_stat_info">
+                                <span class="o_stat_text">Sessioner</span>
+                                <span class="o_stat_value"><field name="session_line_count" widget="statinfo"/></span>
+                            </div>
+                        </button>
                     </div>
-                    <group col="2">
-                        <field name="name"/>
-                        <field name="status"/>
-                        <field name="real_provider"/>
+
+                    <!-- Bild: avatar från provider (mönster från gamla ai.agent.llm image_128 oe_avatar) -->
+                    <field name="provider_image_128" widget="image" class="oe_avatar"/>
+
+                    <!-- D3: Titel -->
+                    <div class="oe_title">
+                        <h1>
+                            <field name="name" placeholder="e.g. gpt-4o"/>
+                        </h1>
+                        <h2>
+                            <field name="provider"/>
+                        </h2>
+                    </div>
+
+                    <!-- D4: Huvudgrupper -->
+                    <group>
+                        <group string="Status">
+                            <field name="status" widget="badge"/>
+                            <field name="active" widget="boolean_toggle"/>
+                            <field name="licence"/>
+                            <field name="tag_ids" widget="many2many_tags"/>
+                        </group>
+                        <group string="Provider">
+                            <field name="source_provider"/>
+                            <field name="real_provider" readonly="1"/>
+                            <field name="provider_type" readonly="1"/>
+                        </group>
                     </group>
+
+                    <!-- D5: Notebook -->
                     <notebook>
-                        <page string="Capabilities">
-                            <group col="4">
-                                <field name="is_vision" widget="boolean_toggle"/>
-                                <field name="is_embedded" widget="boolean_toggle"/>
-                                <field name="is_asr" widget="boolean_toggle"/>
-                                <field name="is_text2image" widget="boolean_toggle"/>
-                                <field name="has_tools" widget="boolean_toggle"/>
-                                <field name="has_json_mode" widget="boolean_toggle"/>
-                                <field name="has_streaming" widget="boolean_toggle"/>
-                            </group>
-                        </page>
-                        <page string="Context &amp; Cost">
+                        <page string="Capabilities" name="capabilities">
                             <group>
-                                <field name="context_window"/>
-                                <field name="max_output_tokens"/>
-                            </group>
-                            <group string="Cost (per 1K tokens)">
-                                <field name="cost_input_1k"/>
-                                <field name="cost_output_1k"/>
+                                <group string="Vision &amp; Media">
+                                    <field name="is_vision" widget="boolean_toggle"/>
+                                    <field name="is_embedded" widget="boolean_toggle"/>
+                                    <field name="is_asr" widget="boolean_toggle"/>
+                                    <field name="is_text2image" widget="boolean_toggle"/>
+                                </group>
+                                <group string="Inference">
+                                    <field name="has_tools" widget="boolean_toggle"/>
+                                    <field name="has_json_mode" widget="boolean_toggle"/>
+                                    <field name="has_streaming" widget="boolean_toggle"/>
+                                </group>
                             </group>
                         </page>
-                        <page string="Systemtoken">
+                        <page string="Context &amp; Cost" name="context_cost">
+                            <group>
+                                <group string="Context">
+                                    <field name="context_window"/>
+                                    <field name="max_output_tokens"/>
+                                </group>
+                                <group string="Cost (per 1K tokens)">
+                                    <field name="cost_input_1k"/>
+                                    <field name="cost_output_1k"/>
+                                </group>
+                            </group>
+                        </page>
+                        <page string="Systemtoken" name="systemtoken">
                             <group string="Pricing">
                                 <field name="sys_multiplier"
-                                    help="How many systemtokens 1 real token costs. Includes Vertel margin."/>
+                                       help="How many systemtokens 1 real token costs. Includes Vertel margin."/>
                                 <field name="provider_cost_1M"
-                                    help="What the provider charges per 1M tokens. Admin insight only."/>
+                                       help="What the provider charges per 1M tokens. Admin insight only."/>
                             </group>
                         </page>
-                        <page string="License">
-                            <group>
-                                <field name="licence"/>
+                        <page string="Usage" name="usage">
+                            <group string="Användning">
+                                <field name="llm_count" readonly="1"/>
+                                <field name="session_line_count" readonly="1"/>
                             </group>
                         </page>
                     </notebook>

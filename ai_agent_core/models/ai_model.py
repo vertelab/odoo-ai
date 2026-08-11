@@ -133,3 +133,23 @@ class AIModel(models.Model):
             r.session_line_count = self.env['ai.coworker.session.line'].search_count([
                 ('ai_llm_id', '=', r.id)
             ])
+
+    def action_open_llms(self):
+        """Open LLM instances using this model (stat button)."""
+        return {
+            'name': 'LLM-instanser',
+            'type': 'ir.actions.act_window',
+            'res_model': 'ai.agent.llm',
+            'view_mode': 'list,form',
+            'domain': [('model_id', '=', self.id)],
+        }
+
+    def action_open_session_lines(self):
+        """Open coworker session lines using this model (stat button)."""
+        return {
+            'name': 'Sessioner',
+            'type': 'ir.actions.act_window',
+            'res_model': 'ai.coworker.session.line',
+            'view_mode': 'list,form',
+            'domain': [('ai_llm_id', '=', self.id)],
+        }
