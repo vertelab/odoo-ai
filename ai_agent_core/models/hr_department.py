@@ -208,6 +208,7 @@ class Department(models.Model):
             except Exception:
                 dept.ai_task_count = 0
 
+    @api.model
     def org_chart_data(self):
         """Org-träd (avdelningar + AI-medarbetare/mål) för org_chart-vyn."""
         depts = self.search([])
