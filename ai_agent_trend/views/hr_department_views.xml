@@ -13,7 +13,6 @@
         {
         "searchpanel_default_department_id": active_id,
         "default_department_id": active_id,
-        "search_default_group_department": 1,
         "search_default_department_id": active_id,
         "expand": 1}
       </field>

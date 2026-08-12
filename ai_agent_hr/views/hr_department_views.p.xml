@@ -17,7 +17,6 @@
         {
         "searchpanel_default_department_id": active_id,
         "default_department_id": active_id,
-        "search_default_group_department": 1,
         "search_default_department_id": active_id,
         "expand": 1}
       </field>
@@ -37,6 +36,21 @@
       <field name="model">hr.department</field>
       <field name="inherit_id" ref="hr.view_department_form" />
       <field name="arch" type="xml">
+        <!-- #if VERSION <= "14.0" -->
+        <xpath expr="//form/sheet/widget[1]" position="before">
+          <div class="oe_button_box" name="button_box">
+            <button name="action_get_quests" class="oe_stat_button " type="object" icon="fa-rocket">
+              <field string="AI Staff" name="total_ai_staff" widget="statinfo" />
+            </button>
+            <button name="action_get_sessions" class="oe_stat_button" type="object" icon="fa-flag-checkered">
+              <field string="Sessions" name="session_count" widget="statinfo" />
+            </button>
+            <button name="action_get_session_lines" class="oe_stat_button" type="object" icon="fa-money">
+              <field string="Tokens" name="session_line_count" widget="statinfo" />
+            </button>
+          </div>
+        </xpath>
+        <!-- #elif VERSION >= "17.0" -->
         <div name="button_box" position="inside">
           <button name="action_get_quests" class="oe_stat_button " type="object" icon="fa-rocket">
             <field string="AI Staff" name="total_ai_staff" widget="statinfo" />
@@ -48,6 +62,7 @@
             <field string="Tokens" name="session_line_count" widget="statinfo" />
           </button>
         </div>
+        <!-- #endif -->
         <sheet position="inside">
           <notebook>
             <page string="Goals and responsibilities" id="ai">
@@ -63,7 +78,11 @@
       <field name="model">hr.department</field>
       <field name="inherit_id" ref="hr.view_department_tree" />
       <field name="arch" type="xml">
+        <!-- #if VERSION <= "14.0" -->
+        <field name="manager_id" position="after">
+        <!-- #elif VERSION >= "17.0" -->
         <field name="total_employee" position="after">
+        <!-- #endif -->
           <field name="total_ai_staff" string="AI Staff" />
         </field>
       </field>
@@ -92,9 +111,11 @@
 		</kanban>
         <!-- #if VERSION >= "18.0" -->
         <div name="kanban_primary_right" class="col-6" position="inside">
-		<!-- #elif VERSION <= "17.0" -->
+		    <!-- #elif VERSION == "17.0" -->
         <div class="col-6 o_kanban_primary_right" position="inside">
-		<!-- #endif -->
+        <!-- #elif VERSION <= "14.0" -->
+        <div class="col-8 o_kanban_primary_right" position="inside">
+		    <!-- #endif -->
           <!-- Right Column for AI Staff Button -->
           <div class="col-6 d-flex justify-content-end">
             <button class="btn btn-primary" name="%(act_ai_staff_from_department)d" type="action">
