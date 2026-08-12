@@ -133,7 +133,7 @@
         <field name="code">
 # Sök över ALLA scopes (company+personal+coworker) med access-filtrering
 results = env['ai.okf.concept']._okf_search(
-    context.get('search_query') or 'senaste',
+    env.context.get('search_query') or 'senaste',
     scope=None, limit=20, hybrid=True)
 action = env['ir.actions.act_window']._for_xml_id(
     'ai_agent_core.action_workspace_search')

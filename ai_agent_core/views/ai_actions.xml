@@ -10,7 +10,6 @@
         <field name="name">Models</field>
         <field name="res_model">ai.model</field>
         <field name="view_mode">kanban,list,form</field>
-        <field name="context">{'search_default_group_provider': 1}</field>
     </record>
     <record id="action_ai_settings" model="ir.actions.act_window">
         <field name="name">Inställningar</field>
