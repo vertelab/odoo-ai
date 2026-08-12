@@ -92,15 +92,16 @@ class WorkspaceParaContainer(models.Model):
 
     # -- Security: users only see their own containers (projections readable) --
     @api.model
-    def _search(self, args, offset=0, limit=None, order=None, count=False,
-                access_rights_uid=None):
-        """Enforce per-user visibility unless system user."""
+    def _search(self, args, offset=0, limit=None, order=None):
+        """Enforce per-user visibility unless system user.
+
+        (Denna Odoo-builds BaseModel._search tar bara domain/offset/limit/order
+        och search_count gör len(query) — inga count/access_rights_uid-kwargs.)
+        """
         if not self.env.user.has_group('base.group_system'):
             args = args or []
             args = [('user_id', '=', self.env.user.id)] + args
-        return super()._search(
-            args, offset=offset, limit=limit, order=order, count=count,
-            access_rights_uid=access_rights_uid)
+        return super()._search(args, offset=offset, limit=limit, order=order)
 
     @api.model_create_multi
     def create(self, vals_list):

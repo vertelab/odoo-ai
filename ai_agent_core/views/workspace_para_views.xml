@@ -63,7 +63,7 @@
                     <group string="References (live, never copies)">
                         <field name="ref_ids" readonly="0">
                             <list string="References" editable="bottom">
-                                <field name="object_ref" widget="many2one_reference"/>
+                                <field name="object_ref" widget="reference"/>
                             </list>
                         </field>
                     </group>
@@ -82,7 +82,7 @@
         <field name="arch" type="xml">
             <list string="PARA References">
                 <field name="container_id"/>
-                <field name="object_ref" widget="many2one_reference"/>
+                <field name="object_ref" widget="reference"/>
             </list>
         </field>
     </record>
@@ -96,7 +96,6 @@
         <field name="res_model">workspace.para.container</field>
         <field name="view_mode">list,form</field>
         <field name="domain">[('user_id', '=', uid)]</field>
-        <field name="context">{'search_default_group_by_kind': 1}</field>
     </record>
 
     <record id="action_workspace_agenda" model="ir.actions.act_window">
@@ -104,7 +103,6 @@
         <field name="res_model">ai.personal.goal</field>
         <field name="view_mode">list,form</field>
         <field name="domain">[('user_id', '=', uid), ('status', 'not in', ('cancelled',))]</field>
-        <field name="context">{'search_default_group_by_status': 1}</field>
     </record>
 
     <record id="action_workspace_inbox" model="ir.actions.act_window">
@@ -125,7 +123,6 @@
         <field name="name">Search</field>
         <field name="res_model">ai.okf.concept</field>
         <field name="view_mode">list,form</field>
-        <field name="context">{'search_default_group_by_owner': 1}</field>
     </record>
 
     <!-- 7.2 Hybridsök över allt användaren har rätt att se (pgvector+tsvector) -->
@@ -148,7 +145,6 @@ action['domain'] = [('id', 'in', results.ids)]
         <field name="name">Coworkers</field>
         <field name="res_model">ai.coworker</field>
         <field name="view_mode">kanban,list,form</field>
-        <field name="context">{'search_default_active': 1}</field>
     </record>
 
     <menuitem id="menu_workspace_root" name="Odoo Mind"
@@ -206,7 +202,6 @@ else:
         <field name="res_model">ai.coworker</field>
         <field name="view_mode">list,form</field>
         <field name="domain">[('active', '=', True)]</field>
-        <field name="context">{'search_default_status': 'active'}</field>
         <field name="help" type="html">
             <p class="o_view_nocontent_smiling_face">
                 Här är dina AI-coworkers. Välj en för att se vad den gör och

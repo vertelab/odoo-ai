@@ -82,3 +82,5 @@ access_ai_coworker_error_user,ai.coworker.error.user,model_ai_coworker_error,bas
 access_ai_coworker_error_admin,ai.coworker.error.admin,model_ai_coworker_error,base.group_system,1,1,1,1
 access_ai_coworker_hitl_user,ai.coworker.hitl.user,model_ai_coworker_hitl,base.group_user,1,1,1,0
 access_ai_coworker_hitl_admin,ai.coworker.hitl.admin,model_ai_coworker_hitl,base.group_system,1,1,1,1
+access_workspace_gap_engine_officer,workspace.gap.engine,model_workspace_gap_engine,ai_agent_core.group_ai_officer,1,1,0,0
+access_workspace_gap_engine_admin,workspace.gap.engine,model_workspace_gap_engine,ai_agent_core.group_ai_admin,1,1,1,1
