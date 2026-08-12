@@ -662,8 +662,24 @@ class AICoworker(models.Model):
         help='Månad då budget-notis/aktivitet senast skickades — en gång '
              'per månad, ingen reset behövs.')
 
+
+    # ── Burn rate & prognos (budget-burn-rate) ──
+    burn_rate_mtokens_day = fields.Float(
+        'Burn rate (M tokens/dag)', compute='_compute_burn_forecast',
+        help='Glidande medelvärde av systemtokenförbrukning per dag (senaste 7 dagarna), härlett från session lines.')
+    days_until_budget_empty = fields.Float(
+        'Dagar kvar', compute='_compute_burn_forecast',
+        help='(monthly_cap_mtokens × 1M − session_line_count) / burn_rate_mtokens_day.')
+    projected_empty_date = fields.Date(
+        'Prognos tom-datum', compute='_compute_burn_forecast',
+        help='Idag + days_until_budget_empty.')
+    burn_rate_warning = fields.Boolean(
+        'Burn rate-varning', compute='_compute_burn_forecast',
+        help='Burn rate skulle tömma månadsbudgeten på < 20 dagar.')
+
     # Autonomi-panel (gap C5/F4, task 8.6) — endast systemtokens som valuta
     # (budget-hard-cap D8: budget_kr_monthly + max_actions_per_day begravda)
+
     hitl_threshold = fields.Selection([
         ('autonomous', 'Autonom (inga godkännanden)'),
         ('high_risk', 'Endast högriskåtgärder kräver godkännande'),
@@ -895,6 +911,161 @@ class AICoworker(models.Model):
                     zabbix_configs.notify_cap_exceeded(self)
             except Exception as e:
                 _logger.warning('Zabbix notification failed (non-critical): %s', e)
+
+    # ── Burn rate warning + push signals (budget-burn-rate) ────────────
+
+    def _burn_rate_warning_message(self):
+        """Build the local burn-rate warning text with recommendations."""
+        days = self.days_until_budget_empty or 0
+        msg = (
+            f'⚠️ **Budget förbrukas snabbt** — med nuvarande takt tar den slut om '
+            f'{days:.0f} dagar ({self.projected_empty_date}).\n\n'
+            f'Rekommendationer:\n'
+            f'- Byt till billigare combo (t.ex. frontier → moderate) för att förlänga budgeten\n'
+            f'- Höj monthly_cap_mtokens i inställningarna\n'
+            f'- Rate-limit kan slå till om budgeten tar slut (kopplat till bifrost-guardrails)'
+        )
+        return msg
+
+    def _notify_burn_rate_warning(self):
+        """Post the burn-rate warning locally (chat + log), informational only."""
+        self.ensure_one()
+        if not self.burn_rate_warning:
+            return False
+        msg = self._burn_rate_warning_message()
+        try:
+            self.message_post(body=self._md_to_html(msg), message_type='notification')
+        except Exception as e:
+            _logger.warning('Burn-rate chat warning failed (non-critical): %s', e)
+        _logger.warning('Burn rate for coworker %s: %s M/day, empty in %s days',
+                        self.name, self.burn_rate_mtokens_day, self.days_until_budget_empty)
+        return True
+
+    def _push_signal(self, signal_type, payload):
+        """Push a signal to the bifrost module (POST /bifrost/signal).
+
+        Reads config from odoo.conf (provisioned via Salt):
+        - bifrost_signal_url
+        - bifrost_signal_key (virtual key name)
+        On failure, spools to /var/lib/odoo/bifrost_signal_spool.jsonl and
+        retries on the next call (no data loss).
+        """
+        import json as _json
+        icp = self.env['ir.config_parameter'].sudo()
+        url = icp.get_param('bifrost.signal_url', '')
+        key = icp.get_param('bifrost.signal_key', '')
+        if not url or not key:
+            return False
+
+        def _send(signal_type, payload):
+            import urllib.request
+            body = _json.dumps({'signal_type': signal_type, 'payload': payload}).encode()
+            req = urllib.request.Request(
+                url.rstrip('/') + '/bifrost/signal',
+                data=body,
+                headers={'Content-Type': 'application/json',
+                         'Authorization': 'Bearer ' + key})
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                return resp.status == 200
+
+        try:
+            return _send(signal_type, payload)
+        except Exception as e:
+            _logger.warning('Bifrost push failed (%s) — spooling: %s', signal_type, e)
+            try:
+                with open('/var/lib/odoo/bifrost_signal_spool.jsonl', 'a') as f:
+                    f.write(_json.dumps({'signal_type': signal_type, 'payload': payload}) + '\n')
+            except Exception:
+                pass
+            # Retry spooled signals (best-effort)
+            self._flush_signal_spool(_send)
+            return False
+
+    def _flush_signal_spool(self, send_fn):
+        """Best-effort retry of spooled signals."""
+        import json as _json
+        spool = '/var/lib/odoo/bifrost_signal_spool.jsonl'
+        try:
+            with open(spool) as f:
+                lines = [l for l in f if l.strip()]
+            remaining = []
+            for line in lines:
+                try:
+                    entry = _json.loads(line)
+                    send_fn(entry['signal_type'], entry['payload'])
+                except Exception:
+                    remaining.append(line)
+            with open(spool, 'w') as f:
+                f.writelines(remaining)
+        except Exception:
+            pass
+
+    def _provisioned_bifrost_usage(self):
+        """Read the Bifrost usage provisioned back to this minion (via Salt)."""
+        import json as _json
+        try:
+            with open('/var/lib/odoo/bifrost_usage_provisioned.json') as f:
+                return _json.load(f)
+        except Exception:
+            return {}
+
+    def _detect_burn_rate_conflict(self):
+        """Compare local session-line burn vs provisioned Bifrost usage."""
+        prov = self._provisioned_bifrost_usage()
+        prov_burn = prov.get('burn_per_day', 0.0)
+        if not prov_burn:
+            return False
+        local_burn = self.burn_rate_mtokens_day or 0.0
+        tolerance = float(self.env['ir.config_parameter'].sudo().get_param(
+            'bifrost.conflict_tolerance', '20'))
+        if local_burn > 0 and abs(prov_burn - local_burn) / local_burn * 100.0 > tolerance:
+            self._push_signal('burn_rate_conflict', {
+                'local_burn': local_burn,
+                'bifrost_burn': prov_burn,
+            })
+            return True
+        return False
+
+    def _detect_budget_change(self):
+        """Push budget_changed when monthly_cap_mtokens changes ≥ threshold (default 50%)."""
+        icp = self.env['ir.config_parameter'].sudo()
+        threshold = float(icp.get_param('bifrost.budget_change_threshold', '50'))
+        key = f'bifrost.cap_snapshot_{self.id}'
+        raw = icp.get_param(key, '')
+        old = float(raw) if raw else 0.0
+        new = self.monthly_cap_mtokens or 0
+        if old and new and old != new and abs(new - old) / old * 100.0 >= threshold:
+            self._push_signal('budget_changed', {'old_budget': old, 'new_budget': new})
+        icp.set_param(key, str(new))
+        return new
+
+    @api.model
+    def cron_burn_rate_check(self):
+        """Periodic: local burn-rate warning + conflict detection + summary."""
+        coworkers = self.search([])
+        warned = 0
+        for c in coworkers:
+            if c.burn_rate_warning:
+                c._notify_burn_rate_warning()
+                warned += 1
+            c._detect_burn_rate_conflict()
+            c._detect_budget_change()
+        _logger.info('Burn rate check: %d coworkers warned', warned)
+        return warned
+
+    @api.model
+    def cron_budget_summary(self):
+        """Periodic budget consolidation pushed to bifrost (cron-configurable)."""
+        coworkers = self.search([])
+        packages = 0
+        for c in coworkers:
+            packages += (c.monthly_cap_mtokens or 0)
+        self._push_signal('budget_summary', {
+            'monthly_packages': packages,
+            'coworkers': len(coworkers),
+            'generated_at': fields.Datetime.now().isoformat(),
+        })
+        return packages
 
     skill_copy_ids = fields.One2many('ai.coworker.skill', 'coworker_id',
         string='Skill Copies',
@@ -1423,6 +1594,35 @@ class AICoworker(models.Model):
                 if line.create_date and line.create_date.date() >= month_start:
                     total += line.token_sys or 0
             r.session_line_count = total
+
+    @api.depends('session_line_ids.token_sys', 'session_line_ids.create_date', 'monthly_cap_mtokens')
+    def _compute_burn_forecast(self):
+        """Burn rate (7-day rolling), forecast and warning — deterministic from session lines."""
+        from datetime import date, timedelta
+        today = date.today()
+        week_ago = today - timedelta(days=7)
+        for r in self:
+            # Aggregate token_sys per day over the last 7 days
+            daily = {}
+            for line in r.session_line_ids:
+                if line.create_date and line.create_date.date() >= week_ago:
+                    d = line.create_date.date()
+                    daily[d] = daily.get(d, 0) + (line.token_sys or 0)
+            days_with_data = len(daily)
+            burn = (sum(daily.values()) / days_with_data / 1_000_000.0) if days_with_data else 0.0
+            r.burn_rate_mtokens_day = round(burn, 4)
+
+            cap_tokens = (r.monthly_cap_mtokens or 0) * 1_000_000
+            remaining = cap_tokens - r.session_line_count
+            if burn > 0 and remaining > 0 and cap_tokens:
+                days = remaining / (burn * 1_000_000.0)
+                r.days_until_budget_empty = round(days, 1)
+                r.projected_empty_date = today + timedelta(days=days)
+                r.burn_rate_warning = days < 20
+            else:
+                r.days_until_budget_empty = False
+                r.projected_empty_date = False
+                r.burn_rate_warning = False
 
     @api.depends('session_line_count')
     def _compute_started_mtokens(self):
