@@ -89,19 +89,8 @@ and cost-effective AI systems that drive innovation and efficiency across their 
             langchain_anthropic
             langchain_huggingface
 
-    """,
-    'author': "Vertel AB",
-    'website': "https://vertel.se/apps/odoo-ai/ai_agent",
-    'images': ["static/description/banner.png"],  # 560x280
-    "license": "AGPL-3",
-    "depends": [
-        "mail",
-        "product",
-        "crm",
-        "web_widget_mermaid_field"
-    ],
-    "data": [
-        "security/ai_agent_security.xml",
+
+  "security/ai_agent_security.xml",
         "security/ir.model.access.csv",
         "data/server_action.xml",
         "data/ai_memory_cron.xml",
@@ -137,7 +126,19 @@ and cost-effective AI systems that drive innovation and efficiency across their 
         "views/mail_channel_views.xml",
         "views/res_config_settings_views.xml",
         "security/ai_quest_record_rule.xml",
+
+    """,
+    'author': "Vertel AB",
+    'website': "https://vertel.se/apps/odoo-ai/ai_agent",
+    'images': ["static/description/banner.png"],  # 560x280
+    "license": "AGPL-3",
+    "depends": [
+        "mail",
+        "product",
+        "crm",
+        "web_widget_mermaid_field"
     ],
+    "data": [],
     "external_dependencies": {
         #"bin": ["postgresql-16-pgvector"], 
         "python": [
