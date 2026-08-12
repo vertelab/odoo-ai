@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+from . import ir_ui_view
+from . import ir_action_act_window
 from . import ai_provider
 from . import ai_model
 from . import ai_tag

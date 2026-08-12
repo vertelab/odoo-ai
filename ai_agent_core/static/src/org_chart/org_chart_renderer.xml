@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+    <t t-name="ai_agent_core.OrgChartRenderer">
+        <div class="o_org_chart">
+            <div t-if="state.loading" class="p-4 text-muted">Laddar organisationen…</div>
+            <div t-elif="state.error" class="alert alert-danger m-3" t-esc="state.error"/>
+            <div t-elif="!state.roots.length" class="p-4 text-muted">
+                Ingen organisation än — starta AI-onboarding för att bygga den.
+            </div>
+            <div t-else="" class="o_org_chart_tree">
+                <t t-foreach="state.roots" t-as="node" t-key="node.id">
+                    <OrgChartNode node="node" onOpen="openDepartment"/>
+                </t>
+            </div>
+        </div>
+    </t>
+
+    <t t-name="ai_agent_core.OrgChartNode">
+        <div class="o_org_node">
+            <button type="button" class="btn o_org_node_card" t-on-click="() => onOpen(node)">
+                <div class="o_org_node_name" t-esc="node.name"/>
+                <div class="o_org_node_badges">
+                    <span t-if="node.ai_staff" class="badge text-bg-info">🤖 <t t-esc="node.ai_staff"/></span>
+                    <span t-if="node.goal_count" class="badge text-bg-warning">🎯 <t t-esc="node.goal_count"/></span>
+                </div>
+            </button>
+            <t t-if="node.child_ids.length">
+                <div class="o_org_node_children">
+                    <t t-foreach="node.child_ids" t-as="child" t-key="child.id">
+                        <OrgChartNode node="child" onOpen="onOpen"/>
+                    </t>
+                </div>
+            </t>
+        </div>
+    </t>
+</templates>

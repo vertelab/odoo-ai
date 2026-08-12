@@ -1,0 +1,45 @@
+.o_org_chart_tree {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 24px;
+    padding: 24px;
+    justify-content: center;
+}
+
+.o_org_node {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.o_org_node_card {
+    border: 1px solid #dee2e6;
+    border-radius: 8px;
+    padding: 12px 20px;
+    background: #fff;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    min-width: 140px;
+    text-align: center;
+}
+
+.o_org_node_card:hover {
+    border-color: #0d6efd;
+    box-shadow: 0 2px 8px rgba(13, 110, 253, 0.2);
+}
+
+.o_org_node_name {
+    font-weight: 600;
+    margin-bottom: 6px;
+}
+
+.o_org_node_badges .badge {
+    margin: 0 2px;
+}
+
+.o_org_node_children {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 24px;
+    margin-top: 20px;
+    justify-content: center;
+}

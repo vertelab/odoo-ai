@@ -207,3 +207,25 @@ class Department(models.Model):
                     [('department_id', '=', dept.id)])
             except Exception:
                 dept.ai_task_count = 0
+
+    def org_chart_data(self):
+        """Org-träd (avdelningar + AI-medarbetare/mål) för org_chart-vyn."""
+        depts = self.search([])
+        nodes = {}
+        for d in depts:
+            nodes[d.id] = {
+                'id': d.id,
+                'name': d.name,
+                'parent_id': d.parent_id.id if d.parent_id else False,
+                'ai_staff': d.total_ai_staff,
+                'goal_count': len(d.department_objective_ids),
+                'child_ids': [],
+            }
+        roots = []
+        for n in nodes.values():
+            parent = n['parent_id']
+            if parent and parent in nodes:
+                nodes[parent]['child_ids'].append(n)
+            else:
+                roots.append(n)
+        return {'roots': roots}
