@@ -96,7 +96,7 @@
         <field name="arch" type="xml">
             <kanban>
                 <templates>
-                    <t t-name="card">
+                    <t t-name="kanban-box">
                         <div t-attf-class="oe_kanban_global_click o_kanban_record #{record.status.raw_value}">
                             <field name="image_128" widget="image" class="oe_kanban_avatar" />
                             <div>

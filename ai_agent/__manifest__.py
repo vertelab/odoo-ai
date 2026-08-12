@@ -90,7 +90,7 @@ and cost-effective AI systems that drive innovation and efficiency across their 
             langchain_huggingface
 
 
-        "security/ai_agent_security.xml",
+  "security/ai_agent_security.xml",
         "security/ir.model.access.csv",
         "data/server_action.xml",
         "data/ai_memory_cron.xml",
@@ -127,9 +127,6 @@ and cost-effective AI systems that drive innovation and efficiency across their 
         "views/res_config_settings_views.xml",
         "security/ai_quest_record_rule.xml",
 
-
-
-
     """,
     'author': "Vertel AB",
     'website': "https://vertel.se/apps/odoo-ai/ai_agent",
@@ -141,7 +138,7 @@ and cost-effective AI systems that drive innovation and efficiency across their 
         "crm",
         "web_widget_mermaid_field"
     ],
-    "data": [  ],
+    "data": [],
     "external_dependencies": {
         #"bin": ["postgresql-16-pgvector"], 
         "python": [
