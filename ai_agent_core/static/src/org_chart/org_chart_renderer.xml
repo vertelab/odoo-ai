@@ -12,7 +12,7 @@
                     <div class="o_org_node_row"
                          t-att-style="'padding-left: ' + (node.depth * 28) + 'px'">
                         <button type="button" class="btn o_org_node_card"
-                                t-on-click="() => openDepartment(node)">
+                                t-on-click="() => this.openDepartment(node)">
                             <span class="o_org_node_depth"
                                   t-if="node.depth" t-esc="'└─ '"/>
                             <span class="o_org_node_name" t-esc="node.name"/>
