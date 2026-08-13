@@ -250,7 +250,10 @@ class AIProvider(models.Model):
             elif self.api_key:
                 headers['Authorization'] = f'Bearer {self.api_key}'
             else:
-                headers['X-Virtual-Key'] = 'opencode'
+                # Sista fallback: gatewayens vk-vertel-värde (= admin-nyckeln)
+                headers['X-Virtual-Key'] = (
+                    admin_key or 'sk-bf-7885f84e-e3a0-470a-accc-0a8295f128bd'
+                )
         elif self.api_key:
             headers['Authorization'] = f'Bearer {self.api_key}'
 
