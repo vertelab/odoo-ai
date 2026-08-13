@@ -29,6 +29,18 @@ PROVIDER_TYPES = [
 
 class AIProvider(models.Model):
     _name = 'ai.provider'
+    @api.constrains('api_key')
+    def _check_api_key_sane(self):
+        """Förhindra att flerradig text klistras in som API-nyckel (skulle
+        krascha HTTP-headers med 'Illegal header value')."""
+        for rec in self:
+            if rec.api_key and any(c in rec.api_key for c in '\r\n'):
+                raise ValidationError(
+                    'API-nyckeln får inte innehålla radbrytningar — '
+                    'klistra bara in själva nyckeln.'
+                )
+
+
     _description = 'AI Provider'
     _inherit = ['mail.thread', 'mail.activity.mixin']
     _order = 'name asc'
@@ -205,6 +217,16 @@ class AIProvider(models.Model):
             }
         }
 
+    @api.model
+    def _bifrost_base_url(self):
+        """Bifrost-gatewayens bas-URL från konfiguration (8081 = combo-adapter)."""
+        url = (
+            self.env['ir.config_parameter'].get_param('bifrost.combo_adapter_url')
+            or self.env['ir.config_parameter'].get_param('bifrost.api_url')
+            or 'http://192.168.11.150:8081'
+        )
+        return url.rstrip('/') + '/v1'
+
     def _fetch_models_from_api(self):
         """Fetch models from provider's /v1/models endpoint.
 
@@ -218,10 +240,19 @@ class AIProvider(models.Model):
         self.ensure_one()
         url = self.base_url.rstrip('/') + '/models'
         headers = {}
-        if self.api_key:
-            headers['Authorization'] = f'Bearer {self.api_key}'
         if self.provider_type == 'bifrost':
-            headers['X-Virtual-Key'] = 'opencode'
+            # Bifrost-gatewayen kräver admin-nyckel för att lista modeller
+            # (X-Virtual-Key ger tom lista). Fallback till api_key om satt.
+            admin_key = self.env['ir.config_parameter'].get_param(
+                'bifrost.admin_api_key', '')
+            if admin_key:
+                headers['Authorization'] = f'Bearer {admin_key}'
+            elif self.api_key:
+                headers['Authorization'] = f'Bearer {self.api_key}'
+            else:
+                headers['X-Virtual-Key'] = 'opencode'
+        elif self.api_key:
+            headers['Authorization'] = f'Bearer {self.api_key}'
 
         try:
             ctx = ssl.create_default_context()
@@ -447,7 +478,7 @@ class AIProviderWizard(models.TransientModel):
         # Auto-detect provider type
         if 'bifrost' in name_lower or '192.168.11.150' in url_lower:
             vals['provider_type'] = 'bifrost'
-            vals['base_url'] = 'http://192.168.11.150:8080/v1'
+            vals['base_url'] = self._bifrost_base_url()
             vals['is_key_required'] = False
         elif 'berget' in url_lower or 'berget' in name_lower:
             vals['provider_type'] = 'custom'

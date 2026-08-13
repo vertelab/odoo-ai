@@ -6,7 +6,7 @@
         <record id="provider_bifrost" model="ai.provider">
             <field name="name">Bifrost</field>
             <field name="provider_type">bifrost</field>
-            <field name="base_url">http://192.168.11.150:8080/v1</field>
+            <field name="base_url">http://192.168.11.150:8081/v1</field>
             <field name="is_bifrost" eval="True"/>
             <field name="api_style">openai</field>
             <field name="is_key_required" eval="False"/>
