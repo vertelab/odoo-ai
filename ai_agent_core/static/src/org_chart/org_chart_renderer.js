@@ -1,20 +1,14 @@
 import { Component, useState, onWillStart } from "@odoo/owl";
 import { useService } from "@web/core/utils/hooks";
 
-export class OrgChartNode extends Component {
-    static template = "ai_agent_core.OrgChartNode";
-    static props = { node: Object, onOpen: Function };
-}
-
 export class OrgChartRenderer extends Component {
     static template = "ai_agent_core.OrgChartRenderer";
-    static components = { OrgChartNode };
     static props = { archInfo: Object };
 
     setup() {
         this.orm = useService("orm");
         this.action = useService("action");
-        this.state = useState({ roots: [], loading: true, error: "" });
+        this.state = useState({ flat: [], loading: true, error: "" });
         onWillStart(async () => {
             try {
                 const data = await this.orm.call(
@@ -22,7 +16,17 @@ export class OrgChartRenderer extends Component {
                     "org_chart_data",
                     []
                 );
-                this.state.roots = data.roots || [];
+                const flat = [];
+                const walk = (nodes, depth) => {
+                    for (const n of nodes) {
+                        flat.push({ id: n.id, name: n.name, ai_staff: n.ai_staff, goal_count: n.goal_count, depth });
+                        if (n.child_ids && n.child_ids.length) {
+                            walk(n.child_ids, depth + 1);
+                        }
+                    }
+                };
+                walk(data.roots || [], 0);
+                this.state.flat = flat;
             } catch (err) {
                 this.state.error = err.message || "Kunde inte ladda organisationen";
             } finally {
