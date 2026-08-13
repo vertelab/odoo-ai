@@ -218,7 +218,13 @@ class Department(models.Model):
                 'id': d.id,
                 'name': d.name,
                 'parent_id': d.parent_id.id if d.parent_id else False,
+                'color': d.color or 0,
+                'manager_name': d.manager_id.name or '',
+                'ai_manager_name': d.ai_manager_id.name or '',
+                'health': d.health or '',
                 'ai_staff': d.total_ai_staff,
+                'ai_task_count': d.ai_task_count,
+                'ai_goal_count': d.ai_goal_count,
                 'goal_count': len(d.department_objective_ids),
                 'child_ids': [],
             }

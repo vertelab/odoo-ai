@@ -1,45 +1,53 @@
 .o_org_chart_tree {
     display: flex;
-    flex-wrap: wrap;
-    gap: 24px;
-    padding: 24px;
-    justify-content: center;
-}
-
-.o_org_node {
-    display: flex;
     flex-direction: column;
-    align-items: center;
+    gap: 12px;
+    padding: 24px;
 }
 
 .o_org_node_card {
     border: 1px solid #dee2e6;
-    border-radius: 8px;
-    padding: 12px 20px;
+    border-radius: 10px;
+    overflow: hidden;
     background: #fff;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-    min-width: 140px;
-    text-align: center;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+    min-width: 220px;
+    max-width: 280px;
 }
 
-.o_org_node_card:hover {
-    border-color: #0d6efd;
-    box-shadow: 0 2px 8px rgba(13, 110, 253, 0.2);
-}
-
-.o_org_node_name {
+.o_org_node_header {
+    padding: 10px 14px;
     font-weight: 600;
-    margin-bottom: 6px;
+    cursor: pointer;
+    background: #e9ecef;
+    color: #212529;
 }
 
-.o_org_node_badges .badge {
-    margin: 0 2px;
+.o_org_node_header:hover {
+    filter: brightness(1.05);
 }
 
-.o_org_node_children {
+.o_org_node_body {
+    padding: 10px 14px 12px;
     display: flex;
-    flex-wrap: wrap;
-    gap: 24px;
-    margin-top: 20px;
-    justify-content: center;
+    flex-direction: column;
 }
+
+.o_org_manager {
+    font-size: 0.85rem;
+    color: #495057;
+}
+
+/* Färgklasser (Odoo color 0–11) för headern — samma palett som hr.hierarchy */
+.o_org_node_color_0 { background: #eceff1; }
+.o_org_node_color_1 { background: #ffe0e0; }
+.o_org_node_color_2 { background: #ffe5cc; }
+.o_org_node_color_3 { background: #fff3cd; }
+.o_org_node_color_4 { background: #e8f5e9; }
+.o_org_node_color_5 { background: #e0f7fa; }
+.o_org_node_color_6 { background: #e3f2fd; }
+.o_org_node_color_7 { background: #ede7f6; }
+.o_org_node_color_8 { background: #f3e5f5; }
+.o_org_node_color_9 { background: #fce4ec; }
+.o_org_node_color_10 { background: #efebe9; }
+.o_org_node_color_11 { background: #fbe9e7; }
