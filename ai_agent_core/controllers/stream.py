@@ -36,6 +36,23 @@ except Exception:
 
 _logger = logging.getLogger(__name__)
 
+
+def _content_to_text(content):
+    """Normalisera OpenAI content till ren text.
+
+    Pi och andra OpenAI-klienter skickar content antingen som sträng
+    eller som multimodal array (t.ex. [{'type': 'text', 'text': '...'}]).
+    Session-lines och prompt-bygge kräver ren text — annars sparas
+    dict-formatet som strängrepresentation i DB (bugg: content ser ut
+    som "[{'type': 'text', 'text': '...'}]").
+    """
+    if isinstance(content, list):
+        texts = [
+            c.get('text', '') for c in content if c.get('type') == 'text'
+        ]
+        return '\n'.join(texts)
+    return content or ''
+
 # ---------------------------------------------------------------------------
 # SSE Controller
 # ---------------------------------------------------------------------------
@@ -2023,7 +2040,7 @@ class AIOpenAIAPI(http.Controller):
             return Response(json.dumps({'error': {'message': 'No user message provided', 'type': 'invalid_request_error'}}),
                           status=400, content_type='application/json')
 
-        prompt = user_messages[-1].get('content') or ''
+        prompt = _content_to_text(user_messages[-1].get('content'))
         system_prompt = quest.description or ''
 
         # Inject conversation history as context
@@ -2032,7 +2049,7 @@ class AIOpenAIAPI(http.Controller):
             history_lines = []
             for m in messages[:-1]:
                 role = m.get('role', 'user')
-                content = m.get('content') or ''
+                content = _content_to_text(m.get('content'))
                 history_lines.append(f'[{role}] {content[:500]}')
             history_context = '\n'.join(history_lines[-20:])
 
