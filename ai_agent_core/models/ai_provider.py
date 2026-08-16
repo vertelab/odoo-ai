@@ -459,6 +459,61 @@ class AIProvider(models.Model):
             self.status = 'error'
             raise UserError(_('Connection failed: %s') % str(e))
 
+    def _text_to_speech(self, text, model=None, voice=None):
+        """Text → ljud (TTS) via providern (OpenAI-kompatibel /v1/audio/speech).
+
+        Anropas av pbx_ai för samtals-coworker (receptionist): texten som
+        AI:n vill säga → ljud-bytes → ARI playback.
+
+        Args:
+            text: texten att tala
+            model: tts-modell (default: första is_asr-modellen, fallback
+                   'tts-1')
+            voice: röst (default 'alloy')
+
+        Returns:
+            bytes: ljudinnehåll (mp3) eller b'' vid fel
+        """
+        self.ensure_one()
+        import requests
+        try:
+            base = (self.base_url or '').rstrip('/')
+            url = base + '/audio/speech'
+            if not base:
+                return b''
+            if not model:
+                # Hitta första is_asr-modellen, annars tts-1
+                asr_model = self.env['ai.model'].search([
+                    ('provider', '=', self.id),
+                    ('is_asr', '=', True),
+                ], limit=1)
+                model = (asr_model.api_name or asr_model.name
+                         if asr_model else 'tts-1')
+            headers = {'Content-Type': 'application/json'}
+            if self.api_key:
+                headers['Authorization'] = 'Bearer %s' % self.api_key
+            if self.is_bifrost:
+                headers['X-Virtual-Key'] = self.api_key or ''
+            resp = requests.post(
+                url,
+                json={
+                    'model': model,
+                    'input': text,
+                    'voice': voice or 'alloy',
+                    'response_format': 'mp3',
+                },
+                headers=headers,
+                timeout=60,
+            )
+            if resp.status_code == 200:
+                return resp.content
+            _logger.warning('TTS failed %s: %s', resp.status_code,
+                            resp.text[:200])
+            return b''
+        except Exception as e:
+            _logger.warning('TTS error: %s', e)
+            return b''
+
 
 class AIProviderWizard(models.TransientModel):
     _name = 'ai.provider.wizard'
