@@ -129,6 +129,13 @@ class AICoworkerInitType(models.Model):
     # ── openai_api specific ──
     rate_limit_rpm = fields.Integer('Rate Limit (req/min)', default=30)
     rate_limit_tpm = fields.Integer('Rate Limit (tokens/min)', default=100000)
+    pi_instruction = fields.Text(
+        'Instruktion till externa klienter (pi/Cline)',
+        help='Markdown-text som skickas som system_prompt_add till klienten '
+             '(Pi-agenten). Instruerar klienten hur den ska arbeta med denna '
+             'coworker: verktyg, arbetsregler, skills att ladda. '
+             'Tom = ingen extra instruktion. Gäller ENBART init-typen '
+             'openai_api — andra init-typer orkestrerar som förut.')
 
     # ── watch specific ──
     # De flesta fälten är related till base_automation — ändringar skrivs

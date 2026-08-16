@@ -176,7 +176,8 @@ class AgentLoop:
         Returns the final ChatResponse when the agent is done.
         """
         messages = list(history) if history else []
-        messages.append(Message(role=Role.USER, content=prompt))
+        if prompt:
+            messages.append(Message(role=Role.USER, content=prompt))
 
         round_num = 0
         total_input_tokens = 0
@@ -800,7 +801,8 @@ class StreamingAgentLoop(AgentLoop):
         Yields tokens, tool_call_start, tool_call_end, and done events.
         """
         messages = list(history) if history else []
-        messages.append(Message(role=Role.USER, content=prompt))
+        if prompt:
+            messages.append(Message(role=Role.USER, content=prompt))
 
         round_num = 0
 

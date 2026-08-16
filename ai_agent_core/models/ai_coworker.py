@@ -3671,6 +3671,92 @@ class AICoworker(models.Model):
             ),
         )
 
+    def _build_pi_instruction(self, session=None):
+        """Bygg system_prompt_add för externa klienter (openai_api-vägen).
+
+        Kombinerar:
+        1. Statisk instruktion från init_type.pi_instruction (överst)
+        2. Coworkerns tillgängliga verktyg (tool_ids → namn + beskrivning)
+        3. Coworkerns skills (skill_ids → namn + trigger)
+        4. Session-kontext (kostnadskontext-status) om session ges
+
+        Returnerar markdown-sträng (eller '' om inget). Tyst no-op vid fel.
+        Gäller ENBART init-typen openai_api — andra init-typer orkestrerar
+        som förut.
+        """
+        try:
+            self.ensure_one()
+            parts = []
+
+            # 1. Statisk instruktion från openai_api-init-typen
+            oai = self.init_type_ids.filtered(
+                lambda it: it.init_type == 'openai_api' and it.enabled)[:1]
+            if oai and oai.pi_instruction:
+                parts.append(oai.pi_instruction)
+
+            # 2. Verktygskatalog (vad klienten kan be coworkern göra)
+            tools = self.sudo().tool_ids.filtered('active')
+            if tools:
+                tool_lines = [
+                    f"- **{t.name}**: {(t.description or '')[:200]}"
+                    for t in tools.sorted('name')
+                ]
+                parts.append(
+                    "## Verktyg som denna coworker kan använda\n"
+                    + '\n'.join(tool_lines))
+
+            # 3. Skill-katalog (vilka skills klienten kan ladda)
+            skills = self.sudo().skill_ids.filtered('active')
+            if skills:
+                skill_lines = [
+                    f"- **{s.name}**: {(s.description or '')[:200]}"
+                    + (f" [triggers: {s.trigger_keywords}]"
+                       if s.trigger_keywords else "")
+                    for s in skills.sorted('name')
+                ]
+                parts.append(
+                    "## Skills tillgängliga hos denna coworker\n"
+                    "(Ladda via /skill:namn om pi har dem lokalt, annars följ "
+                    "instruktionerna i svaren.)\n"
+                    + '\n'.join(skill_lines))
+
+            # 4. Session-kontext
+            if session:
+                cc = []
+                if 'project_id' in session._fields and session.project_id:
+                    cc.append(f"projekt: {session.project_id.name}")
+                if 'task_id' in session._fields and session.task_id:
+                    cc.append(f"uppgift: {session.task_id.name}")
+                if session.partner_id:
+                    cc.append(f"kund: {session.partner_id.name}")
+                confirmed = session.cost_context_confirmed
+                if cc or 'cost_context_confirmed' in session._fields:
+                    parts.append(
+                        "## Aktuell session\n"
+                        f"Kontext: {', '.join(cc) if cc else 'ingen (saknas)'}."
+                        f" Kostnadskontext bekräftad: "
+                        f"{'ja' if confirmed else 'nej'}.")
+
+            return '\n\n'.join(p for p in parts if p)
+        except Exception as e:
+            _logger.warning('_build_pi_instruction failed: %s', e)
+            return ''
+
+    def _pi_skill_to_load(self):
+        """Hitta första pi-kompatibla skill som klienten kan ladda.
+
+        Returnerar skill-namn (str) eller '' om ingen lämplig skill finns.
+        Pi-kompatibla skills har compatibility pi_python/pi_node/any.
+        """
+        try:
+            self.ensure_one()
+            for s in self.sudo().skill_ids.filtered('active').sorted('name'):
+                if s.compatibility in ('any', 'pi_python', 'pi_node'):
+                    return s.name
+        except Exception as e:
+            _logger.warning('_pi_skill_to_load failed: %s', e)
+        return ''
+
     def _get_nats_user_context(self):
         """Build user context dict for NATS tool execution (pi-agent-memory-bridge D5).
 
@@ -4330,7 +4416,8 @@ class AICoworker(models.Model):
         return tools, tool_access_groups
 
     def run(self, prompt, system_prompt=None, force_model=None,
-            force_agent=None, session=None):
+            force_agent=None, session=None, history=None,
+            interrupt_handler=None):
         """Run quest synchronously and return AI response text.
 
         Designed for bridge integrations (html_editor, mail, webhook, etc.)
@@ -4345,11 +4432,21 @@ class AICoworker(models.Model):
             session: Optional existing ai.coworker.session to reuse
                      (webhook flow keeps its own event-tracked session);
                      a new session is created when omitted.
+            history: Optional list[core.Message] — full konversationshistorik
+                     att köra loopen med (openai_api-vägen, återupptagning).
+                     När history ges och prompt är tom appendar loopen ingen
+                     extra user-message.
+            interrupt_handler: Optional HITL-handler (t.ex.
+                     OpenAIInterruptHandler) — pausar loopen vid HITL
+                     istället för auto-approve.
 
         Returns:
             str: AI response text (plain text, no markdown rendering)
         """
         self.ensure_one()
+
+        # AgentLoopPaused (openai_api-HITL): behövs i except-klausulen.
+        from odoo.addons.ai_agent_core.core.interrupt import AgentLoopPaused
 
         # Resolve model — force_model (7.5) → agent-modell → standard
         from odoo.addons.ai_agent_core.core.provider import get_default_model_name
@@ -4474,8 +4571,14 @@ class AICoworker(models.Model):
                         mode=PermissionMode.AUTO)
                     loop_obj.permissions.user_group_ids = set(tool_access_groups)
 
+                # HITL-handler (openai_api-vägen): pausar loopen vid
+                # godkännanden/förtydliganden istället för auto-approve.
+                if interrupt_handler is not None:
+                    loop_obj.interrupt_handler = interrupt_handler
+
                 async def _run():
-                    return await loop_obj.run(prompt)
+                    return await loop_obj.run(
+                        prompt, history=history or [])
 
                 response = loop.run_until_complete(_run())
             finally:
@@ -4589,10 +4692,55 @@ class AICoworker(models.Model):
 
             return result_text
 
+        except AgentLoopPaused:
+            # openai_api-vägen: loopen pausad för HITL — propagera till
+            # controllern som returnerar tool_calls i OpenAI-svar. Sessionen
+            # lämnas aktiv så nästa request kan återuppta.
+            raise
+
         except Exception as e:
             _logger.error('Quest run failed: %s', e, exc_info=True)
             session.write({'status': 'error'})
             return f'Error: {str(e)}'
+
+    def run_with_history(self, prompt, system_prompt=None, history=None,
+                         interrupt_handler=None, session=None,
+                         force_model=None, force_agent=None):
+        """Kör loopen med full historik + HITL-handler (openai_api-vägen).
+
+        Tunn delegator till run() med history + interrupt_handler —
+        samma setup (model, system_prompt, skills, session, budget,
+        verktyg, permission-engine, session-line-persistens).
+
+        Args:
+            prompt: Användarprompten (tom vid ren återupptagning —
+                    historiken innehåller redan user-meddelandet)
+            system_prompt: Optional override för systemprompt
+            history: list[core.Message] — full konversationshistorik
+                     (inkl. assistant-tool_calls + tool-resultat som par)
+            interrupt_handler: HITL-handler (OpenAIInterruptHandler) som
+                     pausar loopen via AgentLoopPaused vid godkännanden
+            session: Optional befintlig ai.coworker.session
+            force_model: Optional model override
+            force_agent: Optional ai.agent
+
+        Returns:
+            ChatResponse (ej sträng) — så att openai-controllern kan
+            fånga AgentLoopPaused och returnera tool_calls.
+        """
+        self.ensure_one()
+        from odoo.addons.ai_agent_core.core.interrupt import AgentLoopPaused
+        try:
+            return self.run(
+                prompt, system_prompt=system_prompt,
+                force_model=force_model, force_agent=force_agent,
+                session=session, history=history,
+                interrupt_handler=interrupt_handler,
+            )
+        except AgentLoopPaused:
+            # Låt pausen propagera till openai-controllern — den fångar
+            # och returnerar tool_calls i OpenAI-svar.
+            raise
 
     def powerbox(self, prompt, res_model=None, res_id=None, record=None):
         """Run quest as a powerbox — triggered from anywhere in Odoo.

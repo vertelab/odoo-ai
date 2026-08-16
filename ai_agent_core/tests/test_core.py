@@ -291,6 +291,68 @@ class TestAutoInterruptHandler(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# OpenAIInterruptHandler Tests (HITL-008)
+# ---------------------------------------------------------------------------
+
+class TestOpenAIInterruptHandler(unittest.TestCase):
+    """Test OpenAIInterruptHandler — pausar via AgentLoopPaused."""
+
+    def setUp(self):
+        from ai_agent_core.core.interrupt import (
+            OpenAIInterruptHandler, AgentLoopPaused)
+        self.handler = OpenAIInterruptHandler()
+        self.AgentLoopPaused = AgentLoopPaused
+
+    def test_ask_raises_agent_loop_paused(self):
+        """ask() kastar AgentLoopPaused med request_hitl_input-tool_call."""
+        import json
+        loop = asyncio.new_event_loop()
+        try:
+            with self.assertRaises(self.AgentLoopPaused) as cm:
+                loop.run_until_complete(
+                    self.handler.ask("Vilket projekt?", "clarification"))
+        finally:
+            loop.close()
+        exc = cm.exception
+        self.assertEqual(exc.state["kind"], "ask")
+        self.assertEqual(len(exc.tool_calls), 1)
+        tc = exc.tool_calls[0]
+        self.assertEqual(tc["function"]["name"], "request_hitl_input")
+        args = json.loads(tc["function"]["arguments"])
+        self.assertEqual(args["question"], "Vilket projekt?")
+        self.assertEqual(args["approval_type"], "clarification")
+        self.assertTrue(self.handler.paused)
+
+    def test_approve_tool_raises_agent_loop_paused(self):
+        """approve_tool() kastar AgentLoopPaused med request_hitl_approval."""
+        import json
+        loop = asyncio.new_event_loop()
+        try:
+            with self.assertRaises(self.AgentLoopPaused) as cm:
+                loop.run_until_complete(
+                    self.handler.approve_tool(
+                        "task_set_status", "write", {"task_id": 123}))
+        finally:
+            loop.close()
+        exc = cm.exception
+        self.assertEqual(exc.state["kind"], "approve_tool")
+        self.assertEqual(exc.state["tool"], "task_set_status")
+        tc = exc.tool_calls[0]
+        self.assertEqual(tc["function"]["name"], "request_hitl_approval")
+        args = json.loads(tc["function"]["arguments"])
+        self.assertEqual(args["tool"], "task_set_status")
+        self.assertEqual(args["risk_level"], "write")
+        self.assertEqual(args["arguments"], {"task_id": 123})
+
+    def test_drain_steer_empty(self):
+        """drain_steer() returnerar alltid tom lista."""
+        loop = asyncio.new_event_loop()
+        result = loop.run_until_complete(self.handler.drain_steer())
+        loop.close()
+        self.assertEqual(result, [])
+
+
+# ---------------------------------------------------------------------------
 # Agent Loop Tests (LOOP-001)
 # ---------------------------------------------------------------------------
 
@@ -304,7 +366,11 @@ class TestAgentLoop(unittest.TestCase):
 
         # Mock provider that returns a fixed response
         class MockProvider(AIProvider):
+            def __init__(self):
+                self.last_messages = []
+
             async def chat(self, model, messages, tools=None, system_prompt="", temperature=0.7, max_tokens=4096):
+                self.last_messages = list(messages)
                 return ChatResponse(
                     text="Mock response",
                     input_tokens=10,
@@ -339,6 +405,52 @@ class TestAgentLoop(unittest.TestCase):
         self.assertEqual(result.text, "Mock response")
         self.assertEqual(result.input_tokens, 10)
         self.assertEqual(result.output_tokens, 5)
+
+    def test_run_without_prompt_does_not_append_user_message(self):
+        """run(prompt="", history=...) appendar inte extra user-message."""
+        from ai_agent_core.core.provider import Message, Role
+        provider = self.MockProvider()
+        tools = self.ToolRegistry()
+        loop_obj = self.AgentLoop(
+            provider=provider, tools=tools,
+            config=self.AgentConfig(max_rounds=5),
+        )
+
+        history = [
+            Message(role=Role.USER, content="Sätt uppgift 123 till pågående"),
+            Message(role=Role.ASSISTANT, content="", tool_calls=[{
+                "id": "call_1", "type": "function",
+                "function": {"name": "request_hitl_approval",
+                              "arguments": "{}"}}]),
+            Message(role=Role.TOOL, content="approved",
+                    tool_call_id="call_1"),
+        ]
+
+        loop = asyncio.new_event_loop()
+        result = loop.run_until_complete(
+            loop_obj.run(prompt="", history=history))
+        loop.close()
+
+        self.assertEqual(result.text, "Mock response")
+        # Loopen fick historiken utan extra user-message — verifiera via
+        # att providern fick exakt 3 meddelanden (inte 4)
+        self.assertEqual(len(provider.last_messages), 3)
+
+    def test_run_with_prompt_still_appends(self):
+        """run(prompt="hej") appendar fortfarande user-message (bakåtkompat)."""
+        provider = self.MockProvider()
+        tools = self.ToolRegistry()
+        loop_obj = self.AgentLoop(
+            provider=provider, tools=tools,
+            config=self.AgentConfig(max_rounds=5),
+        )
+
+        loop = asyncio.new_event_loop()
+        result = loop.run_until_complete(loop_obj.run("hej"))
+        loop.close()
+
+        self.assertEqual(result.text, "Mock response")
+        self.assertEqual(len(provider.last_messages), 1)
 
     def test_run_with_tool_calls(self):
         call_count = [0]
