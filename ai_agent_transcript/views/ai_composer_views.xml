@@ -6,13 +6,13 @@
         <field name="name">ai.composer.tree</field>
         <field name="model">ai.composer</field>
         <field name="arch" type="xml">
-            <tree string="AI Composers" editable="bottom" create="1">
+            <list string="AI Composers" editable="bottom" create="1">
                 <field name="name"/>
                 <field name="interface_key" widget="badge" decoration-info="True"/>
                 <field name="focused_models" widget="many2many_tags"/>
-                <field name="ai_quest_id"/>
+                <field name="coworker_id"/>
                 <field name="active" widget="boolean_toggle"/>
-            </tree>
+            </list>
         </field>
     </record>
 
@@ -32,7 +32,7 @@
                         </h1>
                         <group name="main" col="2">
                             <field name="interface_key" required="1"/>
-                            <field name="ai_quest_id" required="1"/>
+                            <field name="coworker_id" required="1"/>
                             <field name="focused_models" widget="many2many_tags"/>
                             <field name="active" widget="boolean_toggle"/>
                         </group>
@@ -60,13 +60,13 @@
                 <field name="name"/>
                 <field name="interface_key"/>
                 <field name="focused_models"/>
-                <field name="ai_quest_id"/>
+                <field name="coworker_id"/>
                 <filter name="active" string="Active" domain="[('active', '=', True)]"/>
                 <group string="Group By" name="groupby">
                     <filter name="by_interface" string="Interface Key"
                             context="{'group_by': 'interface_key'}"/>
                     <filter name="by_quest" string="AI Quest"
-                            context="{'group_by': 'ai_quest_id'}"/>
+                            context="{'group_by': 'coworker_id'}"/>
                 </group>
             </search>
         </field>

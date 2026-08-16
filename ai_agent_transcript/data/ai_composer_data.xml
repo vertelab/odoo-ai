@@ -2,23 +2,25 @@
 <odoo>
     <data noupdate="1">
 
-        <!-- Default Powerbox Quest -->
-        <record id="ai_quest_powerbox_default" model="ai.quest">
+                <!-- Default Powerbox Coworker -->
+        <record id="ai_coworker_powerbox_default" model="ai.coworker">
             <field name="name">Powerbox Assistant</field>
-            <field name="init_type">powerbox</field>
-            <field name="description">Default powerbox quest triggered from form views and editors.</field>
-            <field name="system_prompt">
-You are an AI assistant integrated into Odoo. You help users with their work by
-answering questions, drafting content, summarizing information, and performing
-other text-based tasks.
+            <field name="sub_description">Default powerbox-assistent från formulär/redigerare</field>
+            <field name="description">
+Du är en AI-assistent integrerad i Odoo. Du hjälper användare med deras
+arbete genom att svara på frågor, utkasta innehåll, sammanfatta
+information och utföra andra textbaserade uppgifter.
 
-When the user provides you with record context (as JSON), use that information
-to give accurate, context-aware responses. If the user asks about specific
-records, refer to the provided context.
+När användaren ger dig rekordkontext (som JSON), använd den informationen
+för att ge korrekta, kontextmedvetna svar. Om användaren frågar om
+specifika poster, referera till den givna kontexten.
 
-Always format your answers using Markdown. Be concise but thorough.
+Formatera alltid dina svar med Markdown. Var koncis men grundlig.
             </field>
-            <field name="active" eval="True"/>
+            <field name="status">active</field>
+            <field name="hitl_threshold">always</field>
+            <field name="orchestration_mode">single</field>
+            <field name="init_type">powerbox</field>
         </record>
 
         <!-- Default Powerbox Composers -->
@@ -27,7 +29,7 @@ Always format your answers using Markdown. Be concise but thorough.
         <record id="ai_composer_html_field" model="ai.composer">
             <field name="name">HTML Field — AI Write</field>
             <field name="interface_key">html_field_record</field>
-            <field name="ai_quest_id" ref="ai_quest_powerbox_default"/>
+            <field name="coworker_id" ref="ai_coworker_powerbox_default"/>
             <field name="default_prompt">
 You are writing content in an Odoo HTML field. Your response will be inserted
 directly into the field. Write in a professional tone appropriate for business
@@ -46,7 +48,7 @@ Write bullet points</field>
         <record id="ai_composer_mail" model="ai.composer">
             <field name="name">Email Composer — AI Write</field>
             <field name="interface_key">mail_composer</field>
-            <field name="ai_quest_id" ref="ai_quest_powerbox_default"/>
+            <field name="coworker_id" ref="ai_coworker_powerbox_default"/>
             <field name="default_prompt">
 You are drafting an email in Odoo. Write in a professional, clear tone. 
 The email should be well-structured with appropriate greeting and closing.
@@ -64,7 +66,7 @@ Write a thank-you note</field>
         <record id="ai_composer_text_select" model="ai.composer">
             <field name="name">Text Selection — AI Rewrite</field>
             <field name="interface_key">html_field_text_select</field>
-            <field name="ai_quest_id" ref="ai_quest_powerbox_default"/>
+            <field name="coworker_id" ref="ai_coworker_powerbox_default"/>
             <field name="default_prompt">
 You are rewriting text selected by the user. Maintain the original meaning
 but improve clarity, tone, and structure. Use Markdown formatting.
@@ -82,7 +84,7 @@ Expand with more detail</field>
         <record id="ai_composer_chatter" model="ai.composer">
             <field name="name">Chatter — Ask AI</field>
             <field name="interface_key">chatter_ai_button</field>
-            <field name="ai_quest_id" ref="ai_quest_powerbox_default"/>
+            <field name="coworker_id" ref="ai_coworker_powerbox_default"/>
             <field name="default_prompt">
 You are assisting a user who is viewing an Odoo record. They may ask you to
 summarize the record, analyze the chatter history, suggest next steps, or
@@ -102,7 +104,7 @@ Find issues mentioned in the chatter</field>
         <record id="ai_composer_systray" model="ai.composer">
             <field name="name">Systray — Ask AI</field>
             <field name="interface_key">systray_ai_button</field>
-            <field name="ai_quest_id" ref="ai_quest_powerbox_default"/>
+            <field name="coworker_id" ref="ai_coworker_powerbox_default"/>
             <field name="default_prompt">
 You are a general AI assistant in Odoo. The user may ask you about anything
 related to their work. Be helpful, concise, and accurate. If you need more
@@ -120,7 +122,7 @@ Generate a report about...</field>
         <record id="ai_composer_voice_transcript" model="ai.composer">
             <field name="name">Voice Transcription — Summarize</field>
             <field name="interface_key">voice_transcription_component</field>
-            <field name="ai_quest_id" ref="ai_quest_powerbox_default"/>
+            <field name="coworker_id" ref="ai_coworker_powerbox_default"/>
             <field name="default_prompt">
 Summarize the transcript below. Extract key points, action items, and decisions.
 Be concise but thorough. Use Markdown formatting.

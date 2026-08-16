@@ -51,22 +51,38 @@ const powerboxService = {
                 }
 
                 try {
-                    const result = await rpc("/web/dataset/call_kw", {
-                        model: "ai.quest.session",
-                        method: "open_powerbox_quest",
+                    // 1. Hitta composer via ai.composer (transcript-modulen)
+                    const composer = await rpc("/web/dataset/call_kw", {
+                        model: "ai.composer",
+                        method: "find_composer",
                         args: [[]],
                         kwargs: {
                             interface_key: interfaceKey,
-                            record_model: recordModel,
-                            record_id: recordId,
-                            text_selection: textSelection,
-                            frontend_info: frontendInfo
-                                ? JSON.stringify(frontendInfo)
-                                : undefined,
+                            model_name: recordModel,
                         },
                     });
 
-                    return result;
+                    if (!composer || !composer.coworker_id) {
+                        notification.add(
+                            "Ingen AI-composer hittades för denna interface-punkt.",
+                            { type: "warning" }
+                        );
+                        return null;
+                    }
+
+                    // 2. Kör powerbox via core-endpoint (/ai/powerbox/run)
+                    const run = await fetch("/ai/powerbox/run", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            coworker_id: composer.coworker_id[0],
+                            text: textSelection || "Hjälp mig med detta rekord",
+                            model: recordModel,
+                            res_id: recordId,
+                        }),
+                    });
+                    const data = await run.json();
+                    return data;
                 } catch (error) {
                     console.error("[powerbox] Failed to open quest:", error);
                     notification.add(
