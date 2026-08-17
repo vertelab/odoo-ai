@@ -1,0 +1,936 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+pi-agent — tunn fristående agent för lokal exekvering, orkestrerad från Odoo.
+
+Användningsfall:
+  - Manuell single-shot:  pi-agent --coworker <id> --prompt "..." --skills a,b
+  - REPL:                 pi-agent --coworker <id>
+  - Orkestrerad:          pi-agent --task <id> --callback /pi/callback/<id>
+  - Lazy discovery:       pi-agent --list-tools
+
+LLM via Odoo:  POST /ai/openai/<coworker_id>/v1/chat/completions
+  (openai_api-controllern — returnerar tool_calls, stödjer HITL-via-tool_calls)
+  OBS: /ai/v1/chat/completions (stream.py) kör verktyg inuti Odoo och
+  returnerar bara text — det är fel endpoint för denna agent.
+
+Auth: Bearer api-nyckel (res.users.apikeys). Enda credential.
+Skills: hämtas från Odoo (GET /ai/v1/skills?names=...) — byggs in i
+  systemprompten av agenten (Alternativ A).
+
+Beroenden: python3.10+, httpx (eller urllib), agent-browser (frivilligt),
+  salt CLI (frivilligt), ssh (frivilligt).
+"""
+
+import argparse
+import json
+import os
+import shutil
+import subprocess
+import sys
+import time
+import urllib.parse
+from typing import Any, Callable, Dict, List, Optional
+
+try:
+    import httpx
+except ImportError:  # pragma: no cover
+    httpx = None
+
+VERSION = "0.1.0"
+DEFAULT_TIMEOUT = 300  # sekunder per uppdrag
+ABORT_POLL_INTERVAL = 2.0  # sekunder mellan abort-polls
+
+
+# ════════════════════════════════════════════════════════════════════
+# Konfiguration
+# ════════════════════════════════════════════════════════════════════
+
+class Config:
+    def __init__(self, args):
+        self.base_url = (args.base_url or os.environ.get("PI_AGENT_BASE_URL", "")).rstrip("/")
+        self.api_key = args.api_key or os.environ.get("PI_AGENT_API_KEY", "")
+        self.coworker = args.coworker or os.environ.get("PI_AGENT_COWORKER", "")
+        self.skills = args.skills or os.environ.get("PI_AGENT_SKILLS", "")
+        self.timeout = args.timeout or int(os.environ.get("PI_AGENT_TIMEOUT", DEFAULT_TIMEOUT))
+        self.task = args.task
+        self.callback = args.callback
+        self.abort_poll = args.abort_poll
+        self.json_out = args.json
+        self.mode = getattr(args, "mode", "") or ""
+        self.port = getattr(args, "port", 0) or 0
+        self.name = getattr(args, "name", "") or os.environ.get("PI_AGENT_NAME", socket.gethostname())
+
+    def validate(self):
+        if not self.base_url:
+            raise ConfigError("--base-url (eller PI_AGENT_BASE_URL) krävs")
+        if not self.api_key:
+            raise ConfigError("--api-key (eller PI_AGENT_API_KEY) krävs")
+        if not self.coworker:
+            raise ConfigError("--coworker (eller PI_AGENT_COWORKER) krävs")
+
+
+class ConfigError(Exception):
+    pass
+
+
+# ════════════════════════════════════════════════════════════════════
+# HTTP-klient (httpx om tillgängligt, annars urllib)
+# ════════════════════════════════════════════════════════════════════
+
+class HttpClient:
+    def __init__(self, cfg: Config):
+        self.cfg = cfg
+        self.headers = {
+            "Authorization": f"Bearer {cfg.api_key}",
+            "Content-Type": "application/json",
+        }
+        self._client = httpx.Client(timeout=cfg.timeout) if httpx else None
+
+    def post_json(self, path: str, payload: dict) -> dict:
+        url = self.cfg.base_url + path
+        if self._client:
+            resp = self._client.post(url, json=payload, headers=self.headers)
+            return self._parse(resp)
+        # urllib fallback
+        import urllib.request as ur
+        req = ur.Request(url, data=json.dumps(payload).encode(),
+                         headers=self.headers, method="POST")
+        with ur.urlopen(req, timeout=self.cfg.timeout) as r:
+            return json.loads(r.read().decode())
+
+    def get_json(self, path: str) -> dict:
+        url = self.cfg.base_url + path
+        if self._client:
+            resp = self._client.get(url, headers=self.headers)
+            return self._parse(resp)
+        import urllib.request as ur
+        req = ur.Request(url, headers=self.headers, method="GET")
+        with ur.urlopen(req, timeout=self.cfg.timeout) as r:
+            return json.loads(r.read().decode())
+
+    def _parse(self, resp) -> dict:
+        try:
+            data = resp.json()
+        except Exception:
+            data = {"raw": resp.text}
+        if resp.status_code >= 400:
+            raise ApiError(resp.status_code, data)
+        return data
+
+    def close(self):
+        if self._client:
+            self._client.close()
+
+
+class ApiError(Exception):
+    def __init__(self, status, data):
+        self.status = status
+        self.data = data
+        msg = data.get("error", {}).get("message", str(data)) if isinstance(data, dict) else str(data)
+        super().__init__(f"API {status}: {msg}")
+
+
+# ════════════════════════════════════════════════════════════════════
+# Verktyg — agenten äger sin verktygskatalog
+# ════════════════════════════════════════════════════════════════════
+
+def _run_cmd(cmd: List[str], timeout: int = 60) -> str:
+    """Kör ett kommando och returnerar stdout+stderr (eller felmeddelande)."""
+    try:
+        proc = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=timeout,
+        )
+        out = (proc.stdout or "").strip()
+        err = (proc.stderr or "").strip()
+        if proc.returncode != 0:
+            return f"exit={proc.returncode}\n{out}\n{err}".strip()
+        return out or "(no output)"
+    except subprocess.TimeoutExpired:
+        return f"timeout after {timeout}s"
+    except FileNotFoundError as e:
+        return f"command not found: {e}"
+    except Exception as e:
+        return f"error: {e}"
+
+
+def tool_bash(args: dict) -> str:
+    """Kör bash-kommando lokalt."""
+    cmd = (args.get("cmd") or args.get("command") or "").strip()
+    if not cmd:
+        return "error: 'cmd' krävs"
+    timeout = int(args.get("timeout") or 60)
+    return _run_cmd(["bash", "-c", cmd], timeout=timeout)
+
+
+def tool_read(args: dict) -> str:
+    """Läs en fil."""
+    path = args.get("path") or ""
+    if not path:
+        return "error: 'path' krävs"
+    try:
+        with open(path, "r", errors="replace") as f:
+            content = f.read()
+        if len(content) > 20000:
+            content = content[:20000] + f"\n... (trunkerad, total {len(content)} tecken)"
+        return content
+    except Exception as e:
+        return f"error: {e}"
+
+
+def tool_write(args: dict) -> str:
+    """Skriv till en fil."""
+    path = args.get("path") or ""
+    content = args.get("content") or ""
+    if not path:
+        return "error: 'path' krävs"
+    try:
+        os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+        with open(path, "w") as f:
+            f.write(content)
+        return f"skrev {len(content)} tecken till {path}"
+    except Exception as e:
+        return f"error: {e}"
+
+
+def tool_salt(args: dict) -> str:
+    """Kör salt-kommando mot minioner."""
+    cmd = (args.get("cmd") or args.get("command") or "").strip()
+    if not cmd:
+        return "error: 'cmd' krävs (t.ex. 'salt * test.ping')"
+    if shutil.which("salt") is None:
+        return "error: salt CLI saknas på denna maskin"
+    timeout = int(args.get("timeout") or 120)
+    # 'cmd' kan vara "salt '*' test.ping" — splitta säkert
+    parts = cmd.split()
+    return _run_cmd(parts, timeout=timeout)
+
+
+def tool_ssh(args: dict) -> str:
+    """SSH till en värd och kör kommando."""
+    host = args.get("host") or ""
+    cmd = (args.get("cmd") or args.get("command") or "").strip()
+    if not host or not cmd:
+        return "error: 'host' och 'cmd' krävs"
+    if shutil.which("ssh") is None:
+        return "error: ssh saknas på denna maskin"
+    timeout = int(args.get("timeout") or 60)
+    return _run_cmd(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10",
+                     host, cmd], timeout=timeout)
+
+
+def tool_screenshot(args: dict) -> str:
+    """Skärmdump via agent-browser (CDP)."""
+    url = args.get("url") or ""
+    if not url:
+        return "error: 'url' krävs"
+    if shutil.which("agent-browser") is None:
+        return "error: agent-browser saknas på denna maskin"
+    timeout = int(args.get("timeout") or 90)
+    out_dir = args.get("out_dir") or "/tmp"
+    os.makedirs(out_dir, exist_ok=True)
+    ts = int(time.time())
+    path = os.path.join(out_dir, f"screenshot_{ts}.png")
+    steps = [
+        ["agent-browser", "open", url],
+        ["agent-browser", "wait", "--load", "networkidle"],
+        ["agent-browser", "screenshot", "--full", path],
+    ]
+    for step in steps:
+        result = _run_cmd(step, timeout=timeout)
+        if result.startswith("exit=") or result.startswith("error"):
+            return f"screenshot misslyckades: {result}"
+    return f"bild sparad till {path}"
+
+
+# Verktygs-dispatch-tabell. Markdown-beskrivningarna används av
+# --list-tools (lazy discovery): Odoo frågar agenten, agenten svarar
+# med markdown, Odoo underhåller inget.
+
+TOOLS: Dict[str, Dict[str, Any]] = {
+    "bash": {
+        "description": "Kör bash-kommandon lokalt på minionen.",
+        "example": "systemctl status caddy, tail -n 100 /var/log/caddy",
+        "handler": tool_bash,
+        "capabilities": ["cli", "infra"],
+    },
+    "read": {
+        "description": "Läs en fil lokalt.",
+        "example": "read /etc/hosts, read /var/log/odoo/odoo-server.log",
+        "handler": tool_read,
+        "capabilities": ["fs"],
+    },
+    "write": {
+        "description": "Skriv till en fil lokalt.",
+        "example": "write /tmp/notes.txt",
+        "handler": tool_write,
+        "capabilities": ["fs"],
+    },
+    "salt": {
+        "description": "Kör Salt-kommandon mot andra minioner.",
+        "example": "salt '*' test.ping, salt <host> state.apply postfix",
+        "handler": tool_salt,
+        "capabilities": ["infra", "salt"],
+    },
+    "ssh": {
+        "description": "SSH till andra värdar och kör kommandon.",
+        "example": "ssh sto-02 'df -h'",
+        "handler": tool_ssh,
+        "capabilities": ["infra", "ssh"],
+    },
+    "screenshot": {
+        "description": "Skärmdump via agent-browser (CDP).",
+        "example": "öppna URL, vänta, skärmdump → bild",
+        "handler": tool_screenshot,
+        "capabilities": ["browser"],
+    },
+}
+
+
+def tool_markdown() -> str:
+    """Markdown-katalog av verktygen (lazy discovery)."""
+    lines = ["# Verktyg", ""]
+    for name in sorted(TOOLS):
+        t = TOOLS[name]
+        lines.append(f"## {name}")
+        lines.append(t["description"])
+        if t.get("example"):
+            lines.append(f"Exempel: {t['example']}")
+        lines.append("")
+    return "\n".join(lines).strip()
+
+
+def execute_tool(name: str, args: dict) -> str:
+    """Exekvera ett verktyg; returnerar text (eller felmeddelande)."""
+    tool = TOOLS.get(name)
+    if not tool:
+        return f"error: okänt verktyg '{name}'"
+    try:
+        return tool["handler"](args or {})
+    except Exception as e:
+        return f"error: {e}"
+
+
+# ════════════════════════════════════════════════════════════════════
+# Skills från Odoo
+# ════════════════════════════════════════════════════════════════════
+
+def fetch_skills(http: HttpClient, skill_names: List[str]) -> List[Dict]:
+    """Hämta skills-markdown från Odoo (GET /ai/v1/skills?names=...)."""
+    if not skill_names:
+        return []
+    names = ",".join(skill_names)
+    path = f"/ai/v1/skills?names={urllib.parse.quote(names)}"
+    try:
+        data = http.get_json(path)
+        return data.get("skills", data.get("data", [])) if isinstance(data, dict) else []
+    except ApiError as e:
+        if e.status in (404, 501):
+            print(f"[pi-agent] varning: /ai/v1/skills ej tillgänglig ({e.status}) — fortsätter utan skills",
+                  file=sys.stderr)
+            return []
+        raise
+
+
+def build_system_prompt(coworker_description: str = "", skills: List[Dict] = None) -> str:
+    """Bygg systemprompten: basbeskrivning + skills (Alternativ A)."""
+    parts = []
+    if coworker_description:
+        parts.append(coworker_description)
+    if skills:
+        skill_parts = ["Dina skills:"]
+        for s in skills:
+            name = s.get("technical_name") or s.get("name") or "?"
+            instr = (s.get("instruction") or "").strip()
+            if instr:
+                skill_parts.append(f"--- {name} ---\n{instr}")
+        parts.append("\n\n".join(skill_parts))
+    if not parts:
+        parts.append("Du är en pi-agent som exekverar uppdrag åt Odoo.")
+    return "\n\n".join(parts)
+
+
+# ════════════════════════════════════════════════════════════════════
+# LLM-loop via Odoo OpenAI-gateway
+# ════════════════════════════════════════════════════════════════════
+
+class AgentLoop:
+    """Tunn OpenAI-klient: skickar messages, exekverar tool_calls lokalt."""
+
+    def __init__(self, cfg: Config, http: HttpClient, system_prompt: str = "",
+                 on_hitl: Optional[Callable[[str, dict], str]] = None):
+        self.cfg = cfg
+        self.http = http
+        self.system_prompt = system_prompt
+        self.on_hitl = on_hitl  # callable(fråga, tool_call) -> "approved"/"denied"/svar
+        self.messages: List[Dict] = []
+        self.last_session_id = 0
+        self.abort_requested = False  # sätts av server-läget vid abort
+
+    def _chat(self, messages: List[Dict]) -> Dict:
+        payload = {
+            "messages": messages,
+            "stream": False,
+            "model": self.cfg.coworker,
+            "max_tokens": 4096,
+        }
+        data = self.http.post_json(
+            f"/ai/openai/{self.cfg.coworker}/v1/chat/completions",
+            payload,
+        )
+        self.last_session_id = data.get("session_id") or self.last_session_id
+        return data
+
+    def run(self, prompt: str) -> str:
+        """Kör LLM-loopen tills svar (utan fler tool_calls)."""
+        # Systemprompt skickas som första system-meddelande
+        self.messages = []
+        if self.system_prompt:
+            self.messages.append({"role": "system", "content": self.system_prompt})
+        self.messages.append({"role": "user", "content": prompt})
+
+        max_rounds = 20  # skyddsnät mot oändliga loopar
+        for round_idx in range(max_rounds):
+            # Lokal abort (server-läge): avbryt direkt
+            if self.abort_requested:
+                raise AbortError("uppdrag aborterat")
+            # Abort-poll mellan varv (orkestrerat läge)
+            if self.cfg.task and self.cfg.abort_poll:
+                try:
+                    if check_abort(self.http, int(self.cfg.task)):
+                        raise AbortError("uppdrag aborterat")
+                except AbortError:
+                    raise
+                except Exception:
+                    pass  # poll-fel ska inte krascha loopen
+
+            data = self._chat(self.messages)
+            choices = data.get("choices", [])
+            if not choices:
+                return f"error: inga choices i svar: {json.dumps(data)[:500]}"
+            message = choices[0].get("message", {})
+            tool_calls = message.get("tool_calls")
+
+            if tool_calls:
+                self.messages.append({
+                    "role": "assistant",
+                    "content": message.get("content"),
+                    "tool_calls": tool_calls,
+                })
+                for tc in tool_calls:
+                    fn = tc.get("function", {})
+                    name = fn.get("name", "")
+                    try:
+                        fn_args = json.loads(fn.get("arguments") or "{}")
+                    except json.JSONDecodeError:
+                        fn_args = {}
+
+                    # HITL-tool_calls (request_hitl_approval/input) exekveras
+                    # INTE lokalt — vidarebefordras till on_hitl.
+                    if name in ("request_hitl_approval", "request_hitl_input"):
+                        result = self._handle_hitl(name, fn_args, tc.get("id", ""))
+                    else:
+                        print(f"[pi-agent] tool: {name}({json.dumps(fn_args, ensure_ascii=False)[:200]})",
+                              file=sys.stderr)
+                        result = execute_tool(name, fn_args)
+
+                    self.messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc.get("id", ""),
+                        "content": result,
+                    })
+                continue
+
+            # Normalt svar
+            content = message.get("content") or ""
+            return content
+
+        return "error: max_rounds uppnått utan slutligt svar"
+
+    def _handle_hitl(self, name: str, fn_args: dict, tool_call_id: str) -> str:
+        """HITL: fråga människan (REPL) eller rapportera 'awaiting approval'."""
+        question = (fn_args.get("question") or fn_args.get("message") or
+                    json.dumps(fn_args, ensure_ascii=False))
+        if self.on_hitl:
+            return self.on_hitl(name, fn_args)
+        # REPL-läge: fråga användaren direkt
+        print(f"\n[HITL {name}] {question}", file=sys.stderr)
+        answer = input("Svar (approved/denied/eller text): ").strip().lower()
+        if answer in ("approved", "yes", "y", "ja", "godkänn"):
+            return "approved"
+        if answer in ("denied", "no", "n", "nej", "avslå"):
+            return "denied"
+        return answer
+
+
+# ════════════════════════════════════════════════════════════════════
+# Orkestrerad körning (--task)
+# ════════════════════════════════════════════════════════════════════
+
+def fetch_task(http: HttpClient, task_id: int) -> Dict:
+    """Hämta uppdrag från Odoo (GET /pi/task/<id>)."""
+    data = http.get_json(f"/pi/task/{task_id}")
+    return data.get("task", data)
+
+
+def post_callback(http: HttpClient, callback: str, payload: dict) -> None:
+    """Postera resultat till callback-URL (t.ex. /pi/callback/<id>)."""
+    if not callback:
+        return
+    if not callback.startswith("/"):
+        callback = "/" + callback
+    http.post_json(callback, payload)
+
+
+def check_abort(http: HttpClient, task_id: int) -> bool:
+    """Kolla om uppdraget är aborterat (state=aborting). True = avbryt."""
+    try:
+        data = fetch_task(http, task_id)
+        return (data.get("state") or "") == "aborting"
+    except Exception:
+        return False
+
+
+def run_orchestrated(cfg: Config, http: HttpClient) -> int:
+    """Kör uppdrag orkestrerat från Odoo."""
+    task_id = int(cfg.task)
+    print(f"[pi-agent] hämtar uppdrag {task_id}...", file=sys.stderr)
+    task = fetch_task(http, task_id)
+    prompt = task.get("prompt") or ""
+    skills_names = task.get("skills") or task.get("skill_ids") or []
+    if isinstance(skills_names, list) and skills_names and isinstance(skills_names[0], dict):
+        skills_names = [s.get("technical_name") or s.get("name") for s in skills_names]
+    model_ref = task.get("model") or ""
+
+    if not prompt:
+        post_callback(http, cfg.callback, {"state": "failed", "result": "tom prompt"})
+        return 1
+
+    skills = fetch_skills(http, [s for s in skills_names if s])
+
+    # on_hitl i orkestrerat läge: rapportera "awaiting approval" och vänta
+    # (Odoo löser HITL:en; agenten pollar tills state inte längre är paused).
+    def _orchestrated_hitl(name, args):
+        post_callback(http, cfg.callback, {
+            "state": "hitl", "hitl": name, "hitl_args": args,
+        })
+        # Vänta tills uppdraget inte längre är i HITL-läge (Odoo uppdaterar)
+        deadline = time.time() + cfg.timeout
+        while time.time() < deadline:
+            if check_abort(http, task_id):
+                raise AbortError("uppdrag aborterat under HITL")
+            try:
+                t = fetch_task(http, task_id)
+                hitl_state = t.get("hitl_state") or t.get("state")
+                if hitl_state in ("approved", "resolved"):
+                    return "approved"
+                if hitl_state in ("denied", "rejected", "aborted"):
+                    return "denied"
+            except Exception:
+                pass
+            time.sleep(ABORT_POLL_INTERVAL)
+        return "denied"  # timeout → avslå
+
+    loop = AgentLoop(cfg, http, system_prompt=build_system_prompt("", skills),
+                     on_hitl=_orchestrated_hitl)
+
+    try:
+        result_text = loop.run(prompt)
+        # Callback med resultat (utan artifacts för nu)
+        post_callback(http, cfg.callback, {
+            "state": "done",
+            "result": result_text,
+            "session_id": loop.last_session_id or task_id,
+        })
+        print(result_text)
+        return 0
+    except AbortError as e:
+        post_callback(http, cfg.callback, {"state": "aborted", "result": str(e)})
+        print(f"[pi-agent] {e}", file=sys.stderr)
+        return 1
+    except Exception as e:
+        post_callback(http, cfg.callback, {"state": "failed", "result": str(e)})
+        print(f"[pi-agent] fel: {e}", file=sys.stderr)
+        return 1
+
+
+class AbortError(Exception):
+    pass
+
+
+# ════════════════════════════════════════════════════════════════════
+# REPL
+# ════════════════════════════════════════════════════════════════════
+
+def run_repl(cfg: Config, http: HttpClient) -> int:
+    """Enkel interaktiv loop."""
+    skills = fetch_skills(http, [s.strip() for s in cfg.skills.split(",") if s.strip()])
+    loop = AgentLoop(cfg, http, system_prompt=build_system_prompt("", skills))
+    print("pi-agent REPL. /skills <a,b>, /quit. Ctrl-C för att avsluta.", file=sys.stderr)
+
+    while True:
+        try:
+            prompt = input("> ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print(file=sys.stderr)
+            return 0
+        if not prompt:
+            continue
+        if prompt.startswith("/quit") or prompt.startswith("/exit"):
+            return 0
+        if prompt.startswith("/skills"):
+            parts = prompt.split(None, 1)
+            names = [s.strip() for s in (parts[1] if len(parts) > 1 else "").split(",") if s.strip()]
+            skills = fetch_skills(http, names)
+            loop.system_prompt = build_system_prompt("", skills)
+            print(f"skills laddade: {names}", file=sys.stderr)
+            continue
+        try:
+            answer = loop.run(prompt)
+            print(answer)
+        except KeyboardInterrupt:
+            print("\n[avbruten]", file=sys.stderr)
+        except Exception as e:
+            print(f"fel: {e}", file=sys.stderr)
+
+
+# ════════════════════════════════════════════════════════════════════
+# Single-shot (--prompt)
+# ════════════════════════════════════════════════════════════════════
+
+def run_single_shot(cfg: Config, http: HttpClient, prompt: str) -> int:
+    skills = fetch_skills(http, [s.strip() for s in cfg.skills.split(",") if s.strip()])
+    loop = AgentLoop(cfg, http, system_prompt=build_system_prompt("", skills))
+    try:
+        answer = loop.run(prompt)
+        if cfg.json_out:
+            print(json.dumps({"result": answer, "session_id": loop.last_session_id},
+                             ensure_ascii=False))
+        else:
+            print(answer)
+        return 0
+    except Exception as e:
+        print(json.dumps({"error": str(e)}, ensure_ascii=False) if cfg.json_out else f"fel: {e}")
+        return 1
+
+
+# ════════════════════════════════════════════════════════════════════
+# Portallokering (--find-free-port) och server-läge (--mode serve)
+# ════════════════════════════════════════════════════════════════════
+
+import socket
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+
+def find_free_port(start: int = 9100, count: int = 1) -> List[int]:
+    """Hitta lediga portar på localhost, med start från `start`.
+
+    Används av dispatchern (Odoo) FÖRE start: agenten startas sedan med
+    --port <vald>. OS-socket-bind garanterar att porten är ledig.
+    """
+    ports = []
+    port = start
+    while len(ports) < count:
+        if port > 65535:
+            break
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            try:
+                s.bind(("127.0.0.1", port))
+                ports.append(port)
+            except OSError:
+                pass  # upptagen — prova nästa
+        port += 1
+    return ports
+
+
+class ServeState:
+    """Tillstånd för server-läget: event-kö + pågående körning."""
+
+    def __init__(self, cfg: Config, http: HttpClient):
+        self.cfg = cfg
+        self.http = http
+        self.lock = threading.Lock()
+        self.events: List[Dict] = []
+        self.next_event_id = 1
+        self.current_thread: Optional[threading.Thread] = None
+        self.abort_flag = False
+        self.last_loop: Optional[AgentLoop] = None
+
+    def emit(self, event_type: str, **data) -> Dict:
+        with self.lock:
+            ev = {"id": self.next_event_id, "type": event_type, **data}
+            self.next_event_id += 1
+            self.events.append(ev)
+            # Bounded: behåll senaste 1000 events
+            if len(self.events) > 1000:
+                self.events = self.events[-1000:]
+            return ev
+
+    def events_since(self, since: int) -> List[Dict]:
+        with self.lock:
+            return [e for e in self.events if e["id"] > since]
+
+    def is_busy(self) -> bool:
+        return self.current_thread is not None and self.current_thread.is_alive()
+
+    def request_abort(self) -> bool:
+        self.abort_flag = True
+        if self.last_loop:
+            self.last_loop.abort_requested = True
+        return True
+
+
+def _run_serve_task(state: ServeState, prompt: str, skills_names: List[str],
+                    on_hitl: Optional[Callable[[str, dict], str]] = None):
+    """Kör LLM-loopen i en tråd och emitterar events."""
+    state.emit("status", status="running")
+    try:
+        skills = fetch_skills(state.http, [s for s in skills_names if s])
+        loop = AgentLoop(state.cfg, state.http,
+                         system_prompt=build_system_prompt("", skills),
+                         on_hitl=on_hitl)
+        state.last_loop = loop
+        state.abort_flag = False
+
+        result = loop.run(prompt)
+        if state.abort_flag:
+            state.emit("status", status="aborted", result="uppdrag aborterat")
+        else:
+            state.emit("response", content=result,
+                       session_id=loop.last_session_id)
+            state.emit("status", status="done")
+    except AbortError as e:
+        state.emit("status", status="aborted", result=str(e))
+    except Exception as e:
+        state.emit("error", message=str(e))
+        state.emit("status", status="error")
+    finally:
+        state.current_thread = None
+        state.last_loop = None
+
+
+class ServeHandler(BaseHTTPRequestHandler):
+    """HTTP-handler för pi-agent-serven (localhost)."""
+
+    state: ServeState = None  # sätts av run_serve
+
+    def log_message(self, fmt, *args):  # tystare loggning
+        if os.environ.get("PI_AGENT_DEBUG"):
+            sys.stderr.write("[pi-agent-serve] %s\n" % (fmt % args))
+
+    def _auth_ok(self) -> bool:
+        auth = self.headers.get("Authorization", "")
+        expected = f"Bearer {self.state.cfg.api_key}"
+        return auth == expected
+
+    def _send_json(self, obj, status=200):
+        body = json.dumps(obj, ensure_ascii=False).encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _read_body(self) -> dict:
+        length = int(self.headers.get("Content-Length", 0) or 0)
+        if length <= 0:
+            return {}
+        try:
+            return json.loads(self.rfile.read(length).decode())
+        except json.JSONDecodeError:
+            return {}
+
+    def do_GET(self):
+        if not self._auth_ok():
+            self._send_json({"error": "Unauthorized"}, 401)
+            return
+        if self.path.startswith("/events"):
+            from urllib.parse import urlparse, parse_qs
+            q = parse_qs(urlparse(self.path).query)
+            since = int((q.get("since") or ["0"])[0] or 0)
+            events = self.state.events_since(since)
+            self._send_json({"events": events, "latest_id": events[-1]["id"] if events else since})
+        elif self.path.startswith("/status"):
+            self._send_json({
+                "name": self.state.cfg.name,
+                "port": self.state.cfg.port,
+                "busy": self.state.is_busy(),
+                "abort": self.state.abort_flag,
+                "uptime": time.time() - self.state.started_at,
+            })
+        elif self.path.startswith("/tools"):
+            self._send_json({"tools": tool_markdown()})
+        else:
+            self._send_json({"error": "not found"}, 404)
+
+    def do_POST(self):
+        if not self._auth_ok():
+            self._send_json({"error": "Unauthorized"}, 401)
+            return
+        if self.path.startswith("/rpc"):
+            body = self._read_body()
+            cmd = body.get("cmd") or body.get("command") or ""
+            if cmd == "prompt":
+                prompt = body.get("prompt") or ""
+                if not prompt:
+                    self._send_json({"error": "prompt krävs"}, 400)
+                    return
+                if self.state.is_busy():
+                    self._send_json({"error": "busy — ett uppdrag pågår"}, 409)
+                    return
+                skills_names = body.get("skills") or []
+                if isinstance(skills_names, str):
+                    skills_names = [s.strip() for s in skills_names.split(",") if s.strip()]
+                self.state.abort_flag = False
+                state = self.state
+                t = threading.Thread(
+                    target=_run_serve_task,
+                    args=(state, prompt, skills_names),
+                    kwargs={"on_hitl": _make_serve_hitl(state)},
+                    daemon=True,
+                )
+                state.current_thread = t
+                t.start()
+                self._send_json({"success": True, "status": "running",
+                                 "started": True})
+            elif cmd == "abort":
+                self.state.request_abort()
+                self._send_json({"success": True, "status": "aborting"})
+            elif cmd == "hitl_answer":
+                # Svar på en pågående hitl_request (approved/denied/text)
+                answer = body.get("answer") or body.get("content") or ""
+                with self.state.lock:
+                    self.state.hitl_answer = answer
+                self._send_json({"success": True})
+            elif cmd == "skills":
+                # Byt skills för nästa körning (hämtas vid start av _run_serve_task)
+                self.state.cfg.skills = body.get("skills", "")
+                self._send_json({"success": True})
+            elif cmd == "ping":
+                self._send_json({"success": True, "pong": True})
+            else:
+                self._send_json({"error": f"okänt kommando: {cmd}"}, 400)
+        else:
+            self._send_json({"error": "not found"}, 404)
+
+
+def _make_serve_hitl(state: ServeState):
+    """HITL-hanterare i server-läge: emitterar hitl_request-event och
+    väntar på att Odoo svarar (via /rpc cmd=hitl_answer)."""
+    def handler(name: str, args: dict):
+        ev = state.emit("hitl_request", name=name, args=args,
+                        question=(args.get("question") or args.get("message") or json.dumps(args, ensure_ascii=False)))
+        # Vänta tills Odoo svarat (poll: hitl_answer sätter state.hitl_answer)
+        deadline = time.time() + state.cfg.timeout
+        while time.time() < deadline:
+            if state.abort_flag:
+                raise AbortError("uppdrag aborterat under HITL")
+            with state.lock:
+                ans = getattr(state, "hitl_answer", None)
+                if ans is not None:
+                    state.hitl_answer = None
+                    return ans
+            time.sleep(0.3)
+        return "denied"  # timeout
+    return handler
+
+
+def run_serve(cfg: Config, http: HttpClient) -> int:
+    """Starta agenten som fristående server på localhost:<port>."""
+    if not cfg.port:
+        print("fel: --port krävs (använd --find-free-port för allokering)", file=sys.stderr)
+        return 2
+
+    state = ServeState(cfg, http)
+    state.started_at = time.time()
+    ServeHandler.state = state
+
+    try:
+        server = ThreadingHTTPServer(("127.0.0.1", cfg.port), ServeHandler)
+    except OSError as e:
+        print(f"fel: kunde inte binda port {cfg.port}: {e}", file=sys.stderr)
+        print("      (använd --find-free-port för att hitta en ledig port)", file=sys.stderr)
+        return 1
+
+    print(f"pi-agent serve: http://localhost:{cfg.port} (name={cfg.name})", file=sys.stderr)
+    print(f"  /rpc (prompt|abort|skills|ping), /events?since=N, /tools, /status", file=sys.stderr)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print(file=sys.stderr)
+    finally:
+        server.server_close()
+    return 0
+
+
+# ════════════════════════════════════════════════════════════════════
+# Main
+# ════════════════════════════════════════════════════════════════════
+
+def build_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(
+        prog="pi-agent",
+        description="Tunn fristående agent för lokal exekvering, orkestrerad från Odoo.",
+    )
+    p.add_argument("--base-url", help="Odoo-bas-URL (eller PI_AGENT_BASE_URL)")
+    p.add_argument("--api-key", help="Bearer api-nyckel, res.users.apikeys (eller PI_AGENT_API_KEY)")
+    p.add_argument("--coworker", help="coworker-id (numeriskt) för /ai/openai/<id>/v1 (eller PI_AGENT_COWORKER)")
+    p.add_argument("--skills", help="komma-separerade skills att hämta från Odoo")
+    p.add_argument("--prompt", help="single-shot uppdrag")
+    p.add_argument("--task", type=int, help="orkestrerad körning: task-id")
+    p.add_argument("--callback", help="callback-URL-suffix (t.ex. /pi/callback/42)")
+    p.add_argument("--abort-poll", help="abort-poll-URL-suffix (t.ex. /pi/task/42)")
+    p.add_argument("--timeout", type=int, help=f"max sekunder (default {DEFAULT_TIMEOUT})")
+    p.add_argument("--list-tools", action="store_true", help="lazy discovery: skriv verktygskatalog som markdown")
+    p.add_argument("--mode", choices=["serve", "rpc"], help="server-läge (lyssna på port) eller rpc-läge (JSONL på stdio)")
+    p.add_argument("--port", type=int, help="port för --mode serve (allokera med --find-free-port)")
+    p.add_argument("--name", help="agentnamn för --mode serve (default: hostname)")
+    p.add_argument("--find-free-port", type=int, metavar="START", nargs="?", const=9100,
+                   help="skriv första lediga porten från START (för dispatchern)")
+    p.add_argument("--json", action="store_true", dest="json", help="JSON-utdata")
+    p.add_argument("--version", action="store_true", help="visa version")
+    return p
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    args = build_parser().parse_args(argv)
+
+    if args.version:
+        print(f"pi-agent {VERSION}")
+        return 0
+
+    if args.list_tools:
+        print(tool_markdown())
+        return 0
+
+    if args.find_free_port is not None:
+        free = find_free_port(args.find_free_port, count=1)
+        if not free:
+            print("ingen ledig port hittad", file=sys.stderr)
+            return 1
+        print(free[0])
+        return 0
+
+    try:
+        cfg = Config(args)
+        cfg.validate()
+    except ConfigError as e:
+        print(f"fel: {e}", file=sys.stderr)
+        return 2
+
+    http = HttpClient(cfg)
+    try:
+        if args.mode == "serve":
+            return run_serve(cfg, http)
+        if args.prompt:
+            return run_single_shot(cfg, http, args.prompt)
+        if args.task:
+            return run_orchestrated(cfg, http)
+        return run_repl(cfg, http)
+    finally:
+        http.close()
+
+
+if __name__ == "__main__":
+    sys.exit(main())
