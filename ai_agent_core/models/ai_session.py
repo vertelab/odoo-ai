@@ -365,6 +365,25 @@ class AICoworkerSession(models.Model):
         self.status = 'done'
         self.finish_reason = reason
         self.end_date = fields.Datetime.now()
+        self._push_done_notification()
+
+    def _push_done_notification(self):
+        """Web push "svar klart" till sessionens användare (via web_pwa_push).
+
+        Tyst om användaren saknar enheter eller VAPID-nycklar saknas.
+        """
+        try:
+            for session in self:
+                if not session.user_id:
+                    continue
+                coworker_name = session.coworker_id.name or 'AI-medarbetare'
+                self.env['web.pwa.push']._push_user_notification(
+                    session.user_id,
+                    title='AI Chat',
+                    body='%s har svarat.' % coworker_name,
+                    url='/ai/chat')
+        except Exception:
+            _logger.exception('web_pwa_push: session done push failed')
 
     # ── Durable Resume (OpenWorker-inspired) ──
     resumable = fields.Boolean('Resumable', default=True,

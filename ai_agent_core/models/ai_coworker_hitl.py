@@ -176,6 +176,19 @@ class AICoworkerHITL(models.Model):
                 partner_ids=[self.user_id.partner_id.id])
         except Exception as e:
             _logger.warning('HITL notify failed: %s', e)
+        self._push_notify()
+
+    def _push_notify(self):
+        """Web push till godkännaren (via web_pwa_push). Tyst utan enheter/nycklar."""
+        self.ensure_one()
+        try:
+            self.env['web.pwa.push']._push_user_notification(
+                self.user_id,
+                title='HITL: %s' % (self.coworker_id.name or 'AI-medarbetare'),
+                body=self.request_summary or 'Väntar på ditt godkännande',
+                url='/odoo/ai.coworker.hitl/%s' % self.id)
+        except Exception as e:
+            _logger.warning('HITL push failed: %s', e)
 
     # ── Trust-ladder ─────────────────────────────────────────────────
 

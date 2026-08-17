@@ -45,18 +45,6 @@ class ResConfigSettings(models.TransientModel):
     _inherit = 'res.config.settings'
 
     # ─────────────────────────────────────────────
-    # PWA (mobilapp) — namn + ikon för hemskärmen
-    # ─────────────────────────────────────────────
-    pwa_name = fields.Char(
-        'PWA-namn',
-        config_parameter='ai_agent_core.pwa_name',
-        help='Namn på den installerade mobilappen. Tomt = "AI <företagsnamn>" '
-             'för chatten, företagsnamnet för Odoo-appen.')
-    pwa_icon = fields.Image(
-        related='company_id.pwa_icon', string='PWA-ikon', readonly=False,
-        help='Ikon på hemskärmen. Tomt = företagsloggan.')
-
-    # ─────────────────────────────────────────────
     # Background Jobs — per-cron rader (task 7.15)
     # ─────────────────────────────────────────────
     bg_cron_line_ids = fields.One2many(

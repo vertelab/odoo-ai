@@ -2,10 +2,12 @@
 /**
  * AI Chat — user-menyn (längst upp till höger, bredvid Documentation/Support).
  *
- * Registrerar "AI Chat" + PWA-installationsposter i Odoo 18:s
- * `user_menuitems`-registry så att alla AI-användare (ai.group_user —
- * implicit för alla via base.group_user) når /ai/chat direkt från
- * användarmenyn, utan att AI Orkestrering-menyn syns.
+ * Registrerar "AI Chat" i Odoo 18:s `user_menuitems`-registry så att alla
+ * AI-användare (ai.group_user — implicit för alla via base.group_user) når
+ * /ai/chat direkt från användarmenyn, utan att AI Orkestrering-menyn syns.
+ *
+ * PWA-installationsposterna togs bort (web-pwa-push): installation sker via
+ * chat-sidan (/pwa/manifest/ai-chat) och /pwa/install-hubben.
  */
 
 import { registry } from "@web/core/registry";
@@ -25,31 +27,5 @@ function aiChatItem() {
     };
 }
 
-function installAiChatItem() {
-    return {
-        type: "item",
-        id: "install_ai_chat",
-        description: _t("Installera AI Chat"),
-        callback: () => {
-            window.open("/ai/install?app=ai", "_blank");
-        },
-        sequence: 16,
-    };
-}
-
-function installAppsItem() {
-    return {
-        type: "item",
-        id: "install_apps",
-        description: _t("Installera appar"),
-        callback: () => {
-            window.open("/ai/install", "_blank");
-        },
-        sequence: 17,
-    };
-}
-
 registry.category("user_menuitems")
-    .add("ai_chat", aiChatItem)
-    .add("install_ai_chat", installAiChatItem)
-    .add("install_apps", installAppsItem);
+    .add("ai_chat", aiChatItem);

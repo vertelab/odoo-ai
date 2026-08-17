@@ -5,16 +5,18 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>
 <title>AI Chat</title>
 <!-- PWA: manifest + iOS-meta (installeras på hemskärmen) -->
-<link rel="manifest" href="/ai/manifest.webmanifest"/>
-<link rel="apple-touch-icon" href="/ai/icon-180.png"/>
+<!-- Manifest/SW servas av web_pwa_push (odoo-web) under /pwa/ -->
+<link rel="manifest" href="/pwa/manifest/ai-chat"/>
+<link rel="apple-touch-icon" href="/web_pwa_push/icon180x180.png"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
 <meta name="theme-color" content="#1a1a2e"/>
 <script>
-// PWA: registrera pass-through service worker (scope /ai/) för installerbarhet.
+// PWA: registrera service worker (scope /ai/ — kontrolleras av web_pwa_push
+// via Service-Worker-Allowed: /ai/).
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', function () {
-        navigator.serviceWorker.register('/ai/sw.js', { scope: '/ai/' }).catch(function () {});
+        navigator.serviceWorker.register('/pwa/sw.js', { scope: '/ai/' }).catch(function () {});
     });
 }
 </script>
@@ -80,6 +82,8 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);overflow:hid
 .chat-header-right{margin-left:auto;display:flex;align-items:center;gap:6px}
 .chat-header-right .header-btn{background:none;border:none;font-size:16px;cursor:pointer;padding:4px 6px;border-radius:6px;transition:background .15s;color:var(--text-muted)}
 .chat-header-right .header-btn:hover{background:rgba(128,128,128,0.15);color:var(--text)}
+.open-odoo-btn{margin-left:8px;font-size:12px;color:var(--text-muted);text-decoration:none;border:1px solid var(--border);border-radius:6px;padding:3px 8px;transition:background .15s,color .15s}
+.open-odoo-btn:hover{background:rgba(128,128,128,0.15);color:var(--text)}
 .theme-btn{background:none;border:none;font-size:20px;cursor:pointer;padding:4px 8px;border-radius:6px;transition:background .15s}
 .theme-btn:hover{background:rgba(128,128,128,0.15)}
 
@@ -292,6 +296,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);overflow:hid
         <div class="chat-header-right">
             <span id="active-thread-name" style="font-size:12px;color:var(--text-muted);margin-right:8px"></span>
             <button class="header-btn" id="thread-edit-btn" title="Redigera tråd" onclick="openThreadEditModal()" style="display:none">✏️</button>
+            <a class="open-odoo-btn" href="/odoo" target="_blank" title="Öppna vanliga Odoo">Odoo ↗</a>
             <button class="theme-btn" id="theme-btn" onclick="toggleTheme()" title="Växla tema">🌙</button>
         </div>
     </div>

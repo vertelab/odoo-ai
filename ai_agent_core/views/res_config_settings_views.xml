@@ -229,28 +229,6 @@
                     </block>
 
                     <!-- ════════════════════════════════════════════
-                         PWA (mobilapp)
-                         ════════════════════════════════════════════ -->
-                    <block title="PWA (Mobilapp)">
-                        <setting id="pwa_settings" title="App-namn och ikon"
-                                 help="Används för den installerade AI-chatten och Odoo-appen på hemskärmen (Android + iPhone).">
-                            <div class="d-flex align-items-center gap-3">
-                                <label for="pwa_name" string="App-namn"/>
-                                <field name="pwa_name" placeholder="Tomt = AI + företagsnamn"/>
-                            </div>
-                            <div class="d-flex align-items-center gap-3 mt4">
-                                <label for="pwa_icon" string="Ikon"/>
-                                <field name="pwa_icon" widget="image" class="oe_avatar"/>
-                                <span class="text-muted small">Lämna tomt för företagsloggan.</span>
-                            </div>
-                            <div class="text-muted small mt8">
-                                Installeras via menyn → "Installera appar", eller direkt på
-                                <a href="/ai/install" target="_blank">/ai/install</a>.
-                            </div>
-                        </setting>
-                    </block>
-
-                    <!-- ════════════════════════════════════════════
                          Tool Executor (NATS)
                          ════════════════════════════════════════════ -->
                     <block title="Tool Executor (NATS)">
