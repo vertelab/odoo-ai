@@ -2,7 +2,7 @@
 # Part of Odoo. See LICENSE file for full copyright and licensing details.
 {
     'name': 'odoo-ai: AI Agent Core',
-    'version': '18.0.1.120',
+    'version': '18.0.1.148',
     'summary': 'AI Agent Core — Org-stomme, heartbeat, onboarding, task-system',
     'category': 'AI Orchestration',
     'description': """
@@ -34,6 +34,7 @@
     'data': [
         'security/ai_groups.xml',
         'security/ir.model.access.csv',
+        'security/ai_hitl_rules.xml',
         'views/ai_actions.xml',
         'data/okf_default_artifact_types.xml',
         'data/okf_artifact_types_personal.xml',
@@ -63,11 +64,13 @@
         'data/provider_openrouter.xml',
         'data/provider_bifrost.xml',
         'data/ensure_init_resources.xml',
+        'data/cron_hitl.xml',
         'data/cron_mail_reply.xml',
         'data/ai_invoice_coworker.xml',
         'data/identity_templates.xml',
         'data/cron_monthly_summary.xml',
         'data/cron_bifrost_sync.xml',
+        'data/cron_burn_rate.xml',
         'data/cron_kaizen.xml',
         'data/cron_onboard.xml',
         'data/cron_memory_consolidation.xml',
@@ -89,6 +92,7 @@
         'views/ai_coworker_buzz_agent_wizard_views.xml',
         'views/server_action_wizard_views.xml',
         'views/ai_coworker_views.xml',
+        'views/ai_coworker_hitl_views.xml',
         'views/ai_agent_views.xml',
         'views/ai_identity_views.xml',
         'views/ai_skill_views.xml',
@@ -127,6 +131,7 @@
             'ai_agent_core/static/src/js/powerbox.js',
             'ai_agent_core/static/src/js/user_menu_ai_chat.js',
             'ai_agent_core/static/src/css/powerbox.css',
+            'ai_agent_core/static/src/org_chart/*',
         ],
     },
     'installable': True,

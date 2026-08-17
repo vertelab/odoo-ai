@@ -20,6 +20,7 @@ tiktoken
 httpx
 ipython
 youtube_transcript_api
+yt-dlp
 google-api-python-client
 google-auth-httplib2
 google-auth-oauthlib

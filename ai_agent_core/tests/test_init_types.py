@@ -407,3 +407,204 @@ class TestOpenAIAPI(TransactionCase):
         }
         self.assertEqual(chunk['object'], 'chat.completion.chunk')
         self.assertEqual(chunk['choices'][0]['delta']['content'], 'Hello')
+
+
+class TestRunWithHistory(TransactionCase):
+    """Test run_with_history() — historik + HITL-paus (openai-api 3.3)."""
+
+    def setUp(self):
+        super().setUp()
+        self.Coworker = self.env['ai.coworker']
+
+    def _make_coworker(self):
+        return self.Coworker.create({
+            'name': 'RunWithHistory-test',
+            'status': 'active',
+            'orchestration_mode': 'single',
+        })
+
+    def test_run_with_history_delegates_to_run(self):
+        """run_with_history anropar run() med history + interrupt_handler."""
+        coworker = self._make_coworker()
+        from odoo.addons.ai_agent_core.core.interrupt import (
+            OpenAIInterruptHandler, AgentLoopPaused)
+        from odoo.addons.ai_agent_core.core.provider import Message, Role
+
+        # Bygg en historik med assistant-tool_calls + tool-resultat (par)
+        history = [
+            Message(role=Role.USER, content='Sätt uppgift 123 till pågående'),
+            Message(role=Role.ASSISTANT, content='', tool_calls=[{
+                'id': 'call_1', 'type': 'function',
+                'function': {'name': 'request_hitl_approval',
+                             'arguments': '{}'}}]),
+            Message(role=Role.TOOL, content='approved', tool_call_id='call_1'),
+        ]
+        handler = OpenAIInterruptHandler()
+
+        # run() kräver provider — utan mockad provider ska det inte krascha
+        # med fel typ: ProviderFactory faller till get_default_provider som
+        # kan vara tom. Verifiera att run_with_history accepterar args och
+        # kastar AgentLoopPaused vid HITL (via patched _build_loop).
+        with patch.object(
+                type(coworker), '_build_loop',
+                return_value=MagicMock()) as mock_loop:
+            mock_loop.return_value.run = AsyncMock(
+                side_effect=AgentLoopPaused(
+                    tool_calls=[{'id': 'c1', 'type': 'function',
+                                 'function': {'name': 'request_hitl_approval',
+                                              'arguments': '{}'}}],
+                    state={'kind': 'approve_tool'}))
+            mock_loop.return_value.tool_history = []
+            from unittest.mock import patch as _p
+            with _p('odoo.addons.ai_agent_core.core.provider.ProviderFactory.from_coworker',
+                    return_value=(MagicMock(), 'mock-model')):
+                with self.assertRaises(AgentLoopPaused):
+                    coworker.run_with_history(
+                        prompt='',
+                        history=history,
+                        interrupt_handler=handler,
+                    )
+
+
+class TestBodyToMessages(TransactionCase):
+    """Test _body_to_messages() — OpenAI-konversation → core.Message (4.4)."""
+
+    def setUp(self):
+        super().setUp()
+        from odoo.addons.ai_agent_core.controllers.openai_api import (
+            AIOpenAPIController)
+        self.controller = AIOpenAPIController()
+
+    def test_plain_conversation(self):
+        """Vanlig user/assistant-konversation konverteras korrekt."""
+        messages = [
+            {'role': 'user', 'content': 'Hej'},
+            {'role': 'assistant', 'content': 'Hej själv!'},
+            {'role': 'user', 'content': 'Vad är status på 123?'},
+        ]
+        result = self.controller._body_to_messages(messages)
+        from odoo.addons.ai_agent_core.core.provider import Role
+        self.assertEqual(len(result), 3)
+        self.assertEqual(result[0].role, Role.USER)
+        self.assertEqual(result[0].content, 'Hej')
+        self.assertEqual(result[1].role, Role.ASSISTANT)
+        self.assertEqual(result[2].role, Role.USER)
+
+    def test_system_message_skipped(self):
+        """System-meddelanden hoppas över (hanteras som system_prompt)."""
+        messages = [
+            {'role': 'system', 'content': 'Du är en expert.'},
+            {'role': 'user', 'content': 'Hej'},
+        ]
+        result = self.controller._body_to_messages(messages)
+        from odoo.addons.ai_agent_core.core.provider import Role
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0].role, Role.USER)
+
+    def test_tool_calls_pair_preserved(self):
+        """Assistant-tool_calls + tool-resultat bevaras som par."""
+        messages = [
+            {'role': 'user', 'content': 'Sätt uppgift 123 till pågående'},
+            {'role': 'assistant', 'content': '',
+             'tool_calls': [{'id': 'call_1', 'type': 'function',
+                             'function': {'name': 'request_hitl_approval',
+                                          'arguments': '{}'}}]},
+            {'role': 'tool', 'tool_call_id': 'call_1', 'content': 'approved'},
+        ]
+        result = self.controller._body_to_messages(messages)
+        from odoo.addons.ai_agent_core.core.provider import Role
+        self.assertEqual(len(result), 3)
+        self.assertEqual(result[1].role, Role.ASSISTANT)
+        self.assertIsNotNone(result[1].tool_calls)
+        self.assertEqual(result[1].tool_calls[0]['id'], 'call_1')
+        self.assertEqual(result[2].role, Role.TOOL)
+        self.assertEqual(result[2].tool_call_id, 'call_1')
+        self.assertEqual(result[2].content, 'approved')
+
+    def test_multimodal_content_extracts_text(self):
+        """Multimodala content-arrayer → enbart text."""
+        messages = [
+            {'role': 'user', 'content': [
+                {'type': 'text', 'text': 'Titta på detta'},
+                {'type': 'image', 'data': 'base64...'},
+            ]},
+        ]
+        result = self.controller._body_to_messages(messages)
+        self.assertEqual(result[0].content, 'Titta på detta')
+
+
+class TestPiInstruction(TransactionCase):
+    """Test _build_pi_instruction() + _pi_skill_to_load() (5.4)."""
+
+    def setUp(self):
+        super().setUp()
+        self.Coworker = self.env['ai.coworker']
+        self.InitType = self.env['ai.coworker.init_type']
+        self.Skill = self.env['ai.skill']
+        self.Tool = self.env['ai.tool']
+
+    def _make_coworker(self):
+        return self.Coworker.create({
+            'name': 'PiInstruction-test',
+            'status': 'active',
+            'orchestration_mode': 'single',
+        })
+
+    def test_empty_without_instruction(self):
+        """Utan pi_instruction och utan verktyg/skills → '' (eller minimal)."""
+        coworker = self._make_coworker()
+        result = coworker._build_pi_instruction()
+        # Utan openai_api-init och utan tools/skills blir resultatet tomt
+        # (filteringen hittar ingen openai_api-init → inga parts).
+        self.assertIsInstance(result, str)
+
+    def test_with_instruction_and_skills(self):
+        """pi_instruction + verktyg + skills kombineras."""
+        coworker = self._make_coworker()
+        self.InitType.create({
+            'coworker_id': coworker.id,
+            'init_type': 'openai_api',
+            'enabled': True,
+            'pi_instruction': 'Du pratar med en test-coworker.',
+        })
+        # Skill
+        skill = self.Skill.create({
+            'name': 'test-skill',
+            'description': 'Test-skill-beskrivning',
+            'compatibility': 'pi_python',
+            'trigger_keywords': 'test',
+        })
+        coworker.write({'skill_ids': [(4, skill.id, 0)]})
+        # Tool
+        tool = self.Tool.create({
+            'name': 'task_get',
+            'description': 'Hämta uppgift',
+        })
+        coworker.write({'tool_ids': [(4, tool.id, 0)]})
+
+        result = coworker._build_pi_instruction()
+        self.assertIn('Du pratar med en test-coworker.', result)
+        self.assertIn('task_get', result)
+        self.assertIn('test-skill', result)
+
+    def test_skill_to_load_returns_pi_skill(self):
+        """_pi_skill_to_load() returnerar första pi-kompatibla skillen."""
+        coworker = self._make_coworker()
+        skill = self.Skill.create({
+            'name': 'pi-skill-name',
+            'description': 'Pi-kompatibel',
+            'compatibility': 'pi_python',
+        })
+        coworker.write({'skill_ids': [(4, skill.id, 0)]})
+        self.assertEqual(coworker._pi_skill_to_load(), 'pi-skill-name')
+
+    def test_skill_to_load_skips_odoo_only(self):
+        """_pi_skill_to_load() hoppar över odoo-only-skills."""
+        coworker = self._make_coworker()
+        skill = self.Skill.create({
+            'name': 'odoo-skill',
+            'description': 'Odoo-only',
+            'compatibility': 'odoo',
+        })
+        coworker.write({'skill_ids': [(4, skill.id, 0)]})
+        self.assertEqual(coworker._pi_skill_to_load(), '')

@@ -253,6 +253,52 @@ Supports: `bifrost`, `openai`, `anthropic`, `openrouter`, `deepseek`,
 
 ### Memory Architecture
 
+Odoo Mind har ett flerskiktat minnessystem:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    MINNESLAGER                              │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│  OKF (Open Knowledge Format) — tunt indexlager              │
+│  ─────────────────────────────────────────                  │
+│  ai.okf.concept: metadata + summary + source_ref            │
+│  PgVector 1024d embedding för semantisk sökning              │
+│  Scope: company | personal | coworker                       │
+│  ADD-only versionering (aldrig skriv över)                  │
+│                                                              │
+│  Vektorlagret                                                │
+│  ────────────                                                │
+│  ai.embedding: attachment chunks → pgvector (ivfflat)       │
+│  ai.memory: FAISS + pgvector för dokumentchunks             │
+│                                                              │
+│  Graflagret (Apache AGE)                                     │
+│  ─────────────────────────                                  │
+│  graph.node.definition: Odoo-modeller → AGE-noder           │
+│  graph.executor: Cypher-queries (read_only validering)      │
+│  res.partner som universell nyckel mellan modeller          │
+│                                                              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Memory Governance (agent-memory-governance)
+
+**Identitet → AI Medarbetare → Agent-koppling**
+
+| Nivå | Modell | Ansvar |
+|------|--------|--------|
+| Identity | `ai.identity` | Designintent: persona, memory_profile (hermes/balanced/session_only) |
+| AI Medarbetare | `ai.coworker` | Runtime-saning: memory_scopes, memory_level, learning, sökstrategi |
+| Agent-koppling | `ai.coworker.agent` | Hårda block: block_personal/company/coworker, level per scope (ärv) |
+
+**Injektionsordning:** tid/schema → roll → användare → multi_source_recall → företag → personligt → medarbetare → mission → rekord → session
+
+**Multi-source recall:** OKF (pgvector) + ai.memory (FAISS) + AGE graph (Cypher) + Knowledge (ts_rank) + Mail/Chatter (ts_rank) + Discuss inkorg (ts_rank) + Calendar (ts_rank + tid) + Activities (ts_rank + förfallo)
+
+**Sökstrategier:** precision | balanced | recall | detective — styr vikter och tröskelvärden för hybrid scoring.
+
+**Pi-agent-brygga:** Externa källor (graphify, OCA-repos) nås via NATS tool-execution — inte injektion.
+
 - **Agent-level**: Permanent RAG on `ai.agent.rag_memory_ids` (handbooks, websites)
 - **Session-level**: Ad-hoc uploaded docs in chat thread, injected into system prompt
 - Both tiers support FAISS vector search
@@ -313,8 +359,9 @@ metodiklager ovanpå OKF-substratet — producerar resultat i Odoo Core.
   `action_nudge_para()`, `render_attribution_html()` (klickbara källor +
   osäker-flagga), `action_publish_to_company()/action_publish_to_channel()`.
 - `ai.coworker` — utökad med `injection_level` (L0-L3-styrning),
-  autonomi-panel (budget_kr_monthly, max_actions_per_day,
-  hitl_threshold) och `example_prompts` (katalog).
+  budget i systemtokens (`monthly_cap_mtokens` + deterministisk
+  `budget_exhausted`/`budget_warning`), `hitl_threshold` och
+  `example_prompts` (katalog).
 
 ### Vyer (menyn "Odoo Mind")
 
@@ -527,3 +574,87 @@ gjorda av modulen/konfigurationen; **B** och **C** kräver mailserver/DNS.
   → skapar session + postar svar. Ingen riktig mailserver krävs.
 - När B är klart: skicka ett riktigt mail till `faktura@coworker.vertel.se` →
   session skapas → Faktura-Assistenten svarar på tråden.
+## HITL-requests — `ai.coworker.hitl` (record-baserad HITL)
+
+Konversations-HITL (interrupt-handlers) gäller *i sessionen*. För asynkrona
+köer och utåtgående handlingar finns **`ai.coworker.hitl`**: bestående,
+granskningsbara godkännandebegäranden med livscykel, aktivitet i klockan
+och trust-ladder-inlärning.
+
+### API för coworkers
+
+```python
+hitl = coworker._request_hitl(
+    action_type='promote_mail',      # t.ex. send_reply, social_publish
+    summary='Koppla in mail i Ticket #1234?',
+    context={'model': 'helpdesk.ticket', 'res_id': 1234},  # JSON-payload
+    risk_level='high',               # safe | high | destructive
+    user_id=approver.id,             # godkännaren (default: env.user)
+)
+# → record med state='asked' + mail.activity (todo) i godkännarens klocka
+#   + Odoo-notis (bell). Dubblettskydd: samma (coworker, action_type,
+#   context-hash) med öppen 'asked' returnerar befintlig request.
+```
+
+### Livscykel
+
+`asked → approved | rejected | expired` (cron, default 7 dagar,
+`ai_agent_core.hitl_expire_days`). Beslut sker i formen (Godkänn/Avslå)
+eller via `action_approve()` / `action_reject()` — endast godkännaren
+eller admin. Beslutet stänger aktiviteten och loggas med `decided_by`,
+`decided_at` och chatter.
+
+### Trust-ladder
+
+Efter N godkända liknande requests (default 3,
+`ai_agent_core.hitl_trust_n`) skapas ett **auto-förslag**
+(`action_type='auto_proposal'`): "vill du att jag gör detta automatiskt
+nästa gång?". Godkänt → standing-rule-rad (JSON på recordet) + hook
+`_on_standing_rule_created(rule)` som domänkonsumenter (mail-regelmodell,
+social-kanal) kan ärva. Avslaget → räknaren nollställs.
+
+### UI
+
+- Meny: AI Orkestrering → Organisation → **Godkännanden (HITL)**.
+- Smartknapp på **ai.coworker**-formen (öppna HITL för medarbetaren).
+- Smartknapp i **Min profil** (res.users) — mina öppna godkännanden.
+- Integritet: `ir.rule` — användare ser bara requests där hen är
+  godkännare; admin ser allt.
+
+## Channel-adapter-kontraktet (`core/channel.py`)
+
+Kanal-neutralt kontrakt för agenter som processar inkommande items
+(mail idag, social media i framtiden). Extraherat ur mail-hjälpredan
+(`user_mail_ai`) — ingen befintlig kod migreras i denna change.
+
+```python
+from ai_agent_core.core.channel import (
+    NormalizedItem, ChannelAdapter, ItemProcessor,
+    channel_registry, process_item, satisfies_adapter,
+)
+
+class MyMailAdapter:            # uppfyller ChannelAdapter (duck-typing)
+    def fetch_new(self, user, since=None): ...
+    def normalize(self, raw): ...
+    def dispose(self, item, disposition): ...
+    def draft_outbound(self, user, item, content): ...
+    def send_outbound(self, user, item, content): ...
+
+class MyProcessor:              # uppfyller ItemProcessor
+    async def classify(self, item): ...
+    def dispose(self, item, disposition): ...
+    def hitl(self, item, action_type, context): ...
+    def nudge(self, item, message): ...
+    def remember(self, item): ...
+
+channel_registry.register('mail', adapter=MyMailAdapter(),
+                          processor=MyProcessor())
+await process_item(item)   # klassificering → disposition → HITL → nudge → minne
+```
+
+- **Dispositioner:** `create | link | draft | nudge | handoff`.
+- **HITL-gate:** `create`/`link`/`handoff` med `hitl_required=True` väntar på
+  godkännande (ai.coworker.hitl) innan dispose; annars `waiting_hitl`.
+- **Referensimplementation:** `user_mail_ai` uppfyller kontraktet
+  strukturellt (ingen migrering — kontraktet reflekterar befintlig kod).
+- `satisfies_adapter(obj)` / `satisfies_processor(obj)` — strukturell koll.

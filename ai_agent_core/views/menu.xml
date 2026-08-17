@@ -53,6 +53,12 @@
               sequence="30" action="action_ai_org_review"/>
     <menuitem id="menu_ai_org_board" name="Board" parent="menu_ai_organization"
               sequence="40" action="action_ai_org_board"/>
+
+    <!-- HITL (Human-in-the-loop) — godkännanden (officer) -->
+    <menuitem id="menu_ai_hitl" name="Godkännanden (HITL)"
+              parent="menu_ai_organization" sequence="30"
+              action="ai_coworker_hitl_action"
+              groups="ai_agent_core.group_ai_officer"/>
     <menuitem id="menu_ai_onboarding" name="Onboarding" parent="menu_ai_technical_org"
               sequence="50" action="action_ai_onboarding"/>
 

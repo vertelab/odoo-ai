@@ -14,7 +14,8 @@
                 <field name="total_output_tokens" optional="hide"/>
                 <field name="session_count"/>
                 <field name="monthly_cap_mtokens" optional="hide"/>
-                <field name="cap_exhausted_count" optional="hide"/>
+                <field name="budget_exhausted" optional="hide"/>
+                <field name="budget_warning" optional="hide"/>
             </list>
         </field>
     </record>
@@ -53,7 +54,6 @@
         <field name="name">Månadsrapporter</field>
         <field name="res_model">ai.coworker.monthly_summary</field>
         <field name="view_mode">pivot,graph,list</field>
-        <field name="context">{'search_default_group_month': 1}</field>
         <field name="help">Systemtoken-förbrukning per quest och månad. Historisk rapportering för fakturering.</field>
     </record>
 

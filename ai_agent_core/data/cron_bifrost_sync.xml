@@ -1,16 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <!-- Cron: Sync models from Bifrost provider (weekly) -->
+    <!-- Cron: Sync models from config-managed providers (auto_sync) — weekly.
+         bifrost-client-provisioning: generaliserad från "bifrost only" till
+         alla providers med auto_sync=True (Salt provisionerar via odoo.conf).
+         Ordning: sync först (modeller måste finnas), sedan default-modell. -->
     <record id="cron_bifrost_sync" model="ir.cron">
-        <field name="name">AI: Synca modeller från Bifrost</field>
+        <field name="name">AI: Synca modeller (config-styrda providers)</field>
         <field name="model_id" ref="model_ai_provider"/>
         <field name="state">code</field>
-        <field name="code"># Sync models from all active bifrost providers
-for provider in env['ai.provider'].search([('provider_type', '=', 'bifrost'), ('status', '=', 'confirmed')]):
+        <field name="code"># Sync models from all config-managed providers (auto_sync)
+Provider = env['ai.provider']
+Provider._reconcile_from_config()
+for provider in Provider.search([('auto_sync', '=', True), ('status', '=', 'confirmed')]):
     try:
         provider.action_fetch_models()
     except Exception:
-        pass</field>
+        pass
+Provider._apply_default_model_from_config()</field>
         <field name="interval_number">7</field>
         <field name="interval_type">days</field>
         <field name="active" eval="True"/>

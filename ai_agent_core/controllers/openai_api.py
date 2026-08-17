@@ -87,6 +87,19 @@ class AIOpenAPIController(http.Controller):
         if not oai_init:
             return self._error(404, "OpenAI API not configured for this coworker")
 
+        # Budgetcheck (budget-hard-cap D4): hårt stopp — 429 + OpenAI-
+        # kompatibel felstruktur. Notis en gång per månad.
+        coworker._unlock_budget_activities()
+        if coworker.budget_exhausted:
+            coworker.check_cap()
+            return self._error(
+                429,
+                'Budget slut: AI-medarbetaren har nått månadstaket. '
+                'Höj taket i inställningarna eller vänta till nästa månad.',
+                error_type='insufficient_quota',
+                code='budget_exhausted',
+            )
+
         # Parse request body
         try:
             body = json.loads(request.httprequest.data or '{}')
@@ -148,12 +161,14 @@ class AIOpenAPIController(http.Controller):
                 coworker, prompt, system_prompt, model, temperature,
                 max_tokens, tools, estimated_tokens,
                 pi_session_id=pi_session_id, session_id=session_id,
+                messages=messages,
             )
         else:
             return self._handle_sync(
                 coworker, prompt, system_prompt, model, temperature,
                 max_tokens, tools, estimated_tokens,
                 pi_session_id=pi_session_id, session_id=session_id,
+                messages=messages,
             )
 
     def _find_or_create_session(self, coworker, prompt, pi_session_id='',
@@ -260,8 +275,10 @@ class AIOpenAPIController(http.Controller):
 
     def _handle_sync(self, coworker, prompt, system_prompt, model,
                      temperature, max_tokens, tools, estimated_tokens,
-                     pi_session_id='', session_id=0):
+                     pi_session_id='', session_id=0, messages=None):
         """Handle non-streaming request — run AgentLoop and return JSON."""
+        from odoo.addons.ai_agent_core.core.interrupt import (
+            AgentLoopPaused, OpenAIInterruptHandler)
         try:
             # Run WITHOUT sudo — coworker.env carries the API-authenticated
             # user so session.user_id is correct (not SUPERUSER).
@@ -271,11 +288,51 @@ class AIOpenAPIController(http.Controller):
             coworker = self._session_context_env(coworker, _session)
             system_prompt = (system_prompt or '') + \
                 self._cost_context_prompt_block(coworker, _session)
-            result = coworker.run(
-                prompt=prompt,
-                system_prompt=system_prompt,
-                session=_session,
-            )
+
+            # Återskapa Message-historik från klientens konversation
+            # (bevarar assistant-tool_calls + tool-resultat som par).
+            history = self._body_to_messages(messages or [])
+            # HITL: pausa loopen via tool_calls istället för auto-approve.
+            handler = OpenAIInterruptHandler()
+
+            try:
+                result = coworker.run_with_history(
+                    prompt=prompt,
+                    system_prompt=system_prompt,
+                    history=history,
+                    interrupt_handler=handler,
+                    session=_session,
+                )
+            except AgentLoopPaused as pause:
+                # HITL: returnera tool_calls till klienten (pi) — loopen
+                # återupptas när klienten svarar med role:"tool"-meddelanden
+                # i nästa request.
+                _logger.info(
+                    'OpenAI API HITL paus (%s) — returnerar tool_calls',
+                    pause.state.get('kind'))
+                return Response(json.dumps({
+                    'id': f'chatcmpl-{coworker.id}-{int(time.time())}',
+                    'object': 'chat.completion',
+                    'created': int(time.time()),
+                    'model': model or 'default',
+                    'choices': [{
+                        'index': 0,
+                        'message': {
+                            'role': 'assistant',
+                            'content': None,
+                            'tool_calls': pause.tool_calls,
+                        },
+                        'finish_reason': 'tool_calls',
+                    }],
+                    'usage': {
+                        'prompt_tokens': estimated_tokens,
+                        'completion_tokens': 0,
+                        'total_tokens': estimated_tokens,
+                    },
+                    'session_id': _session.id,
+                    'cost_context': self._cost_context_payload(_session),
+                }), content_type='application/json')
+
             # Personligt lärande (OpenAI API-yta)
             try:
                 coworker._maybe_learn_async(_session.id)
@@ -285,6 +342,15 @@ class AIOpenAPIController(http.Controller):
             response_text = result.text if hasattr(result, 'text') else str(result or '')
             input_t = getattr(result, 'input_tokens', estimated_tokens)
             output_t = getattr(result, 'output_tokens', len(response_text) // 4)
+
+            # Klientstyrning (D7): system_prompt_add + skill_to_load
+            try:
+                pi_instr = coworker._build_pi_instruction(_session)
+                skill_to_load = coworker._pi_skill_to_load()
+            except Exception as e:
+                _logger.warning('pi_instruction failed: %s', e)
+                pi_instr = ''
+                skill_to_load = ''
 
             return Response(json.dumps({
                 'id': f'chatcmpl-{coworker.id}-{int(time.time())}',
@@ -303,6 +369,8 @@ class AIOpenAPIController(http.Controller):
                 },
                 'session_id': _session.id,
                 'cost_context': self._cost_context_payload(_session),
+                'system_prompt_add': pi_instr or '',
+                'skill_to_load': skill_to_load or '',
             }), content_type='application/json')
 
         except Exception as e:
@@ -311,7 +379,7 @@ class AIOpenAPIController(http.Controller):
 
     def _handle_stream(self, coworker, prompt, system_prompt, model,
                        temperature, max_tokens, tools, estimated_tokens,
-                       pi_session_id='', session_id=0):
+                       pi_session_id='', session_id=0, messages=None):
         """Handle streaming request — SSE response."""
         response_id = f'chatcmpl-{coworker.id}-{int(time.time())}'
         created = int(time.time())
@@ -322,21 +390,47 @@ class AIOpenAPIController(http.Controller):
         system_prompt = (system_prompt or '') + \
             self._cost_context_prompt_block(coworker, _session)
 
+        # HITL-handler + återskapad historik (samma mönster som sync)
+        from odoo.addons.ai_agent_core.core.interrupt import (
+            AgentLoopPaused, OpenAIInterruptHandler)
+        history = self._body_to_messages(messages or [])
+        handler = OpenAIInterruptHandler()
+
         def generate():
             try:
                 # Run WITHOUT sudo — coworker.env carries the API-authenticated
                 # user so session.user_id is correct (not SUPERUSER).
-                result = coworker.run(
-                    prompt=prompt,
-                    system_prompt=system_prompt,
-                    session=_session,
-                )
+                try:
+                    result = coworker.run_with_history(
+                        prompt=prompt,
+                        system_prompt=system_prompt,
+                        history=history,
+                        interrupt_handler=handler,
+                        session=_session,
+                    )
+                except AgentLoopPaused as pause:
+                    # HITL: returnera tool_calls som SSE-händelse
+                    _logger.info(
+                        'OpenAI API stream HITL paus (%s)',
+                        pause.state.get('kind'))
+                    yield f'data: {json.dumps({"id": response_id, "object": "chat.completion.chunk", "created": created, "model": model or "default", "choices": [{"index": 0, "delta": {"role": "assistant", "tool_calls": pause.tool_calls}}]})}\n\n'
+                    yield f'data: {json.dumps({"session_id": _session.id, "cost_context": self._cost_context_payload(_session)})}\n\n'
+                    yield 'data: [DONE]\n\n'
+                    return
                 # Personligt lärande (OpenAI API-yta)
                 try:
                     coworker._maybe_learn_async(_session.id)
                 except Exception:
                     pass
                 response_text = result.text if hasattr(result, 'text') else str(result or '')
+
+                # Klientstyrning (D7)
+                try:
+                    pi_instr = coworker._build_pi_instruction(_session)
+                    skill_to_load = coworker._pi_skill_to_load()
+                except Exception:
+                    pi_instr = ''
+                    skill_to_load = ''
 
                 # Stream token by token
                 words = response_text.split(' ')
@@ -346,7 +440,7 @@ class AIOpenAPIController(http.Controller):
 
                 yield f'data: {json.dumps({"id": response_id, "object": "chat.completion.chunk", "created": created, "model": model or "default", "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]})}\n\n'
                 # Session-info (session-cost-context 3.3) — före [DONE]
-                yield f'data: {json.dumps({"session_id": _session.id, "cost_context": self._cost_context_payload(_session)})}\n\n'
+                yield f'data: {json.dumps({"session_id": _session.id, "cost_context": self._cost_context_payload(_session), "system_prompt_add": pi_instr or "", "skill_to_load": skill_to_load or ""})}\n\n'
                 yield 'data: [DONE]\n\n'
 
             except Exception as e:
@@ -383,11 +477,58 @@ class AIOpenAPIController(http.Controller):
                 parts.append(f'[Assistant]\n{content}')
         return '\n\n'.join(parts)
 
-    def _error(self, status, message, retry_after=None):
+    def _body_to_messages(self, messages):
+        """Konvertera OpenAI-konversation → core.Message-lista.
+
+        Bevarar assistant-tool_calls + tool-resultat som par (krävs av
+        providern vid replay — annars 400). System-meddelanden hanteras
+        separat (skickas som system_prompt, inte i historiken).
+        """
+        from odoo.addons.ai_agent_core.core.provider import Message, Role
+        result = []
+        for m in messages:
+            role = m.get('role', '')
+            content = m.get('content', '')
+            if isinstance(content, list):
+                # Multimodala content-arrayer — ta text
+                texts = [
+                    c['text'] for c in content if c.get('type') == 'text'
+                ]
+                content = '\n'.join(texts)
+
+            if role == 'system':
+                # System-meddelanden hanteras via system_prompt-parametern,
+                # inte i historiken (AgentLoop bygger messages internt).
+                continue
+
+            if role == 'assistant':
+                tool_calls = m.get('tool_calls') or None
+                result.append(Message(
+                    role=Role.ASSISTANT,
+                    content=content or '',
+                    tool_calls=tool_calls,   # ← BEVARAS! dicts i OpenAI-format
+                ))
+            elif role == 'tool':
+                result.append(Message(
+                    role=Role.TOOL,
+                    content=content or '',
+                    tool_call_id=m.get('tool_call_id') or '',
+                    name=m.get('name') or '',
+                ))
+            elif role == 'user':
+                result.append(Message(role=Role.USER, content=content or ''))
+            # okända roller ignoreras
+        return result
+
+    def _error(self, status, message, retry_after=None, error_type="error",
+               code=None):
         headers = {'Content-Type': 'application/json'}
         if retry_after:
             headers['Retry-After'] = str(int(retry_after))
+        error = {"message": message, "type": error_type}
+        if code:
+            error["code"] = code
         return Response(
-            json.dumps({"error": {"message": message, "type": "error"}}),
+            json.dumps({"error": error}),
             status=status, headers=headers,
         )

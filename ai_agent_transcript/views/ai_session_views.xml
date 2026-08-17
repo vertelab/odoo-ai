@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Transcript-kontextvyer (ai_agent_transcript → ai_agent_core).
+         interface_key/transcript_context finns bara när transcript är
+         installerat; ärver core-vyerna (Odoo 18: list, aldrig tree). -->
+
+    <record id="view_ai_session_list_transcript" model="ir.ui.view">
+        <field name="name">ai.coworker.session.list.transcript</field>
+        <field name="model">ai.coworker.session</field>
+        <field name="inherit_id" ref="ai_agent_core.view_ai_session_tree"/>
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='coworker_id']" position="after">
+                <field name="interface_key" optional="hide"/>
+            </xpath>
+        </field>
+    </record>
+
+    <record id="view_ai_session_form_transcript" model="ir.ui.view">
+        <field name="name">ai.coworker.session.form.transcript</field>
+        <field name="model">ai.coworker.session</field>
+        <field name="inherit_id" ref="ai_agent_core.view_ai_session_form"/>
+        <field name="arch" type="xml">
+            <xpath expr="//sheet" position="inside">
+                <group name="transcript_context" string="Transcript">
+                    <field name="interface_key" readonly="1"/>
+                    <field name="transcript_context" readonly="1" nolabel="1"/>
+                </group>
+            </xpath>
+        </field>
+    </record>
+</odoo>

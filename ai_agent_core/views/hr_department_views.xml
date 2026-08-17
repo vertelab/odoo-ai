@@ -173,7 +173,7 @@
                 <field name="ai_goal_count"/>
                 <field name="fold" foldable="1"/>
                 <templates>
-                    <t t-name="hierarchy-box">
+                    <t t-name="hierarchy-box-ai">
                         <div t-attf-class="o_hierarchy_node_header d-flex justify-content-center align-items-center o_hierarchy_node_color_{{ record.color.raw_value }}">
                             <field name="name"/>
                         </div>

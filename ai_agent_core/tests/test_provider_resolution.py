@@ -260,3 +260,342 @@ class TestProviderDataFiles(TransactionCase):
         self.assertIn('is_bifrost" eval="True"', bifrost)
         anthropic = open(os.path.join(data_dir, 'provider_anthropic.xml')).read()
         self.assertIn('api_style">anthropic', anthropic)
+
+
+class TestModelOffering(TransactionCase):
+    """provider-model-offering: SKU-modell — api_name, source_provider-logik,
+    UNIQUE (name, provider), display_name."""
+
+    def _make_provider(self, name, ptype='custom', is_bifrost=False, **kw):
+        return self.env['ai.provider'].create({
+            'name': name,
+            'provider_type': ptype,
+            'base_url': f'https://{name.lower().replace(" ", "-")}.example.com/v1',
+            'is_bifrost': is_bifrost,
+            **kw,
+        })
+
+    def test_get_api_name_fallback(self):
+        """Gammalt record utan api_name → name; med api_name → api_name."""
+        provider = self._make_provider('Dir Provider')
+        m = self.env['ai.model'].create({'name': 'deepseek-chat', 'provider': provider.id})
+        self.assertEqual(m._get_api_name(), 'deepseek-chat')
+        m.api_name = 'deepseek/deepseek-chat'
+        self.assertEqual(m._get_api_name(), 'deepseek/deepseek-chat')
+
+    def test_get_maker_gateway_vs_direct(self):
+        """source_provider satt = tillverkare; tomt = provider."""
+        bifrost = self._make_provider('Bifrost', ptype='bifrost', is_bifrost=True)
+        deepseek = self._make_provider('DeepSeek', ptype='deepseek')
+        m_gw = self.env['ai.model'].create({
+            'name': 'deepseek-flash', 'api_name': 'deepseek/deepseek-flash',
+            'provider': bifrost.id, 'source_provider': deepseek.id,
+        })
+        self.assertEqual(m_gw._get_maker(), deepseek)
+        m_dir = self.env['ai.model'].create({
+            'name': 'deepseek-chat', 'provider': deepseek.id,
+        })
+        self.assertEqual(m_dir._get_maker(), deepseek)
+
+    def test_real_provider_derived_from_maker(self):
+        bifrost = self._make_provider('Bifrost', ptype='bifrost', is_bifrost=True)
+        deepseek = self._make_provider('DeepSeek', ptype='deepseek')
+        m = self.env['ai.model'].create({
+            'name': 'deepseek-flash', 'api_name': 'deepseek/deepseek-flash',
+            'provider': bifrost.id, 'source_provider': deepseek.id,
+        })
+        self.assertEqual(m.real_provider, 'DeepSeek')
+        m2 = self.env['ai.model'].create({
+            'name': 'deepseek-chat', 'provider': deepseek.id,
+        })
+        self.assertEqual(m2.real_provider, 'DeepSeek')
+
+    def test_unique_name_provider(self):
+        provider = self._make_provider('Dir Provider')
+        self.env['ai.model'].create({'name': 'deepseek-chat', 'provider': provider.id})
+        with self.cr.savepoint():
+            with self.assertRaises(Exception):
+                self.env['ai.model'].create(
+                    {'name': 'deepseek-chat', 'provider': provider.id})
+        # samma namn, annan provider → tillåtet (olika SKU:er)
+        provider2 = self._make_provider('Annan Provider')
+        self.env['ai.model'].create({'name': 'deepseek-chat', 'provider': provider2.id})
+
+    def test_display_name_format(self):
+        provider = self._make_provider('Bifrost', ptype='bifrost', is_bifrost=True)
+        m = self.env['ai.model'].create({'name': 'deepseek-flash', 'provider': provider.id})
+        self.assertEqual(m.display_name, '[Bifrost] deepseek-flash')
+
+
+class TestImportCanonicalization(TransactionCase):
+    """Import från gateway: maker-upplösning, kanoniskt namn, source_provider."""
+
+    def _gateway(self):
+        return self.env['ai.provider'].create({
+            'name': 'Bifrost', 'provider_type': 'bifrost',
+            'base_url': 'http://gw:8080/v1', 'is_bifrost': True,
+        })
+
+    def _direct(self, name, ptype):
+        return self.env['ai.provider'].create({
+            'name': name, 'provider_type': ptype,
+            'base_url': f'https://{name.lower()}.example.com/v1',
+        })
+
+    def test_nested_path_anthropic(self):
+        """openrouter/anthropic/claude-sonnet-4 → maker Anthropic (inte OpenRouter)."""
+        bifrost = self._gateway()
+        self._direct('Anthropic', 'anthropic')
+        bifrost._import_model('openrouter/anthropic/claude-sonnet-4')
+        m = self.env['ai.model'].search([('provider', '=', bifrost.id)], limit=1)
+        self.assertEqual(m.name, 'claude-sonnet-4')
+        self.assertEqual(m.api_name, 'openrouter/anthropic/claude-sonnet-4')
+        self.assertEqual(m.source_provider.name, 'Anthropic')
+
+    def test_nested_path_google(self):
+        """google/gemini/gemini-2.5-flash → maker Google (inte gemini)."""
+        bifrost = self._gateway()
+        self._direct('Google', 'google')
+        bifrost._import_model('google/gemini/gemini-2.5-flash')
+        m = self.env['ai.model'].search([('provider', '=', bifrost.id)], limit=1)
+        self.assertEqual(m.name, 'gemini/gemini-2.5-flash')
+        self.assertEqual(m.source_provider.name, 'Google')
+
+    def test_direct_import_no_source(self):
+        """Direkt provider: name = api_name, source_provider tom."""
+        deepseek = self._direct('DeepSeek', 'deepseek')
+        deepseek._import_model('deepseek-chat')
+        m = self.env['ai.model'].search([('provider', '=', deepseek.id)], limit=1)
+        self.assertEqual(m.name, 'deepseek-chat')
+        self.assertEqual(m.api_name, 'deepseek-chat')
+        self.assertFalse(m.source_provider)
+
+    def test_import_idempotent(self):
+        bifrost = self._gateway()
+        self._direct('DeepSeek', 'deepseek')
+        bifrost._import_model('deepseek/deepseek-flash')
+        bifrost._import_model('deepseek/deepseek-flash')
+        models = self.env['ai.model'].search([('provider', '=', bifrost.id)])
+        self.assertEqual(len(models), 1)
+
+    def test_unknown_maker_fallback_gateway(self):
+        """Okänd tillverkare bakom gateway → find-or-create label-record."""
+        bifrost = self._gateway()
+        bifrost._import_model('oklab/ok-1')
+        m = self.env['ai.model'].search([('provider', '=', bifrost.id)], limit=1)
+        self.assertEqual(m.name, 'ok-1')
+        self.assertEqual(m.api_name, 'oklab/ok-1')
+        self.assertEqual(m.source_provider.name, 'Oklab')
+
+
+class TestResolveFromReal(TransactionCase):
+    """_resolve_from_real: kanal-medvetet — aldrig ilike+limit=1 på name."""
+
+    def test_prefers_coworker_agent_models(self):
+        """3 record delar kanoniskt name — coworkerns agent vinner."""
+        bifrost = self.env['ai.provider'].create({
+            'name': 'Bifrost', 'provider_type': 'bifrost', 'is_bifrost': True,
+        })
+        berget = self.env['ai.provider'].create({
+            'name': 'Berget AI', 'provider_type': 'custom',
+        })
+        deepseek = self.env['ai.provider'].create({
+            'name': 'DeepSeek', 'provider_type': 'deepseek',
+        })
+        m_bifrost = self.env['ai.model'].create({
+            'name': 'deepseek-flash', 'api_name': 'deepseek/deepseek-flash',
+            'provider': bifrost.id, 'source_provider': deepseek.id,
+        })
+        m_berget = self.env['ai.model'].create({
+            'name': 'deepseek-flash', 'api_name': 'deepseek/deepseek-flash',
+            'provider': berget.id, 'source_provider': deepseek.id,
+        })
+        agent = self.env['ai.agent'].create({
+            'name': 'Ag', 'model_id': m_berget.id,
+        })
+        coworker = self.env['ai.coworker'].create({'name': 'Cw'})
+        self.env['ai.coworker.agent'].create({
+            'coworker_id': coworker.id, 'agent_id': agent.id,
+        })
+        resolved = self.env['ai.model']._resolve_from_real('deepseek-flash', coworker)
+        self.assertEqual(resolved.id, m_berget.id)
+
+    def test_exact_fallback_returns_one(self):
+        """Utan coworker: exakt match på name/api_name — returnerar ett record."""
+        p1 = self.env['ai.provider'].create({'name': 'P1', 'provider_type': 'custom'})
+        p2 = self.env['ai.provider'].create({'name': 'P2', 'provider_type': 'custom'})
+        p3 = self.env['ai.provider'].create({'name': 'P3', 'provider_type': 'custom'})
+        m1 = self.env['ai.model'].create({'name': 'deepseek-flash', 'provider': p1.id})
+        self.env['ai.model'].create({'name': 'deepseek-flash', 'provider': p2.id})
+        m3 = self.env['ai.model'].create({
+            'name': 'deepseek-flash', 'api_name': 'deepseek/deepseek-flash',
+            'provider': p3.id,
+        })
+        resolved = self.env['ai.model']._resolve_from_real('deepseek-flash')
+        self.assertIn(resolved.id, [m1.id, m3.id])
+        # api_name-match fungerar också
+        resolved2 = self.env['ai.model']._resolve_from_real('deepseek/deepseek-flash')
+        self.assertEqual(resolved2.id, m3.id)
+
+
+class TestConfigProvisioning(TransactionCase):
+    """bifrost-client-provisioning: config-styrd provider + default-modell."""
+
+    def setUp(self):
+        super().setUp()
+        from odoo.tools import config as odoo_config
+        self._odoo_config = odoo_config
+        self._saved = {
+            k: odoo_config.get(k) for k in (
+                'ai_provider_endpoint', 'ai_provider_api_key',
+                'ai_provider_name', 'ai_default_model')
+        }
+
+    def tearDown(self):
+        for k, v in self._saved.items():
+            if v is None:
+                self._odoo_config.pop(k, None)
+            else:
+                self._odoo_config[k] = v
+        super().tearDown()
+
+    def _set(self, **kw):
+        for k, v in kw.items():
+            self._odoo_config[k] = v
+
+    def test_reconcile_creates_provider(self):
+        self._set(ai_provider_endpoint='http://192.168.11.150:8081/v1',
+                  ai_provider_api_key='bf-vk-test')
+        provider, changed = self.env['ai.provider']._reconcile_from_config()
+        self.assertTrue(provider)
+        self.assertTrue(changed)
+        self.assertEqual(provider.base_url, 'http://192.168.11.150:8081/v1')
+        self.assertEqual(provider.api_key, 'bf-vk-test')
+        self.assertTrue(provider.auto_sync)
+        self.assertEqual(provider.status, 'confirmed')
+        self.assertEqual(provider.provider_type, 'custom')
+        self.assertFalse(provider.is_bifrost)
+
+    def test_reconcile_idempotent(self):
+        self._set(ai_provider_endpoint='http://gw:8081/v1',
+                  ai_provider_api_key='bf-vk-test')
+        p1, _c = self.env['ai.provider']._reconcile_from_config()
+        p2, changed2 = self.env['ai.provider']._reconcile_from_config()
+        self.assertEqual(p1.id, p2.id)
+        self.assertFalse(changed2)
+        self.assertEqual(
+            self.env['ai.provider'].search_count(
+                [('base_url', '=', 'http://gw:8081/v1')]), 1)
+
+    def test_reconcile_no_config_returns_empty(self):
+        provider, changed = self.env['ai.provider']._reconcile_from_config()
+        self.assertFalse(provider)
+        self.assertFalse(changed)
+
+    def test_apply_default_model_from_config(self):
+        provider = self.env['ai.provider'].create({
+            'name': 'P', 'provider_type': 'custom',
+            'base_url': 'http://x/v1',
+        })
+        model = self.env['ai.model'].create({
+            'name': 'cheap', 'api_name': 'cheap', 'provider': provider.id,
+        })
+        self._set(ai_default_model='cheap')
+        applied = self.env['ai.provider']._apply_default_model_from_config()
+        self.assertTrue(applied)
+        self.assertEqual(
+            self.env['ir.config_parameter'].sudo().get_param(
+                'ai_agent_core.default_model_id'), str(model.id))
+        # idempotent
+        applied2 = self.env['ai.provider']._apply_default_model_from_config()
+        self.assertFalse(applied2)
+
+
+class TestModelSelection(TransactionCase):
+    """model-selection: billigaste-modellen + aktivitet + felsituation."""
+
+    def test_cheapest_model(self):
+        from odoo.addons.ai_agent_core.core.provider import get_cheapest_model
+        p = self.env['ai.provider'].create({
+            'name': 'P', 'provider_type': 'custom', 'base_url': 'http://x/v1',
+        })
+        expensive = self.env['ai.model'].create({
+            'name': 'frontier-models', 'provider': p.id,
+            'sys_multiplier': 6.0, 'status': 'active',
+        })
+        cheap = self.env['ai.model'].create({
+            'name': 'cheap', 'provider': p.id,
+            'sys_multiplier': 1.0, 'status': 'active',
+        })
+        self.env['ai.model'].create({
+            'name': 'inaktiv', 'provider': p.id,
+            'sys_multiplier': 0.1, 'status': 'active', 'active': False,
+        })
+        chosen = get_cheapest_model()
+        self.assertEqual(chosen.id, cheap.id)
+
+    def test_cheapest_tie_break(self):
+        from odoo.addons.ai_agent_core.core.provider import get_cheapest_model
+        p = self.env['ai.provider'].create({
+            'name': 'P', 'provider_type': 'custom', 'base_url': 'http://x/v1',
+        })
+        a = self.env['ai.model'].create({
+            'name': 'a', 'provider': p.id, 'sys_multiplier': 1.0,
+            'cost_input_1k': 0.5, 'status': 'active',
+        })
+        b = self.env['ai.model'].create({
+            'name': 'b', 'provider': p.id, 'sys_multiplier': 1.0,
+            'cost_input_1k': 0.1, 'status': 'active',
+        })
+        chosen = get_cheapest_model()
+        self.assertEqual(chosen.id, b.id)
+
+    def test_activity_idempotent(self):
+        coworker = self.env['ai.coworker'].create({'name': 'Cw'})
+        p = self.env['ai.provider'].create({
+            'name': 'P', 'provider_type': 'custom', 'base_url': 'http://x/v1',
+        })
+        model = self.env['ai.model'].create({
+            'name': 'cheap', 'provider': p.id, 'status': 'active',
+        })
+        self.assertTrue(coworker._activity_check_model_assignment(model))
+        self.assertFalse(coworker._activity_check_model_assignment(model))
+        activities = self.env['mail.activity'].sudo().search([
+            ('res_model', '=', 'ai.coworker'), ('res_id', '=', coworker.id),
+            ('done', '=', False),
+        ])
+        self.assertEqual(len(activities), 1)
+
+    def test_resolve_default_model_no_hardcode(self):
+        """_ensure_agent utan default och utan modeller → agent utan model_id,
+        ingen hårdkodad '365'."""
+        coworker = self.env['ai.coworker'].create({'name': 'Cw2'})
+        coworker._ensure_agent()
+        agent = coworker.agent_ids[0].agent_id
+        self.assertFalse(agent.model_id)
+
+    def test_chat_without_model_raises(self):
+        from odoo.addons.ai_agent_core.core.provider import (
+            AIProvider, ProviderError)
+        provider = AIProvider(base_url='http://x/v1')
+        with self.assertRaises(ProviderError):
+            _run(provider.chat(
+                model='', messages=[]))
+
+    def test_no_hardcoded_fallbacks(self):
+        import os
+        import odoo.addons.ai_agent_core as mod_pkg
+        root = os.path.dirname(mod_pkg.__file__)
+        banned = ['cerebras/gpt-oss-120b', "'365'"]
+        hits = []
+        for dirpath, _dirs, files in os.walk(root):
+            if 'tests' in dirpath or '.git' in dirpath:
+                continue
+            for fname in files:
+                if not fname.endswith('.py'):
+                    continue
+                path = os.path.join(dirpath, fname)
+                for i, line in enumerate(open(path, encoding='utf-8'), 1):
+                    if any(b in line for b in banned):
+                        hits.append(f'{path}:{i}')
+        self.assertEqual(hits, [])

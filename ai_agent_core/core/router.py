@@ -109,7 +109,7 @@ class LLMRouter:
         """
         router_prompt = self.build_prompt(prompt, agents)
         from odoo.addons.ai_agent_core.core.provider import get_default_model_name
-        model = self.model or get_default_model_name() or 'cerebras/gpt-oss-120b'
+        model = self.model or get_default_model_name()
         try:
             response = await asyncio.wait_for(
                 self.provider.chat(

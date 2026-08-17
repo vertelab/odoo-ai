@@ -12,8 +12,6 @@
                 <field name="model_id"/>
                 <field name="skill_ids"/>
                 <field name="coworker_count"/>
-                <field name="budget_limit"/>
-                <field name="budget_used"/>
                 <field name="active"/>
                 <field name="partner_image_128"/>
                 <templates>
@@ -66,9 +64,6 @@
                                             </span>
                                             <span t-if="record.coworker_count.raw_value" class="badge bg-info small">
                                                 <i class="fa fa-users me-1"/><field name="coworker_count"/>
-                                            </span>
-                                            <span t-if="record.budget_limit.raw_value and record.budget_limit.raw_value > 0" class="badge bg-warning text-dark small">
-                                                <i class="fa fa-usd me-1"/><field name="budget_used"/> / <field name="budget_limit"/>
                                             </span>
                                         </div>
 
@@ -156,8 +151,8 @@
                         </page>
                         <page string="Budget">
                             <group>
-                                <field name="budget_limit"/>
-                                <field name="budget_used" readonly="1"/>
+                                <p>Budget hanteras på AI Medarbetaren i systemtokens
+                                   (monthly_cap_mtokens). Inga per-agent-budgetar.</p>
                             </group>
                         </page>
                         <page string="Buzz Workspace">

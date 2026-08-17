@@ -217,6 +217,13 @@ class AIProvider:
         max_tokens: int = 4096,
     ) -> ChatResponse:
         """Send a chat completion request. Non-streaming."""
+        if not model:
+            # bifrost-client-provisioning D6: ingen provider/modell konfigurerad
+            # är en FELSITUATION — aldrig tyst hårdkodad fallback-sträng.
+            raise ProviderError(
+                "No model configured: set ai_provider_* in odoo.conf or "
+                "assign a model to the agent (ai_agent_core.default_model_id)."
+            )
         if self.api_style == "anthropic":
             return await self._chat_anthropic(
                 model, messages, tools, system_prompt, temperature, max_tokens
@@ -235,6 +242,12 @@ class AIProvider:
         max_tokens: int = 4096,
     ) -> AsyncIterator[TokenEvent]:
         """Send a chat completion request. Streaming via async generator."""
+        if not model:
+            # D6: felsituation — ingen tyst hårdkodad fallback.
+            raise ProviderError(
+                "No model configured: set ai_provider_* in odoo.conf or "
+                "assign a model to the agent (ai_agent_core.default_model_id)."
+            )
         if self.api_style == "anthropic":
             async for event in self._stream_anthropic(
                 model, messages, tools, system_prompt, temperature, max_tokens
@@ -661,7 +674,30 @@ def get_default_model_name():
     leverantörsnamn. Returnerar '' om ingen default är konfigurerad.
     """
     _provider, model = get_default_provider()
-    return model.name if model else ''
+    # Wire-semantik: api_name om satt, annars name (bakåtkompatibelt).
+    return (model.api_name or model.name) if model else ''
+
+
+def get_cheapest_model():
+    """Billigaste aktiva modellen — datadrivet (bifrost-client-provisioning D5).
+
+    Lägst sys_multiplier (Vertels kostnadsproxy), tie-break lägst
+    cost_input_1k sedan id. Aldrig hårdkodad modellsträng.
+
+    Returns:
+        ai.model record eller tom records
+    """
+    try:
+        from odoo.http import request
+
+        if not request:
+            return None
+        return request.env['ai.model'].sudo().search([
+            ('active', '=', True),
+            ('status', '=', 'active'),
+        ], order='sys_multiplier asc, cost_input_1k asc, id asc', limit=1)
+    except Exception:
+        return None
 
 
 class ProviderFactory:

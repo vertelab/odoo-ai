@@ -71,6 +71,9 @@ class AgentConfig:
     nats_max_retries: int = 3  # retries before giving up on NATS tool
     nats_timeout: float = 60.0  # seconds per NATS request-reply
 
+    # User context for NATS tool execution (pi-agent-memory-bridge D5)
+    nats_user_context: dict = None  # {"user_id": 42, "company_id": 1, "coworker_id": 7, "session_id": 123}
+
 
 # ---------------------------------------------------------------------------
 # AgentLoop (LOOP-001, LOOP-003, LOOP-005, LOOP-007)
@@ -173,7 +176,8 @@ class AgentLoop:
         Returns the final ChatResponse when the agent is done.
         """
         messages = list(history) if history else []
-        messages.append(Message(role=Role.USER, content=prompt))
+        if prompt:
+            messages.append(Message(role=Role.USER, content=prompt))
 
         round_num = 0
         total_input_tokens = 0
@@ -680,6 +684,9 @@ class AgentLoop:
             "skills": [s.strip() for s in skills.split(",") if s.strip()],
             "api_secret": self.config.nats_api_secret,
         }
+        # Include user context for pi-agent (pi-agent-memory-bridge D5)
+        if self.config.nats_user_context:
+            payload["context"] = self.config.nats_user_context
 
         last_error = ""
         for attempt in range(1, max_retries + 1):
@@ -794,7 +801,8 @@ class StreamingAgentLoop(AgentLoop):
         Yields tokens, tool_call_start, tool_call_end, and done events.
         """
         messages = list(history) if history else []
-        messages.append(Message(role=Role.USER, content=prompt))
+        if prompt:
+            messages.append(Message(role=Role.USER, content=prompt))
 
         round_num = 0
 

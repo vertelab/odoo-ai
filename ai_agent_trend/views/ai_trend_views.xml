@@ -93,7 +93,7 @@
         <field name="name" />
         <field name="platform" />
         <templates>
-          <t t-name="card">
+          <t t-name="kanban-box">
             <div class="oe_kanban_global_click">
               <strong>
                 <field name="name" />

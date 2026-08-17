@@ -12,7 +12,7 @@
     <record id="action_ai_orchestration_dashboard" model="ir.actions.act_window">
         <field name="name">AI Orkestrering</field>
         <field name="res_model">hr.department</field>
-        <field name="view_mode">kanban,list,hierarchy,form</field>
+        <field name="view_mode">kanban,list,org_chart,form</field>
         <field name="help" type="html">
             <p><strong>AI Orchestration Dashboard</strong></p>
             <p>Här ser du hela din AI-organisation — avdelningar, AI-medarbetare, status och hälsa.</p>
@@ -20,11 +20,22 @@
         </field>
     </record>
 
-    <record id="ai_orchestration_dashboard_hierarchy_view" model="ir.actions.act_window.view">
+    <!-- Org-chart-vy (hr.department-hierarki med AI-badges) — ersätter den
+         borttagna hierarchy-vytypen som installerade Odoo-web saknar -->
+    <record id="hr_department_org_chart_view_ai" model="ir.ui.view">
+        <field name="name">hr.department.org.chart.ai</field>
+        <field name="model">hr.department</field>
+        <field name="type">org_chart</field>
+        <field name="arch" type="xml">
+            <org_chart string="AI Organisation"/>
+        </field>
+    </record>
+
+    <record id="ai_orchestration_dashboard_org_chart_view" model="ir.actions.act_window.view">
         <field name="sequence" eval="12"/>
-        <field name="view_mode">hierarchy</field>
+        <field name="view_mode">org_chart</field>
         <field name="act_window_id" ref="action_ai_orchestration_dashboard"/>
-        <field name="view_id" ref="hr_department_hierarchy_view_ai"/>
+        <field name="view_id" ref="hr_department_org_chart_view_ai"/>
     </record>
 
     <!-- Onboarding server action button -->

@@ -110,6 +110,13 @@ class AITool(models.Model):
         help='Max seconds to wait for Pi-agent reply.',
     )
 
+    # Systemtoken-kostnad per anrop (budget-hard-cap D6)
+    sys_token_cost = fields.Integer(
+        'Systemtoken-kostnad per anrop', default=500,
+        help='Fast minimikostnad i systemtokens per tool-anrop. Läggs '
+             'direkt på tool-raden (token_sys). Global per tool.',
+    )
+
     # Relations
     agent_ids = fields.Many2many(
         'ai.agent', 'ai_agent_tool_custom_rel',
@@ -162,6 +169,8 @@ class AITool(models.Model):
                             'risk_level': bt.risk_level or 'read_only',
                             'executor': bt.executor or 'local',
                             'capabilities': json.dumps(bt.capabilities or []),
+                            'nats_subject': bt.nats_subject or 'pi.task.do',
+                            'nats_skills': bt.nats_skills or '',
                             'active': True,
                         })
                     created += 1
@@ -173,6 +182,15 @@ class AITool(models.Model):
             elif not rec.builtin_name:
                 rec.write({'builtin_name': bt.name})
                 marked += 1
+            # Korrigera NATS-subject om posten har kvar default-värdet
+            # (pi.task.do) men builtin definierar ett specifikt subject.
+            # Bridge-poster med anpassad konfiguration skrivs inte över.
+            if rec.executor == 'nats' and bt.nats_subject:
+                if rec.nats_subject in (False, None, '', 'pi.task.do') \
+                        and bt.nats_subject != 'pi.task.do':
+                    rec.write({'nats_subject': bt.nats_subject})
+                if rec.nats_skills in (False, None, '') and bt.nats_skills:
+                    rec.write({'nats_skills': bt.nats_skills})
             # Bind xmlid (idempotent): tool_<sanitized name> i ai_agent_core.
             # Gör att data-XML (default_coworker.xml m.fl.) kan referera
             # verktygen med ref('tool_describe_model') etc.
@@ -257,8 +275,14 @@ class AITool(models.Model):
             self.error_count += 1
             raise UserError(_('Tool test failed: %s') % str(e))
 
-    def _execute_tool(self, kwargs: dict) -> str:
-        """Execute the tool code with given parameters."""
+    async def _execute_tool_async(self, kwargs: dict) -> str:
+        """Execute the tool code with given parameters (async variant).
+
+        Anropas från AgentLoop (async-kontext). Await:ar execute-funktionen
+        direkt på den körande loopen — undviker deadlock med
+        run_coroutine_threadsafe mot samma loop (30s timeout per tool-call).
+        """
+        import asyncio, inspect
         self.ensure_one()
 
         # Sandboxed environment
@@ -293,20 +317,11 @@ class AITool(models.Model):
             if not callable(execute_func):
                 raise UserError(_('"execute" must be a function'))
 
-            # Call synchronously (Odoo is sync)
-            import asyncio
-            try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    # We're in an async context — use run_coroutine_threadsafe
-                    result = asyncio.run_coroutine_threadsafe(
-                        execute_func(**kwargs), loop
-                    ).result(timeout=30)
-                else:
-                    result = loop.run_until_complete(execute_func(**kwargs))
-            except RuntimeError:
-                # No running loop — create one
-                result = asyncio.run(execute_func(**kwargs))
+            # Await directly — vi är redan i AgentLoop:ens asyncio-loop.
+            if inspect.iscoroutinefunction(execute_func):
+                result = await execute_func(**kwargs)
+            else:
+                result = execute_func(**kwargs)
 
             self.call_count += 1
             self.last_called = fields.Datetime.now()
@@ -320,6 +335,25 @@ class AITool(models.Model):
             self.error_count += 1
             _logger.error("Tool '%s' execution failed: %s", self.name, e, exc_info=True)
             raise UserError(_('Tool execution failed: %s') % str(e))
+
+    def _execute_tool(self, kwargs: dict) -> str:
+        """Execute the tool code with given parameters (sync variant).
+
+        Används av testmetoden (ingen körande asyncio-loop). Kör
+        coroutinen i en fristående loop via asyncio.run().
+        """
+        import asyncio
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            pass
+        else:
+            # Vi är i en async-kontext — anropa async-varianten direkt.
+            raise UserError(
+                _('Use _execute_tool_async in async context'))
+
+        import asyncio
+        return asyncio.run(self._execute_tool_async(kwargs))
 
     def to_core_tool(self, env=None):
         """Convert to core.tools.Tool for use in AgentLoop.

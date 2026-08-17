@@ -59,7 +59,116 @@ class AICoworkerSession(models.Model):
 
     token_input = fields.Integer('Input Tokens', default=0)
     token_output = fields.Integer('Output Tokens', default=0)
-    cost_estimated = fields.Float('Cost (USD)', default=0.0)
+    token_sys = fields.Integer(
+        'Systemtokens', compute='_compute_token_sys', store=False,
+        help='Summan av alla session lines systemtokens (budget-hard-cap D7).')
+
+    @api.depends('session_line_ids.token_sys')
+    def _compute_token_sys(self):
+        """Sessionens totala systemtoken-förbrukning (Σ lines)."""
+        for r in self:
+            r.token_sys = sum(l.token_sys or 0 for l in r.session_line_ids)
+
+    # ── Kostnadskontext (session-cost-context) ──────────────────────────
+    # Generiska fält (domän-rent): pi_session_id kopplar sessionen 1:1 till
+    # en Pi-session (UUID). partner_id/cost_context_confirmed är grunden för
+    # kostnadsuppföljning per kund. Domänfält (project_id/task_id) läggs av
+    # bryggor (project_ai) via arv.
+    pi_session_id = fields.Char(
+        'Pi Session ID', index=True,
+        help='Pi-sessionens UUID (1:1 mot Pi-sessionen). Resumé av samma '
+             'Pi-session återfinner samma Odoo-session.')
+    partner_id = fields.Many2one(
+        'res.partner', string='Kund', index=True,
+        help='Kund (res.partner) som sessionens kostnad belastar. Härleds '
+             'normalt från projektets partner via coworkerns '
+             'kostnadskontext-strategi.')
+    cost_context_confirmed = fields.Boolean(
+        'Kostnadskontext bekräftad', default=False,
+        help='Sätts när kostnadsbelastningen bekräftats (en gång per '
+             'session). Redan bekräftad session frågar inte om igen '
+             '(inte heller efter resume/fork-kopiering).')
+
+    def _session_capture_context(self):
+        """Domän-ren hook: bryggor (t.ex. project_ai) override:ar för att
+        fånga domänkontext (project/task) på sessionen vid körning.
+
+        Kallas av openai_api-vägen efter att en session skapats/återfunnits.
+        Default: ingen åtgärd (core förblir domän-rent).
+        """
+        return self
+
+    def _session_auto_capture(self, prompt):
+        """Domän-ren hook: deterministisk kontextfångst ur användarens
+        prompt (t.ex. 'task 36779' → task/projekt/kund).
+
+        Kallas av openai_api-vägen efter att sessionen skapats/återfunnits
+        OCH efter _session_capture_context, innan LLM-körningen. Bryggor
+        (t.ex. project_ai) override:ar med regex/heuristik — core förblir
+        domän-rent. Default: ingen åtgärd.
+        """
+        return self
+
+    def _apply_cost_context_strategy(self):
+        """Anropa coworkerns resolver-strategi för att härleda partner_id
+        (och ev. domänfält) ur sessionens nuvarande kontext.
+
+        Strategin väljs av coworkerns `cost_context_partner_strategy`
+        (t.ex. "project_partner" registrerad av project_ai). Tyst no-op om
+        ingen strategi är satt/registrerad — hooks får aldrig kasta.
+        """
+        self.ensure_one()
+        strategy = self.coworker_id.cost_context_partner_strategy \
+            if self.coworker_id else ''
+        if not strategy:
+            return self
+        fn = get_cost_context_strategy(strategy)
+        if fn is None:
+            _logger.warning('cost-context strategy %r not registered',
+                            strategy)
+            return self
+        try:
+            fn(self)
+        except Exception as e:
+            _logger.warning('cost-context strategy %s failed: %s',
+                            strategy, e)
+        return self
+
+    @api.model
+    def _lookup_or_create_pi_session(self, pi_session_id,
+                                     copy_from_pi_session_id=''):
+        """Find-or-create session via pi_session_id (session-cost-context).
+
+        Används av POST /ai/v1/sessions/lookup och openai_api-vägen.
+        Idempotent: samma pi_session_id → samma session. Vid
+        copy_from_pi_session_id (fork) skapas en NY session med kontexten
+        (project/task/partner + cost_context_confirmed) kopierad från
+        källsessionen.
+
+        Returnerar (session, created: bool).
+        """
+        pi_session_id = (pi_session_id or '').strip()
+        session = self.search(
+            [('pi_session_id', '=', pi_session_id)], limit=1)
+        if session:
+            return session, False
+        vals = {
+            'pi_session_id': pi_session_id,
+            'status': 'active',
+            'name': pi_session_id[:8],
+            'user_id': self.env.user.id,
+        }
+        if copy_from_pi_session_id:
+            src = self.search(
+                [('pi_session_id', '=', copy_from_pi_session_id)], limit=1)
+            if src:
+                for f in ('project_id', 'task_id', 'partner_id'):
+                    if f in self._fields:
+                        vals[f] = src[f].id if src[f] else False
+                if 'cost_context_confirmed' in self._fields:
+                    vals['cost_context_confirmed'] = \
+                        src.cost_context_confirmed
+        return self.create(vals), True
 
     # ── Kostnadskontext (session-cost-context) ──────────────────────────
     # Generiska fält (domän-rent): pi_session_id kopplar sessionen 1:1 till
@@ -233,11 +342,11 @@ class AICoworkerSession(models.Model):
         self.token_input += input_t
         self.token_output += output_t
 
-        # Look up sys_multiplier from ai.model
+        # Look up sys_multiplier from ai.model (kanal-medvetet)
         sys_mult = 1.0
         if model_real:
-            ai_model = self.env['ai.model'].search(
-                [('name', 'ilike', model_real)], limit=1)
+            ai_model = self.env['ai.model']._resolve_from_real(
+                model_real, self.coworker_id)
             if ai_model:
                 sys_mult = ai_model.sys_multiplier
 

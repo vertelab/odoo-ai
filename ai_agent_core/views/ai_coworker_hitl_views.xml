@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- ── HITL list ── -->
+    <record id="ai_coworker_hitl_list" model="ir.ui.view">
+        <field name="name">ai.coworker.hitl.list</field>
+        <field name="model">ai.coworker.hitl</field>
+        <field name="arch" type="xml">
+            <list string="HITL-requests" sample="1">
+                <field name="create_date"/>
+                <field name="coworker_id"/>
+                <field name="action_type"/>
+                <field name="object_type"/>
+                <field name="risk_level"/>
+                <field name="request_summary"/>
+                <field name="state"/>
+                <field name="user_id"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- ── HITL form ── -->
+    <record id="ai_coworker_hitl_form" model="ir.ui.view">
+        <field name="name">ai.coworker.hitl.form</field>
+        <field name="model">ai.coworker.hitl</field>
+        <field name="arch" type="xml">
+            <form string="HITL-request">
+                <header>
+                    <button name="action_approve" type="object"
+                            string="Godkänn" class="oe_highlight"
+                            invisible="state != 'asked'"/>
+                    <button name="action_reject" type="object"
+                            string="Avslå"
+                            invisible="state != 'asked'"/>
+                    <field name="state" widget="statusbar"
+                           statusbar_visible="asked,approved,rejected,expired"/>
+                </header>
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="coworker_id"/>
+                            <field name="user_id" string="Godkännare"/>
+                            <field name="action_type"/>
+                            <field name="object_type"/>
+                            <field name="risk_level"/>
+                        </group>
+                        <group>
+                            <field name="is_auto_proposal"/>
+                            <field name="decided_by"/>
+                            <field name="decided_at"/>
+                            <field name="standing_rule" readonly="1" nolabel="0"
+                                   invisible="standing_rule == False"/>
+                        </group>
+                    </group>
+                    <group string="Förfrågan">
+                        <field name="request_summary" readonly="1"/>
+                        <field name="context" readonly="1"/>
+                        <field name="decision" placeholder="Beslut/kommentar…"/>
+                    </group>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <!-- ── HITL search ── -->
+    <record id="ai_coworker_hitl_search" model="ir.ui.view">
+        <field name="name">ai.coworker.hitl.search</field>
+        <field name="model">ai.coworker.hitl</field>
+        <field name="arch" type="xml">
+            <search string="HITL">
+                <field name="coworker_id"/>
+                <field name="action_type"/>
+                <field name="user_id"/>
+                <filter name="asked" string="Öppna"
+                        domain="[('state', '=', 'asked')]"/>
+                <filter name="approved" string="Godkända"
+                        domain="[('state', '=', 'approved')]"/>
+                <filter name="rejected" string="Avslagna"
+                        domain="[('state', '=', 'rejected')]"/>
+                <filter name="proposals" string="Auto-förslag"
+                        domain="[('is_auto_proposal', '=', True)]"/>
+                <group expand="0" string="Gruppera">
+                    <filter name="g_state" string="Status" domain="[]"
+                            context="{'group_by': 'state'}"/>
+                    <filter name="g_risk" string="Risk" domain="[]"
+                            context="{'group_by': 'risk_level'}"/>
+                    <filter name="g_action" string="Åtgärdstyp" domain="[]"
+                            context="{'group_by': 'action_type'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <!-- ── Action + meny (AI Orkestrering → Organisation) ── -->
+    <record id="ai_coworker_hitl_action" model="ir.actions.act_window">
+        <field name="name">Godkännanden (HITL)</field>
+        <field name="res_model">ai.coworker.hitl</field>
+        <field name="view_mode">list,form</field>
+        <field name="context">{'search_default_asked': 1}</field>
+    </record>
+
+
+    <!-- ── Smartknapp på ai.coworker-formen ── -->
+    <record id="ai_coworker_form_inherit_hitl" model="ir.ui.view">
+        <field name="name">ai.coworker.form.inherit.hitl</field>
+        <field name="model">ai.coworker</field>
+        <field name="inherit_id" ref="ai_coworker_form"/>
+        <field name="arch" type="xml">
+            <div name="button_box" position="inside">
+                <button name="action_open_hitl" class="oe_stat_button"
+                        type="object" icon="fa-check-square-o">
+                    <field name="hitl_open_count" widget="statinfo"/>
+                </button>
+            </div>
+        </field>
+    </record>
+
+    <!-- ── Smartknapp i Min profil (res.users) ── -->
+    <record id="view_res_users_form_inherit_hitl" model="ir.ui.view">
+        <field name="name">res.users.form.inherit.hitl</field>
+        <field name="model">res.users</field>
+        <field name="inherit_id" ref="base.view_users_form"/>
+        <field name="arch" type="xml">
+            <div name="button_box" position="inside">
+                <button name="action_open_my_hitl" type="object"
+                        class="oe_stat_button" icon="fa-check-square-o">
+                    <div class="o_stat_info">
+                        <field name="hitl_approver_count"/>
+                        <span class="o_stat_text">Godkännanden</span>
+                    </div>
+                </button>
+            </div>
+        </field>
+    </record>
+
+</odoo>

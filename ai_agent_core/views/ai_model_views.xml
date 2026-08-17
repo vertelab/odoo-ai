@@ -8,7 +8,9 @@
                 <field name="name"/>
                 <field name="display_name"/>
                 <field name="provider"/>
+                <field name="source_provider"/>
                 <field name="provider_type"/>
+                <field name="api_name"/>
                 <field name="context_window"/>
                 <field name="status"/>
                 <field name="licence"/>
@@ -54,6 +56,11 @@
                                     · <field name="context_window"/>K context
                                 </div>
 
+                                <!-- Wire-id (api_name) -->
+                                <div class="text-muted small" t-if="record.api_name.raw_value">
+                                    wire: <field name="api_name"/>
+                                </div>
+
                                 <!-- Cost: input / output per 1K -->
                                 <div class="text-muted small" t-if="record.cost_input_1k.raw_value">
                                     <i class="fa fa-usd me-1"/><field name="cost_input_1k"/> / <field name="cost_output_1k"/> per 1K
@@ -81,6 +88,11 @@
                                             <span t-if="record.licence.raw_value" class="badge bg-light text-dark border small">
                                                 <field name="licence"/>
                                             </span>
+
+                                            <!-- Maker badge (tillverkare) -->
+                                            <span t-if="record.source_provider.raw_value" class="badge bg-info text-white small" title="Tillverkare">
+                                                <i class="fa fa-industry me-1"/><field name="source_provider"/>
+                                            </span>
                                         </div>
 
                                         <!-- Right: status -->
@@ -106,7 +118,9 @@
         <field name="arch" type="xml">
             <list string="Models" decoration-danger="status=='deprecated'" multi_edit="1">
                 <field name="name"/>
+                <field name="api_name" optional="show"/>
                 <field name="provider"/>
+                <field name="source_provider" optional="show"/>
                 <field name="real_provider" optional="show"/>
                 <field name="context_window"/>
                 <field name="max_output_tokens" optional="hide"/>
@@ -138,7 +152,15 @@
                 <filter string="Archived" name="inactive" domain="[('active','=',False)]"/>
                 <group expand="0" string="Group By">
                     <filter string="Provider" name="group_provider" context="{'group_by':'provider'}"/>
+                    <filter string="Source Provider (tillverkare)" name="group_source_provider" context="{'group_by':'source_provider'}"/>
+                    <filter string="Provider Type" name="group_provider_type" context="{'group_by':'provider_type'}"/>
                     <filter string="Status" name="group_status" context="{'group_by':'status'}"/>
+                    <filter string="Licence" name="group_licence" context="{'group_by':'licence'}"/>
+                    <filter string="Vision" name="group_vision" context="{'group_by':'is_vision'}"/>
+                    <filter string="Embedding" name="group_embed" context="{'group_by':'is_embedded'}"/>
+                    <filter string="Tool Calling" name="group_tools" context="{'group_by':'has_tools'}"/>
+                    <filter string="Streaming" name="group_stream" context="{'group_by':'has_streaming'}"/>
+                    <filter string="Active" name="group_active" context="{'group_by':'active'}"/>
                 </group>
             </search>
         </field>
@@ -194,6 +216,7 @@
                             <field name="tag_ids" widget="many2many_tags"/>
                         </group>
                         <group string="Provider">
+                            <field name="api_name"/>
                             <field name="source_provider"/>
                             <field name="real_provider" readonly="1"/>
                             <field name="provider_type" readonly="1"/>

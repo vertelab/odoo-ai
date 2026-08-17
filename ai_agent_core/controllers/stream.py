@@ -36,6 +36,23 @@ except Exception:
 
 _logger = logging.getLogger(__name__)
 
+
+def _content_to_text(content):
+    """Normalisera OpenAI content till ren text.
+
+    Pi och andra OpenAI-klienter skickar content antingen som sträng
+    eller som multimodal array (t.ex. [{'type': 'text', 'text': '...'}]).
+    Session-lines och prompt-bygge kräver ren text — annars sparas
+    dict-formatet som strängrepresentation i DB (bugg: content ser ut
+    som "[{'type': 'text', 'text': '...'}]").
+    """
+    if isinstance(content, list):
+        texts = [
+            c.get('text', '') for c in content if c.get('type') == 'text'
+        ]
+        return '\n'.join(texts)
+    return content or ''
+
 # ---------------------------------------------------------------------------
 # SSE Controller
 # ---------------------------------------------------------------------------
@@ -60,7 +77,7 @@ class AIStreamController(http.Controller):
 
         # Resolve quest configuration — frontend skickar quest_id (alias för coworker_id)
         from odoo.addons.ai_agent_core.core.provider import get_default_model_name
-        model = get_default_model_name() or "cerebras/gpt-oss-120b"
+        model = get_default_model_name()
         system_prompt = ""
         quest = None
         if not coworker_id:
@@ -75,6 +92,20 @@ class AIStreamController(http.Controller):
                         return Response(
                             json.dumps({"error": "Quest not accessible"}),
                             status=403,
+                            content_type='application/json',
+                        )
+                    # Budgetcheck (budget-hard-cap D4): web-UI visar budget slut
+                    quest._unlock_budget_activities()
+                    if quest.budget_exhausted:
+                        quest.check_cap()
+                        return Response(
+                            json.dumps({
+                                "error": "budget_exhausted",
+                                "message": "Budget slut: AI-medarbetaren har nått "
+                                           "månadstaket. Höj taket i inställningarna "
+                                           "eller vänta till nästa månad.",
+                            }),
+                            status=402,
                             content_type='application/json',
                         )
                     if quest.description:
@@ -117,7 +148,7 @@ class AIStreamController(http.Controller):
                     for qa in quest.agent_ids:
                         agent = qa.agent_id
                         if agent.model_id:
-                            model = agent.model_id.name
+                            model = agent.model_id._get_api_name()
                             break
             except Exception:
                 pass
@@ -292,15 +323,39 @@ class AIStreamController(http.Controller):
                         gen_agents.append({
                             'name': agent.name,
                             'description': agent.get_agent_name(),
-                            'model': (agent.model_id.name if agent.model_id else model),
+                            'model': (agent.model_id._get_api_name() if agent.model_id else model),
                         })
-                # Resolve provider from quest's agent chain
-                from odoo.addons.ai_agent_core.core.provider import ProviderFactory
+                # Resolve provider from quest's agent chain.
+                # Coworker = skal, agent = hjärna: en coworker utan agent
+                # (eller agent utan modell) ger ingen provider → chatten
+                # kraschade med 'NoneType' ... chat_stream. Auto-skapa
+                # default-agenten (samma som _check_quest_error/_ensure_agent
+                # gör i andra kanaler) och fallbacka till default-providern.
+                from odoo.addons.ai_agent_core.core.provider import (
+                    ProviderFactory, get_default_provider)
+                if not quest.agent_ids:
+                    try:
+                        quest._ensure_agent()
+                    except Exception:
+                        _logger.exception('Failed to auto-create default agent')
                 provider_instance, provider_model = ProviderFactory.from_coworker(quest)
                 if provider_instance:
                     gen_provider = provider_instance
                     if provider_model:
-                        gen_provider_model = provider_model.name
+                        gen_provider_model = provider_model._get_api_name()
+                else:
+                    # Fallback till default-provider MÅSTE fångas här (innan
+                    # teardown). get_default_provider() inuti generatorn
+                    # returnerar alltid (None, None) — `request` är borta
+                    # då, vilket gav 'NoneType' ... chat_stream.
+                    try:
+                        default_provider, default_model = get_default_provider()
+                        if default_provider:
+                            gen_provider = default_provider
+                            if default_model and not gen_provider_model:
+                                gen_provider_model = default_model._get_api_name()
+                    except Exception:
+                        _logger.exception('Failed to resolve default provider')
             except Exception:
                 _logger.exception('Failed to extract quest data for streaming')
 
@@ -351,7 +406,24 @@ class AIStreamController(http.Controller):
                         _register_webui_handler(session_uuid, handler)
                         yield f"data: {json.dumps({'type': 'session', 'session_uuid': session_uuid})}\n\n"
 
-                        provider = gen_provider or get_default_provider()[0] 
+                        provider = gen_provider
+                        if provider is None:
+                            # Defense-in-depth: fallbacken fångades i
+                            # request-kontexten ovan. Här inne (efter
+                            # teardown) finns inget `request` att fallbacka
+                            # med — ge ett tydligt fel istället för
+                            # AttributeError.
+                            _logger.error(
+                                'No AI provider resolvable for quest %s',
+                                gen_coworker_id)
+                            yield ("data: " + json.dumps({
+                                'type': 'error',
+                                'message': ('Ingen AI-leverantör konfigurerad '
+                                            'för denna medarbetare. Kontrollera '
+                                            'agentens modell eller '
+                                            'ai_agent_core.default_model_id.'),
+                            }) + "\n\n")
+                            return
                         # explicit-agent-tools: ENDAST settings-default +
                         # explicita verktyg (gen_tool_ids). Inga builtins.
                         tools = ToolRegistry()
@@ -386,6 +458,8 @@ class AIStreamController(http.Controller):
                                             model=a['model'],
                                             system_prompt=system_prompt,
                                             max_rounds=10,
+                                            # Långa tool-resultat (YouTube-transkript ≈ 24k tecken) får plats
+                                            max_tool_result_chars=40000,
                                             nats_api_secret=nats_api_secret,
                                             nats_max_retries=nats_max_retries,
                                             user_group_ids=gen_user_group_ids,
@@ -402,6 +476,8 @@ class AIStreamController(http.Controller):
                                     model=model,
                                     system_prompt=system_prompt,
                                     max_rounds=10,
+                                    # Långa tool-resultat (YouTube-transkript ≈ 24k tecken) får plats
+                                    max_tool_result_chars=40000,
                                     nats_api_secret=nats_api_secret,
                                     nats_max_retries=nats_max_retries,
                                     user_group_ids=gen_user_group_ids,
@@ -628,9 +704,9 @@ class AIStreamController(http.Controller):
                             continue
                         ai_model = agent.model_id
                         model_name = ai_model.name
-                        if model_name in seen:
+                        if ai_model.id in seen:
                             continue
-                        seen.add(model_name)
+                        seen.add(ai_model.id)
                         models.append({
                             'name': model_name,
                             'display_name': ai_model.display_name or model_name,
@@ -822,11 +898,12 @@ class AIStreamController(http.Controller):
         if session.exists():
             next_seq = len(session.session_line_ids) + 1
 
-            # Resolve sys_multiplier from ai.model if model_real is provided
+            # Resolve sys_multiplier from ai.model if model_real is provided.
+            # Kanal-medvetet via _resolve_from_real (record-id/coworker-agenter).
             sys_mult = 1.0
             if model_real:
-                ai_model = request.env['ai.model'].sudo().search(
-                    [('name', 'ilike', model_real)], limit=1)
+                ai_model = request.env['ai.model']._resolve_from_real(
+                    model_real, quest)
                 if ai_model:
                     sys_mult = ai_model.sys_multiplier
 
@@ -1492,8 +1569,8 @@ def _summarize_history(session, lines, max_chars=4000):
         provider, provider_model = ProviderFactory.from_coworker(quest) if quest else (None, None)
         if not provider:
             provider, provider_model = get_default_provider()
-        model_name = (provider_model and provider_model.name) \
-            or get_default_model_name() or 'cerebras/gpt-oss-120b'
+        model_name = (provider_model and provider_model._get_api_name()) \
+            or get_default_model_name()
         loop = AgentLoop(provider=provider, tools=[], config=AgentConfig(
             model=model_name, max_rounds=1, max_tokens=2048))
         prompt = (
@@ -1963,7 +2040,7 @@ class AIOpenAIAPI(http.Controller):
             return Response(json.dumps({'error': {'message': 'No user message provided', 'type': 'invalid_request_error'}}),
                           status=400, content_type='application/json')
 
-        prompt = user_messages[-1].get('content') or ''
+        prompt = _content_to_text(user_messages[-1].get('content'))
         system_prompt = quest.description or ''
 
         # Inject conversation history as context
@@ -1972,7 +2049,7 @@ class AIOpenAIAPI(http.Controller):
             history_lines = []
             for m in messages[:-1]:
                 role = m.get('role', 'user')
-                content = m.get('content') or ''
+                content = _content_to_text(m.get('content'))
                 history_lines.append(f'[{role}] {content[:500]}')
             history_context = '\n'.join(history_lines[-20:])
 
@@ -2012,7 +2089,14 @@ class AIOpenAIAPI(http.Controller):
             "fråga en gång"-instruktion. Tyst no-op vid fel.
             """
             try:
-                has_openai = bool(quest.init_type_ids.filtered(
+                # OBS (streaming): använder sess.coworker_id (sessionens
+                # egen cursor) i stället för closure-variabeln quest —
+                # request.cursor är stängd när generatorn körs efter
+                # teardown.
+                cw = sess.coworker_id if (
+                    'coworker_id' in sess._fields and sess.coworker_id
+                ) else quest
+                has_openai = bool(cw.init_type_ids.filtered(
                     lambda it: it.init_type == 'openai_api' and it.enabled))
                 if not has_openai:
                     return ''
@@ -2027,7 +2111,7 @@ class AIOpenAIAPI(http.Controller):
                     cc.append(f'kund: {sess.partner_id.name} '
                               f'(id={sess.partner_id.id})')
                 confirmed = sess.cost_context_confirmed
-                question = (quest.cost_context_question or '').strip()
+                question = (cw.cost_context_question or '').strip()
                 block = (
                     '\n\n## Kostnadskontext\n'
                     'Aktuell kontext: '
@@ -2089,11 +2173,11 @@ class AIOpenAIAPI(http.Controller):
         for agent_rel in quest.agent_ids:
             if agent_rel.agent_id and agent_rel.agent_id.model_id \
                     and agent_rel.agent_id.model_id.name:
-                model_name = agent_rel.agent_id.model_id.name
+                model_name = agent_rel.agent_id.model_id._get_api_name()
                 break
         if not model_name:
             from odoo.addons.ai_agent_core.core.provider import get_default_model_name
-            model_name = get_default_model_name() or 'cerebras/gpt-oss-120b'
+            model_name = get_default_model_name()
 
         coworker_id = quest.id
         # explicit-agent-tools: verktygs-ID:n fångas i request-kontext och
@@ -2127,8 +2211,21 @@ class AIOpenAIAPI(http.Controller):
                     ai_lineage_session_id=_sess.id,
                 ))
 
+                # Coworker = skal, agent = hjärna: auto-skapa default-agenten
+                # om medarbetaren saknar agent (samma som _ensure_agent i
+                # chat/channel/cron-vägar) så providern aldrig blir None.
+                if not quest.agent_ids:
+                    try:
+                        quest._ensure_agent()
+                    except Exception:
+                        _logger.exception('Failed to auto-create default agent')
                 provider_instance, provider_model = ProviderFactory.from_coworker(quest)
-                provider = provider_instance or get_default_provider()[0] 
+                provider = provider_instance or get_default_provider()[0]
+                if provider is None:
+                    raise ValueError(
+                        'Ingen AI-leverantör konfigurerad för medarbetaren. '
+                        'Kontrollera agentens modell eller '
+                        'ai_agent_core.default_model_id.')
                 # explicit-agent-tools: ENDAST settings-default + explicita
                 # verktyg — inga interna builtins per default.
                 tool_ids = quest._session_tool_ids(

@@ -54,7 +54,7 @@ class LinearLoop:
             if not agent:
                 continue
 
-            agent_model = agent.model_id.name if agent and agent.model_id else self.base_model
+            agent_model = agent.model_id._get_api_name() if agent and agent.model_id else self.base_model
             agent_system = self.base_system
             if agent:
                 agent_system = (

@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+from . import ir_ui_view
+from . import ir_action_act_window
 from . import ai_provider
 from . import ai_model
 from . import ai_tag
@@ -16,6 +18,7 @@ from . import ai_identity
 from . import ai_skill
 from . import ai_session_line
 from . import ai_coworker_init_type
+from . import ai_coworker_hitl
 from . import res_users
 from . import res_config_settings
 from . import ai_kaizen

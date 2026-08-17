@@ -86,7 +86,7 @@
                     </group>
                     <group string="Mötets ankare (5.7)">
                         <field name="meeting_anchor"
-                               widget="many2one_reference"/>
+                               widget="reference"/>
                     </group>
                 </sheet>
             </form>

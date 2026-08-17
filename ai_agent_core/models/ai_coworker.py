@@ -644,22 +644,42 @@ class AICoworker(models.Model):
         compute='_compute_last_month', store=False,
         help='Systemtokens consumed last calendar month')
 
-    # Cap enforcement (Horisont 2)
+    # Cap enforcement (Horisont 2) — deterministisk spärr (budget-hard-cap D1)
     monthly_cap_mtokens = fields.Integer(
         'Månadstak (M systemtokens)', default=0,
         help='0 = unlimited. Cap in millions of systemtokens.')
-    cap_warning_sent = fields.Boolean('Varning skickad')
-    cap_exhausted = fields.Boolean('Tak överskridet')
+    budget_warning = fields.Boolean(
+        'Budgetvarning', compute='_compute_budget_state', store=False,
+        help='True när session_line_count >= cap × 0.8 (deterministiskt, '
+             'härlett från data).')
+    budget_exhausted = fields.Boolean(
+        'Budget slut', compute='_compute_budget_state', store=False,
+        help='True när session_line_count >= monthly_cap_mtokens × 1M '
+             '(deterministiskt, härlett från create_date på session lines — '
+             'ny månad eller höjd budget öppnar automatiskt).')
+    cap_notified_month = fields.Char(
+        'Budget notifierad månad (YYYY-MM)',
+        help='Månad då budget-notis/aktivitet senast skickades — en gång '
+             'per månad, ingen reset behövs.')
 
-    # ── Autonomi-panel (gap C5/F4, task 8.6) ──
-    budget_kr_monthly = fields.Float(
-        'Budget (kr/mån)', default=0.0,
-        help='Autonomi-budget i kronor per månad. 0 = ingen explicit '
-             'kr-budget (endast mtokens-tak). Hårt stopp när budgeten är slut.')
-    max_actions_per_day = fields.Integer(
-        'Max åtgärder/dag', default=50,
-        help='Hårt stopp: antal express-actions per dag innan coworkern '
-             'måste vänta till nästa dygn.')
+
+    # ── Burn rate & prognos (budget-burn-rate) ──
+    burn_rate_mtokens_day = fields.Float(
+        'Burn rate (M tokens/dag)', compute='_compute_burn_forecast',
+        help='Glidande medelvärde av systemtokenförbrukning per dag (senaste 7 dagarna), härlett från session lines.')
+    days_until_budget_empty = fields.Float(
+        'Dagar kvar', compute='_compute_burn_forecast',
+        help='(monthly_cap_mtokens × 1M − session_line_count) / burn_rate_mtokens_day.')
+    projected_empty_date = fields.Date(
+        'Prognos tom-datum', compute='_compute_burn_forecast',
+        help='Idag + days_until_budget_empty.')
+    burn_rate_warning = fields.Boolean(
+        'Burn rate-varning', compute='_compute_burn_forecast',
+        help='Burn rate skulle tömma månadsbudgeten på < 20 dagar.')
+
+    # Autonomi-panel (gap C5/F4, task 8.6) — endast systemtokens som valuta
+    # (budget-hard-cap D8: budget_kr_monthly + max_actions_per_day begravda)
+
     hitl_threshold = fields.Selection([
         ('autonomous', 'Autonom (inga godkännanden)'),
         ('high_risk', 'Endast högriskåtgärder kräver godkännande'),
@@ -680,48 +700,114 @@ class AICoworker(models.Model):
         for r in self:
             if r.monthly_cap_mtokens < 0:
                 raise UserError(_('Månadstak får inte vara negativt'))
-            if r.monthly_cap_mtokens > 0 and r.started_mtokens > r.monthly_cap_mtokens:
-                raise UserError(_(
-                    'Kan inte sätta taket till %dM — redan förbrukat %dM denna månad'
-                ) % (r.monthly_cap_mtokens, r.started_mtokens))
+
+    @api.depends('session_ids.session_line_ids.token_sys',
+                 'session_ids.session_line_ids.create_date',
+                 'monthly_cap_mtokens')
+    def _compute_budget_state(self):
+        """Deterministisk budgetspärr (budget-hard-cap D1).
+
+        Beräknar Σ token_sys direkt från session_ids (inte via det related
+        fältet session_line_ids som inte triggar compute korrekt). Ny månad
+        eller höjd budget öppnar automatiskt — inget cron-beroende.
+        """
+        from datetime import date as _date
+        today = _date.today()
+        month_start = _date(today.year, today.month, 1)
+        for r in self:
+            total = 0
+            for line in r.session_ids.session_line_ids:
+                if line.create_date and line.create_date.date() >= month_start:
+                    total += line.token_sys or 0
+            cap = r.monthly_cap_mtokens * 1_000_000 if r.monthly_cap_mtokens else 0
+            r.budget_warning = bool(cap) and total >= cap * 0.8
+            r.budget_exhausted = bool(cap) and total >= cap
 
     def check_cap(self):
-        """Check if quest has exceeded its monthly cap. Returns (warning, exhausted).
-        
-        Called after session lines are created. Posts discuss notification at 80%.
-        Hard stop at 100%.
+        """Check budget state. Returns (warning, exhausted).
+
+        Bakåtkompatibel wrapper — läser deterministiska compute-fält och
+        triggar notiser en gång per månad. Hårt stopp vid exhausted.
         """
         self.ensure_one()
-        if not self.monthly_cap_mtokens:
-            return False, False  # No cap set
-
-        cap_tokens = self.monthly_cap_mtokens * 1_000_000
-        used = self.session_line_count
-
-        warning = used >= cap_tokens * 0.8
-        exhausted = used >= cap_tokens
-
-        if warning and not self.cap_warning_sent:
-            self.cap_warning_sent = True
-            self._notify_cap('warning', used, cap_tokens)
-
-        if exhausted and not self.cap_exhausted:
-            self.cap_exhausted = True
-            self._notify_cap('exhausted', used, cap_tokens)
-
+        warning = self.budget_warning
+        exhausted = self.budget_exhausted
+        if warning or exhausted:
+            self._notify_budget_once()
         return warning, exhausted
 
-    def reset_cap(self):
-        """Reset cap flags — called when user increases cap."""
+    def _notify_budget_once(self):
+        """Skicka budget-notis + mail.activity en gång per månad (D2/D3).
+
+        Månads-nycklad via cap_notified_month (YYYY-MM). Anropas från
+        körningsvägarna (inte från compute — compute får inte skriva).
+        """
         self.ensure_one()
-        if not self.monthly_cap_mtokens:
-            self.cap_warning_sent = False
-            self.cap_exhausted = False
-            return
+        month = fields.Date.today().strftime('%Y-%m')
+        if self.cap_notified_month == month:
+            return  # redan notifierad denna månad
         cap_tokens = self.monthly_cap_mtokens * 1_000_000
-        used = self.session_line_count
-        self.cap_warning_sent = used >= cap_tokens * 0.8
-        self.cap_exhausted = used >= cap_tokens
+        if self.budget_exhausted:
+            self._notify_cap('exhausted', self.session_line_count, cap_tokens)
+            self._create_budget_activity()
+        elif self.budget_warning:
+            self._notify_cap('warning', self.session_line_count, cap_tokens)
+        self.cap_notified_month = month
+
+    def _create_budget_activity(self):
+        """Skapa mail.activity på ai.coworkern (en öppen åt gången, D3).
+
+        Default-typ todo (mail.mail_activity_data_todo). user_id = ägaren
+        (den som kan höja budgeten). Ingen deadline — budgeten öppnas
+        automatiskt vid månadsskifte eller höjd budget.
+        """
+        self.ensure_one()
+        todo_type = self.env.ref('mail.mail_activity_data_todo',
+                                raise_if_not_found=False)
+        existing = self.env['mail.activity'].search([
+            ('res_model', '=', 'ai.coworker'),
+            ('res_id', '=', self.id),
+            ('activity_type_id', '=', todo_type.id if todo_type else False),
+            ('active', '=', True),
+        ], limit=1)
+        if existing:
+            return existing
+        try:
+            return self.activity_schedule(
+                'mail.mail_activity_data_todo',
+                summary='Budget slut: höj månadstaket för %s' % self.name,
+                note=(
+                    f'Förbrukat {self.started_mtokens}M av '
+                    f'{self.monthly_cap_mtokens}M systemtokens. '
+                    f'Budgeten öppnas automatiskt vid månadsskifte eller '
+                    f'när taket höjs.'
+                ),
+                user_id=self.env.uid or self.create_uid.id,
+            )
+        except Exception:
+            _logger.warning('Budget activity_schedule failed', exc_info=True)
+
+    def _unlock_budget_activities(self):
+        """Stäng öppna budget-aktiviteter + nollställ notis-månad (D5).
+
+        Anropas från körningsvägarna innan en körning startar — idempotent.
+        Gör inget om budgeten fortfarande är slut.
+        """
+        self.ensure_one()
+        if self.budget_exhausted:
+            return
+        todo_type = self.env.ref('mail.mail_activity_data_todo',
+                                raise_if_not_found=False)
+        activities = self.env['mail.activity'].search([
+            ('res_model', '=', 'ai.coworker'),
+            ('res_id', '=', self.id),
+            ('activity_type_id', '=', todo_type.id if todo_type else False),
+            ('active', '=', True),
+        ])
+        if activities:
+            activities.action_done()
+        if self.cap_notified_month:
+            self.cap_notified_month = False
 
     def consolidate_memories(self):
         """T9.1-T9.5: Daily memory consolidation.
@@ -825,6 +911,161 @@ class AICoworker(models.Model):
                     zabbix_configs.notify_cap_exceeded(self)
             except Exception as e:
                 _logger.warning('Zabbix notification failed (non-critical): %s', e)
+
+    # ── Burn rate warning + push signals (budget-burn-rate) ────────────
+
+    def _burn_rate_warning_message(self):
+        """Build the local burn-rate warning text with recommendations."""
+        days = self.days_until_budget_empty or 0
+        msg = (
+            f'⚠️ **Budget förbrukas snabbt** — med nuvarande takt tar den slut om '
+            f'{days:.0f} dagar ({self.projected_empty_date}).\n\n'
+            f'Rekommendationer:\n'
+            f'- Byt till billigare combo (t.ex. frontier → moderate) för att förlänga budgeten\n'
+            f'- Höj monthly_cap_mtokens i inställningarna\n'
+            f'- Rate-limit kan slå till om budgeten tar slut (kopplat till bifrost-guardrails)'
+        )
+        return msg
+
+    def _notify_burn_rate_warning(self):
+        """Post the burn-rate warning locally (chat + log), informational only."""
+        self.ensure_one()
+        if not self.burn_rate_warning:
+            return False
+        msg = self._burn_rate_warning_message()
+        try:
+            self.message_post(body=self._md_to_html(msg), message_type='notification')
+        except Exception as e:
+            _logger.warning('Burn-rate chat warning failed (non-critical): %s', e)
+        _logger.warning('Burn rate for coworker %s: %s M/day, empty in %s days',
+                        self.name, self.burn_rate_mtokens_day, self.days_until_budget_empty)
+        return True
+
+    def _push_signal(self, signal_type, payload):
+        """Push a signal to the bifrost module (POST /bifrost/signal).
+
+        Reads config from odoo.conf (provisioned via Salt):
+        - bifrost_signal_url
+        - bifrost_signal_key (virtual key name)
+        On failure, spools to /var/lib/odoo/bifrost_signal_spool.jsonl and
+        retries on the next call (no data loss).
+        """
+        import json as _json
+        icp = self.env['ir.config_parameter'].sudo()
+        url = icp.get_param('bifrost.signal_url', '')
+        key = icp.get_param('bifrost.signal_key', '')
+        if not url or not key:
+            return False
+
+        def _send(signal_type, payload):
+            import urllib.request
+            body = _json.dumps({'signal_type': signal_type, 'payload': payload}).encode()
+            req = urllib.request.Request(
+                url.rstrip('/') + '/bifrost/signal',
+                data=body,
+                headers={'Content-Type': 'application/json',
+                         'Authorization': 'Bearer ' + key})
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                return resp.status == 200
+
+        try:
+            return _send(signal_type, payload)
+        except Exception as e:
+            _logger.warning('Bifrost push failed (%s) — spooling: %s', signal_type, e)
+            try:
+                with open('/var/lib/odoo/bifrost_signal_spool.jsonl', 'a') as f:
+                    f.write(_json.dumps({'signal_type': signal_type, 'payload': payload}) + '\n')
+            except Exception:
+                pass
+            # Retry spooled signals (best-effort)
+            self._flush_signal_spool(_send)
+            return False
+
+    def _flush_signal_spool(self, send_fn):
+        """Best-effort retry of spooled signals."""
+        import json as _json
+        spool = '/var/lib/odoo/bifrost_signal_spool.jsonl'
+        try:
+            with open(spool) as f:
+                lines = [l for l in f if l.strip()]
+            remaining = []
+            for line in lines:
+                try:
+                    entry = _json.loads(line)
+                    send_fn(entry['signal_type'], entry['payload'])
+                except Exception:
+                    remaining.append(line)
+            with open(spool, 'w') as f:
+                f.writelines(remaining)
+        except Exception:
+            pass
+
+    def _provisioned_bifrost_usage(self):
+        """Read the Bifrost usage provisioned back to this minion (via Salt)."""
+        import json as _json
+        try:
+            with open('/var/lib/odoo/bifrost_usage_provisioned.json') as f:
+                return _json.load(f)
+        except Exception:
+            return {}
+
+    def _detect_burn_rate_conflict(self):
+        """Compare local session-line burn vs provisioned Bifrost usage."""
+        prov = self._provisioned_bifrost_usage()
+        prov_burn = prov.get('burn_per_day', 0.0)
+        if not prov_burn:
+            return False
+        local_burn = self.burn_rate_mtokens_day or 0.0
+        tolerance = float(self.env['ir.config_parameter'].sudo().get_param(
+            'bifrost.conflict_tolerance', '20'))
+        if local_burn > 0 and abs(prov_burn - local_burn) / local_burn * 100.0 > tolerance:
+            self._push_signal('burn_rate_conflict', {
+                'local_burn': local_burn,
+                'bifrost_burn': prov_burn,
+            })
+            return True
+        return False
+
+    def _detect_budget_change(self):
+        """Push budget_changed when monthly_cap_mtokens changes ≥ threshold (default 50%)."""
+        icp = self.env['ir.config_parameter'].sudo()
+        threshold = float(icp.get_param('bifrost.budget_change_threshold', '50'))
+        key = f'bifrost.cap_snapshot_{self.id}'
+        raw = icp.get_param(key, '')
+        old = float(raw) if raw else 0.0
+        new = self.monthly_cap_mtokens or 0
+        if old and new and old != new and abs(new - old) / old * 100.0 >= threshold:
+            self._push_signal('budget_changed', {'old_budget': old, 'new_budget': new})
+        icp.set_param(key, str(new))
+        return new
+
+    @api.model
+    def cron_burn_rate_check(self):
+        """Periodic: local burn-rate warning + conflict detection + summary."""
+        coworkers = self.search([])
+        warned = 0
+        for c in coworkers:
+            if c.burn_rate_warning:
+                c._notify_burn_rate_warning()
+                warned += 1
+            c._detect_burn_rate_conflict()
+            c._detect_budget_change()
+        _logger.info('Burn rate check: %d coworkers warned', warned)
+        return warned
+
+    @api.model
+    def cron_budget_summary(self):
+        """Periodic budget consolidation pushed to bifrost (cron-configurable)."""
+        coworkers = self.search([])
+        packages = 0
+        for c in coworkers:
+            packages += (c.monthly_cap_mtokens or 0)
+        self._push_signal('budget_summary', {
+            'monthly_packages': packages,
+            'coworkers': len(coworkers),
+            'generated_at': fields.Datetime.now().isoformat(),
+        })
+        return packages
 
     skill_copy_ids = fields.One2many('ai.coworker.skill', 'coworker_id',
         string='Skill Copies',
@@ -1354,6 +1595,35 @@ class AICoworker(models.Model):
                     total += line.token_sys or 0
             r.session_line_count = total
 
+    @api.depends('session_line_ids.token_sys', 'session_line_ids.create_date', 'monthly_cap_mtokens')
+    def _compute_burn_forecast(self):
+        """Burn rate (7-day rolling), forecast and warning — deterministic from session lines."""
+        from datetime import date, timedelta
+        today = date.today()
+        week_ago = today - timedelta(days=7)
+        for r in self:
+            # Aggregate token_sys per day over the last 7 days
+            daily = {}
+            for line in r.session_line_ids:
+                if line.create_date and line.create_date.date() >= week_ago:
+                    d = line.create_date.date()
+                    daily[d] = daily.get(d, 0) + (line.token_sys or 0)
+            days_with_data = len(daily)
+            burn = (sum(daily.values()) / days_with_data / 1_000_000.0) if days_with_data else 0.0
+            r.burn_rate_mtokens_day = round(burn, 4)
+
+            cap_tokens = (r.monthly_cap_mtokens or 0) * 1_000_000
+            remaining = cap_tokens - r.session_line_count
+            if burn > 0 and remaining > 0 and cap_tokens:
+                days = remaining / (burn * 1_000_000.0)
+                r.days_until_budget_empty = round(days, 1)
+                r.projected_empty_date = today + timedelta(days=days)
+                r.burn_rate_warning = days < 20
+            else:
+                r.days_until_budget_empty = False
+                r.projected_empty_date = False
+                r.burn_rate_warning = False
+
     @api.depends('session_line_count')
     def _compute_started_mtokens(self):
         """Number of started millions (rounded up)."""
@@ -1749,7 +2019,7 @@ class AICoworker(models.Model):
              'triggers': []}
             for r in agent_rels
         ]
-        router = LLMRouter(provider, model or '')
+        router = LLMRouter(provider, model._get_api_name() if model else '')
         try:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
@@ -1796,7 +2066,7 @@ class AICoworker(models.Model):
                 f"{self.buzz_channel_session_id.summary}")
 
         # Use agent's own model if available
-        model = agent.model_id.name if agent and agent.model_id else None
+        model = agent.model_id._get_api_name() if agent and agent.model_id else None
         return self.run(
             prompt, system_prompt=system + summary_ctx,
             force_model=model, force_agent=agent)
@@ -2022,6 +2292,27 @@ class AICoworker(models.Model):
     def _buzz_chat(self, message, channel, msg_text, history_ctx='', depth=0):
         """Handle a channel message in buzz workspace mode."""
         self.ensure_one()
+
+        # Budgetcheck (budget-hard-cap D4): DM/channel — gul triangel via
+        # chatter-notis med felmeddelande i mouseover. Tyst no-op för
+        # agent-till-agent-meddelanden (depth > 0) — bara användarmeddelanden
+        # får budget-svar.
+        if depth == 0:
+            self._unlock_budget_activities()
+            if self.budget_exhausted:
+                self.check_cap()
+                _logger.info('Buzz chat skippad för %s: budget slut', self.name)
+                if channel:
+                    channel.message_post(
+                        body=self._md_to_html(
+                            '⚠️ **Budget slut**: AI-medarbetaren har nått '
+                            'månadstaket. Höj taket i inställningarna eller '
+                            'vänta till nästa månad.'
+                        ),
+                        message_type='notification',
+                        subtype_xmlid='mail.mt_note',
+                    )
+                return None
 
         # Avoid responding to our own agents (prevents loops)
         author_partner = message.author_id
@@ -2414,6 +2705,16 @@ class AICoworker(models.Model):
                 + '\n'.join(user_parts)
             )
 
+        # 2b. Tid- och schemakontext (agent-memory-governance D8b)
+        # Aktuell tid + användarens möten (calendar.event) + arbetsschema
+        # (hr.employee → contract → resource.calendar). Best-effort.
+        try:
+            time_block = self._build_time_schedule_block(user)
+            if time_block:
+                parts.append(time_block)
+        except Exception as e:
+            _logger.warning('Tid/schema-block misslyckades: %s', e)
+
         # 3. Rekordkontext (L1-L3 från tidigare _extra_context) — aldrig
         # avbryt hela injektionen; rekordkontext är best-effort.
         if self.context_injection_enabled:
@@ -2518,6 +2819,132 @@ class AICoworker(models.Model):
                 parts.append("\n\n".join(cinfo))
 
         return "\n\n".join(parts)
+
+    def _build_time_schedule_block(self, user=None):
+        """Tid- och schemakontext (agent-memory-governance D8b).
+
+        Bygger ett kompakt block med:
+        - Aktuell tid (datum, veckodag, veckonummer, tidszon)
+        - Användarens möten idag (calendar.event via partner_id, max 5)
+        - Användarens arbetsschema (hr.employee → hr.contract →
+          resource.calendar → attendances)
+        - Förfallande todo (mail.activity, max 5)
+
+        Best-effort: tyst no-op vid fel. Returnerar '' om inget att visa.
+        """
+        self.ensure_one()
+        user = user or self.env.user
+        if not user or not user.id or user.login == 'public':
+            return ''
+
+        from datetime import date, datetime, timedelta
+        parts = []
+
+        # ── Aktuell tid ──
+        now = datetime.now()
+        try:
+            tz_name = user.tz or self.env.user.tz or 'Europe/Stockholm'
+            from pytz import timezone
+            now = datetime.now(timezone(tz_name))
+        except Exception:
+            pass
+        weekday_sv = ['måndag', 'tisdag', 'onsdag', 'torsdag',
+                      'fredag', 'lördag', 'söndag'][now.weekday()]
+        iso_week = now.isocalendar()[1]
+        time_parts = [
+            f'- Nu: {now.strftime("%Y-%m-%d %H:%M")} ({weekday_sv}, v{iso_week})',
+        ]
+
+        # ── Möten idag (calendar.event via partner_id) ──
+        try:
+            if 'calendar.event' in self.env:
+                partner = user.partner_id
+                if partner:
+                    today_start = datetime.combine(now.date(), datetime.min.time())
+                    today_end = today_start + timedelta(days=1)
+                    # Sök på partner_ids utan datumfilter (calendar.event.start
+                    # har tz-konvertering som gör ORM-datumjämförelse opålitlig),
+                    # filtrera sedan i Python.
+                    events = self.env['calendar.event'].sudo().search([
+                        ('partner_ids', 'in', partner.id),
+                    ], limit=20)
+                    events = events.filtered(
+                        lambda ev: ev.start
+                        and today_start <= ev.start < today_end)[:5]
+                    if events:
+                        event_lines = []
+                        for ev in events:
+                            start_sv = ev.start.strftime('%H:%M') if ev.start else '?'
+                            ev_name = ev.name or '(namnlöst)'
+                            event_lines.append(f'- {start_sv}: {ev_name}')
+                        time_parts.append('\nDina möten idag:')
+                        time_parts.extend(event_lines)
+        except Exception as e:
+            _logger.debug('Calendar block failed: %s', e)
+
+        # ── Arbetsschema (hr.employee → contract → resource.calendar) ──
+        try:
+            if 'hr.employee' in self.env:
+                emp = self.env['hr.employee'].sudo().search([
+                    ('work_email', '=', user.login),
+                ] + ([('company_id', '=', user.company_id.id)]
+                     if user.company_id else []),
+                    limit=1)
+                if not emp and partner:
+                    emp = self.env['hr.employee'].sudo().search(
+                        [('work_contact_id', '=', partner.id)], limit=1)
+                if emp:
+                    contract = self.env['hr.contract'].sudo().search([
+                        ('employee_id', '=', emp.id),
+                        ('active', '=', True),
+                        ('state', 'in', ('open', 'draft')),
+                    ], limit=1)
+                    if contract and contract.resource_calendar_id:
+                        cal = contract.resource_calendar_id
+                        cal_info = [f'- Schema: {cal.name or "Arbetsschema"}']
+                        today_idx = str(now.weekday())
+                        attendances = self.env['resource.calendar.attendance'].sudo().search([
+                            ('calendar_id', '=', cal.id),
+                            ('dayofweek', '=', today_idx),
+                            ('display_type', '!=', 'line_section'),
+                        ], order='hour_from asc')
+                        if attendances:
+                            day_times = []
+                            for att in attendances:
+                                if att.day_period in ('morning', 'afternoon'):
+                                    day_times.append(
+                                        f'{att.hour_from:.0f}-{att.hour_to:.0f}')
+                            if day_times:
+                                cal_info.append(
+                                    f'- Arbetstid idag: {", ".join(day_times)}')
+                        time_parts.append('\n' + '\n'.join(cal_info))
+        except Exception as e:
+            _logger.debug('Work schedule block failed: %s', e)
+
+        # ── Förfallande todo (mail.activity) ──
+        try:
+            if 'mail.activity' in self.env:
+                today = date.today()
+                activities = self.env['mail.activity'].sudo().search([
+                    ('user_id', '=', user.id),
+                    ('active', '=', True),
+                    ('date_deadline', '<=', today),
+                ], order='date_deadline asc', limit=5)
+                if activities:
+                    act_lines = ['\nDina uppgifter (todo):']
+                    for act in activities:
+                        dl = act.date_deadline
+                        dl_str = dl.strftime('%Y-%m-%d') if dl else 'ingen deadline'
+                        summary = act.summary or '(aktivitet)'
+                        act_lines.append(f'- ⚠ {summary} (förfaller {dl_str})')
+                    time_parts.extend(act_lines)
+        except Exception as e:
+            _logger.debug('Activity block failed: %s', e)
+
+        if len(time_parts) <= 1:
+            return ''  # Bara tiden — inget schema/möten att visa
+
+        return '## Tid och schema\n' + '\n'.join(time_parts)
 
     def _extra_context(self):
         """Wrapper för bakåtkompatibilitet — ENDA injiceringskällan är
@@ -2630,13 +3057,11 @@ class AICoworker(models.Model):
         for rec in self:
             if rec.agent_ids:
                 continue
-            default_model_id = rec.env['ir.config_parameter'].sudo().get_param(
-                'ai_agent_core.default_model_id', '365')
-            model = rec.env['ai.model'].browse(int(default_model_id))
-            if not model.exists():
-                model = rec.env['ai.model'].search(
-                    [('provider_type', '=', 'bifrost')],
-                    order='id asc', limit=1)
+            # Datadrivet modellval (bifrost-client-provisioning D5):
+            # default från inställningar → billigaste aktiva modellen.
+            # Aldrig hårdkodat record-id — saknas allt är det en felsituation
+            # som syns via chat-guarden (ProviderError) + chatter-aktivitet.
+            model = rec._resolve_default_model()
             agent = rec.env['ai.agent'].sudo().create({
                 'name': rec.name or 'Default Agent',
                 'description': f'Default agent for {rec.name or "coworker"}.',
@@ -2650,8 +3075,66 @@ class AICoworker(models.Model):
                 'sequence': 10,
                 'role': 'member',
             })
-            _logger.info('Auto-created default agent %s for coworker %s',
-                         agent.name, rec.name)
+            if model:
+                rec._activity_check_model_assignment(model)
+            _logger.info('Auto-created default agent %s for coworker %s'
+                         ' (model=%s)', agent.name, rec.name,
+                         model.name if model else 'INGEN')
+        return True
+
+    def _resolve_default_model(self):
+        """Default-modellen för en coworker utan agent-modell.
+
+        uteslutande datadrivet: 1) ai_agent_core.default_model_id
+        2) billigaste aktiva modellen (get_cheapest_model).
+        Returnerar ai.model-record eller tom records.
+        """
+        self.ensure_one()
+        default_model_id = self.env['ir.config_parameter'].sudo().get_param(
+            'ai_agent_core.default_model_id', '')
+        if default_model_id and default_model_id.isdigit():
+            model = self.env['ai.model'].browse(int(default_model_id))
+            if model.exists():
+                return model
+        try:
+            from odoo.addons.ai_agent_core.core.provider import get_cheapest_model
+            model = get_cheapest_model()
+            if model:
+                return model
+        except Exception:
+            pass
+        return self.env['ai.model'].browse()
+
+    def _activity_check_model_assignment(self, model):
+        """Skapa chatter-aktivitet (mail.activity, TODO) när modellen
+        auto-tilldelades (billigaste) — HITL: någon ska granska valet.
+
+        Idempotent: max en öppen aktivitet per coworker med samma summary.
+        """
+        self.ensure_one()
+        summary = ("Kontrollera modellval — agenten saknade konfigurerad modell, "
+                   f"billigaste valdes automatiskt ({model.name}).")
+        existing = self.env['mail.activity'].sudo().search_count([
+            ('res_model', '=', 'ai.coworker'),
+            ('res_id', '=', self.id),
+            ('done', '=', False),
+            ('summary', '=', summary),
+        ])
+        if existing:
+            return False
+        activity_type = self.env.ref('mail.mail_activity_data_todo', raise_if_not_found=False)
+        if not activity_type:
+            return False
+        self.env['mail.activity'].sudo().create({
+            'res_model': 'ai.coworker',
+            'res_id': self.id,
+            'activity_type_id': activity_type.id,
+            'summary': summary,
+            'note': ('Modellen tilldelades automatiskt eftersom agenten saknade '
+                     'konfigurerad modell. Granska och sätt rätt modell på agenten.'),
+        })
+        _logger.info('Aktivitet skapad: modellval för coworker %s (auto-tilldelad %s)',
+                     self.name, model.name)
         return True
 
     def _visible_models(self, init_type=''):
@@ -2977,8 +3460,8 @@ class AICoworker(models.Model):
             provider, provider_model = ProviderFactory.from_coworker(self)
             if not provider:
                 provider, provider_model = get_default_provider()
-            model_name = (provider_model and provider_model.name) \
-                or get_default_model_name() or 'cerebras/gpt-oss-120b'
+            model_name = (provider_model and provider_model._get_api_name()) \
+                or get_default_model_name()
             loop = AgentLoop(provider=provider, tools=[], config=AgentConfig(
                 model=model_name, max_rounds=1, max_tokens=1500))
             prompt = (
@@ -3064,6 +3547,9 @@ class AICoworker(models.Model):
         if extra:
             system_prompt = (system_prompt or '') + extra
 
+        # NATS user context (pi-agent-memory-bridge D5)
+        nats_ctx = self._get_nats_user_context()
+
         mode = self._get_effective_orchestration_mode()
         if self.env.context.get('ai_single_agent_run'):
             mode = 'single'
@@ -3077,6 +3563,7 @@ class AICoworker(models.Model):
                     model=model, system_prompt=system_prompt,
                     max_rounds=max_rounds,
                     permission_mode='auto',
+                    nats_user_context=nats_ctx,
                 ),
             )
 
@@ -3097,7 +3584,7 @@ class AICoworker(models.Model):
         if mode == 'single' or len(self.agent_ids) <= 1:
             agent_rel = self.agent_ids[:1] if self.agent_ids else None
             agent = agent_rel.agent_id if agent_rel else None
-            agent_model = agent.model_id.name if agent and agent.model_id else model
+            agent_model = agent.model_id._get_api_name() if agent and agent.model_id else model
             return AgentLoop(
                 provider=provider, tools=tools,
                 config=AgentConfig(
@@ -3184,6 +3671,109 @@ class AICoworker(models.Model):
             ),
         )
 
+    def _build_pi_instruction(self, session=None):
+        """Bygg system_prompt_add för externa klienter (openai_api-vägen).
+
+        Kombinerar:
+        1. Statisk instruktion från init_type.pi_instruction (överst)
+        2. Coworkerns tillgängliga verktyg (tool_ids → namn + beskrivning)
+        3. Coworkerns skills (skill_ids → namn + trigger)
+        4. Session-kontext (kostnadskontext-status) om session ges
+
+        Returnerar markdown-sträng (eller '' om inget). Tyst no-op vid fel.
+        Gäller ENBART init-typen openai_api — andra init-typer orkestrerar
+        som förut.
+        """
+        try:
+            self.ensure_one()
+            parts = []
+
+            # 1. Statisk instruktion från openai_api-init-typen
+            oai = self.init_type_ids.filtered(
+                lambda it: it.init_type == 'openai_api' and it.enabled)[:1]
+            if oai and oai.pi_instruction:
+                parts.append(oai.pi_instruction)
+
+            # 2. Verktygskatalog (vad klienten kan be coworkern göra)
+            tools = self.sudo().tool_ids.filtered('active')
+            if tools:
+                tool_lines = [
+                    f"- **{t.name}**: {(t.description or '')[:200]}"
+                    for t in tools.sorted('name')
+                ]
+                parts.append(
+                    "## Verktyg som denna coworker kan använda\n"
+                    + '\n'.join(tool_lines))
+
+            # 3. Skill-katalog (vilka skills klienten kan ladda)
+            skills = self.sudo().skill_ids.filtered('active')
+            if skills:
+                skill_lines = [
+                    f"- **{s.name}**: {(s.description or '')[:200]}"
+                    + (f" [triggers: {s.trigger_keywords}]"
+                       if s.trigger_keywords else "")
+                    for s in skills.sorted('name')
+                ]
+                parts.append(
+                    "## Skills tillgängliga hos denna coworker\n"
+                    "(Ladda via /skill:namn om pi har dem lokalt, annars följ "
+                    "instruktionerna i svaren.)\n"
+                    + '\n'.join(skill_lines))
+
+            # 4. Session-kontext
+            if session:
+                cc = []
+                if 'project_id' in session._fields and session.project_id:
+                    cc.append(f"projekt: {session.project_id.name}")
+                if 'task_id' in session._fields and session.task_id:
+                    cc.append(f"uppgift: {session.task_id.name}")
+                if session.partner_id:
+                    cc.append(f"kund: {session.partner_id.name}")
+                confirmed = session.cost_context_confirmed
+                if cc or 'cost_context_confirmed' in session._fields:
+                    parts.append(
+                        "## Aktuell session\n"
+                        f"Kontext: {', '.join(cc) if cc else 'ingen (saknas)'}."
+                        f" Kostnadskontext bekräftad: "
+                        f"{'ja' if confirmed else 'nej'}.")
+
+            return '\n\n'.join(p for p in parts if p)
+        except Exception as e:
+            _logger.warning('_build_pi_instruction failed: %s', e)
+            return ''
+
+    def _pi_skill_to_load(self):
+        """Hitta första pi-kompatibla skill som klienten kan ladda.
+
+        Returnerar skill-namn (str) eller '' om ingen lämplig skill finns.
+        Pi-kompatibla skills har compatibility pi_python/pi_node/any.
+        """
+        try:
+            self.ensure_one()
+            for s in self.sudo().skill_ids.filtered('active').sorted('name'):
+                if s.compatibility in ('any', 'pi_python', 'pi_node'):
+                    return s.name
+        except Exception as e:
+            _logger.warning('_pi_skill_to_load failed: %s', e)
+        return ''
+
+    def _get_nats_user_context(self):
+        """Build user context dict for NATS tool execution (pi-agent-memory-bridge D5).
+
+        Returns dict with user_id, company_id, coworker_id, and optionally
+        session_id from context. Used by _build_loop to pass to AgentConfig.
+        """
+        sess_id = self.env.context.get('_ai_context_id')
+        sess_model = self.env.context.get('_ai_context_model', '')
+        ctx = {
+            'user_id': self.env.user.id,
+            'company_id': self.env.company.id,
+            'coworker_id': self.id,
+        }
+        if sess_model == 'ai.coworker.session' and sess_id:
+            ctx['session_id'] = sess_id
+        return ctx
+
     def _build_specialists(self, provider, tools, model, system_prompt, max_rounds=10):
         """Build list of SpecialistAgent from agent_ids."""
         from odoo.addons.ai_agent_core.core.loop import AgentLoop, AgentConfig
@@ -3198,7 +3788,7 @@ class AICoworker(models.Model):
         specialists = []
         for agent_rel in self.agent_ids:
             agent = agent_rel.agent_id
-            agent_model = agent.model_id.name if agent and agent.model_id else model
+            agent_model = agent.model_id._get_api_name() if agent and agent.model_id else model
             agent_skills_context = ''
             for skill in agent.skill_ids:
                 agent_skills_context += f'\n### Skill: {skill.name}\n{skill.recipe_text or skill.description or ""}\n'
@@ -3417,7 +4007,8 @@ class AICoworker(models.Model):
             'started_mtokens': self.started_mtokens,
             'session_line_count': self.session_line_count,
             'monthly_cap_mtokens': self.monthly_cap_mtokens,
-            'cap_exhausted': self.cap_exhausted,
+            'budget_exhausted': self.budget_exhausted,
+            'budget_warning': self.budget_warning,
             'status': self.status,
             # All-time totals
             'total_sys_tokens': self.total_sys_tokens,
@@ -3538,11 +4129,11 @@ class AICoworker(models.Model):
         model = ''
         for agent_rel in self.agent_ids:
             if agent_rel.agent_id.model_id:
-                model = agent_rel.agent_id.model_id.name
+                model = agent_rel.agent_id.model_id._get_api_name()
                 break
         if not model:
             from odoo.addons.ai_agent_core.core.provider import get_default_model_name
-            model = get_default_model_name() or 'cerebras/gpt-oss-120b'
+            model = get_default_model_name()
 
         try:
             # Create session
@@ -3825,7 +4416,8 @@ class AICoworker(models.Model):
         return tools, tool_access_groups
 
     def run(self, prompt, system_prompt=None, force_model=None,
-            force_agent=None, session=None):
+            force_agent=None, session=None, history=None,
+            interrupt_handler=None):
         """Run quest synchronously and return AI response text.
 
         Designed for bridge integrations (html_editor, mail, webhook, etc.)
@@ -3840,20 +4432,30 @@ class AICoworker(models.Model):
             session: Optional existing ai.coworker.session to reuse
                      (webhook flow keeps its own event-tracked session);
                      a new session is created when omitted.
+            history: Optional list[core.Message] — full konversationshistorik
+                     att köra loopen med (openai_api-vägen, återupptagning).
+                     När history ges och prompt är tom appendar loopen ingen
+                     extra user-message.
+            interrupt_handler: Optional HITL-handler (t.ex.
+                     OpenAIInterruptHandler) — pausar loopen vid HITL
+                     istället för auto-approve.
 
         Returns:
             str: AI response text (plain text, no markdown rendering)
         """
         self.ensure_one()
 
+        # AgentLoopPaused (openai_api-HITL): behövs i except-klausulen.
+        from odoo.addons.ai_agent_core.core.interrupt import AgentLoopPaused
+
         # Resolve model — force_model (7.5) → agent-modell → standard
         from odoo.addons.ai_agent_core.core.provider import get_default_model_name
-        model = force_model or get_default_model_name() or 'cerebras/gpt-oss-120b'
+        model = force_model or get_default_model_name()
         if not force_model:
             for qa in self.agent_ids:
                 agent = qa.agent_id
                 if agent.model_id and agent.model_id.name:
-                    model = agent.model_id.name
+                    model = agent.model_id._get_api_name()
                     break
 
         # Build system prompt
@@ -3890,6 +4492,15 @@ class AICoworker(models.Model):
             'user_id': self.env.user.id,
             'name': prompt[:80] if prompt else 'Quest run',
         })
+
+        # Budgetcheck (budget-hard-cap D4): hårt stopp innan LLM-körning.
+        # Notis/aktivitet en gång per månad; upplåsning vid höjd budget/ny månad.
+        self._unlock_budget_activities()
+        if self.budget_exhausted:
+            self.check_cap()  # triggar notis en gång per månad
+            _logger.info('run() skippad för %s: budget slut', self.name)
+            return 'Budget slut: AI-medarbetaren har nått månadstaket. ' \
+                   'Höj taket i inställningarna eller vänta till nästa månad.'
 
         try:
             import asyncio
@@ -3960,8 +4571,14 @@ class AICoworker(models.Model):
                         mode=PermissionMode.AUTO)
                     loop_obj.permissions.user_group_ids = set(tool_access_groups)
 
+                # HITL-handler (openai_api-vägen): pausar loopen vid
+                # godkännanden/förtydliganden istället för auto-approve.
+                if interrupt_handler is not None:
+                    loop_obj.interrupt_handler = interrupt_handler
+
                 async def _run():
-                    return await loop_obj.run(prompt)
+                    return await loop_obj.run(
+                        prompt, history=history or [])
 
                 response = loop.run_until_complete(_run())
             finally:
@@ -3975,8 +4592,8 @@ class AICoworker(models.Model):
             model_real = getattr(response, 'model', '')
             sys_mult = 1.0
             if model_real:
-                ai_model = self.env['ai.model'].search(
-                    [('name', 'ilike', model_real)], limit=1)
+                ai_model = self.env['ai.model']._resolve_from_real(
+                    model_real, self)
                 if ai_model:
                     sys_mult = ai_model.sys_multiplier
 
@@ -3998,14 +4615,27 @@ class AICoworker(models.Model):
             })
             # Persist tool executions recorded by the loop (observability
             # + lets tests assert expect_tools via session lines)
+            # Systemtoken-kostnad per tool-anrop (budget-hard-cap D6):
+            # token_input = tool.sys_token_cost, multiplier=1.0 → compute
+            # ger token_sys = sys_token_cost direkt.
             for i, (t_name, t_preview) in enumerate(
                     getattr(loop_obj, 'tool_history', [])):
+                tool_cost = 500  # default (ai.tool.sys_token_cost)
+                try:
+                    tool_rec = self.env['ai.tool'].search(
+                        [('name', '=', t_name)], limit=1)
+                    if tool_rec:
+                        tool_cost = tool_rec.sys_token_cost
+                except Exception:
+                    pass
                 self.env['ai.coworker.session.line'].create({
                     'session_id': session.id,
                     'role': 'tool',
                     'tool_name': t_name,
                     'content': t_preview,
                     'sequence': 10 + i,
+                    'token_input': tool_cost,
+                    'sys_multiplier': 1.0,
                 })
 
             # ── Fel-loggning (ai.coworker.error) ──
@@ -4062,10 +4692,55 @@ class AICoworker(models.Model):
 
             return result_text
 
+        except AgentLoopPaused:
+            # openai_api-vägen: loopen pausad för HITL — propagera till
+            # controllern som returnerar tool_calls i OpenAI-svar. Sessionen
+            # lämnas aktiv så nästa request kan återuppta.
+            raise
+
         except Exception as e:
             _logger.error('Quest run failed: %s', e, exc_info=True)
             session.write({'status': 'error'})
             return f'Error: {str(e)}'
+
+    def run_with_history(self, prompt, system_prompt=None, history=None,
+                         interrupt_handler=None, session=None,
+                         force_model=None, force_agent=None):
+        """Kör loopen med full historik + HITL-handler (openai_api-vägen).
+
+        Tunn delegator till run() med history + interrupt_handler —
+        samma setup (model, system_prompt, skills, session, budget,
+        verktyg, permission-engine, session-line-persistens).
+
+        Args:
+            prompt: Användarprompten (tom vid ren återupptagning —
+                    historiken innehåller redan user-meddelandet)
+            system_prompt: Optional override för systemprompt
+            history: list[core.Message] — full konversationshistorik
+                     (inkl. assistant-tool_calls + tool-resultat som par)
+            interrupt_handler: HITL-handler (OpenAIInterruptHandler) som
+                     pausar loopen via AgentLoopPaused vid godkännanden
+            session: Optional befintlig ai.coworker.session
+            force_model: Optional model override
+            force_agent: Optional ai.agent
+
+        Returns:
+            ChatResponse (ej sträng) — så att openai-controllern kan
+            fånga AgentLoopPaused och returnera tool_calls.
+        """
+        self.ensure_one()
+        from odoo.addons.ai_agent_core.core.interrupt import AgentLoopPaused
+        try:
+            return self.run(
+                prompt, system_prompt=system_prompt,
+                force_model=force_model, force_agent=force_agent,
+                session=session, history=history,
+                interrupt_handler=interrupt_handler,
+            )
+        except AgentLoopPaused:
+            # Låt pausen propagera till openai-controllern — den fångar
+            # och returnerar tool_calls i OpenAI-svar.
+            raise
 
     def powerbox(self, prompt, res_model=None, res_id=None, record=None):
         """Run quest as a powerbox — triggered from anywhere in Odoo.
@@ -4136,9 +4811,17 @@ class AICoworker(models.Model):
             'user_id': self.env.user.id,
         })
 
+        # Budgetcheck (budget-hard-cap D4): powerbox returnerar budget slut
+        self._unlock_budget_activities()
+        if self.budget_exhausted:
+            self.check_cap()
+            _logger.info('powerbox skippad för %s: budget slut', self.name)
+            return 'Budget slut: AI-medarbetaren har nått månadstaket. ' \
+                   'Höj taket i inställningarna eller vänta till nästa månad.'
+
         # Get model from first agent
         from odoo.addons.ai_agent_core.core.provider import get_default_model_name
-        model = get_default_model_name() or 'cerebras/gpt-oss-120b'  # default
+        model = get_default_model_name()  # default
         system_prompt = self.description or ''
         if self.identity_id:
             system_prompt = self.identity_id.system_prompt or system_prompt
@@ -4177,8 +4860,8 @@ class AICoworker(models.Model):
                 model_real = getattr(response, 'model', '')
                 sys_mult = 1.0
                 if model_real:
-                    ai_model = self.env['ai.model'].search(
-                        [('name', 'ilike', model_real)], limit=1)
+                    ai_model = self.env['ai.model']._resolve_from_real(
+                        model_real, self)
                     if ai_model:
                         sys_mult = ai_model.sys_multiplier
 
@@ -4730,7 +5413,8 @@ class AICoworkerMonthlySummary(models.Model):
 
     # Cap info at time of summary
     monthly_cap_mtokens = fields.Integer('Cap (M tokens)')
-    cap_exhausted_count = fields.Integer('Times Cap Exhausted')
+    budget_exhausted = fields.Boolean('Budget Slut')
+    budget_warning = fields.Boolean('Budgetvarning')
 
     # Cost
     estimated_cost_usd = fields.Float('Est. Provider Cost (USD)')
@@ -4814,7 +5498,7 @@ class AICoworkerMonthlySummary(models.Model):
                 'session_count': sessions,
                 'model_breakdown': json.dumps(model_data),
                 'monthly_cap_mtokens': quest.monthly_cap_mtokens,
-                'cap_exhausted_count': 1 if quest.cap_exhausted else 0,
+                'budget_exhausted': quest.budget_exhausted,
             })
             created += 1
 

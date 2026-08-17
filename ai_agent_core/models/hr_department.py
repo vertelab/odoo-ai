@@ -207,3 +207,31 @@ class Department(models.Model):
                     [('department_id', '=', dept.id)])
             except Exception:
                 dept.ai_task_count = 0
+    @api.model
+    def org_chart_data(self):
+        """Org-träd (avdelningar + AI-medarbetare/mål) för org_chart-vyn."""
+        depts = self.search([])
+        nodes = {}
+        for d in depts:
+            nodes[d.id] = {
+                'id': d.id,
+                'name': d.name,
+                'parent_id': d.parent_id.id if d.parent_id else False,
+                'color': d.color or 0,
+                'manager_name': d.manager_id.name or '',
+                'ai_manager_name': d.ai_manager_id.name or '',
+                'health': d.health or '',
+                'ai_staff': d.total_ai_staff,
+                'ai_task_count': d.ai_task_count,
+                'ai_goal_count': d.ai_goal_count,
+                'goal_count': len(d.department_objective_ids),
+                'child_ids': [],
+            }
+        roots = []
+        for n in nodes.values():
+            parent = n['parent_id']
+            if parent and parent in nodes:
+                nodes[parent]['child_ids'].append(n)
+            else:
+                roots.append(n)
+        return {'roots': roots}

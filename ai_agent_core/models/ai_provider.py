@@ -29,6 +29,18 @@ PROVIDER_TYPES = [
 
 class AIProvider(models.Model):
     _name = 'ai.provider'
+    @api.constrains('api_key')
+    def _check_api_key_sane(self):
+        """Förhindra att flerradig text klistras in som API-nyckel (skulle
+        krascha HTTP-headers med 'Illegal header value')."""
+        for rec in self:
+            if rec.api_key and any(c in rec.api_key for c in '\r\n'):
+                raise ValidationError(
+                    'API-nyckeln får inte innehålla radbrytningar — '
+                    'klistra bara in själva nyckeln.'
+                )
+
+
     _description = 'AI Provider'
     _inherit = ['mail.thread', 'mail.activity.mixin']
     _order = 'name asc'
@@ -59,6 +71,15 @@ class AIProvider(models.Model):
         ('confirmed', 'Confirmed'),
         ('error', 'Error'),
     ], default='draft')
+
+    # Config-styrd (bifrost-client-provisioning): providern provisioneras via
+    # odoo.conf (ai_provider_endpoint/api_key/list) och synkas automatiskt av
+    # cron — generiskt, ingen Bifrost-hårdkodning i modulen.
+    auto_sync = fields.Boolean(
+        'Config-styrd (auto-sync)',
+        help='Provisionerad via odoo.conf — cron synkar modeller automatiskt.',
+        default=False,
+    )
 
     # Stats
     model_count = fields.Integer(compute='_compute_model_count')
@@ -103,6 +124,75 @@ class AIProvider(models.Model):
             return {'is_bifrost': False, 'api_style': 'anthropic'}
         return {'is_bifrost': False, 'api_style': 'openai'}
 
+    # -- Config-styrd provisionering (bifrost-client-provisioning) --
+    # Läser odoo.conf (ai_provider_*) — mönster user_scim (odoo_config.get +
+    # ir.config_parameter-fallback). Generiska nyckelnamn: modulen vet inget
+    # om Bifrost; Salt mappar pillar → dessa nycklar.
+
+    @staticmethod
+    def _config_get(key: str, default: str = ''):
+        try:
+            from odoo.tools import config as odoo_config
+            return odoo_config.get(key, '') or default
+        except Exception:
+            return default
+
+    @api.model
+    def _reconcile_from_config(self):
+        """Find-or-create provider från odoo.conf-params (idempotent).
+
+        Generisk OpenAI-kompatibel provider (Bearer) — auto_sync=True,
+        status=confirmed. Returnerar (provider_or_False, changed: bool).
+        """
+        endpoint = self._config_get('ai_provider_endpoint')
+        if not endpoint:
+            return self.browse(), False
+        endpoint = endpoint.rstrip('/')
+        api_key = self._config_get('ai_provider_api_key')
+        provider = self.search([('base_url', '=', endpoint)], limit=1)
+        if not provider:
+            provider = self.create({
+                'name': self._config_get('ai_provider_name', 'AI Provider (config)'),
+                'provider_type': 'custom',
+                'base_url': endpoint,
+                'api_key': api_key,
+                'api_style': 'openai',
+                'is_key_required': bool(api_key),
+                'auto_sync': True,
+                'status': 'confirmed',
+            })
+            _logger.info('Provider skapad från config: %s (%s)', provider.name, endpoint)
+            return provider, True
+        vals = {}
+        if provider.api_key != api_key:
+            vals['api_key'] = api_key
+        if not provider.auto_sync:
+            vals['auto_sync'] = True
+        if provider.status != 'confirmed':
+            vals['status'] = 'confirmed'
+        if vals:
+            provider.write(vals)
+        return provider, bool(vals)
+
+    @api.model
+    def _apply_default_model_from_config(self):
+        """Sätt ai_agent_core.default_model_id från ai_default_model (name/api_name)."""
+        default_model = self._config_get('ai_default_model')
+        if not default_model:
+            return False
+        model = self.env['ai.model'].sudo().search([
+            '|', ('name', '=', default_model), ('api_name', '=', default_model),
+        ], limit=1)
+        if not model:
+            return False
+        param = self.env['ir.config_parameter'].sudo().get_param(
+            'ai_agent_core.default_model_id')
+        if str(model.id) != param:
+            self.env['ir.config_parameter'].sudo().set_param(
+                'ai_agent_core.default_model_id', model.id)
+            return True
+        return False
+
     # -- Actions --
     def action_fetch_models(self):
         """Smart button: fetch available models from this provider."""
@@ -127,21 +217,45 @@ class AIProvider(models.Model):
             }
         }
 
+    @api.model
+    def _bifrost_base_url(self):
+        """Bifrost-gatewayens bas-URL från konfiguration (8081 = combo-adapter)."""
+        url = (
+            self.env['ir.config_parameter'].get_param('bifrost.combo_adapter_url')
+            or self.env['ir.config_parameter'].get_param('bifrost.api_url')
+            or 'http://192.168.11.150:8081'
+        )
+        return url.rstrip('/') + '/v1'
+
     def _fetch_models_from_api(self):
         """Fetch models from provider's /v1/models endpoint.
-        
+
         Bifrost returns models in format "provider/model_name"
         (e.g., "openrouter/anthropic/claude-sonnet-4").
         These are upstream provider names — the provider IS Bifrost,
         the prefix is the upstream routing hint.
+        Importen kanonicaliserar: name = identitet (prefix-strippat),
+        api_name = full path (wire), source_provider = tillverkaren.
         """
         self.ensure_one()
         url = self.base_url.rstrip('/') + '/models'
         headers = {}
-        if self.api_key:
-            headers['Authorization'] = f'Bearer {self.api_key}'
         if self.provider_type == 'bifrost':
-            headers['X-Virtual-Key'] = 'opencode'
+            # Bifrost-gatewayen kräver admin-nyckel för att lista modeller
+            # (X-Virtual-Key ger tom lista). Fallback till api_key om satt.
+            admin_key = self.env['ir.config_parameter'].get_param(
+                'bifrost.admin_api_key', '')
+            if admin_key:
+                headers['Authorization'] = f'Bearer {admin_key}'
+            elif self.api_key:
+                headers['Authorization'] = f'Bearer {self.api_key}'
+            else:
+                # Sista fallback: gatewayens vk-vertel-värde (= admin-nyckeln)
+                headers['X-Virtual-Key'] = (
+                    admin_key or 'sk-bf-7885f84e-e3a0-470a-accc-0a8295f128bd'
+                )
+        elif self.api_key:
+            headers['Authorization'] = f'Bearer {self.api_key}'
 
         try:
             ctx = ssl.create_default_context()
@@ -160,35 +274,80 @@ class AIProvider(models.Model):
             model_id = m.get('id', '')
             if not model_id or model_id.startswith('ft:'):
                 continue
-            
-            # For Bifrost: model IDs look like "openrouter/anthropic/claude-sonnet-4"
-            # Store the full Bifrost path, but use simplified name for display
-            display_name = model_id
-            if self.provider_type == 'bifrost' and '/' in model_id:
-                # Bifrost routing: upstream_provider/actual_model
-                # Keep full path for use, extract simple name for display
-                parts = model_id.split('/')
-                display_name = parts[-1] if len(parts) > 1 else model_id
-            
-            self._import_model(model_id, display_name)
+            self._import_model(model_id)
             count += 1
         return count
 
-    def _import_model(self, model_id: str, display_name: str = ''):
-        """Create or update ai.model from provider data.
-        
+    # -- Maker-upplösning (provider-model-offering) --
+
+    def _is_gateway(self) -> bool:
+        """Är denna provider en gateway/återförsäljare (inte tillverkare)?"""
+        return self.provider_type in ('bifrost', 'openrouter') or bool(self.is_bifrost)
+
+    def _resolve_maker(self, model_id: str):
+        """Resolve maker (tillverkare) + kanoniskt namn från ett model-id.
+
+        Längsta prefix-match mot kända DIREKTA provider-record (gateways
+        exkluderas — annars matchar 'openrouter' i
+        'openrouter/anthropic/claude-sonnet-4' felaktigt). Fallback för
+        gateways: näst sista segmentet (find-or-create label-record).
+
+        Returns:
+            (maker_or_False, canonical_name)
+        """
+        if '/' not in (model_id or ''):
+            return False, model_id
+        parts = model_id.split('/')
+        gateway_types = ('bifrost', 'openrouter')
+        known = self.env['ai.provider'].search([
+            ('provider_type', 'not in', list(gateway_types)),
+            ('is_bifrost', '=', False),
+        ])
+        # Längst prefix först
+        for i in range(len(parts) - 1, 0, -1):
+            prefix = '/'.join(parts[:i]).lower()
+            for p in known:
+                if p.name and p.name.lower() == prefix:
+                    return p, '/'.join(parts[i:])
+        # Fallback (bara för gateways): sista segmentet före modellnamnet
+        if self._is_gateway() and len(parts) >= 2:
+            maker_name = parts[-2]
+            maker = self.env['ai.provider'].search(
+                [('name', 'ilike', maker_name)], limit=1)
+            if not maker:
+                maker = self.env['ai.provider'].create({
+                    'name': maker_name.capitalize(),
+                    'provider_type': 'custom',
+                    'is_key_required': False,
+                    'status': 'draft',
+                })
+            return maker, parts[-1]
+        return False, model_id
+
+    def _import_model(self, model_id: str):
+        """Create or update ai.model from provider data (kanonicaliserat).
+
+        - name = kanoniskt identitetsnamn (prefix-strippat)
+        - api_name = full path (wire-id)
+        - source_provider = tillverkare (gateway) / tom (direkt)
+        - find-or-update på (name, provider) — UNIQUE-safe, idempotent
         For NEW models: sets default sys_multiplier based on model name heuristics.
         For EXISTING models: preserves manually set sys_multiplier.
         """
+        maker, canonical = self._resolve_maker(model_id)
+        name = canonical or model_id
+        source_provider = maker.id if maker and maker.id != self.id else False
+
         existing = self.env['ai.model'].search([
-            ('name', '=', model_id),
+            ('name', '=', name),
             ('provider', '=', self.id),
         ], limit=1)
 
         vals = {
-            'name': model_id,
-            'display_name': display_name or model_id,
+            'name': name,
+            'api_name': model_id,
             'provider': self.id,
+            'source_provider': source_provider,
             'status': 'active',
         }
 
@@ -300,6 +459,61 @@ class AIProvider(models.Model):
             self.status = 'error'
             raise UserError(_('Connection failed: %s') % str(e))
 
+    def _text_to_speech(self, text, model=None, voice=None):
+        """Text → ljud (TTS) via providern (OpenAI-kompatibel /v1/audio/speech).
+
+        Anropas av pbx_ai för samtals-coworker (receptionist): texten som
+        AI:n vill säga → ljud-bytes → ARI playback.
+
+        Args:
+            text: texten att tala
+            model: tts-modell (default: första is_asr-modellen, fallback
+                   'tts-1')
+            voice: röst (default 'alloy')
+
+        Returns:
+            bytes: ljudinnehåll (mp3) eller b'' vid fel
+        """
+        self.ensure_one()
+        import requests
+        try:
+            base = (self.base_url or '').rstrip('/')
+            url = base + '/audio/speech'
+            if not base:
+                return b''
+            if not model:
+                # Hitta första is_asr-modellen, annars tts-1
+                asr_model = self.env['ai.model'].search([
+                    ('provider', '=', self.id),
+                    ('is_asr', '=', True),
+                ], limit=1)
+                model = (asr_model.api_name or asr_model.name
+                         if asr_model else 'tts-1')
+            headers = {'Content-Type': 'application/json'}
+            if self.api_key:
+                headers['Authorization'] = 'Bearer %s' % self.api_key
+            if self.is_bifrost:
+                headers['X-Virtual-Key'] = self.api_key or ''
+            resp = requests.post(
+                url,
+                json={
+                    'model': model,
+                    'input': text,
+                    'voice': voice or 'alloy',
+                    'response_format': 'mp3',
+                },
+                headers=headers,
+                timeout=60,
+            )
+            if resp.status_code == 200:
+                return resp.content
+            _logger.warning('TTS failed %s: %s', resp.status_code,
+                            resp.text[:200])
+            return b''
+        except Exception as e:
+            _logger.warning('TTS error: %s', e)
+            return b''
+
 
 class AIProviderWizard(models.TransientModel):
     _name = 'ai.provider.wizard'
@@ -322,7 +536,7 @@ class AIProviderWizard(models.TransientModel):
         # Auto-detect provider type
         if 'bifrost' in name_lower or '192.168.11.150' in url_lower:
             vals['provider_type'] = 'bifrost'
-            vals['base_url'] = 'http://192.168.11.150:8080/v1'
+            vals['base_url'] = self._bifrost_base_url()
             vals['is_key_required'] = False
         elif 'berget' in url_lower or 'berget' in name_lower:
             vals['provider_type'] = 'custom'

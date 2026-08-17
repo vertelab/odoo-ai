@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+    <t t-name="ai_agent_core.OrgChartRenderer">
+        <div class="o_org_chart">
+            <div t-if="state.loading" class="p-4 text-muted">Laddar organisationen…</div>
+            <div t-elif="state.error" class="alert alert-danger m-3" t-esc="state.error"/>
+            <div t-elif="!state.flat.length" class="p-4 text-muted">
+                Ingen organisation än — starta AI-onboarding för att bygga den.
+            </div>
+            <div t-else="" class="o_org_chart_tree">
+                <t t-foreach="state.flat" t-as="node" t-key="node.id">
+                    <div class="o_org_node"
+                         t-att-style="'margin-left: ' + (node.depth * 30) + 'px'">
+                        <div class="o_org_node_card"
+                             t-att-class="'o_org_node_card o_org_node_color_' + node.color">
+                            <div class="o_org_node_header" t-on-click="() => this.openDepartment(node)">
+                                <span class="o_org_node_name" t-esc="node.name"/>
+                            </div>
+                            <div class="o_org_node_body">
+                                <div t-if="node.manager_name" class="o_org_manager">👤 <t t-esc="node.manager_name"/></div>
+                                <div t-if="node.ai_manager_name" class="badge bg-info mt-1">🤖 <t t-esc="node.ai_manager_name"/></div>
+                                <div class="d-flex align-items-center gap-2 mt-1">
+                                    <span class="badge bg-warning text-dark">🤖 <t t-esc="node.ai_staff"/> AI</span>
+                                    <span t-if="node.health" t-att-class="'badge ' + healthClass(node.health)">
+                                        <t t-esc="node.health"/>
+                                    </span>
+                                </div>
+                                <div class="d-flex gap-2 mt-1">
+                                    <span class="badge bg-secondary text-light" title="Antal AI-tasks i avdelningen">📋 <t t-esc="node.ai_task_count"/></span>
+                                    <span class="badge bg-secondary text-light" title="Antal OKR-mål i avdelningen">🎯 <t t-esc="node.ai_goal_count"/></span>
+                                </div>
+                                <div class="d-flex gap-2 mt-1">
+                                    <button class="btn btn-link p-0" type="button"
+                                            t-on-click="() => this.openTasks(node)">📋 Tasks</button>
+                                    <button class="btn btn-link p-0" type="button"
+                                            t-on-click="() => this.openGoals(node)">🎯 OKR</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </t>
+            </div>
+        </div>
+    </t>
+</templates>

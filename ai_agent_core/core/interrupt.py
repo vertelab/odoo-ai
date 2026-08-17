@@ -10,6 +10,7 @@ HITL-006: Mid-turn steering — drain_steer()
 """
 
 import asyncio
+import json
 import logging
 import time
 from abc import ABC, abstractmethod
@@ -303,3 +304,99 @@ class WebUIInterruptHandler(InterruptHandler):
     def queue_steer(self, message: str) -> None:
         """Queue a mid-turn steer message."""
         self._steer_buffer.append(message)
+
+
+# ---------------------------------------------------------------------------
+# OpenAIInterruptHandler (HITL-008) — pausa via OpenAI tool_calls
+# ---------------------------------------------------------------------------
+
+class AgentLoopPaused(Exception):
+    """Signal: loopen pausad för HITL — returnera tool_calls till klienten.
+
+    Kastas av OpenAIInterruptHandler.ask()/approve_tool().
+    Färdas naturligt upp genom AgentLoop.run() (interrupt-anropen ligger
+    utanför try/except) → fångas av openai-controllern som returnerar
+    tool_calls i OpenAI-svar.
+    """
+
+    def __init__(self, tool_calls: list[dict], state: dict):
+        self.tool_calls = tool_calls      # OpenAI-format tool_calls
+        self.state = state                # {kind, question, tool, ...}
+        super().__init__(
+            f"AgentLoop paused for HITL: {state.get('kind', 'unknown')}")
+
+
+class OpenAIInterruptHandler(InterruptHandler):
+    """HITL via OpenAI tool_calls — pausar loopen, låter klienten svara.
+
+    Används av openai_api-init-typen (/ai/openai/<id>/v1/chat/completions)
+    där klienten (Pi-agent, Cline, Continue.dev) är orkestratör.
+    ask()/approve_tool() kastar AgentLoopPaused med tool_calls som
+    klienten exekverar via ctx.ui (confirm/input) och svarar på med
+    role:"tool"-meddelanden i nästa request.
+    """
+
+    def __init__(self):
+        self.paused = False
+
+    async def ask(
+        self,
+        question: str,
+        approval_type: str = "",
+        context: str = "",
+        timeout: float = 300,
+    ) -> dict:
+        """Pausa — returnera en tool_call som klienten visar och svarar på."""
+        self.paused = True
+        raise AgentLoopPaused(
+            tool_calls=[{
+                "id": f"call_hitl_{int(time.time())}",
+                "type": "function",
+                "function": {
+                    "name": "request_hitl_input",
+                    "arguments": json.dumps({
+                        "question": question,
+                        "approval_type": approval_type,
+                        "context": context,
+                    }),
+                },
+            }],
+            state={
+                "kind": "ask",
+                "question": question,
+                "approval_type": approval_type,
+            },
+        )
+
+    async def approve_tool(
+        self,
+        tool_name: str,
+        risk_level: str,
+        arguments: dict,
+    ) -> bool:
+        """Pausa — fråga om verktyget får köras."""
+        self.paused = True
+        raise AgentLoopPaused(
+            tool_calls=[{
+                "id": f"call_approve_{int(time.time())}",
+                "type": "function",
+                "function": {
+                    "name": "request_hitl_approval",
+                    "arguments": json.dumps({
+                        "tool": tool_name,
+                        "risk_level": risk_level,
+                        "arguments": arguments,
+                        "question": f"Godkänn verktyg {tool_name}?",
+                    }),
+                },
+            }],
+            state={
+                "kind": "approve_tool",
+                "tool": tool_name,
+                "arguments": arguments,
+            },
+        )
+
+    async def drain_steer(self) -> list[str]:
+        """Inga köade styrmeddelanden via OpenAI-kanalen."""
+        return []

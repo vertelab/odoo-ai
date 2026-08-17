@@ -298,7 +298,7 @@ def ai_tool_records_to_tools(records, env=None) -> list[Tool]:
 
         async def _handler(_rec=record, **kwargs):
             try:
-                return _rec._execute_tool(kwargs)
+                return await _rec._execute_tool_async(kwargs)
             except Exception as e:
                 return f'Tool {_rec.name} failed: {e}'
 
@@ -579,6 +579,51 @@ def builtin_tools() -> list[Tool]:
             source="builtin",
         ),
         Tool(
+            name="graphify_search",
+            description="Search graphify-indexed repositories (OCA modules, internal repos). "
+                        "Use when user asks 'does OCA have a module for...' or 'has anyone solved this?'. "
+                        "Returns module names, descriptions, relevance scores. Delegates to Pi-agent via NATS.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Search query"},
+                    "repos": {"type": "array", "items": {"type": "string"}, "description": "Repo filter, e.g. ['oca/*']"},
+                    "limit": {"type": "integer", "description": "Max results (default 5)"},
+                },
+                "required": ["query"],
+            },
+            handler=None,
+            risk_level="read_only",
+            source="builtin",
+            executor="nats",
+            capabilities=["graphify", "external-search"],
+            nats_subject="pi.skill.graphify.search",
+            nats_skills="graphify",
+        ),
+        Tool(
+            name="pi_unified_recall",
+            description="Multi-source search across Odoo Mind AND external sources (graphify, filesystem). "
+                        "Use for comprehensive knowledge — both internal Odoo data and external systems. "
+                        "Returns ranked, attributed results. Delegates to Pi-agent via NATS.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Search query"},
+                    "sources": {"type": "array", "items": {"type": "string"}, "description": "Sources: 'internal', 'graphify', 'filesystem', or 'all'"},
+                    "strategy": {"type": "string", "enum": ["precision", "balanced", "recall", "detective"], "description": "Search strategy"},
+                    "limit": {"type": "integer", "description": "Max results (default 10)"},
+                },
+                "required": ["query"],
+            },
+            handler=None,
+            risk_level="read_only",
+            source="builtin",
+            executor="nats",
+            capabilities=["unified-recall", "external-search"],
+            nats_subject="pi.skill.unified.recall",
+            nats_skills="odoo-unified",
+        ),
+        Tool(
             name="echo",
             description="Echo back the message. Useful for testing.",
             parameters={
@@ -727,7 +772,7 @@ def builtin_tools() -> list[Tool]:
             parameters={"type": "object", "properties": {
                 "name": {"type": "string", "description": "Agent name"},
                 "description": {"type": "string", "description": "Agent description / role"},
-                "model": {"type": "string", "description": "Bifrost model, e.g. cerebras/gpt-oss-120b or anthropic/claude-sonnet-4"},
+                "model": {"type": "string", "description": "AI model name (e.g. cheap, moderate, deepseek/deepseek-chat)"},
                 "skills": {"type": "string", "description": "Comma-separated skill names to assign (must exist)"},
             }, "required": ["name"]},
             handler=_tool_builder_create_agent,
@@ -1820,7 +1865,7 @@ def _tool_builder_create_agent(env, name, description="", model="", skills="", *
     """Create a new ai.agent. Returns agent ID."""
     if not model:
         from odoo.addons.ai_agent_core.core.provider import get_default_model_name
-        model = get_default_model_name() or 'cerebras/gpt-oss-120b'
+        model = get_default_model_name()
     vals = {
         "name": name,
         "description": description,
