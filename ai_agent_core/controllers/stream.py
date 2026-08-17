@@ -622,7 +622,9 @@ class AIStreamController(http.Controller):
                 .replace('<!-- WELCOME_TITLE -->', default_qname)
                 .replace('<!-- DEFAULT_QUEST_ID -->', default_qid)
                 .replace('<!-- DEFAULT_QUEST_NAME -->', default_qname)
-                .replace('<!-- THREAD_ITEMS -->', thread_items))
+                .replace('<!-- THREAD_ITEMS -->', thread_items)
+                .replace('<!-- USER_AUTH_FLAG -->',
+                         'true' if (user and not user._is_public()) else 'false'))
         # no-store: chat_template.html is inline JS — a cached page keeps
         # running stale frontend code after deploys (bit us in production)
         return Response(html, headers=[

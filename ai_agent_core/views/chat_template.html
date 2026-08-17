@@ -19,6 +19,52 @@ if ('serviceWorker' in navigator) {
         navigator.serviceWorker.register('/pwa/sw.js', { scope: '/ai/' }).catch(function () {});
     });
 }
+// Push-opt-in: endast för inloggade användare (anonyma har inga notiser).
+// Registrerar enheten mot mail.push.device (samma RPC som webclienten).
+var PWA_USER_AUTH = <!-- USER_AUTH_FLAG -->;
+if (PWA_USER_AUTH && 'PushManager' in window && 'serviceWorker' in navigator) {
+    var pushBtn = document.getElementById('push-enable-btn');
+    if (pushBtn) {
+        var vapidKey = '';
+        pushBtn.addEventListener('click', function () {
+            pushBtn.disabled = true;
+            fetch('/pwa/vapid-public-key')
+                .then(function (r) { return r.json(); })
+                .then(function (data) {
+                    vapidKey = data.vapid_public_key;
+                    return navigator.serviceWorker.ready.then(function (reg) {
+                        return reg.pushManager.subscribe({
+                            userVisibleOnly: true,
+                            applicationServerKey: vapidKey
+                        });
+                    });
+                })
+                .then(function (sub) {
+                    return fetch('/web/dataset/call_kw/mail.push.device/register_devices', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            id: 1, jsonrpc: '2.0', method: 'call',
+                            params: {
+                                model: 'mail.push.device', method: 'register_devices', args: [],
+                                kwargs: Object.assign({}, sub.toJSON(), {
+                                    vapid_public_key: vapidKey
+                                }),
+                                context: {}
+                            }
+                        })
+                    });
+                })
+                .then(function () {
+                    pushBtn.textContent = '✓ Notiser aktiverade';
+                })
+                .catch(function () {
+                    pushBtn.disabled = false;
+                    pushBtn.textContent = '🔔 Aktivera notiser';
+                });
+        });
+    }
+}
 </script>
 <style>
 /* === DARK THEME (default) === */
@@ -295,6 +341,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);overflow:hid
         </div>
         <div class="chat-header-right">
             <span id="active-thread-name" style="font-size:12px;color:var(--text-muted);margin-right:8px"></span>
+            <button class="header-btn" id="push-enable-btn" title="Aktivera push-notiser" style="display:none;font-size:13px;padding:3px 8px;border:1px solid var(--border);border-radius:6px">🔔 Aktivera notiser</button>
             <button class="header-btn" id="thread-edit-btn" title="Redigera tråd" onclick="openThreadEditModal()" style="display:none">✏️</button>
             <a class="open-odoo-btn" href="/odoo" target="_blank" title="Öppna vanliga Odoo">Odoo ↗</a>
             <button class="theme-btn" id="theme-btn" onclick="toggleTheme()" title="Växla tema">🌙</button>
