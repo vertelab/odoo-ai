@@ -129,13 +129,20 @@ class AIPersonalGoal(models.Model):
 
     @api.model
     def _selection_okr_targets(self):
-        """Dynamisk selection för okr_id — endast installerade modeller visas."""
+        """Dynamisk selection för okr_id — endast installerade modeller visas.
+
+        Undantag: under klass-definition (fields.Reference → _setup_attrs) är
+        modellen själv ännu inte registrerad; en self-reference via
+        'ai.personal.goal' in self.env orsakar rekursiv modell-skapelse.
+        Vi läser registry direkt (utan att trigga modell-lookup) så att
+        self-reference är säker även under setup."""
         result = []
-        if 'okr.objective' in self.env:
+        registry = self.env.registry
+        if 'okr.objective' in registry:
             result.append(('okr.objective', 'OKR Objective'))
-        if 'hr.evaluation.goal' in self.env:
+        if 'hr.evaluation.goal' in registry:
             result.append(('hr.evaluation.goal', 'Evaluation Goal'))
-        if 'ai.personal.goal' in self.env:
+        if 'ai.personal.goal' in registry:
             result.append(('ai.personal.goal', 'Personal Goal'))
         return result
 
