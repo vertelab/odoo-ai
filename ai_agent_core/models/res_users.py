@@ -68,6 +68,7 @@ class ResUsers(models.Model):
             'type': 'ir.actions.act_window',
             'res_model': 'ai.personal.goal',
             'view_mode': 'list,form',
+            'views': [[False, 'list'], [False, 'form']],
             'target': 'current',
             'domain': [('user_id', '=', self.id)],
             'context': {
@@ -83,6 +84,7 @@ class ResUsers(models.Model):
             'type': 'ir.actions.act_window',
             'res_model': 'ai.personal.memory',
             'view_mode': 'list,form',
+            'views': [[False, 'list'], [False, 'form']],
             'target': 'current',
             'domain': [('user_id', '=', self.id)],
             'context': {

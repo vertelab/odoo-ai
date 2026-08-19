@@ -75,6 +75,7 @@ class AICoworkerServerActionWizard(models.TransientModel):
             'res_model': 'ai.coworker.server.action.wizard',
             'res_id': self.id,
             'view_mode': 'form',
+            'views': [[False, 'form']],
             'target': 'new',
             'context': self.env.context,
         }

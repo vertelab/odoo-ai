@@ -168,6 +168,7 @@ class AIModel(models.Model):
             'type': 'ir.actions.act_window',
             'res_model': 'ai.agent.llm',
             'view_mode': 'list,form',
+            'views': [[False, 'list'], [False, 'form']],
             'domain': [('model_id', '=', self.id)],
         }
 
@@ -178,5 +179,6 @@ class AIModel(models.Model):
             'type': 'ir.actions.act_window',
             'res_model': 'ai.coworker.session.line',
             'view_mode': 'list,form',
+            'views': [[False, 'list'], [False, 'form']],
             'domain': [('ai_llm_id', '=', self.id)],
         }

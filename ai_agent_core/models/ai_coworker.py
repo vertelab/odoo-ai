@@ -576,6 +576,7 @@ class AICoworker(models.Model):
             'type': 'ir.actions.act_window',
             'res_model': 'mail.alias',
             'view_mode': 'form',
+            'views': [[False, 'form']],
             'res_id': mail.alias_id.id,
             'target': 'new',
         }
@@ -598,6 +599,7 @@ class AICoworker(models.Model):
             'type': 'ir.actions.act_window',
             'res_model': 'ai.coworker.mail.test.wizard',
             'view_mode': 'form',
+            'views': [[False, 'form']],
             'target': 'new',
             'context': {'default_coworker_id': self.id},
         }
@@ -3856,6 +3858,7 @@ class AICoworker(models.Model):
         return {
             'name': 'Agents', 'type': 'ir.actions.act_window',
             'res_model': 'ai.agent', 'view_mode': 'kanban,list,form',
+            'views': [[False, 'kanban'], [False, 'list'], [False, 'form']],
             'target': 'current',
             'domain': [('id', 'in', self.agent_ids.mapped('agent_id').ids)],
         }
@@ -3876,6 +3879,7 @@ class AICoworker(models.Model):
         return {
             'name': 'Sessions', 'type': 'ir.actions.act_window',
             'res_model': 'ai.coworker.session', 'view_mode': 'list,form',
+            'views': [[False, 'list'], [False, 'form']],
             'target': 'current',
             'domain': [('coworker_id', '=', self.id)],
         }
@@ -3885,6 +3889,7 @@ class AICoworker(models.Model):
             'name': 'Session Lines', 'type': 'ir.actions.act_window',
             'res_model': 'ai.coworker.session.line',
             'view_mode': 'list,form,pivot',
+            'views': [[False, 'list'], [False, 'form'], [False, 'pivot']],
             'target': 'current',
             'domain': [('session_id.coworker_id', '=', self.id)],
         }
@@ -3896,6 +3901,7 @@ class AICoworker(models.Model):
             'name': 'Objects', 'type': 'ir.actions.act_window',
             'res_model': 'ai.session.object',
             'view_mode': 'list,form',
+            'views': [[False, 'list'], [False, 'form']],
             'target': 'current',
             'domain': [('ai_coworker_id', '=', self.id)],
         }
@@ -3979,6 +3985,7 @@ class AICoworker(models.Model):
             'type': 'ir.actions.act_window',
             'res_model': 'ai.coworker.session.line',
             'view_mode': 'list,pivot',
+            'views': [[False, 'list'], [False, 'pivot']],
             'target': 'current',
             'domain': [
                 ('session_id.coworker_id', '=', self.id),

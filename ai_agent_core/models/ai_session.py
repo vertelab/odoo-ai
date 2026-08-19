@@ -320,6 +320,7 @@ class AICoworkerSession(models.Model):
             'type': 'ir.actions.act_window',
             'res_model': 'ir.attachment',
             'view_mode': 'list,form',
+            'views': [[False, 'list'], [False, 'form']],
             'target': 'current',
             'domain': [('res_model', '=', 'ai.coworker.session'),
                        ('res_id', '=', self.id)],
@@ -329,6 +330,7 @@ class AICoworkerSession(models.Model):
         return {
             'name': 'Messages', 'type': 'ir.actions.act_window',
             'res_model': 'ai.coworker.session.line', 'view_mode': 'list,form',
+            'views': [[False, 'list'], [False, 'form']],
             'target': 'current',
             'domain': [('session_id', '=', self.id)],
             'context': {'default_session_id': self.id},

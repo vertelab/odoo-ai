@@ -172,6 +172,7 @@ metadata:
             'name': f'Export {self.name}',
             'res_model': 'ai.skill.export.wizard',
             'view_mode': 'form',
+            'views': [[False, 'form']],
             'target': 'new',
             'context': {'default_skill_md': md, 'default_skill_id': self.id},
         }

@@ -222,6 +222,7 @@ class WorkspaceActivitySuggestion(models.Model):
             'res_model': self._name,
             'res_id': self.id,
             'view_mode': 'form',
+            'views': [[False, 'form']],
             'target': 'new',
         }
 
@@ -270,6 +271,7 @@ class WorkspaceActivitySuggestion(models.Model):
                 'name': 'Varför? — källkoncept',
                 'res_model': 'ai.okf.concept',
                 'view_mode': 'list,form',
+                'views': [[False, 'list'], [False, 'form']],
                 'domain': [('id', 'in', self.evidence_ids.ids)],
             }
         return {
@@ -277,6 +279,7 @@ class WorkspaceActivitySuggestion(models.Model):
             'name': 'Varför? — lineage-kedja',
             'res_model': 'ai.lineage.link',
             'view_mode': 'list,form',
+            'views': [[False, 'list'], [False, 'form']],
             'domain': [('id', 'in', edge_ids)],
             'help': 'Kedjan: ÅTGÄRD ← FÖRSLAG ← SESSION ← KONCEPT ← KÄLLA',
         }

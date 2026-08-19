@@ -554,6 +554,7 @@ class ResConfigSettings(models.TransientModel):
             'name': 'OKF Artefakttyper',
             'res_model': 'ai.artifact.type',
             'view_mode': 'list,form',
+            'views': [[False, 'list'], [False, 'form']],
             'target': 'current',
             'context': {'search_default_active': 1},
         }
@@ -565,6 +566,7 @@ class ResConfigSettings(models.TransientModel):
             'name': 'OKF Access Resolvers',
             'res_model': 'ai.access.resolver',
             'view_mode': 'list,form',
+            'views': [[False, 'list'], [False, 'form']],
             'target': 'current',
             'context': {'search_default_active': 1},
         }
@@ -576,6 +578,7 @@ class ResConfigSettings(models.TransientModel):
             'name': 'OKF Koncept',
             'res_model': 'ai.okf.concept',
             'view_mode': 'list,form',
+            'views': [[False, 'list'], [False, 'form']],
             'target': 'current',
         }
 

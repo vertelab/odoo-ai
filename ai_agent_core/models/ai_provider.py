@@ -435,6 +435,7 @@ class AIProvider(models.Model):
             'type': 'ir.actions.act_window',
             'res_model': 'ai.model',
             'view_mode': 'list,kanban,form',
+            'views': [[False, 'list'], [False, 'kanban'], [False, 'form']],
             'target': 'current',
             'domain': [('provider', '=', self.id)],
             'context': {'default_provider': self.id},
@@ -583,5 +584,6 @@ class AIProviderWizard(models.TransientModel):
             'res_model': 'ai.provider',
             'res_id': provider.id,
             'view_mode': 'form',
+            'views': [[False, 'form']],
             'target': 'current',
         }

@@ -39,6 +39,7 @@ class AICoworkerBuilderWizard(models.TransientModel):
             'name': 'Quest Builder',
             'res_model': 'ai.coworker.builder.wizard',
             'view_mode': 'form',
+            'views': [[False, 'form']],
             'target': 'new',
             'context': {
                 'default_quest_id': self.id,

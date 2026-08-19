@@ -189,6 +189,7 @@ class AIAgent(models.Model):
         return {
             'name': 'Quests', 'type': 'ir.actions.act_window',
             'res_model': 'ai.coworker', 'view_mode': 'kanban,list,form',
+            'views': [[False, 'kanban'], [False, 'list'], [False, 'form']],
             'target': 'current', 'domain': [('id', 'in', quest_ids)],
         }
 

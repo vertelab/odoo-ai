@@ -204,6 +204,7 @@ class AIOnboardCandidate(models.Model):
             'res_model': 'ai.coworker',
             'res_id': quest.id,
             'view_mode': 'form',
+            'views': [[False, 'form']],
             'target': 'current',
         }
 
@@ -260,6 +261,7 @@ class AIOnboardCandidate(models.Model):
             'res_model': 'ir.actions.server',
             'res_id': action.id,
             'view_mode': 'form',
+            'views': [[False, 'form']],
             'target': 'current',
         }
 
@@ -304,6 +306,7 @@ class AIOnboardCandidate(models.Model):
             'res_model': 'helpdesk.ticket',
             'res_id': ticket.id,
             'view_mode': 'form',
+            'views': [[False, 'form']],
             'target': 'current',
         }
 
@@ -336,6 +339,7 @@ class AIOnboardCandidate(models.Model):
             'res_model': 'mgmtsystem.nonconformity',
             'res_id': nc.id,
             'view_mode': 'form',
+            'views': [[False, 'form']],
             'target': 'current',
         }
 

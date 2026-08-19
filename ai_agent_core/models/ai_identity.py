@@ -339,5 +339,6 @@ class AIIdentity(models.Model):
             'res_model': 'ai.identity',
             'res_id': self.id,
             'view_mode': 'form',
+            'views': [[False, 'form']],
             'target': 'current',
         }

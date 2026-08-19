@@ -391,6 +391,8 @@ class AIOkfDashboard(models.TransientModel):
             'type': 'ir.actions.act_window',
             'res_model': self._name,
             'view_mode': 'form',
+            'views': [[self.env.ref(
+                'ai_agent_core.view_ai_okf_dashboard_form').id, 'form']],
             'view_id': self.env.ref(
                 'ai_agent_core.view_ai_okf_dashboard_form').id,
             'target': 'current',

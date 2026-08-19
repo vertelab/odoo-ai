@@ -56,6 +56,7 @@ class AIOnboardingWizard(models.TransientModel):
             'type': 'ir.actions.act_window',
             'res_model': 'ai.onboarding.wizard',
             'view_mode': 'form',
+            'views': [[False, 'form']],
             'target': 'new',
             'res_id': res_id,
             'context': {'default_onboarding_id': onboarding_id},
@@ -199,6 +200,7 @@ class AIOnboardingWizard(models.TransientModel):
             'type': 'ir.actions.act_window',
             'res_model': 'ai.onboarding.wizard',
             'view_mode': 'form',
+            'views': [[False, 'form']],
             'target': 'new',
             'context': {'default_onboarding_id': onboarding.id},
         }
@@ -213,6 +215,7 @@ class AIOnboardingWizard(models.TransientModel):
             'type': 'ir.actions.act_window',
             'res_model': 'ai.onboarding.wizard',
             'view_mode': 'form',
+            'views': [[False, 'form']],
             'target': 'new',
             'context': {'default_onboarding_id': onboarding.id},
         }

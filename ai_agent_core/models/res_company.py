@@ -57,6 +57,7 @@ class ResCompany(models.Model):
             'type': 'ir.actions.act_window',
             'res_model': 'ai.company.memory',
             'view_mode': 'list,form',
+            'views': [[False, 'list'], [False, 'form']],
             'target': 'current',
             'domain': [('company_id', '=', self.id)],
             'context': {'default_company_id': self.id},

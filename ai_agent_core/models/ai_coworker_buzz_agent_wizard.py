@@ -23,5 +23,6 @@ class AICoworkerBuzzAgentWizard(models.TransientModel):
             'res_model': 'ai.agent',
             'res_id': agent.id,
             'view_mode': 'form',
+            'views': [[False, 'form']],
             'target': 'current',
         }

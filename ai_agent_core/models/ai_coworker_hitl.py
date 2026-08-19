@@ -358,6 +358,7 @@ class AICoworkerHITLMixin(models.Model):
             'name': 'HITL-requests — %s' % self.name,
             'res_model': 'ai.coworker.hitl',
             'view_mode': 'list,form',
+            'views': [[False, 'list'], [False, 'form']],
             'domain': [('coworker_id', '=', self.id)],
             'context': {'search_default_asked': 1},
         }
@@ -387,6 +388,7 @@ class ResUsersHITL(models.Model):
             'name': 'Mina HITL-godkännanden',
             'res_model': 'ai.coworker.hitl',
             'view_mode': 'list,form',
+            'views': [[False, 'list'], [False, 'form']],
             'domain': [('user_id', '=', self.id)],
             'context': {'search_default_asked': 1},
         }

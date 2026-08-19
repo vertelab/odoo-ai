@@ -503,6 +503,7 @@ class AIOnboarding(models.Model):
             'type': 'ir.actions.act_window',
             'res_model': 'ai.onboarding.wizard',
             'view_mode': 'form',
+            'views': [[False, 'form']],
             'target': 'new',
             'context': {'default_onboarding_id': self.id},
         }
