@@ -615,9 +615,11 @@ social-kanal) kan ärva. Avslaget → räknaren nollställs.
 
 ### UI
 
-- Meny: AI Orkestrering → Organisation → **Godkännanden (HITL)**.
+- Meny: AI Orkestrering → Configuration → Godkännanden → **Godkännanden (HITL)**.
 - Smartknapp på **ai.coworker**-formen (öppna HITL för medarbetaren).
 - Smartknapp i **Min profil** (res.users) — mina öppna godkännanden.
+- Smartknappar på **hr.department**-formen: Mål, Tasks, HITL (avdelningens
+  öppna requests).
 - Integritet: `ir.rule` — användare ser bara requests där hen är
   godkännare; admin ser allt.
 

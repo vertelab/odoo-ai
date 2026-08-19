@@ -86,6 +86,24 @@ class Department(models.Model):
             'target': 'current',
         }
 
+    def action_open_ai_hitl(self):
+        """Öppna HITL-requests för avdelningens AI-medarbetare.
+
+        HITL (ai.coworker.hitl) knyts till avdelning via coworker_id →
+        ai.coworker.department_id.
+        """
+        self.ensure_one()
+        return {
+            'name': _('HITL: %s') % self.name,
+            'type': 'ir.actions.act_window',
+            'res_model': 'ai.coworker.hitl',
+            'view_mode': 'list,form',
+            'views': [[False, 'list'], [False, 'form']],
+            'domain': [('coworker_id.department_id', '=', self.id)],
+            'context': {'search_default_asked': 1},
+            'target': 'current',
+        }
+
     # ════════════════════════════════════════════
     # Avdelningskontext + hälsa (tasks 7.5/7.6)
     # ════════════════════════════════════════════
@@ -199,10 +217,15 @@ class Department(models.Model):
     ai_goal_count = fields.Integer(
         'OKR', compute='_compute_ai_counts',
         help='Antal ai.org.goal kopplade till avdelningen.')
+    hitl_open_count = fields.Integer(
+        'Öppna HITL', compute='_compute_ai_counts',
+        help='Antal öppna (asked) ai.coworker.hitl för avdelningens '
+             'AI-medarbetare.')
 
-    @api.depends('department_objective_ids')
+    @api.depends('department_objective_ids', 'ai_coworker_ids')
     def _compute_ai_counts(self):
         Task = self.env['ai.org.task']
+        HITL = self.env['ai.coworker.hitl']
         for dept in self:
             dept.ai_goal_count = len(dept.department_objective_ids)
             try:
@@ -210,6 +233,13 @@ class Department(models.Model):
                     [('department_id', '=', dept.id)])
             except Exception:
                 dept.ai_task_count = 0
+            try:
+                dept.hitl_open_count = HITL.search_count([
+                    ('coworker_id.department_id', '=', dept.id),
+                    ('state', '=', 'asked'),
+                ])
+            except Exception:
+                dept.hitl_open_count = 0
     @api.model
     def org_chart_data(self):
         """Org-träd (avdelningar + AI-medarbetare/mål) för org_chart-vyn."""

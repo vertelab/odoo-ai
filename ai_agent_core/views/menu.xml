@@ -24,7 +24,8 @@
               parent="menu_ai_technical_root" sequence="20"
               groups="ai_agent_core.group_ai_admin"/>
 
-    <!-- Organization submenu — i rotmenyn. Dashboard/Mål/Tasks/Board här;
+    <!-- Organization submenu — i rotmenyn. Dashboard/Board här;
+         Mål/Tasks/HITL ligger under Configuration (transaktioner);
          Reviews + Onboarding ligger under Technical → AI Orkestrering →
          Organisation (menu_ai_technical_org). -->
     <menuitem id="menu_ai_organization" name="Organisation"
@@ -45,67 +46,80 @@
          Documentation/Support/Preferences) via JS-registrering i
          static/src/js/user_menu_ai_chat.js (Odoo 18 user_menuitems).
          Alla användare har ai.group_user implicit via base.group_user. -->
-    <menuitem id="menu_ai_org_goal" name="Mål (OKR)" parent="menu_ai_organization"
-              sequence="10" action="action_ai_org_goal"/>
-    <menuitem id="menu_ai_org_task" name="Tasks" parent="menu_ai_organization"
-              sequence="20" action="action_ai_org_task"/>
     <menuitem id="menu_ai_org_review" name="Reviews" parent="menu_ai_technical_org"
               sequence="30" action="action_ai_org_review"/>
     <menuitem id="menu_ai_org_board" name="Board" parent="menu_ai_organization"
               sequence="40" action="action_ai_org_board"/>
 
-    <!-- HITL (Human-in-the-loop) — godkännanden (officer) -->
-    <menuitem id="menu_ai_hitl" name="Godkännanden (HITL)"
-              parent="menu_ai_organization" sequence="30"
-              action="ai_coworker_hitl_action"
-              groups="ai_agent_core.group_ai_officer"/>
     <menuitem id="menu_ai_onboarding" name="Onboarding" parent="menu_ai_technical_org"
               sequence="50" action="action_ai_onboarding"/>
 
-    <!-- Configuration submenu (endast ai.group_admin) — i rotmenyn -->
+    <!-- Configuration submenu (endast ai.group_admin) — i rotmenyn.
+         Struktur: Inställningar först, sedan Masterdata, därefter
+         undermenyer för transaktioner (Mål/Tasks, Godkännanden/HITL). -->
     <menuitem id="menu_ai_configuration" name="Configuration"
               parent="menu_ai_root" sequence="99"
               groups="ai_agent_core.group_ai_admin"/>
 
+    <!-- Inställningar — först under Configuration -->
     <menuitem id="menu_ai_settings" name="Inställningar" parent="menu_ai_configuration"
               sequence="1" action="action_ai_settings"/>
-    <menuitem id="menu_ai_identity" name="Identiteter" parent="menu_ai_configuration"
-              sequence="5" action="action_ai_identity"/>
-    <menuitem id="menu_ai_provider" name="Providers" parent="menu_ai_configuration"
-              sequence="10" action="action_ai_provider"/>
-    <menuitem id="menu_ai_model" name="Models" parent="menu_ai_configuration"
-              sequence="15" action="action_ai_model"/>
-    <menuitem id="menu_ai_skill_menu" name="Skills" parent="menu_ai_configuration"
-              sequence="20" action="action_ai_skill"/>
-    <menuitem id="menu_ai_memory" name="Memory" parent="menu_ai_configuration"
-              sequence="30" action="action_ai_memory"/>
-    <menuitem id="menu_ai_okf_concepts" name="OKF Concepts"
-              parent="menu_ai_configuration" sequence="40"
-              action="action_ai_okf_concept"/>
-    <menuitem id="menu_ai_okf_dashboard" name="Odoo Mind Dashboard"
-              parent="menu_ai_configuration" sequence="55"
-              action="action_ai_okf_dashboard"/>
 
-    <!-- Tools / Session / Memory Categories — flyttade hit från sina
-         views-filer så att menu.xml (som laddas sist) har alla actions. -->
+    <!-- Masterdata (basdata/konfigurationsentiteter) -->
+    <menuitem id="menu_ai_config_masterdata" name="Masterdata"
+              parent="menu_ai_configuration" sequence="5"
+              groups="ai_agent_core.group_ai_admin"/>
+    <menuitem id="menu_ai_identity" name="Identiteter" parent="menu_ai_config_masterdata"
+              sequence="10" action="action_ai_identity"/>
+    <menuitem id="menu_ai_provider" name="Providers" parent="menu_ai_config_masterdata"
+              sequence="20" action="action_ai_provider"/>
+    <menuitem id="menu_ai_model" name="Models" parent="menu_ai_config_masterdata"
+              sequence="30" action="action_ai_model"/>
+    <menuitem id="menu_ai_skill_menu" name="Skills" parent="menu_ai_config_masterdata"
+              sequence="40" action="action_ai_skill"/>
     <menuitem id="menu_ai_tool" name="Tools"
-              parent="menu_ai_configuration" sequence="25"
+              parent="menu_ai_config_masterdata" sequence="50"
               action="action_ai_tool"/>
     <menuitem id="menu_ai_tool_capability" name="Capabilities"
-              parent="menu_ai_configuration" sequence="26"
+              parent="menu_ai_config_masterdata" sequence="60"
               action="action_ai_tool_capability"/>
+    <menuitem id="menu_ai_memory" name="Memory" parent="menu_ai_config_masterdata"
+              sequence="70" action="action_ai_memory"/>
+    <menuitem id="menu_ai_company_memory_category" name="Memory Categories"
+              parent="menu_ai_config_masterdata" sequence="80"
+              action="action_ai_company_memory_category"/>
+    <menuitem id="menu_ai_okf_concepts" name="OKF Concepts"
+              parent="menu_ai_config_masterdata" sequence="90"
+              action="action_ai_okf_concept"/>
+
+    <!-- Mål & Tasks (transaktioner) -->
+    <menuitem id="menu_ai_config_goals" name="Mål &amp; Tasks"
+              parent="menu_ai_configuration" sequence="10"
+              groups="ai_agent_core.group_ai_admin"/>
+    <menuitem id="menu_ai_org_goal" name="Mål (OKR)" parent="menu_ai_config_goals"
+              sequence="10" action="action_ai_org_goal"/>
+    <menuitem id="menu_ai_org_task" name="Tasks" parent="menu_ai_config_goals"
+              sequence="20" action="action_ai_org_task"/>
+
+    <!-- Godkännanden (HITL) — transaktioner -->
+    <menuitem id="menu_ai_config_hitl" name="Godkännanden"
+              parent="menu_ai_configuration" sequence="15"
+              groups="ai_agent_core.group_ai_admin"/>
+    <menuitem id="menu_ai_hitl" name="Godkännanden (HITL)"
+              parent="menu_ai_config_hitl" sequence="10"
+              action="ai_coworker_hitl_action"
+              groups="ai_agent_core.group_ai_admin"/>
+
     <menuitem id="menu_ai_session" name="Session"
-              parent="menu_ai_configuration" sequence="35"
+              parent="menu_ai_configuration" sequence="20"
               groups="ai_agent_core.group_ai_admin"
               action="action_ai_coworker_session"/>
-    <menuitem id="menu_ai_company_memory_category" name="Memory Categories"
-              parent="menu_ai_configuration" sequence="92"
-              action="action_ai_company_memory_category"/>
-
-    <!-- Monthly Summary -->
     <menuitem id="menu_ai_monthly_summary" name="Monthly Summary"
-              parent="menu_ai_configuration" sequence="60"
+              parent="menu_ai_configuration" sequence="25"
               action="ai_monthly_summary_action"/>
+    <menuitem id="menu_ai_okf_dashboard" name="Odoo Mind Dashboard"
+              parent="menu_ai_configuration" sequence="30"
+              action="action_ai_okf_dashboard"/>
 
     <!-- ===== Settings → Technical → AI Orkestrering ===== -->
     <!-- Teknisk uppsättning: avancerade AI-menyer under Settings → Technical

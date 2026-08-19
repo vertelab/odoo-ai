@@ -6,6 +6,26 @@
         <field name="model">hr.department</field>
         <field name="inherit_id" ref="hr.view_department_form"/>
         <field name="arch" type="xml">
+            <div name="button_box" position="inside">
+                <button name="action_open_ai_goals" type="object"
+                        class="oe_stat_button" icon="fa-bullseye"
+                        groups="ai_agent_core.group_ai_officer">
+                    <field name="ai_goal_count" widget="statinfo"/>
+                    <span class="o_stat_text">🎯 Mål</span>
+                </button>
+                <button name="action_open_ai_tasks" type="object"
+                        class="oe_stat_button" icon="fa-tasks"
+                        groups="ai_agent_core.group_ai_officer">
+                    <field name="ai_task_count" widget="statinfo"/>
+                    <span class="o_stat_text">📋 Tasks</span>
+                </button>
+                <button name="action_open_ai_hitl" type="object"
+                        class="oe_stat_button" icon="fa-check-square-o"
+                        groups="ai_agent_core.group_ai_officer">
+                    <field name="hitl_open_count" widget="statinfo"/>
+                    <span class="o_stat_text">🛡️ HITL</span>
+                </button>
+            </div>
             <field name="manager_id" position="after">
                 <field name="ai_manager_id" placeholder="Välj AI-chef..."
                     options="{'no_create': True}"/>
