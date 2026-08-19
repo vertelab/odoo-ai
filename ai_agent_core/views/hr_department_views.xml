@@ -188,6 +188,7 @@
                 <field name="name"/>
                 <field name="color"/>
                 <field name="health"/>
+                <field name="ai_manager_id"/>
                 <field name="total_ai_staff"/>
                 <field name="ai_task_count"/>
                 <field name="ai_goal_count"/>
