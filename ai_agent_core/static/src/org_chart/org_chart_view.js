@@ -10,13 +10,12 @@ export const orgChartView = {
     ArchParser: OrgChartArchParser,
 
     props: (genericProps, view) => {
-        const { arch, fields, resModel } = genericProps;
+        const { arch } = genericProps;
         const archInfo = new view.ArchParser().parse(arch);
         return {
             ...genericProps,
             Renderer: view.Renderer,
             archInfo,
-            modelParams: { resModel, fields, archInfo },
         };
     },
 };
