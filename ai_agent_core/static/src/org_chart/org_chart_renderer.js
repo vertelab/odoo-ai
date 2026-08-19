@@ -51,6 +51,7 @@ export class OrgChartRenderer extends Component {
             name: node.name,
             res_model: "hr.department",
             view_mode: "form",
+            views: [[false, "form"]],
             res_id: node.id,
         });
     }

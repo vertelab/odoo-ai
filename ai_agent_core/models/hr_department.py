@@ -51,6 +51,7 @@ class Department(models.Model):
             'type': 'ir.actions.act_window',
             'res_model': 'ai.coworker',
             'view_mode': 'kanban,list,form',
+            'views': [[False, 'kanban'], [False, 'list'], [False, 'form']],
             'domain': [('department_id', '=', self.id)],
             'target': 'current',
         }
@@ -63,6 +64,7 @@ class Department(models.Model):
             'type': 'ir.actions.act_window',
             'res_model': 'ai.org.goal',
             'view_mode': 'kanban,list,form',
+            'views': [[False, 'kanban'], [False, 'list'], [False, 'form']],
             'domain': [('department_id', '=', self.id)],
             'target': 'current',
         }
@@ -79,6 +81,7 @@ class Department(models.Model):
             'type': 'ir.actions.act_window',
             'res_model': 'ai.org.task',
             'view_mode': 'list,form',
+            'views': [[False, 'list'], [False, 'form']],
             'domain': [('department_id', '=', self.id)],
             'target': 'current',
         }
