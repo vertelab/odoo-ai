@@ -287,17 +287,19 @@ class AICoworkerHITLMixin(models.Model):
     """ai.coworker — HITL-API + smartknapp."""
     _inherit = 'ai.coworker'
 
+    hitl_ids = fields.One2many(
+        'ai.coworker.hitl', 'coworker_id',
+        string='HITL-requests',
+        help='HITL-requests som begärts av denna AI-medarbetare.')
     hitl_open_count = fields.Integer(
-        string='Öppna HITL', compute='_compute_hitl_open_count')
+        string='Öppna HITL', compute='_compute_hitl_open_count',
+        help='Antal öppna (asked) HITL-requests för denna AI-medarbetare.')
 
-    @api.depends()
+    @api.depends('hitl_ids.state')
     def _compute_hitl_open_count(self):
-        HITL = self.env['ai.coworker.hitl']
         for rec in self:
-            rec.hitl_open_count = HITL.search_count([
-                ('coworker_id', '=', rec.id),
-                ('state', '=', 'asked'),
-            ])
+            rec.hitl_open_count = len(
+                rec.hitl_ids.filtered(lambda h: h.state == 'asked'))
 
     def _request_hitl(self, action_type, summary, context=None,
                       risk_level='high', user_id=None):
@@ -368,17 +370,19 @@ class ResUsersHITL(models.Model):
     """res.users — smartknapp i Min profil: mina HITL-godkännanden."""
     _inherit = 'res.users'
 
+    hitl_approval_ids = fields.One2many(
+        'ai.coworker.hitl', 'user_id',
+        string='HITL-godkännanden',
+        help='HITL-requests där användaren är godkännare.')
     hitl_approver_count = fields.Integer(
-        string='HITL-godkännanden', compute='_compute_hitl_approver_count')
+        string='HITL-godkännanden',
+        compute='_compute_hitl_approver_count')
 
-    @api.depends()
+    @api.depends('hitl_approval_ids.state')
     def _compute_hitl_approver_count(self):
-        HITL = self.env['ai.coworker.hitl']
         for rec in self:
-            rec.hitl_approver_count = HITL.search_count([
-                ('user_id', '=', rec.id),
-                ('state', '=', 'asked'),
-            ])
+            rec.hitl_approver_count = len(
+                rec.hitl_approval_ids.filtered(lambda h: h.state == 'asked'))
 
     def action_open_my_hitl(self):
         """Smartknapp (Min profil): öppna HITL där jag är godkännare."""

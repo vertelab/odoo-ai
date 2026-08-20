@@ -222,24 +222,52 @@ class Department(models.Model):
         help='Antal öppna (asked) ai.coworker.hitl för avdelningens '
              'AI-medarbetare.')
 
-    @api.depends('department_objective_ids', 'ai_coworker_ids')
+    @api.depends('department_objective_ids', 'ai_coworker_ids.hitl_ids.state')
     def _compute_ai_counts(self):
         Task = self.env['ai.org.task']
         HITL = self.env['ai.coworker.hitl']
+        # Batch-sökning: en query per modell i stället för search_count i loop.
+        try:
+            task_rows = Task.search_read(
+                [('department_id', 'in', self.ids)],
+                fields=['department_id'])
+        except Exception:
+            task_rows = []
+        try:
+            hitl_rows = HITL.search_read(
+                [('coworker_id.department_id', 'in', self.ids),
+                 ('state', '=', 'asked')],
+                fields=['coworker_id'])
+        except Exception:
+            hitl_rows = []
+        # Samla per avdelning (coworker_id är (id, name)-tuple → plocka .id)
+        task_count = {}
+        for row in task_rows:
+            dept_id = row.get('department_id')
+            if dept_id:
+                dept_id = dept_id[0] if isinstance(dept_id, (list, tuple)) else dept_id
+                task_count[dept_id] = task_count.get(dept_id, 0) + 1
+        hitl_count = {}
+        coworker_ids = set()
+        for row in hitl_rows:
+            coworker = row.get('coworker_id')
+            coworker_id = coworker[0] if isinstance(coworker, (list, tuple)) else coworker
+            if coworker_id:
+                coworker_ids.add(coworker_id)
+        dept_by_coworker = {}
+        if coworker_ids:
+            for cw in self.env['ai.coworker'].browse(sorted(coworker_ids)):
+                dept_by_coworker[cw.id] = cw.department_id.id
+        for row in hitl_rows:
+            coworker = row.get('coworker_id')
+            coworker_id = coworker[0] if isinstance(coworker, (list, tuple)) else coworker
+            dept_id = dept_by_coworker.get(coworker_id)
+            if dept_id:
+                hitl_count[dept_id] = hitl_count.get(dept_id, 0) + 1
         for dept in self:
             dept.ai_goal_count = len(dept.department_objective_ids)
-            try:
-                dept.ai_task_count = Task.search_count(
-                    [('department_id', '=', dept.id)])
-            except Exception:
-                dept.ai_task_count = 0
-            try:
-                dept.hitl_open_count = HITL.search_count([
-                    ('coworker_id.department_id', '=', dept.id),
-                    ('state', '=', 'asked'),
-                ])
-            except Exception:
-                dept.hitl_open_count = 0
+            dept.ai_task_count = task_count.get(dept.id, 0)
+            dept.hitl_open_count = hitl_count.get(dept.id, 0)
     @api.model
     def org_chart_data(self):
         """Org-träd (avdelningar + AI-medarbetare/mål) för org_chart-vyn."""
