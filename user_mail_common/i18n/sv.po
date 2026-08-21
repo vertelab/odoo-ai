@@ -1,0 +1,484 @@
+# Translation of Odoo Server.
+# This file contains the translation of the following modules:
+# 	* user_mail_common
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: Odoo Server 18.0-20251205\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2025-12-08 13:36+0000\n"
+"PO-Revision-Date: 2025-12-08 14:55+0100\n"
+"Last-Translator: \n"
+"Language-Team: \n"
+"Language: sv\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+"X-Generator: Poedit 3.4.2\n"
+
+#. module: user_mail_common
+#: model_terms:ir.ui.view,arch_db:user_mail_common.intdomain_company
+msgid ""
+"<span class=\"oe_inline\">\n"
+"                            MB\n"
+"                        </span>"
+msgstr ""
+"<span class=\"oe_inline\">\n"
+"                            MB\n"
+"                        <span>"
+
+#. module: user_mail_common
+#: model:ir.model.fields,field_description:user_mail_common.field_postfix_alias__active
+msgid "Active"
+msgstr "Aktiv"
+
+#. module: user_mail_common
+#: model:res.groups,name:user_mail_common.group_own_email_settings
+msgid "Administrate own email settings"
+msgstr "Administrera egna e-postinställningar"
+
+#. module: user_mail_common
+#: model:ir.model.fields,field_description:user_mail_common.field_res_users__postfix_alias_ids
+#: model_terms:ir.ui.view,arch_db:user_mail_common.view_users_form_conf_mail
+msgid "Alias"
+msgstr "Alias"
+
+#. module: user_mail_common
+#: model:ir.model.fields,field_description:user_mail_common.field_res_company__total_quota
+msgid "All quota (MB)"
+msgstr "All kvot (MB)"
+
+#. module: user_mail_common
+#: model:ir.model.fields,field_description:user_mail_common.field_res_company__catchall
+msgid "Catchall"
+msgstr "Catchall"
+
+#. module: user_mail_common
+#: model:ir.model.fields,help:user_mail_common.field_res_users__forward_address
+msgid "Comma separated list of mail addresses"
+msgstr "Kommaseparerad lista med e-postadresser"
+
+#. module: user_mail_common
+#: model:ir.model,name:user_mail_common.model_res_company
+msgid "Companies"
+msgstr "Bolag"
+
+#. module: user_mail_common
+#: model:ir.model.fields,field_description:user_mail_common.field_postfix_alias__mail
+msgid "Complete Mail Address"
+msgstr "Fullständig e-postadress"
+
+#. module: user_mail_common
+#: model:ir.model.fields,field_description:user_mail_common.field_postfix_alias__create_uid
+#: model:ir.model.fields,field_description:user_mail_common.field_postfix_vacation_notification__create_uid
+msgid "Created by"
+msgstr "Skapad av"
+
+#. module: user_mail_common
+#: model:ir.model.fields,field_description:user_mail_common.field_postfix_alias__create_date
+#: model:ir.model.fields,field_description:user_mail_common.field_postfix_vacation_notification__create_date
+msgid "Created on"
+msgstr "Skapad den"
+
+#. module: user_mail_common
+#: model:ir.model.fields,field_description:user_mail_common.field_postfix_vacation_notification__date
+msgid "Date"
+msgstr "Datum"
+
+#. module: user_mail_common
+#: model:ir.model.fields,field_description:user_mail_common.field_res_company__default_quota
+msgid "Default Quota per User"
+msgstr "Standardkvot per användare"
+
+#. module: user_mail_common
+#: model:ir.model.fields,field_description:user_mail_common.field_postfix_alias__display_name
+#: model:ir.model.fields,field_description:user_mail_common.field_postfix_vacation_notification__display_name
+msgid "Display Name"
+msgstr "Visningsnamn"
+
+#. module: user_mail_common
+#: model:ir.model.fields,field_description:user_mail_common.field_res_company__domain
+#: model:ir.model.fields,field_description:user_mail_common.field_res_users__domain
+msgid "Domain"
+msgstr "Domän"
+
+#. module: user_mail_common
+#: model:ir.model.fields,field_description:user_mail_common.field_res_users__dovecot_password
+msgid "Dovecot Password"
+msgstr "Dovecot Lösenord"
+
+#. module: user_mail_common
+#: model_terms:ir.ui.view,arch_db:user_mail_common.intdomain_company
+#: model_terms:ir.ui.view,arch_db:user_mail_common.view_users_form_conf_mail
+msgid "E-mail settings"
+msgstr "Inställningar för e-post"
+
+#. module: user_mail_common
+#: model:ir.model.fields,field_description:user_mail_common.field_res_users__email
+msgid "Email"
+msgstr "E-post"
+
+#. module: user_mail_common
+#: model:ir.model.fields,help:user_mail_common.field_res_users__login
+msgid ""
+"External e-mail or login. Your Company e-mail address are constructed from "
+"login"
+msgstr ""
+"Extern e-postadress eller inloggning. Din företags-e-postadress är skapad "
+"från inloggningsuppgifter."
+
+#. module: user_mail_common
+#: model:ir.model.fields,field_description:user_mail_common.field_res_users__vacation_forward
+#: model_terms:ir.ui.view,arch_db:user_mail_common.view_users_form_conf_mail
+msgid "Forward"
+msgstr "Framåt"
+
+#. module: user_mail_common
+#: model:ir.model.fields,field_description:user_mail_common.field_res_users__forward_address
+msgid "Forward address"
+msgstr "Vidarebefodransadress"
+
+#. module: user_mail_common
+#: model:ir.model.fields,field_description:user_mail_common.field_res_users__forward_active
+msgid "Foward Active"
+msgstr "Vidarebefordran aktiv"
+
+#. module: user_mail_common
+#: model:ir.model.fields,field_description:user_mail_common.field_res_users__vacation_from
+msgid "From"
+msgstr "Från"
+
+#. module: user_mail_common
+#: model:ir.model.fields.selection,name:user_mail_common.selection__res_users__spam_tag__1_5
+msgid "High (1.5)"
+msgstr "Hög (1,5)"
+
+#. module: user_mail_common
+#: model:ir.model.fields.selection,name:user_mail_common.selection__res_users__spam_tag2__4
+msgid "High (4)"
+msgstr "Hög (4)"
+
+#. module: user_mail_common
+#: model:ir.model.fields.selection,name:user_mail_common.selection__res_users__spam_killevel__4_5
+msgid "High (4.5)"
+msgstr "Hög (4,5)"
+
+#. module: user_mail_common
+#: model_terms:ir.ui.view,arch_db:user_mail_common.view_users_form_conf_mail
+msgid "I am at vacation"
+msgstr "Jag är på semester"
+
+#. module: user_mail_common
+#: model:ir.model.fields,field_description:user_mail_common.field_postfix_alias__id
+#: model:ir.model.fields,field_description:user_mail_common.field_postfix_vacation_notification__id
+msgid "ID"
+msgstr "ID"
+
+#. module: user_mail_common
+#: model:ir.model.fields,field_description:user_mail_common.field_res_users__forward_cp
+msgid "Keep"
+msgstr "Behåll"
+
+#. module: user_mail_common
+#: model:ir.model.fields,help:user_mail_common.field_res_users__forward_cp
+msgid "Keep a local copy of forwarded messages"
+msgstr "Behåll en lokal kopia av vidarebefordrade meddelanden"
+
+#. module: user_mail_common
+#: model:ir.model.fields,help:user_mail_common.field_res_users__spam_killevel
+msgid "Killed spam never reach your mail client"
+msgstr "Avstängd skräppost når aldrig din e-postklient"
+
+#. module: user_mail_common
+#: model:ir.model.fields,field_description:user_mail_common.field_postfix_alias__write_uid
+#: model:ir.model.fields,field_description:user_mail_common.field_postfix_vacation_notification__write_uid
+msgid "Last Updated by"
+msgstr "Senast uppdaterad av"
+
+#. module: user_mail_common
+#: model:ir.model.fields,field_description:user_mail_common.field_postfix_alias__write_date
+#: model:ir.model.fields,field_description:user_mail_common.field_postfix_vacation_notification__write_date
+msgid "Last Updated on"
+msgstr "Senast uppdaterad den"
+
+#. module: user_mail_common
+#: model:ir.model.fields,field_description:user_mail_common.field_res_users__login
+msgid "Login"
+msgstr "Inloggning"
+
+#. module: user_mail_common
+#: model_terms:ir.ui.view,arch_db:user_mail_common.view_users_form_conf_mail
+msgid "Login Name / Email Address"
+msgstr "Inloggningsnamn / E-postadress"
+
+#. module: user_mail_common
+#: model:ir.model.fields.selection,name:user_mail_common.selection__res_users__spam_killevel__10
+msgid "Low (10)"
+msgstr "Låg (10)"
+
+#. module: user_mail_common
+#: model:ir.model.fields.selection,name:user_mail_common.selection__res_users__spam_tag__7_0
+msgid "Low (7)"
+msgstr "Låg (7)"
+
+#. module: user_mail_common
+#: model:ir.model.fields.selection,name:user_mail_common.selection__res_users__spam_tag2__9_5
+msgid "Low (9.5)"
+msgstr "Låg (9,5)"
+
+#. module: user_mail_common
+#: model:ir.model.fields,field_description:user_mail_common.field_postfix_alias__name
+msgid "Mail Address"
+msgstr "E-postadress"
+
+#. module: user_mail_common
+#: model_terms:ir.ui.view,arch_db:user_mail_common.view_users_form_conf_mail
+msgid "Mail alias"
+msgstr "E-postalias"
+
+#. module: user_mail_common
+#: model:ir.model.fields,help:user_mail_common.field_postfix_alias__mail
+msgid ""
+"Mail as <user>@<domain>, if you are using a foreign domain, make sure that "
+"this domain are handled by the same mailserver"
+msgstr ""
+"E-post som <user>@<domain>, om du använder en utländsk domän, se till att "
+"denna domän hanteras av samma e-postserver"
+
+#. module: user_mail_common
+#: model:ir.model.fields,help:user_mail_common.field_postfix_alias__name
+msgid ""
+"Mail without domain (left side of @), leave blank for a catcall for the "
+"domain"
+msgstr ""
+"E-post utan domän (vänster sida av @), lämna tomt för en catcall för domänen"
+
+#. module: user_mail_common
+#: model:ir.model.fields,help:user_mail_common.field_res_users__vacation_forward
+msgid "Mailaddress to send messages during vacation"
+msgstr "E-postadress för att skicka meddelanden under semestern"
+
+#. module: user_mail_common
+#: model:ir.model.fields,field_description:user_mail_common.field_res_users__maildir
+msgid "Maildir"
+msgstr "Maildir"
+
+#. module: user_mail_common
+#: model:ir.model.fields.selection,name:user_mail_common.selection__res_users__spam_tag__3
+msgid "Medium (3)"
+msgstr "Medel (3)"
+
+#. module: user_mail_common
+#: model:ir.model.fields.selection,name:user_mail_common.selection__res_users__spam_tag2__5_5
+msgid "Medium (5.5)"
+msgstr "Medel (5,5)"
+
+#. module: user_mail_common
+#: model:ir.model.fields.selection,name:user_mail_common.selection__res_users__spam_killevel__6
+msgid "Medium (6)"
+msgstr "Medel (6)"
+
+#. module: user_mail_common
+#: model_terms:ir.ui.view,arch_db:user_mail_common.view_users_form_conf_mail
+msgid "Misc"
+msgstr "Övrigt"
+
+#. module: user_mail_common
+#: model:ir.model.fields,field_description:user_mail_common.field_res_company__nbr_users
+msgid "Nbr of users"
+msgstr "Antal användare"
+
+#. module: user_mail_common
+#: model:ir.model.fields,field_description:user_mail_common.field_postfix_vacation_notification__notified
+msgid "Notified"
+msgstr "Meddelad"
+
+#. module: user_mail_common
+#: model:ir.model.fields,field_description:user_mail_common.field_res_users__postfix_active
+#: model_terms:ir.ui.view,arch_db:user_mail_common.view_users_form_conf_mail
+msgid "Postfix Active"
+msgstr "Postfix Aktiv"
+
+#. module: user_mail_common
+#: model:ir.model,name:user_mail_common.model_postfix_alias
+msgid "Postfix Alias"
+msgstr "Postfix-alias"
+
+#. module: user_mail_common
+#: model:ir.model,name:user_mail_common.model_postfix_vacation_notification
+msgid "Postfix Vacation Notfication"
+msgstr "Postfix semestermeddelande"
+
+#. module: user_mail_common
+#: model:ir.model.fields,field_description:user_mail_common.field_res_users__quota
+msgid "Quota"
+msgstr "Kvotering"
+
+#. module: user_mail_common
+#: model:ir.model.fields,help:user_mail_common.field_res_company__default_quota
+msgid "Quota in MB per user that is default"
+msgstr "Kvot i MB per användare som är standard"
+
+#. module: user_mail_common
+#: model:ir.model.fields,field_description:user_mail_common.field_res_users__postfix_mail
+msgid "Real Mail Address"
+msgstr "Verklig postadress"
+
+#. module: user_mail_common
+#: model:ir.model.fields,field_description:user_mail_common.field_res_company__remote_id
+#: model:ir.model.fields,field_description:user_mail_common.field_res_users__remote_id
+msgid "Remote ID"
+msgstr "Fjärr-ID"
+
+#. module: user_mail_common
+#: model:ir.model.fields,field_description:user_mail_common.field_res_users__spam_active
+msgid "Spam Check"
+msgstr "Skräppostkontroll"
+
+#. module: user_mail_common
+#: model:ir.model.fields,field_description:user_mail_common.field_res_users__spam_killevel
+msgid "Spam Kill Level"
+msgstr "Spam Kill-nivå"
+
+#. module: user_mail_common
+#: model:ir.model.fields,field_description:user_mail_common.field_res_users__spam_tag
+msgid "Spam Tag Level"
+msgstr "Nivå för skräpposttagg"
+
+#. module: user_mail_common
+#: model:ir.model.fields,field_description:user_mail_common.field_res_users__spam_tag2
+msgid "Spam Tag Level two"
+msgstr "Skräpposttaggning nivå två"
+
+#. module: user_mail_common
+#: model_terms:ir.ui.view,arch_db:user_mail_common.view_users_form_conf_mail
+msgid "Spam check"
+msgstr "Skräppost kontroll"
+
+#. module: user_mail_common
+#: model:ir.model.fields,field_description:user_mail_common.field_res_users__vacation_subject
+msgid "Subject"
+msgstr "Ämne"
+
+#. module: user_mail_common
+#: model:ir.model.fields,help:user_mail_common.field_res_company__total_quota
+msgid "Sum of all Users Quota in MB"
+msgstr "Summan av alla användares kvot i MB"
+
+#. module: user_mail_common
+#: model:ir.model.fields,help:user_mail_common.field_res_users__spam_tag
+msgid "Tagged spam will be marked as spam in your mail client"
+msgstr "Taggad skräppost kommer att markeras som skräppost i din e-postklient"
+
+#. module: user_mail_common
+#: model:ir.model.fields,help:user_mail_common.field_res_users__spam_tag2
+msgid ""
+"Tagged spam will be marked as spam in your mail client and usually sorted "
+"in the spam directory"
+msgstr ""
+"Märkt skräppost kommer att markeras som skräppost i din e-postklient och "
+"vanligtvis sorteras i skräppostkatalogen"
+
+#. module: user_mail_common
+#: model:ir.model.fields,field_description:user_mail_common.field_res_users__vacation_text
+msgid "Text"
+msgstr "Text"
+
+#. module: user_mail_common
+#: model:ir.model.constraint,message:user_mail_common.constraint_res_company_domain_uniq
+msgid "The company domain must be unique!"
+msgstr "Företagets domän måste vara unik!"
+
+#. module: user_mail_common
+#: model:ir.model.constraint,message:user_mail_common.constraint_res_users_maildir_uniq
+msgid "The maildir must be unique!"
+msgstr "Maildir måste vara unik!"
+
+#. module: user_mail_common
+#: model:ir.model.constraint,message:user_mail_common.constraint_res_users_postfix_mail_uniq
+msgid "The postfix mail address must be unique!"
+msgstr "Postfix mailadress måste vara unik!"
+
+#. module: user_mail_common
+#: model:ir.model.fields,field_description:user_mail_common.field_res_users__vacation_to
+msgid "To"
+msgstr "Till"
+
+#. module: user_mail_common
+#: model:ir.model,name:user_mail_common.model_res_users
+#: model:ir.model.fields,field_description:user_mail_common.field_postfix_alias__user_id
+#: model:ir.model.fields,field_description:user_mail_common.field_postfix_vacation_notification__user_id
+msgid "User"
+msgstr "Användare"
+
+#. module: user_mail_common
+#: model_terms:ir.ui.view,arch_db:user_mail_common.view_users_form_conf_mail
+msgid "Vacation"
+msgstr "Semester"
+
+#. module: user_mail_common
+#: model:ir.model.fields,field_description:user_mail_common.field_res_users__vacation_active
+msgid "Vacation Active"
+msgstr "Semester Aktiv"
+
+#. module: user_mail_common
+#: model:ir.model.fields,help:user_mail_common.field_res_users__vacation_to
+msgid "Vacation ends"
+msgstr "Semesterns slut"
+
+#. module: user_mail_common
+#: model:ir.model.fields,help:user_mail_common.field_res_users__vacation_text
+msgid "Vacation message for autorespond"
+msgstr "Semestermeddelande för autosvar"
+
+#. module: user_mail_common
+#: model:ir.model.fields,help:user_mail_common.field_res_users__vacation_from
+msgid "Vacation starts"
+msgstr "Semester börjar"
+
+#. module: user_mail_common
+#: model:ir.model.fields.selection,name:user_mail_common.selection__res_users__spam_tag2__2_5
+msgid "Very High (2.5)"
+msgstr "Mycket hög (2,5)"
+
+#. module: user_mail_common
+#: model:ir.model.fields.selection,name:user_mail_common.selection__res_users__spam_killevel__3
+msgid "Very High (3)"
+msgstr "Mycket hög (3)"
+
+#. module: user_mail_common
+#: model:ir.model.fields.selection,name:user_mail_common.selection__res_users__spam_tag__0
+msgid "Very high (0)"
+msgstr "Mycket hög (0)"
+
+#. module: user_mail_common
+#: model:ir.model.fields,field_description:user_mail_common.field_res_users__virus_active
+msgid "Virus Check"
+msgstr "Viruskontroll"
+
+#. module: user_mail_common
+#: model_terms:ir.ui.view,arch_db:user_mail_common.view_users_form_conf_mail
+msgid "Virus check"
+msgstr "Viruskontroll"
+
+#. module: user_mail_common
+#: model:ir.model.fields,help:user_mail_common.field_res_company__catchall
+msgid "catchall mail address"
+msgstr "postadress för catchall"
+
+#. module: user_mail_common
+#: model_terms:ir.ui.view,arch_db:user_mail_common.view_users_form_conf_mail
+msgid "my@temporarymail.com"
+msgstr "min@tillfalliga-epost.se"
+
+#. module: user_mail_common
+#: model_terms:ir.ui.view,arch_db:user_mail_common.view_users_form_conf_mail
+msgid "my@vacationmail.com"
+msgstr "min@semesterepost.se"
+
+#. module: user_mail_common
+#: model:ir.model.fields,help:user_mail_common.field_res_company__domain
+#: model:ir.model.fields,help:user_mail_common.field_res_users__domain
+msgid "the internet domain for mail"
+msgstr "internetdomänen för e-post"

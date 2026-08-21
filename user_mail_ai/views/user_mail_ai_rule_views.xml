@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="user_mail_ai_rule_list" model="ir.ui.view">
+        <field name="name">user.mail.ai.rule.list</field>
+        <field name="model">user_mail_ai.rule</field>
+        <field name="arch" type="xml">
+            <list string="Mail-hjälpredan — regler">
+                <field name="priority"/>
+                <field name="name"/>
+                <field name="condition_kind"/>
+                <field name="condition_text"/>
+                <field name="action"/>
+                <field name="source"/>
+                <field name="active"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="user_mail_ai_rule_form" model="ir.ui.view">
+        <field name="name">user.mail.ai.rule.form</field>
+        <field name="model">user_mail_ai.rule</field>
+        <field name="arch" type="xml">
+            <form string="Mail-regel">
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="name"/>
+                            <field name="priority"/>
+                            <field name="active"/>
+                            <field name="source" readonly="1"/>
+                        </group>
+                        <group>
+                            <field name="condition_kind"/>
+                            <field name="condition_text"/>
+                            <field name="action"/>
+                            <field name="action_config"/>
+                        </group>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="user_mail_ai_rule_action" model="ir.actions.act_window">
+        <field name="name">Mail-hjälpredan — regler</field>
+        <field name="res_model">user_mail_ai.rule</field>
+        <field name="view_mode">list,form</field>
+        <field name="domain">[('user_id', '=', uid)]</field>
+    </record>
+
+    <menuitem id="menu_user_mail_ai_rules"
+        name="Regler"
+        parent="menu_user_mail_ai"
+        action="user_mail_ai_rule_action"
+        sequence="10"/>
+
+</odoo>

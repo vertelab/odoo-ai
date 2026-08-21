@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Profil-status + digest-inställningar i Min profil -->
+    <record id="view_res_users_form_inherit_mail_ai" model="ir.ui.view">
+        <field name="name">res.users.form.inherit.mail.ai</field>
+        <field name="model">res.users</field>
+        <field name="inherit_id" ref="base.view_users_form"/>
+        <field name="arch" type="xml">
+            <div name="button_box" position="inside">
+                <button name="action_open_mail_rules" type="object"
+                        class="oe_stat_button" icon="fa-sliders">
+                    <div class="o_stat_info">
+                        <span class="o_stat_text">Mail-regler</span>
+                    </div>
+                </button>
+            </div>
+            <xpath expr="//sheet" position="inside">
+                <group string="Mail-hjälpredan (Skiva 3)">
+                    <field name="ai_digest_enabled"/>
+                    <field name="ai_digest_weekday"
+                           invisible="ai_digest_enabled == False"/>
+                    <field name="ai_profile_updated" readonly="1"/>
+                    <field name="ai_profile_text" readonly="1"/>
+                </group>
+            </xpath>
+        </field>
+    </record>
+</odoo>

@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+        <record id="view_users_form_conf_mail" model="ir.ui.view">
+            <field name="name">res.users.form.mail</field>
+            <field name="model">res.users</field>
+            <field name="inherit_id" ref="base.view_users_form"/>
+            <field name="arch" type="xml">
+                <field name="email" position="replace"/>
+                <label for="login" position="replace">
+                    <label class="oe_edit_only" for="login" string="Login Name / Email Address"/>
+                </label>
+                <field name="login" position="replace">
+                    <div>
+                        <h2 class="oe_inline">
+                            <field class="oe_inline" name="login"/>
+                        </h2>
+                        <field class="oe_read_only" name="email" readonly="1"/>
+                    </div></field>
+                <notebook position="inside">
+                    <page string="E-mail settings">
+                        <group>
+                            <field name="postfix_active" string="Postfix Active"/>
+                        </group>
+                        <group invisible="postfix_active == False">
+                            <field groups="base.group_erp_manager" name="postfix_mail"/>
+                        </group>
+                        <group invisible="postfix_active == False" string="Vacation">
+                            <group>
+                                <field name="vacation_active"/>
+                                <field invisible="vacation_active == False" name="vacation_from" required="vacation_active == True"/>
+                                <field invisible="vacation_active == False" name="vacation_to" required="vacation_active == True"/>
+                            </group>
+                            <group>
+                                <field invisible="vacation_active == False" name="vacation_subject" placeholder="I am at vacation" required="vacation_active == True"/>
+                                <field invisible="vacation_active == False" name="vacation_text" required="vacation_active == True"/>
+                                <field invisible="vacation_active == False" name="vacation_forward" placeholder="my@vacationmail.com" required="vacation_active == True"/>
+                            </group>
+                        </group>
+                        <group invisible="postfix_active == False">
+                            <group string="Forward">
+                                <field name="forward_active"/>
+                                <field invisible="forward_active == False" name="forward_address" placeholder="my@temporarymail.com" required="forward_active == True"/>
+                                <field invisible="forward_active == False" name="forward_cp"/>
+                            </group>
+                            <group string="Virus check">
+                                <field name="virus_active"/>
+                            </group>
+                        </group>
+                        <group invisible="postfix_active == False">
+                            <group string="Spam check">
+                                <field name="spam_active"/>
+                                <field invisible="spam_active == False" name="spam_tag" required="spam_active == True"/>
+                                <field invisible="spam_active == False" name="spam_tag2" required="spam_active == True"/>
+                                <field invisible="spam_active == False" name="spam_killevel" required="spam_active == True"/>
+                            </group>
+                            <group string="Misc">
+                                <field name="maildir"/>
+                                <field name="quota"/>
+                            </group>
+                        </group>
+                        <group invisible="postfix_active == False" string="Alias">
+                            <field colspan="2" name="postfix_alias_ids" nolabel="1" widget="one2many_list">
+                                <list editable="bottom" string="Mail alias">
+                                    <field name="name"/>
+                                    <field class="oe_read_only" invisible="name == ''" name="mail"/>
+                                    <field name="active"/>
+                                </list></field>
+                        </group>
+                    </page>
+                </notebook></field>
+        </record>
+        <record id="intdomain_company" model="ir.ui.view">
+            <field name="name">res.company.intdomain.config</field>
+            <field name="model">res.company</field>
+            <field name="type">form</field>
+            <field name="inherit_id" ref="base.view_company_form"/>
+            <field name="arch" type="xml">
+                <xpath expr="//page" position="inside">
+                    <separator colspan="2" string="E-mail settings"/>
+                    <group>
+                        <field name="domain"/>
+                        <field name="catchall"/>
+                        <field class="oe_inline" name="default_quota"/>
+                        <span class="oe_inline">
+                            MB
+                        </span>
+                        <newline/>
+                        <field name="total_quota"/>
+                        <field name="nbr_users"/>
+                    </group>
+                    <newline/>
+                </xpath></field>
+        </record>
+    </data>
+</odoo>

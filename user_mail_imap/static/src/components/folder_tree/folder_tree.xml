@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+    <t t-name="user_mail_imap.FolderTree" owl="1">
+        <aside class="d-flex flex-column border-end bg-light" style="width: 220px; min-width: 220px; height: 100%; overflow-y: auto;">
+            <div class="p-3">
+                <button class="btn btn-primary w-100 mb-2"
+                    t-on-click="props.openComposer">
+                    <i class="fa fa-pencil me-1"/> Skriv nytt
+                </button>
+                <button class="btn btn-sm btn-outline-secondary w-100 mb-3"
+                    t-on-click="props.onSync"
+                    title="Synkronisera">
+                    <i class="fa fa-refresh me-1"/> Synka
+                </button>
+                <t t-foreach="tree" t-as="f" t-key="f.fullName">
+                    <!-- Case 1: real folder with children → clickable + expandable -->
+                    <t t-if="f.hasChildren and f.isReal">
+                        <div class="d-flex align-items-center p-1 rounded cursor-pointer"
+                            t-att-style="'padding-left: ' + (f.depth * 16 + 8) + 'px'"
+                            t-att-class="f.fullName === props.currentFolder ? 'bg-primary text-white' : 'text-dark'"
+                            t-on-click="() => props.onFolderClick(f.fullName)">
+                            <i t-att-class="state.collapsed[f.fullName] ? 'fa fa-caret-right me-1' : 'fa fa-caret-down me-1'"
+                                style="width: 12px;"
+                                t-on-click.stop="() => toggleCollapse(f.fullName)"/>
+                            <i class="fa fa-folder-o me-1" style="width: 14px;"/>
+                            <small class="text-truncate" t-out="f.name"/>
+                        </div>
+                        <t t-if="!state.collapsed[f.fullName]">
+                            <!-- children rendered by walk() in next iteration -->
+                        </t>
+                    </t>
+                    <!-- Case 2: virtual namespace with children → expandable only, not clickable -->
+                    <t t-elif="f.hasChildren and !f.isReal">
+                        <div class="d-flex align-items-center p-1 rounded cursor-pointer user-select-none text-muted"
+                            t-att-style="'padding-left: ' + (f.depth * 16 + 8) + 'px'"
+                            t-on-click="() => toggleCollapse(f.fullName)">
+                            <i t-att-class="state.collapsed[f.fullName] ? 'fa fa-caret-right me-1' : 'fa fa-caret-down me-1'"
+                                style="width: 12px;"/>
+                            <i class="fa fa-folder-o me-1" style="width: 14px;"/>
+                            <small class="text-truncate" t-out="f.name"/>
+                        </div>
+                    </t>
+                    <!-- Case 3: leaf folder → clickable -->
+                    <t t-else="">
+                        <div class="d-flex align-items-center p-1 rounded cursor-pointer"
+                            t-att-style="'padding-left: ' + (f.depth * 16 + 8) + 'px'"
+                            t-att-class="f.fullName === props.currentFolder ? 'bg-primary text-white' : 'text-dark'"
+                            t-on-click="() => props.onFolderClick(f.fullName)">
+                            <i class="fa fa-folder-o me-1" style="width: 14px; margin-left: 12px;"/>
+                            <small class="text-truncate" t-out="f.name"/>
+                        </div>
+                    </t>
+                </t>
+            </div>
+        </aside>
+    </t>
+</templates>

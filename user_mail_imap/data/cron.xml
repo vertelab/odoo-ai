@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- IMAP-pollning (Odoo 18: ir.cron kräver ir_actions_server_id) -->
+    <record id="ir_actions_server_poll_imap" model="ir.actions.server">
+        <field name="name">User Mail: Poll IMAP</field>
+        <field name="model_id" ref="model_user_mail_poll"/>
+        <field name="state">code</field>
+        <field name="code">
+model._poll_cron()
+        </field>
+    </record>
+
+    <record id="cron_poll_imap" model="ir.cron">
+        <field name="name">User Mail: IMAP Poll (hjälpredan)</field>
+        <field name="cron_name">User Mail: IMAP Poll (hjälpredan)</field>
+        <field name="ir_actions_server_id" ref="ir_actions_server_poll_imap"/>
+        <field name="interval_number">5</field>
+        <field name="interval_type">minutes</field>
+        <field name="active">True</field>
+    </record>
+</odoo>

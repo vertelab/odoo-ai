@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+        <record id="view_users_form_conf_mail" model="ir.ui.view">
+            <field name="name">res.users.form.mail</field>
+            <field name="model">res.users</field>
+            <field name="inherit_id" ref="base.view_users_form"/>
+            <field name="arch" type="xml">
+                <field name="email" position="replace"/>
+                <label for="login" position="replace">
+                    <label class="oe_edit_only" for="login" string="Login Name / Email Address"/>
+                </label>
+                <field name="login" position="replace">
+                    <div>
+                        <h2 class="oe_inline">
+                            <field class="oe_inline" name="login"/>
+                        </h2>
+                        <field class="oe_read_only" name="email" readonly="1"/>
+                    </div></field>
+                <notebook position="inside">
+                    <page string="E-mail settings">
+                        <group>
+                            <field name="postfix_active" string="Postfix Active"/>
+                        </group>
+                        <group invisible="postfix_active == False">
+                            <field groups="base.group_erp_manager" name="postfix_mail"/>
+                            <group string="Vacation">
+                                <field name="vacation_active"/>
+                            </group>
+                            <group>
+                            </group>
+                        </group>
+                        <group>
+                            <field name="postfix_active" string="Postfix Active"/>
+                        </group>
+                        <group invisible="postfix_active == False">
+                            <field groups="base.group_erp_manager" name="postfix_mail"/>
+                            <separator string="Vacation"/>
+                            <field name="vacation_active"/>
+                            <newline/>
+                            <field invisible="vacation_active == False" name="vacation_from" required="vacation_active == True"/>
+                            <field invisible="vacation_active == False" name="vacation_to" required="vacation_active == True"/>
+                            <field invisible="vacation_active == False" name="vacation_subject" placeholder="I am at vacation" required="vacation_active == True"/>
+                            <field invisible="vacation_active == False" name="vacation_text" nolabel="1" required="vacation_active == True"/>
+                            <field invisible="vacation_active == False" name="vacation_forward" placeholder="my@vacationmail.com" required="vacation_active == True"/>
+                            <separator string="Forward"/>
+                            <field name="forward_active"/>
+                            <newline/>
+                            <field invisible="forward_active == False" name="forward_address" nolabel="1" placeholder="my@temporarymail.com" required="forward_active == True"/>
+                            <field invisible="forward_active == False" name="forward_cp"/>
+                            <separator string="Virus check"/>
+                            <field name="virus_active"/>
+                            <separator string="Spam check"/>
+                            <field name="spam_active"/>
+                            <newline/>
+                            <field invisible="spam_active == False" name="spam_tag" required="spam_active == True"/>
+                            <field invisible="spam_active == False" name="spam_tag2" required="spam_active == True"/>
+                            <field invisible="spam_active == False" name="spam_killevel" required="spam_active == True"/>
+                            <separator string="Alias"/>
+                            <newline/>
+                            <field name="postfix_alias_ids" nolabel="1" widget="one2many_list">
+                                <list editable="bottom" string="Mail alias">
+                                    <field name="name"/>
+                                    <field class="oe_read_only" invisible="name == ''" name="mail"/>
+                                    <field name="active"/>
+                                </list></field>
+                            <separator string="Misc"/>
+                            <field name="maildir"/>
+                            <newline/>
+                            <field name="quota"/>
+                            <newline/>
+                        </group>
+                        <!--              <group colspan="4" col="4">-->
+                        <!--                <group>-->
+                        <!--                  <field name="postfix_active" string="Postfix Active"/>-->
+                        <!--                </group>-->
+                        <!--&lt;!&ndash;                <newline />&ndash;&gt;-->
+                        <!--                <group attrs="{'invisible': [('postfix_active','=',False)]}" colspan="4" col="4">-->
+                        <!--                  <field name="postfix_mail" groups="base.group_erp_manager" />-->
+                        <!--                  <separator string="Vacation" colspan="4" />-->
+                        <!--                  <field name="vacation_active" />-->
+                        <!--                  <newline />-->
+                        <!--                  <field name="vacation_from" col="2" attrs="{'invisible': [('vacation_active', '=', False)], 'required':[('vacation_active', '=', True)]}" />-->
+                        <!--                  <field name="vacation_to" col="2" attrs="{'invisible': [('vacation_active', '=', False)], 'required':[('vacation_active', '=', True)]}" />-->
+                        <!--                  <field name="vacation_subject" placeholder="I am at vacation" colspan="4" attrs="{'invisible': [('vacation_active', '=', False)], 'required':[('vacation_active', '=', True)]}" />-->
+                        <!--                  <field name="vacation_text" nolabel="1" colspan="4" attrs="{'invisible': [('vacation_active', '=', False)], 'required':[('vacation_active', '=', True)]}" />-->
+                        <!--                  <field name="vacation_forward" placeholder="my@vacationmail.com" col="2" colspan="4" attrs="{'invisible': [('vacation_active', '=', False)], 'required':[('vacation_active', '=', True)]}" />-->
+                        <!--                  <separator string="Forward" colspan="4" />-->
+                        <!--                  <field name="forward_active" />-->
+                        <!--                  <newline />-->
+                        <!--                  <field name="forward_address" nolabel="1" placeholder="my@temporarymail.com" colspan="4" attrs="{'invisible': [('forward_active', '=', False)], 'required':[('forward_active', '=', True)]}" />-->
+                        <!--                  <field name="forward_cp" col="2" colspan="4" attrs="{'invisible': [('forward_active', '=', False)]}" />-->
+                        <!--                  <separator string="Virus check" colspan="4" />-->
+                        <!--                  <field name="virus_active" colspan="4" />-->
+                        <!--                  <separator string="Spam check" colspan="4" />-->
+                        <!--                  <field name="spam_active" />-->
+                        <!--                  <newline />-->
+                        <!--                  <field name="spam_tag" colspan="4" attrs="{'invisible': [('spam_active', '=', False),], 'required':[('spam_active', '=', True)]}" />-->
+                        <!--                  <field name="spam_tag2" colspan="4" attrs="{'invisible': [('spam_active', '=', False),], 'required':[('spam_active', '=', True)]}" />-->
+                        <!--                  <field name="spam_killevel" colspan="4" attrs="{'invisible': [('spam_active', '=', False),], 'required':[('spam_active', '=', True)]}" />-->
+                        <!--                  <separator string="Alias" />-->
+                        <!--                  <newline />-->
+                        <!--                  <field name="postfix_alias_ids" nolabel="1" widget="one2many_list" colspan="4">-->
+                        <!--                    <tree editable="bottom" string="Mail alias">-->
+                        <!--                      <field name="name" />-->
+                        <!--                      <field name="mail" attrs="{'invisible': [('name', '=', ''),]}" class="oe_read_only"/>-->
+                        <!--                      <field name="active" />-->
+                        <!--                    </tree>-->
+                        <!--</field>-->
+                        <!-- -->
+                        <!--                   <separator string="Misc" colspan="4" />-->
+                        <!--                  <field name="maildir" />-->
+                        <!--&lt;!&ndash;-->
+                        <!--                  <newline />-->
+                        <!--                  <field name="transport" />-->
+                        <!--&ndash;&gt;-->
+                        <!--                  <newline />-->
+                        <!--                  <field name="quota" />-->
+                        <!--                  <newline />-->
+                        <!--                </group>-->
+                        <!--              </group>-->
+                    </page>
+                </notebook></field>
+        </record>
+    </data>
+</odoo>

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Regler är personliga: användaren ser/redigerar sina egna -->
+    <record id="user_mail_ai_rule_owner_rule" model="ir.rule">
+        <field name="name">user_mail_ai.rule: ägare ser egna</field>
+        <field name="model_id" ref="model_user_mail_ai_rule"/>
+        <field name="domain_force">[('user_id', '=', user.id)]</field>
+        <field name="groups" eval="[(4, ref('base.group_user'))]"/>
+        <field name="perm_read" eval="True"/>
+        <field name="perm_write" eval="True"/>
+        <field name="perm_create" eval="True"/>
+        <field name="perm_unlink" eval="True"/>
+    </record>
+</odoo>

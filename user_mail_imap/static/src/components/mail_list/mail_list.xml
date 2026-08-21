@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+    <t t-name="user_mail_imap.MailList" owl="1">
+        <section class="d-flex flex-column border-end h-100">
+            <div class="p-2 border-bottom bg-light">
+                <h6 class="mb-0">
+                    <t t-out="props.currentFolder"/>
+                    <span class="text-muted small ms-2" t-if="props.total">(<t t-out="props.total"/>)</span>
+                </h6>
+            </div>
+            <div class="flex-grow-1 overflow-auto">
+                <t t-if="props.loading">
+                    <div class="text-center p-4 text-muted">
+                        <i class="fa fa-spinner fa-spin fa-2x"/>
+                    </div>
+                </t>
+                <t t-elif="!props.messages || !props.messages.length">
+                    <div class="text-center p-4 text-muted">Inga meddelanden</div>
+                </t>
+                <t t-else="">
+                    <t t-foreach="props.messages" t-as="msg" t-key="msg.uid">
+                        <div class="d-flex p-3 border-bottom cursor-pointer"
+                            t-att-class="msg.uid === (props.selectedMessage &amp;&amp; props.selectedMessage.uid) ? 'bg-primary-subtle' : (msg.seen ? '' : 'fw-bold bg-white')"
+                            t-on-click="() => props.onMessageClick(msg.uid)">
+                            <div class="flex-grow-1 min-width-0">
+                                <div class="d-flex justify-content-between">
+                                    <span class="text-truncate" t-out="msg.from_"/>
+                                    <span class="small text-muted text-nowrap ms-2" t-out="msg.date"/>
+                                </div>
+                                <div class="text-truncate small text-muted" t-out="msg.subject"/>
+                            </div>
+                        </div>
+                    </t>
+                    <t t-if="props.messages.length &lt; props.total">
+                        <div class="text-center p-2">
+                            <button class="btn btn-sm btn-light" t-on-click="props.loadMore">
+                                Ladda fler
+                            </button>
+                        </div>
+                    </t>
+                </t>
+            </div>
+        </section>
+    </t>
+</templates>

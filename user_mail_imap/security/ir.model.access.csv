@@ -1,0 +1,4 @@
+id,name,model_id/id,group_id/id,perm_read,perm_write,perm_create,perm_unlink
+access_imap_server,access.imap.server,model_user_mail_imap,base.group_user,1,0,0,0
+access_processed,access.user.mail.processed,model_user_mail_processed,base.group_user,1,1,1,1
+access_poll,access.user.mail.poll,model_user_mail_poll,base.group_user,1,0,0,0

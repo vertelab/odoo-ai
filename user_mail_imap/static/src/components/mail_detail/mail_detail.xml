@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+    <t t-name="user_mail_imap.MailDetail" owl="1">
+        <section class="d-flex flex-column flex-grow-1 h-100">
+            <t t-if="props.loading">
+                <div class="d-flex flex-column align-items-center justify-content-center h-100 text-muted">
+                    <i class="fa fa-spinner fa-spin fa-3x mb-3"/>
+                    <p>Laddar meddelande...</p>
+                </div>
+            </t>
+            <t t-elif="!props.message">
+                <div class="d-flex flex-column align-items-center justify-content-center h-100 text-muted">
+                    <i class="fa fa-envelope-open-o fa-4x mb-3"/>
+                    <p>Välj ett meddelande</p>
+                </div>
+            </t>
+            <t t-else="">
+                <div class="p-3 border-bottom bg-light">
+                    <div class="d-flex gap-2 mb-2">
+                        <button class="btn btn-sm btn-outline-secondary"
+                            t-on-click="() => props.openComposer('reply', props.message)">
+                            <i class="fa fa-reply me-1"/>Svara
+                        </button>
+                        <button class="btn btn-sm btn-outline-secondary"
+                            t-on-click="() => props.openComposer('forward', props.message)">
+                            <i class="fa fa-mail-forward me-1"/>Vidarebefodra
+                        </button>
+                    </div>
+                    <h5 class="mb-1" t-out="props.message.subject"/>
+                    <div class="small text-muted">
+                        <strong>Från:</strong> <span t-out="props.message.from_"/><br/>
+                        <strong>Till:</strong> <span t-out="props.message.to_"/><br/>
+                        <t t-if="props.message.cc_">
+                            <strong>CC:</strong> <span t-out="props.message.cc_"/><br/>
+                        </t>
+                        <strong>Datum:</strong> <span t-out="props.message.date"/>
+                    </div>
+                </div>
+                <div class="flex-grow-1 overflow-auto p-3">
+                    <iframe class="w-100 h-100 border-0"
+                        t-att-srcdoc="props.message.body_html"/>
+                </div>
+                <t t-if="props.message.attachments &amp;&amp; props.message.attachments.length">
+                    <div class="p-3 border-top bg-light">
+                        <strong>Bilagor:</strong>
+                        <t t-foreach="props.message.attachments" t-as="att" t-key="att.filename">
+                            <div class="small" t-out="att.filename"/>
+                        </t>
+                    </div>
+                </t>
+            </t>
+        </section>
+    </t>
+</templates>

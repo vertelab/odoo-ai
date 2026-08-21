@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+        <!-- Specialist-routing: kategori → aktiv specialist-coworker.
+             Bryggor lägger till fler rader (projekt → Task Manager m.fl.). -->
+        <record id="routing_invoice" model="user_mail_ai.routing">
+            <field name="category">invoice</field>
+            <field name="coworker_id" ref="ai_agent_core.coworker_invoice_assistant"/>
+            <field name="sequence" eval="10"/>
+        </record>
+    </data>
+</odoo>

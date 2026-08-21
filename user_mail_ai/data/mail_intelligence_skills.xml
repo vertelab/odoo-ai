@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+        <!-- Heartbeat-skill: granska öppna mail-ärenden -->
+        <record id="skill_mail_open_review" model="ai.skill">
+            <field name="name">Mail: Granska öppna mail-ärenden</field>
+            <field name="category">general</field>
+            <field name="description">Granska användarens öppna mail-ärenden vid heartbeat och nudgea vid behov.</field>
+            <field name="recipe_text">När du vaknar via heartbeat och ska granska öppna mail-ärenden:
+1. Anropa odoo_call_method på user_mail_ai.mail med metoden _heartbeat_review (utan argument) — den hittar stale action-mail, osedda utkast, förfallna follow-ups och Reply Zero-ärenden.
+2. Resultatet talar om hur många ärenden som nudgades.
+3. Om inget ärende finns: gör ingenting (tyst).</field>
+        </record>
+    </data>
+
+    <!-- Koppla skillen till Mail-hjälpredans agent (install + update) -->
+    <function model="user_mail_ai.mail" name="_ensure_intelligence_skills"/>
+</odoo>

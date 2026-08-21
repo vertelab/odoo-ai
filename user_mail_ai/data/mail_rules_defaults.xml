@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+        <!-- Default-regler (idempotenta): Teams→event, nyhetsbrev→AI-mapp,
+             nudge-för-action. Per användare skapas dessa vid aktivering
+             (se _ensure_default_rules) — här definieras mallen. -->
+        <record id="default_rule_teams_calendar" model="user_mail_ai.rule">
+            <field name="name">Teams-inbjudningar → kalenderhändelse</field>
+            <field name="priority" eval="1"/>
+            <field name="condition_kind">category</field>
+            <field name="condition_text">meeting_invite</field>
+            <field name="action">create_event</field>
+            <field name="action_config">{}</field>
+            <field name="source">seed</field>
+            <field name="user_id" ref="base.user_root"/>
+        </record>
+        <record id="default_rule_newsletter_move" model="user_mail_ai.rule">
+            <field name="name">Nyhetsbrev → AI/Newsletters</field>
+            <field name="priority" eval="2"/>
+            <field name="condition_kind">category</field>
+            <field name="condition_text">newsletter</field>
+            <field name="action">move_to_folder</field>
+            <field name="action_config">{"folder": "AI/Newsletters"}</field>
+            <field name="source">seed</field>
+            <field name="user_id" ref="base.user_root"/>
+        </record>
+        <record id="default_rule_action_nudge" model="user_mail_ai.rule">
+            <field name="name">Kräver åtgärd → nudgea mig</field>
+            <field name="priority" eval="3"/>
+            <field name="condition_kind">llm</field>
+            <field name="condition_text">Mail som kräver en åtgärd av mig</field>
+            <field name="action">nudge</field>
+            <field name="action_config">{}</field>
+            <field name="source">seed</field>
+            <field name="user_id" ref="base.user_root"/>
+        </record>
+    </data>
+
+    <!-- Seed-default-regler per användare vid aktivering (install + update) -->
+    <function model="user_mail_ai.mail" name="_ensure_default_rules"/>
+</odoo>

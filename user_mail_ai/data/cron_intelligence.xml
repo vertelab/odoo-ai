@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Intresseprofil: veckovis återkomputation (Odoo 18-format) -->
+    <record id="ir_actions_server_profile_weekly" model="ir.actions.server">
+        <field name="name">Mail-AI: Generera intresseprofiler (veckovis)</field>
+        <field name="model_id" ref="model_user_mail_ai_mail"/>
+        <field name="state">code</field>
+        <field name="code">
+model._recompute_profiles()
+        </field>
+    </record>
+    <record id="cron_profile_weekly" model="ir.cron">
+        <field name="name">Mail-AI: Intresseprofiler (veckovis)</field>
+        <field name="cron_name">Mail-AI: Intresseprofiler (veckovis)</field>
+        <field name="ir_actions_server_id" ref="ir_actions_server_profile_weekly"/>
+        <field name="interval_number">7</field>
+        <field name="interval_type">days</field>
+        <field name="active">True</field>
+    </record>
+
+    <!-- Daglig digest (morgonbrief) -->
+    <record id="ir_actions_server_digest_daily" model="ir.actions.server">
+        <field name="name">Mail-AI: Daglig digest</field>
+        <field name="model_id" ref="model_user_mail_ai_mail"/>
+        <field name="state">code</field>
+        <field name="code">
+model._run_daily_digests()
+        </field>
+    </record>
+    <record id="cron_digest_daily" model="ir.cron">
+        <field name="name">Mail-AI: Daglig digest</field>
+        <field name="cron_name">Mail-AI: Daglig digest</field>
+        <field name="ir_actions_server_id" ref="ir_actions_server_digest_daily"/>
+        <field name="interval_number">1</field>
+        <field name="interval_type">days</field>
+        <field name="active">True</field>
+    </record>
+
+    <!-- Veckovis digest -->
+    <record id="ir_actions_server_digest_weekly" model="ir.actions.server">
+        <field name="name">Mail-AI: Veckovis digest</field>
+        <field name="model_id" ref="model_user_mail_ai_mail"/>
+        <field name="state">code</field>
+        <field name="code">
+model._run_weekly_digests()
+        </field>
+    </record>
+    <record id="cron_digest_weekly" model="ir.cron">
+        <field name="name">Mail-AI: Veckovis digest</field>
+        <field name="cron_name">Mail-AI: Veckovis digest</field>
+        <field name="ir_actions_server_id" ref="ir_actions_server_digest_weekly"/>
+        <field name="interval_number">1</field>
+        <field name="interval_type">days</field>
+        <field name="active">True</field>
+    </record>
+</odoo>

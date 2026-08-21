@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+    <t t-name="user_mail_imap.MailImap" owl="1">
+        <div class="o_mail_imap d-flex h-100" style="height: 100%;">
+            <t t-if="!state.hasPassword or state.showPasswordPrompt">
+                <div class="d-flex flex-column align-items-center justify-content-center w-100 bg-light">
+                    <div class="card shadow-sm p-4" style="width: 400px;">
+                        <h3 class="mb-3">Ange lösenord för e-post</h3>
+                        <p class="text-muted mb-3">Ange ditt e-postlösenord för att ansluta till IMAP.</p>
+                        <input type="password" class="form-control mb-3"
+                            placeholder="Lösenord"
+                            t-ref="passwordInput"
+                            t-on-keydown="onPasswordKeydown"/>
+                        <button class="btn btn-primary w-100"
+                            t-on-click="onPasswordButtonClick">
+                            Anslut
+                        </button>
+                    </div>
+                </div>
+            </t>
+            <t t-else="">
+                <FolderTree folders="state.folders"
+                    currentFolder="state.currentFolder"
+                    onFolderClick="(f) => this.onFolderClick(f)"
+                    onSync="() => this.onSync()"
+                    openComposer="() => this.openComposer('new', null)"/>
+                <div class="d-flex flex-grow-1" style="min-width: 0; position: relative;">
+                    <div class="d-flex flex-column" t-ref="mailListContainer" style="width: 380px; min-width: 200px;">
+                        <MailList messages="state.messages"
+                            total="state.totalMessages"
+                            loading="state.loading"
+                            selectedMessage="state.selectedMessage"
+                            currentFolder="state.currentFolder"
+                            onMessageClick="(uid) => this.onMessageClick(uid)"
+                            loadMore="() => this.loadMore()"
+                            openComposer="(type, msg) => this.openComposer(type, msg)"/>
+                    </div>
+                    <div class="bg-light" style="width: 4px; cursor: col-resize; flex-shrink: 0;"
+                        t-on-mousedown="(e) => this.startResize(e)"/>
+                    <MailDetail message="state.selectedMessage"
+                        loading="state.loadingDetail"
+                        openComposer="(type, msg) => this.openComposer(type, msg)"/>
+                </div>
+            </t>
+            <t t-if="showComposer.visible">
+                <Composer type="showComposer.type"
+                    message="showComposer.message"
+                    onSend="(d) => this.onSendMail(d)"
+                    onClose="() => this.closeComposer()"/>
+            </t>
+        </div>
+    </t>
+</templates>

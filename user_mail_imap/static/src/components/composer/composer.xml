@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+    <t t-name="user_mail_imap.Composer" owl="1">
+        <div class="modal d-block" style="background: rgba(0,0,0,0.4); position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 1050;">
+            <div class="modal-dialog modal-lg modal-dialog-centered">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">
+                            <t t-if="props.type === 'new'">Nytt meddelande</t>
+                            <t t-elif="props.type === 'reply'">Svara</t>
+                            <t t-elif="props.type === 'forward'">Vidarebefodra</t>
+                        </h5>
+                        <button type="button" class="btn-close" t-on-click="props.onClose"/>
+                    </div>
+                    <div class="modal-body">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <div class="dropdown" t-if="templates.length">
+                                <button class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown">
+                                    <i class="fa fa-file-text-o me-1"/>Mallar
+                                </button>
+                                <div class="dropdown-menu">
+                                    <t t-foreach="templates" t-as="tmpl" t-key="tmpl.id">
+                                        <a class="dropdown-item" href="#" t-on-click.prevent="() => this.onLoadTemplate(tmpl)">
+                                            <t t-out="tmpl.name"/>
+                                        </a>
+                                    </t>
+                                    <div class="dropdown-divider"/>
+                                    <a class="dropdown-item" href="#" t-on-click.prevent="() => this.onSaveTemplate()">
+                                        <i class="fa fa-floppy-o me-1"/>Spara som mall
+                                    </a>
+                                </div>
+                            </div>
+                            <button class="btn btn-sm btn-light ms-auto" t-on-click="() => this.onOpenAI()" title="AI-generera">
+                                <i class="fa fa-magic me-1"/>AI
+                            </button>
+                        </div>
+
+                        <!-- To field with tags -->
+                        <div class="mb-2">
+                            <label class="form-label small mb-0">Till</label>
+                            <div class="border rounded p-1 d-flex flex-wrap align-items-center gap-1 bg-white" style="min-height: 38px;">
+                                <t t-foreach="data.to" t-as="addr" t-key="addr_index">
+                                    <span class="badge bg-primary d-inline-flex align-items-center gap-1" style="font-size: 0.85em;">
+                                        <t t-out="addr"/>
+                                        <i class="fa fa-times cursor-pointer" style="font-size: 0.7em;"
+                                            t-on-click.stop="() => this.removeTag('to', addr_index)"/>
+                                    </span>
+                                </t>
+                                <div class="position-relative flex-grow-1" style="min-width: 120px;">
+                                    <input type="text" class="border-0 w-100" style="outline: none; min-width: 80px;"
+                                        placeholder="Lägg till mottagare..."
+                                        t-ref="toInput"
+                                        t-att-value="toInputValue.val"
+                                        t-on-input="(e) => this.onTagInput('to', e.target.value)"
+                                        t-on-keydown="(e) => this.onTagKeydown('to', e)"/>
+                                    <div class="dropdown-menu d-block w-100" t-if="partnerSuggestions.length" style="max-height: 200px; overflow-y: auto; position: absolute; top: 100%; left: 0; z-index: 1060;">
+                                        <t t-foreach="partnerSuggestions" t-as="partner" t-key="partner.id">
+                                            <a class="dropdown-item" href="#" t-on-click.prevent="() => this.selectPartner('to', partner)">
+                                                <strong t-out="partner.name"/><br/>
+                                                <small class="text-muted" t-out="partner.email"/>
+                                            </a>
+                                        </t>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- CC field with tags -->
+                        <div class="mb-2">
+                            <label class="form-label small mb-0">CC</label>
+                            <div class="border rounded p-1 d-flex flex-wrap align-items-center gap-1 bg-white" style="min-height: 38px;">
+                                <t t-foreach="data.cc" t-as="addr" t-key="addr_index">
+                                    <span class="badge bg-secondary d-inline-flex align-items-center gap-1" style="font-size: 0.85em;">
+                                        <t t-out="addr"/>
+                                        <i class="fa fa-times cursor-pointer" style="font-size: 0.7em;"
+                                            t-on-click.stop="() => this.removeTag('cc', addr_index)"/>
+                                    </span>
+                                </t>
+                                <div class="position-relative flex-grow-1" style="min-width: 120px;">
+                                    <input type="text" class="border-0 w-100" style="outline: none; min-width: 80px;"
+                                        placeholder="Lägg till CC..."
+                                        t-ref="ccInput"
+                                        t-att-value="ccInputValue.val"
+                                        t-on-input="(e) => this.onTagInput('cc', e.target.value)"
+                                        t-on-keydown="(e) => this.onTagKeydown('cc', e)"/>
+                                    <div class="dropdown-menu d-block w-100" t-if="ccSuggestions.length" style="max-height: 200px; overflow-y: auto; position: absolute; top: 100%; left: 0; z-index: 1060;">
+                                        <t t-foreach="ccSuggestions" t-as="partner" t-key="partner.id">
+                                            <a class="dropdown-item" href="#" t-on-click.prevent="() => this.selectPartner('cc', partner)">
+                                                <strong t-out="partner.name"/><br/>
+                                                <small class="text-muted" t-out="partner.email"/>
+                                            </a>
+                                        </t>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="mb-2">
+                            <label class="form-label small mb-0">Ämne</label>
+                            <input type="text" class="form-control"
+                                t-att-value="data.subject"
+                                t-on-input="(e) => this.data.subject = e.target.value"/>
+                        </div>
+                        <div class="mb-2">
+                            <textarea class="form-control" rows="10"
+                                t-att-value="data.body"
+                                t-on-input="(e) => this.data.body = e.target.value"/>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn btn-secondary" t-on-click="props.onClose">Avbryt</button>
+                        <button class="btn btn-primary" t-on-click="() => this.send()">
+                            <i class="fa fa-send me-1"/>Skicka
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </t>
+</templates>

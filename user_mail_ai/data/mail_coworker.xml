@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+
+        <!-- ── Skills: kapaciteterna lever som skills/recipes på
+             medarbetarens agent — INTE som force-körda sub-agenter ── -->
+
+        <record id="skill_mail_partner" model="ai.skill">
+            <field name="name">Mail: Hitta/skapa res.partner</field>
+            <field name="category">communication</field>
+            <field name="description">Hitta eller skapa rätt res.partner från avsändaren av ett mail.</field>
+            <field name="recipe_text">När du ska identifiera avsändaren som en res.partner:
+1. Extrahera email-adressen och avsändarnamnet från mailet.
+2. odoo_search res.partner med domain [('email','=',&lt;email&gt;)] — kontrollera också email_normalized.
+3. Hittas ingen: sök på företagsnamn ([('name','ilike',&lt;namn&gt;)]) och is_company=True.
+4. Hittas fortfarande ingen: odoo_create res.partner med name (helst företagsnamn), email, is_company=True om det ser ut som ett företag.
+5. Returnera partner-id:t och namnet i ditt svar.</field>
+        </record>
+
+        <record id="skill_mail_triage" model="ai.skill">
+            <field name="name">Mail: Triage och routing</field>
+            <field name="category">communication</field>
+            <field name="description">Bedöm inkommande mail: kategori, åtgärd, intresse och om det hör till ett Odoo-objekt.</field>
+            <field name="recipe_text">När du får ett mail att bedöma:
+1. Identifiera avsändaren som res.partner (se skill: Mail: Hitta/skapa res.partner).
+2. Klassa mailet: nyhetsbrev / faktura / mötesinbjudan / support / projekt / personligt / övrigt.
+3. Avgör om det kräver åtgärd och om det verkar höra till ett Odoo-objekt (t.ex. helpdesk-ticket, projekt, säljorder) — använd graph_query för relationer när det hjälper.
+4. Mötesinbjudningar → kalenderhändelse (se skill: Kalender: Teams-inbjudan).
+5. Fakturor → vidarebefordra till Faktura-assistenten när den är aktiv.
+6. Var respektfull mot integritet: posta aldrig personlig mail på delade records och skicka aldrig mail utan godkännande.</field>
+        </record>
+
+        <record id="skill_mail_calendar" model="ai.skill">
+            <field name="name">Kalender: Teams-inbjudan → calendar.event</field>
+            <field name="category">general</field>
+            <field name="description">Skapa calendar.event från en Teams-inbjudan (.ics eller body).</field>
+            <field name="recipe_text">När en mötesinbjudan detekteras:
+1. Hitta .ics-bilagan (text/calendar) eller tolka datum/tid + Teams-länk i mailet.
+2. Skapa calendar.event med start, slut, rubrik och Teams-URL i beskrivningen.
+3. Länka organisatören som res.partner om möjligt.
+4. Bekräfta med notis till användaren.</field>
+        </record>
+
+        <!-- ── AI Medarbetare: Mail-hjälpredan (single mode; skills
+             aggregeras i systemprompten av run()) ── -->
+        <record id="coworker_mail_assistant" model="ai.coworker">
+            <field name="name">Mail-hjälpredan</field>
+            <field name="description">Du är Mail-hjälpredan på Vertel. Du hjälper användare med deras mail: klassificerar, flaggar viktiga ärenden, lägger in mötesinbjudningar i kalendern och föreslår åtgärder. Du är personlig — du lär dig användarens preferenser via Odoo Mind (OKF + graf). Du postar aldrig personlig mail på delade records och skickar aldrig mail utan godkännande.</field>
+            <field name="status">active</field>
+            <field name="orchestration_mode">single</field>
+            <field name="heartbeat_enabled" eval="True"/>
+            <field name="auto_allowed_tools">["odoo_search", "odoo_create", "odoo_write", "describe_model", "odoo_call_method", "okf_search", "graph_query"]</field>
+        </record>
+
+        <record id="agent_mail_assistant" model="ai.agent">
+            <field name="name">Mail-triage</field>
+            <field name="ai_role">Mail Assistant</field>
+            <field name="description">Klassificerar och hanterar mail för användarens räkning — triage, kalender, åtgärder.</field>
+            <field name="ai_goal">Hjälpa användaren med mail: triage, kalenderhändelser och åtgärder — med respekt för integritet och HITL.</field>
+            <field name="status">active</field>
+            <field name="skill_ids" eval="[(6, 0, [
+                ref('skill_mail_partner'),
+                ref('skill_mail_triage'),
+                ref('skill_mail_calendar'),
+            ])]"/>
+            <!-- explicit-agent-tools: odoo-verktyg + OKF + graf anges EXPLICIT -->
+            <field name="tool_ids" eval="[(6, 0, [
+                ref('ai_agent_core.tool_describe_model'),
+                ref('ai_agent_core.tool_odoo_search'),
+                ref('ai_agent_core.tool_odoo_create'),
+                ref('ai_agent_core.tool_odoo_write'),
+                ref('ai_agent_core.tool_odoo_call_method'),
+                ref('ai_agent_core.tool_okf_search'),
+                ref('ai_agent_core.tool_graph_query'),
+            ])]"/>
+        </record>
+
+        <record id="coworker_agent_mail_assistant" model="ai.coworker.agent">
+            <field name="coworker_id" ref="coworker_mail_assistant"/>
+            <field name="agent_id" ref="agent_mail_assistant"/>
+            <field name="role">member</field>
+            <field name="sequence" eval="10"/>
+        </record>
+
+        <!-- Init-typer: chat (DM/nudge från bot) + manual -->
+        <record id="coworker_mail_init_chat" model="ai.coworker.init_type">
+            <field name="coworker_id" ref="coworker_mail_assistant"/>
+            <field name="init_type">chat</field>
+            <field name="enabled" eval="True"/>
+            <field name="sequence" eval="10"/>
+            <field name="response_mode">mention</field>
+        </record>
+        <record id="coworker_mail_init_manual" model="ai.coworker.init_type">
+            <field name="coworker_id" ref="coworker_mail_assistant"/>
+            <field name="init_type">manual</field>
+            <field name="enabled" eval="True"/>
+            <field name="sequence" eval="20"/>
+        </record>
+
+    </data>
+</odoo>

@@ -1,0 +1,150 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <record id="user_mail_ai_mail_list" model="ir.ui.view">
+        <field name="name">user.mail.ai.mail.list</field>
+        <field name="model">user_mail_ai.mail</field>
+        <field name="arch" type="xml">
+            <list string="Mail-hjälpredan — triage" sample="1">
+                <field name="received_at"/>
+                <field name="from_email"/>
+                <field name="subject"/>
+                <field name="category"/>
+                <field name="action_needed" string="Åtgärd"/>
+                <field name="interest_score" string="Intresse"/>
+                <field name="teams_invite" string="Teams"/>
+                <field name="status"/>
+                <field name="calendar_event_id" string="Event"/>
+                <field name="partner_id" string="Partner"/>
+                <field name="reply_needed" string="Svara"/>
+                <field name="awaiting_reply" string="Väntar"/>
+                <field name="draft_folder" string="Utkast"/>
+                <field name="handoff_coworker_id" string="Specialist"/>
+                <field name="handoff_state" string="Handoff"/>
+                <field name="promotion_hitl_id" string="Promotion"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="user_mail_ai_mail_form" model="ir.ui.view">
+        <field name="name">user.mail.ai.mail.form</field>
+        <field name="model">user_mail_ai.mail</field>
+        <field name="arch" type="xml">
+            <form string="Mail-hjälpredan — triage">
+                <header>
+                    <button name="action_mark_processed" type="object"
+                            string="Bearbetad" class="oe_highlight"
+                            invisible="status == 'processed'"/>
+                    <button name="action_mark_ignored" type="object"
+                            string="Avfärda"
+                            invisible="status == 'ignored'"/>
+                    <button name="action_reclassify" type="object"
+                            string="Omklassificera"
+                            invisible="status == 'new'"/>
+                    <button name="action_suggest_send" type="object"
+                            string="Föreslå skick"
+                            invisible="draft_uid == False or status == 'processed'"/>
+                    <button name="action_reply_in_thread" type="object"
+                            string="Svara i tråden"
+                            invisible="raw_message_id == False or status == 'processed'"/>
+                    <button name="action_move_back" type="object"
+                            string="Flytta tillbaka"
+                            invisible="folder != 'AI/Newsletters'"/>
+                </header>
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="subject"/>
+                            <field name="from_email"/>
+                            <field name="from_name"/>
+                            <field name="received_at"/>
+                            <field name="folder"/>
+                            <field name="partner_id"/>
+                            <field name="message_id" readonly="1"/>
+                        </group>
+                        <group>
+                            <field name="status"/>
+                            <field name="category"/>
+                            <field name="action_needed"/>
+                            <field name="interest_score"/>
+                            <field name="teams_invite"/>
+                            <field name="reply_suggested"/>
+                            <field name="calendar_event_id"/>
+                            <field name="reply_needed"/>
+                            <field name="awaiting_reply"/>
+                        </group>
+                        <group string="Skiva 2 — interaktion">
+                            <field name="object_model" readonly="1"/>
+                            <field name="object_res_id" readonly="1"/>
+                            <field name="source_folder"/>
+                            <field name="source_uid" readonly="1"/>
+                            <field name="draft_folder"/>
+                            <field name="draft_uid" readonly="1"/>
+                            <field name="promotion_hitl_id" readonly="1"/>
+                            <field name="send_hitl_id" readonly="1"/>
+                            <field name="handoff_coworker_id" readonly="1"/>
+                            <field name="handoff_state"/>
+                        </group>
+                    </group>
+                    <group string="Klassificering"
+                           invisible="object_link_candidate == False">
+                        <field name="object_link_candidate" readonly="1"/>
+                        <field name="matched_rules" readonly="1"/>
+                        <field name="interest_components" readonly="1"/>
+                        <field name="follow_up_at"/>
+                    </group>
+                    <field name="notes" placeholder="Anteckningar…"/>
+                </sheet>
+                <chatter/>
+            </form>
+        </field>
+    </record>
+
+    <record id="user_mail_ai_mail_action" model="ir.actions.act_window">
+        <field name="name">Mail-hjälpredan (triage)</field>
+        <field name="res_model">user_mail_ai.mail</field>
+        <field name="view_mode">list,form</field>
+        <field name="domain">[('user_id', '=', uid)]</field>
+        <field name="context">{'search_default_new': 1}</field>
+    </record>
+
+    <record id="user_mail_ai_mail_search" model="ir.ui.view">
+        <field name="name">user.mail.ai.mail.search</field>
+        <field name="model">user_mail_ai.mail</field>
+        <field name="arch" type="xml">
+            <search string="Mail-triage">
+                <field name="subject"/>
+                <field name="from_email"/>
+                <field name="partner_id"/>
+                <filter name="new" string="Nya" domain="[('status', '=', 'new')]"/>
+                <filter name="action" string="Kräver åtgärd"
+                        domain="[('action_needed', '=', True)]"/>
+                <filter name="teams" string="Teams-inbjudningar"
+                        domain="[('teams_invite', '=', True)]"/>
+                <filter name="processed" string="Bearbetade"
+                        domain="[('status', 'in', ('processed', 'ignored'))]"/>
+                <filter name="reply_needed" string="Kräver svar"
+                        domain="[('reply_needed', '=', True)]"/>
+                <filter name="awaiting" string="Väntar på svar"
+                        domain="[('awaiting_reply', '=', True)]"/>
+                <filter name="drafted" string="Har utkast"
+                        domain="[('draft_uid', '!=', False)]"/>
+                <filter name="handoff" string="Delegerade"
+                        domain="[('handoff_state', '!=', 'none')]"/>
+                <group expand="0" string="Gruppera">
+                    <filter name="g_status" string="Status"
+                            domain="[]" context="{'group_by': 'status'}"/>
+                    <filter name="g_category" string="Kategori"
+                            domain="[]" context="{'group_by': 'category'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <menuitem id="menu_user_mail_ai"
+        name="Mail-hjälpredan"
+        parent="mail.menu_root_discuss"
+        action="user_mail_ai_mail_action"
+        sequence="100"/>
+
+</odoo>

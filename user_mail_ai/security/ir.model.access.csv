@@ -1,0 +1,5 @@
+id,name,model_id/id,group_id/id,perm_read,perm_write,perm_create,perm_unlink
+access_user_mail_ai_mail,access.user.mail.ai.mail,model_user_mail_ai_mail,base.group_user,1,1,1,0
+access_user_mail_ai_routing,access.user.mail.ai.routing,model_user_mail_ai_routing,base.group_user,1,0,0,0
+access_user_mail_ai_routing_admin,access.user.mail.ai.routing.admin,model_user_mail_ai_routing,base.group_system,1,1,1,1
+access_user_mail_ai_rule,access.user.mail.ai.rule,model_user_mail_ai_rule,base.group_user,1,1,1,1
