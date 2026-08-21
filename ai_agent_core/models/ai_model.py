@@ -89,6 +89,10 @@ class AIModel(models.Model):
     is_embedded = fields.Boolean('Embedding', help='Supports text embeddings')
     is_asr = fields.Boolean('Speech-to-Text', help='Supports audio transcription')
     is_text2image = fields.Boolean('Text-to-Image', help='Supports image generation')
+    is_tts = fields.Boolean('Text-to-Speech', help='Supports audio output / TTS')
+    is_video_input = fields.Boolean('Video Input', help='Supports video input')
+    is_pdf_input = fields.Boolean('PDF Input', help='Supports PDF document input')
+    is_multimodal = fields.Boolean('Multimodal', help='Supports mixed text/image/audio/video in one prompt')
     has_tools = fields.Boolean('Tool Calling', default=True,
                                 help='Supports function/tool calling')
     has_json_mode = fields.Boolean('JSON Mode', help='Supports structured JSON output')
