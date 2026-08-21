@@ -176,12 +176,13 @@
                            statusbar_visible="active,beta,deprecated" clickable="True"/>
                 </header>
                 <sheet>
-                    <!-- D2: Stat-buttons (mönster från gamla ai.agent.llm-formen) -->
+                    <!-- D2: Stat-buttons — llm_count = antal ai.agent som använder modellen;
+                         session_line_count = rader vars model_real matchar name/api_name -->
                     <div class="oe_button_box" name="button_box">
                         <button name="action_open_llms" type="object"
                                 class="oe_stat_button" icon="fa-microchip">
                             <div class="o_stat_info">
-                                <span class="o_stat_text">LLM-instanser</span>
+                                <span class="o_stat_text">Agenter</span>
                                 <span class="o_stat_value"><field name="llm_count" widget="statinfo"/></span>
                             </div>
                         </button>

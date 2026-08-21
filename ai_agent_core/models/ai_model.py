@@ -153,20 +153,20 @@ class AIModel(models.Model):
 
     def _compute_llm_count(self):
         for r in self:
-            r.llm_count = self.env['ai.agent.llm'].search_count([('model_id', '=', r.id)])
+            r.llm_count = self.env['ai.agent'].search_count([('model_id', '=', r.id)])
 
     def _compute_session_line_count(self):
         for r in self:
             r.session_line_count = self.env['ai.coworker.session.line'].search_count([
-                ('ai_llm_id', '=', r.id)
+                '|', ('model_real', '=', r.name), ('model_real', '=', r.api_name),
             ])
 
     def action_open_llms(self):
-        """Open LLM instances using this model (stat button)."""
+        """Open agents using this model (stat button)."""
         return {
-            'name': 'LLM-instanser',
+            'name': 'Agenter',
             'type': 'ir.actions.act_window',
-            'res_model': 'ai.agent.llm',
+            'res_model': 'ai.agent',
             'view_mode': 'list,form',
             'views': [[False, 'list'], [False, 'form']],
             'domain': [('model_id', '=', self.id)],
@@ -180,5 +180,6 @@ class AIModel(models.Model):
             'res_model': 'ai.coworker.session.line',
             'view_mode': 'list,form',
             'views': [[False, 'list'], [False, 'form']],
-            'domain': [('ai_llm_id', '=', self.id)],
+            'domain': ['|', ('model_real', '=', self.name),
+                       ('model_real', '=', self.api_name)],
         }
