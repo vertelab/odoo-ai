@@ -2058,6 +2058,21 @@ class AIOpenAIAPI(http.Controller):
         if history_context:
             system_prompt += f'\n\n## Previous conversation\n{history_context}'
 
+        # Skills (samma block som ai.coworker.run()): medarbetarens egna +
+        # teamets agenters skills. Injiceras i request-kontexten så att även
+        # stream-generatorn (körs efter teardown) får med dem via strängen.
+        # Gör att /ai/v1-klienter (Pi m.fl.) ser samma kapaciteter som
+        # chat-UI:t och run()-vägen.
+        try:
+            skill_recs = quest.skill_ids | quest.agent_ids.agent_id.skill_ids
+            if skill_recs:
+                skill_ctx = '\n\n## Skills (följ dessa vid behov)\n' + '\n'.join(
+                    f'### {s.name}\n{s.recipe_text or s.description or ""}'
+                    for s in skill_recs)
+                system_prompt = (system_prompt or '') + skill_ctx
+        except Exception as e:
+            _logger.warning('skill injection failed (openai_api): %s', e)
+
 
         # ── Session (session-cost-context 3.1) ──────────────────────────────
         # Hitta/skapa session via pi_session_id (Pi) eller återanvänd

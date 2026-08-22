@@ -1,0 +1,182 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Vertel-skills för Allmän assistent (default-coworkern).
+
+    Fyra operativa skills som ger assistenten kunskap om VERTELS verktyg och
+    konventioner — inte generisk LLM-kunskap:
+      - vertel-skills    (meta: hur skills fungerar hos oss)
+      - vertel-infra     (var infrastrukturen och dokumentationen ligger)
+      - vertel-openspec  (spec-driven planering)
+      - vertel-clicktest (klicktest/canary-motorn)
+
+    Utanför noupdate → skapas vid BÅDE install och uppgradering (modul-update, se odoo-18-skillen).
+    Repo är källan för innehållet; redigera här, inte i UI:t.
+
+    Koppling: vertel-skills läggs på agent_default_core (Allmän kärna —
+    ledaragenten hos Allmän assistent) via (4, ...)-länkar = idempotent,
+    rör inte befintliga skills. Kräver att default_coworker.xml laddats
+    först (agent_default_core finns där).
+-->
+<odoo>
+    <data>
+
+        <!-- ── 1. vertel-skills (meta) ─────────────────────────────────── -->
+        <record id="skill_vertel_skills" model="ai.skill">
+            <field name="name">vertel-skills</field>
+            <field name="category">general</field>
+            <field name="source_type">odoo</field>
+            <field name="description">Skills-systemet i denna AI-plattform — vad skills är, hur de aktiveras, vilka som finns och hur man föreslår nya. Använd när användaren frågar om skills, kunskap eller "kan du det här?".</field>
+            <field name="trigger_keywords">skill, skills, kunskap, ladda skill, aktivera skill, /skill</field>
+            <field name="recipe_text"><![CDATA[
+# Skill: vertel-skills — hur skills fungerar hos oss
+
+## Vad skills är
+Skills (ai.skill) är Vertels funktion för att spara kunskap. Varje skill har
+ett recipe_text som beskriver HUR en uppgift görs — processer, verktygshintar,
+sökvägar och regler. Skills ersätter inte träning — de är instruktioner som
+injiceras i din systemprompt. En modell vet bara det den tränats på; allt
+Vertel-specifikt lever i skills.
+
+## Hur de aktiveras
+- I chat-UI:t: skriv `/skill-namn` följt av frågan → recipen laddas in.
+- Automatiskt: om användarens meddelande matchar skillens trigger_keywords.
+- Här (API): kopplade skills ligger i "## Skills"-blocket i systemprompten —
+  läs och följ relevanta skills innan du svarar.
+
+## Regler
+- Känner du igen en uppgift från en skill → följ recipen, gissa inte.
+- Vet du inte var något ligger → vertel-infra-skillen.
+- Ska något planeras (större ändring) → vertel-openspec-skillen.
+- Ska klicktester köras/analyseras → vertel-clicktest-skillen.
+- Saknas kunskap → säg det tydligt OCH föreslå en ny skill (kaizen).
+            ]]></field>
+        </record>
+
+        <!-- ── 2. vertel-infra ─────────────────────────────────────────── -->
+        <record id="skill_vertel_infra" model="ai.skill">
+            <field name="name">vertel-infra</field>
+            <field name="category">infrastructure</field>
+            <field name="source_type">odoo</field>
+            <field name="description">Vertels infrastruktur — SaltStack-repot /srv/salt, var dokumentationen ligger (README.md, docs/), pillar/secrets, HA-par (ska/sto), LXD-containrar. Använd när användaren frågar om infrastruktur, sökvägar eller dokumentation.</field>
+            <field name="trigger_keywords">infrastruktur, salt, srv/salt, dokumentation, docs, README, minion, container, pillar, driftslogg, sökväg, ha, failover</field>
+            <field name="recipe_text"><![CDATA[
+# Skill: vertel-infra — infrastruktur & dokumentation
+
+## Var allt ligger
+- Salt states-repo: /srv/salt (kataloger: caddy/, lxd/, odoo/, postgres/,
+  pillar/, docs/, openspec/, odoosa/, storage/, zabbix/ m.fl.)
+- Huvuddokumentation: /srv/salt/README.md — DRIFTSLOGGEN med alla ändringar,
+  arkitektur och kommandon. Kolla här först!
+- Strukturöversikt: /srv/salt/STRUCTURE.md
+- Övriga docs: /srv/salt/docs/ (infrastruktur.drawio, zabbix.md m.m.)
+- Odoo-dokumentation: /srv/salt/odoo/docs/ (klicktest, deployment)
+- Klicktest: /srv/salt/odoo/docs/clicktest/README.md — ENDA källan för
+  klicktest/canary-kunskap.
+
+## Arkitektur i korthet
+- Ubuntu 24.04 + SaltStack (states i /srv/salt); hemligheter i pillar —
+  aldrig i kod/README.
+- HA-par: ska (primary) / sto (secondary).
+- LXD-containrar: lxd-<typ>-<kund>; klicktest: ct-<kund>-<ååååmmddhhmm>.
+- Kritiska tjänster: PostgreSQL (streaming replikering), Odoo 18-20,
+  Postfix/Dovecot (virtual users i PG), Caddy (reverse proxy), LDAP
+  (FusionDirectory), Garage S3, Zabbix.
+
+## Regler
+- Svara aldrig med sökvägar/kommandon du är osäker på — peka på README.md
+  eller docs/ istället.
+- Vid driftfrågor (salt/zabbix/alarm): Infrastructure Operator
+  (infrastructureopera) har verktygen — föreslå den.
+            ]]></field>
+        </record>
+
+        <!-- ── 3. vertel-openspec ──────────────────────────────────────── -->
+        <record id="skill_vertel_openspec" model="ai.skill">
+            <field name="name">vertel-openspec</field>
+            <field name="category">development</field>
+            <field name="source_type">odoo</field>
+            <field name="description">OpenSpec på Vertel — spec-driven planering: openspec/specs (levande specar) + openspec/changes (ändringsförslag). Använd när användaren vill planera en ändring eller nämner openspec/opsx.</field>
+            <field name="trigger_keywords">openspec, opsx, planering, spec, change, proposal, propose, archive, sync, spec-driven, tasks</field>
+            <field name="recipe_text"><![CDATA[
+# Skill: vertel-openspec — planering med OpenSpec
+
+## Vad det är
+OpenSpec är Vertels ramverk för att planera och dokumentera ändringar.
+Ligger i /srv/salt/openspec/:
+- openspec/specs/ — levande specifikationer (kontrakt som gäller)
+- openspec/changes/<namn>/ — ändringsförslag (proposal.md, design.md,
+  tasks.md, README.md)
+- openspec/changes/archive/ — arkiverade, färdiga ändringar
+- openspec/config.yaml — projektkontext och regler
+
+## Arbetsflöde (via Pi: /opsx-…)
+1. /opsx-propose — skapa förslag (proposal.md, design.md, tasks.md)
+2. Implementera tasks (tasks.md) — /opsx-apply-change
+3. /opsx-sync-specs — uppdatera specarna när delar är klara
+4. /opsx-archive-change — arkivera när allt är implementerat
+
+## Regler
+- Större ändringar planeras ALLTID som OpenSpec-change innan kod.
+- Specs uppdateras i takt med implementation — inte efteråt.
+- Exempel: openspec/changes/odoo-clicktest-consolidation/.
+            ]]></field>
+        </record>
+
+        <!-- ── 4. vertel-clicktest ─────────────────────────────────────── -->
+        <record id="skill_vertel_clicktest" model="ai.skill">
+            <field name="name">vertel-clicktest</field>
+            <field name="category">infrastructure</field>
+            <field name="source_type">odoo</field>
+            <field name="description">Vertels klicktest-motor (odoo.clicktest/odoo.canary) — hur man kör tester, var resultaten ligger (errors-summary.txt, failed_modules.txt), ct-*-containrar och livscykel. Använd när användaren pratar om klicktest, canary eller testcontainrar.</field>
+            <field name="trigger_keywords">klicktest, clicktest, canary, click everywhere, ct-, errors-summary, failed_modules, testcontainer, module-errors</field>
+            <field name="recipe_text"><![CDATA[
+# Skill: vertel-clicktest — klicktest/canary
+
+## ENDA källan
+/srv/salt/odoo/docs/clicktest/README.md — all klicktest-kunskap.
+(odoo/CLICKTEST.md är en pekare dit; TESTMANUAL.md/QUICKSTART.md är
+historiska och ska inte utökas.)
+
+## Vad det är
+Automatiserat klicktest på en LXD-container: skapar testmaskin, installerar
+Odoo med moduler från en repo-fil, kör odoo.canary (click-everywhere) och
+extraherar loggar till mastern. ENDA testmotorn — både manuella klicktester
+och schemalagda canary18 (odoo.provision_cron).
+
+## Köra (Salt-master)
+# Alla moduler (som cron gör):
+salt-call --local state.apply odoo.clicktest \
+  pillar='{"container_name": "canary18", "aggregate": true}'
+# Kundspecifikt:
+salt-call state.apply odoo.clicktest pillar='{"customer": "<kund>"}'
+# Manuellt med repo-fil — lång körning → --async:
+salt-call --local state.apply odoo.clicktest \
+  pillar='{"repo_file": "master.repo"}' --async
+# OBS: master-timeouten (--timeout) dödar INTE minion-jobbet — nästa steg
+# (loggextrahering) hämtar resultatet ändå.
+
+## Resultat — artifact-katalog
+/srv/salt/odoo/clicktest/<container>/
+├── errors-summary.txt    # fel sammanställda per rotorsak
+├── failed_modules.txt    # moduler som inte installerades
+├── module-errors/        # fellogg per modul
+├── canary/               # canary-loggar (latest_selenium.log + tidsstämplade)
+├── odoo-log/odoo/        # Odoo-serverlogg
+└── databases, odoo.conf  # konfig extraherad från containern
+
+## Livscykel & regler
+- ct-*-containrar (och canary18) klassas environment=test och rensas av
+  odoo.clicktest_cleanup efter 7 dagar — bygg INGA manuella fixar där.
+- Rapporter publiceras till Driftsloggen (ledningssystem), source=clicktest.
+            ]]></field>
+        </record>
+
+        <!-- ── Koppla på Allmän assistent (Allmän kärna — ledaragenten) ──
+             Utanför noupdate → appliceras även vid uppgradering.
+             (4, ref, 0) = add link — idempotent, rör inte befintliga skills. -->
+        <record id="agent_default_core" model="ai.agent">
+            <field name="skill_ids" eval="[(4, ref('skill_vertel_skills'), 0), (4, ref('skill_vertel_infra'), 0), (4, ref('skill_vertel_openspec'), 0), (4, ref('skill_vertel_clicktest'), 0)]"/>
+        </record>
+
+    </data>
+</odoo>
