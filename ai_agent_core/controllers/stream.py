@@ -2169,6 +2169,88 @@ class AIOpenAIAPI(http.Controller):
     # ── Coworker helpers ──────────────────────────────────────────────
 
     @staticmethod
+    def _tool_names(tools):
+        """Extrahera verktygsnamn ur OpenAI tool-formatet."""
+        out = []
+        for t in tools or []:
+            fn = t.get('function') if isinstance(t, dict) else None
+            if fn and isinstance(fn, dict):
+                name = fn.get('name')
+                if name:
+                    out.append((name, t))
+        return out
+
+    @staticmethod
+    def _select_relevant_tools(messages, tools):
+        """Supervisor-kontextoptimering: välj endast uppgiftsrelevanta tools.
+
+        Alla 50+ verktygs-schemas i payload:en gör att LLM:en sväljer
+        tool_calls i content-text och misslyckas (verifierat 2026-08-31:
+        2 relevanta verktyg → native tool_calls + 2s; 58 → text-svullnad +
+        87s). Detta metod reducerar verktygslistan så att modellen ser en
+        liten uppgiftsmatchad uppsättning + ett litet bas-set.
+
+        Verktygsformat (OpenAI): [{'type':'function',
+        'function':{'name':...,'description':...,'parameters':...}}].
+        """
+        # Alltid behåll ett litet bas-set (kärnförmågor oavsett uppgift)
+        BAS = {
+            'bash', 'read', 'edit', 'write', 'grep', 'find', 'ls',
+            'describe_model', 'fetch_url', 'calculator', 'okf_search',
+        }
+
+        # Sammanställ uppgiftstexten (senaste meddelanden)
+        prompt_text = ' '.join(
+            str(m.get('content') or '') for m in (messages or [])
+        )[:4000].lower()
+        if not prompt_text:
+            prompt_text = 'generisk uppgift'
+
+        # Nyckelord → verktygsfamilj (prefix-match på tool-namn)
+        RULES = [
+            (['zabbix', 'active check', 'monitor', 'host', 'service down'],
+             ['zabbix', 'salt', 'service']),
+            (['salt', 'minion', 'pillar', 'grain', 'state', 'cmd.run'],
+             ['salt']),
+            (['wazuh', 'correlat', 'security event', 'cve'],
+             ['wazuh', 'driftlarm']),
+            (['postgres', 'pg_', 'replication', 'database', 'db '],
+             ['pg_', 'postgres']),
+            (['caddy', '502', 'gateway', 'reverse prox', 'tls'],
+             ['caddy']),
+            (['odoo', 'task', 'project', 'cron', 'log'],
+             ['odoo_', 'task_', 'prd_', 'logg', 'tail_odoo']),
+            (['mail', 'postfix', 'dovecot', 'email'], ['mail', 'postfix', 'dovecot']),
+        ]
+
+        named = dict(AIOpenAIAPI._tool_names(tools))
+        if not named:
+            return tools or []
+
+        # Matcha fram familjer
+        selected = set(BAS & set(named.keys()))  # bas-set som faktiskt finns
+        for keywords, families in RULES:
+            if any(k in prompt_text for k in keywords):
+                for fam in families:
+                    selected |= {
+                        n for n in named if n.startswith(fam)}
+
+        # Fallback: om inget matchade, behåll en kompakt bas-y del (exkl.
+        # stora per-domän familjer) så sessionen inte blir helt utan kontext.
+        if len(selected) <= len(BAS & set(named.keys())):
+            # Ta de 8 första icke-bas verktygen som en kompakt default
+            rest = [n for n in named if n not in selected]
+            selected |= set(rest[:8])
+
+        # Behåll originalordning
+        result = [t for name, t in named.items() if name in selected]
+        _logger.info(
+            'supervisor tool-select: %d/%d verktyg skickas till LLM (%s)',
+            len(result), len(named),
+            ','.join(sorted(n for n in named if n in selected))[:300])
+        return result
+
+    @staticmethod
     def _coworker_alias(quest):
         """Get a URL-safe alias for a coworker."""
         alias = (quest.channel_alias or '').strip()
@@ -2239,6 +2321,13 @@ class AIOpenAIAPI(http.Controller):
         if not msgs:
             return Response(json.dumps({'error': {'message': 'No valid messages', 'type': 'invalid_request_error'}}),
                           status=400, content_type='application/json')
+
+        # ── Supervisor-kontextoptimering (A): Välj RELEVANTA tools per uppgift ──
+        # Sänder alla 50+ verktygs-schemas får modellen att SVÄLJA tool_calls i
+        # content-text och misslyckas (verifierat: 2 relevanta → native
+        # tool_calls + 2s; 58 → text-svullnad + 87s). Här reduceras `tools`-
+        # payloaden till en uppgiftsrelevant subset (bas + nyckelordsmatch.
+        tools = self._select_relevant_tools(messages, tools)
 
         # Skills (samma block som ai.coworker.run()): medarbetarens egna +
         # teamets agenters skills. Injiceras i request-kontexten så att även
