@@ -273,10 +273,31 @@ class AICoworker(models.Model):
         default = self.env['ai.skill'].sudo().search(
             [('name', '=', 'orchestration.supervisor')], limit=1)
         if default:
-            self.sudo().write({'skill_ids': [(4, default.id, 0)]})
+            # Konkurrensskydd (2026-08-31): flera parallella körningar
+            # (t.ex. webhook-utlösta diagnoser) kan anropa denna metod
+            # samtidigt → Odoos transaktioner kolliderar i
+            # ai_coworker_skill_rel ("could not serialize access due to
+            # concurrent update") och abortar hela körningen. Savepoint +
+            # retry gör kopplingen idempotent även under samtidiga anrop.
+            import psycopg2
+            linked = False
+            for attempt in range(3):
+                try:
+                    with self.env.cr.savepoint():
+                        self.sudo().write(
+                            {'skill_ids': [(4, default.id, 0)]})
+                    linked = True
+                    break
+                except psycopg2.errors.SerializationFailure:
+                    if attempt >= 2:
+                        _logger.warning(
+                            'Orchestration-skill-koppling för %s misslyckades '
+                            'även efter retries (serialization) — fortsätter '
+                            'utan ny koppling', self.name)
+                        break
             _logger.info(
-                'Auto-kopplade orchestration.supervisor till coworker %s',
-                self.name)
+                'Auto-kopplade orchestration.supervisor till coworker %s '
+                '(linked=%s)', self.name, linked)
             return default.recipe_text or default.improvement_guidance or ''
         return ''
 
@@ -4319,6 +4340,14 @@ class AICoworker(models.Model):
           egna group_ids (icke-interaktiv policy)
         """
         self.ensure_one()
+        # Tvinga coworkerns EGNA access-grupper (driftlarm-diagnos, 2026-08-31):
+        # när en människa klickar "Run diagnosis" körs loopen som den
+        # inloggade användaren, vars grupper saknar de salt/zabbix-verktyg
+        # som diagnosen behöver. Med flaggan används coworkerns grupper
+        # (Infrastructure Operator) så diagnosen kan utföra sina verktyg
+        # oavsett vem som triggar — verktygen är ju coworkerns egna.
+        if self.env.context.get('_ai_force_coworker_groups'):
+            return self.group_ids.ids
         if access_user:
             return access_user.groups_id.ids
         u = session and session.user_id
@@ -4454,6 +4483,27 @@ class AICoworker(models.Model):
 
         # AgentLoopPaused (openai_api-HITL): behövs i except-klausulen.
         from odoo.addons.ai_agent_core.core.interrupt import AgentLoopPaused
+
+        # Nested-loop guard (2026-08-31): om run() anropas inifrån en redan
+        # körande asyncio-loop (t.ex. en AI-session via /ai/stream eller en
+        # odoo_call_method från ett verktyg) kan run_until_complete inte köras
+        # i samma tråd ("Cannot run the event loop while another loop is
+        # running"). Kör då hela körningen i en dedikerad tråd med EGEN
+        # DB-cursor/env (samma mönster som _run_learn_in_env).
+        import asyncio
+        try:
+            asyncio.get_running_loop()
+            _nested_in_loop = True
+        except RuntimeError:
+            _nested_in_loop = False
+        if _nested_in_loop:
+            return _run_coworker_nested(
+                self._cr.dbname, self.id, prompt,
+                system_prompt=system_prompt, force_model=force_model,
+                force_agent=force_agent,
+                session_id=session.id if session else None,
+                history=history, interrupt_handler=interrupt_handler,
+                uid=self.env.uid, context=dict(self.env.context))
 
         # Resolve model — force_model (7.5) → agent-modell → standard
         from odoo.addons.ai_agent_core.core.provider import get_default_model_name
@@ -5658,4 +5708,31 @@ def _run_learn_in_env(dbname, quest_id, session_id):
                 quest._learn_from_session(session)
     except Exception as e:
         _logger.warning('Bakgrundslärande misslyckades: %s', e)
+
+
+def _run_coworker_nested(dbname, coworker_id, prompt, system_prompt=None,
+                         force_model=None, force_agent=None, session_id=None,
+                         history=None, interrupt_handler=None, uid=None,
+                         context=None):
+    """Kör coworker.run() i en dedikerad tråd med egen DB-cursor/env.
+
+    Nested-loop guard (2026-08-31): när run() anropas inifrån en redan
+    körande asyncio-loop (t.ex. en AI-session via /ai/stream eller en
+    odoo_call_method från ett verktyg) kan vi inte starta en ny event loop
+    i samma tråd ("Cannot run the event loop while another loop is
+    running"). Samma mönster som _run_learn_in_env — tråden skapar en färsk
+    Registry-cursor + Environment så verktygen får en giltig env/cursor.
+    """
+    from odoo.api import Environment
+    from odoo.modules.registry import Registry
+    registry = Registry(dbname)
+    with registry.cursor() as cr:
+        env = Environment(cr, uid or SUPERUSER_ID, context or {})
+        coworker = env['ai.coworker'].browse(coworker_id)
+        session = (env['ai.coworker.session'].browse(session_id)
+                   if session_id else None)
+        return coworker.run(
+            prompt, system_prompt=system_prompt, force_model=force_model,
+            force_agent=force_agent, session=session, history=history,
+            interrupt_handler=interrupt_handler)
 
