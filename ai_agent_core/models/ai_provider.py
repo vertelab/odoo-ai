@@ -8,6 +8,8 @@ Smart button: fetch available models with capabilities.
 """
 
 import json, logging, re, urllib.request, ssl
+from typing import Optional
+
 from odoo import models, fields, api, _
 from odoo.exceptions import UserError, ValidationError
 
@@ -267,14 +269,68 @@ class AIProvider(models.Model):
             raise UserError(_('Failed to fetch models: %s') % str(e))
 
         models = data.get('data', data if isinstance(data, list) else [])
+        # Berika varje modell med context/pris från providerns rika
+        # /v1/config-katalog (där sådan finns — t.ex. combo-adaptern).
+        # /v1/models ger bara modell-id:n; /v1/config ger contextWindow,
+        # maxTokens och cost.pris. Utan detta behåller ai.model-posterna
+        # fältdafaulten (128k / ingen kostnad).
+        config_map = self._fetch_config_map()
         count = 0
         for m in models:
             model_id = m.get('id', '')
             if not model_id or model_id.startswith('ft:'):
                 continue
-            self._import_model(model_id)
+            self._import_model(model_id, config_map.get(model_id))
             count += 1
         return count
+
+    def _fetch_config_map(self):
+        """Hämta providerns rika /v1/config-katalog som {model_id: dict}.
+
+        Returnerar en map med context/maxOutput/cost per modell-id. Tyst
+        fallback till {} om endpointen saknas / misslyckas (ej kritiskt).
+        """
+        headers = {}
+        if self.provider_type == 'bifrost':
+            if self.api_key:
+                headers['Authorization'] = f'Bearer {self.api_key}'
+            else:
+                headers['X-Virtual-Key'] = self.env['ir.config_parameter'].get_param(
+                    'bifrost.admin_api_key', '')
+        elif self.api_key:
+            headers['Authorization'] = f'Bearer {self.api_key}'
+        url = self.base_url.rstrip('/') + '/config'
+        try:
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=30, context=ctx) as resp:
+                data = json.loads(resp.read().decode())
+        except Exception as e:
+            _logger.debug("No /v1/config catalog for %s: %s", self.name, e)
+            return {}
+        models = data.get('models', data.get('data', data if isinstance(data, list) else []))
+        out = {}
+        for m in models:
+            mid = m.get('id') or m.get('name')
+            if not mid:
+                continue
+            cost_in = None
+            cost_out = None
+            cost = m.get('cost') or {}
+            if isinstance(cost, dict):
+                if cost.get('input') is not None:
+                    cost_in = float(cost['input'])
+                if cost.get('output') is not None:
+                    cost_out = float(cost['output'])
+            out[mid] = {
+                'context': m.get('contextWindow'),
+                'max_output': m.get('maxTokens') or m.get('max_output_tokens'),
+                'cost_input': cost_in,
+                'cost_output': cost_out,
+            }
+        return out
 
     # -- Maker-upplösning (provider-model-offering) --
 
@@ -322,15 +378,18 @@ class AIProvider(models.Model):
             return maker, parts[-1]
         return False, model_id
 
-    def _import_model(self, model_id: str):
+    def _import_model(self, model_id: str, config_meta: Optional[dict] = None):
         """Create or update ai.model from provider data (kanonicaliserat).
 
         - name = kanoniskt identitetsnamn (prefix-strippat)
         - api_name = full path (wire-id)
         - source_provider = tillverkare (gateway) / tom (direkt)
         - find-or-update på (name, provider) — UNIQUE-safe, idempotent
+        - context_window / max_output_tokens / kostnad: berikas från
+          config_meta (rik /v1/config-katalog) när tillgänglig.
         For NEW models: sets default sys_multiplier based on model name heuristics.
-        For EXISTING models: preserves manually set sys_multiplier.
+        For EXISTING models: preserves manually set context/pris (endast
+          kvantiteter som admin ännu inte angivet — 0/NULL — fylls på).
         """
         maker, canonical = self._resolve_maker(model_id)
         name = canonical or model_id
@@ -348,6 +407,37 @@ class AIProvider(models.Model):
             'source_provider': source_provider,
             'status': 'active',
         }
+
+        # Berika med providerns rika config (context/pris).
+        # Bevara manuellt angivna värden på befintliga poster, men skriv
+        # över exakt-aldrig-satta fätldefault: en admin som satt 200000
+        # behåller det, medan en post med default 128000 uppdateras till
+        # config-värdet (t.ex. OR+deepseek → 1M).
+        DEFAULT_CTX = 128000
+        DEFAULT_MAXOUT = 16384
+        if config_meta:
+            ctx = config_meta.get('context')
+            if ctx:
+                cur = existing.context_window if existing else 0
+                if not cur or cur == DEFAULT_CTX:
+                    vals['context_window'] = int(ctx)
+            mo = config_meta.get('max_output')
+            if mo:
+                cur = existing.max_output_tokens if existing else 0
+                if not cur or cur == DEFAULT_MAXOUT:
+                    vals['max_output_tokens'] = int(mo)
+            # Pris per token (adaptern) → per 1K-token (ai.model).
+            ci = config_meta.get('cost_input')
+            co = config_meta.get('cost_output')
+            if ci is not None:
+                if not existing or not existing.cost_input_1k:
+                    vals['cost_input_1k'] = ci * 1000
+                # Admin-insyn: provider $/1M-token (input).
+                if not existing or not existing.provider_cost_1M:
+                    vals['provider_cost_1M'] = ci * 1_000_000
+            if co is not None:
+                if not existing or not existing.cost_output_1k:
+                    vals['cost_output_1k'] = co * 1000
 
         # Detect capabilities from model name
         name_lower = model_id.lower()
