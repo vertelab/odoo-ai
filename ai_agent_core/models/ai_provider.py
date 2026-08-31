@@ -241,19 +241,17 @@ class AIProvider(models.Model):
         url = self.base_url.rstrip('/') + '/models'
         headers = {}
         if self.provider_type == 'bifrost':
-            # Bifrost-gatewayen kräver admin-nyckel för att lista modeller
-            # (X-Virtual-Key ger tom lista). Fallback till api_key om satt.
-            admin_key = self.env['ir.config_parameter'].get_param(
-                'bifrost.admin_api_key', '')
-            if admin_key:
-                headers['Authorization'] = f'Bearer {admin_key}'
-            elif self.api_key:
+            # /v1/models på combo-adaptern är entitlement-baserad — returnerar
+            # de combos/modeller som NYCKELN (provider.api_key) har rätt till.
+            # Admin-nyckeln (bifrost.admin_api_key) är bara för /admin/* och
+            # ger tom lista här (0 modeller). Använd providerns egen VK-nyckel
+            # först; fallback till admin-nyckeln bara om api_key saknas.
+            if self.api_key:
                 headers['Authorization'] = f'Bearer {self.api_key}'
             else:
-                # Sista fallback: gatewayens vk-vertel-värde (= admin-nyckeln)
-                headers['X-Virtual-Key'] = (
-                    admin_key or 'sk-bf-7885f84e-e3a0-470a-accc-0a8295f128bd'
-                )
+                admin_key = self.env['ir.config_parameter'].get_param(
+                    'bifrost.admin_api_key', '')
+                headers['X-Virtual-Key'] = admin_key or ''
         elif self.api_key:
             headers['Authorization'] = f'Bearer {self.api_key}'
 
