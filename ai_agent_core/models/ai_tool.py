@@ -285,12 +285,16 @@ class AITool(models.Model):
         import asyncio, inspect
         self.ensure_one()
 
-        # Sandboxed environment
+        # Sandboxed environment — säkra byggstenar för verktygskod. Utökade
+        # (2026-08) med type/isinstance/getattr/hasattr/min/max/sum — ofarliga
+        # introspektions- och aggFunktioner som verktyg rutinmässigt behöver.
         allowed_builtins = {
             'True': True, 'False': False, 'None': None,
             'str': str, 'int': int, 'float': float, 'bool': bool,
             'list': list, 'dict': dict, 'len': len,
             'range': range, 'enumerate': enumerate, 'zip': zip,
+            'type': type, 'isinstance': isinstance, 'getattr': getattr,
+            'hasattr': hasattr, 'min': min, 'max': max, 'sum': sum,
             '__import__': __import__,
             'print': lambda *a, **kw: None,  # no-op in sandbox
         }
