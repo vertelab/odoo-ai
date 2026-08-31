@@ -454,6 +454,13 @@ class AIProvider:
             choice = chunk.get("choices", [{}])[0]
             delta = choice.get("delta", {})
 
+            # Reasoning/thinking (DeepSeek `reasoning_content`, OpenRouter
+            # `reasoning`) — redovisa tänket precis som Pi visar det när det
+            # ansluter direkt till bifrost. Kastas aldrig tyst.
+            reasoning = delta.get("reasoning_content") or delta.get("reasoning")
+            if reasoning:
+                yield TokenEvent(type="thinking", token=reasoning)
+
             # Text token
             if delta.get("content"):
                 yield TokenEvent(type="token", token=delta["content"])

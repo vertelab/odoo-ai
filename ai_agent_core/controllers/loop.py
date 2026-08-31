@@ -819,7 +819,13 @@ class StreamingAgentLoop(AgentLoop):
                 temperature=self.config.temperature,
                 max_tokens=self.config.max_tokens,
             ):
-                if event.type == "token":
+                if event.type == "thinking":
+                    # Modellens reasoning (reasoning_content) — redovisa
+                    # tänket direkt, precis som Pi gör mot bifrost.
+                    yield event
+
+                elif event.type == "token":
+
                     # Buffra rundans text — först vid done vet vi om det är
                     # narrering (debug) eller slutgiltigt svar (token).
                     text_buffer += event.token

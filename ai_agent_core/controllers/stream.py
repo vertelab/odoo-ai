@@ -497,6 +497,10 @@ class AIStreamController(http.Controller):
                             if event.type == "token":
                                 data["token"] = event.token
                                 full_response.append(event.token)
+                            elif event.type == "thinking":
+                                # Modellens reasoning — sänd som egen SSE-händelse
+                                # så web-UI:t kan visa en hopfällbar tänksektion.
+                                data["token"] = event.token
                             elif event.type in ("debug", "source", "tool_progress"):
                                 data["token"] = event.token
                             elif event.type == "tool_call_start":

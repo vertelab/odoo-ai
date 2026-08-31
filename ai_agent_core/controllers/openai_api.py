@@ -17,6 +17,15 @@ from odoo.http import request, Response
 
 _logger = logging.getLogger(__name__)
 
+
+async def _collect_async(agen):
+    """Collect all items from an async generator into a list."""
+    result = []
+    async for item in agen:
+        result.append(item)
+    return result
+
+
 # Simple in-memory rate limiter (per coworker_id)
 _rate_limiters = {}
 
@@ -396,53 +405,134 @@ class AIOpenAPIController(http.Controller):
         history = self._body_to_messages(messages or [])
         handler = OpenAIInterruptHandler()
 
+        # Fånga env-data INNAN generatorn körs (request är borta under
+        # SSE-strömning) — samma mönster som /ai/stream. ORM görs om i
+        # generatorn via en färsk registry-cursor.
+        gen_dbname = request.env.cr.dbname
+        gen_uid = request.env.uid
+        gen_context = dict(request.env.context)
+        _coworker_id = coworker.id
+        _session_id = _session.id
+        _cost = self._cost_context_payload(_session)
+        _sys_prompt = system_prompt or ''
+        _model = model or 'default'
+
         def generate():
             try:
-                # Run WITHOUT sudo — coworker.env carries the API-authenticated
-                # user so session.user_id is correct (not SUPERUSER).
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
                 try:
-                    result = coworker.run_with_history(
-                        prompt=prompt,
-                        system_prompt=system_prompt,
-                        history=history,
-                        interrupt_handler=handler,
-                        session=_session,
-                    )
-                except AgentLoopPaused as pause:
-                    # HITL: returnera tool_calls som SSE-händelse
-                    _logger.info(
-                        'OpenAI API stream HITL paus (%s)',
-                        pause.state.get('kind'))
-                    yield f'data: {json.dumps({"id": response_id, "object": "chat.completion.chunk", "created": created, "model": model or "default", "choices": [{"index": 0, "delta": {"role": "assistant", "tool_calls": pause.tool_calls}}]})}\n\n'
-                    yield f'data: {json.dumps({"session_id": _session.id, "cost_context": self._cost_context_payload(_session)})}\n\n'
-                    yield 'data: [DONE]\n\n'
-                    return
-                # Personligt lärande (OpenAI API-yta)
-                try:
-                    coworker._maybe_learn_async(_session.id)
-                except Exception:
-                    pass
-                response_text = result.text if hasattr(result, 'text') else str(result or '')
+                    async def _stream(gen_env):
+                        from odoo.addons.ai_agent_core.core.provider import (
+                            ProviderFactory)
+                        from odoo.addons.ai_agent_core.core.loop import (
+                            StreamingAgentLoop, AgentConfig)
+                        from odoo.addons.ai_agent_core.core.tools import (
+                            ToolRegistry, ai_tool_records_to_tools)
 
-                # Klientstyrning (D7)
-                try:
-                    pi_instr = coworker._build_pi_instruction(_session)
-                    skill_to_load = coworker._pi_skill_to_load()
-                except Exception:
-                    pi_instr = ''
-                    skill_to_load = ''
+                        def _chunk(delta, finish_reason=''):
+                            d = {"id": response_id, "object": "chat.completion.chunk",
+                                 "created": created, "model": model_name,
+                                 "choices": [{"index": 0, "delta": delta}]}
+                            if finish_reason:
+                                d["choices"][0]["finish_reason"] = finish_reason
+                            return f'data: {json.dumps(d)}\n\n'
 
-                # Stream token by token
-                words = response_text.split(' ')
-                for i, word in enumerate(words):
-                    chunk = word + (' ' if i < len(words) - 1 else '')
-                    yield f'data: {json.dumps({"id": response_id, "object": "chat.completion.chunk", "created": created, "model": model or "default", "choices": [{"index": 0, "delta": {"content": chunk}}]})}\n\n'
+                        provider, pmodel = ProviderFactory.from_coworker(
+                            gen_env['ai.coworker'].browse(_coworker_id))
+                        if not provider:
+                            yield f'data: {json.dumps({"error": {"message": "Ingen AI-leverantör konfigurerad för denna medarbetare"}})}\n\n'
+                            yield 'data: [DONE]\n\n'
+                            return
 
-                yield f'data: {json.dumps({"id": response_id, "object": "chat.completion.chunk", "created": created, "model": model or "default", "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]})}\n\n'
-                # Session-info (session-cost-context 3.3) — före [DONE]
-                yield f'data: {json.dumps({"session_id": _session.id, "cost_context": self._cost_context_payload(_session), "system_prompt_add": pi_instr or "", "skill_to_load": skill_to_load or ""})}\n\n'
-                yield 'data: [DONE]\n\n'
+                        # Faktisk modell löses från coworker-agentkedjan
+                        # (ai.coworker→ai.agent→ai.model), inte från body:s
+                        # `model` — samma som run_with_history/providern gör.
+                        try:
+                            model_name = pmodel._get_api_name() if pmodel else (_model or 'default')
+                        except Exception:
+                            model_name = _model or 'default'
 
+                        tools_reg = ToolRegistry()
+                        try:
+                            quest = gen_env['ai.coworker'].sudo().browse(_coworker_id)
+                            tool_ids = quest._session_tool_ids(
+                                access_groups=gen_env.user.groups_id.ids)
+                            if tool_ids:
+                                tool_recs = gen_env['ai.tool'].sudo().browse(tool_ids)
+                                if tool_recs:
+                                    tools_reg.register_many(ai_tool_records_to_tools(tool_recs, gen_env))
+                        except Exception:
+                            _logger.warning('tool setup failed', exc_info=True)
+
+                        loop_obj = StreamingAgentLoop(
+                            provider=provider, tools=tools_reg,
+                            interrupt_handler=handler,
+                            config=AgentConfig(
+                                model=model_name, system_prompt=_sys_prompt,
+                                max_rounds=10,
+                            ),
+                        )
+
+                        saw_tool_call = False
+                        finish = 'stop'
+                        try:
+                            async for event in loop_obj.run_stream(prompt, history=history):
+                                if event.type == "thinking":
+                                    # Modellens reasoning → delta.reasoning_content
+                                    # så att Pi/openai-klienter visar tänket precis
+                                    # som mot bifrost direkt.
+                                    yield _chunk({"reasoning_content": event.token})
+                                elif event.type == "token":
+                                    yield _chunk({"content": event.token})
+                                elif event.type in ("tool_call_start", "tool_call_end"):
+                                    saw_tool_call = True
+                                    finish = 'tool_calls'
+                                    tc = event.tool_call or {}
+                                    yield _chunk({
+                                        "role": "assistant",
+                                        "tool_calls": [{
+                                            "index": 0,
+                                            "id": tc.id if hasattr(tc, 'id') else None,
+                                            "type": "function",
+                                            "function": {
+                                                "name": tc.name if hasattr(tc, 'name') else '',
+                                                "arguments": json.dumps(getattr(tc, 'arguments', {}) or {}),
+                                            },
+                                        }],
+                                    })
+                                elif event.type == "done":
+                                    finish = event.finish_reason or ('tool_calls' if saw_tool_call else 'stop')
+                        except AgentLoopPaused as pause:
+                            # HITL: returnera tool_calls som SSE — klienten
+                            # visar flödet och svarar med role:"tool" i nästa request.
+                            tool_calls = pause.tool_calls if hasattr(pause, 'tool_calls') else []
+                            if tool_calls:
+                                yield _chunk({
+                                    "role": "assistant",
+                                    "tool_calls": [{
+                                        "index": i,
+                                        "id": tc.get('id'),
+                                        "type": "function",
+                                        "function": {"name": tc.get('name', ''), "arguments": json.dumps(tc.get('arguments', {}) or {})},
+                                    } for i, tc in enumerate(tool_calls)],
+                                })
+                            finish = 'tool_calls'
+
+                        yield _chunk({}, finish_reason=finish)
+                        # Session-info (session-cost-context 3.3) — före [DONE]
+                        yield f'data: {json.dumps({"session_id": _session_id, "cost_context": _cost})}\n\n'
+                        yield 'data: [DONE]\n\n'
+
+                    from odoo import api as _api, registry as _registry
+                    with _registry(gen_dbname).cursor() as gen_cr:
+                        gen_env = _api.Environment(gen_cr, gen_uid, gen_context)
+                        results = loop.run_until_complete(
+                            _collect_async(_stream(gen_env)))
+                    for chunk in results:
+                        yield chunk
+                finally:
+                    loop.close()
             except Exception as e:
                 _logger.error('OpenAI API stream error: %s', e, exc_info=True)
                 yield f'data: {json.dumps({"error": {"message": str(e)}})}\n\n'
