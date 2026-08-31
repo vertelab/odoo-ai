@@ -34,6 +34,34 @@ from tenacity import (
 
 _logger = logging.getLogger(__name__)
 
+
+def _safe_json_loads(text, default=None):
+    """Tolerant JSON-parsing av verktygsarguments.
+
+    Bifrost/OpenRouter-modeller returnerar ibland arguments med enkla
+    citattecken, nyrader eller extra tecken → std json.loads kastar
+    JSONDecodeError. Fallback: försök ast.literal_eval (icke-standard-enkla
+    citat), annars returnera en dict {p: text} eller default.
+    """
+    if text is None:
+        return default or {}
+    s = text.strip()
+    if not s:
+        return default or {}
+    try:
+        return json.loads(s)
+    except Exception:
+        pass
+    try:
+        import ast
+        return ast.literal_eval(s)
+    except Exception:
+        pass
+    # Sista utväg: om det är ett platt "key: value"-mönster, wrap:a
+    if default is not None:
+        return default
+    return {"_raw": s}
+
 # ---------------------------------------------------------------------------
 # Data types
 # ---------------------------------------------------------------------------
@@ -93,7 +121,7 @@ class Message:
                     "type": "tool_use",
                     "id": tc["id"],
                     "name": tc["function"]["name"],
-                    "input": json.loads(tc["function"]["arguments"]),
+                    "input": _safe_json_loads(tc["function"]["arguments"]),
                 } for tc in self.tool_calls],
             ]
             content = [c for c in content if c is not None]
@@ -443,7 +471,7 @@ class AIProvider:
                 tool_calls.append(ToolCall(
                     id=tc["id"],
                     name=tc["function"]["name"],
-                    arguments=json.loads(tc["function"]["arguments"]),
+                    arguments=_safe_json_loads(tc["function"]["arguments"]),
                 ))
 
         return ChatResponse(
@@ -472,9 +500,9 @@ class AIProvider:
                     # Flush eventuella tool_call-buffers innan done
                     for idx, buf in tool_call_buffer.items():
                         try:
-                            buf["arguments"] = json.loads(buf["arguments"])
-                        except json.JSONDecodeError:
-                            pass
+                            buf["arguments"] = _safe_json_loads(buf["arguments"])
+                        except Exception:
+                            buf["arguments"] = {}
                         yield TokenEvent(type="tool_call_end", tool_call=ToolCall(
                             id=buf["id"],
                             name=buf["name"],
@@ -542,9 +570,9 @@ class AIProvider:
             if finish and not delta.get("content") and not delta.get("tool_calls"):
                 for idx, buf in tool_call_buffer.items():
                     try:
-                        buf["arguments"] = json.loads(buf["arguments"])
-                    except json.JSONDecodeError:
-                        pass
+                        buf["arguments"] = _safe_json_loads(buf["arguments"])
+                    except Exception:
+                        buf["arguments"] = {}
                     yield TokenEvent(type="tool_call_end", tool_call=ToolCall(
                         id=buf["id"],
                         name=buf["name"],
@@ -640,8 +668,8 @@ class AIProvider:
                 elif ev_type == "content_block_stop":
                     if current_tool:
                         try:
-                            args = json.loads(current_tool["arguments"])
-                        except json.JSONDecodeError:
+                            args = _safe_json_loads(current_tool["arguments"])
+                        except Exception:
                             args = {}
                         yield TokenEvent(type="tool_call_end", tool_call=ToolCall(
                             id=current_tool["id"],

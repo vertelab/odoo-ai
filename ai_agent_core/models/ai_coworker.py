@@ -4449,6 +4449,23 @@ class AICoworker(models.Model):
             tools.register_many(ai_tool_records_to_tools(
                 self.env['ai.tool'].browse(tool_ids), self.env))
 
+        # Supervisor-kontextoptimering (2026-08): om en explicit whitelist av
+        # verktygsnamn sätts i kontexten (_ai_tool_whitelist), reduceras
+        # registret till ENDAST dessa. Används av saltstack_ai._start_diagnosis
+        # och liknande så LLM:en ser en liten uppgiftsmatchad uppsättning i
+        # stället för alla 50+ verktyg (annars sväljer den tool_calls i text).
+        wl = self.env.context.get('_ai_tool_whitelist')
+        if wl and isinstance(wl, (list, tuple, set)):
+            wanted = set(wl)
+            names = tools.list()
+            tools = ToolRegistry()
+            for t in names:
+                if t.name in wanted:
+                    tools.register(t)
+            _logger.info(
+                'ai_tool_whitelist: %d/%d verktyg exponerade',
+                len(tools), len(names))
+
         return tools, tool_access_groups
 
     def run(self, prompt, system_prompt=None, force_model=None,
