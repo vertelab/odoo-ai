@@ -4497,13 +4497,30 @@ class AICoworker(models.Model):
         except RuntimeError:
             _nested_in_loop = False
         if _nested_in_loop:
-            return _run_coworker_nested(
-                self._cr.dbname, self.id, prompt,
-                system_prompt=system_prompt, force_model=force_model,
-                force_agent=force_agent,
-                session_id=session.id if session else None,
-                history=history, interrupt_handler=interrupt_handler,
-                uid=self.env.uid, context=dict(self.env.context))
+            import threading
+            _nested_result = {}
+
+            def _run_nested_thread():
+                try:
+                    _nested_result['value'] = _run_coworker_nested(
+                        self._cr.dbname, self.id, prompt,
+                        system_prompt=system_prompt,
+                        force_model=force_model, force_agent=force_agent,
+                        session_id=session.id if session else None,
+                        history=history,
+                        interrupt_handler=interrupt_handler,
+                        uid=self.env.uid,
+                        context=dict(self.env.context))
+                except Exception as _e:  # noqa: BLE001
+                    _nested_result['error'] = _e
+
+            _nested_thread = threading.Thread(
+                target=_run_nested_thread, daemon=True)
+            _nested_thread.start()
+            _nested_thread.join()
+            if 'error' in _nested_result:
+                raise _nested_result['error']
+            return _nested_result['value']
 
         # Resolve model — force_model (7.5) → agent-modell → standard
         from odoo.addons.ai_agent_core.core.provider import get_default_model_name
