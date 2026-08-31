@@ -660,3 +660,21 @@ await process_item(item)   # klassificering → disposition → HITL → nudge �
 - **Referensimplementation:** `user_mail_ai` uppfyller kontraktet
   strukturellt (ingen migrering — kontraktet reflekterar befintlig kod).
 - `satisfies_adapter(obj)` / `satisfies_processor(obj)` — strukturell koll.
+
+## Pi↔Odoo-hybrid + supervisor-kontextoptimering (2026-08-31)
+
+### Hybrid: Odoo-coworker som ren LLM-backend för Pi
+`/ai/v1/chat/completions` kör **INTE** Odoos egen AgentLoop — istället ren
+generation: Pi:s messages + tools (inkl. Pi:s lokala bash/ssh/salt) skickas
+oförändrade till coworkerns LLM; returnerade `tool_calls` går tillbaka till Pi.
+Odoo-verktyg körs av **Odoo** via `POST /ai/v1/tools/run` (full kontext, aldrig
+Pi→Odoo-RPC direkt). Sessionen loggas i Odoo. `GET /ai/v1/<coworker>/tools`
+returnerar verktygens schemas.
+
+### Kontextoptimering (`_select_relevant_tools`)
+Alla 50+ verktygs-schemas gör att LLM:en SVÄLJER tool_calls i content-text och
+misslyckas (verifierat: 58 verktyg → 87s svullnad utan exekvering; 2-8 relevanta
+→ native `tool_calls` + ~3s). `_select_relevant_tools(messages, tools)`
+reducerar payload:en per uppgift (nyckelords-routing: zabbix/salt/pg/caddy/
+odoo/mail + litet bas-set). Effekt: IS Operator fullför riktig iterativ
+driftdiagnos med native tool-calling.
