@@ -56,3 +56,42 @@ agent.bifrost_model  # e.g. 'cerebras/gpt-oss-120b'
 agent.direct_model   # e.g. 'claude-sonnet-4-20250514'
 agent.skill_ids      # M2M to ai.skill
 ```
+
+## Session Accounting (session-audit, 18.0.1.163)
+
+`ai.coworker.session` + `ai.coworker.session.line` är granskningsspåret för
+alla AI-konversationer (web-chat `/ai/chat`, openai_api `/ai/v1`,
+quest.run(), powerbox, mail). Bokföring per meddelande:
+
+- **User-rad** bär requestens **input-tokens** (`token_input`, `token_output=0`)
+  — prompt-kostnaden för det meddelandet.
+- **Assistant-rad** bär **output-tokens** (`token_output`, `token_input=0`)
+  samt `debug_info` (resonemang), `source_urls` och `tool_calls` (JSON-lista
+  `[{name, preview}]`).
+- **Tool-rader** (`role='tool'`) sparar varje verktygsanrop med `tool_name`,
+  preview och `sys_token_cost` som `token_input` (multiplier 1.0).
+- `token_sys` per rad = `(token_input + token_output) × sys_multiplier`;
+  `session.token_sys` = Σ rader ≈ `(input+output) × multiplier` (oförändrad
+  totalsumma jämfört med när input+output låg på samma rad).
+
+Verklig token-usage i streaming:
+
+- `TokenEvent` bär nu `input_tokens`/`output_tokens`; providern fyller dem
+  via `stream_options.include_usage` (OpenAI-kompatibelt, med 400-retry utan
+  för strikta gateways) eller Anthropic `message_start`/`message_delta`.
+- `StreamingAgentLoop.run_stream` aggregerar usage över alla rundor och
+  sätter totaler på den slutgiltiga `done`-händelsen.
+- `/ai/stream` vidarebefordrar dem som `input_tokens`/`output_tokens` i
+  done-SSE; frontend skickar dem till `/ai/threads/<id>/respond`
+  (fallback: tidigare estimat).
+
+Status-/livscykel (`/new`-semantik):
+
+- `POST /ai/threads/<id>/close` — stänger tråden (`status='done'`,
+  `finish_reason='closed'`). Anropas av web-UI:ets "+ Ny tråd".
+- `POST /ai/threads` (thread_create) stänger användarens övriga aktiva
+  sessioner (`finish_reason='new_session'`) — en ny konversation markerar
+  den gamla som avslutad. Idempotent.
+- `GET /ai/threads/<id>` returnerar nu per-meddelande-kontext: `status`,
+  `finish_reason`, `debug_info`, `tool_calls`, `model_real`, `token_input`,
+  `token_output`, `token_sys`.

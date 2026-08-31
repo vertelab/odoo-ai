@@ -4676,16 +4676,30 @@ class AICoworker(models.Model):
                 'role': 'user',
                 'content': prompt[:2000] if prompt else '',
                 'sequence': 1,
+                # User-raden bokför requestens input-tokens (prompt-kostnad)
+                # så varje meddelande visar sin kontextkostnad.
+                'token_input': input_t,
+                'token_output': 0,
+                'sys_multiplier': sys_mult,
             })
             self.env['ai.coworker.session.line'].create({
                 'session_id': session.id,
                 'role': 'assistant',
                 'content': result_text,
-                'token_input': input_t,
+                # Assistant-raden bokför output; input ligger på user-raden
+                # (token_sys per rad = (input|output) × multiplier, summan
+                # över raderna = (input+output) × multiplier som förr).
+                'token_input': 0,
                 'token_output': output_t,
                 'model_real': model_real,
                 'sys_multiplier': sys_mult,
                 'sequence': 2,
+                # Granskningsbar kontext: vilka verktyg anropades och med
+                # vilket resultat (preview).
+                'tool_calls': json.dumps([
+                    {'name': n, 'preview': str(p)[:200]}
+                    for n, p in getattr(loop_obj, 'tool_history', [])],
+                    ensure_ascii=False),
             })
             # Persist tool executions recorded by the loop (observability
             # + lets tests assert expect_tools via session lines)
@@ -4941,9 +4955,17 @@ class AICoworker(models.Model):
 
                 self.env['ai.coworker.session.line'].create({
                     'session_id': session.id,
+                    'role': 'user',
+                    'content': full_prompt[:2000],
+                    'token_input': input_t,
+                    'token_output': 0,
+                    'sys_multiplier': sys_mult,
+                })
+                self.env['ai.coworker.session.line'].create({
+                    'session_id': session.id,
                     'role': 'assistant',
                     'content': response.text,
-                    'token_input': input_t,
+                    'token_input': 0,
                     'token_output': output_t,
                     'model_real': model_real,
                     'sys_multiplier': sys_mult,

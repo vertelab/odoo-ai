@@ -126,6 +126,12 @@ class TokenEvent:
     token: str = ""
     tool_call: Optional[ToolCall] = None
     finish_reason: str = ""
+    # Verklig token-usage (providerns usage-rapport). Fylls i av
+    # stream-generatorerna (include_usage/message_start/message_delta) och
+    # aggregeras av StreamingAgentLoop till totaler på slutgiltiga done.
+    # 0 = ej rapporterad (klienten får estimera).
+    input_tokens: int = 0
+    output_tokens: int = 0
 
 
 class ProviderError(Exception):
@@ -269,6 +275,7 @@ class AIProvider:
         system_prompt: str,
         temperature: float,
         max_tokens: int,
+        include_usage: bool = False,
     ) -> dict:
         msgs = []
         if system_prompt:
@@ -283,6 +290,11 @@ class AIProvider:
         }
         if tools:
             body["tools"] = tools
+        if include_usage:
+            # OpenAI-kompatibla providers rapporterar usage i sista chunk:en
+            # när stream_options.include_usage sätts (krävs för korrekt
+            # token-bokföring i web-chatten).
+            body["stream_options"] = {"include_usage": True}
         return body
 
     def _build_anthropic_body(self, model, messages, tools, system_prompt, temperature, max_tokens):
@@ -391,6 +403,28 @@ class AIProvider:
         finally:
             await response.aclose()
 
+    async def _iter_stream_retry(self, path: str, body: dict):
+        """Iterera en streaming-response; retry utan stream_options vid 400.
+
+        Vissa strikta providers/äldre gateways accepterar inte
+        stream_options.include_usage och svarar 400. Då körs en andra
+        iteration utan include_usage (usage rapporteras inte — klienten
+        får estimera).
+        """
+        try:
+            async for chunk in self._post_stream(path, body):
+                yield chunk
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 400 and body.get("stream_options"):
+                _logger.info(
+                    'provider rejected stream_options (400); retrying without '
+                    'include_usage: %s', body.get('model'))
+                body.pop("stream_options")
+                async for chunk in self._post_stream(path, body):
+                    yield chunk
+            else:
+                raise
+
     # -- OpenAI-compatible (OpenAI, DeepSeek, Cerebras, Groq, Google,
     #    OpenRouter, Ollama, custom) --
 
@@ -423,14 +457,16 @@ class AIProvider:
 
     async def _stream_openai_compat(self, model, messages, tools, system_prompt, temperature, max_tokens):
         body = self._build_openai_body(
-            model, messages, tools, system_prompt, temperature, max_tokens
+            model, messages, tools, system_prompt, temperature, max_tokens,
+            include_usage=True,
         )
         body["stream"] = True
 
         tool_call_buffer: dict[str, dict] = {}
         done_sent = False  # [DONE]-markören får inte ge en andra done
+        last_usage: dict = {}
 
-        async for chunk in self._post_stream("/chat/completions", body):
+        async for chunk in self._iter_stream_retry("/chat/completions", body):
             if isinstance(chunk, TokenEvent):
                 if chunk.type == "done":
                     # Flush eventuella tool_call-buffers innan done
@@ -448,9 +484,23 @@ class AIProvider:
                     if done_sent:
                         continue
                     done_sent = True
+                    # [DONE]-fallback (provider utan finish_reason-chunk):
+                    # fäst ändå den usage vi sett på vägen.
+                    if not getattr(chunk, 'input_tokens', 0) and last_usage:
+                        chunk.input_tokens = (
+                            last_usage.get("prompt_tokens")
+                            or last_usage.get("input_tokens") or 0)
+                        chunk.output_tokens = (
+                            last_usage.get("completion_tokens")
+                            or last_usage.get("output_tokens") or 0)
                 yield chunk
                 continue
 
+            # Raw OpenAI chunk — fånga usage (include_usage ger en sista
+            # chunk med usage men tomma choices; Bifrost rapporterar även
+            # input_tokens/output_tokens i vissa svar).
+            if chunk.get("usage"):
+                last_usage = chunk["usage"]
             choice = chunk.get("choices", [{}])[0]
             delta = choice.get("delta", {})
 
@@ -503,7 +553,15 @@ class AIProvider:
                 tool_call_buffer.clear()
                 if not done_sent:
                     done_sent = True
-                    yield TokenEvent(type="done", finish_reason=finish)
+                    yield TokenEvent(
+                        type="done", finish_reason=finish,
+                        input_tokens=(
+                            last_usage.get("prompt_tokens")
+                            or last_usage.get("input_tokens") or 0),
+                        output_tokens=(
+                            last_usage.get("completion_tokens")
+                            or last_usage.get("output_tokens") or 0),
+                    )
 
     # -- Anthropic-specific (api_style=anthropic) --
 
@@ -536,6 +594,10 @@ class AIProvider:
         body["stream"] = True
 
         current_tool: dict | None = None
+        # Anthropic rapporterar input_tokens i message_start och (kumulativa)
+        # output_tokens i message_delta — fångas för korrekt token-bokföring.
+        usage_input = 0
+        usage_output = 0
         response = await self._stream_open(f"{self.base_url}/messages", body)
         try:
             async for line in response.aiter_lines():
@@ -547,7 +609,15 @@ class AIProvider:
                     continue
 
                 ev_type = event.get("type", "")
-                if ev_type == "content_block_delta":
+                if ev_type == "message_start":
+                    usage_input = (
+                        event.get("message", {}).get("usage", {}).get("input_tokens", 0)
+                        or 0)
+                elif ev_type == "message_delta":
+                    usage_output = (
+                        event.get("usage", {}).get("output_tokens", 0)
+                        or 0)
+                elif ev_type == "content_block_delta":
                     delta = event.get("delta", {})
                     if delta.get("type") == "text_delta":
                         yield TokenEvent(type="token", token=delta["text"])
@@ -580,7 +650,9 @@ class AIProvider:
                         ))
                         current_tool = None
                 elif ev_type == "message_stop":
-                    yield TokenEvent(type="done", finish_reason="end_turn")
+                    yield TokenEvent(
+                        type="done", finish_reason="end_turn",
+                        input_tokens=usage_input, output_tokens=usage_output)
         finally:
             await response.aclose()
 

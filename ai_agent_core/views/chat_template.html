@@ -426,6 +426,7 @@ var activeSessionCoworker=''; // coworker_id för den aktiva sessionen
 var urlQuestId=params.get('quest_id')||'';
 if(urlQuestId){activeQuestId=urlQuestId}
 var currentAiMessage=null,currentAgentCards={},streaming=!1,currentEventSource=null,tokenCount=0;
+var lastUsageInput=0,lastUsageOutput=0,currentToolCalls=[];
 var currentAnswerEl=null,currentDebugEl=null,currentSourcesEl=null,currentSpinnerEl=null;
 var currentDebugText='',currentSources=[];
 var sessionUuid='';
@@ -738,6 +739,12 @@ function loadThreads(){
     })
 }
 function newThread(){
+    // Stäng den nuvarande tråden server-side (status → done) så att
+    // sessionens status speglar att konversationen är avslutad.
+    if(activeSessionId){
+        var x=new XMLHttpRequest();x.open('POST','/ai/threads/'+activeSessionId+'/close',!0);
+        x.setRequestHeader('Content-Type','application/json');x.send('{}');
+    }
     activeSessionId='';activeSessionCoworker='';activeThreadName='';
     document.getElementById('active-thread-name').textContent='';
     document.getElementById('thread-edit-btn').style.display='none';
@@ -1113,10 +1120,13 @@ function handleStreamEvent(e){
             if(currentSourcesEl){currentSourcesEl.style.display='';var sb=currentSourcesEl.querySelector('.ai-sources-body');sb.innerHTML=currentSources.map(function(u){return'<a href="'+esc(u)+'" target="_blank" rel="noopener">'+esc(u)+'</a>'}).join('')}
             break;
         case'tool_call_start':var a=document.createElement('div');a.className='agent-card';var n=e.tool_call?e.tool_call.name:'tool';a.innerHTML='<div class="agent-card-header"><span>🔧</span><span>'+esc(n)+'</span></div><div class="agent-card-body">Kör…</div>';currentAiMessage.appendChild(a);currentAgentCards[n]=a;
+            if(e.tool_call)currentToolCalls.push({name:e.tool_call.name});
             if(currentSpinnerEl)currentSpinnerEl.style.display='flex';break;
         case'needs_approval':if(e.tool_name){showInterruptDialog('Godkänn verktyg: '+esc(e.tool_name)+(e.risk_level?' ('+esc(e.risk_level)+')':''),'tool_approval')}break;
         case'needs_input':showInterruptDialog(e.question||'Agenten behöver input','clarification');break;
-        case'done':if(currentSpinnerEl)currentSpinnerEl.style.display='none';currentEventSource.close();finishStream();break;
+        case'done':if(currentSpinnerEl)currentSpinnerEl.style.display='none';currentEventSource.close();
+            lastUsageInput=e.input_tokens||0;lastUsageOutput=e.output_tokens||0;
+            finishStream();break;
         case'error':if(currentAiMessage){currentAiMessage.innerHTML+='<div style="color:var(--danger)">❌ '+esc(e.message)+'</div>'}currentEventSource.close();finishStream();break
     }scrollBottom()
 }
@@ -1147,17 +1157,19 @@ function finishStream(){
             // progress indicators; the final text replaces them)
             if(txt&&answerEl){answerEl.innerHTML=addMessageActions(md2html(txt))}
             if(currentSpinnerEl)currentSpinnerEl.style.display='none';
-            // Save assistant response (svar + debug + källor)
+            // Save assistant response (svar + debug + källor + tool_calls)
             if(activeSessionId&&txt){
-                var estInput=Math.round(txt.length/4);
-                var estOutput=txt.length;
+                // Riktig usage från SSE done-händelsen (providerns
+                // usage-rapport); fallback till estimat om den saknas.
+                var realInput=lastUsageInput||Math.round(txt.length/4);
+                var realOutput=lastUsageOutput||tokenCount;
                 fetch('/ai/threads/'+activeSessionId+'/respond',{method:'POST',headers:{'Content-Type':'application/json'},
-                    body:JSON.stringify({content:txt,token_input:estInput,token_output:tokenCount,model_real:selectedModel||'web-chat',debug:currentDebugText||'',sources:currentSources})})
+                    body:JSON.stringify({content:txt,token_input:realInput,token_output:realOutput,model_real:selectedModel||'web-chat',debug:currentDebugText||'',sources:currentSources,tool_calls:currentToolCalls})})
                     .then(r=>r.json()).then(d=>{updateSystemtokenDisplay()})
             }else if(activeSessionId&&currentDebugText){
                 // Inget svar men debug finns — spara debug ändå
                 fetch('/ai/threads/'+activeSessionId+'/respond',{method:'POST',headers:{'Content-Type':'application/json'},
-                    body:JSON.stringify({content:'(inget svar)',token_input:0,token_output:tokenCount,model_real:selectedModel||'web-chat',debug:currentDebugText||'',sources:currentSources})})
+                    body:JSON.stringify({content:'(inget svar)',token_input:lastUsageInput||0,token_output:lastUsageOutput||tokenCount,model_real:selectedModel||'web-chat',debug:currentDebugText||'',sources:currentSources,tool_calls:currentToolCalls})})
             }
         }
     }
@@ -1168,6 +1180,7 @@ function finishStream(){
     currentAiMessage=null;currentAgentCards={};currentEventSource=null;
     currentAnswerEl=null;currentDebugEl=null;currentSourcesEl=null;currentSpinnerEl=null;
     currentDebugText='';currentSources=[];
+    lastUsageInput=0;lastUsageOutput=0;currentToolCalls=[];
     if(activeSessionId)loadThreads()
 }
 function relTime(ts){

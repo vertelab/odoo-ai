@@ -483,6 +483,7 @@ class AIStreamController(http.Controller):
                                     user_group_ids=gen_user_group_ids,
                                 ),
                             )
+                        state['loop_obj'] = loop_obj
 
                         async for event in loop_obj.run_stream(prompt, history=history):
                             # Vidarebefordra pending HITL-interrupts som SSE
@@ -511,6 +512,13 @@ class AIStreamController(http.Controller):
                                     }
                             elif event.type in ("done", "error"):
                                 data["finish_reason"] = event.finish_reason
+                                if event.type == "done":
+                                    # Verklig token-usage från loopen —
+                                    # frontend bokför per meddelande.
+                                    data["input_tokens"] = getattr(
+                                        event, 'input_tokens', 0) or 0
+                                    data["output_tokens"] = getattr(
+                                        event, 'output_tokens', 0) or 0
                             yield f"data: {json.dumps(data)}\n\n"
                         pending = handler.get_pending()
                         if pending:
@@ -524,9 +532,20 @@ class AIStreamController(http.Controller):
                     # Fresh cursor + env for the post-teardown phase:
                     # tool handlers run ORM calls while streaming.
                     from odoo import api as _api, registry as _registry
+                    state = {'loop_obj': None}
                     with _registry(gen_dbname).cursor() as gen_cr:
                         gen_env = _api.Environment(gen_cr, gen_uid, gen_context)
                         results = loop.run_until_complete(_collect(_stream(gen_env)))
+                        # Efter streamen: persistera verktygsanrop som
+                        # role='tool'-rader (granskningsbar kontext per
+                        # meddelande) — loop_obj.tool_history fylls av
+                        # _execute_tool under strömningen.
+                        try:
+                            _persist_stream_tool_lines(
+                                gen_env, session_id, state.get('loop_obj'))
+                        except Exception:
+                            _logger.warning(
+                                'persist stream tool lines failed', exc_info=True)
                         gen_cr.commit()
                     for chunk in results:
                         yield chunk
@@ -806,7 +825,14 @@ class AIStreamController(http.Controller):
     @http.route('/ai/threads', type='http', auth='public',
                 methods=['POST'], csrf=False, sitemap=False)
     def thread_create(self, **kw):
-        """Create a new thread."""
+        """Create a new thread.
+
+        När en NY tråd skapas (web-UI:ets "/new" skapar tråden lazy vid
+        första meddelandet) markeras användarens tidigare AKTIVA sessioner
+        som done (finish_reason='new_session') — den gamla konversationen är
+        "klar" tills den öppnas igen (då förblir den done; återupptagning
+        sker via selectThread → thread_get, inte via status).
+        """
         user = request.env.user
         # Parse JSON body for type='http' POST
         body = json.loads(request.httprequest.data or '{}')
@@ -836,8 +862,43 @@ class AIStreamController(http.Controller):
         if skill_id:
             vals['skill_id'] = int(skill_id)
         session = request.env['ai.coworker.session'].sudo().create(vals)
+
+        # /new-semantik: stäng användarens övriga aktiva sessioner.
+        if user and user.id:
+            try:
+                request.env['ai.coworker.session'].sudo().search([
+                    ('user_id', '=', user.id),
+                    ('status', '=', 'active'),
+                    ('id', '!=', session.id),
+                ]).write({
+                    'status': 'done',
+                    'finish_reason': 'new_session',
+                    'end_date': fields.Datetime.now(),
+                })
+            except Exception:
+                _logger.warning('thread_create: close previous sessions failed',
+                                exc_info=True)
+
         return Response(json.dumps({"id": session.id, "name": session.thread_name}),
                        content_type='application/json')
+
+    @http.route('/ai/threads/<int:thread_id>/close', type='http', auth='public',
+                methods=['POST'], csrf=False, sitemap=False)
+    def thread_close(self, thread_id, **kw):
+        """Stäng en tråd (anropas av web-UI:et när användaren klickar /new).
+
+        Markerar sessionen done med finish_reason='closed' så att statusen
+        speglar att konversationen är avslutad. Idempotent: en redan done/
+        error-session rörs inte.
+        """
+        session = request.env['ai.coworker.session'].sudo().browse(thread_id)
+        if session.exists() and session.status == 'active':
+            session.write({
+                'status': 'done',
+                'finish_reason': 'closed',
+                'end_date': fields.Datetime.now(),
+            })
+        return Response(json.dumps({"status": "ok"}), content_type='application/json')
 
     @http.route('/ai/threads/<int:thread_id>', type='http', auth='public',
                 methods=['GET'], csrf=False, sitemap=False)
@@ -847,17 +908,34 @@ class AIStreamController(http.Controller):
         if not session.exists():
             return Response(json.dumps({"error": "Thread not found"}), content_type='application/json', status=404)
         lines = session.session_line_ids.sorted('sequence')
+        # Konversationsrader (user/assistant/system) visas i UI:t;
+        # tool-rader är granskningsdata och exponeras separat som tool_lines
+        # så de inte renderas som AI-meddelanden i trådvyn.
+        conv_lines = [l for l in lines if l.role != 'tool']
+        tool_lines = [l for l in lines if l.role == 'tool']
         return Response(json.dumps({
             "id": session.id,
             "name": session.thread_name or (session.name or ''),
             "coworker_id": session.coworker_id.id if session.coworker_id else None,
             "coworker_name": session.coworker_id.name if session.coworker_id else None,
+            "status": session.status,
+            "finish_reason": session.finish_reason,
             "messages": [{
                 "role": l.role,
                 "content": l.content or '',
                 "tool_name": l.tool_name,
+                "debug_info": l.debug_info or '',
+                "tool_calls": l.tool_calls or '',
+                "model_real": l.model_real or '',
+                "token_input": l.token_input or 0,
+                "token_output": l.token_output or 0,
                 "token_sys": l.token_sys or 0,
-            } for l in lines]
+            } for l in conv_lines],
+            "tool_lines": [{
+                "tool_name": l.tool_name or '',
+                "content": (l.content or '')[:500],
+                "token_sys": l.token_sys or 0,
+            } for l in tool_lines],
         }), content_type='application/json')
 
     @http.route('/ai/threads/<int:thread_id>', type='http', auth='public',
@@ -885,9 +963,14 @@ class AIStreamController(http.Controller):
                 methods=['POST'], csrf=False, sitemap=False)
     def thread_save_response(self, thread_id, **kw):
         """Save an assistant response to a thread (called by frontend after streaming).
-        
-        Accepts optional token tracking fields: token_input, token_output, model_real.
-        These enable systemtoken computation via sys_multiplier.
+
+        Accepts token tracking fields: token_input, token_output, model_real
+        (riktig usage från SSE done-händelsen, annars frontend-estimat).
+        Bokföring per meddelande:
+          - user-raden (senaste) får requestens input-tokens
+          - assistant-raden får output-tokens + debug/källor/tool_calls
+        Detta gör att token_sys per rad = (input|output) × sys_multiplier och
+        session.token_sys = Σ rader ≈ (input+output) × multiplier (som förr).
         """
         body = json.loads(request.httprequest.data or '{}')
         content = body.get('content', '')
@@ -897,6 +980,7 @@ class AIStreamController(http.Controller):
         token_output = body.get('token_output', 0)
         debug_info = body.get('debug', '')
         sources = body.get('sources') or []
+        tool_calls = body.get('tool_calls') or ''
         if not content.strip():
             return Response(json.dumps({"status": "ok"}), content_type='application/json')
         session = request.env['ai.coworker.session'].sudo().browse(thread_id)
@@ -913,6 +997,11 @@ class AIStreamController(http.Controller):
                 if ai_model:
                     sys_mult = ai_model.sys_multiplier
 
+            # tool_calls: lista (frontend) eller redan serialiserad sträng.
+            tool_calls_json = (
+                tool_calls if isinstance(tool_calls, str) else json.dumps(
+                    tool_calls, ensure_ascii=False))
+
             request.env['ai.coworker.session.line'].sudo().create({
                 'session_id': session.id,
                 'sequence': next_seq,
@@ -921,11 +1010,25 @@ class AIStreamController(http.Controller):
                 'debug_info': debug_info,
                 'source_urls': '\n'.join(
                     str(s) for s in sources if str(s).startswith('http')),
-                'token_input': token_input,
+                'tool_calls': tool_calls_json,
+                # Assistant-raden bokför output; input ligger på user-raden.
+                'token_input': 0,
                 'token_output': token_output,
                 'model_real': model_real,
                 'sys_multiplier': sys_mult,
             })
+
+            # Senaste user-raden får requestens input-tokens (riktig usage
+            # eller estimat) så varje meddelande visar sin prompt-kostnad.
+            user_lines = session.session_line_ids.filtered(
+                lambda l: l.role == 'user').sorted('sequence', reverse=True)
+            if user_lines:
+                user_lines[0].write({
+                    'token_input': token_input,
+                    'token_output': 0,
+                    'sys_multiplier': sys_mult,
+                })
+
             # Also update session totals
             session.token_input += token_input
             session.token_output += token_output
@@ -1386,6 +1489,48 @@ async def _collect(agen):
     async for item in agen:
         result.append(item)
     return result
+
+
+def _persist_stream_tool_lines(env, session_id, loop_obj):
+    """Persistera verktygsanrop från en web-chat-stream som tool-rader.
+
+    Körs efter att SSE-generatorn strömmat klart (egen cursor). loop_obj.
+    tool_history = [(tool_name, preview), ...] fylls av AgentLoop.
+    Idempotent: rader som redan finns för sessionen (samma tool_name)
+    hoppas över, så en retry/återkörning inte duplicerar.
+    """
+    if not session_id or not loop_obj:
+        return
+    history = getattr(loop_obj, 'tool_history', None) or []
+    if not history:
+        return
+    session = env['ai.coworker.session'].sudo().browse(int(session_id))
+    if not session.exists():
+        return
+    existing = set(session.session_line_ids.filtered(
+        lambda l: l.role == 'tool').mapped('tool_name'))
+    for i, (t_name, t_preview) in enumerate(history):
+        if t_name in existing:
+            continue
+        tool_cost = 500  # default (ai.tool.sys_token_cost)
+        try:
+            tool_rec = env['ai.tool'].sudo().search(
+                [('name', '=', t_name)], limit=1)
+            if tool_rec:
+                tool_cost = tool_rec.sys_token_cost
+        except Exception:
+            pass
+        env['ai.coworker.session.line'].sudo().create({
+            'session_id': session.id,
+            'role': 'tool',
+            'tool_name': t_name,
+            'content': str(t_preview)[:2000],
+            'sequence': 100 + i,
+            'token_input': tool_cost,
+            'sys_multiplier': 1.0,
+        })
+    _logger.info('persisted %d tool line(s) for session %s',
+                 len(history), session_id)
 
 
 # ---------------------------------------------------------------------------
@@ -2016,6 +2161,9 @@ class AIOpenAIAPI(http.Controller):
             quest, messages, body.get('model', coworker), stream,
             pi_session_id=body.get('pi_session_id', ''),
             session_id=body.get('session_id', 0),
+            tools=body.get('tools', []),
+            temperature=body.get('temperature', 0.7),
+            max_tokens=body.get('max_tokens', 4096),
         )
 
     # ── Coworker helpers ──────────────────────────────────────────────
@@ -2032,15 +2180,29 @@ class AIOpenAIAPI(http.Controller):
         ).strip('-').lower() or f'coworker-{quest.id}'
 
     def _run_coworker_chat(self, quest, messages, model_ref, stream,
-                           pi_session_id='', session_id=0):
-        """Execute a chat completion through a coworker's agent chain."""
+                           pi_session_id='', session_id=0, tools=None,
+                           temperature=0.7, max_tokens=4096):
+        """Execute a chat completion through a coworker as Pi's LLM backend.
+
+        HYBRID (pi+odoo, 2026-08): istället för att köra Odoos egen AgentLoop
+        (som exekverar verktyg inuti Odoo och kastar bort Pi:s lokala
+        tools), gör denna väg REN generation: Pi:s fullständiga messages-
+        historik + tool-schemas (inkl. Pi:s egna bash/ssh/salt) skickas
+        oförändrade till coworkerns underliggande LLM. Returnerade
+        tool_calls skickas tillbaka till Pi, som exekverar sina LOKALA
+        verktyg själv och skickar Odoo-verktyg till /ai/v1/tools/run.
+        Sessionen loggas i Odoo som vanligt.
+        """
         # ── Imports (must be at method level for both sync + stream paths) ──
         import asyncio
-        from odoo.addons.ai_agent_core.core.provider import ProviderFactory, get_default_provider
-        from odoo.addons.ai_agent_core.core.tools import ToolRegistry, ai_tool_records_to_tools
-        from odoo.addons.ai_agent_core.core.loop import AgentLoop, AgentConfig, StreamingAgentLoop
+        from odoo.addons.ai_agent_core.core.provider import (
+            ProviderFactory, get_default_provider, Message, Role)
+        from odoo.addons.ai_agent_core.core.tools import (
+            ToolRegistry, ai_tool_records_to_tools)
 
-        # Extract last user message
+        tools = tools or []
+
+        # Extract last user message (för sessionens name + init-prompt)
         user_messages = [m for m in messages if m.get('role') == 'user']
         if not user_messages:
             return Response(json.dumps({'error': {'message': 'No user message provided', 'type': 'invalid_request_error'}}),
@@ -2049,18 +2211,36 @@ class AIOpenAIAPI(http.Controller):
         prompt = _content_to_text(user_messages[-1].get('content'))
         system_prompt = quest.description or ''
 
-        # Inject conversation history as context
-        history_context = ''
-        if len(messages) > 1:
-            history_lines = []
-            for m in messages[:-1]:
-                role = m.get('role', 'user')
+        # ── Konvertera Pi:s messages → Message-objekt (ren generering) ──
+        # Behovar HELA historiken (inkl. role:'tool', tool_calls,
+        # tool_call_id) så att Pi:s loop kan fortsätta korrekt.
+        def _to_message_list(raw_messages):
+            out = []
+            for m in raw_messages:
+                role = (m.get('role') or '').strip()
+                try:
+                    role_enum = Role(role)
+                except ValueError:
+                    continue
                 content = _content_to_text(m.get('content'))
-                history_lines.append(f'[{role}] {content[:500]}')
-            history_context = '\n'.join(history_lines[-20:])
+                tool_call_id = m.get('tool_call_id')
+                name = m.get('name')
+                tool_calls = m.get('tool_calls') or None
+                if role == 'tool' and not tool_call_id:
+                    # OpenAI kräver tool_call_id på tool-roles
+                    continue
+                out.append(Message(
+                    role=role_enum, content=content,
+                    tool_call_id=tool_call_id, tool_calls=tool_calls,
+                    name=name,
+                ))
+            return out
 
-        if history_context:
-            system_prompt += f'\n\n## Previous conversation\n{history_context}'
+        msgs = _to_message_list(messages)
+        # Sista assistant-meddelandet får alltid korrekt content om det tomt
+        if not msgs:
+            return Response(json.dumps({'error': {'message': 'No valid messages', 'type': 'invalid_request_error'}}),
+                          status=400, content_type='application/json')
 
         # Skills (samma block som ai.coworker.run()): medarbetarens egna +
         # teamets agenters skills. Injiceras i request-kontexten så att även
@@ -2162,18 +2342,36 @@ class AIOpenAIAPI(http.Controller):
 
         def _persist_session(env, sess, response_text, input_t, output_t,
                              model_real='', tool_history=None):
-            """Persistera körningen till sessionen (session-cost-context 3.2)."""
+            """Persistera körningen till sessionen (session-cost-context 3.2).
+
+            Bokföring per meddelande: user-raden får requestens input-tokens
+            (prompt-kostnaden), assistant-raden får output-tokens + en
+            tool_calls-sammanfattning (granskningsbar kontext).
+            """
             try:
                 Line = env['ai.coworker.session.line']
+                sys_mult = 1.0
+                if model_real:
+                    ai_model = env['ai.model']._resolve_from_real(
+                        model_real, sess.coworker_id)
+                    if ai_model:
+                        sys_mult = ai_model.sys_multiplier
                 Line.create({
                     'session_id': sess.id, 'role': 'user',
                     'content': (prompt or '')[:2000], 'sequence': 1,
+                    'token_input': input_t, 'token_output': 0,
+                    'sys_multiplier': sys_mult,
                 })
                 Line.create({
                     'session_id': sess.id, 'role': 'assistant',
                     'content': response_text,
-                    'token_input': input_t, 'token_output': output_t,
+                    'token_input': 0, 'token_output': output_t,
                     'model_real': model_real or '', 'sequence': 2,
+                    'sys_multiplier': sys_mult,
+                    'tool_calls': json.dumps([
+                        {'name': n, 'preview': str(p)[:200]}
+                        for n, p in (tool_history or [])],
+                        ensure_ascii=False),
                 })
                 for i, (t_name, t_preview) in enumerate(tool_history or []):
                     Line.create({
@@ -2247,44 +2445,40 @@ class AIOpenAIAPI(http.Controller):
                         'Ingen AI-leverantör konfigurerad för medarbetaren. '
                         'Kontrollera agentens modell eller '
                         'ai_agent_core.default_model_id.')
-                # explicit-agent-tools: ENDAST settings-default + explicita
-                # verktyg — inga interna builtins per default.
-                tool_ids = quest._session_tool_ids(
-                    access_groups=request.env.user.groups_id.ids)
-                tools = ToolRegistry()
-                if tool_ids:
-                    # API-vägen (/ai/v1): NATS-verktyg kräver en lyssnande
-                    # Pi-agent — uteslut dem så LLM:n inte bränner rundor på
-                    # 30-60s timeouts (snabba svar).
-                    tool_recs = tool_env['ai.tool'].browse(tool_ids)
-                    tools.register_many(ai_tool_records_to_tools(
-                        tool_recs.filtered(
-                            lambda t: t.executor != 'nats'), tool_env))
+                if not provider_model:
+                    provider_model = model_name
 
-                loop_obj = AgentLoop(
-                    provider=provider, tools=tools,
-                    config=AgentConfig(
-                        model=model_name, system_prompt=system_prompt,
-                        max_rounds=6,
-                        nats_api_secret=_nats_api_secret,
-                        nats_max_retries=_nats_max_retries,
-                    ),
-                )
-
+                # HYBRID: REN generation — skicka Pi:s messages + tools
+                # (inkl. Pi:s lokala bash/ssh/salt) oförändrade till LLM:en.
+                # Odoo exekverar INTE verktyg här; tool_calls går tillbaka
+                # till Pi. Odoo-verktyg körs via /ai/v1/tools/run.
                 aloop = asyncio.new_event_loop()
                 asyncio.set_event_loop(aloop)
                 try:
-                    response = aloop.run_until_complete(loop_obj.run(prompt))
+                    response = aloop.run_until_complete(provider.chat(
+                        model=provider_model,
+                        messages=msgs,
+                        tools=tools,          # Pi:s lokala tool-schemas
+                        system_prompt=system_prompt,
+                        temperature=temperature,
+                        max_tokens=max_tokens,
+                    ))
                 finally:
                     aloop.close()
 
                 response_text = response.text if hasattr(response, 'text') else str(response)
                 response_id = f'chatcmpl-{coworker_id}-{fields.Datetime.now().timestamp()}'
+
+                # Bokför anropet. tool_calls (från coworkern) bokförs som
+                # granskningsbar kontext på assistant-raden.
+                tool_history = [
+                    (tc.name, json.dumps(tc.arguments)[:200])
+                    for tc in (response.tool_calls or [])]
                 _persist_session(
                     tool_env, _sess, response_text,
                     getattr(response, 'input_tokens', 0),
                     getattr(response, 'output_tokens', 0),
-                    model_ref, getattr(loop_obj, 'tool_history', []))
+                    model_ref, tool_history)
                 cost_ctx = {
                     'project_id': (
                         _sess.project_id.id
@@ -2298,6 +2492,20 @@ class AIOpenAIAPI(http.Controller):
                     'cost_context_confirmed': _sess.cost_context_confirmed,
                 }
 
+                # OpenAI-format och OFFRETFULLT: tool_calls skickas tillbaka
+                # till Pi så Pi exekverar dem (lokala tools själv, Odoo-tools
+                # via /ai/v1/tools/run).
+                msg = {'role': 'assistant', 'content': response_text}
+                if response.tool_calls:
+                    msg['tool_calls'] = [{
+                        'id': tc.id,
+                        'type': 'function',
+                        'function': {
+                            'name': tc.name,
+                            'arguments': json.dumps(tc.arguments),
+                        },
+                    } for tc in response.tool_calls]
+
                 return Response(json.dumps({
                     'id': response_id,
                     'object': 'chat.completion',
@@ -2307,8 +2515,11 @@ class AIOpenAIAPI(http.Controller):
                     'cost_context': cost_ctx,
                     'choices': [{
                         'index': 0,
-                        'message': {'role': 'assistant', 'content': response_text},
-                        'finish_reason': 'stop',
+                        'message': msg,
+                        'finish_reason': (
+                            response.finish_reason
+                            if hasattr(response, 'finish_reason')
+                            else 'stop'),
                     }],
                     'usage': {
                         'prompt_tokens': getattr(response, 'input_tokens', 0),
@@ -2389,6 +2600,12 @@ class AIOpenAIAPI(http.Controller):
                                 full_response.append(event.token)
                                 yield f'data: {json.dumps({"id": response_id, "object": "chat.completion.chunk", "created": created, "model": model_ref, "choices": [{"index": 0, "delta": {"content": event.token}}]})}\n\n'
                             elif event.type == 'done':
+                                # Verklig usage (aggregerad av loopen) —
+                                # bokförs på sessionen i stället för estimat.
+                                usage_state['input'] = getattr(
+                                    event, 'input_tokens', 0) or 0
+                                usage_state['output'] = getattr(
+                                    event, 'output_tokens', 0) or 0
                                 yield f'data: {json.dumps({"id": response_id, "object": "chat.completion.chunk", "created": created, "model": model_ref, "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]})}\n\n'
                                 # Session-info (session-cost-context 3.3) —
                                 # emitteras före [DONE] för klienter som
@@ -2402,6 +2619,7 @@ class AIOpenAIAPI(http.Controller):
 
                     aloop = asyncio.new_event_loop()
                     asyncio.set_event_loop(aloop)
+                    usage_state = {'input': 0, 'output': 0}
                     try:
                         async def _collect():
                             result = []
@@ -2414,9 +2632,9 @@ class AIOpenAIAPI(http.Controller):
                     try:
                         _persist_session(
                             _gen_env, _sess, ''.join(full_response),
-                            len(prompt) // 4,
-                            len(''.join(full_response)) // 4,
-                            model_ref, [])
+                            usage_state['input'] or (len(prompt) // 4),
+                            usage_state['output'] or (len(''.join(full_response)) // 4),
+                            model_ref, getattr(loop, 'tool_history', []))
                         _gen_cr.commit()
                     finally:
                         _gen_cr.close()

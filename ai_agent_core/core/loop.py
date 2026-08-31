@@ -806,6 +806,12 @@ class StreamingAgentLoop(AgentLoop):
 
         round_num = 0
 
+        # Verklig token-usage ackumuleras över alla rundor (providern
+        # rapporterar per anrop) och sätts på den slutgiltiga done-händelsen
+        # så web-chatten kan bokföra korrekt input/output per meddelande.
+        total_input_tokens = 0
+        total_output_tokens = 0
+
         while round_num < self.config.max_rounds:
             round_num += 1
 
@@ -847,6 +853,8 @@ class StreamingAgentLoop(AgentLoop):
                     yield event
 
                 elif event.type == "done":
+                    total_input_tokens += event.input_tokens or 0
+                    total_output_tokens += event.output_tokens or 0
                     if tool_calls_seen:
                         # Rundans text var NARRERING (agentens resonemang) —
                         # sänd som debug, inte som svar till användaren.
@@ -909,6 +917,10 @@ class StreamingAgentLoop(AgentLoop):
                         # SLUTGILTIGT SVAR — strömma den buffrade texten
                         for t in round_tokens:
                             yield TokenEvent(type="token", token=t)
+                        # Sätt ackumulerad usage på den slutgiltiga done —
+                        # klienten bokför riktiga input/output-tokens.
+                        event.input_tokens = total_input_tokens
+                        event.output_tokens = total_output_tokens
                         yield event
                         return
 
@@ -934,11 +946,17 @@ class StreamingAgentLoop(AgentLoop):
                 if event.type == "token":
                     yield event
                 elif event.type == "done":
+                    total_input_tokens += event.input_tokens or 0
+                    total_output_tokens += event.output_tokens or 0
+                    event.input_tokens = total_input_tokens
+                    event.output_tokens = total_output_tokens
                     yield event
                     return
         except Exception:
             pass
-        yield TokenEvent(type="done", finish_reason="max_rounds")
+        yield TokenEvent(
+            type="done", finish_reason="max_rounds",
+            input_tokens=total_input_tokens, output_tokens=total_output_tokens)
 
     @staticmethod
     def _extract_source_urls(result: str, tc: dict) -> list[str]:

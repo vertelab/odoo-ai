@@ -194,15 +194,8 @@
                             <field name="is_default"/>
                             <field name="heartbeat_enabled"/>
                         </group>
-                        <group string="Budget &amp; HITL">
+                        <group string="HITL">
                             <field name="hitl_threshold" widget="radio"/>
-                            <field name="monthly_cap_mtokens"/>
-                            <field name="budget_warning" readonly="1"/>
-                            <field name="budget_exhausted" readonly="1"/>
-                            <field name="burn_rate_mtokens_day" readonly="1"/>
-                            <field name="days_until_budget_empty" readonly="1"/>
-                            <field name="projected_empty_date" readonly="1"/>
-                            <field name="burn_rate_warning" widget="boolean_toggle" readonly="1"/>
                             <field name="active" widget="boolean_toggle"/>
                             <field name="last_heartbeat" readonly="1"/>
                         </group>
@@ -418,6 +411,21 @@
                         </page>
 -->
 
+                        <page string="Budget" name="budget">
+                            <group>
+                                <group string="Månadstak">
+                                    <field name="monthly_cap_mtokens"/>
+                                    <field name="budget_warning" readonly="1"/>
+                                    <field name="budget_exhausted" readonly="1"/>
+                                </group>
+                                <group string="Burn rate &amp; prognos" name="burn" >
+                                    <field name="burn_rate_mtokens_day" readonly="1"/>
+                                    <field name="days_until_budget_empty" readonly="1"/>
+                                    <field name="projected_empty_date" readonly="1"/>
+                                    <field name="burn_rate_warning" widget="boolean_toggle" readonly="1"/>
+                                </group>
+                            </group>
+                        </page>
                         <page string="Åtkomst" name="access">
                             <group>
                                 <group string="Användare &amp; grupper">
