@@ -2197,8 +2197,6 @@ class AIOpenAIAPI(http.Controller):
         import asyncio
         from odoo.addons.ai_agent_core.core.provider import (
             ProviderFactory, get_default_provider, Message, Role)
-        from odoo.addons.ai_agent_core.core.tools import (
-            ToolRegistry, ai_tool_records_to_tools)
 
         tools = tools or []
 
@@ -2399,15 +2397,7 @@ class AIOpenAIAPI(http.Controller):
             model_name = get_default_model_name()
 
         coworker_id = quest.id
-        # explicit-agent-tools: verktygs-ID:n fångas i request-kontext och
-        # används i generatorn (efter teardown). ENDAST settings-default +
-        # explicita verktyg — inga interna builtins per default.
-        _gen_tool_ids = list(quest._session_tool_ids(
-            access_groups=request.env.user.groups_id.ids))
-        _nats_api_secret = request.env['ir.config_parameter'].sudo().get_param(
-            'ai_agent_core.api_secret', '')
-        _nats_max_retries = int(request.env['ir.config_parameter'].sudo().get_param(
-            'pi.nats.max_retries', '3'))
+        # Request-kontext för generatorn (körs efter teardown)
         _gen_dbname = request.env.cr.dbname
         _gen_uid = request.env.uid
         _gen_context = dict(request.env.context)
@@ -2445,8 +2435,9 @@ class AIOpenAIAPI(http.Controller):
                         'Ingen AI-leverantör konfigurerad för medarbetaren. '
                         'Kontrollera agentens modell eller '
                         'ai_agent_core.default_model_id.')
-                if not provider_model:
-                    provider_model = model_name
+                # OBS: ProviderFactory returnerar (provider, ai.model-record),
+                # INTE modellnamn. Använd model_name (sträng) för provider.chat.
+                gen_model = model_name
 
                 # HYBRID: REN generation — skicka Pi:s messages + tools
                 # (inkl. Pi:s lokala bash/ssh/salt) oförändrade till LLM:en.
@@ -2456,7 +2447,7 @@ class AIOpenAIAPI(http.Controller):
                 asyncio.set_event_loop(aloop)
                 try:
                     response = aloop.run_until_complete(provider.chat(
-                        model=provider_model,
+                        model=gen_model,
                         messages=msgs,
                         tools=tools,          # Pi:s lokala tool-schemas
                         system_prompt=system_prompt,
@@ -2538,10 +2529,14 @@ class AIOpenAIAPI(http.Controller):
             # Streaming SSE
             _gen_provider, _gen_pmodel = ProviderFactory.from_coworker(quest)
             if not _gen_provider:
-                _gen_provider = get_default_provider()[0] 
+                _gen_provider = get_default_provider()[0]
+            # OBS: andra elementet är ai.model-record — använd model_name (sträng)
+            gen_model = model_name
 
             def generate():
                 full_response = []
+                aggregated_tool_calls = []  # (index, {id,name,arguments}) buffrar
+                tool_call_delta_buf = {}   # index → {'id','name','arguments','partial_idx'}
                 response_id = f'chatcmpl-{coworker_id}-{fields.Datetime.now().timestamp()}'
                 created = int(fields.Datetime.now().timestamp())
 
@@ -2568,49 +2563,79 @@ class AIOpenAIAPI(http.Controller):
                             _ai_context_id=_sess.id,
                             ai_lineage_session_id=_sess.id,
                         ))
-                        tools = ToolRegistry()
-                        # explicit-agent-tools: ENDAST settings-default +
-                        # explicita verktyg — inga interna builtins per
-                        # default. NATS-verktyg utesluts (kräver lyssnande
-                        # Pi-agent; annars 30-60s timeouts per anrop).
-                        if _gen_tool_ids:
-                            tool_recs = _gen_env['ai.tool'].browse(_gen_tool_ids)
-                            tool_recs = tool_recs.filtered(
-                                lambda t: t.executor != 'nats')
-                            if tool_recs:
-                                tools.register_many(ai_tool_records_to_tools(
-                                    tool_recs, _gen_env))
                     except Exception:
                         _gen_cr.close()
                         raise
 
-                    loop = StreamingAgentLoop(
-                        provider=provider, tools=tools,
-                        config=AgentConfig(
-                            model=model_name, system_prompt=_gen_sys_prompt,
-                            max_rounds=6,
-                            nats_api_secret=_nats_api_secret,
-                            nats_max_retries=_nats_max_retries,
-                        ),
-                    )
-
+                    # HYBRID: REN streaming-generering — Pi:s messages +
+                    # tools skickas oförändrade; tool_calls emitteras till Pi.
                     async def _stream():
-                        async for event in loop.run_stream(prompt):
-                            if event.type == 'token':
+                        async for event in provider.chat_stream(
+                            model=gen_model,
+                            messages=msgs,
+                            tools=tools,
+                            system_prompt=_gen_sys_prompt,
+                            temperature=temperature,
+                            max_tokens=max_tokens,
+                        ):
+                            if event.type == 'thinking':
+                                # DeepSeek/OpenRouter reasoning — vidarebefordra
+                                yield f'data: {json.dumps({"id": response_id, "object": "chat.completion.chunk", "created": created, "model": model_ref, "choices": [{"index": 0, "delta": {"reasoning_content": event.token}}]})}\n\n'
+                            elif event.type == 'token':
                                 full_response.append(event.token)
                                 yield f'data: {json.dumps({"id": response_id, "object": "chat.completion.chunk", "created": created, "model": model_ref, "choices": [{"index": 0, "delta": {"content": event.token}}]})}\n\n'
+                            elif event.type == 'tool_call_start':
+                                tc = event.tool_call
+                                idx = len(aggregated_tool_calls)
+                                aggregated_tool_calls.append({
+                                    'id': tc.id, 'name': tc.name,
+                                    'arguments': ''})
+                                tool_call_delta_buf[idx] = dict(
+                                    id=tc.id, name=tc.name, args='')
+                                yield f'data: {json.dumps({"id": response_id, "object": "chat.completion.chunk", "created": created, "model": model_ref, "choices": [{"index": 0, "delta": {"tool_calls": [{"index": idx, "id": tc.id, "type": "function", "function": {"name": tc.name, "arguments": ""}}]}}]})}\n\n'
+                            elif event.type == 'tool_call_delta':
+                                # Delvisa arguments-radsignaler — appenda
+                                tc = event.tool_call
+                                for idx, buf in tool_call_delta_buf.items():
+                                    if buf['id'] == tc.id:
+                                        if idx < len(aggregated_tool_calls):
+                                            aggregated_tool_calls[idx]['arguments'] += tc.arguments
+                                        yield f'data: {json.dumps({"id": response_id, "object": "chat.completion.chunk", "created": created, "model": model_ref, "choices": [{"index": 0, "delta": {"tool_calls": [{"index": idx, "function": {"arguments": tc.arguments}}]}}]})}\n\n'
+                                        break
+                            elif event.type == 'tool_call_end':
+                                tc = event.tool_call
+                                # Hitta buffrad tool_call eller lägg till ny.
+                                idx = None
+                                for i, ent in enumerate(aggregated_tool_calls):
+                                    if ent['id'] == tc.id:
+                                        idx = i
+                                        break
+                                full_args = json.dumps(tc.arguments)
+                                if idx is None:
+                                    aggregated_tool_calls.append({
+                                        'id': tc.id, 'name': tc.name,
+                                        'arguments': full_args})
+                                    idx = len(aggregated_tool_calls) - 1
+                                else:
+                                    aggregated_tool_calls[idx]['name'] = tc.name
+                                    aggregated_tool_calls[idx]['arguments'] = \
+                                        full_args
+                                # Emittera KOMPLETTA arguments för tool_calls
+                                # (providern buffrar och ger inga tool_call_delta
+                                # — skicka full args nu så Pi bygger rätt anrop).
+                                yield f'data: {json.dumps({"id": response_id, "object": "chat.completion.chunk", "created": created, "model": model_ref, "choices": [{"index": 0, "delta": {"tool_calls": [{"index": idx, "function": {"name": tc.name, "arguments": full_args}}]}}]})}\n\n'
                             elif event.type == 'done':
-                                # Verklig usage (aggregerad av loopen) —
-                                # bokförs på sessionen i stället för estimat.
+                                # Verklig usage — bokförs på sessionen.
                                 usage_state['input'] = getattr(
                                     event, 'input_tokens', 0) or 0
                                 usage_state['output'] = getattr(
                                     event, 'output_tokens', 0) or 0
-                                yield f'data: {json.dumps({"id": response_id, "object": "chat.completion.chunk", "created": created, "model": model_ref, "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]})}\n\n'
-                                # Session-info (session-cost-context 3.3) —
-                                # emitteras före [DONE] för klienter som
-                                # Pi-extensionen (testbryggan ignorerar
-                                # events utan choices).
+                                # finish_reason: tool_calls om verktyg, annars ev. stop
+                                if aggregated_tool_calls:
+                                    yield f'data: {json.dumps({"id": response_id, "object": "chat.completion.chunk", "created": created, "model": model_ref, "choices": [{"index": 0, "delta": {}, "finish_reason": "tool_calls"}]})}\n\n'
+                                else:
+                                    yield f'data: {json.dumps({"id": response_id, "object": "chat.completion.chunk", "created": created, "model": model_ref, "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]})}\n\n'
+                                # Session-info (session-cost-context 3.3)
                                 yield f'data: {json.dumps({"session_id": _sess.id, "cost_context": {"project_id": _sess.project_id.id if "project_id" in _sess._fields and _sess.project_id else None, "task_id": _sess.task_id.id if "task_id" in _sess._fields and _sess.task_id else None, "partner_id": _sess.partner_id.id if _sess.partner_id else None, "cost_context_confirmed": _sess.cost_context_confirmed}})}\n\n'
                                 yield 'data: [DONE]\n\n'
                             elif event.type == 'error':
@@ -2630,11 +2655,14 @@ class AIOpenAIAPI(http.Controller):
                     finally:
                         aloop.close()
                     try:
+                        tool_history = [
+                            (tc['name'], tc['arguments'][:200])
+                            for tc in aggregated_tool_calls]
                         _persist_session(
                             _gen_env, _sess, ''.join(full_response),
                             usage_state['input'] or (len(prompt) // 4),
                             usage_state['output'] or (len(''.join(full_response)) // 4),
-                            model_ref, getattr(loop, 'tool_history', []))
+                            model_ref, tool_history)
                         _gen_cr.commit()
                     finally:
                         _gen_cr.close()
@@ -2660,6 +2688,189 @@ class AIOpenAIAPI(http.Controller):
                     'X-Accel-Buffering': 'no',
                 }
             )
+
+    # ── Odoo-tools för hybriden (pi+odoo) ────────────────────────────
+
+    @http.route('/ai/v1/<string:coworker>/tools', type='http', auth='public',
+                methods=['GET'], csrf=False, sitemap=False)
+    def coworker_tools(self, coworker, **kw):
+        """GET /ai/v1/<coworker>/tools — Odoo-verktygens schemas.
+
+        Hybriden: Pi hämtar coworkerns Odoo-verktyg och registrerar dem som
+        Pi-tools med en handler som anropar /ai/v1/tools/run. Coworkern kan
+        då använda Odoo-förmågor (describe_model, odoo_search, task_get …)
+        samtidigt som Pi behåller sina LOKALA tools (bash/ssh/salt).
+        Access-filtreras per autentiserad användares grupper; NATS-verktyg
+        utesluts (kräver lyssnande Pi-agent).
+        """
+        if not self._check_api_key():
+            return Response(json.dumps({
+                'error': {'message': 'Unauthorized',
+                          'type': 'authentication_error'}}),
+                status=401, content_type='application/json')
+
+        quest = self._resolve_coworker(coworker)
+        if not quest:
+            return Response(json.dumps({'error': {
+                'message': f"Coworker '{coworker}' not found. See /ai/v1/models",
+                'type': 'invalid_request_error'
+            }}), status=404, content_type='application/json')
+
+        try:
+            from odoo.addons.ai_agent_core.core.tools import (
+                ToolRegistry, ai_tool_records_to_tools)
+            # Samma verktygsurval som _run_coworker_chat tidigare hämtade:
+            # settings-default + explicita verktyg, access-filtrerat.
+            tool_ids = quest._session_tool_ids(
+                access_groups=request.env.user.groups_id.ids)
+            tool_env = request.env(context=dict(
+                request.env.context,
+                _ai_context_model='ai.coworker.session',
+            ))
+            reg = ToolRegistry()
+            if tool_ids:
+                recs = tool_env['ai.tool'].browse(tool_ids).filtered(
+                    lambda t: t.executor != 'nats')
+                tools = ai_tool_records_to_tools(recs, tool_env)
+                reg.register_many(tools)
+            schemas = reg.to_openai()
+        except Exception as e:
+            _logger.error('coworker_tools error: %s', e, exc_info=True)
+            return Response(json.dumps({'error': {
+                'message': str(e), 'type': 'server_error'}}),
+                status=500, content_type='application/json')
+
+        return Response(json.dumps({
+            'object': 'list',
+            'data': schemas,
+            'coworker': self._coworker_alias(quest),
+        }), content_type='application/json')
+
+    @http.route('/ai/v1/tools/run', type='http', auth='public',
+                methods=['POST'], csrf=False, sitemap=False)
+    def tools_run(self, **kw):
+        """POST /ai/v1/tools/run — exekvera Odoo-verktyg med full kontext.
+
+        Hybriden återinbäddar: när coworkerns LLM returnerar en tool_call för
+        ett Odoo-verktyg (som Pi inte kan exekvera lokalt), skickar Pi den
+        hit. Odoo exekverar verktyget med den autentiserade användarens
+        rättigheter och sessionens kostnadskontext — aldrig Pi→Odoo-RPC
+        direkt. Body: {"session_id": N, "tool_calls": [{id, name, arguments}]}.
+        Returnerar {results: [{name, result, is_error}]}.
+        """
+        if not self._check_api_key():
+            return Response(json.dumps({
+                'error': {'message': 'Unauthorized',
+                          'type': 'authentication_error'}}),
+                status=401, content_type='application/json')
+        try:
+            body = json.loads(request.httprequest.data or '{}')
+        except json.JSONDecodeError:
+            return Response(json.dumps({
+                'error': {'message': 'Invalid JSON',
+                          'type': 'invalid_request_error'}}),
+                status=400, content_type='application/json')
+
+        session_id = int(body.get('session_id') or 0)
+        pi_session_id = (body.get('pi_session_id') or '').strip()
+        coworker_ref = (body.get('coworker') or '').strip()
+        tool_calls = body.get('tool_calls') or []
+        if not tool_calls:
+            return Response(json.dumps({
+                'error': {'message': 'Missing tool_calls',
+                          'type': 'invalid_request_error'}}),
+                status=400, content_type='application/json')
+
+        import asyncio
+        Sess = request.env['ai.coworker.session'].sudo()
+        sess = Sess.browse(session_id) if session_id else Sess.browse(0)
+        if not sess.exists() and pi_session_id:
+            sess = Sess.search([('pi_session_id', '=', pi_session_id)],
+                               limit=1)
+        if not sess.exists():
+            # Fallback: använd den autentiserade användarens senaste aktiva
+            # session för sammanhang; annars körs med user-kontext enbart.
+            sess = Sess.search([
+                ('user_id', '=', request.env.user.id),
+                ('status', '=', 'active'),
+            ], limit=1)
+
+        try:
+            quest = sess.coworker_id if sess.exists() else Sess.browse(0)
+            if not quest.exists() and coworker_ref:
+                # Sessionen kan sakna coworker_id (t.ex. Pi-extensionens
+                # sessions/lookup-väg) — lös istället via det skickade alias:et.
+                quest = self._resolve_coworker(coworker_ref)
+            if not quest.exists():
+                return Response(json.dumps({'error': {
+                    'message': 'No coworker session context; pass a valid session_id or coworker',
+                    'type': 'invalid_request_error'}}),
+                    status=400, content_type='application/json')
+
+            from odoo.addons.ai_agent_core.core.tools import (
+                ToolRegistry, ai_tool_records_to_tools)
+
+            # Autentiserad användares rättigheter (ej sudo för grupp-koll),
+            # med session-kontext för verktygens ORM-anrop.
+            tool_env = request.env(context=dict(
+                request.env.context,
+                _ai_context_model='ai.coworker.session',
+                _ai_context_id=sess.id,
+                ai_lineage_session_id=sess.id,
+            ))
+            tool_ids = quest._session_tool_ids(
+                access_groups=request.env.user.groups_id.ids)
+            reg = ToolRegistry()
+            if tool_ids:
+                recs = tool_env['ai.tool'].browse(tool_ids).filtered(
+                    lambda t: t.executor != 'nats')
+                reg.register_many(ai_tool_records_to_tools(recs, tool_env))
+
+            aloop = asyncio.new_event_loop()
+            asyncio.set_event_loop(aloop)
+
+            async def _run_one(tc):
+                name = tc.get('name', '')
+                args = tc.get('arguments') or {}
+                if isinstance(args, str):
+                    try:
+                        args = json.loads(args)
+                    except Exception:
+                        args = {}
+                if not isinstance(args, dict):
+                    args = {}
+                # Normalisera nästlad 'arguments'-nyckel (samma som loop.py)
+                if 'arguments' in args and set(args.keys()) == {'arguments'}:
+                    args = args['arguments']
+                tool = reg.get(name)
+                if not tool:
+                    return {'name': name,
+                            'result': f"Unknown or not-allowed tool '{name}'",
+                            'is_error': True}
+                try:
+                    result = await tool.execute(**args)
+                    return {'name': name, 'result': str(result),
+                            'is_error': False}
+                except Exception as e:
+                    return {'name': name,
+                            'result': f'Tool error ({name}): {e}',
+                            'is_error': True}
+
+            try:
+                results = aloop.run_until_complete(asyncio.gather(
+                    *[_run_one(tc) for tc in tool_calls]))
+            finally:
+                aloop.close()
+
+            return Response(json.dumps({
+                'session_id': sess.id if sess.exists() else 0,
+                'results': results,
+            }), content_type='application/json')
+        except Exception as e:
+            _logger.error('tools/run error: %s', e, exc_info=True)
+            return Response(json.dumps({'error': {
+                'message': str(e), 'type': 'server_error'}}),
+                status=500, content_type='application/json')
 
     # ── Coworker resolution ───────────────────────────────────────────
 
