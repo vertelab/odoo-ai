@@ -1347,21 +1347,34 @@ class AICoworker(models.Model):
                 rec._set_init_type(itype, bool(rec[field_name]))
 
     def _set_init_type(self, itype, enabled):
-        """Aktivera/deaktivera en init_type-rad; skapa raden om den saknas."""
-        rec = self._get_active_init(itype)
-        if enabled and not rec:
-            row = self.init_type_ids.filtered(
-                lambda it: it.init_type == itype)[:1]
-            if row:
-                row.enabled = True
+        """Aktivera/deaktivera en init_type-rad; skapa raden om den saknas.
+
+        Konsoliderar duplikatrader för typen om de finns (känd bugg
+        2026-09-02) — behåller en rad och återanvänder den.
+        """
+        rows = self.env['ai.coworker.init_type'].search([
+            ('coworker_id', '=', self.id),
+            ('init_type', '=', itype),
+        ])
+        if len(rows) > 1:
+            active = [r for r in rows if r.enabled]
+            keep = active[0] if active else rows[0]
+            for r in rows:
+                if r.id != keep.id:
+                    r.unlink()
+            rows = keep
+        if enabled:
+            if rows:
+                if not rows.enabled:
+                    rows.enabled = True
             else:
-                row = self.env['ai.coworker.init_type'].create({
+                self.env['ai.coworker.init_type'].create({
                     'coworker_id': self.id,
                     'init_type': itype,
                     'enabled': True,
                 })
-        elif not enabled and rec:
-            rec.enabled = False
+        elif rows and rows.enabled:
+            rows.enabled = False
 
     @api.depends('init_type_ids', 'init_type_ids.enabled',
                  'init_type_ids.init_type', 'init_type_ids.watch_model_id',
@@ -2670,7 +2683,13 @@ class AICoworker(models.Model):
         rader skapas/aktiveras automatiskt av _inverse_active_init_types.
         """
         for rec in self:
-            existing = {it.init_type for it in rec.init_type_ids}
+            rec._dedupe_init_types()
+            # Sök-baserad (inte bara One2many-cache) — cachen kan vara stale
+            # direkt efter create(), vilket annars skapar duplikatrader.
+            existing = {
+                r.init_type for r in self.env['ai.coworker.init_type'].search(
+                    [('coworker_id', '=', rec.id)])
+            }
             for itype, _label in INIT_TYPES:
                 if itype not in existing:
                     self.env['ai.coworker.init_type'].create({
@@ -2680,7 +2699,32 @@ class AICoworker(models.Model):
                         # skapas avstängda men synliga i kryssrute-UI:t.
                         'enabled': itype in ('manual', 'web_ui'),
                         'sequence': 10,
-                    })    # ── Record Context Injection (ported from ai_agent_context) ──
+                    })
+
+    def _dedupe_init_types(self):
+        """Konsolidera duplikatrader per init_type (behåll en aktiv, radera resten).
+
+        Känd bugg 2026-09-02: `_ensure_all_init_types` kunde skapa en andra rad
+        för samma init_type när One2many-cachen var stale (t.ex. coworker 20
+        'Allmän assistent' hade två web_ui-rader: id 152 + 5882). Denna metod
+        ser till att det bara finns EN rad per init_type.
+        """
+        for rec in self:
+            by_type = {}
+            for it in self.env['ai.coworker.init_type'].search(
+                    [('coworker_id', '=', rec.id)]):
+                by_type.setdefault(it.init_type, []).append(it)
+            for itype, rows in by_type.items():
+                if len(rows) <= 1:
+                    continue
+                active = [r for r in rows if r.enabled]
+                keep = active[0] if active else rows[0]
+                for r in rows:
+                    if r.id != keep.id:
+                        r.unlink()
+                _logger.warning(
+                    'ai.coworker %s: tog bort %d duplikatrader för init_type=%s (behåller id %d)',
+                    rec.id, len(rows) - 1, itype, keep.id)    # ── Record Context Injection (ported from ai_agent_context) ──
 
     def _build_injection_prompt(self, user=None, agent=None, prompt='',
                                 record=None, max_chars=6000):
