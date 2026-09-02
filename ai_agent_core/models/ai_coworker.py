@@ -1343,14 +1343,27 @@ class AICoworker(models.Model):
 
     def _inverse_init_booleans(self):
         for rec in self:
+            # Jämför önskat värde (rec[field]) mot init_type-radens FAKTISKA
+            # enabled-status (DB-sanningen via init_type_ids). Endast fält med
+            # avvikelse processas — annars deaktiverar varje write() alla
+            # andra init-typer ('chat försvinner när jag väljer openai api').
             for field_name, itype in self._INIT_BOOLEAN_MAP:
-                rec._set_init_type(itype, bool(rec[field_name]))
+                row = rec.init_type_ids.filtered(
+                    lambda it: it.init_type == itype)[:1]
+                row_enabled = bool(row.enabled) if row else False
+                wanted = bool(rec[field_name])
+                if wanted != row_enabled:
+                    rec._set_init_type(itype, wanted)
 
     def _set_init_type(self, itype, enabled):
         """Aktivera/deaktivera en init_type-rad; skapa raden om den saknas.
 
         Konsoliderar duplikatrader för typen om de finns (känd bugg
         2026-09-02) — behåller en rad och återanvänder den.
+        Arbetar via One2many-kommandon på self.init_type_ids så att
+        cachen hålls synkroniserad med DB (annars ser efterföljande
+        _compute_init_booleans en stale cache och skriver tillbaka False,
+        vilket ger 'init-typer tar ut varandra'-buggen).
         """
         rows = self.env['ai.coworker.init_type'].search([
             ('coworker_id', '=', self.id),
