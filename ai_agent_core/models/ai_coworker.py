@@ -1301,28 +1301,17 @@ class AICoworker(models.Model):
     # ── Initiering: en Boolean per typ (kryssruta). Vanliga Boolean-fält
     #    gör att invisible på konfig-fälten fungerar direkt i onchange —
     #    mycket pålitligare än many2many_checkboxes + computed has_*.
-    init_web_ui = fields.Boolean('Web Chat UI',
-        compute='_compute_init_booleans', inverse='_inverse_init_booleans')
-    init_chat = fields.Boolean('Discuss — Private Chat',
-        compute='_compute_init_booleans', inverse='_inverse_init_booleans')
-    init_channel = fields.Boolean('Discuss — Team Channel',
-        compute='_compute_init_booleans', inverse='_inverse_init_booleans')
-    init_mail = fields.Boolean('Incoming Mail',
-        compute='_compute_init_booleans', inverse='_inverse_init_booleans')
-    init_cron = fields.Boolean('Scheduled Action',
-        compute='_compute_init_booleans', inverse='_inverse_init_booleans')
-    init_server_action = fields.Boolean('Server Action',
-        compute='_compute_init_booleans', inverse='_inverse_init_booleans')
-    init_powerbox = fields.Boolean('Powerbox',
-        compute='_compute_init_booleans', inverse='_inverse_init_booleans')
-    init_manual = fields.Boolean('Manual',
-        compute='_compute_init_booleans', inverse='_inverse_init_booleans')
-    init_webhook = fields.Boolean('Webhook',
-        compute='_compute_init_booleans', inverse='_inverse_init_booleans')
-    init_openai_api = fields.Boolean('OpenAI API',
-        compute='_compute_init_booleans', inverse='_inverse_init_booleans')
-    init_watch = fields.Boolean('Watch — Dataändring',
-        compute='_compute_init_booleans', inverse='_inverse_init_booleans')
+    init_web_ui = fields.Boolean('Web Chat UI')
+    init_chat = fields.Boolean('Discuss — Private Chat')
+    init_channel = fields.Boolean('Discuss — Team Channel')
+    init_mail = fields.Boolean('Incoming Mail')
+    init_cron = fields.Boolean('Scheduled Action')
+    init_server_action = fields.Boolean('Server Action')
+    init_powerbox = fields.Boolean('Powerbox')
+    init_manual = fields.Boolean('Manual')
+    init_webhook = fields.Boolean('Webhook')
+    init_openai_api = fields.Boolean('OpenAI API')
+    init_watch = fields.Boolean('Watch — Dataändring')
 
     _INIT_BOOLEAN_MAP = [
         ('init_web_ui', 'web_ui'), ('init_chat', 'chat'),
@@ -1332,28 +1321,6 @@ class AICoworker(models.Model):
         ('init_webhook', 'webhook'), ('init_openai_api', 'openai_api'),
         ('init_watch', 'watch'),
     ]
-
-    @api.depends('init_type_ids', 'init_type_ids.enabled', 'init_type_ids.init_type')
-    def _compute_init_booleans(self):
-        for rec in self:
-            enabled = set(
-                it.init_type for it in rec.init_type_ids if it.enabled)
-            for field_name, itype in self._INIT_BOOLEAN_MAP:
-                rec[field_name] = itype in enabled
-
-    def _inverse_init_booleans(self):
-        for rec in self:
-            # Jämför önskat värde (rec[field]) mot init_type-radens FAKTISKA
-            # enabled-status (DB-sanningen via init_type_ids). Endast fält med
-            # avvikelse processas — annars deaktiverar varje write() alla
-            # andra init-typer ('chat försvinner när jag väljer openai api').
-            for field_name, itype in self._INIT_BOOLEAN_MAP:
-                row = rec.init_type_ids.filtered(
-                    lambda it: it.init_type == itype)[:1]
-                row_enabled = bool(row.enabled) if row else False
-                wanted = bool(rec[field_name])
-                if wanted != row_enabled:
-                    rec._set_init_type(itype, wanted)
 
     def _set_init_type(self, itype, enabled):
         """Aktivera/deaktivera en init_type-rad; skapa raden om den saknas.
@@ -5111,7 +5078,43 @@ class AICoworker(models.Model):
         res = super(AICoworker, self).write(vals)
         if any(k in vals for k in ('orchestration_mode', 'channel_id', 'is_supervisor')):
             self._sync_buzz_agents_to_channel()
+        # Synka init_type_ids från stored init_*-booleans. Stored-fält (ej
+        # computed+inverse) är den pålitliga Odoo-vägen — computed+inverse
+        # rekomputerar icke-ändrade fält till False och deaktiverar dem
+        # ('chat försvinner när jag väljer openai api').
+        if any(k in vals for k, _it in self._INIT_BOOLEAN_MAP):
+            for rec in self:
+                rec._sync_init_types_from_booleans()
         return res
+
+    def _sync_init_types_from_booleans(self):
+        """Skapa/aktivera/deaktivera init_type-rader från stored init_*-booleans."""
+        for field_name, itype in self._INIT_BOOLEAN_MAP:
+            wanted = bool(self[field_name])
+            rows = self.env['ai.coworker.init_type'].search([
+                ('coworker_id', '=', self.id),
+                ('init_type', '=', itype),
+            ])
+            # Konsolidera duplikater (känd bugg 2026-09-02) — behåll en rad.
+            if len(rows) > 1:
+                active = [r for r in rows if r.enabled]
+                keep = active[0] if active else rows[0]
+                for r in rows:
+                    if r.id != keep.id:
+                        r.unlink()
+                rows = keep
+            if wanted:
+                if rows:
+                    if not rows.enabled:
+                        rows.enabled = True
+                else:
+                    self.env['ai.coworker.init_type'].create({
+                        'coworker_id': self.id,
+                        'init_type': itype,
+                        'enabled': True,
+                    })
+            elif rows and rows.enabled:
+                rows.enabled = False
 
     def _sync_buzz_agents_to_channel(self):
         """Sync agent partners to channel when buzz mode or channel changes."""
@@ -5329,6 +5332,13 @@ class AICoworker(models.Model):
             # (many2many_checkboxes) kan visa varje typ som kryssruta.
             try:
                 record._ensure_all_init_types()
+                # Synka stored init_*-booleans från de seedade raderna
+                # (stored-fält-vägen, ej computed+inverse).
+                record._sync_init_types_from_booleans()
+                record.invalidate_recordset(['init_web_ui', 'init_chat',
+                    'init_channel', 'init_mail', 'init_cron',
+                    'init_server_action', 'init_powerbox', 'init_manual',
+                    'init_webhook', 'init_openai_api', 'init_watch'])
             except Exception as e:
                 _logger.warning('Could not seed init types for %s: %s',
                               record.name, e)
