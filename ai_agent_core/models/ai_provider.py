@@ -409,23 +409,29 @@ class AIProvider(models.Model):
         }
 
         # Berika med providerns rika config (context/pris).
-        # Bevara manuellt angivna värden på befintliga poster, men skriv
-        # över exakt-aldrig-satta fätldefault: en admin som satt 200000
-        # behåller det, medan en post med default 128000 uppdateras till
-        # config-värdet (t.ex. OR+deepseek → 1M).
+        # fix-context-sync: för Bifrost-gateway är /v1/config AUKTORITATIV
+        # (katalogen ägs av combo-adaptern, inte admin här) — uppdatera alltid
+        # context/max från config, inkl. 0. Direkta providers (OpenAI etc.)
+        # behåller admin-manuella värden: bara fyll på 0/default.
         DEFAULT_CTX = 128000
         DEFAULT_MAXOUT = 16384
         if config_meta:
             ctx = config_meta.get('context')
-            if ctx:
-                cur = existing.context_window if existing else 0
-                if not cur or cur == DEFAULT_CTX:
-                    vals['context_window'] = int(ctx)
             mo = config_meta.get('max_output')
-            if mo:
-                cur = existing.max_output_tokens if existing else 0
-                if not cur or cur == DEFAULT_MAXOUT:
+            if self.provider_type == 'bifrost':
+                if ctx is not None:
+                    vals['context_window'] = int(ctx)
+                if mo is not None:
                     vals['max_output_tokens'] = int(mo)
+            else:
+                if ctx:
+                    cur = existing.context_window if existing else 0
+                    if not cur or cur == DEFAULT_CTX:
+                        vals['context_window'] = int(ctx)
+                if mo:
+                    cur = existing.max_output_tokens if existing else 0
+                    if not cur or cur == DEFAULT_MAXOUT:
+                        vals['max_output_tokens'] = int(mo)
             # Pris per token (adaptern) → per 1K-token (ai.model).
             ci = config_meta.get('cost_input')
             co = config_meta.get('cost_output')

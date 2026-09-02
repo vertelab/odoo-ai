@@ -333,13 +333,17 @@ class AICoworkerInitType(models.Model):
                 self.base_automation_id = automation.id
                 _logger.info('Created base_automation %s for watch init', auto_name)
             else:
-                # Update existing automation
+                # Update existing automation — respektera manuellt avstängt
+                # base_automation (fix-watch-async): skriv INTE 'active': True
+                # här, annars ångrar nästa moduluppdatering en avstängning
+                # (2026-09-01-incidenten: avstängd automation återaktiverades
+                # av _ensure_watch). Operatorn aktiverar via watch_active på
+                # init_type (related till base_automation.active).
                 self.base_automation_id.write({
                     'name': auto_name,
                     'model_id': self.watch_model_id.id,
                     'trigger': trigger,
                     'filter_domain': self.watch_domain or '',
-                    'active': True,
                 })
                 # Se till att kopplad server action finns (äldre rader saknar den)
                 action = self.base_automation_id.action_server_ids[:1]
@@ -397,46 +401,16 @@ class AICoworkerInitType(models.Model):
     def _trigger_watch(self, records):
         """Called by base_automation when watched data changes.
 
-        Creates a session and runs the coworker with the changed record
-        as context.
+        fix-watch-async: tunn delegator till coworkerns _trigger_watch
+        (som skapar sessionen i watch-kön och returnerar direkt — LLM
+        körs asynkront av cron _process_watch_sessions). En enda källa
+        till sanning så båda anropsvägarna är transaktionssäkra.
         """
         self.ensure_one()
         coworker = self.coworker_id
         if not coworker or not records:
             return
-
-        # Budget check before acting
-        try:
-            warning, exhausted = coworker.check_cap()
-            if exhausted:
-                _logger.info('Watch %s skipped: budget exhausted', coworker.name)
-                return
-        except Exception:
-            pass
-
-        for record in records[:3]:  # Max 3 records per trigger
-            try:
-                session = self.env['ai.coworker.session'].create({
-                    'coworker_id': coworker.id,
-                    'name': f'Watch: {record._name} {record.id}',
-                    'status': 'active',
-                    'user_id': self.env.ref('base.user_root').id,
-                })
-                prompt = (
-                    f'A data change was detected on record '
-                    f'{record.display_name or record.id} ({record._name}).\n'
-                    f'Review the record and take appropriate action.\n\n'
-                    f'Record details:\n{record.name or record.display_name or record.id}'
-                )
-                coworker.with_context(
-                    _ai_context_model=record._name,
-                    _ai_context_id=record.id,
-                ).run(session=session, prompt=prompt)
-                _logger.info('Watch %s: processed %s %s',
-                            coworker.name, record._name, record.id)
-            except Exception as e:
-                _logger.error('Watch processing failed for %s: %s',
-                            coworker.name, e)
+        return coworker._trigger_watch(records)
 
     def _ensure_mail_alias(self):
         """Create/update mail alias.

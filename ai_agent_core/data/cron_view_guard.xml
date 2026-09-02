@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- sv_SE view-translation guard:
+         Vertel i18n_extra/sv.po (crm) translated FIELD NAMES inside
+         invisible expressions (duplicate_lead_count -> duplicate_kundamne_count,
+         use_leads -> use_kundamnen) which breaks Odoo 18 expression parser.
+         This cron corrects idempotently - protects even when someone runs
+         checkmodule (load-language=sv applies the po file) without
+         updating ai_agent_core. Deactivate once the po file is fixed. -->
+    <record id="ir_actions_server_view_translation_guard" model="ir.actions.server">
+        <field name="name">AI: Korrigera sv_SE-vyoversattningar</field>
+        <field name="model_id" ref="model_ir_ui_view"/>
+        <field name="state">code</field>
+        <field name="code">
+model._fix_swedish_view_arch()
+        </field>
+    </record>
+
+    <record id="cron_view_translation_guard" model="ir.cron">
+        <field name="name">AI: Korrigera sv_SE-vyoversattningar</field>
+        <field name="cron_name">AI: Korrigera sv_SE-vyoversattningar</field>
+        <field name="ir_actions_server_id" ref="ir_actions_server_view_translation_guard"/>
+        <field name="interval_number">30</field>
+        <field name="interval_type">minutes</field>
+        <field name="active">True</field>
+        <field name="user_id" ref="base.user_root"/>
+    </record>
+</odoo>

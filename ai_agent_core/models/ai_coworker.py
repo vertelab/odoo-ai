@@ -2614,6 +2614,14 @@ class AICoworker(models.Model):
             self._adopt_seed_agent_tools()
         except Exception as e:
             _logger.warning('adopt seed agent tools misslyckades: %s', e)
+        # sv_SE-vyöversättningsvakt (view-translation-guard): korrigera
+        # översatta fältnamn i vyer — skyddar mot felaktig i18n_extra/sv.po
+        # (crm) som annars återskapas av --load-language=sv vid uppdatering.
+        try:
+            if 'ir.ui.view' in self.env:
+                self.env['ir.ui.view']._fix_swedish_view_arch()
+        except Exception as e:
+            _logger.warning('view-translation-guard misslyckades: %s', e)
         return watch_count + mail_count
 
     def _adopt_seed_agent_tools(self):
@@ -2672,9 +2680,7 @@ class AICoworker(models.Model):
                         # skapas avstängda men synliga i kryssrute-UI:t.
                         'enabled': itype in ('manual', 'web_ui'),
                         'sequence': 10,
-                    })
-
-    # ── Record Context Injection (ported from ai_agent_context) ──
+                    })    # ── Record Context Injection (ported from ai_agent_context) ──
 
     def _build_injection_prompt(self, user=None, agent=None, prompt='',
                                 record=None, max_chars=6000):
@@ -4061,11 +4067,47 @@ class AICoworker(models.Model):
         '</svg>'
     )
 
+    def _filter_watch_records(self, records, watch):
+        """Filtrera watch-records: watch_domain + systemkontext-spärr.
+
+        - watch_domain ("Apply on"): Odoo 18 base_automation stödjer inte
+          filter_domain för on_create_or_write, så vi filtrerar här (som
+          tidigare).
+        - Systemkontext-spärr (fix-watch-async): hoppa över records skapade
+          av systemet (SUPERUSER — mail-routning/fetchmail, automationer,
+          importer). Watch ska reagera på mänsklig dataändring, inte på
+          maskin-genererade records — mail-genererade partners var det som
+          utlöste 2026-09-01-incidenten.
+        """
+        filtered = records
+        if watch.watch_domain:
+            try:
+                from odoo.tools.safe_eval import safe_eval
+                filtered = filtered.filtered_domain(
+                    safe_eval(watch.watch_domain))
+            except Exception as e:
+                _logger.warning('watch_domain-filtrering misslyckades: %s', e)
+        # Systemkontext-spärr: create_uid == SUPERUSER → systemgenererat.
+        # fetchmail/message_process skapar partners som root (name_create
+        # i cron-kontext), så dessa exkluderas här.
+        try:
+            if filtered and 'create_uid' in filtered._fields:
+                filtered = filtered.filtered(
+                    lambda r: r.create_uid.id != SUPERUSER_ID)
+        except Exception as e:
+            _logger.warning('watch systemkontext-spärr misslyckades: %s', e)
+        return filtered
+
     def _trigger_watch(self, records):
         """Anropas av base_automation när bevakad data ändras.
 
-        Hämtar watch-init_type:en, filtrerar records på watch_domain och
-        kör medarbetaren med den ändrade posten som kontext.
+        Skapar en session i watch-kön och returnerar DIREKT — kör ALDRIG
+        LLM här. Själva AI-körningen sker asynkront i cron
+        (_process_watch_sessions) i en egen transaktion per session, så en
+        AI-failure kan inte abortera anroparens transaktion (t.ex.
+        mail-routning). Före fix-watch-async kördes coworker.run() synkront
+        här — det aborterade mail-transaktioner med "current transaction is
+        aborted" (2026-09-01-incidenten).
         """
         self.ensure_one()
         if not records:
@@ -4075,16 +4117,7 @@ class AICoworker(models.Model):
             _logger.warning('_trigger_watch: ingen aktiv watch-init för %s',
                             self.name)
             return
-        # Filtrera på watch_domain ("Apply on" — Odoo 18 base_automation
-        # stödjer inte filter_domain för on_create_or_write, så vi filtrerar här)
-        filtered = records
-        if watch.watch_domain:
-            try:
-                from odoo.tools.safe_eval import safe_eval
-                filtered = records.filtered_domain(
-                    safe_eval(watch.watch_domain))
-            except Exception as e:
-                _logger.warning('watch_domain-filtrering misslyckades: %s', e)
+        filtered = self._filter_watch_records(records, watch)
         if not filtered:
             return
         # Budget check
@@ -4097,21 +4130,22 @@ class AICoworker(models.Model):
             pass
         for record in filtered[:3]:
             try:
-                session = self.env['ai.coworker.session'].create({
+                self.env['ai.coworker.session'].create({
                     'coworker_id': self.id,
                     'name': f'Watch: {record._name} {record.id}',
                     'status': 'active',
+                    'watch_pending': True,
+                    'watch_prompt': (
+                        f'En dataändring upptäcktes på record '
+                        f'{record.display_name or record.id} ({record._name}).\n'
+                        f'Granska recordet och agera lämpligt.\n'
+                    ),
+                    'watch_model': record._name,
+                    'watch_res_id': record.id,
                     'user_id': self.env.ref('base.user_root').id,
                 })
-                prompt = (
-                    f'En dataändring upptäcktes på record '
-                    f'{record.display_name or record.id} ({record._name}).\n'
-                    f'Granska recordet och agera lämpligt.\n'
-                )
-                self.with_context(_ai_context_model=record._name,
-                                  _ai_context_id=record.id).run(prompt)
             except Exception as e:
-                _logger.warning('Watch-körning misslyckades: %s', e)
+                _logger.warning('Watch-kö misslyckades: %s', e)
 
     def action_run_scheduled(self):
         """Run this quest as a scheduled automation.

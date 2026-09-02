@@ -45,6 +45,25 @@ class AICoworkerSession(models.Model):
         ('done', 'Done'), ('error', 'Error'),
     ], default='draft')
 
+    # ── Watch-kö (fix-watch-async) ───────────────────────────────────
+    # _trigger_watch skapar sessionen med watch_pending=True och returnerar
+    # DIREKT — AI-körningen sker asynkront i cron (_process_watch_sessions)
+    # i en egen transaktion, så en AI-failure kan aldrig abortera anroparens
+    # transaktion (t.ex. mail-routning).
+    watch_pending = fields.Boolean(
+        'Watch Pending', default=False, index=True,
+        help='Satt av _trigger_watch — sessionen väntar på asynkron '
+             'bearbetning av cron (_process_watch_sessions).')
+    watch_prompt = fields.Text(
+        'Watch Prompt',
+        help='Prompt som genererades vid watch-trigger — körs av cron.')
+    watch_model = fields.Char(
+        'Watch Model',
+        help='Modellnamn (record._name) som triggade watchen.')
+    watch_res_id = fields.Integer(
+        'Watch Record ID',
+        help='Record-id som triggade watchen.')
+
     config_json = fields.Text('Configuration')
     history_json = fields.Text('Message History')
 
@@ -497,6 +516,53 @@ class AICoworkerSession(models.Model):
                 _logger.warning('Kunde inte posta fördröjt svar %s: %s',
                                 session.id, e)
         return len(due)
+
+    @api.model
+    def _process_watch_sessions(self):
+        """Cron: processa watch-kön i egna transaktioner per session.
+
+        Körs av ir.cron (cron_watch_process, 1 minut). Hämtar sessioner
+        med watch_pending=True och kör coworkern med den sparade prompten
+        via run(prompt, session=session) — sessionen återanvänds (ingen
+        dubbel-session) och run() sätter status='done'/'error' själv.
+        Varje session körs i en savepoint så en misslyckad session inte
+        påverkar de andra. AI-körningen sker ALDRIG i base_automation-
+        transaktionen (fix-watch-async).
+
+        Returns:
+            int: antal processade sessioner.
+        """
+        sessions = self.search([
+            ('watch_pending', '=', True),
+            ('status', '=', 'active'),
+        ], limit=10)
+        processed = 0
+        for session in sessions:
+            coworker = session.coworker_id
+            if not coworker:
+                try:
+                    session.write(
+                        {'watch_pending': False, 'status': 'error'})
+                except Exception:
+                    pass
+                continue
+            try:
+                with self.env.cr.savepoint():
+                    coworker.with_context(
+                        _ai_context_model=session.watch_model,
+                        _ai_context_id=session.watch_res_id,
+                    ).run(session.watch_prompt or '', session=session)
+                session.write({'watch_pending': False})
+                processed += 1
+            except Exception as e:
+                _logger.warning('Watch-session %s misslyckades: %s',
+                                session.id, e)
+                try:
+                    session.write(
+                        {'watch_pending': False, 'status': 'error'})
+                except Exception:
+                    pass
+        return processed
 
     # ── Mail-trigger-flöden ──────────────────────────────────────────────
 

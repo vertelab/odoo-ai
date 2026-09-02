@@ -212,6 +212,35 @@ the coworker is triggered. All 10 init types are auto-seeded on creation.
 | `webhook` | `POST /ai/webhook/<id>` | Webhook controller | `webhook_secret` |
 | `openai_api` | `POST /ai/openai/<id>/v1/...` | OpenAI API controller | API key, rate limits |
 | `manual` | Programmatic `run()` | `run()` | None |
+| `watch` | `base_automation` on model change | async queue → cron | `watch_model_id`, `watch_domain`, `watch_trigger` |
+
+### Watch (dataändring) — asynkron kö (fix-watch-async, 18.0.1.164)
+
+`watch` triggas av en `base.automation` när data ändras (t.ex. `res.partner`
+`on_create_or_write`). **AI-körningen sker ALDRIG i base_automation-transaktionen**:
+
+1. `_trigger_watch` (på `ai.coworker`) skapar en `ai.coworker.session` med
+   `watch_pending=True` + sparad prompt (`watch_prompt`, `watch_model`,
+   `watch_res_id`) och returnerar omedelbart.
+2. Cron **"AI: Processera watch-kön"** (`cron_watch_process.xml`, 1 minut)
+   anropar `ai.coworker.session._process_watch_sessions()` som hämtar
+   `watch_pending`-sessioner och kör `run(prompt, session=session)` per
+   session i egen savepoint. En misslyckad session påverkar inte andra;
+   `run()` sätter `status='done'`/`'error'` själv.
+
+Detta förhindrar att en långsam/fallerande LLM-körning aborterar
+anroparens transaktion (2026-09-01-incidenten: mail→ärende dog med
+"current transaction is aborted").
+
+**Spärr mot systemgenererade records:** `_trigger_watch` filtrerar bort
+records skapade av SUPERUSER (`create_uid != 1` — mail-routning/fetchmail
+skapar partners som root) samt `watch_domain` om satt. Watch ska reagera
+på mänsklig dataändring.
+
+**Viktigt för drift:** `_ensure_watch` skriver INTE `active=True` på en
+base_automation som stängts av manuellt — respekterar operatorns val.
+Aktivera/avaktivera watch via init_type (`enabled`/`watch_active`).
+
 
 ### Response Modes (chat/channel)
 
