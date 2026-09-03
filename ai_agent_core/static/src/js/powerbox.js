@@ -111,10 +111,19 @@ const powerboxMixin = {
     },
 
     _detectModel() {
-        // Get model and res_id from the current view context
+        // Get model and res_id from the current view context.
+        // Odoo 18: record.resModel/resId är den pålitliga källan i
+        // form-views; context.active_model kan vara tom i fältkomponenter.
+        const record = this.props?.record || {};
         const context = this.props?.context || this.env?.searchModel?.context || {};
-        this._powerboxModel = context.active_model || this.props?.record?.resModel || "";
-        this._powerboxResId = context.active_id || this.props?.record?.resId || null;
+        this._powerboxModel =
+            record.resModel ||
+            context.active_model ||
+            this.env?.searchModel?.resModel ||
+            this.props?.model ||
+            "";
+        this._powerboxResId =
+            record.resId ?? context.active_id ?? null;
     },
 
     /**
@@ -124,6 +133,9 @@ const powerboxMixin = {
         if (this._powerboxActive) return;
         this._powerboxActive = true;
         this._powerboxFieldValue = fieldValue || "";
+
+        // Hämta färsk modell/res_id vid varje öppning — record kan vara sent känd.
+        this._detectModel();
 
         try {
             // Fetch available powerbox quests for this model
