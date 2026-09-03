@@ -73,14 +73,13 @@ function getRecordContext(plugin) {
 
 /** Infoga HTML vid markeringen. */
 function insertHtml(plugin, html) {
-    const selection = plugin.dependencies.selection.getEditableSelection();
     const dom = plugin.dependencies.dom;
     const history = plugin.dependencies.history;
-    if (history) history.step();
+    if (history && typeof history.addStep === "function") history.addStep();
     try {
-        dom.insert(selection, html);
+        dom.insert(html);
     } finally {
-        if (history) history.step();
+        if (history && typeof history.addStep === "function") history.addStep();
     }
 }
 
