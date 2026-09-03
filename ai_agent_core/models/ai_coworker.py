@@ -4925,7 +4925,7 @@ class AICoworker(models.Model):
             )
         """
         self.ensure_one()
-        if self.init_type != 'powerbox':
+        if 'powerbox' not in self.init_type_ids.filtered('enabled').mapped('init_type'):
             _logger.warning('powerbox called on non-powerbox quest %s', self.name)
 
         # Init-type-scoping (odoo-model-tools change 2.2): powerbox begränsas

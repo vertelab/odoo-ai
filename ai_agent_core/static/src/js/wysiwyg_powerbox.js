@@ -49,7 +49,7 @@ async function runPowerbox(quest, prompt, resModel, resId) {
             model: resModel,
             res_id: resId,
         }),
-        signal: AbortSignal.timeout(120000),
+        signal: AbortSignal.timeout(240000),
     });
     const data = await resp.json();
     if (data.error) throw new Error(data.error);
@@ -100,6 +100,22 @@ function replaceAll(plugin, html) {
     } finally {
         if (history && typeof history.addStep === "function") history.addStep();
     }
+}
+
+/** Visa en enkel "bearbetar"-skärm med spinner. */
+function showLoading() {
+    const el = document.createElement("div");
+    el.style.cssText =
+        "position:fixed;top:0;left:0;right:0;bottom:0;z-index:9999;background:rgba(255,255,255,.75);display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px;";
+    const spinner = document.createElement("div");
+    spinner.className = "spinner-border text-primary";
+    spinner.setAttribute("role", "status");
+    const label = document.createElement("div");
+    label.textContent = _t("AI-medarbetaren bearbetar…");
+    label.style.cssText = "color:#495057;font-weight:500;";
+    el.append(spinner, label);
+    document.body.appendChild(el);
+    return { close: () => el.remove() };
 }
 
 /** Visa en overlay med förhandsvisning + knappar Ersätt / Lägg till / Avbryt. */
@@ -154,8 +170,10 @@ async function promptAndRun(plugin, quest, initialText) {
         initialText || ""
     );
     if (prompt === null) return;
+    const loading = showLoading();
     try {
         const result = await runPowerbox(quest, prompt, resModel, resId);
+        loading.close();
         if (!result) {
             window.alert(_t("Medarbetaren returnerade inget resultat."));
             return;
@@ -169,6 +187,7 @@ async function promptAndRun(plugin, quest, initialText) {
         }
         // "cancel" → gör inget
     } catch (e) {
+        loading.close();
         window.alert(_t("AI-fel: ") + (e.message || String(e)));
     }
 }
