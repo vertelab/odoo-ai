@@ -71,7 +71,7 @@ function getRecordContext(plugin) {
     return { resModel, resId };
 }
 
-/** Infoga HTML vid markeringen. */
+/** Infoga HTML vid markeringen (utan att byta ut hela innehållet). */
 function insertHtml(plugin, html) {
     const dom = plugin.dependencies.dom;
     const history = plugin.dependencies.history;
@@ -83,7 +83,70 @@ function insertHtml(plugin, html) {
     }
 }
 
-/** Visa prompt och kör en medarbetare. */
+/** Ersätt hela fältets innehåll med resultatet. */
+function replaceAll(plugin, html) {
+    const history = plugin.dependencies.history;
+    const dom = plugin.dependencies.dom;
+    const selection = plugin.dependencies.selection;
+    if (history && typeof history.addStep === "function") history.addStep();
+    try {
+        // Välj allt i editable och infoga resultatet (dom.insert ersätter selektionen).
+        selection.setSelection({ editable: plugin.editable, start: 0, end: plugin.editable.innerHTML.length });
+        selection.setCollapsed();
+        plugin.editable.innerHTML = "";
+        const sel = selection.getEditableSelection();
+        // Enklare: sätt innerHTML direkt (hela fältet)
+        plugin.editable.innerHTML = html;
+    } finally {
+        if (history && typeof history.addStep === "function") history.addStep();
+    }
+}
+
+/** Visa en overlay med förhandsvisning + knappar Ersätt / Lägg till / Avbryt. */
+function showPreviewOverlay(plugin, result, originalHtml) {
+    return new Promise((resolve) => {
+        const overlay = document.createElement("div");
+        overlay.style.cssText =
+            "position:fixed;top:0;left:0;right:0;bottom:0;z-index:10000;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;";
+        const box = document.createElement("div");
+        box.style.cssText =
+            "background:#fff;border-radius:8px;max-width:720px;width:92%;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 10px 40px rgba(0,0,0,.3);";
+        const header = document.createElement("div");
+        header.style.cssText = "padding:14px 18px;font-weight:600;border-bottom:1px solid #dee2e6;display:flex;justify-content:space-between;align-items:center;";
+        header.textContent = _t("AI-förslag");
+        const headerNote = document.createElement("small");
+        headerNote.style.cssText = "color:#6c757d;";
+        headerNote.textContent = _t("Granska förslaget innan du infogar");
+        header.appendChild(headerNote);
+        const body = document.createElement("div");
+        body.style.cssText = "padding:16px 18px;overflow:auto;flex:1;border-bottom:1px solid #dee2e6;";
+        body.innerHTML = result; // rendered — tillåter formatering
+        const footer = document.createElement("div");
+        footer.style.cssText = "padding:12px 18px;display:flex;gap:8px;justify-content:flex-end;";
+        const btnReplace = document.createElement("button");
+        btnReplace.textContent = _t("Ersätt");
+        btnReplace.className = "btn btn-primary";
+        const btnInsert = document.createElement("button");
+        btnInsert.textContent = _t("Lägg till");
+        btnInsert.className = "btn btn-secondary";
+        const btnCancel = document.createElement("button");
+        btnCancel.textContent = _t("Avbryt");
+        btnCancel.className = "btn btn-outline-secondary";
+        footer.append(btnReplace, btnInsert, btnCancel);
+
+        const cleanup = () => overlay.remove();
+        btnReplace.onclick = () => { cleanup(); resolve("replace"); };
+        btnInsert.onclick = () => { cleanup(); resolve("insert"); };
+        btnCancel.onclick = () => { cleanup(); resolve("cancel"); };
+        overlay.onclick = (e) => { if (e.target === overlay) { cleanup(); resolve("cancel"); } };
+
+        box.append(header, body, footer);
+        overlay.appendChild(box);
+        document.body.appendChild(overlay);
+    });
+}
+
+/** Visa prompt och kör en medarbetare — med overlay (granska + Ersätt/Lägg till/Avbryt). */
 async function promptAndRun(plugin, quest, initialText) {
     const { resModel, resId } = getRecordContext(plugin);
     const prompt = window.prompt(
@@ -93,8 +156,18 @@ async function promptAndRun(plugin, quest, initialText) {
     if (prompt === null) return;
     try {
         const result = await runPowerbox(quest, prompt, resModel, resId);
-        if (result) insertHtml(plugin, result);
-        else window.alert(_t("Medarbetaren returnerade inget resultat."));
+        if (!result) {
+            window.alert(_t("Medarbetaren returnerade inget resultat."));
+            return;
+        }
+        const originalHtml = plugin.editable?.innerHTML || "";
+        const action = await showPreviewOverlay(plugin, result, originalHtml);
+        if (action === "replace") {
+            replaceAll(plugin, result);
+        } else if (action === "insert") {
+            insertHtml(plugin, result);
+        }
+        // "cancel" → gör inget
     } catch (e) {
         window.alert(_t("AI-fel: ") + (e.message || String(e)));
     }
