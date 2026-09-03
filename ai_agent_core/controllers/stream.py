@@ -1170,7 +1170,8 @@ class AIStreamController(http.Controller):
         Returns AI-processed text.
         """
         body = json.loads(request.httprequest.data or '{}')
-        coworker_id = body.get('coworker_id')
+        # Frontend (powerbox.js) skickar quest_id — alias för coworker_id.
+        coworker_id = body.get('coworker_id') or body.get('quest_id')
         text = body.get('text', '').strip()
         model = body.get('model', '')
         res_id = body.get('res_id')
