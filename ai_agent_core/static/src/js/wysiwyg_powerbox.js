@@ -126,10 +126,16 @@ export class AIPowerboxPlugin extends Plugin {
 // Hooka in i PowerboxPlugin: lägg till dynamiska per-medarbetare commands
 // i "AI-verktyg"-kategorin. INTE async — search_powerbox_plugin anropar
 // getAvailablePowerboxCommands() utan await (förväntar synkron array).
+// OBS: getAvailablePowerboxCommands är en SHARED-metod (bindas via
+// shared-mekanismen) → patch-`_super` injiceras inte — spara original-
+// metoden explicit.
+const _origGetAvailablePowerboxCommands =
+    PowerboxPlugin.prototype.getAvailablePowerboxCommands;
+
 let aiPluginInstance = null;
 patch(PowerboxPlugin.prototype, {
     getAvailablePowerboxCommands() {
-        const baseCommands = this._super(...arguments);
+        const baseCommands = _origGetAvailablePowerboxCommands.call(this);
         if (!aiPluginInstance || !aiPluginInstance._quests?.length) return baseCommands;
 
         // Lägg till ett kommando per medarbetare (i samma "ai"-kategori).
