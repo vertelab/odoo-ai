@@ -87,7 +87,31 @@ function insertHtml(plugin, html) {
             selection.setCursorEnd(plugin.editable);
         }
         if (history && typeof history.addStep === "function") history.addStep();
-        dom.insert(html);
+        // dom.insert(html) med sträng sätter textContent → visar rå HTML.
+        // Infoga via innerHTML-manipulation vid markören så HTML renderas.
+        const node = document.createElement("div");
+        node.innerHTML = html;
+        const frag = node.firstChild;
+        if (frag) {
+            const docSel = plugin.document.getSelection();
+            if (docSel && docSel.rangeCount) {
+                const range = docSel.getRangeAt(0);
+                docSel.removeAllRanges();
+                plugin.editable.focus();
+                const newRange = plugin.document.createRange();
+                // Infoga efter markören
+                range.deleteContents();
+                const selNode = range.endContainer;
+                const selOffset = range.endOffset;
+                selNode.parentNode.insertBefore(frag, selOffset >= selNode.childNodes.length ? null : selNode.childNodes[selOffset]);
+                // Sätt markören efter infogat
+                newRange.setStartAfter(frag);
+                newRange.collapse(true);
+                docSel.addRange(newRange);
+            } else {
+                plugin.editable.appendChild(frag);
+            }
+        }
     } finally {
         if (history && typeof history.addStep === "function") history.addStep();
     }
