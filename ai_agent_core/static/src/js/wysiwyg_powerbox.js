@@ -75,8 +75,18 @@ function getRecordContext(plugin) {
 function insertHtml(plugin, html) {
     const dom = plugin.dependencies.dom;
     const history = plugin.dependencies.history;
-    if (history && typeof history.addStep === "function") history.addStep();
+    const selection = plugin.dependencies.selection;
     try {
+        // Se till att editorn är i fokus och markören ligger i den (efter
+        // overlay/loading-interaktion kan den ha förlorat fokus).
+        plugin.editable?.focus?.();
+        const docSel = plugin.document?.getSelection?.();
+        const inEditable =
+            docSel && (selection.isSelectionInEditable?.(docSel) ?? false);
+        if (!inEditable) {
+            selection.setCursorEnd(plugin.editable);
+        }
+        if (history && typeof history.addStep === "function") history.addStep();
         dom.insert(html);
     } finally {
         if (history && typeof history.addStep === "function") history.addStep();
