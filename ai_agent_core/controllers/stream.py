@@ -1127,20 +1127,29 @@ class AIStreamController(http.Controller):
 
         Called by the frontend slash-command widget when user types '/'.
         Returns quests filtered by the record's model.
-        """
-        if not model:
-            return Response(json.dumps({"quests": []}),
-                          content_type='application/json')
 
-        quests = request.env['ai.coworker'].sudo().search([
+        Fix 2026-09-03: tom/None modell får INTE returnera tom lista — då
+        försvinner alla coworkers. Frontend kan anropa med model='' när
+        det aktuella fältet inte har en känd modell; då visas de
+        obegränsade (model_ids=False = tillgängliga överallt).
+        """
+        model = (model or '').strip()
+        domain = [
             ('status', '=', 'active'),
             ('active', '=', True),
             ('init_type_ids.init_type', '=', 'powerbox'),
             ('init_type_ids.enabled', '=', True),
-            '|',
-            ('model_ids.model', '=', model),
-            ('model_ids', '=', False),  # No model restriction = available on all
-        ], order='sequence asc, name asc')
+        ]
+        if model:
+            domain += ['|',
+                       ('model_ids.model', '=', model),
+                       ('model_ids', '=', False)]
+        else:
+            # Ingen känd modell — visa de obegränsade (inga modellkrav).
+            domain += [('model_ids', '=', False)]
+
+        quests = request.env['ai.coworker'].sudo().search(
+            domain, order='sequence asc, name asc')
 
         return Response(json.dumps({
             "quests": [{
