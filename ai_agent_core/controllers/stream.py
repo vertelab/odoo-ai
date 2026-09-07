@@ -531,9 +531,10 @@ class AIStreamController(http.Controller):
 
                     # Fresh cursor + env for the post-teardown phase:
                     # tool handlers run ORM calls while streaming.
-                    from odoo import api as _api, registry as _registry
+                    from odoo import api as _api
+                    from odoo.modules.registry import Registry as _Registry
                     state = {'loop_obj': None}
-                    with _registry(gen_dbname).cursor() as gen_cr:
+                    with _Registry(gen_dbname).cursor() as gen_cr:
                         gen_env = _api.Environment(gen_cr, gen_uid, gen_context)
                         results = loop.run_until_complete(_collect(_stream(gen_env)))
                         # Efter streamen: persistera verktygsanrop som

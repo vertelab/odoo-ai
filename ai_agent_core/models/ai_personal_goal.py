@@ -42,7 +42,7 @@ class AIPersonalGoal(models.Model):
     time_bound = fields.Date('Time-bound — deadline')
 
     # Status
-    progress = fields.Float('Progress %', default=0.0, group_operator="avg")
+    progress = fields.Float('Progress %', default=0.0, aggregator="avg")
     status = fields.Selection([
         ('proposed', 'AI-suggested'),
         ('accepted', 'Accepted'),

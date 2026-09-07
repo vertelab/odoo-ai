@@ -105,7 +105,9 @@ class AIOkfUpload(models.Model):
         text = ''
         try:
             if category == 'text':
-                text = attach._index_content() or ''
+                # Odoo 18: _index_content() togs bort — läs raw och avkoda som text
+                raw = attach.raw or b''
+                text = raw.decode('utf-8', errors='replace')
             elif category == 'pdf':
                 text = self._normalize_pdf(attach)
             elif category == 'docx':

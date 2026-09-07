@@ -1195,7 +1195,7 @@ class AICoworker(models.Model):
         compute='_compute_init_type_fields', inverse='_inverse_init_type_fields',
         store=False, help='Model att bevaka för dataändringar.')
     watch_model_name = fields.Char(
-        related='watch_model_id.model', string='Watch Model Name',
+        compute='_compute_init_type_fields', string='Watch Model Name',
         readonly=True, store=False)
     # Speglar base_automation.trigger — samma värden.
     watch_trigger = fields.Selection([
@@ -1384,6 +1384,9 @@ class AICoworker(models.Model):
         for rec in self:
             watch = rec._get_active_init('watch')
             rec.watch_model_id = watch.watch_model_id if watch else False
+            rec.watch_model_name = (
+                watch.watch_model_id.model if watch and watch.watch_model_id
+                else False)
             rec.watch_trigger = (watch.watch_trigger
                                  if watch else 'on_create_or_write')
             rec.watch_domain = watch.watch_domain if watch else False

@@ -59,7 +59,7 @@ class AIOrgGoal(models.Model):
 
     # Progress
     progress = fields.Float('Progress %', default=0.0,
-        group_operator='avg', compute='_compute_progress', store=True,
+        aggregator='avg', compute='_compute_progress', store=True,
         help='Automatiskt beräknad som snitt av alla key results. '
              'Kan överskridas manuellt.')
 
