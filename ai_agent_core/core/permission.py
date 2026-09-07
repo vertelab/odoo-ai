@@ -79,7 +79,7 @@ _RISK_LEVEL_TO_CLASS: dict[str, RiskClass] = {
 
 # Tool names that are always READ (bypass metadata)
 _ALWAYS_READ = {
-    "calculator", "web_search", "fetch_url", "echo",
+    "odoo_calculator", "odoo_web_search", "odoo_fetch_url", "echo",
     "search_read", "read", "todo_write", "load_skill",
     # Generic Odoo model tools (read-only)
     "describe_model", "odoo_search", "okf_search", "graph_query",

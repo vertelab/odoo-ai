@@ -145,7 +145,7 @@ class TestToolRegistry(unittest.TestCase):
         tools = builtin_tools()
         self.assertGreaterEqual(len(tools), 2)
         names = {t.name for t in tools}
-        self.assertIn("calculator", names)
+        self.assertIn("odoo_calculator", names)
         self.assertIn("echo", names)
 
 

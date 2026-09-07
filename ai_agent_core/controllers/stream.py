@@ -2206,7 +2206,7 @@ class AIOpenAIAPI(http.Controller):
         # Alltid behåll ett litet bas-set (kärnförmågor oavsett uppgift)
         BAS = {
             'bash', 'read', 'edit', 'write', 'grep', 'find', 'ls',
-            'describe_model', 'fetch_url', 'calculator', 'okf_search',
+            'describe_model', 'odoo_fetch_url', 'odoo_calculator', 'okf_search',
         }
 
         # Sammanställ uppgiftstexten (senaste meddelanden)

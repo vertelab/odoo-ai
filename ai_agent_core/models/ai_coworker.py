@@ -2645,7 +2645,7 @@ class AICoworker(models.Model):
             'describe_model', 'odoo_search', 'odoo_create',
             'odoo_call_method', 'odoo_write', 'odoo_unlink', 'okf_search',
         ])
-        _adopt('agent_research', ['web_search', 'fetch_url'])
+        _adopt('agent_research', ['odoo_web_search', 'odoo_fetch_url'])
         _adopt('agent_invoice_partner', [
             'describe_model', 'odoo_search', 'odoo_create',
         ])
@@ -3399,7 +3399,7 @@ class AICoworker(models.Model):
             'bearbetar YouTube-innehåll via youtube-skills.',
             skills=('youtube-transcript', 'youtube-search',
                     'youtube-channels', 'youtube-playlist', 'youtube-full'),
-            tools=('web_search', 'fetch_url'),
+            tools=('odoo_web_search', 'odoo_fetch_url'),
         )
         _ensure_link(keep, research_agent, role='member', sequence=30)
 
@@ -4481,7 +4481,7 @@ class AICoworker(models.Model):
 
         Registrerar ENDAST:
         1. Settings-default-verktyg (default_tool_ids — säkra kundverktyg:
-           calculator, web_search, fetch_url)
+           odoo_calculator, odoo_web_search, odoo_fetch_url)
         2. Agenternas explicita tool_ids (ai.agent.tool_ids — inkl. builtin-
            poster som resolvas till riktiga handlers via builtin_name)
         3. Coworkerns explicita tool_ids (custom tools)
@@ -4814,7 +4814,7 @@ class AICoworker(models.Model):
                                            'fetch error:', 'no results found',
                                            'nats ')):
                             etype = ('search_error'
-                                     if t_name == 'web_search'
+                                     if t_name == 'odoo_web_search'
                                      else 'tool_error')
                             err_model.create({
                                 'session_id': session.id,

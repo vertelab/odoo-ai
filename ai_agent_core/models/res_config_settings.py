@@ -115,9 +115,9 @@ class ResConfigSettings(models.TransientModel):
     # interna förmågor (odoo-verktyg, inventory, builder, NATS) per default.
     # Interna verktyg läggs på agenten EXPLICIT via ai.agent.tool_ids.
     DEFAULT_AGENT_TOOL_NAMES = [
-        'calculator',
-        'web_search',
-        'fetch_url',
+        'odoo_calculator',
+        'odoo_web_search',
+        'odoo_fetch_url',
         'youtube_get_transcript',
         'youtube_search',
         'youtube_channel',

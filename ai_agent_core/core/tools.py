@@ -158,16 +158,20 @@ async def _tool_calculator(expression: str) -> str:
         return f"Error: {e}"
 
 
-async def _tool_web_search(query: str = "") -> str:
+async def _tool_web_search(query: str = "", max_results: int = 5) -> str:
     """Search the web. Uses DuckDuckGo (DDGS); fallback till HTML-scrape
     om cert-laddning misslyckas (odoo-användaren saknar läsrätt till
     /usr/local/share/ca-certificates/mycacert.crt)."""
     if not query or not query.strip():
         return "Error: query is required"
+    try:
+        max_results = max(1, min(int(max_results or 5), 15))
+    except (TypeError, ValueError):
+        max_results = 5
     # 1. DDGS (primärt)
     try:
         from duckduckgo_search import DDGS
-        results = list(DDGS().text(query, max_results=5))
+        results = list(DDGS().text(query, max_results=max_results))
         if results:
             return "\n".join(
                 f"{i+1}. {r.get('title','?')}\n   {r.get('body','')[:200]}\n   {r.get('href','')}"
@@ -192,7 +196,7 @@ async def _tool_web_search(query: str = "") -> str:
         soup = BeautifulSoup(r.text, 'html.parser')
         results = []
         seen_urls = set()
-        for res in soup.select('.result')[:8]:
+        for res in soup.select('.result')[:max_results + 3]:
             a = res.select_one('.result__a')
             s = res.select_one('.result__snippet')
             if a:
@@ -207,7 +211,7 @@ async def _tool_web_search(query: str = "") -> str:
                     continue
                 seen_urls.add(href)
                 results.append(f"{len(results)+1}. {title}\n   {snippet[:200]}\n   {href}")
-            if len(results) >= 5:
+            if len(results) >= max_results:
                 break
         if results:
             return "\n".join(results)
@@ -216,10 +220,16 @@ async def _tool_web_search(query: str = "") -> str:
         return f"Search error: {e}"
 
 
-async def _tool_fetch_url(url: str = "") -> str:
+async def _tool_fetch_url(url: str = "", max_length: int = 5000) -> str:
     """Fetch and extract text content from a URL."""
     if not url:
         return "Error: url is required"
+    if not (url.startswith('http://') or url.startswith('https://')):
+        return f"Error: invalid URL '{url}'. URL must start with http:// or https://"
+    try:
+        max_length = max(1000, min(int(max_length or 5000), 20000))
+    except (TypeError, ValueError):
+        max_length = 5000
     try:
         import httpx
         try:
@@ -235,7 +245,7 @@ async def _tool_fetch_url(url: str = "") -> str:
         for tag in soup(['script', 'style', 'nav', 'footer', 'header']):
             tag.decompose()
         text = soup.get_text(separator=' ', strip=True)
-        return text[:5000] if len(text) > 5000 else text
+        return text[:max_length] if len(text) > max_length else text
     except ImportError as e:
         return f"Error: {e}. Run: pip install httpx beautifulsoup4"
     except Exception as e:
@@ -474,14 +484,15 @@ def builtin_tools() -> list[Tool]:
     """Return built-in test tools for development."""
     return [
         Tool(
-            name="calculator",
-            description="Evaluate a mathematical expression. Supports +, -, *, /, and parentheses.",
+            name="odoo_calculator",
+            description="Evaluate a mathematical expression safely. Supports +, -, *, /, parentheses, "
+                        "and basic arithmetic. Returns the numeric result as a string.",
             parameters={
                 "type": "object",
                 "properties": {
                     "expression": {
                         "type": "string",
-                        "description": "The mathematical expression to evaluate",
+                        "description": "The mathematical expression to evaluate (e.g. '12 * (3 + 4) / 2')",
                     }
                 },
                 "required": ["expression"],
@@ -491,15 +502,21 @@ def builtin_tools() -> list[Tool]:
             source="builtin",
         ),
         Tool(
-            name="web_search",
-            description="Search the web using DuckDuckGo. Returns top 5 results with title, snippet, and URL.",
+            name="odoo_web_search",
+            description="Search the web for current information. Uses DuckDuckGo (free, no API key). "
+                        "Returns top results with title, snippet, and URL. Good for finding documentation, "
+                        "news, or anything online.",
             parameters={
                 "type": "object",
                 "properties": {
                     "query": {
                         "type": "string",
-                        "description": "Search query (10 words or less)",
-                    }
+                        "description": "The search query (e.g. 'latest Odoo 18 release notes')",
+                    },
+                    "max_results": {
+                        "type": "integer",
+                        "description": "Maximum number of results to return (1-15, default 5)",
+                    },
                 },
                 "required": ["query"],
             },
@@ -508,15 +525,21 @@ def builtin_tools() -> list[Tool]:
             source="builtin",
         ),
         Tool(
-            name="fetch_url",
-            description="Fetch and extract text content from a URL. Returns the main text content of the page.",
+            name="odoo_fetch_url",
+            description="Fetch and read the text content of a web page. Strips HTML tags and returns plain "
+                        "text. Useful for reading articles, documentation, blogs, or API docs. "
+                        "Validate the URL starts with http:// or https:// before calling.",
             parameters={
                 "type": "object",
                 "properties": {
                     "url": {
                         "type": "string",
-                        "description": "The URL to fetch",
-                    }
+                        "description": "The full URL to fetch (must include http:// or https://)",
+                    },
+                    "max_length": {
+                        "type": "integer",
+                        "description": "Maximum characters to return (1000-20000, default 5000)",
+                    },
                 },
                 "required": ["url"],
             },

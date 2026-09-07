@@ -31,8 +31,8 @@ class TestRiskClassification(unittest.TestCase):
     """RiskClass classification (task 1.3)."""
 
     def test_read_tools_are_read(self):
-        self.assertEqual(classify("web_search"), RiskClass.READ)
-        self.assertEqual(classify("calculator"), RiskClass.READ)
+        self.assertEqual(classify("odoo_web_search"), RiskClass.READ)
+        self.assertEqual(classify("odoo_calculator"), RiskClass.READ)
         self.assertEqual(classify("search_read", "read_only"), RiskClass.READ)
 
     def test_write_tools_are_write_local(self):
@@ -72,7 +72,7 @@ class TestPermissionEngineModes(unittest.TestCase):
 
     def test_plan_mode_read_only(self):
         engine = PermissionEngine(mode=PermissionMode.PLAN)
-        d = engine.evaluate("calculator", {})
+        d = engine.evaluate("odoo_calculator", {})
         self.assertTrue(d.allowed)
         d = engine.evaluate("create_sale_order", {})
         self.assertFalse(d.allowed)
