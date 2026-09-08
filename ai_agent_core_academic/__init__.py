@@ -106,7 +106,6 @@ def post_init_hook(env):
         agent = env['ai.agent'].create({
             'name': name,
             'description': desc,
-            'provider_type': 'bifrost',
             'model_id': _default_model.id if _default_model else False,
             'status': 'active',
             'skill_ids': [(4, skill.id)],

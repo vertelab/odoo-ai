@@ -950,7 +950,6 @@ def post_init_hook(env):
         agent = env['ai.agent'].create({
             'name': name,
             'description': desc,
-            'provider_type': 'bifrost',
             'model_id': _models_by_name[model],
             'status': 'active',
             'skill_ids': [(6, 0, [skill_map[s].id for s in skill_xmlids])],
