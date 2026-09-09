@@ -195,6 +195,48 @@
         </field>
     </record>
 
+    <!-- Search/filter & gruppering för session-line (message) listan:
+         Idag / Denna vecka / Denna månad. OBS: webb-säker domän — bara
+         context_today() ± datetime.timedelta(days=KONST) (inga .weekday/.replace,
+         de kraschar klientens domän-evaluator). "Denna vecka/månad" används som
+         rullande fönster (7/30 dagar) för att förbli klient-säker. -->
+    <record id="view_ai_session_line_search" model="ir.ui.view">
+        <field name="name">ai.coworker.session.line.search</field>
+        <field name="model">ai.coworker.session.line</field>
+        <field name="arch" type="xml">
+            <search string="Meddelanden">
+                <field name="content"/>
+                <field name="session_id"/>
+                <field name="role"/>
+                <field name="agent_id"/>
+                <field name="tool_id"/>
+                <field name="model_real"/>
+                <separator/>
+                <filter name="today" string="Idag"
+                        domain="[('create_date','&gt;=',context_today())]"/>
+                <filter name="this_week" string="Denna vecka (7d)"
+                        domain="[('create_date','&gt;=',context_today()-datetime.timedelta(days=7))]"/>
+                <filter name="this_month" string="Denna månad (30d)"
+                        domain="[('create_date','&gt;=',context_today()-datetime.timedelta(days=30))]"/>
+                <separator/>
+                <group expand="0" string="Gruppera efter">
+                    <filter name="group_date" string="Datum"
+                            context="{'group_by':'create_date'}"/>
+                    <filter name="group_role" string="Roll"
+                            context="{'group_by':'role'}"/>
+                    <filter name="group_agent" string="Agent"
+                            context="{'group_by':'agent_id'}"/>
+                    <filter name="group_model" string="Modell"
+                            context="{'group_by':'model_real'}"/>
+                    <filter name="group_tool" string="Verktyg"
+                            context="{'group_by':'tool_id'}"/>
+                    <filter name="group_session" string="Tråd"
+                            context="{'group_by':'session_id'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
     <!-- Action definieras sist: den ref:ar view_ai_session_search,
          som måste existera innan actionn laddas (external-ID-ordning). -->
     <record id="action_ai_coworker_session" model="ir.actions.act_window">
