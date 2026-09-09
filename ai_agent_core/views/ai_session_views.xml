@@ -16,12 +16,12 @@
                 <separator/>
                 <filter name="today" string="Idag"
                         domain="[('create_date','&gt;=',context_today())]"/>
-                <filter name="this_week" string="Denna vecka"
-                        domain="[('create_date','&gt;=',context_today()-datetime.timedelta(days=context_today().weekday()))]"/>
                 <filter name="last_7_days" string="Senaste 7 dagar"
                         domain="[('create_date','&gt;=',context_today()-datetime.timedelta(days=7))]"/>
-                <filter name="this_month" string="Denna månad"
-                        domain="[('create_date','&gt;=',context_today().replace(day=1))]"/>
+                <filter name="last_30_days" string="Senaste 30 dagar"
+                        domain="[('create_date','&gt;=',context_today()-datetime.timedelta(days=30))]"/>
+                <!-- OBS: använder INTE .weekday()/.replace() i domäner — de kraschar
+                     i Odoo-webklientens domän-evaluator (fnValue is not a function). -->
                 <separator/>
                 <group expand="0" string="Gruppera efter">
                     <filter name="group_started" string="Started"
@@ -111,12 +111,6 @@
                             <group>
                                 <field name="summary" readonly="1"/>
                                 <field name="summary_message_count" readonly="1"/>
-                            </group>
-                        </page>
-                        <page string="Konfiguration" name="config">
-                            <group>
-                                <field name="config_json" readonly="1"/>
-                                <field name="history_json" readonly="1"/>
                             </group>
                         </page>
                     </notebook>
