@@ -127,6 +127,13 @@ class AgentLoop:
         # read by callers (e.g. ai.coworker.run) for session-line persistence
         self.tool_history: list = []
 
+        # Reasoning- & narrativ-spårning (d): samlar den "gråa" tänketexten
+        # (reasoning_content/reasoning) och supervisor-/agentrundornas
+        # narrering (undersökning/val före tool-delegation). Exponeras till
+        # ai.coworker.run för att spara på session-message-racerna.
+        self.reasoning_log: list = []
+        self.narration_log: list = []
+
         # Permission engine (optional — backwards compatible)
         if permission_engine:
             self.permissions = permission_engine
@@ -839,6 +846,12 @@ class StreamingAgentLoop(AgentLoop):
                     text_buffer += event.token
                     round_tokens.append(event.token)
 
+                elif event.type == "thinking":
+                    # Modellens "gråa" tänketext (reasoning_content/reasoning)
+                    # — samla för att lagra på session-meddelandet.
+                    if event.token:
+                        self.reasoning_log.append(event.token)
+
                 elif event.type == "tool_call_start":
                     tool_calls_seen.append({
                         "id": event.tool_call.id,
@@ -859,6 +872,7 @@ class StreamingAgentLoop(AgentLoop):
                         # Rundans text var NARRERING (agentens resonemang) —
                         # sänd som debug, inte som svar till användaren.
                         if text_buffer.strip():
+                            self.narration_log.append(text_buffer.strip())
                             yield TokenEvent(
                                 type="debug", token=text_buffer.strip())
                         # Exekvera verktygen och samla källor

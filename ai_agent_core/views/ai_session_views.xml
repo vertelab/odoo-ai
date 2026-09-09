@@ -143,6 +143,7 @@
                 <field name="tool_name" optional="hide"/>
                 <field name="skill_id" optional="hide"/>
                 <field name="model_real" optional="hide"/>
+                <field name="reasoning" optional="hide"/>
                 <field name="token_input" optional="hide"/>
                 <field name="token_output" optional="hide"/>
                 <field name="token_sys" optional="hide"/>
@@ -175,6 +176,10 @@
                     <notebook>
                         <page string="Innehåll" name="content">
                             <field name="content" readonly="1"/>
+                        </page>
+                        <page string="Tänkande (reasoning)" name="reasoning"
+                              invisible="not reasoning">
+                            <field name="reasoning" readonly="1"/>
                         </page>
                         <page string="Resonemang (debug)" name="debug"
                               invisible="not debug_info">

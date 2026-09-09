@@ -4553,6 +4553,36 @@ class AICoworker(models.Model):
 
         return tools, tool_access_groups
 
+    @api.model
+    def _specialist_agent_lookup(self, tool_name):
+        """Resolve vilken ai.agent ett specialist-verktygsanrop tillhör.
+
+        Supervisor-tooldelegation skapar verktyg `call_specialist_<safe>`
+        (safe = transkriberat, sänkt agentname). Returnerar (agent, modell-name)
+        så den resulterande session-tool-raden kan knytas till rätt agent+
+        modell. (agent False om ej specialist- eller ej matchar.)
+        """
+        prefix = 'call_specialist_'
+        if not tool_name or not str(tool_name).startswith(prefix):
+            return False, ''
+        suffix = str(tool_name)[len(prefix):].strip()
+        if not suffix:
+            return False, ''
+        import unicodedata
+
+        def _normalize(name):
+            n = unicodedata.normalize('NFKD', (name or '').strip().lower())
+            out = ''.join(c for c in n if not unicodedata.combining(c))
+            return out.replace(' ', '_').replace('-', '_')
+
+        for a in self.env['ai.agent'].sudo().search([('active', '=', True)]):
+            if _normalize(a.name) == suffix:
+                model = ''
+                if a.model_id:
+                    model = a.model_id.name or a.model_id.api_name or ''
+                return a, model
+        return False, ''
+
     def run(self, prompt, system_prompt=None, force_model=None,
             force_agent=None, session=None, history=None,
             interrupt_handler=None):
@@ -4778,6 +4808,14 @@ class AICoworker(models.Model):
                 if ai_model:
                     sys_mult = ai_model.sys_multiplier
 
+            # Reasoning + supervisor-/delegationsanalys (d): samla den
+            # "gråa" tänketexten (reasoning_log) och rundornas narrering
+            # (narration_log — supervisorns undersökning/val) från loopen.
+            reasoning_text = ''.join(
+                getattr(loop_obj, 'reasoning_log', []) or [])
+            narration_text = '\n\n'.join(
+                getattr(loop_obj, 'narration_log', []) or [])
+
             self.env['ai.coworker.session.line'].create({
                 'session_id': session.id,
                 'role': 'user',
@@ -4799,6 +4837,7 @@ class AICoworker(models.Model):
                 'token_input': 0,
                 'token_output': output_t,
                 'model_real': model_real,
+                'reasoning': reasoning_text[:12000] or False,
                 'sys_multiplier': sys_mult,
                 'sequence': 2,
                 # Granskningsbar kontext: vilka verktyg anropades och med
@@ -4825,7 +4864,12 @@ class AICoworker(models.Model):
                         tool_rec_id = tool_rec.id
                 except Exception:
                     pass
-                self.env['ai.coworker.session.line'].create({
+                # Specialist-delegation (supervisor): om verktyget är
+                # call_specialist_<agent>, knyt raden till rätt ai.agent +
+                # specialistens modell, så specialistsvaret kan spåras och
+                # summeras per agent/modell.
+                spec_agent, spec_model = self._specialist_agent_lookup(t_name)
+                line_vals = {
                     'session_id': session.id,
                     'role': 'tool',
                     'tool_name': t_name,
@@ -4834,7 +4878,12 @@ class AICoworker(models.Model):
                     'sequence': 10 + i,
                     'token_input': tool_cost,
                     'sys_multiplier': 1.0,
-                })
+                }
+                if spec_agent:
+                    line_vals['agent_id'] = spec_agent.id
+                    if spec_model:
+                        line_vals['model_real'] = spec_model
+                self.env['ai.coworker.session.line'].create(line_vals)
 
             # ── Fel-loggning (ai.coworker.error) ──
             # Skanna verktygshistoriken + resultatet för fel så de kan
@@ -4906,6 +4955,24 @@ class AICoworker(models.Model):
                         seq += 1
             except Exception:
                 pass
+
+            # Supervisor && delegations-analys (b): narreringen (den text som
+            # visade vilka skills/agenter supervisorn undersökte/valde innan
+            # delegation) sparas som EGET assistant-"meddelande".
+            if narration_text:
+                try:
+                    self.env['ai.coworker.session.line'].create({
+                        'session_id': session.id,
+                        'role': 'assistant',
+                        'agent_id': False,
+                        'content': (
+                            "[Supervisor-undersökning/val]\n"
+                            + narration_text[:8000]),
+                        'reasoning': reasoning_text[:12000] or False,
+                        'sequence': 5,
+                    })
+                except Exception:
+                    pass
 
             # Update session and quest totals
             session.write({

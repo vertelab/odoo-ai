@@ -37,6 +37,10 @@ class AICoworkerSessionLine(models.Model):
         ('system', 'System'),
     ], required=True, default='user')
     content = fields.Text('Message Content')
+    reasoning = fields.Text('Reasoning',
+        help='Modellens "gråa" tänketext (reasoning_content/reasoning) som '
+             'produsierades före detta meddelande; för granskning utan att det '
+             'visas i svaret.')
     debug_info = fields.Text('Debug/Resonemang',
         help='Agentens resonemang/narrering (visas inte i svaret till '
              'användaren, men sparas här för granskning).')
