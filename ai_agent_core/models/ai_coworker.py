@@ -2043,8 +2043,13 @@ class AICoworker(models.Model):
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             try:
-                decision = loop.run_until_complete(
-                    router.route(body, agents, max_tokens=100))
+                async def _route_and_close():
+                    try:
+                        return await router.route(
+                            body, agents, max_tokens=100)
+                    finally:
+                        await provider.aclose()
+                decision = loop.run_until_complete(_route_and_close())
             finally:
                 loop.close()
         except Exception as e:
@@ -2288,8 +2293,11 @@ class AICoworker(models.Model):
                     max_rounds=1))
 
             async def _run():
-                resp = await loop.run(prompt)
-                return resp.text if hasattr(resp, 'text') else str(resp)
+                try:
+                    resp = await loop.run(prompt)
+                    return resp.text if hasattr(resp, 'text') else str(resp)
+                finally:
+                    await provider.aclose()
 
             evloop = asyncio.new_event_loop()
             asyncio.set_event_loop(evloop)
@@ -3527,7 +3535,16 @@ class AICoworker(models.Model):
                 "\"personal|company|coworker\"}].\n\n"
                 f"Konversation:\n{conversation}"
             )
-            result = asyncio.run(loop.run(prompt))
+            async def _run_and_close():
+                try:
+                    return await loop.run(prompt)
+                finally:
+                    # Stäng providerns httpx-klient innan asyncio.run()
+                    # stänger event-loopen — annars lämnas en pending
+                    # connection-task ("Task was destroyed but it is
+                    # pending!", async_generator_athrow) i Odoo-loggen.
+                    await provider.aclose()
+            result = asyncio.run(_run_and_close())
             text = (result.text or '').strip()
             # Ta bort ev. ```json-omslag
             if '```' in text:
@@ -4312,7 +4329,10 @@ class AICoworker(models.Model):
                     if self.description else
                     "Execute the scheduled task. Be thorough and complete."
                 )
-                return await loop.run(prompt)
+                try:
+                    return await loop.run(prompt)
+                finally:
+                    await provider.aclose()
 
             loop_obj = asyncio.new_event_loop()
             asyncio.set_event_loop(loop_obj)
@@ -4729,8 +4749,13 @@ class AICoworker(models.Model):
                     loop_obj.interrupt_handler = interrupt_handler
 
                 async def _run():
-                    return await loop_obj.run(
-                        prompt, history=history or [])
+                    try:
+                        return await loop_obj.run(
+                            prompt, history=history or [])
+                    finally:
+                        # Stäng providerns httpx-klient innan event-loopen
+                        # stängs (annars pending task → "Task was destroyed").
+                        await provider.aclose()
 
                 response = loop.run_until_complete(_run())
             finally:
@@ -5013,7 +5038,10 @@ class AICoworker(models.Model):
                 )
 
                 async def _run():
-                    return await loop_obj.run(full_prompt)
+                    try:
+                        return await loop_obj.run(full_prompt)
+                    finally:
+                        await provider.aclose()
 
                 response = loop.run_until_complete(_run())
             finally:
