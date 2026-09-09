@@ -67,7 +67,7 @@ class AIOrgTask(models.Model):
         string='Checked Out By')
 
     # Relationer
-    session_ids = fields.One2many('ai.coworker.session', 'task_id',
+    session_ids = fields.One2many('ai.coworker.session', 'ai_task_id',
         string='Sessions')
     goal_id = fields.Many2one('ai.org.goal', string='Goal',
         help='Målet denna uppgift bidrar till.')
@@ -123,7 +123,7 @@ class AIOrgTask(models.Model):
         # Skapa session automatiskt
         session = self.env['ai.coworker.session'].create({
             'coworker_id': self.coworker_id.id,
-            'task_id': self.id,
+            'ai_task_id': self.id,
             'name': f'Task: {self.name[:50]}',
             'status': 'active',
         })

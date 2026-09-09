@@ -11,6 +11,25 @@
 > file lives in the module so it is versioned with the code; Pi reads it from the
 > filesystem.
 
+## Working rules (MCP live edits → explicit go-ahead → source/checkmodule)
+
+These rules govern the whole workflow and apply on every minion that has
+`odoo-ai` on the filesystem (they live in this module, not in a local memory):
+
+- **a) While working over MCP, make LIVE edits directly in the view**
+  (`view_set_arch` on `ir.ui.view`) — no source-code edits, no module
+  reinstall, no Odoo restart per iteration. This stays true until the user
+  gives an **explicit go-ahead** to either (1) **save the changes into the
+  module's source** (`views/*.xml`) or (2) **revert to the prior state**.
+- **b) When the module is to be updated, ALWAYS ASK before running
+  `checkmodule`.** Once the user has given the go-ahead, it is fine to fix
+  errors and re-run `checkmodule` until the module installs cleanly.
+- **c) `checkmodule` can run in single-user mode (Odoo is stopped) or
+  multi-user mode (on a different port than the Odoo server).** ASK which
+  mode to use.
+
+---
+
 Five phases:
 
 ```

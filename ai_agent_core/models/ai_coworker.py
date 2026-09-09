@@ -2221,7 +2221,6 @@ class AICoworker(models.Model):
         session = self.env['ai.coworker.session'].sudo().create({
             'coworker_id': self.id,
             'name': f'Buzz: {self.name}',
-            'thread_name': self.name,
             'status': 'active',
             'user_id': self.env.ref('base.user_root').id,
         })

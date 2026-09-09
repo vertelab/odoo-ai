@@ -83,7 +83,6 @@ class TestSessionHandling(TransactionCase):
         vals = {
             'name': 'Tråd',
             'user_id': self.env.user.id,
-            'thread_name': 'Tråd',
             'status': 'active',
         }
         qid = coworker.id

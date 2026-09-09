@@ -30,8 +30,10 @@ class AICoworkerSession(models.Model):
     _description = 'AI Session'
     _order = 'create_date desc'
 
-    task_id = fields.Many2one('ai.org.task', string='Task',
-        help='Tasken som denna session arbetar på. Skapas automatiskt vid checkout.')
+    ai_task_id = fields.Many2one('ai.org.task', string='AI Task',
+        help='AI-org-uppgiften (ai.org.task) som denna session arbetar på. '
+             'Skapas automatiskt vid checkout. OBS: skilj från task_id '
+             '(project.task) som läggs av project_ai-bryggan.')
 
     name = fields.Char(default=lambda self: str(uuid.uuid4())[:8])
     coworker_id = fields.Many2one('ai.coworker', string='Coworker', ondelete='cascade')
@@ -177,8 +179,7 @@ class AICoworkerSession(models.Model):
     reply_at = fields.Datetime('Svara efter',
         help='Tidpunkt då det fördröjda svaret ska postas.')
 
-    # Thread support
-    thread_name = fields.Char('Thread Name')
+    # Thread support — `name` är enda trådnamnet (thread_name borttaget).
     memory_ids = fields.One2many('ai.memory', 'session_id', string='Session Memories',
         help='Uploaded documents and FAISS memories for this session')
     session_line_ids = fields.One2many(

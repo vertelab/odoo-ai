@@ -693,7 +693,7 @@ class AIStreamController(http.Controller):
                 ('active', '=', True),
             ], order='write_date desc', limit=50)
             for s in sessions:
-                name = s.thread_name or (s.name or 'Tråd')
+                name = s.name or 'Tråd'
                 thread_items += (
                     f'<div class="thread-item" data-id="{s.id}" data-name="{escape(name)}">'
                     f'<span class="thread-icon">📝</span>'
@@ -877,7 +877,7 @@ class AIStreamController(http.Controller):
         return Response(json.dumps({
             "threads": [{
                 "id": s.id,
-                "name": s.thread_name or (s.name or 'Tråd'),
+                "name": s.name or 'Tråd',
                 "coworker_id": s.coworker_id.id if s.coworker_id else None,
                 "skill_id": s.skill_id.id if s.skill_id else None,
                 "last_activity": str(s.write_date) if s.write_date else None,
@@ -917,7 +917,6 @@ class AIStreamController(http.Controller):
         vals = {
             'name': name,
             'user_id': user.id if user.id else None,
-            'thread_name': name,
             'status': 'active',
         }
         if coworker_id:
@@ -942,7 +941,7 @@ class AIStreamController(http.Controller):
                 _logger.warning('thread_create: close previous sessions failed',
                                 exc_info=True)
 
-        return Response(json.dumps({"id": session.id, "name": session.thread_name}),
+        return Response(json.dumps({"id": session.id, "name": session.name}),
                        content_type='application/json')
 
     @http.route('/ai/threads/<int:thread_id>/close', type='http', auth='public',
@@ -978,7 +977,7 @@ class AIStreamController(http.Controller):
         tool_lines = [l for l in lines if l.role == 'tool']
         return Response(json.dumps({
             "id": session.id,
-            "name": session.thread_name or (session.name or ''),
+            "name": session.name or '',
             "coworker_id": session.coworker_id.id if session.coworker_id else None,
             "coworker_name": session.coworker_id.name if session.coworker_id else None,
             "status": session.status,
@@ -1009,7 +1008,6 @@ class AIStreamController(http.Controller):
         name = body.get('name', '')
         session = request.env['ai.coworker.session'].sudo().browse(thread_id)
         if session.exists():
-            session.thread_name = name[:200]
             session.name = name[:200]
         return Response(json.dumps({"status": "ok"}), content_type='application/json')
 
@@ -1176,7 +1174,7 @@ class AIStreamController(http.Controller):
         return Response(json.dumps({
             "threads": [{
                 "id": s.id,
-                "name": s.thread_name or (s.name or 'Tråd'),
+                "name": s.name or 'Tråd',
                 "last_activity": str(s.write_date) if s.write_date else None,
             } for s in sessions]
         }), content_type='application/json')

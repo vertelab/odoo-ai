@@ -1,13 +1,37 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <record id="action_ai_coworker_session" model="ir.actions.act_window">
-        <field name="name">Session</field>
-        <field name="res_model">ai.coworker.session</field>
-        <field name="view_mode">list,form</field>
-        <field name="help" type="html">
-            <p class="o_view_nocontent_smiling_face">
-                Sessioner registreras automatiskt när AI-medarbetare samtalar.
-            </p>
+    <record id="view_ai_session_search" model="ir.ui.view">
+        <field name="name">ai.coworker.session.search</field>
+        <field name="model">ai.coworker.session</field>
+        <field name="arch" type="xml">
+            <search string="Sessioner">
+                <field name="name"/>
+                <field name="user_id"/>
+                <field name="coworker_id"/>
+                <field name="partner_id"/>
+                <field name="pi_session_id"/>
+                <separator/>
+                <filter name="my_sessions" string="Mina sessioner"
+                        domain="[('user_id','=',uid)]"/>
+                <separator/>
+                <filter name="today" string="Idag"
+                        domain="[('create_date','&gt;=',context_today())]"/>
+                <filter name="this_week" string="Denna vecka"
+                        domain="[('create_date','&gt;=',context_today()-datetime.timedelta(days=context_today().weekday()))]"/>
+                <filter name="last_7_days" string="Senaste 7 dagar"
+                        domain="[('create_date','&gt;=',context_today()-datetime.timedelta(days=7))]"/>
+                <filter name="this_month" string="Denna månad"
+                        domain="[('create_date','&gt;=',context_today().replace(day=1))]"/>
+                <separator/>
+                <group expand="0" string="Gruppera efter">
+                    <filter name="group_started" string="Started"
+                            context="{'group_by':'create_date'}"/>
+                    <filter name="group_ended" string="Ended"
+                            context="{'group_by':'end_date'}"/>
+                    <filter name="group_partner" string="Kund"
+                            context="{'group_by':'partner_id'}"/>
+                </group>
+            </search>
         </field>
     </record>
 
@@ -16,16 +40,19 @@
         <field name="model">ai.coworker.session</field>
         <field name="arch" type="xml">
             <list>
+                <field name="create_date"/>
+                <field name="user_id" optional="show"/>
                 <field name="name"/>
-                <field name="thread_name"/>
-                <field name="coworker_id"/>
+                <field name="coworker_id" optional="hide"/>
                 <field name="status" widget="badge"
                        decoration-success="status=='done'"
                        decoration-warning="status=='active'"/>
+                <field name="company_id" optional="hide"/>
+                <field name="partner_id" optional="show"/>
+                <field name="end_date" optional="show"/>
                 <field name="token_input" optional="hide"/>
                 <field name="token_output" optional="hide"/>
                 <field name="token_sys" optional="hide"/>
-                <field name="create_date"/>
             </list>
         </field>
     </record>
@@ -57,8 +84,7 @@
                         </button>
                     </div>
                     <div class="oe_title">
-                        <h1><field name="name" readonly="1"/></h1>
-                        <field name="thread_name" placeholder="Trådnamn..."/>
+                        <h1><field name="name" placeholder="Trådnamn..."/></h1>
                     </div>
                     <group>
                         <group>
@@ -68,7 +94,7 @@
                             <field name="identity_id" readonly="1"/>
                             <field name="user_id" readonly="1"/>
                             <field name="company_id" readonly="1"/>
-                            <field name="task_id" readonly="1"/>
+                            <field name="ai_task_id" readonly="1"/>
                         </group>
                         <group>
                             <field name="create_date" readonly="1"/>
@@ -145,6 +171,22 @@
                     </notebook>
                 </sheet>
             </form>
+        </field>
+    </record>
+
+    <!-- Action definieras sist: den ref:ar view_ai_session_search,
+         som måste existera innan actionn laddas (external-ID-ordning). -->
+    <record id="action_ai_coworker_session" model="ir.actions.act_window">
+        <field name="name">Session</field>
+        <field name="res_model">ai.coworker.session</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="view_ai_session_search"/>
+        <!-- Default: visa bara den inloggade användarens egna sessioner -->
+        <field name="context">{'search_default_my_sessions': 1}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Sessioner registreras automatiskt när AI-medarbetare samtalar.
+            </p>
         </field>
     </record>
 
