@@ -551,6 +551,15 @@ class AIStreamController(http.Controller):
                     for chunk in results:
                         yield chunk
                 finally:
+                    # Stäng providerns httpx-klient innan loopen stängs —
+                    # annars lämnas httpx's interna task pending (asyncio
+                    # 'Task was destroyed but it is pending!').
+                    try:
+                        if gen_provider is not None:
+                            loop.run_until_complete(gen_provider.aclose())
+                    except Exception:
+                        _logger.warning(
+                            'provider aclose failed', exc_info=True)
                     loop.close()
             except Exception as e:
                 _logger.error("SSE stream error: %s", e, exc_info=True)
@@ -2570,6 +2579,12 @@ class AIOpenAIAPI(http.Controller):
                         max_tokens=max_tokens,
                     ))
                 finally:
+                    # Stäng providerns httpx-klient innan loopen stängs.
+                    try:
+                        if provider is not None:
+                            aloop.run_until_complete(provider.aclose())
+                    except Exception:
+                        _logger.warning('provider aclose failed', exc_info=True)
                     aloop.close()
 
                 response_text = response.text if hasattr(response, 'text') else str(response)
@@ -2782,6 +2797,13 @@ class AIOpenAIAPI(http.Controller):
 
                         results = aloop.run_until_complete(_collect(_agen))
                     finally:
+                        # Stäng providerns httpx-klient innan loopen stängs.
+                        try:
+                            if _gen_provider is not None:
+                                aloop.run_until_complete(_gen_provider.aclose())
+                        except Exception:
+                            _logger.warning(
+                                'provider aclose failed', exc_info=True)
                         aloop.close()
                     try:
                         tool_history = [

@@ -241,6 +241,21 @@ class AIProvider:
             )
         return self._client
 
+    async def aclose(self):
+        """Close the underlying httpx.AsyncClient (if created).
+
+        Must be called before the owning asyncio event loop is closed —
+        otherwise httpx leaves its internal connection/stream tasks pending,
+        which triggers asyncio's ``Task was destroyed but it is pending!``
+        warning (``async_generator_athrow``) and spams the Odoo log.
+        """
+        if self._client is not None:
+            try:
+                await self._client.aclose()
+            except Exception:
+                pass
+            self._client = None
+
     async def chat(
         self,
         model: str,
