@@ -511,6 +511,7 @@ def builtin_tools() -> list[Tool]:
                 "properties": {
                     "query": {
                         "type": "string",
+                        "minLength": 1,
                         "description": "The search query (e.g. 'latest Odoo 18 release notes')",
                     },
                     "max_results": {
@@ -2365,6 +2366,7 @@ def specialist_tools(agents) -> list[Tool]:
                 "properties": {
                     "query": {
                         "type": "string",
+                        "minLength": 1,
                         "description": "Precis uppgift att utföra."
                     },
                     "context": {
@@ -2381,6 +2383,10 @@ def specialist_tools(agents) -> list[Tool]:
         async def _handler(_loop=loop, **kwargs):
             query = kwargs.get("query", "")
             context = kwargs.get("context", "")
+            # Delegera aldrig en tom uppgift: säg i stället till vad som saknas
+            # så modellen korrigerar hellre än skapar tom/iterativa delegationsanrop.
+            if not query or not str(query).strip():
+                return "Error: query is required (ange en konkret uppgift till specialisten)."
             prompt = f"{context}\n\n{query}" if context else query
             try:
                 result = await _loop.run(prompt)
