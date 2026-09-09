@@ -3,6 +3,7 @@
 
 from odoo import models, fields, api
 import logging
+import os
 
 _logger = logging.getLogger(__name__)
 
@@ -59,6 +60,25 @@ class ResConfigSettings(models.TransientModel):
         help='Shared Bearer token for the /pi/callback endpoint. '
              'If empty, falls back to the AI_AGENT_API_SECRET '
              'environment variable.')
+
+    # Google API-nyckel (YouTube/Sök m.m.). Lagras säkert som ir.config_parameter
+    # så AI-core-verktyg (yt-sök, Google-sök m.fl.) kan läsa den i stället för att
+    # behöva nyckeln i process-miljöomgivningen (GOOGLE_API_KEY).
+    ai_google_api_key = fields.Char(
+        'Google API Key',
+        config_parameter='ai_agent_core.google_api_key',
+        password=True,
+        help='Google API-nyckel (AIza…). Används av YouTube-/Google-baserade '
+             'AI-verktyg. Tomt → fallback till GOOGLE_API_KEY-miljövariabeln.',
+        groups='base.group_system',
+    )
+
+    @api.model
+    def _google_api_key(self):
+        """Returnera Google-nyckeln: config-parameter, annars env, annars ''."""
+        val = self.env['ir.config_parameter'].sudo().get_param(
+            'ai_agent_core.google_api_key', '')
+        return val or os.environ.get('GOOGLE_API_KEY', '')
 
     ai_api_default_provider_id = fields.Many2one(
         'ai.provider', string='Default Provider',

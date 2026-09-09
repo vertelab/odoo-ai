@@ -226,6 +226,10 @@
                         <setting id="ai_api_default_model" title="Default Model">
                             <field name="ai_api_default_model_id"/>
                         </setting>
+                        <setting id="ai_google_api_key" title="Google API Key"
+                                 help="För YouTube-/Google-baserade AI-verktyg. Tomt → fallback till GOOGLE_API_KEY.">
+                            <field name="ai_google_api_key" widget="password"/>
+                        </setting>
                     </block>
 
                     <!-- ════════════════════════════════════════════
