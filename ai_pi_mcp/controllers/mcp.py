@@ -255,6 +255,24 @@ class McpController(http.Controller):
         except ValueError as exc:
             body = self._error(INVALID_REQUEST, str(exc))
             return request.make_json_response(body, status=400)
+        # Validate the session for every method except initialize (which
+        # creates the session). A request on a missing/inactive/terminated
+        # session must be rejected rather than served.
+        method = data.get('method')
+        if method != 'initialize':
+            session_id = request.httprequest.headers.get('Mcp-Session-Id')
+            session = None
+            if session_id:
+                session = env['mcp.session'].sudo().search([
+                    ('session_id', '=', session_id),
+                    ('active', '=', True),
+                ], limit=1)
+            if not session:
+                body = self._error(
+                    INVALID_REQUEST,
+                    'Missing or expired Mcp-Session-Id (call initialize first)',
+                    data.get('id'))
+                return request.make_json_response(body, status=400)
         # Dispatch.
         try:
             response_data = self._dispatch(data, env)
