@@ -4816,17 +4816,20 @@ class AICoworker(models.Model):
             for i, (t_name, t_preview) in enumerate(
                     getattr(loop_obj, 'tool_history', [])):
                 tool_cost = 500  # default (ai.tool.sys_token_cost)
+                tool_rec_id = False
                 try:
                     tool_rec = self.env['ai.tool'].search(
                         [('name', '=', t_name)], limit=1)
                     if tool_rec:
                         tool_cost = tool_rec.sys_token_cost
+                        tool_rec_id = tool_rec.id
                 except Exception:
                     pass
                 self.env['ai.coworker.session.line'].create({
                     'session_id': session.id,
                     'role': 'tool',
                     'tool_name': t_name,
+                    'tool_id': tool_rec_id or False,
                     'content': t_preview,
                     'sequence': 10 + i,
                     'token_input': tool_cost,
@@ -4868,6 +4871,39 @@ class AICoworker(models.Model):
                             'error_type': etype,
                             'message': str(result_text)[:1000],
                         })
+            except Exception:
+                pass
+
+            # ── Per-agent usage (Väg A): spara varje agents meddelande/tokens
+            # som egen session-line så tokens kan summeras per modell/agent.
+            # Konferens/supervisor bär agent_usage på ChatResponse; här bokförs
+            # en rad per agent (informativ — läggs INTE till session-totalen
+            # igen eftersom dessa tokens redan ingick i den aggregerade totalen).
+            try:
+                usage = getattr(response, 'agent_usage', None) or []
+                if usage and self.env.get('ai.agent'):
+                    seq = len(session.session_line_ids) + 1
+                    for u in usage:
+                        agent = self.env['ai.agent'].search(
+                            [('name', '=', u.get('agent', ''))], limit=1)
+                        if not agent:
+                            continue
+                        _in = int(u.get('input_tokens', 0) or 0)
+                        _out = int(u.get('output_tokens', 0) or 0)
+                        _model = (u.get('model') or '')
+                        self.env['ai.coworker.session.line'].create({
+                            'session_id': session.id,
+                            'agent_id': agent.id,
+                            'role': 'assistant',
+                            'content': (f"[{agent.name}] tokens {_in} in / "
+                                        f"{_out} out ({_model})"),
+                            'sequence': seq,
+                            'token_input': _in,
+                            'token_output': _out,
+                            'model_real': _model,
+                            'skill_id': agent.skill_ids[:1].id if agent.skill_ids else False,
+                        })
+                        seq += 1
             except Exception:
                 pass
 

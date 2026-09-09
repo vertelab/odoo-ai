@@ -94,6 +94,9 @@ class AISkill(models.Model):
     version = fields.Integer(default=1)
     last_improved = fields.Datetime('Last Improved')
     agent_count = fields.Integer(compute='_compute_agent_count')
+    session_line_count = fields.Integer(compute='_compute_session_line_count')
+    session_tokens_last_30d = fields.Integer(
+        compute='_compute_session_tokens_30d', string='Tokens (senaste 30 d)')
 
     # Improvement
     improvement_guidance = fields.Text('Improvement Guidance')
@@ -105,6 +108,25 @@ class AISkill(models.Model):
             r.agent_count = self.env['ai.agent'].search_count([
                 ('skill_ids', 'in', r.id)
             ])
+
+    def _compute_session_line_count(self):
+        for r in self:
+            r.session_line_count = self.env['ai.coworker.session.line'].search_count(
+                [('skill_id', '=', r.id)])
+
+    def _compute_session_tokens_30d(self):
+        for r in self:
+            r.session_tokens_last_30d = self.env['ai.coworker.session.line']._tokens_since(
+                days=30, extra=[('skill_id', '=', r.id)])
+
+    def action_open_session_lines(self):
+        """Open coworker session lines produced by this skill (stat button)."""
+        return {
+            'name': 'Agenter', 'type': 'ir.actions.act_window',
+            'res_model': 'ai.coworker.session.line', 'view_mode': 'list,form',
+            'views': [[False, 'list'], [False, 'form']],
+            'domain': [('skill_id', '=', self.id)],
+        }
 
     def action_improve(self):
         self.ensure_one()

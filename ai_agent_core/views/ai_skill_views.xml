@@ -119,6 +119,15 @@
                         <button name="action_export_skill_md" type="object"
                                 class="oe_stat_button" icon="fa-share-square-o"
                                 string="Export SKILL.md"/>
+                        <button name="action_open_session_lines" type="object"
+                                class="oe_stat_button" icon="fa-comments">
+                            <div class="o_stat_info">
+                                <span class="o_stat_text">Sessioner</span>
+                                <span class="o_stat_value"><field name="session_line_count" widget="statinfo"/></span>
+                                <span class="o_stat_text">Tokens/30d</span>
+                                <span class="o_stat_value"><field name="session_tokens_last_30d" widget="statinfo"/></span>
+                            </div>
+                        </button>
                     </div>
                     <field name="image_128" widget="image" class="oe_avatar"/>
                     <field name="active" invisible="1"/>

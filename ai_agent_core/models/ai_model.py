@@ -141,6 +141,15 @@ class AIModel(models.Model):
     # Usage
     llm_count = fields.Integer(compute='_compute_llm_count')
     session_line_count = fields.Integer(compute='_compute_session_line_count')
+    session_tokens_last_30d = fields.Integer(
+        compute='_compute_session_tokens_30d', string='Tokens (senaste 30 d)')
+
+    @api.depends('name', 'api_name')
+    def _compute_session_tokens_30d(self):
+        for r in self:
+            r.session_tokens_last_30d = self.env['ai.coworker.session.line']._tokens_since(
+                days=30, extra=['|', ('model_real', '=', r.name),
+                                ('model_real', '=', r.api_name)])
 
     # Tags
     tag_ids = fields.Many2many('ai.tag', string='Tags')

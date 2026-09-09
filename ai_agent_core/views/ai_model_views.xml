@@ -208,6 +208,8 @@
                             <div class="o_stat_info">
                                 <span class="o_stat_text">Sessioner</span>
                                 <span class="o_stat_value"><field name="session_line_count" widget="statinfo"/></span>
+                                <span class="o_stat_text">Tokens/30d</span>
+                                <span class="o_stat_value"><field name="session_tokens_last_30d" widget="statinfo"/></span>
                             </div>
                         </button>
                     </div>

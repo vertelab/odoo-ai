@@ -5,6 +5,7 @@ ai.coworker.session.line — Individual messages within a thread.
 Each line represents one message in a conversation thread.
 """
 from odoo import models, fields, api
+from datetime import timedelta
 
 
 class AICoworkerSessionLine(models.Model):
@@ -16,6 +17,18 @@ class AICoworkerSessionLine(models.Model):
         'ai.coworker.session', required=True, ondelete='cascade',
         string='Thread',
     )
+    # Vilken agent/roll/skill/tool som producerade denna rad — för spårning
+    # per agent & modell samt smartknappar från ai.agent/ai.tool/ai.skill.
+    agent_id = fields.Many2one('ai.agent', string='Agent', index=True,
+        help='Den agent som producerade denna meddelanderad. Fylls vid '
+             'multi-agent-delegering (Väg A) och enkel-assistentrader där '
+             'agenten är känd.')
+    skill_id = fields.Many2one('ai.skill', string='Skill', index=True,
+        help='Den skill som byggdes/testades i denna meddelanderad (där det '
+             'är känt, t.ex. från agentens skill eller en skill-sessionskontext).')
+    tool_id = fields.Many2one('ai.tool', string='Tool', index=True,
+        help='Verktyget som anropades (för tool-rader). Fylls från '
+             'tool_name mot ai.tool så att ai.tool kan lista sina meddelanden.')
     sequence = fields.Integer('Order', default=10)
     role = fields.Selection([
         ('user', 'User'),
@@ -46,3 +59,14 @@ class AICoworkerSessionLine(models.Model):
     def _compute_token_sys(self):
         for line in self:
             line.token_sys = int((line.token_input + line.token_output) * line.sys_multiplier)
+
+    @api.model
+    def _tokens_since(self, days=30, extra=(), create_field='create_date'):
+        """Summa token_input+token_output för rader yngre än `days`, som valfritt
+        matchar `extra`-domänvillkor. Används av smartknappar på ai.model/
+        ai.agent/ai.tool/ai.skill för att visa senaste månadens tokenförbrukning.
+        """
+        since = fields.Datetime.now() - timedelta(days=max(days, 1))
+        domain = [(create_field, '>=', since)] + list(extra)
+        rows = self.search(domain)
+        return sum((r.token_input or 0) + (r.token_output or 0) for r in rows)

@@ -138,7 +138,14 @@
                        decoration-info="role=='assistant'"
                        decoration-muted="role=='user'"/>
                 <field name="content"/>
+                <field name="agent_id" optional="hide"/>
+                <field name="tool_id" optional="hide"/>
                 <field name="tool_name" optional="hide"/>
+                <field name="skill_id" optional="hide"/>
+                <field name="model_real" optional="hide"/>
+                <field name="token_input" optional="hide"/>
+                <field name="token_output" optional="hide"/>
+                <field name="token_sys" optional="hide"/>
             </list>
         </field>
     </record>
@@ -150,9 +157,20 @@
             <form string="Meddelande">
                 <sheet>
                     <group>
-                        <field name="session_id" readonly="1"/>
-                        <field name="role" readonly="1"/>
-                        <field name="create_date" readonly="1"/>
+                        <group>
+                            <field name="session_id" readonly="1"/>
+                            <field name="role" readonly="1"/>
+                            <field name="create_date" readonly="1"/>
+                            <field name="agent_id" readonly="1"/>
+                            <field name="skill_id" readonly="1"/>
+                        </group>
+                        <group>
+                            <field name="tool_id" readonly="1"/>
+                            <field name="model_real" readonly="1"/>
+                            <field name="tool_name" readonly="1"/>
+                            <field name="token_input" readonly="1"/>
+                            <field name="token_output" readonly="1"/>
+                        </group>
                     </group>
                     <notebook>
                         <page string="Innehåll" name="content">

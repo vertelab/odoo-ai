@@ -84,12 +84,34 @@ class AIAgent(models.Model):
 
     # Stats
     coworker_count = fields.Integer(compute='_compute_coworker_count')
+    session_line_count = fields.Integer(compute='_compute_session_line_count')
+    session_tokens_last_30d = fields.Integer(
+        compute='_compute_session_tokens_30d', string='Tokens (senaste 30 d)')
+
+    def _compute_session_line_count(self):
+        for r in self:
+            r.session_line_count = self.env['ai.coworker.session.line'].search_count(
+                [('agent_id', '=', r.id)])
+
+    def _compute_session_tokens_30d(self):
+        for r in self:
+            r.session_tokens_last_30d = self.env['ai.coworker.session.line']._tokens_since(
+                days=30, extra=[('agent_id', '=', r.id)])
 
     def _compute_coworker_count(self):
         for r in self:
             r.coworker_count = self.env['ai.coworker.agent'].search_count([
                 ('agent_id', '=', r.id)
             ])
+
+    def action_open_session_lines(self):
+        """Open coworker session lines produced by this agent (stat button)."""
+        return {
+            'name': 'Agenter', 'type': 'ir.actions.act_window',
+            'res_model': 'ai.coworker.session.line', 'view_mode': 'list,form',
+            'views': [[False, 'list'], [False, 'form']],
+            'domain': [('agent_id', '=', self.id)],
+        }
 
     def _compute_is_buzz_active(self):
         for r in self:

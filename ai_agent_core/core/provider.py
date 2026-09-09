@@ -145,6 +145,12 @@ class ChatResponse:
     finish_reason: str = "stop"
     needs_clarification: bool = False  # HITL-007: agent needs to ask a question
     clarification_question: str = ""  # The question to ask the user
+    # Multi-agent (supervisor/conference): per-agent token & model usage att
+    # föra vidare till session-persist (Väg A) — sparas som egna meddelande-
+    # rader per agent så tokens kan summeras per modell. Varje element:
+    #   {'agent': <str/name>, 'model': <str/model_real>, 'input_tokens': int,
+    #    'output_tokens': int}
+    agent_usage: list = field(default_factory=list)
 
 
 @dataclass

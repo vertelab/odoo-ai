@@ -29,6 +29,22 @@ from .provider import ChatResponse, Message, Role
 _logger = logging.getLogger(__name__)
 
 
+def _usage_of(results):
+    """Samla per-agent token/modell-usage (Väg A) från (name, ChatResponse).
+
+    Varje element: {'agent': name, 'model': resp.model,
+                    'input_tokens': resp.input_tokens,
+                    'output_tokens': resp.output_tokens} — för att kunna spara
+    varje agents meddelande/tokens som egen session-line senare.
+    """
+    return [{
+        'agent': str(name or ''),
+        'model': resp.model or '',
+        'input_tokens': int(getattr(resp, 'input_tokens', 0) or 0),
+        'output_tokens': int(getattr(resp, 'output_tokens', 0) or 0),
+    } for name, resp in results if resp]
+
+
 class ConferenceLoop:
     """Multi-agent conference with mechanism support."""
 
@@ -86,6 +102,7 @@ class ConferenceLoop:
             text=f"[Bästa svar från: {best_name}]\n\n{text}",
             input_tokens=total_in, output_tokens=total_out,
             finish_reason="stop",
+            agent_usage=_usage_of(results),
         )
 
     # ── majority ──
@@ -139,6 +156,7 @@ class ConferenceLoop:
             text=f"[Majoritet: {winner_name} ({votes_summary})]\n\n{winner_text}",
             input_tokens=total_in, output_tokens=total_out,
             finish_reason="stop",
+            agent_usage=_usage_of(results),
         )
 
     # ── synthesis ──
@@ -163,7 +181,8 @@ class ConferenceLoop:
             total_out = sum(r.output_tokens for _, r in results) + response.output_tokens
             return ChatResponse(text=response.text,
                                 input_tokens=total_in, output_tokens=total_out,
-                                finish_reason="stop")
+                                finish_reason="stop",
+                                agent_usage=_usage_of(results))
         except Exception as e:
             _logger.warning("Conference synthesis failed: %s", e)
             return results[0][1]

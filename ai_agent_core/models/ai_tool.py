@@ -38,6 +38,30 @@ class AITool(models.Model):
     name = fields.Char('Tool Name', required=True)
     active = fields.Boolean(default=True)
 
+    # Stats (session-meddelanden som använde detta verktyg)
+    session_line_count = fields.Integer(compute='_compute_session_line_count')
+    session_tokens_last_30d = fields.Integer(
+        compute='_compute_session_tokens_30d', string='Tokens (senaste 30 d)')
+
+    def _compute_session_line_count(self):
+        for r in self:
+            r.session_line_count = self.env['ai.coworker.session.line'].search_count(
+                [('tool_id', '=', r.id)])
+
+    def _compute_session_tokens_30d(self):
+        for r in self:
+            r.session_tokens_last_30d = self.env['ai.coworker.session.line']._tokens_since(
+                days=30, extra=[('tool_id', '=', r.id)])
+
+    def action_open_session_lines(self):
+        """Open coworker session lines that used this tool (stat button)."""
+        return {
+            'name': 'Agenter', 'type': 'ir.actions.act_window',
+            'res_model': 'ai.coworker.session.line', 'view_mode': 'list,form',
+            'views': [[False, 'list'], [False, 'form']],
+            'domain': [('tool_id', '=', self.id)],
+        }
+
     # Builtin-verktyg (explicit-agent-tools): när satt är posten den synliga
     # representationen av ett inbyggt verktyg från core/tools.py
     # (builtin_tools()). Konvertering till runtime-verktyg hämtar den riktiga

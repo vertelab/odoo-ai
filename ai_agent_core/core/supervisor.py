@@ -25,6 +25,16 @@ from .loop import AgentLoop, AgentConfig, StreamingAgentLoop
 from .provider import AIProvider, ChatResponse, Message, Role, TokenEvent, ToolCall
 from .tools import Tool, ToolRegistry
 
+
+def _usage_of(results):
+    """Samla per-agent token & modell (Väg A) ur fan-out (name, ChatResponse)."""
+    return [{
+        'agent': str(name or ''),
+        'model': resp.model or '',
+        'input_tokens': int(getattr(resp, 'input_tokens', 0) or 0),
+        'output_tokens': int(getattr(resp, 'output_tokens', 0) or 0),
+    } for name, resp in results if resp]
+
 _logger = logging.getLogger(__name__)
 
 
@@ -427,6 +437,7 @@ class SupervisorLoop:
                 input_tokens=total_in,
                 output_tokens=total_out,
                 finish_reason="stop",
+                agent_usage=_usage_of(results),
             )
 
     async def _merge_results(
@@ -463,6 +474,7 @@ class SupervisorLoop:
                 input_tokens=total_in,
                 output_tokens=total_out,
                 finish_reason="stop",
+                agent_usage=_usage_of(results),
             )
         except Exception as e:
             _logger.warning("Merge failed: %s — returning concatenated", e)
