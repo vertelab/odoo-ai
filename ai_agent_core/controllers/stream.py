@@ -1495,10 +1495,25 @@ def _get_quest_memories(quest, session_id=None, query=None) -> str:
 
 
 async def _collect(agen):
-    """Collect all items from an async generator into a list."""
+    """Collect all items from an async generator into a list.
+
+    Always closes the async generator (even on exception / early exit) so no
+    pending task is left behind when the owning event loop is closed — which
+    otherwise triggers asyncio's ``Task was destroyed but it is pending!``
+    warning (``async_generator_athrow``) and spams the Odoo log.
+    """
     result = []
-    async for item in agen:
-        result.append(item)
+    try:
+        async for item in agen:
+            result.append(item)
+    finally:
+        # Ensure the generator (and its httpx/streaming under-generators) is
+        # torn down before loop.close() in the caller. aclose() is idempotent —
+        # safe even after a normal (exhausted) iteration.
+        try:
+            await agen.aclose()
+        except Exception:
+            pass
     return result
 
 
@@ -2746,12 +2761,26 @@ class AIOpenAIAPI(http.Controller):
                     asyncio.set_event_loop(aloop)
                     usage_state = {'input': 0, 'output': 0}
                     try:
-                        async def _collect():
+                        _agen = _stream()
+
+                        async def _collect(agen):
+                            """Collect all chunks from the async generator,
+                            always closing it so no pending task survives
+                            loop.close() (avoids asyncio's
+                            'Task was destroyed but it is pending!' warning).
+                            """
                             result = []
-                            async for chunk in _stream():
-                                result.append(chunk)
+                            try:
+                                async for chunk in agen:
+                                    result.append(chunk)
+                            finally:
+                                try:
+                                    await agen.aclose()
+                                except Exception:
+                                    pass
                             return result
-                        results = aloop.run_until_complete(_collect())
+
+                        results = aloop.run_until_complete(_collect(_agen))
                     finally:
                         aloop.close()
                     try:
