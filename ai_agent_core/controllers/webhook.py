@@ -76,6 +76,7 @@ class AIWebhookController(http.Controller):
         session = request.env['ai.coworker.session'].sudo().create({
             'coworker_id': coworker.id,
             'status': 'active',
+            'init_type': 'webhook',
             'name': f'Webhook: {event_id[:8]}',
             'config_json': json.dumps({
                 'event_id': event_id,

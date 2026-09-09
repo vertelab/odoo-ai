@@ -1706,6 +1706,7 @@ class AICoworker(models.Model):
         record = records[0] if records else None
         session = self.env['ai.coworker.session'].create({
             'coworker_id': self.id, 'status': 'active',
+            'init_type': 'server_action',
             'name': f'Server action: {records._name}'
                     f'{(" " + str(record.display_name)) if record else ""}'[:80],
             'user_id': self.env.user.id,
@@ -1744,6 +1745,7 @@ class AICoworker(models.Model):
             session = self.env['ai.coworker.session'].create({
                 'coworker_id': self.id, 'status': 'active',
                 'name': f'Mail: {mail_message.subject or "No subject"}',
+                'init_type': 'mail',
                 'user_id': self.env.ref('base.user_root', raise_if_not_found=False).id or 1,
             })
 
@@ -1774,7 +1776,8 @@ class AICoworker(models.Model):
         except Exception as e:
             _logger.error('Mail failed for quest %s: %s', self.name, e)
             if session:
-                session.write({'status': 'error', 'finish_reason': str(e)[:200]})
+                session.write({'status': 'error', 'finish_reason': str(e)[:200],
+                               'error_detail': str(e)[:4000]})
             return None
 
     # ── Chat / Channel (init_type='chat' | 'channel') ──
@@ -1948,7 +1951,8 @@ class AICoworker(models.Model):
         except Exception as e:
             _logger.error('Chat failed for quest %s: %s', self.name, e)
             if session:
-                session.write({'status': 'error', 'finish_reason': str(e)[:200]})
+                session.write({'status': 'error', 'finish_reason': str(e)[:200],
+                               'error_detail': str(e)[:4000]})
             return None
 
     # ── Cron with filter_domain ──
@@ -4175,6 +4179,7 @@ class AICoworker(models.Model):
             try:
                 self.env['ai.coworker.session'].create({
                     'coworker_id': self.id,
+                    'init_type': 'watch',
                     'name': f'Watch: {record._name} {record.id}',
                     'status': 'active',
                     'watch_pending': True,
@@ -4890,7 +4895,8 @@ class AICoworker(models.Model):
 
         except Exception as e:
             _logger.error('Quest run failed: %s', e, exc_info=True)
-            session.write({'status': 'error'})
+            session.write({'status': 'error',
+                           'error_detail': str(e)[:4000]})
             return f'Error: {str(e)}'
 
     def run_with_history(self, prompt, system_prompt=None, history=None,
@@ -5100,6 +5106,7 @@ class AICoworker(models.Model):
         except Exception as e:
             session.status = 'error'
             session.finish_reason = str(e)[:200]
+            session.error_detail = str(e)[:4000]
             _logger.error('Powerbox error for quest %s: %s', self.name, e)
             raise UserError(_('Powerbox error: %s') % str(e))
 

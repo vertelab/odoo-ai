@@ -523,6 +523,7 @@ class AICoworkerSession(models.Model):
             'agent_id': self.agent_id.id,
             'identity_id': self.identity_id.id,
             'status': 'active',
+            'init_type': self.init_type or 'manual',
             'config_json': self.config_json,
             'user_id': self.user_id.id,
             'resumed_from_id': self.id,

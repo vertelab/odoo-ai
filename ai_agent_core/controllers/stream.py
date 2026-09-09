@@ -918,6 +918,7 @@ class AIStreamController(http.Controller):
             'name': name,
             'user_id': user.id if user.id else None,
             'status': 'active',
+            'init_type': 'web_ui',
         }
         if coworker_id:
             vals['coworker_id'] = int(coworker_id)
