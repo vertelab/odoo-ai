@@ -554,6 +554,16 @@ class AIStreamController(http.Controller):
                     # Stäng providerns httpx-klient innan loopen stängs —
                     # annars lämnas httpx's interna task pending (asyncio
                     # 'Task was destroyed but it is pending!').
+                    import asyncio as _sdbg
+                    try:
+                        # Drain pending async_generator_athrow-tasks (från
+                        # GC:ade inre generatorer) innan loopen stängs.
+                        _stasks = _sdbg.all_tasks(loop)
+                        if _stasks:
+                            loop.run_until_complete(
+                                _sdbg.gather(*_stasks, return_exceptions=True))
+                    except Exception:
+                        pass
                     try:
                         if gen_provider is not None:
                             loop.run_until_complete(gen_provider.aclose())
@@ -2797,6 +2807,17 @@ class AIOpenAIAPI(http.Controller):
 
                         results = aloop.run_until_complete(_collect(_agen))
                     finally:
+                        # Drain: ge eventuella pending async_generator_athrow-tasks
+                        # (från GC:ade inre generatorer) tid att slutföras innan
+                        # loopen stängs — annars "Task was destroyed" vid GC.
+                        import asyncio as _dbg
+                        try:
+                            _dbg_tasks = _dbg.all_tasks(aloop)
+                            if _dbg_tasks:
+                                aloop.run_until_complete(
+                                    _dbg.gather(*_dbg_tasks, return_exceptions=True))
+                        except Exception:
+                            pass
                         # Stäng providerns httpx-klient innan loopen stängs.
                         try:
                             if _gen_provider is not None:
@@ -3011,6 +3032,16 @@ class AIOpenAIAPI(http.Controller):
                 results = aloop.run_until_complete(asyncio.gather(
                     *[_run_one(tc) for tc in tool_calls]))
             finally:
+                # Drain pending async-generator-tasks (från verktyg som gör
+                # LLM/httpx-streaming) innan loopen stängs — annars
+                # "Task was destroyed but it is pending!" vid GC.
+                try:
+                    _ttasks = asyncio.all_tasks(aloop)
+                    if _ttasks:
+                        aloop.run_until_complete(
+                            asyncio.gather(*_ttasks, return_exceptions=True))
+                except Exception:
+                    pass
                 aloop.close()
 
             return Response(json.dumps({

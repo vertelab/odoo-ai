@@ -21,8 +21,17 @@ _logger = logging.getLogger(__name__)
 async def _collect_async(agen):
     """Collect all items from an async generator into a list."""
     result = []
-    async for item in agen:
-        result.append(item)
+    try:
+        async for item in agen:
+            result.append(item)
+    finally:
+        # Always close the async generator so no pending task survives when
+        # the owning event loop is closed (avoids asyncio's 'Task was
+        # destroyed but it is pending!' / async_generator_athrow warning).
+        try:
+            await agen.aclose()
+        except Exception:
+            pass
     return result
 
 
@@ -532,6 +541,15 @@ class AIOpenAPIController(http.Controller):
                     for chunk in results:
                         yield chunk
                 finally:
+                    # Drain pending async_generator-tasks innan loopen stängs.
+                    import asyncio as _dbg2
+                    try:
+                        _dt = _dbg2.all_tasks(loop)
+                        if _dt:
+                            loop.run_until_complete(
+                                _dbg2.gather(*_dt, return_exceptions=True))
+                    except Exception:
+                        pass
                     loop.close()
             except Exception as e:
                 _logger.error('OpenAI API stream error: %s', e, exc_info=True)
