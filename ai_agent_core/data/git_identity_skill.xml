@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Skill: git-identitet vid push av Odoo-kod.
+
+    När en coworker (t.ex. Project Planner) committar/pushar kod i ett
+    Odoo-repo (/usr/share/odoo-ai, /usr/share/odoo-project m.fl.) ska
+    git-identiteten (user.name/user.email) matcha den Odoo-användare som
+    Odoo-verktygen kör som — eller den GitHub-användare som SSH-nyckeln
+    tillhör. Inte en hårdkodad/gissad identitet.
+
+    OBS: ligger UTANFÖR noupdate → skapas vid BÅDE install och uppgradering,
+    så att project_ai (som refererar denna via ref) alltid hittar den.
+    Repo är källan för innehållet; redigera här, inte i UI:t.
+-->
+<odoo>
+    <data>
+
+        <record id="skill_git_identity" model="ai.skill">
+            <field name="name">git-identitet vid Odoo-kodpush</field>
+            <field name="category">development</field>
+            <field name="source_type">odoo</field>
+            <field name="description">Använd rätt git-identitet vid push av Odoo-kod — hämta den e-post som är kopplad till den Odoo-användare man kör som (res.users), eller fråga GitHub direkt vem SSH-nyckeln tillhör. Använd när du ska committa/pusha kod i ett Odoo-repo och git user.name/user.email ska sättas, eller när någon frågar "vilken git-identitet ska jag pusha som" / "varför pushar jag som X i Odoo" / "vem är jag på GitHub".</field>
+            <field name="trigger_keywords">git push, pusha kod, commit, user.name, user.email, git-identitet, marcuszxc, waland, Mitchell Admin, vem är jag på github, ssh nyckel, github</field>
+            <field name="recipe_text"><![CDATA[
+# Skill: git-identitet vid push av Odoo-kod
+
+## Regel
+När du committar/pushar kod i ett Odoo-repo ska git-identiteten
+(`user.name`/`user.email`) matcha den Odoo-användare som Odoo-verktygen
+kör som — inte en hårdkodad eller antagen identitet.
+
+Att hårdkoda t.ex. `waland` eller tro att man är "Mitchell Admin" är fel när
+token:en i `~/.pi/agent/odoo.json` autentiserar som en annan användare. Ta
+alltid reda på vem du faktiskt är i Odoo först.
+
+> ⚠️ Systemprompten/verktygsbeskrivningen kan påstå en "standardanvändare"
+> (t.ex. "Mitchell Admin id=2") som är FÖRÅLDRAD. Lita på den faktiska
+> token:en, inte på påståendet.
+
+## Steg 0 — Fråga GitHub direkt vem du är (via SSH-nyckeln)
+Om du pushar via SSH till GitHub, fråga GitHub vem SSH-nyckeln på maskinen
+tillhör — ingen gissning krävs:
+
+    ssh -T -o BatchMode=yes git@github.com
+    # → "Hi marcuszxc! You've successfully authenticated..."
+
+Svaret `Hi <användarnamn>!` är den GitHub-användare som äger SSH-nyckeln som
+`git push` använder. Kombinera med användarens kända e-post (ur repots
+historik, se Steg 2) för att sätta `user.name`/`user.email`. Detta verifierar
+den identitet som faktiskt autentiserar mot GitHub — oavsett vad
+systemprompten/git-config påstår.
+
+## Steg 1 — Ta reda på vem du är i Odoo
+Odoo-verktygen (odoo_create/write/search/call_method) exekveras via token:en i
+`~/.pi/agent/odoo.json` → `baseUrl` + `token`. Token:en är knuten till en
+specifik Odoo-användare (`res_users_apikeys.user_id`).
+
+Sätt A — via ORM (tillförlitligast): gör en skrivåtgärd (t.ex. uppdatera ett
+fält på en uppgift du äger) och läs `write_uid` på posten:
+
+    odoo_search("project.task", [("id", "=", <id>)], ["write_uid", "write_date"])
+    # → write_uid = [<uid>, "<namn>"]  ← detta är din Odoo-användare
+
+Sätt B — via databasen (kryptografiskt bevis): om du har DB-åtkomst
+verifierar du exakt vilken användare token:en tillhör mot `res_users_apikeys`
+med passlib:
+
+    import json
+    from passlib.hash import pbkdf2_sha512
+    tok = json.load(open("/home/karmar/.pi/agent/odoo.json"))["token"]
+    # Anslut till DB (params från /etc/odoo/odoo.conf — se /skill:odoo-vertel-env)
+    # SELECT ak.user_id, u.login, p.email FROM res_users_apikeys ak
+    #   JOIN res_users u ON u.id=ak.user_id LEFT JOIN res_partner p ON p.id=u.partner_id
+    # for varje rad: if pbkdf2_sha512.verify(tok, ak.key): → detta är din användare
+
+Sätt C — hämta e-posten för användaren du fått fram:
+
+    odoo_search("res.users", [("id", "=", <uid>)], ["name", "login", "email"])
+    # → email = din git-user.email
+
+> Verkligt exempel (2026-09-09): token i odoo.json tillhörde
+> `marcus.karlsson@vertel.se` (id=150), trots att prompten sa "Mitchell Admin
+> id=2". Bevisat via passlib-verify mot `res_users_apikeys` (nyckel id=10
+> "Pi-Nyckel") och via `write_uid`=[150,"Marcus Karlsson"] på en uppdaterad
+> uppgift.
+
+## Steg 2 — Sätt git-identiteten
+Använd användarens riktiga e-post (från `res_users.email` → `res_partner.email`).
+Ofta har användaren en etablerad git-identitet i repots historik — hitta den:
+
+    cd <repo>
+    git log --all --format='%an <%ae>' | sort -u | grep -i "<efternamn>"
+    # ex: marcuszxc <marcus.karlsson@vertel.se>
+
+Sätt identiteten per-repo (inte globalt — undvik att skriva över andras):
+
+    git config user.name "marcuszxc"                     # användarens git-användarnamn
+    git config user.email "marcus.karlsson@vertel.se"    # e-post från res_users
+
+Kontrollera att `user.email` matchar det GitHub-konto som SSH-nyckeln
+verifierades mot i Steg 0 — annars attribuerar GitHub commiten till fel
+användare trots att push:en lyckas.
+
+Om ingen matchande identitet finns i historiken, använd `res_users.name` +
+`res_users.email` som `user.name`/`user.email`.
+
+## Steg 3 — Commit + push
+- Commit-meddelanden på engelska, konventionell stil: `fix(module): ...`.
+- Pusha till rätt branch; om remote ligger före, `git pull --rebase` först.
+- Rör aldrig andras ostagade ändringar — om en fil delas med andra
+  utvecklare, stagga selektivt (`git add -p`) endast dina egna hunks.
+
+## Säkerhet
+- Exponera ALDRIG `db_password`/token i klartext i kommandon eller output.
+- Läs DB-credentials via env-variabel i barnprocess (`PGPASSWORD="$DB_PASS"`),
+  aldrig genom att `cat`/`echo` odoo.conf okrypterat.
+- `res_users.password` och `ir_config_parameter`-nycklar får aldrig ändras
+  utan explicit administratörsgodkännande.
+            ]]></field>
+        </record>
+
+    </data>
+</odoo>

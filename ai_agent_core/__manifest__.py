@@ -50,6 +50,7 @@
         'data/youtube_tools.xml',
         'data/default_coworker.xml',
         'data/vertel_skills.xml',
+        'data/git_identity_skill.xml',
         'views/ai_artifact_type_views.xml',
         'views/ai_okf_concept_views.xml',
         'views/ai_access_resolver_views.xml',
