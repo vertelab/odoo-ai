@@ -181,43 +181,114 @@ async def _tool_web_search(query: str = "", max_results: int = 5) -> str:
         pass
     except Exception:
         pass
-    # 2. HTML-scrape (fallback — kringgår cert-problemet)
-    try:
-        import httpx, html as html_mod
-        from urllib.parse import quote_plus
-        # kl=wt-wt = worldwide (annars regionlåst till t.ex. franska sidor)
-        url = ('https://html.duckduckgo.com/html/?q=' + quote_plus(query)
-               + '&kl=wt-wt&l=wt-wt')
-        async with httpx.AsyncClient(timeout=15, verify=False) as client:
-            r = await client.get(url, headers={
-                'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64; rv:126.0) Gecko/20100101 Firefox/126.0'})
-            r.raise_for_status()
-        from bs4 import BeautifulSoup
-        soup = BeautifulSoup(r.text, 'html.parser')
-        results = []
-        seen_urls = set()
-        for res in soup.select('.result')[:max_results + 3]:
-            a = res.select_one('.result__a')
-            s = res.select_one('.result__snippet')
-            if a:
-                title = html_mod.unescape(a.get_text(strip=True))
-                href = a.get('href', '')
-                snippet = html_mod.unescape(
-                    s.get_text(strip=True)) if s else ''
-                # Filtrera bort uppenbart irrelevanta utbildnings/mis-sidor
-                if not title or len(title) < 3:
-                    continue
-                if href in seen_urls:
-                    continue
-                seen_urls.add(href)
-                results.append(f"{len(results)+1}. {title}\n   {snippet[:200]}\n   {href}")
-            if len(results) >= max_results:
+    # 2+3+4. HTML-scrape med flera leverantörer (fallback): DuckDuckGo är
+    # blockerad/ej nabbara från vissa nät (verifierat på ledningssystem:
+    # html.duckduckgo.com ger ingen anslutning) — försök därför även Bing
+    # och Brave så webb-sök faktiskt kan returnera träffar.
+    import httpx as _httpx
+    import html as _html
+    from bs4 import BeautifulSoup as _Soup
+    from urllib.parse import quote_plus as _q
+
+    UA = ('Mozilla/5.0 (X11; Linux x86_64; rv:126.0) '
+          'Gecko/20100101 Firefox/126.0')
+    seen: set = set()
+
+    async def _grab(href):
+        # Bing och DDG ibland redirect-användare; försök aldrig mer än en
+        # gång mot samma url.
+        h = href or ''
+        if h.lower().startswith(('/url?', '//')):
+            import re as _re
+            m = _re.search(r'(?:u=|url=|=)?(https?://[^&]+)', h)
+            if m:
+                h = m.group(1)
+        if h in seen or not h.startswith('http'):
+            return None
+        seen.add(h)
+        return h
+
+    async def _search(label, url, parser):
+        try:
+            async with _httpx.AsyncClient(timeout=20, verify=False,
+                                          follow_redirects=True) as client:
+                r = await client.get(url, headers={'User-Agent': UA})
+                if r.status_code != 200:
+                    return None
+            soup = _Soup(r.text, 'html.parser')
+            items = parser(soup)
+            return items
+        except Exception:
+            return None
+
+    async def _to_lines(items):
+        out = []
+        for t, h, s in items:
+            href = await _grab(h)
+            if not href:
+                continue
+            out.append(f"{len(out)+1}. {t}\n   {(s or '')[:200]}\n   {href}")
+            if len(out) >= max_results:
                 break
-        if results:
-            return "\n".join(results)
-        return "No results found."
-    except Exception as e:
-        return f"Search error: {e}"
+        return out
+
+    # DuckDuckGo (html) — ofta blockerad, första försöket.
+    def _ddg(soup):
+        res = []
+        for el in soup.select('.result'):
+            a = el.select_one('.result__a')
+            sn = el.select_one('.result__snippet')
+            if a:
+                res.append((_html.unescape(a.get_text(strip=True)),
+                            a.get('href', ''),
+                            _html.unescape(sn.get_text(strip=True)) if sn else ''))
+        return res
+
+    links = await _search('ddg',
+        'https://html.duckduckgo.com/html/?q=' + _q(query) + '&kl=wt-wt&l=wt-wt',
+        _ddg)
+    if links:
+        lines = await _to_lines(links)
+        if lines:
+            return '\n'.join(lines)
+
+    # Bing
+    def _bing(soup):
+        res = []
+        for li in soup.select('li.b_algo'):
+            a = li.select_one('h2 a')
+            if not a:
+                continue
+            sn = li.select_one('.b_caption p, p')
+            res.append((a.get_text(strip=True), a.get('href', ''),
+                        sn.get_text(strip=True) if sn else ''))
+        return res
+
+    lines2 = await _search('bing', 'https://www.bing.com/search?q=' + _q(query), _bing)
+    out = await _to_lines(lines2 or [])
+    if out:
+        return '\n'.join(out)
+
+    # Brave
+    def _brave(soup):
+        res = []
+        for el in soup.select('.snippet'):
+            a = el.select_one('[href]') or el.select_one('a')
+            t = el.select_one('.snippet-title, .title')
+            sn = el.select_one('.snippet-description')
+            if t:
+                res.append((t.get_text(strip=True),
+                            a.get('href', '') if a else '',
+                            sn.get_text(strip=True) if sn else ''))
+        return res
+
+    lines3 = await _search('brave', 'https://search.brave.com/search?q=' + _q(query), _brave)
+    out3 = await _to_lines(lines3 or [])
+    if out3:
+        return '\n'.join(out3)
+
+    return ("No web results (DuckDuckGo/Bing/Brave nåddes inte eller gav "
+            "inga träffar för denna sökning). Prova en mer specifik fråga.")
 
 
 async def _tool_fetch_url(url: str = "", max_length: int = 5000) -> str:
@@ -2356,10 +2427,12 @@ def specialist_tools(agents) -> list[Tool]:
         tool = Tool(
             name=f"call_specialist_{safe_name}",
             description=(
-                f"Delegera en uppgift till specialisten '{name}'. "
-                f"{description or ''} Använd denna för frågor som hör till "
-                f"denna specialists kompetens. Parametrar: query (uppgiften), "
-                f"context (relevant bakgrund, valfritt)."
+                f"Delegera EN konkret delfråga till specialisten '{name}'. "
+                f"{description or ''}. VIKTIGT: `query` MÅSTE alltid vara en konkret, "
+                f"specifik sök-/arbetsuppgift som du bygger ur användarens fråga "
+                f"(t.ex. exakt ämne/term att undersöka) — skicka ALDRIG en tom eller "
+                f"vag query. Om du inte kan formulera en konkret delfråga åt "
+                f"specialisten, anropa INTE verktyget."
             ),
             parameters={
                 "type": "object",
