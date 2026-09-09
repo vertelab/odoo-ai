@@ -10,6 +10,7 @@ import asyncio
 import base64
 import json
 import logging
+import re
 import threading
 import time
 from html import escape
@@ -52,6 +53,48 @@ def _content_to_text(content):
         ]
         return '\n'.join(texts)
     return content or ''
+
+
+# Rollmarkörer som Pi/opencode kan bädda in i ett user-meddelande när en
+# (del)konversation skickas som kontext. Används av _clean_user_message
+# för att plocka ut "det faktiska användarmeddelandet" ur svepet. Vi
+# klipper vid ASSISTANT/system/tool-markörer (inte vid [User] — den tas
+# bort separat i steg 3).
+_ROLE_MARKER_RE = re.compile(
+    r'\n?\s*\[\s*(?:Assistant tool calls|Assistant|System)\s*\]\s*:?\s*',
+    re.IGNORECASE)
+
+
+def _clean_user_message(text):
+    """Extrahera användarens faktiska meddelande ur en ev. inbakad konversation.
+
+    Pi/opencode kan skicka ett user-meddelande som är HELA konversationen
+    (supervisor-delegering), inramad som:
+        <conversation>
+        [User]: <användarens fråga>...
+        [Assistant]: ...
+        [Assistant tool calls]: ...
+
+    För sessionens namn + den första trådraden vill vi bara ha själva
+    användartexten — inte ramverket/rollmarkörerna. Funktionen:
+      1. tar bort en inledande <conversation>-tagg,
+      2. klipper bort allt efter första [Assistant]/[Assistant tool calls]
+         (dvs. behåller bara användarens eget meddelande),
+      3. tar bort en eventuell [User]:/[User]-rollmarkör.
+    Oigenkänd/ren text returneras oförändrad (fallback).
+    """
+    t = (text or '').strip()
+    if not t:
+        return ''
+    lower = t.lower()
+    # 1. Inledande <conversation>-tagg (eventuellt med radbrytning efter).
+    if lower.startswith('<conversation>'):
+        t = t[len('<conversation>'):].lstrip('\n')
+    # 2. Klipp vid första rollmarkör som inte är användarens egen.
+    t = _ROLE_MARKER_RE.split(t, maxsplit=1)[0]
+    # 3. Ta bort en inledande [User]: / [User]-markör.
+    t = re.sub(r'^\s*\[\s*User\s*\]\s*:?\s*', '', t, flags=re.IGNORECASE)
+    return t.strip()
 
 # ---------------------------------------------------------------------------
 # SSE Controller
@@ -2333,7 +2376,8 @@ class AIOpenAIAPI(http.Controller):
             return Response(json.dumps({'error': {'message': 'No user message provided', 'type': 'invalid_request_error'}}),
                           status=400, content_type='application/json')
 
-        prompt = _content_to_text(user_messages[-1].get('content'))
+        prompt = _clean_user_message(
+            _content_to_text(user_messages[-1].get('content')))
         system_prompt = quest.description or ''
 
         # ── Konvertera Pi:s messages → Message-objekt (ren generering) ──
@@ -2395,23 +2439,11 @@ class AIOpenAIAPI(http.Controller):
         # session_id. Sync-vägen gör det i request-transaktionen; stream-vägen
         # i generatorn (egen cursor så den nya sessionen syns).
         def _find_or_create_session(env):
-            Sess = env['ai.coworker.session']
-            sess = Sess.browse(0)
-            if session_id:
-                sess = Sess.browse(int(session_id))
-                if not sess.exists():
-                    sess = Sess.browse(0)
-            if not sess and pi_session_id:
-                sess = Sess.search(
-                    [('pi_session_id', '=', pi_session_id)], limit=1)
-            if not sess:
-                sess = Sess.create({
-                    'coworker_id': quest.id,
-                    'status': 'active',
-                    'name': (prompt or 'API')[:80],
-                    'user_id': env.user.id,
-                    'pi_session_id': pi_session_id or False,
-                })
+            sess, _created = env['ai.coworker.session'] \
+                ._find_or_create_coworker_session(
+                    quest.id, env.user.id,
+                    pi_session_id=pi_session_id, session_id=session_id,
+                    prompt=prompt)
             return sess
 
         def _cost_context_prompt_block(sess):

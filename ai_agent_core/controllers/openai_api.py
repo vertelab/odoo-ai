@@ -195,21 +195,10 @@ class AIOpenAPIController(http.Controller):
         session_id (session-cost-context 3.1). Sätter context-nycklarna så
         verktyg (cost_context_get/set) når sessionen."""
         Sess = coworker.env['ai.coworker.session']
-        sess = Sess.browse(0)
-        if session_id:
-            sess = Sess.browse(int(session_id))
-            if not sess.exists():
-                sess = Sess.browse(0)
-        if not sess and pi_session_id:
-            sess = Sess.search([('pi_session_id', '=', pi_session_id)],
-                               limit=1)
-        if not sess:
-            sess = Sess.create({
-                'coworker_id': coworker.id, 'status': 'active',
-                'name': (prompt or 'API')[:50],
-                'user_id': coworker.env.user.id,
-                'pi_session_id': pi_session_id or False,
-            })
+        sess, _created = Sess._find_or_create_coworker_session(
+            coworker.id, coworker.env.user.id,
+            pi_session_id=pi_session_id, session_id=session_id,
+            prompt=prompt)
         # Domän-ren hook: bryggor fångar domänkontext
         try:
             sess._session_capture_context()

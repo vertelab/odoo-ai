@@ -290,6 +290,59 @@ class AICoworkerSession(models.Model):
                         src.cost_context_confirmed
         return self.create(vals), True
 
+    # ── Kontinuitet (find-or-create med fallback) ──────────────────────
+    # Används av /ai/v1/chat/completions + openai_api-vägen. Så länge en
+    # Pi-session lever (och skickar pi_session_id/session_id) återfinns
+    # samma Odoo-session. Skulle klienten av någon anledning INTE skicka
+    # något id (t.ex. delegering via en sub-agent som inte propagerar
+    # pi_session_id) faller vi tillbaka på närmast nyligen aktiva session
+    # för samma (coworker, user) — så konversationen inte fragmenteras i
+    # en ny session per tur.
+    @api.model
+    def _find_or_create_coworker_session(self, coworker_id, user_id,
+                                         pi_session_id='', session_id=0,
+                                         prompt='', idle_minutes=20):
+        """Find-or-create en coworker-session med kontinuitets-fallback.
+
+        Prioritet:
+          1. Exakt session_id (om giltig).
+          2. pi_session_id (1:1 mot Pi-sessionen).
+          3. Fallback: närmast nyligen aktiva session för samma
+             (coworker_id, user_id) vars write_date ligger inom
+             idle_minutes — fortsätt den i stället för att skapa ny.
+          4. Annars: skapa en ny aktiv session.
+
+        Returnerar (session, created: bool).
+        """
+        session = self.browse(0)
+        if session_id:
+            session = self.browse(int(session_id))
+            if not session.exists():
+                session = self.browse(0)
+        pi_session_id = (pi_session_id or '').strip()
+        if not session and pi_session_id:
+            session = self.search(
+                [('pi_session_id', '=', pi_session_id)], limit=1)
+        if not session and coworker_id:
+            # Fallback: fortsätt närmast nyligen aktiva session (samma
+            # coworker + user) i stället för att fragmentera.
+            cutoff = fields.Datetime.now() - timedelta(minutes=idle_minutes)
+            session = self.search([
+                ('coworker_id', '=', int(coworker_id)),
+                ('user_id', '=', int(user_id or 0)),
+                ('status', '=', 'active'),
+                ('write_date', '>=', cutoff),
+            ], limit=1, order='write_date desc')
+        if session:
+            return session, False
+        return self.create({
+            'coworker_id': coworker_id,
+            'status': 'active',
+            'name': (prompt or 'API')[:80],
+            'user_id': int(user_id or 0),
+            'pi_session_id': pi_session_id or False,
+        }), True
+
     create_date = fields.Datetime('Started', default=lambda self: fields.Datetime.now())
     end_date = fields.Datetime('Ended')
     round_count = fields.Integer('Rounds', default=0)
