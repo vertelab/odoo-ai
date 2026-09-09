@@ -48,7 +48,8 @@
                        decoration-success="status=='done'"
                        decoration-warning="status=='active'"/>
                 <field name="company_id" optional="hide"/>
-                <field name="partner_id" optional="show"/>
+                <!-- Kund-kolumnen (partner_id) ägs av project_ai-ext-vyn (6257),
+                     så core-listan deklarerar den INTE (annars blir det dubbel). -->
                 <field name="end_date" optional="show"/>
                 <field name="token_input" optional="hide"/>
                 <field name="token_output" optional="hide"/>
@@ -89,8 +90,6 @@
                     <group>
                         <group>
                             <field name="coworker_id" readonly="1"/>
-                            <field name="agent_id" readonly="1"/>
-                            <field name="skill_id" readonly="1"/>
                             <field name="identity_id" readonly="1"/>
                             <field name="user_id" readonly="1"/>
                             <field name="company_id" readonly="1"/>
@@ -98,8 +97,7 @@
                         </group>
                         <group>
                             <field name="create_date" readonly="1"/>
-                            <field name="end_date" readonly="1"/>
-                            <field name="round_count" readonly="1"/>
+                            <field name="end_date" readonly="1" />
                             <field name="finish_reason" readonly="1"/>
                             <field name="token_input" readonly="1"/>
                             <field name="token_output" readonly="1"/>
