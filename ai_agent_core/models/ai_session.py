@@ -47,6 +47,36 @@ class AICoworkerSession(models.Model):
         ('done', 'Done'), ('error', 'Error'),
     ], default='draft')
 
+    # Leverans-/lärandemetadata (inittering, användarbedömning, feldetalj).
+    # init_type = hur sessionen startades (kanal/källa). Används för att
+    # analysera varifrån AI-trafiken kommer samt för lessons learned.
+    init_type = fields.Selection([
+        ('web_ui', 'Web Chat UI'),
+        ('chat', 'Discuss — Private Chat'),
+        ('channel', 'Discuss — Team Channel'),
+        ('mail', 'Incoming Mail'),
+        ('cron', 'Scheduled Action'),
+        ('server_action', 'Server Action'),
+        ('powerbox', 'Powerbox'),
+        ('manual', 'Manual'),
+        ('webhook', 'Webhook'),
+        ('openai_api', 'OpenAI API'),
+        ('watch', 'Watch — Dataändring'),
+    ], string='Start via', index=True, readonly=True, tracking=True,
+        help='Hur sessionen startades (kanal/källa). Fylls vid sessionens '
+             'skapande där källan är känd.')
+    user_rating = fields.Selection([
+        ('down', 'Missnöjd'),
+        ('neutral', 'Neutral'),
+        ('up', 'Nöjd'),
+        ('unassessed', 'Ej bedömd'),
+    ], string='Användarbedömning', default='unassessed',
+        help='Användarens subjektiva bedömning av svaret (feedback för att '
+             'förbättra coworkern över tid).')
+    error_detail = fields.Text('Felbeskrivning', readonly=True,
+        help='Fylls när sessionen avslutas med status error-ish (undantagsmeddelande '
+             'för felsökning och analys).')
+
     # ── Watch-kö (fix-watch-async) ───────────────────────────────────
     # _trigger_watch skapar sessionen med watch_pending=True och returnerar
     # DIREKT — AI-körningen sker asynkront i cron (_process_watch_sessions)
