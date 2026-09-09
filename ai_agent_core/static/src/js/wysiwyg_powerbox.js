@@ -266,6 +266,7 @@ patch(PowerboxPlugin.prototype, {
         // Lägg till ett kommando per medarbetare (i samma "ai"-kategori).
         const aiCommands = aiPluginInstance._quests.map((quest) => ({
             categoryId: "ai",
+            categoryName: "AI Tools",
             title: quest.name,
             description: quest.sub_description || "",
             icon: "fa-superpowers",
