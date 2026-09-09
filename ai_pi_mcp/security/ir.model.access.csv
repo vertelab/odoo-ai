@@ -1,0 +1,3 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_mcp_session_system,mcp.session.system,model_mcp_session,base.group_system,1,1,1,1
+access_mcp_tool_system,mcp.tool.system,model_mcp_tool,base.group_system,1,1,1,1
