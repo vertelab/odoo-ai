@@ -63,24 +63,49 @@ class McpController(http.Controller):
         return self._get_param('ai_pi_mcp.read_only', 'False') == 'True'
 
     def _check_auth(self):
-        """Validate the Bearer token against the configured API key.
+        """Validate the Bearer token and resolve the acting (developer) user.
 
-        Returns the developer user (as a sudo env) or raises AccessError.
+        Standard behaviour (no ai_pi_mcp.developer_user_id configured): the
+        caller authenticates with their own per-user Odoo API key (same
+        mechanism as /ai/v1) and the request runs as that user. This removes
+        the need for a separate shared key + hardcoded developer user.
+
+        If ai_pi_mcp.developer_user_id is configured it acts as an explicit
+        override (a fixed service account); the token is still validated
+        either as the caller's own per-user key or against the legacy shared
+        ai_pi_mcp.api_key.
+
+        Returns the acting user (as a sudo env) or raises AccessError.
         """
         auth = request.httprequest.headers.get('Authorization', '')
         if not auth.startswith('Bearer '):
             raise AccessError('Missing bearer token')
         token = auth[len('Bearer '):].strip()
-        expected = self._get_param('ai_pi_mcp.api_key', '')
-        if not expected or token != expected:
+
+        # Resolve the caller from their own per-user Odoo API key (standard).
+        caller_uid = None
+        try:
+            caller_uid = request.env['res.users.apikeys'].sudo()._check_credentials(
+                scope='rpc', key=token)
+        except Exception:
+            caller_uid = None
+
+        dev_user_id = self._get_param('ai_pi_mcp.developer_user_id')
+        if dev_user_id:
+            # Explicit override: act as a fixed user, but still require a
+            # valid token (the caller's own key or the legacy shared key).
+            shared = self._get_param('ai_pi_mcp.api_key', '')
+            if not caller_uid and (not shared or token != shared):
+                raise AccessError('Invalid API key')
+            user = request.env['res.users'].sudo().browse(int(dev_user_id))
+            if not user.exists():
+                raise AccessError('Configured developer user not found')
+            return user
+
+        # Standard: the developer user is the API-key owner.
+        if not caller_uid:
             raise AccessError('Invalid API key')
-        user_id = self._get_param('ai_pi_mcp.developer_user_id')
-        if not user_id:
-            raise AccessError('ai_pi_mcp.developer_user_id not configured')
-        user = request.env['res.users'].sudo().browse(int(user_id))
-        if not user.exists():
-            raise AccessError('Configured developer user not found')
-        return user
+        return request.env['res.users'].sudo().browse(caller_uid)
 
     def _run_as(self, user):
         """Return an env acting as ``user`` (sudo) for the current cursor."""

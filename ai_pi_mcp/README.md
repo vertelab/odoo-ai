@@ -18,6 +18,19 @@ checkmodule round-trips.
 * **Data** — `search_read`, `read_records`, `count`, `create_record`,
   `update_record`, `delete_record`, and `call_method` (public methods only).
 
+## Bundled skills (Pi reads from filesystem)
+
+`skills/` holds MCP-native methodology documents that Pi loads from the module
+filesystem (not over MCP, so `ai.coworkers` without MCP access are unaffected):
+
+* `skills/view-design.md` — five-phase view-design dialog for all view types,
+  discovery/iteration via the MCP tools against live `ir.ui.view`; approved
+  views are persisted into module source + verified with `checkmodule`.
+  (ai_pi_mcp-native equivalent of `/skill:odoo-view`.)
+* `skills/kanban-design.md` — same MCP workflow, kanban-specific card design.
+  (ai_pi_mcp-native equivalent of `/skill:odoo-kanban`.)
+* `skills/improvements.md` — metareflection log (created on first use).
+
 ## Transport & protocol
 
 * Single endpoint **`POST /mcp`** speaking the *stateful* MCP protocol revision
@@ -32,18 +45,26 @@ checkmodule round-trips.
 
 ## Authentication
 
-Bearer token against the `ir.config_parameter` key **`ai_pi_mcp.api_key`**.
-Authenticated calls act as the user in **`ai_pi_mcp.developer_user_id`** (which
-should hold `group_system` on a development database so the tools can touch
-`ir.ui.view` / `ir.module.module`).
+By default the caller authenticates with **their own per-user Odoo API key**
+(the same mechanism `/ai/v1` uses): the Bearer token is validated against
+`res.users.apikeys` and the request runs as **that user**. No shared key or
+hardcoded developer user is needed — the acting (developer) user defaults to
+the API-key owner.
+
+If **`ai_pi_mcp.developer_user_id`** is configured it acts as an explicit
+override (a fixed service account); the token is still validated either as the
+caller's own per-user key or against the legacy shared `ai_pi_mcp.api_key`.
+
+The acting user should hold `group_system` on a development database so the
+tools can touch `ir.ui.view` / `ir.module.module`.
 
 ## Configuration (ir.config_parameter)
 
 | Key | Meaning |
 |-----|---------|
 | `ai_pi_mcp.enabled` | `True` to serve `/mcp`. Dev-only; default `False`. |
-| `ai_pi_mcp.api_key` | The bearer token clients must send. |
-| `ai_pi_mcp.developer_user_id` | Odoo user id whose rights tools run with. |
+| `ai_pi_mcp.api_key` | Legacy shared bearer token (optional). Only needed when a fixed `developer_user_id` override is used. |
+| `ai_pi_mcp.developer_user_id` | Optional explicit override: Odoo user id whose rights tools run with. When unset, the caller's own API-key account is used. |
 | `ai_pi_mcp.read_only` | `True` to block all write-capable tools. |
 
 ## Security guards
@@ -56,7 +77,8 @@ should hold `group_system` on a development database so the tools can touch
 
 ## Usage from Pi
 
-Register in `~/.pi/agent/mcp.json`:
+Register in `~/.pi/agent/mcp.json` (use your own Odoo API key — the same one
+as in `~/.pi/agent/odoo.json`):
 
 ```json
 {
@@ -64,7 +86,7 @@ Register in `~/.pi/agent/mcp.json`:
     "odoo-sfa": {
       "transport": "streamable-http",
       "url": "http://localhost:8069/mcp",
-      "headers": { "Authorization": "Bearer <ai_pi_mcp.api_key>" },
+      "headers": { "Authorization": "Bearer <your-odoo-api-key>" },
       "lifecycle": "lazy"
     }
   }
