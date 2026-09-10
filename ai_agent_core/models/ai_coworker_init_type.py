@@ -137,6 +137,25 @@ class AICoworkerInitType(models.Model):
              'Tom = ingen extra instruktion. Gäller ENBART init-typen '
              'openai_api — andra init-typer orkestrerar som förut.')
 
+    # Kontextfönster som annonseras till externa API-klienter (Pi/Cline) via
+    # /ai/v1/<coworker>/models. 0/tomt = härleds automatiskt som det MINSTA
+    # context_window bland medarbetarens agenters modeller — det säkra värdet,
+    # eftersom en request kan landa hos vilken agent/modell som helst i kedjan.
+    openai_context_window = fields.Integer(
+        'Context Window (tokens)',
+        compute='_compute_openai_context_window',
+        inverse='_inverse_openai_context_window',
+        store=True, readonly=False,
+        help='Kontextfönster (tokens) som annonseras till externa API-klienter '
+             'för denna AI Medarbetare. Tomt/0 = automatisk härledning (minsta '
+             'context_window bland medarbetarens agenters modeller).')
+    openai_context_window_manual = fields.Boolean(
+        'Context Window (manuellt)',
+        default=False,
+        help='Sätts automatiskt när du anger ett eget värde ovan. False = '
+             'värdet härleds alltid från medarbetarens agenters modeller '
+             '(minsta), så att det följer med när modellerna ändras.')
+
     # ── watch specific ──
     # De flesta fälten är related till base_automation — ändringar skrivs
     # direkt på base_automation-recorden ("referens-fält").
@@ -625,3 +644,38 @@ class AICoworkerInitType(models.Model):
             if record.base_automation_id:
                 record.base_automation_id.active = False
         return super().unlink()
+
+    # ── kontextfönster (openai_api) ──
+
+    @api.depends('init_type',
+                 'coworker_id.agent_ids.agent_id.model_id.context_window')
+    def _compute_openai_context_window(self):
+        """Default = minsta context_window bland medarbetarens agentmodeller."""
+        for rec in self:
+            # Bara manuellt satta värden lämnas i fred; annars härleds alltid
+            # om (så att värdet följer agenternas modeller).
+            if rec.openai_context_window_manual:
+                continue
+            if rec.init_type != 'openai_api' or not rec.coworker_id:
+                continue
+            rec.openai_context_window = rec.coworker_id._effective_context_window()
+
+    def _inverse_openai_context_window(self):
+        """Manuellt skrivet värde -> markera som manuellt (0 = tillbaka till auto)."""
+        for rec in self:
+            rec.openai_context_window_manual = bool(rec.openai_context_window)
+
+    def _effective_context_window(self):
+        """Annonserat kontextfönster: eget värde, annars min(agenter).
+
+        Returnerar alltid ett positivt heltal. Eget värde vinner (manuell
+        override); annars ärvs medarbetarens härledda minimivärde.
+        """
+        self.ensure_one()
+        # Endast ett *manuellt* satt värde vinner — annars härleds värdet live
+        # från agenternas modeller, så att det aldrig blir stale.
+        if self.openai_context_window_manual and self.openai_context_window:
+            return self.openai_context_window
+        if self.coworker_id:
+            return self.coworker_id._effective_context_window()
+        return self.openai_context_window or 128000

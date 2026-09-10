@@ -70,6 +70,8 @@
                        invisible="init_type!='openai_api'">
                     <field name="rate_limit_rpm"/>
                     <field name="rate_limit_tpm"/>
+                    <field name="openai_context_window"
+                           help="0 = härleds automatiskt (minsta context_window bland medarbetarens agenters modeller). Ett eget värde överrider."/>
                 </group>
             </form>
         </field>

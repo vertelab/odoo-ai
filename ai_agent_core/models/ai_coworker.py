@@ -1592,6 +1592,20 @@ class AICoworker(models.Model):
             active = r.init_type_ids.filtered('enabled')
             r.init_type = active[0].init_type if active else 'manual'
 
+    def _effective_context_window(self):
+        """Minsta context_window bland medarbetarens agenters modeller.
+
+        Minimum (inte maximum) är det säkra värdet: en request kan betjänas av
+        vilken som helst av medarbetarens agenter, så taket sätts av den minsta
+        modellen i kedjan. Saknas agenter/modeller -> 128000.
+        """
+        self.ensure_one()
+        windows = [
+            w for w in self.agent_ids.mapped('agent_id.model_id.context_window')
+            if w and w > 0
+        ]
+        return min(windows) if windows else 128000
+
     @api.depends('agent_ids')
     def _compute_agent_count(self):
         for r in self:

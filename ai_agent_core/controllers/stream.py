@@ -2123,6 +2123,9 @@ class AIOpenAIAPI(http.Controller):
                 'created': int(q.create_date.timestamp()) if q.create_date else 0,
                 'owned_by': 'vertel',
                 'description': q.sub_description or (q.description[:200] if q.description else ''),
+                # Kontextfönster som klienten (Pi/Cline) kan läsa för att veta
+                # när den måste komprimera — minsta värdet i agentkedjan.
+                'context_window': oai[0]._effective_context_window(),
             })
 
         return Response(json.dumps({'object': 'list', 'data': models}),
@@ -2141,10 +2144,16 @@ class AIOpenAIAPI(http.Controller):
             return Response(json.dumps({'error': {'message': f"Coworker '{coworker}' not found"}}),
                           status=404, content_type='application/json')
 
+        oai = quest.sudo().init_type_ids.filtered(
+            lambda it: it.init_type == 'openai_api' and it.enabled)
         return Response(json.dumps({'object': 'list', 'data': [{
             'id': self._coworker_alias(quest),
             'object': 'model',
             'owned_by': 'vertel',
+            # Minsta context_window i agentkedjan (se ai_coworker
+            # ._effective_context_window). Klienten använder detta för att
+            # veta när konversationen måste komprimeras.
+            'context_window': (oai[0]._effective_context_window() if oai else 0),
         }]}), content_type='application/json')
 
     @http.route('/ai/v1/sessions/lookup', type='http', auth='public',
