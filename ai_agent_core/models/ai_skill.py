@@ -96,7 +96,7 @@ class AISkill(models.Model):
     agent_count = fields.Integer(compute='_compute_agent_count')
     session_line_count = fields.Integer(compute='_compute_session_line_count')
     session_tokens_last_30d = fields.Integer(
-        compute='_compute_session_tokens_30d', string='Tokens (senaste 30 d)')
+        compute='_compute_session_tokens_30d', string='Tokens (månad)')
 
     # Improvement
     improvement_guidance = fields.Text('Improvement Guidance')
@@ -116,8 +116,8 @@ class AISkill(models.Model):
 
     def _compute_session_tokens_30d(self):
         for r in self:
-            r.session_tokens_last_30d = self.env['ai.coworker.session.line']._tokens_since(
-                days=30, extra=[('skill_id', '=', r.id)])
+            r.session_tokens_last_30d = self.env['ai.coworker.session.line']._tokens_this_month(
+                extra=[('skill_id', '=', r.id)])
 
     def action_open_session_lines(self):
         """Open coworker session lines produced by this skill (stat button)."""

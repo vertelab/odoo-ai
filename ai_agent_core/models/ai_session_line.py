@@ -74,3 +74,15 @@ class AICoworkerSessionLine(models.Model):
         domain = [(create_field, '>=', since)] + list(extra)
         rows = self.search(domain)
         return sum((r.token_input or 0) + (r.token_output or 0) for r in rows)
+
+    @api.model
+    def _tokens_this_month(self, extra=(), create_field='create_date'):
+        """Summa token_input+token_output för innevarande KALENDERmånad (1:a → nu),
+        som valfritt matchar `extra`. Matchar budget-semantiken (monthly_cap).
+        """
+        from datetime import datetime as _dt
+        now = _dt.now()
+        month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        domain = [(create_field, '>=', month_start)] + list(extra)
+        rows = self.search(domain)
+        return sum((r.token_input or 0) + (r.token_output or 0) for r in rows)

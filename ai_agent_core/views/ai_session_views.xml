@@ -144,9 +144,9 @@
                 <field name="skill_id" optional="hide"/>
                 <field name="model_real" optional="hide"/>
                 <field name="reasoning" optional="hide"/>
-                <field name="token_input" optional="hide"/>
-                <field name="token_output" optional="hide"/>
-                <field name="token_sys" optional="hide"/>
+                <field name="token_input" optional="show" sum="1"/>
+                <field name="token_output" optional="show" sum="1"/>
+                <field name="token_sys" optional="show" sum="1"/>
             </list>
         </field>
     </record>

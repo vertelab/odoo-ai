@@ -41,7 +41,7 @@ class AITool(models.Model):
     # Stats (session-meddelanden som använde detta verktyg)
     session_line_count = fields.Integer(compute='_compute_session_line_count')
     session_tokens_last_30d = fields.Integer(
-        compute='_compute_session_tokens_30d', string='Tokens (senaste 30 d)')
+        compute='_compute_session_tokens_30d', string='Tokens (månad)')
 
     def _compute_session_line_count(self):
         for r in self:
@@ -50,8 +50,8 @@ class AITool(models.Model):
 
     def _compute_session_tokens_30d(self):
         for r in self:
-            r.session_tokens_last_30d = self.env['ai.coworker.session.line']._tokens_since(
-                days=30, extra=[('tool_id', '=', r.id)])
+            r.session_tokens_last_30d = self.env['ai.coworker.session.line']._tokens_this_month(
+                extra=[('tool_id', '=', r.id)])
 
     def action_open_session_lines(self):
         """Open coworker session lines that used this tool (stat button)."""

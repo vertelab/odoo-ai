@@ -86,7 +86,7 @@ class AIAgent(models.Model):
     coworker_count = fields.Integer(compute='_compute_coworker_count')
     session_line_count = fields.Integer(compute='_compute_session_line_count')
     session_tokens_last_30d = fields.Integer(
-        compute='_compute_session_tokens_30d', string='Tokens (senaste 30 d)')
+        compute='_compute_session_tokens_30d', string='Tokens (månad)')
 
     def _compute_session_line_count(self):
         for r in self:
@@ -95,8 +95,8 @@ class AIAgent(models.Model):
 
     def _compute_session_tokens_30d(self):
         for r in self:
-            r.session_tokens_last_30d = self.env['ai.coworker.session.line']._tokens_since(
-                days=30, extra=[('agent_id', '=', r.id)])
+            r.session_tokens_last_30d = self.env['ai.coworker.session.line']._tokens_this_month(
+                extra=[('agent_id', '=', r.id)])
 
     def _compute_coworker_count(self):
         for r in self:
