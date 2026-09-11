@@ -134,6 +134,16 @@ class AIOpenAPIController(http.Controller):
         pi_session_id = (body.get('pi_session_id') or '').strip()
         session_id = int(body.get('session_id') or 0)
 
+        # Transport C-fallback: plocka Pi-sessions-UUID ur `{pi session: …}`-
+        # markör i system-/user-meddelanden om body-fältet saknas.
+        if not pi_session_id:
+            marker_texts = [
+                self._messages_to_prompt([m]) for m in messages
+                if (m.get('role') or '') in ('system', 'developer', 'user')
+            ]
+            pi_session_id = request.env['ai.coworker.session'] \
+                ._extract_pi_session_marker(*marker_texts)
+
         if not messages:
             return self._error(400, "Missing messages")
 

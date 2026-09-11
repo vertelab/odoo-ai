@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """ai.coworker.session — standalone session model for agent runs."""
 
-import json, logging, uuid
+import json, logging, re, uuid
 from datetime import timedelta
 from odoo import models, fields, api
 
@@ -129,6 +129,12 @@ class AICoworkerSession(models.Model):
         'Pi Session ID', index=True,
         help='Pi-sessionens UUID (1:1 mot Pi-sessionen). Resumé av samma '
              'Pi-session återfinner samma Odoo-session.')
+    pi_message_count = fields.Integer(
+        'Pi Messages Persisted', default=0, copy=False,
+        help='Antal poster i Pi-klientens messages[] som redan sparats som '
+             'session lines. Pi skickar HELA historiken varje anrop; denna '
+             'räknare gör att endast NYA meddelanden persisteras (en line '
+             'per messages[]-post, ingen duplicering).')
     partner_id = fields.Many2one(
         'res.partner', string='Kund', index=True,
         help='Kund (res.partner) som sessionens kostnad belastar. Härleds '
@@ -198,7 +204,7 @@ class AICoworkerSession(models.Model):
 
         Returnerar (session, created: bool).
         """
-        pi_session_id = (pi_session_id or '').strip()
+        pi_session_id = (pi_session_id or '').strip().lower()
         session = self.search(
             [('pi_session_id', '=', pi_session_id)], limit=1)
         if session:
@@ -206,107 +212,7 @@ class AICoworkerSession(models.Model):
         vals = {
             'pi_session_id': pi_session_id,
             'status': 'active',
-            'name': pi_session_id[:8],
-            'user_id': self.env.user.id,
-        }
-        if copy_from_pi_session_id:
-            src = self.search(
-                [('pi_session_id', '=', copy_from_pi_session_id)], limit=1)
-            if src:
-                for f in ('project_id', 'task_id', 'partner_id'):
-                    if f in self._fields:
-                        vals[f] = src[f].id if src[f] else False
-                if 'cost_context_confirmed' in self._fields:
-                    vals['cost_context_confirmed'] = \
-                        src.cost_context_confirmed
-        return self.create(vals), True
-
-    # ── Kostnadskontext (session-cost-context) ──────────────────────────
-    # Generiska fält (domän-rent): pi_session_id kopplar sessionen 1:1 till
-    # en Pi-session (UUID). partner_id/cost_context_confirmed är grunden för
-    # kostnadsuppföljning per kund. Domänfält (project_id/task_id) läggs av
-    # bryggor (project_ai) via arv.
-    pi_session_id = fields.Char(
-        'Pi Session ID', index=True,
-        help='Pi-sessionens UUID (1:1 mot Pi-sessionen). Resumé av samma '
-             'Pi-session återfinner samma Odoo-session.')
-    partner_id = fields.Many2one(
-        'res.partner', string='Kund', index=True,
-        help='Kund (res.partner) som sessionens kostnad belastar. Härleds '
-             'normalt från projektets partner via coworkerns '
-             'kostnadskontext-strategi.')
-    cost_context_confirmed = fields.Boolean(
-        'Kostnadskontext bekräftad', default=False,
-        help='Sätts när kostnadsbelastningen bekräftats (en gång per '
-             'session). Redan bekräftad session frågar inte om igen '
-             '(inte heller efter resume/fork-kopiering).')
-
-    def _session_capture_context(self):
-        """Domän-ren hook: bryggor (t.ex. project_ai) override:ar för att
-        fånga domänkontext (project/task) på sessionen vid körning.
-
-        Kallas av openai_api-vägen efter att en session skapats/återfunnits.
-        Default: ingen åtgärd (core förblir domän-rent).
-        """
-        return self
-
-    def _session_auto_capture(self, prompt):
-        """Domän-ren hook: deterministisk kontextfångst ur användarens
-        prompt (t.ex. 'task 36779' → task/projekt/kund).
-
-        Kallas av openai_api-vägen efter att sessionen skapats/återfunnits
-        OCH efter _session_capture_context, innan LLM-körningen. Bryggor
-        (t.ex. project_ai) override:ar med regex/heuristik — core förblir
-        domän-rent. Default: ingen åtgärd.
-        """
-        return self
-
-    def _apply_cost_context_strategy(self):
-        """Anropa coworkerns resolver-strategi för att härleda partner_id
-        (och ev. domänfält) ur sessionens nuvarande kontext.
-
-        Strategin väljs av coworkerns `cost_context_partner_strategy`
-        (t.ex. "project_partner" registrerad av project_ai). Tyst no-op om
-        ingen strategi är satt/registrerad — hooks får aldrig kasta.
-        """
-        self.ensure_one()
-        strategy = self.coworker_id.cost_context_partner_strategy \
-            if self.coworker_id else ''
-        if not strategy:
-            return self
-        fn = get_cost_context_strategy(strategy)
-        if fn is None:
-            _logger.warning('cost-context strategy %r not registered',
-                            strategy)
-            return self
-        try:
-            fn(self)
-        except Exception as e:
-            _logger.warning('cost-context strategy %s failed: %s',
-                            strategy, e)
-        return self
-
-    @api.model
-    def _lookup_or_create_pi_session(self, pi_session_id,
-                                     copy_from_pi_session_id=''):
-        """Find-or-create session via pi_session_id (session-cost-context).
-
-        Används av POST /ai/v1/sessions/lookup och openai_api-vägen.
-        Idempotent: samma pi_session_id → samma session. Vid
-        copy_from_pi_session_id (fork) skapas en NY session med kontexten
-        (project/task/partner + cost_context_confirmed) kopierad från
-        källsessionen.
-
-        Returnerar (session, created: bool).
-        """
-        pi_session_id = (pi_session_id or '').strip()
-        session = self.search(
-            [('pi_session_id', '=', pi_session_id)], limit=1)
-        if session:
-            return session, False
-        vals = {
-            'pi_session_id': pi_session_id,
-            'status': 'active',
+            'init_type': 'openai_api',
             'name': pi_session_id[:8],
             'user_id': self.env.user.id,
         }
@@ -344,15 +250,24 @@ class AICoworkerSession(models.Model):
     def _find_or_create_coworker_session(self, coworker_id, user_id,
                                          pi_session_id='', session_id=0,
                                          prompt='', idle_minutes=20):
-        """Find-or-create en coworker-session med kontinuitets-fallback.
+        """Find-or-create en coworker-session (1:1 mot Pi-sessionen).
 
         Prioritet:
           1. Exakt session_id (om giltig).
           2. pi_session_id (1:1 mot Pi-sessionen).
-          3. Fallback: närmast nyligen aktiva session för samma
-             (coworker_id, user_id) vars write_date ligger inom
-             idle_minutes — fortsätt den i stället för att skapa ny.
+          3. Fallback (ENDART när inget pi_session_id finns): närmast
+             nyligen aktiva session för samma (coworker_id, user_id) vars
+             write_date ligger inom idle_minutes — fortsätt den i stället
+             för att skapa ny. Gäller icke-Pi-klienter (web_ui, mail m.fl.)
+             som saknar Pi-session.
           4. Annars: skapa en ny aktiv session.
+
+        VIKTIGT (session-cost-context 8.5): när ett pi_session_id SKICKAS
+        men ingen session med det id:t finns, skapas ALLTID en ny session —
+        vi faller aldrig tillbaka på "närmast aktiva" (det skulle knyta en
+        ny Pi-session till en annan Pi-sessions Odoo-session och tappa
+        1:1-kopplingen). Fallbacken är alltså reserverad för klienter som
+        inte har något Pi-id alls.
 
         Returnerar (session, created: bool).
         """
@@ -361,13 +276,30 @@ class AICoworkerSession(models.Model):
             session = self.browse(int(session_id))
             if not session.exists():
                 session = self.browse(0)
-        pi_session_id = (pi_session_id or '').strip()
+        pi_session_id = (pi_session_id or '').strip().lower()
         if not session and pi_session_id:
             session = self.search(
                 [('pi_session_id', '=', pi_session_id)], limit=1)
+            if session:
+                # Självläkning: en session som hittats via pi_session_id men
+                # saknar init_type (t.ex. skapad av en äldre kodväg) märks
+                # som openai_api så filtrering/statistik blir korrekt.
+                if not session.init_type:
+                    session.sudo().write({'init_type': 'openai_api'})
+                return session, False
+            # pi_session_id skickat men okänt → NY session (ingen fallback).
+            return self.create({
+                'coworker_id': coworker_id,
+                'status': 'active',
+                'init_type': 'openai_api',
+                'name': (prompt or 'API')[:80],
+                'user_id': int(user_id or 0),
+                'pi_session_id': pi_session_id,
+            }), True
         if not session and coworker_id:
-            # Fallback: fortsätt närmast nyligen aktiva session (samma
-            # coworker + user) i stället för att fragmentera.
+            # Fallback (endast utan pi_session_id): fortsätt närmast nyligen
+            # aktiva session (samma coworker + user) i stället för att
+            # fragmentera. Icke-Pi-klienter (web_ui/mail/powerbox).
             cutoff = fields.Datetime.now() - timedelta(minutes=idle_minutes)
             session = self.search([
                 ('coworker_id', '=', int(coworker_id)),
@@ -383,8 +315,165 @@ class AICoworkerSession(models.Model):
             'init_type': 'openai_api',
             'name': (prompt or 'API')[:80],
             'user_id': int(user_id or 0),
-            'pi_session_id': pi_session_id or False,
         }), True
+
+    # ── Pi-session-markör (transport C) ────────────────────────────────
+    # Pi-klienten äger Pi-sessionens UUID. Primär transport är body-fältet
+    # `pi_session_id`; som fallback märker klienten system-/första
+    # user-meddelandet med `{pi session: <uuid>}`. Denna helper plockar ut
+    # UUID:t ur en text så att även klienter/vägar som strippar okända
+    # body-fält kan kopplas till rätt session.
+    _PI_SESSION_MARKER_RE = re.compile(
+        r'\{\s*pi[\s_-]*session\s*:\s*'
+        r'([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})'
+        r'\s*\}',
+        re.IGNORECASE)
+
+    @api.model
+    def _extract_pi_session_marker(self, *texts):
+        """Plocka ut ett Pi-session-UUID ur `{pi session: <uuid>}`-markörer.
+
+        Tar emot en eller flera texter (system-prompt, user-meddelanden) och
+        returnerar det första UUID som hittas, annars ''. Används som
+        fallback när request-body saknar `pi_session_id`.
+        """
+        for text in texts:
+            if not text:
+                continue
+            m = self._PI_SESSION_MARKER_RE.search(str(text))
+            if m:
+                return m.group(1).lower()
+        return ''
+
+    # ── Persistera Pi:s messages[] som session lines ────────────────────
+    # Pi (och andra OpenAI-klienter) skickar HELA konversationen i
+    # `messages[]` varje anrop. För att varje meddelande ska bli EXAKT en
+    # ai.coworker.session.line (och inte dupliceras per anrop) persisteras
+    # endast DELTAT: messages[pi_message_count:]. Räknaren på sessionen
+    # håller reda på hur många poster som redan sparats.
+    #
+    # Token-accounting: requestens input-tokens läggs på sista NYA
+    # user-raden (prompt-kostnaden), output-tokens på sista NYA
+    # assistant-raden. Summan över raderna = anropets (input+output),
+    # dvs. samma kostnadssemantik som tidigare.
+    @api.model
+    def _persist_pi_messages(self, env, session, messages,
+                             input_t=0, output_t=0, model_real=''):
+        """Skriv NYA messages[]-poster som session lines (en per post).
+
+        Returnerar antalet skapade rader. Tyst no-op vid fel (persist får
+        aldrig krascha en körning).
+        """
+        try:
+            messages = messages or []
+            total = len(messages)
+            already = int(session.pi_message_count or 0)
+            # Robusthet: om klienten skickar färre meddelanden än vi sparat
+            # (t.ex. trunkerad historik) börjar vi om från 0 så inget tappas.
+            if already > total:
+                already = 0
+            new_messages = messages[already:]
+            if not new_messages:
+                # Inget nytt — men bokför tokens om anropet ändå kostat.
+                if input_t or output_t:
+                    session.write({
+                        'token_input': (session.token_input or 0) + input_t,
+                        'token_output': (session.token_output or 0) + output_t,
+                    })
+                return 0
+
+            Line = env['ai.coworker.session.line']
+            sys_mult = 1.0
+            if model_real:
+                try:
+                    ai_model = env['ai.model']._resolve_from_real(
+                        model_real, session.coworker_id)
+                    if ai_model:
+                        sys_mult = ai_model.sys_multiplier
+                except Exception:
+                    pass
+
+            # Index för sista nya user-/assistant-raden (token-bokföring).
+            def _norm_role(m):
+                role = (m.get('role') or '').strip()
+                if role == 'developer':
+                    role = 'system'
+                if role not in ('user', 'assistant', 'tool', 'system'):
+                    role = 'user'
+                return role
+
+            def _norm_content(m):
+                content = m.get('content')
+                if isinstance(content, list):
+                    content = '\n'.join(
+                        c.get('text', '') for c in content
+                        if isinstance(c, dict) and c.get('type') == 'text')
+                return content or ''
+
+            last_user_idx = -1
+            last_asst_idx = -1
+            for i, m in enumerate(new_messages):
+                role = _norm_role(m)
+                if role == 'user':
+                    last_user_idx = i
+                elif role == 'assistant':
+                    last_asst_idx = i
+
+            base_seq = 0
+            if already:
+                max_rec = env['ai.coworker.session.line'].search(
+                    [('session_id', '=', session.id)],
+                    order='sequence desc, id desc', limit=1)
+                base_seq = (max_rec.sequence or 0) + 1
+            # Dedup mot sista persisterade raden: svaret från FÖRRA anropet
+            # skrivs direkt (assistant-rad) och dyker sedan upp som första
+            # post i nästa anrops delta. Utan dedup skulle det dubbleras.
+            last_line = env['ai.coworker.session.line'].search(
+                [('session_id', '=', session.id)],
+                order='sequence desc, id desc', limit=1)
+            created_count = 0
+            for i, m in enumerate(new_messages):
+                role = _norm_role(m)
+                content = _norm_content(m)
+
+                # Hoppa över om detta är exakt samma som sista raden (svaret
+                # som redan skrivits direkt vid föregående anrop).
+                if (last_line and i == 0 and last_line.role == role
+                        and (last_line.content or '') == content):
+                    last_line = env['ai.coworker.session.line'].browse(0)
+                    continue
+
+                vals = {
+                    'session_id': session.id,
+                    'role': role,
+                    'content': content,
+                    'sequence': base_seq + i,
+                    'sys_multiplier': sys_mult,
+                    'model_real': model_real or '',
+                }
+                # Tool-meddelanden: OpenAI:s tool_call_id → spara som namn.
+                if role == 'tool':
+                    vals['tool_name'] = m.get('name') or m.get('tool_call_id') or ''
+                if m.get('tool_calls'):
+                    vals['tool_calls'] = json.dumps(
+                        m.get('tool_calls'), ensure_ascii=False)
+                # Token-bokföring (endast sista nya user/assistant).
+                if i == last_user_idx and input_t:
+                    vals['token_input'] = input_t
+                if i == last_asst_idx and output_t:
+                    vals['token_output'] = output_t
+                Line.create(vals)
+                created_count += 1
+
+            session.write({
+                'pi_message_count': total,
+                'token_input': (session.token_input or 0) + input_t,
+                'token_output': (session.token_output or 0) + output_t,
+            })
+            return created_count
+        except Exception as e:
+            _logger.warning('pi message persist failed: %s', e)
+            return 0
 
     create_date = fields.Datetime('Started', default=lambda self: fields.Datetime.now())
     end_date = fields.Datetime('Ended')

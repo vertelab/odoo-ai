@@ -2253,9 +2253,27 @@ class AIOpenAIAPI(http.Controller):
             return Response(json.dumps({'error': {'message': 'Unauthorized', 'type': 'authentication_error'}}),
                           status=401, content_type='application/json')
 
+        # ── Pi-session-id (transport A + C) ───────────────────────────────
+        # Primär transport: body-fältet `pi_session_id` (Pi-klienten äger
+        # UUID:t). Fallback (C): klienten märker system-/första user-
+        # meddelandet med `{pi session: <uuid>}` — plocka ut det om
+        # body-fältet saknas (t.ex. proxad trafik som strippar okända fält).
+        pi_session_id = (body.get('pi_session_id') or '').strip()
+        if not pi_session_id:
+            marker_texts = []
+            for m in messages:
+                if (m.get('role') or '') in ('system', 'developer', 'user'):
+                    marker_texts.append(_content_to_text(m.get('content')))
+            pi_session_id = self.env['ai.coworker.session'] \
+                ._extract_pi_session_marker(*marker_texts)
+            if pi_session_id:
+                _logger.info(
+                    'pi_session_id saknades i body — hittade markör i '
+                    'meddelandet: %s', pi_session_id)
+
         return self._run_coworker_chat(
             quest, messages, body.get('model', coworker), stream,
-            pi_session_id=body.get('pi_session_id', ''),
+            pi_session_id=pi_session_id,
             session_id=body.get('session_id', 0),
             tools=body.get('tools', []),
             temperature=body.get('temperature', 0.7),
@@ -2513,14 +2531,45 @@ class AIOpenAIAPI(http.Controller):
                 return ''
 
         def _persist_session(env, sess, response_text, input_t, output_t,
-                             model_real='', tool_history=None):
-            """Persistera körningen till sessionen (session-cost-context 3.2).
+                             model_real='', tool_history=None, messages=None):
+            """Persistera körningen till sessionen.
 
-            Bokföring per meddelande: user-raden får requestens input-tokens
-            (prompt-kostnaden), assistant-raden får output-tokens + en
-            tool_calls-sammanfattning (granskningsbar kontext).
+            Primärt: varje NY post i Pi:s `messages[]` blir EXAKT en
+            ai.coworker.session.line (delta via sess.pi_message_count) —
+            ingen duplicering trots att Pi skickar hela historiken varje
+            anrop. Fallback (utan messages): den äldre user+assistant+
+            tools-scheman.
             """
             try:
+                if messages:
+                    env['ai.coworker.session']._persist_pi_messages(
+                        env, sess, messages,
+                        input_t=input_t, output_t=output_t,
+                        model_real=model_real)
+                    # Skriv även DETTA anrops svar direkt (assistant), så
+                    # sista turen inte tappas när ingen ny request följer.
+                    # Nästa anrops delta börjar med samma assistant-post —
+                    # _persist_pi_messages dedupar den då.
+                    if response_text:
+                        try:
+                            _last = env['ai.coworker.session.line'].search(
+                                [('session_id', '=', sess.id)],
+                                order='sequence desc, id desc', limit=1)
+                            env['ai.coworker.session.line'].create({
+                                'session_id': sess.id, 'role': 'assistant',
+                                'content': response_text,
+                                'model_real': model_real or '',
+                                'sequence': (_last.sequence or 0) + 1,
+                                'token_input': 0, 'token_output': 0,
+                                'tool_calls': json.dumps([
+                                    {'name': n, 'preview': str(p)[:200]}
+                                    for n, p in (tool_history or [])],
+                                    ensure_ascii=False),
+                            })
+                        except Exception as e:
+                            _logger.warning(
+                                'assistant response persist failed: %s', e)
+                    return
                 Line = env['ai.coworker.session.line']
                 sys_mult = 1.0
                 if model_real:
@@ -2649,7 +2698,7 @@ class AIOpenAIAPI(http.Controller):
                     tool_env, _sess, response_text,
                     getattr(response, 'input_tokens', 0),
                     getattr(response, 'output_tokens', 0),
-                    model_ref, tool_history)
+                    model_ref, tool_history, messages=messages)
                 cost_ctx = {
                     'project_id': (
                         _sess.project_id.id
@@ -2874,7 +2923,7 @@ class AIOpenAIAPI(http.Controller):
                             _gen_env, _sess, ''.join(full_response),
                             usage_state['input'] or (len(prompt) // 4),
                             usage_state['output'] or (len(''.join(full_response)) // 4),
-                            model_ref, tool_history)
+                            model_ref, tool_history, messages=messages)
                         _gen_cr.commit()
                     finally:
                         _gen_cr.close()
@@ -2999,6 +3048,16 @@ class AIOpenAIAPI(http.Controller):
         if not sess.exists() and pi_session_id:
             sess = Sess.search([('pi_session_id', '=', pi_session_id)],
                                limit=1)
+        if not sess.exists() and pi_session_id and coworker_ref:
+            # Pi-session känd men Odoo-sessionen finns ännu inte (t.ex. ett
+            # Odoo-verktyg anropas innan chat-completions hunnit skapa den):
+            # skapa den nu så verktyget får rätt kostnadskontext — fall inte
+            # tillbaka på en annan sessions kontext.
+            quest_ref = self._resolve_coworker(coworker_ref)
+            if quest_ref:
+                sess, _created = Sess._find_or_create_coworker_session(
+                    quest_ref.id, request.env.user.id,
+                    pi_session_id=pi_session_id)
         if not sess.exists():
             # Fallback: använd den autentiserade användarens senaste aktiva
             # session för sammanhang; annars körs med user-kontext enbart.

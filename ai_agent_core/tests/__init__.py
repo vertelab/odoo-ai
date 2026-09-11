@@ -9,3 +9,4 @@ from . import test_tool_access
 from . import test_coworker_hitl
 from . import test_channel
 from . import test_pwa_push_triggers
+from . import test_pi_session_link
