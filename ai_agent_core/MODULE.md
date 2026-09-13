@@ -155,3 +155,16 @@ aldrig `code` för ett verktyg som redan finns. Ändringar i sådan XML når
 alltså inte ett uppgraderat system. Tvinga om raden med en migration
 (`migrations/<version>/post-migrate.py`) som läser koden ur samma fil —
 se `migrations/18.0.1.215/` för mönstret.
+
+**OBS — `migrations/__pycache__` kraschar uppgraderingen:** Odoo tolkar
+varje katalog under `migrations/` som en versionskod och vägrar på
+`__pycache__` (`Invalid version for upgrade script`). Katalogen skapas av
+`python3 -m py_compile` i `migrations/` och av Odoo själv vid import.
+Rensa den före varje `checkmodule`-körning:
+
+```bash
+rm -rf ai_agent_core/migrations/__pycache__
+```
+
+Den är git-ignorerad (`.gitignore:2`) så den syns inte i `git status` —
+den måste letas upp på disk.
