@@ -95,3 +95,63 @@ Status-/livscykel (`/new`-semantik):
 - `GET /ai/threads/<id>` returnerar nu per-meddelande-kontext: `status`,
   `finish_reason`, `debug_info`, `tool_calls`, `model_real`, `token_input`,
   `token_output`, `token_sys`.
+
+## Verktygsfel — felkontraktet (atgardbara-verktygsfel, 18.0.1.215)
+
+Varje verktygsfel bär samma uppgifter, oavsett om verktyget är inbyggt
+(Python i `core/tools.py`) eller data-definierat (`ai.tool` med kod från
+`data/*.xml`). Kontraktet är `ToolError.to_json()`:
+
+| Nyckel         | Betydelse                                              |
+|----------------|--------------------------------------------------------|
+| `error`        | Vad som gick fel, i klartext                           |
+| `parameter`    | Vilket argument felet gäller (tomt om inte aktuellt)   |
+| `expected`     | Förväntat format/värde — vägledningen                  |
+| `actual`       | Det faktiska värdet som avvisades                      |
+| `valid_fields` | Giltiga fält, när felet är ett okänt fält              |
+| `retryable`    | Om ett nytt försök är meningsfullt                     |
+| `tool_name`    | Vilket verktyg som felade                              |
+
+`to_text()` ger samma innehåll som läsbar text för modellen; `to_json()`
+ger strukturen för kvalitetsloopen (`ToolSequenceCorrector`). `Tool.call()`
+fångar `ToolError` och bevarar vägledningen.
+
+### Hur `retryable` sätts
+
+`retryable=True` — anroparen kan rätta sig och försöka igen:
+
+- saknat eller tomt argument (`_missing_argument_error`)
+- fel format/värde (`_invalid_value_error`)
+- okänt fält (`_unknown_field_error`)
+
+`retryable=False` — nytt försök med samma argument hjälper inte:
+
+- resursen finns inte (`_missing_record_error`), t.ex. `Skill #42 not found`
+- okänd modell i `describe_model`
+- internt fel (`_internal_error`) — ett oväntat undantag är inte
+  anroparens misstag, och `expected` säger det explicit
+
+### Tomt argument är ett SAKNAT argument
+
+`describe_model('')` gav tidigare `"Unknown model: "` — vilket inte namnger
+vad som saknas. Ett tomt argument behandlas därför som saknat och felet
+säger vilket argument det gäller, förväntat format och ett exempel.
+
+### Fel verktyg pekar på rätt verktyg
+
+`odoo_write` avvisar HTML-/textfält (de skrivs vid skapandet). Felet namnger
+de avvisade fälten och pekar på `odoo_create` i stället för att bara neka.
+
+### Data-definierade verktyg
+
+Verktyg vars kod ligger i `data/*.xml` (t.ex. `youtube_tools.xml`) kan inte
+importera `ToolError` — de definierar en lokal `_tool_error()` som ger
+exakt samma JSON-nycklar. Det håller kontraktet identiskt över
+verktygstyperna.
+
+**OBS — noupdate-fällan:** filer under `data/` med `<odoo noupdate="1">`
+läses bara vid FÖRSTA installationen, och `_seed_builtin_tools()` uppdaterar
+aldrig `code` för ett verktyg som redan finns. Ändringar i sådan XML når
+alltså inte ett uppgraderat system. Tvinga om raden med en migration
+(`migrations/<version>/post-migrate.py`) som läser koden ur samma fil —
+se `migrations/18.0.1.215/` för mönstret.
