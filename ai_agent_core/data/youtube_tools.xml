@@ -22,8 +22,28 @@
     import re
     from youtube_transcript_api import YouTubeTranscriptApi
 
-    if not video_id:
-        return json.dumps({"error": "video_id is required"})
+    def _tool_error(message, parameter="", expected="", actual="",
+                    retryable=True, tool_name=""):
+        """Åtgärdbart fel i samma struktur som ToolError.to_json()."""
+        return json.dumps({
+            "error": message,
+            "parameter": parameter,
+            "expected": expected,
+            "actual": actual,
+            "valid_fields": [],
+            "retryable": retryable,
+            "tool_name": tool_name,
+        }, ensure_ascii=False)
+
+    if not video_id or not str(video_id).strip():
+        return _tool_error(
+            "Missing required argument 'video_id' \u2014 example: "
+            "https://youtu.be/6IFVTcM28KA",
+            parameter="video_id",
+            expected="a YouTube URL or an 11-character video ID",
+            actual="(empty)",
+            retryable=True,
+            tool_name="youtube_get_transcript")
 
     # Extract video ID from URL
     url_patterns = [
@@ -79,8 +99,28 @@
     import os
     from googleapiclient.discovery import build
 
-    if not query:
-        return json.dumps({"error": "query is required"})
+    def _tool_error(message, parameter="", expected="", actual="",
+                    retryable=True, tool_name=""):
+        """Åtgärdbart fel i samma struktur som ToolError.to_json()."""
+        return json.dumps({
+            "error": message,
+            "parameter": parameter,
+            "expected": expected,
+            "actual": actual,
+            "valid_fields": [],
+            "retryable": retryable,
+            "tool_name": tool_name,
+        }, ensure_ascii=False)
+
+    if not query or not str(query).strip():
+        return _tool_error(
+            "Missing required argument 'query' \u2014 example: "
+            "gamers nexus smart tv",
+            parameter="query",
+            expected="a search query (1-200 characters)",
+            actual="(empty)",
+            retryable=True,
+            tool_name="youtube_search")
 
     api_key = (env['ir.config_parameter'].sudo()
                    .get_param('ai_agent_core.google_api_key', '')
@@ -150,6 +190,36 @@
     import json
     import os
     import re
+
+    def _tool_error(message, parameter="", expected="", actual="",
+                    retryable=True, tool_name=""):
+        """Åtgärdbart fel i samma struktur som ToolError.to_json()."""
+        return json.dumps({
+            "error": message,
+            "parameter": parameter,
+            "expected": expected,
+            "actual": actual,
+            "valid_fields": [],
+            "retryable": retryable,
+            "tool_name": tool_name,
+        }, ensure_ascii=False)
+
+    if not channel or not str(channel).strip():
+        return _tool_error(
+            "Missing required argument 'channel' \u2014 example: @GamersNexus",
+            parameter="channel",
+            expected="@handle, channel URL, or UC... channel ID",
+            actual="(empty)",
+            retryable=True,
+            tool_name="youtube_channel")
+    if action not in ("latest", "videos", "resolve"):
+        return _tool_error(
+            "Invalid value for 'action'",
+            parameter="action",
+            expected="one of: latest, videos, resolve",
+            actual=str(action),
+            retryable=True,
+            tool_name="youtube_channel")
 
     if action == "resolve":
         api_key = (env['ir.config_parameter'].sudo()
@@ -299,6 +369,19 @@
     import os
     import re
 
+    def _tool_error(message, parameter="", expected="", actual="",
+                    retryable=True, tool_name=""):
+        """Åtgärdbart fel i samma struktur som ToolError.to_json()."""
+        return json.dumps({
+            "error": message,
+            "parameter": parameter,
+            "expected": expected,
+            "actual": actual,
+            "valid_fields": [],
+            "retryable": retryable,
+            "tool_name": tool_name,
+        }, ensure_ascii=False)
+
     api_key = (env['ir.config_parameter'].sudo()
                    .get_param('ai_agent_core.google_api_key', '')
                    or os.environ.get('GOOGLE_API_KEY', ''))
@@ -306,7 +389,14 @@
         return json.dumps({"error": "No Google API key configured \u2014 playlist access needs one. " + 'Set it in Odoo Settings (AI \\u2192 Google API Key) or in the GOOGLE_API_KEY environment variable.'})
 
     if not playlist_id and not continuation:
-        return json.dumps({"error": "playlist_id or continuation required"})
+        return _tool_error(
+            "Missing required argument 'playlist_id' \u2014 example: "
+            "https://www.youtube.com/playlist?list=PLabc123",
+            parameter="playlist_id",
+            expected="a playlist URL or ID (or a continuation token)",
+            actual="(empty)",
+            retryable=True,
+            tool_name="youtube_playlist")
 
     from googleapiclient.discovery import build
     youtube = build('youtube', 'v3', developerKey=api_key, cache_discovery=False)
