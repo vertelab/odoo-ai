@@ -167,6 +167,18 @@
                             </group>
                         </page>
                         <page string="Improve">
+                            <group string="Föreslaget recept (HITL)" name="suggestion">
+                                <field name="improvement_proposed_on" readonly="1"/>
+                                <field name="improvement_suggested_recipe" widget="text"
+                                       nolabel="1" readonly="1"
+                                       invisible="not improvement_suggested_recipe"/>
+                                <div colspan="2" invisible="not improvement_suggested_recipe">
+                                    <button name="action_apply_suggested_recipe" type="object"
+                                            string="Applicera förslag" class="btn-primary"/>
+                                    <button name="action_discard_suggested_recipe" type="object"
+                                            string="Kasta förslag" class="btn-secondary"/>
+                                </div>
+                            </group>
                             <group string="Guidance">
                                 <field name="improvement_guidance" widget="text" nolabel="1"/>
                             </group>

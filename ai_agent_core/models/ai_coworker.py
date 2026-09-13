@@ -5589,6 +5589,41 @@ class AICoworker(models.Model):
             raise UserError(_('Powerbox error: %s') % str(e))
 
 
+    def _ensure_own_identity(self):
+        """Säkerställ att varje medarbetare ÄGER sin identitet (egen kopia).
+
+        onchange-vägen (_onchange_identity_id) körs bara när en människa
+        väljer i formuläret — inte vid create/write via ORM, import eller API.
+        Denna metod är garantin, och täcker två fall:
+
+          1. Den valda identiteten är en MALL (is_template=True)
+          2. Den valda identiteten används redan av en ANNAN medarbetare
+             — då skulle inlärda regler läcka mellan dem
+
+        Skyddas av en kontext-flagga så att ompekningen till kopian inte
+        triggar en ny kopia (annars oändlig rekursion).
+        """
+        if self.env.context.get('__ai_identity_copy_guard'):
+            return
+        for rec in self:
+            ident = rec.identity_id
+            if not ident:
+                continue
+            shared = self.env['ai.coworker'].search_count([
+                ('identity_id', '=', ident.id), ('id', '!=', rec.id)])
+            if not (ident.is_template or shared):
+                continue
+            try:
+                copy = ident.copy_for_coworker(rec)
+                rec.with_context(
+                    __ai_identity_copy_guard=True).write(
+                        {'identity_id': copy.id})
+                rec._seed_memory_settings()
+            except Exception:
+                _logger.warning(
+                    'Kunde inte skapa egen identitetskopia för %s',
+                    rec.name, exc_info=True)
+
     def write(self, vals):
         res = super(AICoworker, self).write(vals)
         if any(k in vals for k in ('orchestration_mode', 'channel_id', 'is_supervisor')):
@@ -5600,6 +5635,10 @@ class AICoworker(models.Model):
         if any(k in vals for k, _it in self._INIT_BOOLEAN_MAP):
             for rec in self:
                 rec._sync_init_types_from_booleans()
+        # Varje medarbetare ska äga sin identitet (egen kopia) — annars
+        # läcker inlärda regler mellan coworkers som delar identitet.
+        if 'identity_id' in vals:
+            self._ensure_own_identity()
         return res
 
     def _sync_init_types_from_booleans(self):
@@ -5864,6 +5903,8 @@ class AICoworker(models.Model):
                 except Exception as e:
                     _logger.warning('Could not create employee for %s: %s',
                                   record.name, e)
+            # Varje medarbetare ska äga sin identitet (egen kopia).
+            records._ensure_own_identity()
         return records
 
 

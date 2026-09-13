@@ -78,6 +78,7 @@
         'data/cron_bifrost_sync.xml',
         'data/cron_burn_rate.xml',
         'data/cron_kaizen.xml',
+        'data/cron_skill_improve.xml',
         'data/cron_onboard.xml',
         'data/cron_memory_consolidation.xml',
         'data/cron_scheduled_quests.xml',
