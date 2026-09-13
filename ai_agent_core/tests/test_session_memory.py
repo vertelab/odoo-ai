@@ -92,7 +92,12 @@ class TestSessionMemory(common.TransactionCase):
         self.assertEqual(history[0].tool_calls, calls)
 
     def test_history_skips_preview_tool_calls(self):
-        """Preview-listor (name/preview) är inte replaybara — hoppas över."""
+        """Preview-listor (name/preview) är inte replaybara — inga tool_calls.
+
+        Sedan web-ui-session-kontext tas de med som en läsbar sammanfattning
+        i content i stället för att kastas bort, men de sätts fortfarande
+        inte som ``tool_calls`` (de kan inte spelas upp).
+        """
         import json
         sess = self._new_session()
         self.Line.create({
@@ -102,6 +107,8 @@ class TestSessionMemory(common.TransactionCase):
         })
         history = sess._build_history_from_lines()
         self.assertIsNone(history[0].tool_calls)
+        # Verktygsspåret finns kvar som sammanfattning i content.
+        self.assertIn('t', history[0].content)
 
     def test_history_empty_session(self):
         """Session utan rader → tom historik (ingen krasch)."""

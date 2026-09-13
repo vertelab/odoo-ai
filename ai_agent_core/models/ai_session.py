@@ -253,6 +253,12 @@ class AICoworkerSession(models.Model):
         av providern vid replay). Tool-rader får tool_name som name så
         OpenAI-formatet håller.
 
+        Verktygsanrop hanteras i två format: OpenAI-format (med 'function')
+        blir replaybara ``tool_calls``; preview-format (name/preview) läggs
+        som en läsbar sammanfattning i assistant-radens content, så modellen
+        ser *att* och *vilket* verktyg som anropades även när anropet inte
+        kan spelas upp.
+
         Args:
             exclude_last_assistant: hoppa över sista assistant-raden —
                 används när svaret skrivs direkt och nästa anrop skickar
@@ -278,17 +284,24 @@ class AICoworkerSession(models.Model):
             if role is None:
                 continue
             tool_calls = None
+            tool_summary = ''
             if line.tool_calls:
                 try:
                     parsed = json.loads(line.tool_calls)
-                    # Endast OpenAI-formade tool_calls (med 'id'/'function')
-                    # kan replayas; preview-listor (name/preview) hoppas över.
-                    if (isinstance(parsed, list) and parsed
-                            and isinstance(parsed[0], dict)
-                            and 'function' in parsed[0]):
-                        tool_calls = parsed
+                    if isinstance(parsed, list) and parsed \
+                            and isinstance(parsed[0], dict):
+                        if 'function' in parsed[0]:
+                            # OpenAI-format: fullt replaybart.
+                            tool_calls = parsed
+                        elif 'name' in parsed[0]:
+                            # Preview-format (name/preview) — det format
+                            # web_ui-vägen skriver. Kan inte replayas, men
+                            # modellen ska se ATT och VILKET verktyg som
+                            # anropades (web-ui-session-kontext D2).
+                            tool_summary = self._tool_calls_summary(parsed)
                 except (ValueError, TypeError):
                     tool_calls = None
+                    tool_summary = ''
             if role == Role.TOOL:
                 history.append(Message(
                     role=Role.TOOL,
@@ -296,14 +309,40 @@ class AICoworkerSession(models.Model):
                     name=line.tool_name or '',
                 ))
             elif role == Role.ASSISTANT:
+                content = line.content or ''
+                if tool_summary:
+                    content = (content + '\n\n' + tool_summary).strip()
                 history.append(Message(
                     role=Role.ASSISTANT,
-                    content=line.content or '',
+                    content=content,
                     tool_calls=tool_calls,
                 ))
             else:
                 history.append(Message(role=role, content=line.content or ''))
         return history
+
+    @staticmethod
+    def _tool_calls_summary(parsed):
+        """Gör preview-formatets verktygsanrop till en läsbar sammanfattning.
+
+        Preview-poster (``{'name':…, 'preview':…}``) kan inte spelas upp som
+        OpenAI-anrop, men de bär vilka verktyg som användes och en preview av
+        resultaten. Att hoppa över dem (som tidigare) kastade bort
+        verktygsspåret helt, så modellen kunde inte relatera till vad den
+        redan gjort.
+        """
+        names = []
+        for item in parsed:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get('name') or '').strip()
+            if not name:
+                continue
+            preview = str(item.get('preview') or '').strip()
+            names.append('%s: %s' % (name, preview[:120]) if preview else name)
+        if not names:
+            return ''
+        return '[Verktygsanrop i denna tur: %s]' % '; '.join(names)
 
     def _sync_pi_message_count(self):
         """Avstäm pi_message_count mot antalet faktiska meddelanderader.

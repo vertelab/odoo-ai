@@ -281,20 +281,26 @@ class AIStreamController(http.Controller):
                         if memories_text:
                             system_prompt = (system_prompt + '\n\n' + memories_text).strip()
 
-                    # Load history from session lines
+                    # Load history from session lines via the SHARED mechanism
+                    # (web-ui-session-kontext D1): sessionens rader är den
+                    # auktoritativa källan, och samma funktion används av
+                    # coworker-vägen. En egen loop här tappade tool_calls, så
+                    # modellen kunde inte relatera till vad den redan gjort.
                     lines = session.session_line_ids.sorted('sequence')
-                    for line in lines:
-                        history_messages.append({
-                            'role': line.role,
-                            'content': line.content or '',
-                        })
+                    history_messages = [
+                        m.to_openai()
+                        for m in session._build_history_from_lines()
+                    ]
                     # Auto-summarize if too many messages
                     if len(lines) > 50:
                         summary = _summarize_history(session, lines)
                         history_messages = [{'role': 'system', 'content': summary}] + history_messages[-20:]
 
-                    # Save user message as session line (T7.4)
-                    next_seq = len(lines) + 1
+                    # Save user message as session line (T7.4). Sekvensen
+                    # härleds från sessionens HÖGSTA värde — inte radantalet,
+                    # som kolliderar så snart verktygsrader skrivits direkt
+                    # (web-ui-session-kontext D3).
+                    next_seq = _next_session_sequence(request.env, session.id)
                     request.env['ai.coworker.session.line'].sudo().create({
                         'session_id': session.id,
                         'sequence': next_seq,
@@ -1048,7 +1054,7 @@ class AIStreamController(http.Controller):
         session = request.env['ai.coworker.session'].sudo().browse(thread_id)
         quest = session.coworker_id if session else None
         if session.exists():
-            next_seq = len(session.session_line_ids) + 1
+            next_seq = _next_session_sequence(request.env, session.id)
 
             # Resolve sys_multiplier from ai.model if model_real is provided.
             # Kanal-medvetet via _resolve_from_real (record-id/coworker-agenter).
@@ -1578,6 +1584,22 @@ async def _collect(agen):
     return result
 
 
+def _next_session_sequence(env, session_id):
+    """Nästa lediga sekvensvärde för en sessionsrad.
+
+    Härleds från sessionens HÖGSTA befintliga sekvens — inte från antalet
+    rader. Radantalet motsvarar inte sekvensvärdet så snart verktygsrader
+    skrivits direkt, och då kolliderar två rader (web-ui-session-kontext D3;
+    samma bugg gav en dubblerad user-rad i session 18204).
+
+    Samma mönster som `ai_coworker.py` använder.
+    """
+    last = env['ai.coworker.session.line'].sudo().search(
+        [('session_id', '=', session_id)],
+        order='sequence desc, id desc', limit=1)
+    return (last.sequence or 0) + 1
+
+
 def _persist_stream_tool_lines(env, session_id, loop_obj):
     """Persistera verktygsanrop från en web-chat-stream som tool-rader.
 
@@ -1596,6 +1618,7 @@ def _persist_stream_tool_lines(env, session_id, loop_obj):
         return
     existing = set(session.session_line_ids.filtered(
         lambda l: l.role == 'tool').mapped('tool_name'))
+    base_seq = _next_session_sequence(env, session.id)
     for i, (t_name, t_preview) in enumerate(history):
         if t_name in existing:
             continue
@@ -1612,7 +1635,7 @@ def _persist_stream_tool_lines(env, session_id, loop_obj):
             'role': 'tool',
             'tool_name': t_name,
             'content': str(t_preview)[:2000],
-            'sequence': 100 + i,
+            'sequence': base_seq + i,
             'token_input': tool_cost,
             'sys_multiplier': 1.0,
         })
@@ -1995,7 +2018,7 @@ class PICallbackController(http.Controller):
         })
 
         # Save as session line
-        next_seq = len(session.session_line_ids) + 1
+        next_seq = _next_session_sequence(request.env, session.id)
         request.env['ai.coworker.session.line'].sudo().create({
             'session_id': session.id,
             'sequence': next_seq,
@@ -2059,7 +2082,7 @@ class PICallbackController(http.Controller):
 
         request.env['ai.coworker.session.line'].sudo().create({
             'session_id': session.id,
-            'sequence': 1,
+            'sequence': _next_session_sequence(request.env, session.id),
             'role': 'assistant',
             'content': content or f'Batch {batch_id} completed',
             'model_real': 'bifrost-batch',
@@ -2642,14 +2665,11 @@ class AIOpenAIAPI(http.Controller):
                     # _persist_pi_messages dedupar den då.
                     if response_text:
                         try:
-                            _last = env['ai.coworker.session.line'].search(
-                                [('session_id', '=', sess.id)],
-                                order='sequence desc, id desc', limit=1)
                             env['ai.coworker.session.line'].create({
                                 'session_id': sess.id, 'role': 'assistant',
                                 'content': response_text,
                                 'model_real': model_real or '',
-                                'sequence': (_last.sequence or 0) + 1,
+                                'sequence': _next_session_sequence(env, sess.id),
                                 'token_input': 0, 'token_output': 0,
                                 'tool_calls': json.dumps([
                                     {'name': n, 'preview': str(p)[:200]}
@@ -2667,9 +2687,14 @@ class AIOpenAIAPI(http.Controller):
                         model_real, sess.coworker_id)
                     if ai_model:
                         sys_mult = ai_model.sys_multiplier
+                # Sekvensen härleds från sessionens högsta värde — hårdkodade
+                # 1/2 kolliderade så snart verktygsrader skrivits direkt
+                # (web-ui-session-kontext D3).
+                _base_seq = _next_session_sequence(env, sess.id)
                 Line.create({
                     'session_id': sess.id, 'role': 'user',
-                    'content': (prompt or '')[:2000], 'sequence': 1,
+                    'content': (prompt or '')[:2000],
+                    'sequence': _base_seq,
                     'token_input': input_t, 'token_output': 0,
                     'sys_multiplier': sys_mult,
                 })
@@ -2677,7 +2702,8 @@ class AIOpenAIAPI(http.Controller):
                     'session_id': sess.id, 'role': 'assistant',
                     'content': response_text,
                     'token_input': 0, 'token_output': output_t,
-                    'model_real': model_real or '', 'sequence': 2,
+                    'model_real': model_real or '',
+                    'sequence': _base_seq + 1,
                     'sys_multiplier': sys_mult,
                     'tool_calls': json.dumps([
                         {'name': n, 'preview': str(p)[:200]}
@@ -2688,7 +2714,7 @@ class AIOpenAIAPI(http.Controller):
                     Line.create({
                         'session_id': sess.id, 'role': 'tool',
                         'tool_name': t_name, 'content': t_preview,
-                        'sequence': 10 + i,
+                        'sequence': _base_seq + 2 + i,
                     })
                 sess.write({
                     'token_input': (sess.token_input or 0) + input_t,

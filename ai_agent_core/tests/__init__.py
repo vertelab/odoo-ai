@@ -19,3 +19,4 @@ from . import test_tool_selection
 from . import test_round_limit
 from . import test_skill_experience
 from . import test_daily_budget
+from . import test_web_ui_context

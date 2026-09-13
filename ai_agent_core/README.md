@@ -841,3 +841,51 @@ utan att något larmar.
 Verifierat: `saltstack_ai` anropar `record_experience` i sin
 `write()`-hook och i `create()`, och erfarenheter bokförs på matchande
 skills (`matched_skill_ids`).
+
+## Web_ui-sessionskontext (web-ui-session-kontext)
+
+Web-chatten delar nu historikmekanism med coworker-vägen. Tidigare byggde
+`controllers/stream.py` sin egen historik-loop med bara `role` + `content`,
+vilket **tappade `tool_calls`** — modellen kunde inte relatera till vad den
+redan gjort, och trådar tappade sammanhang mellan turer.
+
+### En historikmekanism
+
+```
+session._build_history_from_lines()   ← ENDA källan
+        ▲                    ▲
+        │                    │
+   coworker-vägen      web_ui-vägen (stream.py)
+   (run/run_with_history)  (SSE-generatorn)
+```
+
+Historiken serialiseras med `Message.to_openai()`. Verktygsanrop hanteras i
+två format:
+
+| Format | Hantering |
+|---|---|
+| OpenAI-format (`id`/`function`) | `tool_calls` — fullt **replaybart** |
+| Preview-format (`name`/`preview`) | läsbar sammanfattning i `content`: `[Verktygsanrop i denna tur: …]` |
+
+Preview-formatet är det web_ui-vägen skriver. Det kan inte spelas upp, men
+modellen ser *att* och *vilket* verktyg som anropades samt en resultatpreview
+— tidigare kastades det bort helt (12 740 rader i drift hade verktygsspår som
+aldrig nådde modellen).
+
+### Radordningen härleds
+
+Alla sessionsrader får sin sekvens via `_next_session_sequence(env, session_id)`
+= sessionens **högsta** befintliga sekvens + 1. Hårdkodade värden (`1`, `2`,
+`100 + i`, `10 + i`) och `len(session_line_ids) + 1` är borta — de kolliderade
+så snart verktygsrader skrevs direkt, vilket gav dubblerade rader (session
+18204 hade sekvens 100–107 dubblerade).
+
+Läsningen sorterar på `(sequence, id)`, så äldre sessioner med dubblerade
+sekvenser ändå får en stabil ordning. Ingen migrering krävs.
+
+### Verktygsnycklar läses ur Odoo
+
+YouTube-verktygen (`data/youtube_tools.xml`) läser nyckeln via
+`ai_agent_core.google_api_key` (Odoo-inställningarna) med
+`GOOGLE_API_KEY`-miljövariabeln som fallback — inte ur miljön enbart.
+Saknas båda pekar felet på **Odoo Settings → AI → Google API Key**.
