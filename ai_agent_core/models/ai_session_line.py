@@ -64,6 +64,33 @@ class AICoworkerSessionLine(models.Model):
         for line in self:
             line.token_sys = int((line.token_input + line.token_output) * line.sys_multiplier)
 
+    # ── Append-only (improve-ai-coworker-memory-and-tools 1.5) ──────────
+    # Sessionsrader är granskningsbara och får inte skrivas över eller
+    # raderas under sessionens livstid. Endast rena lifecycle-/metadatafält
+    # får uppdateras (t.ex. agent_id/tool_id som kan fyllas i efteråt vid
+    # specialist-delegation). Innehåll och roll är immutabla.
+    _IMMUTABLE_FIELDS = frozenset({
+        'session_id', 'role', 'content', 'tool_calls', 'tool_name',
+        'sequence', 'token_input', 'token_output', 'model_real',
+        'sys_multiplier', 'reasoning', 'debug_info', 'source_urls',
+    })
+
+    def write(self, vals):
+        """Tillåt endast metadatafält — innehållet är append-only."""
+        blocked = set(vals) & self._IMMUTABLE_FIELDS
+        if blocked:
+            from odoo.exceptions import UserError
+            raise UserError(
+                'Session lines are append-only; cannot modify %s. '
+                'Create a new line instead.' % sorted(blocked))
+        return super().write(vals)
+
+    def unlink(self):
+        """Sessionsrader får inte raderas (append-only, granskningsbart)."""
+        from odoo.exceptions import UserError
+        raise UserError(
+            'Session lines are append-only and cannot be deleted.')
+
     @api.model
     def _tokens_since(self, days=30, extra=(), create_field='create_date'):
         """Summa token_input+token_output för rader yngre än `days`, som valfritt

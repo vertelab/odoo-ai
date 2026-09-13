@@ -77,9 +77,12 @@ class AITool(models.Model):
         'Description', required=True,
         help=('AI-beskrivning — det kontrakt LLM:en läser vid verktygsval. '
               'Använd mallen: syfte / när / när inte (peka på rätt verktyg) / '
-              'exempel / output / guardrail. Guardrails är informativa här — '
-              'enforcement sker via risk_level + PermissionEngine, aldrig '
-              'via text.'),
+              'exempel / output / verifierbart utfall / felvägledning / '
+              'guardrail. Ange vilket observerbart utfall ett lyckat anrop '
+              'ger och hur anropet kan misslyckas (obligatoriska parametrar, '
+              'förväntade format) så agenten kan verifiera och korrigera. '
+              'Guardrails är informativa här — enforcement sker via '
+              'risk_level + PermissionEngine, aldrig via text.'),
     )
     code = fields.Text(
         'Code', required=False,  # Not required for NATS-executor tools
@@ -140,6 +143,81 @@ class AITool(models.Model):
         help='Fast minimikostnad i systemtokens per tool-anrop. Läggs '
              'direkt på tool-raden (token_sys). Global per tool.',
     )
+
+    # Verifieringsavtal (improve-ai-coworker-memory-and-tools 3.1):
+    # deklarativt kontrakt — vilka nyckelfält som läses tillbaka efter en
+    # skrivande operation och vilket värde som förväntas. Sätts i XML/UI,
+    # ingen kärnkodändring krävs. Tomt = ingen write-verify.
+    verification_json = fields.Text(
+        'Verification Contract (JSON)',
+        help=('JSON-avtal för write-verify. Format: '
+              '{"model": "<model>", "id_path": "id", '
+              '"checks": [{"field": "parent_id", "equals_path": '
+              '"values.parent_id"}, {"field": "content", '
+              '"non_empty": true}]}. Efter en lyckad skrivning läses '
+              'posten tillbaka och varje check jämförs; avvikelse ger ett '
+              'strukturerat fel (fält, förväntat, faktiskt).'),
+    )
+    verification_enabled = fields.Boolean(
+        'Write-verify', default=False,
+        help='Aktivera verifiering av verktygsutfallet efter skrivning '
+             '(kräver verification_json).')
+
+    def get_verification_contract(self):
+        """Tolka verification_json → dict (eller {} om inget/ogiltigt)."""
+        self.ensure_one()
+        if not self.verification_enabled or not self.verification_json:
+            return {}
+        try:
+            data = json.loads(self.verification_json)
+            if isinstance(data, dict) and data.get('checks') is not None:
+                return data
+        except (ValueError, TypeError):
+            _logger.warning('ogiltigt verification_json på ai.tool %s',
+                            self.id)
+        return {}
+
+    # Standardavtal för de generiska Odoo-verktygen (5.1). Generiska verktyg
+    # betjänar många modeller → avtalet använder model_path och checkar som
+    # inte är tillämpliga på en modell hoppas över (warning, inte fail).
+    _DEFAULT_VERIFICATION_CONTRACTS = {
+        'odoo_create': {
+            'model_path': 'model',
+            'id_path': 'id',
+            'checks': [
+                {'field': 'name', 'equals_path': 'values.name'},
+                {'field': 'content', 'non_empty': True},
+                {'field': 'parent_id', 'equals_path': 'values.parent_id'},
+            ],
+        },
+        'odoo_write': {
+            'model_path': 'model',
+            'id_path': 'ids.0',
+            'checks': [
+                {'field': 'name', 'equals_path': 'values.name'},
+            ],
+        },
+    }
+
+    @api.model
+    def _ensure_verification_contracts(self, records=None):
+        """Seeda write-verify-avtal på de generiska verktygen (idempotent).
+
+        Skriver BARA avtalet om det saknas — rör inte operatörens
+        eventuella anpassningar (och inte övrig verktygskonfiguration).
+        """
+        for tool_name, contract in self._DEFAULT_VERIFICATION_CONTRACTS.items():
+            tool = self.search([('name', '=', tool_name)], limit=1)
+            if not tool:
+                continue
+            if tool.verification_enabled and tool.verification_json:
+                continue  # redan satt — lämna operatörens version
+            tool.write({
+                'verification_enabled': True,
+                'verification_json': json.dumps(contract, indent=2),
+            })
+            _logger.info('write-verify-avtal satt på ai.tool %s', tool_name)
+        return True
 
     # Relations
     agent_ids = fields.Many2many(

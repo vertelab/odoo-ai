@@ -413,8 +413,15 @@
 
                         <page string="Budget" name="budget">
                             <group>
+                                <group string="Dagstak">
+                                    <field name="daily_cap_mtokens"/>
+                                    <field name="daily_budget_used_mtokens" readonly="1" widget="float" digits="[16,2]"/>
+                                    <field name="daily_budget_warning" readonly="1"/>
+                                    <field name="daily_budget_exhausted" readonly="1"/>
+                                </group>
                                 <group string="Månadstak">
                                     <field name="monthly_cap_mtokens"/>
+                                    <field name="monthly_budget_soft" widget="boolean_toggle"/>
                                     <field name="budget_warning" readonly="1"/>
                                     <field name="budget_exhausted" readonly="1"/>
                                 </group>

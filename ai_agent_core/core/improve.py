@@ -65,9 +65,16 @@ class ImprovementLoop:
         )
     """
 
-    def __init__(self, provider=None, max_iterations: int = 3):
+    def __init__(self, provider=None, max_iterations: int = 3, model: str = None):
+        """
+        :param model: modellnamn att skicka till providern. Tidigare hårdkodades
+            'gpt-4o' i _llm_improve, vilket fick anrop mot en gateway som inte
+            känner igen modellen att hänga (ingen timeout). Sätts nu av
+            anroparen — normalt coworkerns egen modell.
+        """
         self.provider = provider
         self.max_iterations = max_iterations
+        self.model = model or 'gpt-4o'
 
     async def improve(
         self,
@@ -193,7 +200,7 @@ class ImprovementLoop:
 
         try:
             response = await self.provider.chat(
-                model="gpt-4o",
+                model=self.model,
                 messages=messages,
                 system_prompt=(
                     "You are an improvement assistant. Given guidance, "
@@ -286,3 +293,188 @@ class ImprovementLoop:
             changes.append("Content modified (detail diff not shown)")
 
         return changes[:20]  # Limit
+
+
+# ---------------------------------------------------------------------------
+# Självkorrigering av verktygssekvenser
+# (improve-ai-coworker-memory-and-tools 4.1–4.4)
+#
+# När write-verify (eller ett åtgärdbart verktygsfel) markerar en skrivande
+# operation som misslyckad ska sekvensen kunna korrigeras och göras om —
+# inom ett BEGRÄNSAT antal försök, med eskalering när korrigeringen inte
+# lyckas, och med varje försök loggat (utfall, felorsak, verifieringsresultat).
+# ---------------------------------------------------------------------------
+
+@dataclass
+class ToolAttempt:
+    """Ett loggat verktygsförsök (4.4)."""
+    attempt: int
+    tool_name: str
+    args: dict = field(default_factory=dict)
+    outcome: str = "pending"      # ok | failed | verified | escalated
+    error: str = ""               # felorsak (åtgärdbart fel / verifieringsfel)
+    verification: str = ""        # pass | fail | warn | (tom)
+    fix_suggestions: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict:
+        return {
+            'attempt': self.attempt,
+            'tool_name': self.tool_name,
+            'outcome': self.outcome,
+            'error': self.error,
+            'verification': self.verification,
+            'fix_suggestions': list(self.fix_suggestions),
+        }
+
+
+@dataclass
+class ToolSequenceRun:
+    """Hela kedjan försök → fel → rättelse → verifiering (4.4)."""
+    attempts: list[ToolAttempt] = field(default_factory=list)
+    verified: bool = False
+    escalated: bool = False
+    escalation_reason: str = ""
+
+    def chain(self) -> list[dict]:
+        """Kedjan som kan läsas ut ur loggen."""
+        return [a.to_dict() for a in self.attempts]
+
+
+def verification_guidance(result, tool_name: str = "") -> ImprovementGuidance:
+    """Omvandla ett write-verify-resultat till förbättringsguidance (4.1).
+
+    Verifieringsresultatet blir ett LAGER i kvalitetsloopen: fail/warn ger
+    guidance + fix-förslag som driver nästa försök.
+    """
+    parts = []
+    for err in getattr(result, 'all_errors', []) or []:
+        parts.append(
+            f"{err.field}: expected {err.expected!r}, got {err.actual!r}")
+    text = "; ".join(parts) or 'Write-verify failed'
+    severity = 'high' if getattr(result, 'needs_fix', False) else 'medium'
+    return ImprovementGuidance(
+        text=text,
+        references=[{'filename': 'write-verify',
+                     'content': '\n'.join(
+                         getattr(result, 'fix_suggestions', []) or [])}],
+        severity=severity,
+    )
+
+
+class ToolSequenceCorrector:
+    """Korrigerar en misslyckad verktygssekvens inom ett begränsat antal försök.
+
+    Anropas när en skrivande operation misslyckats (åtgärdbart fel eller
+    write-verify-fail). Korrigeraren:
+      * loggar varje försök (4.4),
+      * låter försöket köras igen via en `attempt_fn` (4.2),
+      * verifierar om resultatet via en `verify_fn`,
+      * eskalerar när max antal försök nåtts utan verifierat utfall (4.3).
+
+    Både attempt_fn och verify_fn är injicerade callables så korrigeraren
+    förblir testbar och provider-oberoende.
+    """
+
+    def __init__(self, max_attempts: int = 3):
+        self.max_attempts = max(1, int(max_attempts or 1))
+
+    def correct(self, tool_name: str, attempt_fn, verify_fn,
+                first_error: str = '', first_suggestions=None) -> ToolSequenceRun:
+        """Kör korrigeringsloopen.
+
+        Args:
+            tool_name: verktygets namn
+            attempt_fn: callable(attempt:int, fix_suggestions:list) →
+                (ok: bool, result, error: str, fix_suggestions: list)
+            verify_fn: callable(result) → VerifyResult (eller None)
+            first_error: felet från det första (misslyckade) försöket
+            first_suggestions: fix-förslag från det första försöket
+
+        Returns:
+            ToolSequenceRun med hela kedjan + verifierat/escalated.
+        """
+        run = ToolSequenceRun()
+
+        # Logga det inledande misslyckade försöket (försök 0).
+        if first_error:
+            run.attempts.append(ToolAttempt(
+                attempt=0, tool_name=tool_name, outcome='failed',
+                error=first_error,
+                fix_suggestions=list(first_suggestions or []),
+            ))
+
+        suggestions = list(first_suggestions or [])
+        last_error = first_error
+
+        for attempt in range(1, self.max_attempts + 1):
+            _logger.info(
+                'ToolSequenceCorrector: %s försök %d/%d (föregående fel: %s)',
+                tool_name, attempt, self.max_attempts, last_error[:120])
+
+            try:
+                ok, result, error, fix_suggestions = attempt_fn(
+                    attempt, suggestions)
+            except Exception as e:  # noqa: BLE001 — korrigeraren får inte krascha
+                ok, result, error, fix_suggestions = (
+                    False, None, f'attempt raised: {e}', [])
+
+            rec = ToolAttempt(
+                attempt=attempt, tool_name=tool_name,
+                outcome='ok' if ok else 'failed',
+                error=error or '',
+                fix_suggestions=list(fix_suggestions or []),
+            )
+
+            if not ok:
+                rec.verification = ''
+                run.attempts.append(rec)
+                last_error = error or 'unknown error'
+                suggestions = list(fix_suggestions or [])
+                continue
+
+            # Verifiera det nya utfallet (4.2).
+            verify_result = None
+            if verify_fn is not None:
+                try:
+                    verify_result = verify_fn(result)
+                except Exception as e:  # noqa: BLE001
+                    _logger.warning('verify_fn raised: %s', e)
+                    verify_result = None
+
+            if verify_result is None:
+                rec.outcome = 'ok'
+                run.attempts.append(rec)
+                run.verified = True
+                return run
+
+            status = getattr(
+                getattr(verify_result, 'status', None), 'value',
+                str(getattr(verify_result, 'status', '')))
+            rec.verification = status
+            if getattr(verify_result, 'passed', False):
+                rec.outcome = 'verified'
+                run.attempts.append(rec)
+                run.verified = True
+                _logger.info(
+                    'ToolSequenceCorrector: %s verifierat i försök %d',
+                    tool_name, attempt)
+                return run
+
+            # Verifieringen föll — logga och fortsätt korrigera.
+            rec.outcome = 'failed'
+            rec.error = '; '.join(
+                e.message for e in getattr(verify_result, 'all_errors', []))
+            rec.fix_suggestions = list(
+                getattr(verify_result, 'fix_suggestions', []) or [])
+            run.attempts.append(rec)
+            last_error = rec.error
+            suggestions = rec.fix_suggestions
+
+        # Max antal försök nått utan verifierat utfall → eskalera (4.3).
+        run.escalated = True
+        run.escalation_reason = (
+            'Ingen verifierad korrigering inom %d försök: %s'
+            % (self.max_attempts, last_error[:200]))
+        _logger.warning('ToolSequenceCorrector: %s eskalerar — %s',
+                        tool_name, run.escalation_reason)
+        return run

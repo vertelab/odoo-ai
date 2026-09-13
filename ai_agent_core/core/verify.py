@@ -409,3 +409,158 @@ class OutputVerifier:
                 suggestions.append(err.expected)
 
         return suggestions[:10]
+
+
+# ---------------------------------------------------------------------------
+# Write-verify (improve-ai-coworker-memory-and-tools 3.2/4.1)
+# Efter en skrivande verktygsoperation läses nyckelfält tillbaka och jämförs
+# med det avsedda. Resultatet matas in i kvalitetsloopen som ett lager
+# (pass/fail/warn + fix-förslag) — samma VerifyResult-struktur som
+# trelagers-verifieringen använder.
+# ---------------------------------------------------------------------------
+
+def _resolve_path(data: dict, path: str):
+    """Slå upp 'a.b.c' i en nästlad dict. Returnerar (found, value)."""
+    cur = data
+    for part in (path or '').split('.'):
+        if not part:
+            continue
+        if isinstance(cur, dict) and part in cur:
+            cur = cur[part]
+        else:
+            return False, None
+    return True, cur
+
+
+def verify_write_outcome(contract: dict, result_data: dict,
+                         env=None) -> VerifyResult:
+    """Verifiera ett verktygsutfall mot ett deklarativt avtal.
+
+    Args:
+        contract: {'model', 'id_path', 'checks': [{'field', ...}]}
+        result_data: verktygets resultat (dict, t.ex. {'ok', 'id', ...})
+        env: Odoo env (krävs för att läsa tillbaka posten)
+
+    Returns:
+        VerifyResult — pass när alla checks stämmer, annars fail med
+        per-fält-fel och fix-förslag.
+    """
+    result = VerifyResult()
+    if not contract or not contract.get('checks'):
+        return result  # inget avtal → pass (ingen write-verify)
+
+    model = contract.get('model') or ''
+    # model_path: modellen varierar per anrop (t.ex. odoo_create) — läs den
+    # ur resultatet/argumenten i stället för ur avtalet.
+    if not model and contract.get('model_path'):
+        _found, model = _resolve_path(result_data, contract['model_path'])
+        model = model or ''
+    id_path = contract.get('id_path') or 'id'
+    found, rec_id = _resolve_path(result_data, id_path)
+
+    if not found or not rec_id:
+        result.status = ValidationStatus.FAIL
+        result.schema_errors.append(ValidationError(
+            layer='write_verify', field=id_path,
+            message=f'No record id at {id_path!r} in tool result',
+            expected='an existing record id', actual=str(rec_id),
+        ))
+        result.needs_fix = True
+        result.fix_suggestions.append(
+            'Ensure the tool returns the created record id (e.g. {"id": N})')
+        return result
+
+    if env is None or model not in env.registry:
+        result.status = ValidationStatus.WARN
+        result.warnings.append(ValidationError(
+            layer='write_verify', field='model',
+            message=f'Cannot read back {model} (env/model unavailable)',
+            severity='warning',
+        ))
+        return result
+
+    record = env[model].browse(int(rec_id))
+    if not record.exists():
+        result.status = ValidationStatus.FAIL
+        result.schema_errors.append(ValidationError(
+            layer='write_verify', field='id',
+            message=f'{model} {rec_id} does not exist after write',
+            expected='existing record', actual='missing',
+        ))
+        result.needs_fix = True
+        result.fix_suggestions.append(
+            f'Re-create the {model} record and verify the returned id')
+        return result
+
+    for check in contract.get('checks') or []:
+        field = check.get('field') or ''
+        if not field or field not in record._fields:
+            # Fältet finns inte på DENNA modell — avtalet är generiskt
+            # (t.ex. odoo_create) och checken är då inte tillämplig.
+            # Det är en varning, inte ett fel: vi ska inte fälla ett
+            # giltigt utfall för att en check hör till en annan modell.
+            result.warnings.append(ValidationError(
+                layer='write_verify', field=field or '?',
+                message=(f'Verification field {field!r} not on {model} — '
+                         'check skipped'),
+                severity='warning',
+            ))
+            continue
+
+        actual = record[field]
+
+        if check.get('non_empty'):
+            empty = (actual is False or actual is None
+                     or actual == '' or actual == [])
+            if empty:
+                result.requirement_errors.append(ValidationError(
+                    layer='write_verify', field=field,
+                    message=f'{field} is empty after write',
+                    expected='non-empty', actual=repr(actual),
+                ))
+            continue
+
+        if 'equals_path' in check:
+            exp_found, expected = _resolve_path(
+                result_data, check['equals_path'])
+            if not exp_found:
+                result.requirement_errors.append(ValidationError(
+                    layer='write_verify', field=field,
+                    message=(f'Expected value path {check["equals_path"]!r} '
+                             'not found in tool result'),
+                    expected=check['equals_path'], actual='missing',
+                ))
+                continue
+            # many2one: jämför id; annars strängform
+            actual_cmp = actual.id if hasattr(actual, 'id') else actual
+            expected_cmp = expected
+            if hasattr(expected, 'id'):
+                expected_cmp = expected.id
+            if str(actual_cmp) != str(expected_cmp):
+                result.requirement_errors.append(ValidationError(
+                    layer='write_verify', field=field,
+                    message=f'{field} does not match intended value',
+                    expected=str(expected_cmp), actual=str(actual_cmp),
+                ))
+            continue
+
+        if 'equals' in check:
+            if str(actual) != str(check['equals']):
+                result.requirement_errors.append(ValidationError(
+                    layer='write_verify', field=field,
+                    message=f'{field} does not match intended value',
+                    expected=str(check['equals']), actual=str(actual),
+                ))
+
+    total = len(result.all_errors)
+    if total == 0:
+        result.status = ValidationStatus.PASS
+        result.score = 1.0
+    else:
+        result.status = ValidationStatus.FAIL
+        result.score = max(0.0, 1.0 - total * 0.2)
+        result.needs_fix = True
+        for err in result.all_errors:
+            result.fix_suggestions.append(
+                f'{err.field}: expected {err.expected!r}, got {err.actual!r}')
+    return result

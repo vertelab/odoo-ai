@@ -126,6 +126,9 @@ class AgentLoop:
         # Observability: [(tool_name, result_preview), ...] per execution,
         # read by callers (e.g. ai.coworker.run) for session-line persistence
         self.tool_history: list = []
+        # Fullständiga verktygsresultat [(tool_name, arguments, result)] —
+        # behövs för write-verify (3.2) eftersom tool_history trunkeras.
+        self.tool_results: list = []
 
         # Reasoning- & narrativ-spårning (d): samlar den "gråa" tänketexten
         # (reasoning_content/reasoning) och supervisor-/agentrundornas
@@ -603,6 +606,8 @@ class AgentLoop:
         if tool.executor == "nats":
             result = await self._execute_via_nats(tool, tool_call.arguments)
             self.tool_history.append((tool_call.name, str(result)[:500]))
+            self.tool_results.append(
+                (tool_call.name, dict(tool_call.arguments or {}), result))
             return result
 
         # Local execution (default, existing behavior)
@@ -641,6 +646,8 @@ class AgentLoop:
             result = execute_task.result()
             tool_elapsed = time.time() - tool_start
             self.tool_history.append((tool_call.name, str(result)[:500]))
+            self.tool_results.append(
+                (tool_call.name, dict(args or {}), result))
             _logger.debug(
                 "Tool '%s' completed in %.2fs, result length=%d",
                 tool_call.name, tool_elapsed, len(result),

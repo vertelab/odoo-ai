@@ -2,7 +2,7 @@
 # Part of Odoo. See LICENSE file for full copyright and licensing details.
 {
     'name': 'odoo-ai: AI Agent Core',
-    'version': '18.0.1.201',
+    'version': '18.0.1.206',
     'summary': 'AI Agent Core — Org-stomme, heartbeat, onboarding, task-system',
     'category': 'AI Orchestration',
     'description': """
@@ -47,6 +47,7 @@
         'data/okf_migrate_legacy.xml',
         'data/skill_odoo_core.xml',
         'data/builtin_tools_seed.xml',
+        'data/tool_verification_contracts.xml',
         'data/youtube_tools.xml',
         'data/default_coworker.xml',
         'data/vertel_skills.xml',

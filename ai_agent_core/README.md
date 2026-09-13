@@ -424,6 +424,58 @@ python3 -m unittest ai_agent_core.tests.test_openworker_gate -v
 Odoo-integrationstester (kräver DB): `checkmodule -d <db> -m ai_agent_core -t`
 (inkl. `tests/test_workspace.py`).
 
+Nya tester för sessionsminne och write-verify:
+`test_session_memory.py`, `test_tool_errors.py`, `test_write_verify.py`,
+`test_tool_self_correction.py`, `test_document_page_acceptance.py`
+(körs med `-t`; acceptanstestet hoppas över om `document.page` saknas).
+
+## Sessionsminne (improve-ai-coworker-memory-and-tools)
+
+`ai.coworker.session` är den **auktoritativa** kontextkällan. Historiken
+rekonstrueras deterministiskt från sessionens rader — inte från en
+räknare eller en klientbild.
+
+- `session._build_history_from_lines()` bygger `core.Message`-listan i
+  ordning (role, content, tool_calls, tool-resultat) med
+  assistant-`tool_calls` bevarade som par (replaybara).
+- `session._sync_pi_message_count()` stämmer av `pi_message_count` mot
+  antalet rader. Räknaren är ett **derivat** och får bara sänkas — raderna
+  vinner. Den höjs aldrig till totala radantalet eftersom rader som skrivs
+  direkt (tool-rader) inte motsvarar Pi-poster.
+- Historik-injektionen är prompt-medveten: tom prompt ⇒ ingen ny
+  user-message; icke-tom prompt ⇒ exakt en (återupptagning/HITL).
+- `ai.coworker.session.line` är **append-only**: `write()` tillåter bara
+  metadatafält, `unlink()` nekas.
+- Session-lines får sin `sequence` efter sessionens högsta värde (inte
+  hårdkodat 1/2), så varje ny körning appendas efter tidigare historik.
+
+## Write-verify och självkorrigering
+
+Efter en skrivande verktygsoperation verifieras utfallet mot verktygets
+**deklarativa verifieringsavtal** innan resultatet rapporteras som lyckat.
+
+- Avtalet sätts på `ai.tool`: `verification_enabled` +
+  `verification_json` (`{"model_path", "id_path", "checks"}`) — i XML/UI,
+  **ingen kärnkodändring krävs**.
+- Standardavtal seedas idempotent av
+  `ai.tool._ensure_verification_contracts()` (data-XML,
+  `data/tool_verification_contracts.xml`) och rör inte operatörens egna
+  anpassningar. Generiska verktyg (`odoo_create`/`odoo_write`) använder
+  `model_path`; checkar för fält som inte finns på modellen ger en
+  **varning**, inte ett fel.
+- `core/verify.py::verify_write_outcome()` läser tillbaka posten och
+  jämför nyckelfälten; avvikelse ger `VerifyResult` (fail + fältangivelse +
+  fix-förslag) och loggas på `ai.coworker.session`.
+- Åtgärdbara verktygsfel: `core/tools.py::ToolError` bär parameter,
+  förväntat format, faktiskt värde och `retryable` — serialiseras både som
+  LLM-läsbar text och JSON.
+- Självkorrigering: `core/improve.py::ToolSequenceCorrector` gör om ett
+  misslyckat anrop inom ett **begränsat antal försök** (default 3) och
+  eskalerar när inget verifierat utfall nås. Hela kedjan
+  försök → fel → rättelse → verifiering loggas som session-rader.
+- Aktivering: `ai.tool.verification_json` — ett verktyg utan avtal körs utan
+  write-verify (inget fel).
+
 ## Dependencies
 
 - `httpx` — async HTTP client

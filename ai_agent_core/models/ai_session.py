@@ -238,6 +238,106 @@ class AICoworkerSession(models.Model):
         """
         return self
 
+    # ── Sessionsminne (improve-ai-coworker-memory-and-tools 1.1–1.3) ────
+    # Sessionens rader är den AUKTORITATIVA kontextkällan: historiken
+    # rekonstrueras deterministiskt från session_line_ids i ordning — aldrig
+    # från en tillfällig minnesbild eller en separat räknare. Räknaren
+    # (pi_message_count) är ett DERIVAT och används bara för att veta hur
+    # mycket av Pi:s messages[] som redan persisterats.
+
+    def _build_history_from_lines(self, exclude_last_assistant=False):
+        """Bygg core.Message-historik från sessionens rader (i ordning).
+
+        Returnerar list[core.Message] med roller user/assistant/tool/system,
+        inkl. assistant-tool_calls och tool-resultat bevarade som par (krävs
+        av providern vid replay). Tool-rader får tool_name som name så
+        OpenAI-formatet håller.
+
+        Args:
+            exclude_last_assistant: hoppa över sista assistant-raden —
+                används när svaret skrivs direkt och nästa anrop skickar
+                samma post i sitt delta (dedup).
+        """
+        self.ensure_one()
+        from odoo.addons.ai_agent_core.core.provider import Message, Role
+        lines = self.session_line_ids.sorted(
+            key=lambda l: (l.sequence or 0, l.id or 0))
+        if exclude_last_assistant and lines:
+            last = lines[-1]
+            if last.role == 'assistant':
+                lines = lines[:-1]
+        role_map = {
+            'user': Role.USER,
+            'assistant': Role.ASSISTANT,
+            'tool': Role.TOOL,
+            'system': Role.SYSTEM,
+        }
+        history = []
+        for line in lines:
+            role = role_map.get(line.role)
+            if role is None:
+                continue
+            tool_calls = None
+            if line.tool_calls:
+                try:
+                    parsed = json.loads(line.tool_calls)
+                    # Endast OpenAI-formade tool_calls (med 'id'/'function')
+                    # kan replayas; preview-listor (name/preview) hoppas över.
+                    if (isinstance(parsed, list) and parsed
+                            and isinstance(parsed[0], dict)
+                            and 'function' in parsed[0]):
+                        tool_calls = parsed
+                except (ValueError, TypeError):
+                    tool_calls = None
+            if role == Role.TOOL:
+                history.append(Message(
+                    role=Role.TOOL,
+                    content=line.content or '',
+                    name=line.tool_name or '',
+                ))
+            elif role == Role.ASSISTANT:
+                history.append(Message(
+                    role=Role.ASSISTANT,
+                    content=line.content or '',
+                    tool_calls=tool_calls,
+                ))
+            else:
+                history.append(Message(role=role, content=line.content or ''))
+        return history
+
+    def _sync_pi_message_count(self):
+        """Avstäm pi_message_count mot antalet faktiska meddelanderader.
+
+        Räknaren är en delta-kursor mot Pi:s messages[] och är ett DERIVAT
+        av raderna — aldrig tvärtom. Vid avvikelse loggas det och raderna
+        vinner (körningen får aldrig fällas).
+
+        Viktigt: räknaren får bara sänkas (när den pekar förbi antalet
+        rader, t.ex. efter trunkerad historik) eller lämnas — den höjs
+        ALDRIG till det totala radantalet, eftersom rader som skrivs direkt
+        (tool-rader, stream.py:s assistant-rad) inte motsvarar Pi-poster.
+        Att höja den skulle göra nästa anrops delta fel.
+        """
+        self.ensure_one()
+        actual = len(self.session_line_ids.filtered(
+            lambda l: l.role in ('user', 'assistant', 'tool', 'system')))
+        stored = int(self.pi_message_count or 0)
+        if stored > actual:
+            _logger.info(
+                'session %s: pi_message_count %s > %s rader — sänker '
+                '(raderna vinner)', self.id, stored, actual)
+            try:
+                self.sudo().write({'pi_message_count': actual})
+            except Exception as e:
+                _logger.warning('kunde inte synka pi_message_count: %s', e)
+            return actual
+        if stored < actual:
+            _logger.debug(
+                'session %s: pi_message_count %s < %s rader (delta-kursor, '
+                'förväntat vid direkt-skrivna rader)', self.id, stored,
+                actual)
+        return stored
+
     # ── Kontinuitet (find-or-create med fallback) ──────────────────────
     # Används av /ai/v1/chat/completions + openai_api-vägen. Så länge en
     # Pi-session lever (och skickar pi_session_id/session_id) återfinns
@@ -367,6 +467,13 @@ class AICoworkerSession(models.Model):
         try:
             messages = messages or []
             total = len(messages)
+            # Tolerant läsning (1.3): stäm av räknaren mot raderna först —
+            # om den pekar förbi antalet rader (t.ex. efter trunkerad
+            # historik) sänks den så inget tappas.
+            try:
+                session._sync_pi_message_count()
+            except Exception:
+                pass
             already = int(session.pi_message_count or 0)
             # Robusthet: om klienten skickar färre meddelanden än vi sparat
             # (t.ex. trunkerad historik) börjar vi om från 0 så inget tappas.
@@ -470,6 +577,13 @@ class AICoworkerSession(models.Model):
                 'token_input': (session.token_input or 0) + input_t,
                 'token_output': (session.token_output or 0) + output_t,
             })
+            # Räknaren är ett derivat av raderna (1.3): synka mot faktiskt
+            # antal rader så den aldrig driver iväg. Loggar avvikelse utan
+            # att fälla körningen.
+            try:
+                session._sync_pi_message_count()
+            except Exception:
+                pass
             return created_count
         except Exception as e:
             _logger.warning('pi message persist failed: %s', e)

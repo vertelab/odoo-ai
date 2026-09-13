@@ -10,3 +10,10 @@ from . import test_coworker_hitl
 from . import test_channel
 from . import test_pwa_push_triggers
 from . import test_pi_session_link
+from . import test_session_memory
+from . import test_tool_errors
+from . import test_write_verify
+from . import test_tool_self_correction
+from . import test_document_page_acceptance
+from . import test_tool_selection
+from . import test_round_limit

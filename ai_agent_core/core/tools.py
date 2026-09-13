@@ -74,6 +74,11 @@ class Tool:
             return f"Tool '{self.name}' requires remote executor ({self.executor})"
         try:
             return await self.handler(**kwargs)
+        except ToolError as e:
+            # Strukturerat, åtgärdbart fel (2.1) — bevara vägledningen.
+            if not e.tool_name:
+                e.tool_name = self.name
+            return e.to_text()
         except Exception as e:
             return f"Tool error ({self.name}): {e}"
 
@@ -1538,6 +1543,82 @@ def _model_scope_error(env, model):
     return ''
 
 
+# ---------------------------------------------------------------------------
+# Strukturerad verktygsfeltyp (improve-ai-coworker-memory-and-tools 2.1)
+# Verktygsfel ska vara ÅTGÄRDBARA: vilken parameter, förväntat format,
+# faktiskt värde och om anropet kan göras om. Feltypen serialiseras till
+# både LLM-läsbar text och JSON (maskinläsbar för kvalitetsloopen).
+# ---------------------------------------------------------------------------
+
+class ToolError(Exception):
+    """Strukturerat, åtgärdbart verktygsfel.
+
+    Bär tillräckligt för att agenten ska kunna korrigera anropet utan att
+    tappa sessionens tråd: vilken parameter som är fel, förväntat format,
+    faktiskt värde och om ett nytt försök är meningsfullt.
+    """
+
+    def __init__(self, message, parameter='', expected='', actual='',
+                 valid_fields=None, retryable=True, tool_name=''):
+        super().__init__(message)
+        self.message = message
+        self.parameter = parameter
+        self.expected = expected
+        self.actual = actual
+        self.valid_fields = list(valid_fields or [])
+        self.retryable = retryable
+        self.tool_name = tool_name
+
+    def to_text(self):
+        """LLM-läsbar text med vägledning."""
+        parts = [f"Error: {self.message}"]
+        if self.parameter:
+            parts.append(f"Parameter: {self.parameter}")
+        if self.expected:
+            parts.append(f"Expected: {self.expected}")
+        if self.actual:
+            parts.append(f"Actual: {self.actual}")
+        if self.valid_fields:
+            parts.append("Valid fields: %s" % ', '.join(self.valid_fields))
+        parts.append("Retryable: %s" % ('yes' if self.retryable else 'no'))
+        return '\n'.join(parts)
+
+    def to_dict(self):
+        """Maskinläsbar struktur (för kvalitetsloopen)."""
+        return {
+            'error': self.message,
+            'parameter': self.parameter,
+            'expected': self.expected,
+            'actual': self.actual,
+            'valid_fields': self.valid_fields,
+            'retryable': self.retryable,
+            'tool_name': self.tool_name,
+        }
+
+    def to_json(self):
+        import json as _json
+        return _json.dumps(self.to_dict(), ensure_ascii=False, default=str)
+
+
+def _tool_error(message, valid_fields=None, tool_name=''):
+    """Hjälpare: okänt/felaktigt fält → åtgärdbart ToolError."""
+    return ToolError(
+        message, expected='one of: %s' % ', '.join(valid_fields or []),
+        valid_fields=valid_fields, tool_name=tool_name)
+
+
+def _unknown_field_error(model, field, valid_fields, tool_name=''):
+    """Okänt fält: namnge fältet och förteckna giltiga fält."""
+    return ToolError(
+        f"Unknown field '{field}' on {model}",
+        parameter=field,
+        expected='one of: %s' % ', '.join(sorted(valid_fields)[:40]),
+        actual=field,
+        valid_fields=sorted(valid_fields),
+        tool_name=tool_name,
+    )
+
+
 def _tool_describe_model(env, model=''):
     """Return model schema + capabilities (fält, relationer, action-metoder,
     has_okf/has_graph/has_embedding)."""
@@ -1639,17 +1720,34 @@ def _tool_odoo_search(env, model='', domain=None, fields=None, limit=20,
             fg = {}
         fields = [f for f in fields
                   if fg.get(f, {}).get('type') not in ('html', 'text', 'binary')]
+    else:
+        # Explicit fields: validera mot schemat → åtgärdbart fel (2.3).
+        unknown = [f for f in fields
+                   if f not in Model._fields and f != 'id']
+        if unknown:
+            return _unknown_field_error(
+                model, unknown[0], set(Model._fields),
+                tool_name='odoo_search').to_json()
     try:
         records = Model.search_read(
             domain or [], fields=fields, limit=limit or 20,
             offset=offset or 0, order=order)
     except Exception as e:
-        return _json.dumps({"error": f"search_read failed on {model}: {e}"})
+        return ToolError(
+            f"search_read failed on {model}: {e}",
+            expected='valid domain/fields per fields_get',
+            actual=str(e),
+            tool_name='odoo_search',
+        ).to_json()
     return _json.dumps(records, default=str)
 
 
 def _tool_odoo_create(env, model='', values=None):
-    """Create a record via ORM (affärslager). Returnerar id + display_name."""
+    """Create a record via ORM (affärslager). Returnerar id + display_name.
+
+    Felaktigt/okänt fält ger ett ÅTGÄRDBART fel (2.2/2.3): fältnamn,
+    förväntade fält och om anropet kan göras om.
+    """
     import json as _json
     if not model or model not in env.registry:
         return _json.dumps({"error": f"Unknown model: {model}"})
@@ -1659,13 +1757,32 @@ def _tool_odoo_create(env, model='', values=None):
     Model = env[model]
     if not Model.check_access_rights('create', raise_exception=False):
         return _json.dumps({"error": f"No create access on {model}"})
+    vals = dict(values or {})
+    # Validera fältnamn mot modellens schema innan create — ger ett
+    # åtgärdbart fel istället för ett generiskt ORM-undantag.
+    if vals:
+        valid_fields = set(Model._fields)
+        unknown = [f for f in vals if f not in valid_fields]
+        if unknown:
+            return _unknown_field_error(
+                model, unknown[0], valid_fields,
+                tool_name='odoo_create').to_json()
     try:
-        rec = Model.create(dict(values or {}))
+        rec = Model.create(vals)
     except Exception as e:
-        return _json.dumps({"error": f"create failed on {model}: {e}"})
+        return ToolError(
+            f"create failed on {model}: {e}",
+            expected='valid field values per fields_get',
+            actual=str(e),
+            tool_name='odoo_create',
+        ).to_json()
     return _json.dumps({
         "ok": True, "id": rec.id,
         "name": rec.display_name or rec.name or '',
+        # Modellen eklas tillbaka så write-verify kan slå upp posten när
+        # avtalet använder model_path (generiska verktyg, 5.1).
+        "model": model,
+        "values": vals,
     }, default=str)
 
 
@@ -1736,10 +1853,19 @@ def _tool_odoo_write(env, model='', ids=None, values=None):
             continue
         allowed[fname] = fval
     if rejected:
-        return _json.dumps({
-            "error": f"Icke tillåtna fält: {rejected}",
-            "hint": "Använd odoo_call_method för affärsflöden "
-                    "(state ändras via metoder)"})
+        return ToolError(
+            f"Fields not writable on {model}: {rejected}",
+            parameter=rejected[0],
+            expected='writable, non-computed fields (or use odoo_call_method '
+                     'for business flows — state changes via methods)',
+            actual=', '.join(rejected),
+            valid_fields=sorted(
+                f for f in Model._fields
+                if not Model._fields[f].readonly
+                and not Model._fields[f].compute
+                and not Model._fields[f].related),
+            tool_name='odoo_write',
+        ).to_json()
     recs = Model.browse(ids or [])
     if not recs:
         return _json.dumps({"error": f"Inga {model}-poster med ids={ids}"})

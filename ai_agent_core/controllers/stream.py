@@ -2295,6 +2295,48 @@ class AIOpenAIAPI(http.Controller):
         return out
 
     @staticmethod
+    def _skill_triggered(skill, low_text):
+        """Matchar en skills trigger_keywords mot texten (helordsmatchning).
+
+        Helordsmatchning: "read" ska inte plocka upp "read/write"-larm via
+        delsträng, och "pg" inte matcha inuti ett annat ord. Kortare/vanligare
+        nyckelord i ai.skill.trigger_keywords ger fler träffar — det är data
+        som kan trimmas i UI:t utan deploy.
+        """
+        import re as _re
+        for _k in _re.split(r'[,\n]', skill.trigger_keywords or ''):
+            _k = _k.strip().lower()
+            if not _k:
+                continue
+            if _re.search(r'(?<![a-z0-9])' + _re.escape(_k)
+                          + r'(?![a-z0-9])', low_text):
+                return True
+        return False
+
+    @staticmethod
+    def _select_relevant_skills(messages, skill_recs):
+        """Välj vilka skills som ska med i LLM-kontexten (data-driven).
+
+        En skill tas med när frågan matchar dess `trigger_keywords` — reglerna
+        bor i ai.skill och kan ändras i UI:t utan deploy. Ingen hårdkodad
+        tabell.
+
+        - `orchestration.*` behålls alltid (styr arbetsupplägget).
+        - Ingen träff alls → behåll samtliga (oförändrat beteende).
+        """
+        skill_recs = list(skill_recs)
+        low = ' '.join(
+            str(m.get('content') or '') for m in (messages or [])
+        )[:4000].lower()
+        always = [s for s in skill_recs
+                  if (s.name or '').startswith('orchestration')]
+        always_ids = {s.id for s in always}
+        matched = [s for s in skill_recs
+                   if s.id not in always_ids
+                   and AIOpenAIAPI._skill_triggered(s, low)]
+        return always + matched if matched else skill_recs
+
+    @staticmethod
     def _select_relevant_tools(messages, tools):
         """Supervisor-kontextoptimering: välj endast uppgiftsrelevanta tools.
 
@@ -2309,8 +2351,20 @@ class AIOpenAIAPI(http.Controller):
         """
         # Alltid behåll ett litet bas-set (kärnförmågor oavsett uppgift)
         BAS = {
-            'bash', 'read', 'edit', 'write', 'grep', 'find', 'ls',
-            'describe_model', 'odoo_fetch_url', 'odoo_calculator', 'okf_search',
+            'bash', 'read', 'edit', 'write', 'grep',
+            'describe_model', 'odoo_search',
+            'salt_cmd_run', 'driftlarm_update_assessment',
+        }
+
+        # Verktyg som alltid behålls om klienten skickar dem. Skyddar
+        # Pi-agentens egna kapaciteter (delegering, minne, sök, uppgifter):
+        # Pi kör verktygen lokalt och tappar dem helt om de beskärs bort här.
+        ALWAYS = {
+            'subagent', 'bg_wait',
+            'memory_write', 'memory_read', 'memory_search',
+            'web_search', 'fetch_content',
+            'task_get', 'task_set_status', 'task_update_fields',
+            'okf_search',
         }
 
         # Sammanställ uppgiftstexten (senaste meddelanden)
@@ -2320,48 +2374,77 @@ class AIOpenAIAPI(http.Controller):
         if not prompt_text:
             prompt_text = 'generisk uppgift'
 
-        # Nyckelord → verktygsfamilj (prefix-match på tool-namn)
+        # Nyckelord → EXPLICITA verktyg (prioritetsordning).
+        #
+        # OBS 2026-09-13: prefix-matchning togs bort. Tidigare matchade
+        # reglerna på BREDA ord ("host", "salt", "minion", "odoo", "log") och
+        # drog sedan in ALLA verktyg med det prefixet. En typisk driftlarm-
+        # prompt innehåller "host", "salt" och "log" → 65 av 88 verktyg följde
+        # med, vilket fick modellen att svälja tool_calls i content-text.
+        # Explicit lista håller urvalet litet och förutsägbart.
         RULES = [
-            (['zabbix', 'active check', 'monitor', 'host', 'service down'],
-             ['zabbix', 'salt', 'service']),
-            (['salt', 'minion', 'pillar', 'grain', 'state', 'cmd.run'],
-             ['salt']),
-            (['wazuh', 'correlat', 'security event', 'cve'],
-             ['wazuh', 'driftlarm']),
-            (['postgres', 'pg_', 'replication', 'database', 'db '],
-             ['pg_', 'postgres']),
-            (['caddy', '502', 'gateway', 'reverse prox', 'tls'],
-             ['caddy']),
-            (['odoo', 'task', 'project', 'cron', 'log'],
-             ['odoo_', 'task_', 'prd_', 'logg', 'tail_odoo']),
-            (['mail', 'postfix', 'dovecot', 'email'], ['mail', 'postfix', 'dovecot']),
+            (['disk', 'minne', 'memory', 'load', 'cpu', 'i/o'], [
+                'salt_disk_usage', 'salt_memory_usage', 'salt_system_load',
+                'salt_process_list']),
+            (['service', 'tjänst', 'systemd', 'restart', 'nere', 'down'], [
+                'salt_service_status', 'salt_service_restart',
+                'salt_journal_errors']),
+            (['postgres', 'replication', 'database', 'databas', 'pg_'], [
+                'pg_isready', 'pg_replication_lag', 'pg_stat_activity']),
+            (['caddy', '502', '504', 'gateway', 'reverse prox', 'tls'], [
+                'caddy_status', 'caddy_recent_errors',
+                'caddy_upstream_health']),
+            (['odoo', 'traceback'], [
+                'tail_odoo_log', 'grep_odoo_errors', 'odoo_cron_status',
+                'odoo_read', 'odoo_write']),
+            (['zabbix', 'active check', 'trigger', 'item'], [
+                'zabbix_get_alerts', 'zabbix_get_problems',
+                'zabbix_get_triggers', 'zabbix_get_host',
+                'zabbix_get_item']),
+            (['wazuh', 'cve', 'säkerhet', 'security', 'correlat'], [
+                'wazuh_agent_status', 'wazuh_recent_alerts',
+                'wazuh_cve_list']),
+            (['minion', 'pillar', 'grain', 'highstate'], [
+                'salt_test_ping', 'salt_grains_items', 'salt_pillar_items',
+                'salt_state_show_sls', 'salt_minion_list']),
+            (['postfix', 'dovecot', 'mail'], [
+                'salt_service_status', 'salt_journal_errors']),
+            (['helpdesk', 'ticket', 'avvikelse', 'nonconformity'], [
+                'create_helpdesk_ticket', 'document_nonconformity']),
         ]
+
+        # Reglerna får lägga till högst så här många UTOVER bas+ALWAYS —
+        # annars äter bas-setet upp hela budgeten och reglerna blir döda.
+        MAX_RULE_TOOLS = 8
 
         named = dict(AIOpenAIAPI._tool_names(tools))
         if not named:
             return tools or []
 
-        # Matcha fram familjer
-        selected = set(BAS & set(named.keys()))  # bas-set som faktiskt finns
-        for keywords, families in RULES:
-            if any(k in prompt_text for k in keywords):
-                for fam in families:
-                    selected |= {
-                        n for n in named if n.startswith(fam)}
+        available = set(named.keys())
+        # ALWAYS läggs till utanför regel-budgeten — de är få och skyddar Pi.
+        selected = (BAS | ALWAYS) & available
+        base_count = len(selected)
 
-        # Fallback: om inget matchade, behåll en kompakt bas-y del (exkl.
-        # stora per-domän familjer) så sessionen inte blir helt utan kontext.
-        if len(selected) <= len(BAS & set(named.keys())):
-            # Ta de 8 första icke-bas verktygen som en kompakt default
-            rest = [n for n in named if n not in selected]
-            selected |= set(rest[:8])
+        # Fyll på regel för regel tills regel-budgeten är nådd
+        # (mest-specifik-först).
+        for keywords, tool_names in RULES:
+            if len(selected) - base_count >= MAX_RULE_TOOLS:
+                break
+            if not any(k in prompt_text for k in keywords):
+                continue
+            for name in tool_names:
+                if len(selected) - base_count >= MAX_RULE_TOOLS:
+                    break
+                if name in available:
+                    selected.add(name)
 
         # Behåll originalordning
         result = [t for name, t in named.items() if name in selected]
         _logger.info(
             'supervisor tool-select: %d/%d verktyg skickas till LLM (%s)',
             len(result), len(named),
-            ','.join(sorted(n for n in named if n in selected))[:300])
+            ','.join(sorted(selected))[:300])
         return result
 
     @staticmethod
@@ -2450,11 +2533,18 @@ class AIOpenAIAPI(http.Controller):
         # Gör att /ai/v1-klienter (Pi m.fl.) ser samma kapaciteter som
         # chat-UI:t och run()-vägen.
         try:
-            skill_recs = quest.skill_ids | quest.agent_ids.agent_id.skill_ids
+            skill_recs = (quest.skill_ids
+                          | quest.agent_ids.agent_id.skill_ids
+                          | quest.identity_id.skill_ids)
             if skill_recs:
+                _chosen = AIOpenAIAPI._select_relevant_skills(
+                    messages, skill_recs)
+                _logger.info('supervisor skill-select: %d/%d skills (%s)',
+                             len(_chosen), len(skill_recs),
+                             ','.join(s.name or '?' for s in _chosen)[:200])
                 skill_ctx = '\n\n## Skills (följ dessa vid behov)\n' + '\n'.join(
                     f'### {s.name}\n{s.recipe_text or s.description or ""}'
-                    for s in skill_recs)
+                    for s in _chosen)
                 system_prompt = (system_prompt or '') + skill_ctx
         except Exception as e:
             _logger.warning('skill injection failed (openai_api): %s', e)
