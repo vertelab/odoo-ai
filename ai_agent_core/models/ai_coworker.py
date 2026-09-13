@@ -1384,6 +1384,22 @@ class AICoworker(models.Model):
     rate_limit_tpm = fields.Integer('Rate Limit (tokens/min)', default=100000,
         compute='_compute_init_type_fields', inverse='_inverse_init_type_fields',
         store=False)
+    # Kontextfönster som annonseras till externa API-klienter (Pi/Cline) via
+    # /ai/v1/models. Proxy mot init-typ-raden (openai_api) — samma mönster som
+    # rate_limit_*; ingen ny datamodell. 0 = automatisk härledning (minsta
+    # context_window bland medarbetarens agentmodeller).
+    openai_context_window = fields.Integer(
+        'Context Window (tokens)',
+        compute='_compute_init_type_fields', inverse='_inverse_init_type_fields',
+        store=False,
+        help='Kontextfönster (tokens) som annonseras till externa '
+             'API-klienter. 0 = automatiskt (minsta bland agenternas '
+             'modeller).')
+    openai_context_window_manual = fields.Boolean(
+        'Context Window (manuellt)',
+        compute='_compute_init_type_fields', store=False,
+        help='True när ett eget värde angetts ovan. False = värdet härleds '
+             'alltid från agenternas modeller.')
 
     def _get_active_init(self, itype):
         """Returnera den aktiva init_type-raden för en typ (eller tom recordset)."""
@@ -1458,6 +1474,8 @@ class AICoworker(models.Model):
                  'init_type_ids.mail_target_model_id',
                  'init_type_ids.mail_find_partner',
                  'init_type_ids.rate_limit_rpm', 'init_type_ids.rate_limit_tpm',
+                 'init_type_ids.openai_context_window',
+                 'init_type_ids.openai_context_window_manual',
                  'init_type_ids.show_in_chat', 'init_type_ids.cron_id',
                  'init_type_ids.server_action_id',
                  'init_type_ids.watch_trg_selection_field_id',
@@ -1533,6 +1551,10 @@ class AICoworker(models.Model):
             oa = rec._get_active_init('openai_api')
             rec.rate_limit_rpm = oa.rate_limit_rpm if oa else 30
             rec.rate_limit_tpm = oa.rate_limit_tpm if oa else 100000
+            rec.openai_context_window = (
+                oa.openai_context_window if oa else 0)
+            rec.openai_context_window_manual = (
+                oa.openai_context_window_manual if oa else False)
             webui = rec._get_active_init('web_ui')
             rec.show_in_chat = webui.show_in_chat if webui else True
 
@@ -1586,6 +1608,10 @@ class AICoworker(models.Model):
                     'rate_limit_rpm': rec.rate_limit_rpm,
                     'rate_limit_tpm': rec.rate_limit_tpm,
                 })
+                # Skriv alltid kontextfönstret (0 = tillbaka till auto).
+                # Init-typ-radens inverse sätter _manual = bool(värde).
+                oa.write({'openai_context_window':
+                          rec.openai_context_window or 0})
             webui = rec._get_active_init('web_ui')
             if webui:
                 webui.show_in_chat = rec.show_in_chat
@@ -4725,6 +4751,45 @@ class AICoworker(models.Model):
             except Exception as e:
                 _logger.warning('kunde inte logga tool-attempt: %s', e)
 
+    @staticmethod
+    def _contract_needs_source(contract):
+        """Behöver avtalet en källa för innehållslig verifiering?
+
+        Sant så snart någon check begär ``source``. Då — och bara då — byggs
+        källan (design D1: ingen kostnad när avtalet inte begär den).
+        """
+        for check in (contract or {}).get('checks') or []:
+            if check.get('source'):
+                return True
+        return False
+
+    def _build_verify_source(self, session=None):
+        """Bygg källmaterialet för innehållslig verifiering.
+
+        Källan är sessionens egna rader — den auktoritativa källan för vad
+        tråden faktiskt innehöll (samma princip som
+        ``_build_history_from_lines``). ``source_urls`` tas med så
+        källhänvisningar kan prövas mot faktiska belägg.
+
+        Returnerar en sträng, eller None om ingen session/rader finns.
+        """
+        if not session:
+            return None
+        try:
+            lines = session.session_line_ids.sorted(
+                key=lambda l: (l.sequence or 0, l.id or 0))
+        except Exception:  # session utan rader / oväntad form
+            return None
+        if not lines:
+            return None
+        chunks = []
+        for line in lines:
+            if line.content:
+                chunks.append(line.content)
+            if line.source_urls:
+                chunks.append(line.source_urls)
+        return '\n'.join(chunks) if chunks else None
+
     def _run_write_verify(self, tool_results, session=None):
         """Kör write-verify för skrivande verktygsanrop (3.2/3.3).
 
@@ -4733,24 +4798,40 @@ class AICoworker(models.Model):
         Verktyg utan avtal hoppas över utan fel (3.3). Returnerar en lista
         av dicts {tool, result: VerifyResult} för de verktyg som
         verifierades.
+
+        Innehållslig verifiering (innehallsverifiering): när ett avtal begär
+        överensstämmelse med en källa skickas sessionens rader med som källa.
+        Källan byggs BARA när något avtal faktiskt begär den — annars är
+        kostnaden noll (design D1).
         """
         import json as _json
         from odoo.addons.ai_agent_core.core.verify import verify_write_outcome
         outcomes = []
+        source_cache = None
         for tool_name, _args, raw in (tool_results or []):
             tool_rec = self.env['ai.tool'].sudo().search(
                 [('name', '=', tool_name)], limit=1)
             if not tool_rec:
                 continue
-            contract = tool_rec.get_verification_contract()
-            if not contract:
-                continue  # inget avtal → ingen write-verify (3.3)
             try:
                 data = _json.loads(raw) if isinstance(raw, str) else raw
             except (ValueError, TypeError):
                 continue
             if not isinstance(data, dict):
                 continue
+            # Modellen anropet gällde — behövs för modellspecifika avtal
+            # (t.ex. document.page, där innehållet bärs av ett beräknat fält).
+            model = data.get('model') or ''
+            contract = tool_rec.get_verification_contract(model=model)
+            if not contract:
+                continue  # inget avtal → ingen write-verify (3.3)
+            # Källan behövs bara om någon check begär den. Bygg den en gång
+            # och återanvänd — sessionens rader kan vara stora.
+            source = None
+            if self._contract_needs_source(contract):
+                if source_cache is None:
+                    source_cache = self._build_verify_source(session)
+                source = source_cache
             # Åtgärdbart verktygsfel (4.8): grupp 2:s ToolError bär parameter,
             # förväntat format och retryable — exakt vad en korrigering
             # behöver för att rätta ett fältnamn UTAN att gissa. Tidigare
@@ -4765,7 +4846,8 @@ class AICoworker(models.Model):
                 continue
             if not data.get('ok'):
                 continue
-            result = verify_write_outcome(contract, data, env=self.env)
+            result = verify_write_outcome(
+                contract, data, env=self.env, source=source)
             outcomes.append({'tool': tool_name, 'result': result})
             # Logga avvikelsen så den syns i kvalitetsloopen/sessionen.
             if result.needs_fix:

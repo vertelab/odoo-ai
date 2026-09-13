@@ -168,3 +168,90 @@ rm -rf ai_agent_core/migrations/__pycache__
 
 Den är git-ignorerad (`.gitignore:2`) så den syns inte i `git status` —
 den måste letas upp på disk.
+
+## Innehållslig verifiering (write-verify mot en källa)
+
+`verify_write_outcome()` kan utöver "fältet är ifyllt" begära att fältets
+innehåll **motsvarar källan**. Det stänger luckan som session 18204 visade:
+ett `document.page` godkändes som "klart" trots att det tappade videon,
+citat, modellnamn och belägg — och angav en påhittad källa.
+
+### Avtalsformatet
+
+```json
+{
+  "model_path": "model",
+  "id_path": "id",
+  "checks": [
+    {"field": "name", "equals_path": "values.name"},
+    {"field": "content", "non_empty": true,
+     "source": true, "coverage": 0.6}
+  ]
+}
+```
+
+- `source: true` — begär jämförelse mot källan. Utan detta sker **ingen**
+  innehållsjämförelse (kostnaden syns bara där den är motiverad).
+- `coverage` — tröskel 0–1, standard `0.6`. Under tröskeln blir det ett
+  **fel** i `requirement_errors` (inte en varning), med ett fix-förslag som
+  namnger vad som saknas.
+
+Källan är sessionens egna rader (`ai.coworker.session.line`, inkl.
+`source_urls`) och byggs **bara** när något avtal begär den
+(`_contract_needs_source` → `_build_verify_source`).
+
+### Mätningen
+
+`measure_coverage()` mäter hur stor del av källans väsentliga delar som
+återfinns i innehållet. Delarna (`extract_essential_parts`) är modellnamn,
+URL:er, citat, namngivna entiteter och sifferfakta — deterministiskt, utan
+LLM-anrop.
+
+Två saker krävdes för att mätningen skulle bli rättvis på verklig data:
+
+1. **Brusfilter** — sökmotor-omdirigeringar (Bing/Google med spårningstokens),
+   katalogdomäner (`tv.nu`, `allatvkanaler.se`), annonsord och korta
+   fragment är inte belägg. I session 18204 var 8 av 12 URL:er
+   Bing-omdirigeringar.
+2. **Kvotering per typ** — de talrika entiteterna trängde annars ut
+   modellnamn och URL:er, som är de mest värdefulla beläggen.
+
+Citat paras **sekventiellt** (första citattecknet med andra, tredje med
+fjärde) — en regex kan inte veta vilket citattecken som är öppning och
+vilket som är stängning, och parade ihop två åtskilda citat så att texten
+mellan dem blev ett falskt citat.
+
+### Platshållare räknas som tomt
+
+Odoo:s html-widget skriver `<p><br></p>` när ett fält saknar innehåll — 11
+tecken som passerar en naiv tomhetskontroll. `non_empty` genomskådar detta
+(`_is_placeholder_html`). Det var så `document.page` id 82 godkändes.
+
+### Modellspecifika avtal
+
+Ett generiskt avtal (`odoo_create`) kan inte veta vilket fält som bär
+innehållet på en viss modell, och en check mot ett fält som inte finns
+hoppas över som **varning** — en tyst lucka. `_MODEL_VERIFICATION_CONTRACTS`
+lägger därför till modellens egna checks:
+
+```python
+_MODEL_VERIFICATION_CONTRACTS = {
+    'document.page': {
+        'checks': [
+            {'field': 'name', 'equals_path': 'values.name'},
+            {'field': 'content', 'non_empty': True,
+             'source': True, 'coverage': 0.6},
+        ],
+    },
+}
+```
+
+### Acceptansfall (session 18204)
+
+| Innehåll | Täckning | Utfall |
+|---|---|---|
+| Det ofullständiga dokumentet (id 82) | 9 % | FAIL — namnger saknade modellnamn |
+| Halvdant (hälften av beläggen) | 32 % | FAIL |
+| Fullständigt | 85 % | PASS |
+
+Tröskeln 0.6 skiljer alltså de tre fallen.

@@ -156,26 +156,53 @@ class AITool(models.Model):
               '"values.parent_id"}, {"field": "content", '
               '"non_empty": true}]}. Efter en lyckad skrivning läses '
               'posten tillbaka och varje check jämförs; avvikelse ger ett '
-              'strukturerat fel (fält, förväntat, faktiskt).'),
+              'strukturerat fel (fält, förväntat, faktiskt).\n\n'
+              'Innehållslig verifiering: en check kan i stället begära att '
+              'fältet motsvarar en källa — '
+              '{"field": "content", "source": true, "coverage": 0.6}. '
+              'Då mäts hur stor del av källans väsentliga delar (namngivna '
+              'entiteter, modellnamn, citat, URL:er) som återfinns i '
+              'innehållet, och jämförs mot "coverage"-tröskeln (0–1, '
+              'standard 0.6). Under tröskeln blir det ett fel som namnger '
+              'vad som saknas. En påstådd källa ("Källa: X") som inte finns '
+              'i sammanhanget rapporteras också. Källan är sessionens rader '
+              'och läses bara när en check begär den.'),
     )
     verification_enabled = fields.Boolean(
         'Write-verify', default=False,
         help='Aktivera verifiering av verktygsutfallet efter skrivning '
              '(kräver verification_json).')
 
-    def get_verification_contract(self):
-        """Tolka verification_json → dict (eller {} om inget/ogiltigt)."""
+    def get_verification_contract(self, model=None):
+        """Tolka verification_json → dict (eller {} om inget/ogiltigt).
+
+        Args:
+            model: modellen anropet gäller. Om angiven läggs ett
+                modellspecifikt avtal till (se ``_MODEL_VERIFICATION_CONTRACTS``)
+                — det täcker fält som det generiska avtalet inte kan känna
+                till. Det modellspecifika avtalets checks läggs EFTER de
+                generiska, så en generisk check som inte finns på modellen
+                hoppas över medan den specifika körs.
+        """
         self.ensure_one()
         if not self.verification_enabled or not self.verification_json:
             return {}
         try:
             data = json.loads(self.verification_json)
-            if isinstance(data, dict) and data.get('checks') is not None:
-                return data
         except (ValueError, TypeError):
-            _logger.warning('ogiltigt verification_json på ai.tool %s',
-                            self.id)
-        return {}
+            _logger.warning('ogiltigt verification_json på ai.tool %s', self.id)
+            return {}
+        if not isinstance(data, dict) or data.get('checks') is None:
+            return {}
+        # Modellspecifikt tillägg: lägg till de checks som modellen behöver.
+        extra = self._MODEL_VERIFICATION_CONTRACTS.get(model or '')
+        if extra:
+            merged = dict(data)
+            merged['checks'] = list(data.get('checks') or []) + [
+                c for c in extra.get('checks') or []
+                if c not in (data.get('checks') or [])]
+            return merged
+        return data
 
     # Standardavtal för de generiska Odoo-verktygen (5.1). Generiska verktyg
     # betjänar många modeller → avtalet använder model_path och checkar som
@@ -195,6 +222,29 @@ class AITool(models.Model):
             'id_path': 'ids.0',
             'checks': [
                 {'field': 'name', 'equals_path': 'values.name'},
+            ],
+        },
+    }
+
+    # Modellspecifika avtal. Ett generiskt avtal kan inte veta vilket fält
+    # som bär innehållet på en viss modell — och en check mot ett fält som
+    # inte finns hoppas över som varning, vilket ger en tyst lucka.
+    # document.page är det konkreta fallet: innehållet skrivs till
+    # document.page.history, och document.page.content är ett beräknat fält
+    # som faller tillbaka på html-widgetens platshållare när historiken
+    # saknas (session 18204: dokumentet "skapades" utan innehåll).
+    _MODEL_VERIFICATION_CONTRACTS = {
+        'document.page': {
+            'model_path': 'model',
+            'id_path': 'id',
+            'checks': [
+                {'field': 'name', 'equals_path': 'values.name'},
+                # Innehållet ska inte bara vara ifyllt — det ska bära
+                # trådens väsentliga delar. Utan detta passerade ett
+                # dokument som tappade videon, citaten och modellnamnen
+                # (session 18204).
+                {'field': 'content', 'non_empty': True,
+                 'source': True, 'coverage': 0.6},
             ],
         },
     }
