@@ -4902,6 +4902,7 @@ class AICoworker(models.Model):
         """
         from odoo.addons.ai_agent_core.core.improve import (
             ToolSequenceCorrector)
+        from odoo.addons.ai_agent_core.core.verify import verify_write_outcome
         corrector = ToolSequenceCorrector(
             max_attempts=self._TOOL_CORRECTION_MAX_ATTEMPTS)
         first_error = '; '.join(

@@ -232,16 +232,25 @@ class TestToolSelfCorrection(common.TransactionCase):
         self.assertFalse(bogus)
 
     def test_correction_creates_no_duplicate(self):
-        """4.7: korrigeringen skapar ingen ytterligare post."""
+        """4.7: korrigeringen skapar ingen ytterligare post.
+
+        Anroparen angav ett fel värde; korrigeringen skriver det korrigerade
+        värdet till den BEFINTLIGA posten. Antalet poster är oförändrat.
+        """
         contract = {
             'model': 'res.partner', 'id_path': 'id',
-            'checks': [{'field': 'name', 'equals': 'INTENDED'}],
+            'checks': [{'field': 'name', 'equals_path': 'values.name'}],
         }
         coworker = self._coworker_with_contract(contract, 'dup_tool')
-        partner = self.env['res.partner'].create({'name': 'ACTUAL'})
+        partner = self.env['res.partner'].create({'name': 'FELT VÄRDE'})
         before = self.env['res.partner'].search_count([])
-        data = {'ok': True, 'id': partner.id, 'values': {'name': 'ACTUAL'}}
+        # Anroparen angav rätt värde; posten har fortfarande det felaktiga
+        # (som om första skrivningen tappade värdet) → korrigeringen rättar
+        # den befintliga posten.
+        data = {'ok': True, 'id': partner.id,
+                'values': {'name': 'RÄTT VÄRDE'}}
         result = verify_write_outcome(contract, data, env=self.env)
+        self.assertTrue(result.needs_fix, result.all_errors)
 
         run = coworker._correct_failed_tool(
             'dup_tool', contract, data, result)
@@ -250,8 +259,28 @@ class TestToolSelfCorrection(common.TransactionCase):
             before, after,
             'korrigeringen får inte skapa nya poster (dubbletter)')
         # Den befintliga posten åtgärdades i stället.
-        self.assertEqual(run.attempts[-1].outcome, 'verified')
-        self.assertEqual(partner.name, 'ACTUAL')
+        self.assertEqual(run.attempts[-1].outcome, 'verified',
+                         run.chain())
+        self.assertEqual(partner.name, 'RÄTT VÄRDE')
+
+    def test_correction_escalates_when_value_cannot_be_fixed(self):
+        """4.7/4.5: går felet inte att åtgärda eskaleras det utan dubblett."""
+        contract = {
+            'model': 'res.partner', 'id_path': 'id',
+            'checks': [{'field': 'name', 'equals': 'INTENDED'}],
+        }
+        coworker = self._coworker_with_contract(contract, 'cantfix_tool')
+        partner = self.env['res.partner'].create({'name': 'ACTUAL'})
+        before = self.env['res.partner'].search_count([])
+        data = {'ok': True, 'id': partner.id, 'values': {'name': 'ACTUAL'}}
+        result = verify_write_outcome(contract, data, env=self.env)
+
+        run = coworker._correct_failed_tool(
+            'cantfix_tool', contract, data, result)
+        self.assertTrue(run.escalated)
+        self.assertEqual(
+            before, self.env['res.partner'].search_count([]),
+            'eskalering får inte heller skapa dubbletter')
 
     def test_correction_escalates_without_existing_record(self):
         """4.7: ingen befintlig post ⇒ eskalera, skapa inte en ny."""

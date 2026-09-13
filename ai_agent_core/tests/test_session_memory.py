@@ -211,12 +211,31 @@ class TestSessionMemory(common.TransactionCase):
             line.unlink()
 
     def test_line_metadata_can_be_updated(self):
-        """Metadata (agent_id/tool_id) får uppdateras efteråt."""
+        """Metadata (agent_id/tool_id) får uppdateras efteråt.
+
+        Innehålls- och granskningsfält (content, role, debug_info, source_urls,
+        tool_calls) är immutabla — endast rena lifecycle-fält får fyllas i
+        efteråt (t.ex. vid specialist-delegation).
+        """
         sess = self._new_session()
         line = self.Line.create({
             'session_id': sess.id, 'role': 'tool', 'content': 'x',
             'sequence': 1,
         })
-        # ska inte kasta
-        line.write({'debug_info': 'granskning'})
-        self.assertEqual(line.debug_info, 'granskning')
+        agent = self.env['ai.agent'].create({
+            'name': 'Metadata-agent', 'description': 'x'})
+        # ska inte kasta — agent_id är ett lifecycle-fält.
+        line.write({'agent_id': agent.id})
+        self.assertEqual(line.agent_id, agent)
+
+    def test_audit_fields_are_immutable(self):
+        """Granskningsfält (debug_info m.fl.) kan inte ändras efteråt."""
+        sess = self._new_session()
+        line = self.Line.create({
+            'session_id': sess.id, 'role': 'assistant', 'content': 'x',
+            'sequence': 1,
+        })
+        with self.assertRaises(UserError):
+            line.write({'debug_info': 'efterhandsredigering'})
+        with self.assertRaises(UserError):
+            line.write({'source_urls': 'http://x'})
