@@ -671,6 +671,16 @@ class AICoworker(models.Model):
     monthly_cap_mtokens = fields.Integer(
         'Månadstak (M systemtokens)', default=0,
         help='0 = unlimited. Cap in millions of systemtokens.')
+    daily_cap_mtokens = fields.Integer(
+        'Dagstak (M systemtokens)', default=0,
+        help='0 = obegränsat. Tak i miljoner systemtokens per kalenderdag. '
+             'Mjukt stopp: körningen stoppas men posten låses inte — '
+             'taket öppnas automatiskt nästa dygn.')
+    monthly_budget_soft = fields.Boolean(
+        'Mjukt månadstak', default=False,
+        help='True = månadstaket varnar men stoppar inte körningar '
+             '(taket öppnas ändå automatiskt vid ny månad). '
+             'False = hårt stopp innan LLM-körning — kräver höjt tak.')
     budget_warning = fields.Boolean(
         'Budgetvarning', compute='_compute_budget_state', store=False,
         help='True när session_line_count >= cap × 0.8 (deterministiskt, '
@@ -680,10 +690,24 @@ class AICoworker(models.Model):
         help='True när session_line_count >= monthly_cap_mtokens × 1M '
              '(deterministiskt, härlett från create_date på session lines — '
              'ny månad eller höjd budget öppnar automatiskt).')
+    daily_budget_warning = fields.Boolean(
+        'Dagsbudget-varning', compute='_compute_budget_state', store=False,
+        help='True när dagens förbrukning >= daily_cap_mtokens × 0.8.')
+    daily_budget_exhausted = fields.Boolean(
+        'Dagsbudget slut', compute='_compute_budget_state', store=False,
+        help='True när dagens förbrukning >= daily_cap_mtokens × 1M. '
+             'Mjukt stopp — öppnas automatiskt vid midnatt.')
+    daily_budget_used_mtokens = fields.Float(
+        'Dagsbudget förbrukat (M tokens)',
+        compute='_compute_budget_state', store=False,
+        help='Σ systemtokens för innevarande kalenderdag, i miljoner.')
     cap_notified_month = fields.Char(
         'Budget notifierad månad (YYYY-MM)',
         help='Månad då budget-notis/aktivitet senast skickades — en gång '
              'per månad, ingen reset behövs.')
+    cap_notified_day = fields.Char(
+        'Dagsbudget notifierad dag (YYYY-MM-DD)',
+        help='Dag då dagsbudget-notis senast skickades — en gång per dygn.')
 
 
     # ── Burn rate & prognos (budget-burn-rate) ──
@@ -726,38 +750,88 @@ class AICoworker(models.Model):
 
     @api.depends('session_ids.session_line_ids.token_sys',
                  'session_ids.session_line_ids.create_date',
-                 'monthly_cap_mtokens')
+                 'monthly_cap_mtokens', 'daily_cap_mtokens')
     def _compute_budget_state(self):
         """Deterministisk budgetspärr (budget-hard-cap D1).
 
         Beräknar Σ token_sys direkt från session_ids (inte via det related
-        fältet session_line_ids som inte triggar compute korrekt). Ny månad
-        eller höjd budget öppnar automatiskt — inget cron-beroende.
+        fältet session_line_ids som inte triggar compute korrekt). Ny månad,
+        nytt dygn eller höjd budget öppnar automatiskt — inget cron-beroende.
+
+        Månadstaket är ett HÅRT stopp (run() returnerar utan LLM-anrop).
+        Dagstaket är ett MJUKT stopp — samma effekt per körning, men det
+        öppnas av sig självt vid midnatt utan åtgärd.
         """
         from datetime import date as _date
         today = _date.today()
         month_start = _date(today.year, today.month, 1)
         for r in self:
-            total = 0
+            month_total = 0
+            day_total = 0
             for line in r.session_ids.session_line_ids:
-                if line.create_date and line.create_date.date() >= month_start:
-                    total += line.token_sys or 0
-            cap = r.monthly_cap_mtokens * 1_000_000 if r.monthly_cap_mtokens else 0
-            r.budget_warning = bool(cap) and total >= cap * 0.8
-            r.budget_exhausted = bool(cap) and total >= cap
+                if not line.create_date:
+                    continue
+                line_day = line.create_date.date()
+                if line_day >= month_start:
+                    month_total += line.token_sys or 0
+                if line_day == today:
+                    day_total += line.token_sys or 0
+            month_cap = r.monthly_cap_mtokens * 1_000_000 if r.monthly_cap_mtokens else 0
+            day_cap = r.daily_cap_mtokens * 1_000_000 if r.daily_cap_mtokens else 0
+            r.budget_warning = bool(month_cap) and month_total >= month_cap * 0.8
+            r.budget_exhausted = bool(month_cap) and month_total >= month_cap
+            r.daily_budget_warning = bool(day_cap) and day_total >= day_cap * 0.8
+            r.daily_budget_exhausted = bool(day_cap) and day_total >= day_cap
+            r.daily_budget_used_mtokens = day_total / 1_000_000.0
 
     def check_cap(self):
         """Check budget state. Returns (warning, exhausted).
 
         Bakåtkompatibel wrapper — läser deterministiska compute-fält och
-        triggar notiser en gång per månad. Hårt stopp vid exhausted.
+        triggar notiser en gång per period. Hårt stopp vid exhausted.
         """
         self.ensure_one()
         warning = self.budget_warning
         exhausted = self.budget_exhausted
         if warning or exhausted:
             self._notify_budget_once()
+        if self.daily_budget_warning or self.daily_budget_exhausted:
+            self._notify_daily_budget_once()
         return warning, exhausted
+
+    def check_daily_cap(self):
+        """Dagsbudget-läget. Returns (warning, exhausted).
+
+        Mjukt stopp: anropas från körningsvägarna innan LLM-körning.
+        Notis en gång per dygn; öppnas automatiskt vid midnatt.
+        """
+        self.ensure_one()
+        warning = self.daily_budget_warning
+        exhausted = self.daily_budget_exhausted
+        if warning or exhausted:
+            self._notify_daily_budget_once()
+        return warning, exhausted
+
+    def _notify_daily_budget_once(self):
+        """Skicka dagsbudget-notis en gång per dygn.
+
+        Dygnsnycklad via cap_notified_day (YYYY-MM-DD). Ingen aktivitet
+        skapas — dagsbudgeten öppnas av sig själv vid midnatt.
+        """
+        self.ensure_one()
+        day = fields.Date.today().isoformat()
+        if self.cap_notified_day == day:
+            return  # redan notifierad idag
+        cap_tokens = self.daily_cap_mtokens * 1_000_000
+        if self.daily_budget_exhausted:
+            self._notify_cap(
+                'daily_exhausted', int(self.daily_budget_used_mtokens * 1_000_000),
+                cap_tokens)
+        elif self.daily_budget_warning:
+            self._notify_cap(
+                'daily_warning', int(self.daily_budget_used_mtokens * 1_000_000),
+                cap_tokens)
+        self.cap_notified_day = day
 
     def _notify_budget_once(self):
         """Skicka budget-notis + mail.activity en gång per månad (D2/D3).
@@ -831,6 +905,9 @@ class AICoworker(models.Model):
             activities.action_done()
         if self.cap_notified_month:
             self.cap_notified_month = False
+        # Dagsnotisen nollställs när dagsbudgeten är öppen igen (ny dag).
+        if self.cap_notified_day and not self.daily_budget_exhausted:
+            self.cap_notified_day = False
 
     def consolidate_memories(self):
         """T9.1-T9.5: Daily memory consolidation.
@@ -905,7 +982,22 @@ class AICoworker(models.Model):
         pct = int(used / cap * 100) if cap else 0
         mtokens = self.started_mtokens
 
-        if level == 'warning':
+        if level == 'daily_warning':
+            msg = (
+                f'⚠️ **Varning: AI-medarbetaren "{self.name}" har använt {pct}% '
+                f'av dagsbudgeten.**\n\n'
+                f'Förbrukat idag: {self.daily_budget_used_mtokens:.2f}M av '
+                f'{self.daily_cap_mtokens}M systemtokens.\n'
+                f'Dagsbudgeten öppnas automatiskt vid midnatt.'
+            )
+        elif level == 'daily_exhausted':
+            msg = (
+                f'🛑 **Dagsbudget slut: AI-medarbetaren "{self.name}" har nått '
+                f'dagstaket på {self.daily_cap_mtokens}M systemtokens.**\n\n'
+                f'Körningar stoppas mjukt till midnatt — ingen åtgärd krävs. '
+                f'Höj dagstaket i inställningarna om det ska köra vidare idag.'
+            )
+        elif level == 'warning':
             msg = (
                 f'⚠️ **Varning: AI-medarbetaren "{self.name}" har använt {pct}% '
                 f'av månadstaket.**\n\n'
@@ -926,7 +1018,7 @@ class AICoworker(models.Model):
                     level, self.name, used, cap, pct)
 
         # Send Zabbix event (if ai_agent_zabbix is installed)
-        if level == 'exhausted':
+        if level in ('exhausted', 'daily_exhausted'):
             try:
                 zabbix_configs = self.env['ai.zabbix.config'].search(
                     [('active', '=', True)], limit=1)
@@ -2343,7 +2435,12 @@ class AICoworker(models.Model):
         # får budget-svar.
         if depth == 0:
             self._unlock_budget_activities()
-            if self.budget_exhausted:
+            if self.budget_exhausted and self.monthly_budget_soft:
+                # Mjukt månadstak: notera + kör vidare.
+                self.check_cap()
+                _logger.info('Buzz chat: mjukt månadstak för %s — kör vidare',
+                             self.name)
+            elif self.budget_exhausted:
                 self.check_cap()
                 _logger.info('Buzz chat skippad för %s: budget slut', self.name)
                 if channel:
@@ -2352,6 +2449,20 @@ class AICoworker(models.Model):
                             '⚠️ **Budget slut**: AI-medarbetaren har nått '
                             'månadstaket. Höj taket i inställningarna eller '
                             'vänta till nästa månad.'
+                        ),
+                        message_type='notification',
+                        subtype_xmlid='mail.mt_note',
+                    )
+                return None
+            if self.daily_budget_exhausted:
+                self.check_daily_cap()
+                _logger.info('Buzz chat skippad för %s: dagsbudget slut', self.name)
+                if channel:
+                    channel.message_post(
+                        body=self._md_to_html(
+                            '⚠️ **Dagsbudget slut**: AI-medarbetaren har nått '
+                            'dagstaket. Körningar återupptas automatiskt vid '
+                            'midnatt.'
                         ),
                         message_type='notification',
                         subtype_xmlid='mail.mt_note',
@@ -5059,11 +5170,27 @@ class AICoworker(models.Model):
         # Budgetcheck (budget-hard-cap D4): hårt stopp innan LLM-körning.
         # Notis/aktivitet en gång per månad; upplåsning vid höjd budget/ny månad.
         self._unlock_budget_activities()
-        if self.budget_exhausted:
+        if self.budget_exhausted and not self.monthly_budget_soft:
             self.check_cap()  # triggar notis en gång per månad
             _logger.info('run() skippad för %s: budget slut', self.name)
             return 'Budget slut: AI-medarbetaren har nått månadstaket. ' \
                    'Höj taket i inställningarna eller vänta till nästa månad.'
+        if self.budget_exhausted:
+            # Mjukt månadstak: varna men kör vidare.
+            self.check_cap()
+            _logger.info('run(): mjukt månadstak för %s (%.2fM förbrukat) — '
+                         'kör vidare', self.name, self.started_mtokens)
+
+        # Dagsbudget (mjukt stopp): samma effekt per körning, men taket
+        # öppnas av sig självt vid midnatt — ingen åtgärd krävs.
+        if self.daily_budget_exhausted:
+            self.check_daily_cap()  # notis en gång per dygn
+            _logger.info('run() skippad för %s: dagsbudget slut (%.2fM/%.0fM)',
+                         self.name, self.daily_budget_used_mtokens,
+                         self.daily_cap_mtokens)
+            return 'Dagsbudget slut: AI-medarbetaren har nått dagstaket ' \
+                   '(%sM systemtokens). Körningar återupptas automatiskt ' \
+                   'vid midnatt.' % self.daily_cap_mtokens
 
         try:
             import asyncio
@@ -5487,11 +5614,20 @@ class AICoworker(models.Model):
 
         # Budgetcheck (budget-hard-cap D4): powerbox returnerar budget slut
         self._unlock_budget_activities()
-        if self.budget_exhausted:
+        if self.budget_exhausted and not self.monthly_budget_soft:
             self.check_cap()
             _logger.info('powerbox skippad för %s: budget slut', self.name)
             return 'Budget slut: AI-medarbetaren har nått månadstaket. ' \
                    'Höj taket i inställningarna eller vänta till nästa månad.'
+        if self.budget_exhausted:
+            self.check_cap()  # mjukt tak: varna, kör vidare
+            _logger.info('powerbox: mjukt månadstak för %s — kör vidare',
+                         self.name)
+        if self.daily_budget_exhausted:
+            self.check_daily_cap()
+            _logger.info('powerbox skippad för %s: dagsbudget slut', self.name)
+            return 'Dagsbudget slut: AI-medarbetaren har nått dagstaket. ' \
+                   'Körningar återupptas automatiskt vid midnatt.'
 
         # Get model from first agent
         from odoo.addons.ai_agent_core.core.provider import get_default_model_name
