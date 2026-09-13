@@ -17,3 +17,4 @@ from . import test_tool_self_correction
 from . import test_document_page_acceptance
 from . import test_tool_selection
 from . import test_round_limit
+from . import test_skill_experience

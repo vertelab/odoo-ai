@@ -759,3 +759,85 @@ misslyckas (verifierat: 58 verktyg → 87s svullnad utan exekvering; 2-8 relevan
 reducerar payload:en per uppgift (nyckelords-routing: zabbix/salt/pg/caddy/
 odoo/mail + litet bas-set). Effekt: IS Operator fullför riktig iterativ
 driftdiagnos med native tool-calling.
+
+## Erfarenhetsstyrd skill-förbättring (skill-experience-improvement)
+
+En skill bär nu sina egna erfarenheter — vad regeln gjorde rätt och fel i
+verklig drift — och föreslår ur dem en skärpt `recipe_text`. Människan
+behåller sista ordet.
+
+```
+  erfarenhet bokförs          förslag genereras           människa beslutar
+  ─────────────────           ──────────────────          ─────────────────
+  record_experience()   →     propose_improvement()  →    Applicera / Kasta
+  success_cases                 improvement_            (HITL i Improve-
+  failure_cases                 suggested_recipe         fliken)
+        ▲                                                       │
+        │                                                       ▼
+        └────────────── recipe_text uppdateras ────────────────┘
+                     (ALDIGT automatiskt)
+```
+
+### Erfarenheter — `record_experience(note, verdict, source)`
+
+| verdict | fält | betydelse |
+|---|---|---|
+| `success` | `success_cases` | regeln stämde |
+| `failure` | `failure_cases` | regeln larmade falskt |
+
+`recipe_text` rörs **aldrig** av en erfarenhet — den ändras bara via
+förbättringsloopen och ett mänskligt klick.
+
+Dedup sker på **noten** (värd + trigger), inte på källan: 121 larm från samma
+värd+trigger blir **EN rad med räknare** (`(sedd N ggr; senast <källa>)`),
+annars växer fältet obegränsat och följer med i varje prompt. Taket är
+`_MAX_EXPERIENCE_LINES = 40` rader — de senaste behålls.
+
+### Förslag — `propose_improvement()`
+
+Kräver minst `_MIN_FAILURES_FOR_IMPROVEMENT = 2` failure-erfarenheter.
+Bygger en `ImprovementGuidance` ur `failure_cases` + `success_cases` och kör
+den genom `core/improve.py`. Resultatet hamnar i
+`improvement_suggested_recipe` (readonly).
+
+**LLM-vägen får aldrig fälla förslaget.** Kastar den ett fel (provider nere,
+timeout, gateway som inte känner modellen) används
+`_fallback_recipe()` — ett deterministiskt förslag som listar de inlärda
+falska positiva. Annars skulle loopen bli **tyst**, vilket är det farligaste
+läget: ingen erfarenhet blir någonsin ett förslag och inget larmar.
+
+### HITL — endast människa applicerar
+
+`action_apply_suggested_recipe` (ersätter `recipe_text` via
+`action_apply_kaizen_suggestion`, version++ och stämpel) och
+`action_discard_suggested_recipe` (rensar förslaget). Ingen automatisk
+applicering, oavsett konfidens.
+
+Veckovis cron `cron_skill_improve_weekly` →
+`_cron_propose_improvements()` skapar förslag för skills som saknar ett
+väntande förslag men har `failure_cases`. **Den rör aldrig `recipe_text`.**
+
+### Coworker äger sin identitet
+
+`ai.identity.copy_for_coworker()` ger varje medarbetare en egen kopia, och
+`ai_coworker._ensure_own_identity()` garanterar det i **alla** vägar som
+sätter en identitet — `write()`-hooken på `identity_id` och `create()` —
+inte bara när en människa väljer i formuläret. Två fall hanteras: identiteten
+är en mall, eller den används redan av en annan medarbetare. Ompekningen
+skyddas mot rekursion med `__ai_identity_copy_guard`.
+
+För verklig isolation av erfarenheter finns dessutom **per-quest-forken**
+`ai.coworker.skill` (egna `success_cases`/`failure_cases` per medarbetare),
+eftersom erfarenheterna annars delas via den underliggande `ai.skill`-posten.
+
+### Ordningskrav mot konsumenten
+
+`saltstack_ai` är **konsument**: den anropar `ai.skill.record_experience()`
+när ett driftlarms utfall sätts. API:t måste vara deployat och verifierat
+**anropbart** innan konsumenten uppgraderas — annars sväljs
+`AttributeError` av konsumentens `try/except` och loopen lär sig ingenting
+utan att något larmar.
+
+Verifierat: `saltstack_ai` anropar `record_experience` i sin
+`write()`-hook och i `create()`, och erfarenheter bokförs på matchande
+skills (`matched_skill_ids`).

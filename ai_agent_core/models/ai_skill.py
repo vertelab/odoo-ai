@@ -252,8 +252,19 @@ class AISkill(models.Model):
         )
         suggested = None
         if use_llm:
-            suggested = self._llm_improve_recipe(
-                guidance_text, failures, successes, max_iterations)
+            # LLM-vägen får aldrig fälla förslaget: ett kastat fel här
+            # (provider nere, timeout, gateway som inte känner modellen)
+            # ska ge det deterministiska underlaget i stället. Annars blir
+            # loopen tyst — precis det som är farligast, eftersom ingen
+            # erfarenhet då någonsin blir ett förslag.
+            try:
+                suggested = self._llm_improve_recipe(
+                    guidance_text, failures, successes, max_iterations)
+            except Exception:
+                _logger.warning(
+                    'LLM-vägen misslyckades för %s — använder '
+                    'deterministiskt förslag', self.name, exc_info=True)
+                suggested = None
         if not suggested:
             suggested = self._fallback_recipe(failures, successes)
 
@@ -393,11 +404,15 @@ class AISkill(models.Model):
         return True
 
     @api.model
-    def _cron_propose_improvements(self, limit=20):
+    def _cron_propose_improvements(self, limit=20, commit=True):
         """Cron: skapa förbättringsförslag för skills med nog många erfarenheter.
 
         Rör aldrig recipe_text — bara improvement_suggested_recipe. Människan
         godkänner i skill-formuläret.
+
+        :param commit: committa per förslag så ett fel inte rullar tillbaka
+            hela körningen. Sätts till False i tester (Odoo tillåter inte
+            commit inuti en testtransaktion).
         """
         candidates = self.search([
             ('improvement_suggested_recipe', '=', False),
@@ -408,11 +423,13 @@ class AISkill(models.Model):
             try:
                 if skill.propose_improvement():
                     made += 1
-                    self.env.cr.commit()
+                    if commit:
+                        self.env.cr.commit()
             except Exception:
                 _logger.warning('Förbättringsförslag misslyckades för %s',
                                 skill.name, exc_info=True)
-                self.env.cr.rollback()
+                if commit:
+                    self.env.cr.rollback()
         _logger.info('Kaizen: %d förbättringsförslag skapade', made)
         return made
 
