@@ -1157,19 +1157,19 @@ function finishStream(){
             // progress indicators; the final text replaces them)
             if(txt&&answerEl){answerEl.innerHTML=addMessageActions(md2html(txt))}
             if(currentSpinnerEl)currentSpinnerEl.style.display='none';
-            // Save assistant response (svar + debug + källor + tool_calls)
-            if(activeSessionId&&txt){
+            // Save assistant response (svar + debug + källor + tool_calls).
+            // Servern persisterar redan turens assistantsvar själv
+            // (web-ui-stream-turn-persistens 2.1) — denna POST berikar
+            // raden med debug/källor/tool_calls och riktig token-usage.
+            // Servern dedupar identiskt innehåll (3.1), så inget dubbleras.
+            if(activeSessionId&&(txt||currentDebugText)){
                 // Riktig usage från SSE done-händelsen (providerns
                 // usage-rapport); fallback till estimat om den saknas.
                 var realInput=lastUsageInput||Math.round(txt.length/4);
                 var realOutput=lastUsageOutput||tokenCount;
                 fetch('/ai/threads/'+activeSessionId+'/respond',{method:'POST',headers:{'Content-Type':'application/json'},
-                    body:JSON.stringify({content:txt,token_input:realInput,token_output:realOutput,model_real:selectedModel||'web-chat',debug:currentDebugText||'',sources:currentSources,tool_calls:currentToolCalls})})
+                    body:JSON.stringify({content:txt||'(inget svar)',token_input:realInput,token_output:realOutput,model_real:selectedModel||'web-chat',debug:currentDebugText||'',sources:currentSources,tool_calls:currentToolCalls})})
                     .then(r=>r.json()).then(d=>{updateSystemtokenDisplay()})
-            }else if(activeSessionId&&currentDebugText){
-                // Inget svar men debug finns — spara debug ändå
-                fetch('/ai/threads/'+activeSessionId+'/respond',{method:'POST',headers:{'Content-Type':'application/json'},
-                    body:JSON.stringify({content:'(inget svar)',token_input:lastUsageInput||0,token_output:lastUsageOutput||tokenCount,model_real:selectedModel||'web-chat',debug:currentDebugText||'',sources:currentSources,tool_calls:currentToolCalls})})
             }
         }
     }

@@ -548,8 +548,13 @@ class AgentLoop:
                     output_tokens=total_output_tokens + synth.output_tokens,
                     finish_reason="max_rounds",
                 )
-        except Exception:
-            pass
+        except Exception as e:
+            # Logga i stället för att tystna (web-ui-stream-turn-persistens
+            # 1.1) — fallback-texten nedan returneras ändå.
+            _logger.error(
+                "max_rounds-avslutets sammanfattning misslyckades (sync): %s",
+                e, exc_info=True,
+            )
         return ChatResponse(
             text="(max rounds exceeded — stopping)",
             input_tokens=total_input_tokens,
@@ -948,6 +953,12 @@ class StreamingAgentLoop(AgentLoop):
         # max_rounds nådd: gör ett sista anrop UTAN verktyg så användaren
         # alltid får ett sammanfattande svar (tidigare: tomt avslut → klienten
         # visade bara narreringen utan slutsats).
+        #
+        # Ett fel här får INTE sväljas tyst (web-ui-stream-turn-persistens
+        # 1.1): den tysta except:en gjorde att done emit:ades med noll tokens
+        # och turen saknade assistantsvar helt. Felet loggas och bärs vidare
+        # på done-händelsen så anroparen kan skriva ett ärligt avslut.
+        summary_error = ""
         try:
             async for event in self.provider.chat_stream(
                 model=self.config.model,
@@ -973,11 +984,18 @@ class StreamingAgentLoop(AgentLoop):
                     event.output_tokens = total_output_tokens
                     yield event
                     return
-        except Exception:
-            pass
+        except Exception as e:
+            summary_error = "%s: %s" % (type(e).__name__, e)
+            _logger.error(
+                "max_rounds-avslutets sammanfattning misslyckades "
+                "(input=%d output=%d): %s",
+                total_input_tokens, total_output_tokens, summary_error,
+                exc_info=True,
+            )
         yield TokenEvent(
             type="done", finish_reason="max_rounds",
-            input_tokens=total_input_tokens, output_tokens=total_output_tokens)
+            input_tokens=total_input_tokens, output_tokens=total_output_tokens,
+            error=summary_error)
 
     @staticmethod
     def _extract_source_urls(result: str, tc: dict) -> list[str]:

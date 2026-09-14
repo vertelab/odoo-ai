@@ -568,6 +568,13 @@ class AIStreamController(http.Controller):
                                         event, 'input_tokens', 0) or 0
                                     data["output_tokens"] = getattr(
                                         event, 'output_tokens', 0) or 0
+                                    # Bevara avslutsmetadata för serverns
+                                    # persistens (2.1/2.3): avslutsorsak +
+                                    # ev. fel från max_rounds-avslutet.
+                                    state['finish_reason'] = event.finish_reason
+                                    ev_err = getattr(event, 'error', '') or ''
+                                    if ev_err:
+                                        state['error'] = ev_err
                             yield f"data: {json.dumps(data)}\n\n"
                         pending = handler.get_pending()
                         if pending:
@@ -596,6 +603,23 @@ class AIStreamController(http.Controller):
                         except Exception:
                             _logger.warning(
                                 'persist stream tool lines failed', exc_info=True)
+                        # Servern är garanten (2.1): skriv turens avslutande
+                        # assistantsvar även om klienten aldrig POST:ar.
+                        # Utan detta kunde en tur bli stående med enbart
+                        # user+tool-rader (session 20286) — tråden såg tom ut.
+                        try:
+                            _persist_stream_answer(
+                                gen_env, session_id,
+                                ''.join(full_response),
+                                reasoning='\n'.join(
+                                    getattr(state.get('loop_obj'),
+                                            'reasoning_log', None) or []),
+                                finish_reason=state.get('finish_reason', ''),
+                                error=state.get('error', ''),
+                            )
+                        except Exception:
+                            _logger.warning(
+                                'persist stream answer failed', exc_info=True)
                         gen_cr.commit()
                     for chunk in results:
                         yield chunk
@@ -607,10 +631,10 @@ class AIStreamController(http.Controller):
                     try:
                         # Drain pending async_generator_athrow-tasks (från
                         # GC:ade inre generatorer) innan loopen stängs.
-                        _stasks = _sdbg.all_tasks(loop)
-                        if _stasks:
-                            loop.run_until_complete(
-                                _sdbg.gather(*_stasks, return_exceptions=True))
+                        # Tidsbegränsad (4.1): en hängande uppstädning fick
+                        # annars worker-tråden att leva till limit_time_real
+                        # (session 20286: 21 min → tvingad reload).
+                        _drain_tasks_with_timeout(loop, timeout=5.0)
                     except Exception:
                         pass
                     try:
@@ -1054,8 +1078,6 @@ class AIStreamController(http.Controller):
         session = request.env['ai.coworker.session'].sudo().browse(thread_id)
         quest = session.coworker_id if session else None
         if session.exists():
-            next_seq = _next_session_sequence(request.env, session.id)
-
             # Resolve sys_multiplier from ai.model if model_real is provided.
             # Kanal-medvetet via _resolve_from_real (record-id/coworker-agenter).
             sys_mult = 1.0
@@ -1070,21 +1092,20 @@ class AIStreamController(http.Controller):
                 tool_calls if isinstance(tool_calls, str) else json.dumps(
                     tool_calls, ensure_ascii=False))
 
-            request.env['ai.coworker.session.line'].sudo().create({
-                'session_id': session.id,
-                'sequence': next_seq,
-                'role': role,
-                'content': content,
-                'debug_info': debug_info,
-                'source_urls': '\n'.join(
+            # Idempotent (3.1): servern har redan persisterat turens
+            # assistantsvar — ett identiskt klient-svar ska inte dubbleras.
+            session._save_client_response(
+                content=content,
+                role=role,
+                model_real=model_real,
+                token_input=0,
+                token_output=token_output,
+                debug_info=debug_info,
+                source_urls='\n'.join(
                     str(s) for s in sources if str(s).startswith('http')),
-                'tool_calls': tool_calls_json,
-                # Assistant-raden bokför output; input ligger på user-raden.
-                'token_input': 0,
-                'token_output': token_output,
-                'model_real': model_real,
-                'sys_multiplier': sys_mult,
-            })
+                tool_calls=tool_calls_json,
+                sys_multiplier=sys_mult,
+            )
 
             # Senaste user-raden får requestens input-tokens (riktig usage
             # eller estimat) så varje meddelande visar sin prompt-kostnad.
@@ -1641,6 +1662,115 @@ def _persist_stream_tool_lines(env, session_id, loop_obj):
         })
     _logger.info('persisted %d tool line(s) for session %s',
                  len(history), session_id)
+
+
+# Marker som skrivs när en tur avslutats utan något visningsbart innehåll.
+# Avsiktligt synlig: motsatsen (tyst bortfall) är själva buggen.
+_NO_ANSWER_MARKER = '(inget svar)'
+
+
+def _persist_stream_answer(env, session_id, answer, reasoning='',
+                           finish_reason='', error=''):
+    """Persistera turens avslutande assistantsvar server-side.
+
+    Servern är garanten (web-ui-stream-turn-persistens 2.1): klienten kan
+    stänga fliken, tappa nätet eller få tomt innehåll — då tystnade turen
+    helt (session 20286). Skriver en assistant-rad när turen inte redan
+    fått ett assistantsvar, med ackumulerad svarstext, narrering, eller en
+    explicit markering att inget svar gavs.
+
+    Idempotent: om sessionens sista rad redan är ett assistantsvar skrivs
+    ingen ny rad (klientens POST hanteras separat och dedupas i
+    `_save_client_response`).
+
+    Returnerar antalet skapade rader (0 eller 1). Tyst no-op vid fel —
+    persist får aldrig krascha en avslutad körning.
+    """
+    if not session_id:
+        return 0
+    try:
+        session = env['ai.coworker.session'].sudo().browse(int(session_id))
+        if not session.exists():
+            return 0
+        lines = session.session_line_ids.sorted(
+            key=lambda l: (l.sequence or 0, l.id or 0))
+        if lines and lines[-1].role == 'assistant':
+            # Turen har redan ett avslutande assistantsvar.
+            return 0
+        content = (answer or '').strip()
+        if not content:
+            content = (reasoning or '').strip()
+        if not content:
+            content = _NO_ANSWER_MARKER
+        seq = _next_session_sequence(env, session.id)
+        env['ai.coworker.session.line'].sudo().create({
+            'session_id': session.id,
+            'role': 'assistant',
+            'content': content,
+            'reasoning': (reasoning or '').strip() or False,
+            'sequence': seq,
+        })
+        # Avslutsorsak i sessionsmetadata (2.3): skilj "avslutad utan
+        # sammanfattning" från normal avslutning, och fyll feldetalj när
+        # det avslutande anropet felat.
+        meta = {}
+        if finish_reason:
+            meta['finish_reason'] = finish_reason
+        if error:
+            meta['error_detail'] = error
+        if meta:
+            try:
+                session.sudo().write(meta)
+            except Exception as e:
+                _logger.warning(
+                    'kunde inte skriva sessionsmetadata: %s', e)
+        _logger.info('persisted stream answer for session %s (seq=%s)',
+                     session_id, seq)
+        return 1
+    except Exception as e:
+        _logger.warning('persist stream answer failed: %s', e, exc_info=True)
+        return 0
+
+
+def _drain_tasks_with_timeout(loop, timeout=5.0):
+    """Dränera kvarvarande asyncio-tasks med en tidsgräns.
+
+    Efter-strömmens uppstädning kördes tidigare utan gräns
+    (`run_until_complete(gather(...))`), vilket kunde hålla en worker-tråd
+    tills Odoos `limit_time_real` tvingade en reload (session 20286: 21 min,
+    1297/1200 s). Här avbryts uppstädningen i stället vid timeout och
+    loggas — turen är redan persisterad, så inget data går förlorat.
+
+    Returnerar True om alla tasks hann klart, annars False.
+    """
+    try:
+        tasks = [t for t in asyncio.all_tasks(loop) if not t.done()]
+    except Exception:
+        return True
+    if not tasks:
+        return True
+    try:
+        loop.run_until_complete(
+            asyncio.wait_for(
+                asyncio.gather(*tasks, return_exceptions=True),
+                timeout=timeout,
+            )
+        )
+        return True
+    except (asyncio.TimeoutError, TimeoutError):
+        _logger.warning(
+            'efter-strömmens uppstädning överskred %.1fs — avbryter '
+            '(%d task(s) kvar); turen är redan persisterad',
+            timeout, len(tasks))
+        for t in tasks:
+            try:
+                t.cancel()
+            except Exception:
+                pass
+        return False
+    except Exception as e:
+        _logger.warning('efter-strömmens uppstädning misslyckades: %s', e)
+        return False
 
 
 # ---------------------------------------------------------------------------

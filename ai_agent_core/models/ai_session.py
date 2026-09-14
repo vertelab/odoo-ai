@@ -377,6 +377,46 @@ class AICoworkerSession(models.Model):
                 actual)
         return stored
 
+    def _save_client_response(self, content, role='assistant', model_real='',
+                              token_input=0, token_output=0, debug_info='',
+                              source_urls='', tool_calls='', sys_multiplier=1.0):
+        """Spara klientens svarspost — idempotent mot serverns persistens.
+
+        Servern persisterar turens avslutande assistantsvar själv
+        (web-ui-stream-turn-persistens 2.1). Klienten POST:ar ändå samma
+        svar; utan dedup skulle assistantsvaret dubbleras. Skapar därför
+        ingen ny assistant-rad om den senaste raden redan är ett
+        assistantsvar med identiskt innehåll — samma mönster som
+        `_persist_pi_messages` (dedup mot sista persisterade raden).
+
+        Ett ANNAT svar appendas normalt (t.ex. en nyare formulering).
+        Returnerar den skapade raden, eller en tom recordset vid dedup.
+        """
+        self.ensure_one()
+        Line = self.env['ai.coworker.session.line'].sudo()
+        last = Line.search(
+            [('session_id', '=', self.id)],
+            order='sequence desc, id desc', limit=1)
+        if (role == 'assistant' and last and last.role == 'assistant'
+                and (last.content or '') == (content or '')):
+            return Line.browse(0)
+        seq = 0
+        if last:
+            seq = (last.sequence or 0) + 1
+        return Line.create({
+            'session_id': self.id,
+            'sequence': seq,
+            'role': role,
+            'content': content,
+            'debug_info': debug_info,
+            'source_urls': source_urls,
+            'tool_calls': tool_calls,
+            'token_input': token_input,
+            'token_output': token_output,
+            'model_real': model_real,
+            'sys_multiplier': sys_multiplier,
+        })
+
     # ── Kontinuitet (find-or-create med fallback) ──────────────────────
     # Används av /ai/v1/chat/completions + openai_api-vägen. Så länge en
     # Pi-session lever (och skickar pi_session_id/session_id) återfinns
