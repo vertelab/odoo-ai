@@ -15,6 +15,54 @@ from odoo.exceptions import UserError
 
 _logger = logging.getLogger(__name__)
 
+# MIME-typer som innehåller binärdata och därmed inte får avkodas som text.
+# NUL-tecknet (0x00) är giltig UTF-8 och överlever errors='replace', men
+# PostgreSQL vägrar NUL i strängliteraler — en enda sådan post fällde hela
+# uppladdningsbatchen (cron 669, 2026-09-14).
+BINARY_MIMETYPES = frozenset([
+    'application/zip',
+    'application/x-zip-compressed',
+    'application/x-zip',
+    'application/gzip',
+    'application/x-gzip',
+    'application/x-tar',
+    'application/x-7z-compressed',
+    'application/x-rar-compressed',
+    'application/octet-stream',
+    'application/msword',
+    'application/vnd.ms-excel',
+    'application/vnd.ms-powerpoint',
+    'application/rtf',
+    'application/x-rtf',
+    'text/rtf',
+])
+
+# MIME-typer som saknar egen normaliserare men vars innehåll är text.
+# Dessa läses som text — NUL-saneringen i _normalize() skyddar dem.
+# Dokumenterade här för tydlighet; de kräver ingen särskild gren.
+TEXT_FALLBACK_MIMETYPES = frozenset([
+    'message/rfc822',
+    'message/global',
+    'application/json',
+    'application/xml',
+    'application/x-yaml',
+    'application/javascript',
+    'application/x-javascript',
+])
+
+
+def _sanitize_text(value):
+    """Ta bort NUL-tecken ur en sträng.
+
+    PostgreSQL tillåter inte NUL (0x00) i strängliteraler; psycopg2 kastar
+    ValueError och hela transaktionen rullas tillbaka. NUL är dessutom
+    giltig UTF-8, så errors='replace' fångar den inte. Anropas på all text
+    som skrivs till ORM:en från denna modul.
+    """
+    if not value or '\x00' not in value:
+        return value
+    return value.replace('\x00', '')
+
 
 class AIOkfUpload(models.Model):
     _name = 'ai.okf.upload'
@@ -73,6 +121,11 @@ class AIOkfUpload(models.Model):
             return 'image'
         if mimetype.startswith('audio/'):
             return 'audio'
+        # Binärt innehåll får ALDRIG läsas som text: NUL-tecken (0x00) är
+        # giltig UTF-8 och överlever errors='replace', men PostgreSQL
+        # vägrar NUL i strängliteraler → hela jobbet kraschar.
+        if mimetype in BINARY_MIMETYPES:
+            return 'binary'
         return 'text'
 
     def _has_capability(self, capability):
@@ -104,10 +157,17 @@ class AIOkfUpload(models.Model):
         category = self._get_mime_category(attach.mimetype)
         text = ''
         try:
+            if category == 'binary':
+                # Binärfil — indexeras inte som kunskap. Stoppar NUL vid källan.
+                return '', ('Binärfil indexeras inte (%s).'
+                            % (attach.mimetype or 'okänd typ'))
             if category == 'text':
                 # Odoo 18: _index_content() togs bort — läs raw och avkoda som text
                 raw = attach.raw or b''
                 text = raw.decode('utf-8', errors='replace')
+                # NUL (0x00) är giltig UTF-8 och överlever errors='replace',
+                # men PostgreSQL vägrar NUL i strängliteraler. Sanera alltid.
+                text = text.replace('\x00', '')
             elif category == 'pdf':
                 text = self._normalize_pdf(attach)
             elif category == 'docx':
@@ -255,7 +315,7 @@ class AIOkfUpload(models.Model):
                         channel_id=None):
         """Skapa en kö-post för en uppladdad bilaga."""
         return self.create({
-            'name': attachment.name,
+            'name': _sanitize_text(attachment.name),
             'attachment_id': attachment.id,
             'owner_user_id': owner_user_id or self.env.user.id,
             'owner_company_id': owner_company_id,
@@ -275,22 +335,22 @@ class AIOkfUpload(models.Model):
             try:
                 text, error = rec._normalize()
                 if error:
-                    rec.write({'state': 'error', 'error_message': error})
+                    rec.write({'state': 'error',
+                               'error_message': _sanitize_text(error)})
                     continue
-                rec.normalized_text = text[:100000]  # cache (5b.4)
-
+                rec.normalized_text = _sanitize_text(text[:100000])  # cache (5b.4)
                 atype = self.env.ref(
                     'ai_agent_core.artifact_type_document',
                     raise_if_not_found=False) or 'document'
                 concept = self.env['ai.okf.concept']._okf_upsert(
                     artifact_type=atype,
                     concept_key='ir.attachment,%s' % rec.attachment_id.id,
-                    summary=text[:4000],  # tunt koncept
-                    title=rec.name,
+                    summary=_sanitize_text(text[:4000]),  # tunt koncept
+                    title=_sanitize_text(rec.name),
                     source_ref='ir.attachment,%s' % rec.attachment_id.id,
                     sources=[{
                         'resource': 'ir.attachment,%s' % rec.attachment_id.id,
-                        'normalized_text': text[:100000],
+                        'normalized_text': _sanitize_text(text[:100000]),
                     }],
                     owner_company_id=rec.owner_company_id.id or None,
                     owner_user_id=rec.owner_user_id.id or None,
@@ -300,11 +360,12 @@ class AIOkfUpload(models.Model):
                 rec.write({'state': 'done'})
                 rec.concept_ids = [(4, concept.id)]
             except UserError as e:
-                rec.write({'state': 'error', 'error_message': str(e)})
+                rec.write({'state': 'error',
+                           'error_message': _sanitize_text(str(e))})
             except Exception as e:
                 _logger.exception('OKF upload failed for %s', rec.name)
                 rec.write({'state': 'error',
-                           'error_message': 'Internt fel: %s' % e})
+                           'error_message': _sanitize_text('Internt fel: %s' % e)})
 
     @api.model
     def _cron_process_uploads(self):
