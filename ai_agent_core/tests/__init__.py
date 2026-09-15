@@ -25,3 +25,4 @@ from . import test_pwa_push_triggers
 from . import test_pi_session_link
 from . import test_search_settings
 from . import test_scheduled_run_failure
+from . import test_bifrost_key_resolution

@@ -730,9 +730,30 @@ def resolve_provider_from_model(ai_model):
         _logger.warning("Model %s has no provider configured", ai_model.name)
         return None
 
+    # Bifrost: providerns api_key är den virtuella nyckeln (VK) och skickas som
+    # X-Virtual-Key. Saknas den faller vi tillbaka på admin-nyckeln — SAMMA
+    # regel som ai.provider.fetch_models() redan tillämpar. Utan denna fallback
+    # skickades ingen X-Virtual-Key alls och Bifrost svarade 403
+    # "combo is not entitled for this virtual key" — ett fel som ser ut som en
+    # rättighetsfråga men i själva verket är en tom sträng.
+    api_key = provider.api_key or ''
+    if not api_key and getattr(provider, 'is_bifrost', False):
+        api_key = (
+            provider.env['ir.config_parameter'].sudo().get_param(
+                'bifrost.admin_api_key', ''
+            )
+            or ''
+        )
+        if api_key:
+            _logger.debug(
+                "Bifrost-provider %s saknar api_key — använder "
+                "bifrost.admin_api_key",
+                provider.name,
+            )
+
     return AIProvider(
         base_url=provider.base_url or '',
-        api_key=provider.api_key or '',
+        api_key=api_key,
         is_bifrost=bool(getattr(provider, 'is_bifrost', False)),
         api_style=provider.api_style or 'openai',
         timeout=provider.timeout or 120.0,
