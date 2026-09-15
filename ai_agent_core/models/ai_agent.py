@@ -141,6 +141,29 @@ class AIAgent(models.Model):
         self.ensure_one()
         return self.runtime == 'external'
 
+    def _attach_builtin_tool_by_name(self, tool_name):
+        """Koppla ett inbyggt verktyg till agenten via dess NAMN.
+
+        Inbyggda verktyg (core/tools.py) får sina `ai.tool`-poster skapade
+        dynamiskt av `_ensure_builtin_tool_records()` och har därför inget
+        xmlid — de kan inte refereras med `ref()` i en datafil. Denna metod
+        anropas från XML så att seeden förblir deklarativ.
+
+        Idempotent: `(4, id)` lägger bara till länken om den inte finns.
+        Returnerar antalet agenter som fick verktyget (för loggning).
+        """
+        tool = self.env['ai.tool'].search(
+            [('name', '=', tool_name)], limit=1)
+        if not tool:
+            _logger.warning(
+                '_attach_builtin_tool_by_name: hittade inget verktyg med '
+                'namnet %r — hoppar över. Är _ensure_builtin_tool_records() '
+                'körd?', tool_name)
+            return 0
+        for agent in self:
+            agent.write({'tool_ids': [(4, tool.id)]})
+        return len(self)
+
     def _dispatch_external(self, coworker, session, user, prompt=None):
         """Starta denna agent som extern process för en coworker-körning.
 

@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Användarfall 0 — partner-berikning (external-agent-runtime §8).
+
+         Verktyget FÖRESLÅR fältvärden utan att skriva. Skrivningen sker
+         först efter godkännande, per fält, via HITL (8.3). Det är därför
+         verktyget är `risk_level=read_only`: det läser partnern och
+         returnerar ett förslag — det muterar ingenting.
+
+         Poängen med användarfall 0 är att det bevisar att runtime fungerar
+         FRISTÅENDE: ingen salt, ingen zabbix, ingen infrastruktur. Bara
+         Odoo, en LLM och ett web_search. -->
+
+    <record id="tool_partner_propose_enrichment" model="ai.tool">
+        <field name="name">partner_propose_enrichment</field>
+        <field name="description">Läs en partner (res.partner) och föreslå
+berikning av dess fält UTAN att skriva något.
+
+SYFTE: ge användaren ett underlag att godkänna — inte att ändra data.
+
+NÄR: användaren vill fylla i eller förbättra en partners uppgifter (webbplats,
+bransch, beskrivning, telefon, adress).
+
+NÄR INTE: för att faktiskt ändra partnern — det görs av
+partner_apply_enrichment EFTER godkännande.
+
+EXEMPEL: partner_propose_enrichment(partner_id=42, fields=["website","industry"])
+
+OUTPUT: en lista av förslag, ett per fält, med nuvarande värde, föreslaget
+värde och en motivering. Ingenting skrivs.
+
+GUARDRAIL: verktyget är read_only — det kan inte mutera partnern. All
+skrivning går via HITL.</field>
+        <field name="risk_level">read_only</field>
+        <field name="active">True</field>
+        <field name="parameters">{"type": "object", "properties": {
+            "partner_id": {"type": "integer", "description": "ID för res.partner som ska berikas"},
+            "fields": {"type": "array", "items": {"type": "string"}, "description": "Fält att föreslå värden för. Tillåtna: website, industry, description, phone, email, street, city, zip, country. Tomt = en rimlig standarduppsättning."},
+            "context": {"type": "string", "description": "Valfri kontext om partnern som hjälper förslaget (t.ex. vad användaren vet)."}
+        }, "required": ["partner_id"]}</field>
+        <field name="code">async def execute(partner_id=0, fields=None, context=""):
+    """Läs partnern och returnera ett underlag för berikning. Skriver inget."""
+    ALLOWED = ['website', 'industry_id', 'description', 'phone', 'email',
+               'street', 'city', 'zip']
+    if not partner_id:
+        return "Fel: partner_id krävs."
+    partner = env['res.partner'].browse(int(partner_id))
+    if not partner.exists():
+        return "Fel: ingen partner med id %s." % partner_id
+
+    wanted = [f for f in (fields or ['website', 'industry_id', 'description'])
+              if f in ALLOWED]
+    if not wanted:
+        return ("Fel: inga tillåtna fält angivna. Tillåtna: %s"
+                % ", ".join(ALLOWED))
+
+    lines = ["Underlag för berikning av %s (id %s):"
+             % (partner.display_name, partner.id), ""]
+    for f in wanted:
+        current = partner[f]
+        # m2o/selection ger en tuple (id, namn) — sandboxen saknar `tuple`,
+        # så vi känner igen formen på längd + indexering istället.
+        if not isinstance(current, (int, float, str, bool)) and current:
+            try:
+                current = current[1]
+            except (IndexError, TypeError, KeyError):
+                pass
+        current = current or "(tomt)"
+        lines.append("- %s: nuvarande värde: %s" % (f, current))
+    if context:
+        lines.append("")
+        lines.append("Kontext från användaren: %s" % context)
+    lines.append("")
+    lines.append("Föreslå ett värde per fält ovan och motivera kort. "
+                 "Använd web_search om du behöver fakta. Föreslå INTE "
+                 "ändringar av fält som redan har ett rimligt värde. "
+                 "Skriv ingenting — förslagen godkänns per fält efteråt.")
+    return "\n".join(lines)</field>
+    </record>
+
+    <record id="tool_partner_apply_enrichment" model="ai.tool">
+        <field name="name">partner_apply_enrichment</field>
+        <field name="description">Skriv ett godkänt fältvärde till en partner
+(res.partner).
+
+SYFTE: verkställa ett beslut som redan fattats av en människa.
+
+NÄR: EFTER att ett förslag från partner_propose_enrichment godkänts via HITL.
+
+NÄR INTE: för att föreslå värden — använd partner_propose_enrichment först.
+
+EXEMPEL: partner_apply_enrichment(partner_id=42, field="website",
+value="https://example.com")
+
+OUTPUT: en bekräftelse med fältets nya värde.
+
+GUARDRAIL: risk_level=write — kräver godkännande via HITL. Anropas aldrig
+utan ett godkänt förslag.</field>
+        <field name="risk_level">write</field>
+        <field name="active">True</field>
+        <field name="parameters">{"type": "object", "properties": {
+            "partner_id": {"type": "integer", "description": "ID för res.partner"},
+            "field": {"type": "string", "description": "Fält att skriva. Tillåtna: website, industry, description, phone, email, street, city, zip"},
+            "value": {"type": "string", "description": "Värdet som godkänts"}
+        }, "required": ["partner_id", "field", "value"]}</field>
+        <field name="code">async def execute(partner_id=0, field="", value=""):
+    """Skriv ett godkänt värde. Kräver HITL (risk_level=write)."""
+    WRITABLE = ['website', 'industry_id', 'description', 'phone', 'email',
+                'street', 'city', 'zip']
+    if not partner_id:
+        return "Fel: partner_id krävs."
+    if field not in WRITABLE:
+        return ("Fel: fältet %r får inte skrivas. Tillåtna: %s"
+                % (field, ", ".join(WRITABLE)))
+    partner = env['res.partner'].browse(int(partner_id))
+    if not partner.exists():
+        return "Fel: ingen partner med id %s." % partner_id
+    old = partner[field]
+    if not isinstance(old, (int, float, str, bool)) and old:
+        try:
+            old = old[1]
+        except (IndexError, TypeError, KeyError):
+            pass
+    partner.write({field: value})
+    return ("Skrev %s på %s: %r -> %r"
+            % (field, partner.display_name, old or "", value))</field>
+    </record>
+</odoo>

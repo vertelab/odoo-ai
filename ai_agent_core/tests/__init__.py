@@ -20,6 +20,8 @@ from . import test_coworker_hitl
 from . import test_agent_runtime
 from . import test_external_dispatch
 from . import test_hitl_routing
+from . import test_partner_enrichment
+from . import test_use_cases
 from . import test_channel
 from . import test_pwa_push_triggers
 from . import test_pi_session_link
