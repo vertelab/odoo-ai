@@ -50,6 +50,7 @@ from . import ai_onboarding
 from . import hr_employee
 from . import hr_department
 from . import hr_job
+from . import ai_search_source
 from . import ai_artifact_type
 from . import ai_okf_concept
 from . import ai_access_resolver

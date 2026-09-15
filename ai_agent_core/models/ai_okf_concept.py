@@ -187,11 +187,17 @@ class AIOkfConcept(models.Model):
     embedding = PgVector(
         string='Embedding', dimension=EMBEDDING_DIM,
         help='pgvector(%d) embedding (text-embedding-3-small @ 1024d). '
-             'Kolumnen är vector(%d)-typ (migration 1.10).'
+             'Kolumnen är vector(%d)-typ — satt av hooks.py och migration '
+             '18.0.1.202 (migration 1.11 misslyckades tyst: kolumnen var '
+             'dimensionslös `vector`, vilket blockerade ivfflat-indexet).'
              % (EMBEDDING_DIM, EMBEDDING_DIM))
-    # search_vector — GENERATED COLUMN via SQL-migration:
-    #   ALTER TABLE ai_okf_concept ADD COLUMN search_vector tsvector
-    #     GENERATED ALWAYS AS (to_tsvector('swedish', coalesce(summary, title, ''))) STORED;
+    # search_vector — GENERATED COLUMN, skapad av SQL (hooks.py:
+    # okf_ensure_search_infrastructure, körs i post_init_hook + migration
+    # 18.0.1.202). Är avsiktligt INTE ett ORM-fält: en genererad kolumn
+    # ska inte kunna glömmas bort av skrivsidan.
+    #   to_tsvector('swedish', coalesce(summary,'') || ' ' || coalesce(title,''))
+    # Verifierat i drift 2026-09-13: 110/110 koncept har en icke-tom vektor,
+    # svensk stemming fungerar ('kund'/'kunder'/'kunden' → samma 44 träffar).
     entities = fields.Json(
         string='Entities',
         help='Extracted entities for entity linking.')
@@ -201,6 +207,20 @@ class AIOkfConcept(models.Model):
         string='Dirty', default=False,
         help='Sätts av write()-hooks på källmodeller; cron plockar upp och '
              'rensar efter _okf_upsert().')
+
+    embedding_state = fields.Selection(
+        selection=[('pending', 'Pending'),
+                   ('ready', 'Ready'),
+                   ('failed', 'Failed'),
+                   ('skipped', 'Skipped')],
+        string='Embedding State', default='pending', index=True,
+        help='Hur det gick att skapa konceptets vektor. '
+             'pending = ingen provider/nyckel stund; cron fyller på. '
+             'failed = providern svarade men vektorn var felaktig '
+             '(fel dimension) — kräver åtgärd. '
+             'skipped = ingen text att vektorisera. '
+             'Behövs för att efterfyllnad ska veta vad som saknas — '
+             'utan markering ser en tom kolumn likadan ut oavsett orsak.')
 
     _sql_constraints = [
         # Unik per (scope, concept_key, version) — versioner delar
@@ -244,10 +264,17 @@ class AIOkfConcept(models.Model):
         """ADD-only: concept-rader är immutabla (beslut 10).
 
         Endast livscykelfält får ändras: status (superseded av
-        _okf_upsert), archived (offboarding), verified (cron/process)
-        och dirty (trigger-modellen). Allt innehåll är låst.
+        _okf_upsert), archived (offboarding), verified (cron/process),
+        dirty (trigger-modellen) och embedding_state (efterfyllnadens
+        markering av om vektorn finns). Allt INNEHÅLL är låst.
+
+        `embedding_state` är ett livscykelfält och inte innehåll: det säger
+        vad som hänt med raden, inte vad raden betyder. Själva vektorn är
+        innehåll och får därför ALDRIG skrivas direkt — efterfyllnaden
+        skapar en ny version (se _okf_cron_backfill_embeddings).
         """
-        allowed = {'status', 'archived', 'verified', 'dirty'}
+        allowed = {'status', 'archived', 'verified', 'dirty',
+                   'embedding_state'}
         forbidden = set(vals) - allowed
         if forbidden:
             raise ValidationError(
@@ -350,6 +377,95 @@ class AIOkfConcept(models.Model):
         _logger.info('Personliga minneskällor: %d roller, %d mål', roles, goals)
         return {'roles': roles, 'goals': goals}
 
+    def _produce_embedding(self, summary, title=None, explicit=None):
+        """Producera (eller validera) embedding för ett koncept (fas 3.1/3.2).
+
+        Returnerar `(vector, state)` där state är:
+          'ready'   — vektorn är giltig och kan användas
+          'pending' — ingen vektor kunde skapas (ingen provider/nyckel/nät)
+          'failed'  — provider svarade men vektorn var felaktig
+          'skipped' — ingen text att vektorisera
+
+        Anropas av `_okf_upsert` när `embedding` utelämnas. Skrivsidan ska
+        inte behöva komma ihåg vektorn — den ska bara uppstå.
+        """
+        if explicit is not None:
+            # Explicit vektor: validera ändå (fel dimension = tyst korrupt rad)
+            ok = self.env['ai.provider']._validate_embedding(
+                explicit, model=self.env['ai.provider'].DEFAULT_EMBEDDING_MODEL,
+                dim=EMBEDDING_DIM)
+            return (explicit, 'ready') if ok else (None, 'failed')
+
+        text = ' '.join(filter(None, [title, summary])).strip()
+        if not text:
+            return (None, 'skipped')
+
+        provider = self.env['ai.provider']._embedding_provider()
+        if not provider:
+            _logger.warning(
+                'OKF: ingen provider som kan embedda — konceptet sparas utan '
+                'vektor '
+                '(embedding_state=pending, cron fyller på senare)')
+            return (None, 'pending')
+
+        model = provider._effective_embedding_model()
+        # Konceptet är ett DOKUMENT som senare ska hittas av en fråga —
+        # alltså 'search_document'. Att utelämna input_type får gatewayen
+        # att hänga i 45 s och ge tyst None (mätt 2026-09-14).
+        vector = provider._get_embedding(
+            model=model, input=text, input_type='search_document')
+        if not vector:
+            _logger.warning(
+                'OKF: embedding misslyckades för koncept %r '
+                '(provider=%s, modell=%s)',
+                self.env.context.get('okf_key', '?'), provider.name, model)
+            return (None, 'pending')
+
+        if not provider._validate_embedding(vector, model=model,
+                                            dim=EMBEDDING_DIM):
+            return (None, 'failed')
+        return (vector, 'ready')
+
+    @api.model
+    def _version_is_unchanged(self, existing, summary, title, source_ref,
+                             attribution):
+        """Är den nya datan innehållsligt identisk med senaste versionen?
+
+        Jämför de fält som BESKRIVER konceptet. Avsiktligt UTELÄMNADE:
+        `generated`/`verified` (tidsstämplar — de är alltid nya och hade
+        gjort varje körning till en 'ändring'), `embedding` (härleds ur
+        texten, så samma text ger samma vektor) och `id`/`version`.
+
+        `attribution` jämförs normaliserat (sorterad på source+role) — två
+        listor med samma källor i olika ordning är samma attribution, och
+        att behandla dem som olika hade återinfört en rad per körning.
+
+        None och '' normaliseras båda till '' innan jämförelsen, så ett
+        utelämnat `title` inte ser ut som en ändring mot ett tomt.
+        """
+        self.ensure_one()
+
+        def _norm_attr(attr):
+            rows = attr or []
+            out = []
+            for row in rows:
+                if isinstance(row, dict):
+                    out.append((str(row.get('source', '')),
+                                str(row.get('role', ''))))
+                else:
+                    out.append((str(row), ''))
+            return sorted(out)
+
+        if (existing.summary or '') != (summary or ''):
+            return False
+        if (existing.title or '') != (title or ''):
+            return False
+        if (existing.source_ref or '') != (source_ref or ''):
+            return False
+        if _norm_attr(existing.attribution) != _norm_attr(attribution):
+            return False
+        return True
+
     def _okf_upsert(self, artifact_type, concept_key, summary, title=None,
                     attribution=None, source_ref=None, sources=None,
                     owner_company_id=None, owner_user_id=None,
@@ -397,7 +513,40 @@ class AIOkfConcept(models.Model):
         ], order='version desc', limit=1)
 
         if existing:
+            # ── Är detta en GENUIN ny version? (Fas 14) ────────────────
+            # Utan denna kontroll skapade varje cron-körning en ny rad även
+            # när innehållet var bokstavligen identiskt. Mätt mot `social`
+            # 2026-09-14:
+            #
+            #   personal|user.2.role : 22 rader, 1 unik text
+            #   personal|user.6.role : 22 rader, 1 unik text
+            #   company|partner,10   : 22 rader, 1 unik text
+            #
+            # Kedjan såg ut som en historik men var en logg över att cron
+            # hade kört. Värre: eftersom `search_vector` genereras ur
+            # summary||title blev 22 identiska rader 22 identiska
+            # fulltextposter — sökningen fick 22 chanser att hitta samma
+            # sak, vilket förvränger rankningen (DISTINCT ON räddade
+            # dedupen i fas 12, men bara för att den fanns).
+            #
+            # Regeln: samma innehåll = ingen ny version. Villkoret är
+            # innehållsligt, inte tidsmässigt — `verified`/`generated`
+            # uppdateras ändå inte på den gamla raden (ADD-only), så en
+            # 'oförändrad' rad är den ärliga representationen.
+            if self._version_is_unchanged(
+                    existing, summary, title, source_ref, attribution):
+                _logger.debug(
+                    'OKF: %s|%s oförändrat sedan v%s — ingen ny version '
+                    '(annars skapas en rad per cron-körning)',
+                    scope, concept_key, existing.version)
+                # Returnera den BEFINTLIGA raden. Anroparen (t.ex.
+                # _index_user_role) räknar 1 = 'indexerad', vilket är sant:
+                # konceptet finns och är aktuellt.
+                return existing
+
             # ADD-only: ny version istället för att skriva över
+            vec, vec_state = self._produce_embedding(
+                summary, title=title, explicit=embedding)
             vals = {
                 'artifact_type_id': atype.id,
                 'scope': scope,
@@ -414,7 +563,8 @@ class AIOkfConcept(models.Model):
                 'status': status,
                 'stale_after': stale_after,
                 'entities': entities or [],
-                'embedding': embedding,
+                'embedding': vec,
+                'embedding_state': vec_state,
                 'owner_company_id': owner_company_id,
                 'owner_user_id': owner_user_id,
                 'owner_coworker_id': owner_coworker_id,
@@ -425,6 +575,8 @@ class AIOkfConcept(models.Model):
             existing.write({'status': 'superseded'})
             return new
 
+        vec, vec_state = self._produce_embedding(
+            summary, title=title, explicit=embedding)
         vals = {
             'artifact_type_id': atype.id,
             'scope': scope,
@@ -441,7 +593,8 @@ class AIOkfConcept(models.Model):
             'status': status,
             'stale_after': stale_after,
             'entities': entities or [],
-            'embedding': embedding,
+            'embedding': vec,
+            'embedding_state': vec_state,
             'owner_company_id': owner_company_id,
             'owner_user_id': owner_user_id,
             'owner_coworker_id': owner_coworker_id,
@@ -496,17 +649,40 @@ class AIOkfConcept(models.Model):
     @api.model
     def _okf_search(self, query, scope=None, artifact_type_ids=None,
                     department_context=None, time_window=None,
-                    limit=20, user=None, hybrid=True):
-        """Sammansatt retrieval-pipeline (task 7.9).
+                    limit=20, user=None, hybrid=True, semantic_weight=None,
+                    **kw):
+        """Sammansatt retrieval-pipeline (D9).
 
-        1. Query-embedding (samma modell/dimension som indexering:
-           text-embedding-3-small @ 1024d)
-        2. pgvector top-k + tsvector hybrid (beslut 11-pushdown)
-        3. Scope-filter (company/personal/coworker)
-        4. Artifact type-filter (avdelningskontext)
-        5. Access-resolver (ir.access ∩ ir.rule ∩ followers)
-        6. Senaste version per (scope, concept_key) endast
-        7. Tidsfönster (för manuella körningar)
+        Ersätter den gamla tredelade fallback-kedjan (pgvector → ILIKE →
+        create_date desc). Den kedjan hade tre fel som alla syntes i drift:
+
+        1. **"2b. tsvector-hybrid (swedish FTS)" var en lögn i en
+           kommentar** — koden var `summary ILIKE '%<hela prompten>%'`.
+           En hel prompt matchar aldrig en konceptsammanfattning, så grenen
+           var i praktiken död och föll alltid igenom till fallbacken.
+        2. **pgvector-grenen dedupade inte.** `return self.browse(rows)`
+           returnerade råa rad-id:n. I drift (`social`): 110 rader men bara
+           4 unika koncept — `partner,15` har 44 versioner.
+        3. **create_date desc var sista utvägen**, vilket betyder att en
+           fråga utan träff returnerade de senaste koncepten som om de vore
+           relevanta. Tystnaden såg ut som ett svar.
+
+        Nu är det EN fråga. Poängen är en viktad summa av två signaler:
+
+            (1 - (embedding <=> :q)) * w
+          + ts_rank(search_vector, plainto_tsquery('swedish', :query)) * (1-w)
+
+        `COALESCE`-en i 12.3 är hela poängen med sammanslagningen: en rad
+        utan vektor (Bifrost saknar embedding-modeller, alla 110 är
+        `pending`) får ändå sin text-signal. Utan den hade den semantiska
+        blockeraren gjort sökningen helt blind i stället för halvblind.
+
+        **Tomt är tomt.** Ingen fallback returnerar "de senaste koncepten"
+        när frågan inte matchar — ett tomt resultat är ett ärligt svar, och
+        loggas som `info` tillsammans med hur många koncept som fanns i
+        scopet. Ett sökresultat som är tomt för att frågan KRASCHADE är
+        däremot inte tomt på riktigt: det loggas som `warning` med
+        traceback.
         """
         user = user or self.env.user
         domain = self._fresh_domain(include_stale_searchable=False)
@@ -517,64 +693,226 @@ class AIOkfConcept(models.Model):
         if time_window:
             domain.append(('write_date', '>=', time_window))
 
-        # 6. Senaste version per (scope, concept_key) — först via SQL/ORM
-        # (pgvector-pushdown kräver att kolumnen är vector-typ; fallback
-        # till tsvector-sök om pgvector saknas)
-        if hybrid and query:
-            # 1. Query-embedding via providern (samma som indexering)
-            embedding = None
-            try:
-                provider = self.env['ai.provider'].search(
-                    [('active', '=', True)], limit=1)
-                if provider and hasattr(provider, '_get_embedding'):
-                    embedding = provider._get_embedding(query)
-            except Exception as e:
-                _logger.warning('OKF query embedding failed: %s', e)
+        # Hybrid kräver en fråga. Utan fråga är "senaste" ett ärligt svar.
+        if not hybrid or not query or not query.strip():
+            results = self.search(domain, order='create_date desc',
+                                  limit=limit)
+            return results._latest_per_key()
 
-            if embedding:
-                # 2a. pgvector top-k (direkt SQL — beslut 11-pushdown)
-                try:
-                    emb_literal = embedding if isinstance(embedding, str) \
-                        else '[%s]' % ','.join(str(x) for x in embedding)
-                    sql = """
-                        SELECT id FROM ai_okf_concept
-                        WHERE archived = false
-                          AND status != 'superseded'
-                    """
-                    params = []
-                    if scope:
-                        sql += ' AND scope = %s'
-                        params.append(scope)
-                    if artifact_type_ids:
-                        sql += ' AND artifact_type_id = ANY(%s)'
-                        params.append(list(artifact_type_ids))
-                    sql += ' ORDER BY embedding <=> %s::vector LIMIT %%s' % \
-                        emb_literal
-                    params.append(limit)
-                    self.env.cr.execute(sql, params)
-                    rows = [r[0] for r in self.env.cr.fetchall()]
-                    if rows:
-                        return self.browse(rows)
-                except Exception as e:
-                    _logger.warning(
-                        'OKF pgvector search failed (fallback till tsvector): %s',
-                        e)
+        # 1. Query-embedding. Misslyckas den fortsätter vi med ren BM25 —
+        #    det är den ärliga halva som fungerar.
+        embedding = None
+        provider = self.env['ai.provider']._embedding_provider()
+        if provider:
+            # Frågan är en SÖKFRÅGA, inte ett dokument. Asymmetriska
+            # modeller (som embed-multilingual-v3.0) lägger dem i olika
+            # delar av rummet — fel val ger sämre träff, inte ett fel.
+            embedding = provider._get_embedding(
+                input=query, input_type='search_query')
+            if not embedding:
+                _logger.warning(
+                    'OKF-sökning: ingen query-vektor (provider=%s). '
+                    'Endast BM25-signalen bär resultatet (query=%.60s)',
+                    provider.name, query)
+        else:
+            _logger.warning(
+                'OKF-sökning utan aktiv ai.provider — endast BM25 '
+                '(query=%.60s)', query)
 
-            # 2b. tsvector-hybrid (swedish FTS)
-            try:
-                search_domain = domain + [
-                    '|', ('summary', 'ilike', '%%%s%%' % query),
-                    ('title', 'ilike', '%%%s%%' % query),
-                ]
-                results = self.search(search_domain, limit=limit)
-                if results:
-                    return results._latest_per_key()
-            except Exception as e:
-                _logger.warning('OKF tsvector search failed: %s', e)
+        # 2. Vikten. `semantic_weight` kommer från anroparen; default 0.7.
+        #    Är vektorn borta sätts vikten till 0 — annars hade den
+        #    semantiska termen blivit konstant och bara skjutit upp alla
+        #    rader lika mycket (en vikt utan signal är brus).
+        w = 0.7 if semantic_weight is None else float(semantic_weight)
+        w = max(0.0, min(1.0, w))
+        if not embedding:
+            w = 0.0
 
-        # Fallback: ren domän-sök (senaste versioner)
-        results = self.search(domain, order='create_date desc', limit=limit)
-        return results._latest_per_key()
+        # 3. EN fråga. ALL dedup sker i SQL — det var just frånvaron av
+        #    dedup här som gjorde att pgvector-vägen returnerade 110 rader.
+        #
+        # TVÅ fallgropar som kostade en runda var att hitta:
+        #
+        # a) COALESCE runt vektortermen är inte kosmetik: `NULL <=> vektor`
+        #    ger NULL, och NULL + <bm25> = NULL. Utan den hade HELA summan
+        #    blivit NULL i exakt det läge som råder i drift idag (ingen
+        #    embedding-modell) — och varje rad fått score NULL, vilket
+        #    sorteringen tolkar som "lika", dvs. en tyst slumpordning.
+        #
+        # b) `qvec IS NULL OR ...` i WHERE måste bort. Den var tänkt som
+        #    "utan vektor, lita på BM25" — men `IS NULL` är sant för ALLA
+        #    rader, så filtret släppte igenom hela tabellen.
+        #
+        # c) Filtret `score > 0` räcker INTE ensamt. `ts_rank` returnerar
+        #    aldrig exakt 0: en rad som inte matchar frågan får ett golv på
+        #    ~1e-20 (verifierat i drift), vilket är strikt större än 0.
+        #    Utan den explicita @@ -kontrollen nedan slank varje rad i
+        #    tabellen igenom med en omätbar poäng — exakt samma tysta
+        #    icke-tomma fallback som skulle bort. Filtret och @@-villkoret
+        #    hör ihop; det ena utan det andra är en lögn.
+        sql = """
+            SELECT id, scope, concept_key, version,
+                COALESCE(1 - (embedding <=> %(qvec)s::vector), NULL)
+                    AS cosine,
+                ts_rank(search_vector,
+                        plainto_tsquery('swedish', %(q)s)) AS ts_rank,
+                (
+                    COALESCE(1 - (embedding <=> %(qvec)s::vector), 0) * %(w)s
+                  + ts_rank(search_vector,
+                            plainto_tsquery('swedish', %(q)s)) * (1 - %(w)s)
+                ) AS score
+            FROM ai_okf_concept
+            WHERE archived = false
+              AND status != 'superseded'
+              AND (embedding IS NOT NULL
+                   OR search_vector @@ plainto_tsquery('swedish', %(q)s))
+        """
+        params = {'q': query, 'w': w}
+        if embedding:
+            params['qvec'] = embedding if isinstance(embedding, str) \
+                else '[%s]' % ','.join(str(x) for x in embedding)
+        else:
+            params['qvec'] = None
+
+        if scope:
+            sql += ' AND scope = %(scope)s'
+            params['scope'] = scope
+        if artifact_type_ids:
+            sql += ' AND artifact_type_id = ANY(%(atypes)s)'
+            params['atypes'] = list(artifact_type_ids)
+        if time_window:
+            sql += ' AND write_date >= %(tw)s'
+            params['tw'] = time_window
+
+        # Dedup i SQL: senaste versionen per (scope, concept_key). Samma
+        # princip som _latest_per_key(), men FÖRE limit — annars hade
+        # limit=20 kunnat fyllas av 20 versioner av SAMMA koncept.
+        sql = """
+            WITH ranked AS (
+                %s
+            ),
+            deduped AS (
+                SELECT DISTINCT ON (scope, concept_key)
+                    id, cosine, ts_rank, score
+                FROM ranked
+                ORDER BY scope, concept_key, version DESC
+            )
+            SELECT id, cosine, ts_rank, score FROM deduped
+        """ % sql
+
+        # DISTINCT ON kräver att ORDER BY börjar med nycklarna — sorteringen
+        # på score sker därför i ett yttre lager.
+        #
+        # OBS: `score` MÅSTE projiceras genom båda lagren. Första versionen
+        # valde bara `id` i det inre lagret och sorterade på `score` i det
+        # yttre — en kolumn som då inte fanns. Felet såg ut som "inga
+        # träffar", inte som ett SQL-fel, eftersom allt låg i en try/except.
+        #
+        # ── VÄG 2: tröskeln är PER SIGNAL (§17.4) ──────────────────────
+        # Den summerade `score` är inte ett beslutsmått: den blandar en
+        # cosine (0…1) med en onormaliserad ts_rank (~0…0.06) under en
+        # vikt. Ett filter på summan är därför ett filter på en enhet som
+        # inte finns.
+        #
+        # I stället ställs frågan varje signal kan svara på:
+        #
+        #   (cosine >= min_cosine)  ELLER  (ts_rank >= min_ts_rank)
+        #
+        # ELLER, inte OCH — det är hela poängen. En rad som hittas av den
+        # ena signalen är en träff; den andra signalen är frånvarande
+        # (NULL/0), inte underkänd. Med OCH hade varje rad utan vektor
+        # krävt BM25 över tröskeln OCH tvärtom, dvs. bara de få rader där
+        # båda är starka — exakt den blindhet väg 2 ska bota.
+        #
+        # Raden behåller sin `score` (viktad summa) för SORTERING — det är
+        # rätt mått att rangordna på. Tröskeln är ett urval, summan en
+        # ordning. De två rollerna ska inte blandas ihop, och det var
+        # precis det den gamla koden gjorde.
+        min_cosine = kw.get('min_cosine')
+        min_ts_rank = kw.get('min_ts_rank')
+
+        # ── DEN GEMENSAMMA NÄMNAREN: en rad måste vara RELEVANT ────────
+        # Även utan anropartrösklar måste raden kvala in på NÅGON signal.
+        #
+        # Historik (och en riktig bugg som §18 avtäckte): kandidatfiltret
+        # ovan är `embedding IS NOT NULL OR @@`. Så länge INGA rader hade
+        # vektor var det ofarligt — `OR @@` var den enda vägen in, och
+        # `@@` är ett äkta relevanskriterium. Men i samma stund som raderna
+        # FICK vektorer blev `embedding IS NOT NULL` sant för ALLA, och då
+        # släppte kandidatfiltret in hela tabellen oavsett fråga.
+        #
+        # `score > 0` fångade det inte: `embedding <=> q` är alltid ett
+        # tal, så `score` är positivt även för en fråga som inte matchar
+        # något. Utan grind returnerade sökningen allt — exakt den "tysta
+        # icke-tomma fallback" som 12.5 skulle bota, bara med vektorn som
+        # ny ursäkt.
+        #
+        # Därför: finns ingen tröskel, används BRUSGOLVET. Mätt mot den
+        # valda modellen (embed-multilingual-v3.0) mot den egna korpusen:
+        # nonsens-frågor ger cosine 0.22–0.39 — Cohere-modellen lämnar
+        # aldrig ett tal nära 0 för en kort sträng, så `cosine > 0` är
+        # inget relevanskriterium alls. En riktig frågas bästa träff ligger
+        # 0.48–0.71. Skiljelinjen är ~0.39.
+        #
+        # Det här är den ENDA ärliga tolkningen av "ingen tröskel":
+        # ingen KALIBRERAD tröskel per strategi — men fortfarande ett
+        # golv under vilket allt är brus. Annars vore den ogrindade vägen
+        # (som `_tool_okf_search` och alla tester använder) den gamla
+        # tysta fallbacken i ny kostym.
+        #
+        # OBS att golvet bara gäller den SEMANTISKA signalen. En äkta
+        # BM25-träff passerar alltid, hur svag vektorn än är — det är
+        # ELLER-semantiken, och den får inte tappas här. Därför sätts
+        # ALLTID båda klausulerna när golvet appliceras; annars hade en
+        # rad med `cosine = NULL` (ingen vektor) mötts av ett ensamt
+        # `cosine >= 0.39`, som NULL inte kan uppfylla — och en äkta
+        # BM25-träff hade försvunnit. Det var precis vad som hände i
+        # `test_bm25_alone_carries_result_when_no_embedding` (0 != 1).
+        if min_cosine is None and min_ts_rank is None:
+            min_cosine = 0.39
+            min_ts_rank = 1e-20
+
+        having = []
+        if min_cosine is not None:
+            params['min_cosine'] = float(min_cosine)
+            having.append('cosine >= %(min_cosine)s')
+        if min_ts_rank is not None:
+            params['min_ts_rank'] = float(min_ts_rank)
+            having.append('ts_rank >= %(min_ts_rank)s')
+        gate = (' WHERE (' + ' OR '.join(having) + ')') if having else ''
+
+        sql = (
+            'SELECT id FROM (' + sql + ') latest' + gate +
+            ' ORDER BY score DESC LIMIT %(limit)s')
+
+        try:
+            params['limit'] = limit
+            self.env.cr.execute(sql, params)
+            rows = [r[0] for r in self.env.cr.fetchall()]
+        except Exception as e:
+            # Logga HELA felet, inte bara meddelandet. En tyst try/except
+            # runt en SQL-sträng kostade tre felsökningsrundor i den här
+            # fasen: både en saknad `score`-projektion och ett dict+list
+            # typfel såg ut som "inga träffar". Ett sökresultat som är tomt
+            # för att frågan KRASCHADE är inte samma sak som ett tomt
+            # resultat för att inget matchade.
+            _logger.warning('OKF hybridsökning misslyckades: %s', e,
+                            exc_info=True)
+            rows = []
+
+        if rows:
+            return self.browse(rows)
+
+        # 12.5: ÄRLIGT TOMT. Ingen create_date desc-fallback — en fråga
+        # utan träff ska vara tom, inte returnera de senaste koncepten som
+        # om de vore svar.
+        in_scope = self.search_count(domain)
+        _logger.info(
+            'OKF-sökning gav 0 träffar (query=%.60s, scope=%s, %d koncept '
+            'i scopet, vektor=%s)', query, scope or '-', in_scope,
+            'ja' if embedding else 'nej')
+        return self.browse([])
+
 
     def _latest_per_key(self):
         """Returnera bara senaste versionen per (scope, concept_key)."""
@@ -1270,7 +1608,9 @@ class AIOkfConcept(models.Model):
                                        query=None, max_chars=2000,
                                        artifact_type_ids=None,
                                        user=None, include_level1=True,
-                                       injection_level='summary_and_key'):
+                                       injection_level='summary_and_key',
+                                       semantic_weight=None, limit=None,
+                                       hybrid=True):
         """Bygg Hermes-kompatibel system prompt-block från ai.okf.concept.
 
         Nivåordning (task 7.4):
@@ -1294,6 +1634,11 @@ class AIOkfConcept(models.Model):
                 - summary_only → L2+L3 (komprimerad, ingen L1/L0)
                 - summary_and_key → L2+L3+L1 (default)
                 - full → L2+L3+L1+L0
+            semantic_weight (float, optional): Vikt för vektorsignalen i L1.
+                None → `_okf_search`:s default (0.7). Kommer från
+                medarbetarens sökstrategi (fas 13.10).
+            limit (int, optional): Max antal L1-koncept. None → 10.
+            hybrid (bool): Slå samman vektor- och textsignalen (fas 12).
 
         Returns:
             str: Formatterad block eller tom sträng
@@ -1357,7 +1702,8 @@ class AIOkfConcept(models.Model):
         if want_l1 and include_level1 and query:
             search_results = self._okf_search(
                 query, scope=scope, artifact_type_ids=artifact_type_ids,
-                limit=10, user=user)
+                limit=limit or 10, user=user, hybrid=hybrid,
+                semantic_weight=semantic_weight)
             if search_results:
                 l1_block = self._format_concept_block(
                     search_results, max_chars // 3, 'RELEVANT KUNSKAP',

@@ -4,6 +4,8 @@
 import logging
 from odoo import models, fields, api
 
+from .ai_okf_concept import EMBEDDING_DIM as _OKF_EMBEDDING_DIM
+
 _logger = logging.getLogger(__name__)
 
 
@@ -255,12 +257,67 @@ class AIMemory(models.Model):
         return super().write(vals)
 
     @api.model
-    def _okf_cron_index_dirty(self):
+    def _okf_cron_index_dirty(self, batch_size=50):
         """Lätt cron (task 5.2): plocka upp dirty-artefakter, indexera,
-        rensa dirty-flag. Tungt arbete görs HÄR, inte i write()."""
+        rensa dirty-flag. Tungt arbete görs HÄR, inte i write().
+
+        Fas 6 (D7): bryggan täcker nu TRE modeller — `ai.memory` (som redan
+        hade flaggan) samt `ai.personal.memory` och `ai.company.memory`
+        (legacy-minnena, den enda plats där svensk BM25 någonsin fungerade).
+        Utan dem är migreringen halvfärdig: skrivsidan flyttad, läsningen
+        kvar i en stack som töms.
+        """
+        total = self._okf_cron_index_dirty_memories(batch_size)
+        total += self._okf_cron_index_dirty_legacy(
+            'ai.personal.memory', batch_size)
+        total += self._okf_cron_index_dirty_legacy(
+            'ai.company.memory', batch_size)
+        return total
+
+    @api.model
+    def _okf_cron_index_dirty_legacy(self, model_name, batch_size=50):
+        """Indexera dirty-poster från ett legacy-minnesmodell (fas 6.3).
+
+        Idempotent: flaggan rensas bara när `_okf_upsert` returnerat ett
+        koncept. Misslyckas indexeringen ligger posten kvar och görs om.
+        """
+        if model_name not in self.env:
+            return 0
+        Model = self.env[model_name]
+        dirty = Model.sudo().search(
+            [('okf_dirty', '=', True)], limit=batch_size,
+            order='write_date asc')
+        if not dirty:
+            return 0
+        count = 0
+        for mem in dirty:
+            try:
+                vals = mem._okf_concept_vals()
+                if not vals.get('summary'):
+                    # Tom post — inget att indexera. Rensa flaggan så att
+                    # den inte blockerar kön för evigt.
+                    mem.sudo().write({'okf_dirty': False})
+                    continue
+                concept = self.env['ai.okf.concept']._okf_upsert(
+                    artifact_type='learning', **vals)
+                if concept:
+                    mem.sudo().write({
+                        'okf_dirty': False,
+                        'okf_indexed_at': fields.Datetime.now(),
+                    })
+                    count += 1
+            except Exception as e:
+                _logger.warning(
+                    'OKF cron index failed for %s %s: %s',
+                    model_name, mem.id, e)
+        return count
+
+    @api.model
+    def _okf_cron_index_dirty_memories(self, batch_size=50):
+        """Indexera dirty-poster från `ai.memory` (ursprunglig brygga)."""
         # ai.memory har en FAISS-hjälpmetod som skuggar ORM:ts search —
         # använd _search för att komma åt ORM:en
-        dirty_ids = self._search([('okf_dirty', '=', True)], limit=50)
+        dirty_ids = self._search([('okf_dirty', '=', True)], limit=batch_size)
         dirty = self.browse(dirty_ids)
         if not dirty:
             return 0
@@ -301,3 +358,99 @@ class AIMemory(models.Model):
                 _logger.warning('OKF cron index failed for memory %s: %s',
                                 mem.id, e)
         return count
+
+    @api.model
+    def _okf_cron_backfill_embeddings(self, batch_size=20):
+        """Efterfyllnad av saknade vektorer (okf-recall-path fas 3.3).
+
+        Plockar koncept vars `embedding_state` inte är 'ready' och försöker
+        skapa vektorn. Idempotent: lyckade rader markeras 'ready' och plockas
+        aldrig upp igen; misslyckade lämnas i sin markering.
+
+        VARFÖR EN EGEN CRON: koncept skrivna innan embeddings fungerade har
+        en tom vektorkolumn. Utan efterfyllnad kräver varje sådan rad en
+        manuell åtgärd — och utan `embedding_state` går det inte att skilja
+        "aldrig försökt" från "försökt och misslyckats".
+
+        Avsiktligt utan tung logik: tunga saker händer i `_produce_embedding`
+        som REDAN körs via `_okf_upsert` på nya koncept. Denna cron räddar
+        bara eftersläntrare.
+        """
+        Concept = self.env['ai.okf.concept']
+        pending = Concept.search([
+            ('embedding_state', 'in', ('pending', 'failed')),
+            ('archived', '=', False),
+            ('status', '!=', 'superseded'),
+        ], limit=batch_size, order='id asc')
+
+        if not pending:
+            return 0
+
+        provider = self.env['ai.provider']._embedding_provider()
+        if not provider:
+            _logger.warning(
+                'OKF efterfyllnad: ingen provider som kan embedda — %s koncept '
+                'väntar fortfarande', len(pending))
+            return 0
+
+        model = provider.DEFAULT_EMBEDDING_MODEL
+        filled = 0
+        for concept in pending:
+            text = ' '.join(filter(None, [concept.title, concept.summary])).strip()
+            if not text:
+                # 'skipped' får skrivas — det är ett livscykelfält. Ingen ny
+                # version: det finns inget innehåll att versionera, och en
+                # tom kopia vore bara skräp i versionskedjan.
+                concept.write({'embedding_state': 'skipped'})
+                continue
+
+            vector = provider._get_embedding(
+                model=model, input=text, input_type='search_document')
+            if not vector:
+                # Lämna som pending — nästa körning försöker igen.
+                # Vi kan inte märka om raden utan att skapa en ny version,
+                # så vi rör den inte alls: 'pending' är redan sanningen.
+                continue
+
+            if not provider._validate_embedding(vector, model=model,
+                                                dim=_OKF_EMBEDDING_DIM):
+                # Fel dimension: markera 'failed' så den kräver tillsyn.
+                concept.write({'embedding_state': 'failed'})
+                continue
+
+            # VIKTIGT: koncept-rader är ADD-only (beslut 10). Vektorn kan
+            # alltså inte skrivas in i den befintliga raden — efterfyllnaden
+            # skapar en NY VERSION via _okf_upsert. Den gamla raden blir
+            # 'superseded' och den nya bär vektorn. Immutabiliteten är
+            # bevarad: historiken finns kvar, inget skrivs över.
+            owner = self._okf_owner_for_concept(concept)
+            self.env['ai.okf.concept']._okf_upsert(
+                artifact_type=concept.artifact_type_id or 'learning',
+                concept_key=concept.concept_key,
+                summary=concept.summary,
+                title=concept.title,
+                source_ref=concept.source_ref,
+                entities=concept.entities,
+                generated_by='backfill',
+                embedding=vector,
+                **owner
+            )
+            filled += 1
+
+        _logger.info('OKF efterfyllnad: %s av %s koncept fick vektor',
+                     filled, len(pending))
+        return filled
+
+    @api.model
+    def _okf_owner_for_concept(self, concept):
+        """Plocka ut ägar-argumenten från ett koncept för _okf_upsert.
+
+        _okf_upsert kräver exakt ett ägarfält — inte ett browse-id.
+        """
+        if concept.owner_company_id:
+            return {'owner_company_id': concept.owner_company_id.id}
+        if concept.owner_user_id:
+            return {'owner_user_id': concept.owner_user_id.id}
+        if concept.owner_coworker_id:
+            return {'owner_coworker_id': concept.owner_coworker_id.id}
+        return {'owner_company_id': self.env.company.id}

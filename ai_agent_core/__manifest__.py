@@ -42,6 +42,8 @@
         'data/okf_access_resolvers.xml',
         'data/cron_personal_index.xml',
         'data/cron_okf_index_dirty.xml',
+        'data/search_sources.xml',
+        'data/cron_session_idle.xml',
         'data/cron_external_runtime.xml',
         'data/cron_okf_process_uploads.xml',
         'data/cron_company_memory_indexers.xml',

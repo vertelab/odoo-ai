@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="0">
+        <!--
+            Sökkällornas katalog (fas 13.2).
+
+            `is_wired`/`wired_note` sätts av `_seed_sources()` i Python, inte
+            här: de ska spegla kodens verkliga förmåga, och en XML-fil kan
+            inte veta om AGE-grafen har noder. Den här filen bär bara
+            identiteten (kod, namn, ordning); ärligheten bärs av koden.
+        -->
+        <function model="ai.search.source" name="_seed_sources"/>
+    </data>
+</odoo>

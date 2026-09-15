@@ -822,30 +822,39 @@ class AIPersonalMemory(models.Model):
         truncated = [t[:8192] for t in texts]
 
         # Försök via ai.provider med batch
-        try:
-            Provider = self.env['ai.provider']
-            if Provider and hasattr(Provider, '_get_embedding_batch'):
-                embeddings = Provider._get_embedding_batch(
-                    model='text-embedding-3-small',
-                    input=truncated,
-                )
-                if embeddings and isinstance(embeddings, (list, tuple)):
-                    return [
-                        '[' + ','.join(str(v) for v in emb) + ']'
-                        for emb in embeddings
-                    ]
-        except Exception as e:
-            _logger.debug('Batch embedding failed, falling back to single: %s', e)
-
-        # Fallback: embedda en och en
-        return [self._embed_text(t) for t in truncated]
+        Provider = self.env['ai.provider']
+        # Providern, modellen och dimensionen kommer från providerns egna
+        # fält — inte från en hårdkodad sträng. 'text-embedding-3-small'
+        # stod här och pekade på en modell Bifrost avvisar (000/401).
+        emb_provider = Provider._embedding_provider()
+        if not emb_provider:
+            _logger.warning(
+                'Embedding (batch): ingen provider som kan embedda — '
+                '%s texter lämnas utan vektor', len(truncated))
+            return [None] * len(truncated)
+        embeddings = emb_provider._get_embedding_batch(
+            inputs=truncated,
+            input_type='search_document',
+        )
+        if embeddings and isinstance(embeddings, (list, tuple)):
+            if all(emb is None for emb in embeddings):
+                _logger.warning(
+                    'Batch-embedding gav ingen vektor för %s texter — '
+                    'semantisk sökning blir tom', len(truncated))
+                return [None] * len(truncated)
+            return [
+                '[' + ','.join(str(v) for v in emb) + ']'
+                if emb else None
+                for emb in embeddings
+            ]
+        return [None] * len(truncated)
 
     @api.model
     def _embed_text(self, text):
         """Generera embedding via AI-provider.
 
         Använder samma provider som ai.coworker använder.
-        OpenAI text-embedding-3-small (1536 dimensioner).
+        OpenAI text-embedding-3-small (1024 dimensioner — kolumnens dimension).
         Lagrar som PostgreSQL vector-literal: "[0.1,0.2,...]".
 
         Args:
@@ -854,50 +863,15 @@ class AIPersonalMemory(models.Model):
         Returns:
             str: PostgreSQL vector literal (t.ex. "[0.1,0.2,...]") eller None
         """
-        # Försök via ai.provider om tillgängligt
-        try:
-            Provider = self.env['ai.provider']
-            if Provider and hasattr(Provider, '_get_embedding'):
-                embedding = Provider._get_embedding(
-                    model='text-embedding-3-small',
-                    input=text[:8192],
-                )
-                if embedding and isinstance(embedding, (list, tuple)):
-                    # PostgreSQL vector literal: [0.1,0.2,...]
-                    return '[' + ','.join(str(v) for v in embedding) + ']'
-        except Exception as e:
-            _logger.debug('Provider embedding failed: %s', e)
-
-        # Fallback: försök via requests direkt
-        try:
-            import requests
-            # Hitta aktiv provider
-            provider = self.env['ai.provider'].search([
-                ('active', '=', True),
-            ], limit=1)
-            if provider:
-                url = provider.api_url or 'https://api.openai.com/v1/embeddings'
-                api_key = provider.api_key
-                resp = requests.post(
-                    url,
-                    headers={
-                        'Authorization': f'Bearer {api_key}',
-                        'Content-Type': 'application/json',
-                    },
-                    json={
-                        'model': 'text-embedding-3-small',
-                        'input': text[:8192],
-                    },
-                    timeout=10,
-                )
-                if resp.status_code == 200:
-                    data = resp.json()
-                    embedding = data['data'][0]['embedding']
-                    # PostgreSQL vector literal
-                    return '[' + ','.join(str(v) for v in embedding) + ']'
-        except Exception as e:
-            _logger.warning('Direct embedding failed: %s', e)
-
+        # Försök via ai.provider (metoden finns; ingen hasattr-guard)
+        Provider = self.env['ai.provider']
+        embedding = Provider._get_embedding(
+            model='text-embedding-3-small',
+            input=text[:8192],
+        )
+        if embedding and isinstance(embedding, (list, tuple)):
+            # PostgreSQL vector literal: [0.1,0.2,...]
+            return '[' + ','.join(str(v) for v in embedding) + ']'
         return None
 
     @api.model

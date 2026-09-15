@@ -408,11 +408,135 @@ def post_init_hook_org(env):
     _logger.info('post_init_hook_org complete')
 
 
+def okf_ensure_search_infrastructure(env):
+    """Skapa `search_vector` + index på `ai_okf_concept` (okf-recall-path fas 11).
+
+    VARFÖR DENNA FUNKTION FINNS:
+    Migration 1.11 gjorde exakt detta, men körde **före** ORM:en skapade
+    tabellen `ai_okf_concept`. Varje `ALTER TABLE` slog i en icke-existerande
+    tabell och svaldes av `except: _logger.warning('non-fatal')`. Loggen sa
+    "Created search_vector on ai_okf_concept" medan kolumnen aldrig uppstod.
+    Bevis i drift: varken `search_vector`, GIN-indexet, ivfflat-indexet eller
+    B-tree-indexet finns i `social` — endast ORM:ens pkey och unique-index.
+
+    Denna funktion körs i `post_init_hook`, dvs **efter** att tabellen finns,
+    och propagerar fel istället för att svälja dem.
+
+    Idempotent: varje steg kontrollerar information_schema/pg_indexes först.
+
+    Raises:
+        Exception: om ett steg misslyckas. Uppgraderingen SKA rapportera fel —
+            en tyst tom sökväg är värre än ett högljutt fel.
+    """
+    cr = env.cr
+
+    # Kontrollera att tabellen finns — annars är anropet felplacerat
+    cr.execute("""
+        SELECT 1 FROM information_schema.tables
+        WHERE table_name = 'ai_okf_concept' AND table_schema = 'public'
+    """)
+    if not cr.fetchone():
+        raise Exception(
+            'ai_okf_concept-tabellen finns inte — '
+            'okf_ensure_search_infrastructure måste köras efter tabellskapande'
+        )
+
+    # 1. search_vector — GENERATED STORED över summary + title (svensk stemming)
+    cr.execute("""
+        SELECT column_name FROM information_schema.columns
+        WHERE table_name = 'ai_okf_concept' AND column_name = 'search_vector'
+    """)
+    if not cr.fetchone():
+        cr.execute("""
+            ALTER TABLE ai_okf_concept
+            ADD COLUMN search_vector tsvector
+            GENERATED ALWAYS AS (
+                to_tsvector('swedish',
+                            coalesce(summary, '') || ' ' || coalesce(title, ''))
+            ) STORED
+        """)
+        _logger.info('OKF: skapade search_vector på ai_okf_concept'
+                     ' (svensk FTS över summary + title)')
+
+    # 2. GIN-index för fulltext
+    cr.execute("""
+        SELECT 1 FROM pg_indexes
+        WHERE tablename = 'ai_okf_concept'
+          AND indexname = 'idx_ai_okf_concept_fts'
+    """)
+    if not cr.fetchone():
+        cr.execute("""
+            CREATE INDEX idx_ai_okf_concept_fts
+            ON ai_okf_concept USING GIN(search_vector)
+        """)
+        _logger.info('OKF: skapade GIN-index idx_ai_okf_concept_fts')
+
+    # 3. ivfflat-index över embedding (kräver pgvector + rätt kolumntyp)
+    cr.execute("SELECT 1 FROM pg_extension WHERE extname = 'vector'")
+    if cr.fetchone():
+        cr.execute("""
+            SELECT data_type, udt_name FROM information_schema.columns
+            WHERE table_name = 'ai_okf_concept' AND column_name = 'embedding'
+        """)
+        row = cr.fetchone()
+        if row and row[0] == 'USER-DEFINED':
+            # Migration 1.11 steg 4 (ALTER COLUMN TYPE vector(1024)) misslyckades
+            # OCKSÅ tyst: kolumnen blev dimensionslös `vector`, vilket gör
+            # ivfflat omöjligt ("column does not have dimensions").
+            cr.execute("""
+                SELECT format_type(a.atttypid, a.atttypmod)
+                FROM pg_attribute a
+                JOIN pg_class c ON a.attrelid = c.oid
+                WHERE c.relname = 'ai_okf_concept' AND a.attname = 'embedding'
+            """)
+            fmt = cr.fetchone()
+            if fmt and fmt[0] == 'vector':
+                cr.execute("""
+                    ALTER TABLE ai_okf_concept
+                    ALTER COLUMN embedding TYPE vector(1024)
+                    USING NULL
+                """)
+                _logger.info(
+                    'OKF: satte embedding till vector(1024) — kolumnen var '
+                    'dimensionslös sedan migration 1.11 misslyckats tyst')
+
+            cr.execute("""
+                SELECT 1 FROM pg_indexes
+                WHERE tablename = 'ai_okf_concept'
+                  AND indexname = 'idx_ai_okf_concept_embedding'
+            """)
+            if not cr.fetchone():
+                cr.execute("""
+                    CREATE INDEX idx_ai_okf_concept_embedding
+                    ON ai_okf_concept
+                    USING ivfflat (embedding vector_cosine_ops)
+                    WITH (lists = 100)
+                """)
+                _logger.info('OKF: skapade ivfflat-index över embedding')
+
+    # 4. B-tree för versionsuppslag (scope, concept_key, version DESC)
+    cr.execute("""
+        SELECT 1 FROM pg_indexes
+        WHERE tablename = 'ai_okf_concept'
+          AND indexname = 'idx_ai_okf_concept_scope_key'
+    """)
+    if not cr.fetchone():
+        cr.execute("""
+            CREATE INDEX idx_ai_okf_concept_scope_key
+            ON ai_okf_concept (scope, concept_key, version DESC)
+        """)
+        _logger.info('OKF: skapade B-tree-index (scope, concept_key, version)')
+
+
 def post_init_hook(env):
     """Create Quest Builder and Skill Builder quests if they don't exist."""
 
     # Run org init too
     post_init_hook_org(env)
+
+    # OKF-sökvägen: search_vector + index (okf-recall-path fas 11).
+    # Körs här och inte i migration 1.11 — där fanns inte tabellen ännu.
+    okf_ensure_search_infrastructure(env)
 
     # Quest Builder
     if not env['ai.coworker'].search_count([('name', '=', 'Quest Builder')]):

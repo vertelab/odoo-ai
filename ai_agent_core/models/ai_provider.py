@@ -7,7 +7,7 @@ Wizard: fetch provider info from name/URL.
 Smart button: fetch available models with capabilities.
 """
 
-import json, logging, re, urllib.request, ssl
+import json, logging, re, time, urllib.request, ssl
 from typing import Optional
 
 from odoo import models, fields, api, _
@@ -608,6 +608,381 @@ class AIProvider(models.Model):
         except Exception as e:
             _logger.warning('TTS error: %s', e)
             return b''
+
+    # ════════════════════════════════════════════
+    # EMBEDDINGS (okf-recall-path, D2/D3)
+    # ════════════════════════════════════════════
+    # Dimensionen är en enda sanning och måste matcha kolumnen
+    # ai_okf_concept.embedding = vector(1024). Skickas explicit till API:t
+    # (text-embedding-3-small stödjer Matryoshka-trunkering). Att inte skicka
+    # den gav 1536 dim mot en 1024-kolumn → tystnat i try/except → tom kolumn.
+
+    DEFAULT_EMBEDDING_MODEL = 'text-embedding-3-small'
+
+    # ── Embedding-kapabilitet (okf-recall-path §17, väg 2) ──────────────
+    # Fältet är den ENDA sanningen om vilken provider som får embedda.
+    # Bakgrund: sju anropsställen gjorde `search([('active','=',True)],
+    # limit=1)` — ett obundet val som i drift landade på Anthropic (id 2),
+    # vars /embeddings ger HTTP 404. Vektorn uteblev, `embedding_state`
+    # stod kvar på 'pending' för alla 110 koncept, och den semantiska
+    # signalen var tyst död medan BM25 såg ut att fungera.
+    #
+    # Ett fält (inte en lista i koden) för samma skäl som
+    # `_known_backends()` i ai.search.source: två listor glider isär.
+    can_embed = fields.Boolean(
+        'Kan skapa embeddings',
+        default=False,
+        help='Providern får användas för att skapa vektorer. Sätts på den '
+             'provider vars /embeddings faktiskt svarar (verifierat, inte '
+             'antaget).',
+    )
+    embedding_model = fields.Char(
+        'Embedding-modell',
+        help='Modell-id som skickas till providern. Måste vara ett explicit '
+             'modell-id — Bifrost avvisar generativa kombomodeller med '
+             '"Generative combos cannot be used for embeddings".',
+    )
+    embedding_dim = fields.Integer(
+        'Embedding-dimension',
+        help='Dimensionen providern returnerar. Måste matcha kolumnen '
+             'ai_okf_concept.embedding = vector(1024).',
+    )
+
+    @api.model
+    def _embedding_provider(self):
+        """Den provider som ska skapa vektorer — en enda sanning.
+
+        Ersätter sju obundna `search([('active','=',True)], limit=1)`.
+        Ordningen är avsiktlig:
+
+          1. En aktiv provider som uttryckligen markerats `can_embed`.
+          2. En aktiv bifrost-provider med nyckel (Bifrost är den enda
+             gatewayen; en tom nyckel ger 401, inte en vektor).
+          3. Ingen — anroparen ska då hoppa över vektorn och säga varför.
+
+        Att returnera en provider som saknar `can_embed` vore att upprepa
+        ursprungsbuggen: en provider som 'finns' men inte kan embedda.
+        """
+        Provider = self.env['ai.provider'].sudo()
+        explicit = Provider.search([
+            ('active', '=', True), ('can_embed', '=', True)], limit=1)
+        if explicit:
+            return explicit
+        # Fallback: bifrost med nyckel. `api_key` kan vara tom på raden även
+        # när gatewayen fungerar (nyckeln kan komma från ir.config_parameter)
+        # — därför kontrolleras båda innan vi ger upp.
+        admin = self.env['ir.config_parameter'].sudo().get_param(
+            'bifrost.admin_api_key', '')
+        for cand in Provider.search([
+                ('active', '=', True), ('provider_type', '=', 'bifrost')]):
+            if cand.api_key or admin:
+                return cand
+        return Provider.browse()
+
+    # Fältet vinner över konstanten: DEFAULT_EMBEDDING_MODEL pekar på
+    # 'text-embedding-3-small', som Bifrost avvisar (000/401). Att låta
+    # konstanten vinna hade gjort inställningen till dekoration.
+    def _effective_embedding_model(self, model=None):
+        """Modell-id med rätt prioritet: argument → fält → konstant."""
+        self.ensure_one()
+        return model or self.embedding_model or self.DEFAULT_EMBEDDING_MODEL
+
+    def _effective_embedding_dim(self):
+        """Dimension: providerns eget fält om satt, annars kolumnens."""
+        self.ensure_one()
+        return self.embedding_dim or self._embedding_dim()
+
+    def _embedding_dim(self):
+        """Kolumnens dimension — importeras från OKF för en enda sanning."""
+        self.ensure_one()
+        from .ai_okf_concept import EMBEDDING_DIM
+        return EMBEDDING_DIM
+
+    def _embedding_headers(self):
+        """HTTP-headers för embeddings — gatewayens riktiga protokoll.
+
+        Bifrost kräver `x-bf-vk` (virtual key) för /embeddings. Den headern
+        används av den fungerande Pi-klienten (`~/.pi/agent/extensions/
+        bifrost.ts:89`) och är den gatewayen faktiskt svarar på.
+
+        HISTORIK: koden skickade tidigare `X-Virtual-Key` — en header
+        gatewayen accepterar men ignorerar. Det gav inte 401 utan ett tyst
+        avbrott, vilket är precis det mönster detta change arbetar bort.
+        `x-bf-vk` är det namn som bevisats fungera.
+
+        VK:n hämtas ur providerns `api_key`, med fallback till
+        `bifrost.admin_api_key` (ir.config_parameter).
+        """
+        self.ensure_one()
+        headers = {'Content-Type': 'application/json'}
+        vk = self.api_key or self.env['ir.config_parameter'].get_param(
+            'bifrost.admin_api_key', '') or ''
+        if self.provider_type == 'bifrost':
+            headers['x-bf-vk'] = vk
+        elif self.api_key:
+            headers['Authorization'] = 'Bearer %s' % self.api_key
+        return headers
+
+    def _embedding_endpoint(self):
+        self.ensure_one()
+        base = (self.base_url or '').rstrip('/')
+        return base + '/embeddings' if base else ''
+
+    def _embedding_post(self, url, payload, headers, timeout=None):
+        """Utför HTTP-anropet och returnera det tolkade svaret.
+
+        Egen metod av två skäl:
+          1. Testbarhet — Odoo:s testramverk blockerar extern HTTP, så
+             anropet måste kunna mockas på en nivå som ÄR koden.
+          2. Ett ställe för timeout/headers/retry — annars glider de isär
+             mellan singel- och batch-vägen.
+
+        RETRY (mätt 2026-09-14): Bifrost svarar normalt på 0,2–0,5 s men
+        hänger intermittently i exakt samma anrop. Uppmätt över 6 anrop
+        från Odoo: 4 svarade på 0,3–0,4 s, 2 hängde till timeout. Samma
+        payload, samma header, samma sekund — alltså är det inte vår
+        request det är fel på. Utan retry förlorar en tredjedel av alla
+        koncept sin vektor till en övergående hängning.
+
+        Därför: kort timeout per försök + retry. En hängning kostar då
+        ~3×timeout i värsta fall i stället för att blockera 120 s per
+        post (110 poster × 120 s = 3,7 timmar för en cron-körning).
+
+        Kastar vidare nätverksfel till anroparen, som loggar och ger None.
+        """
+        import requests
+
+        attempts = self._embedding_retry_attempts()
+        per_try = timeout or self._embedding_timeout()
+        last_error = None
+
+        for attempt in range(1, attempts + 1):
+            try:
+                resp = requests.post(
+                    url,
+                    json=payload,
+                    headers=headers,
+                    timeout=per_try,
+                )
+                if resp.status_code != 200:
+                    raise ValueError('HTTP %s: %s' % (
+                        resp.status_code, resp.text[:200]))
+                return resp.json()
+            except Exception as e:  # requests.RequestException + ValueError
+                last_error = e
+                if attempt < attempts:
+                    _logger.info(
+                        'Embedding: försök %s/%s misslyckades (%s) — '
+                        'försöker igen', attempt, attempts, str(e)[:120])
+                    time.sleep(self._embedding_retry_delay(attempt))
+
+        raise last_error
+
+    def _embedding_timeout(self):
+        """Timeout per försök. Kortare än providerns generella timeout.
+
+        Providerns `timeout` är 120 s (rätt för LLM-svar, som kan ta lång
+        tid). En embedding ska svara på under en sekund — att vänta 120 s
+        på något som antingen kommer direkt eller aldrig kommer är att
+        göra en övergående hängning till ett dygnsproblem.
+        """
+        self.ensure_one()
+        return min(self.timeout or 120, 20)
+
+    def _embedding_retry_attempts(self):
+        """Antal försök totalt (inte antal omförsök)."""
+        self.ensure_one()
+        return 3
+
+    def _embedding_retry_delay(self, attempt):
+        """Linjär backoff i tiondelar — gatewayen behöver ingen lång vila."""
+        self.ensure_one()
+        return 0.5 * attempt
+
+    def _embedding_payload(self, model, inputs, dim, input_type=None):
+        """Payload för /embeddings — med de fält gatewayen KRÄVER.
+
+        `input_type` är inte valfritt för alla modeller. Mätt mot Bifrost
+        (2026-09-14):
+
+          embed-multilingual-v3.0 + input_type  → HTTP 200 på 0,5 s
+          embed-multilingual-v3.0 UTAN input_type → HTTP 000 efter 45 s
+
+        Det är den farligaste sortens fel: ingen felkod, bara en tyst
+        timeout. `_get_embedding` fångar den och returnerar None, så
+        vektorn försvinner utan spår i loggen utom den generiska
+        "Embedding-fel". Att utelämna fältet är därför inte ett alternativ
+        — men att ALLTID skicka det är inte heller rätt: OpenAI-modeller
+        avvisar okända fält. Därför skickas `input_type` bara när modellen
+        känner igen det (Cohere-familjen och andra som deklarerar det).
+
+        input_type-semantiken (fråga vs dokument) är inte kosmetisk:
+        asymmetriska embeddingsmodeller lägger frågor och dokument i olika
+        delar av rummet. Att embedda en sökfråga som ett dokument ger
+        sämre träff — och det syns inte som ett fel, bara som sämre svar.
+
+        Args:
+            model: modell-id
+            inputs: str eller list[str]
+            dim: dimensionen att begära
+            input_type: 'search_query' | 'search_document' | None
+
+        Returns:
+            dict — redo att JSON-kodas
+        """
+        self.ensure_one()
+        payload = {'model': model, 'input': inputs}
+        # Dimensionen skickas bara till modeller som stödjer trunkering.
+        # embed-multilingual-v3.0 hänger på dimensions=512 → skicka bara
+        # den dimension vi faktiskt vill ha (1024 = kolumnens).
+        if dim:
+            payload['dimensions'] = dim
+        if input_type and self._accepts_input_type(model):
+            payload['input_type'] = input_type
+        return payload
+
+    # Modeller som kräver input_type. Listan är avsiktligt kort och explicit:
+    # ett fält som heter samma sak hos flera leverantörer betyder inte samma
+    # sak, och att gissa ger tysta 45-sekunderstimeouter (se ovan).
+    _INPUT_TYPE_MODELS = ('embed-multilingual', 'embed-english', 'embed-v3',
+                          'cohere')
+
+    def _accepts_input_type(self, model):
+        """Kräver modellen `input_type`? (mätt, inte antaget)"""
+        self.ensure_one()
+        name = (model or '').lower()
+        return any(k in name for k in self._INPUT_TYPE_MODELS)
+
+    def _get_embedding(self, model=None, input=None, input_type=None):
+        """Embedda EN text → rå lista av float (D2).
+
+        Returnerar list[float] med exakt `EMBEDDING_DIM` element, eller None
+        om ingen embedding kunde skapas. Anroparen får aldrig en tyst None
+        utan att orsaken loggats på `warning`-nivå.
+
+        Args:
+            model: embeddingsmodell (default: providerns fält, annars
+                DEFAULT_EMBEDDING_MODEL)
+            input: texten att embedda
+            input_type: 'search_query' när texten är en SÖKFRÅGA,
+                'search_document' när den är ett DOKUMENT som ska hittas.
+                Anroparen vet vilket — providern kan inte gissa.
+
+        Returns:
+            list[float] | None
+        """
+        self.ensure_one()
+        if input is None or not str(input).strip():
+            _logger.warning(
+                'Embedding: tom input (provider=%s)', self.name)
+            return None
+
+        url = self._embedding_endpoint()
+        if not url:
+            _logger.warning(
+                'Embedding: provider %s saknar base_url — kan inte skapa '
+                'vektorer (semantisk sökning körs inte)', self.name)
+            return None
+
+        model = self._effective_embedding_model(model)
+        dim = self._effective_embedding_dim()
+        try:
+            data = self._embedding_post(
+                url,
+                self._embedding_payload(
+                    model, str(input)[:8192], dim, input_type),
+                self._embedding_headers(),
+            )
+            vector = data['data'][0]['embedding']
+        except Exception as e:
+            _logger.warning(
+                'Embedding-fel (provider=%s, modell=%s): %s',
+                self.name, model, e)
+            return None
+
+        return self._validate_embedding(vector, model, dim)
+
+    def _get_embedding_batch(self, model=None, inputs=None, input_type=None):
+        """Embedda flera texter → lista av råa float-listor (D2).
+
+        Anropas av ai_personal_memory.py:828 och ai_memory_mixin.py:285.
+
+        Args:
+            model: embeddingsmodell (default: providerns fält, annars
+                DEFAULT_EMBEDDING_MODEL)
+            inputs: lista av texter
+            input_type: 'search_query' | 'search_document' — se
+                `_get_embedding`. En batch är i praktiken alltid
+                'search_document' (minnen som ska indexeras), men fältet
+                skickas vidare så att anroparen bestämmer.
+
+        Returns:
+            list[list[float] | None] — en post per input, i samma ordning
+        """
+        self.ensure_one()
+        if not inputs:
+            return []
+
+        url = self._embedding_endpoint()
+        if not url:
+            _logger.warning(
+                'Embedding (batch): provider %s saknar base_url', self.name)
+            return [None] * len(inputs)
+
+        model = self._effective_embedding_model(model)
+        dim = self._effective_embedding_dim()
+        truncated = [str(t)[:8192] for t in inputs]
+        try:
+            data = self._embedding_post(
+                url,
+                self._embedding_payload(model, truncated, dim, input_type),
+                self._embedding_headers(),
+            )
+            # API:t returnerar {index, embedding} — sortera på index så att
+            # ordningen matchar anroparens lista (kontraktet: samma ordning).
+            rows = sorted(data.get('data', []),
+                          key=lambda d: d.get('index', 0))
+            if len(rows) != len(inputs):
+                _logger.warning(
+                    'Embedding (batch): fick %s vektorer för %s texter '
+                    '(provider=%s) — alla avvisas (hellre tomt än felkopplat)',
+                    len(rows), len(inputs), self.name)
+                return [None] * len(inputs)
+            return [self._validate_embedding(r.get('embedding'), model, dim)
+                    for r in rows]
+        except Exception as e:
+            _logger.warning(
+                'Embedding-fel (batch, provider=%s, modell=%s): %s',
+                self.name, model, e)
+            return [None] * len(inputs)
+
+    def _validate_embedding(self, vector, model, dim):
+        """Längdvalidering FÖRE INSERT (D3 / okf-recall krav 2).
+
+        En vektor med fel dimension avvisas och loggas —
+        `expected 1024 dimensions, not 1536` ska aldrig kunna uppstå vid
+        INSERT. Returnerar list[float] eller None.
+        """
+        if not vector:
+            _logger.warning(
+                'Embedding: tom vektor (provider=%s, modell=%s)',
+                self.name, model)
+            return None
+        try:
+            values = [float(x) for x in vector]
+        except (TypeError, ValueError) as e:
+            _logger.warning(
+                'Embedding: icke-numerisk vektor (provider=%s, modell=%s): %s',
+                self.name, model, e)
+            return None
+        if len(values) != dim:
+            _logger.warning(
+                'Embedding: fel dimension — fick %s, förväntade %s '
+                '(provider=%s, modell=%s). Vektorn avvisas; konceptet sparas '
+                'utan embedding.',
+                len(values), dim, self.name, model)
+            return None
+        return values
 
 
 class AIProviderWizard(models.TransientModel):

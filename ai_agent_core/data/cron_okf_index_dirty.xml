@@ -13,4 +13,19 @@
         <field name="active" eval="True"/>
         <field name="priority">5</field>
     </record>
+
+    <!-- Cron: OKF efterfyllnad av saknade vektorer (okf-recall-path fas 3.3).
+         Koncept skrivna innan embeddings fungerade har tom vektorkolumn.
+         Denna cron räddar eftersläntrare; nya koncept får vektor direkt i
+         _okf_upsert. Liten batch — embeddings är API-anrop, inte gratis. -->
+    <record id="cron_okf_backfill_embeddings" model="ir.cron">
+        <field name="name">OKF: Efterfyll saknade vektorer</field>
+        <field name="model_id" ref="model_ai_memory"/>
+        <field name="state">code</field>
+        <field name="code">env['ai.memory']._okf_cron_backfill_embeddings(batch_size=20)</field>
+        <field name="interval_number">30</field>
+        <field name="interval_type">minutes</field>
+        <field name="active" eval="True"/>
+        <field name="priority">6</field>
+    </record>
 </odoo>

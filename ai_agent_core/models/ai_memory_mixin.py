@@ -28,6 +28,94 @@ class AIMemoryMixin(models.AbstractModel):
     _auto = False  # Abstract model, no DB table
 
     # ════════════════════════════════════════════
+    # OKF-BRYGGAN (D7, fas 6)
+    # ════════════════════════════════════════════
+    # Legacy-minnena är den enda plats där svensk BM25 någonsin fungerade.
+    # När de skrivs ska de därför också bli OKF-koncept — annars är
+    # migreringen halvfärdig: skrivsidan flyttad, läsningen kvar i en
+    # stack som töms.
+    #
+    # Flaggan sätts i write()/create() och konsumeras av
+    # `ai.memory._okf_cron_index_dirty()`. Indexeringen sker i cron — inte
+    # i write() — så att en användares skrivning aldrig väntar på en
+    # LLM/HTTP-tur.
+    okf_dirty = fields.Boolean(
+        'OKF Dirty', default=True, index=True, copy=False,
+        help='Satt när posten behöver indexeras om till ett OKF-koncept. '
+             'Rensas av cronen när indexeringen lyckats.')
+    okf_indexed_at = fields.Datetime(
+        'OKF Indexed At', readonly=True, copy=False,
+        help='När posten senast indexerades till OKF.')
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        records = super().create(vals_list)
+        # Nya poster ska indexeras.
+        records.filtered(lambda r: not r.okf_dirty).write({'okf_dirty': True})
+        return records
+
+    def write(self, vals):
+        # FYND (fas 6): bägge legacy-modellerna är ADD-ONLY — `content` kan
+        # inte ändras efter skapande (`_check_add_only` kastar UserError).
+        # En hook på innehållsändring är därför till stor del teoretisk: den
+        # enda vägen till ett nytt innehåll är en NY post.
+        #
+        # Kroken finns ändå kvar, av två skäl:
+        #   1. Fälten som INTE är innehåll (archived, importance, entities)
+        #      går att ändra, och en arkivering ska slå igenom på konceptet.
+        #   2. Om ADD-only någon gång luckras upp är bryggan redan hel —
+        #      det är billigare än att upptäcka det i efterhand.
+        dirty_fields = {'content', 'content_preview', 'category',
+                        'importance', 'entities', 'archived', 'scope'}
+        result = super().write(vals)
+        if dirty_fields & set(vals):
+            # Undvik oändlig rekursion: skriv inte flaggan via write()
+            # när vi redan står i write().
+            self.sudo()._set_okf_dirty()
+        return result
+
+    def _set_okf_dirty(self):
+        """Sätt okf_dirty direkt i SQL — kringgår write()-hooken.
+
+        `flush_recordset()` först: annars kan ORM:ens ännu icke-skrivna
+        buffert skrivas EFTER vårt `UPDATE` och skriva över flaggan med det
+        gamla värdet. Det var precis vad som hände i testet — flaggan sattes
+        och försvann i samma andetag.
+        """
+        if not self:
+            return
+        self.flush_recordset(['okf_dirty'])
+        self.env.cr.execute(
+            'UPDATE %s SET okf_dirty = TRUE WHERE id = ANY(%%s)' % self._table,
+            (list(self.ids),))
+        self.invalidate_recordset(['okf_dirty'])
+
+    def _okf_owner_vals(self):
+        """Härled OKF-ägaren ur en legacy-minnespost (fas 6.3)."""
+        self.ensure_one()
+        if self._name == 'ai.personal.memory':
+            return {'owner_user_id': self.user_id.id or None}
+        return {'owner_company_id': self.company_id.id or self.env.company.id}
+
+    def _okf_concept_vals(self):
+        """Bygg `_okf_upsert`-argumenten ur en legacy-post (fas 6.3).
+
+        Nyckeln måste vara STABIL över tid: samma minnespost ska alltid
+        mappa till samma OKF-koncept, annars skapas en ny version vid varje
+        indexering och versionskedjan svämmar över.
+        """
+        self.ensure_one()
+        vals = {
+            'concept_key': '%s,%s' % (self._name, self.id),
+            'summary': (self.content or '')[:2000],
+            'title': (self.content_preview or '')[:120] or None,
+            'source_ref': '%s,%s' % (self._name, self.id),
+            'generated_by': 'cron',
+        }
+        vals.update(self._okf_owner_vals())
+        return vals
+
+    # ════════════════════════════════════════════
     # HYBRID SEARCH — tre signaler
     # ════════════════════════════════════════════
 
@@ -220,51 +308,19 @@ class AIMemoryMixin(models.AbstractModel):
     def _generate_embedding(self, text):
         """Generera embedding via AI-provider.
 
-        OpenAI text-embedding-3-small (1536 dimensioner).
+        OpenAI text-embedding-3-small (1024 dimensioner — kolumnens dimension).
         Lagrar som PostgreSQL vector-literal: "[0.1,0.2,...]".
 
         Returns:
             str: PostgreSQL vector literal eller None
         """
-        try:
-            Provider = self.env['ai.provider']
-            if Provider and hasattr(Provider, '_get_embedding'):
-                embedding = Provider._get_embedding(
-                    model='text-embedding-3-small',
-                    input=text[:8192],
-                )
-                if embedding and isinstance(embedding, (list, tuple)):
-                    return '[' + ','.join(str(v) for v in embedding) + ']'
-        except Exception as e:
-            _logger.debug('Provider embedding failed: %s', e)
-
-        try:
-            import requests
-            provider = self.env['ai.provider'].search([
-                ('active', '=', True),
-            ], limit=1)
-            if provider:
-                url = provider.api_url or 'https://api.openai.com/v1/embeddings'
-                api_key = provider.api_key
-                resp = requests.post(
-                    url,
-                    headers={
-                        'Authorization': f'Bearer {api_key}',
-                        'Content-Type': 'application/json',
-                    },
-                    json={
-                        'model': 'text-embedding-3-small',
-                        'input': text[:8192],
-                    },
-                    timeout=10,
-                )
-                if resp.status_code == 200:
-                    data = resp.json()
-                    embedding = data['data'][0]['embedding']
-                    return '[' + ','.join(str(v) for v in embedding) + ']'
-        except Exception as e:
-            _logger.warning('Direct embedding failed: %s', e)
-
+        Provider = self.env['ai.provider']
+        embedding = Provider._get_embedding(
+            model='text-embedding-3-small',
+            input=text[:8192],
+        )
+        if embedding and isinstance(embedding, (list, tuple)):
+            return '[' + ','.join(str(v) for v in embedding) + ']'
         return None
 
     @api.model
@@ -279,21 +335,27 @@ class AIMemoryMixin(models.AbstractModel):
         if not texts:
             return []
         truncated = [t[:8192] for t in texts]
-        try:
-            Provider = self.env['ai.provider']
-            if Provider and hasattr(Provider, '_get_embedding_batch'):
-                embeddings = Provider._get_embedding_batch(
-                    model='text-embedding-3-small',
-                    input=truncated,
-                )
-                if embeddings and isinstance(embeddings, (list, tuple)):
-                    return [
-                        '[' + ','.join(str(v) for v in emb) + ']'
-                        for emb in embeddings
-                    ]
-        except Exception:
-            pass
-        return [self._generate_embedding(t) for t in truncated]
+        Provider = self.env['ai.provider']
+        # Providern, modellen och dimensionen kommer från providerns egna
+        # fält — inte från en hårdkodad sträng. 'text-embedding-3-small'
+        # stod här och pekade på en modell Bifrost avvisar (000/401).
+        emb_provider = Provider._embedding_provider()
+        if not emb_provider:
+            _logger.warning(
+                'Embedding (batch): ingen provider som kan embedda — '
+                '%s texter lämnas utan vektor', len(truncated))
+            return [None] * len(truncated)
+        embeddings = emb_provider._get_embedding_batch(
+            inputs=truncated,
+            input_type='search_document',
+        )
+        if embeddings and isinstance(embeddings, (list, tuple)):
+            return [
+                '[' + ','.join(str(v) for v in emb) + ']'
+                if emb else None
+                for emb in embeddings
+            ]
+        return [None] * len(truncated)
 
     # ════════════════════════════════════════════
     # ENTITY EXTRACTION

@@ -754,7 +754,215 @@ class AICoworkerSession(models.Model):
             'sys_multiplier': sys_mult,
         })
 
+    # ── Sessionens eftermäle (D4) ────────────────────────────────
+    #
+    # EN skrivare till `summary`. Tidigare fanns fyra
+    # sammanfattningsvägar varav bara en (buzz-vägen) skrev fältet —
+    # och bara i buzz-läge. Resultatet var att en vanlig chatt fick
+    # inget eftermäle alls, och konsolideringen läste en råsvans av
+    # de sista 40 raderna i stället.
+
+    MIN_SUMMARY_LINES = 4
+
+    SUMMARY_HEADINGS = (
+        'Syfte', 'Utfall', 'Beslut', 'Fakta', 'Artefakter',
+        'Öppna frågor',
+    )
+
+    def _final_summary_prompt(self, transcript):
+        """Strukturerad, svensk prompt (D4 / session-close krav 5).
+
+        Rubrikerna är fasta eftersom eftermälet är konsolideringens
+        råvara: samma form varje gång gör den jämförbar och sökbar med
+        svensk fulltextsökning.
+        """
+        headings = '\n'.join('### %s' % h for h in self.SUMMARY_HEADINGS)
+        return (
+            'Sammanfatta sessionen nedan på svenska. Använd exakt dessa '
+            'rubriker och inga andra:\n\n%s\n\n'
+            'Utelämna en rubrik helt om avsnittet inte har något innehåll — '
+            'skriv aldrig påhittat innehåll för att fylla ut. Var koncis men '
+            'komplett: fakta, beslut och öppna frågor är det som spelar roll.\n\n'
+            '--- KONVERSATION ---\n%s' % (headings, transcript))
+
+    def _final_summary_transcript(self, lines, max_chars=12000):
+        """Bygg konversationsunderlaget för eftermälet.
+
+        Till skillnad från `_learn_from_session` (som bara såg de sista
+        40 raderna) täcker detta hela sessionen, trunkerad bakifrån så att
+        slutet — där utfallet finns — alltid kommer med.
+        """
+        parts = []
+        for ln in lines:
+            if not ln.content:
+                continue
+            parts.append('[%s] %s' % (ln.role, ln.content[:500]))
+        text = '\n'.join(parts)
+        if len(text) > max_chars:
+            text = text[-max_chars:]
+        return text
+
+    def _write_final_summary(self, force=False):
+        """Skriv sessionens eftermäle — idempotent (D4).
+
+        Returnerar sammanfattningen (str) eller None. Anropas vid
+        stängning (`mark_done`/`mark_interrupted`) och av idle-cronen.
+
+        Idempotensen hänger på `summary_message_count`: har inga nya rader
+        tillkommit sedan förra sammanfattningen görs INGET LLM-anrop. Det
+        är det som gör att stängning och cron kan köra samtidigt utan att
+        kosta dubbla anrop — och utan att skriva om oförändrat innehåll.
+        """
+        self.ensure_one()
+        lines = self.session_line_ids.sorted('sequence')
+        total = len(lines)
+
+        # 1. Idempotens — inget nytt sedan sist → inget LLM-anrop.
+        if not force and self.summary and \
+                self.summary_message_count == total:
+            _logger.debug(
+                'Eftermäle: session %s oförändrad (%d rader) — hoppar över',
+                self.id, total)
+            return self.summary
+
+        # 2. För kort session → ingen tom sammanfattning.
+        if total < self.MIN_SUMMARY_LINES:
+            _logger.debug(
+                'Eftermäle: session %s för kort (%d < %d rader) — '
+                'ingen sammanfattning',
+                self.id, total, self.MIN_SUMMARY_LINES)
+            return None
+
+        transcript = self._final_summary_transcript(lines)
+        if not transcript.strip():
+            _logger.debug(
+                'Eftermäle: session %s har inget innehåll — hoppar över',
+                self.id)
+            return None
+
+        summary = self._run_final_summary_llm(transcript)
+        if not summary:
+            _logger.warning(
+                'Eftermäle: LLM-sammanfattning misslyckades för session %s '
+                '(%d rader) — summary_message_count lämnas orörd så att '
+                'nästa försök tar om', self.id, total)
+            return None
+
+        self.sudo().write({
+            'summary': summary,
+            'summary_message_count': total,
+        })
+        _logger.info(
+            'Eftermäle skrivet för session %s (%d rader, %d tecken)',
+            self.id, total, len(summary))
+        return summary
+
+    def _run_final_summary_llm(self, transcript):
+        """Kör LLM-anropet för eftermälet. Returnerar str eller None.
+
+        Avskilt från `_write_final_summary` så att idempotens-logiken kan
+        testas utan att röra providern.
+        """
+        import asyncio
+        try:
+            from odoo.addons.ai_agent_core.core.provider import (
+                ProviderFactory, get_default_provider, get_default_model_name)
+            from odoo.addons.ai_agent_core.core.loop import (
+                AgentLoop, AgentConfig)
+            quest = self.coworker_id
+            provider, model_rec = (
+                ProviderFactory.from_coworker(quest) if quest else (None, None))
+            if not provider:
+                provider, model_rec = get_default_provider()
+            if not provider:
+                _logger.warning(
+                    'Eftermäle: ingen provider tillgänglig för session %s',
+                    self.id)
+                return None
+            model_name = (model_rec and model_rec._get_api_name()) \
+                or get_default_model_name()
+            loop = AgentLoop(provider=provider, tools=[], config=AgentConfig(
+                model=model_name, max_rounds=1, max_tokens=2048))
+            result = asyncio.run(
+                loop.run(self._final_summary_prompt(transcript)))
+            return (result.text or '').strip()[:4000] or None
+        except Exception as e:
+            _logger.warning(
+                'Eftermäle: sammanfattning misslyckades för session %s: %s',
+                self.id, e)
+            return None
+
+    @api.model
+    def _cron_close_idle_sessions(self, idle_minutes=None, batch_size=20,
+                                  extra_domain=None):
+        """Stäng övergivna sessioner och skriv deras eftermäle (D4, 4.4).
+
+        Varför denna cron: `mark_done()` anropas bara från webhook-vägen
+        och `mark_interrupted()` aldrig i drift. Majoriteten av alla
+        sessioner stängs därför aldrig — de bara slutar få rader. Utan
+        cronen får de inget eftermäle, och konsolideringen har inget att
+        läsa.
+
+        Idempotent: `_write_final_summary` gör inget LLM-anrop när inga
+        nya rader tillkommit, och en stängd session plockas inte upp igen
+        (status-filtret).
+
+        `extra_domain` används av tester för att begränsa batchen — i
+        drift finns det alltid äldre sessioner som annars fyller batchen.
+        """
+        if idle_minutes is None:
+            idle_minutes = int(
+                self.env['ir.config_parameter'].sudo().get_param(
+                    'ai_agent_core.session_idle_minutes', '60') or 60)
+        cutoff = fields.Datetime.now() - timedelta(minutes=idle_minutes)
+        domain = [
+            ('status', '=', 'active'),
+            ('write_date', '<', cutoff),
+        ] + list(extra_domain or [])
+        sessions = self.search(domain, limit=batch_size, order='write_date asc')
+        if not sessions:
+            return 0
+
+        closed = 0
+        for session in sessions:
+            try:
+                session._write_final_summary()
+                # 'done' (inte 'interrupted'): sessionen är inte avbruten,
+                # den är färdigpratad. Distinktionen spelar roll för
+                # resumable-logiken.
+                #
+                # OBS: stängningen sker i ett write() EFTER sammanfattningen.
+                # Misslyckas sammanfattningen ändå stängs sessionen — annars
+                # skulle en session som aldrig kan sammanfattas (t.ex. för
+                # kort) bli liggande i kön för evigt och svälta ut alla
+                # nyare sessioner ur batchen.
+                session.sudo().write({
+                    'status': 'done',
+                    'finish_reason': 'idle',
+                    'end_date': fields.Datetime.now(),
+                })
+                closed += 1
+            except Exception:
+                _logger.exception(
+                    'Idle-cron: kunde inte stänga session %s', session.id)
+        if closed:
+            _logger.info(
+                'Idle-cron: stängde %d sessioner utan aktivitet i %d min',
+                closed, idle_minutes)
+        return closed
+
     def mark_done(self, reason='stop'):
+        # Eftermälet skrivs INNAN statusen sätts: det som hann hända är
+        # kunskap (session-close krav 3), och en 'done'-session ska redan
+        # vara sammanfattad om någon läser den direkt efteråt.
+        for session in self:
+            try:
+                session._write_final_summary()
+            except Exception:
+                # Eftermälet får aldrig hindra stängningen.
+                _logger.exception(
+                    'Eftermäle misslyckades vid mark_done för session %s',
+                    session.id)
         self.status = 'done'
         self.finish_reason = reason
         self.end_date = fields.Datetime.now()
@@ -785,7 +993,19 @@ class AICoworkerSession(models.Model):
                                        help='Parent session this was resumed from')
 
     def mark_interrupted(self):
-        """Mark session as interrupted (crash/stop) but resumable."""
+        """Mark session as interrupted (crash/stop) but resumable.
+
+        Eftermälet skrivs även här (session-close krav 3): en avbruten
+        session är den VANLIGASTE idag — `mark_done()` anropas bara från
+        webhook-vägen — så utan detta får majoriteten aldrig ett eftermäle.
+        """
+        for session in self:
+            try:
+                session._write_final_summary()
+            except Exception:
+                _logger.exception(
+                    'Eftermäle misslyckades vid mark_interrupted för '
+                    'session %s', session.id)
         self.status = 'active'  # Keep active so it can be resumed
         self.finish_reason = 'interrupted'
         self.end_date = fields.Datetime.now()

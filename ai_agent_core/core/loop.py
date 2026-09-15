@@ -652,16 +652,29 @@ class AgentLoop:
             _logger.warning("Tool '%s' failed: %s", tool_call.name, e)
             return f"Error executing '{tool_call.name}': {e}"
 
-        # Truncate large results
-        if len(result) > self.config.max_tool_result_chars:
-            half = self.config.max_tool_result_chars // 2
-            result = (
-                result[:half]
-                + f"\n... (truncated {len(result) - self.config.max_tool_result_chars} chars) ...\n"
-                + result[-half:]
-            )
+        # Chunkning av stora verktygsresultat — se `_chunk_tool_result`.
+        # Detta är INTE en sammanfattning: ingen LLM anropas, inget skrivs
+        # till `session.summary`. Det är en ren längdbegränsning för att
+        # resultatet ska rymmas i kontextfönstret (okf-recall-path 4.5).
+        return self._chunk_tool_result(result)
 
-        return result
+    def _chunk_tool_result(self, result: str) -> str:
+        """Klipp ett stort verktygsresultat så att både början och slutet bevaras.
+
+        Avgränsad från sammanfattning (okf-recall-path 4.5): denna funktion
+        är deterministisk, gratis och rör aldrig `session.summary`. Tidigare
+        låg logiken inline i `_execute_tool`, vilket gjorde att "att klippa ett
+        resultat" och "att sammanfatta en session" såg ut som samma sak.
+        """
+        if len(result) <= self.config.max_tool_result_chars:
+            return result
+        half = self.config.max_tool_result_chars // 2
+        return (
+            result[:half]
+            + "\n... (truncated %d chars) ...\n"
+            % (len(result) - self.config.max_tool_result_chars)
+            + result[-half:]
+        )
 
     async def _execute_via_nats(self, tool: 'Tool', args: dict) -> str:
         """Execute a tool via NATS request-reply delegation.
@@ -745,9 +758,16 @@ class AgentLoop:
         return estimated_tokens > self.config.max_context_tokens
 
     async def _summarize(self, messages: list[Message]) -> list[Message]:
-        """Summarize conversation history to fit within context budget.
+        """Komprimera konversationshistoriken för att rymmas i kontextbudgeten.
 
-        Buzz pattern: one LLM call to compress, then continue.
+        OBS: detta är INTE sessionens eftermäle (okf-recall-path D4/4.5).
+        Resultatet är ett efemärt systemmeddelande som bara lever i denna
+        körning — det persisteras aldrig på `session.summary` och anropas
+        aldrig av stängnings- eller cron-vägen. Sessionens eftermäle skrivs
+        av `ai.coworker.session._write_final_summary`.
+
+        Prompten är svensk för språkkonsekvens (session-close krav 5):
+        eftermälen ska vara jämförbara och sökbara med svensk fulltextsökning.
         """
         if len(messages) < 4:
             return messages  # nothing to summarize
@@ -758,9 +778,8 @@ class AgentLoop:
         recent = messages[-keep_recent:]
 
         summary_prompt = (
-            "Summarize the following conversation. "
-            "Keep all key facts, decisions, and context. "
-            "Be concise but complete.\n\n"
+            "Sammanfatta konversationen nedan. Behåll alla nyckelfakta, "
+            "beslut och kontext. Var koncis men komplett.\n\n"
             + "\n".join(
                 f"{m.role.value}: {m.content[:500]}"
                 for m in to_summarize
@@ -773,16 +792,16 @@ class AgentLoop:
                 self.provider.chat(
                     model=self.config.model,
                     messages=[Message(role=Role.USER, content=summary_prompt)],
-                    system_prompt="You are a summarization assistant. Be concise.",
+                    system_prompt="Du sammanfattar konversationer. Var koncis.",
                     temperature=0.3,
                     max_tokens=2048,
                 ),
                 timeout=self.config.llm_timeout,
             )
-            summary = f"[Previous conversation summary: {response.text}]"
+            summary = f"[Tidigare konversation, sammanfattad: {response.text}]"
         except Exception as e:
             _logger.warning("Summarization failed: %s — keeping recent messages", e)
-            summary = "[Summarization failed — keeping recent context]"
+            summary = "[Sammanfattning misslyckades — behåller senaste kontexten]"
 
         summary_msg = Message(role=Role.SYSTEM, content=summary)
         return [summary_msg] + recent

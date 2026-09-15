@@ -288,10 +288,20 @@ class AIStreamController(http.Controller):
                             'role': line.role,
                             'content': line.content or '',
                         })
-                    # Auto-summarize if too many messages
+                    # Sammanfatta historiken när den blivit lång (4.6).
+                    # Resultatet persisteras på sessionen via den enda
+                    # sammanfattaren; här används det bara som systemmeddelande
+                    # i den fortsatta konversationen. Vid misslyckad
+                    # sammanfattning behålls historiken oförändrad — aldrig
+                    # ett tomt systemmeddelande.
                     if len(lines) > 50:
                         summary = _summarize_history(session, lines)
-                        history_messages = [{'role': 'system', 'content': summary}] + history_messages[-20:]
+                        if summary:
+                            history_messages = (
+                                [{'role': 'system', 'content': summary}]
+                                + history_messages[-20:])
+                        else:
+                            history_messages = history_messages[-20:]
 
                     # Save user message as session line (T7.4)
                     next_seq = len(lines) + 1
@@ -1780,75 +1790,27 @@ def _chunk_text(text: str, max_chars: int = 2000) -> list:
 
 
 def _summarize_history(session, lines, max_chars=4000):
-    """T7.6: Sammanfatta lång sessionshistorik med LLM (tokenbudget).
+    """Sammanfatta lång sessionshistorik — DELEGERAR till sessionen (4.6).
 
-    Ersätter den gamla heuristiken (första+senaste, mitt kastad).
-    Kör en LLM-sammanfattning över de äldre raderna och sparar
-    sammanfattningen även som OKF coworker-koncept (session-summary)
-    så att nästa session kan återanvända den.
+    Tidigare körde denna funktion en egen LLM-sammanfattning och skrev
+    resultatet till OKF, men persisterade det aldrig på `session.summary`.
+    Nästa anrop kände därför inte till sammanfattningen. Den var alltså en
+    fjärde, parallell sammanfattare med eget format.
+
+    Nu anropar den sessionens ENDA sammanfattare (`_write_final_summary`),
+    vilket ger samma struktur, samma språk och samma idempotens. Returen
+    finns kvar eftersom anroparen använder den som systemmeddelande i den
+    fortsatta konversationen.
+
+    Returnerar sammanfattningen (str) eller None.
     """
-    if len(lines) <= 50:
+    if session is None:
         return None
-
-    recent = lines[-20:]
-    to_summarize = lines[:-20]
-    conversation = '\n'.join(
-        f"[{l.role}] {l.content[:400]}"
-        for l in to_summarize if l.content
-    )[-8000:]  # tokenbudget: begränsa input
-
-    summary = None
-    quest = session.coworker_id if session else None
     try:
-        import asyncio
-        from odoo.addons.ai_agent_core.core.provider import (
-            ProviderFactory, get_default_provider, get_default_model_name)
-        from odoo.addons.ai_agent_core.core.loop import AgentLoop, AgentConfig
-        provider, provider_model = ProviderFactory.from_coworker(quest) if quest else (None, None)
-        if not provider:
-            provider, provider_model = get_default_provider()
-        model_name = (provider_model and provider_model._get_api_name()) \
-            or get_default_model_name()
-        loop = AgentLoop(provider=provider, tools=[], config=AgentConfig(
-            model=model_name, max_rounds=1, max_tokens=2048))
-        prompt = (
-            "Sammanfatta konversationen. Behåll alla nyckelfakta, beslut "
-            "och kontext. Var koncis men komplett.\n\n" + conversation)
-        result = asyncio.run(loop.run(prompt))
-        summary = (result.text or '').strip()[:max_chars]
+        return session._write_final_summary()
     except Exception as e:
-        _logger.warning('LLM-sammanfattning misslyckades: %s', e)
-
-    if not summary:
-        # Fallback: heuristik (första + senaste) — behåller något
-        first_msg = lines[0].content[:200] if lines and lines[0].content else 'Start'
-        recent_txt = '\n'.join(
-            f"[{l.role}] {l.content[:100]}" for l in lines[-5:] if l.content)
-        summary = (
-            f"[Tidigare konversation ({len(lines)} meddelanden). "
-            f"Första: {first_msg}. Senaste: {recent_txt}]")
-
-    # Persist till OKF coworker-scope (session-summary) så nästa session
-    # kan återanvända den via coworker-minnesinjektion.
-    try:
-        if quest and 'ai.okf.concept' in request.env and quest.learning == 'active':
-            request.env['ai.okf.concept']._okf_upsert(
-                'learning',
-                concept_key=f'session.{session.id}.summary',
-                summary=summary[:1000],
-                title=f'Session {session.id} — sammanfattning',
-                source_ref=f'ai.coworker.session,{session.id}',
-                attribution=[{
-                    'source': f'ai.coworker.session,{session.id}',
-                    'role': 'summary',
-                }],
-                owner_coworker_id=quest.id,
-                generated_by='session_summary',
-            )
-    except Exception as e:
-        _logger.warning('Session-summary till OKF misslyckades: %s', e)
-
-    return summary
+        _logger.warning('Session-sammanfattning misslyckades: %s', e)
+        return None
 
 
 def _detect_and_suggest_mission(session_id, last_response, company_id, threshold=0.7):

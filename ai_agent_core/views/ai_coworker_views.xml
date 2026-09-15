@@ -344,6 +344,21 @@
                                 <field name="memory_level" widget="radio"/>
                                 <field name="learning" widget="radio"/>
                             </group>
+                            <group string="Sökning (fas 13)">
+                                <field name="search_sources" widget="many2many_tags"
+                                       options="{'no_create': True}"/>
+                                <field name="search_strategy" widget="radio"/>
+                                <field name="hybrid_search"/>
+                                <field name="hybrid_semantic_weight"
+                                       invisible="not hybrid_search"/>
+                                <field name="graph_enrichment"/>
+                                <field name="graph_enrichment_hops"
+                                       invisible="not graph_enrichment"/>
+                                <field name="graph_enrichment_budget"
+                                       invisible="not graph_enrichment"/>
+                                <field name="session_graph_enabled"
+                                       invisible="not graph_enrichment"/>
+                            </group>
                             <group string="Hermes Injection Level">
                                 <field name="injection_level" widget="radio"/>
                             </group>

@@ -199,6 +199,47 @@ class AICoworker(models.Model):
     ], string='Memory Profile', default='balanced',
         help='Snabbstart: fyller i scopes/nivå. Identity-memory_profile seedar '
              'detta vid skapande.')
+
+    # ── Sökstrategi (fas 13, okf-recall-path D7/D12) ────────────────────
+    # Fälten styr HUR minnessökningen går till. De är satta på medarbetaren
+    # och inte på anropet, eftersom de beskriver en persons 
+    # arbetsstil: en detektiv vill ha bredd + hypoteser, en kirurg vill ha
+    # fem precisa träffar.
+    search_sources = fields.Many2many(
+        'ai.search.source', 'ai_coworker_search_source_rel',
+        'coworker_id', 'source_id', string='Sökkällor',
+        help='Vilka backends sökningen får slå i. Tomt = inga (session-only).')
+    search_strategy = fields.Selection([
+        ('precision', 'Precision — få, säkra träffar'),
+        ('balanced', 'Balanserad'),
+        ('recall', 'Recall — brett, tillåt brus'),
+        ('detective', 'Detektiv — brett + hypoteser'),
+    ], string='Sökstrategi', default='balanced',
+        help='Mappar till (min_score, semantic_weight, limit). Se '
+             '_search_strategy_weights().')
+    hybrid_search = fields.Boolean(
+        'Hybridsökning', default=True,
+        help='Slå samman vektor- och textsignalen i EN fråga (fas 12). '
+             'Av = endast textsignalen (BM25).')
+    hybrid_semantic_weight = fields.Float(
+        'Vikt: semantisk signal', default=0.7,
+        help='Hur mycket vektorsignalen väger mot textsignalen, 0.0–1.0. '
+             'Tvingas till 0 i drift när ingen vektor finns — en vikt utan '
+             'signal skjuter bara upp alla rader lika mycket.')
+    graph_enrichment = fields.Boolean(
+        'Grafberikning', default=False,
+        help='Traversera kunskapsgrafen efter att koncept hittats. '
+             'Degraderar med en varning om graph.executor inte svarar.')
+    graph_enrichment_hops = fields.Integer(
+        'Grafsdjup (hopp)', default=1,
+        help='Max antal hopp från ett hittat koncept.')
+    graph_enrichment_budget = fields.Integer(
+        'Grafbudget (tecken)', default=1500,
+        help='Max antal tecken grafberikningen får lägga till. Trunkeras '
+             'närmast-först.')
+    session_graph_enabled = fields.Boolean(
+        'Graf i session', default=False,
+        help='Tillåt grafen att berika även sessionskontext (dyrare).')
     learning = fields.Selection([
         ('active', 'Active — lär sig av samtal'),
         ('passive', 'Passive — injicerar bara, lär sig inte'),
@@ -2266,71 +2307,27 @@ class AICoworker(models.Model):
         return line
 
     def _buzz_maybe_summarize_session(self, session=None):
-        """Generera session summary när tröskeln passeras (7.4).
+        """Skriv sessionens eftermäle (D4, 4.7).
 
-        Tröskeln (antal meddelanden) är konfigurerbar via
-        ir.config_parameter ai_agent_core.buzz_summary_threshold (default 50).
-        Sammanfattningen injiceras som kontext till nya agenter via
-        _buzz_run_agent istället för hela råhistoriken.
+        Tidigare: villkorad på `orchestration_mode == 'buzz'` och en egen
+        tröskel (`ai_agent_core.buzz_summary_threshold`, default 50). En
+        vanlig chatt fick därför ALDRIG ett eftermäle — och det var den
+        enda skrivaren av `session.summary` i hela systemet.
+
+        Nu: ingen lägeskontroll, ingen egen prompt, ingen egen skrivning.
+        Anropet går till sessionens enda sammanfattare, som har egen
+        idempotens (`summary_message_count`) och egen minsta tröskel.
+        Metodnamnet behålls för att inte bryta anropare.
         """
         self.ensure_one()
-        if self.orchestration_mode != 'buzz':
-            return False
         session = session or self._buzz_ensure_channel_session()
-        threshold = int(self.env['ir.config_parameter'].sudo().get_param(
-            'ai_agent_core.buzz_summary_threshold', '50') or 50)
-        total = len(session.session_line_ids)
-        if total < threshold:
+        if not session:
             return False
-        # Sammanfatta igen först när minst hälften av tröskeln nya
-        # meddelanden tillkommit sedan förra sammanfattningen.
-        if session.summary_message_count and \
-                total - session.summary_message_count < max(threshold // 2, 1):
-            return False
-
-        lines = session.session_line_ids.sorted('sequence')
-        transcript = '\n'.join(
-            f"[{ln.role}] {ln.content[:500]}" for ln in lines[-threshold * 2:])
-        prompt = (
-            f"Sammanfatta följande konversation i ett Buzz-team. "
-            f"Fånga: ämnen, beslut, öppna frågor och agenternas roller. "
-            f"Skriv på svenska, max 300 ord.\n\n{transcript}")
         try:
-            import asyncio
-            from odoo.addons.ai_agent_core.core.provider import ProviderFactory
-            from odoo.addons.ai_agent_core.core.loop import AgentLoop, AgentConfig
-            provider, model = ProviderFactory.from_coworker(self)
-            if not provider:
-                return False
-            loop = AgentLoop(
-                provider=provider,
-                config=AgentConfig(
-                    model=model or '',
-                    system_prompt='Du sammanfattar konversationer.',
-                    max_rounds=1))
-
-            async def _run():
-                try:
-                    resp = await loop.run(prompt)
-                    return resp.text if hasattr(resp, 'text') else str(resp)
-                finally:
-                    await provider.aclose()
-
-            evloop = asyncio.new_event_loop()
-            asyncio.set_event_loop(evloop)
-            try:
-                summary = evloop.run_until_complete(_run())
-            finally:
-                evloop.close()
-            session.sudo().write({
-                'summary': summary[:4000],
-                'summary_message_count': total,
-            })
-            _logger.info('Buzz session %s sammanfattad (%d meddelanden)',
-                         session.id, total)
-            return True
+            return bool(session._write_final_summary())
         except Exception as e:
-            _logger.warning('Buzz session summary failed: %s', e)
+            _logger.warning('Eftermäle misslyckades för session %s: %s',
+                            session.id, e)
             return False
 
     def _buzz_chat(self, message, channel, msg_text, history_ctx='', depth=0):
@@ -2734,6 +2731,344 @@ class AICoworker(models.Model):
                     'ai.coworker %s: tog bort %d duplikatrader för init_type=%s (behåller id %d)',
                     rec.id, len(rows) - 1, itype, keep.id)    # ── Record Context Injection (ported from ai_agent_context) ──
 
+    # ── Sökstrategi: mappning och seedning (fas 13.3, 13.4) ──────────────
+
+    @api.model
+    # ── Väg 2: separata trösklar per signal (design.md §17.4) ──────────
+    #
+    # Problemet var aldrig att en tröskel fanns — det var att DET FANNS EN
+    # och den jämförde två tal på olika skalor. `min_score` antog att den
+    # summerade poängen var en cosine-similaritet (0…1). Den är en summa av
+    # en cosine (0…1) och en onormaliserad `ts_rank` (mätt max ~0.061 mot
+    # den här korpusen). Att filtrera summan på 0.7 var att be om tomt.
+    #
+    # Lösningen är inte att hitta "den rätta" siffran. Det finns ingen — de
+    # två signalerna har olika enheter. Lösningen är att ge varje signal sin
+    # egen tröskel, i sin egen enhet.
+    #
+    # MÄTT mot `social` 2026-09-14, modell embed-multilingual-v3.0:
+    #
+    #   fråga                          bästa koncept   rätt topp-1?
+    #   Vem är VD?                        0.5139          ✓
+    #   vilken roll har användaren        0.4848          ✓
+    #   Azure Interior kund               0.7120          ✓
+    #   kontaktuppgifter till kunden      0.5359          ✓
+    #   zzzznonsense qwerty               0.3586          BRUS
+    #   asdfghjkl                         0.3910          BRUS
+    #
+    #   Verkliga frågor: 0.4848–0.7120.  Brus: 0.3586–0.3910.
+    #   → GAP +0.0938. 4/4 rätt topp-1.
+    #
+    # Cosine-golvet är alltså ~0.39 (under det är allt brus), inte 0.
+    # `ts_rank` når samtidigt ~0.061 för en träff och ~1e-20 (golv) för
+    # ingen träff — därför är dess användbara tröskel ~0.01, inte 0.15.
+    #
+    # Trösklarna nedan bor i KOD, inte i fält per coworker. Fälten
+    # `min_ts_rank`/`min_cosine` på ai.coworker finns ÄNNU INTE — den här
+    # kommentaren påstod det en gång, vilket är exakt §15-mönstret ("ett
+    # fält som beskrivs men inte byggts"). Att göra dem sättbara är rätt
+    # nästa steg, men tills dess ska texten inte lova mer än koden håller.
+    #
+    # Det som INTE är sättbart är den enskilt viktigaste begränsningen:
+    # en kund med en egen korpus kan inte justera sin tröskel utan en
+    # kodändring.
+    #
+    # `min_score` behålls i signaturen som ett HÄRLETT värde för
+    # bakåtkompatibilitet med ai.search.source-kontraktet, men används
+    # inte som filter.
+    #
+    # EN VIKTIG ÄRLIGHET: dessa tal är mätta mot 4 unika koncept i en
+    # testkorpus. De är rätt ORDNING och rätt storleksordning, men de måste
+    # kalibreras om när korpusen växer — särskilt `min_cosine`, eftersom
+    # ett större korpus alltid innehåller något som ligger nära.
+    def _search_thresholds(self, strategy=None):
+        """Mappa strategi → trösklar PER SIGNAL (väg 2, §17.4).
+
+        Returns:
+            dict med min_cosine, min_ts_rank, semantic_weight, limit
+            och det härledda min_score (för loggning/bakåtkompatibilitet).
+        """
+        table = {
+            # få, säkra träffar — vektorn får styra hårt
+            'precision': {'min_cosine': 0.48, 'min_ts_rank': 0.030,
+                          'semantic_weight': 0.8, 'limit': 5},
+            'balanced': {'min_cosine': 0.41, 'min_ts_rank': 0.010,
+                         'semantic_weight': 0.7, 'limit': 10},
+            # brett, tillåt brus — textsignalen får bära
+            'recall': {'min_cosine': 0.39, 'min_ts_rank': 0.001,
+                       'semantic_weight': 0.5, 'limit': 20},
+            'detective': {'min_cosine': 0.39, 'min_ts_rank': 1e-20,
+                          'semantic_weight': 0.4, 'limit': 15},
+        }
+        params = dict(table.get(strategy or 'balanced', table['balanced']))
+        # Härlett värde: den gamla ytan. Inte ett filter — en rapport.
+        params['min_score'] = params['min_cosine']
+        return params
+
+    def _search_strategy_weights(self, strategy=None):
+        """Mappa strategi → (min_score, semantic_weight, limit).
+
+        Behålls som namn för bakåtkompatibilitet (anropas från
+        `_apply_search_profile` och testerna). Delegerar till
+        `_search_thresholds` så att det bara finns EN sanning om
+        trösklarna.
+        """
+        return self._search_thresholds(strategy)
+
+    def _legacy_strategy_weights(self, strategy=None):
+        """DEN GAMLA TABELLEN — kvar endast som historik, kopplas INTE in.
+
+        `min_score` antog en gemensam skala för två signaler med olika
+        enheter. Se `_search_thresholds` för den mätta ersättaren, och
+        design.md §17 för mätningen som fällde den.
+
+        Behålls för att den bär historiken i sig: nästa gång någon vill
+        "bara höja tröskeln" ska det synas att det redan provats.
+        """
+        table = {
+            'precision': {'min_score': 0.7, 'semantic_weight': 0.8,
+                          'limit': 5},
+            'balanced': {'min_score': 0.4, 'semantic_weight': 0.7,
+                         'limit': 10},
+            'recall': {'min_score': 0.2, 'semantic_weight': 0.5,
+                       'limit': 20},
+            'detective': {'min_score': 0.15, 'semantic_weight': 0.4,
+                          'limit': 15},
+        }
+        return dict(table.get(strategy or 'balanced', table['balanced']))
+
+    @api.model
+    def _search_profile_presets(self, profile):
+        """Mappa memory_profile → sökfältens värden (fas 13.3).
+
+        Returnerar bara de nycklar som profilen faktiskt säger något om;
+        resten behåller sina defaults. `session_only` sätter medvetet
+        `hybrid_search=False` och tomma källor: en session-only-medarbetare
+        ska inte söka i ett beständigt minne alls.
+        """
+        _src = lambda codes: [(6, 0, self.env['ai.search.source']
+                               .search([('code', 'in', codes)]).ids)]
+        presets = {
+            'hermes': {
+                'search_sources': _src(
+                    ['okf_concept', 'ai_memory', 'graph']),
+                'search_strategy': 'detective',
+                'hybrid_search': True,
+                'graph_enrichment': True,
+                'graph_enrichment_hops': 2,
+            },
+            'balanced': {
+                'search_sources': _src(['okf_concept', 'graph']),
+                'search_strategy': 'precision',
+                'hybrid_search': True,
+                'graph_enrichment': True,
+                'graph_enrichment_hops': 1,
+            },
+            'session_only': {
+                'search_sources': [(5, 0, 0)],  # rensa
+                'search_strategy': 'balanced',
+                'hybrid_search': False,
+                'graph_enrichment': False,
+            },
+        }
+        return presets.get(profile or 'balanced', presets['balanced'])
+
+    def _apply_search_profile(self, profile=None, force=False):
+        """Seed sökfälten från `memory_profile`.
+
+        `force=False` (default) rör bara fält användaren inte satt själv:
+        källor töms inte om de redan valts, och en explicit strategi skrivs
+        inte över. `force=True` används när profilen byts medvetet i UI:t.
+        """
+        self.ensure_one()
+        profile = profile or self.memory_profile
+        vals = self._search_profile_presets(profile)
+        if not force:
+            if self.search_sources:
+                vals.pop('search_sources', None)
+            # defaultvärdet 'balanced' betyder "inte vald" — bara ett
+            # uttalat val ska skyddas
+            if self.search_strategy and self.search_strategy != 'balanced':
+                vals.pop('search_strategy', None)
+        self.write(vals)
+        return vals
+
+    # ── Multi-source recall (fas 13.5–13.9) ──────────────────────────────
+
+    def _search_backends(self):
+        """Dispatch-tabell: backend-nyckel → anropbar funktion.
+
+        EN sanning om vilka backends som finns. `ai.search.source.backend`
+        valideras mot samma nycklar, så en källa kan inte peka på en
+        backend som ingen kan köra.
+        """
+        Okf = self.env['ai.okf.concept']
+
+        def _okf(query, scope, owner_id, params, **kw):
+            return Okf._okf_search(
+                query, scope=scope, limit=params['limit'],
+                hybrid=kw.get('hybrid', True),
+                semantic_weight=params['semantic_weight'],
+                # VÄG 2 (§17.4): trösklarna är per signal och skickas med
+                # som de är. `_okf_search` applicerar dem som
+                # (cosine >= min_cosine) OR (ts_rank >= min_ts_rank) —
+                # ett urval, medan `score` fortfarande bär ordningen.
+                min_cosine=params.get('min_cosine'),
+                min_ts_rank=params.get('min_ts_rank'))
+
+        return {'okf_concept': _okf}
+
+    def _recall_from_source(self, source, query, scope, owner_id, params,
+                            **kw):
+        """Anropa EN backend. Fel isoleras per källa (13.6).
+
+        Returnerar en lista av tupler `(record, score)`. En källa som inte
+        är inkopplad returnerar tomt med en `info`-rad — den ska INTE se ut
+        som ett fel, men inte heller som en sökning som gav noll träffar.
+        """
+        backends = self._search_backends()
+        if source.backend not in backends:
+            _logger.info(
+                'Sökkällan %s är inte inkopplad (backend=%s) — hoppar över.',
+                source.code, source.backend)
+            return []
+        if not source.is_wired:
+            _logger.info(
+                'Sökkällan %s är en katalogpost utan inkoppling: %s',
+                source.code, source.wired_note or 'ingen anledning angiven')
+            return []
+        try:
+            records = backends[source.backend](query, scope, owner_id,
+                                               params, **kw)
+        except Exception as e:
+            # ALDRIG `pass`. En felande källa måste synas.
+            _logger.warning(
+                'Sökkällan %s misslyckades (query=%r): %s',
+                source.code, query, e, exc_info=True)
+            return []
+        return [(r, params['min_score']) for r in records]
+
+    def _graph_enrich(self, records, budget=None, hops=None):
+        """Berika hittade koncept med kunskapsgrafen (13.8, 13.9).
+
+        Returnerar en text som får läggas till injektionen. Degraderar med
+        en varning — aldrig tyst — om grafen inte svarar. Grafen är
+        read-only: `cypher()` vägrar skrivoperationer.
+        """
+        if not records:
+            return ''
+        budget = budget if budget is not None else self.graph_enrichment_budget
+        hops = hops if hops is not None else self.graph_enrichment_hops
+        keys = [r.concept_key for r in records if r.concept_key][:5]
+        if not keys:
+            return ''
+        try:
+            # `graph.executor.cypher()` deklarerar EN resultatkolumn
+            # (`AS result (r agtype)`). En Cypher-fråga som RETURNerar två
+            # kolumner får "return row and column definition list do not
+            # match", och agtype stödjer inte `+`/`coalesce` mot text.
+            # Vi RETURNerar därför HELA noden (en kolumn) och plockar ut
+            # name/summary i Python ur den parsade mappen.
+            Executor = self.env['graph.executor']
+            keys_lit = ', '.join(
+                "'%s'" % k.replace('\\', '\\\\').replace("'", "\\'")
+                for k in keys)
+            rows = Executor.cypher(
+                "MATCH (n)-[r*1..%d]-(m) WHERE n.name IN [%s] "
+                "RETURN m LIMIT 20" % (max(1, int(hops)), keys_lit),
+                read_only=True, timeout=5)
+        except Exception as e:
+            _logger.warning(
+                'Grafberikning degraderade (hops=%s): %s', hops, e,
+                exc_info=True)
+            return ''
+        out = []
+        used = 0
+        for row in rows or []:
+            # cypher() parsar agtype-cellen: en nod blir en dict med sina
+            # properties (name, summary, ...) — eller en sträng om noden
+            # inte har några.
+            if isinstance(row, dict):
+                name = row.get('name') or '?'
+                summary = (row.get('summary') or '')[:200]
+            else:
+                name, summary = str(row), ''
+            line = '- %s: %s' % (name, summary) if summary else '- %s' % name
+            # trunkera närmast-först: rader i den ordning grafen gav dem
+            if used + len(line) > budget:
+                break
+            out.append(line)
+            used += len(line)
+        if not out:
+            return ''
+        return '\nGRAF-KONTEXT:\n' + '\n'.join(out)
+
+    def _multi_source_recall(self, query, scope=None, owner_id=None,
+                             user=None, strategy=None, sources=None,
+                             **kw):
+        """Sök över flera backends och slå samman resultaten (13.5).
+
+        Dedup sker över KÄLLOR (13.5): samma koncept kan hittas av flera
+        backends. Högsta score vinner. Inom en källa görs dedupen redan i
+        SQL (fas 12.6).
+
+        Returns:
+            (records, diagnostics) där records är dedupnade och sorterade
+            på score, och diagnostics är en dict för loggning/diagnos.
+        """
+        self.ensure_one()
+        strategy = strategy or self.search_strategy or 'balanced'
+        params = self._search_strategy_weights(strategy)
+        if self.hybrid_semantic_weight:
+            params['semantic_weight'] = min(
+                1.0, max(0.0, self.hybrid_semantic_weight))
+        sources = sources if sources is not None else self.search_sources
+        sources = sources.filtered('active')
+        if not sources:
+            _logger.info(
+                'Multi-source recall utan aktiva källor (medarbetare=%s, '
+                'strategi=%s) — ärligt tomt.', self.id, strategy)
+            return self.env['ai.okf.concept'].browse(), {
+                'strategy': strategy, 'sources': [], 'per_source': {},
+                'empty_reason': 'inga aktiva källor'}
+
+        best = {}          # record-id → (record, score)
+        per_source = {}
+        for source in sources:
+            hits = self._recall_from_source(
+                source, query, scope, owner_id, params,
+                hybrid=self.hybrid_search, **kw)
+            per_source[source.code] = len(hits)
+            for record, score in hits:
+                prev = best.get(record.id)
+                if prev is None or score > prev[1]:
+                    best[record.id] = (record, score)
+
+        ranked = sorted(best.values(), key=lambda t: t[1], reverse=True)
+        # Trösklarna tillämpas INNE i `_okf_search`, per signal (väg 2,
+        # §17.4) — inte här. Skälet är att bara SQL-lagret ser de två
+        # signalerna var för sig: när de väl slagits samman till en
+        # viktad summa går cosine och ts_rank inte att skilja åt längre,
+        # och då är man tillbaka i att jämföra två enheter mot en siffra.
+        #
+        # Historik: den här raden var tidigare ett `min_score`-filter som
+        # medvetet INTE kopplades in, eftersom trösklarna (0.15–0.7) var
+        # formulerade för cosine medan ts_rank når ~0.06 — varje strategi
+        # hade blivit TYST TOM, inte svag utan blind. Väg 2 löser det
+        # genom att ge varje signal sin egen tröskel i sin egen enhet.
+        # `limit` bär fortfarande budgeten.
+        ranked = ranked[:params['limit']]
+        records = self.env['ai.okf.concept'].browse(
+            [r.id for r, _s in ranked])
+        return records, {
+            'strategy': strategy,
+            'params': params,
+            'sources': sources.mapped('code'),
+            'per_source': per_source,
+            'deduped': len(best),
+            'returned': len(records),
+        }
+
     def _build_injection_prompt(self, user=None, agent=None, prompt='',
                                 record=None, max_chars=6000):
         """Gemensam injiceringsfunktion (agent-memory-governance 3.x).
@@ -2858,6 +3193,13 @@ class AICoworker(models.Model):
         # 4-6. Minne per scope
         if 'ai.okf.concept' in self.env and scope_codes:
             company_id = self.company_id.id or self.env.company.id
+            # Sökstrategin styr L1 (fas 13.10). Vikten kommer från
+            # medarbetaren när den är satt, annars från strategin.
+            strategy = self.search_strategy or 'balanced'
+            s_params = self._search_strategy_weights(strategy)
+            if self.hybrid_semantic_weight:
+                s_params['semantic_weight'] = min(
+                    1.0, max(0.0, self.hybrid_semantic_weight))
             for scope in ('company', 'personal', 'coworker'):
                 if scope not in scope_codes:
                     continue
@@ -2876,6 +3218,9 @@ class AICoworker(models.Model):
                     block = self.env['ai.okf.concept']._okf_build_system_prompt_block(
                         scope, owner_id, query=prompt or self.description,
                         max_chars=min(budget // 2, 2000),
+                        semantic_weight=s_params['semantic_weight'],
+                        limit=s_params['limit'],
+                        hybrid=self.hybrid_search,
                         injection_level={
                             'L0': 'summary_only',
                             'L1': 'summary_and_key',
@@ -2886,7 +3231,32 @@ class AICoworker(models.Model):
                         parts.append(block)
                         budget -= len(block)
                 except Exception as e:
-                    _logger.debug('Injection block %s misslyckades: %s', scope, e)
+                    # `warning` + traceback, inte `debug`: en injektion som
+                    # tystnar är exakt mönstret fas 4–6 städade bort.
+                    _logger.warning(
+                        'Injection block %s misslyckades: %s', scope, e,
+                        exc_info=True)
+
+        # 6b. Grafberikning (fas 13.8). Egen signal, eget budgettak —
+        # den får inte äta av minnesbudgeten.
+        if self.graph_enrichment and 'ai.okf.concept' in self.env:
+            try:
+                scope = 'company' if 'company' in scope_codes else None
+                if scope:
+                    owner_id = self.company_id.id or self.env.company.id
+                    hits, diag = self._multi_source_recall(
+                        prompt or self.description or '', scope=scope,
+                        owner_id=owner_id, user=user,
+                        sources=self.search_sources.filtered(
+                            lambda s: s.backend == 'okf_concept'))
+                    if hits:
+                        graph_text = self._graph_enrich(hits)
+                        if graph_text:
+                            parts.append(graph_text)
+                            budget -= len(graph_text)
+            except Exception as e:
+                _logger.warning('Grafberikning misslyckades: %s', e,
+                                exc_info=True)
 
         # 6. Mission/values
         if self.use_company_info:
@@ -3453,6 +3823,54 @@ class AICoworker(models.Model):
         except Exception:
             return False
 
+    def _normalize_concept_key(self, summary, scope, llm_key=None):
+        """Normalisera nyckeln för ett lärt koncept (D6, 5.3–5.5).
+
+        Nyckeln avgör om en ny fakta ska ERSÄTTA en tidigare version
+        (`UNIQUE(scope, concept_key, version)`) eller bli ett nytt koncept.
+        Den är därför det känsligaste fältet i lärandet.
+
+        Tre steg:
+          1. LLM:ens semantiska `key` om den finns och är användbar.
+          2. Annars: deterministisk hash av det normaliserade kärnfaktumet.
+          3. Validering/normalisering mot `UNIQUE(scope, concept_key, version)`.
+
+        ALDRIG längd, index eller tidsstämpel — den gamla nyckeln var
+        `len(summary[:40])`, vilket för varje sammanfattning längre än 40
+        tecken alltid blev 40. Alla koncept i samma session kollapsade då
+        till EN versionskedja och skrev över varandra.
+        """
+        scope = (scope or 'personal').strip().lower()
+
+        # 1. LLM:ens nyckel — normaliserad och kontrollerad.
+        key = self._sanitize_concept_key(llm_key) if llm_key else None
+        if key:
+            return f'{scope}.{key}'
+
+        # 2. Deterministisk fallback: normaliserad hash av kärnfaktumet.
+        #    Identiska fakta ger samma nyckel (dedup), olika fakta olika.
+        digest = hashlib.sha1(
+            (summary or '').strip().lower().encode('utf-8')).hexdigest()[:12]
+        return f'{scope}.fakta.{digest}'
+
+    @staticmethod
+    def _sanitize_concept_key(key):
+        """Gör en LLM-nyckel till ett giltigt `concept_key`-segment (5.5).
+
+        Returnerar None om inget användbart återstår — då tar hashen vid.
+        Kravet är gemener, ASCII och punktseparerade segment.
+        """
+        if not key or not isinstance(key, str):
+            return None
+        key = key.strip().lower()
+        # Behåll bokstäver, siffror, punkt, bindestreck och understreck.
+        key = re.sub(r'[^a-z0-9._-]+', '.', key)
+        key = re.sub(r'\.{2,}', '.', key).strip('._-')
+        if len(key) < 3:
+            return None
+        # Undvik att en nyckel blir så lång att den spränger indexet.
+        return key[:120]
+
     def _learn_from_session(self, session):
         """Hermes-lärande (agent-memory-governance 4.x).
 
@@ -3469,10 +3887,29 @@ class AICoworker(models.Model):
         if 'ai.okf.concept' not in self.env:
             return 0
 
-        # Samla konversationen
+        # Samla underlaget. Eftermälet är sessionens råvara (session-close
+        # krav 6): det täcker HELA sessionen, medan ett råfönster av de
+        # sista 40 raderna tappar allt som hände i början av en lång
+        # session. Saknas eftermälet skrivs ett först — att lära på en
+        # tillfällig radsvans vore tyst lärande på fel underlag.
+        summary = session.summary or session._write_final_summary()
         lines = session.session_line_ids.sorted('sequence')
-        conversation = '\n'.join(
-            f"[{l.role}] {l.content[:500]}" for l in lines[-40:])
+        if summary:
+            conversation = summary
+            # Komplettera med de senaste råraderna endast om eftermälet är
+            # kort — annars riskerar de att dominera reflektionen.
+            if len(summary) < 400:
+                tail = '\n'.join(
+                    f"[{l.role}] {l.content[:300]}"
+                    for l in lines[-10:] if l.content)
+                if tail:
+                    conversation = f"{summary}\n\n--- SENASTE RÅRADER ---\n{tail}"
+        else:
+            # Inget eftermäle kunde skrivas (för kort session, eller LLM-fel).
+            _logger.info(
+                'Lärande: session %s saknar eftermäle — hoppar över '
+                '(lär inte på råsvans)', session.id)
+            return 0
         if not conversation.strip():
             return 0
 
@@ -3510,13 +3947,21 @@ class AICoworker(models.Model):
                     owner = {'owner_coworker_id': self.id}
                 self.env['ai.okf.concept']._okf_upsert(
                     'learning',
-                    concept_key=f'learned.{scope}.{session.id}.{len(summary[:40])}',
+                    # 5.3: LLM:ens semantiska nyckel om den finns — annars
+                    # deterministisk hash (5.4). Aldrig längd/index.
+                    concept_key=self._normalize_concept_key(
+                        summary, scope, llm_key=concept.get('key')),
                     summary=summary,
                     title=summary[:80],
+                    # 5.6: attributionen pekar på eftermälet (sessionen) — det
+                    # är den text konceptet faktiskt hämtades ur. Tidigare
+                    # pekade `source_ref` på sessionen medan attribution pekade
+                    # på sista raden, vilket gav en rad som inte stod i
+                    # förhållande till innehållet.
                     source_ref=f'ai.coworker.session,{session.id}',
                     attribution=[{
-                        'source': f'ai.coworker.session.line,{lines[-1].id}',
-                        'role': 'conversation',
+                        'source': f'ai.coworker.session,{session.id}',
+                        'role': 'summary',
                     }],
                     generated_by='learning',
                     **owner,
@@ -3547,9 +3992,17 @@ class AICoworker(models.Model):
                 model=model_name, max_rounds=1, max_tokens=1500))
             prompt = (
                 "Granska konversationen och extrahera 1-3 BESTÅENDE fakta "
-                "värda att minnas (inte småprat). Svara med JSON-lista: "
-                "[{\"summary\": \"kort fakta\", \"scope\": "
-                "\"personal|company|coworker\"}].\n\n"
+                "värda att minnas (inte småprat). Svara med JSON-lista:\n"
+                '[{"key": "kort.semantisk.nyckel", '
+                '"summary": "fakta i en mening", '
+                '"scope": "personal|company|coworker"}]\n\n'
+                "Nyckeln ska vara en semantisk, återanvändbar identifierare för "
+                "FAKTAN — inte för formuleringen. Samma faktum ska ge samma "
+                "nyckel även om den beskrivs med andra ord (t.ex. "
+                "'kund.fakturering.epost' eller 'projekt.sprintlangd.tva.veckor'). "
+                "Använd gemener och punkter som avgränsare. "
+                "Nyckeln är det som avgör om fakta ska ersätta en tidigare "
+                "version eller bli ett nytt koncept — slarva inte med den.\n\n"
                 f"Konversation:\n{conversation}"
             )
             async def _run_and_close():
@@ -4316,11 +4769,22 @@ class AICoworker(models.Model):
             from odoo.addons.ai_agent_core.core.provider import get_default_model_name
             model = get_default_model_name()
 
+        # Sessionen skapas INUTI try-blocket, men maaste finnas aven i
+        # except-grenen: kraschar nagot mellan create() och loop.run()
+        # (t.ex. en trasig import i provider.py) lamnas annars en session
+        # kvar som 'active' — och idle-cronen stanger den som "fardigpratad"
+        # utan att ett enda meddelande skrivits. Det hande 60 ganger i drift
+        # (2026-09-15): cron 92 skapade en session, kraschade pa
+        # `from tenacity import`, och lamnade en tom session som sag ut som
+        # en avslutad konversation. Sessionen ska BÄRA sitt haveri.
+        session = None
+
         try:
             # Create session
             session = self.env['ai.coworker.session'].create({
                 'coworker_id': self.id,
                 'status': 'active',
+                'init_type': 'cron',
                 'user_id': self.env.ref('base.user_root').id
                           if self.env.ref('base.user_root', raise_if_not_found=False)
                           else 1,
@@ -4426,11 +4890,24 @@ class AICoworker(models.Model):
                 'status': 'active',
             })
 
-            # Update session
+            # Update session. OBS: 'result' finns INTE pa ai.coworker.session
+            # (faltet existerar bara pa ai.mail.test.wizard). Den forra koden
+            # skrev 'result' har -> ValueError -> fangades av except-grenen
+            # nedan -> en LYCKAD korning rapporterades som 'last_status=error'.
+            # Texten lagras i stallet som ett meddelande pa sessionen, vilket
+            # ocksa gor den sokbar och synlig i UI:t.
             session.write({
                 'status': 'done',
-                'result': result_text[:2000] if result_text else '',
+                'finish_reason': 'completed',
+                'end_date': fields.Datetime.now(),
             })
+            if result_text:
+                self.env['ai.coworker.session.line'].sudo().create({
+                    'session_id': session.id,
+                    'sequence': len(session.session_line_ids) + 1,
+                    'role': 'assistant',
+                    'content': result_text[:4000],
+                })
 
             # Send completion notification
             if self.notify_on_completion and self.notify_target:
@@ -4451,6 +4928,30 @@ class AICoworker(models.Model):
                 'last_status': 'error',
                 'run_count': self.run_count + 1,
             })
+            # Stang sessionen SA ATT HAVERIET SYNS I DATA. Utan detta ligger
+            # den kvar som 'active' tills idle-cronen stanger den som
+            # 'done'/'idle' — en tom session som ser ut som en avslutad
+            # konversation. 'setup_failed' gor den urskiljbar.
+            if session:
+                try:
+                    session.sudo().write({
+                        'status': 'error',
+                        'finish_reason': 'setup_failed',
+                        'end_date': fields.Datetime.now(),
+                    })
+                    self.env['ai.coworker.session.line'].sudo().create({
+                        'session_id': session.id,
+                        'sequence': len(session.session_line_ids) + 1,
+                        'role': 'system',
+                        'content': (
+                            'Schemalagd korning avbrots innan den borjade: '
+                            f'{type(e).__name__}: {e}'
+                        )[:4000],
+                    })
+                except Exception as close_err:
+                    _logger.warning(
+                        'Kunde inte stanga session %s efter haveri: %s',
+                        session.id, close_err)
             if self.notify_on_completion and self.notify_target:
                 self._send_completion_notification(str(e), 'error')
             return {
@@ -5287,6 +5788,18 @@ class AICoworker(models.Model):
 
     def write(self, vals):
         res = super(AICoworker, self).write(vals)
+        # Profilbyte → seeda om sökfälten (fas 13.3).
+        # OBS: detta måste ligga i DENNA write() — AICoworker har bara en
+        # (en tidigare dubblett längre upp i filen skuggades tyst av denna,
+        # så en krok där kördes aldrig).
+        if 'memory_profile' in vals:
+            for rec in self:
+                try:
+                    rec._apply_search_profile(force=True)
+                except Exception as e:
+                    _logger.warning(
+                        'Kunde inte seeda sökprofil %s på %s: %s',
+                        vals.get('memory_profile'), rec.id, e)
         if any(k in vals for k in ('orchestration_mode', 'channel_id', 'is_supervisor')):
             self._sync_buzz_agents_to_channel()
         # Synka init_type_ids från stored init_*-booleans. Stored-fält (ej
@@ -5560,6 +6073,14 @@ class AICoworker(models.Model):
                 except Exception as e:
                     _logger.warning('Could not create employee for %s: %s',
                                   record.name, e)
+            # Seed sökfälten från memory_profile (fas 13.3). Körs EFTER
+            # super().create() eftersom M2M-källor kräver ett id.
+            if not record.search_sources:
+                try:
+                    record._apply_search_profile()
+                except Exception as e:
+                    _logger.warning(
+                        'Kunde inte seeda sökprofil på %s: %s', record.id, e)
         return records
 
 
