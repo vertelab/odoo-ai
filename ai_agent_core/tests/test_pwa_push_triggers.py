@@ -46,7 +46,18 @@ class TestAiPushTriggers(TransactionCase):
         self.assertGreater(self._push_count(), before)
 
     def test_hitl_notify_queues_push(self):
+        coworker = self.env['ai.coworker'].create({
+            'name': 'Push-testmedarbetare',
+            'orchestration_mode': 'single',
+            'status': 'active',
+        })
+        session = self.env['ai.coworker.session'].create({
+            'coworker_id': coworker.id,
+            'user_id': self.user.id,
+        })
         hitl = self.env['ai.coworker.hitl'].create({
+            'coworker_id': coworker.id,
+            'session_id': session.id,
             'user_id': self.user.id,
             'request_summary': 'Godkänn åtgärden',
             'action_type': 'create_record',

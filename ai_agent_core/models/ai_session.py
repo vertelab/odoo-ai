@@ -501,7 +501,17 @@ class AICoworkerSession(models.Model):
         string='Bilagor', store=False)
     attachment_count = fields.Integer(
         'Bilagor', compute='_compute_attachment_ids')
+    hitl_ids = fields.One2many(
+        'ai.coworker.hitl', 'session_id', string='HITL-requests')
+    hitl_open_count = fields.Integer(
+        'Öppna HITL', compute='_compute_hitl_open_count')
     active = fields.Boolean('Active', default=True)
+
+    @api.depends('hitl_ids.state')
+    def _compute_hitl_open_count(self):
+        for r in self:
+            r.hitl_open_count = len(
+                r.hitl_ids.filtered(lambda h: h.state == 'asked'))
 
     @api.depends('session_line_ids')
     def _compute_line_count(self):
@@ -527,6 +537,19 @@ class AICoworkerSession(models.Model):
             'target': 'current',
             'domain': [('res_model', '=', 'ai.coworker.session'),
                        ('res_id', '=', self.id)],
+        }
+
+    def action_open_hitl(self):
+        """Öppna sessionens HITL-requests (godkännanden)."""
+        self.ensure_one()
+        return {
+            'name': 'HITL-requests',
+            'type': 'ir.actions.act_window',
+            'res_model': 'ai.coworker.hitl',
+            'view_mode': 'list,form',
+            'views': [[False, 'list'], [False, 'form']],
+            'target': 'current',
+            'domain': [('session_id', '=', self.id)],
         }
 
     def action_get_lines(self):

@@ -20,17 +20,31 @@ class TestCoworkerHITL(TransactionCase):
             'name': 'HITL Godkännare',
             'login': 'hitl_approver_%s' % self.env['res.users'].search_count([]),
             'password': 'approver-pass',
-            'group_ids': [(6, 0, [self.env.ref('base.group_user').id])],
+            'groups_id': [(6, 0, [self.env.ref('base.group_user').id])],
         })
         self.stranger = self.env['res.users'].create({
             'name': 'HITL Främling',
             'login': 'hitl_stranger_%s' % self.env['res.users'].search_count([]),
             'password': 'stranger-pass',
-            'group_ids': [(6, 0, [self.env.ref('base.group_user').id])],
+            'groups_id': [(6, 0, [self.env.ref('base.group_user').id])],
         })
 
-    def _request(self, action_type='promote_mail', res_id=1, user=None):
-        return self.coworker._request_hitl(
+    def _session(self, user=None):
+        """En körningssession — HITL kräver en (design D7)."""
+        return self.env['ai.coworker.session'].create({
+            'coworker_id': self.coworker.id,
+            'user_id': (user or self.approver).id,
+            'status': 'active',
+            'name': 'HITL-testkörning',
+        })
+
+    def _request(self, action_type='promote_mail', res_id=1, user=None,
+                 session=None):
+        sess = session or self._session(user=user)
+        return self.coworker.with_context(
+            _ai_context_model='ai.coworker.session',
+            _ai_context_id=sess.id,
+        )._request_hitl(
             action_type,
             'Godkänn promotion av mail till Ticket #%d' % res_id,
             context={'model': 'helpdesk.ticket', 'res_id': res_id},
@@ -51,14 +65,75 @@ class TestCoworkerHITL(TransactionCase):
         self.assertTrue(hitl.request_summary)
 
     def test_no_duplicate_open_request(self):
-        r1 = self._request(res_id=1)
-        r2 = self._request(res_id=1)
+        sess = self._session()
+        r1 = self._request(res_id=1, session=sess)
+        r2 = self._request(res_id=1, session=sess)
         self.assertEqual(r1.id, r2.id)
 
     def test_distinct_context_allows_parallel(self):
         r1 = self._request(res_id=1)
         r2 = self._request(res_id=2)
         self.assertNotEqual(r1.id, r2.id)
+
+    # ── Session (ai-coworker-hitl §7) ────────────────────────────────
+
+    def test_request_binds_session_from_context(self):
+        """Sessionen löses ur env.context — inte ur ett påhittat fält."""
+        sess = self._session()
+        hitl = self.coworker.with_context(
+            _ai_context_model='ai.coworker.session',
+            _ai_context_id=sess.id,
+        )._request_hitl('promote_mail', 'Test', context={'model': 'x'})
+        self.assertEqual(hitl.session_id, sess)
+
+    def test_request_binds_session_from_lineage_key(self):
+        """ai_lineage_session_id är den andra etablerade nyckeln."""
+        sess = self._session()
+        hitl = self.coworker.with_context(
+            ai_lineage_session_id=sess.id,
+        )._request_hitl('promote_mail', 'Test', context={'model': 'x'})
+        self.assertEqual(hitl.session_id, sess)
+
+    def test_request_without_session_raises(self):
+        """Utan session → ValidationError, inte en herrelös request."""
+        from odoo.exceptions import ValidationError
+        with self.assertRaises(ValidationError):
+            self.coworker._request_hitl(
+                'promote_mail', 'Test', context={'model': 'x'})
+
+    def test_request_with_dead_session_raises(self):
+        """Session-id som pekar på en raderad rad → ValidationError."""
+        from odoo.exceptions import ValidationError
+        sess = self._session()
+        sess_id = sess.id
+        sess.unlink()
+        with self.assertRaises(ValidationError):
+            self.coworker.with_context(
+                _ai_context_model='ai.coworker.session',
+                _ai_context_id=sess_id,
+            )._request_hitl('promote_mail', 'Test', context={'model': 'x'})
+
+    def test_same_context_different_session_is_new_request(self):
+        """Dubblettskyddet är per session — två körningar är två frågor."""
+        r1 = self._request(res_id=1, session=self._session())
+        r2 = self._request(res_id=1, session=self._session())
+        self.assertNotEqual(r1.id, r2.id)
+
+    def test_session_smart_button_opens_its_requests(self):
+        sess = self._session()
+        hitl = self._request(res_id=1, session=sess)
+        self.assertEqual(sess.hitl_open_count, 1)
+        action = sess.action_open_hitl()
+        self.assertEqual(action['res_model'], 'ai.coworker.hitl')
+        self.assertIn(('session_id', '=', sess.id), action['domain'])
+        self.assertIn(hitl, sess.hitl_ids)
+
+    def test_session_open_count_excludes_decided(self):
+        sess = self._session()
+        hitl = self._request(res_id=1, session=sess)
+        self.assertEqual(sess.hitl_open_count, 1)
+        hitl.action_approve()
+        self.assertEqual(sess.hitl_open_count, 0)
 
     def test_approve(self):
         hitl = self._request()
@@ -90,13 +165,18 @@ class TestCoworkerHITL(TransactionCase):
         self.assertEqual(activity.user_id, self.approver)
         self.assertEqual(activity.res_model, 'ai.coworker.hitl')
         hitl.with_user(self.approver).action_approve()
-        self.assertFalse(activity.active, "Aktiviteten ska vara stängd")
+        # Odoo 18: action_feedback STÄNGER aktiviteten genom att radera den
+        # (mail.activity har inget "stängd"-tillstånd kvar). Testet ska
+        # därför uttrycka "aktiviteten är inte längre öppen" — inte läsa
+        # .active på en rad som inte finns.
+        self.assertFalse(activity.exists(),
+                         "Aktiviteten ska vara stängd (raderad)")
 
     # ── Trust-ladder ─────────────────────────────────────────────────
 
-    def _approve_n(self, n, action_type='promote_mail'):
+    def _approve_n(self, n, action_type='promote_mail', start=100):
         for i in range(n):
-            hitl = self._request(action_type=action_type, res_id=100 + i)
+            hitl = self._request(action_type=action_type, res_id=start + i)
             hitl.with_user(self.approver).action_approve()
 
     def test_auto_proposal_after_n_approvals(self):
@@ -115,7 +195,9 @@ class TestCoworkerHITL(TransactionCase):
         self.env['ir.config_parameter'].set_param(
             'ai_agent_core.hitl_trust_n', '3')
         self._approve_n(3)
-        self._approve_n(1)  # 4:e godkännandet — befintligt förslag ska återanvändas
+        # 4:e godkännandet — NYTT ärende (start=200), annars återanvänder
+        # _request() den redan godkända requesten och räknaren dubbelräknas.
+        self._approve_n(1, start=200)
         count = self.HITL.search_count([
             ('is_auto_proposal', '=', True),
             ('state', '=', 'asked'),
@@ -145,8 +227,10 @@ class TestCoworkerHITL(TransactionCase):
             ('state', '=', 'asked'),
         ], limit=1)
         proposal.with_user(self.approver).action_reject()
-        # Nästa godkännande → count=1 (efter avslag) → inget nytt förslag
-        self._approve_n(1)
+        # Nästa godkännande → count=1 (efter avslag) → inget nytt förslag.
+        # NYTT ärende (start=200) — annars återanvänds den redan godkända
+        # requesten och ingen ny räkning sker.
+        self._approve_n(1, start=200)
         proposals = self.HITL.search_count([
             ('is_auto_proposal', '=', True),
             ('state', '=', 'asked'),

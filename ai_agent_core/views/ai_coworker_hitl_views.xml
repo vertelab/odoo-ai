@@ -9,6 +9,7 @@
             <list string="HITL-requests" sample="1">
                 <field name="create_date"/>
                 <field name="coworker_id"/>
+                <field name="session_id"/>
                 <field name="action_type"/>
                 <field name="object_type"/>
                 <field name="risk_level"/>
@@ -39,6 +40,8 @@
                     <group>
                         <group>
                             <field name="coworker_id"/>
+                            <field name="session_id" readonly="1"
+                                   options="{'no_open': False}"/>
                             <field name="user_id" string="Godkännare"/>
                             <field name="action_type"/>
                             <field name="object_type"/>
@@ -70,6 +73,7 @@
         <field name="arch" type="xml">
             <search string="HITL">
                 <field name="coworker_id"/>
+                <field name="session_id"/>
                 <field name="action_type"/>
                 <field name="user_id"/>
                 <filter name="asked" string="Öppna"
@@ -80,6 +84,8 @@
                         domain="[('state', '=', 'rejected')]"/>
                 <filter name="proposals" string="Auto-förslag"
                         domain="[('is_auto_proposal', '=', True)]"/>
+                <filter name="has_session" string="Med session"
+                        domain="[('session_id', '!=', False)]"/>
                 <group expand="0" string="Gruppera">
                     <filter name="g_state" string="Status" domain="[]"
                             context="{'group_by': 'state'}"/>
@@ -87,6 +93,8 @@
                             context="{'group_by': 'risk_level'}"/>
                     <filter name="g_action" string="Åtgärdstyp" domain="[]"
                             context="{'group_by': 'action_type'}"/>
+                    <filter name="g_session" string="Session" domain="[]"
+                            context="{'group_by': 'session_id'}"/>
                 </group>
             </search>
         </field>
