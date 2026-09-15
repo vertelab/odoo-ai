@@ -2131,6 +2131,66 @@ class AIOpenAIAPI(http.Controller):
         return Response(json.dumps({'object': 'list', 'data': models}),
                       content_type='application/json')
 
+    @http.route('/ai/v1/skills', type='http', auth='public',
+                methods=['GET'], csrf=False, sitemap=False)
+    def list_skills(self, **kw):
+        """GET /ai/v1/skills — skills som en extern agent kan ladda.
+
+        Domain-clean (external-agent-runtime §7): endpointen listar
+        `ai.skill`-poster ur core. Ingen salt/zabbix/caddy-logik här —
+        domänspecifika skills ligger i specialistlagret och filtreras av
+        anroparen, inte av denna route.
+
+        Auth: Bearer API-nyckel (samma mönster som övriga /ai/v1/*).
+
+        Query-parametrar (valfria):
+            coworker — alias eller id; begränsar till coworkerns skills.
+            names    — kommaseparerade skill-namn (som `--skills` skickar).
+
+        Svar: {"object": "list", "data": [{"name", "description",
+              "recipe_text", "trigger_keywords"}]}
+        """
+        if not self._check_api_key():
+            return Response(
+                json.dumps({'error': {
+                    'message': 'Unauthorized',
+                    'type': 'authentication_error'}}),
+                status=401, content_type='application/json')
+
+        Skill = request.env['ai.skill'].sudo()
+        names = (kw.get('names') or '').strip()
+        coworker = (kw.get('coworker') or '').strip()
+
+        domain = [('active', '=', True)]
+        if names:
+            wanted = [n.strip() for n in names.split(',') if n.strip()]
+            domain.append(('name', 'in', wanted))
+        elif coworker:
+            cw = request.env['ai.coworker'].sudo()
+            if coworker.isdigit():
+                rec = cw.browse(int(coworker)).exists()
+            else:
+                rec = cw.search([('name', '=', coworker)], limit=1)
+            if not rec:
+                return Response(
+                    json.dumps({'error': {
+                        'message': 'Coworker not found',
+                        'type': 'invalid_request_error'}}),
+                    status=404, content_type='application/json')
+            domain.append(('id', 'in', rec.skill_ids.ids))
+
+        skills = Skill.search(domain, order='sequence asc, name asc')
+        data = [{
+            'id': s.id,
+            'name': s.name,
+            'description': s.description or '',
+            'recipe_text': s.recipe_text or '',
+            'trigger_keywords': s.trigger_keywords or '',
+        } for s in skills]
+        return Response(
+            json.dumps({'object': 'list', 'data': data}),
+            content_type='application/json')
+
     @http.route('/ai/v1/<string:coworker>/models', type='http', auth='public',
                 methods=['GET'], csrf=False, sitemap=False)
     def coworker_models(self, coworker, **kw):

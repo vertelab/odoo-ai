@@ -77,6 +77,171 @@ class AICoworkerSession(models.Model):
         help='Fylls när sessionen avslutas med status error-ish (undantagsmeddelande '
              'för felsökning och analys).')
 
+    # ── Extern körning (external-agent-runtime D6/D10) ───────────────
+    # Mätpunkten: varje extern körning loggar PID, minne, starttid och
+    # varaktighet. Tröskeln för samtidighet är EMPIRISK och sätts inte nu —
+    # men ska kunna avläsas ur dessa fält när frågan uppstår.
+    external_pid = fields.Integer('Extern PID', readonly=True,
+        help='PID för den externa agent-processen (om runtime=external).')
+    external_port = fields.Integer('Extern port', readonly=True)
+    external_started_at = fields.Datetime('Extern starttid', readonly=True)
+    external_rss_kb = fields.Integer('Extern RSS (kB)', readonly=True,
+        help='Processens RSS vid dispatch — mätpunkten för minnesprofilen.')
+    external_spawn_time = fields.Float('Spawn-tid (s)', readonly=True,
+        help='Kall start-tid i sekunder (D9: ska vara under ~1 s).')
+    external_duration = fields.Float('Varaktighet (s)', readonly=True,
+        help='Körningens varaktighet i sekunder.')
+
+    def _record_external_run(self, measurement):
+        """Skriv mätpunkten för en extern körning på sessionsraden (D10).
+
+        Anropas av `ai.agent._dispatch_external` direkt efter spawn. Vi
+        skriver bara det vi faktiskt mäter — inga påhittade fält.
+        """
+        self.ensure_one()
+        vals = {
+            'external_pid': measurement.get('pid'),
+            'external_port': measurement.get('port'),
+            'external_started_at': fields.Datetime.now(),
+            'external_rss_kb': measurement.get('rss_kb'),
+            'external_spawn_time': measurement.get('spawn_time'),
+        }
+        self.sudo().write(vals)
+        return vals
+
+    # ── Livscykel för externa processer (D6/D10) ────────────────────
+
+    def _external_alive(self):
+        """Lever den externa processen? PID + (om möjligt) /status."""
+        self.ensure_one()
+        if not self.external_pid:
+            return False
+        from odoo.addons.ai_agent_core.core import runtime as rt
+        return rt.pid_alive(self.external_pid)
+
+    def action_abort_external(self):
+        """Avbryt en extern körning: SIGTERM → respit → SIGKILL (D6)."""
+        self.ensure_one()
+        from odoo.addons.ai_agent_core.core import runtime as rt
+        if not self.external_pid:
+            return False
+        gone = rt.kill_pid(self.external_pid)
+        self.sudo().write({
+            'external_duration': self._external_elapsed(),
+            'status': 'error' if not gone else 'done',
+            'error_detail': False if gone else
+                'Extern process %s kunde inte dödas.' % self.external_pid,
+        })
+        _logger.info('session %s: avbröt extern pid %s (borta=%s)',
+                     self.name, self.external_pid, gone)
+        return gone
+
+    def _external_elapsed(self):
+        """Körningens varaktighet i sekunder (0 om ingen starttid finns)."""
+        self.ensure_one()
+        if not self.external_started_at:
+            return 0.0
+        delta = fields.Datetime.now() - self.external_started_at
+        return round(delta.total_seconds(), 3)
+
+    def _finalize_external_run(self, rss_kb=None):
+        """Stäng en extern körning och skriv varaktigheten (D10).
+
+        Anropas när processen observeras död — av livs-heartbeatet eller
+        städ-cronen. RSS läses om den inte gavs (processen kan redan vara
+        borta, då blir värdet None och lämnas orört).
+        """
+        self.ensure_one()
+        from odoo.addons.ai_agent_core.core import runtime as rt
+        if rss_kb is None and self.external_pid:
+            rss_kb = rt.read_rss_kb(self.external_pid)
+        vals = {'external_duration': self._external_elapsed()}
+        if rss_kb:
+            vals['external_rss_kb'] = rss_kb
+        self.sudo().write(vals)
+        return vals
+
+    @api.model
+    def _live_external_count(self):
+        """Antal levande externa agenter (D10 — mätpunkt, inte tröskel).
+
+        Räknar sessioner med en PID som fortfarande lever. Ingen gräns
+        jämförs mot detta tal: taket är empiriskt och sätts inte nu.
+        """
+        from odoo.addons.ai_agent_core.core import runtime as rt
+        rows = self.sudo().search([('external_pid', '!=', False)])
+        return len(rows.filtered(lambda s: rt.pid_alive(s.external_pid)))
+
+    @api.model
+    def _cron_reap_external(self, batch_size=200):
+        """Livs-heartbeat + städning av föräldralösa processer (D6).
+
+        Två fall:
+
+        1. Sessionen är inte längre aktiv men processen lever → processen
+           är föräldralös (Odoo tappade den, t.ex. vid omstart). Döda den.
+        2. Processen är död men sessionen är aktiv → registrera felet så
+           haveriet syns i data i stället för att se ut som en tom session.
+        """
+        from odoo.addons.ai_agent_core.core import runtime as rt
+        sessions = self.sudo().search(
+            [('external_pid', '!=', False)], limit=batch_size,
+            order='id desc')
+        # Timeout (D6): agenten får sin egen gräns via `--timeout`, men Odoo
+        # äger livscykeln och måste också avbryta. Respit så att agentens
+        # egen (snällare) avslutning hinner ske först.
+        run_timeout = rt.get_int(
+            self.env, rt.PARAM_RUN_TIMEOUT, rt.DEFAULT_RUN_TIMEOUT)
+        grace = rt.get_float(
+            self.env, rt.PARAM_ABORT_GRACE, rt.DEFAULT_ABORT_GRACE)
+        limit = run_timeout + grace
+        reaped, detected, timed_out = 0, 0, 0
+        for sess in sessions:
+            alive = rt.pid_alive(sess.external_pid)
+            if alive and sess.status not in ('active', 'draft'):
+                rt.kill_pid(sess.external_pid)
+                sess._finalize_external_run()
+                reaped += 1
+                _logger.warning(
+                    'extern städning: dödade föräldralös pid %s '
+                    '(session %s, status %s)',
+                    sess.external_pid, sess.name, sess.status)
+            elif alive and sess.status in ('active', 'draft') \
+                    and sess.external_started_at \
+                    and sess._external_elapsed() > limit:
+                rt.kill_pid(sess.external_pid)
+                sess._finalize_external_run()
+                sess.sudo().write({
+                    'status': 'error',
+                    'error_detail': 'Extern körning överskred tidsgränsen '
+                                    '(%.0f s > %.0f s).' %
+                                    (sess._external_elapsed(), limit),
+                })
+                timed_out += 1
+                _logger.warning(
+                    'extern timeout: pid %s (session %s) körde %.0f s > '
+                    '%.0f s — avbruten',
+                    sess.external_pid, sess.name,
+                    sess._external_elapsed(), limit)
+            elif not alive and sess.status in ('active', 'draft'):
+                sess._finalize_external_run()
+                sess.sudo().write({
+                    'status': 'error',
+                    'error_detail': 'Extern process %s avslutades oväntat.'
+                                    % sess.external_pid,
+                })
+                detected += 1
+                _logger.warning(
+                    'extern livs-heartbeat: pid %s är död men session %s '
+                    'är %s — markerad error',
+                    sess.external_pid, sess.name, sess.status)
+        if reaped or detected or timed_out:
+            _logger.info('extern städning: %d föräldralösa dödade, %d '
+                         'döda upptäckta, %d timeouts',
+                         reaped, detected, timed_out)
+        return {'reaped': reaped, 'detected': detected,
+                'timed_out': timed_out}
+
     # ── Watch-kö (fix-watch-async) ───────────────────────────────────
     # _trigger_watch skapar sessionen med watch_pending=True och returnerar
     # DIREKT — AI-körningen sker asynkront i cron (_process_watch_sessions)

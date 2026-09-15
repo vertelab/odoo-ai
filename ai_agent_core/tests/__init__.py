@@ -7,6 +7,9 @@ from . import test_lineage
 from . import test_odoo_model_tools
 from . import test_tool_access
 from . import test_coworker_hitl
+from . import test_agent_runtime
+from . import test_external_dispatch
+from . import test_hitl_routing
 from . import test_channel
 from . import test_pwa_push_triggers
 from . import test_pi_session_link

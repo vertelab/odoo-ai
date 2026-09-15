@@ -94,6 +94,15 @@
                                        string="HITL"/>
                             </div>
                         </button>
+                        <button name="action_abort_external" type="object"
+                                class="oe_stat_button" icon="fa-stop-circle"
+                                invisible="external_pid == 0"
+                                confirm="Avbryt den externa körningen (SIGTERM → SIGKILL)?">
+                            <div class="o_stat_info">
+                                <span class="o_stat_value">Avbryt</span>
+                                <span class="o_stat_text">extern körning</span>
+                            </div>
+                        </button>
                     </div>
                     <div class="oe_title">
                         <h1><field name="name" placeholder="Trådnamn..."/></h1>
@@ -118,6 +127,19 @@
                             <field name="line_count" readonly="1"/>
                             <field name="resumable" readonly="1"/>
                         </group>
+                    </group>
+                    <!-- Extern körning (external-agent-runtime D10): mätpunkten.
+                         Tröskeln för samtidighet är empirisk och sätts inte nu —
+                         men profilen ska kunna avläsas när frågan uppstår. -->
+                    <group string="Extern körning" invisible="external_pid == 0">
+                        <field name="external_pid" readonly="1"/>
+                        <field name="external_port" readonly="1"/>
+                        <field name="external_started_at" readonly="1"/>
+                        <field name="external_spawn_time" readonly="1"
+                               widget="float_time"/>
+                        <field name="external_rss_kb" readonly="1"/>
+                        <field name="external_duration" readonly="1"
+                               widget="float_time"/>
                     </group>
                     <field name="error_detail" readonly="1" placeholder="Felbeskrivning…"/>
                     <notebook>

@@ -141,6 +141,7 @@
                                 <field name="model_name" readonly="1"/>
                             </group>
                             <group string="Config">
+                                <field name="runtime"/>
                                 <field name="temperature"/>
                                 <field name="max_tokens"/>
                                 <field name="max_rounds"/>

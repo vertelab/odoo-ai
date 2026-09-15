@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """ai.coworker — standalone, no LangGraph. Uses AgentLoop."""
 
-import json, logging, re, uuid, base64
+import json, logging, re, uuid, base64, hashlib
 from odoo import models, fields, api, _
-from odoo.exceptions import UserError
+from odoo.exceptions import UserError, ValidationError
 from odoo import SUPERUSER_ID
 
 _logger = logging.getLogger(__name__)
@@ -3863,6 +3863,63 @@ class AICoworker(models.Model):
         if sess_model == 'ai.coworker.session' and sess_id:
             ctx['session_id'] = sess_id
         return ctx
+
+    # ── Användarkontext före extern dispatch (external-agent-runtime D5) ──
+
+    # Init-typer där en människa står bakom anropet och env.uid är rätt
+    # identitet. Övriga är automatiska och använder konfigurerad användare.
+    INTERACTIVE_INIT_TYPES = ('server_action', 'powerbox', 'web_ui',
+                              'chat', 'channel', 'openai_api', 'manual')
+
+    def _resolve_dispatch_user(self, init_type=None, session=None):
+        """Lös upp `res.users` för en extern dispatch — FÖRE spawn (D5).
+
+        Identiteten måste vara känd innan processen startar, eftersom
+        api-nyckeln binds till den. Uppslagningen följer init-typen:
+
+        - interaktiv (server_action, powerbox, web_ui, chat, channel,
+          openai_api, manual) → `env.uid` (den som tryckte/skrev)
+        - automatisk (cron, mail, watch, webhook) → coworkerns konfigurerade
+          användare (`chat_user_id`, annars sessionsradens `user_id`)
+
+        `systemuser` returneras ALDRIG — hellre ett högljutt fel.
+
+        Returns:
+            `res.users`-record.
+
+        Raises:
+            ValidationError: om ingen giltig användare kan lösas upp.
+        """
+        self.ensure_one()
+        root = self.env.ref('base.user_root')
+        init_type = init_type or self.env.context.get('_ai_init_type')
+
+        user = None
+        if init_type in self.INTERACTIVE_INIT_TYPES:
+            user = self.env.user
+        else:
+            # Automatisk körning: den KONFIGURERADE användaren, aldrig
+            # den som råkade råka köra cron-jobbet.
+            user = self.chat_user_id
+            if not user and session is not None and session.user_id:
+                user = session.user_id
+            if not user:
+                active = self.init_type_ids.filtered('enabled')[:1]
+                if active and active.chat_user_id:
+                    user = active.chat_user_id
+
+        if not user:
+            raise ValidationError(
+                'Extern körning: ingen användare kunde lösas upp för '
+                'coworker %s (init-typ %s). Sätt en konfigurerad användare '
+                '— systemuser används aldrig (D5).'
+                % (self.display_name, init_type or 'okänd'))
+        if user.id == root.id or user.login in ('__system__', 'system'):
+            raise ValidationError(
+                'Extern körning får inte köras som systemuser (D5). '
+                'Coworker %s (init-typ %s) saknar en riktig användare.'
+                % (self.display_name, init_type or 'okänd'))
+        return user
 
     def _build_specialists(self, provider, tools, model, system_prompt, max_rounds=10):
         """Build list of SpecialistAgent from agent_ids."""
