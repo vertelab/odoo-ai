@@ -1,50 +1,95 @@
+# ai_agent_core / ai_agent — Python dependencies
+#
+# Installeras av repo_apply (salt odoo.repo_apply) som samlar alla
+# /usr/share/odoo-*/requirements.txt, deduplicerar och installerar.
+# Verifieras efterat av scripts/verify_requirements.py — som gor staten ROD
+# om ett paket har nedan saknas.
+#
+# VIKTIGT (driftlardom 2026-09-14/15):
+#   `tenacity` saknades i drift i elva manader. Inget state var rod, och
+#   forst nar AI-streamen (/ai/stream) anropades small det:
+#       ModuleNotFoundError: No module named 'tenacity'
+#   -> HTTP 500 pa varje AI-session. Orsaken var att repo_apply installerade
+#   paketen men INTE verifierade dem. Verifieringen finns nu
+#   (scripts/verify_requirements.py) och denna fil ar dess indata.
+#
+#   Av samma skal: skriv ALDRIG ett paket utan att det gar att importera.
+#   Paketnamn != importnamn (python-docx -> docx, PyPDF2 -> PyPDF2).
+#
+# VIKTIGT om delade paket:
+#   repo_apply installerar med `--ignore-installed`, dvs pip loser om HELA
+#   beroendetradet fran scratch. Utan versionstak kan det da NEDGRADERA ett
+#   paket som redan fungerar i drift. `cryptography` ar kankans exempel:
+#   pyOpenSSL 22.0.0 kraver cryptography<39, medan Odoo 18 och moderna
+#   libs kraver >=49. Att installera nagot som drar in cryptography utan tak
+#   gav:  AttributeError: module 'lib' has no attribute 'GEN_EMAIL'
+#   -> bruten TLS i hela Odoo. Darfor ar de tva ihoplasta nedan.
+
+# ── Karna (ai_agent_core) ────────────────────────────────────────────────
+# tenacity: retry-logik i ai_agent_core/core/provider.py. KRITISK —
+#   utan den kraschar /ai/stream med ModuleNotFoundError (2026-09-15).
+tenacity>=9.0,<10
+pydantic>=2.0,<3
+typing_extensions
+markupsafe
+requests
+
+# ── LLM / LangChain ──────────────────────────────────────────────────────
 langchain
 langchain-core
-langgraph
 langchain_community
-Markdown
-unidecode
-scrapy
-markdownify
+langchain_openai
+langchain_postgres
+langgraph
+langchain_text_splitters
+tiktoken
+openai
+
+# ── Vektorsok (OKF / Odoo Mind) ──────────────────────────────────────────
+# pgvector: Python-klienten. Sjalva extensionen skapas av
+#   postgres.extensions_activate (CREATE EXTENSION vector) — bada behovs.
+pgvector
+numpy
 faiss-cpu
-pymupdf
-requests
+
+# ── HTTP / scraping / parsning ───────────────────────────────────────────
+httpx
 markdownify
 beautifulsoup4
-typing_extensions
-duckduckgo_search
-IPython
-lxml_html_clean
 lxml
-tiktoken
-httpx
-ipython
-youtube_transcript_api
-yt-dlp
+lxml_html_clean
+unidecode
+Markdown
+scrapy
+duckduckgo_search
+
+# ── Dokument- och mediehantering ─────────────────────────────────────────
+pymupdf
+pydub
+
+# ── Google / YouTube-integrationer ───────────────────────────────────────
 google-api-python-client
 google-auth-httplib2
 google-auth-oauthlib
-pydub
-langchain_postgres
-langchain_openai
-pgvector
-numpy
-langchain_text_splitters
-markupsafe
-pydantic
-tenacity
-requests
-fastapi-mcp
+youtube_transcript_api
+yt-dlp
 
-# ai_agent_core — document upload support
+# ── Notebook / debug ─────────────────────────────────────────────────────
+IPython
+ipython
+
+# ── ai_agent_core — document upload support ──────────────────────────────
 python-docx
 openpyxl
 python-pptx
 PyPDF2
 
-# ai_agent_core — optional (LibreOffice headless for legacy formats)
+# ── api_agent / MCP ──────────────────────────────────────────────────────
+fastapi-mcp
+
+# ── ai_agent_context — record context injection ──────────────────────────
+pytz
+
+# ── ai_agent_core — optional (LibreOffice headless for legacy formats) ───
 # Install via apt: libreoffice-core
 # Handles: .doc, .xls, .ppt, .rtf
-
-# ai_agent_context — record context injection
-pytz
