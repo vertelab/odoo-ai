@@ -465,6 +465,12 @@ class AICoworkerSession(models.Model):
                 # som openai_api så filtrering/statistik blir korrekt.
                 if not session.init_type:
                     session.sudo().write({'init_type': 'openai_api'})
+                # Självläkning (kostnadskontext-injektion-stream 1.1): en
+                # session skapad via sessions-lookup bär ingen coworker
+                # (coworkern är inte vald vid Pi:s session_start). Utan
+                # backfill förblir sessionen permanent kontextlös och
+                # kostnadskontexten kan aldrig härledas.
+                session._backfill_coworker(coworker_id)
                 return session, False
             # pi_session_id skickat men okänt → NY session (ingen fallback).
             return self.create({
@@ -487,6 +493,7 @@ class AICoworkerSession(models.Model):
                 ('write_date', '>=', cutoff),
             ], limit=1, order='write_date desc')
         if session:
+            session._backfill_coworker(coworker_id)
             return session, False
         return self.create({
             'coworker_id': coworker_id,
@@ -495,6 +502,32 @@ class AICoworkerSession(models.Model):
             'name': (prompt or 'API')[:80],
             'user_id': int(user_id or 0),
         }), True
+
+    def _backfill_coworker(self, coworker_id):
+        """Sätt coworker_id på en återfunnen session som saknar det.
+
+        Sessioner skapade via sessions-lookup (`_lookup_or_create_pi_session`)
+        bär ingen coworker — vid Pi:s `session_start` är coworkern ännu inte
+        vald. Utan backfill blir sessionen permanent kontextlös och
+        kostnadskontexten kan inte härledas (kostnadskontext-injektion-stream
+        1.1).
+
+        Skriver ENDAST när fältet är tomt, så en känd coworker aldrig skrivs
+        över (1.2). Tyst no-op vid fel — får aldrig fälla en körning.
+        """
+        self.ensure_one()
+        if not coworker_id or self.coworker_id:
+            return self
+        try:
+            self.sudo().write({'coworker_id': int(coworker_id)})
+            _logger.info(
+                'session %s: coworker_id backfillat till %s',
+                self.id, coworker_id)
+        except Exception as e:
+            _logger.warning(
+                'session %s: kunde inte backfilla coworker_id: %s',
+                self.id, e)
+        return self
 
     # ── Pi-session-markör (transport C) ────────────────────────────────
     # Pi-klienten äger Pi-sessionens UUID. Primär transport är body-fältet

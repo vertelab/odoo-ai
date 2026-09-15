@@ -2721,15 +2721,24 @@ class AIOpenAIAPI(http.Controller):
             Injiceras endast för openai_api-körningar. Innehåller aktuell
             session-kontext + coworkerns konfigurerade frågetext +
             "fråga en gång"-instruktion. Tyst no-op vid fel.
+
+            OBS (kostnadskontext-injektion-stream 2.1): coworkern hämtas
+            ALLTID ur sessionens egen cursor (sess.env) — aldrig ur
+            closure-variabeln `quest`. Generatorn kör efter request-teardown,
+            så `quest` är bunden till en stängd cursor: relationsläsningar på
+            den kastar InterfaceError. Fältet `quest.id` är cachat och maskerar
+            felet, vilket gjorde att fallbacken såg fungerande ut medan varje
+            streamad tur tappade sin kostnadskontext.
             """
             try:
-                # OBS (streaming): använder sess.coworker_id (sessionens
-                # egen cursor) i stället för closure-variabeln quest —
-                # request.cursor är stängd när generatorn körs efter
-                # teardown.
-                cw = sess.coworker_id if (
-                    'coworker_id' in sess._fields and sess.coworker_id
-                ) else quest
+                if 'coworker_id' not in sess._fields or not sess.coworker_id:
+                    # Ingen coworker på sessionen → ingen kontext att bygga.
+                    # Läs INGET request-bundet; returnera tomt block.
+                    _logger.info(
+                        'cost-context: session %s saknar coworker — '
+                        'inget block byggs', getattr(sess, 'id', None))
+                    return ''
+                cw = sess.coworker_id
                 has_openai = bool(cw.init_type_ids.filtered(
                     lambda it: it.init_type == 'openai_api' and it.enabled))
                 if not has_openai:
@@ -2770,7 +2779,15 @@ class AIOpenAIAPI(http.Controller):
                     block += 'Fråga inte om kostnadskontext igen.\n'
                 return block
             except Exception as e:
-                _logger.warning('cost-context injection failed: %s', e)
+                # Kostnadskontext-injektion-stream 3.1: felet får inte tyst
+                # degradera varje tur till "ingen kostnadskontext". Logga
+                # sessionens identitet och orsaken så mönstret syns i drift
+                # (felet var osynligt i en månad trots 432 loggrader).
+                _logger.warning(
+                    'cost-context injection failed: %s (session=%s, '
+                    'coworker=%s)', e, getattr(sess, 'id', None),
+                    getattr(sess.coworker_id, 'id', None)
+                    if 'coworker_id' in getattr(sess, '_fields', {}) else None)
                 return ''
 
         def _persist_session(env, sess, response_text, input_t, output_t,
