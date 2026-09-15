@@ -89,7 +89,7 @@ class AgentLoop:
     Usage:
         provider = AIProvider(base_url='...', is_bifrost=True)
         tools = ToolRegistry()
-        tools.register_many(builtin_tools())
+        # Verktyg väljs explicit (ai.agent.tool_ids) — inte via builtin_tools()
 
         loop = AgentLoop(provider=provider, tools=tools, config=AgentConfig())
         result = await loop.run("What is 2+2?")

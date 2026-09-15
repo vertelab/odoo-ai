@@ -581,7 +581,19 @@ def apply_capability_serialization(registry, capabilities, mode):
 
 
 def builtin_tools() -> list[Tool]:
-    """Return built-in test tools for development."""
+    """Return the tools this module offers (seedningskälla).
+
+    Rollen är INTE att vara ett runtime-register. Vilka verktyg en agent
+    har avgörs uteslutande av `ai.agent.tool_ids` (explicit-agent-tools).
+
+    Används av:
+    - `ai.tool._ensure_builtin_tool_records()` — seedar en `ai.tool`-post
+      per verktyg (med `builtin_name`) vid modul-init och -update.
+    - `ai_tool_records_to_tools()` / `ai.tool.to_core_tool()` — slår upp
+      den riktiga Python-handlern för en post med `builtin_name`.
+
+    Ingen runtime-väg registrerar listan implicit i en session.
+    """
     return [
         Tool(
             name="odoo_calculator",

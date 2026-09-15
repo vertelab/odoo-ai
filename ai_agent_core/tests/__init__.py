@@ -25,3 +25,4 @@ from . import test_actionable_errors
 from . import test_content_verification
 from . import test_stream_turn_persist
 from . import test_explicit_agent_tools
+from . import test_builtin_fallback_removal

@@ -4697,6 +4697,13 @@ class AICoworker(models.Model):
             tools.register_many(ai_tool_records_to_tools(
                 self.env['ai.tool'].browse(tool_ids), self.env))
 
+        # avveckla-builtin-fallbacken (D5): synlig varning i stället för
+        # tystnad. En agent vars tool_ids är tom fick tidigare verktyg via
+        # builtin_tools()-fallbacken. Nu får den inga — det är avsiktligt,
+        # men det ska synas. Efter migreringen ska denna varning inte
+        # förekomma; gör den det är något fel.
+        self._warn_agents_without_tools(session=session)
+
         # Supervisor-kontextoptimering (2026-08): om en explicit whitelist av
         # verktygsnamn sätts i kontexten (_ai_tool_whitelist), reduceras
         # registret till ENDAST dessa. Används av saltstack_ai._start_diagnosis
@@ -4715,6 +4722,25 @@ class AICoworker(models.Model):
                 len(tools), len(names))
 
         return tools, tool_access_groups
+
+    def _warn_agents_without_tools(self, session=None):
+        """Logga en varning för agenter utan tool_ids (avveckla, D5).
+
+        Motmedel mot tyst degradering: en agent som saknar verktyg ska vara
+        ett MEDVETET tillstånd, inte en överraskning. Efter migreringen ska
+        ingen varning förekomma.
+        """
+        empty = self.agent_ids.mapped('agent_id').filtered(
+            lambda a: not a.tool_ids)
+        if not empty:
+            return
+        sid = session.id if session else None
+        for agent in empty:
+            _logger.warning(
+                'Agent utan verktyg: %s (id=%s, coworker=%s, session=%s) — '
+                'får inga verktyg (ingen implicit fallback). Sätt tool_ids '
+                'eller lägg agenten i settings-default.',
+                agent.name, agent.id, self.name, sid)
 
     @api.model
     def _log_tool_attempts(self, session, run):
