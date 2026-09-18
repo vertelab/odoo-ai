@@ -249,3 +249,33 @@ class PiMeshController(http.Controller):
                 # Kopplingen är en bonus. Meshen fungerar utan Odoo.
                 _logger.warning('pi_mesh: kunde inte koppla ai.org.task: %s', e)
         return {'status': 'ok', 'task_id': task.id}
+
+    @http.route('/pi_mesh/agents', type='json', auth='none',
+                methods=['POST'], csrf=False)
+    def agents(self):
+        """Sammanfattning av agentläget — för Zabbix och överblick.
+
+        VARFÖR en egen endpoint och inte en sökning via ORM: Zabbix kör
+        som zabbix-användaren utan Odoo-session. Den här vägen kräver
+        bara webhook-token, samma som de andra.
+        """
+        if not self._authorized():
+            return {'status': 'error', 'error': 'Unauthorized'}
+        admin = request.env['res.users'].browse(1)
+        Agent = request.env['pi.mesh.agent'].sudo().with_user(admin)
+        Lock = request.env['pi.mesh.lock'].sudo().with_user(admin)
+        online = Agent.search([('status', '=', 'online')])
+        return {
+            'status': 'ok',
+            'total': Agent.search_count([]),
+            'online': len(online),
+            'offline': Agent.search_count([('status', '=', 'offline')]),
+            'dead_locks': Lock.search_count([('is_dead', '=', True)]),
+            'held_locks': Lock.search_count([('state', '=', 'held')]),
+            'agents': [
+                {'name': a.name, 'status': a.status,
+                 'last_seen': a.last_seen.isoformat() if a.last_seen else None,
+                 'claims': len(a.claim_list or [])}
+                for a in online
+            ],
+        }
