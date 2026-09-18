@@ -273,6 +273,12 @@ class AICoworkerSession(models.Model):
         'Summary Message Count', default=0,
         help='Antal meddelanden vid senaste sammanfattningen.')
 
+    memory_extracted = fields.Boolean(
+        'Memory Extracted', default=False,
+        help='Har sessionens erfarenhet extraherats till personligt minne? '
+             'Gör bron idempotent — eftermälet kan anropas från flera håll '
+             '(mark_done, idle-cron, buzz) utan dubbla LLM-anrop.')
+
     token_input = fields.Integer('Input Tokens', default=0)
     token_output = fields.Integer('Output Tokens', default=0)
     token_sys = fields.Integer(
@@ -855,7 +861,102 @@ class AICoworkerSession(models.Model):
         _logger.info(
             'Eftermäle skrivet för session %s (%d rader, %d tecken)',
             self.id, total, len(summary))
+
+        # Bron till det personliga minnet (session-memory-bridge D2).
+        # Eftermälet är den naturliga platsen: här finns både transcriptet
+        # och vetskapen att sessionen är slut. Anropet är idempotent.
+        self._bridge_to_personal_memory()
         return summary
+
+    def _bridge_to_personal_memory(self):
+        """Skriv sessionens erfarenhet vidare till personligt minne.
+
+        `extract_from_session()` var byggd men hade NOLL anropare —
+        erfarenhet blev aldrig minne. Här kopplas den in.
+
+        Tre skyddsnät:
+
+        1. **Idempotens** — `memory_extracted` sätts när extraktionen kört.
+           Eftermälet kan anropas från flera håll (mark_done, idle-cron,
+           buzz) och får inte ge dubbla LLM-anrop.
+        2. **Rätt användare** — upplösningen går via
+           `_resolve_dispatch_user()`, inte `session.user_id` rakt av.
+           En cron-session har `user_id = systemuser`, och att skriva
+           personligt minne till systemuser vore både fel och otillåtet.
+        3. **Tröskel** — bara sessioner som nådde `MIN_SUMMARY_LINES`
+           bär tillräcklig erfarenhet. Kortare sessioner hoppas över.
+
+        Returns:
+            int: Antal extraherade minnen (0 om inget gjordes).
+        """
+        self.ensure_one()
+
+        # 1. Idempotens
+        if self.memory_extracted:
+            _logger.debug(
+                'Minne: session %s redan extraherad — hoppar över', self.id)
+            return 0
+
+        # 2. Tröskel — samma som eftermälet
+        total = len(self.session_line_ids)
+        if total < self.MIN_SUMMARY_LINES:
+            _logger.debug(
+                'Minne: session %s för kort (%d < %d rader) — ingen '
+                'extraktion', self.id, total, self.MIN_SUMMARY_LINES)
+            return 0
+
+        coworker = self.coworker_id
+        if not coworker:
+            return 0
+
+        # 3. Rätt användare — aldrig systemuser
+        #
+        # `_resolve_dispatch_user` är byggd för dispatch FÖRE en körning,
+        # där `env.uid` är den som tryckte. Här är vi EFTER körningen, i
+        # en cron-process — då är `env.user` systemuser och upplösningen
+        # faller. Vi ger därför sessionens egen `user_id` som sista utväg:
+        # den är satt vid skapandet och är den som faktiskt ägde körningen.
+        user = None
+        try:
+            user = coworker._resolve_dispatch_user(
+                init_type=self.init_type or None, session=self)
+        except Exception as e:
+            _logger.debug(
+                'Minne: session %s — dispatch-upplösning föll (%s), '
+                'faller tillbaka på sessionens user_id', self.id, e)
+
+        if not user and self.user_id:
+            user = self.user_id
+
+        if not user:
+            _logger.warning(
+                'Minne: session %s saknar användare — ingen extraktion',
+                self.id)
+            return 0
+
+        if user == self.env.ref('base.user_root'):
+            _logger.warning(
+                'Minne: session %s upplöstes till systemuser — ingen '
+                'extraktion (personligt minne kräver en riktig användare)',
+                self.id)
+            return 0
+
+        try:
+            count = self.env['ai.personal.memory'].sudo().extract_from_session(
+                self.id)
+        except Exception as e:
+            _logger.error(
+                'Minne: extraktion från session %s misslyckades: %s',
+                self.id, e, exc_info=True)
+            return 0
+
+        # Markera ÄVEN vid 0 extraherade — annars kör varje eftermäle om
+        # samma LLM-anrop för en session som inte gav något.
+        self.sudo().write({'memory_extracted': True})
+        _logger.info(
+            'Minne: session %s extraherade %d minnen till användare %s',
+            self.id, count, user.login)
+        return count
 
     def _run_final_summary_llm(self, transcript):
         """Kör LLM-anropet för eftermälet. Returnerar str eller None.
@@ -924,8 +1025,28 @@ class AICoworkerSession(models.Model):
             return 0
 
         closed = 0
+        empty = 0
         for session in sessions:
             try:
+                # Upptäck tomma sessioner (session-memory-bridge D4).
+                #
+                # En session utan rader är ett spår av ingenting — den
+                # skapades men kördes aldrig. Den ska STÄNGAS (annars
+                # svälter den ut kön), men den ska inte stängas TYST:
+                # 61 sådana hittades 2026-09-15, och ingenstans gick det
+                # att se varför. Loggen är det enda som skiljer en bugg
+                # från en tom konversation i statistiken.
+                if not session.session_line_ids:
+                    empty += 1
+                    _logger.warning(
+                        'Session %s stängs TOM (0 rader) — coworker=%s '
+                        'init_type=%s skapad=%s. En session ska bära en '
+                        'körning; den här gjorde det inte.',
+                        session.id,
+                        session.coworker_id.name or '-',
+                        session.init_type or '(tom)',
+                        session.create_date)
+
                 session._write_final_summary()
                 # 'done' (inte 'interrupted'): sessionen är inte avbruten,
                 # den är färdigpratad. Distinktionen spelar roll för
@@ -947,8 +1068,9 @@ class AICoworkerSession(models.Model):
                     'Idle-cron: kunde inte stänga session %s', session.id)
         if closed:
             _logger.info(
-                'Idle-cron: stängde %d sessioner utan aktivitet i %d min',
-                closed, idle_minutes)
+                'Idle-cron: stängde %d sessioner utan aktivitet i %d min '
+                '(%d av dem var tomma)',
+                closed, idle_minutes, empty)
         return closed
 
     def mark_done(self, reason='stop'):

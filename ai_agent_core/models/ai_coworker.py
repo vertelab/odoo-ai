@@ -1905,6 +1905,7 @@ class AICoworker(models.Model):
             # Skapa session-line för spårning + posta svaret direkt
             sess = self.env['ai.coworker.session'].create({
                 'coworker_id': self.id, 'status': 'active',
+                'init_type': 'chat',
                 'name': f'Chat: {msg_text[:50]}',
                 'user_id': bot_user.id if bot_user else 1,
             })
@@ -1952,6 +1953,7 @@ class AICoworker(models.Model):
 
         session = self.env['ai.coworker.session'].create({
             'coworker_id': self.id, 'status': 'active',
+            'init_type': 'chat',
             'name': f'Chat: {msg_text[:50]}',
             'user_id': bot_user.id if bot_user else 1,
         })
@@ -2279,6 +2281,7 @@ class AICoworker(models.Model):
             return self.buzz_channel_session_id
         session = self.env['ai.coworker.session'].sudo().create({
             'coworker_id': self.id,
+            'init_type': 'chat',
             'name': f'Buzz: {self.name}',
             'status': 'active',
             'user_id': self.env.ref('base.user_root').id,
@@ -4862,14 +4865,28 @@ class AICoworker(models.Model):
 
             loop.denial_callback = _record_denial_as_suggestion
 
+            # Prompten byggs HÄR (inte inuti _run) så att den kan sparas som
+            # sessionens user-rad. Utan den blir cron-sessionen en ensam
+            # assistant-rad — och eftermälet (MIN_SUMMARY_LINES = 4) kan
+            # aldrig nås. Se session-memory-bridge D1b.
+            cron_prompt = (
+                f"You are an automated agent. Your task:\n\n{self.description}"
+                if self.description else
+                "Execute the scheduled task. Be thorough and complete."
+            )
+
+            # User-raden skrivs FÖRE körningen — den är vad som efterfrågades,
+            # oavsett om körningen lyckas. Assistant-raden skrivs efter.
+            self.env['ai.coworker.session.line'].sudo().create({
+                'session_id': session.id,
+                'sequence': 1,
+                'role': 'user',
+                'content': cron_prompt[:4000],
+            })
+
             async def _run():
-                prompt = (
-                    f"You are an automated agent. Your task:\n\n{self.description}"
-                    if self.description else
-                    "Execute the scheduled task. Be thorough and complete."
-                )
                 try:
-                    return await loop.run(prompt)
+                    return await loop.run(cron_prompt)
                 finally:
                     await provider.aclose()
 
@@ -4904,7 +4921,7 @@ class AICoworker(models.Model):
             if result_text:
                 self.env['ai.coworker.session.line'].sudo().create({
                     'session_id': session.id,
-                    'sequence': len(session.session_line_ids) + 1,
+                    'sequence': 2,   # 1 = user-raden (cron_prompt) skriven ovan
                     'role': 'assistant',
                     'content': result_text[:4000],
                 })
@@ -5267,6 +5284,7 @@ class AICoworker(models.Model):
         session = session or self.env['ai.coworker.session'].create({
             'coworker_id': self.id,
             'status': 'active',
+            'init_type': 'web_ui',
             'user_id': self.env.user.id,
             'name': prompt[:80] if prompt else 'Quest run',
         })
@@ -5679,6 +5697,7 @@ class AICoworker(models.Model):
         session = self.env['ai.coworker.session'].create({
             'coworker_id': self.id,
             'status': 'active',
+            'init_type': 'powerbox',
             'user_id': self.env.user.id,
         })
 
@@ -5920,12 +5939,26 @@ class AICoworker(models.Model):
         if active_goals:
             _logger.info('Heartbeat %s: working on goal %s',
                         self.name, active_goals.name)
-            # Create a session for proactive goal work
-            self.env['ai.coworker.session'].create({
-                'coworker_id': self.id,
-                'name': f'Goal: {active_goals.name[:50]}',
-                'status': 'active',
-            })
+            # Kör målet — sessionen skapas av run() när körningen är beslutad.
+            #
+            # FYND (session-memory-bridge D1): här skapades tidigare en
+            # session och returnerades utan att något kördes. Varje heartbeat
+            # med ett aktivt mål lämnade en TOM session efter sig, som
+            # idle-cronen stängde som 'done' — ett spår av ingenting som såg
+            # ut som en avslutad konversation i statistiken. En session är
+            # spåret av en körning, inte av en avsikt.
+            goal_prompt = (
+                f'Du arbetar proaktivt med målet "{active_goals.name}" '
+                f'(progress {active_goals.progress:.0f}%). '
+                f'Föreslå och utför nästa steg mot målet.'
+            )
+            try:
+                self.run(prompt=goal_prompt)
+            except Exception as e:
+                # En trasig körning ska loggas — inte lämna en tyst session.
+                _logger.warning(
+                    'Heartbeat %s: körning av mål %s misslyckades: %s',
+                    self.name, active_goals.name, e, exc_info=True)
             return
 
         # 4. Nudge? (handled by kaizen/onboard separately)
