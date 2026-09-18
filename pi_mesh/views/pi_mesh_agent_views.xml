@@ -1,0 +1,164 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- ════════════════════════════════════════════════════════════
+         pi.mesh.agent — kanban, lista och formulär.
+
+         Kanban är hela poängen: en kolumn per status, ett kort per
+         agent, med hostname, roll, pågående uppgift och anspråk. Det
+         är den enda vy en människa behöver för att se läget.
+         ════════════════════════════════════════════════════════════ -->
+
+    <record id="view_pi_mesh_agent_kanban" model="ir.ui.view">
+        <field name="name">pi.mesh.agent.kanban</field>
+        <field name="model">pi.mesh.agent</field>
+        <field name="arch" type="xml">
+            <kanban default_group_by="status" quick_create="false"
+                    class="o_kanban_small_column">
+                <field name="name"/>
+                <field name="hostname"/>
+                <field name="role"/>
+                <field name="status"/>
+                <field name="task"/>
+                <field name="claim_list"/>
+                <field name="last_seen"/>
+                <field name="lock_count"/>
+                <field name="color"/>
+                <templates>
+                    <t t-name="card">
+                        <div t-attf-class="oe_kanban_card oe_kanban_global_click #{record.color.raw_value === 1 ? 'opacity-50' : ''}">
+                            <div class="o_kanban_record_title d-flex justify-content-between">
+                                <strong><field name="name"/></strong>
+                                <span t-if="record.lock_count.raw_value &gt; 0"
+                                      class="badge text-bg-warning"
+                                      title="Håller lås">
+                                    🔒 <field name="lock_count"/>
+                                </span>
+                            </div>
+                            <div class="text-muted small">
+                                <field name="hostname"/>
+                                <span t-if="record.role.raw_value"> · </span>
+                                <field name="role"/>
+                            </div>
+                            <div t-if="record.task.raw_value" class="mt-1">
+                                <i class="fa fa-tasks me-1"/>
+                                <field name="task"/>
+                            </div>
+                            <div t-if="record.claim_list.raw_value"
+                                 class="mt-1 text-truncate small"
+                                 title="Filer agenten rört">
+                                <i class="fa fa-file-o me-1"/>
+                                <field name="claim_list"/>
+                            </div>
+                            <div class="mt-1 text-muted small">
+                                <i class="fa fa-clock-o me-1"/>
+                                <field name="last_seen" widget="relative"/>
+                            </div>
+                        </div>
+                    </t>
+                </templates>
+            </kanban>
+        </field>
+    </record>
+
+    <record id="view_pi_mesh_agent_list" model="ir.ui.view">
+        <field name="name">pi.mesh.agent.list</field>
+        <field name="model">pi.mesh.agent</field>
+        <field name="arch" type="xml">
+            <list string="Agenter" decoration-muted="status == 'offline'">
+                <field name="name"/>
+                <field name="hostname"/>
+                <field name="role"/>
+                <field name="status"
+                       decoration-success="status == 'online'"
+                       decoration-info="status == 'working'"
+                       widget="badge"/>
+                <field name="task"/>
+                <field name="lock_count"/>
+                <field name="last_seen"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_pi_mesh_agent_form" model="ir.ui.view">
+        <field name="name">pi.mesh.agent.form</field>
+        <field name="model">pi.mesh.agent</field>
+        <field name="arch" type="xml">
+            <form>
+                <header>
+                    <button name="action_view_messages" type="object"
+                            string="Meddelanden" class="btn-secondary"/>
+                    <button name="action_view_locks" type="object"
+                            string="Lås" class="btn-secondary"/>
+                    <field name="status" widget="statusbar"
+                           statusbar_visible="online,working,idle,offline"/>
+                </header>
+                <sheet>
+                    <div class="oe_title">
+                        <h1><field name="name"/></h1>
+                    </div>
+                    <group>
+                        <group string="Identifiering">
+                            <field name="hostname"/>
+                            <field name="role"/>
+                            <field name="pid"/>
+                        </group>
+                        <group string="Närvaro">
+                            <field name="last_seen"/>
+                            <field name="first_seen"/>
+                            <field name="session_count"/>
+                            <field name="message_count"/>
+                        </group>
+                    </group>
+                    <group string="Arbete">
+                        <field name="task"/>
+                        <field name="claims" placeholder="En fil per rad"/>
+                        <field name="locks" placeholder="En resurs per rad"/>
+                        <field name="skills" placeholder="En skill per rad"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_pi_mesh_agent_search" model="ir.ui.view">
+        <field name="name">pi.mesh.agent.search</field>
+        <field name="model">pi.mesh.agent</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="name"/>
+                <field name="hostname"/>
+                <field name="task"/>
+                <filter name="filter_online" string="Online"
+                        domain="[('status', '!=', 'offline')]"/>
+                <filter name="filter_working" string="Arbetar"
+                        domain="[('status', '=', 'working')]"/>
+                <filter name="filter_locks" string="Håller lås"
+                        domain="[('lock_count', '&gt;', 0)]"/>
+                <separator/>
+                <filter name="group_status" string="Status"
+                        context="{'group_by': 'status'}"/>
+                <filter name="group_host" string="Värd"
+                        context="{'group_by': 'hostname'}"/>
+                <filter name="group_role" string="Roll"
+                        context="{'group_by': 'role'}"/>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_pi_mesh_agent" model="ir.actions.act_window">
+        <field name="name">Mesh-agenter</field>
+        <field name="res_model">pi.mesh.agent</field>
+        <field name="view_mode">kanban,list,form</field>
+        <field name="context">{'search_default_filter_online': 1}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Inga agenter har hörts av ännu
+            </p>
+            <p>
+                Agenter registreras automatiskt när de skickar sin första
+                heartbeat. Startar du en Pi-agent med mesh-extensionen
+                dyker den upp här inom 30 sekunder.
+            </p>
+        </field>
+    </record>
+</odoo>

@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- ════════════════════════════════════════════════════════════
+         pi.mesh.task — delegerat arbete (förbereder Fas 5).
+         ════════════════════════════════════════════════════════════ -->
+
+    <record id="view_pi_mesh_task_list" model="ir.ui.view">
+        <field name="name">pi.mesh.task.list</field>
+        <field name="model">pi.mesh.task</field>
+        <field name="arch" type="xml">
+            <list string="Uppgifter" decoration-success="status == 'done'"
+                  decoration-danger="status == 'failed'">
+                <field name="name"/>
+                <field name="assigned_to"/>
+                <field name="assigned_by"/>
+                <field name="status" widget="badge"/>
+                <field name="started_at"/>
+                <field name="duration_minutes"/>
+                <field name="message_count"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_pi_mesh_task_form" model="ir.ui.view">
+        <field name="name">pi.mesh.task.form</field>
+        <field name="model">pi.mesh.task</field>
+        <field name="arch" type="xml">
+            <form>
+                <header>
+                    <button name="action_done" type="object" string="Klar"
+                            class="btn-primary"
+                            invisible="status in ('done', 'cancelled')"/>
+                    <button name="action_failed" type="object"
+                            string="Misslyckad" invisible="status in ('done', 'cancelled')"/>
+                    <field name="status" widget="statusbar"/>
+                </header>
+                <sheet>
+                    <div class="oe_title">
+                        <h1><field name="name" placeholder="Vad ska göras?"/></h1>
+                    </div>
+                    <group>
+                        <group string="Tilldelning">
+                            <field name="assigned_to"/>
+                            <field name="assigned_by"/>
+                        </group>
+                        <group string="Tid">
+                            <field name="started_at"/>
+                            <field name="finished_at"/>
+                            <field name="duration_minutes"/>
+                        </group>
+                    </group>
+                    <group string="Beskrivning">
+                        <field name="description" nolabel="1"/>
+                    </group>
+                    <group string="Resultat">
+                        <field name="result" nolabel="1"/>
+                    </group>
+                    <notebook>
+                        <page string="Meddelanden" name="messages">
+                            <field name="message_ids">
+                                <list>
+                                    <field name="sent_at"/>
+                                    <field name="agent_id"/>
+                                    <field name="kind"/>
+                                    <field name="subject"/>
+                                </list>
+                            </field>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_pi_mesh_task_search" model="ir.ui.view">
+        <field name="name">pi.mesh.task.search</field>
+        <field name="model">pi.mesh.task</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="name"/>
+                <field name="assigned_to"/>
+                <filter name="filter_open" string="Öppna"
+                        domain="[('status', 'in', ('pending', 'assigned', 'running'))]"/>
+                <filter name="filter_mine" string="Tilldelade mig"
+                        domain="[('assigned_to', '=', uid)]"/>
+                <separator/>
+                <filter name="group_status" string="Status"
+                        context="{'group_by': 'status'}"/>
+                <filter name="group_agent" string="Tilldelad"
+                        context="{'group_by': 'assigned_to'}"/>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_pi_mesh_task" model="ir.actions.act_window">
+        <field name="name">Uppgifter</field>
+        <field name="res_model">pi.mesh.task</field>
+        <field name="view_mode">list,form</field>
+        <field name="context">{'search_default_filter_open': 1}</field>
+    </record>
+</odoo>
