@@ -224,7 +224,7 @@ class AIPersonalMemory(models.Model):
         memory = self.create({
             'user_id': user_id,
             'company_id': company_id,
-            'source_coworker_id': quest_id,
+            'source_coworker_id': coworker_id,
             'source_session_id': session_id,
             'source': source,
             'source_ref': source_ref,
