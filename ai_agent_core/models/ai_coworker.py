@@ -465,7 +465,18 @@ class AICoworker(models.Model):
     server_action_use_wizard = fields.Boolean('Show Prompt Wizard', default=False)
 
     channel_id = fields.Many2one('discuss.channel', string='Channel')
-    chat_user_id = fields.Many2one('res.users', string='Chat Bot User', readonly=True)
+    # Ägaren för automatiska körningar (coworker-dispatch-owner D3).
+    # Redigerbart med flit: en bot-user ger isolation och är rätt default,
+    # men personligt minne tillhör människor — en människa kan sättas när
+    # erfarenheten ska tillhöra en person.
+    chat_user_id = fields.Many2one(
+        'res.users', string='Ägare (automatiska körningar)',
+        help='Vem äger coworkerns automatiska körningar (cron, mail, watch, '
+             'webhook)? Ägaren får sessionernas erfarenhet skriven till sitt '
+             'personliga minne. Standard är coworkerns bot-användare — den '
+             'ger isolation. Sätt en människa när erfarenheten ska tillhöra '
+             'en person. Systemuser accepteras aldrig.',
+        ondelete='restrict')
     allow_trigger_words = fields.Boolean('Use Activation Words')
     chat_trigger_words = fields.Text('Activation Words')
 
@@ -2543,7 +2554,11 @@ class AICoworker(models.Model):
             if old_type == 'web_ui':
                 pass
             elif old_type == 'chat':
-                vals['chat_user_id'] = quest.chat_user_id.id if quest.chat_user_id else False
+                # OBS (coworker-dispatch-owner D1): här kopierades tidigare
+                # `quest.chat_user_id` hit — men det fältet skrevs aldrig av
+                # någon, så kopian var cirkulär och alltid tom.
+                # `_ensure_chat_user()` sätter båda fälten när init-typen
+                # aktiveras; den här grenen ska inte försöka igen.
                 vals['use_chat_history'] = quest.use_chat_history
                 vals['chat_history_limit'] = quest.chat_history_limit
             elif old_type == 'channel':
@@ -4367,15 +4382,75 @@ class AICoworker(models.Model):
         if not user:
             raise ValidationError(
                 'Extern körning: ingen användare kunde lösas upp för '
-                'coworker %s (init-typ %s). Sätt en konfigurerad användare '
-                '— systemuser används aldrig (D5).'
+                'coworker %s (init-typ %s). Sätt fältet "Ägare (automatiska '
+                'körningar)" på coworkern — det är den som får sessionernas '
+                'erfarenhet. Systemuser används aldrig (D5).'
                 % (self.display_name, init_type or 'okänd'))
         if user.id == root.id or user.login in ('__system__', 'system'):
             raise ValidationError(
                 'Extern körning får inte köras som systemuser (D5). '
-                'Coworker %s (init-typ %s) saknar en riktig användare.'
+                'Coworker %s (init-typ %s) saknar en riktig användare — '
+                'sätt fältet "Ägare (automatiska körningar)".'
                 % (self.display_name, init_type or 'okänd'))
         return user
+
+    @api.model
+    def _repair_missing_chat_users(self):
+        """Ge aktiva coworkers utan ägare en (coworker-dispatch-owner D4).
+
+        I drift 2026-09-18 saknade 29 av 29 aktiva coworkers
+        `chat_user_id`, och 0 bot-users existerade. Orsaken var fyra
+        sammanlänkade fel (se design.md D1): fältet skrevs aldrig,
+        `_ensure_chat_user()` fyllde ett annat fält, den var gated på
+        `enabled` (0 av 29), och därför skapades ingen bot-user.
+
+        Metoden är idempotent: andra körningen reparerar 0.
+
+        Returns:
+            int: Antal coworkers som fick en ägare.
+        """
+        coworkers = self.search([
+            ('status', '=', 'active'),
+            ('chat_user_id', '=', False),
+        ])
+        if not coworkers:
+            _logger.info(
+                'Ägar-reparation: alla aktiva coworkers har redan en ägare')
+            return 0
+
+        repaired = 0
+        for coworker in coworkers:
+            try:
+                # Skapa/återanvänd bot-usern via init_type-logiken — den
+                # sätter nu båda fälten.
+                chat_init = coworker.init_type_ids.filtered(
+                    lambda r: r.init_type == 'chat')[:1]
+                if chat_init:
+                    chat_init._ensure_chat_user()
+
+                # Fallback: ingen chat-init_type → skapa bot-usern direkt.
+                if not coworker.chat_user_id:
+                    login = 'bot_' + coworker.name.lower().replace(' ', '_')
+                    user = self.env['res.users'].search(
+                        [('login', '=', login)], limit=1)
+                    if not user:
+                        user = self.env['res.users'].with_context(
+                            no_reset_password=True).create({
+                                'name': coworker.name,
+                                'login': login,
+                            })
+                    coworker.sudo().chat_user_id = user.id
+
+                repaired += 1
+            except Exception as e:
+                _logger.error(
+                    'Ägar-reparation misslyckades för coworker %s: %s',
+                    coworker.name, e, exc_info=True)
+
+        _logger.info(
+            'Ägar-reparation: gav %d av %d coworkers en ägare',
+            repaired, len(coworkers))
+        return repaired
 
     def _build_specialists(self, provider, tools, model, system_prompt, max_rounds=10):
         """Build list of SpecialistAgent from agent_ids."""

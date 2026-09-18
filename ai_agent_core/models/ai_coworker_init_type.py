@@ -457,7 +457,16 @@ class AICoworkerInitType(models.Model):
             self.alias_id.write(vals)
 
     def _ensure_chat_user(self):
-        """Create bot user for private chat if not exists."""
+        """Create bot user for private chat if not exists.
+
+        Skriver till BÅDA fälten (coworker-dispatch-owner D1):
+        - `ai.coworker.init_type.chat_user_id` — bot-usern för chatten
+        - `ai.coworker.chat_user_id` — ÄGAREN för automatiska körningar
+
+        Det andra fältet är det `_resolve_dispatch_user()` läser. Att bara
+        sätta init-typens fält lämnade coworkern utan ägare, och bron från
+        session till personligt minne kunde aldrig skriva något.
+        """
         if not self.chat_user_id:
             quest = self.coworker_id
             user = self.env['res.users'].search([
@@ -471,6 +480,14 @@ class AICoworkerInitType(models.Model):
                         'login': 'bot_' + quest.name.lower().replace(' ', '_'),
                     })
             self.chat_user_id = user.id
+
+        # Koppla ägaren till coworkern — det är HÄR den levande vägen läser.
+        if quest := self.coworker_id:
+            if quest.chat_user_id != self.chat_user_id:
+                quest.sudo().chat_user_id = self.chat_user_id.id
+                _logger.info(
+                    'Kopplade ägare %s till coworker %s',
+                    self.chat_user_id.login, quest.name)
 
     def _ensure_channel(self):
         """Create Discuss channel if not exists and add to channel_ids.

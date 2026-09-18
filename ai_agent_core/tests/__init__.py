@@ -11,6 +11,7 @@ from . import test_okf_memory
 from . import test_okf_embedding
 from . import test_session_summary
 from . import test_session_memory_bridge
+from . import test_coworker_dispatch_owner
 from . import test_memory_consolidation
 from . import test_okf_dirty_bridge
 from . import test_okf_hybrid_search
