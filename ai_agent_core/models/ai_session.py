@@ -970,6 +970,7 @@ class AICoworkerSession(models.Model):
                 ProviderFactory, get_default_provider, get_default_model_name)
             from odoo.addons.ai_agent_core.core.loop import (
                 AgentLoop, AgentConfig)
+            from odoo.addons.ai_agent_core.core.tools import ToolRegistry
             quest = self.coworker_id
             provider, model_rec = (
                 ProviderFactory.from_coworker(quest) if quest else (None, None))
@@ -982,7 +983,7 @@ class AICoworkerSession(models.Model):
                 return None
             model_name = (model_rec and model_rec._get_api_name()) \
                 or get_default_model_name()
-            loop = AgentLoop(provider=provider, tools=[], config=AgentConfig(
+            loop = AgentLoop(provider=provider, tools=ToolRegistry(), config=AgentConfig(
                 model=model_name, max_rounds=1, max_tokens=2048))
             result = asyncio.run(
                 loop.run(self._final_summary_prompt(transcript)))

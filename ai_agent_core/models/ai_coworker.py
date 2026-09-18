@@ -4000,13 +4000,14 @@ class AICoworker(models.Model):
             from odoo.addons.ai_agent_core.core.provider import (
                 ProviderFactory, get_default_provider, get_default_model_name)
             from odoo.addons.ai_agent_core.core.loop import AgentLoop, AgentConfig
+            from odoo.addons.ai_agent_core.core.tools import ToolRegistry
 
             provider, provider_model = ProviderFactory.from_coworker(self)
             if not provider:
                 provider, provider_model = get_default_provider()
             model_name = (provider_model and provider_model._get_api_name()) \
                 or get_default_model_name()
-            loop = AgentLoop(provider=provider, tools=[], config=AgentConfig(
+            loop = AgentLoop(provider=provider, tools=ToolRegistry(), config=AgentConfig(
                 model=model_name, max_rounds=1, max_tokens=1500))
             prompt = (
                 "Granska konversationen och extrahera 1-3 BESTÅENDE fakta "

@@ -540,6 +540,7 @@ class AIPersonalMemory(models.Model):
             new_facts = self._llm_extract_facts(
                 messages=messages,
                 existing=existing_texts,
+                coworker=session.coworker_id,
             )
         except Exception as e:
             _logger.error('LLM extraction failed for session %s: %s',
@@ -973,7 +974,7 @@ class AIPersonalMemory(models.Model):
         return boosts
 
     @api.model
-    def _llm_extract_facts(self, messages, existing):
+    def _llm_extract_facts(self, messages, existing, coworker=None):
         """Anropa LLM för ADD-only extraction.
 
         Använder mem0s ADDITIVE_EXTRACTION_PROMPT-mönster.
@@ -981,6 +982,8 @@ class AIPersonalMemory(models.Model):
         Args:
             messages (list[dict]): Session messages med role/content
             existing (list[str]): Existerande minnen för deduplicering
+            coworker: ai.coworker (valfri) — används för att lösa upp
+                providern via agent-kedjan. Utan den används default-modellen.
 
         Returns:
             list[dict]: Extraherade fakta med text, category, importance
@@ -1006,14 +1009,52 @@ Conversation:
 
 Return ONLY a JSON object: {{"memory": [{{"text": "...", "category": "fact|preference|goal|correction|pattern", "importance": "low|medium|high"}}]}}"""
 
-        # Anropa LLM via ai.provider
+        # Anropa LLM via provider-kedjan.
+        #
+        # TIDIGARE (trasigt): `self.env['ai.provider']._generate(model='gpt-4o-mini', ...)`.
+        # Två fel i ett:
+        #   1. `ai.provider._generate` FINNS INTE — anropet kastade
+        #      AttributeError, som svaldes av `except Exception` → tyst []
+        #   2. `gpt-4o-mini` är hårdkodad och finns inte i installationen
+        #      (modellerna heter cheap/frontier-models/moderate/...)
+        # Resultatet: minnesextraktionen returnerade alltid 0 fakta, och
+        # bron skrev aldrig något personligt minne.
+        #
+        # Rätt väg är samma som resten av systemet: lös upp providern via
+        # coworkern (→ agent → ai.model → ai.provider), annars default.
         try:
-            Provider = self.env['ai.provider']
-            response = Provider._generate(
-                model='gpt-4o-mini',  # billig modell räcker
-                messages=[{'role': 'user', 'content': prompt}],
-                response_format={'type': 'json_object'},
-            )
+            import asyncio
+            from odoo.addons.ai_agent_core.core.provider import (
+                ProviderFactory, get_default_provider, get_default_model_name)
+            from odoo.addons.ai_agent_core.core.loop import (
+                AgentLoop, AgentConfig)
+            from odoo.addons.ai_agent_core.core.tools import ToolRegistry
+
+            provider, model_rec = (
+                ProviderFactory.from_coworker(coworker)
+                if coworker else (None, None))
+            if not provider:
+                provider, model_rec = get_default_provider(self.env)
+            if not provider:
+                _logger.warning(
+                    'LLM extraction: ingen provider tillgänglig')
+                return []
+
+            model_name = (model_rec and model_rec._get_api_name()) \
+                or get_default_model_name()
+            loop = AgentLoop(
+                provider=provider, tools=ToolRegistry(),
+                config=AgentConfig(model=model_name, max_rounds=1,
+                                   max_tokens=1500))
+            result = asyncio.run(loop.run(prompt))
+            response = (result.text or '').strip()
+
+            # Modellen kan linda JSON i ```-block trots instruktionen.
+            if response.startswith('```'):
+                response = response.strip('`')
+                if response.startswith('json'):
+                    response = response[4:]
+                response = response.strip()
             result = json_lib.loads(response)
             return result.get('memory', [])
         except Exception as e:
