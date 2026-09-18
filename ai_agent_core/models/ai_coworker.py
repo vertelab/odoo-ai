@@ -3335,7 +3335,7 @@ class AICoworker(models.Model):
         existing = self.env['mail.activity'].sudo().search_count([
             ('res_model', '=', 'ai.coworker'),
             ('res_id', '=', self.id),
-            ('done', '=', False),
+            ('active', '=', True),
             ('summary', '=', summary),
         ])
         if existing:
@@ -3344,7 +3344,7 @@ class AICoworker(models.Model):
         if not activity_type:
             return False
         self.env['mail.activity'].sudo().create({
-            'res_model': 'ai.coworker',
+            'res_model_id': self.env['ir.model']._get('ai.coworker').id,
             'res_id': self.id,
             'activity_type_id': activity_type.id,
             'summary': summary,

@@ -562,7 +562,7 @@ class TestModelSelection(TransactionCase):
         self.assertFalse(coworker._activity_check_model_assignment(model))
         activities = self.env['mail.activity'].sudo().search([
             ('res_model', '=', 'ai.coworker'), ('res_id', '=', coworker.id),
-            ('done', '=', False),
+            ('active', '=', True),
         ])
         self.assertEqual(len(activities), 1)
 
