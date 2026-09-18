@@ -2286,7 +2286,7 @@ class AIOpenAIAPI(http.Controller):
             for m in messages:
                 if (m.get('role') or '') in ('system', 'developer', 'user'):
                     marker_texts.append(_content_to_text(m.get('content')))
-            pi_session_id = self.env['ai.coworker.session'] \
+            pi_session_id = request.env['ai.coworker.session'] \
                 ._extract_pi_session_marker(*marker_texts)
             if pi_session_id:
                 _logger.info(
