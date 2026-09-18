@@ -18,7 +18,7 @@ import hmac
 import json
 import logging
 
-from odoo import http
+from odoo import fields, http
 from odoo.http import request
 
 _logger = logging.getLogger(__name__)
@@ -115,9 +115,13 @@ class PiMeshController(http.Controller):
             'kind': p.get('kind') or 'message',
             'subject': p.get('subject'),
             'body': p.get('body'),
+            'response': p.get('response'),
             'correlation_id': p.get('correlation_id'),
             'session_ref': p.get('session_ref'),
             'task_id': p.get('task_id') or False,
+            # answered_at sätts när ett svar finns — annars är fältet
+            # 'answered' falskt och frågan ser obesvarad ut i vyn.
+            'answered_at': fields.Datetime.now() if p.get('response') else False,
         })
         return {'status': 'ok', 'message_id': msg.id}
 
@@ -190,3 +194,50 @@ class PiMeshController(http.Controller):
             'body': '\n'.join(files),
         })
         return {'status': 'ok', 'claims': len(files)}
+
+    @http.route('/pi_mesh/task', type='json', auth='none',
+                methods=['POST'], csrf=False)
+    def task(self):
+        """Skapa eller uppdatera en delegerad uppgift.
+
+        Payload:
+            action: 'create' | 'update'
+            name (krävs vid create), assigned_to, assigned_by,
+            description, status, result, task_id (vid update)
+        """
+        if not self._authorized():
+            return {'status': 'error', 'error': 'Unauthorized'}
+        p = self._payload()
+        action = p.get('action') or 'create'
+
+        admin = request.env['res.users'].browse(1)
+        Task = request.env['pi.mesh.task'].sudo().with_user(admin)
+
+        if action == 'update':
+            task = Task.browse(int(p.get('task_id') or 0))
+            if not task.exists():
+                return {'status': 'error', 'error': 'uppgiften finns inte'}
+            vals = {}
+            for f in ('status', 'result', 'assigned_to'):
+                if p.get(f) is not None:
+                    vals[f] = p[f]
+            if vals.get('status') in ('done', 'failed', 'cancelled'):
+                vals['finished_at'] = fields.Datetime.now()
+            if vals.get('status') == 'running' and not task.started_at:
+                vals['started_at'] = fields.Datetime.now()
+            task.write(vals)
+            return {'status': 'ok', 'task_id': task.id, 'state': task.status}
+
+        if not p.get('name'):
+            return {'status': 'error', 'error': 'name krävs'}
+        task = Task.create({
+            'name': p['name'],
+            'description': p.get('description'),
+            'assigned_to': p.get('assigned_to'),
+            'assigned_by': p.get('assigned_by'),
+            'status': p.get('status') or 'assigned',
+            'started_at': fields.Datetime.now()
+            if (p.get('status') or 'assigned') == 'running'
+            else False,
+        })
+        return {'status': 'ok', 'task_id': task.id}

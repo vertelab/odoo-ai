@@ -71,7 +71,13 @@ class PiMeshLock(models.Model):
             ])
         }
         for lock in self:
-            if lock.state != 'held':
+            # ETT LÅS SOM REDAN SLÄPPTS ÄR INTE DÖTT — det är avslutat.
+            # Men 'expired' är INTE 'released': det är precis det lås som
+            # dog utan att någon släppte det. Att sätta is_dead=False för
+            # alla icke-held raderade den enda signalen vyn finns för.
+            # (Fynd 2026-09-18: cronen satte state='expired' och is_dead
+            # släcktes i samma andetag — fältet var alltid False i drift.)
+            if lock.state == 'released':
                 lock.is_dead = False
                 continue
             expired = bool(lock.expires_at and lock.expires_at < now)
@@ -147,6 +153,12 @@ class PiMeshLock(models.Model):
                 'released_at': now,
                 'reason': 'TTL löpte ut utan förnyelse',
             })
+            # is_dead är ett LAGRAT fält som beror på state — och state
+            # ändrades just. Utan denna rad står fältet kvar på sitt
+            # gamla värde och vyn visar fel. (Samma mönster som
+            # _recompute_lock_count: den som ändrar indata måste räkna
+            # om härledningen.)
+            expired._compute_is_dead()
             _logger.info('pi_mesh: %d lås utgick', count)
         return count
 
