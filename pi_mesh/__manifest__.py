@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'Pi Agent Mesh',
-    'version': '18.0.1.3.0',
+    'version': '18.0.1.5.0',
     'license': 'AGPL-3',
     'category': 'AI',
     'summary': 'Historik och överblick för Pi-agenternas mesh',

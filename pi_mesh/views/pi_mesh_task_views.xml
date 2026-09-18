@@ -13,6 +13,7 @@
                 <field name="name"/>
                 <field name="assigned_to"/>
                 <field name="assigned_by"/>
+                <field name="ai_task_id"/>
                 <field name="status" widget="badge"/>
                 <field name="started_at"/>
                 <field name="duration_minutes"/>
@@ -42,6 +43,7 @@
                         <group string="Tilldelning">
                             <field name="assigned_to"/>
                             <field name="assigned_by"/>
+                            <field name="ai_task_id"/>
                         </group>
                         <group string="Tid">
                             <field name="started_at"/>

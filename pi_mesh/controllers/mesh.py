@@ -240,4 +240,12 @@ class PiMeshController(http.Controller):
             if (p.get('status') or 'assigned') == 'running'
             else False,
         })
+        # Koppla till Odoos uppgiftsbegrepp (väg c). Görs här och inte i
+        # agenten: agenten ska inte behöva känna till Odoos modeller.
+        if p.get('link_ai_task', True):
+            try:
+                task.action_link_ai_task()
+            except Exception as e:  # noqa: BLE001
+                # Kopplingen är en bonus. Meshen fungerar utan Odoo.
+                _logger.warning('pi_mesh: kunde inte koppla ai.org.task: %s', e)
         return {'status': 'ok', 'task_id': task.id}
