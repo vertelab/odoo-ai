@@ -270,6 +270,8 @@
                                     <field name="init_openai_api"/>
                                         <field name="rate_limit_rpm" invisible="not init_openai_api" string=" → Rate limit (req/min)"/>
                                         <field name="rate_limit_tpm" invisible="not init_openai_api" string=" → Rate limit (tok/min)"/>
+                                        <field name="openai_context_window" invisible="not init_openai_api" string=" → Context window (tokens)"/>
+                                        <field name="openai_context_window_manual" invisible="not init_openai_api" string=" → Context window (manuellt)" readonly="1"/>
                                     <!-- Watch — kopia av base_automation-formuläret (minus notepad/Notes) -->
                                     <field name="init_watch"/>
                                     <field name="watch_model_name" invisible="1"/>

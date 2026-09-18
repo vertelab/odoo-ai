@@ -1430,7 +1430,9 @@ class AIStreamController(http.Controller):
         Accepts optional session_id to bind memory to a specific session.
         Stores the original file as ir.attachment linked to the session.
         """
-        coworker_id = kw.get('coworker_id')
+        # Frontend (chat_template.html) skickar quest_id - alias for
+        # coworker_id (samma monster som /ai/powerbox/run m.fl.).
+        coworker_id = kw.get('coworker_id') or kw.get('quest_id')
         session_id = kw.get('session_id')
         memory_type = kw.get('memory_type', 'text')
         file_obj = request.httprequest.files.get('file')
@@ -1465,7 +1467,7 @@ class AIStreamController(http.Controller):
                 memory = request.env['ai.memory'].sudo().create({
                     'name': f'FAISS: {filename}',
                     'content': text[:2000],
-                    'coworker_id': quest.id if quest else None,
+                    'quest_id': quest.id if quest else None,
                     'session_id': session.id if session else None,
                     'agent_id': quest.agent_ids[0].agent_id.id if quest and quest.agent_ids else None,
                     'category': 'fact',
@@ -1492,7 +1494,7 @@ class AIStreamController(http.Controller):
             m = request.env['ai.memory'].sudo().create({
                 'name': f'{filename} (del {i+1})' if len(chunks) > 1 else filename,
                 'content': chunk,
-                'coworker_id': quest.id if quest else None,
+                'quest_id': quest.id if quest else None,
                 'session_id': session.id if session else None,
                 'category': 'fact',
                 'importance': 'medium',
@@ -2373,15 +2375,35 @@ class AIOpenAIAPI(http.Controller):
         
         Detta är standard OpenAI-formatet. Pi skickar hit med model=<alias>.
         """
-        body = json.loads(request.httprequest.data or '{}')
+        body = self._parse_json_body()
+        if body is None:
+            return Response(json.dumps({'error': {
+                'message': 'Invalid JSON body',
+                'type': 'invalid_request_error'}}),
+                status=400, content_type='application/json')
         coworker = body.get('model', '')
         if not coworker:
             return Response(json.dumps({'error': {'message': 'Missing model', 'type': 'invalid_request_error'}}),
                           status=400, content_type='application/json')
         return self._handle_chat(coworker, **kw)
 
+    @staticmethod
+    def _parse_json_body():
+        """Parsa request-body som JSON — tolerant (aldrig ohanterat fel).
+
+        Returnerar en dict, eller None vid ogiltig JSON. Kravet är att
+        endpointen alltid svarar giltig JSON — en trasig body ska ge 400,
+        inte en HTML-500.
+        """
+        try:
+            data = json.loads(request.httprequest.data or '{}')
+        except (ValueError, TypeError) as e:
+            _logger.warning('ogiltig JSON-body i /ai/v1/chat/completions: %s', e)
+            return None
+        return data if isinstance(data, dict) else None
+
     def _handle_chat(self, coworker, **kw):
-        body = json.loads(request.httprequest.data or '{}')
+        body = self._parse_json_body() or {}
         messages = body.get('messages', [])
         stream = body.get('stream', True)
 
@@ -2411,18 +2433,32 @@ class AIOpenAIAPI(http.Controller):
         # UUID:t). Fallback (C): klienten märker system-/första user-
         # meddelandet med `{pi session: <uuid>}` — plocka ut det om
         # body-fältet saknas (t.ex. proxad trafik som strippar okända fält).
+        #
+        # KRAV (openai-api-kontextfonster-och-kompaktering): ett saknat
+        # `pi_session_id` får ALDRIG ge ett ohanterat serverfel (HTML-500).
+        # Pi:s auto-kompaktering skickar en sammanfattnings-request som inte
+        # passerar `before_provider_request`-hooken och därför saknar id:t —
+        # den ska behandlas som ren generering utan session. Extraktionen är
+        # därför tolerant: fel loggas och körningen fortsätter utan id.
         pi_session_id = (body.get('pi_session_id') or '').strip()
         if not pi_session_id:
-            marker_texts = []
-            for m in messages:
-                if (m.get('role') or '') in ('system', 'developer', 'user'):
-                    marker_texts.append(_content_to_text(m.get('content')))
-            pi_session_id = self.env['ai.coworker.session'] \
-                ._extract_pi_session_marker(*marker_texts)
-            if pi_session_id:
-                _logger.info(
-                    'pi_session_id saknades i body — hittade markör i '
-                    'meddelandet: %s', pi_session_id)
+            try:
+                marker_texts = []
+                for m in messages:
+                    if (m.get('role') or '') in ('system', 'developer', 'user'):
+                        marker_texts.append(_content_to_text(m.get('content')))
+                pi_session_id = request.env['ai.coworker.session'] \
+                    ._extract_pi_session_marker(*marker_texts)
+                if pi_session_id:
+                    _logger.info(
+                        'pi_session_id saknades i body — hittade markör i '
+                        'meddelandet: %s', pi_session_id)
+            except Exception as e:
+                # Best-effort: markören är en extra transport. Ett fel här
+                # får inte fälla requesten (t.ex. kompakterings-anrop).
+                _logger.warning(
+                    'pi_session_id-markör kunde inte extraheras: %s', e)
+                pi_session_id = ''
 
         return self._run_coworker_chat(
             quest, messages, body.get('model', coworker), stream,
@@ -2708,12 +2744,26 @@ class AIOpenAIAPI(http.Controller):
         # session_id. Sync-vägen gör det i request-transaktionen; stream-vägen
         # i generatorn (egen cursor så den nya sessionen syns).
         def _find_or_create_session(env):
-            sess, _created = env['ai.coworker.session'] \
-                ._find_or_create_coworker_session(
-                    quest.id, env.user.id,
-                    pi_session_id=pi_session_id, session_id=session_id,
-                    prompt=prompt)
-            return sess
+            """Hitta/skapa session — tolerant (openai-api-kontextfonster).
+
+            Ett fel här får ALDRIG fälla requesten: Pi:s
+            kompakterings-anrop saknar `pi_session_id` och ska behandlas
+            som ren generering. Vid fel loggas en varning och en tom
+            recordset returneras; anropare hanterar tom `sess`
+            (ingen sessionsloggning, ingen kostnadskontext).
+            """
+            try:
+                sess, _created = env['ai.coworker.session'] \
+                    ._find_or_create_coworker_session(
+                        quest.id, env.user.id,
+                        pi_session_id=pi_session_id, session_id=session_id,
+                        prompt=prompt)
+                return sess
+            except Exception as e:
+                _logger.warning(
+                    'session find-or-create misslyckades (fortsätter utan '
+                    'session): %s', e)
+                return env['ai.coworker.session'].browse(0)
 
         def _cost_context_prompt_block(sess):
             """Bygg kostnadskontext-blocket (D9) för systemprompten.
@@ -2801,6 +2851,10 @@ class AIOpenAIAPI(http.Controller):
             tools-scheman.
             """
             try:
+                # Tom session (kompakterings-anrop utan pi_session_id):
+                # ren generering — ingen sessionsloggning.
+                if not sess:
+                    return
                 if messages:
                     env['ai.coworker.session']._persist_pi_messages(
                         env, sess, messages,
@@ -3427,6 +3481,10 @@ class AIOpenAIAPI(http.Controller):
           - name slug     (e.g. 'bokslut-britta')
         """
         coworker = request.env['ai.coworker'].sudo()
+
+        # Robusthet: model_id kan komma som icke-sträng i en JSON-body
+        # (t.ex. ett tal) — undvik AttributeError → HTML-500.
+        model_id = str(model_id or '')
 
         # 1. quest-<ID> format
         if model_id.startswith('quest-'):
