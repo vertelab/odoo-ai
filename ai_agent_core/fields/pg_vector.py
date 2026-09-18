@@ -13,7 +13,14 @@ from odoo import fields, tools
 _logger = logging.getLogger(__name__)
 
 try:
-    from pgvector.psycopg2.vector import Vector
+    # OBS: `pgvector.psycopg2.vector.Vector` är en ANNAN klass än
+    # `pgvector.utils.Vector`. Den förstas `_to_db(self, value)` tar ett
+    # argument (bunden metod), den andras `_to_db(value, dim=None)` tar två.
+    # Importen pekade på den första, så `Vector._to_db(value, dim)` gav
+    # "takes 2 positional arguments but 3 were given" — och varje
+    # `convert_to_column` kraschade. Felet var osynligt så länge ingen rad
+    # med en embedding skrevs (coworker-dispatch-owner, 2026-09-18).
+    from pgvector.utils import Vector
 except ImportError:
     Vector = None
     _logger.warning('pgvector python-paket saknas — OKF-embedding fungerar inte')
