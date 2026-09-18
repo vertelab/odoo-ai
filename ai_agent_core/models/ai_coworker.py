@@ -4452,6 +4452,101 @@ class AICoworker(models.Model):
             repaired, len(coworkers))
         return repaired
 
+    def _resolve_provider_or_raise(self):
+        """Lös upp en LLM-provider — eller avbryt med ett tydligt fel.
+
+        Anropas FÖRE `session.create()` i `run()` (agent-model-resolution
+        D2). Skälet är att en körning som inte kan genomföras inte ska
+        lämna ett spår: tidigare skapades sessionen först, och felet
+        upptäcktes först vid `await provider.aclose()` i ett finally-block.
+        Resultatet var en tom session med status='error'.
+
+        Returns:
+            tuple: (provider, ai.model) — båda satta.
+
+        Raises:
+            ValidationError: om ingen provider kan lösas upp.
+        """
+        self.ensure_one()
+        from odoo.addons.ai_agent_core.core.provider import (
+            ProviderFactory, get_default_provider)
+
+        provider = None
+        model_rec = None
+
+        # 1. Coworkerns agent-kedja
+        try:
+            provider, model_rec = ProviderFactory.from_coworker(self)
+        except Exception as e:
+            _logger.debug(
+                'Provider-uppslagning via agent-kedjan föll för %s: %s',
+                self.name, e)
+
+        # 2. Default-modellen
+        if not provider:
+            provider, model_rec = get_default_provider(self.env)
+
+        if not provider:
+            # Namnge orsaken — inte `aclose`.
+            missing = self.agent_ids.filtered(
+                lambda qa: not qa.agent_id.model_id)
+            detail = (
+                '%d av %d agenter saknar model_id'
+                % (len(missing), len(self.agent_ids))
+                if missing else 'ingen agent är kopplad'
+            )
+            raise ValidationError(
+                'Coworker "%s" kan inte köra: ingen LLM-provider kunde lösas '
+                'upp (%s). Sätt fältet "Modell" på agenten, eller sätt '
+                'systemparametern ai_agent_core.default_model_id.'
+                % (self.name, detail))
+
+        return provider, model_rec
+
+    @api.model
+    def _repair_missing_agent_models(self):
+        """Ge agenter utan `model_id` default-modellen (D5).
+
+        I drift 2026-09-18 saknade 20 av 21 agenter en modell. Kedjan
+        ai.coworker → agent → ai.model → ai.provider är den enda vägen
+        till en LLM, så ingen av dem kunde köra.
+
+        Metoden rör INTE agenter som redan har en modell — ett medvetet
+        val ska inte skrivas över. Idempotent.
+
+        Returns:
+            int: Antal agenter som fick en modell.
+        """
+        param = self.env['ir.config_parameter'].sudo().get_param(
+            'ai_agent_core.default_model_id')
+        if not param:
+            _logger.warning(
+                'Agent-modell-reparation: default_model_id saknas — '
+                'kör post_init eller sätt parametern först')
+            return 0
+
+        default_model = self.env['ai.model'].sudo().browse(int(param))
+        if not default_model.exists():
+            _logger.warning(
+                'Agent-modell-reparation: default_model_id=%s pekar på en '
+                'modell som inte finns', param)
+            return 0
+
+        agents = self.env['ai.agent'].sudo().search([
+            ('model_id', '=', False),
+            ('active', '=', True),
+        ])
+        if not agents:
+            _logger.info(
+                'Agent-modell-reparation: alla aktiva agenter har en modell')
+            return 0
+
+        agents.write({'model_id': default_model.id})
+        _logger.info(
+            'Agent-modell-reparation: gav %d agenter modellen %s',
+            len(agents), default_model.name)
+        return len(agents)
+
     def _build_specialists(self, provider, tools, model, system_prompt, max_rounds=10):
         """Build list of SpecialistAgent from agent_ids."""
         from odoo.addons.ai_agent_core.core.loop import AgentLoop, AgentConfig
@@ -5327,6 +5422,16 @@ class AICoworker(models.Model):
                 if agent.model_id and agent.model_id.name:
                     model = agent.model_id._get_api_name()
                     break
+
+        # FÖRKONTROLL (agent-model-resolution D2): kan en provider lösas upp?
+        #
+        # Tidigare skapades sessionen först och providern upptäcktes vara
+        # None först vid `await provider.aclose()` i ett finally-block —
+        # långt efter att körningen misslyckats. Resultatet var en TOM
+        # session med status='error' och felmeddelandet
+        # "'NoneType' object has no attribute 'aclose'", som pekade på fel
+        # sak. En körning som inte kan genomföras ska inte lämna ett spår.
+        self._resolve_provider_or_raise()
 
         # Build system prompt
         if system_prompt is None:

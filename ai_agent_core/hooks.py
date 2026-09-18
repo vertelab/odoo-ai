@@ -534,6 +534,13 @@ def post_init_hook(env):
     # Run org init too
     post_init_hook_org(env)
 
+    # Default-modellen (agent-model-resolution D3).
+    #
+    # `get_default_provider()` läser `ai_agent_core.default_model_id`, men
+    # parametern sattes aldrig — och 20 av 21 agenter saknade `model_id`.
+    # Utan en default kunde ingen av dem köra.
+    _ensure_default_model(env)
+
     # OKF-sökvägen: search_vector + index (okf-recall-path fas 11).
     # Körs här och inte i migration 1.11 — där fanns inte tabellen ännu.
     okf_ensure_search_infrastructure(env)
@@ -635,3 +642,33 @@ def post_init_hook(env):
         _logger.warning(
             'Apache AGE may not be installed. '
             'Run: salt \'*\' state.apply postgres.age')
+
+
+def _ensure_default_model(env):
+    """Sätt `ai_agent_core.default_model_id` om den saknas.
+
+    Väljer den billigaste aktiva modellen — `cheap` om den finns, annars
+    första bästa. Att välja en dyr modell som default vore att fatta ett
+    kostnadsbeslut i smyg (agent-model-resolution D3).
+    """
+    param = 'ai_agent_core.default_model_id'
+    existing = env['ir.config_parameter'].sudo().get_param(param)
+    if existing:
+        model = env['ai.model'].sudo().browse(int(existing))
+        if model.exists():
+            _logger.info('Default-modell finns redan: %s', model.name)
+            return
+
+    Model = env['ai.model'].sudo()
+    model = Model.search([('name', '=', 'cheap'), ('active', '=', True)],
+                         limit=1)
+    if not model:
+        model = Model.search([('active', '=', True)], limit=1)
+    if not model:
+        _logger.warning(
+            'Ingen aktiv ai.model finns — default-modellen kunde inte sättas. '
+            'Agenter utan model_id kan inte köra.')
+        return
+
+    env['ir.config_parameter'].sudo().set_param(param, str(model.id))
+    _logger.info('Default-modell satt till %s (id=%d)', model.name, model.id)

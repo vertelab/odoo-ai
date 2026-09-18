@@ -790,24 +790,35 @@ def resolve_provider_from_coworker(coworker, agent_rel=None):
     return provider, agent.model_id
 
 
-def get_default_provider():
+def get_default_provider(env=None):
     """Get the default provider from system parameters.
 
-    Uses ir.config_parameter 'ai_agent_core.default_model_id' to
-    look up an ai.model record. Returns (provider, model) or (None, None).
+    Använder ir.config_parameter 'ai_agent_core.default_model_id' för att
+    slå upp en ai.model. Returnerar (provider, model) eller (None, None).
+
+    OBS (agent-model-resolution D3): den här funktionen krävde tidigare en
+    HTTP-request (`odoo.http.request`) och returnerade därför ALLTID
+    (None, None) i cron och shell — trots att cron är den vanligaste
+    vägen in. Nu tas `env` emot, och `request` används bara som sista
+    utväg.
+
+    Args:
+        env: Odoo environment. Om None, försök med `odoo.http.request`.
     """
     try:
-        from odoo.http import request
+        if env is None:
+            from odoo.http import request
+            if not request:
+                return None, None
+            env = request.env
 
-        if not request:
-            return None, None
-        param = request.env['ir.config_parameter'].sudo().get_param(
+        param = env['ir.config_parameter'].sudo().get_param(
             'ai_agent_core.default_model_id'
         )
         if not param:
             return None, None
 
-        model = request.env['ai.model'].sudo().browse(int(param))
+        model = env['ai.model'].sudo().browse(int(param))
         if not model.exists():
             return None, None
 

@@ -20,6 +20,7 @@ from . import test_odoo_model_tools
 from . import test_tool_access
 from . import test_coworker_hitl
 from . import test_agent_runtime
+from . import test_agent_model_resolution
 from . import test_external_dispatch
 from . import test_hitl_routing
 from . import test_partner_enrichment
