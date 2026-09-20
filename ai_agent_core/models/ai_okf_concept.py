@@ -1167,7 +1167,7 @@ class AIOkfConcept(models.Model):
             ('res_model', '=', 'ai.okf.concept'),
             ('res_id', '=', self.id),
             ('activity_type_id.name', '=', 'AI Nudge'),
-            ('done', '=', False),
+            ('active', '=', True),
         ], limit=1)
         if existing:
             return existing

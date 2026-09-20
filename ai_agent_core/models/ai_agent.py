@@ -363,22 +363,27 @@ class AIAgent(models.Model):
         """Returnera default-verktygsnamnen från Settings (ir.config_parameter).
 
         Tom/parameter saknas → DEFAULT_AGENT_TOOL_NAMES från res.config.settings.
+
+        avveckla-builtin-fallbacken: ingen hårdkodad sista utväg med INTERNA
+        verktyg. Om settings-listan inte kan läsas returneras en TOM lista —
+        hellre inga verktyg än odoo-verktyg ingen valt. En varning loggas så
+        felet blir synligt i stället för att tyst ge fel verktyg.
         """
         param = self.env['ir.config_parameter'].sudo().get_param(
             'ai_agent_core.default_tool_ids', '')
         names = [n.strip() for n in param.split(',') if n.strip()]
         if names:
             return names
-        # Fallback: samma lista som settings-fältets default.
+        # Fallback: samma lista som settings-fältets default (säkra verktyg).
         try:
             from .res_config_settings import ResConfigSettings
             return list(ResConfigSettings.DEFAULT_AGENT_TOOL_NAMES)
-        except Exception:
-            return [
-                'describe_model', 'odoo_search', 'odoo_create',
-                'odoo_call_method', 'odoo_write', 'odoo_unlink',
-                'okf_search',
-            ]
+        except Exception as e:
+            _logger.warning(
+                'Kunde inte läsa default-verktyg (DEFAULT_AGENT_TOOL_NAMES): '
+                '%s — returnerar TOM lista (inga verktyg) i stället för '
+                'interna odoo-verktyg', e)
+            return []
 
     def write(self, vals):
         res = super(AIAgent, self).write(vals)

@@ -92,7 +92,7 @@ class AgentLoop:
     Usage:
         provider = AIProvider(base_url='...', is_bifrost=True)
         tools = ToolRegistry()
-        tools.register_many(builtin_tools())
+        # Verktyg väljs explicit (ai.agent.tool_ids) — inte via builtin_tools()
 
         loop = AgentLoop(provider=provider, tools=tools, config=AgentConfig())
         result = await loop.run("What is 2+2?")
@@ -126,6 +126,9 @@ class AgentLoop:
         # Observability: [(tool_name, result_preview), ...] per execution,
         # read by callers (e.g. ai.coworker.run) for session-line persistence
         self.tool_history: list = []
+        # Fullständiga verktygsresultat [(tool_name, arguments, result)] —
+        # behövs för write-verify (3.2) eftersom tool_history trunkeras.
+        self.tool_results: list = []
 
         # Reasoning- & narrativ-spårning (d): samlar den "gråa" tänketexten
         # (reasoning_content/reasoning) och supervisor-/agentrundornas
@@ -545,8 +548,13 @@ class AgentLoop:
                     output_tokens=total_output_tokens + synth.output_tokens,
                     finish_reason="max_rounds",
                 )
-        except Exception:
-            pass
+        except Exception as e:
+            # Logga i stället för att tystna (web-ui-stream-turn-persistens
+            # 1.1) — fallback-texten nedan returneras ändå.
+            _logger.error(
+                "max_rounds-avslutets sammanfattning misslyckades (sync): %s",
+                e, exc_info=True,
+            )
         return ChatResponse(
             text="(max rounds exceeded — stopping)",
             input_tokens=total_input_tokens,
@@ -603,6 +611,8 @@ class AgentLoop:
         if tool.executor == "nats":
             result = await self._execute_via_nats(tool, tool_call.arguments)
             self.tool_history.append((tool_call.name, str(result)[:500]))
+            self.tool_results.append(
+                (tool_call.name, dict(tool_call.arguments or {}), result))
             return result
 
         # Local execution (default, existing behavior)
@@ -641,6 +651,8 @@ class AgentLoop:
             result = execute_task.result()
             tool_elapsed = time.time() - tool_start
             self.tool_history.append((tool_call.name, str(result)[:500]))
+            self.tool_results.append(
+                (tool_call.name, dict(args or {}), result))
             _logger.debug(
                 "Tool '%s' completed in %.2fs, result length=%d",
                 tool_call.name, tool_elapsed, len(result),
@@ -960,6 +972,12 @@ class StreamingAgentLoop(AgentLoop):
         # max_rounds nådd: gör ett sista anrop UTAN verktyg så användaren
         # alltid får ett sammanfattande svar (tidigare: tomt avslut → klienten
         # visade bara narreringen utan slutsats).
+        #
+        # Ett fel här får INTE sväljas tyst (web-ui-stream-turn-persistens
+        # 1.1): den tysta except:en gjorde att done emit:ades med noll tokens
+        # och turen saknade assistantsvar helt. Felet loggas och bärs vidare
+        # på done-händelsen så anroparen kan skriva ett ärligt avslut.
+        summary_error = ""
         try:
             async for event in self.provider.chat_stream(
                 model=self.config.model,
@@ -985,11 +1003,18 @@ class StreamingAgentLoop(AgentLoop):
                     event.output_tokens = total_output_tokens
                     yield event
                     return
-        except Exception:
-            pass
+        except Exception as e:
+            summary_error = "%s: %s" % (type(e).__name__, e)
+            _logger.error(
+                "max_rounds-avslutets sammanfattning misslyckades "
+                "(input=%d output=%d): %s",
+                total_input_tokens, total_output_tokens, summary_error,
+                exc_info=True,
+            )
         yield TokenEvent(
             type="done", finish_reason="max_rounds",
-            input_tokens=total_input_tokens, output_tokens=total_output_tokens)
+            input_tokens=total_input_tokens, output_tokens=total_output_tokens,
+            error=summary_error)
 
     @staticmethod
     def _extract_source_urls(result: str, tc: dict) -> list[str]:

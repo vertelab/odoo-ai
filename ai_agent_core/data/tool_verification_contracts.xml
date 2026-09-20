@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Write-verify-avtal (improve-ai-coworker-memory-and-tools 3.1/5.1).
+
+         Sätter deklarativa verifieringsavtal på de generiska Odoo-verktygen.
+         Idempotent via en modellmetod (samma mönster som
+         _ensure_builtin_tool_records) — körs vid BÅDE init och update, och
+         rör inte verktygets övriga konfiguration. Ingen kärnkodändring
+         krävs för att lägga till/ändra ett avtal: det görs i data eller UI. -->
+    <function model="ai.tool" name="_ensure_verification_contracts"
+              eval="[obj()]"/>
+</odoo>

@@ -281,19 +281,17 @@ class AIStreamController(http.Controller):
                         if memories_text:
                             system_prompt = (system_prompt + '\n\n' + memories_text).strip()
 
-                    # Load history from session lines
+                    # Load history from session lines via the SHARED mechanism
+                    # (web-ui-session-kontext D1): sessionens rader är den
+                    # auktoritativa källan, och samma funktion används av
+                    # coworker-vägen. En egen loop här tappade tool_calls, så
+                    # modellen kunde inte relatera till vad den redan gjort.
                     lines = session.session_line_ids.sorted('sequence')
-                    for line in lines:
-                        history_messages.append({
-                            'role': line.role,
-                            'content': line.content or '',
-                        })
-                    # Sammanfatta historiken när den blivit lång (4.6).
-                    # Resultatet persisteras på sessionen via den enda
-                    # sammanfattaren; här används det bara som systemmeddelande
-                    # i den fortsatta konversationen. Vid misslyckad
-                    # sammanfattning behålls historiken oförändrad — aldrig
-                    # ett tomt systemmeddelande.
+                    history_messages = [
+                        m.to_openai()
+                        for m in session._build_history_from_lines()
+                    ]
+                    # Auto-summarize if too many messages
                     if len(lines) > 50:
                         summary = _summarize_history(session, lines)
                         if summary:
@@ -303,8 +301,11 @@ class AIStreamController(http.Controller):
                         else:
                             history_messages = history_messages[-20:]
 
-                    # Save user message as session line (T7.4)
-                    next_seq = len(lines) + 1
+                    # Save user message as session line (T7.4). Sekvensen
+                    # härleds från sessionens HÖGSTA värde — inte radantalet,
+                    # som kolliderar så snart verktygsrader skrivits direkt
+                    # (web-ui-session-kontext D3).
+                    next_seq = _next_session_sequence(request.env, session.id)
                     request.env['ai.coworker.session.line'].sudo().create({
                         'session_id': session.id,
                         'sequence': next_seq,
@@ -572,6 +573,13 @@ class AIStreamController(http.Controller):
                                         event, 'input_tokens', 0) or 0
                                     data["output_tokens"] = getattr(
                                         event, 'output_tokens', 0) or 0
+                                    # Bevara avslutsmetadata för serverns
+                                    # persistens (2.1/2.3): avslutsorsak +
+                                    # ev. fel från max_rounds-avslutet.
+                                    state['finish_reason'] = event.finish_reason
+                                    ev_err = getattr(event, 'error', '') or ''
+                                    if ev_err:
+                                        state['error'] = ev_err
                             yield f"data: {json.dumps(data)}\n\n"
                         pending = handler.get_pending()
                         if pending:
@@ -600,6 +608,23 @@ class AIStreamController(http.Controller):
                         except Exception:
                             _logger.warning(
                                 'persist stream tool lines failed', exc_info=True)
+                        # Servern är garanten (2.1): skriv turens avslutande
+                        # assistantsvar även om klienten aldrig POST:ar.
+                        # Utan detta kunde en tur bli stående med enbart
+                        # user+tool-rader (session 20286) — tråden såg tom ut.
+                        try:
+                            _persist_stream_answer(
+                                gen_env, session_id,
+                                ''.join(full_response),
+                                reasoning='\n'.join(
+                                    getattr(state.get('loop_obj'),
+                                            'reasoning_log', None) or []),
+                                finish_reason=state.get('finish_reason', ''),
+                                error=state.get('error', ''),
+                            )
+                        except Exception:
+                            _logger.warning(
+                                'persist stream answer failed', exc_info=True)
                         gen_cr.commit()
                     for chunk in results:
                         yield chunk
@@ -611,10 +636,10 @@ class AIStreamController(http.Controller):
                     try:
                         # Drain pending async_generator_athrow-tasks (från
                         # GC:ade inre generatorer) innan loopen stängs.
-                        _stasks = _sdbg.all_tasks(loop)
-                        if _stasks:
-                            loop.run_until_complete(
-                                _sdbg.gather(*_stasks, return_exceptions=True))
+                        # Tidsbegränsad (4.1): en hängande uppstädning fick
+                        # annars worker-tråden att leva till limit_time_real
+                        # (session 20286: 21 min → tvingad reload).
+                        _drain_tasks_with_timeout(loop, timeout=5.0)
                     except Exception:
                         pass
                     try:
@@ -1058,8 +1083,6 @@ class AIStreamController(http.Controller):
         session = request.env['ai.coworker.session'].sudo().browse(thread_id)
         quest = session.coworker_id if session else None
         if session.exists():
-            next_seq = len(session.session_line_ids) + 1
-
             # Resolve sys_multiplier from ai.model if model_real is provided.
             # Kanal-medvetet via _resolve_from_real (record-id/coworker-agenter).
             sys_mult = 1.0
@@ -1074,21 +1097,20 @@ class AIStreamController(http.Controller):
                 tool_calls if isinstance(tool_calls, str) else json.dumps(
                     tool_calls, ensure_ascii=False))
 
-            request.env['ai.coworker.session.line'].sudo().create({
-                'session_id': session.id,
-                'sequence': next_seq,
-                'role': role,
-                'content': content,
-                'debug_info': debug_info,
-                'source_urls': '\n'.join(
+            # Idempotent (3.1): servern har redan persisterat turens
+            # assistantsvar — ett identiskt klient-svar ska inte dubbleras.
+            session._save_client_response(
+                content=content,
+                role=role,
+                model_real=model_real,
+                token_input=0,
+                token_output=token_output,
+                debug_info=debug_info,
+                source_urls='\n'.join(
                     str(s) for s in sources if str(s).startswith('http')),
-                'tool_calls': tool_calls_json,
-                # Assistant-raden bokför output; input ligger på user-raden.
-                'token_input': 0,
-                'token_output': token_output,
-                'model_real': model_real,
-                'sys_multiplier': sys_mult,
-            })
+                tool_calls=tool_calls_json,
+                sys_multiplier=sys_mult,
+            )
 
             # Senaste user-raden får requestens input-tokens (riktig usage
             # eller estimat) så varje meddelande visar sin prompt-kostnad.
@@ -1413,7 +1435,9 @@ class AIStreamController(http.Controller):
         Accepts optional session_id to bind memory to a specific session.
         Stores the original file as ir.attachment linked to the session.
         """
-        coworker_id = kw.get('coworker_id')
+        # Frontend (chat_template.html) skickar quest_id - alias for
+        # coworker_id (samma monster som /ai/powerbox/run m.fl.).
+        coworker_id = kw.get('coworker_id') or kw.get('quest_id')
         session_id = kw.get('session_id')
         memory_type = kw.get('memory_type', 'text')
         file_obj = request.httprequest.files.get('file')
@@ -1448,7 +1472,7 @@ class AIStreamController(http.Controller):
                 memory = request.env['ai.memory'].sudo().create({
                     'name': f'FAISS: {filename}',
                     'content': text[:2000],
-                    'coworker_id': quest.id if quest else None,
+                    'quest_id': quest.id if quest else None,
                     'session_id': session.id if session else None,
                     'agent_id': quest.agent_ids[0].agent_id.id if quest and quest.agent_ids else None,
                     'category': 'fact',
@@ -1475,7 +1499,7 @@ class AIStreamController(http.Controller):
             m = request.env['ai.memory'].sudo().create({
                 'name': f'{filename} (del {i+1})' if len(chunks) > 1 else filename,
                 'content': chunk,
-                'coworker_id': quest.id if quest else None,
+                'quest_id': quest.id if quest else None,
                 'session_id': session.id if session else None,
                 'category': 'fact',
                 'importance': 'medium',
@@ -1588,6 +1612,22 @@ async def _collect(agen):
     return result
 
 
+def _next_session_sequence(env, session_id):
+    """Nästa lediga sekvensvärde för en sessionsrad.
+
+    Härleds från sessionens HÖGSTA befintliga sekvens — inte från antalet
+    rader. Radantalet motsvarar inte sekvensvärdet så snart verktygsrader
+    skrivits direkt, och då kolliderar två rader (web-ui-session-kontext D3;
+    samma bugg gav en dubblerad user-rad i session 18204).
+
+    Samma mönster som `ai_coworker.py` använder.
+    """
+    last = env['ai.coworker.session.line'].sudo().search(
+        [('session_id', '=', session_id)],
+        order='sequence desc, id desc', limit=1)
+    return (last.sequence or 0) + 1
+
+
 def _persist_stream_tool_lines(env, session_id, loop_obj):
     """Persistera verktygsanrop från en web-chat-stream som tool-rader.
 
@@ -1606,6 +1646,7 @@ def _persist_stream_tool_lines(env, session_id, loop_obj):
         return
     existing = set(session.session_line_ids.filtered(
         lambda l: l.role == 'tool').mapped('tool_name'))
+    base_seq = _next_session_sequence(env, session.id)
     for i, (t_name, t_preview) in enumerate(history):
         if t_name in existing:
             continue
@@ -1622,12 +1663,121 @@ def _persist_stream_tool_lines(env, session_id, loop_obj):
             'role': 'tool',
             'tool_name': t_name,
             'content': str(t_preview)[:2000],
-            'sequence': 100 + i,
+            'sequence': base_seq + i,
             'token_input': tool_cost,
             'sys_multiplier': 1.0,
         })
     _logger.info('persisted %d tool line(s) for session %s',
                  len(history), session_id)
+
+
+# Marker som skrivs när en tur avslutats utan något visningsbart innehåll.
+# Avsiktligt synlig: motsatsen (tyst bortfall) är själva buggen.
+_NO_ANSWER_MARKER = '(inget svar)'
+
+
+def _persist_stream_answer(env, session_id, answer, reasoning='',
+                           finish_reason='', error=''):
+    """Persistera turens avslutande assistantsvar server-side.
+
+    Servern är garanten (web-ui-stream-turn-persistens 2.1): klienten kan
+    stänga fliken, tappa nätet eller få tomt innehåll — då tystnade turen
+    helt (session 20286). Skriver en assistant-rad när turen inte redan
+    fått ett assistantsvar, med ackumulerad svarstext, narrering, eller en
+    explicit markering att inget svar gavs.
+
+    Idempotent: om sessionens sista rad redan är ett assistantsvar skrivs
+    ingen ny rad (klientens POST hanteras separat och dedupas i
+    `_save_client_response`).
+
+    Returnerar antalet skapade rader (0 eller 1). Tyst no-op vid fel —
+    persist får aldrig krascha en avslutad körning.
+    """
+    if not session_id:
+        return 0
+    try:
+        session = env['ai.coworker.session'].sudo().browse(int(session_id))
+        if not session.exists():
+            return 0
+        lines = session.session_line_ids.sorted(
+            key=lambda l: (l.sequence or 0, l.id or 0))
+        if lines and lines[-1].role == 'assistant':
+            # Turen har redan ett avslutande assistantsvar.
+            return 0
+        content = (answer or '').strip()
+        if not content:
+            content = (reasoning or '').strip()
+        if not content:
+            content = _NO_ANSWER_MARKER
+        seq = _next_session_sequence(env, session.id)
+        env['ai.coworker.session.line'].sudo().create({
+            'session_id': session.id,
+            'role': 'assistant',
+            'content': content,
+            'reasoning': (reasoning or '').strip() or False,
+            'sequence': seq,
+        })
+        # Avslutsorsak i sessionsmetadata (2.3): skilj "avslutad utan
+        # sammanfattning" från normal avslutning, och fyll feldetalj när
+        # det avslutande anropet felat.
+        meta = {}
+        if finish_reason:
+            meta['finish_reason'] = finish_reason
+        if error:
+            meta['error_detail'] = error
+        if meta:
+            try:
+                session.sudo().write(meta)
+            except Exception as e:
+                _logger.warning(
+                    'kunde inte skriva sessionsmetadata: %s', e)
+        _logger.info('persisted stream answer for session %s (seq=%s)',
+                     session_id, seq)
+        return 1
+    except Exception as e:
+        _logger.warning('persist stream answer failed: %s', e, exc_info=True)
+        return 0
+
+
+def _drain_tasks_with_timeout(loop, timeout=5.0):
+    """Dränera kvarvarande asyncio-tasks med en tidsgräns.
+
+    Efter-strömmens uppstädning kördes tidigare utan gräns
+    (`run_until_complete(gather(...))`), vilket kunde hålla en worker-tråd
+    tills Odoos `limit_time_real` tvingade en reload (session 20286: 21 min,
+    1297/1200 s). Här avbryts uppstädningen i stället vid timeout och
+    loggas — turen är redan persisterad, så inget data går förlorat.
+
+    Returnerar True om alla tasks hann klart, annars False.
+    """
+    try:
+        tasks = [t for t in asyncio.all_tasks(loop) if not t.done()]
+    except Exception:
+        return True
+    if not tasks:
+        return True
+    try:
+        loop.run_until_complete(
+            asyncio.wait_for(
+                asyncio.gather(*tasks, return_exceptions=True),
+                timeout=timeout,
+            )
+        )
+        return True
+    except (asyncio.TimeoutError, TimeoutError):
+        _logger.warning(
+            'efter-strömmens uppstädning överskred %.1fs — avbryter '
+            '(%d task(s) kvar); turen är redan persisterad',
+            timeout, len(tasks))
+        for t in tasks:
+            try:
+                t.cancel()
+            except Exception:
+                pass
+        return False
+    except Exception as e:
+        _logger.warning('efter-strömmens uppstädning misslyckades: %s', e)
+        return False
 
 
 # ---------------------------------------------------------------------------
@@ -1957,7 +2107,7 @@ class PICallbackController(http.Controller):
         })
 
         # Save as session line
-        next_seq = len(session.session_line_ids) + 1
+        next_seq = _next_session_sequence(request.env, session.id)
         request.env['ai.coworker.session.line'].sudo().create({
             'session_id': session.id,
             'sequence': next_seq,
@@ -2021,7 +2171,7 @@ class PICallbackController(http.Controller):
 
         request.env['ai.coworker.session.line'].sudo().create({
             'session_id': session.id,
-            'sequence': 1,
+            'sequence': _next_session_sequence(request.env, session.id),
             'role': 'assistant',
             'content': content or f'Batch {batch_id} completed',
             'model_real': 'bifrost-batch',
@@ -2242,15 +2392,35 @@ class AIOpenAIAPI(http.Controller):
         
         Detta är standard OpenAI-formatet. Pi skickar hit med model=<alias>.
         """
-        body = json.loads(request.httprequest.data or '{}')
+        body = self._parse_json_body()
+        if body is None:
+            return Response(json.dumps({'error': {
+                'message': 'Invalid JSON body',
+                'type': 'invalid_request_error'}}),
+                status=400, content_type='application/json')
         coworker = body.get('model', '')
         if not coworker:
             return Response(json.dumps({'error': {'message': 'Missing model', 'type': 'invalid_request_error'}}),
                           status=400, content_type='application/json')
         return self._handle_chat(coworker, **kw)
 
+    @staticmethod
+    def _parse_json_body():
+        """Parsa request-body som JSON — tolerant (aldrig ohanterat fel).
+
+        Returnerar en dict, eller None vid ogiltig JSON. Kravet är att
+        endpointen alltid svarar giltig JSON — en trasig body ska ge 400,
+        inte en HTML-500.
+        """
+        try:
+            data = json.loads(request.httprequest.data or '{}')
+        except (ValueError, TypeError) as e:
+            _logger.warning('ogiltig JSON-body i /ai/v1/chat/completions: %s', e)
+            return None
+        return data if isinstance(data, dict) else None
+
     def _handle_chat(self, coworker, **kw):
-        body = json.loads(request.httprequest.data or '{}')
+        body = self._parse_json_body() or {}
         messages = body.get('messages', [])
         stream = body.get('stream', True)
 
@@ -2280,18 +2450,32 @@ class AIOpenAIAPI(http.Controller):
         # UUID:t). Fallback (C): klienten märker system-/första user-
         # meddelandet med `{pi session: <uuid>}` — plocka ut det om
         # body-fältet saknas (t.ex. proxad trafik som strippar okända fält).
+        #
+        # KRAV (openai-api-kontextfonster-och-kompaktering): ett saknat
+        # `pi_session_id` får ALDRIG ge ett ohanterat serverfel (HTML-500).
+        # Pi:s auto-kompaktering skickar en sammanfattnings-request som inte
+        # passerar `before_provider_request`-hooken och därför saknar id:t —
+        # den ska behandlas som ren generering utan session. Extraktionen är
+        # därför tolerant: fel loggas och körningen fortsätter utan id.
         pi_session_id = (body.get('pi_session_id') or '').strip()
         if not pi_session_id:
-            marker_texts = []
-            for m in messages:
-                if (m.get('role') or '') in ('system', 'developer', 'user'):
-                    marker_texts.append(_content_to_text(m.get('content')))
-            pi_session_id = request.env['ai.coworker.session'] \
-                ._extract_pi_session_marker(*marker_texts)
-            if pi_session_id:
-                _logger.info(
-                    'pi_session_id saknades i body — hittade markör i '
-                    'meddelandet: %s', pi_session_id)
+            try:
+                marker_texts = []
+                for m in messages:
+                    if (m.get('role') or '') in ('system', 'developer', 'user'):
+                        marker_texts.append(_content_to_text(m.get('content')))
+                pi_session_id = request.env['ai.coworker.session'] \
+                    ._extract_pi_session_marker(*marker_texts)
+                if pi_session_id:
+                    _logger.info(
+                        'pi_session_id saknades i body — hittade markör i '
+                        'meddelandet: %s', pi_session_id)
+            except Exception as e:
+                # Best-effort: markören är en extra transport. Ett fel här
+                # får inte fälla requesten (t.ex. kompakterings-anrop).
+                _logger.warning(
+                    'pi_session_id-markör kunde inte extraheras: %s', e)
+                pi_session_id = ''
 
         return self._run_coworker_chat(
             quest, messages, body.get('model', coworker), stream,
@@ -2317,6 +2501,48 @@ class AIOpenAIAPI(http.Controller):
         return out
 
     @staticmethod
+    def _skill_triggered(skill, low_text):
+        """Matchar en skills trigger_keywords mot texten (helordsmatchning).
+
+        Helordsmatchning: "read" ska inte plocka upp "read/write"-larm via
+        delsträng, och "pg" inte matcha inuti ett annat ord. Kortare/vanligare
+        nyckelord i ai.skill.trigger_keywords ger fler träffar — det är data
+        som kan trimmas i UI:t utan deploy.
+        """
+        import re as _re
+        for _k in _re.split(r'[,\n]', skill.trigger_keywords or ''):
+            _k = _k.strip().lower()
+            if not _k:
+                continue
+            if _re.search(r'(?<![a-z0-9])' + _re.escape(_k)
+                          + r'(?![a-z0-9])', low_text):
+                return True
+        return False
+
+    @staticmethod
+    def _select_relevant_skills(messages, skill_recs):
+        """Välj vilka skills som ska med i LLM-kontexten (data-driven).
+
+        En skill tas med när frågan matchar dess `trigger_keywords` — reglerna
+        bor i ai.skill och kan ändras i UI:t utan deploy. Ingen hårdkodad
+        tabell.
+
+        - `orchestration.*` behålls alltid (styr arbetsupplägget).
+        - Ingen träff alls → behåll samtliga (oförändrat beteende).
+        """
+        skill_recs = list(skill_recs)
+        low = ' '.join(
+            str(m.get('content') or '') for m in (messages or [])
+        )[:4000].lower()
+        always = [s for s in skill_recs
+                  if (s.name or '').startswith('orchestration')]
+        always_ids = {s.id for s in always}
+        matched = [s for s in skill_recs
+                   if s.id not in always_ids
+                   and AIOpenAIAPI._skill_triggered(s, low)]
+        return always + matched if matched else skill_recs
+
+    @staticmethod
     def _select_relevant_tools(messages, tools):
         """Supervisor-kontextoptimering: välj endast uppgiftsrelevanta tools.
 
@@ -2331,8 +2557,20 @@ class AIOpenAIAPI(http.Controller):
         """
         # Alltid behåll ett litet bas-set (kärnförmågor oavsett uppgift)
         BAS = {
-            'bash', 'read', 'edit', 'write', 'grep', 'find', 'ls',
-            'describe_model', 'odoo_fetch_url', 'odoo_calculator', 'okf_search',
+            'bash', 'read', 'edit', 'write', 'grep',
+            'describe_model', 'odoo_search',
+            'salt_cmd_run', 'driftlarm_update_assessment',
+        }
+
+        # Verktyg som alltid behålls om klienten skickar dem. Skyddar
+        # Pi-agentens egna kapaciteter (delegering, minne, sök, uppgifter):
+        # Pi kör verktygen lokalt och tappar dem helt om de beskärs bort här.
+        ALWAYS = {
+            'subagent', 'bg_wait',
+            'memory_write', 'memory_read', 'memory_search',
+            'web_search', 'fetch_content',
+            'task_get', 'task_set_status', 'task_update_fields',
+            'okf_search',
         }
 
         # Sammanställ uppgiftstexten (senaste meddelanden)
@@ -2342,48 +2580,77 @@ class AIOpenAIAPI(http.Controller):
         if not prompt_text:
             prompt_text = 'generisk uppgift'
 
-        # Nyckelord → verktygsfamilj (prefix-match på tool-namn)
+        # Nyckelord → EXPLICITA verktyg (prioritetsordning).
+        #
+        # OBS 2026-09-13: prefix-matchning togs bort. Tidigare matchade
+        # reglerna på BREDA ord ("host", "salt", "minion", "odoo", "log") och
+        # drog sedan in ALLA verktyg med det prefixet. En typisk driftlarm-
+        # prompt innehåller "host", "salt" och "log" → 65 av 88 verktyg följde
+        # med, vilket fick modellen att svälja tool_calls i content-text.
+        # Explicit lista håller urvalet litet och förutsägbart.
         RULES = [
-            (['zabbix', 'active check', 'monitor', 'host', 'service down'],
-             ['zabbix', 'salt', 'service']),
-            (['salt', 'minion', 'pillar', 'grain', 'state', 'cmd.run'],
-             ['salt']),
-            (['wazuh', 'correlat', 'security event', 'cve'],
-             ['wazuh', 'driftlarm']),
-            (['postgres', 'pg_', 'replication', 'database', 'db '],
-             ['pg_', 'postgres']),
-            (['caddy', '502', 'gateway', 'reverse prox', 'tls'],
-             ['caddy']),
-            (['odoo', 'task', 'project', 'cron', 'log'],
-             ['odoo_', 'task_', 'prd_', 'logg', 'tail_odoo']),
-            (['mail', 'postfix', 'dovecot', 'email'], ['mail', 'postfix', 'dovecot']),
+            (['disk', 'minne', 'memory', 'load', 'cpu', 'i/o'], [
+                'salt_disk_usage', 'salt_memory_usage', 'salt_system_load',
+                'salt_process_list']),
+            (['service', 'tjänst', 'systemd', 'restart', 'nere', 'down'], [
+                'salt_service_status', 'salt_service_restart',
+                'salt_journal_errors']),
+            (['postgres', 'replication', 'database', 'databas', 'pg_'], [
+                'pg_isready', 'pg_replication_lag', 'pg_stat_activity']),
+            (['caddy', '502', '504', 'gateway', 'reverse prox', 'tls'], [
+                'caddy_status', 'caddy_recent_errors',
+                'caddy_upstream_health']),
+            (['odoo', 'traceback'], [
+                'tail_odoo_log', 'grep_odoo_errors', 'odoo_cron_status',
+                'odoo_read', 'odoo_write']),
+            (['zabbix', 'active check', 'trigger', 'item'], [
+                'zabbix_get_alerts', 'zabbix_get_problems',
+                'zabbix_get_triggers', 'zabbix_get_host',
+                'zabbix_get_item']),
+            (['wazuh', 'cve', 'säkerhet', 'security', 'correlat'], [
+                'wazuh_agent_status', 'wazuh_recent_alerts',
+                'wazuh_cve_list']),
+            (['minion', 'pillar', 'grain', 'highstate'], [
+                'salt_test_ping', 'salt_grains_items', 'salt_pillar_items',
+                'salt_state_show_sls', 'salt_minion_list']),
+            (['postfix', 'dovecot', 'mail'], [
+                'salt_service_status', 'salt_journal_errors']),
+            (['helpdesk', 'ticket', 'avvikelse', 'nonconformity'], [
+                'create_helpdesk_ticket', 'document_nonconformity']),
         ]
+
+        # Reglerna får lägga till högst så här många UTOVER bas+ALWAYS —
+        # annars äter bas-setet upp hela budgeten och reglerna blir döda.
+        MAX_RULE_TOOLS = 8
 
         named = dict(AIOpenAIAPI._tool_names(tools))
         if not named:
             return tools or []
 
-        # Matcha fram familjer
-        selected = set(BAS & set(named.keys()))  # bas-set som faktiskt finns
-        for keywords, families in RULES:
-            if any(k in prompt_text for k in keywords):
-                for fam in families:
-                    selected |= {
-                        n for n in named if n.startswith(fam)}
+        available = set(named.keys())
+        # ALWAYS läggs till utanför regel-budgeten — de är få och skyddar Pi.
+        selected = (BAS | ALWAYS) & available
+        base_count = len(selected)
 
-        # Fallback: om inget matchade, behåll en kompakt bas-y del (exkl.
-        # stora per-domän familjer) så sessionen inte blir helt utan kontext.
-        if len(selected) <= len(BAS & set(named.keys())):
-            # Ta de 8 första icke-bas verktygen som en kompakt default
-            rest = [n for n in named if n not in selected]
-            selected |= set(rest[:8])
+        # Fyll på regel för regel tills regel-budgeten är nådd
+        # (mest-specifik-först).
+        for keywords, tool_names in RULES:
+            if len(selected) - base_count >= MAX_RULE_TOOLS:
+                break
+            if not any(k in prompt_text for k in keywords):
+                continue
+            for name in tool_names:
+                if len(selected) - base_count >= MAX_RULE_TOOLS:
+                    break
+                if name in available:
+                    selected.add(name)
 
         # Behåll originalordning
         result = [t for name, t in named.items() if name in selected]
         _logger.info(
             'supervisor tool-select: %d/%d verktyg skickas till LLM (%s)',
             len(result), len(named),
-            ','.join(sorted(n for n in named if n in selected))[:300])
+            ','.join(sorted(selected))[:300])
         return result
 
     @staticmethod
@@ -2472,11 +2739,18 @@ class AIOpenAIAPI(http.Controller):
         # Gör att /ai/v1-klienter (Pi m.fl.) ser samma kapaciteter som
         # chat-UI:t och run()-vägen.
         try:
-            skill_recs = quest.skill_ids | quest.agent_ids.agent_id.skill_ids
+            skill_recs = (quest.skill_ids
+                          | quest.agent_ids.agent_id.skill_ids
+                          | quest.identity_id.skill_ids)
             if skill_recs:
+                _chosen = AIOpenAIAPI._select_relevant_skills(
+                    messages, skill_recs)
+                _logger.info('supervisor skill-select: %d/%d skills (%s)',
+                             len(_chosen), len(skill_recs),
+                             ','.join(s.name or '?' for s in _chosen)[:200])
                 skill_ctx = '\n\n## Skills (följ dessa vid behov)\n' + '\n'.join(
                     f'### {s.name}\n{s.recipe_text or s.description or ""}'
-                    for s in skill_recs)
+                    for s in _chosen)
                 system_prompt = (system_prompt or '') + skill_ctx
         except Exception as e:
             _logger.warning('skill injection failed (openai_api): %s', e)
@@ -2487,12 +2761,26 @@ class AIOpenAIAPI(http.Controller):
         # session_id. Sync-vägen gör det i request-transaktionen; stream-vägen
         # i generatorn (egen cursor så den nya sessionen syns).
         def _find_or_create_session(env):
-            sess, _created = env['ai.coworker.session'] \
-                ._find_or_create_coworker_session(
-                    quest.id, env.user.id,
-                    pi_session_id=pi_session_id, session_id=session_id,
-                    prompt=prompt)
-            return sess
+            """Hitta/skapa session — tolerant (openai-api-kontextfonster).
+
+            Ett fel här får ALDRIG fälla requesten: Pi:s
+            kompakterings-anrop saknar `pi_session_id` och ska behandlas
+            som ren generering. Vid fel loggas en varning och en tom
+            recordset returneras; anropare hanterar tom `sess`
+            (ingen sessionsloggning, ingen kostnadskontext).
+            """
+            try:
+                sess, _created = env['ai.coworker.session'] \
+                    ._find_or_create_coworker_session(
+                        quest.id, env.user.id,
+                        pi_session_id=pi_session_id, session_id=session_id,
+                        prompt=prompt)
+                return sess
+            except Exception as e:
+                _logger.warning(
+                    'session find-or-create misslyckades (fortsätter utan '
+                    'session): %s', e)
+                return env['ai.coworker.session'].browse(0)
 
         def _cost_context_prompt_block(sess):
             """Bygg kostnadskontext-blocket (D9) för systemprompten.
@@ -2500,15 +2788,24 @@ class AIOpenAIAPI(http.Controller):
             Injiceras endast för openai_api-körningar. Innehåller aktuell
             session-kontext + coworkerns konfigurerade frågetext +
             "fråga en gång"-instruktion. Tyst no-op vid fel.
+
+            OBS (kostnadskontext-injektion-stream 2.1): coworkern hämtas
+            ALLTID ur sessionens egen cursor (sess.env) — aldrig ur
+            closure-variabeln `quest`. Generatorn kör efter request-teardown,
+            så `quest` är bunden till en stängd cursor: relationsläsningar på
+            den kastar InterfaceError. Fältet `quest.id` är cachat och maskerar
+            felet, vilket gjorde att fallbacken såg fungerande ut medan varje
+            streamad tur tappade sin kostnadskontext.
             """
             try:
-                # OBS (streaming): använder sess.coworker_id (sessionens
-                # egen cursor) i stället för closure-variabeln quest —
-                # request.cursor är stängd när generatorn körs efter
-                # teardown.
-                cw = sess.coworker_id if (
-                    'coworker_id' in sess._fields and sess.coworker_id
-                ) else quest
+                if 'coworker_id' not in sess._fields or not sess.coworker_id:
+                    # Ingen coworker på sessionen → ingen kontext att bygga.
+                    # Läs INGET request-bundet; returnera tomt block.
+                    _logger.info(
+                        'cost-context: session %s saknar coworker — '
+                        'inget block byggs', getattr(sess, 'id', None))
+                    return ''
+                cw = sess.coworker_id
                 has_openai = bool(cw.init_type_ids.filtered(
                     lambda it: it.init_type == 'openai_api' and it.enabled))
                 if not has_openai:
@@ -2549,7 +2846,15 @@ class AIOpenAIAPI(http.Controller):
                     block += 'Fråga inte om kostnadskontext igen.\n'
                 return block
             except Exception as e:
-                _logger.warning('cost-context injection failed: %s', e)
+                # Kostnadskontext-injektion-stream 3.1: felet får inte tyst
+                # degradera varje tur till "ingen kostnadskontext". Logga
+                # sessionens identitet och orsaken så mönstret syns i drift
+                # (felet var osynligt i en månad trots 432 loggrader).
+                _logger.warning(
+                    'cost-context injection failed: %s (session=%s, '
+                    'coworker=%s)', e, getattr(sess, 'id', None),
+                    getattr(sess.coworker_id, 'id', None)
+                    if 'coworker_id' in getattr(sess, '_fields', {}) else None)
                 return ''
 
         def _persist_session(env, sess, response_text, input_t, output_t,
@@ -2563,6 +2868,10 @@ class AIOpenAIAPI(http.Controller):
             tools-scheman.
             """
             try:
+                # Tom session (kompakterings-anrop utan pi_session_id):
+                # ren generering — ingen sessionsloggning.
+                if not sess:
+                    return
                 if messages:
                     env['ai.coworker.session']._persist_pi_messages(
                         env, sess, messages,
@@ -2574,14 +2883,11 @@ class AIOpenAIAPI(http.Controller):
                     # _persist_pi_messages dedupar den då.
                     if response_text:
                         try:
-                            _last = env['ai.coworker.session.line'].search(
-                                [('session_id', '=', sess.id)],
-                                order='sequence desc, id desc', limit=1)
                             env['ai.coworker.session.line'].create({
                                 'session_id': sess.id, 'role': 'assistant',
                                 'content': response_text,
                                 'model_real': model_real or '',
-                                'sequence': (_last.sequence or 0) + 1,
+                                'sequence': _next_session_sequence(env, sess.id),
                                 'token_input': 0, 'token_output': 0,
                                 'tool_calls': json.dumps([
                                     {'name': n, 'preview': str(p)[:200]}
@@ -2599,9 +2905,14 @@ class AIOpenAIAPI(http.Controller):
                         model_real, sess.coworker_id)
                     if ai_model:
                         sys_mult = ai_model.sys_multiplier
+                # Sekvensen härleds från sessionens högsta värde — hårdkodade
+                # 1/2 kolliderade så snart verktygsrader skrivits direkt
+                # (web-ui-session-kontext D3).
+                _base_seq = _next_session_sequence(env, sess.id)
                 Line.create({
                     'session_id': sess.id, 'role': 'user',
-                    'content': (prompt or '')[:2000], 'sequence': 1,
+                    'content': (prompt or '')[:2000],
+                    'sequence': _base_seq,
                     'token_input': input_t, 'token_output': 0,
                     'sys_multiplier': sys_mult,
                 })
@@ -2609,7 +2920,8 @@ class AIOpenAIAPI(http.Controller):
                     'session_id': sess.id, 'role': 'assistant',
                     'content': response_text,
                     'token_input': 0, 'token_output': output_t,
-                    'model_real': model_real or '', 'sequence': 2,
+                    'model_real': model_real or '',
+                    'sequence': _base_seq + 1,
                     'sys_multiplier': sys_mult,
                     'tool_calls': json.dumps([
                         {'name': n, 'preview': str(p)[:200]}
@@ -2620,7 +2932,7 @@ class AIOpenAIAPI(http.Controller):
                     Line.create({
                         'session_id': sess.id, 'role': 'tool',
                         'tool_name': t_name, 'content': t_preview,
-                        'sequence': 10 + i,
+                        'sequence': _base_seq + 2 + i,
                     })
                 sess.write({
                     'token_input': (sess.token_input or 0) + input_t,
@@ -3186,6 +3498,10 @@ class AIOpenAIAPI(http.Controller):
           - name slug     (e.g. 'bokslut-britta')
         """
         coworker = request.env['ai.coworker'].sudo()
+
+        # Robusthet: model_id kan komma som icke-sträng i en JSON-body
+        # (t.ex. ett tal) — undvik AttributeError → HTML-500.
+        model_id = str(model_id or '')
 
         # 1. quest-<ID> format
         if model_id.startswith('quest-'):

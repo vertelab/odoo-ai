@@ -74,6 +74,11 @@ class Tool:
             return f"Tool '{self.name}' requires remote executor ({self.executor})"
         try:
             return await self.handler(**kwargs)
+        except ToolError as e:
+            # Strukturerat, åtgärdbart fel (2.1) — bevara vägledningen.
+            if not e.tool_name:
+                e.tool_name = self.name
+            return e.to_text()
         except Exception as e:
             return f"Tool error ({self.name}): {e}"
 
@@ -149,13 +154,25 @@ class ToolRegistry:
 async def _tool_calculator(expression: str) -> str:
     """Evaluate a mathematical expression. Test tool."""
     allowed = set("0123456789+-*/.() ")
-    if not all(c in allowed for c in expression):
-        return "Error: expression contains disallowed characters"
+    if not expression or not expression.strip():
+        return _missing_argument_error(
+            'expression', 'a mathematical expression',
+            example='2 + 2 * 3', tool_name='odoo_calculator').to_json()
+    bad = sorted({c for c in expression if c not in allowed})
+    if bad:
+        return _invalid_value_error(
+            'expression',
+            'only digits and + - * / . ( ) are allowed',
+            ''.join(bad),
+            example='2 + 2 * 3',
+            tool_name='odoo_calculator').to_json()
     try:
         result = eval(expression, {"__builtins__": {}})
         return str(result)
     except Exception as e:
-        return f"Error: {e}"
+        return _internal_error(
+            'odoo_calculator', e,
+            hint='the expression could not be evaluated').to_json()
 
 
 async def _tool_web_search(query: str = "", max_results: int = 5) -> str:
@@ -163,7 +180,10 @@ async def _tool_web_search(query: str = "", max_results: int = 5) -> str:
     om cert-laddning misslyckas (odoo-användaren saknar läsrätt till
     /usr/local/share/ca-certificates/mycacert.crt)."""
     if not query or not query.strip():
-        return "Error: query is required"
+        return _missing_argument_error(
+            'query', 'a search query (1-200 characters)',
+            example='saltstack pillar best practices',
+            tool_name='web_search').to_json()
     try:
         max_results = max(1, min(int(max_results or 5), 15))
     except (TypeError, ValueError):
@@ -294,9 +314,15 @@ async def _tool_web_search(query: str = "", max_results: int = 5) -> str:
 async def _tool_fetch_url(url: str = "", max_length: int = 5000) -> str:
     """Fetch and extract text content from a URL."""
     if not url:
-        return "Error: url is required"
+        return _missing_argument_error(
+            'url', 'a URL starting with http:// or https://',
+            example='https://docs.saltproject.io/',
+            tool_name='fetch_url').to_json()
     if not (url.startswith('http://') or url.startswith('https://')):
-        return f"Error: invalid URL '{url}'. URL must start with http:// or https://"
+        return _invalid_value_error(
+            'url', 'a URL starting with http:// or https://', url,
+            example='https://docs.saltproject.io/',
+            tool_name='fetch_url').to_json()
     try:
         max_length = max(1000, min(int(max_length or 5000), 20000))
     except (TypeError, ValueError):
@@ -318,9 +344,12 @@ async def _tool_fetch_url(url: str = "", max_length: int = 5000) -> str:
         text = soup.get_text(separator=' ', strip=True)
         return text[:max_length] if len(text) > max_length else text
     except ImportError as e:
-        return f"Error: {e}. Run: pip install httpx beautifulsoup4"
+        return _internal_error(
+            'fetch_url', e,
+            hint='install the missing dependency: '
+                 'pip install httpx beautifulsoup4').to_json()
     except Exception as e:
-        return f"Fetch error: {e}"
+        return _internal_error('fetch_url', e).to_json()
 
 
 def _sanitize_tool_name(name: str) -> str:
@@ -552,7 +581,19 @@ def apply_capability_serialization(registry, capabilities, mode):
 
 
 def builtin_tools() -> list[Tool]:
-    """Return built-in test tools for development."""
+    """Return the tools this module offers (seedningskälla).
+
+    Rollen är INTE att vara ett runtime-register. Vilka verktyg en agent
+    har avgörs uteslutande av `ai.agent.tool_ids` (explicit-agent-tools).
+
+    Används av:
+    - `ai.tool._ensure_builtin_tool_records()` — seedar en `ai.tool`-post
+      per verktyg (med `builtin_name`) vid modul-init och -update.
+    - `ai_tool_records_to_tools()` / `ai.tool.to_core_tool()` — slår upp
+      den riktiga Python-handlern för en post med `builtin_name`.
+
+    Ingen runtime-väg registrerar listan implicit i en session.
+    """
     return [
         Tool(
             name="odoo_calculator",
@@ -1117,7 +1158,10 @@ async def _tool_graph_query(env, query: str = "") -> str:
     """
     import json
     if not query or not query.strip():
-        return json.dumps({"error": "query is required"})
+        return _missing_argument_error(
+            'query', 'a graph query (AGE/Cypher syntax)',
+            example="MATCH (n:Model) RETURN n.name LIMIT 10",
+            tool_name='graph_query').to_json()
     try:
         executor = env['graph.executor']
         if not executor.is_age_available():
@@ -1356,7 +1400,10 @@ async def _tool_load_skill(name: str = "") -> str:
 the catalog is relevant to the current task."""
     import json
     if not name or not name.strip():
-        return json.dumps({"error": "skill name is required"})
+        return _missing_argument_error(
+            'name', 'the name of a skill from the catalog',
+            example='saltstack',
+            tool_name='load_skill').to_json()
 
     if _SKILL_SOURCE is None:
         return json.dumps({
@@ -1538,12 +1585,177 @@ def _model_scope_error(env, model):
     return ''
 
 
+# ---------------------------------------------------------------------------
+# Strukturerad verktygsfeltyp (improve-ai-coworker-memory-and-tools 2.1)
+# Verktygsfel ska vara ÅTGÄRDBARA: vilken parameter, förväntat format,
+# faktiskt värde och om anropet kan göras om. Feltypen serialiseras till
+# både LLM-läsbar text och JSON (maskinläsbar för kvalitetsloopen).
+# ---------------------------------------------------------------------------
+
+class ToolError(Exception):
+    """Strukturerat, åtgärdbart verktygsfel.
+
+    Bär tillräckligt för att agenten ska kunna korrigera anropet utan att
+    tappa sessionens tråd: vilken parameter som är fel, förväntat format,
+    faktiskt värde och om ett nytt försök är meningsfullt.
+    """
+
+    def __init__(self, message, parameter='', expected='', actual='',
+                 valid_fields=None, retryable=True, tool_name=''):
+        super().__init__(message)
+        self.message = message
+        self.parameter = parameter
+        self.expected = expected
+        self.actual = actual
+        self.valid_fields = list(valid_fields or [])
+        self.retryable = retryable
+        self.tool_name = tool_name
+
+    def to_text(self):
+        """LLM-läsbar text med vägledning."""
+        parts = [f"Error: {self.message}"]
+        if self.parameter:
+            parts.append(f"Parameter: {self.parameter}")
+        if self.expected:
+            parts.append(f"Expected: {self.expected}")
+        if self.actual:
+            parts.append(f"Actual: {self.actual}")
+        if self.valid_fields:
+            parts.append("Valid fields: %s" % ', '.join(self.valid_fields))
+        parts.append("Retryable: %s" % ('yes' if self.retryable else 'no'))
+        return '\n'.join(parts)
+
+    def to_dict(self):
+        """Maskinläsbar struktur (för kvalitetsloopen)."""
+        return {
+            'error': self.message,
+            'parameter': self.parameter,
+            'expected': self.expected,
+            'actual': self.actual,
+            'valid_fields': self.valid_fields,
+            'retryable': self.retryable,
+            'tool_name': self.tool_name,
+        }
+
+    def to_json(self):
+        import json as _json
+        return _json.dumps(self.to_dict(), ensure_ascii=False, default=str)
+
+
+def _tool_error(message, valid_fields=None, tool_name=''):
+    """Hjälpare: okänt/felaktigt fält → åtgärdbart ToolError."""
+    return ToolError(
+        message, expected='one of: %s' % ', '.join(valid_fields or []),
+        valid_fields=valid_fields, tool_name=tool_name)
+
+
+def _missing_argument_error(parameter, expected, example='', tool_name=''):
+    """Saknat eller tomt obligatoriskt argument → åtgärdbart fel.
+
+    Ett TOMT argument behandlas som ett saknat (atgardbara-verktygsfel D2):
+    felet ska säga vilket argument som saknas och ge ett exempel, inte eka
+    tomheten ("Unknown model: ").
+
+    :param parameter: argumentets namn
+    :param expected:  förväntat format eller vilka värden som gäller
+    :param example:   ett konkret exempel på ett giltigt värde
+    """
+    msg = f"Missing required argument '{parameter}'"
+    if example:
+        msg += f" — example: {example}"
+    return ToolError(
+        msg,
+        parameter=parameter,
+        expected=expected,
+        actual='(empty)',
+        retryable=True,
+        tool_name=tool_name,
+    )
+
+
+def _invalid_value_error(parameter, expected, actual, example='',
+                         retryable=True, tool_name=''):
+    """Fel format/värde på ett argument → åtgärdbart fel."""
+    msg = f"Invalid value for '{parameter}'"
+    if example:
+        msg += f" — example: {example}"
+    return ToolError(
+        msg,
+        parameter=parameter,
+        expected=expected,
+        actual=str(actual),
+        retryable=retryable,
+        tool_name=tool_name,
+    )
+
+
+def _internal_error(tool_name, exc, hint=''):
+    """Oväntat fel inuti ett verktyg → strukturerat fel, inte omförsökbart.
+
+    Till skillnad från ett avvisat anrop är detta inte anroparens misstag
+    (atgardbara-verktygsfel, kategori C): ett nytt försök med samma argument
+    hjälper inte. Formen är densamma som övriga fel så konsumenterna slipper
+    specialfall, men ``retryable`` är False och ``expected`` säger att felet
+    är internt.
+    """
+    return ToolError(
+        f"{tool_name} failed: {exc}",
+        expected=hint or 'the tool to succeed — this is an internal error, '
+                        'not a bad argument',
+        actual=str(exc)[:200],
+        retryable=False,
+        tool_name=tool_name,
+    )
+
+
+def _missing_record_error(model, record_id, tool_name='', parameter=''):
+    """Resursen finns inte → åtgärdbart fel som INTE är omförsökbart.
+
+    Ett nytt försök med samma id hjälper inte (atgardbara-verktygsfel D4):
+    antingen är id:t fel eller så finns posten inte längre. Vägledningen ska
+    säga vilken modell och vilket id som avsågs, så anroparen kan slå upp
+    rätt id i stället för att gissa.
+    """
+    return ToolError(
+        f"{model} #{record_id} not found",
+        parameter=parameter or f'{model.lower().replace(".", "_")}_id',
+        expected=f'an existing {model} id',
+        actual=str(record_id),
+        retryable=False,
+        tool_name=tool_name,
+    )
+
+
+def _unknown_field_error(model, field, valid_fields, tool_name=''):
+    """Okänt fält: namnge fältet och förteckna giltiga fält."""
+    return ToolError(
+        f"Unknown field '{field}' on {model}",
+        parameter=field,
+        expected='one of: %s' % ', '.join(sorted(valid_fields)[:40]),
+        actual=field,
+        valid_fields=sorted(valid_fields),
+        tool_name=tool_name,
+    )
+
+
 def _tool_describe_model(env, model=''):
     """Return model schema + capabilities (fält, relationer, action-metoder,
     has_okf/has_graph/has_embedding)."""
     import json as _json
-    if not model or model not in env.registry:
-        return _json.dumps({"error": f"Unknown model: {model}"})
+    # Tomt argument är ett SAKNAT argument, inte en okänd modell
+    # (atgardbara-verktygsfel D2): tidigare gav detta "Unknown model: "
+    # vilket inte namnger vad som saknas.
+    if not model or not str(model).strip():
+        return _missing_argument_error(
+            'model', 'an Odoo model name (technical name)',
+            example='res.partner',
+            tool_name='describe_model').to_json()
+    if model not in env.registry:
+        return _invalid_value_error(
+            'model', 'an installed Odoo model', model,
+            example='res.partner',
+            retryable=False,
+            tool_name='describe_model').to_json()
     _scope_err = _model_scope_error(env, model)
     if _scope_err:
         return _json.dumps({"error": _scope_err})
@@ -1639,17 +1851,34 @@ def _tool_odoo_search(env, model='', domain=None, fields=None, limit=20,
             fg = {}
         fields = [f for f in fields
                   if fg.get(f, {}).get('type') not in ('html', 'text', 'binary')]
+    else:
+        # Explicit fields: validera mot schemat → åtgärdbart fel (2.3).
+        unknown = [f for f in fields
+                   if f not in Model._fields and f != 'id']
+        if unknown:
+            return _unknown_field_error(
+                model, unknown[0], set(Model._fields),
+                tool_name='odoo_search').to_json()
     try:
         records = Model.search_read(
             domain or [], fields=fields, limit=limit or 20,
             offset=offset or 0, order=order)
     except Exception as e:
-        return _json.dumps({"error": f"search_read failed on {model}: {e}"})
+        return ToolError(
+            f"search_read failed on {model}: {e}",
+            expected='valid domain/fields per fields_get',
+            actual=str(e),
+            tool_name='odoo_search',
+        ).to_json()
     return _json.dumps(records, default=str)
 
 
 def _tool_odoo_create(env, model='', values=None):
-    """Create a record via ORM (affärslager). Returnerar id + display_name."""
+    """Create a record via ORM (affärslager). Returnerar id + display_name.
+
+    Felaktigt/okänt fält ger ett ÅTGÄRDBART fel (2.2/2.3): fältnamn,
+    förväntade fält och om anropet kan göras om.
+    """
     import json as _json
     if not model or model not in env.registry:
         return _json.dumps({"error": f"Unknown model: {model}"})
@@ -1659,13 +1888,32 @@ def _tool_odoo_create(env, model='', values=None):
     Model = env[model]
     if not Model.check_access_rights('create', raise_exception=False):
         return _json.dumps({"error": f"No create access on {model}"})
+    vals = dict(values or {})
+    # Validera fältnamn mot modellens schema innan create — ger ett
+    # åtgärdbart fel istället för ett generiskt ORM-undantag.
+    if vals:
+        valid_fields = set(Model._fields)
+        unknown = [f for f in vals if f not in valid_fields]
+        if unknown:
+            return _unknown_field_error(
+                model, unknown[0], valid_fields,
+                tool_name='odoo_create').to_json()
     try:
-        rec = Model.create(dict(values or {}))
+        rec = Model.create(vals)
     except Exception as e:
-        return _json.dumps({"error": f"create failed on {model}: {e}"})
+        return ToolError(
+            f"create failed on {model}: {e}",
+            expected='valid field values per fields_get',
+            actual=str(e),
+            tool_name='odoo_create',
+        ).to_json()
     return _json.dumps({
         "ok": True, "id": rec.id,
         "name": rec.display_name or rec.name or '',
+        # Modellen eklas tillbaka så write-verify kan slå upp posten när
+        # avtalet använder model_path (generiska verktyg, 5.1).
+        "model": model,
+        "values": vals,
     }, default=str)
 
 
@@ -1736,10 +1984,35 @@ def _tool_odoo_write(env, model='', ids=None, values=None):
             continue
         allowed[fname] = fval
     if rejected:
-        return _json.dumps({
-            "error": f"Icke tillåtna fält: {rejected}",
-            "hint": "Använd odoo_call_method för affärsflöden "
-                    "(state ändras via metoder)"})
+        # Vägledningen ska peka på RÄTT verktyg, inte bara avvisa
+        # (atgardbara-verktygsfel D3). HTML-/textfält går inte att skriva
+        # direkt här — de sätts vid skapandet via odoo_create.
+        has_html = [f for f in rejected
+                    if f in Model._fields
+                    and Model._fields[f].type in ('html', 'text')]
+        if has_html:
+            expected = (
+                'HTML/text fields cannot be written by odoo_write. '
+                'Use odoo_create to set %s when creating the record, or '
+                'odoo_call_method for business flows.'
+                % ', '.join(has_html))
+        else:
+            expected = (
+                'writable, non-computed fields (or use odoo_call_method '
+                'for business flows — state changes via methods)')
+        return ToolError(
+            f"Fields not writable on {model}: {rejected}",
+            parameter=rejected[0],
+            expected=expected,
+            actual=', '.join(rejected),
+            valid_fields=sorted(
+                f for f in Model._fields
+                if not Model._fields[f].readonly
+                and not Model._fields[f].compute
+                and not Model._fields[f].related),
+            retryable=True,
+            tool_name='odoo_write',
+        ).to_json()
     recs = Model.browse(ids or [])
     if not recs:
         return _json.dumps({"error": f"Inga {model}-poster med ids={ids}"})
@@ -1944,7 +2217,9 @@ def _tool_builder_update_quest(env, coworker_id, **kwargs):
     """Update an existing ai.coworker. Only updates provided fields."""
     quest = env["ai.coworker"].browse(int(coworker_id))
     if not quest.exists():
-        return f"Error: Quest #{coworker_id} not found"
+        return _missing_record_error(
+            'ai.coworker', coworker_id,
+            tool_name='builder_update_quest').to_json()
     updates = {}
     for field in ("name", "description"):
         if field in kwargs and kwargs[field]:
@@ -2004,9 +2279,13 @@ def _tool_builder_assign_agent(env, coworker_id, agent_id, sequence=10, **kwargs
     quest = env["ai.coworker"].browse(int(coworker_id))
     agent = env["ai.agent"].browse(int(agent_id))
     if not quest.exists():
-        return f"Error: Quest #{coworker_id} not found"
+        return _missing_record_error(
+            'ai.coworker', coworker_id,
+            tool_name='builder_assign_agent').to_json()
     if not agent.exists():
-        return f"Error: Agent #{agent_id} not found"
+        return _missing_record_error(
+            'ai.agent', agent_id,
+            tool_name='builder_assign_agent').to_json()
     existing = env["ai.coworker.agent"].search([
         ("coworker_id", "=", coworker.id),
         ("agent_id", "=", agent.id),
@@ -2026,7 +2305,9 @@ def _tool_builder_configure_init_type(env, coworker_id, init_type, config="{}", 
     import json as _json
     quest = env["ai.coworker"].browse(int(coworker_id))
     if not quest.exists():
-        return f"Error: Quest #{coworker_id} not found"
+        return _missing_record_error(
+            'ai.coworker', coworker_id,
+            tool_name='builder_configure_init_type').to_json()
     config_data = _json.loads(config) if isinstance(config, str) else config
     vals = {
         "coworker_id": coworker.id,
@@ -2053,9 +2334,13 @@ def _tool_builder_link_skill_to_agent(env, agent_id, skill_id, **kwargs):
     agent = env["ai.agent"].browse(int(agent_id))
     skill = env["ai.skill"].browse(int(skill_id))
     if not agent.exists():
-        return f"Error: Agent #{agent_id} not found"
+        return _missing_record_error(
+            'ai.agent', agent_id,
+            tool_name='builder_link_skill_to_agent').to_json()
     if not skill.exists():
-        return f"Error: Skill #{skill_id} not found"
+        return _missing_record_error(
+            'ai.skill', skill_id,
+            tool_name='builder_link_skill_to_agent').to_json()
     agent.skill_ids = [(4, skill.id)]
     return f"Skill '{skill.name}' linked to agent '{agent.name}'"
 
@@ -2066,7 +2351,9 @@ def _tool_read_skill(env, skill_id, **kwargs):
     """Read full recipe_text from an ai.skill record."""
     skill = env["ai.skill"].browse(int(skill_id))
     if not skill.exists():
-        return f"Error: Skill #{skill_id} not found"
+        return _missing_record_error(
+            'ai.skill', skill_id,
+            tool_name='read_skill').to_json()
     return (
         f"# {skill.name}\n\n"
         f"Category: {skill.category or 'general'}\n"
@@ -2118,7 +2405,9 @@ def _tool_builder_test_skill(env, skill_id, prompt, **kwargs):
     """Test a skill by running a prompt through a temporary quest."""
     skill = env["ai.skill"].browse(int(skill_id))
     if not skill.exists():
-        return f"Error: Skill #{skill_id} not found"
+        return _missing_record_error(
+            'ai.skill', skill_id,
+            tool_name='builder_test_skill').to_json()
     quest = env["ai.coworker"].create({
         "name": f"Test: {skill.name}",
         "description": skill.recipe_text or skill.description or "",
@@ -2154,10 +2443,14 @@ def _tool_builder_improve_skill(env, skill_id, feedback, field="recipe_text", **
     """Update a skill based on user feedback."""
     skill = env["ai.skill"].browse(int(skill_id))
     if not skill.exists():
-        return f"Error: Skill #{skill_id} not found"
+        return _missing_record_error(
+            'ai.skill', skill_id,
+            tool_name='builder_improve_skill').to_json()
     valid_fields = ["recipe_text", "trigger_keywords", "description", "category"]
     if field not in valid_fields:
-        return f"Error: Invalid field '{field}'. Valid: {valid_fields}"
+        return _unknown_field_error(
+            'ai.skill', field, valid_fields,
+            tool_name='builder_improve_skill').to_json()
     # For recipe_text, prepend improvement note and apply feedback
     if field == "recipe_text":
         current = skill.recipe_text or ""
@@ -2459,7 +2752,11 @@ def specialist_tools(agents) -> list[Tool]:
             # Delegera aldrig en tom uppgift: säg i stället till vad som saknas
             # så modellen korrigerar hellre än skapar tom/iterativa delegationsanrop.
             if not query or not str(query).strip():
-                return "Error: query is required (ange en konkret uppgift till specialisten)."
+                return _missing_argument_error(
+                    'query',
+                    'a concrete task for the specialist (not empty)',
+                    example='Sammanfatta senaste driftlarmet för web01',
+                    tool_name='call_specialist').to_json()
             prompt = f"{context}\n\n{query}" if context else query
             try:
                 result = await _loop.run(prompt)

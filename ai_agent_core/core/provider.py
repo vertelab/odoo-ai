@@ -166,6 +166,11 @@ class TokenEvent:
     # 0 = ej rapporterad (klienten får estimera).
     input_tokens: int = 0
     output_tokens: int = 0
+    # Fel som inträffade när ett avslutande/sammanfattande anrop gjordes.
+    # Sätts på den slutgiltiga done-händelsen så att anroparen kan skriva ett
+    # ärligt avslut och sätta avslutsorsak i stället för att turen tystnar
+    # (web-ui-stream-turn-persistens 1.1). Tom sträng = inget fel.
+    error: str = ""
 
 
 class ProviderError(Exception):

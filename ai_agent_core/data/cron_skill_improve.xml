@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+    <!-- Steg 4: erfarenhetsbaserad förbättringsloop.
+         Skapar förslag på ny recipe_text för skills vars failure_cases vuxit.
+         Rör ALDRIG recipe_text själv — människan godkänner i skill-formuläret
+         under fliken Improve ("Applicera förslag"). -->
+    <record id="cron_skill_improve_weekly" model="ir.cron">
+        <field name="name">AI: Föreslå skill-förbättringar från erfarenheter</field>
+        <field name="model_id" ref="model_ai_skill"/>
+        <field name="state">code</field>
+        <field name="code">model._cron_propose_improvements()</field>
+        <field name="interval_number">7</field>
+        <field name="interval_type">days</field>
+        <field name="active" eval="True"/>
+    </record>
+    </data>
+</odoo>

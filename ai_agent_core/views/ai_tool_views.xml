@@ -90,6 +90,13 @@
                                options="{'mode': 'javascript'}"
                                placeholder='{"type": "object", "properties": {...}}'/>
                     </group>
+                    <group string="Write-verify">
+                        <field name="verification_enabled"/>
+                        <field name="verification_json" widget="code"
+                               options="{'mode': 'javascript'}"
+                               invisible="not verification_enabled"
+                               placeholder='{"model": "document.page", "id_path": "id", "checks": [{"field": "parent_id", "equals_path": "values.parent_id"}, {"field": "content", "non_empty": true}]}'/>
+                    </group>
                     <group string="Usage">
                         <field name="agent_ids" widget="many2many_tags"/>
                         <field name="coworker_ids" widget="many2many_tags"/>

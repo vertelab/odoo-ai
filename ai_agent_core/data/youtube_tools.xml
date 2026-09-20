@@ -22,8 +22,28 @@
     import re
     from youtube_transcript_api import YouTubeTranscriptApi
 
-    if not video_id:
-        return json.dumps({"error": "video_id is required"})
+    def _tool_error(message, parameter="", expected="", actual="",
+                    retryable=True, tool_name=""):
+        """Åtgärdbart fel i samma struktur som ToolError.to_json()."""
+        return json.dumps({
+            "error": message,
+            "parameter": parameter,
+            "expected": expected,
+            "actual": actual,
+            "valid_fields": [],
+            "retryable": retryable,
+            "tool_name": tool_name,
+        }, ensure_ascii=False)
+
+    if not video_id or not str(video_id).strip():
+        return _tool_error(
+            "Missing required argument 'video_id' \u2014 example: "
+            "https://youtu.be/6IFVTcM28KA",
+            parameter="video_id",
+            expected="a YouTube URL or an 11-character video ID",
+            actual="(empty)",
+            retryable=True,
+            tool_name="youtube_get_transcript")
 
     # Extract video ID from URL
     url_patterns = [
@@ -60,7 +80,7 @@
     <!-- ── Tool: youtube_search ── -->
     <record id="tool_youtube_search" model="ai.tool">
         <field name="name">youtube_search</field>
-        <field name="description">Search YouTube for videos or channels. Uses Google Data API v3. Requires GOOGLE_API_KEY environment variable.</field>
+        <field name="description">Search YouTube for videos or channels. Uses Google Data API v3. Requires a Google API key — set it in Odoo Settings (AI → Google API Key) or in the GOOGLE_API_KEY environment variable.</field>
         <field name="risk_level">read_only</field>
         <field name="active">True</field>
         <field name="parameters">{"type": "object", "properties": {"query": {"type": "string", "description": "Search query (1-200 characters)"}, "max_results": {"type": "integer", "description": "Maximum results (1-50, default 10)"}, "search_type": {"type": "string", "enum": ["video", "channel"], "description": "Search type: video or channel"}}, "required": ["query"]}</field>
@@ -79,13 +99,37 @@
     import os
     from googleapiclient.discovery import build
 
-    if not query:
-        return json.dumps({"error": "query is required"})
+    def _tool_error(message, parameter="", expected="", actual="",
+                    retryable=True, tool_name=""):
+        """Åtgärdbart fel i samma struktur som ToolError.to_json()."""
+        return json.dumps({
+            "error": message,
+            "parameter": parameter,
+            "expected": expected,
+            "actual": actual,
+            "valid_fields": [],
+            "retryable": retryable,
+            "tool_name": tool_name,
+        }, ensure_ascii=False)
 
-    api_key = os.environ.get('GOOGLE_API_KEY')
+    if not query or not str(query).strip():
+        return _tool_error(
+            "Missing required argument 'query' \u2014 example: "
+            "gamers nexus smart tv",
+            parameter="query",
+            expected="a search query (1-200 characters)",
+            actual="(empty)",
+            retryable=True,
+            tool_name="youtube_search")
+
+    api_key = (env['ir.config_parameter'].sudo()
+                   .get_param('ai_agent_core.google_api_key', '')
+                   or os.environ.get('GOOGLE_API_KEY', ''))
     if not api_key:
         return json.dumps({
-            "error": "GOOGLE_API_KEY not set — search requires a Google API key with YouTube Data API v3 enabled"
+            "error": "No Google API key configured — YouTube search needs one. "
+                     "Set it in Odoo Settings (AI → Google API Key) or in the "
+                     "GOOGLE_API_KEY environment variable."
         })
 
     try:
@@ -127,16 +171,16 @@
     <!-- ── Tool: youtube_channel ── -->
     <record id="tool_youtube_channel" model="ai.tool">
         <field name="name">youtube_channel</field>
-        <field name="description">YouTube channel operations: get latest uploads (free, no key needed via RSS), list all videos (paginated, needs GOOGLE_API_KEY), or resolve @handle to channel ID.</field>
+        <field name="description">YouTube channel operations: get latest uploads (free, no key needed via RSS), list all videos (paginated, needs a Google API key), or resolve @handle to channel ID.</field>
         <field name="risk_level">read_only</field>
         <field name="active">True</field>
-        <field name="parameters">{"type": "object", "properties": {"channel": {"type": "string", "description": "@handle, channel URL, or UC... channel ID"}, "action": {"type": "string", "enum": ["latest", "videos", "resolve"], "description": "latest (free, 15 videos via RSS), videos (paginated, needs GOOGLE_API_KEY), resolve (@handle to UC... ID)"}, "limit": {"type": "integer", "description": "Max results for videos action (1-50)"}, "continuation": {"type": "string", "description": "Next page token for videos pagination"}}, "required": ["channel", "action"]}</field>
+        <field name="parameters">{"type": "object", "properties": {"channel": {"type": "string", "description": "@handle, channel URL, or UC... channel ID"}, "action": {"type": "string", "enum": ["latest", "videos", "resolve"], "description": "latest (free, 15 videos via RSS), videos (paginated, needs a Google API key), resolve (@handle to UC... ID)"}, "limit": {"type": "integer", "description": "Max results for videos action (1-50)"}, "continuation": {"type": "string", "description": "Next page token for videos pagination"}}, "required": ["channel", "action"]}</field>
         <field name="code">async def execute(channel="", action="latest", limit=10, continuation=""):
     """YouTube channel operations.
 
     Args:
         channel: @handle, channel URL, or UC... channel ID
-        action: "latest" (free, 15 videos via RSS), "videos" (paginated, needs GOOGLE_API_KEY), "resolve" (free, @handle to UC... ID)
+        action: "latest" (free, 15 videos via RSS), "videos" (paginated, needs a Google API key), "resolve" (free, @handle to UC... ID)
         limit: Max results for "videos" action (1-50)
         continuation: Next page token for paginated "videos"
 
@@ -147,10 +191,42 @@
     import os
     import re
 
+    def _tool_error(message, parameter="", expected="", actual="",
+                    retryable=True, tool_name=""):
+        """Åtgärdbart fel i samma struktur som ToolError.to_json()."""
+        return json.dumps({
+            "error": message,
+            "parameter": parameter,
+            "expected": expected,
+            "actual": actual,
+            "valid_fields": [],
+            "retryable": retryable,
+            "tool_name": tool_name,
+        }, ensure_ascii=False)
+
+    if not channel or not str(channel).strip():
+        return _tool_error(
+            "Missing required argument 'channel' \u2014 example: @GamersNexus",
+            parameter="channel",
+            expected="@handle, channel URL, or UC... channel ID",
+            actual="(empty)",
+            retryable=True,
+            tool_name="youtube_channel")
+    if action not in ("latest", "videos", "resolve"):
+        return _tool_error(
+            "Invalid value for 'action'",
+            parameter="action",
+            expected="one of: latest, videos, resolve",
+            actual=str(action),
+            retryable=True,
+            tool_name="youtube_channel")
+
     if action == "resolve":
-        api_key = os.environ.get('GOOGLE_API_KEY')
+        api_key = (env['ir.config_parameter'].sudo()
+                   .get_param('ai_agent_core.google_api_key', '')
+                   or os.environ.get('GOOGLE_API_KEY', ''))
         if not api_key:
-            return json.dumps({"error": "GOOGLE_API_KEY required for channel resolve"})
+            return json.dumps({"error": "No Google API key configured \u2014 channel resolve needs one. " + 'Set it in Odoo Settings (AI \\u2192 Google API Key) or in the GOOGLE_API_KEY environment variable.'})
         from googleapiclient.discovery import build
         youtube = build('youtube', 'v3', developerKey=api_key, cache_discovery=False)
         handle = channel.lstrip('@')
@@ -176,9 +252,11 @@
         if m:
             cid = m.group(0)
         else:
-            api_key = os.environ.get('GOOGLE_API_KEY')
+            api_key = (env['ir.config_parameter'].sudo()
+                   .get_param('ai_agent_core.google_api_key', '')
+                   or os.environ.get('GOOGLE_API_KEY', ''))
             if not api_key:
-                return json.dumps({"error": "Need GOOGLE_API_KEY to resolve handle, or pass UC... ID directly"})
+                return json.dumps({"error": "No Google API key configured \u2014 pass a UC... channel ID directly, or set the key. " + 'Set it in Odoo Settings (AI \\u2192 Google API Key) or in the GOOGLE_API_KEY environment variable.'})
             from googleapiclient.discovery import build
             youtube = build('youtube', 'v3', developerKey=api_key, cache_discovery=False)
             handle = channel.lstrip('@')
@@ -220,9 +298,11 @@
             return json.dumps({"error": f"RSS fetch failed: {e}"})
 
     if action == "videos":
-        api_key = os.environ.get('GOOGLE_API_KEY')
+        api_key = (env['ir.config_parameter'].sudo()
+                   .get_param('ai_agent_core.google_api_key', '')
+                   or os.environ.get('GOOGLE_API_KEY', ''))
         if not api_key:
-            return json.dumps({"error": "GOOGLE_API_KEY required for channel videos listing"})
+            return json.dumps({"error": "No Google API key configured \u2014 channel video listing needs one. " + 'Set it in Odoo Settings (AI \\u2192 Google API Key) or in the GOOGLE_API_KEY environment variable.'})
         from googleapiclient.discovery import build
         youtube = build('youtube', 'v3', developerKey=api_key, cache_discovery=False)
         if continuation:
@@ -270,7 +350,7 @@
     <!-- ── Tool: youtube_playlist ── -->
     <record id="tool_youtube_playlist" model="ai.tool">
         <field name="name">youtube_playlist</field>
-        <field name="description">Fetch videos from a YouTube playlist. Accepts playlist URL or ID. Supports pagination. Requires GOOGLE_API_KEY.</field>
+        <field name="description">Fetch videos from a YouTube playlist. Accepts playlist URL or ID. Supports pagination. Requires a Google API key (Odoo Settings → AI → Google API Key).</field>
         <field name="risk_level">read_only</field>
         <field name="active">True</field>
         <field name="parameters">{"type": "object", "properties": {"playlist_id": {"type": "string", "description": "Playlist URL or ID (PL/UU/LL/FL/OL prefix)"}, "max_results": {"type": "integer", "description": "Max videos per page (1-50, default 10)"}, "continuation": {"type": "string", "description": "Next page token for paginated results"}}, "required": ["playlist_id"]}</field>
@@ -289,12 +369,34 @@
     import os
     import re
 
-    api_key = os.environ.get('GOOGLE_API_KEY')
+    def _tool_error(message, parameter="", expected="", actual="",
+                    retryable=True, tool_name=""):
+        """Åtgärdbart fel i samma struktur som ToolError.to_json()."""
+        return json.dumps({
+            "error": message,
+            "parameter": parameter,
+            "expected": expected,
+            "actual": actual,
+            "valid_fields": [],
+            "retryable": retryable,
+            "tool_name": tool_name,
+        }, ensure_ascii=False)
+
+    api_key = (env['ir.config_parameter'].sudo()
+                   .get_param('ai_agent_core.google_api_key', '')
+                   or os.environ.get('GOOGLE_API_KEY', ''))
     if not api_key:
-        return json.dumps({"error": "GOOGLE_API_KEY required for playlist access"})
+        return json.dumps({"error": "No Google API key configured \u2014 playlist access needs one. " + 'Set it in Odoo Settings (AI \\u2192 Google API Key) or in the GOOGLE_API_KEY environment variable.'})
 
     if not playlist_id and not continuation:
-        return json.dumps({"error": "playlist_id or continuation required"})
+        return _tool_error(
+            "Missing required argument 'playlist_id' \u2014 example: "
+            "https://www.youtube.com/playlist?list=PLabc123",
+            parameter="playlist_id",
+            expected="a playlist URL or ID (or a continuation token)",
+            actual="(empty)",
+            retryable=True,
+            tool_name="youtube_playlist")
 
     from googleapiclient.discovery import build
     youtube = build('youtube', 'v3', developerKey=api_key, cache_discovery=False)
@@ -428,7 +530,7 @@ Sök → välj relevanta videor → hämta transkript från varje → sammanfatt
 Sök med `search_type=channel` för att hitta kanaler, inte enskilda videor
 
 ## Viktigt
-- Kräver GOOGLE_API_KEY miljövariabel
+- Kräver Google API-nyckel (Odoo-inställningar → AI → Google API Key)
 - Om nyckel saknas, informera användaren</field>
     </record>
 
@@ -520,7 +622,7 @@ Hämta första sidan → visa videos med titel och position
 För att undvika för många API-anrop, begränsa transcript-hämtning till de första 5 videorna i spellistan som standard.
 
 ## Viktigt
-- Kräver GOOGLE_API_KEY för playlist-åtkomst
+- Kräver Google API-nyckel för playlist-åtkomst
 - Spelliste-ID börjar med PL, UU, LL, FL eller OL</field>
     </record>
 
@@ -541,9 +643,9 @@ Komplett YouTube-verktygslåda. Innehåller alla fyra individuella YouTube-skill
 | Tool | Beskrivning | API-nyckel? |
 |------|-------------|-------------|
 | `youtube_get_transcript` | Hämta transkript från video | ❌ Nej |
-| `youtube_search` | Sök efter videor/kanaler | ✅ GOOGLE_API_KEY |
+| `youtube_search` | Sök efter videor/kanaler | ✅ Google API-nyckel |
 | `youtube_channel` | Kanal-operationer | Delvis (latest: nej, videos: ja) |
-| `youtube_playlist` | Hämta spelliste-videos | ✅ GOOGLE_API_KEY |
+| `youtube_playlist` | Hämta spelliste-videos | ✅ Google API-nyckel |
 
 ## När du ska använda vilket verktyg
 

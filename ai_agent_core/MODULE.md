@@ -95,3 +95,163 @@ Status-/livscykel (`/new`-semantik):
 - `GET /ai/threads/<id>` returnerar nu per-meddelande-kontext: `status`,
   `finish_reason`, `debug_info`, `tool_calls`, `model_real`, `token_input`,
   `token_output`, `token_sys`.
+
+## Verktygsfel — felkontraktet (atgardbara-verktygsfel, 18.0.1.215)
+
+Varje verktygsfel bär samma uppgifter, oavsett om verktyget är inbyggt
+(Python i `core/tools.py`) eller data-definierat (`ai.tool` med kod från
+`data/*.xml`). Kontraktet är `ToolError.to_json()`:
+
+| Nyckel         | Betydelse                                              |
+|----------------|--------------------------------------------------------|
+| `error`        | Vad som gick fel, i klartext                           |
+| `parameter`    | Vilket argument felet gäller (tomt om inte aktuellt)   |
+| `expected`     | Förväntat format/värde — vägledningen                  |
+| `actual`       | Det faktiska värdet som avvisades                      |
+| `valid_fields` | Giltiga fält, när felet är ett okänt fält              |
+| `retryable`    | Om ett nytt försök är meningsfullt                     |
+| `tool_name`    | Vilket verktyg som felade                              |
+
+`to_text()` ger samma innehåll som läsbar text för modellen; `to_json()`
+ger strukturen för kvalitetsloopen (`ToolSequenceCorrector`). `Tool.call()`
+fångar `ToolError` och bevarar vägledningen.
+
+### Hur `retryable` sätts
+
+`retryable=True` — anroparen kan rätta sig och försöka igen:
+
+- saknat eller tomt argument (`_missing_argument_error`)
+- fel format/värde (`_invalid_value_error`)
+- okänt fält (`_unknown_field_error`)
+
+`retryable=False` — nytt försök med samma argument hjälper inte:
+
+- resursen finns inte (`_missing_record_error`), t.ex. `Skill #42 not found`
+- okänd modell i `describe_model`
+- internt fel (`_internal_error`) — ett oväntat undantag är inte
+  anroparens misstag, och `expected` säger det explicit
+
+### Tomt argument är ett SAKNAT argument
+
+`describe_model('')` gav tidigare `"Unknown model: "` — vilket inte namnger
+vad som saknas. Ett tomt argument behandlas därför som saknat och felet
+säger vilket argument det gäller, förväntat format och ett exempel.
+
+### Fel verktyg pekar på rätt verktyg
+
+`odoo_write` avvisar HTML-/textfält (de skrivs vid skapandet). Felet namnger
+de avvisade fälten och pekar på `odoo_create` i stället för att bara neka.
+
+### Data-definierade verktyg
+
+Verktyg vars kod ligger i `data/*.xml` (t.ex. `youtube_tools.xml`) kan inte
+importera `ToolError` — de definierar en lokal `_tool_error()` som ger
+exakt samma JSON-nycklar. Det håller kontraktet identiskt över
+verktygstyperna.
+
+**OBS — noupdate-fällan:** filer under `data/` med `<odoo noupdate="1">`
+läses bara vid FÖRSTA installationen, och `_seed_builtin_tools()` uppdaterar
+aldrig `code` för ett verktyg som redan finns. Ändringar i sådan XML når
+alltså inte ett uppgraderat system. Tvinga om raden med en migration
+(`migrations/<version>/post-migrate.py`) som läser koden ur samma fil —
+se `migrations/18.0.1.215/` för mönstret.
+
+**OBS — `migrations/__pycache__` kraschar uppgraderingen:** Odoo tolkar
+varje katalog under `migrations/` som en versionskod och vägrar på
+`__pycache__` (`Invalid version for upgrade script`). Katalogen skapas av
+`python3 -m py_compile` i `migrations/` och av Odoo själv vid import.
+Rensa den före varje `checkmodule`-körning:
+
+```bash
+rm -rf ai_agent_core/migrations/__pycache__
+```
+
+Den är git-ignorerad (`.gitignore:2`) så den syns inte i `git status` —
+den måste letas upp på disk.
+
+## Innehållslig verifiering (write-verify mot en källa)
+
+`verify_write_outcome()` kan utöver "fältet är ifyllt" begära att fältets
+innehåll **motsvarar källan**. Det stänger luckan som session 18204 visade:
+ett `document.page` godkändes som "klart" trots att det tappade videon,
+citat, modellnamn och belägg — och angav en påhittad källa.
+
+### Avtalsformatet
+
+```json
+{
+  "model_path": "model",
+  "id_path": "id",
+  "checks": [
+    {"field": "name", "equals_path": "values.name"},
+    {"field": "content", "non_empty": true,
+     "source": true, "coverage": 0.6}
+  ]
+}
+```
+
+- `source: true` — begär jämförelse mot källan. Utan detta sker **ingen**
+  innehållsjämförelse (kostnaden syns bara där den är motiverad).
+- `coverage` — tröskel 0–1, standard `0.6`. Under tröskeln blir det ett
+  **fel** i `requirement_errors` (inte en varning), med ett fix-förslag som
+  namnger vad som saknas.
+
+Källan är sessionens egna rader (`ai.coworker.session.line`, inkl.
+`source_urls`) och byggs **bara** när något avtal begär den
+(`_contract_needs_source` → `_build_verify_source`).
+
+### Mätningen
+
+`measure_coverage()` mäter hur stor del av källans väsentliga delar som
+återfinns i innehållet. Delarna (`extract_essential_parts`) är modellnamn,
+URL:er, citat, namngivna entiteter och sifferfakta — deterministiskt, utan
+LLM-anrop.
+
+Två saker krävdes för att mätningen skulle bli rättvis på verklig data:
+
+1. **Brusfilter** — sökmotor-omdirigeringar (Bing/Google med spårningstokens),
+   katalogdomäner (`tv.nu`, `allatvkanaler.se`), annonsord och korta
+   fragment är inte belägg. I session 18204 var 8 av 12 URL:er
+   Bing-omdirigeringar.
+2. **Kvotering per typ** — de talrika entiteterna trängde annars ut
+   modellnamn och URL:er, som är de mest värdefulla beläggen.
+
+Citat paras **sekventiellt** (första citattecknet med andra, tredje med
+fjärde) — en regex kan inte veta vilket citattecken som är öppning och
+vilket som är stängning, och parade ihop två åtskilda citat så att texten
+mellan dem blev ett falskt citat.
+
+### Platshållare räknas som tomt
+
+Odoo:s html-widget skriver `<p><br></p>` när ett fält saknar innehåll — 11
+tecken som passerar en naiv tomhetskontroll. `non_empty` genomskådar detta
+(`_is_placeholder_html`). Det var så `document.page` id 82 godkändes.
+
+### Modellspecifika avtal
+
+Ett generiskt avtal (`odoo_create`) kan inte veta vilket fält som bär
+innehållet på en viss modell, och en check mot ett fält som inte finns
+hoppas över som **varning** — en tyst lucka. `_MODEL_VERIFICATION_CONTRACTS`
+lägger därför till modellens egna checks:
+
+```python
+_MODEL_VERIFICATION_CONTRACTS = {
+    'document.page': {
+        'checks': [
+            {'field': 'name', 'equals_path': 'values.name'},
+            {'field': 'content', 'non_empty': True,
+             'source': True, 'coverage': 0.6},
+        ],
+    },
+}
+```
+
+### Acceptansfall (session 18204)
+
+| Innehåll | Täckning | Utfall |
+|---|---|---|
+| Det ofullständiga dokumentet (id 82) | 9 % | FAIL — namnger saknade modellnamn |
+| Halvdant (hälften av beläggen) | 32 % | FAIL |
+| Fullständigt | 85 % | PASS |
+
+Tröskeln 0.6 skiljer alltså de tre fallen.

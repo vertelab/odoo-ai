@@ -723,6 +723,16 @@ class AICoworker(models.Model):
     monthly_cap_mtokens = fields.Integer(
         'Månadstak (M systemtokens)', default=0,
         help='0 = unlimited. Cap in millions of systemtokens.')
+    daily_cap_mtokens = fields.Integer(
+        'Dagstak (M systemtokens)', default=0,
+        help='0 = obegränsat. Tak i miljoner systemtokens per kalenderdag. '
+             'Mjukt stopp: körningen stoppas men posten låses inte — '
+             'taket öppnas automatiskt nästa dygn.')
+    monthly_budget_soft = fields.Boolean(
+        'Mjukt månadstak', default=False,
+        help='True = månadstaket varnar men stoppar inte körningar '
+             '(taket öppnas ändå automatiskt vid ny månad). '
+             'False = hårt stopp innan LLM-körning — kräver höjt tak.')
     budget_warning = fields.Boolean(
         'Budgetvarning', compute='_compute_budget_state', store=False,
         help='True när session_line_count >= cap × 0.8 (deterministiskt, '
@@ -732,10 +742,24 @@ class AICoworker(models.Model):
         help='True när session_line_count >= monthly_cap_mtokens × 1M '
              '(deterministiskt, härlett från create_date på session lines — '
              'ny månad eller höjd budget öppnar automatiskt).')
+    daily_budget_warning = fields.Boolean(
+        'Dagsbudget-varning', compute='_compute_budget_state', store=False,
+        help='True när dagens förbrukning >= daily_cap_mtokens × 0.8.')
+    daily_budget_exhausted = fields.Boolean(
+        'Dagsbudget slut', compute='_compute_budget_state', store=False,
+        help='True när dagens förbrukning >= daily_cap_mtokens × 1M. '
+             'Mjukt stopp — öppnas automatiskt vid midnatt.')
+    daily_budget_used_mtokens = fields.Float(
+        'Dagsbudget förbrukat (M tokens)',
+        compute='_compute_budget_state', store=False,
+        help='Σ systemtokens för innevarande kalenderdag, i miljoner.')
     cap_notified_month = fields.Char(
         'Budget notifierad månad (YYYY-MM)',
         help='Månad då budget-notis/aktivitet senast skickades — en gång '
              'per månad, ingen reset behövs.')
+    cap_notified_day = fields.Char(
+        'Dagsbudget notifierad dag (YYYY-MM-DD)',
+        help='Dag då dagsbudget-notis senast skickades — en gång per dygn.')
 
 
     # ── Burn rate & prognos (budget-burn-rate) ──
@@ -778,38 +802,88 @@ class AICoworker(models.Model):
 
     @api.depends('session_ids.session_line_ids.token_sys',
                  'session_ids.session_line_ids.create_date',
-                 'monthly_cap_mtokens')
+                 'monthly_cap_mtokens', 'daily_cap_mtokens')
     def _compute_budget_state(self):
         """Deterministisk budgetspärr (budget-hard-cap D1).
 
         Beräknar Σ token_sys direkt från session_ids (inte via det related
-        fältet session_line_ids som inte triggar compute korrekt). Ny månad
-        eller höjd budget öppnar automatiskt — inget cron-beroende.
+        fältet session_line_ids som inte triggar compute korrekt). Ny månad,
+        nytt dygn eller höjd budget öppnar automatiskt — inget cron-beroende.
+
+        Månadstaket är ett HÅRT stopp (run() returnerar utan LLM-anrop).
+        Dagstaket är ett MJUKT stopp — samma effekt per körning, men det
+        öppnas av sig självt vid midnatt utan åtgärd.
         """
         from datetime import date as _date
         today = _date.today()
         month_start = _date(today.year, today.month, 1)
         for r in self:
-            total = 0
+            month_total = 0
+            day_total = 0
             for line in r.session_ids.session_line_ids:
-                if line.create_date and line.create_date.date() >= month_start:
-                    total += line.token_sys or 0
-            cap = r.monthly_cap_mtokens * 1_000_000 if r.monthly_cap_mtokens else 0
-            r.budget_warning = bool(cap) and total >= cap * 0.8
-            r.budget_exhausted = bool(cap) and total >= cap
+                if not line.create_date:
+                    continue
+                line_day = line.create_date.date()
+                if line_day >= month_start:
+                    month_total += line.token_sys or 0
+                if line_day == today:
+                    day_total += line.token_sys or 0
+            month_cap = r.monthly_cap_mtokens * 1_000_000 if r.monthly_cap_mtokens else 0
+            day_cap = r.daily_cap_mtokens * 1_000_000 if r.daily_cap_mtokens else 0
+            r.budget_warning = bool(month_cap) and month_total >= month_cap * 0.8
+            r.budget_exhausted = bool(month_cap) and month_total >= month_cap
+            r.daily_budget_warning = bool(day_cap) and day_total >= day_cap * 0.8
+            r.daily_budget_exhausted = bool(day_cap) and day_total >= day_cap
+            r.daily_budget_used_mtokens = day_total / 1_000_000.0
 
     def check_cap(self):
         """Check budget state. Returns (warning, exhausted).
 
         Bakåtkompatibel wrapper — läser deterministiska compute-fält och
-        triggar notiser en gång per månad. Hårt stopp vid exhausted.
+        triggar notiser en gång per period. Hårt stopp vid exhausted.
         """
         self.ensure_one()
         warning = self.budget_warning
         exhausted = self.budget_exhausted
         if warning or exhausted:
             self._notify_budget_once()
+        if self.daily_budget_warning or self.daily_budget_exhausted:
+            self._notify_daily_budget_once()
         return warning, exhausted
+
+    def check_daily_cap(self):
+        """Dagsbudget-läget. Returns (warning, exhausted).
+
+        Mjukt stopp: anropas från körningsvägarna innan LLM-körning.
+        Notis en gång per dygn; öppnas automatiskt vid midnatt.
+        """
+        self.ensure_one()
+        warning = self.daily_budget_warning
+        exhausted = self.daily_budget_exhausted
+        if warning or exhausted:
+            self._notify_daily_budget_once()
+        return warning, exhausted
+
+    def _notify_daily_budget_once(self):
+        """Skicka dagsbudget-notis en gång per dygn.
+
+        Dygnsnycklad via cap_notified_day (YYYY-MM-DD). Ingen aktivitet
+        skapas — dagsbudgeten öppnas av sig själv vid midnatt.
+        """
+        self.ensure_one()
+        day = fields.Date.today().isoformat()
+        if self.cap_notified_day == day:
+            return  # redan notifierad idag
+        cap_tokens = self.daily_cap_mtokens * 1_000_000
+        if self.daily_budget_exhausted:
+            self._notify_cap(
+                'daily_exhausted', int(self.daily_budget_used_mtokens * 1_000_000),
+                cap_tokens)
+        elif self.daily_budget_warning:
+            self._notify_cap(
+                'daily_warning', int(self.daily_budget_used_mtokens * 1_000_000),
+                cap_tokens)
+        self.cap_notified_day = day
 
     def _notify_budget_once(self):
         """Skicka budget-notis + mail.activity en gång per månad (D2/D3).
@@ -883,6 +957,9 @@ class AICoworker(models.Model):
             activities.action_done()
         if self.cap_notified_month:
             self.cap_notified_month = False
+        # Dagsnotisen nollställs när dagsbudgeten är öppen igen (ny dag).
+        if self.cap_notified_day and not self.daily_budget_exhausted:
+            self.cap_notified_day = False
 
     def consolidate_memories(self):
         """T9.1-T9.5: Daily memory consolidation.
@@ -957,7 +1034,22 @@ class AICoworker(models.Model):
         pct = int(used / cap * 100) if cap else 0
         mtokens = self.started_mtokens
 
-        if level == 'warning':
+        if level == 'daily_warning':
+            msg = (
+                f'⚠️ **Varning: AI-medarbetaren "{self.name}" har använt {pct}% '
+                f'av dagsbudgeten.**\n\n'
+                f'Förbrukat idag: {self.daily_budget_used_mtokens:.2f}M av '
+                f'{self.daily_cap_mtokens}M systemtokens.\n'
+                f'Dagsbudgeten öppnas automatiskt vid midnatt.'
+            )
+        elif level == 'daily_exhausted':
+            msg = (
+                f'🛑 **Dagsbudget slut: AI-medarbetaren "{self.name}" har nått '
+                f'dagstaket på {self.daily_cap_mtokens}M systemtokens.**\n\n'
+                f'Körningar stoppas mjukt till midnatt — ingen åtgärd krävs. '
+                f'Höj dagstaket i inställningarna om det ska köra vidare idag.'
+            )
+        elif level == 'warning':
             msg = (
                 f'⚠️ **Varning: AI-medarbetaren "{self.name}" har använt {pct}% '
                 f'av månadstaket.**\n\n'
@@ -978,7 +1070,7 @@ class AICoworker(models.Model):
                     level, self.name, used, cap, pct)
 
         # Send Zabbix event (if ai_agent_zabbix is installed)
-        if level == 'exhausted':
+        if level in ('exhausted', 'daily_exhausted'):
             try:
                 zabbix_configs = self.env['ai.zabbix.config'].search(
                     [('active', '=', True)], limit=1)
@@ -1344,6 +1436,22 @@ class AICoworker(models.Model):
     rate_limit_tpm = fields.Integer('Rate Limit (tokens/min)', default=100000,
         compute='_compute_init_type_fields', inverse='_inverse_init_type_fields',
         store=False)
+    # Kontextfönster som annonseras till externa API-klienter (Pi/Cline) via
+    # /ai/v1/models. Proxy mot init-typ-raden (openai_api) — samma mönster som
+    # rate_limit_*; ingen ny datamodell. 0 = automatisk härledning (minsta
+    # context_window bland medarbetarens agentmodeller).
+    openai_context_window = fields.Integer(
+        'Context Window (tokens)',
+        compute='_compute_init_type_fields', inverse='_inverse_init_type_fields',
+        store=False,
+        help='Kontextfönster (tokens) som annonseras till externa '
+             'API-klienter. 0 = automatiskt (minsta bland agenternas '
+             'modeller).')
+    openai_context_window_manual = fields.Boolean(
+        'Context Window (manuellt)',
+        compute='_compute_init_type_fields', store=False,
+        help='True när ett eget värde angetts ovan. False = värdet härleds '
+             'alltid från agenternas modeller.')
 
     def _get_active_init(self, itype):
         """Returnera den aktiva init_type-raden för en typ (eller tom recordset)."""
@@ -1418,6 +1526,8 @@ class AICoworker(models.Model):
                  'init_type_ids.mail_target_model_id',
                  'init_type_ids.mail_find_partner',
                  'init_type_ids.rate_limit_rpm', 'init_type_ids.rate_limit_tpm',
+                 'init_type_ids.openai_context_window',
+                 'init_type_ids.openai_context_window_manual',
                  'init_type_ids.show_in_chat', 'init_type_ids.cron_id',
                  'init_type_ids.server_action_id',
                  'init_type_ids.watch_trg_selection_field_id',
@@ -1493,6 +1603,10 @@ class AICoworker(models.Model):
             oa = rec._get_active_init('openai_api')
             rec.rate_limit_rpm = oa.rate_limit_rpm if oa else 30
             rec.rate_limit_tpm = oa.rate_limit_tpm if oa else 100000
+            rec.openai_context_window = (
+                oa.openai_context_window if oa else 0)
+            rec.openai_context_window_manual = (
+                oa.openai_context_window_manual if oa else False)
             webui = rec._get_active_init('web_ui')
             rec.show_in_chat = webui.show_in_chat if webui else True
 
@@ -1546,6 +1660,10 @@ class AICoworker(models.Model):
                     'rate_limit_rpm': rec.rate_limit_rpm,
                     'rate_limit_tpm': rec.rate_limit_tpm,
                 })
+                # Skriv alltid kontextfönstret (0 = tillbaka till auto).
+                # Init-typ-radens inverse sätter _manual = bool(värde).
+                oa.write({'openai_context_window':
+                          rec.openai_context_window or 0})
             webui = rec._get_active_init('web_ui')
             if webui:
                 webui.show_in_chat = rec.show_in_chat
@@ -2354,7 +2472,12 @@ class AICoworker(models.Model):
         # får budget-svar.
         if depth == 0:
             self._unlock_budget_activities()
-            if self.budget_exhausted:
+            if self.budget_exhausted and self.monthly_budget_soft:
+                # Mjukt månadstak: notera + kör vidare.
+                self.check_cap()
+                _logger.info('Buzz chat: mjukt månadstak för %s — kör vidare',
+                             self.name)
+            elif self.budget_exhausted:
                 self.check_cap()
                 _logger.info('Buzz chat skippad för %s: budget slut', self.name)
                 if channel:
@@ -2363,6 +2486,20 @@ class AICoworker(models.Model):
                             '⚠️ **Budget slut**: AI-medarbetaren har nått '
                             'månadstaket. Höj taket i inställningarna eller '
                             'vänta till nästa månad.'
+                        ),
+                        message_type='notification',
+                        subtype_xmlid='mail.mt_note',
+                    )
+                return None
+            if self.daily_budget_exhausted:
+                self.check_daily_cap()
+                _logger.info('Buzz chat skippad för %s: dagsbudget slut', self.name)
+                if channel:
+                    channel.message_post(
+                        body=self._md_to_html(
+                            '⚠️ **Dagsbudget slut**: AI-medarbetaren har nått '
+                            'dagstaket. Körningar återupptas automatiskt vid '
+                            'midnatt.'
                         ),
                         message_type='notification',
                         subtype_xmlid='mail.mt_note',
@@ -3586,7 +3723,7 @@ class AICoworker(models.Model):
         existing = self.env['mail.activity'].sudo().search_count([
             ('res_model', '=', 'ai.coworker'),
             ('res_id', '=', self.id),
-            ('done', '=', False),
+            ('active', '=', True),
             ('summary', '=', summary),
         ])
         if existing:
@@ -3595,7 +3732,7 @@ class AICoworker(models.Model):
         if not activity_type:
             return False
         self.env['mail.activity'].sudo().create({
-            'res_model': 'ai.coworker',
+            'res_model_id': self.env['ir.model']._get('ai.coworker').id,
             'res_id': self.id,
             'activity_type_id': activity_type.id,
             'summary': summary,
@@ -4090,12 +4227,18 @@ class AICoworker(models.Model):
             return _('Check status on agents: %s') % ', '.join(inactive.mapped('agent_id.name'))
         return False
 
-    def _build_loop(self, provider, tools, model, system_prompt, max_rounds=10):
+    def _build_loop(self, provider, tools, model, system_prompt, max_rounds=None):
         """Build AgentLoop or loop based on orchestration mode.
 
         Supports: single, supervisor, buzz, linear, conference, automation.
         Returns a callable loop object with a `run(prompt)` async method.
+
+        max_rounds: None → härleds från self.max_iterations (fallback 8).
+        Tidigare hårdkodades 10 på anropsplatserna, vilket gjorde att
+        medarbetarens Max Iterations-inställning aldrig nådde specialisterna.
         """
+        if not max_rounds:
+            max_rounds = self.max_iterations or 8
         from odoo.addons.ai_agent_core.core.loop import AgentLoop, AgentConfig
         from odoo.addons.ai_agent_core.core.linear import LinearLoop
 
@@ -4548,8 +4691,14 @@ class AICoworker(models.Model):
             len(agents), default_model.name)
         return len(agents)
 
-    def _build_specialists(self, provider, tools, model, system_prompt, max_rounds=10):
-        """Build list of SpecialistAgent from agent_ids."""
+    def _build_specialists(self, provider, tools, model, system_prompt, max_rounds=None):
+        """Build list of SpecialistAgent from agent_ids.
+
+        max_rounds: None → härleds från self.max_iterations (fallback 8), så
+        att medarbetarens Max Iterations styr även specialisternas rundtak.
+        """
+        if not max_rounds:
+            max_rounds = self.max_iterations or 8
         from odoo.addons.ai_agent_core.core.loop import AgentLoop, AgentConfig
         from odoo.addons.ai_agent_core.core.supervisor import SpecialistAgent
 
@@ -5004,7 +5153,7 @@ class AICoworker(models.Model):
 
             loop = self._build_loop(
                 provider=provider, tools=tools,
-                model=model, system_prompt=system_prompt, max_rounds=10,
+                model=model, system_prompt=system_prompt,
             )
             loop.interrupt_handler = interrupt
             loop.permission_engine = permissions
@@ -5294,6 +5443,13 @@ class AICoworker(models.Model):
             tools.register_many(ai_tool_records_to_tools(
                 self.env['ai.tool'].browse(tool_ids), self.env))
 
+        # avveckla-builtin-fallbacken (D5): synlig varning i stället för
+        # tystnad. En agent vars tool_ids är tom fick tidigare verktyg via
+        # builtin_tools()-fallbacken. Nu får den inga — det är avsiktligt,
+        # men det ska synas. Efter migreringen ska denna varning inte
+        # förekomma; gör den det är något fel.
+        self._warn_agents_without_tools(session=session)
+
         # Supervisor-kontextoptimering (2026-08): om en explicit whitelist av
         # verktygsnamn sätts i kontexten (_ai_tool_whitelist), reduceras
         # registret till ENDAST dessa. Används av saltstack_ai._start_diagnosis
@@ -5313,7 +5469,368 @@ class AICoworker(models.Model):
 
         return tools, tool_access_groups
 
+    def _warn_agents_without_tools(self, session=None):
+        """Logga en varning för agenter utan tool_ids (avveckla, D5).
+
+        Motmedel mot tyst degradering: en agent som saknar verktyg ska vara
+        ett MEDVETET tillstånd, inte en överraskning. Efter migreringen ska
+        ingen varning förekomma.
+        """
+        empty = self.agent_ids.mapped('agent_id').filtered(
+            lambda a: not a.tool_ids)
+        if not empty:
+            return
+        sid = session.id if session else None
+        for agent in empty:
+            _logger.warning(
+                'Agent utan verktyg: %s (id=%s, coworker=%s, session=%s) — '
+                'får inga verktyg (ingen implicit fallback). Sätt tool_ids '
+                'eller lägg agenten i settings-default.',
+                agent.name, agent.id, self.name, sid)
+
     @api.model
+    def _log_tool_attempts(self, session, run):
+        """Logga kedjan försök → fel → rättelse → verifiering (4.4).
+
+        Skriver en session-line per försök så kedjan går att läsa ut ur
+        sessionen i efterhand (granskningsbart).
+        """
+        if session is None:
+            return
+        import json as _json
+        base = 0
+        try:
+            last = self.env['ai.coworker.session.line'].search(
+                [('session_id', '=', session.id)],
+                order='sequence desc, id desc', limit=1)
+            base = (last.sequence or 0) + 1
+        except Exception:
+            base = 0
+        for i, attempt in enumerate(run.chain()):
+            try:
+                self.env['ai.coworker.session.line'].create({
+                    'session_id': session.id,
+                    'role': 'system',
+                    'content': 'tool-verify %s attempt=%s outcome=%s '
+                               'verification=%s error=%s' % (
+                                   attempt['tool_name'], attempt['attempt'],
+                                   attempt['outcome'],
+                                   attempt['verification'] or '-',
+                                   (attempt['error'] or '-')[:300]),
+                    'sequence': base + i,
+                    'debug_info': _json.dumps(attempt, ensure_ascii=False),
+                })
+            except Exception as e:
+                _logger.warning('kunde inte logga tool-attempt: %s', e)
+
+    @staticmethod
+    def _contract_needs_source(contract):
+        """Behöver avtalet en källa för innehållslig verifiering?
+
+        Sant så snart någon check begär ``source``. Då — och bara då — byggs
+        källan (design D1: ingen kostnad när avtalet inte begär den).
+        """
+        for check in (contract or {}).get('checks') or []:
+            if check.get('source'):
+                return True
+        return False
+
+    def _build_verify_source(self, session=None):
+        """Bygg källmaterialet för innehållslig verifiering.
+
+        Källan är sessionens egna rader — den auktoritativa källan för vad
+        tråden faktiskt innehöll (samma princip som
+        ``_build_history_from_lines``). ``source_urls`` tas med så
+        källhänvisningar kan prövas mot faktiska belägg.
+
+        Returnerar en sträng, eller None om ingen session/rader finns.
+        """
+        if not session:
+            return None
+        try:
+            lines = session.session_line_ids.sorted(
+                key=lambda l: (l.sequence or 0, l.id or 0))
+        except Exception:  # session utan rader / oväntad form
+            return None
+        if not lines:
+            return None
+        chunks = []
+        for line in lines:
+            if line.content:
+                chunks.append(line.content)
+            if line.source_urls:
+                chunks.append(line.source_urls)
+        return '\n'.join(chunks) if chunks else None
+
+    def _run_write_verify(self, tool_results, session=None):
+        """Kör write-verify för skrivande verktygsanrop (3.2/3.3).
+
+        För varje verktygsresultat som är JSON med 'ok' och vars ai.tool
+        deklarerar ett verifieringsavtal läses posten tillbaka och jämförs.
+        Verktyg utan avtal hoppas över utan fel (3.3). Returnerar en lista
+        av dicts {tool, result: VerifyResult} för de verktyg som
+        verifierades.
+
+        Innehållslig verifiering (innehallsverifiering): när ett avtal begär
+        överensstämmelse med en källa skickas sessionens rader med som källa.
+        Källan byggs BARA när något avtal faktiskt begär den — annars är
+        kostnaden noll (design D1).
+        """
+        import json as _json
+        from odoo.addons.ai_agent_core.core.verify import verify_write_outcome
+        outcomes = []
+        source_cache = None
+        for tool_name, _args, raw in (tool_results or []):
+            tool_rec = self.env['ai.tool'].sudo().search(
+                [('name', '=', tool_name)], limit=1)
+            if not tool_rec:
+                continue
+            try:
+                data = _json.loads(raw) if isinstance(raw, str) else raw
+            except (ValueError, TypeError):
+                continue
+            if not isinstance(data, dict):
+                continue
+            # Modellen anropet gällde — behövs för modellspecifika avtal
+            # (t.ex. document.page, där innehållet bärs av ett beräknat fält).
+            model = data.get('model') or ''
+            contract = tool_rec.get_verification_contract(model=model)
+            if not contract:
+                continue  # inget avtal → ingen write-verify (3.3)
+            # Källan behövs bara om någon check begär den. Bygg den en gång
+            # och återanvänd — sessionens rader kan vara stora.
+            source = None
+            if self._contract_needs_source(contract):
+                if source_cache is None:
+                    source_cache = self._build_verify_source(session)
+                source = source_cache
+            # Åtgärdbart verktygsfel (4.8): grupp 2:s ToolError bär parameter,
+            # förväntat format och retryable — exakt vad en korrigering
+            # behöver för att rätta ett fältnamn UTAN att gissa. Tidigare
+            # hoppades dessa över (inget 'ok'-fält), så halvorna möttes aldrig.
+            if data.get('error') and not data.get('ok'):
+                if self._handle_tool_error(data, tool_name, session=session):
+                    outcomes.append({
+                        'tool': tool_name,
+                        'error': data.get('error'),
+                        'actionable': True,
+                    })
+                continue
+            if not data.get('ok'):
+                continue
+            result = verify_write_outcome(
+                contract, data, env=self.env, source=source)
+            outcomes.append({'tool': tool_name, 'result': result})
+            # Logga avvikelsen så den syns i kvalitetsloopen/sessionen.
+            if result.needs_fix:
+                _logger.warning(
+                    'write-verify misslyckades för %s: %s', tool_name,
+                    [e.message for e in result.all_errors])
+                # Självkorrigering (4.2/4.3/4.4): försök göra om anropet med
+                # korrigerade parametrar inom ett begränsat antal försök.
+                # Utan en redo-anropare (t.ex. i en efterhandsverifiering)
+                # registreras bara kedjan och ärendet eskalerar.
+                run = self._correct_failed_tool(
+                    tool_name, contract, data, result, session=session)
+                outcomes[-1]['correction'] = run
+                if session is not None:
+                    self._log_tool_attempts(session, run)
+                try:
+                    if session is not None and \
+                            'ai.coworker.error' in self.env:
+                        self.env['ai.coworker.error'].create({
+                            'session_id': session.id,
+                            'error_type': 'tool_error',
+                            'tool_name': tool_name,
+                            'message': 'write-verify: %s' % '; '.join(
+                                e.message for e in result.all_errors)[:1000],
+                        })
+                except Exception:
+                    pass
+        return outcomes
+
+    # Antal korrigeringsförsök innan eskalering (4.3).
+    _TOOL_CORRECTION_MAX_ATTEMPTS = 3
+
+    def _handle_tool_error(self, data, tool_name, session=None):
+        """Ta emot ett åtgärdbart verktygsfel och registrera korrigeringen (4.8).
+
+        Felet kommer från grupp 2:s ToolError-serialisering:
+        ``{'error', 'parameter', 'expected', 'actual', 'valid_fields',
+        'retryable', 'tool_name'}``. Informationen (särskilt valid_fields)
+        är precis vad en korrigering behöver för att rätta ett fältnamn i
+        stället för att gissa.
+
+        Returnerar True om felet var åtgärdbart (och alltså hanterat),
+        annars False.
+
+        Notera: ett åtgärdbart fel betyder att anropet AVVISADES — ingen
+        post skapades. Korrigeringen här är därför en registrering av
+        kedjan (försök → fel) som anroparen (agentloopen) använder för att
+        göra ett korrigerat anrop. Ingen post skapas och inget påhittas.
+        """
+        if not data.get('retryable'):
+            return False
+        parameter = data.get('parameter') or ''
+        valid_fields = data.get('valid_fields') or []
+        error_text = data.get('error') or 'verktygsfel'
+        _logger.info(
+            'åtgärdbart verktygsfel i %s (parameter=%s, giltiga fält=%d): %s',
+            tool_name, parameter or '-', len(valid_fields), error_text[:200])
+        if session is None:
+            return True
+        # Logga försöket så att kedjan går att läsa ur sessionen (4.4/4.8).
+        from odoo.addons.ai_agent_core.core.improve import (
+            ToolAttempt, ToolSequenceRun)
+        run = ToolSequenceRun()
+        run.attempts.append(ToolAttempt(
+            attempt=0, tool_name=tool_name, outcome='failed',
+            error=error_text,
+            fix_suggestions=[
+                'Använd ett av de giltiga fälten: %s' % ', '.join(
+                    valid_fields[:20])
+            ] if valid_fields else [],
+        ))
+        run.escalated = True
+        run.escalation_reason = (
+            'Anropet avvisades med ett åtgärdbart fel — anroparen kan '
+            'korrigera och göra om (parameter: %s)' % (parameter or '-'))
+        self._log_tool_attempts(session, run)
+        try:
+            if 'ai.coworker.error' in self.env:
+                self.env['ai.coworker.error'].create({
+                    'session_id': session.id,
+                    'error_type': 'tool_error',
+                    'tool_name': tool_name,
+                    'message': 'åtgärdbart verktygsfel: %s' % error_text[:1000],
+                })
+        except Exception:
+            pass
+        return True
+
+    def _correction_target(self, contract, data):
+        """Hitta den BEFINTLIGA post som korrigeringen ska åtgärda (4.7).
+
+        Ett misslyckat write-verify har redan skapat sin post — att köra om
+        skapandet ger en dubblett utan att felet försvinner. Korrigeringen
+        ska därför skriva till den post som redan finns, och returnerar
+        (record, missing_fields).
+
+        missing_fields är de fält vars värde anroparen inte angav. De kan
+        korrigeringen INTE fylla i (4.5) — den informationen finns bara hos
+        anroparen. Att hitta på ett värde vore att verifiera meningslöshet
+        med meningslöst innehåll.
+        """
+        model = contract.get('model') or ''
+        if not model and contract.get('model_path'):
+            from odoo.addons.ai_agent_core.core.verify import _resolve_path
+            _found, model = _resolve_path(data, contract['model_path'])
+            model = model or ''
+        if not model or model not in self.env.registry:
+            return False, []
+        from odoo.addons.ai_agent_core.core.verify import _resolve_path
+        id_path = contract.get('id_path') or 'id'
+        found, rec_id = _resolve_path(data, id_path)
+        if not found or not rec_id:
+            return False, []
+        rec = self.env[model].browse(int(rec_id))
+        if not rec.exists():
+            return False, []
+        vals = dict((data or {}).get('values') or {})
+        missing = [
+            c.get('field') for c in (contract.get('checks') or [])
+            if c.get('non_empty') and c.get('field')
+            and not vals.get(c.get('field'))
+        ]
+        return rec, missing
+
+    def _correct_failed_tool(self, tool_name, contract, data, verify_result,
+                             session=None):
+        """Försök korrigera ett misslyckat verktygsanrop (4.2–4.4, 4.7).
+
+        Korrigeringen rättar sådant anroparen angett FEL. Den åtgärdar den
+        post som redan skapats — aldrig genom att skapa en ny — och fyller
+        aldrig i ett saknat fält med ett påhittat värde (4.5): kan felet
+        inte åtgärdas utan anroparens omdöme eskaleras ärendet i stället,
+        så anroparen kan fylla i värdet i nästa varv.
+        """
+        from odoo.addons.ai_agent_core.core.improve import (
+            ToolSequenceCorrector)
+        from odoo.addons.ai_agent_core.core.verify import verify_write_outcome
+        corrector = ToolSequenceCorrector(
+            max_attempts=self._TOOL_CORRECTION_MAX_ATTEMPTS)
+        first_error = '; '.join(
+            e.message for e in verify_result.all_errors)
+        first_suggestions = list(verify_result.fix_suggestions or [])
+
+        record, missing_fields = self._correction_target(contract, data)
+        if missing_fields:
+            # Anroparen angav inte fältet. Korrigeringen har ingen källa för
+            # ett korrekt värde — att skriva ett påhittat vore att lura
+            # verifieringen. Eskalera med ett åtgärdbart fel i stället (4.5).
+            from odoo.addons.ai_agent_core.core.improve import (
+                ToolAttempt, ToolSequenceRun)
+            run = ToolSequenceRun()
+            run.escalated = True
+            run.escalation_reason = (
+                'Saknat värde för %s — kan inte korrigeras utan anroparens '
+                'omdöme (inget påhittat värde skrivs)'
+                % ', '.join(missing_fields))
+            run.attempts.append(ToolAttempt(
+                attempt=0, tool_name=tool_name, outcome='escalated',
+                error=first_error,
+                fix_suggestions=list(first_suggestions) + [
+                    'Ange ett värde för %s' % ', '.join(missing_fields)]))
+            _logger.info(
+                'ToolSequenceCorrector: %s eskalerar — saknar %s',
+                tool_name, missing_fields)
+            return run
+        if not record:
+            # Ingen befintlig post att åtgärda. Att skapa en ny vore en
+            # dubblett (4.7) — eskalera i stället.
+            from odoo.addons.ai_agent_core.core.improve import (
+                ToolAttempt, ToolSequenceRun)
+            run = ToolSequenceRun()
+            run.escalated = True
+            run.escalation_reason = (
+                'Ingen befintlig post att korrigera — vägrar skapa '
+                'dubblett (write-verify: %s)' % first_error[:200])
+            run.attempts.append(ToolAttempt(
+                attempt=0, tool_name=tool_name, outcome='escalated',
+                error=first_error, fix_suggestions=list(first_suggestions)))
+            _logger.warning(
+                'ToolSequenceCorrector: %s eskalerar — ingen post att åtgärda',
+                tool_name)
+            return run
+
+        def _attempt_fn(attempt, fix_suggestions):
+            # Åtgärda den BEFINTLIGA posten — skriv inte en ny (4.7).
+            # Endast värden anroparen själv angav skrivs (4.5).
+            vals = dict((data or {}).get('values') or {})
+            writable = {
+                f: v for f, v in vals.items()
+                if f in record._fields and v not in (None, '', [])
+                and not record._fields[f].readonly
+                and not record._fields[f].compute
+            }
+            if not writable:
+                return (False, None,
+                        'inget korrigerbart värde angivet', [])
+            try:
+                record.write(writable)
+            except Exception as e:  # noqa: BLE001
+                return (False, None, 'skrivning misslyckades: %s' % e, [])
+            payload = {'ok': True, 'id': record.id, 'values': writable}
+            return (True, payload, '', [])
+
+        def _verify_fn(payload):
+            return verify_write_outcome(contract, payload, env=self.env)
+
+        return corrector.correct(
+            tool_name, _attempt_fn, _verify_fn,
+            first_error=first_error,
+            first_suggestions=first_suggestions)
+
     def _specialist_agent_lookup(self, tool_name):
         """Resolve vilken ai.agent ett specialist-verktygsanrop tillhör.
 
@@ -5451,14 +5968,60 @@ class AICoworker(models.Model):
                 for s in force_agent.skill_ids)
             system_prompt = (system_prompt or '') + skill_ctx
         # Ingen force_agent (generisk körning — mail, webhook, chat):
-        # aggregera medarbetarens egna + teamets agenters skills så
-        # kapaciteter lever som skills/instruktioner, INTE som sub-agenter.
+        # aggregera medarbetarens egna + teamets agenters + identitetens
+        # skills, så kapaciteter lever som skills/instruktioner, INTE som
+        # sub-agenter. Identitetens skills bär de inlärda reglerna.
+        #
+        # Aktivering sker på skillens trigger_keywords (data i ai.skill —
+        # redigerbar i UI:t utan deploy). orchestration.* behålls alltid.
+        # Ingen träff alls → behåll allt (oförändrat beteende).
         if not force_agent:
-            skill_recs = self.skill_ids | self.agent_ids.agent_id.skill_ids
+            skill_recs = (self.skill_ids
+                          | self.agent_ids.agent_id.skill_ids
+                          | self.identity_id.skill_ids)
             if skill_recs:
+                import re as _re
+                _low = (prompt or '')[:4000].lower()
+
+                def _triggered(s):
+                    # Helordsmatchning: "read" ska inte plocka upp
+                    # "read/write"-larm via delsträng, och "pg" inte matcha
+                    # inuti ett annat ord. Kortare/vanligare nyckelord i
+                    # ai.skill.trigger_keywords ger fler träffar — det är data
+                    # som kan trimmas i UI:t utan deploy.
+                    for _k in _re.split(r'[,\n]', s.trigger_keywords or ''):
+                        _k = _k.strip().lower()
+                        if not _k:
+                            continue
+                        if _re.search(
+                                r'(?<![a-z0-9])' + _re.escape(_k)
+                                + r'(?![a-z0-9])', _low):
+                            return True
+                    return False
+
+                _always = [s for s in skill_recs
+                           if (s.name or '').startswith('orchestration')]
+                _always_ids = {s.id for s in _always}
+                _matched = [s for s in skill_recs
+                            if s.id not in _always_ids and _triggered(s)]
+                _chosen = _always + _matched if _matched else list(skill_recs)
+                # Räkna användning — billig direkt-UPDATE så att write_date
+                # inte churnar på varje körning (use_count är ren statistik).
+                try:
+                    _ids = tuple(s.id for s in _chosen)
+                    if _ids:
+                        self.env.cr.execute(
+                            'UPDATE ai_skill SET use_count = '
+                            'COALESCE(use_count, 0) + 1 WHERE id IN %s',
+                            (_ids,))
+                except Exception:
+                    _logger.warning('use_count-ökning misslyckades', exc_info=True)
+                _logger.info('skill-select (run): %d/%d skills (%s)',
+                             len(_chosen), len(skill_recs),
+                             ','.join(s.name or '?' for s in _chosen)[:200])
                 skill_ctx = '\n\n## Skills (följ dessa vid behov)\n' + '\n'.join(
                     f'### {s.name}\n{s.recipe_text or s.description or ""}'
-                    for s in skill_recs)
+                    for s in _chosen)
                 system_prompt = (system_prompt or '') + skill_ctx
 
         # Create session for tracking (reuse provided session when given)
@@ -5473,11 +6036,27 @@ class AICoworker(models.Model):
         # Budgetcheck (budget-hard-cap D4): hårt stopp innan LLM-körning.
         # Notis/aktivitet en gång per månad; upplåsning vid höjd budget/ny månad.
         self._unlock_budget_activities()
-        if self.budget_exhausted:
+        if self.budget_exhausted and not self.monthly_budget_soft:
             self.check_cap()  # triggar notis en gång per månad
             _logger.info('run() skippad för %s: budget slut', self.name)
             return 'Budget slut: AI-medarbetaren har nått månadstaket. ' \
                    'Höj taket i inställningarna eller vänta till nästa månad.'
+        if self.budget_exhausted:
+            # Mjukt månadstak: varna men kör vidare.
+            self.check_cap()
+            _logger.info('run(): mjukt månadstak för %s (%.2fM förbrukat) — '
+                         'kör vidare', self.name, self.started_mtokens)
+
+        # Dagsbudget (mjukt stopp): samma effekt per körning, men taket
+        # öppnas av sig självt vid midnatt — ingen åtgärd krävs.
+        if self.daily_budget_exhausted:
+            self.check_daily_cap()  # notis en gång per dygn
+            _logger.info('run() skippad för %s: dagsbudget slut (%.2fM/%.0fM)',
+                         self.name, self.daily_budget_used_mtokens,
+                         self.daily_cap_mtokens)
+            return 'Dagsbudget slut: AI-medarbetaren har nått dagstaket ' \
+                   '(%sM systemtokens). Körningar återupptas automatiskt ' \
+                   'vid midnatt.' % self.daily_cap_mtokens
 
         try:
             import asyncio
@@ -5528,7 +6107,7 @@ class AICoworker(models.Model):
 
                 loop_obj = self._build_loop(
                     provider=provider, tools=tools,
-                    model=model, system_prompt=system_prompt, max_rounds=10,
+                    model=model, system_prompt=system_prompt,
                 )
 
                 # PermissionEngine får användarens grupper (defense-in-depth):
@@ -5587,11 +6166,21 @@ class AICoworker(models.Model):
             narration_text = '\n\n'.join(
                 getattr(loop_obj, 'narration_log', []) or [])
 
+            # Determinism (improve-ai-coworker-memory-and-tools 1.1/1.4):
+            # appendra efter sessionens högsta sequence i stället för att
+            # hårdkoda 1/2 — annars sorterar varje ny körning FÖRE tidigare
+            # historik och historiken blir icke-deterministisk vid
+            # återupptagning.
+            _last_line = self.env['ai.coworker.session.line'].search(
+                [('session_id', '=', session.id)],
+                order='sequence desc, id desc', limit=1)
+            _base_seq = (_last_line.sequence or 0) + 1
+
             self.env['ai.coworker.session.line'].create({
                 'session_id': session.id,
                 'role': 'user',
                 'content': prompt[:2000] if prompt else '',
-                'sequence': 1,
+                'sequence': _base_seq,
                 # User-raden bokför requestens input-tokens (prompt-kostnad)
                 # så varje meddelande visar sin kontextkostnad.
                 'token_input': input_t,
@@ -5610,7 +6199,7 @@ class AICoworker(models.Model):
                 'model_real': model_real,
                 'reasoning': reasoning_text[:12000] or False,
                 'sys_multiplier': sys_mult,
-                'sequence': 2,
+                'sequence': _base_seq + 1,
                 # Granskningsbar kontext: vilka verktyg anropades och med
                 # vilket resultat (preview).
                 'tool_calls': json.dumps([
@@ -5646,7 +6235,7 @@ class AICoworker(models.Model):
                     'tool_name': t_name,
                     'tool_id': tool_rec_id or False,
                     'content': t_preview,
-                    'sequence': 10 + i,
+                    'sequence': _base_seq + 2 + i,
                     'token_input': tool_cost,
                     'sys_multiplier': 1.0,
                 }
@@ -5693,6 +6282,14 @@ class AICoworker(models.Model):
                         })
             except Exception:
                 pass
+
+            # ── Write-verify (3.2): verifiera skrivande verktygsutfall ──
+            # mot verktygets deklarativa avtal. Utan avtal → ingen åtgärd.
+            try:
+                self._run_write_verify(
+                    getattr(loop_obj, 'tool_results', []), session=session)
+            except Exception as _wv_err:
+                _logger.warning('write-verify failed: %s', _wv_err)
 
             # ── Per-agent usage (Väg A): spara varje agents meddelande/tokens
             # som egen session-line så tokens kan summeras per modell/agent.
@@ -5884,11 +6481,20 @@ class AICoworker(models.Model):
 
         # Budgetcheck (budget-hard-cap D4): powerbox returnerar budget slut
         self._unlock_budget_activities()
-        if self.budget_exhausted:
+        if self.budget_exhausted and not self.monthly_budget_soft:
             self.check_cap()
             _logger.info('powerbox skippad för %s: budget slut', self.name)
             return 'Budget slut: AI-medarbetaren har nått månadstaket. ' \
                    'Höj taket i inställningarna eller vänta till nästa månad.'
+        if self.budget_exhausted:
+            self.check_cap()  # mjukt tak: varna, kör vidare
+            _logger.info('powerbox: mjukt månadstak för %s — kör vidare',
+                         self.name)
+        if self.daily_budget_exhausted:
+            self.check_daily_cap()
+            _logger.info('powerbox skippad för %s: dagsbudget slut', self.name)
+            return 'Dagsbudget slut: AI-medarbetaren har nått dagstaket. ' \
+                   'Körningar återupptas automatiskt vid midnatt.'
 
         # Get model from first agent
         from odoo.addons.ai_agent_core.core.provider import get_default_model_name
@@ -5986,6 +6592,41 @@ class AICoworker(models.Model):
             raise UserError(_('Powerbox error: %s') % str(e))
 
 
+    def _ensure_own_identity(self):
+        """Säkerställ att varje medarbetare ÄGER sin identitet (egen kopia).
+
+        onchange-vägen (_onchange_identity_id) körs bara när en människa
+        väljer i formuläret — inte vid create/write via ORM, import eller API.
+        Denna metod är garantin, och täcker två fall:
+
+          1. Den valda identiteten är en MALL (is_template=True)
+          2. Den valda identiteten används redan av en ANNAN medarbetare
+             — då skulle inlärda regler läcka mellan dem
+
+        Skyddas av en kontext-flagga så att ompekningen till kopian inte
+        triggar en ny kopia (annars oändlig rekursion).
+        """
+        if self.env.context.get('__ai_identity_copy_guard'):
+            return
+        for rec in self:
+            ident = rec.identity_id
+            if not ident:
+                continue
+            shared = self.env['ai.coworker'].search_count([
+                ('identity_id', '=', ident.id), ('id', '!=', rec.id)])
+            if not (ident.is_template or shared):
+                continue
+            try:
+                copy = ident.copy_for_coworker(rec)
+                rec.with_context(
+                    __ai_identity_copy_guard=True).write(
+                        {'identity_id': copy.id})
+                rec._seed_memory_settings()
+            except Exception:
+                _logger.warning(
+                    'Kunde inte skapa egen identitetskopia för %s',
+                    rec.name, exc_info=True)
+
     def write(self, vals):
         res = super(AICoworker, self).write(vals)
         # Profilbyte → seeda om sökfälten (fas 13.3).
@@ -6009,6 +6650,10 @@ class AICoworker(models.Model):
         if any(k in vals for k, _it in self._INIT_BOOLEAN_MAP):
             for rec in self:
                 rec._sync_init_types_from_booleans()
+        # Varje medarbetare ska äga sin identitet (egen kopia) — annars
+        # läcker inlärda regler mellan coworkers som delar identitet.
+        if 'identity_id' in vals:
+            self._ensure_own_identity()
         return res
 
     def _sync_init_types_from_booleans(self):
@@ -6295,6 +6940,8 @@ class AICoworker(models.Model):
                 except Exception as e:
                     _logger.warning(
                         'Kunde inte seeda sökprofil på %s: %s', record.id, e)
+            # Varje medarbetare ska äga sin identitet (egen kopia).
+            records._ensure_own_identity()
         return records
 
 

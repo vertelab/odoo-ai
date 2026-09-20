@@ -77,9 +77,12 @@ class AITool(models.Model):
         'Description', required=True,
         help=('AI-beskrivning — det kontrakt LLM:en läser vid verktygsval. '
               'Använd mallen: syfte / när / när inte (peka på rätt verktyg) / '
-              'exempel / output / guardrail. Guardrails är informativa här — '
-              'enforcement sker via risk_level + PermissionEngine, aldrig '
-              'via text.'),
+              'exempel / output / verifierbart utfall / felvägledning / '
+              'guardrail. Ange vilket observerbart utfall ett lyckat anrop '
+              'ger och hur anropet kan misslyckas (obligatoriska parametrar, '
+              'förväntade format) så agenten kan verifiera och korrigera. '
+              'Guardrails är informativa här — enforcement sker via '
+              'risk_level + PermissionEngine, aldrig via text.'),
     )
     code = fields.Text(
         'Code', required=False,  # Not required for NATS-executor tools
@@ -140,6 +143,131 @@ class AITool(models.Model):
         help='Fast minimikostnad i systemtokens per tool-anrop. Läggs '
              'direkt på tool-raden (token_sys). Global per tool.',
     )
+
+    # Verifieringsavtal (improve-ai-coworker-memory-and-tools 3.1):
+    # deklarativt kontrakt — vilka nyckelfält som läses tillbaka efter en
+    # skrivande operation och vilket värde som förväntas. Sätts i XML/UI,
+    # ingen kärnkodändring krävs. Tomt = ingen write-verify.
+    verification_json = fields.Text(
+        'Verification Contract (JSON)',
+        help=('JSON-avtal för write-verify. Format: '
+              '{"model": "<model>", "id_path": "id", '
+              '"checks": [{"field": "parent_id", "equals_path": '
+              '"values.parent_id"}, {"field": "content", '
+              '"non_empty": true}]}. Efter en lyckad skrivning läses '
+              'posten tillbaka och varje check jämförs; avvikelse ger ett '
+              'strukturerat fel (fält, förväntat, faktiskt).\n\n'
+              'Innehållslig verifiering: en check kan i stället begära att '
+              'fältet motsvarar en källa — '
+              '{"field": "content", "source": true, "coverage": 0.6}. '
+              'Då mäts hur stor del av källans väsentliga delar (namngivna '
+              'entiteter, modellnamn, citat, URL:er) som återfinns i '
+              'innehållet, och jämförs mot "coverage"-tröskeln (0–1, '
+              'standard 0.6). Under tröskeln blir det ett fel som namnger '
+              'vad som saknas. En påstådd källa ("Källa: X") som inte finns '
+              'i sammanhanget rapporteras också. Källan är sessionens rader '
+              'och läses bara när en check begär den.'),
+    )
+    verification_enabled = fields.Boolean(
+        'Write-verify', default=False,
+        help='Aktivera verifiering av verktygsutfallet efter skrivning '
+             '(kräver verification_json).')
+
+    def get_verification_contract(self, model=None):
+        """Tolka verification_json → dict (eller {} om inget/ogiltigt).
+
+        Args:
+            model: modellen anropet gäller. Om angiven läggs ett
+                modellspecifikt avtal till (se ``_MODEL_VERIFICATION_CONTRACTS``)
+                — det täcker fält som det generiska avtalet inte kan känna
+                till. Det modellspecifika avtalets checks läggs EFTER de
+                generiska, så en generisk check som inte finns på modellen
+                hoppas över medan den specifika körs.
+        """
+        self.ensure_one()
+        if not self.verification_enabled or not self.verification_json:
+            return {}
+        try:
+            data = json.loads(self.verification_json)
+        except (ValueError, TypeError):
+            _logger.warning('ogiltigt verification_json på ai.tool %s', self.id)
+            return {}
+        if not isinstance(data, dict) or data.get('checks') is None:
+            return {}
+        # Modellspecifikt tillägg: lägg till de checks som modellen behöver.
+        extra = self._MODEL_VERIFICATION_CONTRACTS.get(model or '')
+        if extra:
+            merged = dict(data)
+            merged['checks'] = list(data.get('checks') or []) + [
+                c for c in extra.get('checks') or []
+                if c not in (data.get('checks') or [])]
+            return merged
+        return data
+
+    # Standardavtal för de generiska Odoo-verktygen (5.1). Generiska verktyg
+    # betjänar många modeller → avtalet använder model_path och checkar som
+    # inte är tillämpliga på en modell hoppas över (warning, inte fail).
+    _DEFAULT_VERIFICATION_CONTRACTS = {
+        'odoo_create': {
+            'model_path': 'model',
+            'id_path': 'id',
+            'checks': [
+                {'field': 'name', 'equals_path': 'values.name'},
+                {'field': 'content', 'non_empty': True},
+                {'field': 'parent_id', 'equals_path': 'values.parent_id'},
+            ],
+        },
+        'odoo_write': {
+            'model_path': 'model',
+            'id_path': 'ids.0',
+            'checks': [
+                {'field': 'name', 'equals_path': 'values.name'},
+            ],
+        },
+    }
+
+    # Modellspecifika avtal. Ett generiskt avtal kan inte veta vilket fält
+    # som bär innehållet på en viss modell — och en check mot ett fält som
+    # inte finns hoppas över som varning, vilket ger en tyst lucka.
+    # document.page är det konkreta fallet: innehållet skrivs till
+    # document.page.history, och document.page.content är ett beräknat fält
+    # som faller tillbaka på html-widgetens platshållare när historiken
+    # saknas (session 18204: dokumentet "skapades" utan innehåll).
+    _MODEL_VERIFICATION_CONTRACTS = {
+        'document.page': {
+            'model_path': 'model',
+            'id_path': 'id',
+            'checks': [
+                {'field': 'name', 'equals_path': 'values.name'},
+                # Innehållet ska inte bara vara ifyllt — det ska bära
+                # trådens väsentliga delar. Utan detta passerade ett
+                # dokument som tappade videon, citaten och modellnamnen
+                # (session 18204).
+                {'field': 'content', 'non_empty': True,
+                 'source': True, 'coverage': 0.6},
+            ],
+        },
+    }
+
+    @api.model
+    def _ensure_verification_contracts(self, records=None):
+        """Seeda write-verify-avtal på de generiska verktygen (idempotent).
+
+        Skriver BARA avtalet om det saknas — rör inte operatörens
+        eventuella anpassningar (och inte övrig verktygskonfiguration).
+        """
+        for tool_name, contract in self._DEFAULT_VERIFICATION_CONTRACTS.items():
+            tool = self.search([('name', '=', tool_name)], limit=1)
+            if not tool:
+                continue
+            if tool.verification_enabled and tool.verification_json:
+                continue  # redan satt — lämna operatörens version
+            tool.write({
+                'verification_enabled': True,
+                'verification_json': json.dumps(contract, indent=2),
+            })
+            _logger.info('write-verify-avtal satt på ai.tool %s', tool_name)
+        return True
 
     # Relations
     agent_ids = fields.Many2many(

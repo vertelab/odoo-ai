@@ -424,6 +424,58 @@ python3 -m unittest ai_agent_core.tests.test_openworker_gate -v
 Odoo-integrationstester (kräver DB): `checkmodule -d <db> -m ai_agent_core -t`
 (inkl. `tests/test_workspace.py`).
 
+Nya tester för sessionsminne och write-verify:
+`test_session_memory.py`, `test_tool_errors.py`, `test_write_verify.py`,
+`test_tool_self_correction.py`, `test_document_page_acceptance.py`
+(körs med `-t`; acceptanstestet hoppas över om `document.page` saknas).
+
+## Sessionsminne (improve-ai-coworker-memory-and-tools)
+
+`ai.coworker.session` är den **auktoritativa** kontextkällan. Historiken
+rekonstrueras deterministiskt från sessionens rader — inte från en
+räknare eller en klientbild.
+
+- `session._build_history_from_lines()` bygger `core.Message`-listan i
+  ordning (role, content, tool_calls, tool-resultat) med
+  assistant-`tool_calls` bevarade som par (replaybara).
+- `session._sync_pi_message_count()` stämmer av `pi_message_count` mot
+  antalet rader. Räknaren är ett **derivat** och får bara sänkas — raderna
+  vinner. Den höjs aldrig till totala radantalet eftersom rader som skrivs
+  direkt (tool-rader) inte motsvarar Pi-poster.
+- Historik-injektionen är prompt-medveten: tom prompt ⇒ ingen ny
+  user-message; icke-tom prompt ⇒ exakt en (återupptagning/HITL).
+- `ai.coworker.session.line` är **append-only**: `write()` tillåter bara
+  metadatafält, `unlink()` nekas.
+- Session-lines får sin `sequence` efter sessionens högsta värde (inte
+  hårdkodat 1/2), så varje ny körning appendas efter tidigare historik.
+
+## Write-verify och självkorrigering
+
+Efter en skrivande verktygsoperation verifieras utfallet mot verktygets
+**deklarativa verifieringsavtal** innan resultatet rapporteras som lyckat.
+
+- Avtalet sätts på `ai.tool`: `verification_enabled` +
+  `verification_json` (`{"model_path", "id_path", "checks"}`) — i XML/UI,
+  **ingen kärnkodändring krävs**.
+- Standardavtal seedas idempotent av
+  `ai.tool._ensure_verification_contracts()` (data-XML,
+  `data/tool_verification_contracts.xml`) och rör inte operatörens egna
+  anpassningar. Generiska verktyg (`odoo_create`/`odoo_write`) använder
+  `model_path`; checkar för fält som inte finns på modellen ger en
+  **varning**, inte ett fel.
+- `core/verify.py::verify_write_outcome()` läser tillbaka posten och
+  jämför nyckelfälten; avvikelse ger `VerifyResult` (fail + fältangivelse +
+  fix-förslag) och loggas på `ai.coworker.session`.
+- Åtgärdbara verktygsfel: `core/tools.py::ToolError` bär parameter,
+  förväntat format, faktiskt värde och `retryable` — serialiseras både som
+  LLM-läsbar text och JSON.
+- Självkorrigering: `core/improve.py::ToolSequenceCorrector` gör om ett
+  misslyckat anrop inom ett **begränsat antal försök** (default 3) och
+  eskalerar när inget verifierat utfall nås. Hela kedjan
+  försök → fel → rättelse → verifiering loggas som session-rader.
+- Aktivering: `ai.tool.verification_json` — ett verktyg utan avtal körs utan
+  write-verify (inget fel).
+
 ## Dependencies
 
 - `httpx` — async HTTP client
@@ -707,3 +759,133 @@ misslyckas (verifierat: 58 verktyg → 87s svullnad utan exekvering; 2-8 relevan
 reducerar payload:en per uppgift (nyckelords-routing: zabbix/salt/pg/caddy/
 odoo/mail + litet bas-set). Effekt: IS Operator fullför riktig iterativ
 driftdiagnos med native tool-calling.
+
+## Erfarenhetsstyrd skill-förbättring (skill-experience-improvement)
+
+En skill bär nu sina egna erfarenheter — vad regeln gjorde rätt och fel i
+verklig drift — och föreslår ur dem en skärpt `recipe_text`. Människan
+behåller sista ordet.
+
+```
+  erfarenhet bokförs          förslag genereras           människa beslutar
+  ─────────────────           ──────────────────          ─────────────────
+  record_experience()   →     propose_improvement()  →    Applicera / Kasta
+  success_cases                 improvement_            (HITL i Improve-
+  failure_cases                 suggested_recipe         fliken)
+        ▲                                                       │
+        │                                                       ▼
+        └────────────── recipe_text uppdateras ────────────────┘
+                     (ALDIGT automatiskt)
+```
+
+### Erfarenheter — `record_experience(note, verdict, source)`
+
+| verdict | fält | betydelse |
+|---|---|---|
+| `success` | `success_cases` | regeln stämde |
+| `failure` | `failure_cases` | regeln larmade falskt |
+
+`recipe_text` rörs **aldrig** av en erfarenhet — den ändras bara via
+förbättringsloopen och ett mänskligt klick.
+
+Dedup sker på **noten** (värd + trigger), inte på källan: 121 larm från samma
+värd+trigger blir **EN rad med räknare** (`(sedd N ggr; senast <källa>)`),
+annars växer fältet obegränsat och följer med i varje prompt. Taket är
+`_MAX_EXPERIENCE_LINES = 40` rader — de senaste behålls.
+
+### Förslag — `propose_improvement()`
+
+Kräver minst `_MIN_FAILURES_FOR_IMPROVEMENT = 2` failure-erfarenheter.
+Bygger en `ImprovementGuidance` ur `failure_cases` + `success_cases` och kör
+den genom `core/improve.py`. Resultatet hamnar i
+`improvement_suggested_recipe` (readonly).
+
+**LLM-vägen får aldrig fälla förslaget.** Kastar den ett fel (provider nere,
+timeout, gateway som inte känner modellen) används
+`_fallback_recipe()` — ett deterministiskt förslag som listar de inlärda
+falska positiva. Annars skulle loopen bli **tyst**, vilket är det farligaste
+läget: ingen erfarenhet blir någonsin ett förslag och inget larmar.
+
+### HITL — endast människa applicerar
+
+`action_apply_suggested_recipe` (ersätter `recipe_text` via
+`action_apply_kaizen_suggestion`, version++ och stämpel) och
+`action_discard_suggested_recipe` (rensar förslaget). Ingen automatisk
+applicering, oavsett konfidens.
+
+Veckovis cron `cron_skill_improve_weekly` →
+`_cron_propose_improvements()` skapar förslag för skills som saknar ett
+väntande förslag men har `failure_cases`. **Den rör aldrig `recipe_text`.**
+
+### Coworker äger sin identitet
+
+`ai.identity.copy_for_coworker()` ger varje medarbetare en egen kopia, och
+`ai_coworker._ensure_own_identity()` garanterar det i **alla** vägar som
+sätter en identitet — `write()`-hooken på `identity_id` och `create()` —
+inte bara när en människa väljer i formuläret. Två fall hanteras: identiteten
+är en mall, eller den används redan av en annan medarbetare. Ompekningen
+skyddas mot rekursion med `__ai_identity_copy_guard`.
+
+För verklig isolation av erfarenheter finns dessutom **per-quest-forken**
+`ai.coworker.skill` (egna `success_cases`/`failure_cases` per medarbetare),
+eftersom erfarenheterna annars delas via den underliggande `ai.skill`-posten.
+
+### Ordningskrav mot konsumenten
+
+`saltstack_ai` är **konsument**: den anropar `ai.skill.record_experience()`
+när ett driftlarms utfall sätts. API:t måste vara deployat och verifierat
+**anropbart** innan konsumenten uppgraderas — annars sväljs
+`AttributeError` av konsumentens `try/except` och loopen lär sig ingenting
+utan att något larmar.
+
+Verifierat: `saltstack_ai` anropar `record_experience` i sin
+`write()`-hook och i `create()`, och erfarenheter bokförs på matchande
+skills (`matched_skill_ids`).
+
+## Web_ui-sessionskontext (web-ui-session-kontext)
+
+Web-chatten delar nu historikmekanism med coworker-vägen. Tidigare byggde
+`controllers/stream.py` sin egen historik-loop med bara `role` + `content`,
+vilket **tappade `tool_calls`** — modellen kunde inte relatera till vad den
+redan gjort, och trådar tappade sammanhang mellan turer.
+
+### En historikmekanism
+
+```
+session._build_history_from_lines()   ← ENDA källan
+        ▲                    ▲
+        │                    │
+   coworker-vägen      web_ui-vägen (stream.py)
+   (run/run_with_history)  (SSE-generatorn)
+```
+
+Historiken serialiseras med `Message.to_openai()`. Verktygsanrop hanteras i
+två format:
+
+| Format | Hantering |
+|---|---|
+| OpenAI-format (`id`/`function`) | `tool_calls` — fullt **replaybart** |
+| Preview-format (`name`/`preview`) | läsbar sammanfattning i `content`: `[Verktygsanrop i denna tur: …]` |
+
+Preview-formatet är det web_ui-vägen skriver. Det kan inte spelas upp, men
+modellen ser *att* och *vilket* verktyg som anropades samt en resultatpreview
+— tidigare kastades det bort helt (12 740 rader i drift hade verktygsspår som
+aldrig nådde modellen).
+
+### Radordningen härleds
+
+Alla sessionsrader får sin sekvens via `_next_session_sequence(env, session_id)`
+= sessionens **högsta** befintliga sekvens + 1. Hårdkodade värden (`1`, `2`,
+`100 + i`, `10 + i`) och `len(session_line_ids) + 1` är borta — de kolliderade
+så snart verktygsrader skrevs direkt, vilket gav dubblerade rader (session
+18204 hade sekvens 100–107 dubblerade).
+
+Läsningen sorterar på `(sequence, id)`, så äldre sessioner med dubblerade
+sekvenser ändå får en stabil ordning. Ingen migrering krävs.
+
+### Verktygsnycklar läses ur Odoo
+
+YouTube-verktygen (`data/youtube_tools.xml`) läser nyckeln via
+`ai_agent_core.google_api_key` (Odoo-inställningarna) med
+`GOOGLE_API_KEY`-miljövariabeln som fallback — inte ur miljön enbart.
+Saknas båda pekar felet på **Odoo Settings → AI → Google API Key**.

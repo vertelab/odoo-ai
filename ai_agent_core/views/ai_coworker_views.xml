@@ -270,6 +270,8 @@
                                     <field name="init_openai_api"/>
                                         <field name="rate_limit_rpm" invisible="not init_openai_api" string=" → Rate limit (req/min)"/>
                                         <field name="rate_limit_tpm" invisible="not init_openai_api" string=" → Rate limit (tok/min)"/>
+                                        <field name="openai_context_window" invisible="not init_openai_api" string=" → Context window (tokens)"/>
+                                        <field name="openai_context_window_manual" invisible="not init_openai_api" string=" → Context window (manuellt)" readonly="1"/>
                                     <!-- Watch — kopia av base_automation-formuläret (minus notepad/Notes) -->
                                     <field name="init_watch"/>
                                     <field name="watch_model_name" invisible="1"/>
@@ -428,8 +430,15 @@
 
                         <page string="Budget" name="budget">
                             <group>
+                                <group string="Dagstak">
+                                    <field name="daily_cap_mtokens"/>
+                                    <field name="daily_budget_used_mtokens" readonly="1" widget="float" digits="[16,2]"/>
+                                    <field name="daily_budget_warning" readonly="1"/>
+                                    <field name="daily_budget_exhausted" readonly="1"/>
+                                </group>
                                 <group string="Månadstak">
                                     <field name="monthly_cap_mtokens"/>
+                                    <field name="monthly_budget_soft" widget="boolean_toggle"/>
                                     <field name="budget_warning" readonly="1"/>
                                     <field name="budget_exhausted" readonly="1"/>
                                 </group>

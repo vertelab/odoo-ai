@@ -409,6 +409,185 @@ class AICoworkerSession(models.Model):
         """
         return self
 
+    # ── Sessionsminne (improve-ai-coworker-memory-and-tools 1.1–1.3) ────
+    # Sessionens rader är den AUKTORITATIVA kontextkällan: historiken
+    # rekonstrueras deterministiskt från session_line_ids i ordning — aldrig
+    # från en tillfällig minnesbild eller en separat räknare. Räknaren
+    # (pi_message_count) är ett DERIVAT och används bara för att veta hur
+    # mycket av Pi:s messages[] som redan persisterats.
+
+    def _build_history_from_lines(self, exclude_last_assistant=False):
+        """Bygg core.Message-historik från sessionens rader (i ordning).
+
+        Returnerar list[core.Message] med roller user/assistant/tool/system,
+        inkl. assistant-tool_calls och tool-resultat bevarade som par (krävs
+        av providern vid replay). Tool-rader får tool_name som name så
+        OpenAI-formatet håller.
+
+        Verktygsanrop hanteras i två format: OpenAI-format (med 'function')
+        blir replaybara ``tool_calls``; preview-format (name/preview) läggs
+        som en läsbar sammanfattning i assistant-radens content, så modellen
+        ser *att* och *vilket* verktyg som anropades även när anropet inte
+        kan spelas upp.
+
+        Args:
+            exclude_last_assistant: hoppa över sista assistant-raden —
+                används när svaret skrivs direkt och nästa anrop skickar
+                samma post i sitt delta (dedup).
+        """
+        self.ensure_one()
+        from odoo.addons.ai_agent_core.core.provider import Message, Role
+        lines = self.session_line_ids.sorted(
+            key=lambda l: (l.sequence or 0, l.id or 0))
+        if exclude_last_assistant and lines:
+            last = lines[-1]
+            if last.role == 'assistant':
+                lines = lines[:-1]
+        role_map = {
+            'user': Role.USER,
+            'assistant': Role.ASSISTANT,
+            'tool': Role.TOOL,
+            'system': Role.SYSTEM,
+        }
+        history = []
+        for line in lines:
+            role = role_map.get(line.role)
+            if role is None:
+                continue
+            tool_calls = None
+            tool_summary = ''
+            if line.tool_calls:
+                try:
+                    parsed = json.loads(line.tool_calls)
+                    if isinstance(parsed, list) and parsed \
+                            and isinstance(parsed[0], dict):
+                        if 'function' in parsed[0]:
+                            # OpenAI-format: fullt replaybart.
+                            tool_calls = parsed
+                        elif 'name' in parsed[0]:
+                            # Preview-format (name/preview) — det format
+                            # web_ui-vägen skriver. Kan inte replayas, men
+                            # modellen ska se ATT och VILKET verktyg som
+                            # anropades (web-ui-session-kontext D2).
+                            tool_summary = self._tool_calls_summary(parsed)
+                except (ValueError, TypeError):
+                    tool_calls = None
+                    tool_summary = ''
+            if role == Role.TOOL:
+                history.append(Message(
+                    role=Role.TOOL,
+                    content=line.content or '',
+                    name=line.tool_name or '',
+                ))
+            elif role == Role.ASSISTANT:
+                content = line.content or ''
+                if tool_summary:
+                    content = (content + '\n\n' + tool_summary).strip()
+                history.append(Message(
+                    role=Role.ASSISTANT,
+                    content=content,
+                    tool_calls=tool_calls,
+                ))
+            else:
+                history.append(Message(role=role, content=line.content or ''))
+        return history
+
+    @staticmethod
+    def _tool_calls_summary(parsed):
+        """Gör preview-formatets verktygsanrop till en läsbar sammanfattning.
+
+        Preview-poster (``{'name':…, 'preview':…}``) kan inte spelas upp som
+        OpenAI-anrop, men de bär vilka verktyg som användes och en preview av
+        resultaten. Att hoppa över dem (som tidigare) kastade bort
+        verktygsspåret helt, så modellen kunde inte relatera till vad den
+        redan gjort.
+        """
+        names = []
+        for item in parsed:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get('name') or '').strip()
+            if not name:
+                continue
+            preview = str(item.get('preview') or '').strip()
+            names.append('%s: %s' % (name, preview[:120]) if preview else name)
+        if not names:
+            return ''
+        return '[Verktygsanrop i denna tur: %s]' % '; '.join(names)
+
+    def _sync_pi_message_count(self):
+        """Avstäm pi_message_count mot antalet faktiska meddelanderader.
+
+        Räknaren är en delta-kursor mot Pi:s messages[] och är ett DERIVAT
+        av raderna — aldrig tvärtom. Vid avvikelse loggas det och raderna
+        vinner (körningen får aldrig fällas).
+
+        Viktigt: räknaren får bara sänkas (när den pekar förbi antalet
+        rader, t.ex. efter trunkerad historik) eller lämnas — den höjs
+        ALDRIG till det totala radantalet, eftersom rader som skrivs direkt
+        (tool-rader, stream.py:s assistant-rad) inte motsvarar Pi-poster.
+        Att höja den skulle göra nästa anrops delta fel.
+        """
+        self.ensure_one()
+        actual = len(self.session_line_ids.filtered(
+            lambda l: l.role in ('user', 'assistant', 'tool', 'system')))
+        stored = int(self.pi_message_count or 0)
+        if stored > actual:
+            _logger.info(
+                'session %s: pi_message_count %s > %s rader — sänker '
+                '(raderna vinner)', self.id, stored, actual)
+            try:
+                self.sudo().write({'pi_message_count': actual})
+            except Exception as e:
+                _logger.warning('kunde inte synka pi_message_count: %s', e)
+            return actual
+        if stored < actual:
+            _logger.debug(
+                'session %s: pi_message_count %s < %s rader (delta-kursor, '
+                'förväntat vid direkt-skrivna rader)', self.id, stored,
+                actual)
+        return stored
+
+    def _save_client_response(self, content, role='assistant', model_real='',
+                              token_input=0, token_output=0, debug_info='',
+                              source_urls='', tool_calls='', sys_multiplier=1.0):
+        """Spara klientens svarspost — idempotent mot serverns persistens.
+
+        Servern persisterar turens avslutande assistantsvar själv
+        (web-ui-stream-turn-persistens 2.1). Klienten POST:ar ändå samma
+        svar; utan dedup skulle assistantsvaret dubbleras. Skapar därför
+        ingen ny assistant-rad om den senaste raden redan är ett
+        assistantsvar med identiskt innehåll — samma mönster som
+        `_persist_pi_messages` (dedup mot sista persisterade raden).
+
+        Ett ANNAT svar appendas normalt (t.ex. en nyare formulering).
+        Returnerar den skapade raden, eller en tom recordset vid dedup.
+        """
+        self.ensure_one()
+        Line = self.env['ai.coworker.session.line'].sudo()
+        last = Line.search(
+            [('session_id', '=', self.id)],
+            order='sequence desc, id desc', limit=1)
+        if (role == 'assistant' and last and last.role == 'assistant'
+                and (last.content or '') == (content or '')):
+            return Line.browse(0)
+        seq = 0
+        if last:
+            seq = (last.sequence or 0) + 1
+        return Line.create({
+            'session_id': self.id,
+            'sequence': seq,
+            'role': role,
+            'content': content,
+            'debug_info': debug_info,
+            'source_urls': source_urls,
+            'tool_calls': tool_calls,
+            'token_input': token_input,
+            'token_output': token_output,
+            'model_real': model_real,
+            'sys_multiplier': sys_multiplier,
+        })
+
     # ── Kontinuitet (find-or-create med fallback) ──────────────────────
     # Används av /ai/v1/chat/completions + openai_api-vägen. Så länge en
     # Pi-session lever (och skickar pi_session_id/session_id) återfinns
@@ -457,6 +636,12 @@ class AICoworkerSession(models.Model):
                 # som openai_api så filtrering/statistik blir korrekt.
                 if not session.init_type:
                     session.sudo().write({'init_type': 'openai_api'})
+                # Självläkning (kostnadskontext-injektion-stream 1.1): en
+                # session skapad via sessions-lookup bär ingen coworker
+                # (coworkern är inte vald vid Pi:s session_start). Utan
+                # backfill förblir sessionen permanent kontextlös och
+                # kostnadskontexten kan aldrig härledas.
+                session._backfill_coworker(coworker_id)
                 return session, False
             # pi_session_id skickat men okänt → NY session (ingen fallback).
             return self.create({
@@ -479,6 +664,7 @@ class AICoworkerSession(models.Model):
                 ('write_date', '>=', cutoff),
             ], limit=1, order='write_date desc')
         if session:
+            session._backfill_coworker(coworker_id)
             return session, False
         return self.create({
             'coworker_id': coworker_id,
@@ -487,6 +673,32 @@ class AICoworkerSession(models.Model):
             'name': (prompt or 'API')[:80],
             'user_id': int(user_id or 0),
         }), True
+
+    def _backfill_coworker(self, coworker_id):
+        """Sätt coworker_id på en återfunnen session som saknar det.
+
+        Sessioner skapade via sessions-lookup (`_lookup_or_create_pi_session`)
+        bär ingen coworker — vid Pi:s `session_start` är coworkern ännu inte
+        vald. Utan backfill blir sessionen permanent kontextlös och
+        kostnadskontexten kan inte härledas (kostnadskontext-injektion-stream
+        1.1).
+
+        Skriver ENDAST när fältet är tomt, så en känd coworker aldrig skrivs
+        över (1.2). Tyst no-op vid fel — får aldrig fälla en körning.
+        """
+        self.ensure_one()
+        if not coworker_id or self.coworker_id:
+            return self
+        try:
+            self.sudo().write({'coworker_id': int(coworker_id)})
+            _logger.info(
+                'session %s: coworker_id backfillat till %s',
+                self.id, coworker_id)
+        except Exception as e:
+            _logger.warning(
+                'session %s: kunde inte backfilla coworker_id: %s',
+                self.id, e)
+        return self
 
     # ── Pi-session-markör (transport C) ────────────────────────────────
     # Pi-klienten äger Pi-sessionens UUID. Primär transport är body-fältet
@@ -538,6 +750,13 @@ class AICoworkerSession(models.Model):
         try:
             messages = messages or []
             total = len(messages)
+            # Tolerant läsning (1.3): stäm av räknaren mot raderna först —
+            # om den pekar förbi antalet rader (t.ex. efter trunkerad
+            # historik) sänks den så inget tappas.
+            try:
+                session._sync_pi_message_count()
+            except Exception:
+                pass
             already = int(session.pi_message_count or 0)
             # Robusthet: om klienten skickar färre meddelanden än vi sparat
             # (t.ex. trunkerad historik) börjar vi om från 0 så inget tappas.
@@ -641,6 +860,13 @@ class AICoworkerSession(models.Model):
                 'token_input': (session.token_input or 0) + input_t,
                 'token_output': (session.token_output or 0) + output_t,
             })
+            # Räknaren är ett derivat av raderna (1.3): synka mot faktiskt
+            # antal rader så den aldrig driver iväg. Loggar avvikelse utan
+            # att fälla körningen.
+            try:
+                session._sync_pi_message_count()
+            except Exception:
+                pass
             return created_count
         except Exception as e:
             _logger.warning('pi message persist failed: %s', e)

@@ -176,6 +176,30 @@ class AIIdentity(models.Model):
         """Increment use count."""
         self.use_count += 1
 
+    def copy_for_coworker(self, coworker):
+        """Skapa en egen identitetskopia för en specifik AI-medarbetare.
+
+        Varje ai.coworker ska ÄGA sin identitet. Delar flera medarbetare en
+        identitet läcker inlärda regler och erfarenheter mellan dem — det som
+        skrivs i success_cases/failure_cases och de skills som hänger på
+        identiteten blir gemensamma. Kopian börjar från mallen men lever
+        oberoende av den.
+
+        Samma mönster som copy_for_user och ai.coworker.skill (quest-specifik
+        fork av delad skill).
+        """
+        self.ensure_one()
+        copy = self.copy({
+            'name': '%s — %s' % (self.name, coworker.name or 'Quest'),
+            'scope': self.scope,
+            'is_template': False,
+            'template_id': self.id if self.is_template else (
+                self.template_id.id or self.id),
+        })
+        _logger.info('Identitetskopia %s skapad för coworker %s från %s',
+                     copy.name, coworker.name, self.name)
+        return copy
+
     def copy_for_user(self, user):
         """Create a personal copy of this identity for a specific user (Hole 3).
         
