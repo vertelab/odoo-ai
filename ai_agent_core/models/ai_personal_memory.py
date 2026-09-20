@@ -10,6 +10,7 @@ Minnet följer PERSONEN (res.users), inte en specifik ai.coworker.
 Alla quests som användaren interagerar med kan använda samma minne.
 """
 
+import asyncio
 import json
 import logging
 import math
@@ -864,12 +865,18 @@ class AIPersonalMemory(models.Model):
         Returns:
             str: PostgreSQL vector literal (t.ex. "[0.1,0.2,...]") eller None
         """
-        # Försök via ai.provider (metoden finns; ingen hasattr-guard)
-        Provider = self.env['ai.provider']
-        embedding = Provider._get_embedding(
-            model='text-embedding-3-small',
-            input=text[:8192],
-        )
+        # `_get_embedding` kräver EN provider (ensure_one) — att anropa den
+        # på ett tomt recordset ger "Expected singleton: ai.provider()".
+        # Skicka heller inget model-argument: konstanten
+        # DEFAULT_EMBEDDING_MODEL ('text-embedding-3-small') är den modell
+        # Bifrost avvisar (401), och ett argument slår ut providerns fält.
+        provider = self.env['ai.provider'].sudo()._embedding_provider()
+        if not provider:
+            _logger.warning(
+                'Embedding: ingen provider kan skapa vektorer — '
+                'texten lämnas utan vektor')
+            return None
+        embedding = provider._get_embedding(input=text[:8192])
         if embedding and isinstance(embedding, (list, tuple)):
             # PostgreSQL vector literal: [0.1,0.2,...]
             return '[' + ','.join(str(v) for v in embedding) + ']'
@@ -1023,7 +1030,6 @@ Return ONLY a JSON object: {{"memory": [{{"text": "...", "category": "fact|prefe
         # Rätt väg är samma som resten av systemet: lös upp providern via
         # coworkern (→ agent → ai.model → ai.provider), annars default.
         try:
-            import asyncio
             from odoo.addons.ai_agent_core.core.provider import (
                 ProviderFactory, get_default_provider, get_default_model_name)
             from odoo.addons.ai_agent_core.core.loop import (
@@ -1147,10 +1153,28 @@ Return ONLY a JSON object: {{"memory": [{{"text": "...", "category": "fact|prefe
               "identity_updates": {{"style":"...","user_model":"..."}} }}
             """
             try:
-                result = json.loads(self.env['ai.provider']._generate(
-                    model='gpt-4o-mini',
-                    messages=[{'role': 'user', 'content': prompt}],
-                ))
+                # `ai.provider._generate` FINNS INTE (AttributeError svaldes
+                # av except) och 'gpt-4o-mini' finns inte i installationen.
+                # Använd samma provider-kedja som resten av systemet.
+                from odoo.addons.ai_agent_core.core.provider import (
+                    ProviderFactory, get_default_provider,
+                    get_default_model_name)
+                from odoo.addons.ai_agent_core.core.loop import (
+                    AgentLoop, AgentConfig)
+                from odoo.addons.ai_agent_core.core.tools import ToolRegistry
+                provider, model_rec = get_default_provider(self.env)
+                if not provider:
+                    _logger.warning(
+                        'Discuss-extraction: ingen provider tillgänglig')
+                    return total
+                loop = AgentLoop(
+                    provider=provider, tools=ToolRegistry(),
+                    config=AgentConfig(
+                        model=(model_rec and model_rec._get_api_name())
+                        or get_default_model_name(),
+                        max_rounds=1, max_tokens=1500))
+                raw = asyncio.run(loop.run(prompt))
+                result = json.loads((raw.text or '').strip())
                 for mem in result.get('memories', []):
                     self.add_memory(user_id=uid, content=mem['content'],
                         category=mem.get('category','context'), source='discuss_chat',

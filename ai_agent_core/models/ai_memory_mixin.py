@@ -314,11 +314,23 @@ class AIMemoryMixin(models.AbstractModel):
         Returns:
             str: PostgreSQL vector literal eller None
         """
-        Provider = self.env['ai.provider']
-        embedding = Provider._get_embedding(
-            model='text-embedding-3-small',
-            input=text[:8192],
-        )
+        # `_get_embedding` kräver en SINGEL provider (`ensure_one()`), så den
+        # får inte anropas på ett tomt recordset — det ger
+        # "Expected singleton: ai.provider()" och minnet tappar sin vektor.
+        # `_embedding_provider()` är den avsedda uppslagningen: en aktiv
+        # provider med can_embed, annars en bifrost-provider med nyckel.
+        provider = self.env['ai.provider'].sudo()._embedding_provider()
+        if not provider:
+            _logger.warning(
+                'Embedding: ingen provider kan skapa vektorer '
+                '(can_embed saknas) — minnet sparas utan vektor')
+            return None
+        # Skicka INGET model-argument. `_effective_embedding_model` har
+        # prioritet argument → fält → konstant, och konstanten
+        # (DEFAULT_EMBEDDING_MODEL = 'text-embedding-3-small') är den modell
+        # Bifrost AVVISAR (401). Genom att skicka in den som argument
+        # kringgick vi fältets värde och tvingade fram det trasiga valet.
+        embedding = provider._get_embedding(input=text[:8192])
         if embedding and isinstance(embedding, (list, tuple)):
             return '[' + ','.join(str(v) for v in embedding) + ']'
         return None
