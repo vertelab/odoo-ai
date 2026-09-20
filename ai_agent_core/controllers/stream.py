@@ -2383,7 +2383,10 @@ class AIOpenAIAPI(http.Controller):
                 methods=['POST'], csrf=False, sitemap=False)
     def coworker_chat(self, coworker, **kw):
         """POST /ai/v1/<coworker>/chat/completions — Coworker i URL:en."""
-        return self._handle_chat(coworker, **kw)
+        try:
+            return self._handle_chat(coworker, **kw)
+        except Exception as exc:  # noqa: BLE001 — /ai/** får aldrig svara HTML
+            return self._error_json(exc)
 
     @http.route('/ai/v1/chat/completions', type='http', auth='public',
                 methods=['POST'], csrf=False, sitemap=False)
@@ -2402,7 +2405,42 @@ class AIOpenAIAPI(http.Controller):
         if not coworker:
             return Response(json.dumps({'error': {'message': 'Missing model', 'type': 'invalid_request_error'}}),
                           status=400, content_type='application/json')
-        return self._handle_chat(coworker, **kw)
+        try:
+            return self._handle_chat(coworker, **kw)
+        except Exception as exc:  # noqa: BLE001 — /ai/** får aldrig svara HTML
+            return self._error_json(exc)
+
+    @staticmethod
+    def _error_json(exc):
+        """/ai/** får aldrig svara Werkzeug-HTML (2026-09-20).
+
+        Odoo renderar HTTPException (t.ex. UserError -> BadRequest) som en
+        HTML-sida för type='http'-routes. Ett fel djupt i ORM:en blev därför en
+        ogenomskinlig "400 <!doctype html>" i klienten (Pi) — och syntes inte i
+        loggen eftersom UserError inte loggas som ERROR. Här blir det JSON med
+        det verkliga meddelandet plus en WARNING.
+        """
+        from werkzeug.exceptions import HTTPException
+        from odoo.exceptions import UserError
+        if isinstance(exc, HTTPException):
+            code = exc.code or 500
+            message = (exc.args[0] if exc.args and exc.args[0]
+                       else (exc.description or exc.name))
+        elif isinstance(exc, UserError):  # inkl. ValidationError
+            code = 400
+            message = str(exc.args[0]) if exc.args else 'User error'
+        else:
+            code = 500
+            message = 'Internal server error'
+        if code >= 500:
+            _logger.error('Ohanterat fel i /ai/v1: %s', exc, exc_info=True)
+            message = 'Internal server error'
+        else:
+            _logger.warning('Fel i /ai/v1 (%s): %s', type(exc).__name__, message)
+        return Response(json.dumps({'error': {
+            'message': str(message),
+            'type': 'server_error' if code >= 500 else 'invalid_request_error',
+        }}), status=code, content_type='application/json')
 
     @staticmethod
     def _parse_json_body():
