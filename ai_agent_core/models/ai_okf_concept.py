@@ -442,8 +442,17 @@ class AIOkfConcept(models.Model):
 
         None och '' normaliseras båda till '' innan jämförelsen, så ett
         utelämnat `title` inte ser ut som en ändring mot ett tomt.
+
+        FYND (2026-09-21): metoden är `@api.model` och anropas som
+        `self._version_is_unchanged(existing, ...)` — där `self` är MODELLEN
+        (oftast ett tomt recordset), inte raden. `self.ensure_one()` kastade
+        därför `Expected singleton: ai.okf.concept()` så fort en befintlig
+        version hittades, och hela `_okf_upsert` föll. Felet dolde sig bakom
+        versionsstormen: cronens try/except loggade bara en varning, så
+        varje post förblev dirty och försökte igen var 5:e minut.
+        Kontrollen ska gälla den befintliga raden — det är den vi jämför mot.
         """
-        self.ensure_one()
+        existing.ensure_one()
 
         def _norm_attr(attr):
             rows = attr or []

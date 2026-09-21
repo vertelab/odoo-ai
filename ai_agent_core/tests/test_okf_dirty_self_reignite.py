@@ -111,3 +111,56 @@ class TestOkfDirtySelfReignite(common.TransactionCase):
     def test_okf_indexed_at_exists_on_ai_memory(self):
         """Fältet saknades — cronen skrev till ett fält som inte fanns."""
         self.assertIn('okf_indexed_at', self.Memory._fields)
+
+
+@tagged('okf', 'memory', 'post_install', '-at_install')
+class TestOkfUpsertUnchangedPath(common.TransactionCase):
+    """Fynd 2026-09-21: `_version_is_unchanged` kastade på fel mottagare.
+
+    `_okf_upsert` anropar `self._version_is_unchanged(existing, ...)` där
+    `self` är MODELLEN (ett tomt recordset) — men metoden gjorde
+    `self.ensure_one()`. Så fort en befintlig version hittades kastades
+    `Expected singleton: ai.okf.concept()`, och hela upserten föll.
+
+    Felet var osynligt i drift: cronens try/except loggade bara en varning,
+    posten förblev dirty och försökte igen var 5:e minut. Det var därför
+    versionsstormen kunde pågå i timmar utan att någon såg rotorsaken.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.Concept = cls.env['ai.okf.concept']
+
+    def test_upsert_same_content_twice_is_idempotent(self):
+        """Andra upserten med identiskt innehåll ska returnera befintlig rad."""
+        key = 'test.unchanged.path'
+        kwargs = dict(
+            artifact_type='learning',
+            concept_key=key,
+            summary='Ett och samma innehåll.',
+            title='Test',
+            owner_company_id=self.env.company.id,
+        )
+        c1 = self.Concept._okf_upsert(**kwargs)
+        self.assertTrue(c1, 'första upserten ska skapa ett koncept')
+
+        # Andra anropet: identiskt innehåll -> ingen ny version, ingen krasch.
+        c2 = self.Concept._okf_upsert(**kwargs)
+        self.assertTrue(c2, 'andra upserten ska returnera befintlig rad')
+        self.assertEqual(c1.id, c2.id, 'samma innehåll = samma rad')
+        self.assertEqual(c2.version, 1, 'ingen ny version ska skapas')
+
+    def test_upsert_changed_content_creates_new_version(self):
+        """Ändrat innehåll ska fortfarande ge en ny version."""
+        key = 'test.changed.path'
+        c1 = self.Concept._okf_upsert(
+            artifact_type='learning', concept_key=key,
+            summary='Första innehållet.', title='Test',
+            owner_company_id=self.env.company.id)
+        c2 = self.Concept._okf_upsert(
+            artifact_type='learning', concept_key=key,
+            summary='Andra innehållet.', title='Test',
+            owner_company_id=self.env.company.id)
+        self.assertEqual(c2.version, 2, 'ändrat innehåll = ny version')
+        self.assertEqual(c2.supersedes_id.id, c1.id)
