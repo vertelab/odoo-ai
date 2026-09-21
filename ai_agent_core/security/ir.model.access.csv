@@ -34,6 +34,7 @@ access_ai_company_memory_category_user,ai.company.memory.category.user,model_ai_
 access_ai_company_memory_category_admin,ai.company.memory.category.admin,model_ai_company_memory_category,base.group_system,1,1,1,1
 
 access_ai_tool,ai.tool,model_ai_tool,base.group_user,1,1,1,1
+access_ai_search_source,ai.search.source,model_ai_search_source,base.group_user,1,1,1,1
 access_ai_personal_goal_user,ai.personal.goal.user,model_ai_personal_goal,base.group_user,1,1,1,1
 access_discuss_learning_user,discuss.learning.user,model_discuss_learning,base.group_user,1,0,0,0
 access_company_identity_user,company.identity.evolution.user,model_company_identity_evolution,base.group_user,1,0,0,0

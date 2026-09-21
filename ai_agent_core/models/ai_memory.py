@@ -58,8 +58,17 @@ class AIMemory(models.Model):
     # OKF dirty-flag (trigger-modell, task 5.1) — sätts av write()-hooken
     # (microseconds, inget AI-arbete); lätt cron plockar upp och rensar.
     okf_dirty = fields.Boolean(
-        'OKF Dirty', default=False,
+        'OKF Dirty', default=False, index=True, copy=False,
         help='Sätts av write()-hook; lätt cron (5 min) indexerar och rensar.')
+    # FYND (2026-09-21): `_okf_cron_index_dirty_memories` skrev
+    # `okf_indexed_at` — men fältet fanns bara på `ai.memory.mixin`, som
+    # `ai.memory` INTE ärver. Skrivningen hade kraschat i det ögonblick
+    # den nåddes (och gjorde det tyst: felet fångades av cronens
+    # try/except och loggades som en varning). Fältet deklareras därför
+    # här, med samma innebörd som på mixin.
+    okf_indexed_at = fields.Datetime(
+        'OKF Indexed At', readonly=True, copy=False,
+        help='När posten senast indexerades till OKF.')
 
     # Metadata
     tags = fields.Char('Tags', help='Comma-separated')
@@ -256,8 +265,25 @@ class AIMemory(models.Model):
     # OKF trigger-modell (task 5.1)
     # ════════════════════════════════════════════
     def write(self, vals):
-        """write()-hook: sätt okf_dirty utan AI-arbete."""
-        if vals.get('okf_dirty') is not True and not vals.get('consolidated'):
+        """write()-hook: sätt okf_dirty utan AI-arbete.
+
+        FYND (2026-09-21): hooken satte flaggan VILLKORSLÖST, även när
+        anroparen uttryckligen ville RENSA den (`okf_dirty=False`). Cronen
+        rensar med `mem.write({'okf_dirty': False})` — vilket gick rakt in i
+        denna hook och satte flaggan igen. Varje cron-varv (5 min) skapade
+        därför en ny OKF-version: `ai.memory,257` hade 38 versioner med
+        identiskt innehåll ("hello test"), 11:36 → 15:06.
+
+        Fixen: en explicit rensning (`False`) respekteras — den är ett
+        medvetet beslut av cronen efter lyckad indexering, inte en
+        innehållsändring. Flaggan sätts bara när anroparen inte sagt något
+        om den alls, eller uttryckligen satt den till True.
+
+        `ai.memory.mixin._set_okf_dirty()` löser samma sak genom att sätta
+        flaggan direkt i SQL; den vägen är kvar för mixin-modellerna. Här
+        räcker det att hooken slutar motarbeta sin egen anropare.
+        """
+        if 'okf_dirty' not in vals and not vals.get('consolidated'):
             vals['okf_dirty'] = True
         return super().write(vals)
 
@@ -301,6 +327,14 @@ class AIMemory(models.Model):
                 if not vals.get('summary'):
                     # Tom post — inget att indexera. Rensa flaggan så att
                     # den inte blockerar kön för evigt.
+                    #
+                    # `_set_okf_dirty`-vägen finns inte på legacy-modellerna
+                    # (den ligger på mixin, men sätter bara TRUE). En tom
+                    # post ska inte indexeras — därför skrivs flaggan med
+                    # `sudo()` och en explicit False, vilket mixinens
+                    # write()-hook respekterar eftersom den bara tittar på
+                    # `dirty_fields` (content, archived, …) och
+                    # `okf_dirty` inte ingår där.
                     mem.sudo().write({'okf_dirty': False})
                     continue
                 concept = self.env['ai.okf.concept']._okf_upsert(
@@ -357,7 +391,14 @@ class AIMemory(models.Model):
                     generated_by='cron',
                 )
                 if concept:
-                    mem.write({'okf_dirty': False})
+                    # Skriv BÅDE flaggan och tidsstämpeln. Med den
+                    # fixade write()-hooken (explicit False respekteras)
+                    # stannar flaggan rensad — tidigare tände hooken den
+                    # igen och samma post indexerades om var 5:e minut.
+                    mem.write({
+                        'okf_dirty': False,
+                        'okf_indexed_at': fields.Datetime.now(),
+                    })
                     count += 1
             except Exception as e:
                 _logger.warning('OKF cron index failed for memory %s: %s',
