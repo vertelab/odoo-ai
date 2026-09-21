@@ -1369,15 +1369,31 @@ class AIStreamController(http.Controller):
             ('archived', '=', False),
         ])
 
-        return Response(json.dumps({
-            "documents": [{
+        def _doc(m):
+            att = m.source_attachment_id
+            if not att and m.faiss_attachment_id:
+                # legacy rows: the FAISS index attachment is not the source
+                # file, but it is the only attachment we know about.
+                att = m.faiss_attachment_id
+            url = ''
+            if att:
+                if not att.access_token:
+                    att.generate_access_token()
+                url = '/web/content/%d?access_token=%s&download=true' % (
+                    att.id, att.access_token)
+            return {
                 "id": m.id,
                 "name": m.name or 'Dokument',
                 "content_preview": (m.content or '')[:200],
                 "memory_type": m.memory_type,
                 "tags": m.tags or '',
                 "can_remove": True,
-            } for m in memories]
+                "attachment_id": att.id if att else None,
+                "url": url,
+            }
+
+        return Response(json.dumps({
+            "documents": [_doc(m) for m in memories]
         }), content_type='application/json')
 
     @http.route('/ai/memory/<int:memory_id>/archive', type='http', auth='public',
@@ -1456,13 +1472,21 @@ class AIStreamController(http.Controller):
         # Store original file as ir.attachment linked to session
         attachment = None
         if session:
+            # NOTE: ir.attachment.datas expects BASE64 text; passing raw
+            # bytes makes Odoo base64.b64decode() the file content, which
+            # silently corrupts it (T/11520). Use 'raw' for raw bytes.
             attachment = request.env['ir.attachment'].sudo().create({
                 'name': filename,
-                'datas': content,
+                'raw': content,
                 'res_model': 'ai.coworker.session',
                 'res_id': session.id,
                 'mimetype': file_obj.content_type or 'application/octet-stream',
             })
+            # The chat UI runs as the public user, which has no read ACL
+            # on ir.attachment. Generate an access token so the tokenised
+            # /web/content/<id>?access_token=... link works without
+            # making the file public.
+            attachment.generate_access_token()
 
         if memory_type == 'faiss':
             # Create FAISS memory from uploaded document
@@ -1479,6 +1503,7 @@ class AIStreamController(http.Controller):
                     'importance': 'medium',
                     'memory_type': 'faiss',
                     'tags': f'uploaded,faiss,{filename}',
+                    'source_attachment_id': attachment.id if attachment else None,
                 })
                 chunk_count = memory.create_vector([doc])
                 return Response(json.dumps({
@@ -1504,6 +1529,7 @@ class AIStreamController(http.Controller):
                 'category': 'fact',
                 'importance': 'medium',
                 'tags': f'uploaded,{filename}',
+                'source_attachment_id': attachment.id if attachment else None,
             })
             memories.append(m.id)
         _logger.info("Upload: %s (%d chars, %d chunks)", filename, len(text), len(chunks))

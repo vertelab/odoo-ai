@@ -75,6 +75,11 @@ class AIMemory(models.Model):
     faiss_attachment_id = fields.Many2one('ir.attachment',
         string='FAISS Index',
         help='Serialized FAISS vector index stored as attachment')
+    source_attachment_id = fields.Many2one('ir.attachment',
+        string='Source File',
+        help='The original uploaded file (ir.attachment) this memory '
+             'was created from. Used by the chat UI to render a '
+             'download link.')
     chunk_count = fields.Integer('Chunk Count', default=0,
         help='Number of document chunks in the FAISS index')
 

@@ -288,6 +288,8 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);overflow:hid
 .documents-list{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:4px}
 .document-chip{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;background:var(--bg-input);border:1px solid var(--border);border-radius:12px;font-size:11px;color:var(--text);max-width:200px}
 .document-chip .doc-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+a.doc-name{color:inherit;text-decoration:none;cursor:pointer}
+a.doc-name:hover{text-decoration:underline}
 .document-chip .doc-remove{background:none;border:none;color:var(--danger);cursor:pointer;font-size:14px;padding:0 2px;line-height:1;border-radius:50%}
 .document-chip .doc-remove:hover{background:rgba(255,0,0,0.1)}
 </style>
@@ -1232,7 +1234,13 @@ function loadSessionDocuments(){
             d.documents.forEach(function(doc){
                 var chip=document.createElement('span');
                 chip.className='document-chip';
-                chip.innerHTML='<span>📄</span><span class="doc-name">'+esc(doc.name)+'</span>';
+                var label='<span>📄</span>';
+                if(doc.url){
+                    label+='<a class="doc-name" href="'+esc(doc.url)+'" target="_blank" rel="noopener" title="Ladda ner '+esc(doc.name)+'">'+esc(doc.name)+'</a>';
+                }else{
+                    label+='<span class="doc-name">'+esc(doc.name)+'</span>';
+                }
+                chip.innerHTML=label;
                 if(doc.can_remove){
                     var rm=document.createElement('button');
                     rm.className='doc-remove';rm.innerHTML='×';
