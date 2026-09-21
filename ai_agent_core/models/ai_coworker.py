@@ -520,11 +520,63 @@ class AICoworker(models.Model):
     use_time_context = fields.Boolean(default=True)
     chat_history_limit = fields.Integer(default=10)
 
-    # ── Context Injection (ported from ai_agent_context) ──
-    context_injection_enabled = fields.Boolean('Enable Record Context', default=True)
+    # ── Context Injection (ai-coworker-record-context) ──
+    # Inställningarna bor nu på ai.coworker.init_type (en medarbetare kan
+    # vara både DM-assistent och kanal-bot med olika behov). Fälten här är
+    # related (readonly=False) för bakåtkompatibilitet — de läser/skriver
+    # den AKTIVA init-typens värde. Utan aktiv init-typ faller de tillbaka
+    # på sina egna defaultvärden.
+    #
+    # `use_chat_history`/`chat_history_limit` finns på BÅDA nivåerna och
+    # läses nu från init-typen med coworkern som fallback (splitten som
+    # annars gav tysta avvikelser).
+    context_injection_enabled = fields.Boolean(
+        'Enable Record Context', default=True)
     context_max_fields = fields.Integer('Max Context Fields', default=100)
-    context_include_chatter = fields.Boolean('Include Chatter History', default=True)
-    context_chatter_limit = fields.Integer('Chatter Message Limit', default=20)
+    context_include_chatter = fields.Boolean(
+        'Include Chatter History', default=True)
+    context_chatter_limit = fields.Integer(
+        'Chatter Message Limit', default=20)
+    context_max_records = fields.Integer(
+        'Max Records', default=20,
+        help='Högsta antal records vid en list-vy-markering.')
+
+    # Init-typens fältnamn → coworkerns motsvarande fältnamn.
+    # Namnen skiljer sig: init-typen använder `ai_record_*`, coworkern
+    # behåller de äldre `context_*` (bakåtkompatibilitet). Utan
+    # mappningen letar uppslaget efter samma namn på båda nivåerna och
+    # fallbacken blir alltid None.
+    _AI_RECORD_SETTING_MAP = {
+        'ai_record_injection_enabled': 'context_injection_enabled',
+        'ai_record_max_fields': 'context_max_fields',
+        'ai_record_include_chatter': 'context_include_chatter',
+        'ai_record_chatter_limit': 'context_chatter_limit',
+        'ai_record_max_records': 'context_max_records',
+    }
+
+    def _ai_record_setting(self, field_name, default=None):
+        """Lös upp en rekordkontext-inställning: init_type → coworker.
+
+        Init-typen vinner (den är per-kanal), coworkern är fallback.
+        Returnerar `default` när ingen av dem har ett värde.
+
+        Fältnamnen skiljer sig mellan nivåerna — se
+        `_AI_RECORD_SETTING_MAP`. `field_name` anges med init-typens namn.
+        """
+        self.ensure_one()
+        init = self.init_type_ids.filtered(
+            lambda it: it.init_type in ('chat', 'channel') and it.enabled)[:1]
+        if init and field_name in init._fields:
+            val = init[field_name]
+            if val not in (None, False, 0):
+                return val
+        coworker_field = self._AI_RECORD_SETTING_MAP.get(
+            field_name, field_name)
+        if coworker_field in self._fields:
+            val = self[coworker_field]
+            if val not in (None, False):
+                return val
+        return default
 
     debug = fields.Boolean('Debug Mode')
 
@@ -617,8 +669,7 @@ class AICoworker(models.Model):
                 '\n'
                 '# Exempel 3 — server action-kod (körs på valda records)\n'
                 f'coworker = {ref}\n'
-                'coworker = coworker.with_context(_ai_context_model=records._name, _ai_context_id=records.id)\n'
-                'coworker.run("Analysera " + records.display_name)\n'
+                'coworker.run("Analysera " + records.display_name, records=records)\n'
                 '\n'
                 '# OBS: för verktyg som skriver (odoo_create/odoo_write) i automatiserade flöden:\n'
                 f'result = {ref}.with_context(_ai_auto_approve=True).run("Din fråga")\n'
@@ -1895,16 +1946,34 @@ class AICoworker(models.Model):
                     f'{(" " + str(record.display_name)) if record else ""}'[:80],
             'user_id': self.env.user.id,
         })
+        # Prompten räknar upp namnen — men bara de första 10, och anger
+        # EXPLICIT när fler finns (ai-coworker-record-context R5: tyst
+        # trunkering får inte förekomma).
+        shown = records[:10]
+        listing = ', '.join(str(r.display_name or r.id) for r in shown) or ''
+        if len(records) > len(shown):
+            listing += f' … (+{len(records) - len(shown)} fler, se id-listan)'
         prompt = (
             f'Du har anropats som server action på {records._name}. '
-            f'Hantera/analysera record(s): '
-            + (', '.join(str(r.display_name or r.id)
-                         for r in records[:10]) or '')
+            f'Hantera/analysera record(s): {listing}'
         )
-        result = self.with_context(
-            _ai_context_model=records._name,
-            _ai_context_id=record.id if record else False,
-        ).run(prompt=prompt, session=session)
+        # Rekordkontext (ai-coworker-record-context 4c): hela recordsetet
+        # förs vidare — i dag sattes bara den FÖRSTA postens id, så agenten
+        # såg namnen men kunde inte agera på mer än en record.
+        #
+        # OBS (D1b): `_ai_context_model`/`_ai_context_id` betyder "aktuell
+        # SESSION" och läses av HITL/NATS/sessionsminnen. Vi sätter dem
+        # därför INTE till recorden — den bor på sessionen (ai_record_*).
+        try:
+            if len(records) > 1:
+                session._set_records_context(records)
+            elif record:
+                session._set_record_context(record)
+        except Exception as e:
+            _logger.warning(
+                'server_action: rekordkontext misslyckades: %s', e)
+        result = self.run(prompt=prompt, session=session,
+                          records=records, record=record)
         return result
 
     # ── Mail (init_type='mail') ──
@@ -2091,11 +2160,48 @@ class AICoworker(models.Model):
             'role': 'user', 'content': msg_text[:4000],
         })
 
+        # ── Rekordkontext (ai-coworker-record-context) ──────────────────
+        # Vilken record — eller markering — gällde denna tur? Två vägar:
+        #   plural:  en list-vy med förkryssade rader (active_ids)
+        #   singular: en öppen form-vy (active_id)
+        #
+        # OBS (D1b): vi sätter INTE `_ai_context_model`/`_ai_context_id`.
+        # De nycklarna betyder "aktuell SESSION" och läses av HITL,
+        # NATS-kontexten och sessionsminnena — att sätta dem till en
+        # record kraschar HITL (ValidationError) och tystar minnena.
+        # Kanalen skickas i stället som fri parameter till run().
+        try:
+            marked = self._detect_records({'channel': channel})
+            if marked:
+                session._set_records_context(
+                    marked,
+                    max_records=self._ai_record_setting(
+                        'ai_record_max_records'),
+                    include_chatter=bool(self._ai_record_setting(
+                        'ai_record_include_chatter')))
+                _logger.info(
+                    'chat: markering %s x%d kopplad till session %s',
+                    marked._name, len(marked), session.id)
+            else:
+                rec = self._detect_record({'channel': channel,
+                                           'message': message})
+                if rec:
+                    session._set_record_context(rec)
+                    _logger.info(
+                        'chat: record %s#%s kopplad till session %s',
+                        rec._name, rec.id, session.id)
+        except Exception as e:
+            # Kontexten får aldrig fälla en chatt-körning.
+            _logger.warning('chat: rekordkontext misslyckades: %s', e)
+
         try:
             # Single-mode: DM/kanal ska svara snabbt — supervisor gör 4+ LLM-
             # anrop (router + specialister + syntes) som fastnar i rate-limit.
+            # Kanalen skickas vidare (D1b) så _detect_record() källa 4 får
+            # något att läsa — den är annars alltid None här.
             result = self.with_context(
-                ai_single_agent_run=True).run(prompt=msg_text, session=session)
+                ai_single_agent_run=True).run(
+                    prompt=msg_text, session=session, channel=channel)
             if session and channel:
                 # Sista ASSISTANT-raden (sista raden kan vara en tool-rad)
                 last_line = session.session_line_ids.filtered(
@@ -3279,47 +3385,59 @@ class AICoworker(models.Model):
         # 2b. Tid- och schemakontext (agent-memory-governance D8b)
         # Aktuell tid + användarens möten (calendar.event) + arbetsschema
         # (hr.employee → contract → resource.calendar). Best-effort.
-        try:
-            time_block = self._build_time_schedule_block(user)
-            if time_block:
-                parts.append(time_block)
-        except Exception as e:
-            _logger.warning('Tid/schema-block misslyckades: %s', e)
+        #
+        # Flaggan `use_time_context` styrde tidigare INGENTING — blocket
+        # anropades ovillkorligt (ai-coworker-record-context 7.1). Ett fält
+        # som ser ut att styra något men inte gör det är värre än inget.
+        if self.use_time_context:
+            try:
+                time_block = self._build_time_schedule_block(user)
+                if time_block:
+                    parts.append(time_block)
+            except Exception as e:
+                _logger.warning('Tid/schema-block misslyckades: %s', e)
 
         # 3. Rekordkontext (L1-L3 från tidigare _extra_context) — aldrig
         # avbryt hela injektionen; rekordkontext är best-effort.
         if self.context_injection_enabled:
             try:
-                ch_ctx = self._get_channel_context()
-                if ch_ctx:
-                    parts.append(
-                        f"## User Context\n"
-                        f"The user is currently viewing: {ch_ctx['model']}"
-                        + (f" (record ID: {ch_ctx['record_id']})" if ch_ctx.get('record_id') else "")
-                        + (f" in {ch_ctx['view_type']} view.\n" if ch_ctx.get('view_type') else ".\n")
-                    )
-                if record is None:
-                    record = self._get_ai_context_record() or self._get_session_context_record()
-                if record and record.exists():
-                    parts.append(
-                        f"## Current Record: {record._name} (ID: {record.id})\n"
-                        f"You are interacting within this Odoo record. "
-                        f"Use the field data below to answer questions about it.\n"
-                    )
-                    json_data = record._ai_serialize_fields_data(
-                        max_fields=self.context_max_fields)
-                    parts.append(f"### Record Fields\n```json\n{json_data}\n```\n")
-                    if self.context_include_chatter and hasattr(
-                            record, '_ai_serialize_messages_data'):
-                        chatter = record._ai_serialize_messages_data()
-                        if chatter:
-                            clines = chatter.split('\n')
-                            if len(clines) > self.context_chatter_limit:
-                                clines = clines[-self.context_chatter_limit:]
-                                chatter = '\n'.join(clines) + \
-                                    "\n(older messages omitted)"
-                            parts.append(
-                                f"### Chatter History (oldest -> newest)\n{chatter}\n")
+                # Sessionens EGEN rekordkontext är kanonisk (D1): den sattes
+                # när turen skapades och bär frontendens osparade fältvärden.
+                # Faller tillbaka på detektering för vägar som inte satte den.
+                _sess = self._get_context_session()
+                if _sess and _sess.ai_record_model:
+                    self._inject_session_record(parts, _sess)
+                else:
+                    ch_ctx = self._get_channel_context()
+                    if ch_ctx:
+                        parts.append(
+                            f"## User Context\n"
+                            f"The user is currently viewing: {ch_ctx['model']}"
+                            + (f" (record ID: {ch_ctx['record_id']})" if ch_ctx.get('record_id') else "")
+                            + (f" in {ch_ctx['view_type']} view.\n" if ch_ctx.get('view_type') else ".\n")
+                        )
+                    if record is None:
+                        record = self._get_ai_context_record() or self._get_session_context_record()
+                    if record and record.exists():
+                        parts.append(
+                            f"## Current Record: {record._name} (ID: {record.id})\n"
+                            f"You are interacting within this Odoo record. "
+                            f"Use the field data below to answer questions about it.\n"
+                        )
+                        json_data = record._ai_serialize_fields_data(
+                            max_fields=self.context_max_fields)
+                        parts.append(f"### Record Fields\n```json\n{json_data}\n```\n")
+                        if self.context_include_chatter and hasattr(
+                                record, '_ai_serialize_messages_data'):
+                            chatter = record._ai_serialize_messages_data()
+                            if chatter:
+                                clines = chatter.split('\n')
+                                if len(clines) > self.context_chatter_limit:
+                                    clines = clines[-self.context_chatter_limit:]
+                                    chatter = '\n'.join(clines) + \
+                                        "\n(older messages omitted)"
+                                parts.append(
+                                    f"### Chatter History (oldest -> newest)\n{chatter}\n")
             except Exception as e:
                 _logger.error('Rekordkontext misslyckades: %s', e)
 
@@ -3559,8 +3677,70 @@ class AICoworker(models.Model):
         inj = self._build_injection_prompt(user=self.env.user, prompt='')
         return (res + '\n\n' + inj).strip() if inj else res
 
+    def _inject_session_record(self, parts, sess):
+        """Bygg promptblock för sessionens rekordkontext (singular/plural).
+
+        Singular (form-vy): recordens fält + chatter.
+        Plural (list-vy): markeringens id:n EXPLICIT + fältprojektion.
+        Chatter utesluts för samlingar (R7: 35 x 20 meddelanden spränger
+        prompten) om det inte slagits på explicit.
+
+        Id:na exponeras explicit så att agenten kan använda dem i
+        verktygsanrop utan att gissa — specen namnger inga verktyg
+        (D8: verktygsuppsättningen varierar över tid).
+        """
+        model = sess.ai_record_model
+        ids = sess.ai_record_ids or []
+        if ids:
+            # ── Plural: markering från list-vy ──
+            parts.append(
+                f"## Selected Records: {model} ({len(ids)} rows)\n"
+                f"The user has these rows selected in a list view. "
+                f"Use the ids below when acting on them.\n"
+                f"### Record IDs\n```json\n{json.dumps(ids)}\n```\n"
+            )
+            if sess.ai_records_json:
+                parts.append(
+                    f"### Record Fields\n```json\n"
+                    f"{sess.ai_records_json}\n```\n")
+            if sess.ai_record_chatter:
+                parts.append(
+                    f"### Chatter History (oldest -> newest)\n"
+                    f"{sess.ai_record_chatter}\n")
+            return
+        # ── Singular: en record från form-vy ──
+        parts.append(
+            f"## Current Record: {model} (ID: {sess.ai_record_id})\n"
+            f"You are interacting within this Odoo record. "
+            f"Use the field data below to answer questions about it.\n"
+        )
+        if sess.ai_record_json:
+            parts.append(
+                f"### Record Fields\n```json\n{sess.ai_record_json}\n```\n")
+        if sess.ai_record_chatter:
+            chatter = sess.ai_record_chatter
+            _limit = self._ai_record_setting(
+                'ai_record_chatter_limit', self.context_chatter_limit)
+            if _limit:
+                clines = chatter.split('\n')
+                if len(clines) > _limit:
+                    clines = clines[-_limit:]
+                    chatter = '\n'.join(clines) + \
+                        "\n(older messages omitted)"
+            parts.append(
+                f"### Chatter History (oldest -> newest)\n{chatter}\n")
+
     def _detect_record(self, kwargs):
-        """Detect context record from available sources."""
+        """Detect context record from available sources.
+
+        Returnerar EN record (singular). För list-vy-markeringar, se
+        `_detect_records()` — den returnerar ett recordset.
+
+        Källa 3 (`context_record_model` ur env.context) är avvecklad
+        (ai-coworker-record-context D1c): den var en tredje
+        namnkonvention för samma sak. Se `_detect_records()` för den
+        kanoniska vägen.
+        """
         # 1. Direct record parameter
         r = kwargs.get('record')
         if r and hasattr(r, 'exists') and r.exists():
@@ -3569,28 +3749,31 @@ class AICoworker(models.Model):
         records = kwargs.get('records')
         if records and len(records) > 0:
             return records[0]
-        # 3. env.context (form button)
-        ctx_m = self.env.context.get('context_record_model')
-        ctx_id = self.env.context.get('context_record_id')
-        if ctx_m and ctx_id:
+        # 3. Sessionens egen rekordkontext (kanonisk bärare, D1)
+        sess = self._get_context_session()
+        if sess and sess.ai_record_model and sess.ai_record_id:
             try:
-                r = self.env[ctx_m].browse(int(ctx_id))
+                r = self.env[sess.ai_record_model].browse(
+                    int(sess.ai_record_id))
                 if r.exists():
                     return r
             except Exception:
                 pass
-        # 4. Channel context
+        # 4. Channel context — den INKOMMANDE kanalen (D1b), inte
+        #    self.channel_id. Läser kanalens coworker-koppling och
+        #    därifrån sessionens record.
         ch = kwargs.get('channel')
         if ch:
-            ch_model = getattr(ch, 'ai_context_model', False)
-            ch_rid = getattr(ch, 'ai_context_record_id', False)
-            if ch_model and ch_rid:
-                try:
-                    r = self.env[ch_model].browse(int(ch_rid))
+            try:
+                ch_sess = self._get_session_for_channel(ch)
+                if ch_sess and ch_sess.ai_record_model \
+                        and ch_sess.ai_record_id:
+                    r = self.env[ch_sess.ai_record_model].browse(
+                        int(ch_sess.ai_record_id))
                     if r.exists():
                         return r
-                except Exception:
-                    pass
+            except Exception:
+                pass
         # 5. Message model/res_id
         msg = kwargs.get('message')
         if msg:
@@ -3615,18 +3798,95 @@ class AICoworker(models.Model):
                     return obj.object_id
         return None
 
-    def _get_channel_context(self):
-        """Get user view context from quest's linked discuss channel."""
-        channel = self.channel_id
-        if not channel:
+    def _detect_records(self, kwargs):
+        """Detect en MARKERING (plural) från list-vy.
+
+        Returnerar ett recordset — eller tomt recordset när turen gällde
+        en enskild record (då ansvarar `_detect_record()`).
+
+        Källa: `active_ids`/`_ai_context_ids` ur env.context, satt av
+        frontend när användaren står i en list-vy med förkryssade rader.
+        Samma mönster som server actions `records`.
+
+        Vid markering över flera modeller returneras INGET recordset —
+        beteendet är explicit (avvisning), aldrig en tyst delmängd (R4).
+        """
+        model = (self.env.context.get('_ai_context_ids_model')
+                 or self.env.context.get('active_model'))
+        ids = (self.env.context.get('_ai_context_ids')
+               or self.env.context.get('active_ids'))
+        if not model or not ids:
+            return self.env[self._name].browse(0)
+        if model not in self.env:
+            return self.env[self._name].browse(0)
+        try:
+            ids = [int(i) for i in ids]
+        except (TypeError, ValueError):
+            return self.env[self._name].browse(0)
+        if len(ids) < 2:
+            # En rad markerad är singular — låt _detect_record() hantera den.
+            return self.env[self._name].browse(0)
+        try:
+            recs = self.env[model].browse(ids).exists()
+        except Exception as e:
+            _logger.warning('_detect_records: kunde inte browsa %s: %s',
+                            model, e)
+            return self.env[self._name].browse(0)
+        return recs
+
+    def _get_session_for_channel(self, channel):
+        """Aktiv session för en kanal — via kanalens coworker-koppling.
+
+        Ersätter den gamla heuristiken (matcha bot-partner mot
+        kanalmedlemmar). Returnerar tomt recordset när ingen finns.
+        """
+        if not channel or not channel.exists():
+            return self.env['ai.coworker.session'].browse(0)
+        coworkers = channel.ai_coworker_ids | channel.ai_coworker_id
+        if not coworkers:
+            return self.env['ai.coworker.session'].browse(0)
+        return self.env['ai.coworker.session'].search([
+            ('coworker_id', 'in', coworkers.ids),
+            ('status', '=', 'active'),
+        ], limit=1, order='create_date desc')
+
+    def _get_context_session(self):
+        """Sessionen ur env.context — det KANONISKA paret (D1b).
+
+        `_ai_context_model`/`_ai_context_id` betyder "aktuell session",
+        inte "aktuell record". Nycklarna läses även av HITL, NATS- och
+        sessionsminnes-vägarna — att sätta dem till en record kraschar
+        HITL och tystar minnena.
+        """
+        if self.env.context.get('_ai_context_model') \
+                != 'ai.coworker.session':
+            return self.env['ai.coworker.session'].browse(0)
+        sid = self.env.context.get('_ai_context_id') or 0
+        if not sid:
+            return self.env['ai.coworker.session'].browse(0)
+        return self.env['ai.coworker.session'].browse(int(sid)).exists()
+
+    def _get_channel_context(self, channel=None):
+        """Get user view context from the INCOMING discuss channel.
+
+        Läser den inkommande kanalen (D1b) — inte `self.channel_id`, som
+        är coworkerns LÄNKADE kanal och ofta tom för en DM-assistent.
+
+        Kontexten kommer från kanalens aktiva session (ai_record_*), inte
+        från ett `ai_context_model`-fält på kanalen (som inte existerar i
+        drift — ai_agent_context är oinstallerad).
+        """
+        channel = channel or self.channel_id
+        if not channel or not channel.exists():
             return None
-        model = getattr(channel, 'ai_context_model', False)
-        if not model:
+        sess = self._get_session_for_channel(channel)
+        if not sess or not sess.ai_record_model:
             return None
         return {
-            'model': model,
-            'record_id': getattr(channel, 'ai_context_record_id', False),
-            'view_type': getattr(channel, 'ai_context_view_type', False),
+            'model': sess.ai_record_model,
+            'record_id': sess.ai_record_id or False,
+            'record_ids': sess.ai_record_ids or False,
+            'view_type': 'form' if sess.ai_record_id else 'list',
         }
 
     def _get_ai_context_record(self):
@@ -5862,7 +6122,8 @@ class AICoworker(models.Model):
 
     def run(self, prompt, system_prompt=None, force_model=None,
             force_agent=None, session=None, history=None,
-            interrupt_handler=None):
+            interrupt_handler=None, channel=None, records=None,
+            record=None):
         """Run quest synchronously and return AI response text.
 
         Designed for bridge integrations (html_editor, mail, webhook, etc.)
@@ -5884,11 +6145,49 @@ class AICoworker(models.Model):
             interrupt_handler: Optional HITL-handler (t.ex.
                      OpenAIInterruptHandler) — pausar loopen vid HITL
                      istället för auto-approve.
+            channel: Optional discuss.channel — den INKOMMANDE kanalen.
+                     Skickas vidare till _detect_record() (källa 4) så
+                     record-detekteringen får något att läsa. Sätts av
+                     chat(); är annars None och källan hoppas över.
+            records: Optional recordset — en markering (list-vy).
+            record: Optional record — en enskild record (form-vy).
 
         Returns:
             str: AI response text (plain text, no markdown rendering)
         """
         self.ensure_one()
+
+        # ── Rekordkontext (ai-coworker-record-context) ──────────────────
+        # Detektera vilken record/markering turen gäller och koppla den
+        # till sessionen. Detta låg tidigare bara i ai_agent_context (som
+        # är oinstallerad) — därför anropades _detect_record() ALDRIG i
+        # drift och ingen record-kontext injicerades.
+        #
+        # OBS (D1b): vi sätter INTE `_ai_context_model`/`_ai_context_id`.
+        # De nycklarna betyder "aktuell SESSION" och läses av HITL,
+        # NATS-kontexten och sessionsminnena. Recorden bor i stället på
+        # sessionen (ai_record_*).
+        if session and not (session.ai_record_model):
+            try:
+                _marked = records if records is not None \
+                    else self._detect_records({'channel': channel})
+                if _marked:
+                    session._set_records_context(
+                        _marked,
+                        max_records=self._ai_record_setting(
+                            'ai_record_max_records'),
+                        include_chatter=bool(self._ai_record_setting(
+                            'ai_record_include_chatter')))
+                else:
+                    _rec = record or self._detect_record(
+                        {'channel': channel, 'records': records})
+                    if _rec:
+                        session._set_record_context(_rec)
+            except Exception as e:
+                # Kontexten får aldrig fälla en körning.
+                _logger.warning(
+                    'run: rekordkontext misslyckades för session %s: %s',
+                    session.id, e)
 
         # AgentLoopPaused (openai_api-HITL): behövs i except-klausulen.
         from odoo.addons.ai_agent_core.core.interrupt import AgentLoopPaused

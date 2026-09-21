@@ -47,9 +47,27 @@
                 <group string="Channel Settings"
                        invisible="init_type!='channel'">
                     <field name="channel_id"/>
+                    <field name="use_chat_history"/>
+                    <field name="chat_history_limit"
+                           invisible="not use_chat_history"/>
                     <field name="allow_trigger_words"/>
                     <field name="chat_trigger_words"
                            invisible="not allow_trigger_words"/>
+                </group>
+                <!-- Rekordkontext (ai-coworker-record-context 6.4):
+                     inställningarna hör till init-typen — en medarbetare kan
+                     vara både DM-assistent och kanal-bot med olika behov. -->
+                <group string="Rekordkontext"
+                       invisible="init_type not in ('chat', 'channel')">
+                    <field name="ai_record_injection_enabled"/>
+                    <field name="ai_record_max_fields"
+                           invisible="not ai_record_injection_enabled"/>
+                    <field name="ai_record_include_chatter"
+                           invisible="not ai_record_injection_enabled"/>
+                    <field name="ai_record_chatter_limit"
+                           invisible="not ai_record_include_chatter or not ai_record_injection_enabled"/>
+                    <field name="ai_record_max_records"
+                           invisible="not ai_record_injection_enabled"/>
                 </group>
                 <group string="Mail Settings"
                        invisible="init_type!='mail'">

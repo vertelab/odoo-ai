@@ -317,6 +317,176 @@ class AICoworkerSession(models.Model):
              'session). Redan bekräftad session frågar inte om igen '
              '(inte heller efter resume/fork-kopiering).')
 
+    # ── Rekordkontext (ai-coworker-record-context) ──────────────────────
+    # Vilken record — eller vilken markering — gällde DENNA tur. Fälten
+    # sätts när sessionen skapas från en chatt-tur där en record eller en
+    # list-markering kunde identifieras, och lämnas tomma annars.
+    #
+    # NAMNVAL (D1): `ai_`-prefixet matchar ai_task_id/ai_coworker_id och
+    # undviker medvetet `context_*` (coworkerns injektionsinställningar)
+    # samt env.context-nycklarna `_ai_context_model`/`_ai_context_id`.
+    # De nycklarna betyder "aktuell SESSION" — inte "aktuell record" —
+    # och läses av HITL, NATS-kontexten och sessionsminnena (D1b). Att
+    # återanvända dem för en record kraschar HITL och tystar minnena.
+    ai_record_model = fields.Char(
+        'Record Model', index=True,
+        help='Tekniskt modellnamn för den record (eller markeringens '
+             'modell) som denna tur gällde.')
+    ai_record_id = fields.Integer(
+        'Record ID',
+        help='Id för den enskilda record turen gällde (form-vyn). '
+             'Tom när turen gällde en markering — se ai_record_ids.')
+    ai_record_ids = fields.Json(
+        'Record IDs',
+        help='Lista av id:n för den markering turen gällde (list-vyn). '
+             'Samma mönster som server actions records.ids.')
+    ai_record_json = fields.Text(
+        'Record Fields',
+        help='Serialiserade fält för den enskilda recorden (singular). '
+             'Föredrar frontendens fältvärden när de finns — de bär '
+             'osparade ändringar.')
+    ai_records_json = fields.Text(
+        'Records Fields',
+        help='Serialiserade fält för markeringen (plural). Fältprojektion: '
+             'list-vyns kolumner när frontend skickar dem, annars en fast '
+             'projektion (id, display_name, _rec_name).')
+    ai_record_chatter = fields.Text(
+        'Record Chatter',
+        help='Chatter-historik för den enskilda recorden. Utesluts som '
+             'default för samlingar — 35 records x 20 meddelanden spränger '
+             'prompten (R7).')
+    ai_record_count = fields.Integer(
+        'Record Count', compute='_compute_ai_record_count', store=False,
+        help='Antal id:n i markeringen (0 för singular).')
+
+    @api.depends('ai_record_ids')
+    def _compute_ai_record_count(self):
+        for rec in self:
+            ids = rec.ai_record_ids or []
+            rec.ai_record_count = len(ids) if isinstance(ids, list) else 0
+
+    def _set_record_context(self, record, front_end_info=None,
+                            chatter=None):
+        """Sätt singular rekordkontext på sessionen (idempotent).
+
+        Args:
+            record: Odoo-record turen gällde.
+            front_end_info: Fältvärden från browsern (kan bära osparade
+                ändringar). Föredras framför backend-serialisering.
+            chatter: Färdig chatter-sträng. Serialiseras annars från
+                recorden om den stöder _ai_serialize_messages_data().
+
+        Tyst no-op vid fel — kontexten får aldrig fälla en körning.
+        """
+        self.ensure_one()
+        if not record or not record.exists():
+            return self
+        vals = {
+            'ai_record_model': record._name,
+            'ai_record_id': record.id,
+            'ai_record_ids': False,
+            'ai_records_json': False,
+        }
+        # Fält: frontend-info vinner (osparade värden), annars backend.
+        if front_end_info:
+            vals['ai_record_json'] = (
+                front_end_info if isinstance(front_end_info, str)
+                else json.dumps(front_end_info, default=str,
+                                ensure_ascii=False))
+        else:
+            try:
+                vals['ai_record_json'] = record._ai_serialize_fields_data()
+            except Exception as e:
+                _logger.warning(
+                    'session %s: fältserialisering misslyckades: %s',
+                    self.id, e)
+        # Chatter (singular tillåter den).
+        if chatter is not None:
+            vals['ai_record_chatter'] = chatter
+        elif hasattr(record, '_ai_serialize_messages_data'):
+            try:
+                vals['ai_record_chatter'] = \
+                    record._ai_serialize_messages_data()
+            except Exception as e:
+                _logger.warning(
+                    'session %s: chatter-serialisering misslyckades: %s',
+                    self.id, e)
+        try:
+            self.sudo().write(vals)
+            _logger.info(
+                'session %s: rekordkontext satt — %s#%s (källa: %s)',
+                self.id, record._name, record.id,
+                'frontend' if front_end_info else 'backend')
+        except Exception as e:
+            _logger.warning(
+                'session %s: kunde inte sätta rekordkontext: %s', self.id, e)
+        return self
+
+    def _set_records_context(self, records, fields=None,
+                             max_records=None, include_chatter=False):
+        """Sätt plural rekordkontext (markering) på sessionen (idempotent).
+
+        Args:
+            records: Recordset — markeringen.
+            fields: Fältprojektion. När None används en fast projektion
+                (id, display_name, _rec_name) — ALDRIG context_max_fields
+                per record (D7: 35 x 100 fält spränger prompten).
+            max_records: Gräns för antal records. Överskridandet loggas
+                och rapporteras i prompten — det får inte tystas (R5).
+            include_chatter: Chatter är AVSTÄNGT som default för samlingar.
+
+        Tyst no-op vid fel.
+        """
+        self.ensure_one()
+        if not records:
+            return self
+        model = records._name
+        all_ids = list(records.ids)
+        truncated = False
+        if max_records and len(all_ids) > max_records:
+            truncated = True
+            all_ids = all_ids[:max_records]
+        recs = records.browse(all_ids)
+        # Fältprojektion: explicit lista, annars fast projektion.
+        if not fields:
+            fields = ['id', 'display_name']
+            rec_name = recs._rec_name
+            if rec_name and rec_name not in fields:
+                fields.append(rec_name)
+        try:
+            data = recs.read(fields)
+        except Exception as e:
+            _logger.warning(
+                'session %s: kunde inte läsa markeringen: %s', self.id, e)
+            return self
+        vals = {
+            'ai_record_model': model,
+            'ai_record_id': False,
+            'ai_record_ids': all_ids,
+            'ai_records_json': json.dumps(
+                data, default=str, ensure_ascii=False),
+            'ai_record_json': False,
+            'ai_record_chatter': False,
+        }
+        if include_chatter and hasattr(recs, '_ai_serialize_messages_data'):
+            try:
+                vals['ai_record_chatter'] = '\n'.join(
+                    r._ai_serialize_messages_data() for r in recs)
+            except Exception as e:
+                _logger.warning(
+                    'session %s: chatter för markering misslyckades: %s',
+                    self.id, e)
+        try:
+            self.sudo().write(vals)
+            _logger.info(
+                'session %s: markering satt — %s x%d%s',
+                self.id, model, len(all_ids),
+                ' (TRUNKERAD från %d)' % len(records) if truncated else '')
+        except Exception as e:
+            _logger.warning(
+                'session %s: kunde inte sätta markering: %s', self.id, e)
+        return self
+
     def _session_capture_context(self):
         """Domän-ren hook: bryggor (t.ex. project_ai) override:ar för att
         fånga domänkontext (project/task) på sessionen vid körning.

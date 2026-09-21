@@ -61,6 +61,31 @@ class AICoworkerInitType(models.Model):
     chat_trigger_words = fields.Text('Activation Words',
         help='Comma-separated words that trigger the bot response')
 
+    # ── Rekordkontext (ai-coworker-record-context) ──────────────────────
+    # Inställningarna hör till INIT-TYPEN, inte coworkern: en medarbetare
+    # kan vara både DM-assistent och kanal-bot och behöver kunna ha olika
+    # chatter-gränser för dem. Coworkernivån behålls som related-fält
+    # (readonly=False) för bakåtkompatibilitet.
+    ai_record_injection_enabled = fields.Boolean(
+        'Enable Record Context', default=True,
+        help='Injicera den record (eller markering) användaren har öppen i '
+             'systemprompten.')
+    ai_record_max_fields = fields.Integer(
+        'Max Context Fields', default=100,
+        help='Högsta antal fält per record vid serialisering.')
+    ai_record_include_chatter = fields.Boolean(
+        'Include Chatter History', default=True,
+        help='Inkludera recordens chatter-historik. För en MARKERING '
+             '(list-vy) är chatter avstängt som default — 35 records x 20 '
+             'meddelanden spränger prompten.')
+    ai_record_chatter_limit = fields.Integer(
+        'Chatter Message Limit', default=20,
+        help='Högsta antal chatter-meddelanden (de senaste).')
+    ai_record_max_records = fields.Integer(
+        'Max Records', default=20,
+        help='Högsta antal records vid en list-vy-markering. Överskridandet '
+             'rapporteras explicit i prompten — det tystas aldrig.')
+
     # ── channel specific ──
     channel_ids = fields.Many2many('discuss.channel', 'ai_coworker_init_type_channel_rel',
         'init_type_id', 'channel_id', string='Channels',

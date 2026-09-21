@@ -376,13 +376,13 @@
                                 <field name="inject_nudging"/>
                             </group>
                             <group string="Rekordkontext">
-                                <field name="context_injection_enabled"/>
-                                <field name="context_max_fields"/>
-                                <field name="context_include_chatter"/>
-                                <field name="context_chatter_limit"/>
-                                <field name="use_chat_history"/>
-                                <field name="chat_history_limit"/>
+                                <!-- Flyttade till init-typen (ai-coworker-record-context 6.4):
+                                     en medarbetare kan vara både DM-assistent och kanal-bot
+                                     och behöver kunna ha olika gränser för dem. Här visas
+                                     bara det som är medarbetar-globalt. -->
                                 <field name="use_time_context"/>
+                                <field name="context_max_records"
+                                       help="Standardvärde — den aktiva init-typen kan överrida."/>
                             </group>
                         </page>
 

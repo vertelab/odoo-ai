@@ -50,13 +50,26 @@ def install():
             status = 500
             message = "Internal server error"
 
+        # Full bokföring: metod, body-storlek och User-Agent avgör om felet kom
+        # från en avbruten uppladdning (ClientDisconnected) eller från appen.
+        req_meta = ""
+        httprequest = getattr(request, "httprequest", None)
+        if httprequest is not None:
+            req_meta = " [%s %s cl=%s ua=%s]" % (
+                httprequest.method,
+                path,
+                httprequest.headers.get("Content-Length"),
+                (httprequest.headers.get("User-Agent") or "")[:70],
+            )
+
         if status >= 500:
-            _logger.error("ai_agent_core: %s -> %s: %s", path, status, exc,
-                          exc_info=isinstance(exc, Exception))
+            _logger.error("ai_agent_core: %s%s -> %s %s", type(exc).__name__,
+                          req_meta, status, exc, exc_info=True)
             message = "Internal server error"
         else:
-            _logger.warning("ai_agent_core: %s -> %s %s: %s",
-                            path, status, type(exc).__name__, message)
+            _logger.warning("ai_agent_core: %s%s -> %s %s: %s",
+                            type(exc).__name__, req_meta, status, path, message,
+                            exc_info=True)
 
         return request.make_json_response(
             {"error": {

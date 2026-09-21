@@ -67,7 +67,21 @@
             'ai_agent_context/static/src/xml/quest_systray.xml',
         ],
     },
-    'installable': True,
+    # AVVECKLAD (ai-coworker-record-context 8.1, 2026-09-21).
+    #
+    # Modulen var det första försöket att lösa rekordkontext och portade
+    # mönster från Odoo Enterprise `ai`. Den kan inte installeras: den beror
+    # på `ai_agent` (också oinstallerad) och anropar `ai.quest`-modeller som
+    # inte finns i ai_agent_core. I drift har den aldrig varit installerad.
+    #
+    # Funktionen tas över av ai_agent_core:
+    #   - sessionsfälten ai_record_model/_id/_ids/_json/_chatter
+    #   - _detect_record() / _detect_records() / _inject_session_record()
+    #   - rekordkontext-inställningarna på ai.coworker.init_type
+    #
+    # Behålls i trädet som referens för frontend-delen (systray +
+    # form-controller-patch), som portas in i ai_agent_core.
+    'installable': False,
     'auto_install': False,
     'application': False,
 }
