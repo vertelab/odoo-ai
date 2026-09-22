@@ -20,6 +20,7 @@ from . import ai_session_line
 from . import ai_coworker_init_type
 from . import ai_coworker_hitl
 from . import res_users
+from . import res_company
 from . import res_config_settings
 from . import ai_kaizen
 from . import ai_tag
@@ -31,7 +32,6 @@ from . import ai_memory_scope
 from . import ai_personal_memory
 from . import ai_company_memory
 from . import ai_company_memory_category
-from . import res_company
 from . import mail_thread
 from . import mail_message
 from . import discuss_channel

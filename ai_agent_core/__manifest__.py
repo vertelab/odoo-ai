@@ -47,12 +47,17 @@
         'data/cron_session_idle.xml',
         'data/cron_external_runtime.xml',
         'data/partner_enrichment_tools.xml',
+        # builtin_tools_seed skapar ai.tool-poster för de inbyggda verktygen
+        # (core/tools.py) via _ensure_builtin_tool_records(). Den MÅSTE köra
+        # före varje fil som refererar dem — annars faller ref() med
+        # "External ID not found". FYND 2026-09-22: partner_enrichment_
+        # coworker.xml låg före och blockerade all nyinstallation.
+        'data/builtin_tools_seed.xml',
         'data/partner_enrichment_coworker.xml',
         'data/cron_okf_process_uploads.xml',
         'data/cron_company_memory_indexers.xml',
         'data/okf_migrate_legacy.xml',
         'data/skill_odoo_core.xml',
-        'data/builtin_tools_seed.xml',
         'data/tool_verification_contracts.xml',
         'data/youtube_tools.xml',
         'data/default_coworker.xml',
