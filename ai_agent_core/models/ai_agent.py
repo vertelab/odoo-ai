@@ -429,39 +429,11 @@ class AIAgent(models.Model):
         return "\n".join(parts)
 
 
-class AIAgentTool(models.Model):
-    _name = 'ai.agent.tool'
-    _description = 'Agent Tool'
-    _order = 'sequence asc'
-
-    agent_id = fields.Many2one('ai.agent', required=True, ondelete='cascade')
-    name = fields.Char('Tool Name', required=True)
-    description = fields.Text('Description')
-    parameters = fields.Text('Parameters (JSON Schema)')
-    risk_level = fields.Selection([
-        ('safe', 'Safe'), ('read_only', 'Read Only'),
-        ('write', 'Write'), ('destructive', 'Destructive'),
-    ], default='read_only')
-    sequence = fields.Integer(default=10)
-
-
-class AIAgentMemory(models.Model):
-    _name = 'ai.agent.memory'
-    _description = 'Agent Memory Link'
-    _order = 'sequence asc'
-
-    agent_id = fields.Many2one('ai.agent', required=True, ondelete='cascade',
-                                string='Agent')
-    memory_id = fields.Many2one('ai.memory', required=True, ondelete='cascade',
-                                 string='Memory')
-    sequence = fields.Integer(default=10)
-
 
     # ══════════════════════════════════════════════════════════════════
     # Default-skills för Allmän kärna
     # ══════════════════════════════════════════════════════════════════
 
-    @api.model
     def _ensure_default_skills(self):
         """Koppla default-skillarna till Allmän kärna (idempotent).
 
@@ -510,3 +482,31 @@ class AIAgentMemory(models.Model):
             _logger.info('ai.agent: kopplade %s till %s',
                          ', '.join(added), agent.name)
         return True
+
+
+class AIAgentTool(models.Model):
+    _name = 'ai.agent.tool'
+    _description = 'Agent Tool'
+    _order = 'sequence asc'
+
+    agent_id = fields.Many2one('ai.agent', required=True, ondelete='cascade')
+    name = fields.Char('Tool Name', required=True)
+    description = fields.Text('Description')
+    parameters = fields.Text('Parameters (JSON Schema)')
+    risk_level = fields.Selection([
+        ('safe', 'Safe'), ('read_only', 'Read Only'),
+        ('write', 'Write'), ('destructive', 'Destructive'),
+    ], default='read_only')
+    sequence = fields.Integer(default=10)
+
+
+class AIAgentMemory(models.Model):
+    _name = 'ai.agent.memory'
+    _description = 'Agent Memory Link'
+    _order = 'sequence asc'
+
+    agent_id = fields.Many2one('ai.agent', required=True, ondelete='cascade',
+                                string='Agent')
+    memory_id = fields.Many2one('ai.memory', required=True, ondelete='cascade',
+                                 string='Memory')
+    sequence = fields.Integer(default=10)

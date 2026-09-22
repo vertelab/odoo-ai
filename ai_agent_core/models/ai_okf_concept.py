@@ -513,7 +513,7 @@ class AIOkfConcept(models.Model):
                     owner_coworker_id=None, generated_by='process',
                     status='stable', stale_after=None, entities=None,
                     embedding=None, search_vector=None, source_text=None,
-                    **kwargs):
+                    force_new_version=False, **kwargs):
         """Skapa ny concept eller ny version vid re-index (ADD-only).
 
         - Memory-koncept (kind=memory): ny rad endast vid genuint ny inlärning
@@ -522,6 +522,11 @@ class AIOkfConcept(models.Model):
         - Knowledge-koncept: re-index av samma concept_key skapar ny version
           (version+1, supersedes_id → föregående), föregående blir superseded.
         - Rader är immutabla (ADD-only gäller alltid).
+
+        `force_new_version` (okf-mixin): skapa en ny version även när
+        innehållet är oförändrat. Används av efterfyllnaden, som lägger till
+        en vektor — en genuin ändring av raden som `_version_is_unchanged`
+        annars skulle avvisa.
 
         `source_text` (okf-mixin D5): källtexten som `summary` härleddes ur.
         När den är satt styr DEN versionsbeslutet — en LLM som formulerar om
@@ -580,7 +585,7 @@ class AIOkfConcept(models.Model):
             # innehållsligt, inte tidsmässigt — `verified`/`generated`
             # uppdateras ändå inte på den gamla raden (ADD-only), så en
             # 'oförändrad' rad är den ärliga representationen.
-            if self._version_is_unchanged(
+            if not force_new_version and self._version_is_unchanged(
                     existing, summary, title, source_ref, attribution,
                     source_text=source_text):
                 _logger.debug(
@@ -1836,7 +1841,7 @@ class AIOkfConcept(models.Model):
         Flyttad hit från `ai.memory` (okf-mixin, 2026-09-22): den fyller
         vektorer på `ai.okf.concept` och är OKF:s egen efterfyllnad — den
         råkade bara bo på RAG-modellen (därför heter konstanten
-        `_OKF_EMBEDDING_DIM`).
+        `EMBEDDING_DIM` — samma konstant, samma modul.)
 
         Plockar koncept vars `embedding_state` inte är 'ready' och försöker
         skapa vektorn. Idempotent: lyckade rader markeras 'ready' och plockas
@@ -1887,7 +1892,7 @@ class AIOkfConcept(models.Model):
                 continue
 
             if not provider._validate_embedding(vector, model=model,
-                                                dim=_OKF_EMBEDDING_DIM):
+                                                dim=EMBEDDING_DIM):
                 # Fel dimension: markera 'failed' så den kräver tillsyn.
                 concept.write({'embedding_state': 'failed'})
                 continue
@@ -1898,6 +1903,15 @@ class AIOkfConcept(models.Model):
             # 'superseded' och den nya bär vektorn. Immutabiliteten är
             # bevarad: historiken finns kvar, inget skrivs över.
             owner = self._okf_owner_for_concept(concept)
+            # `source_text` skickas INTE med flit. Efterfyllnaden lägger
+            # till en vektor — det är en genuin ändring av raden, även om
+            # sammanfattningen är identisk. Skickas källtexten med hade
+            # `_version_is_unchanged` (D5) sett oförändrat innehåll och
+            # returnerat den gamla raden UTAN vektor — och efterfyllnaden
+            # hade varit verkningslös.
+            #
+            # Utan `source_text` jämförs `summary` som förut, och eftersom
+            # den är identisk... se nästa stycke.
             self._okf_upsert(
                 artifact_type=concept.artifact_type_id or 'learning',
                 concept_key=concept.concept_key,
@@ -1907,6 +1921,7 @@ class AIOkfConcept(models.Model):
                 entities=concept.entities,
                 generated_by='backfill',
                 embedding=vector,
+                force_new_version=True,
                 **owner
             )
             filled += 1
