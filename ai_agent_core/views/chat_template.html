@@ -409,6 +409,12 @@ var params=new URLSearchParams(window.location.search);
 var embedded=params.get('embedded')==='1';
 var contextQuest=params.get('context_quest')||'';
 var contextSkill=params.get('context_skill')||'';
+// Rekordkontext (ai-coworker-record-context 5.3): vilken record — eller
+// markering — användaren hade öppen när chatten öppnades. Skickas vidare
+// till /ai/stream så sessionen får ai_record_*-fälten satta.
+var contextModel=params.get('context_model')||'';
+var contextResId=params.get('context_res_id')||'';
+var contextResIds=params.get('context_res_ids')||'';
 if(embedded){document.body.classList.add('chat-embedded')}
 
 // Auto-init: if context_skill is set, tell the AI to read it
@@ -1104,6 +1110,11 @@ function startStream(prompt){
     if(activeSessionId)url+='&session_id='+activeSessionId;
     if(contextSkill)url+='&context_skill='+contextSkill;
     if(contextQuest)url+='&context_quest='+contextQuest;
+    // Rekordkontext (5.3): skickas varje tur — servern sätter den bara
+    // när sessionen saknar kontext, så en följdfråga inte skriver över.
+    if(contextModel)url+='&context_model='+encodeURIComponent(contextModel);
+    if(contextResIds)url+='&context_res_ids='+encodeURIComponent(contextResIds);
+    else if(contextResId)url+='&context_res_id='+encodeURIComponent(contextResId);
     currentEventSource=new EventSource(url);
     currentEventSource.onmessage=function(e){try{var t=JSON.parse(e.data);handleStreamEvent(t)}catch(e){}};
     currentEventSource.onerror=function(){if(streaming){currentEventSource.close();showChatError('Anslutningen till AI-servern bröts — försök igen.')}}

@@ -375,7 +375,7 @@
                                 <field name="use_company_info"/>
                                 <field name="inject_nudging"/>
                             </group>
-                            <group string="Rekordkontext">
+                            <group string="Record context">
                                 <!-- Flyttade till init-typen (ai-coworker-record-context 6.4):
                                      en medarbetare kan vara både DM-assistent och kanal-bot
                                      och behöver kunna ha olika gränser för dem. Här visas

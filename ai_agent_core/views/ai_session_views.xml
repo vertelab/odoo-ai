@@ -25,7 +25,7 @@
                 <separator/>
                 <filter name="has_record_context" string="Med rekordkontext"
                         domain="[('ai_record_model','!=',False)]"/>
-                <filter name="has_multi_record" string="Med markering"
+                <filter name="has_multi_record" string="With selection"
                         domain="[('ai_record_ids','!=',False)]"/>
                 <separator/>
                 <group expand="0" string="Gruppera efter">
@@ -35,7 +35,7 @@
                             context="{'group_by':'end_date'}"/>
                     <filter name="group_partner" string="Kund"
                             context="{'group_by':'partner_id'}"/>
-                    <filter name="group_record_model" string="Record-modell"
+                    <filter name="group_record_model" string="Record model"
                             context="{'group_by':'ai_record_model'}"/>
                 </group>
             </search>
@@ -141,7 +141,7 @@
                          record — eller vilken markering — denna tur gällde.
                          Singular (form-vy) sätter ai_record_id/json/chatter;
                          plural (list-vy) sätter ai_record_ids/records_json. -->
-                    <group string="Rekordkontext" invisible="not ai_record_model">
+                    <group string="Record context" invisible="not ai_record_model">
                         <field name="ai_record_model" readonly="1"/>
                         <field name="ai_record_id" readonly="1"
                                invisible="not ai_record_id"/>
@@ -171,7 +171,7 @@
                                 <field name="summary_message_count" readonly="1"/>
                             </group>
                         </page>
-                        <page string="Rekordkontext" name="record_context"
+                        <page string="Record context" name="record_context"
                               invisible="not ai_record_model">
                             <group>
                                 <field name="ai_record_model" readonly="1"/>
@@ -179,11 +179,11 @@
                                 <field name="ai_record_count" readonly="1"/>
                                 <field name="ai_record_ids" readonly="1"/>
                             </group>
-                            <group string="Fält (singular)"
+                            <group string="Fields (singular)"
                                    invisible="not ai_record_json">
                                 <field name="ai_record_json" readonly="1"/>
                             </group>
-                            <group string="Fält (markering)"
+                            <group string="Fields (selection)"
                                    invisible="not ai_records_json">
                                 <field name="ai_records_json" readonly="1"/>
                             </group>

@@ -76,4 +76,16 @@
         <field name="view_mode">list,form</field>
         <field name="context">{'default_ceo_user_id': uid}</field>
     </record>
+
+    <!-- Fråga AI om denna post (ai-coworker-record-context 5.3).
+         Bindbar server action — läggs på valfri modell via
+         Inställningar → Teknisk → Server Actions, eller via
+         binding_model_id. Läser active_model/active_id/active_ids ur
+         contexten och öppnar chatten med rekordkontexten. -->
+    <record id="ir_action_server_ask_ai_about_record" model="ir.actions.server">
+        <field name="name">Ask AI about this record</field>
+        <field name="model_id" ref="model_ai_coworker"/>
+        <field name="state">code</field>
+        <field name="code">action = env['ai.coworker'].action_ask_ai_about_record()</field>
+    </record>
 </odoo>

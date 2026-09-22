@@ -57,7 +57,7 @@
                 <!-- Rekordkontext (ai-coworker-record-context 6.4):
                      inställningarna hör till init-typen — en medarbetare kan
                      vara både DM-assistent och kanal-bot med olika behov. -->
-                <group string="Rekordkontext"
+                <group string="Record context"
                        invisible="init_type not in ('chat', 'channel')">
                     <field name="ai_record_injection_enabled"/>
                     <field name="ai_record_max_fields"
