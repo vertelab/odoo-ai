@@ -1261,7 +1261,25 @@ class AICoworkerSession(models.Model):
         # Bron till det personliga minnet (session-memory-bridge D2).
         # Eftermälet är den naturliga platsen: här finns både transcriptet
         # och vetskapen att sessionen är slut. Anropet är idempotent.
-        self._bridge_to_personal_memory()
+        #
+        # SAVEPOINT är obligatorisk, inte kosmetik. Bron gör LLM- och
+        # SQL-anrop; kastar något av dem utan savepoint förgiftas hela
+        # transaktionen (InFailedSqlTransaction) och ALLT efterföljande
+        # dör — inklusive `session.write({'status': 'done'})` i
+        # _cron_close_idle_sessions, som då aldrig stängde sessionen.
+        # Det var mekanismen bakom idle-cronens failure_count: eftermälet
+        # skrevs, men stängningen kraschade, och samma session plockades
+        # upp igen var 15:e minut i evighet.
+        #
+        # Ett anrop som FÅR misslyckas måste ha en savepoint — try/except
+        # räcker inte, transaktionen är förgiftad ändå.
+        try:
+            with self.env.cr.savepoint():
+                self._bridge_to_personal_memory()
+        except Exception:
+            _logger.exception(
+                'Eftermäle: minnesbron misslyckades för session %s — '
+                'eftermälet är skrivet och sessionen stängs ändå', self.id)
         return summary
 
     def _bridge_to_personal_memory(self):
@@ -1371,7 +1389,13 @@ class AICoworkerSession(models.Model):
             provider, model_rec = (
                 ProviderFactory.from_coworker(quest) if quest else (None, None))
             if not provider:
-                provider, model_rec = get_default_provider()
+                # `env` MÅSTE skickas in. Utan den faller funktionen
+                # tillbaka på `odoo.http.request`, som inte finns i cron
+                # — och då blir svaret alltid (None, None). Det var
+                # därför varje API-session (coworker_id = false) fick
+                # "ingen provider tillgänglig" och aldrig något eftermäle.
+                # Samma fälla som _resolve_dispatch_user nedan beskriver.
+                provider, model_rec = get_default_provider(self.env)
             if not provider:
                 _logger.warning(
                     'Eftermäle: ingen provider tillgänglig för session %s',
