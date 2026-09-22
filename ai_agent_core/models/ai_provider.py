@@ -835,7 +835,13 @@ class AIProvider(models.Model):
         # Dimensionen skickas bara till modeller som stödjer trunkering.
         # embed-multilingual-v3.0 hänger på dimensions=512 → skicka bara
         # den dimension vi faktiskt vill ha (1024 = kolumnens).
-        if dim:
+        #
+        # MÄTT 2026-09-22: mistral/mistral-embed hänger på `dimensions`
+        # (HTTP 000 efter 20 s, 3/3 försök) men svarar på 0,2 s utan
+        # (8/8). Samma tysta timeout som docstringen ovan varnar för.
+        # Modellen ger ändå exakt 1024 dimensioner — kolumnens — så
+        # fältet behövs inte.
+        if dim and self._accepts_dimensions(model):
             payload['dimensions'] = dim
         if input_type and self._accepts_input_type(model):
             payload['input_type'] = input_type
@@ -852,6 +858,22 @@ class AIProvider(models.Model):
         self.ensure_one()
         name = (model or '').lower()
         return any(k in name for k in self._INPUT_TYPE_MODELS)
+
+    # Modeller som TÅL `dimensions`. Fältet är en OpenAI-utökning som inte
+    # alla leverantörer implementerar; de som inte gör det svarar inte med
+    # ett fel utan med en tyst timeout. Listan är därför explicit — att
+    # skicka fältet på måfå är precis den bugg docstringen ovan beskriver.
+    _DIMENSION_MODELS = ('text-embedding-3', 'text-embedding-ada')
+
+    def _accepts_dimensions(self, model):
+        """Tål modellen `dimensions`? (mätt, inte antaget)
+
+        OpenAI:s text-embedding-3-* stödjer trunkering. Mistral, Cohere
+        och de flesta andra gör det inte — de hänger på fältet.
+        """
+        self.ensure_one()
+        name = (model or '').lower()
+        return any(k in name for k in self._DIMENSION_MODELS)
 
     def _get_embedding(self, model=None, input=None, input_type=None):
         """Embedda EN text → rå lista av float (D2).
