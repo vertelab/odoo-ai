@@ -2909,6 +2909,13 @@ class AICoworker(models.Model):
         Gäller agenter skapade i tidigare versioner (data-XML noupdate)
         som saknar tool_ids sedan verktygen blev explicita. Användarnas
         egna anpassningar skrivs aldrig över — bara SAKNADE verktyg läggs till.
+
+        ALLTID via ORM (`agent.write({'tool_ids': [(4, id)]})`) — aldrig mot
+        `ai_agent_tool_custom_rel` direkt. Den tabellen är bara ORM:ens
+        lagringsbacke för many2many-fältet `tool_ids` på `ai.agent`; den har
+        ingen egen modell och inga hooks. En INSERT i den förbigår
+        cachen, `create_uid`/`write_date`, eventuella `@api.depends` och
+        spårbarheten — och ser ändå ut att ha lyckats.
         """
         tool_by_name = {t.name: t for t in self.env['ai.tool'].search([])}
 
