@@ -57,6 +57,25 @@ def _relation_exists(cr, schema, relname):
     return bool(cr.fetchone())
 
 
+def _graph_exists(cr, graph_name):
+    """Return True if the AGE graph is usable by the current role.
+
+    OBS: vi testar INTE med `SELECT 1 FROM ag_catalog.ag_graph`. Det
+    schemat ägs av postgres-superusern, så en vanlig Odoo-roll får
+    `permission denied` där — även när AGE är installerat och grafen
+    fungerar. Testet gav då falskt negativt och loggade "Graph
+    initialization failed" på ett friskt system.
+
+    cypher() är den väg app-rollen faktiskt använder; fungerar den är
+    grafen användbar. Anroparen ansvarar för att fånga undantag.
+    """
+    cr.execute(
+        "SELECT * FROM ag_catalog.cypher(%s, $$ RETURN 1 $$) "
+        "AS (x ag_catalog.agtype)",
+        (graph_name,))
+    return cr.fetchone() is not None
+
+
 def _safe_identifier(name):
     """Return name double-quoted, or None if it does not look like an identifier."""
     if name and _IDENTIFIER_RE.match(name):
@@ -101,16 +120,13 @@ def migrate(cr, version):
     # ── 4. odoo_mind graph (only if AGE actually got installed)
     if _extension_installed(cr, 'age'):
         try:
-            cr.execute(
-                "SELECT 1 FROM ag_catalog.ag_graph WHERE name = %s",
-                (GRAPH_NAME,))
-            if not cr.fetchone():
+            if _graph_exists(cr, GRAPH_NAME):
+                _logger.info("%s graph already exists", GRAPH_NAME)
+            else:
                 cr.execute(
                     "SELECT * FROM ag_catalog.create_graph(%s)",
                     (GRAPH_NAME,))
                 _logger.info("Created %s graph", GRAPH_NAME)
-            else:
-                _logger.info("%s graph already exists", GRAPH_NAME)
         except Exception as e:
             _logger.warning("Graph initialization failed (non-fatal): %s", e)
 

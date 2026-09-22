@@ -5,6 +5,30 @@ import logging
 
 _logger = logging.getLogger(__name__)
 
+GRAPH_NAME = 'odoo_mind'
+
+
+def _age_graph_exists(cr):
+    """Return True if the AGE graph is usable by the current role.
+
+    OBS: vi testar INTE med `SELECT 1 FROM ag_catalog.ag_graph`. Det
+    schemat ägs av postgres-superusern, så en vanlig Odoo-roll får
+    `permission denied` där — även när AGE är installerat och grafen
+    fungerar. Testet gav då falskt negativt och loggade "graph init
+    failed" på ett friskt system.
+
+    cypher() är den väg anroparen faktiskt använder; fungerar den är
+    grafen användbar. Anroparen ansvarar för SAVEPOINT runt anropet.
+    """
+    cr.execute("SELECT 1 FROM pg_extension WHERE extname = 'age'")
+    if not cr.fetchone():
+        return False
+    cr.execute(
+        "SELECT * FROM ag_catalog.cypher(%s, $$ RETURN 1 $$) "
+        "AS (x ag_catalog.agtype)",
+        (GRAPH_NAME,))
+    return cr.fetchone() is not None
+
 
 def pre_init_hook_check_conflicts(env):
     """Förhindra installation om inkompatibel modul (ai_agent) är installerad.
@@ -141,12 +165,11 @@ def post_init_hook_personal_memory(env):
     try:
         cr.execute("SELECT 1 FROM pg_extension WHERE extname = 'age'")
         if cr.fetchone():
-            cr.execute("SELECT 1 FROM ag_catalog.ag_graph WHERE name = 'odoo_mind'")
-            if not cr.fetchone():
+            if _age_graph_exists(cr):
+                _logger.info('odoo_mind graph already exists')
+            else:
                 cr.execute("SELECT * FROM ag_catalog.create_graph('odoo_mind')")
                 _logger.info('Created odoo_mind graph')
-            else:
-                _logger.info('odoo_mind graph already exists')
         else:
             _logger.info('AGE extension not installed — skipping graph init')
     except Exception as e:
@@ -589,12 +612,11 @@ def post_init_hook(env):
         _logger.info('AGE extension skipped — managed by DBA')
 
         # 2. Create graph if not exists
-        cr.execute("SELECT 1 FROM ag_catalog.ag_graph WHERE name = 'odoo_mind'")
-        if not cr.fetchone():
+        if _age_graph_exists(cr):
+            _logger.info('odoo_mind graph already exists')
+        else:
             cr.execute("SELECT * FROM ag_catalog.create_graph('odoo_mind')")
             _logger.info('Created odoo_mind graph')
-        else:
-            _logger.info('odoo_mind graph already exists')
 
         # 3. Create cron_sync_graph if not exists
         cron = env['ir.cron'].search([
