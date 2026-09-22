@@ -29,7 +29,7 @@
     'category': "AI Orchestration",
     "description": "Module to manage 'res.mcp' resources with interface and security rules.",
     "author": "Vertel AB",
-    'website': "https://vertel.se/apps/odoo-ai/ai_agent",
+    'website': "https://vertel.se/apps/odoo-ai/ai_agent_mcp",
     'images': ["static/description/banner.png"],  # 560x280
     "license": "AGPL-3",
     "depends": ["fastapi", "ai_agent"],

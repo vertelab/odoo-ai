@@ -15,7 +15,7 @@ Depends on:
     - Zabbix 7.0 server with API token (configured in pillar)
     """,
     'author': 'Vertel AB',
-    'website': 'https://vertel.se',
+    'website': 'https://vertel.se/apps/odoo-ai/ai_agent_zabbix',
     'depends': ['ai_agent_core'],
     'data': [
         'security/ir.model.access.csv',

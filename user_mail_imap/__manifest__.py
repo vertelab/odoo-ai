@@ -4,7 +4,7 @@
     'summary': 'IMAP email client integrated in Odoo — with per-user poller',
     'category': 'Productivity',
     'author': 'Vertel AB',
-    'website': 'https://vertel.se',
+    'website': 'https://vertel.se/apps/odoo-ai/user_mail_imap',
     'license': 'AGPL-3',
     'depends': ['user_mail_common', 'mail', 'web'],
     'external_dependencies': {

@@ -33,7 +33,7 @@
     """,
     #'sequence': '1',
     'author': 'Vertel AB',
-    'website': 'https://vertel.se/apps/odoo-user-mail/user_mail_common',
+    'website': 'https://vertel.se/apps/odoo-ai/user_mail_common',
     'images': ['static/description/banner.png'], # 560x280 px.
     'license': 'AGPL-3',
     'contributor': '',

@@ -8,7 +8,7 @@
     "summary": "Provider abstraction, model discovery, rate limiting, token tracking",
     "category": "AI",
     "author": "Vertel Sverige AB",
-    "website": "https://vertel.se",
+    "website": "https://vertel.se/apps/odoo-ai/ai_core",
     "license": "AGPL-3",
     "depends": ["mail"],
     "data": [

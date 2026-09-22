@@ -4,6 +4,7 @@
     'summary': '21 AI skills, 5 agents, 3 quests for business strategy — BMC, SWOT, OKR, Porter, and more',
     'category': 'AI Orchestration',
     'author': 'Vertel AB',
+    'website': 'https://vertel.se/apps/odoo-ai/ai_agent_core_strategy',
     'license': 'AGPL-3',
     'depends': ['ai_agent_core'],
     'data': ['security/ir.model.access.csv'],

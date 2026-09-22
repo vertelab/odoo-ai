@@ -5,6 +5,7 @@
     'summary': 'Connect gamification (badges, challenges) with AI personal goals',
     'category': 'AI/Gamification',
     'author': 'Vertel AB',
+    'website': 'https://vertel.se/apps/odoo-ai/gamification_ai',
     'license': 'AGPL-3',
     'depends': ['ai_agent_core', 'gamification'],
     'data': [
