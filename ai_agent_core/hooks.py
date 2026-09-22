@@ -568,6 +568,19 @@ def post_init_hook(env):
     # Körs här och inte i migration 1.11 — där fanns inte tabellen ännu.
     okf_ensure_search_infrastructure(env)
 
+    # Personal/company memory: search_vector + GIN + pgvector-index.
+    #
+    # VARFÖR DEN ANROPAS HÄR: manifestet pekade tidigare på
+    # post_init_hook_personal_memory som 'post_init_hook', vilket gjorde att
+    # DENNA funktion (post_init_hook) aldrig kördes — och därmed varken
+    # _ensure_default_model, okf_ensure_search_infrastructure eller
+    # Quest/Skill Builder. Följden i drift: kolumnen search_vector saknades
+    # på ai_personal_memory, BM25-sökningen kraschade med
+    # 'column "search_vector" does not exist', transaktionen förgiftades
+    # (InFailedSqlTransaction) och /ai/stream svarade HTTP 500 →
+    # "Anslutningen till AI-servern bröts" (session 21772, 2026-09-22).
+    post_init_hook_personal_memory(env)
+
     # Quest Builder
     if not env['ai.coworker'].search_count([('name', '=', 'Quest Builder')]):
         env['ai.coworker'].create({

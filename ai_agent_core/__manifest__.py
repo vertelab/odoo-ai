@@ -2,7 +2,7 @@
 # Part of Odoo. See LICENSE file for full copyright and licensing details.
 {
     'name': 'odoo-ai: AI Agent Core',
-    'version': '18.0.1.232',
+    'version': '18.0.1.240',
     'summary': 'AI Agent Core — Org-stomme, heartbeat, onboarding, task-system',
     'category': 'AI Orchestration',
     'description': """
@@ -153,6 +153,12 @@
     'demo': [
         'demo/demo_data.xml',
     ],
-    'post_init_hook': 'post_init_hook_personal_memory',
+    # OBS: peka på post_init_hook (den sammanhållande), INTE
+    # post_init_hook_personal_memory. Manifestet registrerade tidigare
+    # personal_memory-hooken direkt, vilket gjorde att post_init_hook —
+    # med _ensure_default_model, okf_ensure_search_infrastructure och
+    # Quest/Skill Builder — aldrig kördes. post_init_hook anropar nu
+    # post_init_hook_personal_memory internt.
+    'post_init_hook': 'post_init_hook',
     'pre_init_hook': 'pre_init_hook_check_conflicts',
 }
