@@ -42,6 +42,10 @@ class Tool:
     nats_subject: str = "pi.task.do"
     nats_skills: str = ""
     nats_timeout: int = 30
+    # Agent-identitet (pi-agent-agent-identity): agentens id som sträng,
+    # eller "" för ingen styrning. En HINT till executorn — uppdragets
+    # eget `agent`-fält har högre prioritet.
+    nats_agent: str = ""
 
     # Access-grupper (ai-tool-access-capabilities): Odoo group ids som får
     # använda verktyget. Tom = obegränsat. PermissionEngine nekar anrop när
@@ -426,6 +430,8 @@ def ai_tool_records_to_tools(records, env=None) -> list[Tool]:
             nats_subject=record.nats_subject or 'pi.task.do',
             nats_skills=record.nats_skills or '',
             nats_timeout=record.nats_timeout or 30,
+            nats_agent=(str(record.nats_agent_id.id)
+                        if record.nats_agent_id else ''),
         ))
     return tools
 

@@ -753,6 +753,12 @@ class AgentLoop:
             "skills": [s.strip() for s in skills.split(",") if s.strip()],
             "api_secret": self.config.nats_api_secret,
         }
+        # Agent-identitet (pi-agent-agent-identity): verktygets ägande
+        # agent följer med som en HINT. Executorn prioriterar ett
+        # uppdrags-specifikt agent-fält över denna.
+        nats_agent = getattr(tool, 'nats_agent', '') or ''
+        if nats_agent:
+            payload["agent"] = nats_agent
         # Include user context for pi-agent (pi-agent-memory-bridge D5)
         if self.config.nats_user_context:
             payload["context"] = self.config.nats_user_context
