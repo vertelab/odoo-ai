@@ -41,7 +41,7 @@ versioner av `ai.memory,257` innan den fixades 2026-09-21.
 import logging
 
 from odoo import api, fields, models
-from odoo.tools import Json
+from psycopg2.extras import Json
 
 _logger = logging.getLogger(__name__)
 
@@ -190,7 +190,8 @@ class AIOkfMixin(models.AbstractModel):
         self.flush_recordset(list(vals))
         # jsonb-fält (okf_tags, okf_links) måste serialiseras — rå SQL går
         # förbi ORM:ens typkonvertering, och psycopg2 tolkar en Python-lista
-        # som text[]. Json()-omslaget är samma väg Odoo själv använder.
+        # som text[]. psycopg2.extras.Json är samma omslag Odoo själv
+        # använder (odoo/models.py importerar det därifrån).
         params = []
         for name, value in vals.items():
             field = self._fields.get(name)
