@@ -2931,6 +2931,21 @@ class AICoworker(models.Model):
             'describe_model', 'odoo_search', 'odoo_create',
             'odoo_call_method', 'odoo_write', 'odoo_unlink', 'okf_search',
         ])
+        # Kostnadskontext på ledar-agenten ("Allmän kärna").
+        #
+        # Verktygen fanns i ai.tool (id 215/216, aktiva) men var kopplade
+        # till INGEN agent och INGEN grupp — alltså osynliga. `_session_tool_ids`
+        # bygger listan ur settings-default + agenternas tool_ids + coworkerns
+        # tool_ids, och ingen av de tre vägarna innehöll dem. Följden i drift:
+        # `cost_context_get` nekades med "Unknown or not-allowed tool" och
+        # kostnaden kunde inte bokföras på ett projekt.
+        #
+        # Ledar-agenten är rätt hemvist: kostnadskontext är en
+        # sessionsövergripande uppgift, inte en Odoo-affärsmodellfråga
+        # (Odoo-specialist) eller en research-uppgift.
+        _adopt('agent_default_core', [
+            'cost_context_get', 'cost_context_set',
+        ])
         _adopt('agent_research', ['odoo_web_search', 'odoo_fetch_url'])
         _adopt('agent_invoice_partner', [
             'describe_model', 'odoo_search', 'odoo_create',
