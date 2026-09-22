@@ -196,8 +196,13 @@ class TestOkfDirtyBridge(common.TransactionCase):
         self.assertEqual(
             self.Line._okf_cron_index_dirty_legacy('finns.inte'), 0)
 
-    def test_full_cron_covers_all_three_models(self):
-        """Bryggan ska täcka ai.memory OCH båda legacy-modellerna."""
+    def test_full_cron_covers_both_legacy_models(self):
+        """Bryggan ska täcka båda legacy-modellerna.
+
+        FYND (okf-mixin F2.9): testet täckte tidigare TRE modeller —
+        `ai.memory` räknades in. Den är pensionerad som OKF-konsument
+        (modellen är RAG-kapacitet, inte kunskap), så nu är det två.
+        """
         p = self.Personal.create({
             'user_id': self.user.id, 'content': 'Personligt.',
             'category': 'fact'})
@@ -205,9 +210,7 @@ class TestOkfDirtyBridge(common.TransactionCase):
             'company_id': self.env.company.id, 'content': 'Företagsvisst.',
             'category': 'knowledge'})
 
-        with patch.object(type(self.Line), '_okf_cron_index_dirty_memories',
-                          return_value=0):
-            total = self.Line._okf_cron_index_dirty()
+        total = self.Line._okf_cron_index_dirty()
 
         self.assertGreaterEqual(total, 2)
         p.invalidate_recordset(['okf_dirty'])

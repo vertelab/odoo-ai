@@ -448,7 +448,7 @@ class AIOkfConcept(models.Model):
 
     @api.model
     def _version_is_unchanged(self, existing, summary, title, source_ref,
-                             attribution):
+                             attribution, source_text=None):
         """Är den nya datan innehållsligt identisk med senaste versionen?
 
         Jämför de fält som BESKRIVER konceptet. Avsiktligt UTELÄMNADE:
@@ -485,7 +485,14 @@ class AIOkfConcept(models.Model):
                     out.append((str(row), ''))
             return sorted(out)
 
-        if (existing.summary or '') != (summary or ''):
+        # D5 (okf-mixin): när källtexten är känd styr DEN versionen — inte
+        # derivatet. En LLM som formulerar om samma text ska inte skapa en
+        # ny version; en faktisk källändring ska. Utan källtexten (legacy-
+        # anropare) jämförs summary som förut.
+        if source_text is not None:
+            if (existing.source_text or '') != (source_text or ''):
+                return False
+        elif (existing.summary or '') != (summary or ''):
             return False
         if (existing.title or '') != (title or ''):
             return False
@@ -500,7 +507,8 @@ class AIOkfConcept(models.Model):
                     owner_company_id=None, owner_user_id=None,
                     owner_coworker_id=None, generated_by='process',
                     status='stable', stale_after=None, entities=None,
-                    embedding=None, search_vector=None, **kwargs):
+                    embedding=None, search_vector=None, source_text=None,
+                    **kwargs):
         """Skapa ny concept eller ny version vid re-index (ADD-only).
 
         - Memory-koncept (kind=memory): ny rad endast vid genuint ny inlärning
@@ -509,6 +517,11 @@ class AIOkfConcept(models.Model):
         - Knowledge-koncept: re-index av samma concept_key skapar ny version
           (version+1, supersedes_id → föregående), föregående blir superseded.
         - Rader är immutabla (ADD-only gäller alltid).
+
+        `source_text` (okf-mixin D5): källtexten som `summary` härleddes ur.
+        När den är satt styr DEN versionsbeslutet — en LLM som formulerar om
+        samma text ger ingen ny version, men en faktisk källändring gör det.
+        Utelämnad → `summary` jämförs som förut (legacy-anropare oförändrade).
         """
         ArtifactType = self.env['ai.artifact.type']
         if isinstance(artifact_type, str):
@@ -563,7 +576,8 @@ class AIOkfConcept(models.Model):
             # uppdateras ändå inte på den gamla raden (ADD-only), så en
             # 'oförändrad' rad är den ärliga representationen.
             if self._version_is_unchanged(
-                    existing, summary, title, source_ref, attribution):
+                    existing, summary, title, source_ref, attribution,
+                    source_text=source_text):
                 _logger.debug(
                     'OKF: %s|%s oförändrat sedan v%s — ingen ny version '
                     '(annars skapas en rad per cron-körning)',
@@ -584,6 +598,7 @@ class AIOkfConcept(models.Model):
                 'supersedes_id': existing.id,
                 'title': title,
                 'summary': summary,
+                'source_text': source_text,
                 'attribution': attribution or [],
                 'source_ref': source_ref,
                 'sources': sources or [],
@@ -614,6 +629,7 @@ class AIOkfConcept(models.Model):
             'supersedes_id': None,
             'title': title,
             'summary': summary,
+            'source_text': source_text,
             'attribution': attribution or [],
             'source_ref': source_ref,
             'sources': sources or [],
@@ -1807,3 +1823,103 @@ class AIOkfConcept(models.Model):
         header = f"{header_label} [{pct}% — {chars:,}/{max_chars:,} chars]"
         separator = '═' * 46
         return f"{separator}\n{header}\n{separator}\n{content}"
+
+    @api.model
+    def _okf_cron_backfill_embeddings(self, batch_size=20):
+        """Efterfyllnad av saknade vektorer (okf-recall-path fas 3.3).
+
+        Flyttad hit från `ai.memory` (okf-mixin, 2026-09-22): den fyller
+        vektorer på `ai.okf.concept` och är OKF:s egen efterfyllnad — den
+        råkade bara bo på RAG-modellen (därför heter konstanten
+        `_OKF_EMBEDDING_DIM`).
+
+        Plockar koncept vars `embedding_state` inte är 'ready' och försöker
+        skapa vektorn. Idempotent: lyckade rader markeras 'ready' och plockas
+        aldrig upp igen; misslyckade lämnas i sin markering.
+
+        VARFÖR EN EGEN CRON: koncept skrivna innan embeddings fungerade har
+        en tom vektorkolumn. Utan efterfyllnad kräver varje sådan rad en
+        manuell åtgärd — och utan `embedding_state` går det inte att skilja
+        "aldrig försökt" från "försökt och misslyckats".
+
+        Avsiktligt utan tung logik: tunga saker händer i `_produce_embedding`
+        som REDAN körs via `_okf_upsert` på nya koncept. Denna cron räddar
+        bara eftersläntrare.
+        """
+        pending = self.search([
+            ('embedding_state', 'in', ('pending', 'failed')),
+            ('archived', '=', False),
+            ('status', '!=', 'superseded'),
+        ], limit=batch_size, order='id asc')
+
+        if not pending:
+            return 0
+
+        provider = self.env['ai.provider']._embedding_provider()
+        if not provider:
+            _logger.warning(
+                'OKF efterfyllnad: ingen provider som kan embedda — %s koncept '
+                'väntar fortfarande', len(pending))
+            return 0
+
+        model = provider.DEFAULT_EMBEDDING_MODEL
+        filled = 0
+        for concept in pending:
+            text = ' '.join(filter(None, [concept.title, concept.summary])).strip()
+            if not text:
+                # 'skipped' får skrivas — det är ett livscykelfält. Ingen ny
+                # version: det finns inget innehåll att versionera, och en
+                # tom kopia vore bara skräp i versionskedjan.
+                concept.write({'embedding_state': 'skipped'})
+                continue
+
+            vector = provider._get_embedding(
+                model=model, input=text, input_type='search_document')
+            if not vector:
+                # Lämna som pending — nästa körning försöker igen.
+                # Vi kan inte märka om raden utan att skapa en ny version,
+                # så vi rör den inte alls: 'pending' är redan sanningen.
+                continue
+
+            if not provider._validate_embedding(vector, model=model,
+                                                dim=_OKF_EMBEDDING_DIM):
+                # Fel dimension: markera 'failed' så den kräver tillsyn.
+                concept.write({'embedding_state': 'failed'})
+                continue
+
+            # VIKTIGT: koncept-rader är ADD-only (beslut 10). Vektorn kan
+            # alltså inte skrivas in i den befintliga raden — efterfyllnaden
+            # skapar en NY VERSION via _okf_upsert. Den gamla raden blir
+            # 'superseded' och den nya bär vektorn. Immutabiliteten är
+            # bevarad: historiken finns kvar, inget skrivs över.
+            owner = self._okf_owner_for_concept(concept)
+            self._okf_upsert(
+                artifact_type=concept.artifact_type_id or 'learning',
+                concept_key=concept.concept_key,
+                summary=concept.summary,
+                title=concept.title,
+                source_ref=concept.source_ref,
+                entities=concept.entities,
+                generated_by='backfill',
+                embedding=vector,
+                **owner
+            )
+            filled += 1
+
+        _logger.info('OKF efterfyllnad: %s av %s koncept fick vektor',
+                     filled, len(pending))
+        return filled
+
+    @api.model
+    def _okf_owner_for_concept(self, concept):
+        """Plocka ut ägar-argumenten från ett koncept för _okf_upsert.
+
+        _okf_upsert kräver exakt ett ägarfält — inte ett browse-id.
+        """
+        if concept.owner_company_id:
+            return {'owner_company_id': concept.owner_company_id.id}
+        if concept.owner_user_id:
+            return {'owner_user_id': concept.owner_user_id.id}
+        if concept.owner_coworker_id:
+            return {'owner_coworker_id': concept.owner_coworker_id.id}
+        return {'owner_company_id': self.env.company.id}

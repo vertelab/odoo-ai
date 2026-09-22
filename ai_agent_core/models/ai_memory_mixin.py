@@ -26,69 +26,58 @@ class AIMemoryMixin(models.AbstractModel):
     _name = 'ai.memory.mixin'
     _description = 'Memory Mixin — hybrid search for personal and company memory'
     _auto = False  # Abstract model, no DB table
+    _inherit = ['ai.okf.mixin']
 
     # ════════════════════════════════════════════
-    # OKF-BRYGGAN (D7, fas 6)
+    # OKF-KONTRAKTET (ärvt från ai.okf.mixin)
     # ════════════════════════════════════════════
-    # Legacy-minnena är den enda plats där svensk BM25 någonsin fungerade.
-    # När de skrivs ska de därför också bli OKF-koncept — annars är
-    # migreringen halvfärdig: skrivsidan flyttad, läsningen kvar i en
-    # stack som töms.
+    # Fälten (okf_text, okf_summary, okf_tags, okf_links, okf_dirty,
+    # okf_indexed_at), flagg-hookarna (create/write/_set_okf_dirty/
+    # _clear_okf_dirty) och sammanfattningskedjan bor nu på ai.okf.mixin.
+    # Legacy-minnena ärver dem — beteendet är oförändrat.
     #
-    # Flaggan sätts i write()/create() och konsumeras av
-    # `ai.memory._okf_cron_index_dirty()`. Indexeringen sker i cron — inte
-    # i write() — så att en användares skrivning aldrig väntar på en
-    # LLM/HTTP-tur.
-    okf_dirty = fields.Boolean(
-        'OKF Dirty', default=True, index=True, copy=False,
-        help='Satt när posten behöver indexeras om till ett OKF-koncept. '
-             'Rensas av cronen när indexeringen lyckats.')
-    okf_indexed_at = fields.Datetime(
-        'OKF Indexed At', readonly=True, copy=False,
-        help='När posten senast indexerades till OKF.')
+    # Det som är specifikt för legacy-minnena är KÄLLORNA och ÄGAREN:
+    # de är ADD-only (content kan inte ändras), de har ingen egen
+    # sammanfattning, och de ägs av user/company — inte av env.company.
 
-    @api.model_create_multi
-    def create(self, vals_list):
-        records = super().create(vals_list)
-        # Nya poster ska indexeras.
-        records.filtered(lambda r: not r.okf_dirty).write({'okf_dirty': True})
-        return records
+    def _okf_text_source(self):
+        """Legacy-minnets text. `content` är ADD-only — den sätts en gång."""
+        self.ensure_one()
+        return self.content or ''
 
-    def write(self, vals):
-        # FYND (fas 6): bägge legacy-modellerna är ADD-ONLY — `content` kan
-        # inte ändras efter skapande (`_check_add_only` kastar UserError).
-        # En hook på innehållsändring är därför till stor del teoretisk: den
-        # enda vägen till ett nytt innehåll är en NY post.
-        #
-        # Kroken finns ändå kvar, av två skäl:
-        #   1. Fälten som INTE är innehåll (archived, importance, entities)
-        #      går att ändra, och en arkivering ska slå igenom på konceptet.
-        #   2. Om ADD-only någon gång luckras upp är bryggan redan hel —
-        #      det är billigare än att upptäcka det i efterhand.
-        dirty_fields = {'content', 'content_preview', 'category',
-                        'importance', 'entities', 'archived', 'scope'}
-        result = super().write(vals)
-        if dirty_fields & set(vals):
-            # Undvik oändlig rekursion: skriv inte flaggan via write()
-            # när vi redan står i write().
-            self.sudo()._set_okf_dirty()
-        return result
+    def _okf_dirty_fields(self):
+        """Fält vars ändring gör OKF-fälten inaktuella.
 
-    def _set_okf_dirty(self):
-        """Sätt okf_dirty direkt i SQL — kringgår write()-hooken.
+        FYND (fas 6): bägge legacy-modellerna är ADD-ONLY — `content` kan
+        inte ändras efter skapande (`_check_add_only` kastar UserError).
+        En hook på innehållsändring är därför till stor del teoretisk: den
+        enda vägen till ett nytt innehåll är en NY post.
 
-        `flush_recordset()` först: annars kan ORM:ens ännu icke-skrivna
-        buffert skrivas EFTER vårt `UPDATE` och skriva över flaggan med det
-        gamla värdet. Det var precis vad som hände i testet — flaggan sattes
-        och försvann i samma andetag.
+        Kroken finns ändå kvar, av två skäl:
+          1. Fälten som INTE är innehåll (archived, importance, entities)
+             går att ändra, och en arkivering ska slå igenom på konceptet.
+          2. Om ADD-only någon gång luckras upp är bryggan redan hel.
         """
-        if not self:
-            return
-        self.flush_recordset(['okf_dirty'])
-        self.env.cr.execute(
-            'UPDATE %s SET okf_dirty = TRUE WHERE id = ANY(%%s)' % self._table,
-            (list(self.ids),))
-        self.invalidate_recordset(['okf_dirty'])
+        return {'content', 'content_preview', 'category',
+                'importance', 'entities', 'archived', 'scope'}
+
+    @api.model
+    def _okf_indexable_models(self):
+        """Legacy-minnena — basmodellens lista (okf-mixin F4.1).
+
+        Kärnan äger dessa två; bryggmoduler överrider och lägger till sina
+        egna. Kärnan namnger aldrig en domänmodell.
+        """
+        return ['ai.personal.memory', 'ai.company.memory']
+
+    def _okf_skip_reason(self):
+        """Legacy-minnen är ADD-only: tomt innehåll blir aldrig icke-tomt.
+
+        Därför 'empty' → rensa flaggan (befintligt beteende). En webbsida
+        däremot kan publiceras senare och behåller flaggan.
+        """
+        self.ensure_one()
+        return None if (self.content or '').strip() else 'empty'
 
     def _okf_owner_vals(self):
         """Härled OKF-ägaren ur en legacy-minnespost (fas 6.3)."""
@@ -103,14 +92,21 @@ class AIMemoryMixin(models.AbstractModel):
         Nyckeln måste vara STABIL över tid: samma minnespost ska alltid
         mappa till samma OKF-koncept, annars skapas en ny version vid varje
         indexering och versionskedjan svämmar över.
+
+        Texten hämtas via den ärvda `_okf_text_source()`, och gränsen via
+        `_okf_summary_max_chars()` — samma 2000 som förut (default), men nu
+        en systemparameter istället för ett hårdkodat tal.
         """
         self.ensure_one()
+        text = self._okf_text_source()
         vals = {
             'concept_key': '%s,%s' % (self._name, self.id),
-            'summary': (self.content or '')[:2000],
+            'summary': text[:self._okf_summary_max_chars()],
             'title': (self.content_preview or '')[:120] or None,
             'source_ref': '%s,%s' % (self._name, self.id),
             'generated_by': 'cron',
+            # D5: källan styr versionen, inte derivatet.
+            'source_text': text,
         }
         vals.update(self._okf_owner_vals())
         return vals

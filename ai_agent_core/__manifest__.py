@@ -37,6 +37,7 @@
         'security/ir.model.access.csv',
         'security/ai_hitl_rules.xml',
         'views/ai_actions.xml',
+        'views/ai_okf_record_views.xml',
         'data/okf_default_artifact_types.xml',
         'data/okf_artifact_types_personal.xml',
         'data/okf_access_resolvers.xml',

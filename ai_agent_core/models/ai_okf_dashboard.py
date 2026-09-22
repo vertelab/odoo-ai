@@ -19,12 +19,11 @@ _logger = logging.getLogger(__name__)
 _TYPE_CRON_KEYWORDS = {
     'partner': ['partner customer'],
     'supplier': ['partner supplier'],
-    'knowledge': ['knowledge article'],
+    # 'knowledge' hanteras av OKF dirty-cron (ai.okf.mixin) — inga egna crons
     'document': ['dms document'],
     'website': ['website rag'],
     'strategy': ['strategy'],
     'mgmt_summary': ['management summary'],
-    # learning (memory) hanteras av OKF dirty-cron — inga egna crons
 }
 
 
@@ -106,7 +105,6 @@ class AIOkfDashboard(models.TransientModel):
     graph_status = fields.Char(compute='_compute_stats', string='Graph Status')
     graph_version = fields.Char(compute='_compute_stats', string='AGE Version')
     concept_count = fields.Integer(compute='_compute_stats', string='Koncept')
-    memory_count = fields.Integer(compute='_compute_stats', string='AI Memories')
     company_concept_count = fields.Integer(compute='_compute_stats')
     personal_concept_count = fields.Integer(compute='_compute_stats')
     coworker_concept_count = fields.Integer(compute='_compute_stats')
@@ -282,7 +280,6 @@ class AIOkfDashboard(models.TransientModel):
             rec.dirty_count = Concept.search_count([('dirty', '=', True)])
             rec.superseded_count = Concept.search_count(
                 [('status', '=', 'superseded')])
-            rec.memory_count = self.env['ai.memory'].search_count([])
 
             # Graph-status
             try:
@@ -317,54 +314,21 @@ class AIOkfDashboard(models.TransientModel):
     # ════════════════════════════════════════════
     def _run_okf_index(self, dirty_scope=None, artifact_types=None,
                        limit=200):
-        """Kör _okf_upsert() för dirty-artefakter med filter.
+        """Kör indexeringen för dirty-poster — via SAMMA väg som cronen.
 
-        dirty_scope: None=alla, 'month'=ändrade denna månad,
-        'today'=ändrade idag. artifact_types: m2m-filter.
+        FYND (okf-mixin F2.5): denna metod var en EGEN implementation av
+        indexeringen — `_okf_upsert` anropades direkt med samma concept_key
+        som cronen, men `generated_by='dashboard'`. Två skrivvägar till
+        samma nyckel är samma felklass som okf-recall-path §15 (skrivsidan
+        byggdes på två ställen, lässidan antog att det var ett).
+
+        Nu delegerar den till `_okf_cron_index_dirty()` — samma kodväg,
+        samma sammanfattningskedja, samma flagghantering. Skillnaden är
+        bara filter och batchstorlek.
         """
-        domain = [('okf_dirty', '=', True)]
-        if dirty_scope == 'month':
-            since = datetime.now() - timedelta(days=30)
-            domain.append(('write_date', '>=', since))
-        elif dirty_scope == 'today':
-            since = datetime.now().replace(hour=0, minute=0, second=0)
-            domain.append(('write_date', '>=', since))
-        if artifact_types:
-            domain.append(('artifact_type_id', 'in', artifact_types.ids))
-
-        Memory = self.env['ai.memory']
-        # ai.memory har en FAISS-hjälpmetod som skuggar ORM:ts search
-        dirty_ids = Memory._search(domain, limit=limit)
-        dirty = Memory.browse(dirty_ids)
-        if not dirty:
-            self.run_result = 'Inga dirty-artefakter med detta filter.'
-            return
-
-        ok = self.env['ai.memory'].browse()
-        for mem in dirty:
-            try:
-                concept = self.env['ai.okf.concept']._okf_upsert(
-                    artifact_type=mem.artifact_type_id or 'learning',
-                    concept_key='ai.memory,%s' % mem.id,
-                    summary=mem.content or mem.name or '',
-                    title=mem.name,
-                    source_ref='ai.memory,%s' % mem.id,
-                    owner_company_id=(not mem.quest_id and not mem.identity_id
-                                      and self.env.company.id) or None,
-                    owner_user_id=mem.identity_id.user_id.id
-                    if mem.identity_id and mem.identity_id.user_id else None,
-                    owner_coworker_id=mem.quest_id.id or None,
-                    generated_by='dashboard',
-                )
-                if concept:
-                    ok |= mem
-            except Exception as e:
-                _logger.warning('Dashboard run failed for memory %s: %s',
-                                mem.id, e)
-        if ok:
-            ok.write({'okf_dirty': False})
-        self.run_result = 'Indexerade %d/%d artefakter.' % (len(ok), len(dirty))
-
+        Mixin = self.env['ai.okf.mixin']
+        total = Mixin._okf_cron_index_dirty(batch_size=limit or 200)
+        self.run_result = 'Indexerade %d artefakter (via cron-vägen).' % total
     def action_index_all(self):
         self._run_okf_index()
         return self._reopen()

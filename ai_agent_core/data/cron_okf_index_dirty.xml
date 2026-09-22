@@ -1,13 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <!-- Cron: OKF lätt indexerare (var 5:e minut) — plockar upp dirty-artefakter
-         och gör det tunga arbetet (sammanfattning, upsert via _okf_upsert,
-         rensning av dirty-flag). Tungt arbete sker här, aldrig i write(). -->
+    <!-- Cron: OKF lätt indexerare (var 5:e minut) — plockar upp dirty-poster
+         från alla modeller som bär ai.okf.mixin (_okf_indexable_models(),
+         utökningsbar av bryggor) och gör det tunga arbetet: sammanfattning
+         (modellens egen → Allmän assistent → trunkering), upsert via
+         _okf_upsert, rensning av flaggan. Tungt arbete sker här, aldrig i
+         write().
+
+         Modellen är ai.okf.mixin (abstrakt) — cronen anropar en @api.model-
+         metod, så vilken konkret modell som helst hade fungerat; mixinen är
+         den ärliga adressen sedan ai.memory pensionerades (okf-mixin F2). -->
     <record id="cron_okf_index_dirty" model="ir.cron">
         <field name="name">OKF: Indexera dirty-artefakter</field>
-        <field name="model_id" ref="model_ai_memory"/>
+        <field name="model_id" ref="model_ai_okf_mixin"/>
         <field name="state">code</field>
-        <field name="code">env['ai.memory']._okf_cron_index_dirty()</field>
+        <field name="code">env['ai.okf.mixin']._okf_cron_index_dirty()</field>
         <field name="interval_number">5</field>
         <field name="interval_type">minutes</field>
         <field name="active" eval="True"/>
@@ -34,9 +41,9 @@
          fortfarande ~15 min marginal i värsta fall innan cronen dödas. -->
     <record id="cron_okf_backfill_embeddings" model="ir.cron">
         <field name="name">OKF: Efterfyll saknade vektorer</field>
-        <field name="model_id" ref="model_ai_memory"/>
+        <field name="model_id" ref="model_ai_okf_concept"/>
         <field name="state">code</field>
-        <field name="code">env['ai.memory']._okf_cron_backfill_embeddings(batch_size=100)</field>
+        <field name="code">env['ai.okf.concept']._okf_cron_backfill_embeddings(batch_size=100)</field>
         <field name="interval_number">30</field>
         <field name="interval_type">minutes</field>
         <field name="active" eval="True"/>

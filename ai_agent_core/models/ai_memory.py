@@ -49,26 +49,21 @@ class AIMemory(models.Model):
     archived = fields.Boolean('Archived', default=False,
                                help='Hidden from system prompt injection')
 
-    # OKF artifact type (registrerbar taxonomi, ersätter statiska selections)
-    artifact_type_id = fields.Many2one(
-        'ai.artifact.type', string='Artifact Type',
-        help='OKF artifact type (learning = memory kind, övriga = knowledge).'
-             ' Befintliga poster får default learning via data/init.')
-
-    # OKF dirty-flag (trigger-modell, task 5.1) — sätts av write()-hooken
-    # (microseconds, inget AI-arbete); lätt cron plockar upp och rensar.
-    okf_dirty = fields.Boolean(
-        'OKF Dirty', default=False, index=True, copy=False,
-        help='Sätts av write()-hook; lätt cron (5 min) indexerar och rensar.')
-    # FYND (2026-09-21): `_okf_cron_index_dirty_memories` skrev
-    # `okf_indexed_at` — men fältet fanns bara på `ai.memory.mixin`, som
-    # `ai.memory` INTE ärver. Skrivningen hade kraschat i det ögonblick
-    # den nåddes (och gjorde det tyst: felet fångades av cronens
-    # try/except och loggades som en varning). Fältet deklareras därför
-    # här, med samma innebörd som på mixin.
-    okf_indexed_at = fields.Datetime(
-        'OKF Indexed At', readonly=True, copy=False,
-        help='När posten senast indexerades till OKF.')
+    # ── OKF: INGEN koppling (okf-mixin, 2026-09-22) ────────────────────
+    # `ai.memory` är agentens RAG-kapacitet: vektoriserade PDF:er,
+    # `faiss_search`, `rag_memory_ids`. Det är material en agent ARBETAR
+    # med — inte kunskap som ska bli OKF-koncept.
+    #
+    # Modellen bar tidigare `okf_dirty` + `okf_indexed_at` +
+    # `artifact_type_id` och indexerades till `ai.okf.concept`. Det var ett
+    # kategorifel: en uppladdad PDF blev både FAISS-index OCH
+    # kunskapskoncept, och en dirty-flagga skapade en rad per cron-varv.
+    # `ai-memory`-specen säger redan att modellen är "material, inte
+    # inlärning" — nu gör koden detsamma.
+    #
+    # Vägen från uppladdat material till koncept går via `ai.okf.upload`,
+    # som skriver konceptet direkt ur `ir.attachment`. RAG-funktionerna
+    # nedan är orörda.
 
     # Metadata
     tags = fields.Char('Tags', help='Comma-separated')
