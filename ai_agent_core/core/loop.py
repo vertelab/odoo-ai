@@ -112,12 +112,19 @@ class AgentLoop:
         permission_engine: Optional[PermissionEngine] = None,
         context_provider: Optional[callable] = None,
         denial_callback: Optional[callable] = None,
+        tool_selector=None,
     ):
         self.provider = provider
         self.tools = tools
         self.config = config or AgentConfig()
         self.interrupt_handler = interrupt_handler
         self.context_provider = context_provider
+        # Tool selection (priority 1): narrow the registry to a task-matched
+        # subset before each provider call. None = send everything (old
+        # behaviour). Never widens access — only narrows the authorised set.
+        self.tool_selector = tool_selector
+        # Last selection stats (observability — token delta per call).
+        self.tool_selection_stats: list = []
         # Async-ytor (cron/mail/webhook): kallas när ett verktyg nekas av
         # permission engine (t.ex. hårt stopp) — kan dirigera till
         # workspace-approval-kön.
@@ -165,6 +172,36 @@ class AgentLoop:
         for pt in planning_tools(self.todo_list):
             if pt.name not in self.tools:
                 self.tools.register(pt)
+
+    def _tool_defs(self, messages: list[Message]):
+        """Build the tool definitions for a provider call.
+
+        Priority 1 (context saving): when a tool_selector is configured, the
+        registry is narrowed to a task-matched subset before serialisation.
+        The selector never widens access — it only filters the already
+        authorised registry — and it fails open (full registry on error).
+
+        The prompt used for selection is the last user message; that is what
+        the turn is actually about.
+        """
+        if len(self.tools) == 0:
+            return None
+        if self.tool_selector is None:
+            return self.tools.to_openai()
+
+        prompt = ""
+        for m in reversed(messages):
+            if m.role == Role.USER and m.content:
+                prompt = m.content
+                break
+
+        narrowed = self.tool_selector.select(prompt, self.tools)
+        stats = getattr(self.tool_selector, "last_stats", None)
+        if stats:
+            self.tool_selection_stats.append(stats)
+        if len(narrowed) == 0:
+            return None
+        return narrowed.to_openai()
 
     def cancel(self) -> None:
         """Signal cancellation. Stops LLM call and pending tools."""
@@ -250,7 +287,7 @@ class AgentLoop:
                     pass  # Best-effort — never fail a turn over context injection
 
             # -- Provider call (with cancel support) --
-            tool_defs = self.tools.to_openai() if len(self.tools) > 0 else None
+            tool_defs = self._tool_defs(messages)
 
             try:
                 chat_task = asyncio.create_task(
@@ -856,7 +893,7 @@ class StreamingAgentLoop(AgentLoop):
             if self._context_too_large(messages):
                 messages = await self._summarize(messages)
 
-            tool_defs = self.tools.to_openai() if len(self.tools) > 0 else None
+            tool_defs = self._tool_defs(messages)
 
             # Stream from provider
             text_buffer = ""

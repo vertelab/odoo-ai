@@ -4502,6 +4502,12 @@ class AICoworker(models.Model):
         from odoo.addons.ai_agent_core.core.loop import AgentLoop, AgentConfig
         from odoo.addons.ai_agent_core.core.linear import LinearLoop
 
+        # Priority 1 (context saving): build the tool selector once and hand
+        # it to every loop below. It narrows the authorised registry to a
+        # task-matched subset before each provider call. None → old behaviour
+        # (send everything). Fails open; never widens access.
+        tool_selector = self._tool_selector()
+
         # Supervisor model: explicit fält vinner, annars första agentens modell.
         supervisor_model = (
             self.supervisor_model_id.name
@@ -4530,6 +4536,7 @@ class AICoworker(models.Model):
                     permission_mode='auto',
                     nats_user_context=nats_ctx,
                 ),
+                tool_selector=tool_selector,
             )
 
         # ── Linear: sequential pipeline ──
@@ -4556,6 +4563,7 @@ class AICoworker(models.Model):
                     model=agent_model, system_prompt=system_prompt,
                     max_rounds=max_rounds,
                 ),
+                tool_selector=tool_selector,
             )
 
         # ── Conference: all agents answer, best answer wins ──
@@ -5729,6 +5737,28 @@ class AICoworker(models.Model):
 
         return tools, tool_access_groups
 
+    def _tool_selector(self):
+        """Bygg en ToolSelector från konfiguration (priority 1).
+
+        Returnerar None när selektion är avstängd — då skickas hela det
+        auktoriserade registret (gammalt beteende). Selektorn ärver INTE
+        behörigheter: den filtrerar bara det register som redan byggts av
+        _session_tools(), så den kan aldrig vidga åtkomst.
+
+        Konfig (ir.config_parameter):
+            ai_agent_core.tool_selection_enabled   'True' | 'False'
+            ai_agent_core.tool_selection_top_k     '5'
+            ai_agent_core.tool_selection_min_tools '12'
+            jev.url / jev.model / jev.timeout
+        """
+        try:
+            from odoo.addons.ai_agent_core.core.tool_select import ToolSelector
+            sel = ToolSelector.from_env(self.env)
+            return sel if sel.enabled else None
+        except Exception as e:
+            _logger.info('_tool_selector: selektion avstängd (%s)', e)
+            return None
+
     def _warn_agents_without_tools(self, session=None):
         """Logga en varning för agenter utan tool_ids (avveckla, D5).
 
@@ -6543,6 +6573,38 @@ class AICoworker(models.Model):
                     if spec_model:
                         line_vals['model_real'] = spec_model
                 self.env['ai.coworker.session.line'].create(line_vals)
+
+            # ── Verktygsselektion (priority 1): bokför besparingen i tråden ──
+            # En system-rad per tur som visar hur många verktyg som skickades
+            # och hur många tokens verktygsblocket kostade. Gör besparingen
+            # granskningsbar i sessionen i stället för att bara ligga i loggen.
+            try:
+                sel_stats = getattr(loop_obj, 'tool_selection_stats', None)
+                if sel_stats:
+                    real = [s for s in sel_stats if not s.get('skipped')]
+                    if real:
+                        before = sum(s.get('tokens_before', 0) for s in real)
+                        after = sum(s.get('tokens_after', 0) for s in real)
+                        n_turns = len(real)
+                        backends = sorted({s.get('backend', '?') for s in real})
+                        saved = before - after
+                        pct = round(100 * saved / before, 1) if before else 0
+                        self.env['ai.coworker.session.line'].create({
+                            'session_id': session.id,
+                            'role': 'system',
+                            'content': (
+                                f'Verktygsselektion ({n_turns} tur(er), '
+                                f'backend={", ".join(backends)}): '
+                                f'verktygsblocket ~{before:,} → ~{after:,} '
+                                f'tokens (−{pct}%, sparat ~{saved:,}).'),
+                            'sequence': _base_seq + 2 + len(
+                                getattr(loop_obj, 'tool_history', [])),
+                            'token_input': 0,
+                            'token_output': 0,
+                            'sys_multiplier': 0.0,
+                        })
+            except Exception as e:
+                _logger.info('Kunde inte bokföra selektions-statistik: %s', e)
 
             # ── Fel-loggning (ai.coworker.error) ──
             # Skanna verktygshistoriken + resultatet för fel så de kan
