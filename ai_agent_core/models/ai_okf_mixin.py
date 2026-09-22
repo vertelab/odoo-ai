@@ -41,6 +41,7 @@ versioner av `ai.memory,257` innan den fixades 2026-09-21.
 import logging
 
 from odoo import api, fields, models
+from odoo.tools import Json
 
 _logger = logging.getLogger(__name__)
 
@@ -187,10 +188,20 @@ class AIOkfMixin(models.AbstractModel):
         vals['okf_dirty'] = False
         vals.setdefault('okf_indexed_at', fields.Datetime.now())
         self.flush_recordset(list(vals))
+        # jsonb-fält (okf_tags, okf_links) måste serialiseras — rå SQL går
+        # förbi ORM:ens typkonvertering, och psycopg2 tolkar en Python-lista
+        # som text[]. Json()-omslaget är samma väg Odoo själv använder.
+        params = []
+        for name, value in vals.items():
+            field = self._fields.get(name)
+            if field and field.type == 'json' and value is not None:
+                params.append(Json(value))
+            else:
+                params.append(value)
         assignments = ', '.join('%s = %%s' % f for f in vals)
         self.env.cr.execute(
             'UPDATE %s SET %s WHERE id = ANY(%%s)' % (self._table, assignments),
-            list(vals.values()) + [list(self.ids)],
+            params + [list(self.ids)],
         )
         self.invalidate_recordset(list(vals))
 
