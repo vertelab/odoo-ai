@@ -100,12 +100,44 @@ def post_init_hook_personal_memory(env):
                 cr.execute("CREATE INDEX idx_ai_personal_memory_fts ON ai_personal_memory USING GIN(search_vector)")
                 _logger.info('Created GIN index on search_vector')
 
-            # pgvector-index (only if vector extension + column exists + type is vector)
+            # pgvector: konvertera text → vector(1024) och skapa index.
+            #
+            # BUGGEN (mätt i drift 2026-09-22): villkoret var
+            # `if row and row[0] == 'USER-DEFINED'` — dvs. kolumnen
+            # konverterades bara om den REDAN var en vector-typ. En
+            # TEXT-kolumn (vilket `fields.Text` skapar) lämnades som text,
+            # så `1 - (embedding <=> %s::vector)` kastade
+            # `UndefinedFunction: operator does not exist: text <=> vector`.
+            # Cirkulär logik: den migreras bara om den redan är migrerad.
+            #
+            # Följden i drift: /ai/stream svarade HTTP 500 för varje session
+            # med >50 rader (de som anropar _summarize_history →
+            # _bridge_to_personal_memory → search_for_user), och användaren
+            # såg "Anslutningen till AI-servern bröts".
+            #
+            # Konverteringen är idempotent och tål att köras om: en kolumn
+            # som redan är vector lämnas orörd.
             cr.execute("SELECT 1 FROM pg_extension WHERE extname = 'vector'")
             if cr.fetchone():
-                cr.execute("SELECT data_type FROM information_schema.columns WHERE table_name = 'ai_personal_memory' AND column_name = 'embedding'")
+                cr.execute(
+                    "SELECT udt_name FROM information_schema.columns "
+                    "WHERE table_name = 'ai_personal_memory' "
+                    "AND column_name = 'embedding'")
                 row = cr.fetchone()
-                if row and row[0] == 'USER-DEFINED':
+                if row and row[0] != 'vector':
+                    # Värden skrivna som text-literal ('[0.1,0.2,...]') är
+                    # redan giltiga vector-literaler → casten fungerar.
+                    # NULL/otolkbara värden nollställs i stället för att
+                    # fälla hela ALTER:en.
+                    cr.execute(
+                        "ALTER TABLE ai_personal_memory "
+                        "ALTER COLUMN embedding TYPE vector(1024) "
+                        "USING CASE WHEN embedding IS NULL THEN NULL "
+                        "ELSE embedding::vector(1024) END")
+                    _logger.info(
+                        'ai_personal_memory.embedding: %s → vector(1024)'
+                        ' (var %s)', 'vector(1024)', row[0])
+                if row and row[0] == 'vector':
                     cr.execute("SELECT 1 FROM pg_indexes WHERE tablename = 'ai_personal_memory' AND indexname = 'idx_ai_personal_memory_embedding'")
                     if not cr.fetchone():
                         cr.execute("CREATE INDEX idx_ai_personal_memory_embedding ON ai_personal_memory USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100)")
@@ -141,9 +173,25 @@ def post_init_hook_personal_memory(env):
 
             cr.execute("SELECT 1 FROM pg_extension WHERE extname = 'vector'")
             if cr.fetchone():
-                cr.execute("SELECT data_type FROM information_schema.columns WHERE table_name = 'ai_company_memory' AND column_name = 'embedding'")
+                cr.execute(
+                    "SELECT udt_name FROM information_schema.columns "
+                    "WHERE table_name = 'ai_company_memory' "
+                    "AND column_name = 'embedding'")
                 row = cr.fetchone()
-                if row and row[0] == 'USER-DEFINED':
+                # Samma cirkulära villkor som ai_personal_memory hade:
+                # `== 'USER-DEFINED'` konverterade bara en kolumn som redan
+                # var vector. En TEXT-kolumn lämnades som text →
+                # `text <=> vector` kastade UndefinedFunction i drift.
+                if row and row[0] != 'vector':
+                    cr.execute(
+                        "ALTER TABLE ai_company_memory "
+                        "ALTER COLUMN embedding TYPE vector(1024) "
+                        "USING CASE WHEN embedding IS NULL THEN NULL "
+                        "ELSE embedding::vector(1024) END")
+                    _logger.info(
+                        'ai_company_memory.embedding: → vector(1024) '
+                        '(var %s)', row[0])
+                if row and row[0] == 'vector':
                     cr.execute("SELECT 1 FROM pg_indexes WHERE tablename = 'ai_company_memory' AND indexname = 'idx_ai_company_memory_embedding'")
                     if not cr.fetchone():
                         cr.execute("CREATE INDEX idx_ai_company_memory_embedding ON ai_company_memory USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100)")

@@ -120,6 +120,38 @@ class AIMemoryMixin(models.AbstractModel):
     # ════════════════════════════════════════════
 
     @api.model
+    def _embedding_column_is_vector(self):
+        """Är `embedding`-kolumnen på DENNA tabell en riktig vector-kolumn?
+
+        Mixin delas av `ai.personal.memory` och `ai.company.memory`, som
+        båda deklarerar `embedding = fields.Text(...)` — Odoo skapar alltså
+        en TEXT-kolumn. `1 - (embedding <=> %s::vector)` är då ett SQL-fel,
+        och utan savepoint förgiftas hela requesten.
+
+        Returns:
+            bool: True om kolumnen är av typen vector.
+        """
+        table = self._table
+        cache_attr = '_embedding_is_vector_cache_%s' % table
+        cls = type(self)
+        if getattr(cls, cache_attr, None) is not None:
+            return getattr(cls, cache_attr)
+        try:
+            with self.env.cr.savepoint():
+                self.env.cr.execute("""
+                    SELECT udt_name FROM information_schema.columns
+                    WHERE table_name = %s AND column_name = 'embedding'
+                """, (table,))
+                row = self.env.cr.fetchone()
+            is_vector = bool(row) and row[0] == 'vector'
+        except Exception as e:
+            _logger.warning(
+                'Kunde inte avgöra embedding-kolumnens typ på %s: %s — '
+                'hoppar över semantisk signal', table, e)
+            is_vector = False
+        setattr(cls, cache_attr, is_vector)
+        return is_vector
+
     def _search_memory(self, domain, query=None, limit=10, threshold=0.1,
                        include_archived=False, explain=False, order='score'):
         """Hybrid search — pgvector + tsvector + entity boost.
@@ -167,7 +199,7 @@ class AIMemoryMixin(models.AbstractModel):
         except Exception as e:
             _logger.warning('Query embedding failed: %s', e)
 
-        if query_embedding:
+        if query_embedding and self._embedding_column_is_vector():
             # Build WHERE clause from domain
             where_clauses = ['archived = %s']
             params = [include_archived]
@@ -186,18 +218,29 @@ class AIMemoryMixin(models.AbstractModel):
 
             where_sql = ' AND '.join(where_clauses)
 
-            self.env.cr.execute(f"""
-                SELECT id, content, category, importance,
-                       create_date,
-                       1 - (embedding <=> %s::vector) AS semantic_score
-                FROM {table}
-                WHERE {where_sql}
-                  AND embedding IS NOT NULL
-                  AND 1 - (embedding <=> %s::vector) >= %s
-                ORDER BY semantic_score DESC
-                LIMIT %s
-            """, (query_embedding, query_embedding, threshold, limit * 4) + tuple(params))
-            semantic_results = self.env.cr.dictfetchall()
+            # savepoint: ett SQL-fel här abortar annars HELA transaktionen
+            # (InFailedSqlTransaction) och varje efterföljande query i
+            # requesten dör. Samma felklass som ai_personal_memory —
+            # BM25-vägen nedan hade redan en savepoint, vektor-vägen inte.
+            try:
+                with self.env.cr.savepoint():
+                    self.env.cr.execute(f"""
+                        SELECT id, content, category, importance,
+                               create_date,
+                               1 - (embedding <=> %s::vector) AS semantic_score
+                        FROM {table}
+                        WHERE {where_sql}
+                          AND embedding IS NOT NULL
+                          AND 1 - (embedding <=> %s::vector) >= %s
+                        ORDER BY semantic_score DESC
+                        LIMIT %s
+                    """, (query_embedding, query_embedding, threshold, limit * 4) + tuple(params))
+                    semantic_results = self.env.cr.dictfetchall()
+            except Exception as e:
+                _logger.warning(
+                    'Semantic search failed for %s (embedding-kolumnen är '
+                    'inte vector?): %s — fortsätter med BM25', table, e)
+                semantic_results = []
 
         # ════════════════════════════════════════
         # SIGNAL 2: BM25 (tsvector full-text)

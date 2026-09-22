@@ -246,6 +246,48 @@ class AIPersonalMemory(models.Model):
     # ════════════════════════════════════════════
 
     @api.model
+    def _embedding_column_is_vector(self):
+        """Är `embedding`-kolumnen en riktig pgvector-kolumn?
+
+        Fältet deklareras som `fields.Text` (se ovan), så Odoo skapar en
+        TEXT-kolumn. Endast `ai_okf_concept.embedding` använder PgVector.
+        `1 - (embedding <=> %s::vector)` är därför ett SQL-fel på denna
+        tabell tills kolumnen migrerats.
+
+        Kollen är billig (en information_schema-fråga i en savepoint) och
+        gör att den semantiska signalen kan hoppas över i stället för att
+        krascha. Resultatet cachas på modellklassen — kolumntypen ändras
+        bara av en migration, aldrig under en körande process.
+
+        Returns:
+            bool: True om kolumnen är av typen vector.
+        """
+        cls = type(self)
+        if getattr(cls, '_embedding_is_vector_cache', None) is not None:
+            return cls._embedding_is_vector_cache
+        try:
+            with self.env.cr.savepoint():
+                self.env.cr.execute("""
+                    SELECT udt_name FROM information_schema.columns
+                    WHERE table_name = 'ai_personal_memory'
+                      AND column_name = 'embedding'
+                """)
+                row = self.env.cr.fetchone()
+            is_vector = bool(row) and row[0] == 'vector'
+        except Exception as e:
+            _logger.warning(
+                'Kunde inte avgöra embedding-kolumnens typ: %s — '
+                'hoppar över semantisk signal', e)
+            is_vector = False
+        if not is_vector:
+            _logger.warning(
+                'ai_personal_memory.embedding är inte en vector-kolumn '
+                '(saknad migration?) — semantisk sökning hoppas över, '
+                'BM25 bär resultatet')
+        cls._embedding_is_vector_cache = is_vector
+        return is_vector
+
+    @api.model
     def search_for_user(self, user_id, query=None, limit=10, threshold=0.1,
                         include_archived=False, explain=False):
         """Hybrid search över ALLA minnen för en användare.
@@ -298,21 +340,41 @@ class AIPersonalMemory(models.Model):
         except Exception as e:
             _logger.warning('Query embedding failed: %s', e)
 
-        if query_embedding:
-            self.env.cr.execute("""
-                SELECT id, content, category, importance, source,
-                       create_date,
-                       1 - (embedding <=> %s::vector) AS semantic_score
-                FROM ai_personal_memory
-                WHERE user_id = %s
-                  AND archived = %s
-                  AND embedding IS NOT NULL
-                  AND 1 - (embedding <=> %s::vector) >= %s
-                ORDER BY semantic_score DESC
-                LIMIT %s
-            """, (query_embedding, user_id, include_archived,
-                  query_embedding, threshold, limit * 4))
-            semantic_results = self.env.cr.dictfetchall()
+        if query_embedding and self._embedding_column_is_vector():
+            # savepoint: ett SQL-fel här (t.ex. text-kolumn i en DB som inte
+            # kört migreringen) abortar annars HELA transaktionen. Varje
+            # efterföljande query i requesten dör då med
+            # InFailedSqlTransaction — även anroparens `session.exists()`,
+            # vilket ger HTTP 500 och "Anslutningen till AI-servern bröts".
+            #
+            # MÄTT 2026-09-22: `embedding` var `text` (inte `vector`) på
+            # ai_personal_memory, så `1 - (embedding <=> %s::vector)` kastade
+            # `UndefinedFunction: operator does not exist: text <=> vector`.
+            # Utan savepoint förgiftades requesten och /ai/stream svarade 500
+            # för varje session med >50 rader (de som anropar
+            # _summarize_history → _bridge_to_personal_memory → hit).
+            # BM25-vägen nedan hade redan en savepoint; vektor-vägen saknade.
+            try:
+                with self.env.cr.savepoint():
+                    self.env.cr.execute("""
+                        SELECT id, content, category, importance, source,
+                               create_date,
+                               1 - (embedding <=> %s::vector) AS semantic_score
+                        FROM ai_personal_memory
+                        WHERE user_id = %s
+                          AND archived = %s
+                          AND embedding IS NOT NULL
+                          AND 1 - (embedding <=> %s::vector) >= %s
+                        ORDER BY semantic_score DESC
+                        LIMIT %s
+                    """, (query_embedding, user_id, include_archived,
+                          query_embedding, threshold, limit * 4))
+                    semantic_results = self.env.cr.dictfetchall()
+            except Exception as e:
+                _logger.warning(
+                    'Semantic search failed (embedding-kolumnen är inte '
+                    'vector?): %s — fortsätter med BM25', e)
+                semantic_results = []
 
         # ════════════════════════════════════════
         # SIGNAL 2: BM25 (tsvector full-text)
