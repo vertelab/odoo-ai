@@ -429,6 +429,61 @@ class AIAgent(models.Model):
         return "\n".join(parts)
 
 
+
+    # ══════════════════════════════════════════════════════════════════
+    # Default-skills för Allmän kärna
+    # ══════════════════════════════════════════════════════════════════
+
+    def _ensure_default_skills(self):
+        """Koppla default-skillarna till Allmän kärna (idempotent).
+
+        Anropas som `<function>` i `data/vertel_skills.xml`, UTANFÖR
+        noupdate-blocket.
+
+        VARFÖR EN FUNKTION OCH INTE EN `<record>`: xmlid:n
+        `agent_default_core` skapas i `default_coworker.xml` med
+        `<data noupdate="1">` → `noupdate=true` i ir_model_data. Odoos
+        `_load_records` hoppar då över ALL vidare bearbetning av den
+        xmlid:n — även från en annan fil. En `<record>` på samma xmlid i
+        `vertel_skills.xml` hade alltså ingen verkan, och felet var tyst:
+        skillsen skapades, men kopplingen uteblev.
+
+        Mätt på social 2026-09-22: `skill_okf_summarize` fanns som rad men
+        `ai_agent_skill_rel` saknade kopplingen till agent 1.
+
+        Idempotent: lägger bara till länkar som saknas, rör inga befintliga.
+        """
+        agent = self.env.ref('ai_agent_core.agent_default_core',
+                             raise_if_not_found=False)
+        if not agent:
+            _logger.warning(
+                'ai.agent: agent_default_core saknas — kan inte koppla '
+                'default-skills')
+            return True
+
+        wanted = [
+            'skill_vertel_skills',
+            'skill_vertel_infra',
+            'skill_vertel_openspec',
+            'skill_vertel_clicktest',
+            'skill_okf_summarize',
+        ]
+        added = []
+        for xmlid in wanted:
+            skill = self.env.ref('ai_agent_core.%s' % xmlid,
+                                 raise_if_not_found=False)
+            if not skill:
+                _logger.warning('ai.agent: skillen %s saknas', xmlid)
+                continue
+            if skill not in agent.skill_ids:
+                agent.write({'skill_ids': [(4, skill.id)]})
+                added.append(xmlid)
+        if added:
+            _logger.info('ai.agent: kopplade %s till %s',
+                         ', '.join(added), agent.name)
+        return True
+
+
 class AIAgentTool(models.Model):
     _name = 'ai.agent.tool'
     _description = 'Agent Tool'

@@ -5,30 +5,6 @@ import logging
 
 _logger = logging.getLogger(__name__)
 
-GRAPH_NAME = 'odoo_mind'
-
-
-def _age_graph_exists(cr):
-    """Return True if the AGE graph is usable by the current role.
-
-    OBS: vi testar INTE med `SELECT 1 FROM ag_catalog.ag_graph`. Det
-    schemat ägs av postgres-superusern, så en vanlig Odoo-roll får
-    `permission denied` där — även när AGE är installerat och grafen
-    fungerar. Testet gav då falskt negativt och loggade "graph init
-    failed" på ett friskt system.
-
-    cypher() är den väg anroparen faktiskt använder; fungerar den är
-    grafen användbar. Anroparen ansvarar för SAVEPOINT runt anropet.
-    """
-    cr.execute("SELECT 1 FROM pg_extension WHERE extname = 'age'")
-    if not cr.fetchone():
-        return False
-    cr.execute(
-        "SELECT * FROM ag_catalog.cypher(%s, $$ RETURN 1 $$) "
-        "AS (x ag_catalog.agtype)",
-        (GRAPH_NAME,))
-    return cr.fetchone() is not None
-
 
 def pre_init_hook_check_conflicts(env):
     """Förhindra installation om inkompatibel modul (ai_agent) är installerad.
@@ -165,11 +141,12 @@ def post_init_hook_personal_memory(env):
     try:
         cr.execute("SELECT 1 FROM pg_extension WHERE extname = 'age'")
         if cr.fetchone():
-            if _age_graph_exists(cr):
-                _logger.info('odoo_mind graph already exists')
-            else:
+            cr.execute("SELECT 1 FROM ag_catalog.ag_graph WHERE name = 'odoo_mind'")
+            if not cr.fetchone():
                 cr.execute("SELECT * FROM ag_catalog.create_graph('odoo_mind')")
                 _logger.info('Created odoo_mind graph')
+            else:
+                _logger.info('odoo_mind graph already exists')
         else:
             _logger.info('AGE extension not installed — skipping graph init')
     except Exception as e:
@@ -221,29 +198,11 @@ def post_init_hook_personal_memory(env):
     # ── Org init (default coworker + templates) ──
     try:
         post_init_hook_org(env)
-        okf_init_default_artifact_types(env)
         env.flush_all()
         env.cr.commit()
     except Exception as e:
         _logger.warning('Org init failed (non-fatal): %s', e)
 
-
-def okf_init_default_artifact_types(env):
-    """OKF-init: sätt default artifact_type 'learning' på befintliga
-    ai.memory-poster som saknar artifact_type_id (task 1.5). Idempotent."""
-    try:
-        learning = env.ref('ai_agent_core.artifact_type_learning',
-                           raise_if_not_found=False)
-        if not learning:
-            _logger.warning('OKF: learning artifact type saknas — hoppar default')
-            return
-        memories = env['ai.memory'].search([('artifact_type_id', '=', False)])
-        if memories:
-            memories.write({'artifact_type_id': learning.id})
-            _logger.info('OKF: satte default artifact_type learning på %s poster',
-                         len(memories))
-    except Exception as e:
-        _logger.warning('OKF-init default artifact types failed (non-fatal): %s', e)
 
 GRILL_BLOCK = """## Interview protocol (GRILL)
 
@@ -568,6 +527,19 @@ def post_init_hook(env):
     # Körs här och inte i migration 1.11 — där fanns inte tabellen ännu.
     okf_ensure_search_infrastructure(env)
 
+    # Personal/company memory: search_vector + GIN + pgvector-index.
+    #
+    # VARFÖR DEN ANROPAS HÄR: manifestet pekade tidigare på
+    # post_init_hook_personal_memory som 'post_init_hook', vilket gjorde att
+    # DENNA funktion (post_init_hook) aldrig kördes — och därmed varken
+    # _ensure_default_model, okf_ensure_search_infrastructure eller
+    # Quest/Skill Builder. Följden i drift: kolumnen search_vector saknades
+    # på ai_personal_memory, BM25-sökningen kraschade med
+    # 'column "search_vector" does not exist', transaktionen förgiftades
+    # (InFailedSqlTransaction) och /ai/stream svarade HTTP 500 →
+    # "Anslutningen till AI-servern bröts" (session 21772, 2026-09-22).
+    post_init_hook_personal_memory(env)
+
     # Quest Builder
     if not env['ai.coworker'].search_count([('name', '=', 'Quest Builder')]):
         env['ai.coworker'].create({
@@ -612,11 +584,12 @@ def post_init_hook(env):
         _logger.info('AGE extension skipped — managed by DBA')
 
         # 2. Create graph if not exists
-        if _age_graph_exists(cr):
-            _logger.info('odoo_mind graph already exists')
-        else:
+        cr.execute("SELECT 1 FROM ag_catalog.ag_graph WHERE name = 'odoo_mind'")
+        if not cr.fetchone():
             cr.execute("SELECT * FROM ag_catalog.create_graph('odoo_mind')")
             _logger.info('Created odoo_mind graph')
+        else:
+            _logger.info('odoo_mind graph already exists')
 
         # 3. Create cron_sync_graph if not exists
         cron = env['ir.cron'].search([

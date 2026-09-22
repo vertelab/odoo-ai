@@ -2,12 +2,13 @@
 <!--
     Vertel-skills för Allmän assistent (default-coworkern).
 
-    Fyra operativa skills som ger assistenten kunskap om VERTELS verktyg och
+    Fem skills: fyra operativa som ger assistenten kunskap om VERTELS verktyg och
     konventioner — inte generisk LLM-kunskap:
       - vertel-skills    (meta: hur skills fungerar hos oss)
       - vertel-infra     (var infrastrukturen och dokumentationen ligger)
       - vertel-openspec  (spec-driven planering)
       - vertel-clicktest (klicktest/canary-motorn)
+      - okf-summarize    (maskinell: OKF-cronens sammanfattning)
 
     Utanför noupdate → skapas vid BÅDE install och uppgradering (modul-update, se odoo-18-skillen).
     Repo är källan för innehållet; redigera här, inte i UI:t.
@@ -171,12 +172,66 @@ salt-call --local state.apply odoo.clicktest \
             ]]></field>
         </record>
 
-        <!-- ── Koppla på Allmän assistent (Allmän kärna — ledaragenten) ──
-             Utanför noupdate → appliceras även vid uppgradering.
-             (4, ref, 0) = add link — idempotent, rör inte befintliga skills. -->
-        <record id="agent_default_core" model="ai.agent">
-            <field name="skill_ids" eval="[(4, ref('skill_vertel_skills'), 0), (4, ref('skill_vertel_infra'), 0), (4, ref('skill_vertel_openspec'), 0), (4, ref('skill_vertel_clicktest'), 0)]"/>
+        <!-- ── 5. okf-summarize (maskinell — anropas av cronen) ────────── -->
+        <record id="skill_okf_summarize" model="ai.skill">
+            <field name="name">okf-summarize</field>
+            <field name="category">general</field>
+            <field name="source_type">odoo</field>
+            <field name="description">Sammanfatta en text till en kort, sökbar sammanfattning för OKF-indexet. Anropas av OKF-cronen när en posts text överstiger den konfigurerade gränsen. Behåller fakta, namn, siffror och datum — tappar ingen innebörd.</field>
+            <field name="trigger_keywords">sammanfatta, okf, sammanfattning, indexera</field>
+            <field name="recipe_text"><![CDATA[
+# Skill: okf-summarize — sammanfatta för OKF-indexet
+
+## När du anropas
+OKF-cronen (var 5:e minut) har hittat en post vars text överstiger
+`ai_agent_core.okf_summary_max_chars` (default 2000). Texten är för lång för
+att bli ett koncept — den måste sammanfattas först.
+
+## Vad du får
+En text, avgränsad med `---`. Den är HELA postens innehåll (en webbsidas
+arch_db, ett blogginläggs content, ett projekts description …).
+
+## Vad du ska göra
+1. Skriv en sammanfattning på **högst den angivna teckenlängden**.
+2. **Behåll fakta**: namn, siffror, datum, belopp, artikelnummer, e-postadresser.
+3. **Tappa ingen innebörd.** Om texten säger tre saker ska sammanfattningen
+   säga tre saker — kortare.
+4. **Hitta inte på.** Står det inte i texten ska det inte stå i sammanfattningen.
+5. Svara på **textens eget språk**.
+
+## Vad du INTE ska göra
+- Ingen inledning ("Här är en sammanfattning …")
+- Ingen förklaring, ingen rubrik, ingen punktlista om texten inte är en lista
+- Ingen markdown-formatering — ren text
+- Ingen översättning
+
+## Format
+Svara med ENDAST sammanfattningen. Ingenting annat.
+
+## Varför det spelar roll
+Sammanfattningen blir ett OKF-koncept: den embeddas (1024d vektor) och går in
+i `search_vector` (svensk fulltext). Den är det enda av posten som är SÖKBART.
+Tappar du ett namn i sammanfattningen är namnet osökbart — originalet finns
+kvar i `okf_text`, men ingen fråga når det.
+            ]]></field>
         </record>
 
     </data>
+
+    <!-- ── Koppla skillsen på Allmän assistent (Allmän kärna) ──────────────
+         FYND (2026-09-22, under installation på social): en `<record>` på
+         `agent_default_core` här hade INGEN verkan. Xmlid:n är skapad i
+         `default_coworker.xml` med `<data noupdate="1">` → `noupdate=true`
+         i ir_model_data → Odoos `_load_records` hoppar över ALL vidare
+         bearbetning av den, även från denna fil.
+
+         Konsekvensen syntes bara i databasen: `skill_okf_summarize` skapades
+         (den är ny), men kopplingen till agenten uteblev — tyst. Kommentaren
+         som stod här ("appliceras även vid uppgradering") var alltså fel.
+
+         Fixen följer mönstret från `default_coworker.xml`: en `<function>`
+         UTANFÖR noupdate, som körs vid både install och update. Metoden är
+         idempotent — den lägger bara till länkar som saknas. -->
+    <function model="ai.agent" name="_ensure_default_skills" eval="[obj()]"/>
+
 </odoo>

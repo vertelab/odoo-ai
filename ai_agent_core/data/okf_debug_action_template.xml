@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!--
+        MALL: OKF-valet i debug-menyn (okf-mixin F3b.6).
+
+        Denna fil är en MALL, inte en aktiv åtgärd — den binder ingen modell
+        (kärnan känner ingen domän). Varje bryggmodul kopierar blocket och
+        byter ut `model_<modell>` mot sin egen modell.
+
+        Varför `base.group_no_one`: det är gruppen som bara är aktiv i
+        debug-läge — samma mekanism som *Meta data* och *Data* använder.
+        Ingen egen debug-flagga behövs.
+
+        Varför åtgärden är generisk och bindningen per modell:
+        `binding_model_id` måste peka på en konkret modell, och modellen bor
+        i bryggmodulen. Kärnan kan inte binda en åtgärd till `website.page`
+        — den känner inte modellen. Men *åtgärden* är identisk för alla, så
+        den bor i kärnan och bryggan deklarerar bara bindningen.
+
+        EXEMPEL (website_ai i odoo-website):
+
+            <record id="action_okf_website_page" model="ir.actions.server">
+                <field name="name">OKF</field>
+                <field name="model_id" ref="website.model_website_page"/>
+                <field name="binding_model_id" ref="website.model_website_page"/>
+                <field name="binding_view_types">form</field>
+                <field name="groups_id" eval="[(4, ref('base.group_no_one'))]"/>
+                <field name="state">code</field>
+                <field name="code">action = env['ai.okf.mixin'].action_open_okf()</field>
+            </record>
+
+        Upprepa per modell. Fyra rader per modell, ingen Python.
+    -->
+</odoo>

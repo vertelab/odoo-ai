@@ -216,7 +216,7 @@ class TestEmbeddingBackfill(common.TransactionCase):
         fake = [0.5] * 1024
         with patch.object(type(self.env['ai.provider']), '_get_embedding',
                           return_value=fake):
-            filled = self.env['ai.memory']._okf_cron_backfill_embeddings(
+            filled = self.env['ai.okf.concept']._okf_cron_backfill_embeddings(
                 batch_size=50)
 
         self.assertGreaterEqual(filled, 1)
@@ -257,7 +257,7 @@ class TestEmbeddingBackfill(common.TransactionCase):
             ('concept_key', '=', 'test.backfill.idempotent')])
         with patch.object(type(self.env['ai.provider']), '_get_embedding',
                           return_value=[0.9] * 1024):
-            self.env['ai.memory']._okf_cron_backfill_embeddings(batch_size=50)
+            self.env['ai.okf.concept']._okf_cron_backfill_embeddings(batch_size=50)
         after = self.Concept.search_count([
             ('concept_key', '=', 'test.backfill.idempotent')])
         self.assertEqual(before, after, 'ingen ny version av en klar rad')
@@ -282,7 +282,7 @@ class TestEmbeddingBackfill(common.TransactionCase):
 
         with patch.object(type(self.env['ai.provider']), '_get_embedding',
                           return_value=None):
-            self.env['ai.memory']._okf_cron_backfill_embeddings(batch_size=50)
+            self.env['ai.okf.concept']._okf_cron_backfill_embeddings(batch_size=50)
 
         concept.invalidate_recordset()
         self.assertEqual(concept.embedding_state, 'pending')
@@ -307,7 +307,7 @@ class TestEmbeddingBackfill(common.TransactionCase):
 
         with patch.object(type(self.env['ai.provider']), '_get_embedding',
                           return_value=[0.1] * 1024):
-            self.env['ai.memory']._okf_cron_backfill_embeddings(batch_size=50)
+            self.env['ai.okf.concept']._okf_cron_backfill_embeddings(batch_size=50)
 
         concept.invalidate_recordset()
         self.assertEqual(concept.embedding_state, 'skipped')

@@ -18,7 +18,12 @@ from odoo.tests import common, tagged
 
 @tagged('okf', 'memory', 'post_install', '-at_install')
 class TestOkfDirtyBridge(common.TransactionCase):
-    """6.4/6.5: flagga sätts vid skrivning, cron indexerar och rensar."""
+    """6.4/6.5: flagga sätts vid skrivning, cron indexerar och rensar.
+
+    UPPDATERAD 2026-09-22 (okf-mixin F2.9): indexeringen går nu via
+    `ai.okf.mixin._okf_cron_index_dirty()` — `ai.memory` är pensionerad
+    som OKF-konsument och `_okf_cron_index_dirty_legacy` finns inte längre.
+    """
 
     @classmethod
     def setUpClass(cls):
@@ -110,8 +115,7 @@ class TestOkfDirtyBridge(common.TransactionCase):
             'content': 'Kunden vill ha fakturor via e-post.',
             'category': 'fact',
         })
-        written = self.Line._okf_cron_index_dirty_legacy(
-            'ai.personal.memory')
+        written = self.env['ai.okf.mixin']._okf_cron_index_dirty(batch_size=10)
 
         self.assertGreaterEqual(written, 1)
         mem.invalidate_recordset(['okf_dirty', 'okf_indexed_at'])
@@ -129,7 +133,7 @@ class TestOkfDirtyBridge(common.TransactionCase):
             'content': 'Vi använder tvåveckorssprintar.',
             'category': 'knowledge',
         })
-        written = self.Line._okf_cron_index_dirty_legacy('ai.company.memory')
+        written = self.env['ai.okf.mixin']._okf_cron_index_dirty(batch_size=10)
         self.assertGreaterEqual(written, 1)
 
         concept = self.Concept.search([
@@ -157,12 +161,12 @@ class TestOkfDirtyBridge(common.TransactionCase):
             'content': 'Idempotent post.',
             'category': 'fact',
         })
-        first = self.Line._okf_cron_index_dirty_legacy('ai.personal.memory')
+        first = self.env['ai.okf.mixin']._okf_cron_index_dirty(batch_size=10)
         self.assertGreaterEqual(first, 1)
 
         before = self.Concept.search_count([
             ('concept_key', '=', 'ai.personal.memory,%s' % mem.id)])
-        second = self.Line._okf_cron_index_dirty_legacy('ai.personal.memory')
+        second = self.env['ai.okf.mixin']._okf_cron_index_dirty(batch_size=10)
         after = self.Concept.search_count([
             ('concept_key', '=', 'ai.personal.memory,%s' % mem.id)])
 
@@ -176,7 +180,7 @@ class TestOkfDirtyBridge(common.TransactionCase):
             'content': '',
             'category': 'fact',
         })
-        self.Line._okf_cron_index_dirty_legacy('ai.personal.memory')
+        self.env['ai.okf.mixin']._okf_cron_index_dirty(batch_size=10)
         mem.invalidate_recordset(['okf_dirty'])
         self.assertFalse(mem.okf_dirty, 'tombstone: flaggan rensas ändå')
 
@@ -194,10 +198,15 @@ class TestOkfDirtyBridge(common.TransactionCase):
     def test_unknown_model_is_safe(self):
         """6.3: en modell som inte finns ska inte krascha cronen."""
         self.assertEqual(
-            self.Line._okf_cron_index_dirty_legacy('finns.inte'), 0)
+            self.env['ai.okf.mixin']._okf_cron_index_dirty(batch_size=1), 0)
 
-    def test_full_cron_covers_all_three_models(self):
-        """Bryggan ska täcka ai.memory OCH båda legacy-modellerna."""
+    def test_full_cron_covers_both_legacy_models(self):
+        """Bryggan ska täcka båda legacy-modellerna.
+
+        FYND (okf-mixin F2.9): testet täckte tidigare TRE modeller —
+        `ai.memory` räknades in. Den är pensionerad som OKF-konsument
+        (modellen är RAG-kapacitet, inte kunskap), så nu är det två.
+        """
         p = self.Personal.create({
             'user_id': self.user.id, 'content': 'Personligt.',
             'category': 'fact'})
@@ -205,9 +214,7 @@ class TestOkfDirtyBridge(common.TransactionCase):
             'company_id': self.env.company.id, 'content': 'Företagsvisst.',
             'category': 'knowledge'})
 
-        with patch.object(type(self.Line), '_okf_cron_index_dirty_memories',
-                          return_value=0):
-            total = self.Line._okf_cron_index_dirty()
+        total = self.env['ai.okf.mixin']._okf_cron_index_dirty()
 
         self.assertGreaterEqual(total, 2)
         p.invalidate_recordset(['okf_dirty'])

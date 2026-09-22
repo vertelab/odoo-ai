@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!--
+        OKF debug-vy — postens OKF-fält (okf-mixin F3b).
+
+        Öppnas från skalbaggens OKF-val (action_open_okf). Skrivskyddad:
+        fälten GENERERAS av indexeraren, de redigeras inte för hand. Att
+        redigera okf_text vore att skapa en andra sanning som nästa
+        _okf_text_source() skriver över — vill man ändra texten ändrar man
+        källan.
+
+        Vyn är generisk (ingen modell specad i fältlistan): den används för
+        varje modell som bär mixinen.
+    -->
+    <record id="view_okf_record_form" model="ir.ui.view">
+        <field name="name">ai.okf.mixin.debug.form</field>
+        <field name="model">ai.okf.mixin</field>
+        <field name="arch" type="xml">
+            <form string="OKF" create="false" edit="false">
+                <sheet>
+                    <div class="alert alert-warning" role="alert"
+                         invisible="not okf_dirty">
+                        <strong>OKF-fälten är inaktuella.</strong>
+                        <span> En cron kör normalt inom 5 minuter. Vill du
+                        köra nu, använd knappen nedan.</span>
+                    </div>
+                    <div class="alert alert-success" role="alert"
+                         invisible="okf_dirty">
+                        <span>OKF-fälten är aktuella.</span>
+                    </div>
+
+                    <group>
+                        <group string="Status">
+                            <field name="okf_dirty"/>
+                            <field name="okf_indexed_at"/>
+                        </group>
+                        <group string="Struktur">
+                            <field name="okf_tags" widget="json"/>
+                            <field name="okf_links" widget="json"/>
+                        </group>
+                    </group>
+
+                    <notebook>
+                        <page string="Sammanfattning (söks och embeddas)"
+                              name="summary">
+                            <field name="okf_summary" readonly="1"
+                                   nolabel="1"/>
+                        </page>
+                        <page string="Text (hela kopian)" name="text">
+                            <field name="okf_text" readonly="1" nolabel="1"/>
+                        </page>
+                    </notebook>
+                </sheet>
+                <footer>
+                    <button name="action_okf_index_now" type="object"
+                            string="Kör indexering nu" class="btn-primary"
+                            invisible="not okf_dirty"/>
+                    <button name="action_okf_show_concepts" type="object"
+                            string="Visa koncepten"/>
+                    <button string="Stäng" class="btn-secondary"
+                            special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+</odoo>
