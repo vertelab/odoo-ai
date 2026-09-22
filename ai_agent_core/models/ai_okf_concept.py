@@ -129,6 +129,11 @@ class AIOkfConcept(models.Model):
     attribution = fields.Json(
         string='Attribution',
         help='Per-rad källattribution: [{"line": 1, "source_ref": "res.partner,42"}, ...]')
+    source_text = fields.Text(
+        'Source Text',
+        help='Källtexten som summary härleddes ur (okf-mixin D5). Styr '
+             'versionsbeslutet: en LLM som formulerar om samma text ger '
+             'ingen ny version, men en faktisk källändring gör det.')
     source_ref = fields.Char(
         string='Source Ref',
         help='Primary source reference, t.ex. res.partner,42')
