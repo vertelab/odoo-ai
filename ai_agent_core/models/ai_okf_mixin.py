@@ -425,17 +425,55 @@ class AIOkfMixin(models.AbstractModel):
     # Indexeringslistan — utökningsbar av bryggor
     # ==================================================================
 
+    #: Modeller som ska dirty-indexeras, utöver kärnans egna.
+    #: En bryggmodul lägger till sina i sin `_register_hook()`:
+    #:
+    #:     class WebsitePage(models.Model):
+    #:         _inherit = ['website.page', 'ai.okf.mixin']
+    #:
+    #:         def _register_hook(self):
+    #:             res = super()._register_hook()
+    #:             self.env['ai.okf.mixin']._okf_register_indexable('website.page')
+    #:             return res
+    #:
+    #: VARFÖR REGISTRERING OCH INTE ÖVERRIDNING: `_okf_indexable_models()`
+    #: är `@api.model` på en ABSTRAKT modell. En brygga som ärver mixinen på
+    #: `website.page` kan inte påverka vad `ai.okf.mixin._okf_indexable_models()`
+    #: returnerar — `@api.model`-uppslagningen sker på den abstrakta modellen,
+    #: inte på den ärvande. Mätt i test på luke18 2026-09-22: en överridning
+    #: på `website.page` hade ingen verkan på cronen.
+    _okf_extra_indexable_models = None  # sätts lazy (klassattribut får inte vara muterbart)
+
+    @api.model
+    def _okf_register_indexable(self, model_name):
+        """Registrera en modell för dirty-indexering (kallas av bryggor).
+
+        Idempotent. Modellen behöver inte finnas än — listan filtreras mot
+        `self.env` när cronen kör.
+        """
+        if self._okf_extra_indexable_models is None:
+            type(self)._okf_extra_indexable_models = []
+        if model_name not in self._okf_extra_indexable_models:
+            self._okf_extra_indexable_models.append(model_name)
+            _logger.info('OKF: registrerade %s för dirty-indexering',
+                         model_name)
+        return True
+
     @api.model
     def _okf_indexable_models(self):
         """Modeller som bär mixinen och ska dirty-indexeras.
 
-        Basen returnerar de modeller KÄRNAN äger (legacy-minnena). En
-        bryggmodul överrider denna och lägger till sina — kärnan namnger
-        aldrig en domänmodell.
+        Basen returnerar de modeller KÄRNAN äger (legacy-minnena) plus de
+        bryggor har registrerat via `_okf_register_indexable()`. Kärnan
+        namnger aldrig en domänmodell.
 
         Modeller som inte finns i miljön hoppas över utan fel.
         """
-        return ['ai.personal.memory', 'ai.company.memory']
+        models = ['ai.personal.memory', 'ai.company.memory']
+        for name in (self._okf_extra_indexable_models or []):
+            if name not in models:
+                models.append(name)
+        return models
 
     @api.model
     def _okf_cron_index_dirty(self, batch_size=50):
