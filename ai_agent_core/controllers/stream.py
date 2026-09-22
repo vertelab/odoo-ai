@@ -18,6 +18,13 @@ from html import escape
 from odoo import http, fields, api
 from odoo.http import request, Response
 
+# DSML-parser (DeepSeek kan skriva tool-anrop som text i content).
+# Modulniva: anvands inuti nastlade generatorer, sa lokala importer i
+# generate()/_stream() ar kansliga for anropsordning (UnboundLocalError).
+from odoo.addons.ai_agent_core.core.dsml import (  # noqa: E402
+    contains_dsml, parse_dsml, strip_dsml,
+)
+
 # Import access control helper (quest-access-control change)
 # Fånga ALLA undantag: vid tidig import (stream.py → ai_coworker → models)
 # kan AssertionError uppstå (base_sparse_field ej laddad), vilket annars
@@ -245,6 +252,51 @@ class AIStreamController(http.Controller):
                     )
                 system_prompt = (system_prompt or '') + '\n'.join(skill_lines)
 
+        # -- Automatisk skill-aktivering via trigger-nyckelord ──────────
+        # Katalogen ovan LOVAR modellen att skills "also activate
+        # automatically when user's message matches trigger keywords" —
+        # men bara /skill-name var implementerat. Har matchar vi prompten
+        # mot skillsens triggers och injicerar receptet for de basta
+        # traffarna. Litet antal (MAX_AUTO_SKILLS) sa prompten inte svaller
+        # — samma lardom som for verktygsvalet.
+        MAX_AUTO_SKILLS = 2
+        _explicit_skill = bool(
+            prompt and prompt.startswith('/') and
+            '/' not in prompt.split()[0][1:])
+        if (quest and quest.exists() and not _explicit_skill
+                and prompt):
+            try:
+                _auto = []
+                _ptext = prompt.lower()
+                for _s in quest.get_available_skills():
+                    _trig = [
+                        t.strip().lower()
+                        for t in (_s.get('trigger_keywords') or '').split(',')
+                        if t.strip()
+                    ]
+                    if not _trig:
+                        continue
+                    _hits = [t for t in _trig if t in _ptext]
+                    if _hits:
+                        _auto.append((len(_hits), _hits, _s))
+                _auto.sort(key=lambda x: -x[0])
+                for _n, _hits, _s in _auto[:MAX_AUTO_SKILLS]:
+                    _recipe = (_s.get('recipe_text') or '').strip()
+                    if not _recipe:
+                        continue
+                    system_prompt = (
+                        f"[SKILL AUTO-ACTIVATED: {_s['name']}]\n"
+                        f"Matched triggers: {', '.join(_hits)}\n"
+                        f"Follow the recipe below for this task:\n\n"
+                        f"{_recipe}\n\n"
+                        f"[END SKILL: {_s['name']}]\n\n"
+                    ) + (system_prompt or '')
+                    _logger.info(
+                        'Auto-skill aktiverad: %s (triggers=%s)',
+                        _s['name'], _hits)
+            except Exception as e:
+                _logger.warning('Auto-skill aktivering misslyckades: %s', e)
+
         # Aktuell användare + minne via gemensam injiceringsfunktion
         # (agent-memory-governance 3.x — D1/D2)
         if quest and quest.exists():
@@ -273,6 +325,33 @@ class AIStreamController(http.Controller):
             try:
                 session = request.env['ai.coworker.session'].sudo().browse(int(session_id))
                 if session.exists():
+                    # ── Rekordkontext (ai-coworker-record-context 5.1) ────
+                    # Frontend skickar vilken record (eller markering)
+                    # användaren hade öppen. Sätts på sessionen — den
+                    # kanoniska bäraren (D1). Sätts BARA när sessionen
+                    # saknar kontext, så en följdfråga i samma tråd inte
+                    # skriver över recorden med en tom vy.
+                    if not session.ai_record_model:
+                        try:
+                            _ctx_model = kw.get('context_model')
+                            _ctx_ids = kw.get('context_res_ids')
+                            _ctx_id = kw.get('context_res_id')
+                            if _ctx_model and _ctx_model in request.env:
+                                if _ctx_ids:
+                                    _ids = [int(i) for i in str(_ctx_ids).split(',') if i.strip()]
+                                    if len(_ids) > 1:
+                                        session._set_records_context(
+                                            request.env[_ctx_model].sudo().browse(_ids),
+                                            max_records=quest._ai_record_setting(
+                                                'ai_record_max_records') if quest else None,
+                                            include_chatter=bool(quest._ai_record_setting(
+                                                'ai_record_include_chatter')) if quest else False)
+                                elif _ctx_id:
+                                    session._set_record_context(
+                                        request.env[_ctx_model].sudo().browse(int(_ctx_id)))
+                        except Exception as e:
+                            _logger.warning('stream: rekordkontext misslyckades: %s', e)
+
                     # Inject quest + session memories into system prompt
                     if quest:
                         memories_text = _get_quest_memories(
@@ -1354,6 +1433,48 @@ class AIStreamController(http.Controller):
         }), content_type='application/json')
 
     # === Session document API ===
+
+    @http.route('/ai/session/<int:session_id>/record_context',
+                type='json', auth='user', methods=['POST'], csrf=False,
+                sitemap=False)
+    def session_record_context(self, session_id, model=None, res_id=None,
+                               res_ids=None, **kw):
+        """Koppla en record (eller markering) till en session.
+
+        Anropas av formulär-/list-vyns "Fråga AI om denna post"-åtgärd.
+        Sätter sessionens ai_record_*-fält — den kanoniska bäraren (D1).
+
+        Body: {session_id, model, res_id}     — singular (form-vy)
+              {session_id, model, res_ids:[…]} — plural (list-vy)
+
+        OBS (D1b): `_ai_context_model`/`_ai_context_id` sätts ALDRIG här.
+        De betyder "aktuell session" och läses av HITL, NATS-kontexten och
+        sessionsminnena.
+        """
+        session = request.env['ai.coworker.session'].browse(int(session_id))
+        if not session.exists():
+            return {'success': False, 'error': 'Session not found'}
+        if not model or model not in request.env:
+            return {'success': False, 'error': 'Unknown model: %s' % model}
+        coworker = session.coworker_id
+        try:
+            if res_ids:
+                ids = [int(i) for i in res_ids]
+                session._set_records_context(
+                    request.env[model].browse(ids),
+                    max_records=coworker._ai_record_setting(
+                        'ai_record_max_records') if coworker else None,
+                    include_chatter=bool(coworker._ai_record_setting(
+                        'ai_record_include_chatter')) if coworker else False)
+                return {'success': True, 'count': len(ids)}
+            if res_id:
+                session._set_record_context(
+                    request.env[model].browse(int(res_id)))
+                return {'success': True, 'count': 1}
+            return {'success': False, 'error': 'res_id eller res_ids krävs'}
+        except Exception as e:
+            _logger.warning('record_context: misslyckades: %s', e)
+            return {'success': False, 'error': str(e)}
 
     @http.route('/ai/session/<int:session_id>/documents', type='http', auth='public',
                 methods=['GET'], csrf=False, sitemap=False)
@@ -3166,6 +3287,13 @@ class AIOpenAIAPI(http.Controller):
                 tool_call_delta_buf = {}   # index → {'id','name','arguments','partial_idx'}
                 response_id = f'chatcmpl-{coworker_id}-{fields.Datetime.now().timestamp()}'
                 created = int(fields.Datetime.now().timestamp())
+                # DSML-hallare (2026-09-22): delad mellan generate() och
+                # den nästlade _stream(). Vi MUTERAR dict:en i stället för
+                # att tilldela namnet — annars blir dsml_hold en lokal i
+                # _stream() och första läsningen kastar UnboundLocalError
+                # (dödar hela SSE-strömmen).
+                _dsml = {'hold': [], 'prefixes': (
+                    '<\uff5c\uff5cDSML\uff5c\uff5c', '<||DSML||')}
 
                 try:
                     provider = _gen_provider
@@ -3210,7 +3338,24 @@ class AIOpenAIAPI(http.Controller):
                                 yield f'data: {json.dumps({"id": response_id, "object": "chat.completion.chunk", "created": created, "model": model_ref, "choices": [{"index": 0, "delta": {"reasoning_content": event.token}}]})}\n\n'
                             elif event.type == 'token':
                                 full_response.append(event.token)
-                                yield f'data: {json.dumps({"id": response_id, "object": "chat.completion.chunk", "created": created, "model": model_ref, "choices": [{"index": 0, "delta": {"content": event.token}}]})}\n\n'
+                                # DSML-hallare: buffra tills vi vet om svaret
+                                # ar DSML-markup eller vanlig text. Annars
+                                # lacker markup till anvandaren och kan inte
+                                # tas tillbaka (streaming ar oaterkallelig).
+                                _tok = event.token
+                                if _dsml['hold'] is not None:
+                                    _dsml['hold'].append(_tok)
+                                    _acc = ''.join(_dsml['hold'])
+                                    if contains_dsml(_acc):
+                                        pass  # DSML — konverteras vid done
+                                    elif any(_p.startswith(_acc) or _acc.startswith(_p)
+                                             for _p in _dsml['prefixes']):
+                                        pass  # avvakta — kan bli DSML
+                                    else:
+                                        yield f'data: {json.dumps({"id": response_id, "object": "chat.completion.chunk", "created": created, "model": model_ref, "choices": [{"index": 0, "delta": {"content": _acc}}]})}\n\n'
+                                        _dsml['hold'] = None
+                                else:
+                                    yield f'data: {json.dumps({"id": response_id, "object": "chat.completion.chunk", "created": created, "model": model_ref, "choices": [{"index": 0, "delta": {"content": _tok}}]})}\n\n'
                             elif event.type == 'tool_call_start':
                                 tc = event.tool_call
                                 idx = len(aggregated_tool_calls)
@@ -3252,6 +3397,32 @@ class AIOpenAIAPI(http.Controller):
                                 # — skicka full args nu så Pi bygger rätt anrop).
                                 yield f'data: {json.dumps({"id": response_id, "object": "chat.completion.chunk", "created": created, "model": model_ref, "choices": [{"index": 0, "delta": {"tool_calls": [{"index": idx, "function": {"name": tc.name, "arguments": full_args}}]}}]})}\n\n'
                             elif event.type == 'done':
+                                # DSML: DeepSeek kan skriva tool-anrop som
+                                # text i content istallet for strukturerade
+                                # tool_calls. Konvertera dem sa de exekveras.
+                                if _dsml['hold']:
+                                    _held = ''.join(_dsml['hold'])
+                                    if not contains_dsml(_held):
+                                        yield f'data: {json.dumps({"id": response_id, "object": "chat.completion.chunk", "created": created, "model": model_ref, "choices": [{"index": 0, "delta": {"content": _held}}]})}\n\n'
+                                    _dsml['hold'] = None
+                                if not aggregated_tool_calls:
+                                    _raw = ''.join(full_response)
+                                    if contains_dsml(_raw):
+                                        _dsml_calls = parse_dsml(_raw)
+                                        if _dsml_calls:
+                                            for _i, _dc in enumerate(_dsml_calls):
+                                                aggregated_tool_calls.append({
+                                                    'id': _dc['id'],
+                                                    'name': _dc['function']['name'],
+                                                    'arguments': _dc['function']['arguments'],
+                                                })
+                                                yield f'data: {json.dumps({"id": response_id, "object": "chat.completion.chunk", "created": created, "model": model_ref, "choices": [{"index": 0, "delta": {"tool_calls": [{"index": _i, "id": _dc["id"], "type": "function", "function": {"name": _dc["function"]["name"], "arguments": _dc["function"]["arguments"]}}]}}]})}\n\n'
+                                            # Rensa markup ur den sparade texten
+                                            _clean = strip_dsml(_raw)
+                                            full_response[:] = [_clean] if _clean else []
+                                            _logger.info(
+                                                'DSML: konverterade %d tool-call(s) ur content-text',
+                                                len(_dsml_calls))
                                 # Verklig usage — bokförs på sessionen.
                                 usage_state['input'] = getattr(
                                     event, 'input_tokens', 0) or 0
@@ -3269,50 +3440,80 @@ class AIOpenAIAPI(http.Controller):
                                 yield f'data: {json.dumps({"error": {"message": event.message}})}\n\n'
                                 yield 'data: [DONE]\n\n'
 
+                    # ── ÄKTA STREAMING (2026-09-22) ──────────────────
+                    # Tidigare samlades ALLA chunks i en lista och yieldades
+                    # först när generatorn var klar → klienten såg ingenting
+                    # förrän hela svaret var genererat (långa svar = frusen
+                    # UI). Nu driver en bakgrundstråd den async-generatorn
+                    # och lägger chunks i en kö som yieldas direkt.
+                    import queue as _queue
+                    import threading as _threading
+
                     aloop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(aloop)
                     usage_state = {'input': 0, 'output': 0}
-                    try:
-                        _agen = _stream()
+                    _chunk_q = _queue.Queue(maxsize=256)
+                    _SENTINEL = object()
+                    _stream_err = {'exc': None}
 
-                        async def _collect(agen):
-                            """Collect all chunks from the async generator,
-                            always closing it so no pending task survives
-                            loop.close() (avoids asyncio's
-                            'Task was destroyed but it is pending!' warning).
-                            """
-                            result = []
-                            try:
-                                async for chunk in agen:
-                                    result.append(chunk)
-                            finally:
+                    def _drive_stream():
+                        """Kör async-generatorn i egen loop, putta chunks."""
+                        asyncio.set_event_loop(aloop)
+                        try:
+                            async def _run(agen):
                                 try:
-                                    await agen.aclose()
-                                except Exception:
-                                    pass
-                            return result
+                                    async for chunk in agen:
+                                        _chunk_q.put(chunk)
+                                finally:
+                                    try:
+                                        await agen.aclose()
+                                    except Exception:
+                                        pass
 
-                        results = aloop.run_until_complete(_collect(_agen))
-                    finally:
-                        # Drain: ge eventuella pending async_generator_athrow-tasks
-                        # (från GC:ade inre generatorer) tid att slutföras innan
-                        # loopen stängs — annars "Task was destroyed" vid GC.
-                        import asyncio as _dbg
+                            _agen = _stream()
+                            aloop.run_until_complete(_run(_agen))
+                        except Exception as _e:
+                            _stream_err['exc'] = _e
+                        finally:
+                            # Drain: pending athrow-tasks innan loopen stängs
+                            try:
+                                _dbg_tasks = asyncio.all_tasks(aloop)
+                                if _dbg_tasks:
+                                    aloop.run_until_complete(
+                                        asyncio.gather(*_dbg_tasks,
+                                                       return_exceptions=True))
+                            except Exception:
+                                pass
+                            try:
+                                if _gen_provider is not None:
+                                    aloop.run_until_complete(
+                                        _gen_provider.aclose())
+                            except Exception:
+                                _logger.warning(
+                                    'provider aclose failed', exc_info=True)
+                            aloop.close()
+                            _chunk_q.put(_SENTINEL)
+
+                    _thread = _threading.Thread(
+                        target=_drive_stream, daemon=True)
+                    _thread.start()
+
+                    # Yielda direkt medan tråden producerar.
+                    while True:
                         try:
-                            _dbg_tasks = _dbg.all_tasks(aloop)
-                            if _dbg_tasks:
-                                aloop.run_until_complete(
-                                    _dbg.gather(*_dbg_tasks, return_exceptions=True))
-                        except Exception:
-                            pass
-                        # Stäng providerns httpx-klient innan loopen stängs.
-                        try:
-                            if _gen_provider is not None:
-                                aloop.run_until_complete(_gen_provider.aclose())
-                        except Exception:
-                            _logger.warning(
-                                'provider aclose failed', exc_info=True)
-                        aloop.close()
+                            _item = _chunk_q.get(timeout=300)
+                        except _queue.Empty:
+                            _logger.error(
+                                'stream timeout: ingen chunk på 300s')
+                            break
+                        if _item is _SENTINEL:
+                            break
+                        yield _item
+
+                    _thread.join(timeout=30)
+
+                    if _stream_err['exc'] is not None:
+                        raise _stream_err['exc']
+
                     try:
                         tool_history = [
                             (tc['name'], tc['arguments'][:200])
@@ -3325,9 +3526,6 @@ class AIOpenAIAPI(http.Controller):
                         _gen_cr.commit()
                     finally:
                         _gen_cr.close()
-
-                    for chunk in results:
-                        yield chunk
 
                 except Exception as e:
                     try:
