@@ -17,12 +17,26 @@
     <!-- Cron: OKF efterfyllnad av saknade vektorer (okf-recall-path fas 3.3).
          Koncept skrivna innan embeddings fungerade har tom vektorkolumn.
          Denna cron räddar eftersläntrare; nya koncept får vektor direkt i
-         _okf_upsert. Liten batch — embeddings är API-anrop, inte gratis. -->
+         _okf_upsert.
+
+         BATCH 20 → 100 (2026-09-22). Mätt: 20 koncept tar 4–16 s, alltså
+         0,2–0,8 s per koncept. 100 koncept ≈ 20–80 s mot cronens
+         limit_time_real = 1200 s — marginalen är stor.
+
+         Varför höjningen: efter att loop-buggen fixades (fbd2c70d) töms kön
+         korrekt, men 20 per halvtimme gav ~4,5 h för en efterslänt på 450.
+         Med 100 tar samma kön ~2,5 h och en normal efterslänt (några tiotal)
+         går på en enda körning.
+
+         Varför inte högre: varje koncept är ett HTTP-anrop mot Bifrost.
+         Batchen är sekventiell, så en hängande gateway (20 s timeout × 3
+         försök = 60 s per koncept) förlänger körningen linjärt. 100 ger
+         fortfarande ~15 min marginal i värsta fall innan cronen dödas. -->
     <record id="cron_okf_backfill_embeddings" model="ir.cron">
         <field name="name">OKF: Efterfyll saknade vektorer</field>
         <field name="model_id" ref="model_ai_memory"/>
         <field name="state">code</field>
-        <field name="code">env['ai.memory']._okf_cron_backfill_embeddings(batch_size=20)</field>
+        <field name="code">env['ai.memory']._okf_cron_backfill_embeddings(batch_size=100)</field>
         <field name="interval_number">30</field>
         <field name="interval_type">minutes</field>
         <field name="active" eval="True"/>
