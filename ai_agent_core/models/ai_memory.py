@@ -439,7 +439,18 @@ class AIMemory(models.Model):
                 'väntar fortfarande', len(pending))
             return 0
 
-        model = provider.DEFAULT_EMBEDDING_MODEL
+        # Skicka INGET model-argument. `_effective_embedding_model` har
+        # prioritet argument → fält → konstant, och konstanten
+        # (DEFAULT_EMBEDDING_MODEL = 'text-embedding-3-small') är den modell
+        # Bifrost inte svarar på (tyst timeout 20 s × 3 försök). Genom att
+        # skicka in den som argument kringgicks provider-fältets värde
+        # (`mistral/mistral-embed`, svarar på 0,2 s) och efterfyllnaden
+        # fastnade i en timeout-loop — 450 koncept låg kvar som 'pending'
+        # medan cronen brann sin tid.
+        #
+        # Samma fälla som ai_memory_mixin._generate_embedding redan
+        # dokumenterar. Denna väg hade den kvar.
+        model = provider._effective_embedding_model()
         filled = 0
         for concept in pending:
             text = ' '.join(filter(None, [concept.title, concept.summary])).strip()
@@ -451,7 +462,7 @@ class AIMemory(models.Model):
                 continue
 
             vector = provider._get_embedding(
-                model=model, input=text, input_type='search_document')
+                input=text, input_type='search_document')
             if not vector:
                 # Lämna som pending — nästa körning försöker igen.
                 # Vi kan inte märka om raden utan att skapa en ny version,
