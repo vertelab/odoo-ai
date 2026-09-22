@@ -465,8 +465,7 @@ class AIMemory(models.Model):
                 input=text, input_type='search_document')
             if not vector:
                 # Lämna som pending — nästa körning försöker igen.
-                # Vi kan inte märka om raden utan att skapa en ny version,
-                # så vi rör den inte alls: 'pending' är redan sanningen.
+                # 'pending' är redan sanningen om raden; vi rör den inte.
                 continue
 
             if not provider._validate_embedding(vector, model=model,
@@ -475,39 +474,26 @@ class AIMemory(models.Model):
                 concept.write({'embedding_state': 'failed'})
                 continue
 
-            # VIKTIGT: koncept-rader är ADD-only (beslut 10). Vektorn kan
-            # alltså inte skrivas in i den befintliga raden — efterfyllnaden
-            # skapar en NY VERSION via _okf_upsert. Den gamla raden blir
-            # 'superseded' och den nya bär vektorn. Immutabiliteten är
-            # bevarad: historiken finns kvar, inget skrivs över.
-            owner = self._okf_owner_for_concept(concept)
-            self.env['ai.okf.concept']._okf_upsert(
-                artifact_type=concept.artifact_type_id or 'learning',
-                concept_key=concept.concept_key,
-                summary=concept.summary,
-                title=concept.title,
-                source_ref=concept.source_ref,
-                entities=concept.entities,
-                generated_by='backfill',
-                embedding=vector,
-                **owner
-            )
+            # Skriv vektorn PÅ SAMMA RAD — ingen ny version.
+            #
+            # VARFÖR (mätt 2026-09-22): efterfyllnaden gick tidigare via
+            # `_okf_upsert` med konceptets EGEN summary. `_okf_upsert`
+            # jämför innehållet (`_version_is_unchanged`) och returnerade
+            # den befintliga raden UTAN att skapa en version — alltså
+            # ingen `existing.write({'status': 'superseded'})` heller.
+            # Den gamla raden förblev 'pending', och nästa körning plockade
+            # samma 20 igen (order='id asc'). Oändlig loop: loggen sa
+            # "20 av 20 koncept fick vektor" medan kön stod still.
+            #
+            # `embedding` och `embedding_state` är livscykelfält i write()
+            # (se docstringen där): en vektor är härledd ur texten, inte en
+            # del av konceptets innebörd. Innehållet är fortfarande låst.
+            concept.write({
+                'embedding': vector,
+                'embedding_state': 'ready',
+            })
             filled += 1
 
         _logger.info('OKF efterfyllnad: %s av %s koncept fick vektor',
                      filled, len(pending))
         return filled
-
-    @api.model
-    def _okf_owner_for_concept(self, concept):
-        """Plocka ut ägar-argumenten från ett koncept för _okf_upsert.
-
-        _okf_upsert kräver exakt ett ägarfält — inte ett browse-id.
-        """
-        if concept.owner_company_id:
-            return {'owner_company_id': concept.owner_company_id.id}
-        if concept.owner_user_id:
-            return {'owner_user_id': concept.owner_user_id.id}
-        if concept.owner_coworker_id:
-            return {'owner_coworker_id': concept.owner_coworker_id.id}
-        return {'owner_company_id': self.env.company.id}

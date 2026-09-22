@@ -265,16 +265,36 @@ class AIOkfConcept(models.Model):
 
         Endast livscykelfält får ändras: status (superseded av
         _okf_upsert), archived (offboarding), verified (cron/process),
-        dirty (trigger-modellen) och embedding_state (efterfyllnadens
-        markering av om vektorn finns). Allt INNEHÅLL är låst.
+        dirty (trigger-modellen), embedding_state och embedding
+        (efterfyllnaden). Allt INNEHÅLL är låst.
 
         `embedding_state` är ett livscykelfält och inte innehåll: det säger
-        vad som hänt med raden, inte vad raden betyder. Själva vektorn är
-        innehåll och får därför ALDRIG skrivas direkt — efterfyllnaden
-        skapar en ny version (se _okf_cron_backfill_embeddings).
+        vad som hänt med raden, inte vad raden betyder.
+
+        `embedding` RÄKNAS OCKSÅ SOM LIVSCYKEL (rättat 2026-09-22).
+        Den tidigare regeln — "vektorn är innehåll, efterfyllnaden skapar en
+        ny version" — var en återvändsgränd i drift:
+
+          Efterfyllnaden anropar `_okf_upsert` med SAMMA summary som den
+          gamla raden. Då slår `_version_is_unchanged` till och returnerar
+          den befintliga raden UTAN att skapa en version. Ingen ny rad, och
+          därför ingen `existing.write({'status': 'superseded'})` — den
+          gamla raden förblev 'pending' för evigt. Efterfyllnaden plockade
+          samma 20 koncept varje körning (order='id asc'), loggade
+          "20 av 20 koncept fick vektor" och gjorde ingenting.
+
+        Bevis i drift: `user.140.role` hade 44 versioner där v44 var 'ready'
+        och v1–v42 låg kvar som 'pending' + 'stable'. Kön stod still på 449
+        medan cronen rapporterade framsteg var 30:e sekund.
+
+        En vektor är HÄRLEDD ur texten — den beskriver inte konceptet, den
+        är ett index över det. Att fylla i den ändrar inte vad raden betyder,
+        och att tvinga fram en ny version för den skapade bara en oändlig
+        svans av dubbletter. `summary`/`title`/`source_ref` är fortfarande
+        låsta; det är de som bär innebörden.
         """
         allowed = {'status', 'archived', 'verified', 'dirty',
-                   'embedding_state'}
+                   'embedding_state', 'embedding'}
         forbidden = set(vals) - allowed
         if forbidden:
             raise ValidationError(
