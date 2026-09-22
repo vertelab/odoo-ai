@@ -1898,6 +1898,27 @@ def _tool_odoo_create(env, model='', values=None):
             return _unknown_field_error(
                 model, unknown[0], valid_fields,
                 tool_name='odoo_create').to_json()
+    # mail.activity (och liknande modeller) har ett OBLIGATORISKT
+    # many2one-fält till ir.model (res_model_id) vars motsvarande Char-fält
+    # (res_model) är related+readonly. default_get()-mappningen som annars
+    # gör res_model -> res_model_id körs INTE vid create() från API, så
+    # anroparen måste skicka res_model_id — annars blir det
+    # "null value in column res_model_id violates not-null constraint".
+    # Vi mappar därför res_model -> res_model_id automatiskt (2026-09-22).
+    if 'res_model' in vals and 'res_model_id' not in vals:
+        _rm = vals.pop('res_model')
+        if _rm:
+            _im = env['ir.model'].sudo().search([('model', '=', _rm)], limit=1)
+            if _im:
+                vals['res_model_id'] = _im.id
+            else:
+                return _json.dumps({
+                    "error": f"Unknown res_model: {_rm}",
+                    "parameter": "res_model",
+                    "expected": "ett installerat modellnamn (ir.model.model)",
+                    "actual": _rm,
+                    "retryable": False,
+                })
     try:
         rec = Model.create(vals)
     except Exception as e:
@@ -1917,9 +1938,22 @@ def _tool_odoo_create(env, model='', values=None):
     }, default=str)
 
 
-def _tool_odoo_call_method(env, model='', id=None, method='', args=None):
-    """Anropa affärsmetod (action_*/button_* eller vitlista). HITL alltid."""
+def _tool_odoo_call_method(env, model='', id=None, ids=None, record_id=None,
+                           method='', args=None, **kwargs):
+    """Anropa affärsmetod (action_*/button_* eller vitlista). HITL alltid.
+
+    Parameternamn: `id` är den kanoniska. `ids`/`record_id` accepteras som
+    alias (LLM:er gissar olika) och normaliseras — annars blir det ett
+    otydligt TypeError: unexpected keyword argument (2026-09-22).
+    `args` kan vara dict (kwargs till metoden) eller lista (positionella).
+    """
     import json as _json
+    # Normalisera id-alias -> id
+    if id is None:
+        if ids is not None:
+            id = ids[0] if isinstance(ids, (list, tuple)) and ids else ids
+        elif record_id is not None:
+            id = record_id
     if not model or model not in env.registry:
         return _json.dumps({"error": f"Unknown model: {model}"})
     _scope_err = _model_scope_error(env, model)
@@ -1945,7 +1979,10 @@ def _tool_odoo_call_method(env, model='', id=None, method='', args=None):
     if not hasattr(rec, method) or not callable(getattr(rec, method)):
         return _json.dumps({"error": f"Method '{method}' not found on {model}"})
     try:
-        result = getattr(rec, method)(**(args or {}))
+        if isinstance(args, (list, tuple)):
+            result = getattr(rec, method)(*args)
+        else:
+            result = getattr(rec, method)(**(args or {}))
     except Exception as e:
         return _json.dumps({
             "error": f"Method call {model}.{method} failed: {e}"})
