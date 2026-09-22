@@ -4730,6 +4730,48 @@ class AICoworker(models.Model):
             _logger.warning('_pi_skill_to_load failed: %s', e)
         return ''
 
+    def _pi_skills_to_load(self, prompt_text='', limit=3):
+        """Ranka pi-kompatibla skills mot prompten, returnera topp-N namn.
+
+        Ersätter det alfabetiska första-träff-valet i `_pi_skill_to_load`.
+        Den katalogen lovar att skills aktiveras automatiskt när användarens
+        meddelande matchar deras trigger-nyckelord — men bara `/skill-namn`
+        var implementerat. Här matchas prompten mot trigger_keywords och de
+        bästa träffarna returneras.
+
+        Pi-kompatibla skills har compatibility pi_python/pi_node/any.
+
+        :param prompt_text: användarens meddelande (matchas mot triggers)
+        :param limit: max antal skill-namn att returnera
+        :return: lista av skill-namn, bästa träff först. Tom om ingen finns.
+        """
+        try:
+            self.ensure_one()
+            ptext = (prompt_text or '').lower()
+            scored = []
+            for s in self.sudo().skill_ids.filtered('active'):
+                if s.compatibility not in ('any', 'pi_python', 'pi_node'):
+                    continue
+                triggers = [
+                    t.strip().lower()
+                    for t in (s.trigger_keywords or '').split(',')
+                    if t.strip()
+                ]
+                hits = [t for t in triggers if t in ptext] if ptext else []
+                # Poäng: antal träffar, sedan prioritet, sedan namn (stabilt)
+                scored.append((len(hits), s.priority or 0, s.name, s.name))
+            # Skills med träffar först (fallande), sedan prioritet, sedan namn
+            scored.sort(key=lambda x: (-x[0], -x[1], x[2]))
+            matched = [name for hits, _prio, name, _n in scored if hits > 0]
+            if matched:
+                return matched[:limit]
+            # Ingen trigger-träff: behåll gamla beteendet (första pi-kompatibla)
+            fallback = self._pi_skill_to_load()
+            return [fallback] if fallback else []
+        except Exception as e:
+            _logger.warning('_pi_skills_to_load failed: %s', e)
+            return []
+
     def _get_nats_user_context(self):
         """Build user context dict for NATS tool execution (pi-agent-memory-bridge D5).
 

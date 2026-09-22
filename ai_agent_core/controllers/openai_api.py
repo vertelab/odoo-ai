@@ -363,11 +363,17 @@ class AIOpenAPIController(http.Controller):
             # Klientstyrning (D7): system_prompt_add + skill_to_load
             try:
                 pi_instr = coworker._build_pi_instruction(_session)
-                skill_to_load = coworker._pi_skill_to_load()
+                # Uppgiftsbaserat skill-val (2026-09-22): ranka skills mot
+                # användarens prompt via trigger_keywords i stället för
+                # alfabetiskt första-träff.
+                _skill_names = coworker._pi_skills_to_load(
+                    prompt_text=prompt, limit=3)
+                skill_to_load = _skill_names[0] if _skill_names else ''
             except Exception as e:
                 _logger.warning('pi_instruction failed: %s', e)
                 pi_instr = ''
                 skill_to_load = ''
+                _skill_names = []
 
             return Response(json.dumps({
                 'id': f'chatcmpl-{coworker.id}-{int(time.time())}',
@@ -388,6 +394,7 @@ class AIOpenAPIController(http.Controller):
                 'cost_context': self._cost_context_payload(_session),
                 'system_prompt_add': pi_instr or '',
                 'skill_to_load': skill_to_load or '',
+                'skills_to_load': _skill_names,
             }), content_type='application/json')
 
         except Exception as e:
