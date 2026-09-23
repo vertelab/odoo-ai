@@ -632,12 +632,31 @@ def post_init_hook(env):
         _logger.info('AGE extension skipped — managed by DBA')
 
         # 2. Create graph if not exists
-        cr.execute("SELECT 1 FROM ag_catalog.ag_graph WHERE name = 'odoo_mind'")
-        if not cr.fetchone():
-            cr.execute("SELECT * FROM ag_catalog.create_graph('odoo_mind')")
-            _logger.info('Created odoo_mind graph')
-        else:
-            _logger.info('odoo_mind graph already exists')
+        #
+        # SAVEPOINT: `ag_catalog` ägs av postgres-superusern, så app-rollen
+        # får `permission denied` på `ag_graph` även när AGE är installerat.
+        # Utan savepoint förgiftar det transaktionen (InFailedSqlTransaction)
+        # och ALLT efteråt i hooken dör — inklusive ir_attachment.create för
+        # Quest/Skill Builders hr.employee-bilder (FYND 2026-09-23, ren
+        # nyinstallation i okf_mixin_test: exit 255).
+        #
+        # Samma mönster som is_age_available() i ai_graph_node.py: ett fel här
+        # är inte fatalt, det betyder bara att grafen inte är användbar.
+        cr.execute('SAVEPOINT age_graph_init')
+        try:
+            cr.execute("SELECT 1 FROM ag_catalog.ag_graph WHERE name = 'odoo_mind'")
+            if not cr.fetchone():
+                cr.execute("SELECT * FROM ag_catalog.create_graph('odoo_mind')")
+                _logger.info('Created odoo_mind graph')
+            else:
+                _logger.info('odoo_mind graph already exists')
+            cr.execute('RELEASE SAVEPOINT age_graph_init')
+        except Exception as e:
+            cr.execute('ROLLBACK TO SAVEPOINT age_graph_init')
+            _logger.warning(
+                'AGE-grafen kunde inte initieras (%s) — grafen är avstängd, '
+                'resten av hooken fortsätter. Kör GRANT på ag_catalog för '
+                'app-rollen om grafen ska användas.', e)
 
         # 3. Create cron_sync_graph if not exists
         cron = env['ir.cron'].search([
