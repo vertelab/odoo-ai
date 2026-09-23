@@ -138,9 +138,15 @@ class AIOkfMixin(models.AbstractModel):
         for fname, field in self._fields.items():
             if fname in self.OKF_BODY_SKIP or fname.startswith('okf_'):
                 continue
-            if field.compute or field.related:
+            # Lagrade compute-fält är läsbara; se _okf_links_source.
+            if (field.compute or field.related) and not field.store:
                 continue
             if fname.endswith('_search'):
+                continue
+            # Integritet: fält med gruppbegränsning får ALDRIG indexeras.
+            # hr.employee bär ssnid, private_email, private_phone m.fl. —
+            # att kopiera dem till ett koncept gör dem sökbara för alla.
+            if field.groups:
                 continue
             if field.type not in ('html', 'text') and fname != 'name':
                 continue
@@ -167,6 +173,27 @@ class AIOkfMixin(models.AbstractModel):
         """
         return None
 
+    def _okf_field_readable(self, fname):
+        """Får den här användaren läsa fältet?
+
+        Används av modeller som vill läsa ett gruppbegränsat fält när
+        användaren HAR gruppen — den generiska källan hoppar över alla
+        gruppbegränsade fält, men en hr-användare ska kunna indexera
+        `notes` medan en säljare inte ska det.
+
+        Odoo filtrerar redan värdet vid läsning (self[fname] är tom utan
+        gruppen), så detta är ett andra skydd: vi kontrollerar behörigheten
+        uttryckligen i stället för att lita på att fältet råkade vara tomt.
+        """
+        self.ensure_one()
+        field = self._fields.get(fname)
+        if not field or not field.groups:
+            return True
+        try:
+            return self.user_has_groups(field.groups)
+        except Exception:
+            return False
+
     def _okf_tags_source(self):
         """Modellens taggar (OKF:s `tags:`).
 
@@ -181,7 +208,11 @@ class AIOkfMixin(models.AbstractModel):
         for fname, field in self._fields.items():
             if field.type not in ('many2one', 'many2many'):
                 continue
-            if field.compute or field.related:
+            # Lagrade compute-fält är läsbara; se _okf_links_source.
+            if (field.compute or field.related) and not field.store:
+                continue
+            # Integritet: gruppbegränsade fält indexeras aldrig.
+            if field.groups:
                 continue
             comodel = field.comodel_name or ''
             # Regel C: fältnamnet ELLER målmodellen
@@ -218,7 +249,15 @@ class AIOkfMixin(models.AbstractModel):
         for fname, field in self._fields.items():
             if field.type not in ('many2one', 'many2many', 'one2many'):
                 continue
-            if field.compute or field.related:
+            # Ett OBERÄKNAT fält är alltid läsbart. Ett BERÄKNAT fält är
+            # läsbart bara om det är lagrat — `project.task.project_id` är
+            # compute+store i Odoo 18, och att hoppa över det tappade
+            # länken till projektet (mätt 2026-09-23).
+            if (field.compute or field.related) and not field.store:
+                continue
+            # Integritet: en länk till en post användaren inte får se
+            # är fortfarande en avslöjad relation.
+            if field.groups:
                 continue
             comodel = field.comodel_name or ''
             if not self._okf_model_is_indexable(comodel):
