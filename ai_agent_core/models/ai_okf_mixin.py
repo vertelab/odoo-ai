@@ -39,6 +39,7 @@ versioner av `ai.memory,257` innan den fixades 2026-09-21.
 """
 
 import logging
+import time
 
 from odoo import api, fields, models
 from psycopg2.extras import Json
@@ -495,8 +496,19 @@ class AIOkfMixin(models.AbstractModel):
                 models.append(name)
         return models
 
+    #: Hur länge cronen får arbeta innan den ger tillbaka. Sätts under
+    #: Odoos egen gräns (limit_time_real=1200 s) med god marginal, så att
+    #: körningen hinner avslutas innan nästa startar.
+    #:
+    #: VARFÖR EN TIDSBUDGET OCH INTE BARA batch_size: cronen kör var 5:e
+    #: minut. Om en körning tar längre tid än så startar nästa medan den
+    #: förra arbetar — och då håller två transaktioner ir_cron-låset
+    #: samtidigt. Mätt på social 2026-09-23: fyra sessioner "idle in
+    #: transaction" i upp till 8 minuter, ir_cron låst 60/60 stickprov.
+    OKF_CRON_TIME_BUDGET = 240  # sekunder (4 min < 5 min intervall)
+
     @api.model
-    def _okf_cron_index_dirty(self, batch_size=50):
+    def _okf_cron_index_dirty(self, batch_size=25, time_budget=None):
         """Lätt cron: plocka upp flaggade poster, generera OKF-fälten.
 
         Tungt arbete (LLM-sammanfattning, embedding) sker HÄR — aldrig i
@@ -505,18 +517,38 @@ class AIOkfMixin(models.AbstractModel):
 
         Parametern läses EN gång per varv (D7): 1000 poster ska inte ge
         1000 get_param-anrop. Sessionen skapas EN gång (D6).
+
+        **`batch_size` är ett TAK, inte en kvot.** Tidigare tillämpades det
+        per modell — med sex registrerade modeller blev det 6 × 50 = 300
+        poster per körning. Nu räknas det mot ett gemensamt tak.
+
+        **`time_budget` (sekunder)** gör att cronen ger tillbaka innan
+        nästa körning startar. Utan den kan två körningar överlappa och
+        hålla `ir_cron`-låset samtidigt (mätt 2026-09-23).
         """
+        if time_budget is None:
+            time_budget = self.OKF_CRON_TIME_BUDGET
+        deadline = time.monotonic() + time_budget
+
         max_chars = self._okf_summary_max_chars()
         session = self._okf_summarize_session()
         total = 0
+        skipped_for_time = 0
+
         for model_name in self._okf_indexable_models():
             if model_name not in self.env:
                 continue
+            if total >= batch_size:
+                break
+            remaining = batch_size - total
             Model = self.env[model_name].sudo()
             dirty = Model.search(
-                [('okf_dirty', '=', True)], limit=batch_size,
+                [('okf_dirty', '=', True)], limit=remaining,
                 order='write_date asc')
             for rec in dirty:
+                if time.monotonic() >= deadline:
+                    skipped_for_time += 1
+                    continue
                 try:
                     concept = rec._okf_index_record(
                         max_chars=max_chars, session=session)
@@ -529,6 +561,12 @@ class AIOkfMixin(models.AbstractModel):
                     _logger.warning(
                         'OKF cron: indexering misslyckades för %s,%s: %s',
                         model_name, rec.id, e, exc_info=True)
+
+        if skipped_for_time:
+            _logger.info(
+                'OKF cron: tidsbudgeten (%ss) slut efter %s poster — '
+                '%s kvar till nästa varv',
+                time_budget, total, skipped_for_time)
         return total
 
     # ==================================================================

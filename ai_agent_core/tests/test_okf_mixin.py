@@ -14,6 +14,7 @@ Dessa tester bevisar:
   5. indexeringslistan är utökningsbar
 """
 
+import time
 from unittest.mock import patch
 
 from odoo.tests import common, tagged
@@ -255,6 +256,38 @@ class TestIndexableModels(_OkfTestModel):
                           return_value=['finns.inte', 'ai.personal.memory']):
             total = self.Mixin._okf_cron_index_dirty(batch_size=1)
         self.assertGreaterEqual(total, 0)
+
+    def test_batch_size_is_a_shared_cap(self):
+        """batch_size är ett TAK över alla modeller, inte per modell.
+
+        FYND 2026-09-23: `limit=batch_size` sattes per modell i loopen. Med
+        sex registrerade modeller blev det 6 × 50 = 300 poster per körning —
+        cronen överskred sitt intervall och nästa körning startade medan den
+        förra arbetade. Två transaktioner höll `ir_cron`-låset samtidigt.
+        """
+        for i in range(4):
+            self.env['ai.personal.memory'].create({
+                'user_id': self.env.ref('base.user_admin').id,
+                'content': 'Batch-test %s.' % i, 'category': 'fact'})
+        for i in range(4):
+            self.env['ai.company.memory'].create({
+                'company_id': self.env.company.id,
+                'content': 'Batch-test %s.' % i, 'category': 'knowledge'})
+        total = self.Mixin._okf_cron_index_dirty(batch_size=3)
+        self.assertLessEqual(total, 3,
+                             'taket ska gälla totalt, inte per modell')
+
+    def test_time_budget_stops_the_run(self):
+        """Tidsbudgeten gör att cronen ger tillbaka innan nästa startar."""
+        for i in range(3):
+            self.env['ai.personal.memory'].create({
+                'user_id': self.env.ref('base.user_admin').id,
+                'content': 'Tid-test %s.' % i, 'category': 'fact'})
+        with patch.object(type(self.Mixin), '_okf_index_record',
+                          side_effect=lambda **kw: time.sleep(0.05) or None):
+            total = self.Mixin._okf_cron_index_dirty(
+                batch_size=100, time_budget=0.01)
+        self.assertLessEqual(total, 3, 'budgeten ska stoppa körningen')
 
     def test_cron_is_idempotent(self):
         """Andra körningen skapar inga nya versioner."""
