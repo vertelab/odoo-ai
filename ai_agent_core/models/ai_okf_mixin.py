@@ -592,8 +592,21 @@ class AIOkfMixin(models.AbstractModel):
         if res_id is None:
             model = self.env.context.get('active_model') or model
             res_id = self.env.context.get('active_id')
-        if not model or not res_id:
+        # FYND 2026-09-23: `res_id` kommer från JS som en array
+        # (`orm.call(model, method, [[resId]])`) och kan bli en sträng.
+        # Owl kräver `number | boolean` på FormController → krasch.
+        try:
+            res_id = int(res_id)
+        except (TypeError, ValueError):
             return {'type': 'ir.actions.act_window_close'}
+        if not model or res_id <= 0:
+            return {'type': 'ir.actions.act_window_close'}
+        # Kontexten RENSAS på active_model/active_id: den nya vyn öppnar
+        # samma post, och ett kvarvarande active_id pekar på fel modell
+        # när anroparen var en annan (t.ex. en server-action på en rad).
+        ctx = {k: v for k, v in self.env.context.items()
+               if k not in ('active_model', 'active_id', 'active_ids')}
+        ctx['okf_debug_view'] = True
         return {
             'type': 'ir.actions.act_window',
             'name': 'OKF: %s,%s' % (model, res_id),
@@ -603,7 +616,7 @@ class AIOkfMixin(models.AbstractModel):
             'views': [(self.env.ref(
                 'ai_agent_core.view_okf_record_form').id, 'form')],
             'target': 'new',
-            'context': dict(self.env.context, okf_debug_view=True),
+            'context': ctx,
         }
 
     def action_okf_show_concepts(self):

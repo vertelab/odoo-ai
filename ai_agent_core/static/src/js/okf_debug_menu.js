@@ -29,7 +29,10 @@ import { _t } from "@web/core/l10n/translation";
 
 export function okfDebugItem({ component, env }) {
     const { resId, resModel } = component.model?.config || {};
-    if (!resId || !resModel) {
+    // `resId` kan vara en sträng beroende på vy — Owl kräver tal i
+    // FormController, så vi normaliserar här (FYND 2026-09-23).
+    const id = Number(resId);
+    if (!id || !resModel) {
         return null; // ingen post — inget att visa
     }
     return {
@@ -37,7 +40,7 @@ export function okfDebugItem({ component, env }) {
         description: _t("OKF"),
         callback: async () => {
             const action = await env.services.orm.call(
-                resModel, "action_open_okf", [[resId]]
+                resModel, "action_open_okf", [id]
             );
             if (action) {
                 env.services.action.doAction(action);
