@@ -447,25 +447,32 @@ class TestRunWithHistory(TransactionCase):
         # med fel typ: ProviderFactory faller till get_default_provider som
         # kan vara tom. Verifiera att run_with_history accepterar args och
         # kastar AgentLoopPaused vid HITL (via patched _build_loop).
+        # run_with_history är en TUNN DELEGATOR till run() (se docstringen
+        # i ai_coworker.py). Att mocka _build_loop räcker därför inte —
+        # anropet går via run() → _build_loop, och run() gör egen setup
+        # (provider, tools, budget) som faller innan loopen nås.
+        #
+        # Mocka i stället run() själv: det är kontraktet testet vill
+        # verifiera ("run_with_history delegerar till run och låter
+        # AgentLoopPaused propagera").
         with patch.object(
-                type(coworker), '_build_loop',
-                return_value=MagicMock()) as mock_loop:
-            mock_loop.return_value.run = AsyncMock(
+                type(coworker), 'run',
                 side_effect=AgentLoopPaused(
                     tool_calls=[{'id': 'c1', 'type': 'function',
                                  'function': {'name': 'request_hitl_approval',
                                               'arguments': '{}'}}],
-                    state={'kind': 'approve_tool'}))
-            mock_loop.return_value.tool_history = []
-            from unittest.mock import patch as _p
-            with _p('odoo.addons.ai_agent_core.core.provider.ProviderFactory.from_coworker',
-                    return_value=(MagicMock(), 'mock-model')):
-                with self.assertRaises(AgentLoopPaused):
-                    coworker.run_with_history(
-                        prompt='',
-                        history=history,
-                        interrupt_handler=handler,
-                    )
+                    state={'kind': 'approve_tool'})) as mock_run:
+            with self.assertRaises(AgentLoopPaused):
+                coworker.run_with_history(
+                    prompt='',
+                    history=history,
+                    interrupt_handler=handler,
+                )
+            # Delegationen: run() anropades med historik + handler
+            self.assertTrue(mock_run.called)
+            kwargs = mock_run.call_args.kwargs
+            self.assertEqual(kwargs.get('history'), history)
+            self.assertEqual(kwargs.get('interrupt_handler'), handler)
 
 
 class TestBodyToMessages(TransactionCase):

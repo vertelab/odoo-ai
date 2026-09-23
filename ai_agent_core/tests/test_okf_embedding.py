@@ -39,6 +39,31 @@ class TestEmbeddingProduction(common.TransactionCase):
     def _fake_vector(self, dim=1024, value=0.1):
         return [value] * dim
 
+    def _patch_embedding(self, vector=None):
+        """Mocka BÅDE provider-valet och själva anropet.
+
+        `_okf_cron_backfill_embeddings` gör två saker i tur och ordning:
+          1. `_embedding_provider()` — väljer provider (returnerar None i en
+             test-DB utan `can_embed`-provider, och då avbryter cronen med
+             "ingen provider som kan embedda" INNAN `_get_embedding` nås).
+          2. `_get_embedding()` — det faktiska HTTP-anropet.
+
+        Att bara mocka (2) räcker inte: cronen faller på (1). Det var
+        därför test_backfill_* FAILade i ren nyinstallation (FYND 2026-09-23).
+
+        Returnerar en context manager som mockar båda.
+        """
+        from contextlib import ExitStack
+        vec = vector if vector is not None else self._fake_vector()
+        stack = ExitStack()
+        stack.enter_context(patch.object(
+            type(self.env['ai.provider']), '_embedding_provider',
+            return_value=self.env['ai.provider'].browse()))
+        stack.enter_context(patch.object(
+            type(self.env['ai.provider']), '_get_embedding',
+            return_value=vec))
+        return stack
+
     # ── fas 1.3/1.3b: metoderna finns och validerar ──
 
     def test_get_embedding_returns_raw_list(self):
@@ -213,9 +238,7 @@ class TestEmbeddingBackfill(common.TransactionCase):
             'embedding_state': 'pending',
         })
 
-        fake = [0.5] * 1024
-        with patch.object(type(self.env['ai.provider']), '_get_embedding',
-                          return_value=fake):
+        with self._patch_embedding([0.5] * 1024):
             filled = self.env['ai.okf.concept']._okf_cron_backfill_embeddings(
                 batch_size=50)
 
@@ -255,8 +278,7 @@ class TestEmbeddingBackfill(common.TransactionCase):
 
         before = self.Concept.search_count([
             ('concept_key', '=', 'test.backfill.idempotent')])
-        with patch.object(type(self.env['ai.provider']), '_get_embedding',
-                          return_value=[0.9] * 1024):
+        with self._patch_embedding([0.9] * 1024):
             self.env['ai.okf.concept']._okf_cron_backfill_embeddings(batch_size=50)
         after = self.Concept.search_count([
             ('concept_key', '=', 'test.backfill.idempotent')])
@@ -305,8 +327,7 @@ class TestEmbeddingBackfill(common.TransactionCase):
             'embedding_state': 'pending',
         })
 
-        with patch.object(type(self.env['ai.provider']), '_get_embedding',
-                          return_value=[0.1] * 1024):
+        with self._patch_embedding([0.1] * 1024):
             self.env['ai.okf.concept']._okf_cron_backfill_embeddings(batch_size=50)
 
         concept.invalidate_recordset()
