@@ -19,7 +19,16 @@ INTERNAL_PREFIXES = (
     'nats_publish',
 )
 # Säkra kundvänliga verktyg (settings-default).
-SAFE_DEFAULTS = ('odoo_calculator', 'odoo_fetch_url', 'odoo_web_search')
+# Settings-default (DEFAULT_AGENT_TOOL_NAMES i res_config_settings.py).
+# YouTube-verktygen lades till medvetet i commit 89e0ba8d ("youtube-verktyg
+# i default-tools") — de är säkra kundverktyg (data-definierade, inga
+# interna förmågor) och ska därför räknas som defaults. Listan här hade
+# inte följt med, vilket gav ett falskt FAIL (FYND 2026-09-23).
+SAFE_DEFAULTS = (
+    'odoo_calculator', 'odoo_fetch_url', 'odoo_web_search',
+    'youtube_get_transcript', 'youtube_search',
+    'youtube_channel', 'youtube_playlist',
+)
 
 
 class TestBuiltinSeedIdempotens(TransactionCase):

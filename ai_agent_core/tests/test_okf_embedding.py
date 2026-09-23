@@ -55,10 +55,16 @@ class TestEmbeddingProduction(common.TransactionCase):
         """
         from contextlib import ExitStack
         vec = vector if vector is not None else self._fake_vector()
+        provider = self.env['ai.provider'].create({
+            'name': 'Test-embedding-provider',
+            'provider_type': 'bifrost',
+            'can_embed': True,
+            'api_key': 'test-key',
+        })
         stack = ExitStack()
         stack.enter_context(patch.object(
             type(self.env['ai.provider']), '_embedding_provider',
-            return_value=self.env['ai.provider'].browse()))
+            return_value=provider))
         stack.enter_context(patch.object(
             type(self.env['ai.provider']), '_get_embedding',
             return_value=vec))
@@ -219,6 +225,40 @@ class TestEmbeddingBackfill(common.TransactionCase):
             cls.atype = cls.env['ai.artifact.type'].create({
                 'name': 'knowledge', 'kind': 'knowledge',
             })
+
+    def _patch_embedding(self, vector=None):
+        """Mocka BÅDE provider-valet och själva anropet.
+
+        `_okf_cron_backfill_embeddings` gör två saker i tur och ordning:
+          1. `_embedding_provider()` — väljer provider (returnerar None i en
+             test-DB utan `can_embed`-provider, och då avbryter cronen med
+             "ingen provider som kan embedda" INNAN `_get_embedding` nås).
+          2. `_get_embedding()` — det faktiska HTTP-anropet.
+
+        Att bara mocka (2) räcker inte: cronen faller på (1). Det var
+        därför test_backfill_* FAILade i ren nyinstallation (FYND 2026-09-23).
+        """
+        from contextlib import ExitStack
+        vec = vector if vector is not None else [0.1] * 1024
+        # OBS: providern måste vara TRUTHY. `browse()` utan id är ett tomt
+        # recordset = falsy, och cronen gör `if not provider: return 0` —
+        # mocken skulle då tysta testet i stället för att driva det.
+        # En riktig (men overifierad) provider-rad duger: _get_embedding
+        # är ändå mockad, så ingen HTTP-trafik sker.
+        provider = self.env['ai.provider'].create({
+            'name': 'Test-embedding-provider',
+            'provider_type': 'bifrost',
+            'can_embed': True,
+            'api_key': 'test-key',
+        })
+        stack = ExitStack()
+        stack.enter_context(patch.object(
+            type(self.env['ai.provider']), '_embedding_provider',
+            return_value=provider))
+        stack.enter_context(patch.object(
+            type(self.env['ai.provider']), '_get_embedding',
+            return_value=vec))
+        return stack
 
     def test_backfill_fills_pending_and_clears_marker(self):
         """En 'pending'-rad ska få en NY VERSION med vektor (fas 3.5).
