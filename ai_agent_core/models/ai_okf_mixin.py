@@ -331,6 +331,26 @@ class AIOkfMixin(models.AbstractModel):
         """
         return None
 
+    def _okf_artifact_type(self):
+        """Konceptets artefakttyp — överridbar av varje modell.
+
+        Default `'knowledge'`: en modell som inte deklarerar en egen typ
+        får den generiska. En bryggmodul registrerar sin egen typ i
+        `ai.artifact.type` (med `bridge_module` satt) och returnerar dess
+        namn här, så taxonomin går att spåra tillbaka till bryggan.
+        """
+        return 'knowledge'
+
+    def _okf_concept_key(self):
+        """Konceptets stabila nyckel — överridbar.
+
+        Default `'<modell>,<id>'`. Nyckeln MÅSTE vara stabil över
+        innehållsändringar: härled den aldrig ur text, längd eller radantal.
+        En ändrad nyckel startar en ny kedja i stället för en ny version.
+        """
+        self.ensure_one()
+        return '%s,%s' % (self._name, self.id)
+
     def _okf_owner_vals(self):
         """Exakt EN ägare. `_okf_upsert` kastar ValidationError på noll/flera."""
         self.ensure_one()
@@ -378,8 +398,8 @@ class AIOkfMixin(models.AbstractModel):
 
         source_ref = '%s,%s' % (self._name, self.id)
         vals = {
-            'artifact_type': 'knowledge',
-            'concept_key': source_ref,
+            'artifact_type': self._okf_artifact_type(),
+            'concept_key': self._okf_concept_key(),
             'summary': summary,
             'title': (self.display_name or source_ref)[:120],
             'source_ref': source_ref,
