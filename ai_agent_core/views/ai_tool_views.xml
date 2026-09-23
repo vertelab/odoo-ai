@@ -78,6 +78,8 @@
                         <field name="nats_skills"
                                placeholder="agent-browser, caddy-routing"/>
                         <field name="nats_timeout"/>
+                        <field name="nats_agent_id"
+                               options="{'no_create': True}"/>
                     </group>
                     <group string="Code"
                            invisible="executor == 'nats'">

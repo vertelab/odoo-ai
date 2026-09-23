@@ -50,3 +50,4 @@ from . import test_stream_turn_persist
 from . import test_explicit_agent_tools
 from . import test_builtin_fallback_removal
 from . import test_record_context
+from . import test_agent_identity
