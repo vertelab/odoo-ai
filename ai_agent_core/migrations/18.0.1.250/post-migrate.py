@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Migrate to 18.0.1.238: pensionera ai.memory som OKF-konsument (okf-mixin F2).
+"""Migrate to 18.0.1.250: pensionera ai.memory som OKF-konsument (okf-mixin F2).
 
 Bakgrund
 --------
@@ -44,7 +44,7 @@ _logger = logging.getLogger(__name__)
 
 
 def migrate(cr, version):
-    _logger.info('Running migration 18.0.1.238: pensionera ai.memory som '
+    _logger.info('Running migration 18.0.1.250: pensionera ai.memory som '
                  'OKF-konsument')
 
     # 1. Arkivera ai.memory-koncept (arkivering, inte radering).
