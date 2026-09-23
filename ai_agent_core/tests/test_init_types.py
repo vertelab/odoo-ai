@@ -6,6 +6,8 @@ Run with Odoo test framework:
 """
 
 import unittest
+from unittest.mock import AsyncMock, MagicMock, patch
+
 from odoo.tests.common import TransactionCase
 from odoo.exceptions import UserError
 

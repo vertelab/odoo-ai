@@ -184,7 +184,8 @@ class TestPersonalMemory(common.TransactionCase):
 
         self.env['ai.personal.memory'].cron_daily_consolidation()
 
-        old_memory.refresh()
+        # Odoo 18: refresh() är borttagen — läs om från DB i stället.
+        old_memory.invalidate_recordset()
         self.assertTrue(old_memory.archived)
 
     def test_nightly_cron_runs(self):

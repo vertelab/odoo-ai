@@ -259,28 +259,17 @@ class AIMemory(models.Model):
     # ════════════════════════════════════════════
     # OKF trigger-modell (task 5.1)
     # ════════════════════════════════════════════
-    def write(self, vals):
-        """write()-hook: sätt okf_dirty utan AI-arbete.
-
-        FYND (2026-09-21): hooken satte flaggan VILLKORSLÖST, även när
-        anroparen uttryckligen ville RENSA den (`okf_dirty=False`). Cronen
-        rensar med `mem.write({'okf_dirty': False})` — vilket gick rakt in i
-        denna hook och satte flaggan igen. Varje cron-varv (5 min) skapade
-        därför en ny OKF-version: `ai.memory,257` hade 38 versioner med
-        identiskt innehåll ("hello test"), 11:36 → 15:06.
-
-        Fixen: en explicit rensning (`False`) respekteras — den är ett
-        medvetet beslut av cronen efter lyckad indexering, inte en
-        innehållsändring. Flaggan sätts bara när anroparen inte sagt något
-        om den alls, eller uttryckligen satt den till True.
-
-        `ai.memory.mixin._set_okf_dirty()` löser samma sak genom att sätta
-        flaggan direkt i SQL; den vägen är kvar för mixin-modellerna. Här
-        räcker det att hooken slutar motarbeta sin egen anropare.
-        """
-        if 'okf_dirty' not in vals and not vals.get('consolidated'):
-            vals['okf_dirty'] = True
-        return super().write(vals)
+    # FYND (2026-09-23): write()-hooken som satte `okf_dirty` togs bort.
+    #
+    # `ai.memory` pensionerades som OKF-konsument (okf-mixin F2, migration
+    # 1.250): fälten okf_dirty/okf_indexed_at/artifact_type_id flyttade till
+    # `ai.okf.mixin`, och `ai.memory` ärver inte längre den. Hooken skrev
+    # ändå `vals['okf_dirty'] = True` → ValueError: Invalid field 'okf_dirty'
+    # on model 'ai.memory' vid varje write (fångat i test_init_types_overhaul
+    # och i ren nyinstallation).
+    #
+    # Historiken bakom flaggan (38 versioner av ai.memory,257, 2026-09-21) är
+    # överspelad: ai.memory indexeras inte längre till OKF.
 
     @api.model
     def _okf_cron_index_dirty(self, batch_size=50):
@@ -348,9 +337,19 @@ class AIMemory(models.Model):
 
     @api.model
     def _okf_cron_index_dirty_memories(self, batch_size=50):
-        """Indexera dirty-poster från `ai.memory` (ursprunglig brygga)."""
-        # ai.memory har en FAISS-hjälpmetod som skuggar ORM:ts search —
-        # använd _search för att komma åt ORM:en
+        """Pensionerad: ai.memory indexeras inte längre till OKF.
+
+        `ai.memory` pensionerades som OKF-konsument (okf-mixin F2, migration
+        1.250). Fälten okf_dirty/okf_indexed_at flyttade till ai.okf.mixin,
+        så `_search([('okf_dirty', ...)])` kastar ValueError. Behålls som
+        no-op så anropare inte kraschar; den riktiga vägen är
+        `ai.okf.mixin._okf_cron_index_dirty()`.
+        """
+        return 0
+
+    @api.model
+    def _okf_cron_index_dirty_memories_legacy(self, batch_size=50):
+        """Historisk implementation (före okf-mixin F2). Anropas inte."""
         dirty_ids = self._search([('okf_dirty', '=', True)], limit=batch_size)
         dirty = self.browse(dirty_ids)
         if not dirty:
