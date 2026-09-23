@@ -574,21 +574,24 @@ class AIOkfMixin(models.AbstractModel):
     # ==================================================================
 
     @api.model
-    def action_open_okf(self):
-        """Öppna OKF-fälten för den aktuella posten (debug-menyn).
+    def action_open_okf(self, res_id=None):
+        """Öppna OKF-fälten för en post (debug-menyn).
 
-        Bindbar server action — läggs på varje modell som bär mixinen via
-        `binding_model_id` + `groups_id = base.group_no_one` (debug-läget),
-        samma mekanism som *Meta data* och *Data*.
+        Anropas från OKF-valet i skalbaggen. Två vägar in:
 
-        Läser `active_model`/`active_id` ur kontexten (mönstret från
-        `ai.coworker.action_ask_ai_about_record`) och öppnar posten i en
-        skrivskyddad vy med bara okf_*-fälten.
+          - **Frontend** (`okf_debug_menu.js`) anropar metoden via ORM med
+            `res_id` explicit. Det är den väg som används — Odoo 18 renderar
+            inte server-actions i skalbaggen (mätt på social 2026-09-23:
+            servern skickade åtgärden, frontend visade den aldrig).
+          - **Kontext** (`active_model`/`active_id`) fungerar fortfarande,
+            för en bindbar server-action eller ett manuellt anrop.
 
-        Ingen domän nämns: åtgärden är generisk, bindningen är per modell.
+        Ingen domän nämns: åtgärden är generisk, anroparen bestämmer posten.
         """
-        model = self.env.context.get('active_model')
-        res_id = self.env.context.get('active_id')
+        model = self._name
+        if res_id is None:
+            model = self.env.context.get('active_model') or model
+            res_id = self.env.context.get('active_id')
         if not model or not res_id:
             return {'type': 'ir.actions.act_window_close'}
         return {
