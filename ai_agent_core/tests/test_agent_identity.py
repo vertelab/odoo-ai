@@ -10,9 +10,11 @@ Täcker:
 - ai.tool.nats_agent_id följer med till core-Tool som hint
 """
 
+from odoo.tests import tagged
 from odoo.tests.common import TransactionCase
 
 
+@tagged('post_install', '-at_install')
 class TestAgentResolution(TransactionCase):
     """Uppgift 1.2/1.8/1.9/1.10/1.11 — _resolve_agent."""
 
@@ -103,6 +105,7 @@ class TestAgentResolution(TransactionCase):
         self.assertIn('no linked agents', err)
 
 
+@tagged('post_install', '-at_install')
 class TestAgentIdentityBackwardCompat(TransactionCase):
     """Uppgift 1.7 — utan agent är beteendet oförändrat."""
 
@@ -143,6 +146,7 @@ class TestAgentIdentityBackwardCompat(TransactionCase):
             self.assertIn(t.name, forced)
 
 
+@tagged('post_install', '-at_install')
 class TestToolAgentHint(TransactionCase):
     """Uppgift 2.1/2.2/2.5 — ai.tool.nats_agent_id som hint."""
 
