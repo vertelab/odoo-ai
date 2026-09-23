@@ -31,7 +31,7 @@ class AIMemoryMixin(models.AbstractModel):
     # ════════════════════════════════════════════
     # OKF-KONTRAKTET (ärvt från ai.okf.mixin)
     # ════════════════════════════════════════════
-    # Fälten (okf_text, okf_summary, okf_tags, okf_links, okf_dirty,
+    # Fälten (okf_body, okf_summary, okf_tags, okf_links, okf_dirty,
     # okf_indexed_at), flagg-hookarna (create/write/_set_okf_dirty/
     # _clear_okf_dirty) och sammanfattningskedjan bor nu på ai.okf.mixin.
     # Legacy-minnena ärver dem — beteendet är oförändrat.
@@ -40,7 +40,7 @@ class AIMemoryMixin(models.AbstractModel):
     # de är ADD-only (content kan inte ändras), de har ingen egen
     # sammanfattning, och de ägs av user/company — inte av env.company.
 
-    def _okf_text_source(self):
+    def _okf_body_source(self):
         """Legacy-minnets text. `content` är ADD-only — den sätts en gång."""
         self.ensure_one()
         return self.content or ''
@@ -93,12 +93,12 @@ class AIMemoryMixin(models.AbstractModel):
         mappa till samma OKF-koncept, annars skapas en ny version vid varje
         indexering och versionskedjan svämmar över.
 
-        Texten hämtas via den ärvda `_okf_text_source()`, och gränsen via
+        Texten hämtas via den ärvda `_okf_body_source()`, och gränsen via
         `_okf_summary_max_chars()` — samma 2000 som förut (default), men nu
         en systemparameter istället för ett hårdkodat tal.
         """
         self.ensure_one()
-        text = self._okf_text_source()
+        text = self._okf_body_source()
         vals = {
             'concept_key': '%s,%s' % (self._name, self.id),
             'summary': text[:self._okf_summary_max_chars()],

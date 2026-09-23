@@ -36,7 +36,7 @@ class TestOkfMixinContract(_OkfTestModel):
     """F1.1–1.6, 1.12: kontraktet är generiskt."""
 
     def test_fields_exist(self):
-        for f in ('okf_text', 'okf_summary', 'okf_tags', 'okf_links',
+        for f in ('okf_body', 'okf_summary', 'okf_tags', 'okf_links',
                   'okf_dirty', 'okf_indexed_at'):
             self.assertIn(f, self.Mixin._fields, f)
 
@@ -54,7 +54,7 @@ class TestOkfMixinContract(_OkfTestModel):
     def test_source_defaults_do_not_crash(self):
         """En modell som inte överrider källmetoderna ska inte krascha."""
         rec = self.env['ai.personal.memory'].new({})
-        self.assertEqual(rec._okf_text_source(), '')
+        self.assertEqual(rec._okf_body_source(), '')
         self.assertIsNone(rec._okf_summary_source())
         self.assertEqual(rec._okf_tags_source(), [])
         self.assertEqual(rec._okf_links_source(), [])
@@ -118,10 +118,10 @@ class TestOkfDirtyFlag(_OkfTestModel):
 
     def test_clear_writes_extra_vals_in_same_update(self):
         mem = self._memory()
-        mem._clear_okf_dirty({'okf_text': 'ny text',
+        mem._clear_okf_dirty({'okf_body': 'ny text',
                               'okf_summary': 'ny sammanfattning'})
-        mem.invalidate_recordset(['okf_text', 'okf_summary', 'okf_dirty'])
-        self.assertEqual(mem.okf_text, 'ny text')
+        mem.invalidate_recordset(['okf_body', 'okf_summary', 'okf_dirty'])
+        self.assertEqual(mem.okf_body, 'ny text')
         self.assertEqual(mem.okf_summary, 'ny sammanfattning')
         self.assertFalse(mem.okf_dirty)
         self.assertTrue(mem.okf_indexed_at)
@@ -304,7 +304,7 @@ class TestIndexableModels(_OkfTestModel):
         mem = self.env['ai.personal.memory'].create({
             'user_id': self.env.ref('base.user_admin').id,
             'content': 'x', 'category': 'fact'})
-        with patch.object(type(mem), '_okf_text_source', return_value=''):
+        with patch.object(type(mem), '_okf_body_source', return_value=''):
             result = mem._okf_index_record()
         mem.invalidate_recordset(['okf_dirty'])
         self.assertIsNone(result)

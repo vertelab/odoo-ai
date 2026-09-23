@@ -30,6 +30,12 @@ class AIPersonalMemory(models.Model):
     _rec_name = 'content_preview'
     _inherit = 'ai.memory.mixin'
 
+    # OKF-taggar: egen relationstabell (en many2many kan inte ligga
+    # pa en abstrakt mixin — den ger samma tabell for alla arvande).
+    okf_tags = fields.Many2many(
+        'ai.okf.tag', 'ai_personal_memory_okf_tag_rel', 'res_id', 'tag_id',
+        string='OKF Tags')
+
     # ════════════════════════════════════════════
     # SCOPE — MINNET FÖLJER PERSONEN
     # ════════════════════════════════════════════

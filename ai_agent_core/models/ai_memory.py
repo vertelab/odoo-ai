@@ -11,6 +11,12 @@ _logger = logging.getLogger(__name__)
 
 class AIMemory(models.Model):
     _name = 'ai.memory'
+
+    # OKF-taggar: egen relationstabell (en many2many kan inte ligga
+    # pa en abstrakt mixin — den ger samma tabell for alla arvande).
+    okf_tags = fields.Many2many(
+        'ai.okf.tag', 'ai_memory_okf_tag_rel', 'res_id', 'tag_id',
+        string='OKF Tags')
     _description = 'AI Memory'
     _order = 'create_date desc'
 

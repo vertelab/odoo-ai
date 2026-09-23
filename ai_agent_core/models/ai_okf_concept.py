@@ -129,6 +129,11 @@ class AIOkfConcept(models.Model):
     attribution = fields.Json(
         string='Attribution',
         help='Per-rad källattribution: [{"line": 1, "source_ref": "res.partner,42"}, ...]')
+    okf_tags = fields.Many2many(
+        'ai.okf.tag', 'ai_okf_concept_tag_rel', 'concept_id', 'tag_id',
+        string='Tags',
+        help='OKF-frontmatterns tags — etiketter, inte länkar. En tagg har '
+             'inget innehåll att indexera och får därför ingen egen mixin.')
     source_text = fields.Text(
         'Source Text',
         help='Källtexten som summary härleddes ur (okf-mixin D5). Styr '
@@ -519,7 +524,7 @@ class AIOkfConcept(models.Model):
                     owner_coworker_id=None, generated_by='process',
                     status='stable', stale_after=None, entities=None,
                     embedding=None, search_vector=None, source_text=None,
-                    force_new_version=False, **kwargs):
+                    force_new_version=False, okf_tags=None, **kwargs):
         """Skapa ny concept eller ny version vid re-index (ADD-only).
 
         - Memory-koncept (kind=memory): ny rad endast vid genuint ny inlärning
@@ -615,6 +620,7 @@ class AIOkfConcept(models.Model):
                 'title': title,
                 'summary': summary,
                 'source_text': source_text,
+                'okf_tags': okf_tags or [],
                 'attribution': attribution or [],
                 'source_ref': source_ref,
                 'sources': sources or [],
@@ -646,6 +652,7 @@ class AIOkfConcept(models.Model):
             'title': title,
             'summary': summary,
             'source_text': source_text,
+            'okf_tags': okf_tags or [],
             'attribution': attribution or [],
             'source_ref': source_ref,
             'sources': sources or [],

@@ -78,11 +78,22 @@ class AIOkfMixin(models.AbstractModel):
              'söks. Hålls inom den konfigurerade gränsen '
              '(%s, default %s).' % (SUMMARY_MAX_CHARS_PARAM,
                                     SUMMARY_MAX_CHARS_DEFAULT))
-    okf_tags = fields.Many2many(
-        'ai.okf.tag', 'ai_okf_mixin_tag_rel', 'res_id', 'tag_id',
-        string='OKF Tags',
-        help='OKF:ns tags. En etikett är ingen länk — den har inget '
-             'innehåll att indexera och får därför ingen egen mixin.')
+    # OBS: `okf_tags` är INTE deklarerat här.
+    #
+    # FYND 2026-09-23: en many2many på en ABSTRAKT modell ger SAMMA
+    # relationstabell för alla ärvande modeller:
+    #
+    #   TypeError: Many2many fields ai.company.memory.okf_tags and
+    #              ai.personal.memory.okf_tags use the same table
+    #
+    # Odoo kräver en egen tabell per konkret modell. Fältet deklareras
+    # därför av varje modell som bär mixinen:
+    #
+    #   okf_tags = fields.Many2many(
+    #       'ai.okf.tag', '<modell>_okf_tag_rel', 'res_id', 'tag_id')
+    #
+    # Mixinen äger LÄSNINGEN (_okf_tags_source) och skrivningen
+    # (_okf_index_record sätter relationen om fältet finns).
     okf_links = fields.Json(
         'OKF Links', default=list,
         help='OKF:ns [[länkar]] — referenser till andra poster, som '
@@ -518,17 +529,21 @@ class AIOkfMixin(models.AbstractModel):
             'okf_links': links,
         })
 
-        # Taggar: hitta/skapa ai.okf.tag och sätt relationen.
-        tag_names = self._okf_tags_source() or []
-        if tag_names:
-            Tag = self.env['ai.okf.tag'].sudo()
-            tag_ids = []
-            for name in tag_names:
-                tag = Tag.search([('name', '=', name)], limit=1)
-                if not tag:
-                    tag = Tag.create({'name': name})
-                tag_ids.append(tag.id)
-            self.sudo().write({'okf_tags': [(6, 0, tag_ids)]})
+        # Taggar: hitta/skapa ai.okf.tag. Fältet deklareras av modellen
+        # (en many2many kan inte ligga på en abstrakt mixin — den ger
+        # samma tabell för alla ärvande modeller), och konceptet får dem
+        # via _okf_upsert.
+        tag_ids = []
+        if 'okf_tags' in self._fields:
+            tag_names = self._okf_tags_source() or []
+            if tag_names:
+                Tag = self.env['ai.okf.tag'].sudo()
+                for name in tag_names:
+                    tag = Tag.search([('name', '=', name)], limit=1)
+                    if not tag:
+                        tag = Tag.create({'name': name})
+                    tag_ids.append(tag.id)
+                self.sudo().write({'okf_tags': [(6, 0, tag_ids)]})
 
         source_ref = '%s,%s' % (self._name, self.id)
         vals = {
@@ -542,6 +557,7 @@ class AIOkfMixin(models.AbstractModel):
             'generated_by': 'cron',
             # D5: källan styr versionen, inte derivatet.
             'source_text': body,
+            'okf_tags': tag_ids,
         }
         vals.update(self._okf_owner_vals())
 

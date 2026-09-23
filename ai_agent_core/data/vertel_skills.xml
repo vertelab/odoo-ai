@@ -212,7 +212,7 @@ Svara med ENDAST sammanfattningen. Ingenting annat.
 Sammanfattningen blir ett OKF-koncept: den embeddas (1024d vektor) och går in
 i `search_vector` (svensk fulltext). Den är det enda av posten som är SÖKBART.
 Tappar du ett namn i sammanfattningen är namnet osökbart — originalet finns
-kvar i `okf_text`, men ingen fråga når det.
+kvar i `okf_body`, men ingen fråga når det.
             ]]></field>
         </record>
 
