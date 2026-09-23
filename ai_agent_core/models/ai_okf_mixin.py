@@ -10,10 +10,10 @@ Odoo-modell de fälten — och en flagga som säger när de måste genereras om.
 Vad mixinen INTE är
 -------------------
 Den är **inte** en sökmotor (det är `ai.memory.mixin`s halva), och den
-känner **ingen domän**. `_okf_text_source()` och `_okf_summary_source()`
+känner **ingen domän**. `_okf_body_source()` och `_okf_summary_source()`
 implementeras av modellen; mixinen läser aldrig ett fält den inte fick.
 
-    ai.okf.mixin          okf_text · okf_summary · okf_tags · okf_links
+    ai.okf.mixin          okf_body · okf_summary · okf_tags · okf_links
                           okf_dirty · okf_indexed_at
          |
          +-- ai.memory.mixin      (ärver, behåller sökhalvan)
@@ -21,8 +21,10 @@ implementeras av modellen; mixinen läser aldrig ett fält den inte fick.
 
 Två fält, inte ett
 ------------------
-    okf_text      HELA kopian av modellens text (description, notes, arch_db)
-    okf_summary   DERIVATET — det som embeddas och söks
+    okf_body      HELA kopian av modellens text (description, notes, arch_db)
+    okf_summary   DERIVATET — det som embeddas och söks (OKF: description)
+    okf_tags      ETIKETTER (OKF: tags) — many2many mot ai.okf.tag
+    okf_links     REFERENSER (OKF §6.1) — otypade, '<modell>,<id>'
 
 `summary` går in i `search_vector` och i embeddingen. Ett enda fält som både
 källa och summary gör att en 40 000-teckens sida antingen får en skev
@@ -61,24 +63,32 @@ class AIOkfMixin(models.AbstractModel):
     _auto = False
 
     # -- Fälten ---------------------------------------------------------
-    okf_text = fields.Text(
-        'OKF Text',
-        help='Hela kopian av modellens text (description, notes, arch_db ...). '
-             'Materialet — inte det som söks. Fylls av modellens '
-             '_okf_text_source().')
+    # Mappningen mot OKF:s markdown-fil:
+    #   frontmatter:  title, description (okf_summary), tags (okf_tags)
+    #   body:         okf_body  ("everything after the frontmatter")
+    #   länkar:       okf_links (OKF §6.1 — koncept till koncept)
+    okf_body = fields.Text(
+        'OKF Body',
+        help='OKF:ns body — modellens hela text (name, description, notes, '
+             'arch_db ...). Materialet, inte det som söks. Fylls av '
+             'modellens _okf_body_source().')
     okf_summary = fields.Text(
         'OKF Summary',
-        help='Derivatet: det tunna konceptet som embeddas och söks. '
-             'Hålls inom den konfigurerade gränsen '
+        help='OKF:ns description — det tunna konceptet som embeddas och '
+             'söks. Hålls inom den konfigurerade gränsen '
              '(%s, default %s).' % (SUMMARY_MAX_CHARS_PARAM,
                                     SUMMARY_MAX_CHARS_DEFAULT))
-    okf_tags = fields.Json(
-        'OKF Tags', default=list,
-        help='OKF-frontmatterns tags — en lista av strängar.')
+    okf_tags = fields.Many2many(
+        'ai.okf.tag', 'ai_okf_mixin_tag_rel', 'res_id', 'tag_id',
+        string='OKF Tags',
+        help='OKF:ns tags. En etikett är ingen länk — den har inget '
+             'innehåll att indexera och får därför ingen egen mixin.')
     okf_links = fields.Json(
         'OKF Links', default=list,
-        help='Länkar till andra koncept (OKF:s [[länkar]]) — en lista av '
-             '{"ref": "<modell>,<id>"}.')
+        help='OKF:ns [[länkar]] — referenser till andra poster, som '
+             '"res.partner,10". Otypade (OKF §6.1): relationen bor i '
+             'okf_body, inte i länken. Trasiga länkar är tillåtna — målet '
+             'kanske ännu inte har ett koncept.')
     okf_dirty = fields.Boolean(
         'OKF Dirty', default=True, index=True, copy=False,
         help='Satt när OKF-fälten är inaktuella och måste genereras om. '
@@ -91,13 +101,47 @@ class AIOkfMixin(models.AbstractModel):
     # Källmetoder — modellen svarar, mixinen läser aldrig själv
     # ==================================================================
 
-    def _okf_text_source(self):
-        """Modellens text — hela materialet.
+    #: Fält som aldrig blir en del av okf_body — oavsett typ.
+    #: okf_* är våra egna (cirkulärt), *_search är sökindex,
+    #: och Odoo:s tekniska fält bär ingen kunskap.
+    OKF_BODY_SKIP = (
+        'id', 'display_name', 'create_uid', 'create_date',
+        'write_uid', 'write_date', '__last_update',
+    )
 
-        Överridd av varje modell som bär mixinen. Default returnerar tom
-        sträng så att en modell utan text inte kraschar.
+    def _okf_body_source(self):
+        """Modellens text — hela materialet (OKF:s body).
+
+        GENERISK DEFAULT: alla HTML- och Text-fält, plus `name`.
+        Modellen överrider när standarden inte räcker (t.ex. website.page,
+        där texten bor på `view_id.arch_db`).
+
+        Varför just HTML + Text + name:
+          - HTML/Text är där fritexten bor (description, content, notes)
+          - `name` bär mest information per tecken och finns på nästan allt
+          - CHAR i övrigt utesluts: e-postkopior, sökindex och koder
+            (email_cc, phone_mobile_search, referred) är inte innehåll
         """
-        return ''
+        self.ensure_one()
+        parts = []
+        for fname, field in self._fields.items():
+            if fname in self.OKF_BODY_SKIP or fname.startswith('okf_'):
+                continue
+            if field.compute or field.related:
+                continue
+            if fname.endswith('_search'):
+                continue
+            if field.type not in ('html', 'text') and fname != 'name':
+                continue
+            value = self[fname]
+            if not value:
+                continue
+            if field.type == 'html':
+                value = self._okf_html_to_text(value)
+            value = str(value).strip()
+            if value:
+                parts.append(value)
+        return '\n\n'.join(parts)
 
     def _okf_summary_source(self):
         """Modellens EGEN sammanfattning, om den har en.
@@ -113,12 +157,89 @@ class AIOkfMixin(models.AbstractModel):
         return None
 
     def _okf_tags_source(self):
-        """Modellens taggar. Default: inga."""
-        return []
+        """Modellens taggar (OKF:s `tags:`).
+
+        GENERISK DEFAULT: fält vars namn innehåller 'tag', eller vars
+        målmodell är en taggmodell. Modellen kan överrida.
+
+        En tagg är en ETIKETT — den har inget innehåll att indexera.
+        Därför blir den aldrig en länk, och får ingen egen mixin.
+        """
+        self.ensure_one()
+        names = []
+        for fname, field in self._fields.items():
+            if field.type not in ('many2one', 'many2many'):
+                continue
+            if field.compute or field.related:
+                continue
+            comodel = field.comodel_name or ''
+            # Regel C: fältnamnet ELLER målmodellen
+            if 'tag' not in fname and 'tag' not in comodel:
+                continue
+            value = self[fname]
+            if not value:
+                continue
+            if field.type == 'many2one':
+                value = value.exists()
+            names.extend(n for n in value.mapped('name') if n)
+        return names
 
     def _okf_links_source(self):
-        """Modellens länkar till andra koncept. Default: inga."""
-        return []
+        """Modellens länkar (OKF:s [[länkar]]).
+
+        GENERISK DEFAULT: samtliga relationsfält (many2one, many2many,
+        one2many) DÄR MÅLETS MODELL BÄR `ai.okf.mixin`.
+
+        Varför bara de med mixinen: en länk är koncept → koncept. En
+        referens till en post som aldrig kan bli ett koncept är ingen
+        länk — den är brus. (OKF tillåter trasiga länkar, men vi länkar
+        bara dit kunskap faktiskt kan uppstå.)
+
+        Formen är `'<modell>,<id>'` — samma som `source_ref`, så en
+        konsument kan slå upp målet direkt.
+
+        Regeln är SJÄLVREGISTRERANDE: när partner_ai byggs och lägger
+        mixinen på res.partner, blir `crm.lead.partner_id` automatiskt en
+        länk. Ingen ändring i crm_ai behövs.
+        """
+        self.ensure_one()
+        refs = []
+        for fname, field in self._fields.items():
+            if field.type not in ('many2one', 'many2many', 'one2many'):
+                continue
+            if field.compute or field.related:
+                continue
+            comodel = field.comodel_name or ''
+            if not self._okf_model_is_indexable(comodel):
+                continue
+            value = self[fname]
+            if not value:
+                continue
+            refs.extend('%s,%s' % (comodel, rid) for rid in value.ids)
+        # Dedup men behåll ordningen (samma post kan nås via flera fält)
+        seen = set()
+        return [r for r in refs if not (r in seen or seen.add(r))]
+
+    @api.model
+    def _okf_model_is_indexable(self, model_name):
+        """Bär modellen `ai.okf.mixin`? (cachas per registerladdning)"""
+        if model_name not in self.env:
+            return False
+        inherit = self.env[model_name]._inherit
+        if isinstance(inherit, str):
+            inherit = [inherit]
+        return 'ai.okf.mixin' in inherit
+
+    @staticmethod
+    def _okf_html_to_text(html):
+        """HTML → text. Använder ai.memory.mixins parser om den finns."""
+        if not html:
+            return ''
+        try:
+            from .ai_memory_mixin import AIMemoryMixin
+            return AIMemoryMixin._html_to_text(html)
+        except Exception:  # noqa: BLE001 — fallback är ett giltigt utfall
+            return html
 
     def _okf_dirty_fields(self):
         """Fält vars ändring gör OKF-fälten inaktuella.
@@ -174,14 +295,14 @@ class AIOkfMixin(models.AbstractModel):
     def _clear_okf_dirty(self, extra_vals=None):
         """Rensa flaggan direkt i SQL — spegelbild av `_set_okf_dirty()`.
 
-        Indexeraren skriver `okf_text`/`okf_summary` och rensar flaggan i
+        Indexeraren skriver `okf_body`/`okf_summary` och rensar flaggan i
         SAMMA anrop. Går den genom `write()` tänder hooken flaggan igen och
         nästa varv (5 min) gör om arbetet — självåtertändningen som gav 38
         versioner av `ai.memory,257` (fixad 2026-09-21).
 
         Args:
             extra_vals (dict, optional): fält att skriva i samma UPDATE,
-                t.ex. `{'okf_text': ..., 'okf_summary': ...}`.
+                t.ex. `{'okf_body': ..., 'okf_summary': ...}`.
         """
         if not self:
             return
@@ -189,7 +310,7 @@ class AIOkfMixin(models.AbstractModel):
         vals['okf_dirty'] = False
         vals.setdefault('okf_indexed_at', fields.Datetime.now())
         self.flush_recordset(list(vals))
-        # jsonb-fält (okf_tags, okf_links) måste serialiseras — rå SQL går
+        # jsonb-fält (okf_links) måste serialiseras — rå SQL går
         # förbi ORM:ens typkonvertering, och psycopg2 tolkar en Python-lista
         # som text[]. psycopg2.extras.Json är samma omslag Odoo själv
         # använder (odoo/models.py importerar det därifrån).
@@ -368,16 +489,16 @@ class AIOkfMixin(models.AbstractModel):
         if max_chars is None:
             max_chars = self._okf_summary_max_chars()
 
-        text = self._okf_text_source() or ''
+        body = self._okf_body_source() or ''
         skip = self._okf_skip_reason()
 
         if skip:
             # "Tomt för alltid" — rensa så posten inte blockerar kön.
-            self._clear_okf_dirty({'okf_text': text, 'okf_summary': ''})
+            self._clear_okf_dirty({'okf_body': body, 'okf_summary': ''})
             _logger.info('OKF: avför %s,%s (%s)', self._name, self.id, skip)
             return None
 
-        if not text.strip():
+        if not body.strip():
             # "Tomt just nu" — behåll flaggan, försök nästa körning.
             # Annars tappar vi poster permanent (D5-fällan: "vägen är byggd"
             # utan att ha sett den köra).
@@ -385,17 +506,29 @@ class AIOkfMixin(models.AbstractModel):
                           self._name, self.id)
             return None
 
-        summary, source = self._okf_build_summary(text, max_chars, session)
-        tags = self.okf_tags or self._okf_tags_source() or []
-        links = self.okf_links or self._okf_links_source() or []
+        summary, source = self._okf_build_summary(body, max_chars, session)
+        links = self._okf_links_source() or []
 
         # Fälten skrivs och flaggan rensas i SAMMA SQL-anrop (D3).
+        # Taggar sätts separat: de är en many2many och kan inte gå via
+        # rå SQL på samma sätt.
         self._clear_okf_dirty({
-            'okf_text': text,
+            'okf_body': body,
             'okf_summary': summary,
-            'okf_tags': tags,
             'okf_links': links,
         })
+
+        # Taggar: hitta/skapa ai.okf.tag och sätt relationen.
+        tag_names = self._okf_tags_source() or []
+        if tag_names:
+            Tag = self.env['ai.okf.tag'].sudo()
+            tag_ids = []
+            for name in tag_names:
+                tag = Tag.search([('name', '=', name)], limit=1)
+                if not tag:
+                    tag = Tag.create({'name': name})
+                tag_ids.append(tag.id)
+            self.sudo().write({'okf_tags': [(6, 0, tag_ids)]})
 
         source_ref = '%s,%s' % (self._name, self.id)
         vals = {
@@ -408,14 +541,14 @@ class AIOkfMixin(models.AbstractModel):
             'attribution': [{'line': 1, 'source_ref': source_ref}],
             'generated_by': 'cron',
             # D5: källan styr versionen, inte derivatet.
-            'source_text': text,
+            'source_text': body,
         }
         vals.update(self._okf_owner_vals())
 
         concept = self.env['ai.okf.concept']._okf_upsert(**vals)
         _logger.info(
             'OKF: indexerade %s (summary-källa: %s, %d -> %d tecken)',
-            source_ref, source, len(text), len(summary))
+            source_ref, source, len(body), len(summary))
         return concept
 
     def action_okf_index_now(self):
