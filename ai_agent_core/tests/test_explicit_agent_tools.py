@@ -172,22 +172,44 @@ class TestDefaultToolIds(TransactionCase):
             'Explicita tool_ids ska bevaras orörda')
 
     def test_settings_roundtrip_persists_tool_names(self):
-        """Settings get/set_values bevarar default-verktygen."""
+        """Settings get/set_values bevarar default-verktygen.
+
+        FYND 2026-09-23: testet skrev `ai_agent_core.default_tool_ids` till
+        ir.config_parameter via set_values(). TransactionCase rullar
+        tillbaka DB-transaktionen, men ir.config_parameter är CACHAD i
+        registryt — värdet läckte vidare till nästa testklass. Följden var
+        att test_builtin_fallback_removal och test_explicit_agent_tools
+        (i hela sviten) såg odoo_unlink/okf_search i en tom coworkers
+        verktygslista. Städar parametern efter sig.
+        """
         Settings = self.env['res.config.settings']
+        ICP = self.env['ir.config_parameter'].sudo()
         rec = self.env['ai.tool'].search(
             [('builtin_name', '=', 'odoo_calculator')], limit=1)
-        settings = Settings.create({
-            'ai_default_tool_ids': [(6, 0, rec.ids)],
-        })
-        settings.set_values()
+        old_param = ICP.get_param('ai_agent_core.default_tool_ids', '')
+        try:
+            settings = Settings.create({
+                'ai_default_tool_ids': [(6, 0, rec.ids)],
+            })
+            settings.set_values()
 
-        values = Settings.get_values()
-        self.assertIn(
-            'ai_default_tool_ids', values,
-            'get_values ska returnera ai_default_tool_ids')
-        self.assertIn(
-            rec.id, values['ai_default_tool_ids'][0][2],
-            'Det sparade verktyget ska komma tillbaka i rundturen')
+            values = Settings.get_values()
+            self.assertIn(
+                'ai_default_tool_ids', values,
+                'get_values ska returnera ai_default_tool_ids')
+            self.assertIn(
+                rec.id, values['ai_default_tool_ids'][0][2],
+                'Det sparade verktyget ska komma tillbaka i rundturen')
+        finally:
+            # Återställ parametern — annars läcker den till nästa testklass
+            # (cachen rensas av set_param, men vi måste sätta tillbaka
+            # ursprungsvärdet först).
+            if old_param:
+                ICP.set_param('ai_agent_core.default_tool_ids', old_param)
+            else:
+                ICP.search([
+                    ('key', '=', 'ai_agent_core.default_tool_ids'),
+                ]).unlink()
 
 
 class TestNoImplicitBuiltins(TransactionCase):

@@ -137,8 +137,13 @@ class TestPiSessionLink(common.TransactionCase):
     # ── (f) persistering: en line per messages[]-post (delta) ──────────
 
     def _pi_session(self, uuid):
+        # FYND 2026-09-23: coworker_id var HÅRDKODAT till 20. Det råkade
+        # finnas i den gamla test-DB:n (där ai_coworker redan hade rader),
+        # men vid färsk installation finns inget id 20 → FK-brott i
+        # ai_coworker_session_coworker_id_fkey. Använd setUpClass-coworkern.
         sess, _ = self.Session._find_or_create_coworker_session(
-            20, self.env.user.id, pi_session_id=uuid, prompt='delta test')
+            self.coworker.id, self.env.user.id,
+            pi_session_id=uuid, prompt='delta test')
         return sess
 
     def test_every_message_becomes_one_line(self):
