@@ -5,6 +5,7 @@ import base64
 import json
 
 from odoo.tests.common import TransactionCase, tagged
+from ._config_param_guard import ConfigParamGuardedCase
 
 
 def _fake_keys():

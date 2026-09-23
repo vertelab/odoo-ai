@@ -17,6 +17,7 @@ den underliggande datan (nyckeln) ens finns. "Combo är inte tillåten" och
 "ingen nyckel skickades" ger samma HTTP-status men kräver olika åtgärd.
 """
 from odoo.tests import tagged
+from ._config_param_guard import ConfigParamGuardedCase
 from odoo.tests.common import TransactionCase
 
 

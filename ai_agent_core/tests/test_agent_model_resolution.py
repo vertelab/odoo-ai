@@ -9,12 +9,12 @@ None), och körningen kraschade först vid `await provider.aclose()` — efter
 att sessionen skapats. Resultatet var en tom session med status='error'.
 """
 from odoo.tests import tagged
-from odoo.tests.common import TransactionCase
+from ._config_param_guard import ConfigParamGuardedCase
 from odoo.exceptions import ValidationError
 
 
 @tagged('post_install', '-at_install')
-class TestDefaultModel(TransactionCase):
+class TestDefaultModel(ConfigParamGuardedCase):
 
     def setUp(self):
         super().setUp()
@@ -71,7 +71,7 @@ class TestDefaultModel(TransactionCase):
 
 
 @tagged('post_install', '-at_install')
-class TestProviderPrecheck(TransactionCase):
+class TestProviderPrecheck(ConfigParamGuardedCase):
 
     def setUp(self):
         super().setUp()

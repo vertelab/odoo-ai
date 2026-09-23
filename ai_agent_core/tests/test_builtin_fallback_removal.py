@@ -13,6 +13,7 @@ Täcker:
 import logging
 
 from odoo.tests.common import TransactionCase
+from ._config_param_guard import ConfigParamGuardedCase
 
 # Interna förmågor som aldrig ska läcka in utan explicit tool_ids.
 INTERNAL_PREFIXES = (
@@ -22,7 +23,7 @@ INTERNAL_PREFIXES = (
 )
 
 
-class TestNoImplicitFallback(TransactionCase):
+class TestNoImplicitFallback(ConfigParamGuardedCase):
     """Grupp 2 — ingen väg lägger till verktyg som inte valts."""
 
     def test_empty_coworker_gets_only_settings_default(self):

@@ -3,6 +3,7 @@
 
 from odoo.exceptions import AccessError
 from odoo.tests.common import TransactionCase
+from ._config_param_guard import ConfigParamGuardedCase
 
 
 class TestCoworkerHITL(TransactionCase):

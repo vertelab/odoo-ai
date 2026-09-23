@@ -17,6 +17,7 @@ Dessa tester bevisar:
 from unittest.mock import patch
 
 from odoo.tests import common, tagged
+from ._config_param_guard import ConfigParamGuardedCase
 
 
 class _OkfTestModel(common.TransactionCase):

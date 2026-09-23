@@ -11,6 +11,7 @@ Täcker:
 """
 
 from odoo.tests.common import TransactionCase
+from ._config_param_guard import ConfigParamGuardedCase
 
 # Interna förmågor som ALDRIG ska hamna i en session utan explicit tool_ids.
 INTERNAL_PREFIXES = (
@@ -212,7 +213,7 @@ class TestDefaultToolIds(TransactionCase):
                 ]).unlink()
 
 
-class TestNoImplicitBuiltins(TransactionCase):
+class TestNoImplicitBuiltins(ConfigParamGuardedCase):
     """Uppgift 8.5 — interna verktyg kräver explicit tool_ids."""
 
     def test_session_without_tools_has_no_internal_tools(self):
