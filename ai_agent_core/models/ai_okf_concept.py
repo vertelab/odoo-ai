@@ -415,9 +415,15 @@ class AIOkfConcept(models.Model):
         inte behöva komma ihåg vektorn — den ska bara uppstå.
         """
         if explicit is not None:
-            # Explicit vektor: validera ändå (fel dimension = tyst korrupt rad)
-            ok = self.env['ai.provider']._validate_embedding(
-                explicit, model=self.env['ai.provider'].DEFAULT_EMBEDDING_MODEL,
+            # Explicit vektor: validera ändå (fel dimension = tyst korrupt rad).
+            # Modellnamnet används bara i loggning — längden kontrolleras mot
+            # `dim`. Vi läser providerns fält i stället för den hårdkodade
+            # konstanten, så loggen namnger den modell som faktiskt används.
+            Prov = self.env['ai.provider']
+            ok = Prov._validate_embedding(
+                explicit,
+                model=Prov._embedding_provider()._effective_embedding_model()
+                if Prov._embedding_provider() else Prov.DEFAULT_EMBEDDING_MODEL,
                 dim=EMBEDDING_DIM)
             return (explicit, 'ready') if ok else (None, 'failed')
 
@@ -1872,7 +1878,17 @@ class AIOkfConcept(models.Model):
                 'väntar fortfarande', len(pending))
             return 0
 
-        model = provider.DEFAULT_EMBEDDING_MODEL
+        # Providerns EGNA modell — inte den hårdkodade konstanten.
+        #
+        # FYND på social 2026-09-23: `DEFAULT_EMBEDDING_MODEL` är
+        # 'text-embedding-3-small', som inte finns i Bifrosts modellista.
+        # Anropet routades till en trial-nyckel som inte svarar: 3 × 20 sek
+        # = 60 sek per koncept. Med 118 pending-koncept blev backfill-cronen
+        # två timmar lång — och höll `ir_cron`-låset.
+        #
+        # Providerns fält (`embedding_model`) är den enda sanningen;
+        # `_effective_embedding_model()` läser det med fallback.
+        model = provider._effective_embedding_model()
         filled = 0
         for concept in pending:
             text = ' '.join(filter(None, [concept.title, concept.summary])).strip()
