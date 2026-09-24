@@ -90,10 +90,18 @@
     </record>
 
     <!-- Menu Entry under AI Agent configuration -->
+    <!-- The parent menu lives in ai_agent_core as menu_ai_configuration.
+         This used to point at ai_agent.ai_agent_menu_configuration, an xmlid
+         that only exists in the legacy ai_agent module. With ai_agent_core
+         installed (and ai_agent deliberately excluded) the reference made
+         the whole module fail with:
+           ValueError: External ID not found in the system:
+           ai_agent.ai_agent_menu_configuration
+           ParseError: while parsing .../ai_composer_views.xml:97 -->
     <menuitem id="menu_ai_composer"
               name="AI Composers"
               sequence="30"
-              parent="ai_agent.ai_agent_menu_configuration"
+              parent="ai_agent_core.menu_ai_configuration"
               action="action_ai_composer"/>
 
 </odoo>

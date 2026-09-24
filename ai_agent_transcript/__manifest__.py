@@ -20,7 +20,7 @@
 ##############################################################################
 {
     'name': 'odoo-ai: Powerbox & Transcript',
-    'version': '18.0.1.0.0',
+    'version': '18.0.1.0.1',
     'summary': 'Powerbox-style AI interaction with transcript/context injection',
     'category': 'AI Orchestration',
     'description': """
