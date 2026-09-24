@@ -59,6 +59,73 @@ class AICoworkerSessionLine(models.Model):
     token_sys = fields.Integer('Systemtokens', compute='_compute_token_sys', store=True,
         help='(token_input + token_output) × sys_multiplier')
 
+    # ── Utfall per rad (utfall-och-tokenmatning) ────────────────────────
+    # Radens eget utfall. `TokenEvent`/`ChatResponse` bär redan
+    # `finish_reason` — det nådde tidigare aldrig raden. `interrupted`
+    # markerar en tur som avbröts mitt i strömmen (prefixet bevaras).
+    finish_reason = fields.Selection([
+        ('stop', 'Stop'),
+        ('length', 'Length'),
+        ('tool_calls', 'Tool Calls'),
+        ('content_filter', 'Content Filter'),
+        ('refusal', 'Refusal'),
+        ('max_rounds', 'Max Rounds'),
+        ('max_tokens', 'Max Tokens'),
+        ('timeout', 'Timeout'),
+        ('cancelled', 'Cancelled'),
+        ('error', 'Error'),
+        ('idle', 'Idle'),
+        ('closed', 'Closed'),
+        ('interrupted', 'Interrupted'),
+        ('new_session', 'New Session'),
+    ], string='Finish Reason',
+        help='Varför denna rads tur/steg slutade. Samma vokabulär som '
+             'sessionens finish_reason.')
+    interrupted = fields.Boolean('Interrupted', default=False,
+        help='True när turen avbröts mitt i en ström och det levererade '
+             'prefixet bevarades.')
+
+    # ── Kostnad och osäkerhet (utfall-och-tokenmatning) ────────────────
+    # Ögonblicksbilder från ai.model vid radens skapande — samma mönster
+    # som sys_multiplier. `token_sys` är DEBITERINGSGRUND (inkl. marginal);
+    # `cost_usd` är FAKTISK kostnad. De slås aldrig ihop.
+    cost_input_1k = fields.Float('Input Cost per 1K', digits=(12, 8),
+        help='Modellens input-pris per 1K tokens vid radens skapande.')
+    cost_output_1k = fields.Float('Output Cost per 1K', digits=(12, 8),
+        help='Modellens output-pris per 1K tokens vid radens skapande.')
+    cached_tokens = fields.Integer('Cached Tokens', default=0,
+        help='Antal input-tokens som var cache-träffar (billigare).')
+    usage_reported = fields.Boolean('Usage Reported', default=True,
+        help='False när providern inte rapporterade token-usage. Skiljer '
+             '"inga tokens" från "vi vet inte" — en omätt rad får inte se '
+             'gratis ut.')
+    cost_usd = fields.Float('Cost (USD)', compute='_compute_cost_usd',
+        store=True, digits=(16, 8),
+        help='Faktisk kostnad i USD: (in − cached)/1000 × cost_input_1k '
+             '+ ut/1000 × cost_output_1k. Omätt (0) när usage_reported=False.')
+
+    @api.depends('token_input', 'token_output', 'cached_tokens',
+                 'cost_input_1k', 'cost_output_1k', 'usage_reported')
+    def _compute_cost_usd(self):
+        for line in self:
+            if not line.usage_reported:
+                # Omätt är inte 0 — lämna utan värde så aggregat kan skilja dem.
+                line.cost_usd = 0.0
+                continue
+            billed_input = max((line.token_input or 0) - (line.cached_tokens or 0), 0)
+            line.cost_usd = (
+                billed_input / 1000.0 * (line.cost_input_1k or 0.0)
+                + (line.token_output or 0) / 1000.0 * (line.cost_output_1k or 0.0)
+            )
+
+    # ── Informativa rader (utfall-och-tokenmatning) ────────────────────
+    # Rader som bär spårbarhet men INTE ska räknas i budgeten (t.ex.
+    # per-agent-tokens från supervisor/konsensus, där den aggregerade
+    # totalen redan bokförts på sessionen). Utan denna flagga dubbelräknar
+    # _compute_session_line_count dessa rader.
+    informative = fields.Boolean('Informative', default=False, index=True,
+        help='True = raden är spårbarhet men räknas INTE i budget/burn rate.')
+
     @api.depends('token_input', 'token_output', 'sys_multiplier')
     def _compute_token_sys(self):
         for line in self:
@@ -69,6 +136,10 @@ class AICoworkerSessionLine(models.Model):
     # raderas under sessionens livstid. Endast rena lifecycle-/metadatafält
     # får uppdateras (t.ex. agent_id/tool_id som kan fyllas i efteråt vid
     # specialist-delegation). Innehåll och roll är immutabla.
+    #
+    # Utfalls-/kostnadsfälten (finish_reason, interrupted, cost_*, cached_tokens,
+    # usage_reported, informative) är metadata och får uppdateras — de tillhör
+    # livscykeln, inte innehållet.
     _IMMUTABLE_FIELDS = frozenset({
         'session_id', 'role', 'content', 'tool_calls', 'tool_name',
         'sequence', 'token_input', 'token_output', 'model_real',

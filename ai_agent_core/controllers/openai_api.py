@@ -133,6 +133,10 @@ class AIOpenAPIController(http.Controller):
         user_ident = body.get('user', '')
         pi_session_id = (body.get('pi_session_id') or '').strip()
         session_id = int(body.get('session_id') or 0)
+        # Agent-identitet (pi-agent-agent-identity): vilken ai.agent
+        # gäller uppdraget? Valfritt — utan fältet är beteendet
+        # oförändrat (coworkerns union av kopplade agenter).
+        agent_ref = (body.get('agent') or '').strip()
 
         # Transport C-fallback: plocka Pi-sessions-UUID ur `{pi session: …}`-
         # markör i system-/user-meddelanden om body-fältet saknas.
@@ -146,6 +150,15 @@ class AIOpenAPIController(http.Controller):
 
         if not messages:
             return self._error(400, "Missing messages")
+
+        # Agent-uppslagning (pi-agent-agent-identity). Sker EFTER att
+        # coworkern verifierats ha openai_api påslaget, så en klient utan
+        # giltig konfiguration får samma fel som förut.
+        force_agent = None
+        if agent_ref:
+            force_agent, agent_err = self._resolve_agent(coworker, agent_ref)
+            if agent_err:
+                return self._error(400, agent_err)
 
         # Rate limiting
         rpm = oai_init[0].rate_limit_rpm or 30
@@ -189,15 +202,60 @@ class AIOpenAPIController(http.Controller):
                 coworker, prompt, system_prompt, model, temperature,
                 max_tokens, tools, estimated_tokens,
                 pi_session_id=pi_session_id, session_id=session_id,
-                messages=messages,
+                messages=messages, force_agent=force_agent,
             )
         else:
             return self._handle_sync(
                 coworker, prompt, system_prompt, model, temperature,
                 max_tokens, tools, estimated_tokens,
                 pi_session_id=pi_session_id, session_id=session_id,
-                messages=messages,
+                messages=messages, force_agent=force_agent,
             )
+
+    def _resolve_agent(self, coworker, agent_ref):
+        """Lös upp en ai.agent inom coworkerns kopplingar.
+
+        Klienten kan ange vilken agent ett uppdrag gäller (fältet `agent`
+        i request-body). Uppslagningen sker ENDAST bland de agenter som är
+        kopplade till den anropade coworkern — en API-nyckel för coworker 1
+        får inte köra en agent som hör till coworker 7. Det är samma
+        behörighetsmodell som _session_tool_ids() tillämpar.
+
+        Args:
+            coworker: ai.coworker — den anropade medarbetaren.
+            agent_ref: str — numeriskt id ("8") eller namn
+                ("CrawlAI Lead Enricher"). Skiftlägeskänsligt namn.
+
+        Returns:
+            (agent, error): agent är ett ai.agent-record eller None.
+            error är en felsträng när uppslagningen misslyckades, annars
+            None. Aldrig tyst fallback — ett okänt värde ska synas.
+        """
+        linked = coworker.agent_ids.mapped('agent_id')
+        if not linked:
+            return None, (
+                "Coworker '%s' has no linked agents — cannot resolve "
+                "agent '%s'." % (coworker.name, agent_ref))
+
+        # Numeriskt id
+        if agent_ref.isdigit():
+            agent = linked.filtered(lambda a: a.id == int(agent_ref))
+            if agent:
+                return agent[0], None
+        else:
+            # Namn (exakt träff först, sedan skiftlägesokänsligt)
+            agent = linked.filtered(lambda a: a.name == agent_ref)
+            if not agent:
+                agent = linked.filtered(
+                    lambda a: (a.name or '').lower() == agent_ref.lower())
+            if agent:
+                return agent[0], None
+
+        available = ', '.join(
+            '%s (id %s)' % (a.name, a.id) for a in linked)
+        return None, (
+            "Unknown agent '%s' for coworker '%s'. Available agents: %s"
+            % (agent_ref, coworker.name, available))
 
     def _find_or_create_session(self, coworker, prompt, pi_session_id='',
                                 session_id=0):
@@ -292,7 +350,8 @@ class AIOpenAPIController(http.Controller):
 
     def _handle_sync(self, coworker, prompt, system_prompt, model,
                      temperature, max_tokens, tools, estimated_tokens,
-                     pi_session_id='', session_id=0, messages=None):
+                     pi_session_id='', session_id=0, messages=None,
+                     force_agent=None):
         """Handle non-streaming request — run AgentLoop and return JSON."""
         from odoo.addons.ai_agent_core.core.interrupt import (
             AgentLoopPaused, OpenAIInterruptHandler)
@@ -319,6 +378,7 @@ class AIOpenAPIController(http.Controller):
                     history=history,
                     interrupt_handler=handler,
                     session=_session,
+                    force_agent=force_agent,
                 )
             except AgentLoopPaused as pause:
                 # HITL: returnera tool_calls till klienten (pi) — loopen
@@ -363,17 +423,11 @@ class AIOpenAPIController(http.Controller):
             # Klientstyrning (D7): system_prompt_add + skill_to_load
             try:
                 pi_instr = coworker._build_pi_instruction(_session)
-                # Uppgiftsbaserat skill-val (2026-09-22): ranka skills mot
-                # användarens prompt via trigger_keywords i stället för
-                # alfabetiskt första-träff.
-                _skill_names = coworker._pi_skills_to_load(
-                    prompt_text=prompt, limit=3)
-                skill_to_load = _skill_names[0] if _skill_names else ''
+                skill_to_load = coworker._pi_skill_to_load()
             except Exception as e:
                 _logger.warning('pi_instruction failed: %s', e)
                 pi_instr = ''
                 skill_to_load = ''
-                _skill_names = []
 
             return Response(json.dumps({
                 'id': f'chatcmpl-{coworker.id}-{int(time.time())}',
@@ -394,7 +448,6 @@ class AIOpenAPIController(http.Controller):
                 'cost_context': self._cost_context_payload(_session),
                 'system_prompt_add': pi_instr or '',
                 'skill_to_load': skill_to_load or '',
-                'skills_to_load': _skill_names,
             }), content_type='application/json')
 
         except Exception as e:
@@ -403,7 +456,8 @@ class AIOpenAPIController(http.Controller):
 
     def _handle_stream(self, coworker, prompt, system_prompt, model,
                        temperature, max_tokens, tools, estimated_tokens,
-                       pi_session_id='', session_id=0, messages=None):
+                       pi_session_id='', session_id=0, messages=None,
+                       force_agent=None):
         """Handle streaming request — SSE response."""
         response_id = f'chatcmpl-{coworker.id}-{int(time.time())}'
         created = int(time.time())
@@ -425,6 +479,10 @@ class AIOpenAPIController(http.Controller):
         # generatorn via en färsk registry-cursor.
         gen_dbname = request.env.cr.dbname
         gen_uid = request.env.uid
+        # Agent-identiteten måste fångas som plain värde: request är borta
+        # när generatorn kör. force_agent är ett ai.agent-record — vi bär
+        # dess id och slår upp det i generatorns färska env.
+        gen_force_agent_id = force_agent.id if force_agent else 0
         gen_context = dict(request.env.context)
         _coworker_id = coworker.id
         _session_id = _session.id
@@ -471,8 +529,13 @@ class AIOpenAPIController(http.Controller):
                         tools_reg = ToolRegistry()
                         try:
                             quest = gen_env['ai.coworker'].sudo().browse(_coworker_id)
+                            gen_agent = (
+                                gen_env['ai.agent'].sudo().browse(
+                                    gen_force_agent_id).exists()
+                                if gen_force_agent_id else None)
                             tool_ids = quest._session_tool_ids(
-                                access_groups=gen_env.user.groups_id.ids)
+                                access_groups=gen_env.user.groups_id.ids,
+                                force_agent=gen_agent)
                             if tool_ids:
                                 tool_recs = gen_env['ai.tool'].sudo().browse(tool_ids)
                                 if tool_recs:
