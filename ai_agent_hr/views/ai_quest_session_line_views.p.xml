@@ -2,7 +2,11 @@
   <record id="ai_quest_session_line_list" model="ir.ui.view">
     <field name="name">ai.quest.session.line.list.department</field>
     <field name="model">ai.quest.session.line</field>
+    <!-- #if VERSION <= "17.0" -->
+    <field name="inherit_id" ref="ai_agent.ai_quest_session_line_tree" />
+    <!-- #else -->
     <field name="inherit_id" ref="ai_agent.ai_quest_session_line_list" />
+    <!-- #endif -->
     <field name="arch" type="xml">
       <field name="ai_quest_id" position="after">
         <field name="department_id" />
