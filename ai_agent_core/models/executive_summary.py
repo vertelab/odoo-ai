@@ -54,16 +54,31 @@ class ExecutiveSummaryInterface(models.Model):
              'from a project close, points at the generated knowledge concept.')
 
     @api.model
-    def _add(self, concept, level, summary, title=None, generated_by='cron'):
-        """Add a new distillation row (ADD-only versioning)."""
-        self.ensure_one()
-        return self.create({
+    def _add(self, concept, level, summary, title=None, generated_by='cron',
+             source_concept_id=None):
+        """Add a new distillation row (ADD-only versioning).
+
+        Model-level helper: it is called as ``env['executive.summary
+        .interface']._add(...)``, which is a *legitimately empty*
+        recordset (``_ids == ()``). Do NOT call ``self.ensure_one()``
+        here — that is exactly what broke the nightly distillation cron
+        ("Expected singleton: executive.summary.interface()",
+        server action #2848). ``create()`` on an empty recordset is the
+        normal Odoo idiom and works fine.
+        """
+        concept.ensure_one()
+        summary = (summary or '').strip() or (title or concept.title or '')
+        vals = {
             'concept_id': concept.id,
             'level': level,
             'title': title or concept.title,
             'summary': summary,
             'generated_by': generated_by,
-        })
+        }
+        if source_concept_id:
+            vals['source_concept_id'] = source_concept_id.id \
+                if hasattr(source_concept_id, 'id') else source_concept_id
+        return self.create(vals)
 
     @api.model
     def _latest(self, concept, level):
@@ -114,30 +129,44 @@ class AIOKFConceptDistill(models.Model):
         Accepts provided summaries; when missing, builds a mechanical
         fallback from title + summary head so distillation works without
         an LLM provider in the loop.
+
+        NOTE: the caller-supplied ``l2``/``l3`` are only used for a
+        *single* concept. They are resolved into local variables per
+        record — never assigned back to the arguments — so iterating a
+        multi-record recordset cannot leak the first concept's summary
+        into every subsequent one.
         """
         Summary = self.env['executive.summary.interface']
         for rec in self:
-            if l2 is None:
+            rec_l2 = l2
+            rec_l3 = l3
+            if rec_l2 is None:
                 head = (rec.summary or '').strip().split('\n')[0]
-                l2 = _mechanical_l2(rec.title, head)
-            if l3 is None:
-                l3 = _mechanical_l3(rec.title)
-            Summary._add(rec, 'L2', l2, title=rec.title,
+                rec_l2 = _mechanical_l2(rec.title, head)
+            if rec_l3 is None:
+                rec_l3 = _mechanical_l3(rec.title)
+            Summary._add(rec, 'L2', rec_l2, title=rec.title,
                          generated_by=generated_by)
-            Summary._add(rec, 'L3', l3, title=rec.title,
+            Summary._add(rec, 'L3', rec_l3, title=rec.title,
                          generated_by=generated_by)
         return True
 
     @api.model
     def _distill_inbox_batch(self, limit=20, generated_by='cron'):
         """Nightly/inbox distillation (task 4.3): distill concepts that have
-        no L2 row yet (i.e. are new/unprocessed capture)."""
+        no L2 row yet (i.e. are new/unprocessed capture).
+
+        Per-concept errors are logged and skipped so one malformed
+        concept can never abort the whole batch (which would leave the
+        cron permanently red).
+        """
         Summary = self.env['executive.summary.interface']
         candidates = self.search([
             ('scope', '=', 'personal'),
             ('archived', '=', False),
         ], limit=limit, order='create_date asc')
         done = 0
+        failed = 0
         for concept in candidates:
             has_l2 = Summary.search_count([
                 ('concept_id', '=', concept.id),
@@ -145,16 +174,34 @@ class AIOKFConceptDistill(models.Model):
             ])
             if has_l2:
                 continue
-            concept.distill_l2_l3(generated_by=generated_by)
-            done += 1
+            try:
+                with self.env.cr.savepoint():
+                    concept.distill_l2_l3(generated_by=generated_by)
+                done += 1
+            except Exception:
+                failed += 1
+                _logger.exception(
+                    'Distillation failed for concept %s (%r) — skipped',
+                    concept.id, concept.title)
+        if failed:
+            _logger.warning(
+                'Distillation batch: %s distilled, %s failed (skipped)',
+                done, failed)
         return done
 
 
 def _mechanical_l2(title, head):
-    """Mechanical L2 fallback (no LLM needed): one business-value sentence."""
-    return f"{title or 'Koncept'}: {head[:200]}" if head else title or ''
+    """Mechanical L2 fallback (no LLM needed): one business-value sentence.
+
+    Always returns a non-empty str so the Text field never gets None/''.
+    """
+    title = (title or '').strip()
+    head = (head or '').strip()
+    if title and head:
+        return f"{title}: {head[:200]}"
+    return title or head[:200] or 'Koncept'
 
 
 def _mechanical_l3(title):
-    """Mechanical L3 fallback: one line."""
-    return title or ''
+    """Mechanical L3 fallback: one line (never None/'')."""
+    return (title or '').strip() or 'Sammanfattning'
