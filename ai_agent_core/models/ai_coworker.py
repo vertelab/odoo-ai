@@ -5128,6 +5128,33 @@ class AICoworker(models.Model):
             url += f'&context_quest={self.id}'
         return {'type': 'ir.actions.act_url', 'url': url, 'target': 'new'}
 
+    @api.model
+    def action_ask_ai_about_record(self):
+        """Open the AI chat with the current record (or selection).
+
+        Bindable server action - can be placed on any model. Reads
+        `active_model`/`active_id` (form view) or `active_ids` (list view)
+        from the context and forwards them as URL parameters; the chat
+        passes them on to /ai/stream, which sets the session's
+        ai_record_* fields (ai-coworker-record-context 5.3).
+
+        No record is required: without active_id/active_ids the chat opens
+        without context, which is the correct behaviour (empty selection =
+        no context).
+        """
+        model = self.env.context.get('active_model')
+        active_id = self.env.context.get('active_id')
+        active_ids = self.env.context.get('active_ids') or []
+        url = '/ai/chat'
+        if model:
+            url += '&context_model=' + model
+            if len(active_ids) > 1:
+                url += '&context_res_ids=' + ','.join(
+                    str(i) for i in active_ids)
+            elif active_id:
+                url += '&context_res_id=' + str(active_id)
+        return {'type': 'ir.actions.act_url', 'url': url, 'target': 'new'}
+
     def action_get_sessions(self):
         return {
             'name': 'Sessions', 'type': 'ir.actions.act_window',
