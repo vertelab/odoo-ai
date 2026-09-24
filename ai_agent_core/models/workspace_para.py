@@ -204,8 +204,13 @@ class WorkspaceParaContainer(models.Model):
             # Sammanfatta refs till en kort lessons-learned-text
             parts = []
             for ref in rec.ref_ids:
-                label = ref.object_ref and str(ref.object_ref) or \
-                    (ref.model, ref.res_id)
+                # object_ref may be empty (lazy ref) — then fall back to a
+                # readable "model,id" string. Never pass a tuple to %
+                # formatting: '- %s' % ('m', 1) raises TypeError.
+                if ref.object_ref:
+                    label = str(ref.object_ref)
+                else:
+                    label = '%s,%s' % (ref.model, ref.res_id)
                 parts.append('- %s' % label)
             summary = (
                 f"Lessons learned från projektet \"{rec.name}\":\n"

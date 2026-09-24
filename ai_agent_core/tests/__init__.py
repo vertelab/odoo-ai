@@ -52,3 +52,7 @@ from . import test_explicit_agent_tools
 from . import test_builtin_fallback_removal
 from . import test_record_context
 from . import test_agent_identity
+# Workspace/PARA + L2/L3 distillation. This file was never imported, which is
+# why the _add()/ensure_one() regression in executive_summary.py (nightly
+# distillation cron, server action #2848) shipped without a red test.
+from . import test_workspace
