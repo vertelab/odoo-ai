@@ -43,6 +43,8 @@ versioner av `ai.memory,257` innan den fixades 2026-09-21.
 import logging
 import time
 
+import re
+
 from odoo import api, fields, models
 from psycopg2.extras import Json
 
@@ -194,11 +196,50 @@ class AIOkfMixin(models.AbstractModel):
         except Exception:
             return False
 
+    # Modeller som är ETIKETTER men inte har 'tag' i namnet.
+    # Odoo kallar dem 'category' eller 'industry'; semantiskt är de taggar:
+    # en etikett utan innehåll, kopplad till en post för att gruppera den.
+    #
+    # FYND 2026-09-24: `res.partner.category` är Odoo:s TAG för partners,
+    # men fältet heter `category_id` och målmodellen `category` — regel C
+    # missade den helt, och en VIP-kund blev ingen tagg.
+    #
+    # MEDVETET UTESLUTNA (de ÄR inte taggar):
+    #   crm.stage, event.stage, utm.stage, project.project.stage
+    #       — etapper är en POSITION i en process, inte en etikett
+    #   uom.category — måttenheter
+    #   ir.module.category — teknisk klassificering
+    OKF_LABEL_MODELS = {
+        'res.partner.category',
+        'res.partner.industry',
+        'hr.employee.category',
+        'blog.tag.category',
+        'event.tag.category',
+        'prd.function_category',
+        'prd.requirement_category',
+    }
+
+    @staticmethod
+    def _okf_is_tag_name(name):
+        """Är `name` ett tagg-namn — på ordgräns?
+
+        `tag_ids` → True. `personal_stage_type_ids` → False.
+        `project.tags` → True. `project.task.type` → False.
+
+        Utan ordgräns matchar 'tag' inuti 'stage', och varje etappfält
+        i Odoo blir en taggkälla.
+        """
+        for part in re.split(r'[._]', name or ''):
+            if part in ('tag', 'tags'):
+                return True
+        return False
+
     def _okf_tags_source(self):
         """Modellens taggar (OKF:s `tags:`).
 
-        GENERISK DEFAULT: fält vars namn innehåller 'tag', eller vars
-        målmodell är en taggmodell. Modellen kan överrida.
+        GENERISK DEFAULT: fält vars namn innehåller 'tag', vars målmodell
+        innehåller 'tag', eller vars målmodell står i OKF_LABEL_MODELS.
+        Modellen kan överrida.
 
         En tagg är en ETIKETT — den har inget innehåll att indexera.
         Därför blir den aldrig en länk, och får ingen egen mixin.
@@ -215,8 +256,18 @@ class AIOkfMixin(models.AbstractModel):
             if field.groups:
                 continue
             comodel = field.comodel_name or ''
-            # Regel C: fältnamnet ELLER målmodellen
-            if 'tag' not in fname and 'tag' not in comodel:
+            # Regel C: fältnamnet, målmodellen, eller etikett-listan.
+            #
+            # OBS: `'tag' in 'stage'` är True — bokstäverna t-a-g ligger
+            # inuti s-t-a-g-e. En naiv delsträngskontroll gjorde därför
+            # `personal_stage_type_ids` till en taggkälla, och etapperna
+            # ['Inbox', 'Done'] hamnade i okf_tags (mätt 2026-09-24).
+            #
+            # Vi matchar därför på ORDGRÄNSER: 'tag' eller 'tags' som
+            # eget ord i fältnamnet, eller i målmodellens sista led.
+            if (not self._okf_is_tag_name(fname)
+                    and not self._okf_is_tag_name(comodel)
+                    and comodel not in self.OKF_LABEL_MODELS):
                 continue
             value = self[fname]
             if not value:
