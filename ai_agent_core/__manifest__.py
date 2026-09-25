@@ -2,21 +2,30 @@
 # Part of Odoo. See LICENSE file for full copyright and licensing details.
 {
     'name': 'odoo-ai: AI Agent Core',
-    'version': '18.0.1.220',
-    'summary': 'AI Agent Core — Org-stomme, heartbeat, onboarding, task-system',
+    'version': '18.0.1.220.0',
+    'summary': 'AI Agent Core — Org-stomme, heartbeat, onboarding, task-system.',
     'category': 'AI Orchestration',
-    'description': """
-        AI Agent Core — self-sufficient AI agent platform for Odoo.
-        
-        Now includes organization layer:
-        * AI Organization Goals (OKR) — hierarchical with cascade
-        * AI Tasks — persistent with atomic checkout, blockers, work products
-        * Heartbeat system — proactive coworkers that wake and work
-        * AI CEO Onboarding — scans modules, interviews CEO, creates org
-        * AI Orchestration Dashboard — org chart with kanban, onboarding button
-        * Bridge Protocol — connect strategy, marketing, helpdesk modules
-        * hr integration — AI coworkers as hr.employees, AI department managers
-    """,
+    'description': '''
+AI Agent Core
+=============
+
+    Now includes organization layer:
+            * AI Organization Goals (OKR) — hierarchical with cascade
+            * AI Tasks — persistent with atomic checkout, blockers, work products
+            * Heartbeat system — proactive coworkers that wake and work
+            * AI CEO Onboarding — scans modules, interviews CEO, creates org
+            * AI Orchestration Dashboard — org chart with kanban, onboarding button
+            * Bridge Protocol — connect strategy, marketing, helpdesk modules
+            * hr integration — AI coworkers as hr.employees, AI department managers
+
+    Features:
+
+        - Web integration: Exposes HTTP endpoints for external systems.
+        - Automation: Scheduled jobs: AI: Generera månadssammanställning, AI: Föreslå skill-förbättringar från erfarenheter, Company Memory Nightly Consolidation.
+        - Guided Wizards: Step-by-step dialogs for data entry.
+        - UI Integration: Extends 49 view(s) in the Odoo interface.
+        - Extends Odoo: Builds on ai.access.resolver, ai.agent, ai.agent.memory, ai.agent.tool.
+    ''',
     'author': 'Vertel AB',
     'website': 'https://vertel.se/apps/odoo-ai/ai_agent_core',
     'license': 'AGPL-3',

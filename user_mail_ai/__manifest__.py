@@ -7,20 +7,16 @@
     'author': 'Vertel AB',
     'website': 'https://vertel.se/apps/odoo-ai/user_mail_ai',
     'license': 'AGPL-3',
-    'description': """
-        Personlig AI-hjälpreda för mail (ai.coworker "Mail-hjälpredan").
+    'description': '''
+AI Assistant
+============
 
-        - Poller-piggyback: ärver user.mail.imap och konsumerar normaliserade
-          mail via _on_new_messages().
-        - Triage: user_mail_ai.mail (tunn modell, Message-ID-dedup).
-        - OKF-arkiv: varje mail arkiveras i personligt scope (create_from_mail).
-        - Graf: :MailMessage-noder + SENT_BY-kant till :OdooPartner via
-          graph.node.definition (befintlig 5-min-sync).
-        - Klassificering: zero-shot (kategori, action, intresse, teams_invite)
-          + deterministisk Teams-detektering.
-        - Teams-inbjudan → calendar.event (autonomt, låg risk) + notis.
-        - Nudges: Odoo-notis + Discuss-DM (när bot-användare konfigurerad).
-    """,
+    Personal AI assistant for mail (ai.coworker "Mail Assistant").
+
+    - Poller piggyback: inherits user.mail.imap and consumes normalised mail
+      via _on_new_messages().
+    - Triage: classifies incoming mail and suggests actions.
+    ''',
     'depends': [
         'user_mail_imap',
         'user_mail_common',

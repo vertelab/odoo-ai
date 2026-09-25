@@ -1,20 +1,26 @@
 {
     'name': 'odoo-ai: Agent Trend Analysis',
-    'version': '0.3',
-    'summary': 'Agent for analysing trends and create material for blogs and LinkedIn-articles',
+    'version': '18.0.1.0.0',
+    'summary': 'Agent for analysing trends and create material for blogs and LinkedIn-articles.',
     'category': 'Productivity / Discuss',
-    'description': """
-        Agent for analysing trends and create material for blogs and LinkedIn-articles
-        
-        Features:
-        * AI-powered trend analysis
-        * Blog content generation  
-        * LinkedIn article creation
-        * Data visualization and insights
-        
-        For professional implementation, customization and support services,
-        contact Vertel AB at https://vertel.se/contact
-    """,
+    'description': '''
+Agent Trend Analysis
+====================
+
+    Features:
+            * AI-powered trend analysis
+            * Blog content generation  
+            * LinkedIn article creation
+            * Data visualization and insights
+
+    For professional implementation, customization and support services,
+            contact Vertel AB at https://vertel.se/contact
+
+    Features:
+
+        - UI Integration: Extends 12 view(s) in the Odoo interface.
+        - Extends Odoo: Builds on ai.agent, ai.memory, ai.quest, ai.quest.session.
+    ''',
     'sequence': 10,
     'author': 'Vertel AB',
     'website': 'https://vertel.se/apps/odoo-ai/ai_agent_trend',

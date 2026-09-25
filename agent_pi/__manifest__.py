@@ -4,28 +4,37 @@
 
 {
     'name': 'agent_pi — Pi Agent Infrastructure',
-    'version': '0.2.0',
-    'summary': 'Distributed Pi Coding Agent orchestration via NATS',
+    'version': '18.0.1.0.0',
+    'summary': 'Distributed Pi Coding Agent orchestration via NATS.',
     'category': 'AI Orchestration',
-    'description': """
-        Odoo module for distributed Pi Coding Agent orchestration via NATS messaging.
+    'description': '''
+agent_pi — Pi Agent Infrastructure
+==================================
 
-        Models:
-        - pi.skill — Agent skills (Markdown instructions)
-        - pi.skill.category — Skill categories
-        - pi.task — Agent tasks with priority, retry, artifacts
-        - pi.agent — Registered Pi agents with health monitoring
-        - pi.artifact — Task results, logs, images
+    Odoo module for distributed Pi Coding Agent orchestration via NATS messaging.
 
-        Communication:
-        - NATS publish/subscribe via nats-py
-        - Callback endpoint /pi/callback/<task_id>
-        - JetStream for persistence, retry, dead-letter
+    Models:
+            - pi.skill — Agent skills (Markdown instructions)
+            - pi.skill.category — Skill categories
+            - pi.task — Agent tasks with priority, retry, artifacts
+            - pi.agent — Registered Pi agents with health monitoring
+            - pi.artifact — Task results, logs, images
 
-        Used by:
-        - module_quality v2 (container-based quality checks)
-        - Future: automated deployments, monitoring, code review
-    """,
+    Communication:
+            - NATS publish/subscribe via nats-py
+            - Callback endpoint /pi/callback/<task_id>
+            - JetStream for persistence, retry, dead-letter
+
+    Used by:
+            - module_quality v2 (container-based quality checks)
+            - Future: automated deployments, monitoring, code review
+
+    Features:
+
+        - Web integration: Exposes HTTP endpoints for external systems.
+        - UI Integration: Extends 4 view(s) in the Odoo interface.
+        - Extends Odoo: Builds on mail.thread, pi.agent, pi.artifact, pi.nats.
+    ''',
     'author': 'Vertel AB',
     'website': 'https://vertel.se/apps/odoo-ai/agent_pi',
     'license': 'AGPL-3',

@@ -20,32 +20,41 @@
 
 {
     'name': 'odoo-ai: Context Injection for AI Quests',
-    'version': '1.1',
-    'summary': 'Injects record data and chatter history as context into AI Quest sessions',
+    'version': '18.0.1.1.0',
+    'summary': 'Injects record data and chatter history as context into AI Quest sessions.',
     'category': 'AI Orchestration',
-    'description': """
-        AI Agent Context Injection
-        ==========================
-        
-        Inspired by Odoo Enterprise AI, this module adds automatic context
-        injection to AI Coworkers. When a Quest is triggered from a record
-        form, the record's field values and chatter history are automatically
-        serialized and included in the AI's system prompt.
-        
-        Features:
-        * Record data serialization (all non-binary fields) via _ai_serialize_fields_data()
-        * Chatter history injection via _ai_serialize_messages_data()
-        * Automatic context building on session creation via _build_record_context()
-        * Works with existing chat, channel, powerbox, and manual Quest types
-        * Systray button with quest selector dialog for launching Quests from any form view
-        * Robust context capture from HTTP request, env.context, and explicit API
-        * JSONRPC endpoints for frontend context push and quest launch
-        
-        Ported patterns from Odoo Enterprise ai module:
-        - models.py: _ai_serialize_fields_data(), _ai_initialise_context()
-        - mail_thread.py: _ai_serialize_messages_data()
-        - discuss_channel.py: create_ai_draft_channel() context building
-    """,
+    'description': '''
+Context Injection for AI Quests
+===============================
+
+    AI Agent Context Injection
+            ==========================
+
+    Inspired by Odoo Enterprise AI, this module adds automatic context
+            injection to AI Coworkers. When a Quest is triggered from a record
+            form, the record's field values and chatter history are automatically
+            serialized and included in the AI's system prompt.
+
+    Features:
+            * Record data serialization (all non-binary fields) via _ai_serialize_fields_data()
+            * Chatter history injection via _ai_serialize_messages_data()
+            * Automatic context building on session creation via _build_record_context()
+            * Works with existing chat, channel, powerbox, and manual Quest types
+            * Systray button with quest selector dialog for launching Quests from any form view
+            * Robust context capture from HTTP request, env.context, and explicit API
+            * JSONRPC endpoints for frontend context push and quest launch
+
+    Ported patterns from Odoo Enterprise ai module:
+            - models.py: _ai_serialize_fields_data(), _ai_initialise_context()
+            - mail_thread.py: _ai_serialize_messages_data()
+            - discuss_channel.py: create_ai_draft_channel() context building
+
+    Features:
+
+        - Web integration: Exposes HTTP endpoints for external systems.
+        - UI Integration: Extends 3 view(s) in the Odoo interface.
+        - Extends Odoo: Builds on ai.coworker, ai.coworker.session, discuss.channel.
+    ''',
     'author': 'Vertel AB',
     'website': 'https://vertel.se/apps/odoo-ai/ai_agent_context',
     'images': ['static/description/banner.png'],

@@ -21,22 +21,27 @@
 
 {
     'name': 'ai_agent: pg_vector-connector',
-    'version': '1.0.3',
-    'summary': 'Ao Orchestration and memory using pg_vector',
+    'version': '18.0.1.0.3',
+    'summary': 'Ao Orchestration and memory using pg_vector.',
     # Categories can be used to filter modules in modules listing
     # Check https://github.com/odoo/odoo/blob/14.0/odoo/addons/base/data/ir_module_category_data.xml
     # for the full list
     'category': 'other',
-    'description': """
-        Mempry Pg_vector
-        
-        pip install  langchain_postgres
-        
-        sudo apt install postgresql-1[4567]-pgvector  (psql --version)
-        sudo -u postgres psql
-        CREATE EXTENSION vector;
-        SELECT * FROM pg_extension WHERE extname = 'vector';
-    """,
+    'description': '''
+pg_vector-connector
+===================
+
+    sudo apt install postgresql-1[4567]-pgvector  (psql --version)
+            sudo -u postgres psql
+            CREATE EXTENSION vector;
+            SELECT * FROM pg_extension WHERE extname = 'vector';
+
+    Features:
+
+        - Guided Wizards: Step-by-step dialogs for data entry.
+        - UI Integration: Extends 4 view(s) in the Odoo interface.
+        - Extends Odoo: Builds on ai.agent.llm, ai.memory, ai.memory.rag, ai.quest.
+    ''',
     #'sequence': '1',
     'author': 'Vertel AB',
     'website': 'https://vertel.se/apps/odoo-ai/ai_agent_pgvector',

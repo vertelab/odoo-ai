@@ -21,16 +21,24 @@
 
 {
     'name': 'odoo-ai: Mailbox for AI',
-    'version': '0.3',
+    'version': '18.0.1.0.0',
     # Version ledger: 16.0 = Odoo version. 1 = Major. Non regressionable code. 2 = Minor. New features that are regressionable. 3 = Bug fixes
-    'summary': 'Mailbox for AI',
+    'summary': 'Mailbox for AI.',
     # Categories can be used to filter modules in modules listing
     # Check https://github.com/odoo/odoo/blob/14.0/odoo/addons/base/data/ir_module_category_data.xml
     # for the full list
     'category': 'Productivity / Discuss',
-    'description': """
-        Mailbox for AI
-    """,
+    'description': '''
+Mailbox for AI
+==============
+
+    Mailbox for AI.
+
+    Features:
+
+        - UI Integration: Extends 3 view(s) in the Odoo interface.
+        - Extends Odoo: Builds on ai.agent, ai.quest, ai.quest.session, crm.lead.
+    ''',
     #'sequence': '1',
     'author': 'Vertel AB',
     'website': 'https://vertel.se/apps/odoo-ai/ai_mail_e_avrop',

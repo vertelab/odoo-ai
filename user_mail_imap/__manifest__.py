@@ -1,7 +1,21 @@
 {
     'name': 'User Mail: IMAP Client',
     'version': '18.0.1.2.0',
-    'summary': 'IMAP email client integrated in Odoo — with per-user poller',
+    'summary': 'IMAP email client integrated in Odoo — with per-user poller.',
+    'description': '''
+IMAP Client
+===========
+
+    IMAP email client integrated in Odoo — with per-user poller.
+
+    Features:
+
+        - Web integration: Exposes HTTP endpoints for external systems.
+        - Automation: Scheduled jobs: User Mail: IMAP Poll (hjälpredan).
+        - Guided Wizards: Step-by-step dialogs for data entry.
+        - UI Integration: Extends 1 view(s) in the Odoo interface.
+        - Extends Odoo: Builds on user.mail.imap, user.mail.poll, user.mail.processed.
+    ''',
     'category': 'Productivity',
     'author': 'Vertel AB',
     'website': 'https://vertel.se/apps/odoo-ai/user_mail_imap',
