@@ -2047,11 +2047,24 @@ class AICoworker(models.Model):
         mot "berätta om record framför mig").
 
         Källor, i prioritetsordning:
-          1. env.context: `_ai_context_ids`/`active_ids` (list-vy) och
-             `active_id` (form-vy) — så sätter frontend det i DM.
-          2. `_detect_record()` — session/kanal/meddelande-vägarna.
+          1. Kanalens vy-kontext (`ai_context_*`) — satt av
+             frontend-patchen vid varje DM-tur. En DM är ingen vy, så
+             kontexten kommer från användarens AKTUELLA vy.
+          2. env.context: `_ai_context_ids`/`active_ids` (list-vy) och
+             `active_id` (form-vy).
+          3. `_detect_record()` — session/kanal/meddelande-vägarna.
         """
-        # 1. Frontend-kontexten (DM-vägen).
+        # 1. Kanalens kontext (DM/kanal-vägen).
+        if channel:
+            try:
+                recs, _vt = channel._get_ai_context_record()
+                if len(recs) == 1:
+                    return (recs._name, recs.id)
+                if len(recs) > 1:
+                    return (recs._name, tuple(sorted(recs.ids)))
+            except Exception:
+                pass
+        # 2. Frontend-kontexten (env.context).
         try:
             model = (self.env.context.get('_ai_context_ids_model')
                      or self.env.context.get('active_model'))
@@ -2074,7 +2087,7 @@ class AICoworker(models.Model):
                     return (rec._name, rec.id)
         except Exception:
             pass
-        # 2. Session/kanal/meddelande-vägarna.
+        # 3. Session/kanal/meddelande-vägarna.
         try:
             rec = self._detect_record({'channel': channel,
                                        'message': message})
@@ -3849,10 +3862,22 @@ class AICoworker(models.Model):
             except Exception:
                 pass
         # 4. Channel context — den INKOMMANDE kanalen (D1b), inte
-        #    self.channel_id. Läser kanalens coworker-koppling och
-        #    därifrån sessionens record.
+        #    self.channel_id.
+        #
+        #    Två vägar, i prioritetsordning:
+        #    a) Kanalens EGEN vy-kontext (ai_context_*), satt av
+        #       frontend-patchen vid varje DM-tur. Detta är den kanoniska
+        #       vägen för DM/kanal — en DM är ingen vy, så kontexten måste
+        #       komma från användarens AKTUELLA vy via meddelandet.
+        #    b) Kanalens coworker-koppling → sessionens record (äldre väg).
         ch = kwargs.get('channel')
         if ch:
+            try:
+                recs, _vt = ch._get_ai_context_record()
+                if recs:
+                    return recs[0]
+            except Exception:
+                pass
             try:
                 ch_sess = self._get_session_for_channel(ch)
                 if ch_sess and ch_sess.ai_record_model \
@@ -3893,34 +3918,51 @@ class AICoworker(models.Model):
         Returnerar ett recordset — eller tomt recordset när turen gällde
         en enskild record (då ansvarar `_detect_record()`).
 
-        Källa: `active_ids`/`_ai_context_ids` ur env.context, satt av
-        frontend när användaren står i en list-vy med förkryssade rader.
+        Källor, i prioritetsordning:
+          1. Kanalens vy-kontext (`ai_context_*`), satt av frontend-patchen
+             vid varje DM-tur (en DM är ingen vy — kontexten kommer från
+             användarens AKTUELLA vy via meddelandet).
+          2. `active_ids`/`_ai_context_ids` ur env.context, satt av
+             frontend när användaren står i en list-vy.
         Samma mönster som server actions `records`.
 
         Vid markering över flera modeller returneras INGET recordset —
         beteendet är explicit (avvisning), aldrig en tyst delmängd (R4).
         """
+        empty = self.env[self._name].browse(0)
+
+        # 1. Kanalens kontext (DM/kanal-vägen).
+        ch = kwargs.get('channel') if kwargs else None
+        if ch:
+            try:
+                recs, _vt = ch._get_ai_context_record()
+                if len(recs) > 1:
+                    return recs
+            except Exception:
+                pass
+
+        # 2. env.context (server actions, webb-UI).
         model = (self.env.context.get('_ai_context_ids_model')
                  or self.env.context.get('active_model'))
         ids = (self.env.context.get('_ai_context_ids')
                or self.env.context.get('active_ids'))
         if not model or not ids:
-            return self.env[self._name].browse(0)
+            return empty
         if model not in self.env:
-            return self.env[self._name].browse(0)
+            return empty
         try:
             ids = [int(i) for i in ids]
         except (TypeError, ValueError):
-            return self.env[self._name].browse(0)
+            return empty
         if len(ids) < 2:
             # En rad markerad är singular — låt _detect_record() hantera den.
-            return self.env[self._name].browse(0)
+            return empty
         try:
             recs = self.env[model].browse(ids).exists()
         except Exception as e:
             _logger.warning('_detect_records: kunde inte browsa %s: %s',
                             model, e)
-            return self.env[self._name].browse(0)
+            return empty
         return recs
 
     def _get_session_for_channel(self, channel):
