@@ -2035,6 +2035,55 @@ class AICoworker(models.Model):
 
     # ── Chat / Channel (init_type='chat' | 'channel') ──
 
+    def _chat_record_key(self, channel=None, message=None):
+        """Identifiera vilken record en chatt-tur gäller — för cachen.
+
+        Returnerar (model, id) eller None när turen inte gäller en
+        specifik record.
+
+        Varför: cache-snabbspåret i chat() matchar frågor på ordöverlapp.
+        Utan record-identitet besvarades "berätta om recorden jag har
+        framför mig" med ett svar om en HELT ANNAN record (mätt: 0.80
+        mot "berätta om record framför mig").
+
+        Källor, i prioritetsordning:
+          1. env.context: `_ai_context_ids`/`active_ids` (list-vy) och
+             `active_id` (form-vy) — så sätter frontend det i DM.
+          2. `_detect_record()` — session/kanal/meddelande-vägarna.
+        """
+        # 1. Frontend-kontexten (DM-vägen).
+        try:
+            model = (self.env.context.get('_ai_context_ids_model')
+                     or self.env.context.get('active_model'))
+            ids = (self.env.context.get('_ai_context_ids')
+                   or self.env.context.get('active_ids'))
+            if model and ids and model in self.env:
+                ids = [int(i) for i in ids]
+                if len(ids) == 1:
+                    rec = self.env[model].browse(ids[0]).exists()
+                    if rec:
+                        return (rec._name, rec.id)
+                elif len(ids) > 1:
+                    # Markering — cachen får inte återanvända ett svar som
+                    # gällde en annan uppsättning rader.
+                    return (model, tuple(sorted(ids)))
+            active_id = self.env.context.get('active_id')
+            if model and active_id and model in self.env:
+                rec = self.env[model].browse(int(active_id)).exists()
+                if rec:
+                    return (rec._name, rec.id)
+        except Exception:
+            pass
+        # 2. Session/kanal/meddelande-vägarna.
+        try:
+            rec = self._detect_record({'channel': channel,
+                                       'message': message})
+            if rec:
+                return (rec._name, rec.id)
+        except Exception:
+            pass
+        return None
+
     def chat(self, message, channel=None, bot_user=None):
         """Handle Discuss message → run AgentLoop and respond."""
         self.ensure_one()
@@ -2092,8 +2141,15 @@ class AICoworker(models.Model):
             return None
 
         # ── Snabbspår: frågan redan besvarad (samma eller annan session) ──
+        # Record-medvetenhet: om turen gäller en record får cachen bara
+        # återanvända svar som gällde SAMMA record. Annars besvaras
+        # "berätta om recorden framför mig" med en annan records innehåll
+        # (mätt: "berätta om record framför mig" fick 0.80 mot
+        # "berätta om recorden jag har framför mig").
+        record_key = self._chat_record_key(channel=channel, message=message)
         try:
-            cached = _find_cached_answer(self, msg_text)
+            cached = _find_cached_answer(self, msg_text,
+                                         record_key=record_key)
         except Exception:
             cached = None
         if cached:
@@ -2101,12 +2157,23 @@ class AICoworker(models.Model):
             _logger.info('Cache-träff: "%s" → session %s (snabb svar)',
                          msg_text[:50], source_session_id)
             # Skapa session-line för spårning + posta svaret direkt
-            sess = self.env['ai.coworker.session'].create({
+            _sess_vals = {
                 'coworker_id': self.id, 'status': 'active',
                 'init_type': 'chat',
                 'name': f'Chat: {msg_text[:50]}',
                 'user_id': bot_user.id if bot_user else 1,
-            })
+            }
+            # Bevara record-identiteten så framtida cache-sökningar kan
+            # matcha på SAMMA record (annars tappas kopplingen och nästa
+            # liknande fråga kan återigen besvaras med fel records svar).
+            if record_key:
+                _rk_model, _rk_id = record_key[0], record_key[1]
+                _sess_vals['ai_record_model'] = _rk_model
+                if isinstance(_rk_id, int):
+                    _sess_vals['ai_record_id'] = _rk_id
+                else:
+                    _sess_vals['ai_record_ids'] = list(_rk_id)
+            sess = self.env['ai.coworker.session'].create(_sess_vals)
             self.env['ai.coworker.session.line'].create({
                 'session_id': sess.id, 'sequence': 1,
                 'role': 'user', 'content': msg_text[:4000],
@@ -7441,12 +7508,20 @@ def _is_error_answer(text):
                          '(cancelled)'))
 
 
-def _find_cached_answer(coworker, question):
+def _find_cached_answer(coworker, question, record_key=None):
     """Hitta ett tidigare svar på samma fråga (samma + andra sessioner).
 
     Går igenom medarbetarens sessioner (senaste först), kopplar varje
     user-fråga till nästa assistant-svar och matchar mot frågan.
     Returnerar (svarstext, session_id) eller None.
+
+    OBS (record-medveten cache): en fråga som "berätta om recorden framför
+    mig" betyder olika saker beroende på VILKEN record som var öppen. Utan
+    `record_key` returnerade cachen ett svar om en helt annan record — den
+    matchade bara orden ("berätta om record framför mig" fick 0.80 mot
+    "berätta om recorden jag har framför mig"). När `record_key` ges kräver
+    vi att källsessionen gällde SAMMA record (model,id). Frågor som inte
+    refererar till en record (record_key=None) cachas som förut.
     """
     q = _normalize_question(question)
     if len(q) < 4:
@@ -7457,6 +7532,20 @@ def _find_cached_answer(coworker, question):
     best = None
     best_score = 0.0
     for sess in sessions:
+        # Record-medvetenhet: om frågan gäller en record får bara svar från
+        # sessioner om SAMMA record användas. Annars besvaras "berätta om
+        # recorden framför mig" med en annan records innehåll.
+        if record_key is not None:
+            _rk_model, _rk_id = record_key[0], record_key[1]
+            if isinstance(_rk_id, tuple):
+                # Markering (list-vy): jämför hela uppsättningen rader.
+                sess_ids = tuple(sorted(sess.ai_record_ids or []))
+                sess_key = (sess.ai_record_model or None, sess_ids)
+            else:
+                sess_key = (sess.ai_record_model or None,
+                            sess.ai_record_id or None)
+            if sess_key != record_key:
+                continue
         lines = sess.session_line_ids.sorted('sequence')
         user_q = None
         for line in lines:
@@ -7523,43 +7612,6 @@ def _strip_narration(text):
         r'[^\n]*(?:\n[^\n]*){0,4}$',
         '', body, flags=re.I)
     return body.strip() or text.strip()
-
-
-def _find_cached_answer(coworker, question):
-    """Hitta ett tidigare svar på samma fråga (samma + andra sessioner).
-
-    Går igenom medarbetarens sessioner (senaste först), kopplar varje
-    user-fråga till nästa assistant-svar och matchar mot frågan.
-    Returnerar (svarstext, session_id) eller None.
-    """
-    q = _normalize_question(question)
-    if len(q) < 4:
-        return None
-    sessions = coworker.env['ai.coworker.session'].search([
-        ('coworker_id', '=', coworker.id),
-    ], order='create_date desc', limit=30)
-    best = None
-    best_score = 0.0
-    for sess in sessions:
-        lines = sess.session_line_ids.sorted('sequence')
-        user_q = None
-        for line in lines:
-            if line.role == 'user':
-                user_q = _normalize_question(line.content or '')
-            elif line.role == 'assistant' and user_q and line.content:
-                # Hoppa över fel/tomma svar (max rounds, no response, Error:)
-                if _is_error_answer(line.content):
-                    user_q = None
-                    continue
-                score = _question_score(user_q, q)
-                # Bästa matchningen vinner — inte den nyaste sessionen.
-                # (Annars kunde 'vad kostar 3090' matcha en nyare Strix Halo-
-                # fråga med lägre poäng.)
-                if score >= 0.5 and score > best_score:
-                    best_score = score
-                    best = (line.content, sess.id)
-                user_q = None
-    return best
 
 
 def _strip_narration(text):
