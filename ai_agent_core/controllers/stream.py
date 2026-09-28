@@ -2668,7 +2668,7 @@ class AIOpenAIAPI(http.Controller):
             session_id=body.get('session_id', 0),
             tools=body.get('tools', []),
             temperature=body.get('temperature', 0.7),
-            max_tokens=body.get('max_tokens', 4096),
+            max_tokens=body.get('max_tokens', 0),
         )
 
     # ── Coworker helpers ──────────────────────────────────────────────
@@ -2851,7 +2851,7 @@ class AIOpenAIAPI(http.Controller):
 
     def _run_coworker_chat(self, quest, messages, model_ref, stream,
                            pi_session_id='', session_id=0, tools=None,
-                           temperature=0.7, max_tokens=4096):
+                           temperature=0.7, max_tokens=0):
         """Execute a chat completion through a coworker as Pi's LLM backend.
 
         HYBRID (pi+odoo, 2026-08): istället för att köra Odoos egen AgentLoop
@@ -3181,6 +3181,30 @@ class AIOpenAIAPI(http.Controller):
                 # INTE modellnamn. Använd model_name (sträng) för provider.chat.
                 gen_model = model_name
 
+                # Tokenbudget. Pi skickar normalt max_tokens, men anrop via
+                # /ai/v1/chat/completions UTAN max_tokens fick tidigare 4096 —
+                # mindre än vad resonemangsmodeller (DeepSeek m.fl.) gör av med
+                # ENBART på reasoning. Följden blev 0 tecken svar +
+                # finish_reason=length, dvs ett tyst "hmm, " hos Pi.
+                # 0/None = auto -> modellens max_output_tokens, annars 16384.
+                # Ett uttryckligt max_tokens respekteras men klampas mot
+                # modellens egen gräns (annars svarar providern med fel).
+                _model_budget = 0
+                try:
+                    if provider_model is not None:
+                        _model_budget = int(
+                            getattr(provider_model, 'max_output_tokens', 0) or 0)
+                except (TypeError, ValueError):
+                    _model_budget = 0
+                if not max_tokens or max_tokens <= 0:
+                    max_tokens = _model_budget or 16384
+                elif _model_budget and max_tokens > _model_budget:
+                    _logger.info(
+                        'max_tokens %s överstiger modellens max_output_tokens '
+                        '%s — klampar till modellens budget',
+                        max_tokens, _model_budget)
+                    max_tokens = _model_budget
+
                 # HYBRID: REN generation — skicka Pi:s messages + tools
                 # (inkl. Pi:s lokala bash/ssh/salt) oförändrade till LLM:en.
                 # Odoo exekverar INTE verktyg här; tool_calls går tillbaka
@@ -3280,6 +3304,26 @@ class AIOpenAIAPI(http.Controller):
                 _gen_provider = get_default_provider()[0]
             # OBS: andra elementet är ai.model-record — använd model_name (sträng)
             gen_model = model_name
+
+            # Tokenbudget (samma härledning som icke-strömningsgrenen ovan).
+            # Pi:s normala väg är streaming — utan detta låg max_tokens kvar
+            # på 0 och skickades rakt igenom till providern, vilket gjorde att
+            # modellen kapades efter en enda chunk (finish_reason=length).
+            _model_budget = 0
+            try:
+                if _gen_pmodel is not None:
+                    _model_budget = int(
+                        getattr(_gen_pmodel, 'max_output_tokens', 0) or 0)
+            except (TypeError, ValueError):
+                _model_budget = 0
+            if not max_tokens or max_tokens <= 0:
+                max_tokens = _model_budget or 16384
+            elif _model_budget and max_tokens > _model_budget:
+                _logger.info(
+                    'max_tokens %s överstiger modellens max_output_tokens '
+                    '%s — klampar till modellens budget (streaming)',
+                    max_tokens, _model_budget)
+                max_tokens = _model_budget
 
             def generate():
                 full_response = []
@@ -3428,11 +3472,36 @@ class AIOpenAIAPI(http.Controller):
                                     event, 'input_tokens', 0) or 0
                                 usage_state['output'] = getattr(
                                     event, 'output_tokens', 0) or 0
-                                # finish_reason: tool_calls om verktyg, annars ev. stop
+                                # finish_reason: tool_calls om verktyg, annars
+                                # providerns VERKLIGA orsak (t.ex. "length").
+                                # Att hardkoda "stop" dolde att modellen gjort
+                                # slut pa max_tokens: Pi fick ett tomt svar som
+                                # såg ut som ett lyckat slut och tystnade
+                                # (pi-agent-integration 4.3).
+                                _real_finish = (
+                                    getattr(event, 'finish_reason', '') or ''
+                                ).strip()
+                                # Vitlista: Pi:s mapStopReason() gör ett
+                                # OKÄNT värde till stopReason "error" — att
+                                # skicka vidare t.ex. "network_error" vore en
+                                # värre regression än att säga "stop".
                                 if aggregated_tool_calls:
-                                    yield f'data: {json.dumps({"id": response_id, "object": "chat.completion.chunk", "created": created, "model": model_ref, "choices": [{"index": 0, "delta": {}, "finish_reason": "tool_calls"}]})}\n\n'
+                                    _finish_reason = 'tool_calls'
+                                elif _real_finish in (
+                                        'tool_calls', 'function_call'):
+                                    _finish_reason = 'tool_calls'
+                                elif _real_finish in (
+                                        'stop', 'length', 'content_filter'):
+                                    _finish_reason = _real_finish
                                 else:
-                                    yield f'data: {json.dumps({"id": response_id, "object": "chat.completion.chunk", "created": created, "model": model_ref, "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]})}\n\n'
+                                    _finish_reason = 'stop'
+                                if _finish_reason == 'length':
+                                    _logger.warning(
+                                        'provider truncation: finish_reason=length '
+                                        '(max_tokens=%s, coworker=%s) — svaret '
+                                        'avslutades av tokenbudgeten',
+                                        max_tokens, quest.id)
+                                yield f'data: {json.dumps({"id": response_id, "object": "chat.completion.chunk", "created": created, "model": model_ref, "choices": [{"index": 0, "delta": {}, "finish_reason": _finish_reason}]})}\n\n'
                                 # Session-info (session-cost-context 3.3)
                                 yield f'data: {json.dumps({"session_id": _sess.id, "cost_context": {"project_id": _sess.project_id.id if "project_id" in _sess._fields and _sess.project_id else None, "task_id": _sess.task_id.id if "task_id" in _sess._fields and _sess.task_id else None, "partner_id": _sess.partner_id.id if _sess.partner_id else None, "cost_context_confirmed": _sess.cost_context_confirmed}})}\n\n'
                                 yield 'data: [DONE]\n\n'
