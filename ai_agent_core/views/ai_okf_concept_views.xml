@@ -18,6 +18,7 @@
                 <field name="owner_company_id" optional="show"/>
                 <field name="owner_user_id" optional="show"/>
                 <field name="owner_coworker_id" optional="show"/>
+                <field name="source_user_id" optional="hide"/>
             </list>
         </field>
     </record>
@@ -106,6 +107,16 @@
                 <field name="title"/>
                 <field name="concept_key"/>
                 <field name="summary"/>
+                <field name="source_ref"/>
+                <field name="owner_user_id"/>
+                <field name="owner_coworker_id"/>
+                <field name="source_user_id"/>
+                <separator/>
+                <!-- Snabbfilter: mina egna minnen (personliga + coworker
+                     lärda ur min session). Dynamiskt mot inloggad användare. -->
+                <filter name="my_memory" string="Mina minnen"
+                        domain="[('is_my_memory','=',True)]"/>
+                <separator/>
                 <filter name="group_scope" string="Scope" context="{'group_by':'scope'}"/>
                 <filter name="group_status" string="Status" context="{'group_by':'status'}"/>
                 <filter name="group_artifact" string="Artifact Type" context="{'group_by':'artifact_type_id'}"/>

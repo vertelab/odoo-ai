@@ -3297,7 +3297,8 @@ class AICoworker(models.Model):
 
         def _okf(query, scope, owner_id, params, **kw):
             return Okf._okf_search(
-                query, scope=scope, limit=params['limit'],
+                query, scope=scope, owner_id=owner_id,
+                limit=params['limit'],
                 hybrid=kw.get('hybrid', True),
                 semantic_weight=params['semantic_weight'],
                 # VÄG 2 (§17.4): trösklarna är per signal och skickas med
@@ -3408,6 +3409,17 @@ class AICoworker(models.Model):
             på score, och diagnostics är en dict för loggning/diagnos.
         """
         self.ensure_one()
+        # Ägaruppslag (odoo-mind-memory-scope-isolation): den publika
+        # recall-ytan löser ägaren ur scopet när anroparen inte angett
+        # en. Den låga nivån (`_okf_search`) förblir strikt — den
+        # kastar hellre än att bredda tyst.
+        if owner_id is None and scope:
+            if scope == 'company':
+                owner_id = self.company_id.id or self.env.company.id
+            elif scope == 'personal':
+                owner_id = (user or self.env.user).id
+            elif scope == 'coworker':
+                owner_id = self.id
         strategy = strategy or self.search_strategy or 'balanced'
         params = self._search_strategy_weights(strategy)
         if self.hybrid_semantic_weight:
@@ -4518,7 +4530,10 @@ class AICoworker(models.Model):
                 elif scope == 'personal':
                     owner = {'owner_user_id': (session.user_id.id or self.env.user.id)}
                 else:
-                    owner = {'owner_coworker_id': self.id}
+                    # coworker-scope: ägs av coworkern men avgränsas av
+                    # användaren vars session lärde den (scope-isolering).
+                    owner = {'owner_coworker_id': self.id,
+                             'source_user_id': (session.user_id.id or None)}
                 self.env['ai.okf.concept']._okf_upsert(
                     'learning',
                     # 5.3: LLM:ens semantiska nyckel om den finns — annars
@@ -5299,6 +5314,32 @@ class AICoworker(models.Model):
             'views': [[False, 'list'], [False, 'form']],
             'target': 'current',
             'domain': [('coworker_id', '=', self.id)],
+        }
+
+    def action_get_memory(self):
+        """Smartknapp: AI Medarbetarens minne (ai.okf.concept).
+
+        Coworker-scope ägt av medarbetaren. Listan visar alla koncept
+        (coworker-globala + per användare); filterfliken 'Mina minnen'
+        begränsar till den inloggade användarens egna (source_user_id).
+        """
+        self.ensure_one()
+        return {
+            'name': 'Minne — %s' % self.name,
+            'type': 'ir.actions.act_window',
+            'res_model': 'ai.okf.concept',
+            'view_mode': 'list,form',
+            'views': [[False, 'list'], [False, 'form']],
+            'target': 'current',
+            'domain': [
+                ('scope', '=', 'coworker'),
+                ('owner_coworker_id', '=', self.id),
+            ],
+            'context': {
+                'default_scope': 'coworker',
+                'default_owner_coworker_id': self.id,
+                'search_default_not_archived': 1,
+            },
         }
 
     def action_get_session_lines(self):

@@ -14,8 +14,8 @@
                             class="oe_stat_button"
                             icon="fa-database">
                         <div class="o_stat_info">
-                            <field name="personal_memory_count"/>
-                            <span class="o_stat_text">Memories</span>
+                            <field name="okf_memory_count"/>
+                            <span class="o_stat_text">Minnen</span>
                         </div>
                     </button>
                     <button name="action_open_personal_goals"
@@ -50,8 +50,8 @@
                                     class="oe_stat_button"
                                     icon="fa-database">
                                 <div class="o_stat_info">
-                                    <field name="personal_memory_count"/>
-                                    <span class="o_stat_text">Memories</span>
+                                    <field name="okf_memory_count"/>
+                                    <span class="o_stat_text">Minnen</span>
                                 </div>
                             </button>
                             <button name="action_open_personal_goals"
