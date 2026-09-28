@@ -44,9 +44,9 @@
 <body>
 <div class="hero">
   <h1>odoo-ai: Agent Trend Analysis</h1>
-  <p class="subtitle">Agent for analysing trends and create material for blogs and LinkedIn-articles.</p>
+  <p class="subtitle">Agent for analysing trends and creating material for blogs and LinkedIn articles.</p>
   <div class="meta">
-    <span>Odoo 18.0</span><span>&middot;</span>
+    <span>Odoo 0.3</span><span>&middot;</span>
     <span>Productivity / Discuss</span><span>&middot;</span>
     <span>by Vertel Sverige AB</span>
   </div>
@@ -54,16 +54,16 @@
 <div class="container">
   <section id="overview">
     <h2>Overview</h2>
-    <p>Agent for analysing trends and create material for blogs and LinkedIn-articles.</p>
-    <p>It introduces the model(s) <code>Department</code>, <code>AISession</code>, <code>AISessionLine</code> to handle this workflow.</p>
-    <p>It extends Odoo's settings.</p>
+    <p>An agent that watches for <b>trends</b> and turns them into publishable material — blog posts and LinkedIn articles.</p>
+    <p>It stores each identified trend with its evidence and the draft it produced, so you can review before publishing.</p>
+    <p><strong>Typical use:</strong> Use it for content marketing where you want a steady stream of trend-based drafts to review and publish.</p>
   </section>
   <section id="features">
     <h2>Key Features</h2>
     <div class="feature-grid">
-      <div class="feature-card"><h4>Dedicated data model</h4><p>Adds its own models: Department, AISession, AISessionLine.</p></div>
-      <div class="feature-card"><h4>Actions</h4><p>Adds action_get_quests, action_get_session_lines, action_get_sessions.</p></div>
-      <div class="feature-card"><h4>UI integration</h4><p>Extends 12 view(s) in the Odoo interface.</p></div>
+      <div class="feature-card"><h4>Trend records</h4><p><code>ai.trend</code> holds the topic, the signals behind it and the generated content.</p></div>
+      <div class="feature-card"><h4>Content drafting</h4><p>Produces a draft article per trend, ready for human editing.</p></div>
+      <div class="feature-card"><h4>Built on pgvector memory</h4><p>Uses semantic memory to avoid repeating topics and to connect related trends over time.</p></div>
     </div>
   </section>
   <section id="screenshots">
@@ -82,7 +82,7 @@
   <section id="dependencies">
     <h2>Dependencies</h2>
     <ul><li><code>ai_agent_pgvector</code></li></ul>
-    <p><small>Requires <strong>Odoo 18.0</strong> or later.</small></p>
+    <p><small>Requires <strong>Odoo 0.3</strong> or later.</small></p>
   </section>
   <section id="installation">
     <h2>Installation</h2>

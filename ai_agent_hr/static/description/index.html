@@ -44,9 +44,9 @@
 <body>
 <div class="hero">
   <h1>odoo-ai: Agent Orchestration HR</h1>
-  <p class="subtitle">Agent Orchestration HR.</p>
+  <p class="subtitle">Agent orchestration for HR — recruit, onboard and support employees.</p>
   <div class="meta">
-    <span>Odoo 18.0</span><span>&middot;</span>
+    <span>Odoo 0.3</span><span>&middot;</span>
     <span>Productivity / Discuss</span><span>&middot;</span>
     <span>by Vertel Sverige AB</span>
   </div>
@@ -54,15 +54,16 @@
 <div class="container">
   <section id="overview">
     <h2>Overview</h2>
-    <p>Agent Orchestration HR.</p>
-    <p>It introduces the model(s) <code>Department</code>, <code>AISession</code>, <code>AISessionLine</code> to handle this workflow.</p>
+    <p>Brings the AI coworker platform into <b>HR</b>: recruitment, onboarding and day-to-day employee support, wired to Odoo's HR models.</p>
+    <p>It adds HR-specific tools and agents on top of the existing <code>hr</code> and <code>ai_agent</code> modules.</p>
+    <p><strong>Typical use:</strong> Use it when HR wants an AI assistant that understands the employee record and can help with routine people questions.</p>
   </section>
   <section id="features">
     <h2>Key Features</h2>
     <div class="feature-grid">
-      <div class="feature-card"><h4>Dedicated data model</h4><p>Adds its own models: Department, AISession, AISessionLine.</p></div>
-      <div class="feature-card"><h4>Actions</h4><p>Adds action_get_quests, action_get_session_lines, action_get_sessions.</p></div>
-      <div class="feature-card"><h4>UI integration</h4><p>Extends 8 view(s) in the Odoo interface.</p></div>
+      <div class="feature-card"><h4>HR-aware agents</h4><p>Agents that can read employees, departments and job positions and act on them within their permissions.</p></div>
+      <div class="feature-card"><h4>Recruitment assistance</h4><p>Tools for screening and summarising applicants against a role.</p></div>
+      <div class="feature-card"><h4>Onboarding support</h4><p>Guided flows that help a new employee get set up and find answers.</p></div>
     </div>
   </section>
   <section id="screenshots">
@@ -81,7 +82,7 @@
   <section id="dependencies">
     <h2>Dependencies</h2>
     <ul><li><code>ai_agent</code></li><li><code>hr</code></li></ul>
-    <p><small>Requires <strong>Odoo 18.0</strong> or later.</small></p>
+    <p><small>Requires <strong>Odoo 0.3</strong> or later.</small></p>
   </section>
   <section id="installation">
     <h2>Installation</h2>

@@ -44,7 +44,7 @@
 <body>
 <div class="hero">
   <h1>User Mail: IMAP Client</h1>
-  <p class="subtitle">IMAP email client integrated in Odoo — with per-user poller.</p>
+  <p class="subtitle">IMAP email client integrated in Odoo, with a per-user poller.</p>
   <div class="meta">
     <span>Odoo 18.0</span><span>&middot;</span>
     <span>Productivity</span><span>&middot;</span>
@@ -54,18 +54,16 @@
 <div class="container">
   <section id="overview">
     <h2>Overview</h2>
-    <p>IMAP email client integrated in Odoo — with per-user poller.</p>
-    <p>It introduces the model(s) <code>UserMailPoll</code>, <code>UserMailProcessed</code> to handle this workflow.</p>
+    <p>A real <b>IMAP client inside Odoo</b>. Each user connects their own mailbox and a per-user poller fetches new messages into the database.</p>
+    <p>It is the transport that the AI mail assistant reads from.</p>
+    <p><strong>Typical use:</strong> Use it when users should read and process their mail inside Odoo instead of a separate client.</p>
   </section>
   <section id="features">
     <h2>Key Features</h2>
     <div class="feature-grid">
-      <div class="feature-card"><h4>Dedicated data model</h4><p>Adds its own models: UserMailPoll, UserMailProcessed.</p></div>
-      <div class="feature-card"><h4>API integration</h4><p>Exposes HTTP endpoints for external systems.</p></div>
-      <div class="feature-card"><h4>Automation</h4><p>Scheduled jobs: User Mail: IMAP Poll (hjälpredan).</p></div>
-      <div class="feature-card"><h4>Guided wizards</h4><p>Step-by-step dialogs for data entry.</p></div>
-      <div class="feature-card"><h4>Actions</h4><p>Adds action_list_folders, action_fetch_mails, action_fetch_mail.</p></div>
-      <div class="feature-card"><h4>UI integration</h4><p>Extends 1 view(s) in the Odoo interface.</p></div>
+      <div class="feature-card"><h4>Per-user poller</h4><p>Each user's mailbox is polled on its own schedule, so one busy account does not delay the others.</p></div>
+      <div class="feature-card"><h4>IMAP account setup</h4><p>Configure server, port, credentials and folders per user from Odoo.</p></div>
+      <div class="feature-card"><h4>Messages in Odoo</h4><p>Fetched mail becomes Odoo records that can be searched, linked and processed like any other data.</p></div>
     </div>
   </section>
   <section id="screenshots">

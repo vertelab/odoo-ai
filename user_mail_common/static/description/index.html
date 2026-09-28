@@ -44,7 +44,7 @@
 <body>
 <div class="hero">
   <h1>User Mail: User Mail Common</h1>
-  <p class="subtitle">Administration of mail for users on client side.</p>
+  <p class="subtitle">Administration of mail for users on the client side.</p>
   <div class="meta">
     <span>Odoo 18.0</span><span>&middot;</span>
     <span>Technical</span><span>&middot;</span>
@@ -54,15 +54,16 @@
 <div class="container">
   <section id="overview">
     <h2>Overview</h2>
-    <p>Administration of mail for users on client side.</p>
-    <p>It introduces the model(s) <code>postfix_vacation_notification</code>, <code>postfix_alias</code>, <code>res_users</code> to handle this workflow.</p>
-    <p>It extends Odoo's company settings.</p>
+    <p>The shared <b>administration layer</b> for per-user mail: settings, accounts and the common plumbing that the IMAP client and the AI assistant both build on.</p>
+    <p>It exists so the user-mail modules do not each reimplement account handling.</p>
+    <p><strong>Typical use:</strong> Install it as a dependency — it is not used on its own.</p>
   </section>
   <section id="features">
     <h2>Key Features</h2>
     <div class="feature-grid">
-      <div class="feature-card"><h4>Dedicated data model</h4><p>Adds its own models: postfix_vacation_notification, postfix_alias, res_users.</p></div>
-      <div class="feature-card"><h4>UI integration</h4><p>Extends 1 view(s) in the Odoo interface.</p></div>
+      <div class="feature-card"><h4>User mail settings</h4><p>Central configuration for how a user's mail is fetched and stored.</p></div>
+      <div class="feature-card"><h4>Account model</h4><p>Stores the per-user mail account details used by the other modules.</p></div>
+      <div class="feature-card"><h4>Shared base</h4><p>Depends only on <code>base</code> and <code>base_setup</code>, keeping it lightweight.</p></div>
     </div>
   </section>
   <section id="screenshots">

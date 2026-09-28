@@ -44,9 +44,9 @@
 <body>
 <div class="hero">
   <h1>odoo-ai: AI Agent</h1>
-  <p class="subtitle">AI Agent orchestration.</p>
+  <p class="subtitle">AI Agent orchestration — quests, sessions, tools and LLM bindings.</p>
   <div class="meta">
-    <span>Odoo 18.0</span><span>&middot;</span>
+    <span>Odoo 1.0</span><span>&middot;</span>
     <span>AI Orchestration</span><span>&middot;</span>
     <span>by Vertel Sverige AB</span>
   </div>
@@ -54,19 +54,17 @@
 <div class="container">
   <section id="overview">
     <h2>Overview</h2>
-    <p>AI Agent orchestration.</p>
-    <p>It introduces the model(s) <code>AISessionObject</code>, <code>AIQuestSession</code>, <code>Company</code> to handle this workflow.</p>
-    <p>It extends Odoo's product templates, company settings, settings.</p>
+    <p>The original AI Agent orchestration layer. It defines <b>quests</b> (structured jobs), <b>sessions</b> (one run of a quest), the <b>tools</b> an agent may call, and the <b>LLM</b> bindings that power them.</p>
+    <p>It is the runtime that executes a quest step by step and records every message exchanged.</p>
+    <p><strong>Typical use:</strong> Use it as the foundation when you need scripted, multi-step AI work against Odoo records with full traceability.</p>
   </section>
   <section id="features">
     <h2>Key Features</h2>
     <div class="feature-grid">
-      <div class="feature-card"><h4>Dedicated data model</h4><p>Adds its own models: AISessionObject, AIQuestSession, Company.</p></div>
-      <div class="feature-card"><h4>API integration</h4><p>Exposes HTTP endpoints for external systems.</p></div>
-      <div class="feature-card"><h4>Automation</h4><p>Scheduled jobs: Memory RAG Cron, Memory RAG Cron.</p></div>
-      <div class="feature-card"><h4>Guided wizards</h4><p>Step-by-step dialogs for data entry.</p></div>
-      <div class="feature-card"><h4>Actions</h4><p>Adds action_get_llms, action_get_agents, action_get_session_lines.</p></div>
-      <div class="feature-card"><h4>UI integration</h4><p>Extends 27 view(s) in the Odoo interface.</p></div>
+      <div class="feature-card"><h4>Quest sessions</h4><p><code>ai.quest.session</code> holds one execution with its state, while <code>ai.quest.session.message</code> stores the full transcript.</p></div>
+      <div class="feature-card"><h4>Tool registry with test wizard</h4><p><code>ai.tool</code> registers callable tools; the bundled <code>ai.tool.test.wizard</code> lets you invoke a tool manually and inspect the raw result.</p></div>
+      <div class="feature-card"><h4>Session objects</h4><p><code>ai.session.object</code> links any Odoo record to a session, so the agent can read and act on real business data.</p></div>
+      <div class="feature-card"><h4>Per-agent LLM configuration</h4><p><code>ai.agent.llm</code> binds a model, temperature and token limits to a specific agent.</p></div>
     </div>
   </section>
   <section id="screenshots">
@@ -85,7 +83,7 @@
   <section id="dependencies">
     <h2>Dependencies</h2>
     <ul><li><code>mail</code></li><li><code>product</code></li><li><code>crm</code></li><li><code>web_widget_mermaid_field</code></li></ul>
-    <p><small>Requires <strong>Odoo 18.0</strong> or later.</small></p>
+    <p><small>Requires <strong>Odoo 1.0</strong> or later.</small></p>
   </section>
   <section id="installation">
     <h2>Installation</h2>

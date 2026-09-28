@@ -44,7 +44,7 @@
 <body>
 <div class="hero">
   <h1>AI Core — LLM Provider Abstraction</h1>
-  <p class="subtitle">Provider abstraction, model discovery, rate limiting, token tracking.</p>
+  <p class="subtitle">Provider abstraction, model discovery, rate limiting and token tracking.</p>
   <div class="meta">
     <span>Odoo 18.0</span><span>&middot;</span>
     <span>AI</span><span>&middot;</span>
@@ -54,15 +54,17 @@
 <div class="container">
   <section id="overview">
     <h2>Overview</h2>
-    <p>Provider abstraction, model discovery, rate limiting, token tracking.</p>
-    <p>It introduces the model(s) <code>LLMSessionLine</code>, <code>BaseLLMProvider</code>, <code>LLMModel</code> to handle this workflow.</p>
+    <p>The <b>LLM plumbing</b> layer. It abstracts over providers (OpenAI, Anthropic, Google, local models …), discovers which models each one offers, and enforces rate limits and budgets.</p>
+    <p>Every AI feature in the suite talks to a provider through this module.</p>
+    <p><strong>Typical use:</strong> Install it as the foundation for any module that calls a language model — it keeps provider details out of business logic.</p>
   </section>
   <section id="features">
     <h2>Key Features</h2>
     <div class="feature-grid">
-      <div class="feature-card"><h4>Dedicated data model</h4><p>Adds its own models: LLMSessionLine, BaseLLMProvider, LLMModel.</p></div>
-      <div class="feature-card"><h4>Actions</h4><p>Adds action_view_models, action_check_health, action_discover_models.</p></div>
-      <div class="feature-card"><h4>UI integration</h4><p>Extends 1 view(s) in the Odoo interface.</p></div>
+      <div class="feature-card"><h4>Provider abstraction</h4><p><code>llm.provider</code> holds the endpoint, API key and provider type; the same code path works for any supported vendor.</p></div>
+      <div class="feature-card"><h4>Model catalogue with capabilities</h4><p><code>llm.model</code> records each model's capabilities — vision, embeddings, speech-to-text, text-to-image, tools, PDF input — so the right model is chosen for the job.</p></div>
+      <div class="feature-card"><h4>Session lines and token tracking</h4><p><code>llm.session.line</code> logs each call with input/output tokens, giving per-model usage and cost reporting.</p></div>
+      <div class="feature-card"><h4>Rate limiting</h4><p>Requests are throttled per provider to stay within quota and avoid 429 errors.</p></div>
     </div>
   </section>
   <section id="screenshots">

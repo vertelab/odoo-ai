@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>odoo-ai: AI Agent Core &mdash; Vertel for Odoo</title>
+  <title>Pi Agent Mesh &mdash; Vertel for Odoo</title>
   <style>
     :root { --navy:#0F172A; --darkBg:#1E293B; --white:#F8FAFC; --gray:#94A3B8;
              --lightGray:#E2E8F0; --brand:#930a57; --brand2:#8105a7; }
@@ -43,53 +43,50 @@
 </head>
 <body>
 <div class="hero">
-  <h1>odoo-ai: AI Agent Core</h1>
-  <p class="subtitle">AI Agent Core — org structure, heartbeat, onboarding and the task system.</p>
+  <h1>Pi Agent Mesh</h1>
+  <p class="subtitle">History and overview of the Pi agent mesh.</p>
   <div class="meta">
     <span>Odoo 18.0</span><span>&middot;</span>
-    <span>AI Orchestration</span><span>&middot;</span>
+    <span>AI</span><span>&middot;</span>
     <span>by Vertel Sverige AB</span>
   </div>
 </div>
 <div class="container">
   <section id="overview">
     <h2>Overview</h2>
-    <p>The backbone of the AI agent platform. It models an <b>organisation of AI coworkers</b> — departments, goals, key results, boards and reviews — alongside the runtime that keeps them alive: heartbeat, sessions, memory, tools and the task queue.</p>
-    <p>It also carries the <b>Odoo Mind</b> (OKF) knowledge layer, human-in-the-loop approvals, and the onboarding flow that interviews a new company and spins up its first coworkers.</p>
-    <p><strong>Typical use:</strong> Install it as the base for every AI coworker deployment — it is the platform the other ai_agent_* modules extend.</p>
+    <p>Gives a <b>single view of the agent mesh</b>: which Pi agents exist, where they run, what they have done and how they relate to each other.</p>
+    <p>Where <code>agent_pi</code> dispatches work, <code>pi_mesh</code> answers "what is the fleet doing right now?".</p>
+    <p><strong>Typical use:</strong> Use it to operate and audit a fleet of Pi agents rather than a single one.</p>
   </section>
   <section id="features">
     <h2>Key Features</h2>
     <div class="feature-grid">
-      <div class="feature-card"><h4>Coworkers and agents</h4><p><code>ai.coworker</code> is the shell a user chats with; <code>ai.agent</code> is the brain with role, goal, backstory, skills, tools and memory. Coworkers orchestrate one or more agents.</p></div>
-      <div class="feature-card"><h4>Org structure</h4><p><code>ai.org.goal</code>, <code>ai.org.key_result</code>, <code>ai.org.board</code> and <code>ai.org.review</code> give the AI workforce goals, decisions and periodic reviews.</p></div>
-      <div class="feature-card"><h4>Human-in-the-loop (HITL)</h4><p><code>ai.coworker.hitl</code> raises an approval request before a risky action runs, with risk level, context hash and a recorded decision — plus standing rules for repeat approvals.</p></div>
-      <div class="feature-card"><h4>Odoo Mind / OKF knowledge</h4><p><code>ai.okf.concept</code> and <code>ai.okf.dashboard</code> index the company's knowledge into versioned concepts with staleness tracking and cron-driven re-indexing.</p></div>
-      <div class="feature-card"><h4>Company and personal memory</h4><p><code>ai.company.memory</code> and <code>ai.memory</code> store shared and private knowledge with embeddings, access counts and scopes.</p></div>
-      <div class="feature-card"><h4>Onboarding interview</h4><p><code>ai.onboarding</code> asks the CEO a structured set of questions and creates the departments, coworkers, goals and tasks from the answers.</p></div>
+      <div class="feature-card"><h4>Mesh overview</h4><p>A dashboard-style view of all agents, their hosts and their current status.</p></div>
+      <div class="feature-card"><h4>Run history</h4><p>Keeps the history of dispatched tasks and their outcomes so past work can be reviewed.</p></div>
+      <div class="feature-card"><h4>Relationships between agents</h4><p>Shows how agents connect — who supervises whom and which host they belong to.</p></div>
     </div>
   </section>
   <section id="screenshots">
     <h2>Module Graphics</h2>
     <div class="screenshots">
       <figure>
-        <img src="icon.png" alt="odoo-ai: AI Agent Core icon" width="140" height="140">
+        <img src="icon.png" alt="Pi Agent Mesh icon" width="140" height="140">
         <figcaption>Icon &mdash; 140 &times; 140 px</figcaption>
       </figure>
       <figure>
-        <img src="banner.png" alt="odoo-ai: AI Agent Core banner" width="560" height="280">
+        <img src="banner.png" alt="Pi Agent Mesh banner" width="560" height="280">
         <figcaption>Banner &mdash; 560 &times; 280 px</figcaption>
       </figure>
     </div>
   </section>
   <section id="dependencies">
     <h2>Dependencies</h2>
-    <ul><li><code>base</code></li><li><code>mail</code></li><li><code>html_editor</code></li><li><code>hr</code></li><li><code>base_automation</code></li><li><code>web_pwa_push</code></li></ul>
+    <ul><li><code>ai_agent_core</code></li></ul>
     <p><small>Requires <strong>Odoo 18.0</strong> or later.</small></p>
   </section>
   <section id="installation">
     <h2>Installation</h2>
-    <p>Install the module <code>ai_agent_core</code> from the Odoo Apps menu,
+    <p>Install the module <code>pi_mesh</code> from the Odoo Apps menu,
        or deploy it via the Vertel SaltStack pipeline.</p>
   </section>
   <section id="support">
@@ -99,7 +96,7 @@
   </section>
 </div>
 <footer>
-  <p><strong>odoo-ai: AI Agent Core</strong> &mdash; by <a href="https://vertel.se">Vertel Sverige AB</a></p>
+  <p><strong>Pi Agent Mesh</strong> &mdash; by <a href="https://vertel.se">Vertel Sverige AB</a></p>
   <p><a href="https://vertel.se">vertel.se</a> &middot;
      <a href="mailto:info@vertel.se">info@vertel.se</a></p>
 </footer>

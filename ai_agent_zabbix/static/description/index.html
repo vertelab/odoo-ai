@@ -54,15 +54,16 @@
 <div class="container">
   <section id="overview">
     <h2>Overview</h2>
-    <p>Zabbix integration for AI agent monitoring.</p>
-    <p>It introduces the model(s) <code>AIZabbixConfig</code> to handle this workflow.</p>
+    <p>Connects the AI agent platform to <b>Zabbix</b>, so infrastructure alerts and agent health live in the same place.</p>
+    <p>An agent can read Zabbix problems and act on them, and Zabbix can watch the agents themselves.</p>
+    <p><strong>Typical use:</strong> Use it when AI agents should participate in infrastructure monitoring and incident response.</p>
   </section>
   <section id="features">
     <h2>Key Features</h2>
     <div class="feature-grid">
-      <div class="feature-card"><h4>Dedicated data model</h4><p>Adds its own models: AIZabbixConfig.</p></div>
-      <div class="feature-card"><h4>Actions</h4><p>Adds action_test_connection.</p></div>
-      <div class="feature-card"><h4>UI integration</h4><p>Extends 1 view(s) in the Odoo interface.</p></div>
+      <div class="feature-card"><h4>Zabbix configuration</h4><p><code>ai.zabbix.config</code> stores the server endpoint and credentials used for API calls.</p></div>
+      <div class="feature-card"><h4>Problem retrieval</h4><p>Fetches current problems from Zabbix so an agent can triage or correlate them with other events.</p></div>
+      <div class="feature-card"><h4>Agent monitoring</h4><p>Lets Zabbix alert on the agent platform's own health.</p></div>
     </div>
   </section>
   <section id="screenshots">

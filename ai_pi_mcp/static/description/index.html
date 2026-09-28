@@ -54,14 +54,17 @@
 <div class="container">
   <section id="overview">
     <h2>Overview</h2>
-    <p>Standalone MCP streamable-HTTP server for Pi system development against this database.</p>
-    <p>It introduces the model(s) <code>McpSession</code>, <code>McpTool</code> to handle this workflow.</p>
+    <p>Exposes this Odoo database to <b>Pi</b> (and any MCP client) through a standalone, streamable-HTTP <b>MCP server</b>, aimed at system development work.</p>
+    <p>It gives a coding agent safe, permission-checked access to models and tools without going through the chat UI.</p>
+    <p><strong>Typical use:</strong> Use it when a developer agent should work directly against an Odoo database over MCP.</p>
   </section>
   <section id="features">
     <h2>Key Features</h2>
     <div class="feature-grid">
-      <div class="feature-card"><h4>Dedicated data model</h4><p>Adds its own models: McpSession, McpTool.</p></div>
-      <div class="feature-card"><h4>API integration</h4><p>Exposes HTTP endpoints for external systems.</p></div>
+      <div class="feature-card"><h4>MCP sessions</h4><p><code>mcp.session</code> tracks each connected client and its state.</p></div>
+      <div class="feature-card"><h4>Tool registry with mixin</h4><p><code>mcp.tool</code> and <code>mcp.tool.mixin</code> register the exposed tools and how each one is invoked.</p></div>
+      <div class="feature-card"><h4>Developer tool set</h4><p><code>ai_pi_mcp.dev_tools</code> groups the tools intended for system development against the live database.</p></div>
+      <div class="feature-card"><h4>Streamable HTTP transport</h4><p>Runs as its own HTTP endpoint, independent of the Odoo web client.</p></div>
     </div>
   </section>
   <section id="screenshots">

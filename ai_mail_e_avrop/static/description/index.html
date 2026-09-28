@@ -44,7 +44,7 @@
 <body>
 <div class="hero">
   <h1>odoo-ai: Mailbox for AI</h1>
-  <p class="subtitle">Mailbox for AI.</p>
+  <p class="subtitle">Mailbox for AI — an e-avrop (call-off) mailbox driven by AI quests.</p>
   <div class="meta">
     <span>Odoo 18.0</span><span>&middot;</span>
     <span>Productivity / Discuss</span><span>&middot;</span>
@@ -54,16 +54,16 @@
 <div class="container">
   <section id="overview">
     <h2>Overview</h2>
-    <p>Mailbox for AI.</p>
-    <p>It introduces the model(s) <code>AIQuest</code> to handle this workflow.</p>
-    <p>It extends Odoo's settings.</p>
+    <p>Turns an incoming mailbox into an AI-driven workflow. It extends <code>ai.quest</code> so that arriving mail can trigger a quest and be handled automatically — here aimed at <b>e-avrop</b> (electronic call-offs).</p>
+    <p>It ties the mail, CRM and AI layers together so a message becomes a tracked action.</p>
+    <p><strong>Typical use:</strong> Use it when a shared mailbox should be triaged and actioned by AI instead of by hand.</p>
   </section>
   <section id="features">
     <h2>Key Features</h2>
     <div class="feature-grid">
-      <div class="feature-card"><h4>Dedicated data model</h4><p>Adds its own models: AIQuest.</p></div>
-      <div class="feature-card"><h4>Actions</h4><p>Adds action_show_mail_ai, action_show_crm_lead.</p></div>
-      <div class="feature-card"><h4>UI integration</h4><p>Extends 3 view(s) in the Odoo interface.</p></div>
+      <div class="feature-card"><h4>AI quest on incoming mail</h4><p>Extends <code>ai.quest</code> so a quest can be started by an arriving message rather than a manual click.</p></div>
+      <div class="feature-card"><h4>CRM and sales-team aware</h4><p>Depends on <code>crm</code> and <code>sales_team</code>, so incoming call-offs can be matched to the right customer and team.</p></div>
+      <div class="feature-card"><h4>Mailbox model</h4><p>A dedicated mailbox record groups the messages and the quests they spawned.</p></div>
     </div>
   </section>
   <section id="screenshots">

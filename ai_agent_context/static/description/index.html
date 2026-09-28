@@ -54,17 +54,16 @@
 <div class="container">
   <section id="overview">
     <h2>Overview</h2>
-    <p>Injects record data and chatter history as context into AI Quest sessions.</p>
-    <p>It introduces the model(s) <code>AIQuest</code>, <code>AIQuestSession</code> to handle this workflow.</p>
-    <p>It extends Odoo's settings.</p>
+    <p>Gives an AI quest the context it needs to be useful: the fields of the record it is working on <b>and</b> the conversation history from the record's chatter.</p>
+    <p>Without this, an agent starts blind; with it, answers are grounded in the actual document.</p>
+    <p><strong>Typical use:</strong> Use it on any quest that operates on a specific record — invoices, tickets, projects — where the surrounding conversation matters.</p>
   </section>
   <section id="features">
     <h2>Key Features</h2>
     <div class="feature-grid">
-      <div class="feature-card"><h4>Dedicated data model</h4><p>Adds its own models: AIQuest, AIQuestSession.</p></div>
-      <div class="feature-card"><h4>API integration</h4><p>Exposes HTTP endpoints for external systems.</p></div>
-      <div class="feature-card"><h4>Actions</h4><p>Adds action_view_context_record.</p></div>
-      <div class="feature-card"><h4>UI integration</h4><p>Extends 3 view(s) in the Odoo interface.</p></div>
+      <div class="feature-card"><h4>Record field injection</h4><p>Selected fields of the target record are rendered into the prompt, so the agent sees the real values instead of placeholders.</p></div>
+      <div class="feature-card"><h4>Chatter history</h4><p>The record's <code>mail.message</code> thread is summarised into the context, giving the agent the discussion that led up to now.</p></div>
+      <div class="feature-card"><h4>Configurable per record</h4><p>Which fields and how much history to include is configurable, keeping token usage under control.</p></div>
     </div>
   </section>
   <section id="screenshots">

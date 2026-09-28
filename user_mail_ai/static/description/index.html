@@ -44,7 +44,7 @@
 <body>
 <div class="hero">
   <h1>User Mail: AI Assistant</h1>
-  <p class="subtitle">Personlig AI-mailhjälpreda — IMAP-triage, Odoo Mind (graf), Teams→kalender.</p>
+  <p class="subtitle">Personal AI mail assistant — IMAP triage, Odoo Mind graph and Teams-to-calendar.</p>
   <div class="meta">
     <span>Odoo 18.0</span><span>&middot;</span>
     <span>Productivity</span><span>&middot;</span>
@@ -54,16 +54,17 @@
 <div class="container">
   <section id="overview">
     <h2>Overview</h2>
-    <p>Personlig AI-mailhjälpreda — IMAP-triage, Odoo Mind (graf), Teams→kalender.</p>
-    <p>It introduces the model(s) <code>UserMailAiRule</code>, <code>AICoworkerHITLMail</code>, <code>MailMessageAI</code> to handle this workflow.</p>
+    <p>A <b>personal AI assistant for your mailbox</b>. It triages incoming IMAP mail, links it into the Odoo Mind knowledge graph, and can turn Microsoft Teams invitations into calendar events.</p>
+    <p>It sits on top of the user-mail stack, so each user gets their own assistant over their own mail.</p>
+    <p><strong>Typical use:</strong> Use it when individual users want AI help managing a busy personal inbox.</p>
   </section>
   <section id="features">
     <h2>Key Features</h2>
     <div class="feature-grid">
-      <div class="feature-card"><h4>Dedicated data model</h4><p>Adds its own models: UserMailAiRule, AICoworkerHITLMail, MailMessageAI.</p></div>
-      <div class="feature-card"><h4>Automation</h4><p>Scheduled jobs: Mail-AI: Intresseprofiler (veckovis), Mail-AI: Daglig digest, Mail-AI: Veckovis digest.</p></div>
-      <div class="feature-card"><h4>Actions</h4><p>Adds action_approve, action_open_mail_rules, action_mark_processed.</p></div>
-      <div class="feature-card"><h4>UI integration</h4><p>Extends 3 view(s) in the Odoo interface.</p></div>
+      <div class="feature-card"><h4>Mail triage</h4><p>Classifies and prioritises incoming messages so the important ones surface first.</p></div>
+      <div class="feature-card"><h4>Odoo Mind graph</h4><p>Extracts people, companies and topics from mail and links them into the knowledge graph.</p></div>
+      <div class="feature-card"><h4>Teams invitations to calendar</h4><p>Parses Microsoft Teams meeting invitations and creates the matching calendar event.</p></div>
+      <div class="feature-card"><h4>Per-user assistant</h4><p>Runs against the user's own IMAP account, not a shared company mailbox.</p></div>
     </div>
   </section>
   <section id="screenshots">

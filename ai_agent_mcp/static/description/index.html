@@ -44,9 +44,9 @@
 <body>
 <div class="hero">
   <h1>odoo-ai: MCP Resource Management</h1>
-  <p class="subtitle">Adds MCP Power to AI Agent and AI Quests.</p>
+  <p class="subtitle">Adds MCP (Model Context Protocol) power to AI Agent and AI Quests.</p>
   <div class="meta">
-    <span>Odoo 18.0</span><span>&middot;</span>
+    <span>Odoo 1.0</span><span>&middot;</span>
     <span>AI Orchestration</span><span>&middot;</span>
     <span>by Vertel Sverige AB</span>
   </div>
@@ -54,15 +54,16 @@
 <div class="container">
   <section id="overview">
     <h2>Overview</h2>
-    <p>Adds MCP Power to AI Agent and AI Quests.</p>
-    <p>It introduces the model(s) <code>ResMCP</code>, <code>AIQuestMCP</code>, <code>ResMCP</code> to handle this workflow.</p>
+    <p>Lets an AI agent talk to external <b>MCP servers</b> — the open protocol for exposing tools and resources to language models.</p>
+    <p>External tools show up next to the built-in ones, so an agent can use them without custom code for every integration.</p>
+    <p><strong>Typical use:</strong> Use it to plug third-party MCP servers into your agents without writing a bespoke connector each time.</p>
   </section>
   <section id="features">
     <h2>Key Features</h2>
     <div class="feature-grid">
-      <div class="feature-card"><h4>Dedicated data model</h4><p>Adds its own models: ResMCP, AIQuestMCP, ResMCP.</p></div>
-      <div class="feature-card"><h4>API integration</h4><p>Exposes HTTP endpoints for external systems.</p></div>
-      <div class="feature-card"><h4>UI integration</h4><p>Extends 4 view(s) in the Odoo interface.</p></div>
+      <div class="feature-card"><h4>External MCP resources</h4><p><code>res.mcp</code> registers an MCP server with its endpoint and credentials, and exposes the tools it advertises.</p></div>
+      <div class="feature-card"><h4>Tools appear as native tools</h4><p>Discovered MCP tools are callable from a quest exactly like built-in tools, with the same permission and logging.</p></div>
+      <div class="feature-card"><h4>FastAPI endpoint</h4><p>Depends on <code>fastapi</code> to serve and consume the MCP transport.</p></div>
     </div>
   </section>
   <section id="screenshots">
@@ -81,7 +82,7 @@
   <section id="dependencies">
     <h2>Dependencies</h2>
     <ul><li><code>fastapi</code></li><li><code>ai_agent</code></li></ul>
-    <p><small>Requires <strong>Odoo 18.0</strong> or later.</small></p>
+    <p><small>Requires <strong>Odoo 1.0</strong> or later.</small></p>
   </section>
   <section id="installation">
     <h2>Installation</h2>

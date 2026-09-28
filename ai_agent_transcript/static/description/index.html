@@ -44,7 +44,7 @@
 <body>
 <div class="hero">
   <h1>odoo-ai: Powerbox &amp; Transcript</h1>
-  <p class="subtitle">Powerbox-style AI interaction with transcript/context injection.</p>
+  <p class="subtitle">Powerbox-style AI interaction with transcript and context injection.</p>
   <div class="meta">
     <span>Odoo 18.0</span><span>&middot;</span>
     <span>AI Orchestration</span><span>&middot;</span>
@@ -54,14 +54,16 @@
 <div class="container">
   <section id="overview">
     <h2>Overview</h2>
-    <p>Powerbox-style AI interaction with transcript/context injection.</p>
-    <p>It introduces the model(s) <code>AICoworkerSessionTranscript</code>, <code>AIComposer</code> to handle this workflow.</p>
+    <p>Provides a <b>Powerbox</b> interface: a single composer where the user picks a coworker and asks a question, and the exchange is captured as a transcript that can be injected as context later.</p>
+    <p>It bridges the chat UI to the coworker layer.</p>
+    <p><strong>Typical use:</strong> Use it when you want a lightweight, chat-style entry point to your coworkers with reusable conversation history.</p>
   </section>
   <section id="features">
     <h2>Key Features</h2>
     <div class="feature-grid">
-      <div class="feature-card"><h4>Dedicated data model</h4><p>Adds its own models: AICoworkerSessionTranscript, AIComposer.</p></div>
-      <div class="feature-card"><h4>UI integration</h4><p>Extends 2 view(s) in the Odoo interface.</p></div>
+      <div class="feature-card"><h4>AI composer</h4><p><code>ai.composer</code> maps a free-text request to the right coworker and opens the session.</p></div>
+      <div class="feature-card"><h4>Transcript capture</h4><p>Every exchange is stored as a transcript that can be replayed or fed back as context for a follow-up.</p></div>
+      <div class="feature-card"><h4>Context injection</h4><p>Selected transcripts are injected into a new session, so a fresh agent starts with the earlier discussion.</p></div>
     </div>
   </section>
   <section id="screenshots">

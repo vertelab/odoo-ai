@@ -54,17 +54,17 @@
 <div class="container">
   <section id="overview">
     <h2>Overview</h2>
-    <p>Distributed Pi Coding Agent orchestration via NATS.</p>
-    <p>It introduces the model(s) <code>PiTask</code>, <code>PiSkillCategory</code>, <code>PiSkill</code> to handle this workflow.</p>
-    <p>It extends Odoo's settings.</p>
+    <p>Connects Odoo to a fleet of remote <b>Pi coding agents</b> over NATS. Tasks are queued in Odoo, dispatched to the right agent on the right host, and their artifacts and results flow back into the database.</p>
+    <p>The module owns the full task lifecycle: assignment, skills, artifacts and the NATS connection itself.</p>
+    <p><strong>Typical use:</strong> Use it when you want Odoo to orchestrate coding work across several machines instead of running everything on one server.</p>
   </section>
   <section id="features">
     <h2>Key Features</h2>
     <div class="feature-grid">
-      <div class="feature-card"><h4>Dedicated data model</h4><p>Adds its own models: PiTask, PiSkillCategory, PiSkill.</p></div>
-      <div class="feature-card"><h4>API integration</h4><p>Exposes HTTP endpoints for external systems.</p></div>
-      <div class="feature-card"><h4>Actions</h4><p>Adds action_run, action_retry, action_view_artifacts.</p></div>
-      <div class="feature-card"><h4>UI integration</h4><p>Extends 4 view(s) in the Odoo interface.</p></div>
+      <div class="feature-card"><h4>Task dispatch over NATS</h4><p>The <code>pi.task</code> model queues work and publishes it on <code>pi.task.assign.&lt;host&gt;</code>; results return on <code>pi.result.&lt;task_id&gt;</code>.</p></div>
+      <div class="feature-card"><h4>Agent registry with heartbeat</h4><p><code>pi.agent</code> tracks each connected agent, its host, status and last heartbeat, so you can see which agents are alive.</p></div>
+      <div class="feature-card"><h4>Skill library</h4><p><code>pi.skill</code> and <code>pi.skill.category</code> store reusable recipes that are injected into an agent's prompt at dispatch time.</p></div>
+      <div class="feature-card"><h4>Artifact capture</h4><p><code>pi.artifact</code> stores files, diffs and logs produced by a run, attached to the task that produced them.</p></div>
     </div>
   </section>
   <section id="screenshots">

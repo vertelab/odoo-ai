@@ -44,9 +44,9 @@
 <body>
 <div class="hero">
   <h1>ai_agent: pg_vector-connector</h1>
-  <p class="subtitle">Ao Orchestration and memory using pg_vector.</p>
+  <p class="subtitle">Agent orchestration and memory using pgvector.</p>
   <div class="meta">
-    <span>Odoo 18.0</span><span>&middot;</span>
+    <span>Odoo 1.0</span><span>&middot;</span>
     <span>other</span><span>&middot;</span>
     <span>by Vertel Sverige AB</span>
   </div>
@@ -54,15 +54,16 @@
 <div class="container">
   <section id="overview">
     <h2>Overview</h2>
-    <p>Ao Orchestration and memory using pg_vector.</p>
-    <p>It introduces the model(s) <code>MailMessageReaction</code>, <code>AIAgentMemoryRAG</code>, <code>AIAgentMemoryRAG</code> to handle this workflow.</p>
+    <p>Adds <b>vector search</b> to agent memory using PostgreSQL's <code>pgvector</code> extension. Memories and messages are embedded and retrieved by semantic similarity instead of keyword match.</p>
+    <p>This is what makes an agent remember relevant past context even when the wording differs.</p>
+    <p><strong>Typical use:</strong> Install it whenever agents need long-term, semantic memory over a growing body of company knowledge.</p>
   </section>
   <section id="features">
     <h2>Key Features</h2>
     <div class="feature-grid">
-      <div class="feature-card"><h4>Dedicated data model</h4><p>Adds its own models: MailMessageReaction, AIAgentMemoryRAG, AIAgentMemoryRAG.</p></div>
-      <div class="feature-card"><h4>Guided wizards</h4><p>Step-by-step dialogs for data entry.</p></div>
-      <div class="feature-card"><h4>UI integration</h4><p>Extends 4 view(s) in the Odoo interface.</p></div>
+      <div class="feature-card"><h4>Embedding mixin</h4><p><code>llm.embedding.mixin</code> adds an embedding vector to any model and keeps it in sync when the source text changes.</p></div>
+      <div class="feature-card"><h4>RAG memory</h4><p><code>ai.memory.rag</code> retrieves the most similar memories for a query and feeds them into the prompt.</p></div>
+      <div class="feature-card"><h4>Message reactions as signal</h4><p>Extends <code>mail.message.reaction</code> so user feedback on answers can influence what is remembered.</p></div>
     </div>
   </section>
   <section id="screenshots">
@@ -81,7 +82,7 @@
   <section id="dependencies">
     <h2>Dependencies</h2>
     <ul><li><code>ai_agent</code></li></ul>
-    <p><small>Requires <strong>Odoo 18.0</strong> or later.</small></p>
+    <p><small>Requires <strong>Odoo 1.0</strong> or later.</small></p>
   </section>
   <section id="installation">
     <h2>Installation</h2>
