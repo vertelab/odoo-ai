@@ -736,6 +736,34 @@ class AICoworker(models.Model):
     session_ids = fields.One2many('ai.coworker.session', 'coworker_id')
     session_object_count = fields.Integer(compute='_compute_session_object_count')
 
+    # ── Odoo Mind (okf-smart-buttons) ──────────────────────────────────
+    # Antal koncept som denna medarbetare ÄGER (scope `coworker`).
+    # Icke-lagrad: ai.okf.concept är ADD-only och skrivs av indexeraren —
+    # en lagrad räknare hade krävt invalidering över modellgränsen.
+    okf_concept_count = fields.Integer(
+        'Odoo Mind', compute='_compute_okf_concept_count',
+        help='Antal OKF-koncept som ägs av denna AI-medarbetare '
+             '(scope coworker).')
+
+    @api.depends()
+    def _compute_okf_concept_count(self):
+        Concept = self.env['ai.okf.concept']
+        for r in self:
+            r.okf_concept_count = Concept.search_count([
+                ('owner_coworker_id', '=', r.id),
+                ('archived', '=', False),
+                ('status', '!=', 'superseded'),
+            ])
+
+    def action_open_okf_owned_concepts(self):
+        # Smartknapp: öppna de koncept medarbetaren ÄGER (scope coworker).
+        # Namnet skiljer sig från res_config_settings.action_open_okf_concepts,
+        # som öppnar ALLA koncept (Inställningar-blocket) — samma namn på
+        # två olika frågor kolliderade i res.users-vyn (mätt 2026-09-28).
+        self.ensure_one()
+        return self.env['ai.okf.concept']._okf_action_for_owner(
+            'ai.coworker', self.id)
+
     @api.depends('session_ids')
     def _compute_session_object_count(self):
         for r in self:

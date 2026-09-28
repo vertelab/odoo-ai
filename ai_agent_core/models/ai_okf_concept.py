@@ -1966,3 +1966,62 @@ class AIOkfConcept(models.Model):
         if concept.owner_coworker_id:
             return {'owner_coworker_id': concept.owner_coworker_id.id}
         return {'owner_company_id': self.env.company.id}
+
+    # ════════════════════════════════════════════
+    # ÄGAR-ÅTGÄRDEN (okf-smart-buttons)
+    # ════════════════════════════════════════════
+
+    #: Modeller som kan ÄGA ett koncept → ägarfältet på ai.okf.concept.
+    #: Används av _okf_action_for_owner(). Ägande är inte samma sak som
+    #: ursprung (source_ref): inlärning skriver koncept med en användare
+    #: som ägare utan att användarposten var källan.
+    OKF_OWNER_MODELS = {
+        "res.company": "owner_company_id",
+        "res.users": "owner_user_id",
+        "ai.coworker": "owner_coworker_id",
+    }
+
+    @api.model
+    def _okf_action_for_owner(self, model, res_id):
+        """Öppna de koncept en post ÄGER (inte de som kom från den).
+
+        Smartknapparna på res.users (Min profil), res.company
+        (Företagsinställningar) och ai.coworker använder denna. Skillnaden
+        mot `action_okf_show_concepts()` (som följer `source_ref`) är
+        avsiktlig: en användares personliga koncept skrivs av inlärningen
+        och har användaren som ägare — formulärposten var aldrig källan.
+
+        Generisk med flit: ägarfrågan bor i kärnan, inte i tre modeller.
+        Returnerar False för en modell som inte är en OKF-ägare, så
+        anroparen kan avstå utan krasch.
+        """
+        owner_field = self.OKF_OWNER_MODELS.get(model)
+        if not owner_field:
+            return False
+        try:
+            res_id = int(res_id)
+        except (TypeError, ValueError):
+            return False
+        if res_id <= 0:
+            return False
+
+        domain = [
+            (owner_field, "=", res_id),
+            ("archived", "=", False),
+            ("status", "!=", "superseded"),
+        ]
+        count = self.search_count(domain)
+        return {
+            "type": "ir.actions.act_window",
+            "name": _("Odoo Mind: %s,%s") % (model, res_id),
+            "res_model": "ai.okf.concept",
+            "view_mode": "list,form",
+            "domain": domain,
+            "context": {"create": False},
+            "target": "current",
+            "help": _(
+                "<p>%s koncept ägs av den här posten.</p>"
+                "<p>Koncept är ADD-only och genereras av indexeraren — "
+                "de redigeras inte för hand.</p>"
+            ) % count,
+        }

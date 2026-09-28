@@ -169,6 +169,12 @@
                         <button name="action_get_session_objects" class="oe_stat_button" type="object" icon="fa-puzzle-piece">
                             <field name="session_object_count" widget="statinfo" string="Objects"/>
                         </button>
+                        <!-- Odoo Mind: koncept som medarbetaren ÄGER
+                             (scope coworker). Bredvid sessionsräknarna —
+                             de säger vad den GJORT, denna vad den VET. -->
+                        <button name="action_open_okf_owned_concepts" class="oe_stat_button" type="object" icon="fa-brain">
+                            <field name="okf_concept_count" widget="statinfo" string="Odoo Mind"/>
+                        </button>
                     </div>
 
                     <div class="oe_title d-flex align-items-start">
