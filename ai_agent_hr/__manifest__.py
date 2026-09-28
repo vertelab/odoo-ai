@@ -21,21 +21,13 @@
 
 {
     'name': 'odoo-ai: Agent Orchestration HR',
-    'version': '18.0.1.0.0',
-    'summary': 'Agent Orchestration HR.',
+    'version': '0.3',
+    'summary': 'Agent Orchestration HR',
     'category': 'Productivity / Discuss',
-    'description': '''
-Agent Orchestration HR
-======================
-
-    Agent Orchestration for departments
-            Organize you AI Staff
-
-    Features:
-
-        - UI Integration: Extends 8 view(s) in the Odoo interface.
-        - Extends Odoo: Builds on ai.agent, ai.quest, ai.quest.session, ai.quest.session.line.
-    ''',
+    'description': """
+        Agent Orchestration for departments
+        Organize you AI Staff
+    """,
     #'sequence': '1',
     'author': 'Vertel AB',
     'website': 'https://vertel.se/apps/odoo-ai/ai_agent_hr',
@@ -60,3 +52,4 @@ Agent Orchestration HR
     'auto_install': False,
     'application': False,
 }
+# vim:expandtab:smartindent:tabstop=4:softtabstop=4:shiftwidth=4:
