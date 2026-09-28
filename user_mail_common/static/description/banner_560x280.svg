@@ -120,14 +120,14 @@
     <text
        xml:space="preserve"
        style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:15px;line-height:125%;font-family:Ubuntu;-inkscape-font-specification:'Ubuntu, Normal';text-align:end;letter-spacing:0px;word-spacing:0px;writing-mode:lr-tb;text-anchor:end;fill:#000000;fill-opacity:1;stroke:none;stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1"
-       x="519.41309"
+       x="518.0"
        y="90.822594"
        id="text2035"
        inkscape:export-filename="/usr/share/odoo-user-mail/user_mail_client/static/description/banner.png"
        inkscape:export-xdpi="92.61972"
        inkscape:export-ydpi="92.61972"><tspan
          sodipodi:role="line"
-         x="519.41309"
+         x="518.0"
          y="90.822594"
          style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:26.6667px;font-family:Ubuntu;-inkscape-font-specification:'Ubuntu, Normal';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-feature-settings:normal;text-align:end;writing-mode:lr-tb;text-anchor:end;stroke-width:1px"
          id="tspan8888">User Mail Common</tspan></text>
@@ -173,14 +173,5 @@
          id="tspan11395"
          x="251.18945"
          y="243.29272" /></text>
-    <image
-       width="27.488956"
-       height="24.190279"
-       preserveAspectRatio="none"
-       style="stroke-width:3.63783;image-rendering:optimizeQuality"
-       xlink:href="data:image/png;base64,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 "
-       id="image14989"
-       x="299.9371"
-       y="130.33142" />
   </g>
 </svg>
