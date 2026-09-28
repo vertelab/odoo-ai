@@ -44,23 +44,53 @@ class ResCompany(models.Model):
         string='Memory Count',
         compute='_compute_company_memory_count')
 
+    # ── Företagsminne (LEVANDE väg: ai.okf.concept) ──
+    okf_memory_count = fields.Integer(
+        string='OKF Memory Count',
+        compute='_compute_okf_memory_count',
+        help='Antal levande OKF-koncept som ägs av bolaget (company-scope). '
+             'Detta är vad som faktiskt injiceras i prompten.')
+
     @api.depends('company_memory_ids')
     def _compute_company_memory_count(self):
         for r in self:
             r.company_memory_count = len(r.company_memory_ids)
 
+    @api.depends()
+    def _compute_okf_memory_count(self):
+        Concept = self.env['ai.okf.concept'].sudo()
+        for r in self:
+            r.okf_memory_count = Concept.search_count([
+                ('scope', '=', 'company'),
+                ('owner_company_id', '=', r.id),
+                ('archived', '=', False),
+                ('status', '!=', 'superseded'),
+            ])
+
     def action_open_company_memory(self):
-        """Smart button: öppna företagets minnen."""
+        """Smartknapp: öppna bolagets LEVANDE minne (ai.okf.concept).
+
+        Company-scope ägt av bolaget — kunskap, partners, leverantörer,
+        strategi, webbplats, mejl. Källan syns som kolumn/filter, inte som
+        en egen knapp (samma koncept som det personliga minnet).
+        """
         self.ensure_one()
         return {
-            'name': 'Company Memories',
+            'name': 'Företagsminne',
             'type': 'ir.actions.act_window',
-            'res_model': 'ai.company.memory',
+            'res_model': 'ai.okf.concept',
             'view_mode': 'list,form',
             'views': [[False, 'list'], [False, 'form']],
             'target': 'current',
-            'domain': [('company_id', '=', self.id)],
-            'context': {'default_company_id': self.id},
+            'domain': [
+                ('scope', '=', 'company'),
+                ('owner_company_id', '=', self.id),
+            ],
+            'context': {
+                'default_scope': 'company',
+                'default_owner_company_id': self.id,
+                'search_default_not_archived': 1,
+            },
         }
 
     # ─────────────────────────────────────────────

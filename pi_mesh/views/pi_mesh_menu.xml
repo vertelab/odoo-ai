@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- ════════════════════════════════════════════════════════════
+         Meny — Pi Agent Mesh under AI Orkestrering.
+
+         Rotmenyn deklareras i ai_agent_core/views/menu.xml och laddas
+         före denna fil (depends), så parent finns när vi refererar
+         den. Menyn ligger i ROTMENYN, inte under Technical: mesh:en är
+         drift, inte konfiguration — och den som undrar vem som rör en
+         fil ska inte behöva gå via Inställningar.
+         ════════════════════════════════════════════════════════════ -->
+
+    <menuitem id="menu_pi_mesh_root" name="Pi Mesh"
+              parent="ai_agent_core.menu_ai_root" sequence="30"
+              groups="ai_agent_core.group_ai_officer"/>
+
+    <menuitem id="menu_pi_mesh_agent" name="Agenter"
+              parent="menu_pi_mesh_root" sequence="10"
+              action="action_pi_mesh_agent"/>
+
+    <menuitem id="menu_pi_mesh_message" name="Meddelanden"
+              parent="menu_pi_mesh_root" sequence="20"
+              action="action_pi_mesh_message"/>
+
+    <menuitem id="menu_pi_mesh_lock" name="Lås"
+              parent="menu_pi_mesh_root" sequence="30"
+              action="action_pi_mesh_lock"/>
+
+    <menuitem id="menu_pi_mesh_task" name="Uppgifter"
+              parent="menu_pi_mesh_root" sequence="40"
+              action="action_pi_mesh_task"/>
+</odoo>

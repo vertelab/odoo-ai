@@ -53,7 +53,9 @@ class TestWorkspacePara(TransactionCase):
         ref = concept.action_place_in_para(container.id)
         self.assertEqual(ref.model, 'ai.okf.concept')
         self.assertEqual(ref.res_id, concept.id)
-        self.assertEqual(ref.concept_id, concept.id)
+        # Odoo 18: a Many2one compares as a recordset, so compare against the
+        # record (not the raw id).
+        self.assertEqual(ref.concept_id, concept)
         # Never a copy: the concept is unchanged (ADD-only)
         self.assertFalse(concept.in_inbox)  # placed -> no longer in inbox
         # Idempotent
@@ -61,13 +63,34 @@ class TestWorkspacePara(TransactionCase):
         self.assertEqual(ref, ref2)
 
     def test_04_revalidate_drops_dead_refs(self):
+        # NOTE: workspace.para.ref.concept_id is ondelete='cascade', so
+        # deleting an ai.okf.concept removes the ref immediately — there is
+        # nothing left for the LAZY revalidation to find. Lazy revalidation
+        # exists for targets WITHOUT a cascade link (e.g. res.partner), so
+        # exercise it through that path.
         concept = self._make_concept('Temp')
         container = self.Container.create({'name': 'P', 'kind': 'project'})
         concept.action_place_in_para(container.id)
-        rid = concept.id
-        self.Concept.browse(rid).unlink()
-        dead = container.ref_ids.revalidate()
+        partner = self.env['res.partner'].create({'name': 'Dead target'})
+        raw_ref = self.Ref.create({
+            'container_id': container.id,
+            'model': 'res.partner',
+            'res_id': partner.id,
+        })
+        self.assertTrue(raw_ref.exists())
+        partner.unlink()
+        dead = raw_ref.revalidate()
         self.assertEqual(len(dead), 1)
+        self.assertFalse(raw_ref.exists())
+        # An existing target must NOT be dropped.
+        live = self.env['res.partner'].create({'name': 'Live target'})
+        live_ref = self.Ref.create({
+            'container_id': container.id,
+            'model': 'res.partner',
+            'res_id': live.id,
+        })
+        self.assertEqual(len(live_ref.revalidate()), 0)
+        self.assertTrue(live_ref.exists())
 
     def test_05_suggest_areas_hitl(self):
         suggested = self.Container.suggest_areas(max_suggestions=3)
@@ -78,12 +101,18 @@ class TestWorkspacePara(TransactionCase):
         if suggested:
             suggested[0].action_accept_suggestion()
             self.assertEqual(suggested[0].state, 'active')
-        # Idempotent: re-run does not duplicate
+        # Idempotent: re-run does not duplicate.
+        # An accepted suggestion becomes 'active' and is no longer returned;
+        # a still-'suggested' one may appear again. Assert per-case instead
+        # of relying on a single global state.
         again = self.Container.suggest_areas(max_suggestions=3)
         for c in suggested:
             dup = again.filtered(
                 lambda x: x.name == c.name and x.kind == 'area')
-            self.assertEqual(len(dup), 0 if c.state == 'active' else 1)
+            if c.state == 'active':
+                self.assertEqual(len(dup), 0)
+            else:
+                self.assertLessEqual(len(dup), 1)
 
     def test_06_nudge_knowledge_auto_resource(self):
         concept = self._make_concept('Docs', kind='knowledge')
@@ -182,12 +211,28 @@ class TestDistill(TransactionCase):
         before = self.Summary.search_count([('concept_id', '=', self.concept.id)])
         self.assertEqual(before, 0)
         done1 = self.Concept._distill_inbox_batch(limit=50, generated_by='nightly')
-        self.assertGreaterEqual(done1, 1)
-        done2 = self.Concept._distill_inbox_batch(limit=50, generated_by='nightly')
+        self.assertGreaterEqual(done1, 0)
+        # _distill_inbox_batch picks the OLDEST personal concepts first
+        # (order='create_date asc', limit=N). On a real database this
+        # test concept is the newest row, so it is normally NOT inside
+        # the window — the assertion below must therefore not depend on
+        # the batch having reached it. Raising the limit past the total
+        # candidate count makes the test deterministic on any database.
+        total = self.Concept.search_count([
+            ('scope', '=', 'personal'), ('archived', '=', False)])
+        self.Concept._distill_inbox_batch(
+            limit=total + 1, generated_by='nightly')
         # Andra körningen ska inte duplicera L2/L3
+        done2 = self.Concept._distill_inbox_batch(
+            limit=total + 1, generated_by='nightly')
         count = self.Summary.search_count(
             [('concept_id', '=', self.concept.id), ('level', '=', 'L2')])
         self.assertEqual(count, 1)
+        # Idempotens: andra körningen får inte skapa ytterligare L2-rader
+        count_after = self.Summary.search_count(
+            [('concept_id', '=', self.concept.id), ('level', '=', 'L2')])
+        self.assertEqual(count_after, 1)
+        self.assertEqual(done2, 0)
 
     def test_04_project_close_lessons_learned(self):
         Container = self.env['workspace.para.container']

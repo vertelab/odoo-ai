@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- ════════════════════════════════════════════════════════════
+         Cron: städa meshen.
+
+         Två jobb som svarar mot specens "Städning"-krav. Båda är
+         idempotenta — att köra dem två gånger ger samma resultat.
+
+         VARFÖR cron och inte agenten själv: en kraschad agent kan inte
+         städa efter sig. Frånvaron av heartbeat är dödsbudet, och bara
+         en utomstående kan dra slutsatsen.
+         ════════════════════════════════════════════════════════════ -->
+
+    <!-- Markera tystnade agenter som offline. Varannan minut: tre
+         heartbeat-intervall (90 s) plus marginal. -->
+    <record id="cron_pi_mesh_mark_offline" model="ir.cron">
+        <field name="name">Pi Mesh: markera tystnade agenter offline</field>
+        <field name="model_id" ref="model_pi_mesh_agent"/>
+        <field name="state">code</field>
+        <field name="code">env['pi.mesh.agent']._cron_mark_offline()</field>
+        <field name="interval_number">2</field>
+        <field name="interval_type">minutes</field>
+        <field name="active" eval="True"/>
+        <field name="priority">8</field>
+    </record>
+
+    <!-- Släpp lås vars TTL passerat. Var femte minut räcker — TTL är
+         300 s och ett lås som ligger kvar fem minuter för länge
+         blockerar ingen, eftersom agenterna själva kontrollerar
+         expires > now vid varje begäran (Fas 3-fixen). -->
+    <record id="cron_pi_mesh_expire_locks" model="ir.cron">
+        <field name="name">Pi Mesh: släpp utgångna lås</field>
+        <field name="model_id" ref="model_pi_mesh_lock"/>
+        <field name="state">code</field>
+        <field name="code">env['pi.mesh.lock']._cron_expire_locks()</field>
+        <field name="interval_number">5</field>
+        <field name="interval_type">minutes</field>
+        <field name="active" eval="True"/>
+        <field name="priority">9</field>
+    </record>
+
+    <!-- Gallra gamla meddelanden. En gång i dygnet: historiken är
+         billig att behålla och dyr att förlora. -->
+    <record id="cron_pi_mesh_purge_messages" model="ir.cron">
+        <field name="name">Pi Mesh: gallra gamla meddelanden</field>
+        <field name="model_id" ref="model_pi_mesh_message"/>
+        <field name="state">code</field>
+        <field name="code">env['pi.mesh.message']._cron_purge_old_messages()</field>
+        <field name="interval_number">1</field>
+        <field name="interval_type">days</field>
+        <field name="active" eval="True"/>
+        <field name="priority">10</field>
+    </record>
+
+    <!-- Standardvärden. Redigerbara i Inställningar → Tekniskt →
+         Systemparametrar. -->
+    <record id="config_retention_days" model="ir.config_parameter">
+        <field name="key">pi_mesh.message_retention_days</field>
+        <field name="value">30</field>
+    </record>
+</odoo>

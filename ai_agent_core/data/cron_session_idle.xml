@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Cron: stäng övergivna sessioner och skriv eftermäle (okf-recall-path
+         fas 4.4, beslut D4).
+
+         Bakgrund: `mark_done()` anropas bara från webhook-vägen och
+         `mark_interrupted()` aldrig i drift. En session som tappas — vilket
+         är majoriteten — stängs därför aldrig och får inget eftermäle.
+         Konsolideringen har då inget att läsa (den såg tidigare bara en
+         råsvans av de sista 40 raderna).
+
+         Tröskeln är konfigurerbar via ir.config_parameter
+         `ai_agent_core.session_idle_minutes` (default 60).
+
+         Idempotent: `_write_final_summary` gör inget LLM-anrop när inga nya
+         rader tillkommit, och stängda sessioner plockas inte upp igen. -->
+    <record id="cron_close_idle_sessions" model="ir.cron">
+        <field name="name">Session: Stäng inaktiva och skriv eftermäle</field>
+        <field name="model_id" ref="model_ai_coworker_session"/>
+        <field name="state">code</field>
+        <field name="code">env['ai.coworker.session']._cron_close_idle_sessions(batch_size=20)</field>
+        <field name="interval_number">15</field>
+        <field name="interval_type">minutes</field>
+        <field name="active" eval="True"/>
+        <field name="priority">7</field>
+    </record>
+</odoo>

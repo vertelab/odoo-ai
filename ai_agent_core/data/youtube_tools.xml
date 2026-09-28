@@ -126,11 +126,15 @@
                    .get_param('ai_agent_core.google_api_key', '')
                    or os.environ.get('GOOGLE_API_KEY', ''))
     if not api_key:
-        return json.dumps({
-            "error": "No Google API key configured — YouTube search needs one. "
-                     "Set it in Odoo Settings (AI → Google API Key) or in the "
-                     "GOOGLE_API_KEY environment variable."
-        })
+        return _tool_error(
+            "No Google API key configured — YouTube search needs one. "
+            "Set it in Odoo Settings (AI → Google API Key) or in the "
+            "GOOGLE_API_KEY environment variable.",
+            parameter="api_key",
+            expected="a Google API key in Settings (AI → Google API Key) "
+                     "or the GOOGLE_API_KEY environment variable",
+            actual="(not configured)",
+            retryable=False)
 
     try:
         youtube = build('youtube', 'v3', developerKey=api_key, cache_discovery=False)
@@ -226,7 +230,15 @@
                    .get_param('ai_agent_core.google_api_key', '')
                    or os.environ.get('GOOGLE_API_KEY', ''))
         if not api_key:
-            return json.dumps({"error": "No Google API key configured \u2014 channel resolve needs one. " + 'Set it in Odoo Settings (AI \\u2192 Google API Key) or in the GOOGLE_API_KEY environment variable.'})
+            return _tool_error(
+                "No Google API key configured \u2014 channel resolve needs "
+                "one. Set it in Odoo Settings (AI \\u2192 Google API Key) or "
+                "in the GOOGLE_API_KEY environment variable.",
+                parameter="api_key",
+                expected="a Google API key in Settings (AI \\u2192 Google API "
+                         "Key) or the GOOGLE_API_KEY environment variable",
+                actual="(not configured)",
+                retryable=False)
         from googleapiclient.discovery import build
         youtube = build('youtube', 'v3', developerKey=api_key, cache_discovery=False)
         handle = channel.lstrip('@')
@@ -256,7 +268,16 @@
                    .get_param('ai_agent_core.google_api_key', '')
                    or os.environ.get('GOOGLE_API_KEY', ''))
             if not api_key:
-                return json.dumps({"error": "No Google API key configured \u2014 pass a UC... channel ID directly, or set the key. " + 'Set it in Odoo Settings (AI \\u2192 Google API Key) or in the GOOGLE_API_KEY environment variable.'})
+                return _tool_error(
+                    "No Google API key configured \u2014 pass a UC... "
+                    "channel ID directly, or set the key. Set it in Odoo "
+                    "Settings (AI \\u2192 Google API Key) or in the "
+                    "GOOGLE_API_KEY environment variable.",
+                    parameter="api_key",
+                    expected="a UC... channel ID, or a Google API key in "
+                             "Settings (AI \\u2192 Google API Key)",
+                    actual="(not configured)",
+                    retryable=False)
             from googleapiclient.discovery import build
             youtube = build('youtube', 'v3', developerKey=api_key, cache_discovery=False)
             handle = channel.lstrip('@')
@@ -302,7 +323,15 @@
                    .get_param('ai_agent_core.google_api_key', '')
                    or os.environ.get('GOOGLE_API_KEY', ''))
         if not api_key:
-            return json.dumps({"error": "No Google API key configured \u2014 channel video listing needs one. " + 'Set it in Odoo Settings (AI \\u2192 Google API Key) or in the GOOGLE_API_KEY environment variable.'})
+            return _tool_error(
+                "No Google API key configured \u2014 channel video listing "
+                "needs one. Set it in Odoo Settings (AI \\u2192 Google API "
+                "Key) or in the GOOGLE_API_KEY environment variable.",
+                parameter="api_key",
+                expected="a Google API key in Settings (AI \\u2192 Google API "
+                         "Key) or the GOOGLE_API_KEY environment variable",
+                actual="(not configured)",
+                retryable=False)
         from googleapiclient.discovery import build
         youtube = build('youtube', 'v3', developerKey=api_key, cache_discovery=False)
         if continuation:
@@ -386,7 +415,15 @@
                    .get_param('ai_agent_core.google_api_key', '')
                    or os.environ.get('GOOGLE_API_KEY', ''))
     if not api_key:
-        return json.dumps({"error": "No Google API key configured \u2014 playlist access needs one. " + 'Set it in Odoo Settings (AI \\u2192 Google API Key) or in the GOOGLE_API_KEY environment variable.'})
+        return _tool_error(
+            "No Google API key configured \u2014 playlist access needs one. "
+            "Set it in Odoo Settings (AI \\u2192 Google API Key) or in the "
+            "GOOGLE_API_KEY environment variable.",
+            parameter="api_key",
+            expected="a Google API key in Settings (AI \\u2192 Google API Key) "
+                     "or the GOOGLE_API_KEY environment variable",
+            actual="(not configured)",
+            retryable=False)
 
     if not playlist_id and not continuation:
         return _tool_error(

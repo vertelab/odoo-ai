@@ -51,6 +51,10 @@ class Config:
         self.base_url = (args.base_url or os.environ.get("PI_AGENT_BASE_URL", "")).rstrip("/")
         self.api_key = args.api_key or os.environ.get("PI_AGENT_API_KEY", "")
         self.coworker = args.coworker or os.environ.get("PI_AGENT_COWORKER", "")
+        # Agent-identitet (pi-agent-agent-identity): vilken ai.agent
+        # uppdraget gäller. Skickas som `agent` i request-body så att
+        # Odoo kör loopen med force_agent. Tomt = coworkerns union.
+        self.agent = getattr(args, "agent", "") or os.environ.get("PI_AGENT_AGENT", "")
         self.skills = args.skills or os.environ.get("PI_AGENT_SKILLS", "")
         self.timeout = args.timeout or int(os.environ.get("PI_AGENT_TIMEOUT", DEFAULT_TIMEOUT))
         self.task = args.task
@@ -374,6 +378,11 @@ class AgentLoop:
             "model": self.cfg.coworker,
             "max_tokens": 4096,
         }
+        # Agent-identitet (pi-agent-agent-identity): låt Odoo köra rätt
+        # ai.agent. Utelämnas helt när ingen är satt — då är beteendet
+        # oförändrat (coworkerns union av kopplade agenter).
+        if self.cfg.agent:
+            payload["agent"] = self.cfg.agent
         data = self.http.post_json(
             f"/ai/openai/{self.cfg.coworker}/v1/chat/completions",
             payload,
@@ -876,6 +885,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--base-url", help="Odoo-bas-URL (eller PI_AGENT_BASE_URL)")
     p.add_argument("--api-key", help="Bearer api-nyckel, res.users.apikeys (eller PI_AGENT_API_KEY)")
     p.add_argument("--coworker", help="coworker-id (numeriskt) för /ai/openai/<id>/v1 (eller PI_AGENT_COWORKER)")
+    p.add_argument("--agent", help="ai.agent att köra (id eller namn) — sätts i request-body som 'agent' (eller PI_AGENT_AGENT)")
     p.add_argument("--skills", help="komma-separerade skills att hämta från Odoo")
     p.add_argument("--prompt", help="single-shot uppdrag")
     p.add_argument("--task", type=int, help="orkestrerad körning: task-id")

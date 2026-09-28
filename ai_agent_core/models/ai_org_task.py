@@ -124,6 +124,7 @@ class AIOrgTask(models.Model):
         session = self.env['ai.coworker.session'].create({
             'coworker_id': self.coworker_id.id,
             'ai_task_id': self.id,
+            'init_type': 'cron',
             'name': f'Task: {self.name[:50]}',
             'status': 'active',
         })

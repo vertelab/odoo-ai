@@ -125,6 +125,13 @@ class TestActionableToolErrors(common.TransactionCase):
         """2.2: HTML-fält ⇒ vägledningen namnger odoo_create."""
         from odoo.addons.ai_agent_core.core.tools import _tool_odoo_write
         # document.page.content är html och får inte skrivas via odoo_write.
+        #
+        # FYND 2026-09-23: `document_page` är inte ett beroende i manifestet
+        # — i en installation utan modulen finns modellen inte i registret,
+        # och `self.env['document.page']` kastar KeyError INNAN skipTest-
+        # guarden nås. Kolla registret först.
+        if 'document.page' not in self.env:
+            self.skipTest('document.page saknas (document_page ej installerad)')
         page = self.env['document.page'].search([], limit=1)
         if not page:
             self.skipTest('document.page saknas')

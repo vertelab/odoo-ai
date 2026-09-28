@@ -100,6 +100,18 @@ class AIOkfConcept(models.Model):
     owner_user_id = fields.Many2one('res.users', string='User')
     owner_coworker_id = fields.Many2one('ai.coworker', string='Coworker')
 
+    # ── Avgränsare för coworker-scopet ──
+    # Ett coworker-koncept ägs av coworkern men LÄRDES ur EN
+    # användares session. Utan denna avgränsare delas coworker-
+    # minnet av alla som pratar med coworkern (läckage).
+    # Tomt = coworker-globalt (t.ex. kaizen-skrivet) och injiceras
+    # för alla användare.
+    source_user_id = fields.Many2one(
+        'res.users', string='Source User', index=True,
+        help='Användaren vars session konceptet lärdes ur. '
+             'Avgränsar coworker-scopet per användare. Tomt = '
+             'coworker-globalt.')
+
     scope = fields.Selection([
         ('company', 'Company'),
         ('personal', 'Personal'),
@@ -129,6 +141,16 @@ class AIOkfConcept(models.Model):
     attribution = fields.Json(
         string='Attribution',
         help='Per-rad källattribution: [{"line": 1, "source_ref": "res.partner,42"}, ...]')
+    okf_tags = fields.Many2many(
+        'ai.okf.tag', 'ai_okf_concept_tag_rel', 'concept_id', 'tag_id',
+        string='Tags',
+        help='OKF-frontmatterns tags — etiketter, inte länkar. En tagg har '
+             'inget innehåll att indexera och får därför ingen egen mixin.')
+    source_text = fields.Text(
+        'Source Text',
+        help='Källtexten som summary härleddes ur (okf-mixin D5). Styr '
+             'versionsbeslutet: en LLM som formulerar om samma text ger '
+             'ingen ny version, men en faktisk källändring gör det.')
     source_ref = fields.Char(
         string='Source Ref',
         help='Primary source reference, t.ex. res.partner,42')
@@ -182,16 +204,28 @@ class AIOkfConcept(models.Model):
         string='In Inbox', compute='_compute_in_inbox', search='_search_in_inbox',
         help='True when the concept is owned by a user, not archived, and has '
              'no PARA reference yet (i.e. it is unorganized capture material).')
+    is_my_memory = fields.Boolean(
+        string='Mina minnen', compute='_compute_is_my_memory',
+        search='_search_is_my_memory',
+        help="Koncept som hör till den inloggade användaren: personliga "
+             "(owner_user_id) eller coworker-koncept lärda ur dennes session "
+             "(source_user_id). Coworker-globala koncept ingår inte.")
 
     # ── Vektorer (pushdown, beslut 11) ──
     embedding = PgVector(
         string='Embedding', dimension=EMBEDDING_DIM,
         help='pgvector(%d) embedding (text-embedding-3-small @ 1024d). '
-             'Kolumnen är vector(%d)-typ (migration 1.10).'
+             'Kolumnen är vector(%d)-typ — satt av hooks.py och migration '
+             '18.0.1.202 (migration 1.11 misslyckades tyst: kolumnen var '
+             'dimensionslös `vector`, vilket blockerade ivfflat-indexet).'
              % (EMBEDDING_DIM, EMBEDDING_DIM))
-    # search_vector — GENERATED COLUMN via SQL-migration:
-    #   ALTER TABLE ai_okf_concept ADD COLUMN search_vector tsvector
-    #     GENERATED ALWAYS AS (to_tsvector('swedish', coalesce(summary, title, ''))) STORED;
+    # search_vector — GENERATED COLUMN, skapad av SQL (hooks.py:
+    # okf_ensure_search_infrastructure, körs i post_init_hook + migration
+    # 18.0.1.202). Är avsiktligt INTE ett ORM-fält: en genererad kolumn
+    # ska inte kunna glömmas bort av skrivsidan.
+    #   to_tsvector('swedish', coalesce(summary,'') || ' ' || coalesce(title,''))
+    # Verifierat i drift 2026-09-13: 110/110 koncept har en icke-tom vektor,
+    # svensk stemming fungerar ('kund'/'kunder'/'kunden' → samma 44 träffar).
     entities = fields.Json(
         string='Entities',
         help='Extracted entities for entity linking.')
@@ -201,6 +235,20 @@ class AIOkfConcept(models.Model):
         string='Dirty', default=False,
         help='Sätts av write()-hooks på källmodeller; cron plockar upp och '
              'rensar efter _okf_upsert().')
+
+    embedding_state = fields.Selection(
+        selection=[('pending', 'Pending'),
+                   ('ready', 'Ready'),
+                   ('failed', 'Failed'),
+                   ('skipped', 'Skipped')],
+        string='Embedding State', default='pending', index=True,
+        help='Hur det gick att skapa konceptets vektor. '
+             'pending = ingen provider/nyckel stund; cron fyller på. '
+             'failed = providern svarade men vektorn var felaktig '
+             '(fel dimension) — kräver åtgärd. '
+             'skipped = ingen text att vektorisera. '
+             'Behövs för att efterfyllnad ska veta vad som saknas — '
+             'utan markering ser en tom kolumn likadan ut oavsett orsak.')
 
     _sql_constraints = [
         # Unik per (scope, concept_key, version) — versioner delar
@@ -244,10 +292,37 @@ class AIOkfConcept(models.Model):
         """ADD-only: concept-rader är immutabla (beslut 10).
 
         Endast livscykelfält får ändras: status (superseded av
-        _okf_upsert), archived (offboarding), verified (cron/process)
-        och dirty (trigger-modellen). Allt innehåll är låst.
+        _okf_upsert), archived (offboarding), verified (cron/process),
+        dirty (trigger-modellen), embedding_state och embedding
+        (efterfyllnaden). Allt INNEHÅLL är låst.
+
+        `embedding_state` är ett livscykelfält och inte innehåll: det säger
+        vad som hänt med raden, inte vad raden betyder.
+
+        `embedding` RÄKNAS OCKSÅ SOM LIVSCYKEL (rättat 2026-09-22).
+        Den tidigare regeln — "vektorn är innehåll, efterfyllnaden skapar en
+        ny version" — var en återvändsgränd i drift:
+
+          Efterfyllnaden anropar `_okf_upsert` med SAMMA summary som den
+          gamla raden. Då slår `_version_is_unchanged` till och returnerar
+          den befintliga raden UTAN att skapa en version. Ingen ny rad, och
+          därför ingen `existing.write({'status': 'superseded'})` — den
+          gamla raden förblev 'pending' för evigt. Efterfyllnaden plockade
+          samma 20 koncept varje körning (order='id asc'), loggade
+          "20 av 20 koncept fick vektor" och gjorde ingenting.
+
+        Bevis i drift: `user.140.role` hade 44 versioner där v44 var 'ready'
+        och v1–v42 låg kvar som 'pending' + 'stable'. Kön stod still på 449
+        medan cronen rapporterade framsteg var 30:e sekund.
+
+        En vektor är HÄRLEDD ur texten — den beskriver inte konceptet, den
+        är ett index över det. Att fylla i den ändrar inte vad raden betyder,
+        och att tvinga fram en ny version för den skapade bara en oändlig
+        svans av dubbletter. `summary`/`title`/`source_ref` är fortfarande
+        låsta; det är de som bär innebörden.
         """
-        allowed = {'status', 'archived', 'verified', 'dirty'}
+        allowed = {'status', 'archived', 'verified', 'dirty',
+                   'embedding_state', 'embedding'}
         forbidden = set(vals) - allowed
         if forbidden:
             raise ValidationError(
@@ -350,12 +425,125 @@ class AIOkfConcept(models.Model):
         _logger.info('Personliga minneskällor: %d roller, %d mål', roles, goals)
         return {'roles': roles, 'goals': goals}
 
+    def _produce_embedding(self, summary, title=None, explicit=None):
+        """Producera (eller validera) embedding för ett koncept (fas 3.1/3.2).
+
+        Returnerar `(vector, state)` där state är:
+          'ready'   — vektorn är giltig och kan användas
+          'pending' — ingen vektor kunde skapas (ingen provider/nyckel/nät)
+          'failed'  — provider svarade men vektorn var felaktig
+          'skipped' — ingen text att vektorisera
+
+        Anropas av `_okf_upsert` när `embedding` utelämnas. Skrivsidan ska
+        inte behöva komma ihåg vektorn — den ska bara uppstå.
+        """
+        if explicit is not None:
+            # Explicit vektor: validera ändå (fel dimension = tyst korrupt rad).
+            # Modellnamnet används bara i loggning — längden kontrolleras mot
+            # `dim`. Vi läser providerns fält i stället för den hårdkodade
+            # konstanten, så loggen namnger den modell som faktiskt används.
+            Prov = self.env['ai.provider']
+            ok = Prov._validate_embedding(
+                explicit,
+                model=Prov._embedding_provider()._effective_embedding_model()
+                if Prov._embedding_provider() else Prov.DEFAULT_EMBEDDING_MODEL,
+                dim=EMBEDDING_DIM)
+            return (explicit, 'ready') if ok else (None, 'failed')
+
+        text = ' '.join(filter(None, [title, summary])).strip()
+        if not text:
+            return (None, 'skipped')
+
+        provider = self.env['ai.provider']._embedding_provider()
+        if not provider:
+            _logger.warning(
+                'OKF: ingen provider som kan embedda — konceptet sparas utan '
+                'vektor '
+                '(embedding_state=pending, cron fyller på senare)')
+            return (None, 'pending')
+
+        model = provider._effective_embedding_model()
+        # Konceptet är ett DOKUMENT som senare ska hittas av en fråga —
+        # alltså 'search_document'. Att utelämna input_type får gatewayen
+        # att hänga i 45 s och ge tyst None (mätt 2026-09-14).
+        vector = provider._get_embedding(
+            model=model, input=text, input_type='search_document')
+        if not vector:
+            _logger.warning(
+                'OKF: embedding misslyckades för koncept %r '
+                '(provider=%s, modell=%s)',
+                self.env.context.get('okf_key', '?'), provider.name, model)
+            return (None, 'pending')
+
+        if not provider._validate_embedding(vector, model=model,
+                                            dim=EMBEDDING_DIM):
+            return (None, 'failed')
+        return (vector, 'ready')
+
+    @api.model
+    def _version_is_unchanged(self, existing, summary, title, source_ref,
+                             attribution, source_text=None):
+        """Är den nya datan innehållsligt identisk med senaste versionen?
+
+        Jämför de fält som BESKRIVER konceptet. Avsiktligt UTELÄMNADE:
+        `generated`/`verified` (tidsstämplar — de är alltid nya och hade
+        gjort varje körning till en 'ändring'), `embedding` (härleds ur
+        texten, så samma text ger samma vektor) och `id`/`version`.
+
+        `attribution` jämförs normaliserat (sorterad på source+role) — två
+        listor med samma källor i olika ordning är samma attribution, och
+        att behandla dem som olika hade återinfört en rad per körning.
+
+        None och '' normaliseras båda till '' innan jämförelsen, så ett
+        utelämnat `title` inte ser ut som en ändring mot ett tomt.
+
+        FYND (2026-09-21): metoden är `@api.model` och anropas som
+        `self._version_is_unchanged(existing, ...)` — där `self` är MODELLEN
+        (oftast ett tomt recordset), inte raden. `self.ensure_one()` kastade
+        därför `Expected singleton: ai.okf.concept()` så fort en befintlig
+        version hittades, och hela `_okf_upsert` föll. Felet dolde sig bakom
+        versionsstormen: cronens try/except loggade bara en varning, så
+        varje post förblev dirty och försökte igen var 5:e minut.
+        Kontrollen ska gälla den befintliga raden — det är den vi jämför mot.
+        """
+        existing.ensure_one()
+
+        def _norm_attr(attr):
+            rows = attr or []
+            out = []
+            for row in rows:
+                if isinstance(row, dict):
+                    out.append((str(row.get('source', '')),
+                                str(row.get('role', ''))))
+                else:
+                    out.append((str(row), ''))
+            return sorted(out)
+
+        # D5 (okf-mixin): när källtexten är känd styr DEN versionen — inte
+        # derivatet. En LLM som formulerar om samma text ska inte skapa en
+        # ny version; en faktisk källändring ska. Utan källtexten (legacy-
+        # anropare) jämförs summary som förut.
+        if source_text is not None:
+            if (existing.source_text or '') != (source_text or ''):
+                return False
+        elif (existing.summary or '') != (summary or ''):
+            return False
+        if (existing.title or '') != (title or ''):
+            return False
+        if (existing.source_ref or '') != (source_ref or ''):
+            return False
+        if _norm_attr(existing.attribution) != _norm_attr(attribution):
+            return False
+        return True
+
     def _okf_upsert(self, artifact_type, concept_key, summary, title=None,
                     attribution=None, source_ref=None, sources=None,
                     owner_company_id=None, owner_user_id=None,
                     owner_coworker_id=None, generated_by='process',
                     status='stable', stale_after=None, entities=None,
-                    embedding=None, search_vector=None, **kwargs):
+                    embedding=None, search_vector=None, source_text=None,
+                    force_new_version=False, okf_tags=None,
+                    source_user_id=None, **kwargs):
         """Skapa ny concept eller ny version vid re-index (ADD-only).
 
         - Memory-koncept (kind=memory): ny rad endast vid genuint ny inlärning
@@ -364,6 +552,16 @@ class AIOkfConcept(models.Model):
         - Knowledge-koncept: re-index av samma concept_key skapar ny version
           (version+1, supersedes_id → föregående), föregående blir superseded.
         - Rader är immutabla (ADD-only gäller alltid).
+
+        `force_new_version` (okf-mixin): skapa en ny version även när
+        innehållet är oförändrat. Används av efterfyllnaden, som lägger till
+        en vektor — en genuin ändring av raden som `_version_is_unchanged`
+        annars skulle avvisa.
+
+        `source_text` (okf-mixin D5): källtexten som `summary` härleddes ur.
+        När den är satt styr DEN versionsbeslutet — en LLM som formulerar om
+        samma text ger ingen ny version, men en faktisk källändring gör det.
+        Utelämnad → `summary` jämförs som förut (legacy-anropare oförändrade).
         """
         ArtifactType = self.env['ai.artifact.type']
         if isinstance(artifact_type, str):
@@ -397,7 +595,41 @@ class AIOkfConcept(models.Model):
         ], order='version desc', limit=1)
 
         if existing:
+            # ── Är detta en GENUIN ny version? (Fas 14) ────────────────
+            # Utan denna kontroll skapade varje cron-körning en ny rad även
+            # när innehållet var bokstavligen identiskt. Mätt mot `social`
+            # 2026-09-14:
+            #
+            #   personal|user.2.role : 22 rader, 1 unik text
+            #   personal|user.6.role : 22 rader, 1 unik text
+            #   company|partner,10   : 22 rader, 1 unik text
+            #
+            # Kedjan såg ut som en historik men var en logg över att cron
+            # hade kört. Värre: eftersom `search_vector` genereras ur
+            # summary||title blev 22 identiska rader 22 identiska
+            # fulltextposter — sökningen fick 22 chanser att hitta samma
+            # sak, vilket förvränger rankningen (DISTINCT ON räddade
+            # dedupen i fas 12, men bara för att den fanns).
+            #
+            # Regeln: samma innehåll = ingen ny version. Villkoret är
+            # innehållsligt, inte tidsmässigt — `verified`/`generated`
+            # uppdateras ändå inte på den gamla raden (ADD-only), så en
+            # 'oförändrad' rad är den ärliga representationen.
+            if not force_new_version and self._version_is_unchanged(
+                    existing, summary, title, source_ref, attribution,
+                    source_text=source_text):
+                _logger.debug(
+                    'OKF: %s|%s oförändrat sedan v%s — ingen ny version '
+                    '(annars skapas en rad per cron-körning)',
+                    scope, concept_key, existing.version)
+                # Returnera den BEFINTLIGA raden. Anroparen (t.ex.
+                # _index_user_role) räknar 1 = 'indexerad', vilket är sant:
+                # konceptet finns och är aktuellt.
+                return existing
+
             # ADD-only: ny version istället för att skriva över
+            vec, vec_state = self._produce_embedding(
+                summary, title=title, explicit=embedding)
             vals = {
                 'artifact_type_id': atype.id,
                 'scope': scope,
@@ -406,6 +638,8 @@ class AIOkfConcept(models.Model):
                 'supersedes_id': existing.id,
                 'title': title,
                 'summary': summary,
+                'source_text': source_text,
+                'okf_tags': okf_tags or [],
                 'attribution': attribution or [],
                 'source_ref': source_ref,
                 'sources': sources or [],
@@ -414,10 +648,12 @@ class AIOkfConcept(models.Model):
                 'status': status,
                 'stale_after': stale_after,
                 'entities': entities or [],
-                'embedding': embedding,
+                'embedding': vec,
+                'embedding_state': vec_state,
                 'owner_company_id': owner_company_id,
                 'owner_user_id': owner_user_id,
                 'owner_coworker_id': owner_coworker_id,
+                'source_user_id': source_user_id,
                 'retention_purpose': atype.okf_contract.get('retention_purpose', 'none')
                 if atype.okf_contract else 'none',
             }
@@ -425,6 +661,8 @@ class AIOkfConcept(models.Model):
             existing.write({'status': 'superseded'})
             return new
 
+        vec, vec_state = self._produce_embedding(
+            summary, title=title, explicit=embedding)
         vals = {
             'artifact_type_id': atype.id,
             'scope': scope,
@@ -433,6 +671,8 @@ class AIOkfConcept(models.Model):
             'supersedes_id': None,
             'title': title,
             'summary': summary,
+            'source_text': source_text,
+            'okf_tags': okf_tags or [],
             'attribution': attribution or [],
             'source_ref': source_ref,
             'sources': sources or [],
@@ -441,10 +681,12 @@ class AIOkfConcept(models.Model):
             'status': status,
             'stale_after': stale_after,
             'entities': entities or [],
-            'embedding': embedding,
+            'embedding': vec,
+            'embedding_state': vec_state,
             'owner_company_id': owner_company_id,
             'owner_user_id': owner_user_id,
             'owner_coworker_id': owner_coworker_id,
+            'source_user_id': source_user_id,
             'retention_purpose': atype.okf_contract.get('retention_purpose', 'none')
             if atype.okf_contract else 'none',
         }
@@ -496,85 +738,326 @@ class AIOkfConcept(models.Model):
     @api.model
     def _okf_search(self, query, scope=None, artifact_type_ids=None,
                     department_context=None, time_window=None,
-                    limit=20, user=None, hybrid=True):
-        """Sammansatt retrieval-pipeline (task 7.9).
+                    limit=20, user=None, hybrid=True, semantic_weight=None,
+                    owner_id=None, cross_user=False, **kw):
+        """Sammansatt retrieval-pipeline (D9).
 
-        1. Query-embedding (samma modell/dimension som indexering:
-           text-embedding-3-small @ 1024d)
-        2. pgvector top-k + tsvector hybrid (beslut 11-pushdown)
-        3. Scope-filter (company/personal/coworker)
-        4. Artifact type-filter (avdelningskontext)
-        5. Access-resolver (ir.access ∩ ir.rule ∩ followers)
-        6. Senaste version per (scope, concept_key) endast
-        7. Tidsfönster (för manuella körningar)
+        Ersätter den gamla tredelade fallback-kedjan (pgvector → ILIKE →
+        create_date desc). Den kedjan hade tre fel som alla syntes i drift:
+
+        1. **"2b. tsvector-hybrid (swedish FTS)" var en lögn i en
+           kommentar** — koden var `summary ILIKE '%<hela prompten>%'`.
+           En hel prompt matchar aldrig en konceptsammanfattning, så grenen
+           var i praktiken död och föll alltid igenom till fallbacken.
+        2. **pgvector-grenen dedupade inte.** `return self.browse(rows)`
+           returnerade råa rad-id:n. I drift (`social`): 110 rader men bara
+           4 unika koncept — `partner,15` har 44 versioner.
+        3. **create_date desc var sista utvägen**, vilket betyder att en
+           fråga utan träff returnerade de senaste koncepten som om de vore
+           relevanta. Tystnaden såg ut som ett svar.
+
+        Nu är det EN fråga. Poängen är en viktad summa av två signaler:
+
+            (1 - (embedding <=> :q)) * w
+          + ts_rank(search_vector, plainto_tsquery('swedish', :query)) * (1-w)
+
+        `COALESCE`-en i 12.3 är hela poängen med sammanslagningen: en rad
+        utan vektor (Bifrost saknar embedding-modeller, alla 110 är
+        `pending`) får ändå sin text-signal. Utan den hade den semantiska
+        blockeraren gjort sökningen helt blind i stället för halvblind.
+
+        **Tomt är tomt.** Ingen fallback returnerar "de senaste koncepten"
+        när frågan inte matchar — ett tomt resultat är ett ärligt svar, och
+        loggas som `info` tillsammans med hur många koncept som fanns i
+        scopet. Ett sökresultat som är tomt för att frågan KRASCHADE är
+        däremot inte tomt på riktigt: det loggas som `warning` med
+        traceback.
         """
         user = user or self.env.user
+
+        # ── ÄGARKONTROLL (odoo-mind-memory-scope-isolation) ──────────
+        # Sökningen får ALDRIG bredda till andra ägare än den som
+        # efterfrågas. Tidigare filtrerades bara `scope`, så ett
+        # personal-scope returnerade ALLA användares personliga
+        # koncept (och coworker-scope ALLA coworkers). Access-lagret
+        # (_resolve_visible_sources) täcker inte detta — det prövar
+        # källpostens läsbarhet, inte konceptets ägare.
+        #
+        # Regler:
+        #   * scope satt utan owner_id → fel (tyst läcka förbjuden)
+        #   * owner_id satt → filtrera på rätt owner_*-kolumn
+        #   * coworker-scope → även source_user_id (om inte cross_user)
+        #   * scope None (bred legacy-sökning) → tillåts, varnas
+        owner_column = None
+        if scope == 'company':
+            owner_column = 'owner_company_id'
+        elif scope == 'personal':
+            owner_column = 'owner_user_id'
+        elif scope == 'coworker':
+            owner_column = 'owner_coworker_id'
+        if scope and owner_column and owner_id is None:
+            raise ValueError(
+                "_okf_search(scope=%r) kräver owner_id — en sökning "
+                "utan ägare skulle tyst returnera andra ägares koncept "
+                "(odoo-mind-memory-scope-isolation)." % scope)
+        if scope and not owner_column:
+            raise ValueError(
+                "_okf_search: okänt scope %r" % scope)
+        if not scope:
+            _logger.warning(
+                '_okf_search utan scope/ägare (bred sökning) — query=%.60s',
+                query)
+
         domain = self._fresh_domain(include_stale_searchable=False)
         if scope:
             domain.append(('scope', '=', scope))
+        if owner_column and owner_id is not None:
+            domain.append((owner_column, '=', owner_id))
+        if scope == 'coworker' and not cross_user:
+            # Avgränsa coworker-minnet per användare. Coworker-globala
+            # koncept (source_user_id tomt, t.ex. kaizen) ingår alltid.
+            src_user = user.id if user else self.env.uid
+            domain.append(('source_user_id', 'in', [False, src_user]))
+        if cross_user:
+            _logger.info(
+                '_okf_search cross_user=True (scope=%s, owner=%s) — '
+                'läser över alla användare (kaizen-vägen)',
+                scope, owner_id)
         if artifact_type_ids:
             domain.append(('artifact_type_id', 'in', artifact_type_ids))
         if time_window:
             domain.append(('write_date', '>=', time_window))
 
-        # 6. Senaste version per (scope, concept_key) — först via SQL/ORM
-        # (pgvector-pushdown kräver att kolumnen är vector-typ; fallback
-        # till tsvector-sök om pgvector saknas)
-        if hybrid and query:
-            # 1. Query-embedding via providern (samma som indexering)
-            embedding = None
-            try:
-                provider = self.env['ai.provider'].search(
-                    [('active', '=', True)], limit=1)
-                if provider and hasattr(provider, '_get_embedding'):
-                    embedding = provider._get_embedding(query)
-            except Exception as e:
-                _logger.warning('OKF query embedding failed: %s', e)
+        # Hybrid kräver en fråga. Utan fråga är "senaste" ett ärligt svar.
+        if not hybrid or not query or not query.strip():
+            results = self.search(domain, order='create_date desc',
+                                  limit=limit)
+            return results._latest_per_key()
 
-            if embedding:
-                # 2a. pgvector top-k (direkt SQL — beslut 11-pushdown)
-                try:
-                    emb_literal = embedding if isinstance(embedding, str) \
-                        else '[%s]' % ','.join(str(x) for x in embedding)
-                    sql = """
-                        SELECT id FROM ai_okf_concept
-                        WHERE archived = false
-                          AND status != 'superseded'
-                    """
-                    params = []
-                    if scope:
-                        sql += ' AND scope = %s'
-                        params.append(scope)
-                    if artifact_type_ids:
-                        sql += ' AND artifact_type_id = ANY(%s)'
-                        params.append(list(artifact_type_ids))
-                    sql += ' ORDER BY embedding <=> %s::vector LIMIT %%s' % \
-                        emb_literal
-                    params.append(limit)
-                    self.env.cr.execute(sql, params)
-                    rows = [r[0] for r in self.env.cr.fetchall()]
-                    if rows:
-                        return self.browse(rows)
-                except Exception as e:
-                    _logger.warning(
-                        'OKF pgvector search failed (fallback till tsvector): %s',
-                        e)
+        # 1. Query-embedding. Misslyckas den fortsätter vi med ren BM25 —
+        #    det är den ärliga halva som fungerar.
+        embedding = None
+        provider = self.env['ai.provider']._embedding_provider()
+        if provider:
+            # Frågan är en SÖKFRÅGA, inte ett dokument. Asymmetriska
+            # modeller (som embed-multilingual-v3.0) lägger dem i olika
+            # delar av rummet — fel val ger sämre träff, inte ett fel.
+            embedding = provider._get_embedding(
+                input=query, input_type='search_query')
+            if not embedding:
+                _logger.warning(
+                    'OKF-sökning: ingen query-vektor (provider=%s). '
+                    'Endast BM25-signalen bär resultatet (query=%.60s)',
+                    provider.name, query)
+        else:
+            _logger.warning(
+                'OKF-sökning utan aktiv ai.provider — endast BM25 '
+                '(query=%.60s)', query)
 
-            # 2b. tsvector-hybrid (swedish FTS)
-            try:
-                search_domain = domain + [
-                    '|', ('summary', 'ilike', '%%%s%%' % query),
-                    ('title', 'ilike', '%%%s%%' % query),
-                ]
-                results = self.search(search_domain, limit=limit)
-                if results:
-                    return results._latest_per_key()
-            except Exception as e:
-                _logger.warning('OKF tsvector search failed: %s', e)
+        # 2. Vikten. `semantic_weight` kommer från anroparen; default 0.7.
+        #    Är vektorn borta sätts vikten till 0 — annars hade den
+        #    semantiska termen blivit konstant och bara skjutit upp alla
+        #    rader lika mycket (en vikt utan signal är brus).
+        w = 0.7 if semantic_weight is None else float(semantic_weight)
+        w = max(0.0, min(1.0, w))
+        if not embedding:
+            w = 0.0
 
-        # Fallback: ren domän-sök (senaste versioner)
-        results = self.search(domain, order='create_date desc', limit=limit)
-        return results._latest_per_key()
+        # 3. EN fråga. ALL dedup sker i SQL — det var just frånvaron av
+        #    dedup här som gjorde att pgvector-vägen returnerade 110 rader.
+        #
+        # TVÅ fallgropar som kostade en runda var att hitta:
+        #
+        # a) COALESCE runt vektortermen är inte kosmetik: `NULL <=> vektor`
+        #    ger NULL, och NULL + <bm25> = NULL. Utan den hade HELA summan
+        #    blivit NULL i exakt det läge som råder i drift idag (ingen
+        #    embedding-modell) — och varje rad fått score NULL, vilket
+        #    sorteringen tolkar som "lika", dvs. en tyst slumpordning.
+        #
+        # b) `qvec IS NULL OR ...` i WHERE måste bort. Den var tänkt som
+        #    "utan vektor, lita på BM25" — men `IS NULL` är sant för ALLA
+        #    rader, så filtret släppte igenom hela tabellen.
+        #
+        # c) Filtret `score > 0` räcker INTE ensamt. `ts_rank` returnerar
+        #    aldrig exakt 0: en rad som inte matchar frågan får ett golv på
+        #    ~1e-20 (verifierat i drift), vilket är strikt större än 0.
+        #    Utan den explicita @@ -kontrollen nedan slank varje rad i
+        #    tabellen igenom med en omätbar poäng — exakt samma tysta
+        #    icke-tomma fallback som skulle bort. Filtret och @@-villkoret
+        #    hör ihop; det ena utan det andra är en lögn.
+        sql = """
+            SELECT id, scope, concept_key, version,
+                COALESCE(1 - (embedding <=> %(qvec)s::vector), NULL)
+                    AS cosine,
+                ts_rank(search_vector,
+                        plainto_tsquery('swedish', %(q)s)) AS ts_rank,
+                (
+                    COALESCE(1 - (embedding <=> %(qvec)s::vector), 0) * %(w)s
+                  + ts_rank(search_vector,
+                            plainto_tsquery('swedish', %(q)s)) * (1 - %(w)s)
+                ) AS score
+            FROM ai_okf_concept
+            WHERE archived = false
+              AND status != 'superseded'
+              AND (embedding IS NOT NULL
+                   OR search_vector @@ plainto_tsquery('swedish', %(q)s))
+        """
+        params = {'q': query, 'w': w}
+        if embedding:
+            params['qvec'] = embedding if isinstance(embedding, str) \
+                else '[%s]' % ','.join(str(x) for x in embedding)
+        else:
+            params['qvec'] = None
+
+        if scope:
+            sql += ' AND scope = %(scope)s'
+            params['scope'] = scope
+        # Ägarfilter (odoo-mind-memory-scope-isolation): SQL-vägen
+        # måste filtrera ägaren precis som domain-vägen gör. Utan
+        # detta returnerar personal-scope ALLA användares koncept.
+        if owner_column and owner_id is not None:
+            sql += ' AND %s = %%(owner)s' % owner_column
+            params['owner'] = owner_id
+        if scope == 'coworker' and not cross_user:
+            sql += (' AND (source_user_id IS NULL OR '
+                    'source_user_id = %(src_user)s)')
+            params['src_user'] = src_user
+        if artifact_type_ids:
+            sql += ' AND artifact_type_id = ANY(%(atypes)s)'
+            params['atypes'] = list(artifact_type_ids)
+        if time_window:
+            sql += ' AND write_date >= %(tw)s'
+            params['tw'] = time_window
+
+        # Dedup i SQL: senaste versionen per (scope, concept_key). Samma
+        # princip som _latest_per_key(), men FÖRE limit — annars hade
+        # limit=20 kunnat fyllas av 20 versioner av SAMMA koncept.
+        sql = """
+            WITH ranked AS (
+                %s
+            ),
+            deduped AS (
+                SELECT DISTINCT ON (scope, concept_key)
+                    id, cosine, ts_rank, score
+                FROM ranked
+                ORDER BY scope, concept_key, version DESC
+            )
+            SELECT id, cosine, ts_rank, score FROM deduped
+        """ % sql
+
+        # DISTINCT ON kräver att ORDER BY börjar med nycklarna — sorteringen
+        # på score sker därför i ett yttre lager.
+        #
+        # OBS: `score` MÅSTE projiceras genom båda lagren. Första versionen
+        # valde bara `id` i det inre lagret och sorterade på `score` i det
+        # yttre — en kolumn som då inte fanns. Felet såg ut som "inga
+        # träffar", inte som ett SQL-fel, eftersom allt låg i en try/except.
+        #
+        # ── VÄG 2: tröskeln är PER SIGNAL (§17.4) ──────────────────────
+        # Den summerade `score` är inte ett beslutsmått: den blandar en
+        # cosine (0…1) med en onormaliserad ts_rank (~0…0.06) under en
+        # vikt. Ett filter på summan är därför ett filter på en enhet som
+        # inte finns.
+        #
+        # I stället ställs frågan varje signal kan svara på:
+        #
+        #   (cosine >= min_cosine)  ELLER  (ts_rank >= min_ts_rank)
+        #
+        # ELLER, inte OCH — det är hela poängen. En rad som hittas av den
+        # ena signalen är en träff; den andra signalen är frånvarande
+        # (NULL/0), inte underkänd. Med OCH hade varje rad utan vektor
+        # krävt BM25 över tröskeln OCH tvärtom, dvs. bara de få rader där
+        # båda är starka — exakt den blindhet väg 2 ska bota.
+        #
+        # Raden behåller sin `score` (viktad summa) för SORTERING — det är
+        # rätt mått att rangordna på. Tröskeln är ett urval, summan en
+        # ordning. De två rollerna ska inte blandas ihop, och det var
+        # precis det den gamla koden gjorde.
+        min_cosine = kw.get('min_cosine')
+        min_ts_rank = kw.get('min_ts_rank')
+
+        # ── DEN GEMENSAMMA NÄMNAREN: en rad måste vara RELEVANT ────────
+        # Även utan anropartrösklar måste raden kvala in på NÅGON signal.
+        #
+        # Historik (och en riktig bugg som §18 avtäckte): kandidatfiltret
+        # ovan är `embedding IS NOT NULL OR @@`. Så länge INGA rader hade
+        # vektor var det ofarligt — `OR @@` var den enda vägen in, och
+        # `@@` är ett äkta relevanskriterium. Men i samma stund som raderna
+        # FICK vektorer blev `embedding IS NOT NULL` sant för ALLA, och då
+        # släppte kandidatfiltret in hela tabellen oavsett fråga.
+        #
+        # `score > 0` fångade det inte: `embedding <=> q` är alltid ett
+        # tal, så `score` är positivt även för en fråga som inte matchar
+        # något. Utan grind returnerade sökningen allt — exakt den "tysta
+        # icke-tomma fallback" som 12.5 skulle bota, bara med vektorn som
+        # ny ursäkt.
+        #
+        # Därför: finns ingen tröskel, används BRUSGOLVET. Mätt mot den
+        # valda modellen (embed-multilingual-v3.0) mot den egna korpusen:
+        # nonsens-frågor ger cosine 0.22–0.39 — Cohere-modellen lämnar
+        # aldrig ett tal nära 0 för en kort sträng, så `cosine > 0` är
+        # inget relevanskriterium alls. En riktig frågas bästa träff ligger
+        # 0.48–0.71. Skiljelinjen är ~0.39.
+        #
+        # Det här är den ENDA ärliga tolkningen av "ingen tröskel":
+        # ingen KALIBRERAD tröskel per strategi — men fortfarande ett
+        # golv under vilket allt är brus. Annars vore den ogrindade vägen
+        # (som `_tool_okf_search` och alla tester använder) den gamla
+        # tysta fallbacken i ny kostym.
+        #
+        # OBS att golvet bara gäller den SEMANTISKA signalen. En äkta
+        # BM25-träff passerar alltid, hur svag vektorn än är — det är
+        # ELLER-semantiken, och den får inte tappas här. Därför sätts
+        # ALLTID båda klausulerna när golvet appliceras; annars hade en
+        # rad med `cosine = NULL` (ingen vektor) mötts av ett ensamt
+        # `cosine >= 0.39`, som NULL inte kan uppfylla — och en äkta
+        # BM25-träff hade försvunnit. Det var precis vad som hände i
+        # `test_bm25_alone_carries_result_when_no_embedding` (0 != 1).
+        if min_cosine is None and min_ts_rank is None:
+            min_cosine = 0.39
+            min_ts_rank = 1e-20
+
+        having = []
+        if min_cosine is not None:
+            params['min_cosine'] = float(min_cosine)
+            having.append('cosine >= %(min_cosine)s')
+        if min_ts_rank is not None:
+            params['min_ts_rank'] = float(min_ts_rank)
+            having.append('ts_rank >= %(min_ts_rank)s')
+        gate = (' WHERE (' + ' OR '.join(having) + ')') if having else ''
+
+        sql = (
+            'SELECT id FROM (' + sql + ') latest' + gate +
+            ' ORDER BY score DESC LIMIT %(limit)s')
+
+        try:
+            params['limit'] = limit
+            self.env.cr.execute(sql, params)
+            rows = [r[0] for r in self.env.cr.fetchall()]
+        except Exception as e:
+            # Logga HELA felet, inte bara meddelandet. En tyst try/except
+            # runt en SQL-sträng kostade tre felsökningsrundor i den här
+            # fasen: både en saknad `score`-projektion och ett dict+list
+            # typfel såg ut som "inga träffar". Ett sökresultat som är tomt
+            # för att frågan KRASCHADE är inte samma sak som ett tomt
+            # resultat för att inget matchade.
+            _logger.warning('OKF hybridsökning misslyckades: %s', e,
+                            exc_info=True)
+            rows = []
+
+        if rows:
+            return self.browse(rows)
+
+        # 12.5: ÄRLIGT TOMT. Ingen create_date desc-fallback — en fråga
+        # utan träff ska vara tom, inte returnera de senaste koncepten som
+        # om de vore svar.
+        in_scope = self.search_count(domain)
+        _logger.info(
+            'OKF-sökning gav 0 träffar (query=%.60s, scope=%s, %d koncept '
+            'i scopet, vektor=%s)', query, scope or '-', in_scope,
+            'ja' if embedding else 'nej')
+        return self.browse([])
+
 
     def _latest_per_key(self):
         """Returnera bara senaste versionen per (scope, concept_key)."""
@@ -718,6 +1201,24 @@ class AIOkfConcept(models.Model):
     # ════════════════════════════════════════════
     # Workspace inbox / PARA (tasks 3.1-3.6)
     # ════════════════════════════════════════════
+
+    @api.depends('owner_user_id', 'source_user_id')
+    def _compute_is_my_memory(self):
+        uid = self.env.uid
+        for rec in self:
+            rec.is_my_memory = bool(
+                rec.owner_user_id.id == uid
+                or rec.source_user_id.id == uid)
+
+    def _search_is_my_memory(self, operator, value):
+        """Sökfilter 'Mina minnen' — dynamiskt mot inloggad användare."""
+        uid = self.env.uid
+        want = (operator == '=' and value) or (operator == '!=' and not value)
+        domain = ['|', ('owner_user_id', '=', uid),
+                  ('source_user_id', '=', uid)]
+        if want:
+            return domain
+        return ['!'] + domain
 
     @api.depends('owner_user_id', 'archived', 'para_ref_ids')
     def _compute_in_inbox(self):
@@ -1270,7 +1771,9 @@ class AIOkfConcept(models.Model):
                                        query=None, max_chars=2000,
                                        artifact_type_ids=None,
                                        user=None, include_level1=True,
-                                       injection_level='summary_and_key'):
+                                       injection_level='summary_and_key',
+                                       semantic_weight=None, limit=None,
+                                       hybrid=True):
         """Bygg Hermes-kompatibel system prompt-block från ai.okf.concept.
 
         Nivåordning (task 7.4):
@@ -1294,6 +1797,11 @@ class AIOkfConcept(models.Model):
                 - summary_only → L2+L3 (komprimerad, ingen L1/L0)
                 - summary_and_key → L2+L3+L1 (default)
                 - full → L2+L3+L1+L0
+            semantic_weight (float, optional): Vikt för vektorsignalen i L1.
+                None → `_okf_search`:s default (0.7). Kommer från
+                medarbetarens sökstrategi (fas 13.10).
+            limit (int, optional): Max antal L1-koncept. None → 10.
+            hybrid (bool): Slå samman vektor- och textsignalen (fas 12).
 
         Returns:
             str: Formatterad block eller tom sträng
@@ -1356,8 +1864,10 @@ class AIOkfConcept(models.Model):
         want_l1 = injection_level in ('summary_and_key', 'full')
         if want_l1 and include_level1 and query:
             search_results = self._okf_search(
-                query, scope=scope, artifact_type_ids=artifact_type_ids,
-                limit=10, user=user)
+                query, scope=scope, owner_id=owner_id,
+                artifact_type_ids=artifact_type_ids,
+                limit=limit or 10, user=user, hybrid=hybrid,
+                semantic_weight=semantic_weight)
             if search_results:
                 l1_block = self._format_concept_block(
                     search_results, max_chars // 3, 'RELEVANT KUNSKAP',
@@ -1432,3 +1942,182 @@ class AIOkfConcept(models.Model):
         header = f"{header_label} [{pct}% — {chars:,}/{max_chars:,} chars]"
         separator = '═' * 46
         return f"{separator}\n{header}\n{separator}\n{content}"
+
+    @api.model
+    def _okf_cron_backfill_embeddings(self, batch_size=20):
+        """Efterfyllnad av saknade vektorer (okf-recall-path fas 3.3).
+
+        Flyttad hit från `ai.memory` (okf-mixin, 2026-09-22): den fyller
+        vektorer på `ai.okf.concept` och är OKF:s egen efterfyllnad — den
+        råkade bara bo på RAG-modellen (därför heter konstanten
+        `EMBEDDING_DIM` — samma konstant, samma modul.)
+
+        Plockar koncept vars `embedding_state` inte är 'ready' och försöker
+        skapa vektorn. Idempotent: lyckade rader markeras 'ready' och plockas
+        aldrig upp igen; misslyckade lämnas i sin markering.
+
+        VARFÖR EN EGEN CRON: koncept skrivna innan embeddings fungerade har
+        en tom vektorkolumn. Utan efterfyllnad kräver varje sådan rad en
+        manuell åtgärd — och utan `embedding_state` går det inte att skilja
+        "aldrig försökt" från "försökt och misslyckats".
+
+        Avsiktligt utan tung logik: tunga saker händer i `_produce_embedding`
+        som REDAN körs via `_okf_upsert` på nya koncept. Denna cron räddar
+        bara eftersläntrare.
+        """
+        pending = self.search([
+            ('embedding_state', 'in', ('pending', 'failed')),
+            ('archived', '=', False),
+            ('status', '!=', 'superseded'),
+        ], limit=batch_size, order='id asc')
+
+        if not pending:
+            return 0
+
+        provider = self.env['ai.provider']._embedding_provider()
+        if not provider:
+            _logger.warning(
+                'OKF efterfyllnad: ingen provider som kan embedda — %s koncept '
+                'väntar fortfarande', len(pending))
+            return 0
+
+        # Providerns EGNA modell — inte den hårdkodade konstanten.
+        #
+        # FYND på social 2026-09-23: `DEFAULT_EMBEDDING_MODEL` är
+        # 'text-embedding-3-small', som inte finns i Bifrosts modellista.
+        # Anropet routades till en trial-nyckel som inte svarar: 3 × 20 sek
+        # = 60 sek per koncept. Med 118 pending-koncept blev backfill-cronen
+        # två timmar lång — och höll `ir_cron`-låset.
+        #
+        # Providerns fält (`embedding_model`) är den enda sanningen;
+        # `_effective_embedding_model()` läser det med fallback.
+        model = provider._effective_embedding_model()
+        filled = 0
+        for concept in pending:
+            text = ' '.join(filter(None, [concept.title, concept.summary])).strip()
+            if not text:
+                # 'skipped' får skrivas — det är ett livscykelfält. Ingen ny
+                # version: det finns inget innehåll att versionera, och en
+                # tom kopia vore bara skräp i versionskedjan.
+                concept.write({'embedding_state': 'skipped'})
+                continue
+
+            vector = provider._get_embedding(
+                model=model, input=text, input_type='search_document')
+            if not vector:
+                # Lämna som pending — nästa körning försöker igen.
+                # Vi kan inte märka om raden utan att skapa en ny version,
+                # så vi rör den inte alls: 'pending' är redan sanningen.
+                continue
+
+            if not provider._validate_embedding(vector, model=model,
+                                                dim=EMBEDDING_DIM):
+                # Fel dimension: markera 'failed' så den kräver tillsyn.
+                concept.write({'embedding_state': 'failed'})
+                continue
+
+            # VIKTIGT: koncept-rader är ADD-only (beslut 10). Vektorn kan
+            # alltså inte skrivas in i den befintliga raden — efterfyllnaden
+            # skapar en NY VERSION via _okf_upsert. Den gamla raden blir
+            # 'superseded' och den nya bär vektorn. Immutabiliteten är
+            # bevarad: historiken finns kvar, inget skrivs över.
+            owner = self._okf_owner_for_concept(concept)
+            # `source_text` skickas INTE med flit. Efterfyllnaden lägger
+            # till en vektor — det är en genuin ändring av raden, även om
+            # sammanfattningen är identisk. Skickas källtexten med hade
+            # `_version_is_unchanged` (D5) sett oförändrat innehåll och
+            # returnerat den gamla raden UTAN vektor — och efterfyllnaden
+            # hade varit verkningslös.
+            #
+            # Utan `source_text` jämförs `summary` som förut, och eftersom
+            # den är identisk... se nästa stycke.
+            self._okf_upsert(
+                artifact_type=concept.artifact_type_id or 'learning',
+                concept_key=concept.concept_key,
+                summary=concept.summary,
+                title=concept.title,
+                source_ref=concept.source_ref,
+                entities=concept.entities,
+                generated_by='backfill',
+                embedding=vector,
+                force_new_version=True,
+                **owner
+            )
+            filled += 1
+
+        _logger.info('OKF efterfyllnad: %s av %s koncept fick vektor',
+                     filled, len(pending))
+        return filled
+
+    @api.model
+    def _okf_owner_for_concept(self, concept):
+        """Plocka ut ägar-argumenten från ett koncept för _okf_upsert.
+
+        _okf_upsert kräver exakt ett ägarfält — inte ett browse-id.
+        """
+        if concept.owner_company_id:
+            return {'owner_company_id': concept.owner_company_id.id}
+        if concept.owner_user_id:
+            return {'owner_user_id': concept.owner_user_id.id}
+        if concept.owner_coworker_id:
+            return {'owner_coworker_id': concept.owner_coworker_id.id}
+        return {'owner_company_id': self.env.company.id}
+
+    # ════════════════════════════════════════════
+    # ÄGAR-ÅTGÄRDEN (okf-smart-buttons)
+    # ════════════════════════════════════════════
+
+    #: Modeller som kan ÄGA ett koncept → ägarfältet på ai.okf.concept.
+    #: Används av _okf_action_for_owner(). Ägande är inte samma sak som
+    #: ursprung (source_ref): inlärning skriver koncept med en användare
+    #: som ägare utan att användarposten var källan.
+    OKF_OWNER_MODELS = {
+        "res.company": "owner_company_id",
+        "res.users": "owner_user_id",
+        "ai.coworker": "owner_coworker_id",
+    }
+
+    @api.model
+    def _okf_action_for_owner(self, model, res_id):
+        """Öppna de koncept en post ÄGER (inte de som kom från den).
+
+        Smartknapparna på res.users (Min profil), res.company
+        (Företagsinställningar) och ai.coworker använder denna. Skillnaden
+        mot `action_okf_show_concepts()` (som följer `source_ref`) är
+        avsiktlig: en användares personliga koncept skrivs av inlärningen
+        och har användaren som ägare — formulärposten var aldrig källan.
+
+        Generisk med flit: ägarfrågan bor i kärnan, inte i tre modeller.
+        Returnerar False för en modell som inte är en OKF-ägare, så
+        anroparen kan avstå utan krasch.
+        """
+        owner_field = self.OKF_OWNER_MODELS.get(model)
+        if not owner_field:
+            return False
+        try:
+            res_id = int(res_id)
+        except (TypeError, ValueError):
+            return False
+        if res_id <= 0:
+            return False
+
+        domain = [
+            (owner_field, "=", res_id),
+            ("archived", "=", False),
+            ("status", "!=", "superseded"),
+        ]
+        count = self.search_count(domain)
+        return {
+            "type": "ir.actions.act_window",
+            "name": _("Odoo Mind: %s,%s") % (model, res_id),
+            "res_model": "ai.okf.concept",
+            "view_mode": "list,form",
+            "domain": domain,
+            "context": {"create": False},
+            "target": "current",
+            "help": _(
+                "<p>%s koncept ägs av den här posten.</p>"
+                "<p>Koncept är ADD-only och genereras av indexeraren — "
+                "de redigeras inte för hand.</p>"
+            ) % count,
+        }

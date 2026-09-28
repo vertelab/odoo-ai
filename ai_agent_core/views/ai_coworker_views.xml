@@ -169,6 +169,12 @@
                         <button name="action_get_session_objects" class="oe_stat_button" type="object" icon="fa-puzzle-piece">
                             <field name="session_object_count" widget="statinfo" string="Objects"/>
                         </button>
+                        <!-- Odoo Mind: koncept som medarbetaren ÄGER
+                             (scope coworker). Bredvid sessionsräknarna —
+                             de säger vad den GJORT, denna vad den VET. -->
+                        <button name="action_open_okf_owned_concepts" class="oe_stat_button" type="object" icon="fa-brain">
+                            <field name="okf_concept_count" widget="statinfo" string="Odoo Mind"/>
+                        </button>
                     </div>
 
                     <div class="oe_title d-flex align-items-start">
@@ -270,6 +276,8 @@
                                     <field name="init_openai_api"/>
                                         <field name="rate_limit_rpm" invisible="not init_openai_api" string=" → Rate limit (req/min)"/>
                                         <field name="rate_limit_tpm" invisible="not init_openai_api" string=" → Rate limit (tok/min)"/>
+                                        <field name="openai_context_window" invisible="not init_openai_api" string=" → Context window (tokens)"/>
+                                        <field name="openai_context_window_manual" invisible="not init_openai_api" string=" → Context window (manuellt)" readonly="1"/>
                                     <!-- Watch — kopia av base_automation-formuläret (minus notepad/Notes) -->
                                     <field name="init_watch"/>
                                     <field name="watch_model_name" invisible="1"/>
@@ -344,6 +352,21 @@
                                 <field name="memory_level" widget="radio"/>
                                 <field name="learning" widget="radio"/>
                             </group>
+                            <group string="Sökning (fas 13)">
+                                <field name="search_sources" widget="many2many_tags"
+                                       options="{'no_create': True}"/>
+                                <field name="search_strategy" widget="radio"/>
+                                <field name="hybrid_search"/>
+                                <field name="hybrid_semantic_weight"
+                                       invisible="not hybrid_search"/>
+                                <field name="graph_enrichment"/>
+                                <field name="graph_enrichment_hops"
+                                       invisible="not graph_enrichment"/>
+                                <field name="graph_enrichment_budget"
+                                       invisible="not graph_enrichment"/>
+                                <field name="session_graph_enabled"
+                                       invisible="not graph_enrichment"/>
+                            </group>
                             <group string="Hermes Injection Level">
                                 <field name="injection_level" widget="radio"/>
                             </group>
@@ -358,14 +381,14 @@
                                 <field name="use_company_info"/>
                                 <field name="inject_nudging"/>
                             </group>
-                            <group string="Rekordkontext">
-                                <field name="context_injection_enabled"/>
-                                <field name="context_max_fields"/>
-                                <field name="context_include_chatter"/>
-                                <field name="context_chatter_limit"/>
-                                <field name="use_chat_history"/>
-                                <field name="chat_history_limit"/>
+                            <group string="Record context">
+                                <!-- Flyttade till init-typen (ai-coworker-record-context 6.4):
+                                     en medarbetare kan vara både DM-assistent och kanal-bot
+                                     och behöver kunna ha olika gränser för dem. Här visas
+                                     bara det som är medarbetar-globalt. -->
                                 <field name="use_time_context"/>
+                                <field name="context_max_records"
+                                       help="Standardvärde — den aktiva init-typen kan överrida."/>
                             </group>
                         </page>
 

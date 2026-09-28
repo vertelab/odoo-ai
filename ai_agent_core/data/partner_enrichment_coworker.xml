@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+
+        <!-- Användarfall 0 — partner-berikning (external-agent-runtime §8).
+
+             Detta är det MINSTA användarfall som bevisar att runtime fungerar
+             fristående: ingen salt, ingen zabbix, ingen infrastruktur. Bara
+             Odoo, en LLM och ett web_search.
+
+             Coworkern är interaktiv (server_action) och körs externt
+             (runtime=external) — alltså: en människa trycker på en knapp,
+             agenten startas som en separat process, och web-workern frigörs
+             direkt. HITL sker pausat via tool_calls (interaktiv init-typ). -->
+
+        <record id="skill_partner_enrichment" model="ai.skill">
+            <field name="name">Partner: Berika företagsuppgifter</field>
+            <field name="category">communication</field>
+            <field name="description">Föreslå berikning av en res.partner (webbplats, bransch, beskrivning) med stöd av web_search, och skriv först efter godkännande.</field>
+            <field name="recipe_text">När du ska berika en partner (res.partner):
+1. Anropa partner_propose_enrichment(partner_id, fields) för att läsa nuvarande värden. Verktyget skriver ingenting.
+2. Sök fakta med web_search när fältet kräver det (webbplats, bransch, beskrivning). Använd företagsnamnet och, om det finns, organisationsnummer eller adress som sökord.
+3. Föreslå ETT värde per fält och motivera kort. Föreslå aldrig en ändring av ett fält som redan har ett rimligt värde — säg det i stället.
+4. Presentera förslagen som en tydlig lista: fält, nuvarande värde, föreslaget värde, motivering.
+5. Skriv INGENTING ännu. Varje fält godkänns separat av användaren (HITL).
+6. När ett fält godkänts: anropa partner_apply_enrichment(partner_id, field, value) för DET fältet. Upprepa per godkänt fält.
+7. Om ett förslag avvisas: skriv inte det fältet, och försök inte igen utan ny information.
+</field>
+        </record>
+
+        <record id="coworker_partner_enrichment" model="ai.coworker">
+            <field name="name">Partner-Berikaren</field>
+            <field name="description">Du är Partner-Berikaren. Du hjälper användaren att fylla i och förbättra företagsuppgifter på en partner (res.partner) — webbplats, bransch, beskrivning och kontaktuppgifter. Du föreslår alltid värden med en kort motivering, och du skriver aldrig något förrän användaren godkänt det fältet. Du är källkritisk: hellre ett tomt fält än en gissning.</field>
+            <field name="status">active</field>
+            <field name="orchestration_mode">single</field>
+            <field name="heartbeat_enabled" eval="False"/>
+            <field name="server_action_model_id" ref="base.model_res_partner"/>
+            <field name="auto_allowed_tools">["partner_propose_enrichment", "partner_apply_enrichment", "odoo_search", "describe_model"]</field>
+        </record>
+
+        <record id="agent_partner_enrichment" model="ai.agent">
+            <field name="name">Partner-Berikning</field>
+            <field name="ai_role">Company Data Enricher</field>
+            <field name="description">Läser en partner, söker fakta på webben och föreslår berikning av företagsuppgifter. Skriver först efter godkännande per fält.</field>
+            <field name="ai_goal">Föreslå korrekta, motiverade fältvärden för en partner — utan att skriva något ofrivilligt.</field>
+            <field name="status">active</field>
+            <!-- Runtime-axeln: agenten körs som en separat process. -->
+            <field name="runtime">external</field>
+            <field name="skill_ids" eval="[(6, 0, [ref('skill_partner_enrichment')])]"/>
+            <field name="tool_ids" eval="[(6, 0, [
+                ref('tool_partner_propose_enrichment'),
+                ref('tool_partner_apply_enrichment'),
+                ref('tool_odoo_search'),
+                ref('tool_describe_model'),
+            ])]"/>
+        </record>
+
+        <!-- odoo_web_search är ett inbyggt verktyg (core/tools.py). Dess
+             ai.tool-post skapas dynamiskt av _ensure_builtin_tool_records()
+             och har inget xmlid — därför kan den inte refereras med ref().
+             Vi kopplar den via en funktion på agenten, uppslagen på namn.
+             Idempotent: (4, id) lägger bara till om den inte redan finns. -->
+        <function model="ai.agent" name="_attach_builtin_tool_by_name"
+                  eval="[ref('agent_partner_enrichment'), 'odoo_web_search']"/>
+
+        <!-- Init-typ: interaktiv (server_action). En knapp på parten, ingen
+             väntande worker. HITL blir pausad (tool_calls) eftersom
+             init-typen är interaktiv — se select_interrupt_handler(). -->
+        <record id="init_partner_enrichment_server_action" model="ai.coworker.init_type">
+            <field name="coworker_id" ref="coworker_partner_enrichment"/>
+            <field name="init_type">server_action</field>
+            <field name="enabled" eval="True"/>
+            <field name="sequence" eval="10"/>
+            <field name="server_action_use_wizard" eval="False"/>
+        </record>
+
+        <record id="link_partner_enrichment_agent" model="ai.coworker.agent">
+            <field name="coworker_id" ref="coworker_partner_enrichment"/>
+            <field name="agent_id" ref="agent_partner_enrichment"/>
+            <field name="role">member</field>
+            <field name="sequence" eval="10"/>
+        </record>
+
+    </data>
+</odoo>

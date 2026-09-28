@@ -18,6 +18,13 @@ from html import escape
 from odoo import http, fields, api
 from odoo.http import request, Response
 
+# DSML-parser (DeepSeek kan skriva tool-anrop som text i content).
+# Modulniva: anvands inuti nastlade generatorer, sa lokala importer i
+# generate()/_stream() ar kansliga for anropsordning (UnboundLocalError).
+from odoo.addons.ai_agent_core.core.dsml import (  # noqa: E402
+    contains_dsml, parse_dsml, strip_dsml,
+)
+
 # Import access control helper (quest-access-control change)
 # Fånga ALLA undantag: vid tidig import (stream.py → ai_coworker → models)
 # kan AssertionError uppstå (base_sparse_field ej laddad), vilket annars
@@ -245,6 +252,51 @@ class AIStreamController(http.Controller):
                     )
                 system_prompt = (system_prompt or '') + '\n'.join(skill_lines)
 
+        # -- Automatisk skill-aktivering via trigger-nyckelord ──────────
+        # Katalogen ovan LOVAR modellen att skills "also activate
+        # automatically when user's message matches trigger keywords" —
+        # men bara /skill-name var implementerat. Har matchar vi prompten
+        # mot skillsens triggers och injicerar receptet for de basta
+        # traffarna. Litet antal (MAX_AUTO_SKILLS) sa prompten inte svaller
+        # — samma lardom som for verktygsvalet.
+        MAX_AUTO_SKILLS = 2
+        _explicit_skill = bool(
+            prompt and prompt.startswith('/') and
+            '/' not in prompt.split()[0][1:])
+        if (quest and quest.exists() and not _explicit_skill
+                and prompt):
+            try:
+                _auto = []
+                _ptext = prompt.lower()
+                for _s in quest.get_available_skills():
+                    _trig = [
+                        t.strip().lower()
+                        for t in (_s.get('trigger_keywords') or '').split(',')
+                        if t.strip()
+                    ]
+                    if not _trig:
+                        continue
+                    _hits = [t for t in _trig if t in _ptext]
+                    if _hits:
+                        _auto.append((len(_hits), _hits, _s))
+                _auto.sort(key=lambda x: -x[0])
+                for _n, _hits, _s in _auto[:MAX_AUTO_SKILLS]:
+                    _recipe = (_s.get('recipe_text') or '').strip()
+                    if not _recipe:
+                        continue
+                    system_prompt = (
+                        f"[SKILL AUTO-ACTIVATED: {_s['name']}]\n"
+                        f"Matched triggers: {', '.join(_hits)}\n"
+                        f"Follow the recipe below for this task:\n\n"
+                        f"{_recipe}\n\n"
+                        f"[END SKILL: {_s['name']}]\n\n"
+                    ) + (system_prompt or '')
+                    _logger.info(
+                        'Auto-skill aktiverad: %s (triggers=%s)',
+                        _s['name'], _hits)
+            except Exception as e:
+                _logger.warning('Auto-skill aktivering misslyckades: %s', e)
+
         # Aktuell användare + minne via gemensam injiceringsfunktion
         # (agent-memory-governance 3.x — D1/D2)
         if quest and quest.exists():
@@ -273,6 +325,33 @@ class AIStreamController(http.Controller):
             try:
                 session = request.env['ai.coworker.session'].sudo().browse(int(session_id))
                 if session.exists():
+                    # ── Rekordkontext (ai-coworker-record-context 5.1) ────
+                    # Frontend skickar vilken record (eller markering)
+                    # användaren hade öppen. Sätts på sessionen — den
+                    # kanoniska bäraren (D1). Sätts BARA när sessionen
+                    # saknar kontext, så en följdfråga i samma tråd inte
+                    # skriver över recorden med en tom vy.
+                    if not session.ai_record_model:
+                        try:
+                            _ctx_model = kw.get('context_model')
+                            _ctx_ids = kw.get('context_res_ids')
+                            _ctx_id = kw.get('context_res_id')
+                            if _ctx_model and _ctx_model in request.env:
+                                if _ctx_ids:
+                                    _ids = [int(i) for i in str(_ctx_ids).split(',') if i.strip()]
+                                    if len(_ids) > 1:
+                                        session._set_records_context(
+                                            request.env[_ctx_model].sudo().browse(_ids),
+                                            max_records=quest._ai_record_setting(
+                                                'ai_record_max_records') if quest else None,
+                                            include_chatter=bool(quest._ai_record_setting(
+                                                'ai_record_include_chatter')) if quest else False)
+                                elif _ctx_id:
+                                    session._set_record_context(
+                                        request.env[_ctx_model].sudo().browse(int(_ctx_id)))
+                        except Exception as e:
+                            _logger.warning('stream: rekordkontext misslyckades: %s', e)
+
                     # Inject quest + session memories into system prompt
                     if quest:
                         memories_text = _get_quest_memories(
@@ -294,7 +373,12 @@ class AIStreamController(http.Controller):
                     # Auto-summarize if too many messages
                     if len(lines) > 50:
                         summary = _summarize_history(session, lines)
-                        history_messages = [{'role': 'system', 'content': summary}] + history_messages[-20:]
+                        if summary:
+                            history_messages = (
+                                [{'role': 'system', 'content': summary}]
+                                + history_messages[-20:])
+                        else:
+                            history_messages = history_messages[-20:]
 
                     # Save user message as session line (T7.4). Sekvensen
                     # härleds från sessionens HÖGSTA värde — inte radantalet,
@@ -1350,6 +1434,48 @@ class AIStreamController(http.Controller):
 
     # === Session document API ===
 
+    @http.route('/ai/session/<int:session_id>/record_context',
+                type='json', auth='user', methods=['POST'], csrf=False,
+                sitemap=False)
+    def session_record_context(self, session_id, model=None, res_id=None,
+                               res_ids=None, **kw):
+        """Koppla en record (eller markering) till en session.
+
+        Anropas av formulär-/list-vyns "Fråga AI om denna post"-åtgärd.
+        Sätter sessionens ai_record_*-fält — den kanoniska bäraren (D1).
+
+        Body: {session_id, model, res_id}     — singular (form-vy)
+              {session_id, model, res_ids:[…]} — plural (list-vy)
+
+        OBS (D1b): `_ai_context_model`/`_ai_context_id` sätts ALDRIG här.
+        De betyder "aktuell session" och läses av HITL, NATS-kontexten och
+        sessionsminnena.
+        """
+        session = request.env['ai.coworker.session'].browse(int(session_id))
+        if not session.exists():
+            return {'success': False, 'error': 'Session not found'}
+        if not model or model not in request.env:
+            return {'success': False, 'error': 'Unknown model: %s' % model}
+        coworker = session.coworker_id
+        try:
+            if res_ids:
+                ids = [int(i) for i in res_ids]
+                session._set_records_context(
+                    request.env[model].browse(ids),
+                    max_records=coworker._ai_record_setting(
+                        'ai_record_max_records') if coworker else None,
+                    include_chatter=bool(coworker._ai_record_setting(
+                        'ai_record_include_chatter')) if coworker else False)
+                return {'success': True, 'count': len(ids)}
+            if res_id:
+                session._set_record_context(
+                    request.env[model].browse(int(res_id)))
+                return {'success': True, 'count': 1}
+            return {'success': False, 'error': 'res_id eller res_ids krävs'}
+        except Exception as e:
+            _logger.warning('record_context: misslyckades: %s', e)
+            return {'success': False, 'error': str(e)}
+
     @http.route('/ai/session/<int:session_id>/documents', type='http', auth='public',
                 methods=['GET'], csrf=False, sitemap=False)
     def session_documents(self, session_id, **kw):
@@ -1364,15 +1490,31 @@ class AIStreamController(http.Controller):
             ('archived', '=', False),
         ])
 
-        return Response(json.dumps({
-            "documents": [{
+        def _doc(m):
+            att = m.source_attachment_id
+            if not att and m.faiss_attachment_id:
+                # legacy rows: the FAISS index attachment is not the source
+                # file, but it is the only attachment we know about.
+                att = m.faiss_attachment_id
+            url = ''
+            if att:
+                if not att.access_token:
+                    att.generate_access_token()
+                url = '/web/content/%d?access_token=%s&download=true' % (
+                    att.id, att.access_token)
+            return {
                 "id": m.id,
                 "name": m.name or 'Dokument',
                 "content_preview": (m.content or '')[:200],
                 "memory_type": m.memory_type,
                 "tags": m.tags or '',
                 "can_remove": True,
-            } for m in memories]
+                "attachment_id": att.id if att else None,
+                "url": url,
+            }
+
+        return Response(json.dumps({
+            "documents": [_doc(m) for m in memories]
         }), content_type='application/json')
 
     @http.route('/ai/memory/<int:memory_id>/archive', type='http', auth='public',
@@ -1430,7 +1572,9 @@ class AIStreamController(http.Controller):
         Accepts optional session_id to bind memory to a specific session.
         Stores the original file as ir.attachment linked to the session.
         """
-        coworker_id = kw.get('coworker_id')
+        # Frontend (chat_template.html) skickar quest_id - alias for
+        # coworker_id (samma monster som /ai/powerbox/run m.fl.).
+        coworker_id = kw.get('coworker_id') or kw.get('quest_id')
         session_id = kw.get('session_id')
         memory_type = kw.get('memory_type', 'text')
         file_obj = request.httprequest.files.get('file')
@@ -1449,13 +1593,21 @@ class AIStreamController(http.Controller):
         # Store original file as ir.attachment linked to session
         attachment = None
         if session:
+            # NOTE: ir.attachment.datas expects BASE64 text; passing raw
+            # bytes makes Odoo base64.b64decode() the file content, which
+            # silently corrupts it (T/11520). Use 'raw' for raw bytes.
             attachment = request.env['ir.attachment'].sudo().create({
                 'name': filename,
-                'datas': content,
+                'raw': content,
                 'res_model': 'ai.coworker.session',
                 'res_id': session.id,
                 'mimetype': file_obj.content_type or 'application/octet-stream',
             })
+            # The chat UI runs as the public user, which has no read ACL
+            # on ir.attachment. Generate an access token so the tokenised
+            # /web/content/<id>?access_token=... link works without
+            # making the file public.
+            attachment.generate_access_token()
 
         if memory_type == 'faiss':
             # Create FAISS memory from uploaded document
@@ -1465,13 +1617,14 @@ class AIStreamController(http.Controller):
                 memory = request.env['ai.memory'].sudo().create({
                     'name': f'FAISS: {filename}',
                     'content': text[:2000],
-                    'coworker_id': quest.id if quest else None,
+                    'quest_id': quest.id if quest else None,
                     'session_id': session.id if session else None,
                     'agent_id': quest.agent_ids[0].agent_id.id if quest and quest.agent_ids else None,
                     'category': 'fact',
                     'importance': 'medium',
                     'memory_type': 'faiss',
                     'tags': f'uploaded,faiss,{filename}',
+                    'source_attachment_id': attachment.id if attachment else None,
                 })
                 chunk_count = memory.create_vector([doc])
                 return Response(json.dumps({
@@ -1492,11 +1645,12 @@ class AIStreamController(http.Controller):
             m = request.env['ai.memory'].sudo().create({
                 'name': f'{filename} (del {i+1})' if len(chunks) > 1 else filename,
                 'content': chunk,
-                'coworker_id': quest.id if quest else None,
+                'quest_id': quest.id if quest else None,
                 'session_id': session.id if session else None,
                 'category': 'fact',
                 'importance': 'medium',
                 'tags': f'uploaded,{filename}',
+                'source_attachment_id': attachment.id if attachment else None,
             })
             memories.append(m.id)
         _logger.info("Upload: %s (%d chars, %d chunks)", filename, len(text), len(chunks))
@@ -1933,75 +2087,27 @@ def _chunk_text(text: str, max_chars: int = 2000) -> list:
 
 
 def _summarize_history(session, lines, max_chars=4000):
-    """T7.6: Sammanfatta lång sessionshistorik med LLM (tokenbudget).
+    """Sammanfatta lång sessionshistorik — DELEGERAR till sessionen (4.6).
 
-    Ersätter den gamla heuristiken (första+senaste, mitt kastad).
-    Kör en LLM-sammanfattning över de äldre raderna och sparar
-    sammanfattningen även som OKF coworker-koncept (session-summary)
-    så att nästa session kan återanvända den.
+    Tidigare körde denna funktion en egen LLM-sammanfattning och skrev
+    resultatet till OKF, men persisterade det aldrig på `session.summary`.
+    Nästa anrop kände därför inte till sammanfattningen. Den var alltså en
+    fjärde, parallell sammanfattare med eget format.
+
+    Nu anropar den sessionens ENDA sammanfattare (`_write_final_summary`),
+    vilket ger samma struktur, samma språk och samma idempotens. Returen
+    finns kvar eftersom anroparen använder den som systemmeddelande i den
+    fortsatta konversationen.
+
+    Returnerar sammanfattningen (str) eller None.
     """
-    if len(lines) <= 50:
+    if session is None:
         return None
-
-    recent = lines[-20:]
-    to_summarize = lines[:-20]
-    conversation = '\n'.join(
-        f"[{l.role}] {l.content[:400]}"
-        for l in to_summarize if l.content
-    )[-8000:]  # tokenbudget: begränsa input
-
-    summary = None
-    quest = session.coworker_id if session else None
     try:
-        import asyncio
-        from odoo.addons.ai_agent_core.core.provider import (
-            ProviderFactory, get_default_provider, get_default_model_name)
-        from odoo.addons.ai_agent_core.core.loop import AgentLoop, AgentConfig
-        provider, provider_model = ProviderFactory.from_coworker(quest) if quest else (None, None)
-        if not provider:
-            provider, provider_model = get_default_provider()
-        model_name = (provider_model and provider_model._get_api_name()) \
-            or get_default_model_name()
-        loop = AgentLoop(provider=provider, tools=[], config=AgentConfig(
-            model=model_name, max_rounds=1, max_tokens=2048))
-        prompt = (
-            "Sammanfatta konversationen. Behåll alla nyckelfakta, beslut "
-            "och kontext. Var koncis men komplett.\n\n" + conversation)
-        result = asyncio.run(loop.run(prompt))
-        summary = (result.text or '').strip()[:max_chars]
+        return session._write_final_summary()
     except Exception as e:
-        _logger.warning('LLM-sammanfattning misslyckades: %s', e)
-
-    if not summary:
-        # Fallback: heuristik (första + senaste) — behåller något
-        first_msg = lines[0].content[:200] if lines and lines[0].content else 'Start'
-        recent_txt = '\n'.join(
-            f"[{l.role}] {l.content[:100]}" for l in lines[-5:] if l.content)
-        summary = (
-            f"[Tidigare konversation ({len(lines)} meddelanden). "
-            f"Första: {first_msg}. Senaste: {recent_txt}]")
-
-    # Persist till OKF coworker-scope (session-summary) så nästa session
-    # kan återanvända den via coworker-minnesinjektion.
-    try:
-        if quest and 'ai.okf.concept' in request.env and quest.learning == 'active':
-            request.env['ai.okf.concept']._okf_upsert(
-                'learning',
-                concept_key=f'session.{session.id}.summary',
-                summary=summary[:1000],
-                title=f'Session {session.id} — sammanfattning',
-                source_ref=f'ai.coworker.session,{session.id}',
-                attribution=[{
-                    'source': f'ai.coworker.session,{session.id}',
-                    'role': 'summary',
-                }],
-                owner_coworker_id=quest.id,
-                generated_by='session_summary',
-            )
-    except Exception as e:
-        _logger.warning('Session-summary till OKF misslyckades: %s', e)
-
-    return summary
+        _logger.warning('Session-sammanfattning misslyckades: %s', e)
+        return None
 
 
 def _detect_and_suggest_mission(session_id, last_response, company_id, threshold=0.7):
@@ -2284,6 +2390,66 @@ class AIOpenAIAPI(http.Controller):
         return Response(json.dumps({'object': 'list', 'data': models}),
                       content_type='application/json')
 
+    @http.route('/ai/v1/skills', type='http', auth='public',
+                methods=['GET'], csrf=False, sitemap=False)
+    def list_skills(self, **kw):
+        """GET /ai/v1/skills — skills som en extern agent kan ladda.
+
+        Domain-clean (external-agent-runtime §7): endpointen listar
+        `ai.skill`-poster ur core. Ingen salt/zabbix/caddy-logik här —
+        domänspecifika skills ligger i specialistlagret och filtreras av
+        anroparen, inte av denna route.
+
+        Auth: Bearer API-nyckel (samma mönster som övriga /ai/v1/*).
+
+        Query-parametrar (valfria):
+            coworker — alias eller id; begränsar till coworkerns skills.
+            names    — kommaseparerade skill-namn (som `--skills` skickar).
+
+        Svar: {"object": "list", "data": [{"name", "description",
+              "recipe_text", "trigger_keywords"}]}
+        """
+        if not self._check_api_key():
+            return Response(
+                json.dumps({'error': {
+                    'message': 'Unauthorized',
+                    'type': 'authentication_error'}}),
+                status=401, content_type='application/json')
+
+        Skill = request.env['ai.skill'].sudo()
+        names = (kw.get('names') or '').strip()
+        coworker = (kw.get('coworker') or '').strip()
+
+        domain = [('active', '=', True)]
+        if names:
+            wanted = [n.strip() for n in names.split(',') if n.strip()]
+            domain.append(('name', 'in', wanted))
+        elif coworker:
+            cw = request.env['ai.coworker'].sudo()
+            if coworker.isdigit():
+                rec = cw.browse(int(coworker)).exists()
+            else:
+                rec = cw.search([('name', '=', coworker)], limit=1)
+            if not rec:
+                return Response(
+                    json.dumps({'error': {
+                        'message': 'Coworker not found',
+                        'type': 'invalid_request_error'}}),
+                    status=404, content_type='application/json')
+            domain.append(('id', 'in', rec.skill_ids.ids))
+
+        skills = Skill.search(domain, order='sequence asc, name asc')
+        data = [{
+            'id': s.id,
+            'name': s.name,
+            'description': s.description or '',
+            'recipe_text': s.recipe_text or '',
+            'trigger_keywords': s.trigger_keywords or '',
+        } for s in skills]
+        return Response(
+            json.dumps({'object': 'list', 'data': data}),
+            content_type='application/json')
+
     @http.route('/ai/v1/<string:coworker>/models', type='http', auth='public',
                 methods=['GET'], csrf=False, sitemap=False)
     def coworker_models(self, coworker, **kw):
@@ -2364,7 +2530,10 @@ class AIOpenAIAPI(http.Controller):
                 methods=['POST'], csrf=False, sitemap=False)
     def coworker_chat(self, coworker, **kw):
         """POST /ai/v1/<coworker>/chat/completions — Coworker i URL:en."""
-        return self._handle_chat(coworker, **kw)
+        try:
+            return self._handle_chat(coworker, **kw)
+        except Exception as exc:  # noqa: BLE001 — /ai/** får aldrig svara HTML
+            return self._error_json(exc)
 
     @http.route('/ai/v1/chat/completions', type='http', auth='public',
                 methods=['POST'], csrf=False, sitemap=False)
@@ -2373,15 +2542,70 @@ class AIOpenAIAPI(http.Controller):
         
         Detta är standard OpenAI-formatet. Pi skickar hit med model=<alias>.
         """
-        body = json.loads(request.httprequest.data or '{}')
+        body = self._parse_json_body()
+        if body is None:
+            return Response(json.dumps({'error': {
+                'message': 'Invalid JSON body',
+                'type': 'invalid_request_error'}}),
+                status=400, content_type='application/json')
         coworker = body.get('model', '')
         if not coworker:
             return Response(json.dumps({'error': {'message': 'Missing model', 'type': 'invalid_request_error'}}),
                           status=400, content_type='application/json')
-        return self._handle_chat(coworker, **kw)
+        try:
+            return self._handle_chat(coworker, **kw)
+        except Exception as exc:  # noqa: BLE001 — /ai/** får aldrig svara HTML
+            return self._error_json(exc)
+
+    @staticmethod
+    def _error_json(exc):
+        """/ai/** får aldrig svara Werkzeug-HTML (2026-09-20).
+
+        Odoo renderar HTTPException (t.ex. UserError -> BadRequest) som en
+        HTML-sida för type='http'-routes. Ett fel djupt i ORM:en blev därför en
+        ogenomskinlig "400 <!doctype html>" i klienten (Pi) — och syntes inte i
+        loggen eftersom UserError inte loggas som ERROR. Här blir det JSON med
+        det verkliga meddelandet plus en WARNING.
+        """
+        from werkzeug.exceptions import HTTPException
+        from odoo.exceptions import UserError
+        if isinstance(exc, HTTPException):
+            code = exc.code or 500
+            message = (exc.args[0] if exc.args and exc.args[0]
+                       else (exc.description or exc.name))
+        elif isinstance(exc, UserError):  # inkl. ValidationError
+            code = 400
+            message = str(exc.args[0]) if exc.args else 'User error'
+        else:
+            code = 500
+            message = 'Internal server error'
+        if code >= 500:
+            _logger.error('Ohanterat fel i /ai/v1: %s', exc, exc_info=True)
+            message = 'Internal server error'
+        else:
+            _logger.warning('Fel i /ai/v1 (%s): %s', type(exc).__name__, message)
+        return Response(json.dumps({'error': {
+            'message': str(message),
+            'type': 'server_error' if code >= 500 else 'invalid_request_error',
+        }}), status=code, content_type='application/json')
+
+    @staticmethod
+    def _parse_json_body():
+        """Parsa request-body som JSON — tolerant (aldrig ohanterat fel).
+
+        Returnerar en dict, eller None vid ogiltig JSON. Kravet är att
+        endpointen alltid svarar giltig JSON — en trasig body ska ge 400,
+        inte en HTML-500.
+        """
+        try:
+            data = json.loads(request.httprequest.data or '{}')
+        except (ValueError, TypeError) as e:
+            _logger.warning('ogiltig JSON-body i /ai/v1/chat/completions: %s', e)
+            return None
+        return data if isinstance(data, dict) else None
 
     def _handle_chat(self, coworker, **kw):
-        body = json.loads(request.httprequest.data or '{}')
+        body = self._parse_json_body() or {}
         messages = body.get('messages', [])
         stream = body.get('stream', True)
 
@@ -2411,18 +2635,32 @@ class AIOpenAIAPI(http.Controller):
         # UUID:t). Fallback (C): klienten märker system-/första user-
         # meddelandet med `{pi session: <uuid>}` — plocka ut det om
         # body-fältet saknas (t.ex. proxad trafik som strippar okända fält).
+        #
+        # KRAV (openai-api-kontextfonster-och-kompaktering): ett saknat
+        # `pi_session_id` får ALDRIG ge ett ohanterat serverfel (HTML-500).
+        # Pi:s auto-kompaktering skickar en sammanfattnings-request som inte
+        # passerar `before_provider_request`-hooken och därför saknar id:t —
+        # den ska behandlas som ren generering utan session. Extraktionen är
+        # därför tolerant: fel loggas och körningen fortsätter utan id.
         pi_session_id = (body.get('pi_session_id') or '').strip()
         if not pi_session_id:
-            marker_texts = []
-            for m in messages:
-                if (m.get('role') or '') in ('system', 'developer', 'user'):
-                    marker_texts.append(_content_to_text(m.get('content')))
-            pi_session_id = self.env['ai.coworker.session'] \
-                ._extract_pi_session_marker(*marker_texts)
-            if pi_session_id:
-                _logger.info(
-                    'pi_session_id saknades i body — hittade markör i '
-                    'meddelandet: %s', pi_session_id)
+            try:
+                marker_texts = []
+                for m in messages:
+                    if (m.get('role') or '') in ('system', 'developer', 'user'):
+                        marker_texts.append(_content_to_text(m.get('content')))
+                pi_session_id = request.env['ai.coworker.session'] \
+                    ._extract_pi_session_marker(*marker_texts)
+                if pi_session_id:
+                    _logger.info(
+                        'pi_session_id saknades i body — hittade markör i '
+                        'meddelandet: %s', pi_session_id)
+            except Exception as e:
+                # Best-effort: markören är en extra transport. Ett fel här
+                # får inte fälla requesten (t.ex. kompakterings-anrop).
+                _logger.warning(
+                    'pi_session_id-markör kunde inte extraheras: %s', e)
+                pi_session_id = ''
 
         return self._run_coworker_chat(
             quest, messages, body.get('model', coworker), stream,
@@ -2430,7 +2668,7 @@ class AIOpenAIAPI(http.Controller):
             session_id=body.get('session_id', 0),
             tools=body.get('tools', []),
             temperature=body.get('temperature', 0.7),
-            max_tokens=body.get('max_tokens', 4096),
+            max_tokens=body.get('max_tokens', 0),
         )
 
     # ── Coworker helpers ──────────────────────────────────────────────
@@ -2613,7 +2851,7 @@ class AIOpenAIAPI(http.Controller):
 
     def _run_coworker_chat(self, quest, messages, model_ref, stream,
                            pi_session_id='', session_id=0, tools=None,
-                           temperature=0.7, max_tokens=4096):
+                           temperature=0.7, max_tokens=0):
         """Execute a chat completion through a coworker as Pi's LLM backend.
 
         HYBRID (pi+odoo, 2026-08): istället för att köra Odoos egen AgentLoop
@@ -2708,12 +2946,26 @@ class AIOpenAIAPI(http.Controller):
         # session_id. Sync-vägen gör det i request-transaktionen; stream-vägen
         # i generatorn (egen cursor så den nya sessionen syns).
         def _find_or_create_session(env):
-            sess, _created = env['ai.coworker.session'] \
-                ._find_or_create_coworker_session(
-                    quest.id, env.user.id,
-                    pi_session_id=pi_session_id, session_id=session_id,
-                    prompt=prompt)
-            return sess
+            """Hitta/skapa session — tolerant (openai-api-kontextfonster).
+
+            Ett fel här får ALDRIG fälla requesten: Pi:s
+            kompakterings-anrop saknar `pi_session_id` och ska behandlas
+            som ren generering. Vid fel loggas en varning och en tom
+            recordset returneras; anropare hanterar tom `sess`
+            (ingen sessionsloggning, ingen kostnadskontext).
+            """
+            try:
+                sess, _created = env['ai.coworker.session'] \
+                    ._find_or_create_coworker_session(
+                        quest.id, env.user.id,
+                        pi_session_id=pi_session_id, session_id=session_id,
+                        prompt=prompt)
+                return sess
+            except Exception as e:
+                _logger.warning(
+                    'session find-or-create misslyckades (fortsätter utan '
+                    'session): %s', e)
+                return env['ai.coworker.session'].browse(0)
 
         def _cost_context_prompt_block(sess):
             """Bygg kostnadskontext-blocket (D9) för systemprompten.
@@ -2801,6 +3053,10 @@ class AIOpenAIAPI(http.Controller):
             tools-scheman.
             """
             try:
+                # Tom session (kompakterings-anrop utan pi_session_id):
+                # ren generering — ingen sessionsloggning.
+                if not sess:
+                    return
                 if messages:
                     env['ai.coworker.session']._persist_pi_messages(
                         env, sess, messages,
@@ -2925,6 +3181,30 @@ class AIOpenAIAPI(http.Controller):
                 # INTE modellnamn. Använd model_name (sträng) för provider.chat.
                 gen_model = model_name
 
+                # Tokenbudget. Pi skickar normalt max_tokens, men anrop via
+                # /ai/v1/chat/completions UTAN max_tokens fick tidigare 4096 —
+                # mindre än vad resonemangsmodeller (DeepSeek m.fl.) gör av med
+                # ENBART på reasoning. Följden blev 0 tecken svar +
+                # finish_reason=length, dvs ett tyst "hmm, " hos Pi.
+                # 0/None = auto -> modellens max_output_tokens, annars 16384.
+                # Ett uttryckligt max_tokens respekteras men klampas mot
+                # modellens egen gräns (annars svarar providern med fel).
+                _model_budget = 0
+                try:
+                    if provider_model is not None:
+                        _model_budget = int(
+                            getattr(provider_model, 'max_output_tokens', 0) or 0)
+                except (TypeError, ValueError):
+                    _model_budget = 0
+                if not max_tokens or max_tokens <= 0:
+                    max_tokens = _model_budget or 16384
+                elif _model_budget and max_tokens > _model_budget:
+                    _logger.info(
+                        'max_tokens %s överstiger modellens max_output_tokens '
+                        '%s — klampar till modellens budget',
+                        max_tokens, _model_budget)
+                    max_tokens = _model_budget
+
                 # HYBRID: REN generation — skicka Pi:s messages + tools
                 # (inkl. Pi:s lokala bash/ssh/salt) oförändrade till LLM:en.
                 # Odoo exekverar INTE verktyg här; tool_calls går tillbaka
@@ -3025,12 +3305,39 @@ class AIOpenAIAPI(http.Controller):
             # OBS: andra elementet är ai.model-record — använd model_name (sträng)
             gen_model = model_name
 
+            # Tokenbudget (samma härledning som icke-strömningsgrenen ovan).
+            # Pi:s normala väg är streaming — utan detta låg max_tokens kvar
+            # på 0 och skickades rakt igenom till providern, vilket gjorde att
+            # modellen kapades efter en enda chunk (finish_reason=length).
+            _model_budget = 0
+            try:
+                if _gen_pmodel is not None:
+                    _model_budget = int(
+                        getattr(_gen_pmodel, 'max_output_tokens', 0) or 0)
+            except (TypeError, ValueError):
+                _model_budget = 0
+            if not max_tokens or max_tokens <= 0:
+                max_tokens = _model_budget or 16384
+            elif _model_budget and max_tokens > _model_budget:
+                _logger.info(
+                    'max_tokens %s överstiger modellens max_output_tokens '
+                    '%s — klampar till modellens budget (streaming)',
+                    max_tokens, _model_budget)
+                max_tokens = _model_budget
+
             def generate():
                 full_response = []
                 aggregated_tool_calls = []  # (index, {id,name,arguments}) buffrar
                 tool_call_delta_buf = {}   # index → {'id','name','arguments','partial_idx'}
                 response_id = f'chatcmpl-{coworker_id}-{fields.Datetime.now().timestamp()}'
                 created = int(fields.Datetime.now().timestamp())
+                # DSML-hallare (2026-09-22): delad mellan generate() och
+                # den nästlade _stream(). Vi MUTERAR dict:en i stället för
+                # att tilldela namnet — annars blir dsml_hold en lokal i
+                # _stream() och första läsningen kastar UnboundLocalError
+                # (dödar hela SSE-strömmen).
+                _dsml = {'hold': [], 'prefixes': (
+                    '<\uff5c\uff5cDSML\uff5c\uff5c', '<||DSML||')}
 
                 try:
                     provider = _gen_provider
@@ -3075,7 +3382,24 @@ class AIOpenAIAPI(http.Controller):
                                 yield f'data: {json.dumps({"id": response_id, "object": "chat.completion.chunk", "created": created, "model": model_ref, "choices": [{"index": 0, "delta": {"reasoning_content": event.token}}]})}\n\n'
                             elif event.type == 'token':
                                 full_response.append(event.token)
-                                yield f'data: {json.dumps({"id": response_id, "object": "chat.completion.chunk", "created": created, "model": model_ref, "choices": [{"index": 0, "delta": {"content": event.token}}]})}\n\n'
+                                # DSML-hallare: buffra tills vi vet om svaret
+                                # ar DSML-markup eller vanlig text. Annars
+                                # lacker markup till anvandaren och kan inte
+                                # tas tillbaka (streaming ar oaterkallelig).
+                                _tok = event.token
+                                if _dsml['hold'] is not None:
+                                    _dsml['hold'].append(_tok)
+                                    _acc = ''.join(_dsml['hold'])
+                                    if contains_dsml(_acc):
+                                        pass  # DSML — konverteras vid done
+                                    elif any(_p.startswith(_acc) or _acc.startswith(_p)
+                                             for _p in _dsml['prefixes']):
+                                        pass  # avvakta — kan bli DSML
+                                    else:
+                                        yield f'data: {json.dumps({"id": response_id, "object": "chat.completion.chunk", "created": created, "model": model_ref, "choices": [{"index": 0, "delta": {"content": _acc}}]})}\n\n'
+                                        _dsml['hold'] = None
+                                else:
+                                    yield f'data: {json.dumps({"id": response_id, "object": "chat.completion.chunk", "created": created, "model": model_ref, "choices": [{"index": 0, "delta": {"content": _tok}}]})}\n\n'
                             elif event.type == 'tool_call_start':
                                 tc = event.tool_call
                                 idx = len(aggregated_tool_calls)
@@ -3117,16 +3441,67 @@ class AIOpenAIAPI(http.Controller):
                                 # — skicka full args nu så Pi bygger rätt anrop).
                                 yield f'data: {json.dumps({"id": response_id, "object": "chat.completion.chunk", "created": created, "model": model_ref, "choices": [{"index": 0, "delta": {"tool_calls": [{"index": idx, "function": {"name": tc.name, "arguments": full_args}}]}}]})}\n\n'
                             elif event.type == 'done':
+                                # DSML: DeepSeek kan skriva tool-anrop som
+                                # text i content istallet for strukturerade
+                                # tool_calls. Konvertera dem sa de exekveras.
+                                if _dsml['hold']:
+                                    _held = ''.join(_dsml['hold'])
+                                    if not contains_dsml(_held):
+                                        yield f'data: {json.dumps({"id": response_id, "object": "chat.completion.chunk", "created": created, "model": model_ref, "choices": [{"index": 0, "delta": {"content": _held}}]})}\n\n'
+                                    _dsml['hold'] = None
+                                if not aggregated_tool_calls:
+                                    _raw = ''.join(full_response)
+                                    if contains_dsml(_raw):
+                                        _dsml_calls = parse_dsml(_raw)
+                                        if _dsml_calls:
+                                            for _i, _dc in enumerate(_dsml_calls):
+                                                aggregated_tool_calls.append({
+                                                    'id': _dc['id'],
+                                                    'name': _dc['function']['name'],
+                                                    'arguments': _dc['function']['arguments'],
+                                                })
+                                                yield f'data: {json.dumps({"id": response_id, "object": "chat.completion.chunk", "created": created, "model": model_ref, "choices": [{"index": 0, "delta": {"tool_calls": [{"index": _i, "id": _dc["id"], "type": "function", "function": {"name": _dc["function"]["name"], "arguments": _dc["function"]["arguments"]}}]}}]})}\n\n'
+                                            # Rensa markup ur den sparade texten
+                                            _clean = strip_dsml(_raw)
+                                            full_response[:] = [_clean] if _clean else []
+                                            _logger.info(
+                                                'DSML: konverterade %d tool-call(s) ur content-text',
+                                                len(_dsml_calls))
                                 # Verklig usage — bokförs på sessionen.
                                 usage_state['input'] = getattr(
                                     event, 'input_tokens', 0) or 0
                                 usage_state['output'] = getattr(
                                     event, 'output_tokens', 0) or 0
-                                # finish_reason: tool_calls om verktyg, annars ev. stop
+                                # finish_reason: tool_calls om verktyg, annars
+                                # providerns VERKLIGA orsak (t.ex. "length").
+                                # Att hardkoda "stop" dolde att modellen gjort
+                                # slut pa max_tokens: Pi fick ett tomt svar som
+                                # såg ut som ett lyckat slut och tystnade
+                                # (pi-agent-integration 4.3).
+                                _real_finish = (
+                                    getattr(event, 'finish_reason', '') or ''
+                                ).strip()
+                                # Vitlista: Pi:s mapStopReason() gör ett
+                                # OKÄNT värde till stopReason "error" — att
+                                # skicka vidare t.ex. "network_error" vore en
+                                # värre regression än att säga "stop".
                                 if aggregated_tool_calls:
-                                    yield f'data: {json.dumps({"id": response_id, "object": "chat.completion.chunk", "created": created, "model": model_ref, "choices": [{"index": 0, "delta": {}, "finish_reason": "tool_calls"}]})}\n\n'
+                                    _finish_reason = 'tool_calls'
+                                elif _real_finish in (
+                                        'tool_calls', 'function_call'):
+                                    _finish_reason = 'tool_calls'
+                                elif _real_finish in (
+                                        'stop', 'length', 'content_filter'):
+                                    _finish_reason = _real_finish
                                 else:
-                                    yield f'data: {json.dumps({"id": response_id, "object": "chat.completion.chunk", "created": created, "model": model_ref, "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]})}\n\n'
+                                    _finish_reason = 'stop'
+                                if _finish_reason == 'length':
+                                    _logger.warning(
+                                        'provider truncation: finish_reason=length '
+                                        '(max_tokens=%s, coworker=%s) — svaret '
+                                        'avslutades av tokenbudgeten',
+                                        max_tokens, quest.id)
+                                yield f'data: {json.dumps({"id": response_id, "object": "chat.completion.chunk", "created": created, "model": model_ref, "choices": [{"index": 0, "delta": {}, "finish_reason": _finish_reason}]})}\n\n'
                                 # Session-info (session-cost-context 3.3)
                                 yield f'data: {json.dumps({"session_id": _sess.id, "cost_context": {"project_id": _sess.project_id.id if "project_id" in _sess._fields and _sess.project_id else None, "task_id": _sess.task_id.id if "task_id" in _sess._fields and _sess.task_id else None, "partner_id": _sess.partner_id.id if _sess.partner_id else None, "cost_context_confirmed": _sess.cost_context_confirmed}})}\n\n'
                                 yield 'data: [DONE]\n\n'
@@ -3134,50 +3509,80 @@ class AIOpenAIAPI(http.Controller):
                                 yield f'data: {json.dumps({"error": {"message": event.message}})}\n\n'
                                 yield 'data: [DONE]\n\n'
 
+                    # ── ÄKTA STREAMING (2026-09-22) ──────────────────
+                    # Tidigare samlades ALLA chunks i en lista och yieldades
+                    # först när generatorn var klar → klienten såg ingenting
+                    # förrän hela svaret var genererat (långa svar = frusen
+                    # UI). Nu driver en bakgrundstråd den async-generatorn
+                    # och lägger chunks i en kö som yieldas direkt.
+                    import queue as _queue
+                    import threading as _threading
+
                     aloop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(aloop)
                     usage_state = {'input': 0, 'output': 0}
-                    try:
-                        _agen = _stream()
+                    _chunk_q = _queue.Queue(maxsize=256)
+                    _SENTINEL = object()
+                    _stream_err = {'exc': None}
 
-                        async def _collect(agen):
-                            """Collect all chunks from the async generator,
-                            always closing it so no pending task survives
-                            loop.close() (avoids asyncio's
-                            'Task was destroyed but it is pending!' warning).
-                            """
-                            result = []
-                            try:
-                                async for chunk in agen:
-                                    result.append(chunk)
-                            finally:
+                    def _drive_stream():
+                        """Kör async-generatorn i egen loop, putta chunks."""
+                        asyncio.set_event_loop(aloop)
+                        try:
+                            async def _run(agen):
                                 try:
-                                    await agen.aclose()
-                                except Exception:
-                                    pass
-                            return result
+                                    async for chunk in agen:
+                                        _chunk_q.put(chunk)
+                                finally:
+                                    try:
+                                        await agen.aclose()
+                                    except Exception:
+                                        pass
 
-                        results = aloop.run_until_complete(_collect(_agen))
-                    finally:
-                        # Drain: ge eventuella pending async_generator_athrow-tasks
-                        # (från GC:ade inre generatorer) tid att slutföras innan
-                        # loopen stängs — annars "Task was destroyed" vid GC.
-                        import asyncio as _dbg
+                            _agen = _stream()
+                            aloop.run_until_complete(_run(_agen))
+                        except Exception as _e:
+                            _stream_err['exc'] = _e
+                        finally:
+                            # Drain: pending athrow-tasks innan loopen stängs
+                            try:
+                                _dbg_tasks = asyncio.all_tasks(aloop)
+                                if _dbg_tasks:
+                                    aloop.run_until_complete(
+                                        asyncio.gather(*_dbg_tasks,
+                                                       return_exceptions=True))
+                            except Exception:
+                                pass
+                            try:
+                                if _gen_provider is not None:
+                                    aloop.run_until_complete(
+                                        _gen_provider.aclose())
+                            except Exception:
+                                _logger.warning(
+                                    'provider aclose failed', exc_info=True)
+                            aloop.close()
+                            _chunk_q.put(_SENTINEL)
+
+                    _thread = _threading.Thread(
+                        target=_drive_stream, daemon=True)
+                    _thread.start()
+
+                    # Yielda direkt medan tråden producerar.
+                    while True:
                         try:
-                            _dbg_tasks = _dbg.all_tasks(aloop)
-                            if _dbg_tasks:
-                                aloop.run_until_complete(
-                                    _dbg.gather(*_dbg_tasks, return_exceptions=True))
-                        except Exception:
-                            pass
-                        # Stäng providerns httpx-klient innan loopen stängs.
-                        try:
-                            if _gen_provider is not None:
-                                aloop.run_until_complete(_gen_provider.aclose())
-                        except Exception:
-                            _logger.warning(
-                                'provider aclose failed', exc_info=True)
-                        aloop.close()
+                            _item = _chunk_q.get(timeout=300)
+                        except _queue.Empty:
+                            _logger.error(
+                                'stream timeout: ingen chunk på 300s')
+                            break
+                        if _item is _SENTINEL:
+                            break
+                        yield _item
+
+                    _thread.join(timeout=30)
+
+                    if _stream_err['exc'] is not None:
+                        raise _stream_err['exc']
+
                     try:
                         tool_history = [
                             (tc['name'], tc['arguments'][:200])
@@ -3190,9 +3595,6 @@ class AIOpenAIAPI(http.Controller):
                         _gen_cr.commit()
                     finally:
                         _gen_cr.close()
-
-                    for chunk in results:
-                        yield chunk
 
                 except Exception as e:
                     try:
@@ -3427,6 +3829,10 @@ class AIOpenAIAPI(http.Controller):
           - name slug     (e.g. 'bokslut-britta')
         """
         coworker = request.env['ai.coworker'].sudo()
+
+        # Robusthet: model_id kan komma som icke-sträng i en JSON-body
+        # (t.ex. ett tal) — undvik AttributeError → HTML-500.
+        model_id = str(model_id or '')
 
         # 1. quest-<ID> format
         if model_id.startswith('quest-'):

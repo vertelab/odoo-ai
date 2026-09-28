@@ -99,17 +99,41 @@ class InterruptHandler(ABC):
 
 
 class AutoInterruptHandler(InterruptHandler):
-    """Auto-approving handler for unattended execution.
+    """Handler för obevakad körning som materialiserar RECORD-HITL.
 
-    Used for: cron jobs, server actions, email-triggered quests.
-    Never blocks — always returns immediately.
+    Används av icke-interaktiva init-typer (cron, mail, watch, webhook).
+    Den blockerar aldrig: när ett verktyg kräver godkännande skapas en
+    `ai.coworker.hitl`-post och körningen fortsätter (nekas tills vidare)
+    i stället för att vänta på en människa.
+
+    OBS: tidigare returnerade `approve_tool()` alltid True — vilket
+    auto-godkände även destruktiva verktyg. Det motsade
+    hitl-dispatch-routing: en obevakad körning ska INTE kunna kringgå
+    gaten, den ska lämna ett ärende efter sig.
+
+    `hitl_request` är en callable (tool_name, risk_level, arguments) →
+    som skapar posten. Är den None (t.ex. i enhetstester av loopen)
+    behålls det gamla beteendet, så inga befintliga tester krossas.
     """
+
+    def __init__(self, hitl_request=None):
+        self.hitl_request = hitl_request
 
     async def ask(self, question: str, approval_type: str = "", context: str = "", timeout: float = 300) -> dict:
         return {"action": "timeout", "reason": "unattended execution"}
 
     async def approve_tool(self, tool_name: str, risk_level: str, arguments: dict) -> bool:
-        return True
+        if self.hitl_request is None:
+            return True   # inget ärende att skapa — oförändrat beteende
+        if risk_level in ('safe', 'read_only'):
+            return True   # läsverktyg kräver inget godkännande
+        # Destruktivt/skrivande: materialisera ärendet och neka tills vidare.
+        try:
+            self.hitl_request(tool_name, risk_level, arguments)
+        except Exception as e:  # noqa: BLE001 — HITL får aldrig krascha loopen
+            _logger.warning('AutoInterruptHandler: kunde inte skapa '
+                            'HITL-ärende för %s: %s', tool_name, e)
+        return False
 
     async def drain_steer(self) -> list[str]:
         return []
@@ -400,3 +424,58 @@ class OpenAIInterruptHandler(InterruptHandler):
     async def drain_steer(self) -> list[str]:
         """Inga köade styrmeddelanden via OpenAI-kanalen."""
         return []
+
+
+# ---------------------------------------------------------------------------
+# Val av HITL-mekanism per init-typ (external-agent-runtime D7/D8)
+# ---------------------------------------------------------------------------
+
+# Init-typer där en människa står vid rodret och kan svara inom rimlig tid.
+# Övriga är obevakade: de får inte blockera på en människa.
+INTERACTIVE_INIT_TYPES = (
+    'server_action', 'powerbox', 'web_ui', 'chat', 'channel',
+    'openai_api', 'manual',
+)
+
+
+def select_interrupt_handler(init_type, hitl_request=None, web_ui_session=None,
+                             discuss_channel=None, discuss_bot_user=None,
+                             env=None):
+    """Välj HITL-mekanism UTIFRÅN INIT-TYPEN — aldrig utifrån agenten.
+
+    Detta är den ENDA beslutsplatsen (hitl-dispatch-routing). Valet beror
+    inte på något "användare närvarande"-tillstånd, utan på vilken kanal
+    körningen kom in genom:
+
+    - interaktiv (server_action, powerbox, web_ui, chat, channel,
+      openai_api, manual) → PAUSAD HITL via OpenAI `tool_calls`
+      (`OpenAIInterruptHandler` → `AgentLoopPaused`); körningen återupptas
+      i samma session när svaret kommer.
+    - icke-interaktiv (cron, mail, watch, webhook) → RECORD-HITL
+      (`AutoInterruptHandler` med `hitl_request`), som skapar en
+      `ai.coworker.hitl`-post och INTE blockerar körningen.
+
+    Args:
+        init_type: str — coworkerns init-typ.
+        hitl_request: callable(tool_name, risk_level, arguments) som
+            skapar record-HITL-posten. Krävs för den icke-interaktiva vägen.
+        web_ui_session: session-uuid för WebUI-vägen (valfritt).
+        discuss_channel: discuss.channel för Discuss-vägen (valfritt).
+        discuss_bot_user: bot-användaren för Discuss-vägen (valfritt).
+        env: Odoo-env för de rikare handlerarna (valfritt).
+
+    Returns:
+        En `InterruptHandler`.
+    """
+    if init_type in INTERACTIVE_INIT_TYPES:
+        # web_ui och chat har egna, rikare handlers när deras kontext finns;
+        # annars OpenAI-vägen (klienten är orkestratör).
+        if init_type == 'web_ui' and web_ui_session:
+            return WebUIInterruptHandler(web_ui_session, env=env)
+        if init_type in ('chat', 'channel') and discuss_channel \
+                and discuss_bot_user:
+            return DiscussInterruptHandler(
+                discuss_channel, discuss_bot_user, env)
+        return OpenAIInterruptHandler()
+    # Icke-interaktiv: record-HITL, blockerar aldrig.
+    return AutoInterruptHandler(hitl_request=hitl_request)

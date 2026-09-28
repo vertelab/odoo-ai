@@ -77,6 +77,171 @@ class AICoworkerSession(models.Model):
         help='Fylls när sessionen avslutas med status error-ish (undantagsmeddelande '
              'för felsökning och analys).')
 
+    # ── Extern körning (external-agent-runtime D6/D10) ───────────────
+    # Mätpunkten: varje extern körning loggar PID, minne, starttid och
+    # varaktighet. Tröskeln för samtidighet är EMPIRISK och sätts inte nu —
+    # men ska kunna avläsas ur dessa fält när frågan uppstår.
+    external_pid = fields.Integer('Extern PID', readonly=True,
+        help='PID för den externa agent-processen (om runtime=external).')
+    external_port = fields.Integer('Extern port', readonly=True)
+    external_started_at = fields.Datetime('Extern starttid', readonly=True)
+    external_rss_kb = fields.Integer('Extern RSS (kB)', readonly=True,
+        help='Processens RSS vid dispatch — mätpunkten för minnesprofilen.')
+    external_spawn_time = fields.Float('Spawn-tid (s)', readonly=True,
+        help='Kall start-tid i sekunder (D9: ska vara under ~1 s).')
+    external_duration = fields.Float('Varaktighet (s)', readonly=True,
+        help='Körningens varaktighet i sekunder.')
+
+    def _record_external_run(self, measurement):
+        """Skriv mätpunkten för en extern körning på sessionsraden (D10).
+
+        Anropas av `ai.agent._dispatch_external` direkt efter spawn. Vi
+        skriver bara det vi faktiskt mäter — inga påhittade fält.
+        """
+        self.ensure_one()
+        vals = {
+            'external_pid': measurement.get('pid'),
+            'external_port': measurement.get('port'),
+            'external_started_at': fields.Datetime.now(),
+            'external_rss_kb': measurement.get('rss_kb'),
+            'external_spawn_time': measurement.get('spawn_time'),
+        }
+        self.sudo().write(vals)
+        return vals
+
+    # ── Livscykel för externa processer (D6/D10) ────────────────────
+
+    def _external_alive(self):
+        """Lever den externa processen? PID + (om möjligt) /status."""
+        self.ensure_one()
+        if not self.external_pid:
+            return False
+        from odoo.addons.ai_agent_core.core import runtime as rt
+        return rt.pid_alive(self.external_pid)
+
+    def action_abort_external(self):
+        """Avbryt en extern körning: SIGTERM → respit → SIGKILL (D6)."""
+        self.ensure_one()
+        from odoo.addons.ai_agent_core.core import runtime as rt
+        if not self.external_pid:
+            return False
+        gone = rt.kill_pid(self.external_pid)
+        self.sudo().write({
+            'external_duration': self._external_elapsed(),
+            'status': 'error' if not gone else 'done',
+            'error_detail': False if gone else
+                'Extern process %s kunde inte dödas.' % self.external_pid,
+        })
+        _logger.info('session %s: avbröt extern pid %s (borta=%s)',
+                     self.name, self.external_pid, gone)
+        return gone
+
+    def _external_elapsed(self):
+        """Körningens varaktighet i sekunder (0 om ingen starttid finns)."""
+        self.ensure_one()
+        if not self.external_started_at:
+            return 0.0
+        delta = fields.Datetime.now() - self.external_started_at
+        return round(delta.total_seconds(), 3)
+
+    def _finalize_external_run(self, rss_kb=None):
+        """Stäng en extern körning och skriv varaktigheten (D10).
+
+        Anropas när processen observeras död — av livs-heartbeatet eller
+        städ-cronen. RSS läses om den inte gavs (processen kan redan vara
+        borta, då blir värdet None och lämnas orört).
+        """
+        self.ensure_one()
+        from odoo.addons.ai_agent_core.core import runtime as rt
+        if rss_kb is None and self.external_pid:
+            rss_kb = rt.read_rss_kb(self.external_pid)
+        vals = {'external_duration': self._external_elapsed()}
+        if rss_kb:
+            vals['external_rss_kb'] = rss_kb
+        self.sudo().write(vals)
+        return vals
+
+    @api.model
+    def _live_external_count(self):
+        """Antal levande externa agenter (D10 — mätpunkt, inte tröskel).
+
+        Räknar sessioner med en PID som fortfarande lever. Ingen gräns
+        jämförs mot detta tal: taket är empiriskt och sätts inte nu.
+        """
+        from odoo.addons.ai_agent_core.core import runtime as rt
+        rows = self.sudo().search([('external_pid', '!=', False)])
+        return len(rows.filtered(lambda s: rt.pid_alive(s.external_pid)))
+
+    @api.model
+    def _cron_reap_external(self, batch_size=200):
+        """Livs-heartbeat + städning av föräldralösa processer (D6).
+
+        Två fall:
+
+        1. Sessionen är inte längre aktiv men processen lever → processen
+           är föräldralös (Odoo tappade den, t.ex. vid omstart). Döda den.
+        2. Processen är död men sessionen är aktiv → registrera felet så
+           haveriet syns i data i stället för att se ut som en tom session.
+        """
+        from odoo.addons.ai_agent_core.core import runtime as rt
+        sessions = self.sudo().search(
+            [('external_pid', '!=', False)], limit=batch_size,
+            order='id desc')
+        # Timeout (D6): agenten får sin egen gräns via `--timeout`, men Odoo
+        # äger livscykeln och måste också avbryta. Respit så att agentens
+        # egen (snällare) avslutning hinner ske först.
+        run_timeout = rt.get_int(
+            self.env, rt.PARAM_RUN_TIMEOUT, rt.DEFAULT_RUN_TIMEOUT)
+        grace = rt.get_float(
+            self.env, rt.PARAM_ABORT_GRACE, rt.DEFAULT_ABORT_GRACE)
+        limit = run_timeout + grace
+        reaped, detected, timed_out = 0, 0, 0
+        for sess in sessions:
+            alive = rt.pid_alive(sess.external_pid)
+            if alive and sess.status not in ('active', 'draft'):
+                rt.kill_pid(sess.external_pid)
+                sess._finalize_external_run()
+                reaped += 1
+                _logger.warning(
+                    'extern städning: dödade föräldralös pid %s '
+                    '(session %s, status %s)',
+                    sess.external_pid, sess.name, sess.status)
+            elif alive and sess.status in ('active', 'draft') \
+                    and sess.external_started_at \
+                    and sess._external_elapsed() > limit:
+                rt.kill_pid(sess.external_pid)
+                sess._finalize_external_run()
+                sess.sudo().write({
+                    'status': 'error',
+                    'error_detail': 'Extern körning överskred tidsgränsen '
+                                    '(%.0f s > %.0f s).' %
+                                    (sess._external_elapsed(), limit),
+                })
+                timed_out += 1
+                _logger.warning(
+                    'extern timeout: pid %s (session %s) körde %.0f s > '
+                    '%.0f s — avbruten',
+                    sess.external_pid, sess.name,
+                    sess._external_elapsed(), limit)
+            elif not alive and sess.status in ('active', 'draft'):
+                sess._finalize_external_run()
+                sess.sudo().write({
+                    'status': 'error',
+                    'error_detail': 'Extern process %s avslutades oväntat.'
+                                    % sess.external_pid,
+                })
+                detected += 1
+                _logger.warning(
+                    'extern livs-heartbeat: pid %s är död men session %s '
+                    'är %s — markerad error',
+                    sess.external_pid, sess.name, sess.status)
+        if reaped or detected or timed_out:
+            _logger.info('extern städning: %d föräldralösa dödade, %d '
+                         'döda upptäckta, %d timeouts',
+                         reaped, detected, timed_out)
+        return {'reaped': reaped, 'detected': detected,
+                'timed_out': timed_out}
+
     # ── Watch-kö (fix-watch-async) ───────────────────────────────────
     # _trigger_watch skapar sessionen med watch_pending=True och returnerar
     # DIREKT — AI-körningen sker asynkront i cron (_process_watch_sessions)
@@ -107,6 +272,12 @@ class AICoworkerSession(models.Model):
     summary_message_count = fields.Integer(
         'Summary Message Count', default=0,
         help='Antal meddelanden vid senaste sammanfattningen.')
+
+    memory_extracted = fields.Boolean(
+        'Memory Extracted', default=False,
+        help='Har sessionens erfarenhet extraherats till personligt minne? '
+             'Gör bron idempotent — eftermälet kan anropas från flera håll '
+             '(mark_done, idle-cron, buzz) utan dubbla LLM-anrop.')
 
     token_input = fields.Integer('Input Tokens', default=0)
     token_output = fields.Integer('Output Tokens', default=0)
@@ -145,6 +316,176 @@ class AICoworkerSession(models.Model):
         help='Sätts när kostnadsbelastningen bekräftats (en gång per '
              'session). Redan bekräftad session frågar inte om igen '
              '(inte heller efter resume/fork-kopiering).')
+
+    # ── Rekordkontext (ai-coworker-record-context) ──────────────────────
+    # Vilken record — eller vilken markering — gällde DENNA tur. Fälten
+    # sätts när sessionen skapas från en chatt-tur där en record eller en
+    # list-markering kunde identifieras, och lämnas tomma annars.
+    #
+    # NAMNVAL (D1): `ai_`-prefixet matchar ai_task_id/ai_coworker_id och
+    # undviker medvetet `context_*` (coworkerns injektionsinställningar)
+    # samt env.context-nycklarna `_ai_context_model`/`_ai_context_id`.
+    # De nycklarna betyder "aktuell SESSION" — inte "aktuell record" —
+    # och läses av HITL, NATS-kontexten och sessionsminnena (D1b). Att
+    # återanvända dem för en record kraschar HITL och tystar minnena.
+    ai_record_model = fields.Char(
+        'Record Model', index=True,
+        help='Tekniskt modellnamn för den record (eller markeringens '
+             'modell) som denna tur gällde.')
+    ai_record_id = fields.Integer(
+        'Record ID',
+        help='Id för den enskilda record turen gällde (form-vyn). '
+             'Tom när turen gällde en markering — se ai_record_ids.')
+    ai_record_ids = fields.Json(
+        'Record IDs',
+        help='Lista av id:n för den markering turen gällde (list-vyn). '
+             'Samma mönster som server actions records.ids.')
+    ai_record_json = fields.Text(
+        'Record Fields',
+        help='Serialiserade fält för den enskilda recorden (singular). '
+             'Föredrar frontendens fältvärden när de finns — de bär '
+             'osparade ändringar.')
+    ai_records_json = fields.Text(
+        'Records Fields',
+        help='Serialiserade fält för markeringen (plural). Fältprojektion: '
+             'list-vyns kolumner när frontend skickar dem, annars en fast '
+             'projektion (id, display_name, _rec_name).')
+    ai_record_chatter = fields.Text(
+        'Record Chatter',
+        help='Chatter-historik för den enskilda recorden. Utesluts som '
+             'default för samlingar — 35 records x 20 meddelanden spränger '
+             'prompten (R7).')
+    ai_record_count = fields.Integer(
+        'Record Count', compute='_compute_ai_record_count', store=False,
+        help='Antal id:n i markeringen (0 för singular).')
+
+    @api.depends('ai_record_ids')
+    def _compute_ai_record_count(self):
+        for rec in self:
+            ids = rec.ai_record_ids or []
+            rec.ai_record_count = len(ids) if isinstance(ids, list) else 0
+
+    def _set_record_context(self, record, front_end_info=None,
+                            chatter=None):
+        """Sätt singular rekordkontext på sessionen (idempotent).
+
+        Args:
+            record: Odoo-record turen gällde.
+            front_end_info: Fältvärden från browsern (kan bära osparade
+                ändringar). Föredras framför backend-serialisering.
+            chatter: Färdig chatter-sträng. Serialiseras annars från
+                recorden om den stöder _ai_serialize_messages_data().
+
+        Tyst no-op vid fel — kontexten får aldrig fälla en körning.
+        """
+        self.ensure_one()
+        if not record or not record.exists():
+            return self
+        vals = {
+            'ai_record_model': record._name,
+            'ai_record_id': record.id,
+            'ai_record_ids': False,
+            'ai_records_json': False,
+        }
+        # Fält: frontend-info vinner (osparade värden), annars backend.
+        if front_end_info:
+            vals['ai_record_json'] = (
+                front_end_info if isinstance(front_end_info, str)
+                else json.dumps(front_end_info, default=str,
+                                ensure_ascii=False))
+        else:
+            try:
+                vals['ai_record_json'] = record._ai_serialize_fields_data()
+            except Exception as e:
+                _logger.warning(
+                    'session %s: fältserialisering misslyckades: %s',
+                    self.id, e)
+        # Chatter (singular tillåter den).
+        if chatter is not None:
+            vals['ai_record_chatter'] = chatter
+        elif hasattr(record, '_ai_serialize_messages_data'):
+            try:
+                vals['ai_record_chatter'] = \
+                    record._ai_serialize_messages_data()
+            except Exception as e:
+                _logger.warning(
+                    'session %s: chatter-serialisering misslyckades: %s',
+                    self.id, e)
+        try:
+            self.sudo().write(vals)
+            _logger.info(
+                'session %s: rekordkontext satt — %s#%s (källa: %s)',
+                self.id, record._name, record.id,
+                'frontend' if front_end_info else 'backend')
+        except Exception as e:
+            _logger.warning(
+                'session %s: kunde inte sätta rekordkontext: %s', self.id, e)
+        return self
+
+    def _set_records_context(self, records, fields=None,
+                             max_records=None, include_chatter=False):
+        """Sätt plural rekordkontext (markering) på sessionen (idempotent).
+
+        Args:
+            records: Recordset — markeringen.
+            fields: Fältprojektion. När None används en fast projektion
+                (id, display_name, _rec_name) — ALDRIG context_max_fields
+                per record (D7: 35 x 100 fält spränger prompten).
+            max_records: Gräns för antal records. Överskridandet loggas
+                och rapporteras i prompten — det får inte tystas (R5).
+            include_chatter: Chatter är AVSTÄNGT som default för samlingar.
+
+        Tyst no-op vid fel.
+        """
+        self.ensure_one()
+        if not records:
+            return self
+        model = records._name
+        all_ids = list(records.ids)
+        truncated = False
+        if max_records and len(all_ids) > max_records:
+            truncated = True
+            all_ids = all_ids[:max_records]
+        recs = records.browse(all_ids)
+        # Fältprojektion: explicit lista, annars fast projektion.
+        if not fields:
+            fields = ['id', 'display_name']
+            rec_name = recs._rec_name
+            if rec_name and rec_name not in fields:
+                fields.append(rec_name)
+        try:
+            data = recs.read(fields)
+        except Exception as e:
+            _logger.warning(
+                'session %s: kunde inte läsa markeringen: %s', self.id, e)
+            return self
+        vals = {
+            'ai_record_model': model,
+            'ai_record_id': False,
+            'ai_record_ids': all_ids,
+            'ai_records_json': json.dumps(
+                data, default=str, ensure_ascii=False),
+            'ai_record_json': False,
+            'ai_record_chatter': False,
+        }
+        if include_chatter and hasattr(recs, '_ai_serialize_messages_data'):
+            try:
+                vals['ai_record_chatter'] = '\n'.join(
+                    r._ai_serialize_messages_data() for r in recs)
+            except Exception as e:
+                _logger.warning(
+                    'session %s: chatter för markering misslyckades: %s',
+                    self.id, e)
+        try:
+            self.sudo().write(vals)
+            _logger.info(
+                'session %s: markering satt — %s x%d%s',
+                self.id, model, len(all_ids),
+                ' (TRUNKERAD från %d)' % len(records) if truncated else '')
+        except Exception as e:
+            _logger.warning(
+                'session %s: kunde inte sätta markering: %s', self.id, e)
+        return self
 
     def _session_capture_context(self):
         """Domän-ren hook: bryggor (t.ex. project_ai) override:ar för att
@@ -727,7 +1068,17 @@ class AICoworkerSession(models.Model):
         string='Bilagor', store=False)
     attachment_count = fields.Integer(
         'Bilagor', compute='_compute_attachment_ids')
+    hitl_ids = fields.One2many(
+        'ai.coworker.hitl', 'session_id', string='HITL-requests')
+    hitl_open_count = fields.Integer(
+        'Öppna HITL', compute='_compute_hitl_open_count')
     active = fields.Boolean('Active', default=True)
+
+    @api.depends('hitl_ids.state')
+    def _compute_hitl_open_count(self):
+        for r in self:
+            r.hitl_open_count = len(
+                r.hitl_ids.filtered(lambda h: h.state == 'asked'))
 
     @api.depends('session_line_ids')
     def _compute_line_count(self):
@@ -753,6 +1104,19 @@ class AICoworkerSession(models.Model):
             'target': 'current',
             'domain': [('res_model', '=', 'ai.coworker.session'),
                        ('res_id', '=', self.id)],
+        }
+
+    def action_open_hitl(self):
+        """Öppna sessionens HITL-requests (godkännanden)."""
+        self.ensure_one()
+        return {
+            'name': 'HITL-requests',
+            'type': 'ir.actions.act_window',
+            'res_model': 'ai.coworker.hitl',
+            'view_mode': 'list,form',
+            'views': [[False, 'list'], [False, 'form']],
+            'target': 'current',
+            'domain': [('session_id', '=', self.id)],
         }
 
     def action_get_lines(self):
@@ -792,7 +1156,356 @@ class AICoworkerSession(models.Model):
             'sys_multiplier': sys_mult,
         })
 
+    # ── Sessionens eftermäle (D4) ────────────────────────────────
+    #
+    # EN skrivare till `summary`. Tidigare fanns fyra
+    # sammanfattningsvägar varav bara en (buzz-vägen) skrev fältet —
+    # och bara i buzz-läge. Resultatet var att en vanlig chatt fick
+    # inget eftermäle alls, och konsolideringen läste en råsvans av
+    # de sista 40 raderna i stället.
+
+    MIN_SUMMARY_LINES = 4
+
+    SUMMARY_HEADINGS = (
+        'Syfte', 'Utfall', 'Beslut', 'Fakta', 'Artefakter',
+        'Öppna frågor',
+    )
+
+    def _final_summary_prompt(self, transcript):
+        """Strukturerad, svensk prompt (D4 / session-close krav 5).
+
+        Rubrikerna är fasta eftersom eftermälet är konsolideringens
+        råvara: samma form varje gång gör den jämförbar och sökbar med
+        svensk fulltextsökning.
+        """
+        headings = '\n'.join('### %s' % h for h in self.SUMMARY_HEADINGS)
+        return (
+            'Sammanfatta sessionen nedan på svenska. Använd exakt dessa '
+            'rubriker och inga andra:\n\n%s\n\n'
+            'Utelämna en rubrik helt om avsnittet inte har något innehåll — '
+            'skriv aldrig påhittat innehåll för att fylla ut. Var koncis men '
+            'komplett: fakta, beslut och öppna frågor är det som spelar roll.\n\n'
+            '--- KONVERSATION ---\n%s' % (headings, transcript))
+
+    def _final_summary_transcript(self, lines, max_chars=12000):
+        """Bygg konversationsunderlaget för eftermälet.
+
+        Till skillnad från `_learn_from_session` (som bara såg de sista
+        40 raderna) täcker detta hela sessionen, trunkerad bakifrån så att
+        slutet — där utfallet finns — alltid kommer med.
+        """
+        parts = []
+        for ln in lines:
+            if not ln.content:
+                continue
+            parts.append('[%s] %s' % (ln.role, ln.content[:500]))
+        text = '\n'.join(parts)
+        if len(text) > max_chars:
+            text = text[-max_chars:]
+        return text
+
+    def _write_final_summary(self, force=False):
+        """Skriv sessionens eftermäle — idempotent (D4).
+
+        Returnerar sammanfattningen (str) eller None. Anropas vid
+        stängning (`mark_done`/`mark_interrupted`) och av idle-cronen.
+
+        Idempotensen hänger på `summary_message_count`: har inga nya rader
+        tillkommit sedan förra sammanfattningen görs INGET LLM-anrop. Det
+        är det som gör att stängning och cron kan köra samtidigt utan att
+        kosta dubbla anrop — och utan att skriva om oförändrat innehåll.
+        """
+        self.ensure_one()
+        lines = self.session_line_ids.sorted('sequence')
+        total = len(lines)
+
+        # 1. Idempotens — inget nytt sedan sist → inget LLM-anrop.
+        if not force and self.summary and \
+                self.summary_message_count == total:
+            _logger.debug(
+                'Eftermäle: session %s oförändrad (%d rader) — hoppar över',
+                self.id, total)
+            return self.summary
+
+        # 2. För kort session → ingen tom sammanfattning.
+        if total < self.MIN_SUMMARY_LINES:
+            _logger.debug(
+                'Eftermäle: session %s för kort (%d < %d rader) — '
+                'ingen sammanfattning',
+                self.id, total, self.MIN_SUMMARY_LINES)
+            return None
+
+        transcript = self._final_summary_transcript(lines)
+        if not transcript.strip():
+            _logger.debug(
+                'Eftermäle: session %s har inget innehåll — hoppar över',
+                self.id)
+            return None
+
+        summary = self._run_final_summary_llm(transcript)
+        if not summary:
+            _logger.warning(
+                'Eftermäle: LLM-sammanfattning misslyckades för session %s '
+                '(%d rader) — summary_message_count lämnas orörd så att '
+                'nästa försök tar om', self.id, total)
+            return None
+
+        self.sudo().write({
+            'summary': summary,
+            'summary_message_count': total,
+        })
+        _logger.info(
+            'Eftermäle skrivet för session %s (%d rader, %d tecken)',
+            self.id, total, len(summary))
+
+        # Bron till det personliga minnet (session-memory-bridge D2).
+        # Eftermälet är den naturliga platsen: här finns både transcriptet
+        # och vetskapen att sessionen är slut. Anropet är idempotent.
+        #
+        # SAVEPOINT är obligatorisk, inte kosmetik. Bron gör LLM- och
+        # SQL-anrop; kastar något av dem utan savepoint förgiftas hela
+        # transaktionen (InFailedSqlTransaction) och ALLT efterföljande
+        # dör — inklusive `session.write({'status': 'done'})` i
+        # _cron_close_idle_sessions, som då aldrig stängde sessionen.
+        # Det var mekanismen bakom idle-cronens failure_count: eftermälet
+        # skrevs, men stängningen kraschade, och samma session plockades
+        # upp igen var 15:e minut i evighet.
+        #
+        # Ett anrop som FÅR misslyckas måste ha en savepoint — try/except
+        # räcker inte, transaktionen är förgiftad ändå.
+        try:
+            with self.env.cr.savepoint():
+                self._bridge_to_personal_memory()
+        except Exception:
+            _logger.exception(
+                'Eftermäle: minnesbron misslyckades för session %s — '
+                'eftermälet är skrivet och sessionen stängs ändå', self.id)
+        return summary
+
+    def _bridge_to_personal_memory(self):
+        """Skriv sessionens erfarenhet vidare till personligt minne.
+
+        `extract_from_session()` var byggd men hade NOLL anropare —
+        erfarenhet blev aldrig minne. Här kopplas den in.
+
+        Tre skyddsnät:
+
+        1. **Idempotens** — `memory_extracted` sätts när extraktionen kört.
+           Eftermälet kan anropas från flera håll (mark_done, idle-cron,
+           buzz) och får inte ge dubbla LLM-anrop.
+        2. **Rätt användare** — upplösningen går via
+           `_resolve_dispatch_user()`, inte `session.user_id` rakt av.
+           En cron-session har `user_id = systemuser`, och att skriva
+           personligt minne till systemuser vore både fel och otillåtet.
+        3. **Tröskel** — bara sessioner som nådde `MIN_SUMMARY_LINES`
+           bär tillräcklig erfarenhet. Kortare sessioner hoppas över.
+
+        Returns:
+            int: Antal extraherade minnen (0 om inget gjordes).
+        """
+        self.ensure_one()
+
+        # 1. Idempotens
+        if self.memory_extracted:
+            _logger.debug(
+                'Minne: session %s redan extraherad — hoppar över', self.id)
+            return 0
+
+        # 2. Tröskel — samma som eftermälet
+        total = len(self.session_line_ids)
+        if total < self.MIN_SUMMARY_LINES:
+            _logger.debug(
+                'Minne: session %s för kort (%d < %d rader) — ingen '
+                'extraktion', self.id, total, self.MIN_SUMMARY_LINES)
+            return 0
+
+        coworker = self.coworker_id
+        if not coworker:
+            return 0
+
+        # 3. Rätt användare — aldrig systemuser
+        #
+        # `_resolve_dispatch_user` är byggd för dispatch FÖRE en körning,
+        # där `env.uid` är den som tryckte. Här är vi EFTER körningen, i
+        # en cron-process — då är `env.user` systemuser och upplösningen
+        # faller. Vi ger därför sessionens egen `user_id` som sista utväg:
+        # den är satt vid skapandet och är den som faktiskt ägde körningen.
+        user = None
+        try:
+            user = coworker._resolve_dispatch_user(
+                init_type=self.init_type or None, session=self)
+        except Exception as e:
+            _logger.debug(
+                'Minne: session %s — dispatch-upplösning föll (%s), '
+                'faller tillbaka på sessionens user_id', self.id, e)
+
+        if not user and self.user_id:
+            user = self.user_id
+
+        if not user:
+            _logger.warning(
+                'Minne: session %s saknar användare — ingen extraktion',
+                self.id)
+            return 0
+
+        if user == self.env.ref('base.user_root'):
+            _logger.warning(
+                'Minne: session %s upplöstes till systemuser — ingen '
+                'extraktion (personligt minne kräver en riktig användare)',
+                self.id)
+            return 0
+
+        try:
+            count = self.env['ai.personal.memory'].sudo().extract_from_session(
+                self.id)
+        except Exception as e:
+            _logger.error(
+                'Minne: extraktion från session %s misslyckades: %s',
+                self.id, e, exc_info=True)
+            return 0
+
+        # Markera ÄVEN vid 0 extraherade — annars kör varje eftermäle om
+        # samma LLM-anrop för en session som inte gav något.
+        self.sudo().write({'memory_extracted': True})
+        _logger.info(
+            'Minne: session %s extraherade %d minnen till användare %s',
+            self.id, count, user.login)
+        return count
+
+    def _run_final_summary_llm(self, transcript):
+        """Kör LLM-anropet för eftermälet. Returnerar str eller None.
+
+        Avskilt från `_write_final_summary` så att idempotens-logiken kan
+        testas utan att röra providern.
+        """
+        import asyncio
+        try:
+            from odoo.addons.ai_agent_core.core.provider import (
+                ProviderFactory, get_default_provider, get_default_model_name)
+            from odoo.addons.ai_agent_core.core.loop import (
+                AgentLoop, AgentConfig)
+            from odoo.addons.ai_agent_core.core.tools import ToolRegistry
+            quest = self.coworker_id
+            provider, model_rec = (
+                ProviderFactory.from_coworker(quest) if quest else (None, None))
+            if not provider:
+                # `env` MÅSTE skickas in. Utan den faller funktionen
+                # tillbaka på `odoo.http.request`, som inte finns i cron
+                # — och då blir svaret alltid (None, None). Det var
+                # därför varje API-session (coworker_id = false) fick
+                # "ingen provider tillgänglig" och aldrig något eftermäle.
+                # Samma fälla som _resolve_dispatch_user nedan beskriver.
+                provider, model_rec = get_default_provider(self.env)
+            if not provider:
+                _logger.warning(
+                    'Eftermäle: ingen provider tillgänglig för session %s',
+                    self.id)
+                return None
+            model_name = (model_rec and model_rec._get_api_name()) \
+                or get_default_model_name()
+            loop = AgentLoop(provider=provider, tools=ToolRegistry(), config=AgentConfig(
+                model=model_name, max_rounds=1, max_tokens=2048))
+            result = asyncio.run(
+                loop.run(self._final_summary_prompt(transcript)))
+            return (result.text or '').strip()[:4000] or None
+        except Exception as e:
+            _logger.warning(
+                'Eftermäle: sammanfattning misslyckades för session %s: %s',
+                self.id, e)
+            return None
+
+    @api.model
+    def _cron_close_idle_sessions(self, idle_minutes=None, batch_size=20,
+                                  extra_domain=None):
+        """Stäng övergivna sessioner och skriv deras eftermäle (D4, 4.4).
+
+        Varför denna cron: `mark_done()` anropas bara från webhook-vägen
+        och `mark_interrupted()` aldrig i drift. Majoriteten av alla
+        sessioner stängs därför aldrig — de bara slutar få rader. Utan
+        cronen får de inget eftermäle, och konsolideringen har inget att
+        läsa.
+
+        Idempotent: `_write_final_summary` gör inget LLM-anrop när inga
+        nya rader tillkommit, och en stängd session plockas inte upp igen
+        (status-filtret).
+
+        `extra_domain` används av tester för att begränsa batchen — i
+        drift finns det alltid äldre sessioner som annars fyller batchen.
+        """
+        if idle_minutes is None:
+            idle_minutes = int(
+                self.env['ir.config_parameter'].sudo().get_param(
+                    'ai_agent_core.session_idle_minutes', '60') or 60)
+        cutoff = fields.Datetime.now() - timedelta(minutes=idle_minutes)
+        domain = [
+            ('status', '=', 'active'),
+            ('write_date', '<', cutoff),
+        ] + list(extra_domain or [])
+        sessions = self.search(domain, limit=batch_size, order='write_date asc')
+        if not sessions:
+            return 0
+
+        closed = 0
+        empty = 0
+        for session in sessions:
+            try:
+                # Upptäck tomma sessioner (session-memory-bridge D4).
+                #
+                # En session utan rader är ett spår av ingenting — den
+                # skapades men kördes aldrig. Den ska STÄNGAS (annars
+                # svälter den ut kön), men den ska inte stängas TYST:
+                # 61 sådana hittades 2026-09-15, och ingenstans gick det
+                # att se varför. Loggen är det enda som skiljer en bugg
+                # från en tom konversation i statistiken.
+                if not session.session_line_ids:
+                    empty += 1
+                    _logger.warning(
+                        'Session %s stängs TOM (0 rader) — coworker=%s '
+                        'init_type=%s skapad=%s. En session ska bära en '
+                        'körning; den här gjorde det inte.',
+                        session.id,
+                        session.coworker_id.name or '-',
+                        session.init_type or '(tom)',
+                        session.create_date)
+
+                session._write_final_summary()
+                # 'done' (inte 'interrupted'): sessionen är inte avbruten,
+                # den är färdigpratad. Distinktionen spelar roll för
+                # resumable-logiken.
+                #
+                # OBS: stängningen sker i ett write() EFTER sammanfattningen.
+                # Misslyckas sammanfattningen ändå stängs sessionen — annars
+                # skulle en session som aldrig kan sammanfattas (t.ex. för
+                # kort) bli liggande i kön för evigt och svälta ut alla
+                # nyare sessioner ur batchen.
+                session.sudo().write({
+                    'status': 'done',
+                    'finish_reason': 'idle',
+                    'end_date': fields.Datetime.now(),
+                })
+                closed += 1
+            except Exception:
+                _logger.exception(
+                    'Idle-cron: kunde inte stänga session %s', session.id)
+        if closed:
+            _logger.info(
+                'Idle-cron: stängde %d sessioner utan aktivitet i %d min '
+                '(%d av dem var tomma)',
+                closed, idle_minutes, empty)
+        return closed
+
     def mark_done(self, reason='stop'):
+        # Eftermälet skrivs INNAN statusen sätts: det som hann hända är
+        # kunskap (session-close krav 3), och en 'done'-session ska redan
+        # vara sammanfattad om någon läser den direkt efteråt.
+        for session in self:
+            try:
+                session._write_final_summary()
+            except Exception:
+                # Eftermälet får aldrig hindra stängningen.
+                _logger.exception(
+                    'Eftermäle misslyckades vid mark_done för session %s',
+                    session.id)
         self.status = 'done'
         self.finish_reason = reason
         self.end_date = fields.Datetime.now()
@@ -823,7 +1536,19 @@ class AICoworkerSession(models.Model):
                                        help='Parent session this was resumed from')
 
     def mark_interrupted(self):
-        """Mark session as interrupted (crash/stop) but resumable."""
+        """Mark session as interrupted (crash/stop) but resumable.
+
+        Eftermälet skrivs även här (session-close krav 3): en avbruten
+        session är den VANLIGASTE idag — `mark_done()` anropas bara från
+        webhook-vägen — så utan detta får majoriteten aldrig ett eftermäle.
+        """
+        for session in self:
+            try:
+                session._write_final_summary()
+            except Exception:
+                _logger.exception(
+                    'Eftermäle misslyckades vid mark_interrupted för '
+                    'session %s', session.id)
         self.status = 'active'  # Keep active so it can be resumed
         self.finish_reason = 'interrupted'
         self.end_date = fields.Datetime.now()

@@ -20,36 +20,28 @@
 ##############################################################################
 {
     'name': 'odoo-ai: Powerbox & Transcript',
-    'version': '18.0.1.0.0',
-    'summary': 'Powerbox-style AI interaction with transcript/context injection.',
+    'version': '18.0.1.0.1',
+    'summary': 'Powerbox-style AI interaction with transcript/context injection',
     'category': 'AI Orchestration',
-    'description': '''
-Powerbox & Transcript
-=====================
+    'description': """
+        AI — Powerbox & Transcript
+        ===========================
+        Powerbox-mönstret portat till ai_agent_core-runtime:
+        interface-points (HTML-fält, mail-composer, chatter-knapp,
+        systray, rösttranskription) → ai.coworker med automatisk
+        transcript/context-injektion.
 
-    AI — Powerbox & Transcript
-            ===========================
-            Powerbox-mönstret portat till ai_agent_core-runtime:
-            interface-points (HTML-fält, mail-composer, chatter-knapp,
-            systray, rösttranskription) → ai.coworker med automatisk
-            transcript/context-injektion.
+        Komponenter:
+        1. ai.composer — mappar interface-keys till ai.coworker med
+           default-prompt + quick-actions.
+        2. Transcript-injektion — session får rekordfält-JSON + chatter +
+           frontend-kontext + vald text (transcript_context).
+        3. Mötestext — voice_transcription_component sammanfattar
+           rösttranskriptioner till mötesanteckningar/action items.
+        4. Powerbox-init (ai_agent_core) kopplas via composer.
 
-    Komponenter:
-            1. ai.composer — mappar interface-keys till ai.coworker med
-               default-prompt + quick-actions.
-            2. Transcript-injektion — session får rekordfält-JSON + chatter +
-               frontend-kontext + vald text (transcript_context).
-            3. Mötestext — voice_transcription_component sammanfattar
-               rösttranskriptioner till mötesanteckningar/action items.
-            4. Powerbox-init (ai_agent_core) kopplas via composer.
-
-    Bridge-standard: depends ai_agent_core (inte legacy ai_agent).
-
-    Features:
-
-        - UI Integration: Extends 2 view(s) in the Odoo interface.
-        - Extends Odoo: Builds on ai.composer, ai.coworker.session.
-    ''',
+        Bridge-standard: depends ai_agent_core (inte legacy ai_agent).
+    """,
     'author': 'Vertel Sverige AB',
     'website': 'https://vertel.se/apps/odoo-ai/ai_agent_transcript',
     'license': 'AGPL-3',

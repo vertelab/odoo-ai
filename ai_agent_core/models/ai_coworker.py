@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """ai.coworker — standalone, no LangGraph. Uses AgentLoop."""
 
-import json, logging, re, uuid, base64
+import json, logging, re, uuid, base64, hashlib
 from odoo import models, fields, api, _
-from odoo.exceptions import UserError
+from odoo.exceptions import UserError, ValidationError
 from odoo import SUPERUSER_ID
 
 _logger = logging.getLogger(__name__)
@@ -199,6 +199,47 @@ class AICoworker(models.Model):
     ], string='Memory Profile', default='balanced',
         help='Snabbstart: fyller i scopes/nivå. Identity-memory_profile seedar '
              'detta vid skapande.')
+
+    # ── Sökstrategi (fas 13, okf-recall-path D7/D12) ────────────────────
+    # Fälten styr HUR minnessökningen går till. De är satta på medarbetaren
+    # och inte på anropet, eftersom de beskriver en persons 
+    # arbetsstil: en detektiv vill ha bredd + hypoteser, en kirurg vill ha
+    # fem precisa träffar.
+    search_sources = fields.Many2many(
+        'ai.search.source', 'ai_coworker_search_source_rel',
+        'coworker_id', 'source_id', string='Sökkällor',
+        help='Vilka backends sökningen får slå i. Tomt = inga (session-only).')
+    search_strategy = fields.Selection([
+        ('precision', 'Precision — få, säkra träffar'),
+        ('balanced', 'Balanserad'),
+        ('recall', 'Recall — brett, tillåt brus'),
+        ('detective', 'Detektiv — brett + hypoteser'),
+    ], string='Sökstrategi', default='balanced',
+        help='Mappar till (min_score, semantic_weight, limit). Se '
+             '_search_strategy_weights().')
+    hybrid_search = fields.Boolean(
+        'Hybridsökning', default=True,
+        help='Slå samman vektor- och textsignalen i EN fråga (fas 12). '
+             'Av = endast textsignalen (BM25).')
+    hybrid_semantic_weight = fields.Float(
+        'Vikt: semantisk signal', default=0.7,
+        help='Hur mycket vektorsignalen väger mot textsignalen, 0.0–1.0. '
+             'Tvingas till 0 i drift när ingen vektor finns — en vikt utan '
+             'signal skjuter bara upp alla rader lika mycket.')
+    graph_enrichment = fields.Boolean(
+        'Grafberikning', default=False,
+        help='Traversera kunskapsgrafen efter att koncept hittats. '
+             'Degraderar med en varning om graph.executor inte svarar.')
+    graph_enrichment_hops = fields.Integer(
+        'Grafsdjup (hopp)', default=1,
+        help='Max antal hopp från ett hittat koncept.')
+    graph_enrichment_budget = fields.Integer(
+        'Grafbudget (tecken)', default=1500,
+        help='Max antal tecken grafberikningen får lägga till. Trunkeras '
+             'närmast-först.')
+    session_graph_enabled = fields.Boolean(
+        'Graf i session', default=False,
+        help='Tillåt grafen att berika även sessionskontext (dyrare).')
     learning = fields.Selection([
         ('active', 'Active — lär sig av samtal'),
         ('passive', 'Passive — injicerar bara, lär sig inte'),
@@ -424,7 +465,18 @@ class AICoworker(models.Model):
     server_action_use_wizard = fields.Boolean('Show Prompt Wizard', default=False)
 
     channel_id = fields.Many2one('discuss.channel', string='Channel')
-    chat_user_id = fields.Many2one('res.users', string='Chat Bot User', readonly=True)
+    # Ägaren för automatiska körningar (coworker-dispatch-owner D3).
+    # Redigerbart med flit: en bot-user ger isolation och är rätt default,
+    # men personligt minne tillhör människor — en människa kan sättas när
+    # erfarenheten ska tillhöra en person.
+    chat_user_id = fields.Many2one(
+        'res.users', string='Ägare (automatiska körningar)',
+        help='Vem äger coworkerns automatiska körningar (cron, mail, watch, '
+             'webhook)? Ägaren får sessionernas erfarenhet skriven till sitt '
+             'personliga minne. Standard är coworkerns bot-användare — den '
+             'ger isolation. Sätt en människa när erfarenheten ska tillhöra '
+             'en person. Systemuser accepteras aldrig.',
+        ondelete='restrict')
     allow_trigger_words = fields.Boolean('Use Activation Words')
     chat_trigger_words = fields.Text('Activation Words')
 
@@ -468,11 +520,63 @@ class AICoworker(models.Model):
     use_time_context = fields.Boolean(default=True)
     chat_history_limit = fields.Integer(default=10)
 
-    # ── Context Injection (ported from ai_agent_context) ──
-    context_injection_enabled = fields.Boolean('Enable Record Context', default=True)
+    # ── Context Injection (ai-coworker-record-context) ──
+    # Inställningarna bor nu på ai.coworker.init_type (en medarbetare kan
+    # vara både DM-assistent och kanal-bot med olika behov). Fälten här är
+    # related (readonly=False) för bakåtkompatibilitet — de läser/skriver
+    # den AKTIVA init-typens värde. Utan aktiv init-typ faller de tillbaka
+    # på sina egna defaultvärden.
+    #
+    # `use_chat_history`/`chat_history_limit` finns på BÅDA nivåerna och
+    # läses nu från init-typen med coworkern som fallback (splitten som
+    # annars gav tysta avvikelser).
+    context_injection_enabled = fields.Boolean(
+        'Enable Record Context', default=True)
     context_max_fields = fields.Integer('Max Context Fields', default=100)
-    context_include_chatter = fields.Boolean('Include Chatter History', default=True)
-    context_chatter_limit = fields.Integer('Chatter Message Limit', default=20)
+    context_include_chatter = fields.Boolean(
+        'Include Chatter History', default=True)
+    context_chatter_limit = fields.Integer(
+        'Chatter Message Limit', default=20)
+    context_max_records = fields.Integer(
+        'Max Records', default=20,
+        help='Högsta antal records vid en list-vy-markering.')
+
+    # Init-typens fältnamn → coworkerns motsvarande fältnamn.
+    # Namnen skiljer sig: init-typen använder `ai_record_*`, coworkern
+    # behåller de äldre `context_*` (bakåtkompatibilitet). Utan
+    # mappningen letar uppslaget efter samma namn på båda nivåerna och
+    # fallbacken blir alltid None.
+    _AI_RECORD_SETTING_MAP = {
+        'ai_record_injection_enabled': 'context_injection_enabled',
+        'ai_record_max_fields': 'context_max_fields',
+        'ai_record_include_chatter': 'context_include_chatter',
+        'ai_record_chatter_limit': 'context_chatter_limit',
+        'ai_record_max_records': 'context_max_records',
+    }
+
+    def _ai_record_setting(self, field_name, default=None):
+        """Lös upp en rekordkontext-inställning: init_type → coworker.
+
+        Init-typen vinner (den är per-kanal), coworkern är fallback.
+        Returnerar `default` när ingen av dem har ett värde.
+
+        Fältnamnen skiljer sig mellan nivåerna — se
+        `_AI_RECORD_SETTING_MAP`. `field_name` anges med init-typens namn.
+        """
+        self.ensure_one()
+        init = self.init_type_ids.filtered(
+            lambda it: it.init_type in ('chat', 'channel') and it.enabled)[:1]
+        if init and field_name in init._fields:
+            val = init[field_name]
+            if val not in (None, False, 0):
+                return val
+        coworker_field = self._AI_RECORD_SETTING_MAP.get(
+            field_name, field_name)
+        if coworker_field in self._fields:
+            val = self[coworker_field]
+            if val not in (None, False):
+                return val
+        return default
 
     debug = fields.Boolean('Debug Mode')
 
@@ -565,8 +669,7 @@ class AICoworker(models.Model):
                 '\n'
                 '# Exempel 3 — server action-kod (körs på valda records)\n'
                 f'coworker = {ref}\n'
-                'coworker = coworker.with_context(_ai_context_model=records._name, _ai_context_id=records.id)\n'
-                'coworker.run("Analysera " + records.display_name)\n'
+                'coworker.run("Analysera " + records.display_name, records=records)\n'
                 '\n'
                 '# OBS: för verktyg som skriver (odoo_create/odoo_write) i automatiserade flöden:\n'
                 f'result = {ref}.with_context(_ai_auto_approve=True).run("Din fråga")\n'
@@ -632,6 +735,34 @@ class AICoworker(models.Model):
     session_count = fields.Integer(compute='_compute_session_count')
     session_ids = fields.One2many('ai.coworker.session', 'coworker_id')
     session_object_count = fields.Integer(compute='_compute_session_object_count')
+
+    # ── Odoo Mind (okf-smart-buttons) ──────────────────────────────────
+    # Antal koncept som denna medarbetare ÄGER (scope `coworker`).
+    # Icke-lagrad: ai.okf.concept är ADD-only och skrivs av indexeraren —
+    # en lagrad räknare hade krävt invalidering över modellgränsen.
+    okf_concept_count = fields.Integer(
+        'Odoo Mind', compute='_compute_okf_concept_count',
+        help='Antal OKF-koncept som ägs av denna AI-medarbetare '
+             '(scope coworker).')
+
+    @api.depends()
+    def _compute_okf_concept_count(self):
+        Concept = self.env['ai.okf.concept']
+        for r in self:
+            r.okf_concept_count = Concept.search_count([
+                ('owner_coworker_id', '=', r.id),
+                ('archived', '=', False),
+                ('status', '!=', 'superseded'),
+            ])
+
+    def action_open_okf_owned_concepts(self):
+        # Smartknapp: öppna de koncept medarbetaren ÄGER (scope coworker).
+        # Namnet skiljer sig från res_config_settings.action_open_okf_concepts,
+        # som öppnar ALLA koncept (Inställningar-blocket) — samma namn på
+        # två olika frågor kolliderade i res.users-vyn (mätt 2026-09-28).
+        self.ensure_one()
+        return self.env['ai.okf.concept']._okf_action_for_owner(
+            'ai.coworker', self.id)
 
     @api.depends('session_ids')
     def _compute_session_object_count(self):
@@ -1843,16 +1974,34 @@ class AICoworker(models.Model):
                     f'{(" " + str(record.display_name)) if record else ""}'[:80],
             'user_id': self.env.user.id,
         })
+        # Prompten räknar upp namnen — men bara de första 10, och anger
+        # EXPLICIT när fler finns (ai-coworker-record-context R5: tyst
+        # trunkering får inte förekomma).
+        shown = records[:10]
+        listing = ', '.join(str(r.display_name or r.id) for r in shown) or ''
+        if len(records) > len(shown):
+            listing += f' … (+{len(records) - len(shown)} fler, se id-listan)'
         prompt = (
             f'Du har anropats som server action på {records._name}. '
-            f'Hantera/analysera record(s): '
-            + (', '.join(str(r.display_name or r.id)
-                         for r in records[:10]) or '')
+            f'Hantera/analysera record(s): {listing}'
         )
-        result = self.with_context(
-            _ai_context_model=records._name,
-            _ai_context_id=record.id if record else False,
-        ).run(prompt=prompt, session=session)
+        # Rekordkontext (ai-coworker-record-context 4c): hela recordsetet
+        # förs vidare — i dag sattes bara den FÖRSTA postens id, så agenten
+        # såg namnen men kunde inte agera på mer än en record.
+        #
+        # OBS (D1b): `_ai_context_model`/`_ai_context_id` betyder "aktuell
+        # SESSION" och läses av HITL/NATS/sessionsminnen. Vi sätter dem
+        # därför INTE till recorden — den bor på sessionen (ai_record_*).
+        try:
+            if len(records) > 1:
+                session._set_records_context(records)
+            elif record:
+                session._set_record_context(record)
+        except Exception as e:
+            _logger.warning(
+                'server_action: rekordkontext misslyckades: %s', e)
+        result = self.run(prompt=prompt, session=session,
+                          records=records, record=record)
         return result
 
     # ── Mail (init_type='mail') ──
@@ -1914,6 +2063,68 @@ class AICoworker(models.Model):
 
     # ── Chat / Channel (init_type='chat' | 'channel') ──
 
+    def _chat_record_key(self, channel=None, message=None):
+        """Identifiera vilken record en chatt-tur gäller — för cachen.
+
+        Returnerar (model, id) eller None när turen inte gäller en
+        specifik record.
+
+        Varför: cache-snabbspåret i chat() matchar frågor på ordöverlapp.
+        Utan record-identitet besvarades "berätta om recorden jag har
+        framför mig" med ett svar om en HELT ANNAN record (mätt: 0.80
+        mot "berätta om record framför mig").
+
+        Källor, i prioritetsordning:
+          1. Kanalens vy-kontext (`ai_context_*`) — satt av
+             frontend-patchen vid varje DM-tur. En DM är ingen vy, så
+             kontexten kommer från användarens AKTUELLA vy.
+          2. env.context: `_ai_context_ids`/`active_ids` (list-vy) och
+             `active_id` (form-vy).
+          3. `_detect_record()` — session/kanal/meddelande-vägarna.
+        """
+        # 1. Kanalens kontext (DM/kanal-vägen).
+        if channel:
+            try:
+                recs, _vt = channel._get_ai_context_record()
+                if len(recs) == 1:
+                    return (recs._name, recs.id)
+                if len(recs) > 1:
+                    return (recs._name, tuple(sorted(recs.ids)))
+            except Exception:
+                pass
+        # 2. Frontend-kontexten (env.context).
+        try:
+            model = (self.env.context.get('_ai_context_ids_model')
+                     or self.env.context.get('active_model'))
+            ids = (self.env.context.get('_ai_context_ids')
+                   or self.env.context.get('active_ids'))
+            if model and ids and model in self.env:
+                ids = [int(i) for i in ids]
+                if len(ids) == 1:
+                    rec = self.env[model].browse(ids[0]).exists()
+                    if rec:
+                        return (rec._name, rec.id)
+                elif len(ids) > 1:
+                    # Markering — cachen får inte återanvända ett svar som
+                    # gällde en annan uppsättning rader.
+                    return (model, tuple(sorted(ids)))
+            active_id = self.env.context.get('active_id')
+            if model and active_id and model in self.env:
+                rec = self.env[model].browse(int(active_id)).exists()
+                if rec:
+                    return (rec._name, rec.id)
+        except Exception:
+            pass
+        # 3. Session/kanal/meddelande-vägarna.
+        try:
+            rec = self._detect_record({'channel': channel,
+                                       'message': message})
+            if rec:
+                return (rec._name, rec.id)
+        except Exception:
+            pass
+        return None
+
     def chat(self, message, channel=None, bot_user=None):
         """Handle Discuss message → run AgentLoop and respond."""
         self.ensure_one()
@@ -1971,8 +2182,15 @@ class AICoworker(models.Model):
             return None
 
         # ── Snabbspår: frågan redan besvarad (samma eller annan session) ──
+        # Record-medvetenhet: om turen gäller en record får cachen bara
+        # återanvända svar som gällde SAMMA record. Annars besvaras
+        # "berätta om recorden framför mig" med en annan records innehåll
+        # (mätt: "berätta om record framför mig" fick 0.80 mot
+        # "berätta om recorden jag har framför mig").
+        record_key = self._chat_record_key(channel=channel, message=message)
         try:
-            cached = _find_cached_answer(self, msg_text)
+            cached = _find_cached_answer(self, msg_text,
+                                         record_key=record_key)
         except Exception:
             cached = None
         if cached:
@@ -1980,11 +2198,23 @@ class AICoworker(models.Model):
             _logger.info('Cache-träff: "%s" → session %s (snabb svar)',
                          msg_text[:50], source_session_id)
             # Skapa session-line för spårning + posta svaret direkt
-            sess = self.env['ai.coworker.session'].create({
+            _sess_vals = {
                 'coworker_id': self.id, 'status': 'active',
+                'init_type': 'chat',
                 'name': f'Chat: {msg_text[:50]}',
                 'user_id': bot_user.id if bot_user else 1,
-            })
+            }
+            # Bevara record-identiteten så framtida cache-sökningar kan
+            # matcha på SAMMA record (annars tappas kopplingen och nästa
+            # liknande fråga kan återigen besvaras med fel records svar).
+            if record_key:
+                _rk_model, _rk_id = record_key[0], record_key[1]
+                _sess_vals['ai_record_model'] = _rk_model
+                if isinstance(_rk_id, int):
+                    _sess_vals['ai_record_id'] = _rk_id
+                else:
+                    _sess_vals['ai_record_ids'] = list(_rk_id)
+            sess = self.env['ai.coworker.session'].create(_sess_vals)
             self.env['ai.coworker.session.line'].create({
                 'session_id': sess.id, 'sequence': 1,
                 'role': 'user', 'content': msg_text[:4000],
@@ -2029,6 +2259,7 @@ class AICoworker(models.Model):
 
         session = self.env['ai.coworker.session'].create({
             'coworker_id': self.id, 'status': 'active',
+            'init_type': 'chat',
             'name': f'Chat: {msg_text[:50]}',
             'user_id': bot_user.id if bot_user else 1,
         })
@@ -2037,11 +2268,48 @@ class AICoworker(models.Model):
             'role': 'user', 'content': msg_text[:4000],
         })
 
+        # ── Rekordkontext (ai-coworker-record-context) ──────────────────
+        # Vilken record — eller markering — gällde denna tur? Två vägar:
+        #   plural:  en list-vy med förkryssade rader (active_ids)
+        #   singular: en öppen form-vy (active_id)
+        #
+        # OBS (D1b): vi sätter INTE `_ai_context_model`/`_ai_context_id`.
+        # De nycklarna betyder "aktuell SESSION" och läses av HITL,
+        # NATS-kontexten och sessionsminnena — att sätta dem till en
+        # record kraschar HITL (ValidationError) och tystar minnena.
+        # Kanalen skickas i stället som fri parameter till run().
+        try:
+            marked = self._detect_records({'channel': channel})
+            if marked:
+                session._set_records_context(
+                    marked,
+                    max_records=self._ai_record_setting(
+                        'ai_record_max_records'),
+                    include_chatter=bool(self._ai_record_setting(
+                        'ai_record_include_chatter')))
+                _logger.info(
+                    'chat: markering %s x%d kopplad till session %s',
+                    marked._name, len(marked), session.id)
+            else:
+                rec = self._detect_record({'channel': channel,
+                                           'message': message})
+                if rec:
+                    session._set_record_context(rec)
+                    _logger.info(
+                        'chat: record %s#%s kopplad till session %s',
+                        rec._name, rec.id, session.id)
+        except Exception as e:
+            # Kontexten får aldrig fälla en chatt-körning.
+            _logger.warning('chat: rekordkontext misslyckades: %s', e)
+
         try:
             # Single-mode: DM/kanal ska svara snabbt — supervisor gör 4+ LLM-
             # anrop (router + specialister + syntes) som fastnar i rate-limit.
+            # Kanalen skickas vidare (D1b) så _detect_record() källa 4 får
+            # något att läsa — den är annars alltid None här.
             result = self.with_context(
-                ai_single_agent_run=True).run(prompt=msg_text, session=session)
+                ai_single_agent_run=True).run(
+                    prompt=msg_text, session=session, channel=channel)
             if session and channel:
                 # Sista ASSISTANT-raden (sista raden kan vara en tool-rad)
                 last_line = session.session_line_ids.filtered(
@@ -2356,6 +2624,7 @@ class AICoworker(models.Model):
             return self.buzz_channel_session_id
         session = self.env['ai.coworker.session'].sudo().create({
             'coworker_id': self.id,
+            'init_type': 'chat',
             'name': f'Buzz: {self.name}',
             'status': 'active',
             'user_id': self.env.ref('base.user_root').id,
@@ -2384,71 +2653,27 @@ class AICoworker(models.Model):
         return line
 
     def _buzz_maybe_summarize_session(self, session=None):
-        """Generera session summary när tröskeln passeras (7.4).
+        """Skriv sessionens eftermäle (D4, 4.7).
 
-        Tröskeln (antal meddelanden) är konfigurerbar via
-        ir.config_parameter ai_agent_core.buzz_summary_threshold (default 50).
-        Sammanfattningen injiceras som kontext till nya agenter via
-        _buzz_run_agent istället för hela råhistoriken.
+        Tidigare: villkorad på `orchestration_mode == 'buzz'` och en egen
+        tröskel (`ai_agent_core.buzz_summary_threshold`, default 50). En
+        vanlig chatt fick därför ALDRIG ett eftermäle — och det var den
+        enda skrivaren av `session.summary` i hela systemet.
+
+        Nu: ingen lägeskontroll, ingen egen prompt, ingen egen skrivning.
+        Anropet går till sessionens enda sammanfattare, som har egen
+        idempotens (`summary_message_count`) och egen minsta tröskel.
+        Metodnamnet behålls för att inte bryta anropare.
         """
         self.ensure_one()
-        if self.orchestration_mode != 'buzz':
-            return False
         session = session or self._buzz_ensure_channel_session()
-        threshold = int(self.env['ir.config_parameter'].sudo().get_param(
-            'ai_agent_core.buzz_summary_threshold', '50') or 50)
-        total = len(session.session_line_ids)
-        if total < threshold:
+        if not session:
             return False
-        # Sammanfatta igen först när minst hälften av tröskeln nya
-        # meddelanden tillkommit sedan förra sammanfattningen.
-        if session.summary_message_count and \
-                total - session.summary_message_count < max(threshold // 2, 1):
-            return False
-
-        lines = session.session_line_ids.sorted('sequence')
-        transcript = '\n'.join(
-            f"[{ln.role}] {ln.content[:500]}" for ln in lines[-threshold * 2:])
-        prompt = (
-            f"Sammanfatta följande konversation i ett Buzz-team. "
-            f"Fånga: ämnen, beslut, öppna frågor och agenternas roller. "
-            f"Skriv på svenska, max 300 ord.\n\n{transcript}")
         try:
-            import asyncio
-            from odoo.addons.ai_agent_core.core.provider import ProviderFactory
-            from odoo.addons.ai_agent_core.core.loop import AgentLoop, AgentConfig
-            provider, model = ProviderFactory.from_coworker(self)
-            if not provider:
-                return False
-            loop = AgentLoop(
-                provider=provider,
-                config=AgentConfig(
-                    model=model or '',
-                    system_prompt='Du sammanfattar konversationer.',
-                    max_rounds=1))
-
-            async def _run():
-                try:
-                    resp = await loop.run(prompt)
-                    return resp.text if hasattr(resp, 'text') else str(resp)
-                finally:
-                    await provider.aclose()
-
-            evloop = asyncio.new_event_loop()
-            asyncio.set_event_loop(evloop)
-            try:
-                summary = evloop.run_until_complete(_run())
-            finally:
-                evloop.close()
-            session.sudo().write({
-                'summary': summary[:4000],
-                'summary_message_count': total,
-            })
-            _logger.info('Buzz session %s sammanfattad (%d meddelanden)',
-                         session.id, total)
-            return True
+            return bool(session._write_final_summary())
         except Exception as e:
-            _logger.warning('Buzz session summary failed: %s', e)
+            _logger.warning('Eftermäle misslyckades för session %s: %s',
+                            session.id, e)
             return False
 
     def _buzz_chat(self, message, channel, msg_text, history_ctx='', depth=0):
@@ -2680,7 +2905,11 @@ class AICoworker(models.Model):
             if old_type == 'web_ui':
                 pass
             elif old_type == 'chat':
-                vals['chat_user_id'] = quest.chat_user_id.id if quest.chat_user_id else False
+                # OBS (coworker-dispatch-owner D1): här kopierades tidigare
+                # `quest.chat_user_id` hit — men det fältet skrevs aldrig av
+                # någon, så kopian var cirkulär och alltid tom.
+                # `_ensure_chat_user()` sätter båda fälten när init-typen
+                # aktiveras; den här grenen ska inte försöka igen.
                 vals['use_chat_history'] = quest.use_chat_history
                 vals['chat_history_limit'] = quest.chat_history_limit
             elif old_type == 'channel':
@@ -2788,6 +3017,13 @@ class AICoworker(models.Model):
         Gäller agenter skapade i tidigare versioner (data-XML noupdate)
         som saknar tool_ids sedan verktygen blev explicita. Användarnas
         egna anpassningar skrivs aldrig över — bara SAKNADE verktyg läggs till.
+
+        ALLTID via ORM (`agent.write({'tool_ids': [(4, id)]})`) — aldrig mot
+        `ai_agent_tool_custom_rel` direkt. Den tabellen är bara ORM:ens
+        lagringsbacke för many2many-fältet `tool_ids` på `ai.agent`; den har
+        ingen egen modell och inga hooks. En INSERT i den förbigår
+        cachen, `create_uid`/`write_date`, eventuella `@api.depends` och
+        spårbarheten — och ser ändå ut att ha lyckats.
         """
         tool_by_name = {t.name: t for t in self.env['ai.tool'].search([])}
 
@@ -2809,6 +3045,21 @@ class AICoworker(models.Model):
         _adopt('agent_odoo_business', [
             'describe_model', 'odoo_search', 'odoo_create',
             'odoo_call_method', 'odoo_write', 'odoo_unlink', 'okf_search',
+        ])
+        # Kostnadskontext på ledar-agenten ("Allmän kärna").
+        #
+        # Verktygen fanns i ai.tool (id 215/216, aktiva) men var kopplade
+        # till INGEN agent och INGEN grupp — alltså osynliga. `_session_tool_ids`
+        # bygger listan ur settings-default + agenternas tool_ids + coworkerns
+        # tool_ids, och ingen av de tre vägarna innehöll dem. Följden i drift:
+        # `cost_context_get` nekades med "Unknown or not-allowed tool" och
+        # kostnaden kunde inte bokföras på ett projekt.
+        #
+        # Ledar-agenten är rätt hemvist: kostnadskontext är en
+        # sessionsövergripande uppgift, inte en Odoo-affärsmodellfråga
+        # (Odoo-specialist) eller en research-uppgift.
+        _adopt('agent_default_core', [
+            'cost_context_get', 'cost_context_set',
         ])
         _adopt('agent_research', ['odoo_web_search', 'odoo_fetch_url'])
         _adopt('agent_invoice_partner', [
@@ -2871,6 +3122,356 @@ class AICoworker(models.Model):
                     'ai.coworker %s: tog bort %d duplikatrader för init_type=%s (behåller id %d)',
                     rec.id, len(rows) - 1, itype, keep.id)    # ── Record Context Injection (ported from ai_agent_context) ──
 
+    # ── Sökstrategi: mappning och seedning (fas 13.3, 13.4) ──────────────
+
+    @api.model
+    # ── Väg 2: separata trösklar per signal (design.md §17.4) ──────────
+    #
+    # Problemet var aldrig att en tröskel fanns — det var att DET FANNS EN
+    # och den jämförde två tal på olika skalor. `min_score` antog att den
+    # summerade poängen var en cosine-similaritet (0…1). Den är en summa av
+    # en cosine (0…1) och en onormaliserad `ts_rank` (mätt max ~0.061 mot
+    # den här korpusen). Att filtrera summan på 0.7 var att be om tomt.
+    #
+    # Lösningen är inte att hitta "den rätta" siffran. Det finns ingen — de
+    # två signalerna har olika enheter. Lösningen är att ge varje signal sin
+    # egen tröskel, i sin egen enhet.
+    #
+    # MÄTT mot `social` 2026-09-14, modell embed-multilingual-v3.0:
+    #
+    #   fråga                          bästa koncept   rätt topp-1?
+    #   Vem är VD?                        0.5139          ✓
+    #   vilken roll har användaren        0.4848          ✓
+    #   Azure Interior kund               0.7120          ✓
+    #   kontaktuppgifter till kunden      0.5359          ✓
+    #   zzzznonsense qwerty               0.3586          BRUS
+    #   asdfghjkl                         0.3910          BRUS
+    #
+    #   Verkliga frågor: 0.4848–0.7120.  Brus: 0.3586–0.3910.
+    #   → GAP +0.0938. 4/4 rätt topp-1.
+    #
+    # Cosine-golvet är alltså ~0.39 (under det är allt brus), inte 0.
+    # `ts_rank` når samtidigt ~0.061 för en träff och ~1e-20 (golv) för
+    # ingen träff — därför är dess användbara tröskel ~0.01, inte 0.15.
+    #
+    # Trösklarna nedan bor i KOD, inte i fält per coworker. Fälten
+    # `min_ts_rank`/`min_cosine` på ai.coworker finns ÄNNU INTE — den här
+    # kommentaren påstod det en gång, vilket är exakt §15-mönstret ("ett
+    # fält som beskrivs men inte byggts"). Att göra dem sättbara är rätt
+    # nästa steg, men tills dess ska texten inte lova mer än koden håller.
+    #
+    # Det som INTE är sättbart är den enskilt viktigaste begränsningen:
+    # en kund med en egen korpus kan inte justera sin tröskel utan en
+    # kodändring.
+    #
+    # `min_score` behålls i signaturen som ett HÄRLETT värde för
+    # bakåtkompatibilitet med ai.search.source-kontraktet, men används
+    # inte som filter.
+    #
+    # EN VIKTIG ÄRLIGHET: dessa tal är mätta mot 4 unika koncept i en
+    # testkorpus. De är rätt ORDNING och rätt storleksordning, men de måste
+    # kalibreras om när korpusen växer — särskilt `min_cosine`, eftersom
+    # ett större korpus alltid innehåller något som ligger nära.
+    def _search_thresholds(self, strategy=None):
+        """Mappa strategi → trösklar PER SIGNAL (väg 2, §17.4).
+
+        Returns:
+            dict med min_cosine, min_ts_rank, semantic_weight, limit
+            och det härledda min_score (för loggning/bakåtkompatibilitet).
+        """
+        table = {
+            # få, säkra träffar — vektorn får styra hårt
+            'precision': {'min_cosine': 0.48, 'min_ts_rank': 0.030,
+                          'semantic_weight': 0.8, 'limit': 5},
+            'balanced': {'min_cosine': 0.41, 'min_ts_rank': 0.010,
+                         'semantic_weight': 0.7, 'limit': 10},
+            # brett, tillåt brus — textsignalen får bära
+            'recall': {'min_cosine': 0.39, 'min_ts_rank': 0.001,
+                       'semantic_weight': 0.5, 'limit': 20},
+            'detective': {'min_cosine': 0.39, 'min_ts_rank': 1e-20,
+                          'semantic_weight': 0.4, 'limit': 15},
+        }
+        params = dict(table.get(strategy or 'balanced', table['balanced']))
+        # Härlett värde: den gamla ytan. Inte ett filter — en rapport.
+        params['min_score'] = params['min_cosine']
+        return params
+
+    def _search_strategy_weights(self, strategy=None):
+        """Mappa strategi → (min_score, semantic_weight, limit).
+
+        Behålls som namn för bakåtkompatibilitet (anropas från
+        `_apply_search_profile` och testerna). Delegerar till
+        `_search_thresholds` så att det bara finns EN sanning om
+        trösklarna.
+        """
+        return self._search_thresholds(strategy)
+
+    def _legacy_strategy_weights(self, strategy=None):
+        """DEN GAMLA TABELLEN — kvar endast som historik, kopplas INTE in.
+
+        `min_score` antog en gemensam skala för två signaler med olika
+        enheter. Se `_search_thresholds` för den mätta ersättaren, och
+        design.md §17 för mätningen som fällde den.
+
+        Behålls för att den bär historiken i sig: nästa gång någon vill
+        "bara höja tröskeln" ska det synas att det redan provats.
+        """
+        table = {
+            'precision': {'min_score': 0.7, 'semantic_weight': 0.8,
+                          'limit': 5},
+            'balanced': {'min_score': 0.4, 'semantic_weight': 0.7,
+                         'limit': 10},
+            'recall': {'min_score': 0.2, 'semantic_weight': 0.5,
+                       'limit': 20},
+            'detective': {'min_score': 0.15, 'semantic_weight': 0.4,
+                          'limit': 15},
+        }
+        return dict(table.get(strategy or 'balanced', table['balanced']))
+
+    @api.model
+    def _search_profile_presets(self, profile):
+        """Mappa memory_profile → sökfältens värden (fas 13.3).
+
+        Returnerar bara de nycklar som profilen faktiskt säger något om;
+        resten behåller sina defaults. `session_only` sätter medvetet
+        `hybrid_search=False` och tomma källor: en session-only-medarbetare
+        ska inte söka i ett beständigt minne alls.
+        """
+        _src = lambda codes: [(6, 0, self.env['ai.search.source']
+                               .search([('code', 'in', codes)]).ids)]
+        presets = {
+            'hermes': {
+                'search_sources': _src(
+                    ['okf_concept', 'ai_memory', 'graph']),
+                'search_strategy': 'detective',
+                'hybrid_search': True,
+                'graph_enrichment': True,
+                'graph_enrichment_hops': 2,
+            },
+            'balanced': {
+                'search_sources': _src(['okf_concept', 'graph']),
+                'search_strategy': 'precision',
+                'hybrid_search': True,
+                'graph_enrichment': True,
+                'graph_enrichment_hops': 1,
+            },
+            'session_only': {
+                'search_sources': [(5, 0, 0)],  # rensa
+                'search_strategy': 'balanced',
+                'hybrid_search': False,
+                'graph_enrichment': False,
+            },
+        }
+        return presets.get(profile or 'balanced', presets['balanced'])
+
+    def _apply_search_profile(self, profile=None, force=False):
+        """Seed sökfälten från `memory_profile`.
+
+        `force=False` (default) rör bara fält användaren inte satt själv:
+        källor töms inte om de redan valts, och en explicit strategi skrivs
+        inte över. `force=True` används när profilen byts medvetet i UI:t.
+        """
+        self.ensure_one()
+        profile = profile or self.memory_profile
+        vals = self._search_profile_presets(profile)
+        if not force:
+            if self.search_sources:
+                vals.pop('search_sources', None)
+            # defaultvärdet 'balanced' betyder "inte vald" — bara ett
+            # uttalat val ska skyddas
+            if self.search_strategy and self.search_strategy != 'balanced':
+                vals.pop('search_strategy', None)
+        self.write(vals)
+        return vals
+
+    # ── Multi-source recall (fas 13.5–13.9) ──────────────────────────────
+
+    def _search_backends(self):
+        """Dispatch-tabell: backend-nyckel → anropbar funktion.
+
+        EN sanning om vilka backends som finns. `ai.search.source.backend`
+        valideras mot samma nycklar, så en källa kan inte peka på en
+        backend som ingen kan köra.
+        """
+        Okf = self.env['ai.okf.concept']
+
+        def _okf(query, scope, owner_id, params, **kw):
+            return Okf._okf_search(
+                query, scope=scope, owner_id=owner_id,
+                limit=params['limit'],
+                hybrid=kw.get('hybrid', True),
+                semantic_weight=params['semantic_weight'],
+                # VÄG 2 (§17.4): trösklarna är per signal och skickas med
+                # som de är. `_okf_search` applicerar dem som
+                # (cosine >= min_cosine) OR (ts_rank >= min_ts_rank) —
+                # ett urval, medan `score` fortfarande bär ordningen.
+                min_cosine=params.get('min_cosine'),
+                min_ts_rank=params.get('min_ts_rank'))
+
+        return {'okf_concept': _okf}
+
+    def _recall_from_source(self, source, query, scope, owner_id, params,
+                            **kw):
+        """Anropa EN backend. Fel isoleras per källa (13.6).
+
+        Returnerar en lista av tupler `(record, score)`. En källa som inte
+        är inkopplad returnerar tomt med en `info`-rad — den ska INTE se ut
+        som ett fel, men inte heller som en sökning som gav noll träffar.
+        """
+        backends = self._search_backends()
+        if source.backend not in backends:
+            _logger.info(
+                'Sökkällan %s är inte inkopplad (backend=%s) — hoppar över.',
+                source.code, source.backend)
+            return []
+        if not source.is_wired:
+            _logger.info(
+                'Sökkällan %s är en katalogpost utan inkoppling: %s',
+                source.code, source.wired_note or 'ingen anledning angiven')
+            return []
+        try:
+            records = backends[source.backend](query, scope, owner_id,
+                                               params, **kw)
+        except Exception as e:
+            # ALDRIG `pass`. En felande källa måste synas.
+            _logger.warning(
+                'Sökkällan %s misslyckades (query=%r): %s',
+                source.code, query, e, exc_info=True)
+            return []
+        return [(r, params['min_score']) for r in records]
+
+    def _graph_enrich(self, records, budget=None, hops=None):
+        """Berika hittade koncept med kunskapsgrafen (13.8, 13.9).
+
+        Returnerar en text som får läggas till injektionen. Degraderar med
+        en varning — aldrig tyst — om grafen inte svarar. Grafen är
+        read-only: `cypher()` vägrar skrivoperationer.
+        """
+        if not records:
+            return ''
+        budget = budget if budget is not None else self.graph_enrichment_budget
+        hops = hops if hops is not None else self.graph_enrichment_hops
+        keys = [r.concept_key for r in records if r.concept_key][:5]
+        if not keys:
+            return ''
+        try:
+            # `graph.executor.cypher()` deklarerar EN resultatkolumn
+            # (`AS result (r agtype)`). En Cypher-fråga som RETURNerar två
+            # kolumner får "return row and column definition list do not
+            # match", och agtype stödjer inte `+`/`coalesce` mot text.
+            # Vi RETURNerar därför HELA noden (en kolumn) och plockar ut
+            # name/summary i Python ur den parsade mappen.
+            Executor = self.env['graph.executor']
+            keys_lit = ', '.join(
+                "'%s'" % k.replace('\\', '\\\\').replace("'", "\\'")
+                for k in keys)
+            rows = Executor.cypher(
+                "MATCH (n)-[r*1..%d]-(m) WHERE n.name IN [%s] "
+                "RETURN m LIMIT 20" % (max(1, int(hops)), keys_lit),
+                read_only=True, timeout=5)
+        except Exception as e:
+            _logger.warning(
+                'Grafberikning degraderade (hops=%s): %s', hops, e,
+                exc_info=True)
+            return ''
+        out = []
+        used = 0
+        for row in rows or []:
+            # cypher() parsar agtype-cellen: en nod blir en dict med sina
+            # properties (name, summary, ...) — eller en sträng om noden
+            # inte har några.
+            if isinstance(row, dict):
+                name = row.get('name') or '?'
+                summary = (row.get('summary') or '')[:200]
+            else:
+                name, summary = str(row), ''
+            line = '- %s: %s' % (name, summary) if summary else '- %s' % name
+            # trunkera närmast-först: rader i den ordning grafen gav dem
+            if used + len(line) > budget:
+                break
+            out.append(line)
+            used += len(line)
+        if not out:
+            return ''
+        return '\nGRAF-KONTEXT:\n' + '\n'.join(out)
+
+    def _multi_source_recall(self, query, scope=None, owner_id=None,
+                             user=None, strategy=None, sources=None,
+                             **kw):
+        """Sök över flera backends och slå samman resultaten (13.5).
+
+        Dedup sker över KÄLLOR (13.5): samma koncept kan hittas av flera
+        backends. Högsta score vinner. Inom en källa görs dedupen redan i
+        SQL (fas 12.6).
+
+        Returns:
+            (records, diagnostics) där records är dedupnade och sorterade
+            på score, och diagnostics är en dict för loggning/diagnos.
+        """
+        self.ensure_one()
+        # Ägaruppslag (odoo-mind-memory-scope-isolation): den publika
+        # recall-ytan löser ägaren ur scopet när anroparen inte angett
+        # en. Den låga nivån (`_okf_search`) förblir strikt — den
+        # kastar hellre än att bredda tyst.
+        if owner_id is None and scope:
+            if scope == 'company':
+                owner_id = self.company_id.id or self.env.company.id
+            elif scope == 'personal':
+                owner_id = (user or self.env.user).id
+            elif scope == 'coworker':
+                owner_id = self.id
+        strategy = strategy or self.search_strategy or 'balanced'
+        params = self._search_strategy_weights(strategy)
+        if self.hybrid_semantic_weight:
+            params['semantic_weight'] = min(
+                1.0, max(0.0, self.hybrid_semantic_weight))
+        sources = sources if sources is not None else self.search_sources
+        sources = sources.filtered('active')
+        if not sources:
+            _logger.info(
+                'Multi-source recall utan aktiva källor (medarbetare=%s, '
+                'strategi=%s) — ärligt tomt.', self.id, strategy)
+            return self.env['ai.okf.concept'].browse(), {
+                'strategy': strategy, 'sources': [], 'per_source': {},
+                'empty_reason': 'inga aktiva källor'}
+
+        best = {}          # record-id → (record, score)
+        per_source = {}
+        for source in sources:
+            hits = self._recall_from_source(
+                source, query, scope, owner_id, params,
+                hybrid=self.hybrid_search, **kw)
+            per_source[source.code] = len(hits)
+            for record, score in hits:
+                prev = best.get(record.id)
+                if prev is None or score > prev[1]:
+                    best[record.id] = (record, score)
+
+        ranked = sorted(best.values(), key=lambda t: t[1], reverse=True)
+        # Trösklarna tillämpas INNE i `_okf_search`, per signal (väg 2,
+        # §17.4) — inte här. Skälet är att bara SQL-lagret ser de två
+        # signalerna var för sig: när de väl slagits samman till en
+        # viktad summa går cosine och ts_rank inte att skilja åt längre,
+        # och då är man tillbaka i att jämföra två enheter mot en siffra.
+        #
+        # Historik: den här raden var tidigare ett `min_score`-filter som
+        # medvetet INTE kopplades in, eftersom trösklarna (0.15–0.7) var
+        # formulerade för cosine medan ts_rank når ~0.06 — varje strategi
+        # hade blivit TYST TOM, inte svag utan blind. Väg 2 löser det
+        # genom att ge varje signal sin egen tröskel i sin egen enhet.
+        # `limit` bär fortfarande budgeten.
+        ranked = ranked[:params['limit']]
+        records = self.env['ai.okf.concept'].browse(
+            [r.id for r, _s in ranked])
+        return records, {
+            'strategy': strategy,
+            'params': params,
+            'sources': sources.mapped('code'),
+            'per_source': per_source,
+            'deduped': len(best),
+            'returned': len(records),
+        }
+
     def _build_injection_prompt(self, user=None, agent=None, prompt='',
                                 record=None, max_chars=6000):
         """Gemensam injiceringsfunktion (agent-memory-governance 3.x).
@@ -2926,47 +3527,59 @@ class AICoworker(models.Model):
         # 2b. Tid- och schemakontext (agent-memory-governance D8b)
         # Aktuell tid + användarens möten (calendar.event) + arbetsschema
         # (hr.employee → contract → resource.calendar). Best-effort.
-        try:
-            time_block = self._build_time_schedule_block(user)
-            if time_block:
-                parts.append(time_block)
-        except Exception as e:
-            _logger.warning('Tid/schema-block misslyckades: %s', e)
+        #
+        # Flaggan `use_time_context` styrde tidigare INGENTING — blocket
+        # anropades ovillkorligt (ai-coworker-record-context 7.1). Ett fält
+        # som ser ut att styra något men inte gör det är värre än inget.
+        if self.use_time_context:
+            try:
+                time_block = self._build_time_schedule_block(user)
+                if time_block:
+                    parts.append(time_block)
+            except Exception as e:
+                _logger.warning('Tid/schema-block misslyckades: %s', e)
 
         # 3. Rekordkontext (L1-L3 från tidigare _extra_context) — aldrig
         # avbryt hela injektionen; rekordkontext är best-effort.
         if self.context_injection_enabled:
             try:
-                ch_ctx = self._get_channel_context()
-                if ch_ctx:
-                    parts.append(
-                        f"## User Context\n"
-                        f"The user is currently viewing: {ch_ctx['model']}"
-                        + (f" (record ID: {ch_ctx['record_id']})" if ch_ctx.get('record_id') else "")
-                        + (f" in {ch_ctx['view_type']} view.\n" if ch_ctx.get('view_type') else ".\n")
-                    )
-                if record is None:
-                    record = self._get_ai_context_record() or self._get_session_context_record()
-                if record and record.exists():
-                    parts.append(
-                        f"## Current Record: {record._name} (ID: {record.id})\n"
-                        f"You are interacting within this Odoo record. "
-                        f"Use the field data below to answer questions about it.\n"
-                    )
-                    json_data = record._ai_serialize_fields_data(
-                        max_fields=self.context_max_fields)
-                    parts.append(f"### Record Fields\n```json\n{json_data}\n```\n")
-                    if self.context_include_chatter and hasattr(
-                            record, '_ai_serialize_messages_data'):
-                        chatter = record._ai_serialize_messages_data()
-                        if chatter:
-                            clines = chatter.split('\n')
-                            if len(clines) > self.context_chatter_limit:
-                                clines = clines[-self.context_chatter_limit:]
-                                chatter = '\n'.join(clines) + \
-                                    "\n(older messages omitted)"
-                            parts.append(
-                                f"### Chatter History (oldest -> newest)\n{chatter}\n")
+                # Sessionens EGEN rekordkontext är kanonisk (D1): den sattes
+                # när turen skapades och bär frontendens osparade fältvärden.
+                # Faller tillbaka på detektering för vägar som inte satte den.
+                _sess = self._get_context_session()
+                if _sess and _sess.ai_record_model:
+                    self._inject_session_record(parts, _sess)
+                else:
+                    ch_ctx = self._get_channel_context()
+                    if ch_ctx:
+                        parts.append(
+                            f"## User Context\n"
+                            f"The user is currently viewing: {ch_ctx['model']}"
+                            + (f" (record ID: {ch_ctx['record_id']})" if ch_ctx.get('record_id') else "")
+                            + (f" in {ch_ctx['view_type']} view.\n" if ch_ctx.get('view_type') else ".\n")
+                        )
+                    if record is None:
+                        record = self._get_ai_context_record() or self._get_session_context_record()
+                    if record and record.exists():
+                        parts.append(
+                            f"## Current Record: {record._name} (ID: {record.id})\n"
+                            f"You are interacting within this Odoo record. "
+                            f"Use the field data below to answer questions about it.\n"
+                        )
+                        json_data = record._ai_serialize_fields_data(
+                            max_fields=self.context_max_fields)
+                        parts.append(f"### Record Fields\n```json\n{json_data}\n```\n")
+                        if self.context_include_chatter and hasattr(
+                                record, '_ai_serialize_messages_data'):
+                            chatter = record._ai_serialize_messages_data()
+                            if chatter:
+                                clines = chatter.split('\n')
+                                if len(clines) > self.context_chatter_limit:
+                                    clines = clines[-self.context_chatter_limit:]
+                                    chatter = '\n'.join(clines) + \
+                                        "\n(older messages omitted)"
+                                parts.append(
+                                    f"### Chatter History (oldest -> newest)\n{chatter}\n")
             except Exception as e:
                 _logger.error('Rekordkontext misslyckades: %s', e)
 
@@ -2995,6 +3608,13 @@ class AICoworker(models.Model):
         # 4-6. Minne per scope
         if 'ai.okf.concept' in self.env and scope_codes:
             company_id = self.company_id.id or self.env.company.id
+            # Sökstrategin styr L1 (fas 13.10). Vikten kommer från
+            # medarbetaren när den är satt, annars från strategin.
+            strategy = self.search_strategy or 'balanced'
+            s_params = self._search_strategy_weights(strategy)
+            if self.hybrid_semantic_weight:
+                s_params['semantic_weight'] = min(
+                    1.0, max(0.0, self.hybrid_semantic_weight))
             for scope in ('company', 'personal', 'coworker'):
                 if scope not in scope_codes:
                     continue
@@ -3013,6 +3633,9 @@ class AICoworker(models.Model):
                     block = self.env['ai.okf.concept']._okf_build_system_prompt_block(
                         scope, owner_id, query=prompt or self.description,
                         max_chars=min(budget // 2, 2000),
+                        semantic_weight=s_params['semantic_weight'],
+                        limit=s_params['limit'],
+                        hybrid=self.hybrid_search,
                         injection_level={
                             'L0': 'summary_only',
                             'L1': 'summary_and_key',
@@ -3023,7 +3646,32 @@ class AICoworker(models.Model):
                         parts.append(block)
                         budget -= len(block)
                 except Exception as e:
-                    _logger.debug('Injection block %s misslyckades: %s', scope, e)
+                    # `warning` + traceback, inte `debug`: en injektion som
+                    # tystnar är exakt mönstret fas 4–6 städade bort.
+                    _logger.warning(
+                        'Injection block %s misslyckades: %s', scope, e,
+                        exc_info=True)
+
+        # 6b. Grafberikning (fas 13.8). Egen signal, eget budgettak —
+        # den får inte äta av minnesbudgeten.
+        if self.graph_enrichment and 'ai.okf.concept' in self.env:
+            try:
+                scope = 'company' if 'company' in scope_codes else None
+                if scope:
+                    owner_id = self.company_id.id or self.env.company.id
+                    hits, diag = self._multi_source_recall(
+                        prompt or self.description or '', scope=scope,
+                        owner_id=owner_id, user=user,
+                        sources=self.search_sources.filtered(
+                            lambda s: s.backend == 'okf_concept'))
+                    if hits:
+                        graph_text = self._graph_enrich(hits)
+                        if graph_text:
+                            parts.append(graph_text)
+                            budget -= len(graph_text)
+            except Exception as e:
+                _logger.warning('Grafberikning misslyckades: %s', e,
+                                exc_info=True)
 
         # 6. Mission/values
         if self.use_company_info:
@@ -3171,8 +3819,70 @@ class AICoworker(models.Model):
         inj = self._build_injection_prompt(user=self.env.user, prompt='')
         return (res + '\n\n' + inj).strip() if inj else res
 
+    def _inject_session_record(self, parts, sess):
+        """Bygg promptblock för sessionens rekordkontext (singular/plural).
+
+        Singular (form-vy): recordens fält + chatter.
+        Plural (list-vy): markeringens id:n EXPLICIT + fältprojektion.
+        Chatter utesluts för samlingar (R7: 35 x 20 meddelanden spränger
+        prompten) om det inte slagits på explicit.
+
+        Id:na exponeras explicit så att agenten kan använda dem i
+        verktygsanrop utan att gissa — specen namnger inga verktyg
+        (D8: verktygsuppsättningen varierar över tid).
+        """
+        model = sess.ai_record_model
+        ids = sess.ai_record_ids or []
+        if ids:
+            # ── Plural: markering från list-vy ──
+            parts.append(
+                f"## Selected Records: {model} ({len(ids)} rows)\n"
+                f"The user has these rows selected in a list view. "
+                f"Use the ids below when acting on them.\n"
+                f"### Record IDs\n```json\n{json.dumps(ids)}\n```\n"
+            )
+            if sess.ai_records_json:
+                parts.append(
+                    f"### Record Fields\n```json\n"
+                    f"{sess.ai_records_json}\n```\n")
+            if sess.ai_record_chatter:
+                parts.append(
+                    f"### Chatter History (oldest -> newest)\n"
+                    f"{sess.ai_record_chatter}\n")
+            return
+        # ── Singular: en record från form-vy ──
+        parts.append(
+            f"## Current Record: {model} (ID: {sess.ai_record_id})\n"
+            f"You are interacting within this Odoo record. "
+            f"Use the field data below to answer questions about it.\n"
+        )
+        if sess.ai_record_json:
+            parts.append(
+                f"### Record Fields\n```json\n{sess.ai_record_json}\n```\n")
+        if sess.ai_record_chatter:
+            chatter = sess.ai_record_chatter
+            _limit = self._ai_record_setting(
+                'ai_record_chatter_limit', self.context_chatter_limit)
+            if _limit:
+                clines = chatter.split('\n')
+                if len(clines) > _limit:
+                    clines = clines[-_limit:]
+                    chatter = '\n'.join(clines) + \
+                        "\n(older messages omitted)"
+            parts.append(
+                f"### Chatter History (oldest -> newest)\n{chatter}\n")
+
     def _detect_record(self, kwargs):
-        """Detect context record from available sources."""
+        """Detect context record from available sources.
+
+        Returnerar EN record (singular). För list-vy-markeringar, se
+        `_detect_records()` — den returnerar ett recordset.
+
+        Källa 3 (`context_record_model` ur env.context) är avvecklad
+        (ai-coworker-record-context D1c): den var en tredje
+        namnkonvention för samma sak. Se `_detect_records()` för den
+        kanoniska vägen.
+        """
         # 1. Direct record parameter
         r = kwargs.get('record')
         if r and hasattr(r, 'exists') and r.exists():
@@ -3181,28 +3891,43 @@ class AICoworker(models.Model):
         records = kwargs.get('records')
         if records and len(records) > 0:
             return records[0]
-        # 3. env.context (form button)
-        ctx_m = self.env.context.get('context_record_model')
-        ctx_id = self.env.context.get('context_record_id')
-        if ctx_m and ctx_id:
+        # 3. Sessionens egen rekordkontext (kanonisk bärare, D1)
+        sess = self._get_context_session()
+        if sess and sess.ai_record_model and sess.ai_record_id:
             try:
-                r = self.env[ctx_m].browse(int(ctx_id))
+                r = self.env[sess.ai_record_model].browse(
+                    int(sess.ai_record_id))
                 if r.exists():
                     return r
             except Exception:
                 pass
-        # 4. Channel context
+        # 4. Channel context — den INKOMMANDE kanalen (D1b), inte
+        #    self.channel_id.
+        #
+        #    Två vägar, i prioritetsordning:
+        #    a) Kanalens EGEN vy-kontext (ai_context_*), satt av
+        #       frontend-patchen vid varje DM-tur. Detta är den kanoniska
+        #       vägen för DM/kanal — en DM är ingen vy, så kontexten måste
+        #       komma från användarens AKTUELLA vy via meddelandet.
+        #    b) Kanalens coworker-koppling → sessionens record (äldre väg).
         ch = kwargs.get('channel')
         if ch:
-            ch_model = getattr(ch, 'ai_context_model', False)
-            ch_rid = getattr(ch, 'ai_context_record_id', False)
-            if ch_model and ch_rid:
-                try:
-                    r = self.env[ch_model].browse(int(ch_rid))
+            try:
+                recs, _vt = ch._get_ai_context_record()
+                if recs:
+                    return recs[0]
+            except Exception:
+                pass
+            try:
+                ch_sess = self._get_session_for_channel(ch)
+                if ch_sess and ch_sess.ai_record_model \
+                        and ch_sess.ai_record_id:
+                    r = self.env[ch_sess.ai_record_model].browse(
+                        int(ch_sess.ai_record_id))
                     if r.exists():
                         return r
-                except Exception:
-                    pass
+            except Exception:
+                pass
         # 5. Message model/res_id
         msg = kwargs.get('message')
         if msg:
@@ -3227,18 +3952,112 @@ class AICoworker(models.Model):
                     return obj.object_id
         return None
 
-    def _get_channel_context(self):
-        """Get user view context from quest's linked discuss channel."""
-        channel = self.channel_id
-        if not channel:
+    def _detect_records(self, kwargs):
+        """Detect en MARKERING (plural) från list-vy.
+
+        Returnerar ett recordset — eller tomt recordset när turen gällde
+        en enskild record (då ansvarar `_detect_record()`).
+
+        Källor, i prioritetsordning:
+          1. Kanalens vy-kontext (`ai_context_*`), satt av frontend-patchen
+             vid varje DM-tur (en DM är ingen vy — kontexten kommer från
+             användarens AKTUELLA vy via meddelandet).
+          2. `active_ids`/`_ai_context_ids` ur env.context, satt av
+             frontend när användaren står i en list-vy.
+        Samma mönster som server actions `records`.
+
+        Vid markering över flera modeller returneras INGET recordset —
+        beteendet är explicit (avvisning), aldrig en tyst delmängd (R4).
+        """
+        empty = self.env[self._name].browse(0)
+
+        # 1. Kanalens kontext (DM/kanal-vägen).
+        ch = kwargs.get('channel') if kwargs else None
+        if ch:
+            try:
+                recs, _vt = ch._get_ai_context_record()
+                if len(recs) > 1:
+                    return recs
+            except Exception:
+                pass
+
+        # 2. env.context (server actions, webb-UI).
+        model = (self.env.context.get('_ai_context_ids_model')
+                 or self.env.context.get('active_model'))
+        ids = (self.env.context.get('_ai_context_ids')
+               or self.env.context.get('active_ids'))
+        if not model or not ids:
+            return empty
+        if model not in self.env:
+            return empty
+        try:
+            ids = [int(i) for i in ids]
+        except (TypeError, ValueError):
+            return empty
+        if len(ids) < 2:
+            # En rad markerad är singular — låt _detect_record() hantera den.
+            return empty
+        try:
+            recs = self.env[model].browse(ids).exists()
+        except Exception as e:
+            _logger.warning('_detect_records: kunde inte browsa %s: %s',
+                            model, e)
+            return empty
+        return recs
+
+    def _get_session_for_channel(self, channel):
+        """Aktiv session för en kanal — via kanalens coworker-koppling.
+
+        Ersätter den gamla heuristiken (matcha bot-partner mot
+        kanalmedlemmar). Returnerar tomt recordset när ingen finns.
+        """
+        if not channel or not channel.exists():
+            return self.env['ai.coworker.session'].browse(0)
+        coworkers = channel.ai_coworker_ids | channel.ai_coworker_id
+        if not coworkers:
+            return self.env['ai.coworker.session'].browse(0)
+        return self.env['ai.coworker.session'].search([
+            ('coworker_id', 'in', coworkers.ids),
+            ('status', '=', 'active'),
+        ], limit=1, order='create_date desc')
+
+    def _get_context_session(self):
+        """Sessionen ur env.context — det KANONISKA paret (D1b).
+
+        `_ai_context_model`/`_ai_context_id` betyder "aktuell session",
+        inte "aktuell record". Nycklarna läses även av HITL, NATS- och
+        sessionsminnes-vägarna — att sätta dem till en record kraschar
+        HITL och tystar minnena.
+        """
+        if self.env.context.get('_ai_context_model') \
+                != 'ai.coworker.session':
+            return self.env['ai.coworker.session'].browse(0)
+        sid = self.env.context.get('_ai_context_id') or 0
+        if not sid:
+            return self.env['ai.coworker.session'].browse(0)
+        return self.env['ai.coworker.session'].browse(int(sid)).exists()
+
+    def _get_channel_context(self, channel=None):
+        """Get user view context from the INCOMING discuss channel.
+
+        Läser den inkommande kanalen (D1b) — inte `self.channel_id`, som
+        är coworkerns LÄNKADE kanal och ofta tom för en DM-assistent.
+
+        Kontexten kommer från kanalens aktiva session (ai_record_*), inte
+        från ett `ai_context_model`-fält på kanalen (som inte existerar i
+        drift — ai_agent_context är oinstallerad).
+        """
+        channel = channel or self.channel_id
+        if not channel or not channel.exists():
             return None
-        model = getattr(channel, 'ai_context_model', False)
-        if not model:
+        sess = self._get_session_for_channel(channel)
+        if not sess or not sess.ai_record_model:
             return None
         return {
-            'model': model,
-            'record_id': getattr(channel, 'ai_context_record_id', False),
-            'view_type': getattr(channel, 'ai_context_view_type', False),
+            'model': sess.ai_record_model,
+            'record_id': sess.ai_record_id or False,
+            'record_ids': sess.ai_record_ids or False,
+            'view_type': 'form' if sess.ai_record_id else 'list',
         }
 
     def _get_ai_context_record(self):
@@ -3590,6 +4409,54 @@ class AICoworker(models.Model):
         except Exception:
             return False
 
+    def _normalize_concept_key(self, summary, scope, llm_key=None):
+        """Normalisera nyckeln för ett lärt koncept (D6, 5.3–5.5).
+
+        Nyckeln avgör om en ny fakta ska ERSÄTTA en tidigare version
+        (`UNIQUE(scope, concept_key, version)`) eller bli ett nytt koncept.
+        Den är därför det känsligaste fältet i lärandet.
+
+        Tre steg:
+          1. LLM:ens semantiska `key` om den finns och är användbar.
+          2. Annars: deterministisk hash av det normaliserade kärnfaktumet.
+          3. Validering/normalisering mot `UNIQUE(scope, concept_key, version)`.
+
+        ALDRIG längd, index eller tidsstämpel — den gamla nyckeln var
+        `len(summary[:40])`, vilket för varje sammanfattning längre än 40
+        tecken alltid blev 40. Alla koncept i samma session kollapsade då
+        till EN versionskedja och skrev över varandra.
+        """
+        scope = (scope or 'personal').strip().lower()
+
+        # 1. LLM:ens nyckel — normaliserad och kontrollerad.
+        key = self._sanitize_concept_key(llm_key) if llm_key else None
+        if key:
+            return f'{scope}.{key}'
+
+        # 2. Deterministisk fallback: normaliserad hash av kärnfaktumet.
+        #    Identiska fakta ger samma nyckel (dedup), olika fakta olika.
+        digest = hashlib.sha1(
+            (summary or '').strip().lower().encode('utf-8')).hexdigest()[:12]
+        return f'{scope}.fakta.{digest}'
+
+    @staticmethod
+    def _sanitize_concept_key(key):
+        """Gör en LLM-nyckel till ett giltigt `concept_key`-segment (5.5).
+
+        Returnerar None om inget användbart återstår — då tar hashen vid.
+        Kravet är gemener, ASCII och punktseparerade segment.
+        """
+        if not key or not isinstance(key, str):
+            return None
+        key = key.strip().lower()
+        # Behåll bokstäver, siffror, punkt, bindestreck och understreck.
+        key = re.sub(r'[^a-z0-9._-]+', '.', key)
+        key = re.sub(r'\.{2,}', '.', key).strip('._-')
+        if len(key) < 3:
+            return None
+        # Undvik att en nyckel blir så lång att den spränger indexet.
+        return key[:120]
+
     def _learn_from_session(self, session):
         """Hermes-lärande (agent-memory-governance 4.x).
 
@@ -3606,10 +4473,29 @@ class AICoworker(models.Model):
         if 'ai.okf.concept' not in self.env:
             return 0
 
-        # Samla konversationen
+        # Samla underlaget. Eftermälet är sessionens råvara (session-close
+        # krav 6): det täcker HELA sessionen, medan ett råfönster av de
+        # sista 40 raderna tappar allt som hände i början av en lång
+        # session. Saknas eftermälet skrivs ett först — att lära på en
+        # tillfällig radsvans vore tyst lärande på fel underlag.
+        summary = session.summary or session._write_final_summary()
         lines = session.session_line_ids.sorted('sequence')
-        conversation = '\n'.join(
-            f"[{l.role}] {l.content[:500]}" for l in lines[-40:])
+        if summary:
+            conversation = summary
+            # Komplettera med de senaste råraderna endast om eftermälet är
+            # kort — annars riskerar de att dominera reflektionen.
+            if len(summary) < 400:
+                tail = '\n'.join(
+                    f"[{l.role}] {l.content[:300]}"
+                    for l in lines[-10:] if l.content)
+                if tail:
+                    conversation = f"{summary}\n\n--- SENASTE RÅRADER ---\n{tail}"
+        else:
+            # Inget eftermäle kunde skrivas (för kort session, eller LLM-fel).
+            _logger.info(
+                'Lärande: session %s saknar eftermäle — hoppar över '
+                '(lär inte på råsvans)', session.id)
+            return 0
         if not conversation.strip():
             return 0
 
@@ -3644,16 +4530,27 @@ class AICoworker(models.Model):
                 elif scope == 'personal':
                     owner = {'owner_user_id': (session.user_id.id or self.env.user.id)}
                 else:
-                    owner = {'owner_coworker_id': self.id}
+                    # coworker-scope: ägs av coworkern men avgränsas av
+                    # användaren vars session lärde den (scope-isolering).
+                    owner = {'owner_coworker_id': self.id,
+                             'source_user_id': (session.user_id.id or None)}
                 self.env['ai.okf.concept']._okf_upsert(
                     'learning',
-                    concept_key=f'learned.{scope}.{session.id}.{len(summary[:40])}',
+                    # 5.3: LLM:ens semantiska nyckel om den finns — annars
+                    # deterministisk hash (5.4). Aldrig längd/index.
+                    concept_key=self._normalize_concept_key(
+                        summary, scope, llm_key=concept.get('key')),
                     summary=summary,
                     title=summary[:80],
+                    # 5.6: attributionen pekar på eftermälet (sessionen) — det
+                    # är den text konceptet faktiskt hämtades ur. Tidigare
+                    # pekade `source_ref` på sessionen medan attribution pekade
+                    # på sista raden, vilket gav en rad som inte stod i
+                    # förhållande till innehållet.
                     source_ref=f'ai.coworker.session,{session.id}',
                     attribution=[{
-                        'source': f'ai.coworker.session.line,{lines[-1].id}',
-                        'role': 'conversation',
+                        'source': f'ai.coworker.session,{session.id}',
+                        'role': 'summary',
                     }],
                     generated_by='learning',
                     **owner,
@@ -3674,19 +4571,28 @@ class AICoworker(models.Model):
             from odoo.addons.ai_agent_core.core.provider import (
                 ProviderFactory, get_default_provider, get_default_model_name)
             from odoo.addons.ai_agent_core.core.loop import AgentLoop, AgentConfig
+            from odoo.addons.ai_agent_core.core.tools import ToolRegistry
 
             provider, provider_model = ProviderFactory.from_coworker(self)
             if not provider:
                 provider, provider_model = get_default_provider()
             model_name = (provider_model and provider_model._get_api_name()) \
                 or get_default_model_name()
-            loop = AgentLoop(provider=provider, tools=[], config=AgentConfig(
+            loop = AgentLoop(provider=provider, tools=ToolRegistry(), config=AgentConfig(
                 model=model_name, max_rounds=1, max_tokens=1500))
             prompt = (
                 "Granska konversationen och extrahera 1-3 BESTÅENDE fakta "
-                "värda att minnas (inte småprat). Svara med JSON-lista: "
-                "[{\"summary\": \"kort fakta\", \"scope\": "
-                "\"personal|company|coworker\"}].\n\n"
+                "värda att minnas (inte småprat). Svara med JSON-lista:\n"
+                '[{"key": "kort.semantisk.nyckel", '
+                '"summary": "fakta i en mening", '
+                '"scope": "personal|company|coworker"}]\n\n'
+                "Nyckeln ska vara en semantisk, återanvändbar identifierare för "
+                "FAKTAN — inte för formuleringen. Samma faktum ska ge samma "
+                "nyckel även om den beskrivs med andra ord (t.ex. "
+                "'kund.fakturering.epost' eller 'projekt.sprintlangd.tva.veckor'). "
+                "Använd gemener och punkter som avgränsare. "
+                "Nyckeln är det som avgör om fakta ska ersätta en tidigare "
+                "version eller bli ett nytt koncept — slarva inte med den.\n\n"
                 f"Konversation:\n{conversation}"
             )
             async def _run_and_close():
@@ -3770,6 +4676,12 @@ class AICoworker(models.Model):
         from odoo.addons.ai_agent_core.core.loop import AgentLoop, AgentConfig
         from odoo.addons.ai_agent_core.core.linear import LinearLoop
 
+        # Priority 1 (context saving): build the tool selector once and hand
+        # it to every loop below. It narrows the authorised registry to a
+        # task-matched subset before each provider call. None → old behaviour
+        # (send everything). Fails open; never widens access.
+        tool_selector = self._tool_selector()
+
         # Supervisor model: explicit fält vinner, annars första agentens modell.
         supervisor_model = (
             self.supervisor_model_id.name
@@ -3798,6 +4710,7 @@ class AICoworker(models.Model):
                     permission_mode='auto',
                     nats_user_context=nats_ctx,
                 ),
+                tool_selector=tool_selector,
             )
 
         # ── Linear: sequential pipeline ──
@@ -3824,6 +4737,7 @@ class AICoworker(models.Model):
                     model=agent_model, system_prompt=system_prompt,
                     max_rounds=max_rounds,
                 ),
+                tool_selector=tool_selector,
             )
 
         # ── Conference: all agents answer, best answer wins ──
@@ -3990,6 +4904,48 @@ class AICoworker(models.Model):
             _logger.warning('_pi_skill_to_load failed: %s', e)
         return ''
 
+    def _pi_skills_to_load(self, prompt_text='', limit=3):
+        """Ranka pi-kompatibla skills mot prompten, returnera topp-N namn.
+
+        Ersätter det alfabetiska första-träff-valet i `_pi_skill_to_load`.
+        Den katalogen lovar att skills aktiveras automatiskt när användarens
+        meddelande matchar deras trigger-nyckelord — men bara `/skill-namn`
+        var implementerat. Här matchas prompten mot trigger_keywords och de
+        bästa träffarna returneras.
+
+        Pi-kompatibla skills har compatibility pi_python/pi_node/any.
+
+        :param prompt_text: användarens meddelande (matchas mot triggers)
+        :param limit: max antal skill-namn att returnera
+        :return: lista av skill-namn, bästa träff först. Tom om ingen finns.
+        """
+        try:
+            self.ensure_one()
+            ptext = (prompt_text or '').lower()
+            scored = []
+            for s in self.sudo().skill_ids.filtered('active'):
+                if s.compatibility not in ('any', 'pi_python', 'pi_node'):
+                    continue
+                triggers = [
+                    t.strip().lower()
+                    for t in (s.trigger_keywords or '').split(',')
+                    if t.strip()
+                ]
+                hits = [t for t in triggers if t in ptext] if ptext else []
+                # Poäng: antal träffar, sedan prioritet, sedan namn (stabilt)
+                scored.append((len(hits), s.priority or 0, s.name, s.name))
+            # Skills med träffar först (fallande), sedan prioritet, sedan namn
+            scored.sort(key=lambda x: (-x[0], -x[1], x[2]))
+            matched = [name for hits, _prio, name, _n in scored if hits > 0]
+            if matched:
+                return matched[:limit]
+            # Ingen trigger-träff: behåll gamla beteendet (första pi-kompatibla)
+            fallback = self._pi_skill_to_load()
+            return [fallback] if fallback else []
+        except Exception as e:
+            _logger.warning('_pi_skills_to_load failed: %s', e)
+            return []
+
     def _get_nats_user_context(self):
         """Build user context dict for NATS tool execution (pi-agent-memory-bridge D5).
 
@@ -4006,6 +4962,218 @@ class AICoworker(models.Model):
         if sess_model == 'ai.coworker.session' and sess_id:
             ctx['session_id'] = sess_id
         return ctx
+
+    # ── Användarkontext före extern dispatch (external-agent-runtime D5) ──
+
+    # Init-typer där en människa står bakom anropet och env.uid är rätt
+    # identitet. Övriga är automatiska och använder konfigurerad användare.
+    INTERACTIVE_INIT_TYPES = ('server_action', 'powerbox', 'web_ui',
+                              'chat', 'channel', 'openai_api', 'manual')
+
+    def _resolve_dispatch_user(self, init_type=None, session=None):
+        """Lös upp `res.users` för en extern dispatch — FÖRE spawn (D5).
+
+        Identiteten måste vara känd innan processen startar, eftersom
+        api-nyckeln binds till den. Uppslagningen följer init-typen:
+
+        - interaktiv (server_action, powerbox, web_ui, chat, channel,
+          openai_api, manual) → `env.uid` (den som tryckte/skrev)
+        - automatisk (cron, mail, watch, webhook) → coworkerns konfigurerade
+          användare (`chat_user_id`, annars sessionsradens `user_id`)
+
+        `systemuser` returneras ALDRIG — hellre ett högljutt fel.
+
+        Returns:
+            `res.users`-record.
+
+        Raises:
+            ValidationError: om ingen giltig användare kan lösas upp.
+        """
+        self.ensure_one()
+        root = self.env.ref('base.user_root')
+        init_type = init_type or self.env.context.get('_ai_init_type')
+
+        user = None
+        if init_type in self.INTERACTIVE_INIT_TYPES:
+            user = self.env.user
+        else:
+            # Automatisk körning: den KONFIGURERADE användaren, aldrig
+            # den som råkade råka köra cron-jobbet.
+            user = self.chat_user_id
+            if not user and session is not None and session.user_id:
+                user = session.user_id
+            if not user:
+                active = self.init_type_ids.filtered('enabled')[:1]
+                if active and active.chat_user_id:
+                    user = active.chat_user_id
+
+        if not user:
+            raise ValidationError(
+                'Extern körning: ingen användare kunde lösas upp för '
+                'coworker %s (init-typ %s). Sätt fältet "Ägare (automatiska '
+                'körningar)" på coworkern — det är den som får sessionernas '
+                'erfarenhet. Systemuser används aldrig (D5).'
+                % (self.display_name, init_type or 'okänd'))
+        if user.id == root.id or user.login in ('__system__', 'system'):
+            raise ValidationError(
+                'Extern körning får inte köras som systemuser (D5). '
+                'Coworker %s (init-typ %s) saknar en riktig användare — '
+                'sätt fältet "Ägare (automatiska körningar)".'
+                % (self.display_name, init_type or 'okänd'))
+        return user
+
+    @api.model
+    def _repair_missing_chat_users(self):
+        """Ge aktiva coworkers utan ägare en (coworker-dispatch-owner D4).
+
+        I drift 2026-09-18 saknade 29 av 29 aktiva coworkers
+        `chat_user_id`, och 0 bot-users existerade. Orsaken var fyra
+        sammanlänkade fel (se design.md D1): fältet skrevs aldrig,
+        `_ensure_chat_user()` fyllde ett annat fält, den var gated på
+        `enabled` (0 av 29), och därför skapades ingen bot-user.
+
+        Metoden är idempotent: andra körningen reparerar 0.
+
+        Returns:
+            int: Antal coworkers som fick en ägare.
+        """
+        coworkers = self.search([
+            ('status', '=', 'active'),
+            ('chat_user_id', '=', False),
+        ])
+        if not coworkers:
+            _logger.info(
+                'Ägar-reparation: alla aktiva coworkers har redan en ägare')
+            return 0
+
+        repaired = 0
+        for coworker in coworkers:
+            try:
+                # Skapa/återanvänd bot-usern via init_type-logiken — den
+                # sätter nu båda fälten.
+                chat_init = coworker.init_type_ids.filtered(
+                    lambda r: r.init_type == 'chat')[:1]
+                if chat_init:
+                    chat_init._ensure_chat_user()
+
+                # Fallback: ingen chat-init_type → skapa bot-usern direkt.
+                if not coworker.chat_user_id:
+                    login = 'bot_' + coworker.name.lower().replace(' ', '_')
+                    user = self.env['res.users'].search(
+                        [('login', '=', login)], limit=1)
+                    if not user:
+                        user = self.env['res.users'].with_context(
+                            no_reset_password=True).create({
+                                'name': coworker.name,
+                                'login': login,
+                            })
+                    coworker.sudo().chat_user_id = user.id
+
+                repaired += 1
+            except Exception as e:
+                _logger.error(
+                    'Ägar-reparation misslyckades för coworker %s: %s',
+                    coworker.name, e, exc_info=True)
+
+        _logger.info(
+            'Ägar-reparation: gav %d av %d coworkers en ägare',
+            repaired, len(coworkers))
+        return repaired
+
+    def _resolve_provider_or_raise(self):
+        """Lös upp en LLM-provider — eller avbryt med ett tydligt fel.
+
+        Anropas FÖRE `session.create()` i `run()` (agent-model-resolution
+        D2). Skälet är att en körning som inte kan genomföras inte ska
+        lämna ett spår: tidigare skapades sessionen först, och felet
+        upptäcktes först vid `await provider.aclose()` i ett finally-block.
+        Resultatet var en tom session med status='error'.
+
+        Returns:
+            tuple: (provider, ai.model) — båda satta.
+
+        Raises:
+            ValidationError: om ingen provider kan lösas upp.
+        """
+        self.ensure_one()
+        from odoo.addons.ai_agent_core.core.provider import (
+            ProviderFactory, get_default_provider)
+
+        provider = None
+        model_rec = None
+
+        # 1. Coworkerns agent-kedja
+        try:
+            provider, model_rec = ProviderFactory.from_coworker(self)
+        except Exception as e:
+            _logger.debug(
+                'Provider-uppslagning via agent-kedjan föll för %s: %s',
+                self.name, e)
+
+        # 2. Default-modellen
+        if not provider:
+            provider, model_rec = get_default_provider(self.env)
+
+        if not provider:
+            # Namnge orsaken — inte `aclose`.
+            missing = self.agent_ids.filtered(
+                lambda qa: not qa.agent_id.model_id)
+            detail = (
+                '%d av %d agenter saknar model_id'
+                % (len(missing), len(self.agent_ids))
+                if missing else 'ingen agent är kopplad'
+            )
+            raise ValidationError(
+                'Coworker "%s" kan inte köra: ingen LLM-provider kunde lösas '
+                'upp (%s). Sätt fältet "Modell" på agenten, eller sätt '
+                'systemparametern ai_agent_core.default_model_id.'
+                % (self.name, detail))
+
+        return provider, model_rec
+
+    @api.model
+    def _repair_missing_agent_models(self):
+        """Ge agenter utan `model_id` default-modellen (D5).
+
+        I drift 2026-09-18 saknade 20 av 21 agenter en modell. Kedjan
+        ai.coworker → agent → ai.model → ai.provider är den enda vägen
+        till en LLM, så ingen av dem kunde köra.
+
+        Metoden rör INTE agenter som redan har en modell — ett medvetet
+        val ska inte skrivas över. Idempotent.
+
+        Returns:
+            int: Antal agenter som fick en modell.
+        """
+        param = self.env['ir.config_parameter'].sudo().get_param(
+            'ai_agent_core.default_model_id')
+        if not param:
+            _logger.warning(
+                'Agent-modell-reparation: default_model_id saknas — '
+                'kör post_init eller sätt parametern först')
+            return 0
+
+        default_model = self.env['ai.model'].sudo().browse(int(param))
+        if not default_model.exists():
+            _logger.warning(
+                'Agent-modell-reparation: default_model_id=%s pekar på en '
+                'modell som inte finns', param)
+            return 0
+
+        agents = self.env['ai.agent'].sudo().search([
+            ('model_id', '=', False),
+            ('active', '=', True),
+        ])
+        if not agents:
+            _logger.info(
+                'Agent-modell-reparation: alla aktiva agenter har en modell')
+            return 0
+
+        agents.write({'model_id': default_model.id})
+        _logger.info(
+            'Agent-modell-reparation: gav %d agenter modellen %s',
+            len(agents), default_model.name)
+        return len(agents)
 
     def _build_specialists(self, provider, tools, model, system_prompt, max_rounds=None):
         """Build list of SpecialistAgent from agent_ids.
@@ -4112,6 +5280,33 @@ class AICoworker(models.Model):
             url += f'&context_quest={self.id}'
         return {'type': 'ir.actions.act_url', 'url': url, 'target': 'new'}
 
+    @api.model
+    def action_ask_ai_about_record(self):
+        """Open the AI chat with the current record (or selection).
+
+        Bindable server action - can be placed on any model. Reads
+        `active_model`/`active_id` (form view) or `active_ids` (list view)
+        from the context and forwards them as URL parameters; the chat
+        passes them on to /ai/stream, which sets the session's
+        ai_record_* fields (ai-coworker-record-context 5.3).
+
+        No record is required: without active_id/active_ids the chat opens
+        without context, which is the correct behaviour (empty selection =
+        no context).
+        """
+        model = self.env.context.get('active_model')
+        active_id = self.env.context.get('active_id')
+        active_ids = self.env.context.get('active_ids') or []
+        url = '/ai/chat'
+        if model:
+            url += '&context_model=' + model
+            if len(active_ids) > 1:
+                url += '&context_res_ids=' + ','.join(
+                    str(i) for i in active_ids)
+            elif active_id:
+                url += '&context_res_id=' + str(active_id)
+        return {'type': 'ir.actions.act_url', 'url': url, 'target': 'new'}
+
     def action_get_sessions(self):
         return {
             'name': 'Sessions', 'type': 'ir.actions.act_window',
@@ -4119,6 +5314,32 @@ class AICoworker(models.Model):
             'views': [[False, 'list'], [False, 'form']],
             'target': 'current',
             'domain': [('coworker_id', '=', self.id)],
+        }
+
+    def action_get_memory(self):
+        """Smartknapp: AI Medarbetarens minne (ai.okf.concept).
+
+        Coworker-scope ägt av medarbetaren. Listan visar alla koncept
+        (coworker-globala + per användare); filterfliken 'Mina minnen'
+        begränsar till den inloggade användarens egna (source_user_id).
+        """
+        self.ensure_one()
+        return {
+            'name': 'Minne — %s' % self.name,
+            'type': 'ir.actions.act_window',
+            'res_model': 'ai.okf.concept',
+            'view_mode': 'list,form',
+            'views': [[False, 'list'], [False, 'form']],
+            'target': 'current',
+            'domain': [
+                ('scope', '=', 'coworker'),
+                ('owner_coworker_id', '=', self.id),
+            ],
+            'context': {
+                'default_scope': 'coworker',
+                'default_owner_coworker_id': self.id,
+                'search_default_not_archived': 1,
+            },
         }
 
     def action_get_session_lines(self):
@@ -4408,11 +5629,22 @@ class AICoworker(models.Model):
             from odoo.addons.ai_agent_core.core.provider import get_default_model_name
             model = get_default_model_name()
 
+        # Sessionen skapas INUTI try-blocket, men maaste finnas aven i
+        # except-grenen: kraschar nagot mellan create() och loop.run()
+        # (t.ex. en trasig import i provider.py) lamnas annars en session
+        # kvar som 'active' — och idle-cronen stanger den som "fardigpratad"
+        # utan att ett enda meddelande skrivits. Det hande 60 ganger i drift
+        # (2026-09-15): cron 92 skapade en session, kraschade pa
+        # `from tenacity import`, och lamnade en tom session som sag ut som
+        # en avslutad konversation. Sessionen ska BÄRA sitt haveri.
+        session = None
+
         try:
             # Create session
             session = self.env['ai.coworker.session'].create({
                 'coworker_id': self.id,
                 'status': 'active',
+                'init_type': 'cron',
                 'user_id': self.env.ref('base.user_root').id
                           if self.env.ref('base.user_root', raise_if_not_found=False)
                           else 1,
@@ -4490,14 +5722,28 @@ class AICoworker(models.Model):
 
             loop.denial_callback = _record_denial_as_suggestion
 
+            # Prompten byggs HÄR (inte inuti _run) så att den kan sparas som
+            # sessionens user-rad. Utan den blir cron-sessionen en ensam
+            # assistant-rad — och eftermälet (MIN_SUMMARY_LINES = 4) kan
+            # aldrig nås. Se session-memory-bridge D1b.
+            cron_prompt = (
+                f"You are an automated agent. Your task:\n\n{self.description}"
+                if self.description else
+                "Execute the scheduled task. Be thorough and complete."
+            )
+
+            # User-raden skrivs FÖRE körningen — den är vad som efterfrågades,
+            # oavsett om körningen lyckas. Assistant-raden skrivs efter.
+            self.env['ai.coworker.session.line'].sudo().create({
+                'session_id': session.id,
+                'sequence': 1,
+                'role': 'user',
+                'content': cron_prompt[:4000],
+            })
+
             async def _run():
-                prompt = (
-                    f"You are an automated agent. Your task:\n\n{self.description}"
-                    if self.description else
-                    "Execute the scheduled task. Be thorough and complete."
-                )
                 try:
-                    return await loop.run(prompt)
+                    return await loop.run(cron_prompt)
                 finally:
                     await provider.aclose()
 
@@ -4518,11 +5764,24 @@ class AICoworker(models.Model):
                 'status': 'active',
             })
 
-            # Update session
+            # Update session. OBS: 'result' finns INTE pa ai.coworker.session
+            # (faltet existerar bara pa ai.mail.test.wizard). Den forra koden
+            # skrev 'result' har -> ValueError -> fangades av except-grenen
+            # nedan -> en LYCKAD korning rapporterades som 'last_status=error'.
+            # Texten lagras i stallet som ett meddelande pa sessionen, vilket
+            # ocksa gor den sokbar och synlig i UI:t.
             session.write({
                 'status': 'done',
-                'result': result_text[:2000] if result_text else '',
+                'finish_reason': 'completed',
+                'end_date': fields.Datetime.now(),
             })
+            if result_text:
+                self.env['ai.coworker.session.line'].sudo().create({
+                    'session_id': session.id,
+                    'sequence': 2,   # 1 = user-raden (cron_prompt) skriven ovan
+                    'role': 'assistant',
+                    'content': result_text[:4000],
+                })
 
             # Send completion notification
             if self.notify_on_completion and self.notify_target:
@@ -4543,6 +5802,30 @@ class AICoworker(models.Model):
                 'last_status': 'error',
                 'run_count': self.run_count + 1,
             })
+            # Stang sessionen SA ATT HAVERIET SYNS I DATA. Utan detta ligger
+            # den kvar som 'active' tills idle-cronen stanger den som
+            # 'done'/'idle' — en tom session som ser ut som en avslutad
+            # konversation. 'setup_failed' gor den urskiljbar.
+            if session:
+                try:
+                    session.sudo().write({
+                        'status': 'error',
+                        'finish_reason': 'setup_failed',
+                        'end_date': fields.Datetime.now(),
+                    })
+                    self.env['ai.coworker.session.line'].sudo().create({
+                        'session_id': session.id,
+                        'sequence': len(session.session_line_ids) + 1,
+                        'role': 'system',
+                        'content': (
+                            'Schemalagd korning avbrots innan den borjade: '
+                            f'{type(e).__name__}: {e}'
+                        )[:4000],
+                    })
+                except Exception as close_err:
+                    _logger.warning(
+                        'Kunde inte stanga session %s efter haveri: %s',
+                        session.id, close_err)
             if self.notify_on_completion and self.notify_target:
                 self._send_completion_notification(str(e), 'error')
             return {
@@ -4722,6 +6005,28 @@ class AICoworker(models.Model):
                 len(tools), len(names))
 
         return tools, tool_access_groups
+
+    def _tool_selector(self):
+        """Bygg en ToolSelector från konfiguration (priority 1).
+
+        Returnerar None när selektion är avstängd — då skickas hela det
+        auktoriserade registret (gammalt beteende). Selektorn ärver INTE
+        behörigheter: den filtrerar bara det register som redan byggts av
+        _session_tools(), så den kan aldrig vidga åtkomst.
+
+        Konfig (ir.config_parameter):
+            ai_agent_core.tool_selection_enabled   'True' | 'False'
+            ai_agent_core.tool_selection_top_k     '5'
+            ai_agent_core.tool_selection_min_tools '12'
+            jev.url / jev.model / jev.timeout
+        """
+        try:
+            from odoo.addons.ai_agent_core.core.tool_select import ToolSelector
+            sel = ToolSelector.from_env(self.env)
+            return sel if sel.enabled else None
+        except Exception as e:
+            _logger.info('_tool_selector: selektion avstängd (%s)', e)
+            return None
 
     def _warn_agents_without_tools(self, session=None):
         """Logga en varning för agenter utan tool_ids (avveckla, D5).
@@ -5116,7 +6421,8 @@ class AICoworker(models.Model):
 
     def run(self, prompt, system_prompt=None, force_model=None,
             force_agent=None, session=None, history=None,
-            interrupt_handler=None):
+            interrupt_handler=None, channel=None, records=None,
+            record=None):
         """Run quest synchronously and return AI response text.
 
         Designed for bridge integrations (html_editor, mail, webhook, etc.)
@@ -5138,11 +6444,49 @@ class AICoworker(models.Model):
             interrupt_handler: Optional HITL-handler (t.ex.
                      OpenAIInterruptHandler) — pausar loopen vid HITL
                      istället för auto-approve.
+            channel: Optional discuss.channel — den INKOMMANDE kanalen.
+                     Skickas vidare till _detect_record() (källa 4) så
+                     record-detekteringen får något att läsa. Sätts av
+                     chat(); är annars None och källan hoppas över.
+            records: Optional recordset — en markering (list-vy).
+            record: Optional record — en enskild record (form-vy).
 
         Returns:
             str: AI response text (plain text, no markdown rendering)
         """
         self.ensure_one()
+
+        # ── Rekordkontext (ai-coworker-record-context) ──────────────────
+        # Detektera vilken record/markering turen gäller och koppla den
+        # till sessionen. Detta låg tidigare bara i ai_agent_context (som
+        # är oinstallerad) — därför anropades _detect_record() ALDRIG i
+        # drift och ingen record-kontext injicerades.
+        #
+        # OBS (D1b): vi sätter INTE `_ai_context_model`/`_ai_context_id`.
+        # De nycklarna betyder "aktuell SESSION" och läses av HITL,
+        # NATS-kontexten och sessionsminnena. Recorden bor i stället på
+        # sessionen (ai_record_*).
+        if session and not (session.ai_record_model):
+            try:
+                _marked = records if records is not None \
+                    else self._detect_records({'channel': channel})
+                if _marked:
+                    session._set_records_context(
+                        _marked,
+                        max_records=self._ai_record_setting(
+                            'ai_record_max_records'),
+                        include_chatter=bool(self._ai_record_setting(
+                            'ai_record_include_chatter')))
+                else:
+                    _rec = record or self._detect_record(
+                        {'channel': channel, 'records': records})
+                    if _rec:
+                        session._set_record_context(_rec)
+            except Exception as e:
+                # Kontexten får aldrig fälla en körning.
+                _logger.warning(
+                    'run: rekordkontext misslyckades för session %s: %s',
+                    session.id, e)
 
         # AgentLoopPaused (openai_api-HITL): behövs i except-klausulen.
         from odoo.addons.ai_agent_core.core.interrupt import AgentLoopPaused
@@ -5194,6 +6538,16 @@ class AICoworker(models.Model):
                 if agent.model_id and agent.model_id.name:
                     model = agent.model_id._get_api_name()
                     break
+
+        # FÖRKONTROLL (agent-model-resolution D2): kan en provider lösas upp?
+        #
+        # Tidigare skapades sessionen först och providern upptäcktes vara
+        # None först vid `await provider.aclose()` i ett finally-block —
+        # långt efter att körningen misslyckats. Resultatet var en TOM
+        # session med status='error' och felmeddelandet
+        # "'NoneType' object has no attribute 'aclose'", som pekade på fel
+        # sak. En körning som inte kan genomföras ska inte lämna ett spår.
+        self._resolve_provider_or_raise()
 
         # Build system prompt
         if system_prompt is None:
@@ -5272,6 +6626,7 @@ class AICoworker(models.Model):
         session = session or self.env['ai.coworker.session'].create({
             'coworker_id': self.id,
             'status': 'active',
+            'init_type': 'web_ui',
             'user_id': self.env.user.id,
             'name': prompt[:80] if prompt else 'Quest run',
         })
@@ -5487,6 +6842,38 @@ class AICoworker(models.Model):
                     if spec_model:
                         line_vals['model_real'] = spec_model
                 self.env['ai.coworker.session.line'].create(line_vals)
+
+            # ── Verktygsselektion (priority 1): bokför besparingen i tråden ──
+            # En system-rad per tur som visar hur många verktyg som skickades
+            # och hur många tokens verktygsblocket kostade. Gör besparingen
+            # granskningsbar i sessionen i stället för att bara ligga i loggen.
+            try:
+                sel_stats = getattr(loop_obj, 'tool_selection_stats', None)
+                if sel_stats:
+                    real = [s for s in sel_stats if not s.get('skipped')]
+                    if real:
+                        before = sum(s.get('tokens_before', 0) for s in real)
+                        after = sum(s.get('tokens_after', 0) for s in real)
+                        n_turns = len(real)
+                        backends = sorted({s.get('backend', '?') for s in real})
+                        saved = before - after
+                        pct = round(100 * saved / before, 1) if before else 0
+                        self.env['ai.coworker.session.line'].create({
+                            'session_id': session.id,
+                            'role': 'system',
+                            'content': (
+                                f'Verktygsselektion ({n_turns} tur(er), '
+                                f'backend={", ".join(backends)}): '
+                                f'verktygsblocket ~{before:,} → ~{after:,} '
+                                f'tokens (−{pct}%, sparat ~{saved:,}).'),
+                            'sequence': _base_seq + 2 + len(
+                                getattr(loop_obj, 'tool_history', [])),
+                            'token_input': 0,
+                            'token_output': 0,
+                            'sys_multiplier': 0.0,
+                        })
+            except Exception as e:
+                _logger.info('Kunde inte bokföra selektions-statistik: %s', e)
 
             # ── Fel-loggning (ai.coworker.error) ──
             # Skanna verktygshistoriken + resultatet för fel så de kan
@@ -5718,6 +7105,7 @@ class AICoworker(models.Model):
         session = self.env['ai.coworker.session'].create({
             'coworker_id': self.id,
             'status': 'active',
+            'init_type': 'powerbox',
             'user_id': self.env.user.id,
         })
 
@@ -5871,6 +7259,18 @@ class AICoworker(models.Model):
 
     def write(self, vals):
         res = super(AICoworker, self).write(vals)
+        # Profilbyte → seeda om sökfälten (fas 13.3).
+        # OBS: detta måste ligga i DENNA write() — AICoworker har bara en
+        # (en tidigare dubblett längre upp i filen skuggades tyst av denna,
+        # så en krok där kördes aldrig).
+        if 'memory_profile' in vals:
+            for rec in self:
+                try:
+                    rec._apply_search_profile(force=True)
+                except Exception as e:
+                    _logger.warning(
+                        'Kunde inte seeda sökprofil %s på %s: %s',
+                        vals.get('memory_profile'), rec.id, e)
         if any(k in vals for k in ('orchestration_mode', 'channel_id', 'is_supervisor')):
             self._sync_buzz_agents_to_channel()
         # Synka init_type_ids från stored init_*-booleans. Stored-fält (ej
@@ -5995,12 +7395,26 @@ class AICoworker(models.Model):
         if active_goals:
             _logger.info('Heartbeat %s: working on goal %s',
                         self.name, active_goals.name)
-            # Create a session for proactive goal work
-            self.env['ai.coworker.session'].create({
-                'coworker_id': self.id,
-                'name': f'Goal: {active_goals.name[:50]}',
-                'status': 'active',
-            })
+            # Kör målet — sessionen skapas av run() när körningen är beslutad.
+            #
+            # FYND (session-memory-bridge D1): här skapades tidigare en
+            # session och returnerades utan att något kördes. Varje heartbeat
+            # med ett aktivt mål lämnade en TOM session efter sig, som
+            # idle-cronen stängde som 'done' — ett spår av ingenting som såg
+            # ut som en avslutad konversation i statistiken. En session är
+            # spåret av en körning, inte av en avsikt.
+            goal_prompt = (
+                f'Du arbetar proaktivt med målet "{active_goals.name}" '
+                f'(progress {active_goals.progress:.0f}%). '
+                f'Föreslå och utför nästa steg mot målet.'
+            )
+            try:
+                self.run(prompt=goal_prompt)
+            except Exception as e:
+                # En trasig körning ska loggas — inte lämna en tyst session.
+                _logger.warning(
+                    'Heartbeat %s: körning av mål %s misslyckades: %s',
+                    self.name, active_goals.name, e, exc_info=True)
             return
 
         # 4. Nudge? (handled by kaizen/onboard separately)
@@ -6148,6 +7562,14 @@ class AICoworker(models.Model):
                 except Exception as e:
                     _logger.warning('Could not create employee for %s: %s',
                                   record.name, e)
+            # Seed sökfälten från memory_profile (fas 13.3). Körs EFTER
+            # super().create() eftersom M2M-källor kräver ett id.
+            if not record.search_sources:
+                try:
+                    record._apply_search_profile()
+                except Exception as e:
+                    _logger.warning(
+                        'Kunde inte seeda sökprofil på %s: %s', record.id, e)
             # Varje medarbetare ska äga sin identitet (egen kopia).
             records._ensure_own_identity()
         return records
@@ -6197,12 +7619,20 @@ def _is_error_answer(text):
                          '(cancelled)'))
 
 
-def _find_cached_answer(coworker, question):
+def _find_cached_answer(coworker, question, record_key=None):
     """Hitta ett tidigare svar på samma fråga (samma + andra sessioner).
 
     Går igenom medarbetarens sessioner (senaste först), kopplar varje
     user-fråga till nästa assistant-svar och matchar mot frågan.
     Returnerar (svarstext, session_id) eller None.
+
+    OBS (record-medveten cache): en fråga som "berätta om recorden framför
+    mig" betyder olika saker beroende på VILKEN record som var öppen. Utan
+    `record_key` returnerade cachen ett svar om en helt annan record — den
+    matchade bara orden ("berätta om record framför mig" fick 0.80 mot
+    "berätta om recorden jag har framför mig"). När `record_key` ges kräver
+    vi att källsessionen gällde SAMMA record (model,id). Frågor som inte
+    refererar till en record (record_key=None) cachas som förut.
     """
     q = _normalize_question(question)
     if len(q) < 4:
@@ -6213,6 +7643,20 @@ def _find_cached_answer(coworker, question):
     best = None
     best_score = 0.0
     for sess in sessions:
+        # Record-medvetenhet: om frågan gäller en record får bara svar från
+        # sessioner om SAMMA record användas. Annars besvaras "berätta om
+        # recorden framför mig" med en annan records innehåll.
+        if record_key is not None:
+            _rk_model, _rk_id = record_key[0], record_key[1]
+            if isinstance(_rk_id, tuple):
+                # Markering (list-vy): jämför hela uppsättningen rader.
+                sess_ids = tuple(sorted(sess.ai_record_ids or []))
+                sess_key = (sess.ai_record_model or None, sess_ids)
+            else:
+                sess_key = (sess.ai_record_model or None,
+                            sess.ai_record_id or None)
+            if sess_key != record_key:
+                continue
         lines = sess.session_line_ids.sorted('sequence')
         user_q = None
         for line in lines:
@@ -6279,43 +7723,6 @@ def _strip_narration(text):
         r'[^\n]*(?:\n[^\n]*){0,4}$',
         '', body, flags=re.I)
     return body.strip() or text.strip()
-
-
-def _find_cached_answer(coworker, question):
-    """Hitta ett tidigare svar på samma fråga (samma + andra sessioner).
-
-    Går igenom medarbetarens sessioner (senaste först), kopplar varje
-    user-fråga till nästa assistant-svar och matchar mot frågan.
-    Returnerar (svarstext, session_id) eller None.
-    """
-    q = _normalize_question(question)
-    if len(q) < 4:
-        return None
-    sessions = coworker.env['ai.coworker.session'].search([
-        ('coworker_id', '=', coworker.id),
-    ], order='create_date desc', limit=30)
-    best = None
-    best_score = 0.0
-    for sess in sessions:
-        lines = sess.session_line_ids.sorted('sequence')
-        user_q = None
-        for line in lines:
-            if line.role == 'user':
-                user_q = _normalize_question(line.content or '')
-            elif line.role == 'assistant' and user_q and line.content:
-                # Hoppa över fel/tomma svar (max rounds, no response, Error:)
-                if _is_error_answer(line.content):
-                    user_q = None
-                    continue
-                score = _question_score(user_q, q)
-                # Bästa matchningen vinner — inte den nyaste sessionen.
-                # (Annars kunde 'vad kostar 3090' matcha en nyare Strix Halo-
-                # fråga med lägre poäng.)
-                if score >= 0.5 and score > best_score:
-                    best_score = score
-                    best = (line.content, sess.id)
-                user_q = None
-    return best
 
 
 def _strip_narration(text):

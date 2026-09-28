@@ -14,8 +14,8 @@
                             class="oe_stat_button"
                             icon="fa-database">
                         <div class="o_stat_info">
-                            <field name="personal_memory_count"/>
-                            <span class="o_stat_text">Memories</span>
+                            <field name="okf_memory_count"/>
+                            <span class="o_stat_text">Minnen</span>
                         </div>
                     </button>
                     <button name="action_open_personal_goals"
@@ -28,6 +28,50 @@
                         </div>
                     </button>
                 </div>
+            </field>
+        </record>
+
+        <!-- Min profil (action_res_users_my → view_users_form_simple_modif).
+             FYND 2026-09-28: knapparna ovan ärvde base.view_users_form, men
+             "Min profil" öppnar view_users_form_simple_modif — en ANNAN vy
+             utan button_box. Knapparna syntes därför bara i
+             Inställningar → Användare (admin), aldrig på Min profil.
+             Den här vyn lägger dem där användaren faktiskt är. -->
+        <record id="view_res_users_preferences_inherit_ai_memory" model="ir.ui.view">
+            <field name="name">res.users.preferences.form.inherit.ai.memory</field>
+            <field name="model">res.users</field>
+            <field name="inherit_id" ref="base.view_users_form_simple_modif"/>
+            <field name="arch" type="xml">
+                <xpath expr="//page[@name='preferences_page']/group[@name='preferences']" position="before">
+                    <group name="ai_memory" string="AI-profil">
+                        <div class="o_row">
+                            <button name="action_open_personal_memory"
+                                    type="object"
+                                    class="oe_stat_button"
+                                    icon="fa-database">
+                                <div class="o_stat_info">
+                                    <field name="okf_memory_count"/>
+                                    <span class="o_stat_text">Minnen</span>
+                                </div>
+                            </button>
+                            <button name="action_open_personal_goals"
+                                    type="object"
+                                    class="oe_stat_button"
+                                    icon="fa-bullseye">
+                                <div class="o_stat_info">
+                                    <field name="personal_goal_count"/>
+                                    <span class="o_stat_text">Mål</span>
+                                </div>
+                            </button>
+                        </div>
+                        <div colspan="2">
+                            <p class="text-muted mb-0">
+                                Det här är vad AI-medarbetarna kommer ihåg om dig
+                                — det som injiceras i deras systemprompt.
+                            </p>
+                        </div>
+                    </group>
+                </xpath>
             </field>
         </record>
 

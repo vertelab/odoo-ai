@@ -366,16 +366,37 @@ class GraphExecutor(models.Model):
 
     @api.model
     def is_age_available(self):
-        """Check if AGE extension is installed and graph exists."""
+        """Check if AGE extension is installed and the graph is usable.
+
+        OBS: vi testar INTE med `SELECT 1 FROM ag_catalog.ag_graph`.
+        ag_catalog ägs av postgres-superusern, så en vanlig Odoo-roll
+        (app-rollen) får `permission denied` på den tabellen — även när
+        AGE är installerat och grafen fungerar. Det gjorde att den här
+        metoden returnerade False på ett fullt fungerande system, och
+        graph_query svarade "AGE may not be installed".
+
+        I stället kör vi en minimal cypher() mot grafen — exakt den väg
+        anroparen sedan använder. Fungerar den är grafen användbar.
+        """
         try:
             self.env.cr.execute("""
                 SELECT 1 FROM pg_extension WHERE extname = 'age'
             """)
             if not self.env.cr.fetchone():
                 return False
-            self.env.cr.execute("""
-                SELECT 1 FROM ag_catalog.ag_graph WHERE name = 'odoo_mind'
-            """)
-            return bool(self.env.cr.fetchone())
+            # SAVEPOINT: ett fel här får inte förgifta transaktionen
+            # (samma mönster som cypher() nedan).
+            self.env.cr.execute("SAVEPOINT age_available")
+            try:
+                self.env.cr.execute("""
+                    SELECT * FROM ag_catalog.cypher('odoo_mind', $$ RETURN 1 $$)
+                    AS (x ag_catalog.agtype)
+                """)
+                ok = self.env.cr.fetchone() is not None
+                self.env.cr.execute("RELEASE SAVEPOINT age_available")
+                return ok
+            except Exception:
+                self.env.cr.execute("ROLLBACK TO SAVEPOINT age_available")
+                return False
         except Exception:
             return False

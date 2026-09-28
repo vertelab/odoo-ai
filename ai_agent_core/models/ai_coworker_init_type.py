@@ -61,6 +61,31 @@ class AICoworkerInitType(models.Model):
     chat_trigger_words = fields.Text('Activation Words',
         help='Comma-separated words that trigger the bot response')
 
+    # ── Rekordkontext (ai-coworker-record-context) ──────────────────────
+    # Inställningarna hör till INIT-TYPEN, inte coworkern: en medarbetare
+    # kan vara både DM-assistent och kanal-bot och behöver kunna ha olika
+    # chatter-gränser för dem. Coworkernivån behålls som related-fält
+    # (readonly=False) för bakåtkompatibilitet.
+    ai_record_injection_enabled = fields.Boolean(
+        'Enable Record Context', default=True,
+        help='Injicera den record (eller markering) användaren har öppen i '
+             'systemprompten.')
+    ai_record_max_fields = fields.Integer(
+        'Max Context Fields', default=100,
+        help='Högsta antal fält per record vid serialisering.')
+    ai_record_include_chatter = fields.Boolean(
+        'Include Chatter History', default=True,
+        help='Inkludera recordens chatter-historik. För en MARKERING '
+             '(list-vy) är chatter avstängt som default — 35 records x 20 '
+             'meddelanden spränger prompten.')
+    ai_record_chatter_limit = fields.Integer(
+        'Chatter Message Limit', default=20,
+        help='Högsta antal chatter-meddelanden (de senaste).')
+    ai_record_max_records = fields.Integer(
+        'Max Records', default=20,
+        help='Högsta antal records vid en list-vy-markering. Överskridandet '
+             'rapporteras explicit i prompten — det tystas aldrig.')
+
     # ── channel specific ──
     channel_ids = fields.Many2many('discuss.channel', 'ai_coworker_init_type_channel_rel',
         'init_type_id', 'channel_id', string='Channels',
@@ -457,7 +482,16 @@ class AICoworkerInitType(models.Model):
             self.alias_id.write(vals)
 
     def _ensure_chat_user(self):
-        """Create bot user for private chat if not exists."""
+        """Create bot user for private chat if not exists.
+
+        Skriver till BÅDA fälten (coworker-dispatch-owner D1):
+        - `ai.coworker.init_type.chat_user_id` — bot-usern för chatten
+        - `ai.coworker.chat_user_id` — ÄGAREN för automatiska körningar
+
+        Det andra fältet är det `_resolve_dispatch_user()` läser. Att bara
+        sätta init-typens fält lämnade coworkern utan ägare, och bron från
+        session till personligt minne kunde aldrig skriva något.
+        """
         if not self.chat_user_id:
             quest = self.coworker_id
             user = self.env['res.users'].search([
@@ -471,6 +505,14 @@ class AICoworkerInitType(models.Model):
                         'login': 'bot_' + quest.name.lower().replace(' ', '_'),
                     })
             self.chat_user_id = user.id
+
+        # Koppla ägaren till coworkern — det är HÄR den levande vägen läser.
+        if quest := self.coworker_id:
+            if quest.chat_user_id != self.chat_user_id:
+                quest.sudo().chat_user_id = self.chat_user_id.id
+                _logger.info(
+                    'Kopplade ägare %s till coworker %s',
+                    self.chat_user_id.login, quest.name)
 
     def _ensure_channel(self):
         """Create Discuss channel if not exists and add to channel_ids.

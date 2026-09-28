@@ -20,7 +20,6 @@
                             <field name="company_concept_count" string="🏢 Company-scope"/>
                             <field name="personal_concept_count" string="👤 Personal-scope"/>
                             <field name="coworker_concept_count" string="🤖 Coworker-scope"/>
-                            <field name="memory_count" string="Legacy ai.memory"/>
                             <field name="dirty_count" string="Dirty (väntar)"/>
                             <field name="superseded_count" string="Superseded versioner"/>
                         </group>

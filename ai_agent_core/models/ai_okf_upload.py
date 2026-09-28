@@ -64,6 +64,80 @@ def _sanitize_text(value):
     return value.replace('\x00', '')
 
 
+# ── Tekniska förmågor (fix 2026-09-22) ──
+#
+# Förmågor som 'pdf'/'image'/'docx' är BEROENDEN, inte skills. Den gamla
+# kontrollen letade en ai.skill med det namnet och returnerade alltid False
+# (sådana skills finns inte, och coworker_id är NULL för web-UI-uppladdningar).
+# 736 poster hamnade i state='error' med "felkonfiguration" som orsak.
+#
+# Nedan: en faktisk kontroll av vad som är installerat. Resultatet cachas —
+# import- och which-anrop är dyra och kön processar upp till 20 poster/varv.
+_CAPABILITY_CACHE = {}
+
+
+def _module_available(module_name):
+    """Kan modulen importeras? (cachat)"""
+    key = ('module', module_name)
+    if key not in _CAPABILITY_CACHE:
+        try:
+            __import__(module_name)
+            _CAPABILITY_CACHE[key] = True
+        except Exception:
+            _CAPABILITY_CACHE[key] = False
+    return _CAPABILITY_CACHE[key]
+
+
+def _binary_available(binary_name):
+    """Finns binären i PATH? (cachat)
+
+    pytesseract är bara ett omslag — det kräver tesseract-ocr-binären.
+    Utan denna kontroll kastar anropet FileNotFoundError, som svaldes av
+    en bred except och gav 'Kunde inte extrahera text från filen.'
+    """
+    key = ('binary', binary_name)
+    if key not in _CAPABILITY_CACHE:
+        found = False
+        for d in os.environ.get('PATH', '').split(os.pathsep):
+            if d and os.path.isfile(os.path.join(d, binary_name)):
+                found = os.access(os.path.join(d, binary_name), os.X_OK)
+                if found:
+                    break
+        _CAPABILITY_CACHE[key] = found
+    return _CAPABILITY_CACHE[key]
+
+
+def _capability_available(capability):
+    """Är den tekniska förmågan tillgänglig i denna miljö?
+
+    capability → vad som krävs:
+      'pdf'    → PyMuPDF (fitz) eller pypdf
+      'docx'   → python-docx
+      'image'  → Pillow (för att läsa bilden)
+      'audio'  → någon av de vanliga ljudavkodarna
+      'ocr'    → tesseract-binären (valfritt förbättringslager)
+      'vision' → en aktiv ai.provider med vision-stöd
+
+    Okänd förmåga → False. Hellre ett tydligt fel i error_message än ett
+    tyst antagande om att något fungerar.
+    """
+    cap = (capability or '').lower()
+    if cap == 'pdf':
+        return _module_available('fitz') or _module_available('pypdf')
+    if cap == 'docx':
+        return _module_available('docx')
+    if cap == 'image':
+        return _module_available('PIL')
+    if cap == 'audio':
+        return (_module_available('speech_recognition')
+                or _binary_available('ffmpeg'))
+    if cap == 'ocr':
+        return _binary_available('tesseract')
+    if cap == 'vision':
+        return True  # kontrolleras mot ai.provider i _normalize_image
+    return False
+
+
 class AIOkfUpload(models.Model):
     _name = 'ai.okf.upload'
     _description = 'OKF Upload'
@@ -129,21 +203,25 @@ class AIOkfUpload(models.Model):
         return 'text'
 
     def _has_capability(self, capability):
-        """Har coworkerns agenter förmågan? (ai.skill/ai.tool)"""
+        """Finns den TEKNISKA förmågan (installerat bibliotek/binär)?
+
+        VARFÖR DEN SER UT SÅ HÄR (fix 2026-09-22):
+        Denna metod letade tidigare efter en ai.skill/ai.tool vars NAMN var
+        'image'/'pdf'/'docx'/'ocr'/'vision'. Det finns inga sådana skills —
+        och `coworker_id` är NULL för alla web-UI-uppladdningar — så metoden
+        returnerade alltid False. Följden: 736 poster i `ai_okf_upload` med
+        state='error' och meddelandet "Förmågan \"image\" saknas på
+        coworkerns agenter (felkonfiguration)".
+
+        En förmåga som 'pdf' eller 'image' är inte en skill — det är ett
+        BEROENDE. Frågan är om pypdf/PyMuPDF/python-docx/Pillow/tesseract
+        finns installerade, inte vad en coworker råkar heta i sina skills.
+
+        Returnerar True/False. Okänd förmåga → False (hellre ett tydligt
+        fel än ett tyst antagande).
+        """
         self.ensure_one()
-        if not self.coworker_id:
-            return False
-        skills = self.coworker_id.skill_ids or self.coworker_id.agent_ids.mapped(
-            'agent_id.skill_ids')
-        names = set()
-        for s in skills:
-            names.add((s.name or '').lower())
-            names.add((s.ai_skill_id.name or '').lower()
-                      if hasattr(s, 'ai_skill_id') else '')
-        tools = self.coworker_id.agent_ids.mapped('agent_id.tool_ids')
-        for t in tools:
-            names.add((t.name or '').lower())
-        return capability.lower() in {n for n in names if n}
+        return _capability_available(capability)
 
     def _normalize(self):
         """Normalisera artefakten till text. Returnerar (text, error)."""
@@ -232,17 +310,29 @@ class AIOkfUpload(models.Model):
             return self._raise_missing('docx-lib')
 
     def _normalize_image(self, attach):
-        """Bild → tesseract OCR + vision-caption (gpt-4o)."""
-        if not self._has_capability('image'):
-            return self._raise_missing('image')
-        import base64
+        """Bild → tesseract OCR + vision-caption.
+
+        OCR och vision är FÖRBÄTTRANDE lager, inte krav. En bild utan
+        OCR-text och utan vision-caption ger ändå ett användbart koncept:
+        en beskrivning av bilden och dess metadata. Att kasta bort hela
+        uppladdningen för att tesseract saknas vore att förlora data.
+        """
         import tempfile
         parts = []
-        # 1. OCR
+
+        # 0. Alltid: en beskrivning ur bilagans egen metadata. Gör att
+        #    bilden blir sökbar även utan OCR/vision.
+        parts.append('Bild: %s (%s, %s byte)' % (
+            attach.name or 'namnlös',
+            attach.mimetype or 'okänd typ',
+            attach.file_size or 0))
+
+        # 1. OCR (krver tesseract-binären)
         if self._has_capability('ocr'):
             try:
                 import subprocess
-                with tempfile.NamedTemporaryFile(suffix='.img', delete=False) as f:
+                with tempfile.NamedTemporaryFile(suffix='.img',
+                                                 delete=False) as f:
                     f.write(attach.raw)
                     tmp = f.name
                 try:
@@ -256,20 +346,22 @@ class AIOkfUpload(models.Model):
                         os.remove(tmp)
             except Exception as e:
                 _logger.warning('OCR failed: %s', e)
+        else:
+            _logger.info(
+                'OKF: tesseract saknas — bilden indexeras utan OCR (%s)',
+                attach.name)
+
         # 2. Vision-caption (via AI-provider)
-        if self._has_capability('vision'):
-            try:
-                provider = self.env['ai.provider'].search(
-                    [('active', '=', True)], limit=1)
-                if provider and hasattr(provider, '_generate_vision_caption'):
-                    caption = provider._generate_vision_caption(
-                        attach.raw)
-                    if caption:
-                        parts.append('Bildbeskrivning:\n' + caption)
-            except Exception as e:
-                _logger.warning('Vision caption failed: %s', e)
-        if not parts:
-            return self._raise_missing('vision-eller-ocr')
+        try:
+            provider = self.env['ai.provider'].search(
+                [('active', '=', True)], limit=1)
+            if provider and hasattr(provider, '_generate_vision_caption'):
+                caption = provider._generate_vision_caption(attach.raw)
+                if caption:
+                    parts.append('Bildbeskrivning:\n' + caption)
+        except Exception as e:
+            _logger.warning('Vision caption failed: %s', e)
+
         return '\n\n'.join(parts)
 
     def _normalize_audio(self, attach):
@@ -303,10 +395,25 @@ class AIOkfUpload(models.Model):
             return self._raise_missing('whisper-lib')
 
     def _raise_missing(self, capability):
+        """Förmågan saknas i MILJÖN — säg vad som ska installeras.
+
+        Meddelandet ska vara handlingsbart för en drifttekniker, inte
+        antyda att en coworker är felkonfigurerad (det var den gamla
+        formuleringen, och den pekade fel: felet låg i miljön).
+        """
+        hints = {
+            'pdf': 'installera PyMuPDF (pip install PyMuPDF)',
+            'pdf-lib': 'installera PyMuPDF (pip install PyMuPDF)',
+            'docx': 'installera python-docx (pip install python-docx)',
+            'image': 'installera Pillow (pip install Pillow)',
+            'audio': 'installera ffmpeg (apt install ffmpeg)',
+            'ocr': 'installera tesseract-ocr (apt install tesseract-ocr)',
+        }
+        hint = hints.get(capability.lower(),
+                         'kontrollera modulens beroenden')
         raise UserError(_(
-            'Förmågan "%s" saknas på coworkerns agenter (felkonfiguration). '
-            'Välj en annan coworker eller lägg till förmågan.'
-        ) % capability)
+            'Förmågan "%s" saknas i denna Odoo-miljö — %s.'
+        ) % (capability, hint))
 
     # ── Kön (task 5b.1) ──
     @api.model
@@ -389,3 +496,47 @@ class AIOkfUpload(models.Model):
         )
         upload._process_upload(sync=True)
         return upload
+
+    # ── Åtgärder (fix 2026-09-22) ──
+    def action_retry(self):
+        """Kör om misslyckade uppladdningar.
+
+        VARFÖR: 1391 poster hamnade i state='error' på grund av tre buggar
+        som nu är fixade (felkonfigurerad förmågekontroll, saknad
+        tesseract-binär, okritiskt urval i ir.attachment-bron). Posterna
+        ligger kvar och skräpar — men många av dem KAN nu normaliseras.
+
+        `retry_count` räknas upp per försök så att en post som failar igen
+        syns ha försökts. Ingen automatisk oändlig loop: cron plockar bara
+        'queued'/'working', aldrig 'error'.
+        """
+        for rec in self:
+            if rec.state != 'error':
+                continue
+            rec.write({'state': 'queued',
+                       'retry_count': rec.retry_count + 1,
+                       'error_message': False})
+        self._process_upload(sync=True)
+        return True
+
+    def action_archive_errors(self):
+        """Rensa felposter som aldrig kan bli kunskap.
+
+        En post vars fel är 'Binärfil indexeras inte' eller 'Bilagan
+        saknas' kan inte bli ett koncept hur många försök den än får.
+        Arkiverar dem ur kön i stället för att radera — historiken är
+        beviset på vad som hände (ADD-only).
+        """
+        hopeless = ('Binärfil indexeras inte', 'Bilagan saknas.',
+                    'Filen är för stor')
+
+        def _is_hopeless(rec):
+            msg = rec.error_message or ''
+            return any(msg.startswith(p) for p in hopeless)
+
+        to_clear = self.filtered(
+            lambda r: r.state == 'error' and _is_hopeless(r))
+        if to_clear:
+            _logger.info('OKF: rensar %d hopplösa felposter', len(to_clear))
+            to_clear.unlink()
+        return True

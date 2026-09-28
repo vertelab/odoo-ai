@@ -16,7 +16,7 @@ import logging
 from datetime import timedelta
 
 from odoo import api, fields, models
-from odoo.exceptions import AccessError
+from odoo.exceptions import AccessError, ValidationError
 
 _logger = logging.getLogger(__name__)
 
@@ -33,6 +33,12 @@ class AICoworkerHITL(models.Model):
     user_id = fields.Many2one(
         'res.users', string='Godkännare', required=True,
         ondelete='cascade', index=True)
+    session_id = fields.Many2one(
+        'ai.coworker.session', string='Session', required=True,
+        ondelete='cascade', index=True,
+        help='Körningen som begärde godkännandet. Obligatorisk — en '
+             'HITL-request utan session är en herrelös förfrågan som '
+             'ingen kan härleda till ett arbete.')
     state = fields.Selection([
         ('asked', 'Frågad'),
         ('approved', 'Godkänd'),
@@ -197,7 +203,11 @@ class AICoworkerHITL(models.Model):
         auto-förslag (avslag nollställer räknaren)."""
         last_reject = self.search([
             ('user_id', '=', user_id),
-            ('action_type', '=', action_type),
+            # Auto-förslag lagras med action_type='auto_proposal' — inte
+            # med den åtgärd de föreslår (den ligger i context/standing_rule).
+            # Att filtrera på `action_type` här gjorde att avslaget aldrig
+            # hittades och räknaren aldrig nollställdes.
+            ('action_type', '=', 'auto_proposal'),
             ('object_type', '=', object_type or ''),
             ('is_auto_proposal', '=', True),
             ('state', '=', 'rejected'),
@@ -232,7 +242,11 @@ class AICoworkerHITL(models.Model):
             ('user_id', '=', self.user_id.id),
             ('is_auto_proposal', '=', True),
             ('state', '=', 'asked'),
-            ('action_type', '=', self.action_type),
+            # Förslaget SKAPAS med action_type='auto_proposal' (rad ~250),
+            # så vakten måste söka på samma värde — inte på self.action_type
+            # (t.ex. 'promote_mail'). Den gamla sökningen kunde aldrig matcha
+            # sina egna förslag och skapade en ny rad varje gång.
+            ('action_type', '=', 'auto_proposal'),
             ('object_type', '=', self.object_type or ''),
         ], limit=1)
         if existing:
@@ -240,6 +254,9 @@ class AICoworkerHITL(models.Model):
         proposal = self.sudo().create({
             'coworker_id': self.coworker_id.id,
             'user_id': self.user_id.id,
+            # Auto-förslaget är ett barn av den request som utlöste det —
+            # det hör till samma körning, inte till en ny.
+            'session_id': self.session_id.id,
             'action_type': 'auto_proposal',
             'object_type': self.object_type or '',
             'request_summary': (
@@ -301,8 +318,43 @@ class AICoworkerHITLMixin(models.Model):
             rec.hitl_open_count = len(
                 rec.hitl_ids.filtered(lambda h: h.state == 'asked'))
 
+    def _resolve_session(self):
+        """Sessionen som körningen tillhör — eller raise.
+
+        Sessionen ärvs via env.context, satt av den väg som startade
+        körningen (`_session_context_env` i openai_api, motsvarande i
+        stream). Två nycklar är etablerade i kodbasen:
+
+        * `_ai_context_model`/`_ai_context_id` — kanonisk "aktuell
+          session" (samma idiom som `_get_nats_user_context`, rad 4309).
+        * `ai_lineage_session_id` — lineage-nyckeln (samma idiom som
+          `ai_okf_concept.py:1729`).
+
+        Ingen tyst fallback: en HITL-request utan session är en
+        herrelös förfrågan (design D7). Att skapa en ny session här
+        vore att hitta på ett arbete som inte finns.
+        """
+        self.ensure_one()
+        Sess = self.env['ai.coworker.session']
+        sess_id = 0
+        if self.env.context.get('_ai_context_model') == 'ai.coworker.session':
+            sess_id = self.env.context.get('_ai_context_id') or 0
+        if not sess_id:
+            sess_id = self.env.context.get('ai_lineage_session_id') or 0
+        if not sess_id:
+            raise ValidationError(
+                'HITL-request kan inte skapas utan en session. Körningen '
+                'saknar ai.coworker.session i context (förväntade '
+                '_ai_context_id eller ai_lineage_session_id). Detta är en '
+                'bugg i anroparen — inte ett tillstånd att gissa runt.')
+        sess = Sess.browse(int(sess_id)).exists()
+        if not sess:
+            raise ValidationError(
+                'HITL-request: session %s finns inte (raderad?).' % sess_id)
+        return sess
+
     def _request_hitl(self, action_type, summary, context=None,
-                      risk_level='high', user_id=None):
+                      risk_level='high', user_id=None, session=None):
         """Begär mänskligt godkännande — record + aktivitet + notis.
 
         Dubblettskydd: samma (coworker, action_type, context-hash) med
@@ -314,8 +366,10 @@ class AICoworkerHITLMixin(models.Model):
             context: dict (model, res_id, förslag…) — lagras som JSON.
             risk_level: safe | high | destructive.
             user_id: godkännaren (res.users). Default: env.user.
+            session: ai.coworker.session. Default: löses ur env.context.
         """
         self.ensure_one()
+        session = session or self._resolve_session()
         user = self.env['res.users'].browse(user_id) if user_id \
             else self.env.user
         if not user:
@@ -333,6 +387,7 @@ class AICoworkerHITLMixin(models.Model):
             ('action_type', '=', action_type),
             ('context_hash', '=', ctx_hash),
             ('user_id', '=', user.id),
+            ('session_id', '=', session.id),
         ], limit=1)
         if existing:
             return existing
@@ -340,6 +395,7 @@ class AICoworkerHITLMixin(models.Model):
         hitl = self.env['ai.coworker.hitl'].sudo().create({
             'coworker_id': self.id,
             'user_id': user.id,
+            'session_id': session.id,
             'action_type': action_type,
             'object_type': object_type,
             'context_hash': ctx_hash,

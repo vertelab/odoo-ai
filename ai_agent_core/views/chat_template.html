@@ -288,6 +288,8 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);overflow:hid
 .documents-list{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:4px}
 .document-chip{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;background:var(--bg-input);border:1px solid var(--border);border-radius:12px;font-size:11px;color:var(--text);max-width:200px}
 .document-chip .doc-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+a.doc-name{color:inherit;text-decoration:none;cursor:pointer}
+a.doc-name:hover{text-decoration:underline}
 .document-chip .doc-remove{background:none;border:none;color:var(--danger);cursor:pointer;font-size:14px;padding:0 2px;line-height:1;border-radius:50%}
 .document-chip .doc-remove:hover{background:rgba(255,0,0,0.1)}
 </style>
@@ -407,6 +409,12 @@ var params=new URLSearchParams(window.location.search);
 var embedded=params.get('embedded')==='1';
 var contextQuest=params.get('context_quest')||'';
 var contextSkill=params.get('context_skill')||'';
+// Rekordkontext (ai-coworker-record-context 5.3): vilken record — eller
+// markering — användaren hade öppen när chatten öppnades. Skickas vidare
+// till /ai/stream så sessionen får ai_record_*-fälten satta.
+var contextModel=params.get('context_model')||'';
+var contextResId=params.get('context_res_id')||'';
+var contextResIds=params.get('context_res_ids')||'';
 if(embedded){document.body.classList.add('chat-embedded')}
 
 // Auto-init: if context_skill is set, tell the AI to read it
@@ -1102,6 +1110,11 @@ function startStream(prompt){
     if(activeSessionId)url+='&session_id='+activeSessionId;
     if(contextSkill)url+='&context_skill='+contextSkill;
     if(contextQuest)url+='&context_quest='+contextQuest;
+    // Rekordkontext (5.3): skickas varje tur — servern sätter den bara
+    // när sessionen saknar kontext, så en följdfråga inte skriver över.
+    if(contextModel)url+='&context_model='+encodeURIComponent(contextModel);
+    if(contextResIds)url+='&context_res_ids='+encodeURIComponent(contextResIds);
+    else if(contextResId)url+='&context_res_id='+encodeURIComponent(contextResId);
     currentEventSource=new EventSource(url);
     currentEventSource.onmessage=function(e){try{var t=JSON.parse(e.data);handleStreamEvent(t)}catch(e){}};
     currentEventSource.onerror=function(){if(streaming){currentEventSource.close();showChatError('Anslutningen till AI-servern bröts — försök igen.')}}
@@ -1232,7 +1245,13 @@ function loadSessionDocuments(){
             d.documents.forEach(function(doc){
                 var chip=document.createElement('span');
                 chip.className='document-chip';
-                chip.innerHTML='<span>📄</span><span class="doc-name">'+esc(doc.name)+'</span>';
+                var label='<span>📄</span>';
+                if(doc.url){
+                    label+='<a class="doc-name" href="'+esc(doc.url)+'" target="_blank" rel="noopener" title="Ladda ner '+esc(doc.name)+'">'+esc(doc.name)+'</a>';
+                }else{
+                    label+='<span class="doc-name">'+esc(doc.name)+'</span>';
+                }
+                chip.innerHTML=label;
                 if(doc.can_remove){
                     var rm=document.createElement('button');
                     rm.className='doc-remove';rm.innerHTML='×';

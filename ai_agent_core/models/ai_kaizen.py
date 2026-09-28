@@ -175,7 +175,21 @@ class AIKaizenReport(models.Model):
         return report
 
     def _gather_week_data(self, quest, week_start, week_end):
-        """Gather metrics for the specified week."""
+        """Gather metrics for the specified week.
+
+        ── Cross-user-läsning (odoo-mind-memory-scope-isolation) ──────────
+        Kaizen läser AVSIKTLIGT alla användares sessioner för coworkern inom
+        veckofönstret — det är hela poängen med veckoträningen. Detta är det
+        ENDA sanktionerade undantaget från ägarisoleringen, och det är:
+
+          * bundet till coworkern (inte globalt)
+          * tidsbegränsat till veckan
+          * läsning för aggregering — aldrig injektion i en enskild
+            användares prompt
+
+        Lärdomar skrivs tillbaka som coworker-globala koncept
+        (`source_user_id = NULL`), inte som en användares minne.
+        """
         week_start_dt = datetime.combine(week_start, datetime.min.time())
         week_end_dt = datetime.combine(week_end, datetime.max.time())
 
@@ -190,6 +204,13 @@ class AIKaizenReport(models.Model):
             ('create_date', '>=', week_start_dt),
             ('create_date', '<=', week_end_dt),
         ])
+
+        # Spårbarhet (task 3.3): logga varje cross-user-läsning.
+        _logger.info(
+            'Kaizen cross-user-läsning: coworker=%s vecka %s..%s — '
+            '%d sessioner från %d användare',
+            coworker.name, week_start, week_end, len(sessions),
+            len(set(sessions.mapped('user_id').ids)))
 
         error_sessions = sessions.filtered(lambda s: s.status == 'error')
 

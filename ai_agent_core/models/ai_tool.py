@@ -136,6 +136,21 @@ class AITool(models.Model):
         'NATS Timeout (s)', default=30,
         help='Max seconds to wait for Pi-agent reply.',
     )
+    # Agent-identitet (pi-agent-agent-identity): vilken ai.agent som äger
+    # detta verktyg. Sätts när verktyget bara är meningsfullt för en
+    # specifik agent — executorn väljer då rätt agent utan att gissa.
+    #
+    # OBS: detta är en HINT, inte sanningen. Ett verktyg kan användas av
+    # flera agenter, och ett uppdrag kan bära en annan agent via
+    # request-fältet `agent`. Prioritet i executorn:
+    #   payload.agent (från uppdraget) > nats_agent (från verktyget) > inget
+    nats_agent_id = fields.Many2one(
+        'ai.agent', string='Owning Agent',
+        ondelete='set null',
+        help='Valfritt. Agenten som äger detta verktyg. Skickas med i '
+             'NATS-payloaden så att pi-agenten kör rätt agent. Tomt = '
+             'ingen styrning (coworkerns union gäller).',
+    )
 
     # Systemtoken-kostnad per anrop (budget-hard-cap D6)
     sys_token_cost = fields.Integer(
@@ -559,6 +574,10 @@ class AITool(models.Model):
                 nats_subject=self.nats_subject or "pi.task.do",
                 nats_skills=self.nats_skills or "",
                 nats_timeout=self.nats_timeout or 30,
+                # Agent-identitet (pi-agent-agent-identity): ägande agent
+                # följer med som en hint i NATS-payloaden.
+                nats_agent=(str(self.nats_agent_id.id)
+                            if self.nats_agent_id else ""),
             )
 
         # Local executor tool (existing behavior)

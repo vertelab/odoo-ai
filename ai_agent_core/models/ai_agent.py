@@ -5,6 +5,7 @@ import base64
 import logging
 import requests
 from odoo import models, fields, api, _
+from odoo.exceptions import ValidationError
 
 _logger = logging.getLogger(__name__)
 
@@ -73,6 +74,17 @@ class AIAgent(models.Model):
     max_tokens = fields.Integer(default=4096)
     max_rounds = fields.Integer(default=10)
 
+    # Runtime (external-agent-runtime D1/D2): ortogonal axel mot init-typen.
+    # Init-typen säger VEM som väcker coworkern; runtime säger VAR loopen kör.
+    # Ingen migration behövs — default täcker befintliga rader.
+    runtime = fields.Selection([
+        ('in_process', 'I Odoo-processen'),
+        ('external', 'Extern process'),
+    ], string='Körmiljö', default='in_process', required=True,
+        help='Var agent-loopen kör. "I Odoo-processen" ockuperar en '
+             'Odoo-worker under körningen; "Extern process" startar '
+             'agenten som en separat process och frigör workern direkt.')
+
     # Budget (budget-hard-cap D8: budget_limit/budget_used i USD begravda —
     # systemtokens är enda valuta, hanteras på ai.coworker)
 
@@ -87,6 +99,10 @@ class AIAgent(models.Model):
     session_line_count = fields.Integer(compute='_compute_session_line_count')
     session_tokens_last_30d = fields.Integer(
         compute='_compute_session_tokens_30d', string='Tokens (månad)')
+    live_external_count = fields.Integer(
+        compute='_compute_live_external_count', string='Levande externa',
+        help='Antal externa agent-processer som lever just nu (D10-mätpunkt). '
+             'Inget tak jämförs mot detta tal — taket är empiriskt.')
 
     def _compute_session_line_count(self):
         for r in self:
@@ -104,6 +120,12 @@ class AIAgent(models.Model):
                 ('agent_id', '=', r.id)
             ])
 
+    def _compute_live_external_count(self):
+        """Levande externa processer (D10). Beräknas en gång, samma för alla."""
+        count = self.env['ai.coworker.session']._live_external_count()
+        for r in self:
+            r.live_external_count = count
+
     def action_open_session_lines(self):
         """Open coworker session lines produced by this agent (stat button)."""
         return {
@@ -112,6 +134,108 @@ class AIAgent(models.Model):
             'views': [[False, 'list'], [False, 'form']],
             'domain': [('agent_id', '=', self.id)],
         }
+
+    # ── Extern körning (external-agent-runtime) ─────────────────────
+
+    def _runtime_is_external(self):
+        self.ensure_one()
+        return self.runtime == 'external'
+
+    def _attach_builtin_tool_by_name(self, tool_name):
+        """Koppla ett inbyggt verktyg till agenten via dess NAMN.
+
+        Inbyggda verktyg (core/tools.py) får sina `ai.tool`-poster skapade
+        dynamiskt av `_ensure_builtin_tool_records()` och har därför inget
+        xmlid — de kan inte refereras med `ref()` i en datafil. Denna metod
+        anropas från XML så att seeden förblir deklarativ.
+
+        Idempotent: `(4, id)` lägger bara till länken om den inte finns.
+        Returnerar antalet agenter som fick verktyget (för loggning).
+        """
+        tool = self.env['ai.tool'].search(
+            [('name', '=', tool_name)], limit=1)
+        if not tool:
+            _logger.warning(
+                '_attach_builtin_tool_by_name: hittade inget verktyg med '
+                'namnet %r — hoppar över. Är _ensure_builtin_tool_records() '
+                'körd?', tool_name)
+            return 0
+        for agent in self:
+            agent.write({'tool_ids': [(4, tool.id)]})
+        return len(self)
+
+    def _dispatch_external(self, coworker, session, user, prompt=None):
+        """Starta denna agent som extern process för en coworker-körning.
+
+        Detta är DEN ENDA dispatch-implementationen (D3/D11): specialistlager
+        (t.ex. `saltstack_ai`) ärver den och bygger ingen egen livscykel.
+
+        Användarkontexten (D5) löses upp av anroparen INNAN denna metod —
+        nyckeln binds till `user`, och `systemuser` är aldrig tillåtet.
+
+        Args:
+            coworker: `ai.coworker`-record som körningen tillhör.
+            session: `ai.coworker.session`-record (kan vara tom).
+            user: `res.users` — den UPPLÖSTA identiteten (aldrig systemuser).
+            prompt: uppdrag att skicka till agenten vid start.
+
+        Returns:
+            dict med pid, port, spawn_time, rss_kb — eller None om agenten
+            inte är extern.
+        """
+        self.ensure_one()
+        if not self._runtime_is_external():
+            return None
+
+        from odoo.addons.ai_agent_core.core import runtime as rt
+
+        if not user:
+            raise ValidationError(
+                'Extern körning kräver en upplöst användare — '
+                'systemuser är aldrig tillåtet (D5).')
+        if user.id == self.env.ref('base.user_root').id:
+            raise ValidationError(
+                'Extern körning får inte köras som systemuser (D5).')
+
+        base_url = self.env['ir.config_parameter'].sudo().get_param(
+            'web.base.url', 'http://localhost:8069')
+
+        # Nyckeln skapas som den UPPLÖSTA användaren: `_generate` binder
+        # nyckeln till `env.user` (INSERT ... user_id = env.user.id). Det är
+        # därför identiteten måste vara löst INNAN vi skapar den (D5).
+        # `with_user(user)` sätter env.user; `.sudo()` behövs för att
+        # skriva i apikeys-tabellen.
+        api_key = self.env['res.users.apikeys'].with_user(user).sudo()._generate(
+            scope='rpc',
+            name='pi-agent dispatch (coworker %s)' % coworker.id,
+            expiration_date=None,
+        )
+
+        skills = self.skill_ids.mapped('name') if self.skill_ids else None
+        handle = rt.spawn(
+            env=self.env,
+            coworker_id=coworker.id,
+            api_key=api_key,
+            base_url=base_url,
+            name='pi-agent-coworker-%s' % coworker.id,
+            skills=skills,
+            prompt=prompt,
+        )
+
+        measurement = {
+            'pid': handle.pid,
+            'port': handle.port,
+            'spawn_time': round(handle.duration(), 3),
+            'rss_kb': handle.rss_kb(),
+        }
+        if session:
+            session._record_external_run(measurement)
+        _logger.info(
+            'runtime: dispatchade agent %s för coworker %s som %s '
+            '(pid=%s, port=%s, %.3f s)',
+            self.id, coworker.id, user.login, handle.pid, handle.port,
+            measurement['spawn_time'])
+        return measurement
 
     def _compute_is_buzz_active(self):
         for r in self:
@@ -303,6 +427,61 @@ class AIAgent(models.Model):
             parts.append(f"LLM: {self.model_id.name}")
 
         return "\n".join(parts)
+
+
+
+    # ══════════════════════════════════════════════════════════════════
+    # Default-skills för Allmän kärna
+    # ══════════════════════════════════════════════════════════════════
+
+    def _ensure_default_skills(self):
+        """Koppla default-skillarna till Allmän kärna (idempotent).
+
+        Anropas som `<function>` i `data/vertel_skills.xml`, UTANFÖR
+        noupdate-blocket.
+
+        VARFÖR EN FUNKTION OCH INTE EN `<record>`: xmlid:n
+        `agent_default_core` skapas i `default_coworker.xml` med
+        `<data noupdate="1">` → `noupdate=true` i ir_model_data. Odoos
+        `_load_records` hoppar då över ALL vidare bearbetning av den
+        xmlid:n — även från en annan fil. En `<record>` på samma xmlid i
+        `vertel_skills.xml` hade alltså ingen verkan, och felet var tyst:
+        skillsen skapades, men kopplingen uteblev.
+
+        Mätt på social 2026-09-22: `skill_okf_summarize` fanns som rad men
+        `ai_agent_skill_rel` saknade kopplingen till agent 1.
+
+        Idempotent: lägger bara till länkar som saknas, rör inga befintliga.
+        """
+        agent = self.env.ref('ai_agent_core.agent_default_core',
+                             raise_if_not_found=False)
+        if not agent:
+            _logger.warning(
+                'ai.agent: agent_default_core saknas — kan inte koppla '
+                'default-skills')
+            return True
+
+        wanted = [
+            'skill_vertel_skills',
+            'skill_vertel_infra',
+            'skill_vertel_openspec',
+            'skill_vertel_clicktest',
+            'skill_okf_summarize',
+        ]
+        added = []
+        for xmlid in wanted:
+            skill = self.env.ref('ai_agent_core.%s' % xmlid,
+                                 raise_if_not_found=False)
+            if not skill:
+                _logger.warning('ai.agent: skillen %s saknas', xmlid)
+                continue
+            if skill not in agent.skill_ids:
+                agent.write({'skill_ids': [(4, skill.id)]})
+                added.append(xmlid)
+        if added:
+            _logger.info('ai.agent: kopplade %s till %s',
+                         ', '.join(added), agent.name)
+        return True
 
 
 class AIAgentTool(models.Model):

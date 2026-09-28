@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- ════════════════════════════════════════════════════════════
+         pi.mesh.lock — lås-vyn.
+
+         Specen: "WHEN ett lås har passerat sin timeout THEN släpps det
+         av en ir.cron och försvinner ur lås-vyn."
+
+         Standardfiltret visar bara HÅLLNA lås. Ett dött lås (utgånget
+         eller med en ägare som tystnat) flaggas — det är den enda
+         vyn en människa behöver för att upptäcka en blockering.
+         ════════════════════════════════════════════════════════════ -->
+
+    <record id="view_pi_mesh_lock_list" model="ir.ui.view">
+        <field name="name">pi.mesh.lock.list</field>
+        <field name="model">pi.mesh.lock</field>
+        <field name="arch" type="xml">
+            <list string="Lås" decoration-danger="is_dead"
+                  decoration-muted="state != 'held'">
+                <field name="resource"/>
+                <field name="agent_id"/>
+                <field name="state" widget="badge"
+                       decoration-success="state == 'held'"/>
+                <field name="acquired_at"/>
+                <field name="expires_at"/>
+                <field name="ttl_seconds" optional="hide"/>
+                <field name="held_for" optional="show"/>
+                <field name="is_dead" optional="show"/>
+                <field name="reason" optional="hide"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_pi_mesh_lock_form" model="ir.ui.view">
+        <field name="name">pi.mesh.lock.form</field>
+        <field name="model">pi.mesh.lock</field>
+        <field name="arch" type="xml">
+            <form>
+                <header>
+                    <field name="state" widget="statusbar"/>
+                </header>
+                <sheet>
+                    <div class="alert alert-danger" role="alert"
+                         invisible="not is_dead">
+                        <i class="fa fa-exclamation-triangle me-1"/>
+                        Detta lås är dött — antingen har TTL löpt ut eller
+                        har ägaren tystnat. Det blockerar ingen, men
+                        förklarar varför en agent kan ha nekats.
+                    </div>
+                    <group>
+                        <group string="Låset">
+                            <field name="resource"/>
+                            <field name="agent_id"/>
+                            <field name="ttl_seconds"/>
+                        </group>
+                        <group string="Tid">
+                            <field name="acquired_at"/>
+                            <field name="expires_at"/>
+                            <field name="released_at"/>
+                            <field name="held_for"/>
+                        </group>
+                    </group>
+                    <group string="Orsak">
+                        <field name="reason" nolabel="1"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_pi_mesh_lock_search" model="ir.ui.view">
+        <field name="name">pi.mesh.lock.search</field>
+        <field name="model">pi.mesh.lock</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="resource"/>
+                <field name="agent_id"/>
+                <filter name="filter_held" string="Hållna"
+                        domain="[('state', '=', 'held')]"/>
+                <filter name="filter_dead" string="Döda"
+                        domain="[('is_dead', '=', True)]"/>
+                <filter name="filter_expired" string="Utgångna"
+                        domain="[('state', '=', 'expired')]"/>
+                <separator/>
+                <filter name="group_state" string="Tillstånd"
+                        context="{'group_by': 'state'}"/>
+                <filter name="group_agent" string="Ägare"
+                        context="{'group_by': 'agent_id'}"/>
+                <filter name="group_resource" string="Resurs"
+                        context="{'group_by': 'resource'}"/>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_pi_mesh_lock" model="ir.actions.act_window">
+        <field name="name">Lås</field>
+        <field name="res_model">pi.mesh.lock</field>
+        <field name="view_mode">list,form</field>
+        <field name="context">{'search_default_filter_held': 1}</field>
+    </record>
+</odoo>

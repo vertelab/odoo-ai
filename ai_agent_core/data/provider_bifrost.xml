@@ -14,6 +14,19 @@
             <field name="retry_count">3</field>
             <field name="active" eval="True"/>
             <field name="status">confirmed</field>
+            <!-- Embeddings (okf-recall-path). Satt 2026-09-23 efter att
+                 text-embedding-3-small visat sig saknas i Bifrosts katalog
+                 (POST /v1/embeddings hänger, HTTP 000 — ingen träff i
+                 routningen). mistral/mistral-embed svarar 200 på ~200 ms
+                 och ger EXAKT 1024 dimensioner, samma som kolumnen
+                 ai_okf_concept.embedding = vector(1024).
+
+                 OBS: ett explicit modell-id proxas förbi combo-adapterns
+                 entitlement-kontroll — nyckelns explicit_models behöver
+                 därför INTE uppdateras. -->
+            <field name="can_embed" eval="True"/>
+            <field name="embedding_model">mistral/mistral-embed</field>
+            <field name="embedding_dim" eval="1024"/>
         </record>
 
     </data>

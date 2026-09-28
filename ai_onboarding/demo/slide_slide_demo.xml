@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo><data noupdate="1">
+
+    <!-- Testdata: lektioner i kursen "AI-assistenten i Vertel".
+         Laddas ENDAST mot *_test-databaser (repo_apply: –without-demo=all
+         för produktion). Ersätts av riktigt innehåll i Fas 5. -->
+    <record id="slide_ai_0" model="slide.slide">
+        <field name="name">Översikt: vad AI-assistenten gör</field>
+        <field name="channel_id" ref="slide_channel_ai"/>
+        <field name="slide_category">article</field>
+        <field name="is_published" eval="True"/>
+        <field name="description">&lt;p&gt;Co-pilot i formulär, chatt och dokument.&lt;/p&gt;</field>
+        <field name="sequence">10</field>
+    </record>
+    <record id="slide_ai_1" model="slide.slide">
+        <field name="name">Fråga och få svar</field>
+        <field name="channel_id" ref="slide_channel_ai"/>
+        <field name="slide_category">article</field>
+        <field name="is_published" eval="True"/>
+        <field name="description">&lt;p&gt;Ställa frågor mot era data, källor och spårbarhet.&lt;/p&gt;</field>
+        <field name="sequence">20</field>
+    </record>
+    <record id="slide_ai_2" model="slide.slide">
+        <field name="name">Delegera och granska</field>
+        <field name="channel_id" ref="slide_channel_ai"/>
+        <field name="slide_category">article</field>
+        <field name="is_published" eval="True"/>
+        <field name="description">&lt;p&gt;Coworker, förslag, godkännande (HITL).&lt;/p&gt;</field>
+        <field name="sequence">30</field>
+    </record>
+    <record id="slide_ai_3" model="slide.slide">
+        <field name="name">Gränser och ansvar</field>
+        <field name="channel_id" ref="slide_channel_ai"/>
+        <field name="slide_category">article</field>
+        <field name="is_published" eval="True"/>
+        <field name="description">&lt;p&gt;Vad AI:n inte får göra, loggning och revision.&lt;/p&gt;</field>
+        <field name="sequence">40</field>
+    </record>
+
+</data></odoo>

@@ -21,6 +21,26 @@
         </field>
     </record>
 
+    <!-- Kör om misslyckade uppladdningar (fix 2026-09-22: tre buggar
+         gjorde att 1391 poster hamnade i error — de kan nu normaliseras). -->
+    <record id="action_ai_okf_upload_retry" model="ir.actions.server">
+        <field name="name">Försök igen</field>
+        <field name="model_id" ref="model_ai_okf_upload"/>
+        <field name="binding_model_id" ref="model_ai_okf_upload"/>
+        <field name="binding_view_types">list,form</field>
+        <field name="state">code</field>
+        <field name="code">action = records.action_retry()</field>
+    </record>
+
+    <record id="action_ai_okf_upload_archive_errors" model="ir.actions.server">
+        <field name="name">Rensa hopplösa fel</field>
+        <field name="model_id" ref="model_ai_okf_upload"/>
+        <field name="binding_model_id" ref="model_ai_okf_upload"/>
+        <field name="binding_view_types">list,form</field>
+        <field name="state">code</field>
+        <field name="code">action = records.action_archive_errors()</field>
+    </record>
+
     <record id="view_ai_okf_upload_form" model="ir.ui.view">
         <field name="name">ai.okf.upload.form</field>
         <field name="model">ai.okf.upload</field>

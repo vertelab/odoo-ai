@@ -112,12 +112,19 @@ class AgentLoop:
         permission_engine: Optional[PermissionEngine] = None,
         context_provider: Optional[callable] = None,
         denial_callback: Optional[callable] = None,
+        tool_selector=None,
     ):
         self.provider = provider
         self.tools = tools
         self.config = config or AgentConfig()
         self.interrupt_handler = interrupt_handler
         self.context_provider = context_provider
+        # Tool selection (priority 1): narrow the registry to a task-matched
+        # subset before each provider call. None = send everything (old
+        # behaviour). Never widens access — only narrows the authorised set.
+        self.tool_selector = tool_selector
+        # Last selection stats (observability — token delta per call).
+        self.tool_selection_stats: list = []
         # Async-ytor (cron/mail/webhook): kallas när ett verktyg nekas av
         # permission engine (t.ex. hårt stopp) — kan dirigera till
         # workspace-approval-kön.
@@ -165,6 +172,36 @@ class AgentLoop:
         for pt in planning_tools(self.todo_list):
             if pt.name not in self.tools:
                 self.tools.register(pt)
+
+    def _tool_defs(self, messages: list[Message]):
+        """Build the tool definitions for a provider call.
+
+        Priority 1 (context saving): when a tool_selector is configured, the
+        registry is narrowed to a task-matched subset before serialisation.
+        The selector never widens access — it only filters the already
+        authorised registry — and it fails open (full registry on error).
+
+        The prompt used for selection is the last user message; that is what
+        the turn is actually about.
+        """
+        if len(self.tools) == 0:
+            return None
+        if self.tool_selector is None:
+            return self.tools.to_openai()
+
+        prompt = ""
+        for m in reversed(messages):
+            if m.role == Role.USER and m.content:
+                prompt = m.content
+                break
+
+        narrowed = self.tool_selector.select(prompt, self.tools)
+        stats = getattr(self.tool_selector, "last_stats", None)
+        if stats:
+            self.tool_selection_stats.append(stats)
+        if len(narrowed) == 0:
+            return None
+        return narrowed.to_openai()
 
     def cancel(self) -> None:
         """Signal cancellation. Stops LLM call and pending tools."""
@@ -250,7 +287,7 @@ class AgentLoop:
                     pass  # Best-effort — never fail a turn over context injection
 
             # -- Provider call (with cancel support) --
-            tool_defs = self.tools.to_openai() if len(self.tools) > 0 else None
+            tool_defs = self._tool_defs(messages)
 
             try:
                 chat_task = asyncio.create_task(
@@ -664,16 +701,29 @@ class AgentLoop:
             _logger.warning("Tool '%s' failed: %s", tool_call.name, e)
             return f"Error executing '{tool_call.name}': {e}"
 
-        # Truncate large results
-        if len(result) > self.config.max_tool_result_chars:
-            half = self.config.max_tool_result_chars // 2
-            result = (
-                result[:half]
-                + f"\n... (truncated {len(result) - self.config.max_tool_result_chars} chars) ...\n"
-                + result[-half:]
-            )
+        # Chunkning av stora verktygsresultat — se `_chunk_tool_result`.
+        # Detta är INTE en sammanfattning: ingen LLM anropas, inget skrivs
+        # till `session.summary`. Det är en ren längdbegränsning för att
+        # resultatet ska rymmas i kontextfönstret (okf-recall-path 4.5).
+        return self._chunk_tool_result(result)
 
-        return result
+    def _chunk_tool_result(self, result: str) -> str:
+        """Klipp ett stort verktygsresultat så att både början och slutet bevaras.
+
+        Avgränsad från sammanfattning (okf-recall-path 4.5): denna funktion
+        är deterministisk, gratis och rör aldrig `session.summary`. Tidigare
+        låg logiken inline i `_execute_tool`, vilket gjorde att "att klippa ett
+        resultat" och "att sammanfatta en session" såg ut som samma sak.
+        """
+        if len(result) <= self.config.max_tool_result_chars:
+            return result
+        half = self.config.max_tool_result_chars // 2
+        return (
+            result[:half]
+            + "\n... (truncated %d chars) ...\n"
+            % (len(result) - self.config.max_tool_result_chars)
+            + result[-half:]
+        )
 
     async def _execute_via_nats(self, tool: 'Tool', args: dict) -> str:
         """Execute a tool via NATS request-reply delegation.
@@ -703,6 +753,12 @@ class AgentLoop:
             "skills": [s.strip() for s in skills.split(",") if s.strip()],
             "api_secret": self.config.nats_api_secret,
         }
+        # Agent-identitet (pi-agent-agent-identity): verktygets ägande
+        # agent följer med som en HINT. Executorn prioriterar ett
+        # uppdrags-specifikt agent-fält över denna.
+        nats_agent = getattr(tool, 'nats_agent', '') or ''
+        if nats_agent:
+            payload["agent"] = nats_agent
         # Include user context for pi-agent (pi-agent-memory-bridge D5)
         if self.config.nats_user_context:
             payload["context"] = self.config.nats_user_context
@@ -757,9 +813,16 @@ class AgentLoop:
         return estimated_tokens > self.config.max_context_tokens
 
     async def _summarize(self, messages: list[Message]) -> list[Message]:
-        """Summarize conversation history to fit within context budget.
+        """Komprimera konversationshistoriken för att rymmas i kontextbudgeten.
 
-        Buzz pattern: one LLM call to compress, then continue.
+        OBS: detta är INTE sessionens eftermäle (okf-recall-path D4/4.5).
+        Resultatet är ett efemärt systemmeddelande som bara lever i denna
+        körning — det persisteras aldrig på `session.summary` och anropas
+        aldrig av stängnings- eller cron-vägen. Sessionens eftermäle skrivs
+        av `ai.coworker.session._write_final_summary`.
+
+        Prompten är svensk för språkkonsekvens (session-close krav 5):
+        eftermälen ska vara jämförbara och sökbara med svensk fulltextsökning.
         """
         if len(messages) < 4:
             return messages  # nothing to summarize
@@ -770,9 +833,8 @@ class AgentLoop:
         recent = messages[-keep_recent:]
 
         summary_prompt = (
-            "Summarize the following conversation. "
-            "Keep all key facts, decisions, and context. "
-            "Be concise but complete.\n\n"
+            "Sammanfatta konversationen nedan. Behåll alla nyckelfakta, "
+            "beslut och kontext. Var koncis men komplett.\n\n"
             + "\n".join(
                 f"{m.role.value}: {m.content[:500]}"
                 for m in to_summarize
@@ -785,16 +847,16 @@ class AgentLoop:
                 self.provider.chat(
                     model=self.config.model,
                     messages=[Message(role=Role.USER, content=summary_prompt)],
-                    system_prompt="You are a summarization assistant. Be concise.",
+                    system_prompt="Du sammanfattar konversationer. Var koncis.",
                     temperature=0.3,
                     max_tokens=2048,
                 ),
                 timeout=self.config.llm_timeout,
             )
-            summary = f"[Previous conversation summary: {response.text}]"
+            summary = f"[Tidigare konversation, sammanfattad: {response.text}]"
         except Exception as e:
             _logger.warning("Summarization failed: %s — keeping recent messages", e)
-            summary = "[Summarization failed — keeping recent context]"
+            summary = "[Sammanfattning misslyckades — behåller senaste kontexten]"
 
         summary_msg = Message(role=Role.SYSTEM, content=summary)
         return [summary_msg] + recent
@@ -837,7 +899,7 @@ class StreamingAgentLoop(AgentLoop):
             if self._context_too_large(messages):
                 messages = await self._summarize(messages)
 
-            tool_defs = self.tools.to_openai() if len(self.tools) > 0 else None
+            tool_defs = self._tool_defs(messages)
 
             # Stream from provider
             text_buffer = ""

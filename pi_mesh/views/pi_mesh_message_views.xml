@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- ════════════════════════════════════════════════════════════
+         pi.mesh.message — historiken.
+
+         Specen: "WHEN någon vill veta vem som rörde en fil vid en viss
+         tidpunkt THEN kan pi.mesh.message och pi.mesh.lock svara på
+         det." Därför är sökningen viktigare än formuläret.
+         ════════════════════════════════════════════════════════════ -->
+
+    <record id="view_pi_mesh_message_list" model="ir.ui.view">
+        <field name="name">pi.mesh.message.list</field>
+        <field name="model">pi.mesh.message</field>
+        <field name="arch" type="xml">
+            <list string="Meddelanden" decoration-warning="not answered and kind == 'query'">
+                <field name="sent_at"/>
+                <field name="agent_id"/>
+                <field name="recipient"/>
+                <field name="kind" widget="badge"/>
+                <field name="subject"/>
+                <field name="body" optional="show"/>
+                <field name="answered_at"/>
+                <field name="task_id" optional="hide"/>
+                <field name="age_days" optional="hide"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_pi_mesh_message_form" model="ir.ui.view">
+        <field name="name">pi.mesh.message.form</field>
+        <field name="model">pi.mesh.message</field>
+        <field name="arch" type="xml">
+            <form>
+                <sheet>
+                    <group>
+                        <group string="Meddelande">
+                            <field name="agent_id"/>
+                            <field name="recipient"/>
+                            <field name="kind"/>
+                            <field name="subject"/>
+                            <field name="correlation_id"/>
+                            <field name="session_ref"/>
+                        </group>
+                        <group string="Tid">
+                            <field name="sent_at"/>
+                            <field name="answered_at"/>
+                            <field name="age_days"/>
+                            <field name="task_id"/>
+                        </group>
+                    </group>
+                    <group string="Innehåll">
+                        <field name="body" nolabel="1"/>
+                    </group>
+                    <group string="Svar" invisible="not response">
+                        <field name="response" nolabel="1"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_pi_mesh_message_search" model="ir.ui.view">
+        <field name="name">pi.mesh.message.search</field>
+        <field name="model">pi.mesh.message</field>
+        <field name="arch" type="xml">
+            <search>
+                <field name="agent_id"/>
+                <field name="recipient"/>
+                <field name="subject"/>
+                <field name="body"/>
+                <field name="correlation_id"/>
+                <filter name="filter_unanswered" string="Obebesvarade frågor"
+                        domain="[('kind', '=', 'query'), ('answered', '=', False)]"/>
+                <filter name="filter_claims" string="Anspråk"
+                        domain="[('kind', '=', 'claim')]"/>
+                <filter name="filter_locks" string="Lås"
+                        domain="[('kind', '=', 'lock')]"/>
+                <separator/>
+                <filter name="filter_today" string="I dag"
+                        domain="[('sent_at', '&gt;=', (context_today()).strftime('%Y-%m-%d 00:00:00'))]"/>
+                <separator/>
+                <filter name="group_kind" string="Typ"
+                        context="{'group_by': 'kind'}"/>
+                <filter name="group_agent" string="Från"
+                        context="{'group_by': 'agent_id'}"/>
+                <filter name="group_day" string="Dag"
+                        context="{'group_by': 'sent_at:day'}"/>
+            </search>
+        </field>
+    </record>
+
+    <record id="action_pi_mesh_message" model="ir.actions.act_window">
+        <field name="name">Meddelanden</field>
+        <field name="res_model">pi.mesh.message</field>
+        <field name="view_mode">list,form</field>
+        <field name="context">{'search_default_group_day': 1}</field>
+    </record>
+</odoo>

@@ -26,12 +26,128 @@ class AIMemoryMixin(models.AbstractModel):
     _name = 'ai.memory.mixin'
     _description = 'Memory Mixin — hybrid search for personal and company memory'
     _auto = False  # Abstract model, no DB table
+    _inherit = ['ai.okf.mixin']
+
+    # ════════════════════════════════════════════
+    # OKF-KONTRAKTET (ärvt från ai.okf.mixin)
+    # ════════════════════════════════════════════
+    # Fälten (okf_body, okf_summary, okf_tags, okf_links, okf_dirty,
+    # okf_indexed_at), flagg-hookarna (create/write/_set_okf_dirty/
+    # _clear_okf_dirty) och sammanfattningskedjan bor nu på ai.okf.mixin.
+    # Legacy-minnena ärver dem — beteendet är oförändrat.
+    #
+    # Det som är specifikt för legacy-minnena är KÄLLORNA och ÄGAREN:
+    # de är ADD-only (content kan inte ändras), de har ingen egen
+    # sammanfattning, och de ägs av user/company — inte av env.company.
+
+    def _okf_body_source(self):
+        """Legacy-minnets text. `content` är ADD-only — den sätts en gång."""
+        self.ensure_one()
+        return self.content or ''
+
+    def _okf_dirty_fields(self):
+        """Fält vars ändring gör OKF-fälten inaktuella.
+
+        FYND (fas 6): bägge legacy-modellerna är ADD-ONLY — `content` kan
+        inte ändras efter skapande (`_check_add_only` kastar UserError).
+        En hook på innehållsändring är därför till stor del teoretisk: den
+        enda vägen till ett nytt innehåll är en NY post.
+
+        Kroken finns ändå kvar, av två skäl:
+          1. Fälten som INTE är innehåll (archived, importance, entities)
+             går att ändra, och en arkivering ska slå igenom på konceptet.
+          2. Om ADD-only någon gång luckras upp är bryggan redan hel.
+        """
+        return {'content', 'content_preview', 'category',
+                'importance', 'entities', 'archived', 'scope'}
+
+    @api.model
+    def _okf_indexable_models(self):
+        """Legacy-minnena — basmodellens lista (okf-mixin F4.1).
+
+        Kärnan äger dessa två; bryggmoduler överrider och lägger till sina
+        egna. Kärnan namnger aldrig en domänmodell.
+        """
+        return ['ai.personal.memory', 'ai.company.memory']
+
+    def _okf_skip_reason(self):
+        """Legacy-minnen är ADD-only: tomt innehåll blir aldrig icke-tomt.
+
+        Därför 'empty' → rensa flaggan (befintligt beteende). En webbsida
+        däremot kan publiceras senare och behåller flaggan.
+        """
+        self.ensure_one()
+        return None if (self.content or '').strip() else 'empty'
+
+    def _okf_owner_vals(self):
+        """Härled OKF-ägaren ur en legacy-minnespost (fas 6.3)."""
+        self.ensure_one()
+        if self._name == 'ai.personal.memory':
+            return {'owner_user_id': self.user_id.id or None}
+        return {'owner_company_id': self.company_id.id or self.env.company.id}
+
+    def _okf_concept_vals(self):
+        """Bygg `_okf_upsert`-argumenten ur en legacy-post (fas 6.3).
+
+        Nyckeln måste vara STABIL över tid: samma minnespost ska alltid
+        mappa till samma OKF-koncept, annars skapas en ny version vid varje
+        indexering och versionskedjan svämmar över.
+
+        Texten hämtas via den ärvda `_okf_body_source()`, och gränsen via
+        `_okf_summary_max_chars()` — samma 2000 som förut (default), men nu
+        en systemparameter istället för ett hårdkodat tal.
+        """
+        self.ensure_one()
+        text = self._okf_body_source()
+        vals = {
+            'concept_key': '%s,%s' % (self._name, self.id),
+            'summary': text[:self._okf_summary_max_chars()],
+            'title': (self.content_preview or '')[:120] or None,
+            'source_ref': '%s,%s' % (self._name, self.id),
+            'generated_by': 'cron',
+            # D5: källan styr versionen, inte derivatet.
+            'source_text': text,
+        }
+        vals.update(self._okf_owner_vals())
+        return vals
 
     # ════════════════════════════════════════════
     # HYBRID SEARCH — tre signaler
     # ════════════════════════════════════════════
 
     @api.model
+    def _embedding_column_is_vector(self):
+        """Är `embedding`-kolumnen på DENNA tabell en riktig vector-kolumn?
+
+        Mixin delas av `ai.personal.memory` och `ai.company.memory`, som
+        båda deklarerar `embedding = fields.Text(...)` — Odoo skapar alltså
+        en TEXT-kolumn. `1 - (embedding <=> %s::vector)` är då ett SQL-fel,
+        och utan savepoint förgiftas hela requesten.
+
+        Returns:
+            bool: True om kolumnen är av typen vector.
+        """
+        table = self._table
+        cache_attr = '_embedding_is_vector_cache_%s' % table
+        cls = type(self)
+        if getattr(cls, cache_attr, None) is not None:
+            return getattr(cls, cache_attr)
+        try:
+            with self.env.cr.savepoint():
+                self.env.cr.execute("""
+                    SELECT udt_name FROM information_schema.columns
+                    WHERE table_name = %s AND column_name = 'embedding'
+                """, (table,))
+                row = self.env.cr.fetchone()
+            is_vector = bool(row) and row[0] == 'vector'
+        except Exception as e:
+            _logger.warning(
+                'Kunde inte avgöra embedding-kolumnens typ på %s: %s — '
+                'hoppar över semantisk signal', table, e)
+            is_vector = False
+        setattr(cls, cache_attr, is_vector)
+        return is_vector
+
     def _search_memory(self, domain, query=None, limit=10, threshold=0.1,
                        include_archived=False, explain=False, order='score'):
         """Hybrid search — pgvector + tsvector + entity boost.
@@ -79,7 +195,7 @@ class AIMemoryMixin(models.AbstractModel):
         except Exception as e:
             _logger.warning('Query embedding failed: %s', e)
 
-        if query_embedding:
+        if query_embedding and self._embedding_column_is_vector():
             # Build WHERE clause from domain
             where_clauses = ['archived = %s']
             params = [include_archived]
@@ -98,18 +214,29 @@ class AIMemoryMixin(models.AbstractModel):
 
             where_sql = ' AND '.join(where_clauses)
 
-            self.env.cr.execute(f"""
-                SELECT id, content, category, importance,
-                       create_date,
-                       1 - (embedding <=> %s::vector) AS semantic_score
-                FROM {table}
-                WHERE {where_sql}
-                  AND embedding IS NOT NULL
-                  AND 1 - (embedding <=> %s::vector) >= %s
-                ORDER BY semantic_score DESC
-                LIMIT %s
-            """, (query_embedding, query_embedding, threshold, limit * 4) + tuple(params))
-            semantic_results = self.env.cr.dictfetchall()
+            # savepoint: ett SQL-fel här abortar annars HELA transaktionen
+            # (InFailedSqlTransaction) och varje efterföljande query i
+            # requesten dör. Samma felklass som ai_personal_memory —
+            # BM25-vägen nedan hade redan en savepoint, vektor-vägen inte.
+            try:
+                with self.env.cr.savepoint():
+                    self.env.cr.execute(f"""
+                        SELECT id, content, category, importance,
+                               create_date,
+                               1 - (embedding <=> %s::vector) AS semantic_score
+                        FROM {table}
+                        WHERE {where_sql}
+                          AND embedding IS NOT NULL
+                          AND 1 - (embedding <=> %s::vector) >= %s
+                        ORDER BY semantic_score DESC
+                        LIMIT %s
+                    """, (query_embedding, query_embedding, threshold, limit * 4) + tuple(params))
+                    semantic_results = self.env.cr.dictfetchall()
+            except Exception as e:
+                _logger.warning(
+                    'Semantic search failed for %s (embedding-kolumnen är '
+                    'inte vector?): %s — fortsätter med BM25', table, e)
+                semantic_results = []
 
         # ════════════════════════════════════════
         # SIGNAL 2: BM25 (tsvector full-text)
@@ -220,51 +347,31 @@ class AIMemoryMixin(models.AbstractModel):
     def _generate_embedding(self, text):
         """Generera embedding via AI-provider.
 
-        OpenAI text-embedding-3-small (1536 dimensioner).
+        OpenAI text-embedding-3-small (1024 dimensioner — kolumnens dimension).
         Lagrar som PostgreSQL vector-literal: "[0.1,0.2,...]".
 
         Returns:
             str: PostgreSQL vector literal eller None
         """
-        try:
-            Provider = self.env['ai.provider']
-            if Provider and hasattr(Provider, '_get_embedding'):
-                embedding = Provider._get_embedding(
-                    model='text-embedding-3-small',
-                    input=text[:8192],
-                )
-                if embedding and isinstance(embedding, (list, tuple)):
-                    return '[' + ','.join(str(v) for v in embedding) + ']'
-        except Exception as e:
-            _logger.debug('Provider embedding failed: %s', e)
-
-        try:
-            import requests
-            provider = self.env['ai.provider'].search([
-                ('active', '=', True),
-            ], limit=1)
-            if provider:
-                url = provider.api_url or 'https://api.openai.com/v1/embeddings'
-                api_key = provider.api_key
-                resp = requests.post(
-                    url,
-                    headers={
-                        'Authorization': f'Bearer {api_key}',
-                        'Content-Type': 'application/json',
-                    },
-                    json={
-                        'model': 'text-embedding-3-small',
-                        'input': text[:8192],
-                    },
-                    timeout=10,
-                )
-                if resp.status_code == 200:
-                    data = resp.json()
-                    embedding = data['data'][0]['embedding']
-                    return '[' + ','.join(str(v) for v in embedding) + ']'
-        except Exception as e:
-            _logger.warning('Direct embedding failed: %s', e)
-
+        # `_get_embedding` kräver en SINGEL provider (`ensure_one()`), så den
+        # får inte anropas på ett tomt recordset — det ger
+        # "Expected singleton: ai.provider()" och minnet tappar sin vektor.
+        # `_embedding_provider()` är den avsedda uppslagningen: en aktiv
+        # provider med can_embed, annars en bifrost-provider med nyckel.
+        provider = self.env['ai.provider'].sudo()._embedding_provider()
+        if not provider:
+            _logger.warning(
+                'Embedding: ingen provider kan skapa vektorer '
+                '(can_embed saknas) — minnet sparas utan vektor')
+            return None
+        # Skicka INGET model-argument. `_effective_embedding_model` har
+        # prioritet argument → fält → konstant, och konstanten
+        # (DEFAULT_EMBEDDING_MODEL = 'text-embedding-3-small') är den modell
+        # Bifrost AVVISAR (401). Genom att skicka in den som argument
+        # kringgick vi fältets värde och tvingade fram det trasiga valet.
+        embedding = provider._get_embedding(input=text[:8192])
+        if embedding and isinstance(embedding, (list, tuple)):
+            return '[' + ','.join(str(v) for v in embedding) + ']'
         return None
 
     @api.model
@@ -279,21 +386,27 @@ class AIMemoryMixin(models.AbstractModel):
         if not texts:
             return []
         truncated = [t[:8192] for t in texts]
-        try:
-            Provider = self.env['ai.provider']
-            if Provider and hasattr(Provider, '_get_embedding_batch'):
-                embeddings = Provider._get_embedding_batch(
-                    model='text-embedding-3-small',
-                    input=truncated,
-                )
-                if embeddings and isinstance(embeddings, (list, tuple)):
-                    return [
-                        '[' + ','.join(str(v) for v in emb) + ']'
-                        for emb in embeddings
-                    ]
-        except Exception:
-            pass
-        return [self._generate_embedding(t) for t in truncated]
+        Provider = self.env['ai.provider']
+        # Providern, modellen och dimensionen kommer från providerns egna
+        # fält — inte från en hårdkodad sträng. 'text-embedding-3-small'
+        # stod här och pekade på en modell Bifrost avvisar (000/401).
+        emb_provider = Provider._embedding_provider()
+        if not emb_provider:
+            _logger.warning(
+                'Embedding (batch): ingen provider som kan embedda — '
+                '%s texter lämnas utan vektor', len(truncated))
+            return [None] * len(truncated)
+        embeddings = emb_provider._get_embedding_batch(
+            inputs=truncated,
+            input_type='search_document',
+        )
+        if embeddings and isinstance(embeddings, (list, tuple)):
+            return [
+                '[' + ','.join(str(v) for v in emb) + ']'
+                if emb else None
+                for emb in embeddings
+            ]
+        return [None] * len(truncated)
 
     # ════════════════════════════════════════════
     # ENTITY EXTRACTION

@@ -15,6 +15,7 @@ Verifierar:
 import json
 
 from odoo.tests import common, tagged
+from ._config_param_guard import ConfigParamGuardedCase
 
 
 @tagged('post_install', '-at_install')

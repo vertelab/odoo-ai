@@ -10,6 +10,7 @@ Minnet följer PERSONEN (res.users), inte en specifik ai.coworker.
 Alla quests som användaren interagerar med kan använda samma minne.
 """
 
+import asyncio
 import json
 import logging
 import math
@@ -28,6 +29,12 @@ class AIPersonalMemory(models.Model):
     _order = 'create_date desc'
     _rec_name = 'content_preview'
     _inherit = 'ai.memory.mixin'
+
+    # OKF-taggar: egen relationstabell (en many2many kan inte ligga
+    # pa en abstrakt mixin — den ger samma tabell for alla arvande).
+    okf_tags = fields.Many2many(
+        'ai.okf.tag', 'ai_personal_memory_okf_tag_rel', 'res_id', 'tag_id',
+        string='OKF Tags')
 
     # ════════════════════════════════════════════
     # SCOPE — MINNET FÖLJER PERSONEN
@@ -224,7 +231,7 @@ class AIPersonalMemory(models.Model):
         memory = self.create({
             'user_id': user_id,
             'company_id': company_id,
-            'source_coworker_id': quest_id,
+            'source_coworker_id': coworker_id,
             'source_session_id': session_id,
             'source': source,
             'source_ref': source_ref,
@@ -243,6 +250,48 @@ class AIPersonalMemory(models.Model):
     # ════════════════════════════════════════════
     # HYBRID SEARCH — tre signaler
     # ════════════════════════════════════════════
+
+    @api.model
+    def _embedding_column_is_vector(self):
+        """Är `embedding`-kolumnen en riktig pgvector-kolumn?
+
+        Fältet deklareras som `fields.Text` (se ovan), så Odoo skapar en
+        TEXT-kolumn. Endast `ai_okf_concept.embedding` använder PgVector.
+        `1 - (embedding <=> %s::vector)` är därför ett SQL-fel på denna
+        tabell tills kolumnen migrerats.
+
+        Kollen är billig (en information_schema-fråga i en savepoint) och
+        gör att den semantiska signalen kan hoppas över i stället för att
+        krascha. Resultatet cachas på modellklassen — kolumntypen ändras
+        bara av en migration, aldrig under en körande process.
+
+        Returns:
+            bool: True om kolumnen är av typen vector.
+        """
+        cls = type(self)
+        if getattr(cls, '_embedding_is_vector_cache', None) is not None:
+            return cls._embedding_is_vector_cache
+        try:
+            with self.env.cr.savepoint():
+                self.env.cr.execute("""
+                    SELECT udt_name FROM information_schema.columns
+                    WHERE table_name = 'ai_personal_memory'
+                      AND column_name = 'embedding'
+                """)
+                row = self.env.cr.fetchone()
+            is_vector = bool(row) and row[0] == 'vector'
+        except Exception as e:
+            _logger.warning(
+                'Kunde inte avgöra embedding-kolumnens typ: %s — '
+                'hoppar över semantisk signal', e)
+            is_vector = False
+        if not is_vector:
+            _logger.warning(
+                'ai_personal_memory.embedding är inte en vector-kolumn '
+                '(saknad migration?) — semantisk sökning hoppas över, '
+                'BM25 bär resultatet')
+        cls._embedding_is_vector_cache = is_vector
+        return is_vector
 
     @api.model
     def search_for_user(self, user_id, query=None, limit=10, threshold=0.1,
@@ -297,21 +346,41 @@ class AIPersonalMemory(models.Model):
         except Exception as e:
             _logger.warning('Query embedding failed: %s', e)
 
-        if query_embedding:
-            self.env.cr.execute("""
-                SELECT id, content, category, importance, source,
-                       create_date,
-                       1 - (embedding <=> %s::vector) AS semantic_score
-                FROM ai_personal_memory
-                WHERE user_id = %s
-                  AND archived = %s
-                  AND embedding IS NOT NULL
-                  AND 1 - (embedding <=> %s::vector) >= %s
-                ORDER BY semantic_score DESC
-                LIMIT %s
-            """, (query_embedding, user_id, include_archived,
-                  query_embedding, threshold, limit * 4))
-            semantic_results = self.env.cr.dictfetchall()
+        if query_embedding and self._embedding_column_is_vector():
+            # savepoint: ett SQL-fel här (t.ex. text-kolumn i en DB som inte
+            # kört migreringen) abortar annars HELA transaktionen. Varje
+            # efterföljande query i requesten dör då med
+            # InFailedSqlTransaction — även anroparens `session.exists()`,
+            # vilket ger HTTP 500 och "Anslutningen till AI-servern bröts".
+            #
+            # MÄTT 2026-09-22: `embedding` var `text` (inte `vector`) på
+            # ai_personal_memory, så `1 - (embedding <=> %s::vector)` kastade
+            # `UndefinedFunction: operator does not exist: text <=> vector`.
+            # Utan savepoint förgiftades requesten och /ai/stream svarade 500
+            # för varje session med >50 rader (de som anropar
+            # _summarize_history → _bridge_to_personal_memory → hit).
+            # BM25-vägen nedan hade redan en savepoint; vektor-vägen saknade.
+            try:
+                with self.env.cr.savepoint():
+                    self.env.cr.execute("""
+                        SELECT id, content, category, importance, source,
+                               create_date,
+                               1 - (embedding <=> %s::vector) AS semantic_score
+                        FROM ai_personal_memory
+                        WHERE user_id = %s
+                          AND archived = %s
+                          AND embedding IS NOT NULL
+                          AND 1 - (embedding <=> %s::vector) >= %s
+                        ORDER BY semantic_score DESC
+                        LIMIT %s
+                    """, (query_embedding, user_id, include_archived,
+                          query_embedding, threshold, limit * 4))
+                    semantic_results = self.env.cr.dictfetchall()
+            except Exception as e:
+                _logger.warning(
+                    'Semantic search failed (embedding-kolumnen är inte '
+                    'vector?): %s — fortsätter med BM25', e)
+                semantic_results = []
 
         # ════════════════════════════════════════
         # SIGNAL 2: BM25 (tsvector full-text)
@@ -540,6 +609,7 @@ class AIPersonalMemory(models.Model):
             new_facts = self._llm_extract_facts(
                 messages=messages,
                 existing=existing_texts,
+                coworker=session.coworker_id,
             )
         except Exception as e:
             _logger.error('LLM extraction failed for session %s: %s',
@@ -822,30 +892,39 @@ class AIPersonalMemory(models.Model):
         truncated = [t[:8192] for t in texts]
 
         # Försök via ai.provider med batch
-        try:
-            Provider = self.env['ai.provider']
-            if Provider and hasattr(Provider, '_get_embedding_batch'):
-                embeddings = Provider._get_embedding_batch(
-                    model='text-embedding-3-small',
-                    input=truncated,
-                )
-                if embeddings and isinstance(embeddings, (list, tuple)):
-                    return [
-                        '[' + ','.join(str(v) for v in emb) + ']'
-                        for emb in embeddings
-                    ]
-        except Exception as e:
-            _logger.debug('Batch embedding failed, falling back to single: %s', e)
-
-        # Fallback: embedda en och en
-        return [self._embed_text(t) for t in truncated]
+        Provider = self.env['ai.provider']
+        # Providern, modellen och dimensionen kommer från providerns egna
+        # fält — inte från en hårdkodad sträng. 'text-embedding-3-small'
+        # stod här och pekade på en modell Bifrost avvisar (000/401).
+        emb_provider = Provider._embedding_provider()
+        if not emb_provider:
+            _logger.warning(
+                'Embedding (batch): ingen provider som kan embedda — '
+                '%s texter lämnas utan vektor', len(truncated))
+            return [None] * len(truncated)
+        embeddings = emb_provider._get_embedding_batch(
+            inputs=truncated,
+            input_type='search_document',
+        )
+        if embeddings and isinstance(embeddings, (list, tuple)):
+            if all(emb is None for emb in embeddings):
+                _logger.warning(
+                    'Batch-embedding gav ingen vektor för %s texter — '
+                    'semantisk sökning blir tom', len(truncated))
+                return [None] * len(truncated)
+            return [
+                '[' + ','.join(str(v) for v in emb) + ']'
+                if emb else None
+                for emb in embeddings
+            ]
+        return [None] * len(truncated)
 
     @api.model
     def _embed_text(self, text):
         """Generera embedding via AI-provider.
 
         Använder samma provider som ai.coworker använder.
-        OpenAI text-embedding-3-small (1536 dimensioner).
+        OpenAI text-embedding-3-small (1024 dimensioner — kolumnens dimension).
         Lagrar som PostgreSQL vector-literal: "[0.1,0.2,...]".
 
         Args:
@@ -854,50 +933,21 @@ class AIPersonalMemory(models.Model):
         Returns:
             str: PostgreSQL vector literal (t.ex. "[0.1,0.2,...]") eller None
         """
-        # Försök via ai.provider om tillgängligt
-        try:
-            Provider = self.env['ai.provider']
-            if Provider and hasattr(Provider, '_get_embedding'):
-                embedding = Provider._get_embedding(
-                    model='text-embedding-3-small',
-                    input=text[:8192],
-                )
-                if embedding and isinstance(embedding, (list, tuple)):
-                    # PostgreSQL vector literal: [0.1,0.2,...]
-                    return '[' + ','.join(str(v) for v in embedding) + ']'
-        except Exception as e:
-            _logger.debug('Provider embedding failed: %s', e)
-
-        # Fallback: försök via requests direkt
-        try:
-            import requests
-            # Hitta aktiv provider
-            provider = self.env['ai.provider'].search([
-                ('active', '=', True),
-            ], limit=1)
-            if provider:
-                url = provider.api_url or 'https://api.openai.com/v1/embeddings'
-                api_key = provider.api_key
-                resp = requests.post(
-                    url,
-                    headers={
-                        'Authorization': f'Bearer {api_key}',
-                        'Content-Type': 'application/json',
-                    },
-                    json={
-                        'model': 'text-embedding-3-small',
-                        'input': text[:8192],
-                    },
-                    timeout=10,
-                )
-                if resp.status_code == 200:
-                    data = resp.json()
-                    embedding = data['data'][0]['embedding']
-                    # PostgreSQL vector literal
-                    return '[' + ','.join(str(v) for v in embedding) + ']'
-        except Exception as e:
-            _logger.warning('Direct embedding failed: %s', e)
-
+        # `_get_embedding` kräver EN provider (ensure_one) — att anropa den
+        # på ett tomt recordset ger "Expected singleton: ai.provider()".
+        # Skicka heller inget model-argument: konstanten
+        # DEFAULT_EMBEDDING_MODEL ('text-embedding-3-small') är den modell
+        # Bifrost avvisar (401), och ett argument slår ut providerns fält.
+        provider = self.env['ai.provider'].sudo()._embedding_provider()
+        if not provider:
+            _logger.warning(
+                'Embedding: ingen provider kan skapa vektorer — '
+                'texten lämnas utan vektor')
+            return None
+        embedding = provider._get_embedding(input=text[:8192])
+        if embedding and isinstance(embedding, (list, tuple)):
+            # PostgreSQL vector literal: [0.1,0.2,...]
+            return '[' + ','.join(str(v) for v in embedding) + ']'
         return None
 
     @api.model
@@ -999,7 +1049,7 @@ class AIPersonalMemory(models.Model):
         return boosts
 
     @api.model
-    def _llm_extract_facts(self, messages, existing):
+    def _llm_extract_facts(self, messages, existing, coworker=None):
         """Anropa LLM för ADD-only extraction.
 
         Använder mem0s ADDITIVE_EXTRACTION_PROMPT-mönster.
@@ -1007,6 +1057,8 @@ class AIPersonalMemory(models.Model):
         Args:
             messages (list[dict]): Session messages med role/content
             existing (list[str]): Existerande minnen för deduplicering
+            coworker: ai.coworker (valfri) — används för att lösa upp
+                providern via agent-kedjan. Utan den används default-modellen.
 
         Returns:
             list[dict]: Extraherade fakta med text, category, importance
@@ -1032,14 +1084,51 @@ Conversation:
 
 Return ONLY a JSON object: {{"memory": [{{"text": "...", "category": "fact|preference|goal|correction|pattern", "importance": "low|medium|high"}}]}}"""
 
-        # Anropa LLM via ai.provider
+        # Anropa LLM via provider-kedjan.
+        #
+        # TIDIGARE (trasigt): `self.env['ai.provider']._generate(model='gpt-4o-mini', ...)`.
+        # Två fel i ett:
+        #   1. `ai.provider._generate` FINNS INTE — anropet kastade
+        #      AttributeError, som svaldes av `except Exception` → tyst []
+        #   2. `gpt-4o-mini` är hårdkodad och finns inte i installationen
+        #      (modellerna heter cheap/frontier-models/moderate/...)
+        # Resultatet: minnesextraktionen returnerade alltid 0 fakta, och
+        # bron skrev aldrig något personligt minne.
+        #
+        # Rätt väg är samma som resten av systemet: lös upp providern via
+        # coworkern (→ agent → ai.model → ai.provider), annars default.
         try:
-            Provider = self.env['ai.provider']
-            response = Provider._generate(
-                model='gpt-4o-mini',  # billig modell räcker
-                messages=[{'role': 'user', 'content': prompt}],
-                response_format={'type': 'json_object'},
-            )
+            from odoo.addons.ai_agent_core.core.provider import (
+                ProviderFactory, get_default_provider, get_default_model_name)
+            from odoo.addons.ai_agent_core.core.loop import (
+                AgentLoop, AgentConfig)
+            from odoo.addons.ai_agent_core.core.tools import ToolRegistry
+
+            provider, model_rec = (
+                ProviderFactory.from_coworker(coworker)
+                if coworker else (None, None))
+            if not provider:
+                provider, model_rec = get_default_provider(self.env)
+            if not provider:
+                _logger.warning(
+                    'LLM extraction: ingen provider tillgänglig')
+                return []
+
+            model_name = (model_rec and model_rec._get_api_name()) \
+                or get_default_model_name()
+            loop = AgentLoop(
+                provider=provider, tools=ToolRegistry(),
+                config=AgentConfig(model=model_name, max_rounds=1,
+                                   max_tokens=1500))
+            result = asyncio.run(loop.run(prompt))
+            response = (result.text or '').strip()
+
+            # Modellen kan linda JSON i ```-block trots instruktionen.
+            if response.startswith('```'):
+                response = response.strip('`')
+                if response.startswith('json'):
+                    response = response[4:]
+                response = response.strip()
             result = json_lib.loads(response)
             return result.get('memory', [])
         except Exception as e:
@@ -1132,10 +1221,28 @@ Return ONLY a JSON object: {{"memory": [{{"text": "...", "category": "fact|prefe
               "identity_updates": {{"style":"...","user_model":"..."}} }}
             """
             try:
-                result = json.loads(self.env['ai.provider']._generate(
-                    model='gpt-4o-mini',
-                    messages=[{'role': 'user', 'content': prompt}],
-                ))
+                # `ai.provider._generate` FINNS INTE (AttributeError svaldes
+                # av except) och 'gpt-4o-mini' finns inte i installationen.
+                # Använd samma provider-kedja som resten av systemet.
+                from odoo.addons.ai_agent_core.core.provider import (
+                    ProviderFactory, get_default_provider,
+                    get_default_model_name)
+                from odoo.addons.ai_agent_core.core.loop import (
+                    AgentLoop, AgentConfig)
+                from odoo.addons.ai_agent_core.core.tools import ToolRegistry
+                provider, model_rec = get_default_provider(self.env)
+                if not provider:
+                    _logger.warning(
+                        'Discuss-extraction: ingen provider tillgänglig')
+                    return total
+                loop = AgentLoop(
+                    provider=provider, tools=ToolRegistry(),
+                    config=AgentConfig(
+                        model=(model_rec and model_rec._get_api_name())
+                        or get_default_model_name(),
+                        max_rounds=1, max_tokens=1500))
+                raw = asyncio.run(loop.run(prompt))
+                result = json.loads((raw.text or '').strip())
                 for mem in result.get('memories', []):
                     self.add_memory(user_id=uid, content=mem['content'],
                         category=mem.get('category','context'), source='discuss_chat',

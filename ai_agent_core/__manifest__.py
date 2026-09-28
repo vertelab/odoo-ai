@@ -2,30 +2,21 @@
 # Part of Odoo. See LICENSE file for full copyright and licensing details.
 {
     'name': 'odoo-ai: AI Agent Core',
-    'version': '18.0.1.220.0',
-    'summary': 'AI Agent Core — Org-stomme, heartbeat, onboarding, task-system.',
+    'version': '18.0.1.270',
+    'summary': 'AI Agent Core — Org-stomme, heartbeat, onboarding, task-system',
     'category': 'AI Orchestration',
-    'description': '''
-AI Agent Core
-=============
-
-    Now includes organization layer:
-            * AI Organization Goals (OKR) — hierarchical with cascade
-            * AI Tasks — persistent with atomic checkout, blockers, work products
-            * Heartbeat system — proactive coworkers that wake and work
-            * AI CEO Onboarding — scans modules, interviews CEO, creates org
-            * AI Orchestration Dashboard — org chart with kanban, onboarding button
-            * Bridge Protocol — connect strategy, marketing, helpdesk modules
-            * hr integration — AI coworkers as hr.employees, AI department managers
-
-    Features:
-
-        - Web integration: Exposes HTTP endpoints for external systems.
-        - Automation: Scheduled jobs: AI: Generera månadssammanställning, AI: Föreslå skill-förbättringar från erfarenheter, Company Memory Nightly Consolidation.
-        - Guided Wizards: Step-by-step dialogs for data entry.
-        - UI Integration: Extends 49 view(s) in the Odoo interface.
-        - Extends Odoo: Builds on ai.access.resolver, ai.agent, ai.agent.memory, ai.agent.tool.
-    ''',
+    'description': """
+        AI Agent Core — self-sufficient AI agent platform for Odoo.
+        
+        Now includes organization layer:
+        * AI Organization Goals (OKR) — hierarchical with cascade
+        * AI Tasks — persistent with atomic checkout, blockers, work products
+        * Heartbeat system — proactive coworkers that wake and work
+        * AI CEO Onboarding — scans modules, interviews CEO, creates org
+        * AI Orchestration Dashboard — org chart with kanban, onboarding button
+        * Bridge Protocol — connect strategy, marketing, helpdesk modules
+        * hr integration — AI coworkers as hr.employees, AI department managers
+    """,
     'author': 'Vertel AB',
     'website': 'https://vertel.se/apps/odoo-ai/ai_agent_core',
     'license': 'AGPL-3',
@@ -46,16 +37,27 @@ AI Agent Core
         'security/ir.model.access.csv',
         'security/ai_hitl_rules.xml',
         'views/ai_actions.xml',
+        'views/ai_okf_record_views.xml',
         'data/okf_default_artifact_types.xml',
         'data/okf_artifact_types_personal.xml',
         'data/okf_access_resolvers.xml',
         'data/cron_personal_index.xml',
         'data/cron_okf_index_dirty.xml',
+        'data/search_sources.xml',
+        'data/cron_session_idle.xml',
+        'data/cron_external_runtime.xml',
+        'data/partner_enrichment_tools.xml',
+        # builtin_tools_seed skapar ai.tool-poster för de inbyggda verktygen
+        # (core/tools.py) via _ensure_builtin_tool_records(). Den MÅSTE köra
+        # före varje fil som refererar dem — annars faller ref() med
+        # "External ID not found". FYND 2026-09-22: partner_enrichment_
+        # coworker.xml låg före och blockerade all nyinstallation.
+        'data/builtin_tools_seed.xml',
+        'data/partner_enrichment_coworker.xml',
         'data/cron_okf_process_uploads.xml',
         'data/cron_company_memory_indexers.xml',
         'data/okf_migrate_legacy.xml',
         'data/skill_odoo_core.xml',
-        'data/builtin_tools_seed.xml',
         'data/tool_verification_contracts.xml',
         'data/youtube_tools.xml',
         'data/default_coworker.xml',
@@ -144,9 +146,11 @@ AI Agent Core
     ],
     'assets': {
         'web.assets_backend': [
+            'ai_agent_core/static/src/js/ai_record_context_patch.js',
             'ai_agent_core/static/src/js/powerbox.js',
             'ai_agent_core/static/src/js/wysiwyg_powerbox.js',
             'ai_agent_core/static/src/js/user_menu_ai_chat.js',
+            'ai_agent_core/static/src/js/okf_debug_menu.js',
             'ai_agent_core/static/src/css/powerbox.css',
             'ai_agent_core/static/src/org_chart/*',
         ],
@@ -157,6 +161,12 @@ AI Agent Core
     'demo': [
         'demo/demo_data.xml',
     ],
-    'post_init_hook': 'post_init_hook_personal_memory',
+    # OBS: peka på post_init_hook (den sammanhållande), INTE
+    # post_init_hook_personal_memory. Manifestet registrerade tidigare
+    # personal_memory-hooken direkt, vilket gjorde att post_init_hook —
+    # med _ensure_default_model, okf_ensure_search_infrastructure och
+    # Quest/Skill Builder — aldrig kördes. post_init_hook anropar nu
+    # post_init_hook_personal_memory internt.
+    'post_init_hook': 'post_init_hook',
     'pre_init_hook': 'pre_init_hook_check_conflicts',
 }

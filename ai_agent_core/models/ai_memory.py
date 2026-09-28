@@ -4,11 +4,19 @@
 import logging
 from odoo import models, fields, api
 
+from .ai_okf_concept import EMBEDDING_DIM as _OKF_EMBEDDING_DIM
+
 _logger = logging.getLogger(__name__)
 
 
 class AIMemory(models.Model):
     _name = 'ai.memory'
+
+    # OKF-taggar: egen relationstabell (en many2many kan inte ligga
+    # pa en abstrakt mixin — den ger samma tabell for alla arvande).
+    okf_tags = fields.Many2many(
+        'ai.okf.tag', 'ai_memory_okf_tag_rel', 'res_id', 'tag_id',
+        string='OKF Tags')
     _description = 'AI Memory'
     _order = 'create_date desc'
 
@@ -47,17 +55,21 @@ class AIMemory(models.Model):
     archived = fields.Boolean('Archived', default=False,
                                help='Hidden from system prompt injection')
 
-    # OKF artifact type (registrerbar taxonomi, ersätter statiska selections)
-    artifact_type_id = fields.Many2one(
-        'ai.artifact.type', string='Artifact Type',
-        help='OKF artifact type (learning = memory kind, övriga = knowledge).'
-             ' Befintliga poster får default learning via data/init.')
-
-    # OKF dirty-flag (trigger-modell, task 5.1) — sätts av write()-hooken
-    # (microseconds, inget AI-arbete); lätt cron plockar upp och rensar.
-    okf_dirty = fields.Boolean(
-        'OKF Dirty', default=False,
-        help='Sätts av write()-hook; lätt cron (5 min) indexerar och rensar.')
+    # ── OKF: INGEN koppling (okf-mixin, 2026-09-22) ────────────────────
+    # `ai.memory` är agentens RAG-kapacitet: vektoriserade PDF:er,
+    # `faiss_search`, `rag_memory_ids`. Det är material en agent ARBETAR
+    # med — inte kunskap som ska bli OKF-koncept.
+    #
+    # Modellen bar tidigare `okf_dirty` + `okf_indexed_at` +
+    # `artifact_type_id` och indexerades till `ai.okf.concept`. Det var ett
+    # kategorifel: en uppladdad PDF blev både FAISS-index OCH
+    # kunskapskoncept, och en dirty-flagga skapade en rad per cron-varv.
+    # `ai-memory`-specen säger redan att modellen är "material, inte
+    # inlärning" — nu gör koden detsamma.
+    #
+    # Vägen från uppladdat material till koncept går via `ai.okf.upload`,
+    # som skriver konceptet direkt ur `ir.attachment`. RAG-funktionerna
+    # nedan är orörda.
 
     # Metadata
     tags = fields.Char('Tags', help='Comma-separated')
@@ -73,6 +85,11 @@ class AIMemory(models.Model):
     faiss_attachment_id = fields.Many2one('ir.attachment',
         string='FAISS Index',
         help='Serialized FAISS vector index stored as attachment')
+    source_attachment_id = fields.Many2one('ir.attachment',
+        string='Source File',
+        help='The original uploaded file (ir.attachment) this memory '
+             'was created from. Used by the chat UI to render a '
+             'download link.')
     chunk_count = fields.Integer('Chunk Count', default=0,
         help='Number of document chunks in the FAISS index')
 
@@ -248,19 +265,98 @@ class AIMemory(models.Model):
     # ════════════════════════════════════════════
     # OKF trigger-modell (task 5.1)
     # ════════════════════════════════════════════
-    def write(self, vals):
-        """write()-hook: sätt okf_dirty utan AI-arbete."""
-        if vals.get('okf_dirty') is not True and not vals.get('consolidated'):
-            vals['okf_dirty'] = True
-        return super().write(vals)
+    # FYND (2026-09-23): write()-hooken som satte `okf_dirty` togs bort.
+    #
+    # `ai.memory` pensionerades som OKF-konsument (okf-mixin F2, migration
+    # 1.250): fälten okf_dirty/okf_indexed_at/artifact_type_id flyttade till
+    # `ai.okf.mixin`, och `ai.memory` ärver inte längre den. Hooken skrev
+    # ändå `vals['okf_dirty'] = True` → ValueError: Invalid field 'okf_dirty'
+    # on model 'ai.memory' vid varje write (fångat i test_init_types_overhaul
+    # och i ren nyinstallation).
+    #
+    # Historiken bakom flaggan (38 versioner av ai.memory,257, 2026-09-21) är
+    # överspelad: ai.memory indexeras inte längre till OKF.
 
     @api.model
-    def _okf_cron_index_dirty(self):
+    def _okf_cron_index_dirty(self, batch_size=50):
         """Lätt cron (task 5.2): plocka upp dirty-artefakter, indexera,
-        rensa dirty-flag. Tungt arbete görs HÄR, inte i write()."""
-        # ai.memory har en FAISS-hjälpmetod som skuggar ORM:ts search —
-        # använd _search för att komma åt ORM:en
-        dirty_ids = self._search([('okf_dirty', '=', True)], limit=50)
+        rensa dirty-flag. Tungt arbete görs HÄR, inte i write().
+
+        Fas 6 (D7): bryggan täcker nu TRE modeller — `ai.memory` (som redan
+        hade flaggan) samt `ai.personal.memory` och `ai.company.memory`
+        (legacy-minnena, den enda plats där svensk BM25 någonsin fungerade).
+        Utan dem är migreringen halvfärdig: skrivsidan flyttad, läsningen
+        kvar i en stack som töms.
+        """
+        total = self._okf_cron_index_dirty_memories(batch_size)
+        total += self._okf_cron_index_dirty_legacy(
+            'ai.personal.memory', batch_size)
+        total += self._okf_cron_index_dirty_legacy(
+            'ai.company.memory', batch_size)
+        return total
+
+    @api.model
+    def _okf_cron_index_dirty_legacy(self, model_name, batch_size=50):
+        """Indexera dirty-poster från ett legacy-minnesmodell (fas 6.3).
+
+        Idempotent: flaggan rensas bara när `_okf_upsert` returnerat ett
+        koncept. Misslyckas indexeringen ligger posten kvar och görs om.
+        """
+        if model_name not in self.env:
+            return 0
+        Model = self.env[model_name]
+        dirty = Model.sudo().search(
+            [('okf_dirty', '=', True)], limit=batch_size,
+            order='write_date asc')
+        if not dirty:
+            return 0
+        count = 0
+        for mem in dirty:
+            try:
+                vals = mem._okf_concept_vals()
+                if not vals.get('summary'):
+                    # Tom post — inget att indexera. Rensa flaggan så att
+                    # den inte blockerar kön för evigt.
+                    #
+                    # `_set_okf_dirty`-vägen finns inte på legacy-modellerna
+                    # (den ligger på mixin, men sätter bara TRUE). En tom
+                    # post ska inte indexeras — därför skrivs flaggan med
+                    # `sudo()` och en explicit False, vilket mixinens
+                    # write()-hook respekterar eftersom den bara tittar på
+                    # `dirty_fields` (content, archived, …) och
+                    # `okf_dirty` inte ingår där.
+                    mem.sudo().write({'okf_dirty': False})
+                    continue
+                concept = self.env['ai.okf.concept']._okf_upsert(
+                    artifact_type='learning', **vals)
+                if concept:
+                    mem.sudo().write({
+                        'okf_dirty': False,
+                        'okf_indexed_at': fields.Datetime.now(),
+                    })
+                    count += 1
+            except Exception as e:
+                _logger.warning(
+                    'OKF cron index failed for %s %s: %s',
+                    model_name, mem.id, e)
+        return count
+
+    @api.model
+    def _okf_cron_index_dirty_memories(self, batch_size=50):
+        """Pensionerad: ai.memory indexeras inte längre till OKF.
+
+        `ai.memory` pensionerades som OKF-konsument (okf-mixin F2, migration
+        1.250). Fälten okf_dirty/okf_indexed_at flyttade till ai.okf.mixin,
+        så `_search([('okf_dirty', ...)])` kastar ValueError. Behålls som
+        no-op så anropare inte kraschar; den riktiga vägen är
+        `ai.okf.mixin._okf_cron_index_dirty()`.
+        """
+        return 0
+
+    @api.model
+    def _okf_cron_index_dirty_memories_legacy(self, batch_size=50):
+        """Historisk implementation (före okf-mixin F2). Anropas inte."""
+        dirty_ids = self._search([('okf_dirty', '=', True)], limit=batch_size)
         dirty = self.browse(dirty_ids)
         if not dirty:
             return 0
@@ -295,9 +391,109 @@ class AIMemory(models.Model):
                     generated_by='cron',
                 )
                 if concept:
-                    mem.write({'okf_dirty': False})
+                    # Skriv BÅDE flaggan och tidsstämpeln. Med den
+                    # fixade write()-hooken (explicit False respekteras)
+                    # stannar flaggan rensad — tidigare tände hooken den
+                    # igen och samma post indexerades om var 5:e minut.
+                    mem.write({
+                        'okf_dirty': False,
+                        'okf_indexed_at': fields.Datetime.now(),
+                    })
                     count += 1
             except Exception as e:
                 _logger.warning('OKF cron index failed for memory %s: %s',
                                 mem.id, e)
         return count
+
+    @api.model
+    def _okf_cron_backfill_embeddings(self, batch_size=20):
+        """Efterfyllnad av saknade vektorer (okf-recall-path fas 3.3).
+
+        Plockar koncept vars `embedding_state` inte är 'ready' och försöker
+        skapa vektorn. Idempotent: lyckade rader markeras 'ready' och plockas
+        aldrig upp igen; misslyckade lämnas i sin markering.
+
+        VARFÖR EN EGEN CRON: koncept skrivna innan embeddings fungerade har
+        en tom vektorkolumn. Utan efterfyllnad kräver varje sådan rad en
+        manuell åtgärd — och utan `embedding_state` går det inte att skilja
+        "aldrig försökt" från "försökt och misslyckats".
+
+        Avsiktligt utan tung logik: tunga saker händer i `_produce_embedding`
+        som REDAN körs via `_okf_upsert` på nya koncept. Denna cron räddar
+        bara eftersläntrare.
+        """
+        Concept = self.env['ai.okf.concept']
+        pending = Concept.search([
+            ('embedding_state', 'in', ('pending', 'failed')),
+            ('archived', '=', False),
+            ('status', '!=', 'superseded'),
+        ], limit=batch_size, order='id asc')
+
+        if not pending:
+            return 0
+
+        provider = self.env['ai.provider']._embedding_provider()
+        if not provider:
+            _logger.warning(
+                'OKF efterfyllnad: ingen provider som kan embedda — %s koncept '
+                'väntar fortfarande', len(pending))
+            return 0
+
+        # Skicka INGET model-argument. `_effective_embedding_model` har
+        # prioritet argument → fält → konstant, och konstanten
+        # (DEFAULT_EMBEDDING_MODEL = 'text-embedding-3-small') är den modell
+        # Bifrost inte svarar på (tyst timeout 20 s × 3 försök). Genom att
+        # skicka in den som argument kringgicks provider-fältets värde
+        # (`mistral/mistral-embed`, svarar på 0,2 s) och efterfyllnaden
+        # fastnade i en timeout-loop — 450 koncept låg kvar som 'pending'
+        # medan cronen brann sin tid.
+        #
+        # Samma fälla som ai_memory_mixin._generate_embedding redan
+        # dokumenterar. Denna väg hade den kvar.
+        model = provider._effective_embedding_model()
+        filled = 0
+        for concept in pending:
+            text = ' '.join(filter(None, [concept.title, concept.summary])).strip()
+            if not text:
+                # 'skipped' får skrivas — det är ett livscykelfält. Ingen ny
+                # version: det finns inget innehåll att versionera, och en
+                # tom kopia vore bara skräp i versionskedjan.
+                concept.write({'embedding_state': 'skipped'})
+                continue
+
+            vector = provider._get_embedding(
+                input=text, input_type='search_document')
+            if not vector:
+                # Lämna som pending — nästa körning försöker igen.
+                # 'pending' är redan sanningen om raden; vi rör den inte.
+                continue
+
+            if not provider._validate_embedding(vector, model=model,
+                                                dim=_OKF_EMBEDDING_DIM):
+                # Fel dimension: markera 'failed' så den kräver tillsyn.
+                concept.write({'embedding_state': 'failed'})
+                continue
+
+            # Skriv vektorn PÅ SAMMA RAD — ingen ny version.
+            #
+            # VARFÖR (mätt 2026-09-22): efterfyllnaden gick tidigare via
+            # `_okf_upsert` med konceptets EGEN summary. `_okf_upsert`
+            # jämför innehållet (`_version_is_unchanged`) och returnerade
+            # den befintliga raden UTAN att skapa en version — alltså
+            # ingen `existing.write({'status': 'superseded'})` heller.
+            # Den gamla raden förblev 'pending', och nästa körning plockade
+            # samma 20 igen (order='id asc'). Oändlig loop: loggen sa
+            # "20 av 20 koncept fick vektor" medan kön stod still.
+            #
+            # `embedding` och `embedding_state` är livscykelfält i write()
+            # (se docstringen där): en vektor är härledd ur texten, inte en
+            # del av konceptets innebörd. Innehållet är fortfarande låst.
+            concept.write({
+                'embedding': vector,
+                'embedding_state': 'ready',
+            })
+            filled += 1
+
+        _logger.info('OKF efterfyllnad: %s av %s koncept fick vektor',
+                     filled, len(pending))
+        return filled

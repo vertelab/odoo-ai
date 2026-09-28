@@ -11,6 +11,7 @@ Täcker:
 """
 
 from odoo.tests.common import TransactionCase
+from ._config_param_guard import ConfigParamGuardedCase
 
 # Interna förmågor som ALDRIG ska hamna i en session utan explicit tool_ids.
 INTERNAL_PREFIXES = (
@@ -19,7 +20,16 @@ INTERNAL_PREFIXES = (
     'nats_publish',
 )
 # Säkra kundvänliga verktyg (settings-default).
-SAFE_DEFAULTS = ('odoo_calculator', 'odoo_fetch_url', 'odoo_web_search')
+# Settings-default (DEFAULT_AGENT_TOOL_NAMES i res_config_settings.py).
+# YouTube-verktygen lades till medvetet i commit 89e0ba8d ("youtube-verktyg
+# i default-tools") — de är säkra kundverktyg (data-definierade, inga
+# interna förmågor) och ska därför räknas som defaults. Listan här hade
+# inte följt med, vilket gav ett falskt FAIL (FYND 2026-09-23).
+SAFE_DEFAULTS = (
+    'odoo_calculator', 'odoo_fetch_url', 'odoo_web_search',
+    'youtube_get_transcript', 'youtube_search',
+    'youtube_channel', 'youtube_playlist',
+)
 
 
 class TestBuiltinSeedIdempotens(TransactionCase):
@@ -163,25 +173,47 @@ class TestDefaultToolIds(TransactionCase):
             'Explicita tool_ids ska bevaras orörda')
 
     def test_settings_roundtrip_persists_tool_names(self):
-        """Settings get/set_values bevarar default-verktygen."""
+        """Settings get/set_values bevarar default-verktygen.
+
+        FYND 2026-09-23: testet skrev `ai_agent_core.default_tool_ids` till
+        ir.config_parameter via set_values(). TransactionCase rullar
+        tillbaka DB-transaktionen, men ir.config_parameter är CACHAD i
+        registryt — värdet läckte vidare till nästa testklass. Följden var
+        att test_builtin_fallback_removal och test_explicit_agent_tools
+        (i hela sviten) såg odoo_unlink/okf_search i en tom coworkers
+        verktygslista. Städar parametern efter sig.
+        """
         Settings = self.env['res.config.settings']
+        ICP = self.env['ir.config_parameter'].sudo()
         rec = self.env['ai.tool'].search(
             [('builtin_name', '=', 'odoo_calculator')], limit=1)
-        settings = Settings.create({
-            'ai_default_tool_ids': [(6, 0, rec.ids)],
-        })
-        settings.set_values()
+        old_param = ICP.get_param('ai_agent_core.default_tool_ids', '')
+        try:
+            settings = Settings.create({
+                'ai_default_tool_ids': [(6, 0, rec.ids)],
+            })
+            settings.set_values()
 
-        values = Settings.get_values()
-        self.assertIn(
-            'ai_default_tool_ids', values,
-            'get_values ska returnera ai_default_tool_ids')
-        self.assertIn(
-            rec.id, values['ai_default_tool_ids'][0][2],
-            'Det sparade verktyget ska komma tillbaka i rundturen')
+            values = Settings.get_values()
+            self.assertIn(
+                'ai_default_tool_ids', values,
+                'get_values ska returnera ai_default_tool_ids')
+            self.assertIn(
+                rec.id, values['ai_default_tool_ids'][0][2],
+                'Det sparade verktyget ska komma tillbaka i rundturen')
+        finally:
+            # Återställ parametern — annars läcker den till nästa testklass
+            # (cachen rensas av set_param, men vi måste sätta tillbaka
+            # ursprungsvärdet först).
+            if old_param:
+                ICP.set_param('ai_agent_core.default_tool_ids', old_param)
+            else:
+                ICP.search([
+                    ('key', '=', 'ai_agent_core.default_tool_ids'),
+                ]).unlink()
 
 
-class TestNoImplicitBuiltins(TransactionCase):
+class TestNoImplicitBuiltins(ConfigParamGuardedCase):
     """Uppgift 8.5 — interna verktyg kräver explicit tool_ids."""
 
     def test_session_without_tools_has_no_internal_tools(self):

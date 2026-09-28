@@ -39,10 +39,30 @@ class ResUsers(models.Model):
              'By default, access is determined by the user\'s groups.\n'
              'Use this to grant extra access to specific categories.')
 
+    # ── Personligt minne (LEVANDE väg: ai.okf.concept) ──
+    # Legacy `ai.personal.memory` räknas inte längre i smartknappen —
+    # den levande injektionen går via OKF (odoo-mind-three-memories).
+    okf_memory_count = fields.Integer(
+        string='OKF Memory Count',
+        compute='_compute_okf_memory_count',
+        help='Antal levande OKF-koncept som ägs av användaren (personal-'
+             'scope). Detta är vad som faktiskt injiceras i prompten.')
+
     @api.depends('personal_memory_ids')
     def _compute_personal_memory_count(self):
         for r in self:
             r.personal_memory_count = len(r.personal_memory_ids)
+
+    @api.depends()
+    def _compute_okf_memory_count(self):
+        Concept = self.env['ai.okf.concept'].sudo()
+        for r in self:
+            r.okf_memory_count = Concept.search_count([
+                ('scope', '=', 'personal'),
+                ('owner_user_id', '=', r.id),
+                ('archived', '=', False),
+                ('status', '!=', 'superseded'),
+            ])
 
     # ── Personal Goals (ai.personal.goal) ──
     personal_goal_ids = fields.One2many(
@@ -77,18 +97,29 @@ class ResUsers(models.Model):
         }
 
     def action_open_personal_memory(self):
-        """Smart button: öppna användarens personliga minnen."""
+        """Smartknapp: öppna användarens LEVANDE personliga minne.
+
+        Visar `ai.okf.concept` (personal-scope, ägt av användaren) — det som
+        faktiskt injiceras i prompten. E-post, chatt, kalender och manuella
+        minnen är alla KÄLLOR (`source`/`artifact_type_id`) i samma lista,
+        filtrerbara via sökvyns flikar.
+        """
         self.ensure_one()
         return {
-            'name': 'Personal Memories',
+            'name': 'Personligt minne',
             'type': 'ir.actions.act_window',
-            'res_model': 'ai.personal.memory',
+            'res_model': 'ai.okf.concept',
             'view_mode': 'list,form',
             'views': [[False, 'list'], [False, 'form']],
             'target': 'current',
-            'domain': [('user_id', '=', self.id)],
+            'domain': [
+                ('scope', '=', 'personal'),
+                ('owner_user_id', '=', self.id),
+            ],
             'context': {
-                'default_user_id': self.id,
+                'default_scope': 'personal',
+                'default_owner_user_id': self.id,
+                'search_default_not_archived': 1,
             },
         }
 
