@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 {
-    'name': 'AI Agent Zabbix',
+    'name': 'AI: Zabbix Integration',
     'version': '18.0.1.0.0',
     'license': 'AGPL-3',
     'category': 'AI',

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 {
-    'name': 'Gamification AI Bridge',
+    'name': 'AI: Gamification Bridge',
     'version': '18.0.1.0.0',
     'summary': 'Connect gamification (badges, challenges) with AI personal goals.',
     'description': '''

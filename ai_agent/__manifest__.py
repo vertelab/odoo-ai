@@ -22,7 +22,7 @@
 # https://www.odoo.com/documentation/14.0/reference/module.html
 #
 {
-    'name': "odoo-ai: AI Agent",
+    'name': "AI: Agent",
     'version': "1.0",
     'summary': "AI Agent orchestration",
     'category': "AI Orchestration",

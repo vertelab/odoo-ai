@@ -23,7 +23,7 @@
 #
 
 {
-    'name': "odoo-ai: MCP Resource Management",
+    'name': "AI: MCP Resource Management",
     'version': "1.0",
     'summary': "Adds MCP Power to AI Agent and AI Quests",
     'category': "AI Orchestration",

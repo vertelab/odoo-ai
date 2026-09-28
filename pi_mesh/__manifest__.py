@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 {
-    'name': 'Pi Agent Mesh',
+    'name': 'AI: Pi Agent Mesh',
     'version': '18.0.1.6.0',
     'license': 'AGPL-3',
     'category': 'AI',

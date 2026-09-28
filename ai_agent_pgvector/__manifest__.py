@@ -20,7 +20,7 @@
 ##############################################################################
 
 {
-    'name': 'ai_agent: pg_vector-connector',
+    'name': 'AI: pg_vector Connector',
     'version': '1.0.3',
     'summary': 'Ao Orchestration and memory using pg_vector',
     # Categories can be used to filter modules in modules listing

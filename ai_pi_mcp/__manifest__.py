@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Part of Odoo. See LICENSE file for full copyright and licensing details.
 {
-    'name': 'odoo-ai: Pi MCP Developer Server',
+    'name': 'AI: Pi MCP Developer Server',
     'version': '18.0.1.0.0',
     'summary': 'Standalone MCP streamable-HTTP server for Pi system development against this database.',
     'category': 'AI Orchestration',

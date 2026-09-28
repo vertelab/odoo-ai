@@ -1,5 +1,5 @@
 {
-    'name': 'odoo-ai: Agent Trend Analysis',
+    'name': 'AI: Agent Trend Analysis',
     'version': '0.3',
     'summary': 'Agent for analysing trends and create material for blogs and LinkedIn-articles',
     'category': 'Productivity / Discuss',

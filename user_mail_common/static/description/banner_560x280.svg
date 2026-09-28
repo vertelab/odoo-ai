@@ -9,7 +9,7 @@
    id="SVGRoot"
    inkscape:version="1.1.2 (0a00cf5339, 2022-02-04)"
    sodipodi:docname="banner_560x280.svg"
-   inkscape:export-filename="/usr/share/odoo-user-mail/user_mail_common/static/description/banner.png"
+   inkscape:export-filename="/usr/share/odoo-ai/user_mail_common/static/description/banner.png"
    inkscape:export-xdpi="92.61972"
    inkscape:export-ydpi="92.61972"
    xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
@@ -30,6 +30,23 @@
          offset="0"
          id="stop4209" />
     </linearGradient>
+    <linearGradient
+       id="linearGradient-1"
+       y2="145.47549"
+       x2="79.832403"
+       y1="-2.9184923"
+       x1="66.881189"
+       gradientTransform="scale(1.7597466,0.56826363)"
+       gradientUnits="userSpaceOnUse">
+      <stop
+         id="stop833"
+         offset="0%"
+         stop-color="#222357" />
+      <stop
+         id="stop835"
+         offset="100%"
+         stop-color="#254AA5" />
+    </linearGradient>
   </defs>
   <sodipodi:namedview
      id="base"
@@ -39,15 +56,15 @@
      inkscape:pageopacity="0.0"
      inkscape:pageshadow="2"
      inkscape:zoom="1"
-     inkscape:cx="242.5"
-     inkscape:cy="212"
+     inkscape:cx="164"
+     inkscape:cy="105"
      inkscape:document-units="px"
      inkscape:current-layer="layer1"
      showgrid="false"
-     inkscape:window-width="1466"
+     inkscape:window-width="1625"
      inkscape:window-height="773"
-     inkscape:window-x="2705"
-     inkscape:window-y="378"
+     inkscape:window-x="295"
+     inkscape:window-y="104"
      inkscape:window-maximized="0"
      inkscape:pagecheckerboard="0">
     <inkscape:grid
@@ -119,59 +136,37 @@
     </g>
     <text
        xml:space="preserve"
-       style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:15px;line-height:125%;font-family:Ubuntu;-inkscape-font-specification:'Ubuntu, Normal';text-align:end;letter-spacing:0px;word-spacing:0px;writing-mode:lr-tb;text-anchor:end;fill:#000000;fill-opacity:1;stroke:none;stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1"
-       x="518.0"
-       y="90.822594"
-       id="text2035"
-       inkscape:export-filename="/usr/share/odoo-user-mail/user_mail_client/static/description/banner.png"
-       inkscape:export-xdpi="92.61972"
-       inkscape:export-ydpi="92.61972"><tspan
-         sodipodi:role="line"
-         x="518.0"
-         y="90.822594"
-         style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:26.6667px;font-family:Ubuntu;-inkscape-font-specification:'Ubuntu, Normal';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-feature-settings:normal;text-align:end;writing-mode:lr-tb;text-anchor:end;stroke-width:1px"
-         id="tspan8888">User Mail Common</tspan></text>
-    <flowRoot
-       xml:space="preserve"
-       id="flowRoot892"
-       style="font-style:normal;font-variant:normal;font-weight:500;font-stretch:normal;font-size:53.33333206px;line-height:1.25;font-family:'Futura PT';-inkscape-font-specification:'Futura PT, Medium';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-feature-settings:normal;text-align:start;letter-spacing:0px;word-spacing:0px;writing-mode:lr-tb;text-anchor:start;fill:#000000;fill-opacity:1;stroke:none"><flowRegion
-         id="flowRegion894"><rect
-           id="rect896"
-           width="165"
-           height="57"
-           x="276"
-           y="-57" /></flowRegion><flowPara
-         id="flowPara898"></flowPara></flowRoot>
-    <text
-       xml:space="preserve"
        style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:15px;line-height:125%;font-family:Ubuntu;-inkscape-font-specification:'Ubuntu, Normal';text-align:start;letter-spacing:0px;word-spacing:0px;writing-mode:lr-tb;text-anchor:start;fill:#000000;fill-opacity:1;stroke:none;stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1"
-       x="332.03513"
-       y="154.41"
+       x="319.77063"
+       y="153.03708"
        id="text2039"><tspan
          sodipodi:role="line"
-         x="332.03513"
-         y="154.41"
-         id="tspan2041"
-         style="stroke-width:1px">odoo-user-mail</tspan></text>
+         id="tspan2037"
+         x="319.77063"
+         y="153.03708"
+         style="stroke-width:1px">odoo-ai</tspan><tspan
+         sodipodi:role="line"
+         x="319.77063"
+         y="171.78708"
+         id="tspan2041" /></text>
     <text
        xml:space="preserve"
-       style="font-style:normal;font-variant:normal;font-weight:500;font-stretch:normal;font-size:53.3333px;line-height:1.25;font-family:'Futura PT';-inkscape-font-specification:'Futura PT, Medium';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-feature-settings:normal;text-align:start;letter-spacing:0px;word-spacing:0px;writing-mode:lr-tb;text-anchor:start;fill:#000000;fill-opacity:1;stroke:none"
-       x="227.0979"
-       y="254.66064"
-       id="text12382"><tspan
-         sodipodi:role="line"
-         id="tspan12380"
-         x="227.0979"
-         y="254.66064" /></text>
-    <text
+       style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:26.6667px;line-height:125%;font-family:Ubuntu;-inkscape-font-specification:'Ubuntu, Normal';text-align:end;letter-spacing:0px;word-spacing:0px;writing-mode:lr-tb;text-anchor:end;fill:#000000;fill-opacity:1;stroke:none;stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1"
+       x="518.0"
+       y="77.2"
+       id="text2035"
+       inkscape:export-xdpi="92"
+       inkscape:export-ydpi="92"><tspan sodipodi:role="line" x="518.0" y="77.2" style="font-size:26.6667px;text-anchor:end;fill:#000000">User Mail Common</tspan></text>
+    <flowRoot
        xml:space="preserve"
-       style="font-style:normal;font-variant:normal;font-weight:500;font-stretch:normal;font-size:53.3333px;line-height:1.25;font-family:'Futura PT';-inkscape-font-specification:'Futura PT, Medium';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-feature-settings:normal;text-align:start;letter-spacing:0px;word-spacing:0px;writing-mode:lr-tb;text-anchor:start;fill:#000000;fill-opacity:1;stroke:none"
-       x="251.18945"
-       y="243.29272"
-       id="text11397"><tspan
-         sodipodi:role="line"
-         id="tspan11395"
-         x="251.18945"
-         y="243.29272" /></text>
+       id="flowRoot844"
+       style="font-style:normal;font-variant:normal;font-weight:500;font-stretch:normal;font-size:53.3333px;line-height:1.25;font-family:'Futura PT';-inkscape-font-specification:'Futura PT, Medium';font-variant-ligatures:normal;font-variant-caps:normal;font-variant-numeric:normal;font-feature-settings:normal;text-align:start;letter-spacing:0px;word-spacing:0px;writing-mode:lr-tb;text-anchor:start;fill:#000000;fill-opacity:1;stroke:none"><flowRegion
+         id="flowRegion846"><rect
+           id="rect848"
+           width="100"
+           height="83"
+           x="206"
+           y="-32" /></flowRegion><flowPara
+         id="flowPara850" /></flowRoot>
   </g>
 </svg>

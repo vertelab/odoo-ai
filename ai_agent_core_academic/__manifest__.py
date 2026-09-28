@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 {
-    'name': 'AI Agent Core — Academic Research Skills',
+    'name': 'AI: Academic Research Skills',
     'version': '18.0.1.0.0',
     'summary': 'Academic paper writing pipeline — 8-agent team for research to publication.',
     'description': '''

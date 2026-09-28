@@ -85,11 +85,20 @@
        style="stroke-width:4.60939169" />
     <text
        xml:space="preserve"
-       style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:32.5px;line-height:125%;font-family:Ubuntu;-inkscape-font-specification:'Ubuntu, Normal';text-align:start;letter-spacing:0px;word-spacing:0px;writing-mode:lr-tb;text-anchor:start;fill:#ffffff;fill-opacity:1;stroke:none;stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1"
+       style="font-style:normal;font-variant:normal;font-weight:normal;font-stretch:normal;font-size:24.25px;line-height:125%;font-family:Ubuntu;-inkscape-font-specification:'Ubuntu, Normal';text-align:start;letter-spacing:0px;word-spacing:0px;writing-mode:lr-tb;text-anchor:start;fill:#ffffff;fill-opacity:1;stroke:none;stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1"
        x="70.0"
        y="81.734192"
        id="text2035"
        inkscape:export-xdpi="92"
-       inkscape:export-ydpi="92"><tspan sodipodi:role="line" x="70.0" y="77.0" style="font-size:32.5px;text-anchor:middle;fill:#ffffff">Pi Agent</tspan><tspan sodipodi:role="line" x="70.0" y="116.0" style="font-size:32.5px;text-anchor:middle;fill:#ffffff">Mesh</tspan></text>
+       inkscape:export-ydpi="92"><tspan sodipodi:role="line" x="70.0" y="65.75" style="font-size:24.25px;text-anchor:middle;fill:#ffffff">AI Pi</tspan><tspan sodipodi:role="line" x="70.0" y="94.85" style="font-size:24.25px;text-anchor:middle;fill:#ffffff">Agent</tspan><tspan sodipodi:role="line" x="70.0" y="123.95" style="font-size:24.25px;text-anchor:middle;fill:#ffffff">Mesh</tspan></text>
+    <image
+       width="29.0"
+       height="29.0"
+       preserveAspectRatio="none"
+       style="stroke-width:1.14035;image-rendering:optimizeQuality"
+       xlink:href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADIAAAAyCAYAAAAeP4ixAAACW0lEQVR4nO2awWsTQRTGf1mLHho81Jb2IOWDXoVWRPSgZ4uCBT148FgQsQeF/iN6EfHuQVAQT3ryoAdFxEbUk8IDRSupLUhSMDTFQzYhhF03s5mQJczvNJuZ9733JTubmUkgEBgKJZ9iZjYFLAKHMob+BSqStn3l9mbEzC4CD4BynyE14Kqkpz7yezFiZhFQBaYcQ7eBGUn7g9YQDSoQM4+7CeKYeR8F+DIyMaLYDr6MjJxgpGgEI0UjGCkavozUB4it+SjAixFJP4EPOUIrkjZ91ODz1roEvAAafYxtxGMv+0rudRnfi5m9Bk7Fl28knR5WrjDZi0YwUjT+O9nN7Cxwjv63r71cAebi9ibwMKdODXgu6WXagFQjZnYbuJkz8bC4I+lWUkeiETNbAZ4MsaBBWEk6sEibI+eHXMwgXEh6MW2/PNnV/i1pOk9GX1+IZrYFHEmorcPYPLWCkaIxNkZKZjYN3AOWSZlIXTSB98ANSW+7O8xsAbgPnAEOZug0gFfANUlfe3ROAneB48CBDJ068Ay4XjKzR7jvC34BC5I6O0Mz26B1Eu9CRdJSl0YZ+ALMOuo8jmh9Eq7M0nrH2gXM4W4CYDGObbOEuwmA5Yjs2ymNckp7FDqTYzPZg5GiEYwUjWCkaES0lh152Etpj0KnGQGVnMk/dV1/A3Zy6OzEsW0+k89MJQLWgC2HoCawHh9cAyCpCawCuw46u8BqHNvW+QGs43aXVIG1EoCZHQZOkL1c2QM+Svqe1GlmM7TWS/38hWNDUjVF5yhwjOyfruvAO0l/MsYFAnn5B/zIlyI0RyAwAAAAAElFTkSuQmCC"
+       id="image2838"
+       x="7"
+       y="9.5" />
   </g>
 </svg>
