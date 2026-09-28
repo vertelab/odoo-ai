@@ -24,24 +24,12 @@
 
 {
     'name': "odoo-ai: MCP Resource Management",
-    'version': '18.0.1.1.0',
-    'summary': "Adds MCP Power to AI Agent and AI Quests.",
-    'description': '''
-MCP Resource Management
-=======================
-
-    Adds MCP Power to AI Agent and AI Quests.
-
-    Features:
-
-        - Web integration: Exposes HTTP endpoints for external systems.
-        - UI Integration: Extends 4 view(s) in the Odoo interface.
-        - Extends Odoo: Builds on ai.quest, fastapi.endpoint, mail.thread.
-    ''',
+    'version': "1.0",
+    'summary': "Adds MCP Power to AI Agent and AI Quests",
     'category': "AI Orchestration",
     "description": "Module to manage 'res.mcp' resources with interface and security rules.",
     "author": "Vertel AB",
-    'website': "https://vertel.se/apps/odoo-ai/ai_agent_mcp",
+    'website': "https://vertel.se/apps/odoo-ai/ai_agent",
     'images': ["static/description/banner.png"],  # 560x280
     "license": "AGPL-3",
     "depends": ["fastapi", "ai_agent"],
