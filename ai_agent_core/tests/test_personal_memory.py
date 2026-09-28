@@ -242,11 +242,103 @@ class TestPersonalMemory(common.TransactionCase):
     # ════════════════════════════════════════════
 
     def test_res_users_smart_button(self):
-        """Smart button på res.users returnerar korrekt action."""
+        """Smartknappen på res.users öppnar det LEVANDE minnet.
+
+        Kontraktet ändrades (odoo-mind-memory-scope-isolation): knappen
+        visar `ai.okf.concept` (personal-scope, ägt av användaren) — inte
+        legacy `ai.personal.memory`. Legacy-vägen injiceras inte.
+        """
         action = self.user.action_open_personal_memory()
-        self.assertEqual(action['res_model'], 'ai.personal.memory')
+        self.assertEqual(action['res_model'], 'ai.okf.concept')
         self.assertEqual(action['type'], 'ir.actions.act_window')
-        self.assertIn(('user_id', '=', self.user.id), action['domain'])
+        self.assertIn(('scope', '=', 'personal'), action['domain'])
+        self.assertIn(('owner_user_id', '=', self.user.id), action['domain'])
+
+    # ════════════════════════════════════════════
+    # Smartknappar på de tre ägarna (odoo-mind-memory-scope-isolation)
+    # ════════════════════════════════════════════
+
+    def _mk_concept(self, key, scope, owner_user=None, owner_company=None,
+                    owner_coworker=None, source_user=None):
+        atype = self.env['ai.artifact.type'].search([], limit=1)
+        self.env.cr.execute("""
+            INSERT INTO ai_okf_concept
+                (concept_key, summary, scope, version, status, archived,
+                 artifact_type_id, owner_user_id, owner_company_id,
+                 owner_coworker_id, source_user_id, create_date, write_date)
+            VALUES (%s, %s, %s, 1, 'stable', false, %s, %s, %s, %s, %s,
+                    now(), now())
+            RETURNING id
+        """, (key, key, scope, atype.id,
+              owner_user.id if owner_user else None,
+              owner_company.id if owner_company else None,
+              owner_coworker.id if owner_coworker else None,
+              source_user.id if source_user else None))
+        return self.env.cr.fetchone()[0]
+
+    def test_company_smart_button(self):
+        """res.company-knappen öppnar company-scope ägt av bolaget."""
+        action = self.company.action_open_company_memory()
+        self.assertEqual(action['res_model'], 'ai.okf.concept')
+        self.assertIn(('scope', '=', 'company'), action['domain'])
+        self.assertIn(('owner_company_id', '=', self.company.id),
+                      action['domain'])
+
+    def test_coworker_smart_button(self):
+        """ai.coworker-knappen öppnar coworker-scope ägt av medarbetaren."""
+        coworker = self.env['ai.coworker'].create({
+            'name': 'GUI Coworker', 'status': 'active'})
+        action = coworker.action_get_memory()
+        self.assertEqual(action['res_model'], 'ai.okf.concept')
+        self.assertIn(('scope', '=', 'coworker'), action['domain'])
+        self.assertIn(('owner_coworker_id', '=', coworker.id),
+                      action['domain'])
+
+    def test_is_my_memory_filter(self):
+        """'Mina minnen' = personliga + coworker lärda ur min session."""
+        other = self.env['res.users'].create({
+            'name': 'Other', 'login': 'other_mymem@example.com'})
+        coworker = self.env['ai.coworker'].create({
+            'name': 'MyMem Coworker', 'status': 'active'})
+        # Min personliga
+        self._mk_concept('mymem.personal', 'personal',
+                         owner_user=self.user)
+        # Annans personliga
+        self._mk_concept('mymem.other', 'personal', owner_user=other)
+        # Coworker lärd ur MIN session
+        self._mk_concept('mymem.cw.mine', 'coworker',
+                         owner_coworker=coworker, source_user=self.user)
+        # Coworker lärd ur annans session
+        self._mk_concept('mymem.cw.other', 'coworker',
+                         owner_coworker=coworker, source_user=other)
+        # Coworker-global (kaizen)
+        self._mk_concept('mymem.cw.global', 'coworker',
+                         owner_coworker=coworker)
+
+        Concept = self.env['ai.okf.concept'].with_user(self.user)
+        mine = Concept.search([('is_my_memory', '=', True)])
+        keys = set(mine.mapped('concept_key'))
+        self.assertIn('mymem.personal', keys)
+        self.assertIn('mymem.cw.mine', keys)
+        self.assertNotIn('mymem.other', keys)
+        self.assertNotIn('mymem.cw.other', keys)
+        self.assertNotIn('mymem.cw.global', keys,
+                         'coworker-globalt minne är inte "mitt"')
+
+    def test_okf_counts_are_owner_scoped(self):
+        """Räknarna visar bara den egna ägarens koncept."""
+        other = self.env['res.users'].create({
+            'name': 'Other2', 'login': 'other_counts@example.com'})
+        self._mk_concept('cnt.mine', 'personal', owner_user=self.user)
+        self._mk_concept('cnt.other', 'personal', owner_user=other)
+        self.user._compute_okf_memory_count()
+        self.assertEqual(self.user.okf_memory_count, 1)
+
+        coworker = self.env['ai.coworker'].create({
+            'name': 'Cnt Coworker', 'status': 'active'})
+        self._mk_concept('cnt.cw', 'coworker', owner_coworker=coworker)
+        coworker._compute_okf_memory_count()
+        self.assertEqual(coworker.okf_memory_count, 1)
 
     def test_personal_memory_count(self):
         """personal_memory_count räknas korrekt."""

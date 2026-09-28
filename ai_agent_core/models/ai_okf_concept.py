@@ -100,6 +100,18 @@ class AIOkfConcept(models.Model):
     owner_user_id = fields.Many2one('res.users', string='User')
     owner_coworker_id = fields.Many2one('ai.coworker', string='Coworker')
 
+    # ── Avgränsare för coworker-scopet ──
+    # Ett coworker-koncept ägs av coworkern men LÄRDES ur EN
+    # användares session. Utan denna avgränsare delas coworker-
+    # minnet av alla som pratar med coworkern (läckage).
+    # Tomt = coworker-globalt (t.ex. kaizen-skrivet) och injiceras
+    # för alla användare.
+    source_user_id = fields.Many2one(
+        'res.users', string='Source User', index=True,
+        help='Användaren vars session konceptet lärdes ur. '
+             'Avgränsar coworker-scopet per användare. Tomt = '
+             'coworker-globalt.')
+
     scope = fields.Selection([
         ('company', 'Company'),
         ('personal', 'Personal'),
@@ -192,6 +204,12 @@ class AIOkfConcept(models.Model):
         string='In Inbox', compute='_compute_in_inbox', search='_search_in_inbox',
         help='True when the concept is owned by a user, not archived, and has '
              'no PARA reference yet (i.e. it is unorganized capture material).')
+    is_my_memory = fields.Boolean(
+        string='Mina minnen', compute='_compute_is_my_memory',
+        search='_search_is_my_memory',
+        help="Koncept som hör till den inloggade användaren: personliga "
+             "(owner_user_id) eller coworker-koncept lärda ur dennes session "
+             "(source_user_id). Coworker-globala koncept ingår inte.")
 
     # ── Vektorer (pushdown, beslut 11) ──
     embedding = PgVector(
@@ -524,7 +542,8 @@ class AIOkfConcept(models.Model):
                     owner_coworker_id=None, generated_by='process',
                     status='stable', stale_after=None, entities=None,
                     embedding=None, search_vector=None, source_text=None,
-                    force_new_version=False, okf_tags=None, **kwargs):
+                    force_new_version=False, okf_tags=None,
+                    source_user_id=None, **kwargs):
         """Skapa ny concept eller ny version vid re-index (ADD-only).
 
         - Memory-koncept (kind=memory): ny rad endast vid genuint ny inlärning
@@ -634,6 +653,7 @@ class AIOkfConcept(models.Model):
                 'owner_company_id': owner_company_id,
                 'owner_user_id': owner_user_id,
                 'owner_coworker_id': owner_coworker_id,
+                'source_user_id': source_user_id,
                 'retention_purpose': atype.okf_contract.get('retention_purpose', 'none')
                 if atype.okf_contract else 'none',
             }
@@ -666,6 +686,7 @@ class AIOkfConcept(models.Model):
             'owner_company_id': owner_company_id,
             'owner_user_id': owner_user_id,
             'owner_coworker_id': owner_coworker_id,
+            'source_user_id': source_user_id,
             'retention_purpose': atype.okf_contract.get('retention_purpose', 'none')
             if atype.okf_contract else 'none',
         }
@@ -718,7 +739,7 @@ class AIOkfConcept(models.Model):
     def _okf_search(self, query, scope=None, artifact_type_ids=None,
                     department_context=None, time_window=None,
                     limit=20, user=None, hybrid=True, semantic_weight=None,
-                    **kw):
+                    owner_id=None, cross_user=False, **kw):
         """Sammansatt retrieval-pipeline (D9).
 
         Ersätter den gamla tredelade fallback-kedjan (pgvector → ILIKE →
@@ -753,9 +774,55 @@ class AIOkfConcept(models.Model):
         traceback.
         """
         user = user or self.env.user
+
+        # ── ÄGARKONTROLL (odoo-mind-memory-scope-isolation) ──────────
+        # Sökningen får ALDRIG bredda till andra ägare än den som
+        # efterfrågas. Tidigare filtrerades bara `scope`, så ett
+        # personal-scope returnerade ALLA användares personliga
+        # koncept (och coworker-scope ALLA coworkers). Access-lagret
+        # (_resolve_visible_sources) täcker inte detta — det prövar
+        # källpostens läsbarhet, inte konceptets ägare.
+        #
+        # Regler:
+        #   * scope satt utan owner_id → fel (tyst läcka förbjuden)
+        #   * owner_id satt → filtrera på rätt owner_*-kolumn
+        #   * coworker-scope → även source_user_id (om inte cross_user)
+        #   * scope None (bred legacy-sökning) → tillåts, varnas
+        owner_column = None
+        if scope == 'company':
+            owner_column = 'owner_company_id'
+        elif scope == 'personal':
+            owner_column = 'owner_user_id'
+        elif scope == 'coworker':
+            owner_column = 'owner_coworker_id'
+        if scope and owner_column and owner_id is None:
+            raise ValueError(
+                "_okf_search(scope=%r) kräver owner_id — en sökning "
+                "utan ägare skulle tyst returnera andra ägares koncept "
+                "(odoo-mind-memory-scope-isolation)." % scope)
+        if scope and not owner_column:
+            raise ValueError(
+                "_okf_search: okänt scope %r" % scope)
+        if not scope:
+            _logger.warning(
+                '_okf_search utan scope/ägare (bred sökning) — query=%.60s',
+                query)
+
         domain = self._fresh_domain(include_stale_searchable=False)
         if scope:
             domain.append(('scope', '=', scope))
+        if owner_column and owner_id is not None:
+            domain.append((owner_column, '=', owner_id))
+        if scope == 'coworker' and not cross_user:
+            # Avgränsa coworker-minnet per användare. Coworker-globala
+            # koncept (source_user_id tomt, t.ex. kaizen) ingår alltid.
+            src_user = user.id if user else self.env.uid
+            domain.append(('source_user_id', 'in', [False, src_user]))
+        if cross_user:
+            _logger.info(
+                '_okf_search cross_user=True (scope=%s, owner=%s) — '
+                'läser över alla användare (kaizen-vägen)',
+                scope, owner_id)
         if artifact_type_ids:
             domain.append(('artifact_type_id', 'in', artifact_type_ids))
         if time_window:
@@ -845,6 +912,16 @@ class AIOkfConcept(models.Model):
         if scope:
             sql += ' AND scope = %(scope)s'
             params['scope'] = scope
+        # Ägarfilter (odoo-mind-memory-scope-isolation): SQL-vägen
+        # måste filtrera ägaren precis som domain-vägen gör. Utan
+        # detta returnerar personal-scope ALLA användares koncept.
+        if owner_column and owner_id is not None:
+            sql += ' AND %s = %%(owner)s' % owner_column
+            params['owner'] = owner_id
+        if scope == 'coworker' and not cross_user:
+            sql += (' AND (source_user_id IS NULL OR '
+                    'source_user_id = %(src_user)s)')
+            params['src_user'] = src_user
         if artifact_type_ids:
             sql += ' AND artifact_type_id = ANY(%(atypes)s)'
             params['atypes'] = list(artifact_type_ids)
@@ -1124,6 +1201,24 @@ class AIOkfConcept(models.Model):
     # ════════════════════════════════════════════
     # Workspace inbox / PARA (tasks 3.1-3.6)
     # ════════════════════════════════════════════
+
+    @api.depends('owner_user_id', 'source_user_id')
+    def _compute_is_my_memory(self):
+        uid = self.env.uid
+        for rec in self:
+            rec.is_my_memory = bool(
+                rec.owner_user_id.id == uid
+                or rec.source_user_id.id == uid)
+
+    def _search_is_my_memory(self, operator, value):
+        """Sökfilter 'Mina minnen' — dynamiskt mot inloggad användare."""
+        uid = self.env.uid
+        want = (operator == '=' and value) or (operator == '!=' and not value)
+        domain = ['|', ('owner_user_id', '=', uid),
+                  ('source_user_id', '=', uid)]
+        if want:
+            return domain
+        return ['!'] + domain
 
     @api.depends('owner_user_id', 'archived', 'para_ref_ids')
     def _compute_in_inbox(self):
@@ -1769,7 +1864,8 @@ class AIOkfConcept(models.Model):
         want_l1 = injection_level in ('summary_and_key', 'full')
         if want_l1 and include_level1 and query:
             search_results = self._okf_search(
-                query, scope=scope, artifact_type_ids=artifact_type_ids,
+                query, scope=scope, owner_id=owner_id,
+                artifact_type_ids=artifact_type_ids,
                 limit=limit or 10, user=user, hybrid=hybrid,
                 semantic_weight=semantic_weight)
             if search_results:

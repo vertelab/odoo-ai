@@ -429,6 +429,47 @@ Nya tester för sessionsminne och write-verify:
 `test_tool_self_correction.py`, `test_document_page_acceptance.py`
 (körs med `-t`; acceptanstestet hoppas över om `document.page` saknas).
 
+## Minnesscope-isolering (odoo-mind-memory-scope-isolation)
+
+De tre OKF-scopen (`company`, `personal`, `coworker`) filtreras nu på
+**ägare** i sökningen, inte bara på `scope`.
+
+### Före (läckan)
+
+`_okf_search()` lade bara `AND scope = ...` i SQL:en. Ett `personal`-scope
+returnerade **alla** användares personliga koncept; ett `coworker`-scope
+**alla** coworkers. Access-lagret (`_resolve_visible_sources`) täcker inte
+gapet — det prövar källpostens läsbarhet, inte konceptets ägare. Konsekvens:
+en användares personliga minne läckte in i en annan användares prompt.
+
+### Efter
+
+- `_okf_search(scope=...)` **kräver** `owner_id`. Ett anrop utan ägare
+  kastar `ValueError` — tyst breddning är förbjuden.
+- SQL:en filtrerar `owner_company_id` / `owner_user_id` /
+  `owner_coworker_id` beroende på scope.
+- `coworker`-scopet avgränsas dessutom per användare via `source_user_id`
+  (ny kolumn): en coworker-lärdom från användare A injiceras inte för B.
+  Coworker-globala koncept (`source_user_id` tomt, t.ex. kaizen) delas.
+- Den publika ytan `_multi_source_recall(scope=...)` löser ägaren ur scopet
+  när anroparen inte angett en; den låga nivån förblir strikt.
+
+### Undantag: veckovis kaizen
+
+`ai.kaizen.report._gather_week_data()` läser **avsiktligt** alla användares
+sessioner för en coworker inom veckofönstret — det är veckoträningen.
+Undantaget är bundet till coworkern, tidsbegränsat och loggas. Kaizen-lärdom
+skrivs som coworker-globalt koncept (`source_user_id = NULL`), aldrig som en
+användares minne. Sökningens `cross_user=True`-flagga är reserverad för
+denna väg och kan inte sättas från injektionen.
+
+### Migration
+
+`18.0.1.261` lägger till `source_user_id` och backfillar befintliga
+`coworker`-koncept ur sessionens `user_id` (via
+`source_ref='ai.coworker.session,<id>'`). Koncept utan sessionsreferens
+förblir coworker-globala.
+
 ## Sessionsminne (improve-ai-coworker-memory-and-tools)
 
 `ai.coworker.session` är den **auktoritativa** kontextkällan. Historiken

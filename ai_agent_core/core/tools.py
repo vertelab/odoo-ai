@@ -2079,7 +2079,12 @@ def _tool_odoo_unlink(env, model='', ids=None):
 
 
 def _tool_okf_search(env, query='', scope='company', limit=10):
-    """Sök OKF-koncept via _okf_search (hybrid pgvector + tsvector + access)."""
+    """Sök OKF-koncept via _okf_search (hybrid pgvector + tsvector + access).
+
+    Ägaren löses ur körningskontexten (odoo-mind-memory-scope-isolation):
+    sökningen får aldrig bredda till andra ägare. company → env.company,
+    personal → env.user, coworker → coworkern i kontexten.
+    """
     import json as _json
     if not query:
         return _json.dumps({"error": "query krävs"})
@@ -2089,6 +2094,25 @@ def _tool_okf_search(env, query='', scope='company', limit=10):
         kw = {'query': query, 'limit': limit or 10}
         if scope in ('company', 'personal', 'coworker'):
             kw['scope'] = scope
+            # Ägaruppslag per scope — annars kastar _okf_search (med flit).
+            if scope == 'company':
+                kw['owner_id'] = env.company.id
+            elif scope == 'personal':
+                kw['owner_id'] = env.user.id
+            else:  # coworker
+                cw_id = env.context.get('default_coworker_id') \
+                    or env.context.get('_ai_context_coworker_id')
+                if not cw_id:
+                    sess_id = env.context.get('_ai_context_id')
+                    if sess_id and env.context.get('_ai_context_model') \
+                            == 'ai.coworker.session':
+                        sess = env['ai.coworker.session'].browse(sess_id)
+                        cw_id = sess.coworker_id.id if sess.exists() else None
+                if not cw_id:
+                    return _json.dumps({
+                        "error": "coworker-scope kräver en coworker i "
+                                 "kontexten (default_coworker_id)"})
+                kw['owner_id'] = cw_id
         results = env['ai.okf.concept']._okf_search(**kw)
         out = [{
             'id': c.id, 'title': c.title,

@@ -31,17 +31,31 @@ class TestOkfHybridSearch(common.TransactionCase):
         cls.atype_id = cls.Atype.search([], limit=1).id or \
             cls.env.ref('ai_agent_core.artifact_type_learning').id
 
-    def _mk(self, key, summary, scope='company', version=1, atype=None):
+    def _mk(self, key, summary, scope='company', version=1, atype=None,
+            owner_id=None, source_user_id=None):
         """Skapa ett koncept. Direkt via SQL för att styra version/status —
-        `_okf_upsert` skulle lägga på versionslogik vi vill testa runt."""
+        `_okf_upsert` skulle lägga på versionslogik vi vill testa runt.
+
+        Ägaren sätts alltid (sökningen kräver den): company → env.company,
+        personal → env.user, coworker → env.user (coworker sätts separat).
+        """
+        owner_col = {'company': 'owner_company_id',
+                     'personal': 'owner_user_id',
+                     'coworker': 'owner_coworker_id'}.get(scope)
+        if owner_id is None:
+            owner_id = self.env.company.id if scope == 'company' \
+                else self.env.user.id
         self.env.cr.execute("""
             INSERT INTO ai_okf_concept
                 (concept_key, summary, scope, version, status, archived,
-                 artifact_type_id, create_date, write_date)
-            VALUES (%s, %s, %s, %s, 'stable', false, %s, now(), now())
+                 artifact_type_id, %s, source_user_id,
+                 create_date, write_date)
+            VALUES (%%s, %%s, %%s, %%s, 'stable', false, %%s, %%s, %%s,
+                    now(), now())
             RETURNING id
-        """, (key, summary, scope, version,
-                atype.id if atype else self.atype_id))
+        """ % owner_col, (key, summary, scope, version,
+                          atype.id if atype else self.atype_id,
+                          owner_id, source_user_id))
         return self.env.cr.fetchone()[0]
 
     # ── 12.6: dedup ──
@@ -63,7 +77,7 @@ class TestOkfHybridSearch(common.TransactionCase):
         ett enda koncept — och resten av tabellen aldrig nås."""
         for v in range(1, 20):
             self._mk('limit.hog', 'Fakturor och fakturering.', version=v)
-        self._mk('limit.annan', 'Fakturor skickas varje månad.', 1)
+        self._mk('limit.annan', 'Fakturor skickas varje månad.', version=1)
 
         results = self.Concept._okf_search('fakturor', limit=2)
         keys = {c.concept_key for c in results}
@@ -96,8 +110,92 @@ class TestOkfHybridSearch(common.TransactionCase):
         self._mk('scope.a', 'Fakturor i företaget.', scope='company')
         self._mk('scope.b', 'Fakturor personligt.', scope='personal')
 
-        company = self.Concept._okf_search('fakturor', scope='company')
+        company = self.Concept._okf_search(
+            'fakturor', scope='company', owner_id=self.env.company.id)
         self.assertEqual({c.concept_key for c in company}, {'scope.a'})
+
+    # ── ÄGARISOLERING (odoo-mind-memory-scope-isolation) ──
+
+    def test_scoped_search_without_owner_raises(self):
+        """En scopad sökning UTAN ägare får inte tyst bredda — den ska
+        kasta. Tidigare returnerade den alla ägares koncept."""
+        self._mk('leak.a', 'Fakturor.', scope='personal')
+        with self.assertRaises(ValueError):
+            self.Concept._okf_search('fakturor', scope='personal')
+
+    def test_personal_scope_isolates_users(self):
+        """Två användare i samma scope ser inte varandras koncept."""
+        user_a = self.env['res.users'].create({
+            'name': 'Iso A', 'login': 'iso_a_search'})
+        user_b = self.env['res.users'].create({
+            'name': 'Iso B', 'login': 'iso_b_search'})
+        self._mk('iso.a', 'Fakturor för A.', scope='personal')
+        self.env.cr.execute(
+            "UPDATE ai_okf_concept SET owner_user_id=%s WHERE concept_key='iso.a'",
+            (user_a.id,))
+        self._mk('iso.b', 'Fakturor för B.', scope='personal')
+        self.env.cr.execute(
+            "UPDATE ai_okf_concept SET owner_user_id=%s WHERE concept_key='iso.b'",
+            (user_b.id,))
+
+        a_hits = self.Concept._okf_search(
+            'fakturor', scope='personal', owner_id=user_a.id)
+        self.assertEqual({c.concept_key for c in a_hits}, {'iso.a'},
+                         'A ska bara se sina egna personliga koncept')
+
+    def test_company_scope_isolates_companies(self):
+        """Två bolag i samma scope ser inte varandras koncept."""
+        c1 = self.env.company
+        c2 = self.env['res.company'].create({'name': 'Iso Co 2'})
+        self._mk('co.1', 'Fakturor i bolag 1.', scope='company')
+        self.env.cr.execute(
+            "UPDATE ai_okf_concept SET owner_company_id=%s WHERE concept_key='co.1'",
+            (c1.id,))
+        self._mk('co.2', 'Fakturor i bolag 2.', scope='company')
+        self.env.cr.execute(
+            "UPDATE ai_okf_concept SET owner_company_id=%s WHERE concept_key='co.2'",
+            (c2.id,))
+
+        hits = self.Concept._okf_search(
+            'fakturor', scope='company', owner_id=c1.id)
+        self.assertEqual({c.concept_key for c in hits}, {'co.1'})
+
+    def test_coworker_scope_isolates_users(self):
+        """Coworker-minnet avgränsas per användare: A:s lärdom läcker inte
+        till B, men coworker-globala koncept (source_user_id tomt) delas."""
+        coworker = self.env['ai.coworker'].create({
+            'name': 'Iso Coworker', 'status': 'active'})
+        user_a = self.env['res.users'].create({
+            'name': 'Cw A', 'login': 'cw_a_search'})
+        user_b = self.env['res.users'].create({
+            'name': 'Cw B', 'login': 'cw_b_search'})
+        # A:s lärdom
+        self._mk('cw.a', 'Fakturor lärt av A.', scope='coworker')
+        self.env.cr.execute(
+            "UPDATE ai_okf_concept SET owner_coworker_id=%s, source_user_id=%s "
+            "WHERE concept_key='cw.a'", (coworker.id, user_a.id))
+        # Coworker-global (kaizen)
+        self._mk('cw.global', 'Fakturor: svara kortare.', scope='coworker')
+        self.env.cr.execute(
+            "UPDATE ai_okf_concept SET owner_coworker_id=%s, source_user_id=NULL "
+            "WHERE concept_key='cw.global'", (coworker.id,))
+
+        b_hits = self.Concept._okf_search(
+            'fakturor', scope='coworker', owner_id=coworker.id,
+            user=user_b)
+        keys = {c.concept_key for c in b_hits}
+        self.assertNotIn('cw.a', keys,
+                         'B ska inte se A:s coworker-lärdom')
+        self.assertIn('cw.global', keys,
+                      'coworker-globalt koncept ska delas')
+
+        # cross_user (kaizen) ser båda
+        kaizen_hits = self.Concept._okf_search(
+            'fakturor', scope='coworker', owner_id=coworker.id,
+            user=user_b, cross_user=True)
+        kaizen_keys = {c.concept_key for c in kaizen_hits}
+        self.assertIn('cw.a', kaizen_keys,
+                      'kaizen (cross_user) ska se alla användares sessioner')
 
     # ── 12.1/12.2: viktad sammanslagning ──
 

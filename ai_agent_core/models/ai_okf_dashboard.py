@@ -268,6 +268,15 @@ class AIOkfDashboard(models.TransientModel):
 
     @api.depends()
     def _compute_stats(self):
+        """Statistik över ALLA koncept — avsiktligt bred (admin-dashboard).
+
+        OBS (odoo-mind-memory-scope-isolation): räkningarna nedan är INTE
+        ägarfiltrerade, och ska inte vara det. Dashboarden visar hur många
+        koncept som finns per scope för en administratör — den injicerar
+        inget i någon prompt. Ägarisoleringen gäller SÖKNINGEN
+        (`_okf_search`), inte räkning. Att filtrera här vore att dölja
+        data för den som ska övervaka systemet.
+        """
         Concept = self.env['ai.okf.concept']
         for rec in self:
             rec.concept_count = Concept.search_count([])

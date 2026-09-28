@@ -294,16 +294,25 @@ class TestSearchSettings(TransactionCase):
         self.assertNotIn('GRAF-KONTEXT', text)
 
     # ── §17: tröskeln som filtrerar bort allt ─────────────────────────
-    def _mk_concept(self, key, summary, scope='company'):
-        """Skapa ett koncept via SQL (samma mönster som fas 12:s _mk)."""
+    def _mk_concept(self, key, summary, scope='company', owner_id=None):
+        """Skapa ett koncept via SQL (samma mönster som fas 12:s _mk).
+
+        Ägaren sätts alltid — sökningen kräver den (scope-isolering).
+        """
         atype = self.env['ai.artifact.type'].search([], limit=1)
+        owner_col = {'company': 'owner_company_id',
+                     'personal': 'owner_user_id',
+                     'coworker': 'owner_coworker_id'}[scope]
+        if owner_id is None:
+            owner_id = self.env.company.id if scope == 'company' \
+                else self.env.user.id
         self.env.cr.execute("""
             INSERT INTO ai_okf_concept
                 (concept_key, summary, scope, version, status, archived,
-                 artifact_type_id, create_date, write_date)
-            VALUES (%s, %s, %s, 1, 'stable', false, %s, now(), now())
+                 artifact_type_id, %s, create_date, write_date)
+            VALUES (%%s, %%s, %%s, 1, 'stable', false, %%s, %%s, now(), now())
             RETURNING id
-        """, (key, summary, scope, atype.id))
+        """ % owner_col, (key, summary, scope, atype.id, owner_id))
         return self.env.cr.fetchone()[0]
 
     def test_thresholds_do_not_make_real_hits_disappear(self):
