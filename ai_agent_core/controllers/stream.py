@@ -3723,6 +3723,19 @@ class AIOpenAIAPI(http.Controller):
                 sess, _created = Sess._find_or_create_coworker_session(
                     quest_ref.id, request.env.user.id,
                     pi_session_id=pi_session_id)
+        # Om en coworker anges explicit men vi ännu inte har en session för
+        # den: skapa/återanvänd en session bunden till DEN coworkern INNAN vi
+        # faller tillbaka på användarens senaste aktiva session. Annars
+        # ignoreras coworker-parametern helt (quest sätts från fallback-
+        # sessionens coworker_id) och anropet körs med fel verktygsregister —
+        # det ger 'Unknown or not-allowed tool' för verktyg som den
+        # efterfrågade coworkern faktiskt har. (T/11527, verifierat på luke18.)
+        if not sess.exists() and coworker_ref:
+            quest_ref = self._resolve_coworker(coworker_ref)
+            if quest_ref:
+                sess, _created = Sess._find_or_create_coworker_session(
+                    quest_ref.id, request.env.user.id,
+                    pi_session_id=pi_session_id or None)
         if not sess.exists():
             # Fallback: använd den autentiserade användarens senaste aktiva
             # session för sammanhang; annars körs med user-kontext enbart.
