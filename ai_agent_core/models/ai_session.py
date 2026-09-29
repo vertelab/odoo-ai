@@ -62,6 +62,7 @@ class AICoworkerSession(models.Model):
         ('webhook', 'Webhook'),
         ('openai_api', 'OpenAI API'),
         ('watch', 'Watch — Dataändring'),
+        ('heartbeat', 'Heartbeat — Proaktiv'),
     ], string='Start via', index=True, readonly=True, tracking=True,
         help='Hur sessionen startades (kanal/källa). Fylls vid sessionens '
              'skapande där källan är känd.')
@@ -260,6 +261,19 @@ class AICoworkerSession(models.Model):
     watch_res_id = fields.Integer(
         'Watch Record ID',
         help='Record-id som triggade watchen.')
+
+    # ── Heartbeat-kö (bevakning-over-tid D1/D2) ──────────────────────
+    # Samma mönster som watch: väckaren skapar sessionen och returnerar,
+    # processorn kör. Prompten är FRYST här (job_prompt) — ändras uppgiften
+    # efter köning körs ändå den prompt som gällde när den köades.
+    heartbeat_pending = fields.Boolean(
+        'Heartbeat Pending', default=False, index=True,
+        help='Satt av _heartbeat-väckaren — sessionen väntar på asynkron '
+             'bearbetning av cron (_process_heartbeat_sessions).')
+    job_prompt = fields.Text(
+        'Job Prompt',
+        help='Prompten som byggdes ur uppgiften vid köning — fryst, körs av '
+             'processorn. Samma roll som watch_prompt men för heartbeat/cron.')
 
     config_json = fields.Text('Configuration')
     history_json = fields.Text('Message History')

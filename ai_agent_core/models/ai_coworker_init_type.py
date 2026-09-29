@@ -133,6 +133,16 @@ class AICoworkerInitType(models.Model):
         ondelete='cascade')
     filter_domain = fields.Char('Record Filter',
         help='Domain applied to cron-triggered records')
+    # Prompt per init_type (bevakning-over-tid D3): init_typer UTAN kö
+    # (cron/server_action/watch) har ingen session att frysa prompten på, så
+    # den hör till konfigurationen. Heartbeat använder INTE detta fält — den
+    # har en kö och prompten bor på sessionen (job_prompt).
+    # `description` hör i systemprompten (vad coworkern ÄR), inte här (vad
+    # den ska göra) — att blanda dem var dagens problem.
+    job_prompt = fields.Text('Job Prompt',
+        help='Vad coworkern ska göra vid automatisk körning. Tomt för en '
+             'aktiv automatisk typ är en felsituation — ingen generisk '
+             'fallback används.')
     cron_interval_number = fields.Integer('Interval', default=1,
         help='How often to run (1 = every interval)')
     cron_interval_type = fields.Selection([
@@ -248,14 +258,14 @@ class AICoworkerInitType(models.Model):
             'channel': ['response_mode', 'channel_id', 'channel_ids', 'channel_reply_mode',
                      'allow_trigger_words', 'chat_trigger_words'],
             'mail': ['alias_name', 'alias_id', 'alias_contact'],
-            'cron': ['cron_id', 'filter_domain', 'cron_interval_number', 'cron_interval_type'],
-            'server_action': ['server_action_id', 'server_action_use_wizard'],
+            'cron': ['cron_id', 'filter_domain', 'cron_interval_number', 'cron_interval_type', 'job_prompt'],
+            'server_action': ['server_action_id', 'server_action_use_wizard', 'job_prompt'],
             'powerbox': [],
             'manual': [],
             'webhook': [],
             'controller': [],
             'openai_api': ['rate_limit_rpm', 'rate_limit_tpm'],
-            'watch': ['watch_model_id', 'watch_trigger', 'watch_domain', 'base_automation_id'],
+            'watch': ['watch_model_id', 'watch_trigger', 'watch_domain', 'base_automation_id', 'job_prompt'],
         }
         all_specific = set()
         for fields_list in type_fields.values():
@@ -721,3 +731,30 @@ class AICoworkerInitType(models.Model):
         if self.coworker_id:
             return self.coworker_id._effective_context_window()
         return self.openai_context_window or 128000
+
+    #: Init-typer som körs automatiskt (ingen människa bakom anropet). De
+    #: kräver en ägare (`chat_user_id`) — API-nyckeln binds till användaren
+    #: vid extern dispatch, och systemuser är aldrig tillåtet.
+    AUTOMATIC_INIT_TYPES = ('cron', 'heartbeat', 'watch', 'mail', 'webhook')
+
+    @api.constrains('enabled', 'init_type', 'coworker_id')
+    def _check_automatic_type_has_owner(self):
+        """Varna (logga) när en automatisk typ aktiveras utan ägare (D7).
+
+        Varning, inte blockerande: `_resolve_dispatch_user` kastar redan ett
+        ValidationError vid körning som sista skyddsnät. Denna fångar felet
+        TIDIGARE — vid konfiguration. Att blockera här vore att göra en
+        halvfärdig konfiguration omöjlig att spara.
+        """
+        for rec in self:
+            if not rec.enabled:
+                continue
+            if rec.init_type not in self.AUTOMATIC_INIT_TYPES:
+                continue
+            if rec.coworker_id and not rec.coworker_id.chat_user_id:
+                _logger.warning(
+                    'Init-typ %s (%s) är aktiv men coworkern %s saknar '
+                    '"Ägare (automatiska körningar)" — automatiska körningar '
+                    'kommer att nekas vid körning.',
+                    rec.init_type, rec.display_name,
+                    rec.coworker_id.display_name)

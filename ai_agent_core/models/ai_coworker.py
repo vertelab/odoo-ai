@@ -33,6 +33,7 @@ INIT_TYPES = [
     ('webhook', 'Webhook'),
     ('openai_api', 'OpenAI API'),
     ('watch', 'Watch — Dataändring'),
+    ('heartbeat', 'Heartbeat — Proaktiv'),
 ]
 
 DEFAULT_AGENT_CREATOR_PROMPT = """You are a creative director designing AI agents for a Swedish workplace.
@@ -5153,6 +5154,53 @@ class AICoworker(models.Model):
     INTERACTIVE_INIT_TYPES = ('server_action', 'powerbox', 'web_ui',
                               'chat', 'channel', 'openai_api', 'manual')
 
+    def _build_job_prompt(self, task):
+        """Bygg prompten ur en uppgift (bevakning-over-tid 2.1).
+
+        Prompten hämtas ur `task.description` (fallback `name`), målkontext
+        och beroenden — inte ur `coworker.description` (som beskriver VAD
+        coworkern är och hör i systemprompten).
+
+        Kastar ValidationError om uppgiften saknar báde beskrivning och namn —
+        en tom prompt ska INTE köas (2.3).
+        """
+        task.ensure_one()
+        body = (task.description or '').strip() or (task.name or '').strip()
+        if not body:
+            raise ValidationError(
+                'Uppgiften %s saknar både beskrivning och namn — kan inte '
+                'bygga en job-prompt.' % (task.id,))
+        parts = [body]
+        goal = task.goal_id
+        if goal:
+            parts.append(
+                'Mål: "%s"' % goal.name
+                + ((' — %s' % goal.specific.strip()) if goal.specific else ''))
+        parts.append(
+            'Utför uppgiften och sammanfatta resultatet kort när du är klar.')
+        return '\n\n'.join(parts)
+
+    def _run_job(self, prompt, init_type, session=None):
+        """Enhetlig körväg för init_typer UTAN kö (bevakning-over-tid 4.1).
+
+        Skapar sessionen (om ingen given), löser ägaren via
+        `_resolve_dispatch_user` (4.3 — aldrig base.user_root) och kör loopen.
+        Utfallet registreras av `outcome_callback` (utfall-och-tokenmatning),
+        så `finish_reason` kommer från `response` — inte hårdkodat.
+        """
+        if session is None:
+            user = self._resolve_dispatch_user(init_type, None)
+            session = self.env['ai.coworker.session'].create({
+                'coworker_id': self.id,
+                'status': 'active',
+                'init_type': init_type,
+                'user_id': user.id,
+            })
+        # Extern dispatch frigör tråden även här (cron-arbetartrad).
+        if self._dispatch_or_loop(session, prompt, init_type):
+            return session
+        return self.run(prompt=prompt, session=session)
+
     def _dispatch_or_loop(self, session, prompt, init_type):
         """Välj extern dispatch eller in-process loop (cron-arbetartrad D1).
 
@@ -7605,10 +7653,15 @@ class AICoworker(models.Model):
     # ── Heartbeat ──
 
     def _heartbeat(self):
-        """Single heartbeat tick: budget → tasks → goals → nudge.
+        """Heartbeat-väckaren: skapa sessionen, kör ALDRIG här (D1/5.3).
 
-        Called periodically by _heartbeat_all().
-        Each coworker decides what to do based on current state.
+        Watch-mönstret är bevisat i drift (fix-watch-async): väckaren skapar
+        en kö-post och returnerar, processorn (`_process_heartbeat_sessions`)
+        kör i en egen transaktion med savepoint per session. Att köra direkt
+        här blockerade cron-tråden i upp till 240 s per uppgift.
+
+        Prompten FRYSES på sessionen (job_prompt) — ändras uppgiften efter
+        köning körs ändå den prompt som gällde när den köades.
         """
         self.ensure_one()
 
@@ -7625,11 +7678,30 @@ class AICoworker(models.Model):
         ], order='priority desc, create_date asc', limit=1)
 
         if pending_tasks:
-            # Check out and work on the task
-            _logger.info('Heartbeat %s: found pending task %s, checking out',
-                        self.name, pending_tasks.name)
             task = pending_tasks[0]
-            task.action_checkout()
+            _logger.info('Heartbeat %s: köar uppgift %s', self.name, task.name)
+            # Bygg prompten FÖRE utcheckningen så en tom uppgift inte lämnas
+            # utcheckad (D5).
+            try:
+                prompt = self._build_job_prompt(task)
+            except ValidationError:
+                _logger.warning(
+                    'Heartbeat %s: uppgift %s saknar prompt — köas inte',
+                    self.name, task.name)
+                return
+            try:
+                user = self._resolve_dispatch_user('heartbeat', None)
+            except ValidationError as e:
+                _logger.warning('Heartbeat %s: %s', self.name, e)
+                return
+            try:
+                session = task.action_checkout(
+                    init_type='heartbeat', job_prompt=prompt)
+                session.write({'user_id': user.id})
+            except Exception as e:
+                _logger.warning(
+                    'Heartbeat %s: kunde inte checka ut %s: %s',
+                    self.name, task.name, e)
             return
 
         # 3. Check goals — proactive work
@@ -7640,47 +7712,26 @@ class AICoworker(models.Model):
         ], limit=1)
 
         if active_goals:
-            _logger.info('Heartbeat %s: working on goal %s',
+            _logger.info('Heartbeat %s: köar mål %s',
                         self.name, active_goals.name)
-            # Kör målet — sessionen skapas av run() när körningen är beslutad.
-            #
-            # FYND (session-memory-bridge D1): här skapades tidigare en
-            # session och returnerades utan att något kördes. Varje heartbeat
-            # med ett aktivt mål lämnade en TOM session efter sig, som
-            # idle-cronen stängde som 'done' — ett spår av ingenting som såg
-            # ut som en avslutad konversation i statistiken. En session är
-            # spåret av en körning, inte av en avsikt.
             goal_prompt = (
                 f'Du arbetar proaktivt med målet "{active_goals.name}" '
                 f'(progress {active_goals.progress:.0f}%). '
                 f'Föreslå och utför nästa steg mot målet.'
             )
-            # Extern dispatch frigör cron-tråden (cron-arbetartrad 3.1):
-            # heartbeat är den värsta blockeraren — `_heartbeat_all` itererar
-            # coworkers sekventiellt, så en extern agent får inte vänta ut
-            # de andra i kön.
-            session = None
             try:
-                session = self.env['ai.coworker.session'].create({
+                user = self._resolve_dispatch_user('heartbeat', None)
+                self.env['ai.coworker.session'].create({
                     'coworker_id': self.id,
                     'status': 'active',
-                    'init_type': 'cron',
+                    'init_type': 'heartbeat',
+                    'user_id': user.id,
+                    'job_prompt': goal_prompt,
+                    'heartbeat_pending': True,
                 })
-                if self._dispatch_or_loop(session, goal_prompt, 'cron'):
-                    _logger.info(
-                        'Heartbeat %s: mål %s dispatchat externt — '
-                        'cron-tråden frigjord', self.name, active_goals.name)
-                    return
             except Exception as e:
                 _logger.warning(
-                    'Heartbeat %s: extern dispatch av mål %s misslyckades: %s',
-                    self.name, active_goals.name, e, exc_info=True)
-            try:
-                self.run(prompt=goal_prompt, session=session)
-            except Exception as e:
-                # En trasig körning ska loggas — inte lämna en tyst session.
-                _logger.warning(
-                    'Heartbeat %s: körning av mål %s misslyckades: %s',
+                    'Heartbeat %s: kunde inte köa mål %s: %s',
                     self.name, active_goals.name, e, exc_info=True)
             return
 
@@ -7688,6 +7739,114 @@ class AICoworker(models.Model):
         # 5. Sleep until next heartbeat
 
     @api.model
+    def _process_heartbeat_sessions(self, batch_size=10):
+        """Cron: processa heartbeat-kön (bevakning-over-tid 5.4).
+
+        Som `_process_watch_sessions`: hämtar sessioner med
+        `heartbeat_pending=True` och kör coworkern med den FRYSTA prompten.
+        Varje session körs i en savepoint så en misslyckad session inte
+        påverkar de andra (5.7).
+        """
+        sessions = self.env['ai.coworker.session'].search([
+            ('heartbeat_pending', '=', True),
+            ('status', '=', 'active'),
+        ], limit=batch_size)
+        processed = 0
+        for session in sessions:
+            coworker = session.coworker_id
+            if not coworker or not session.job_prompt:
+                session.write({'heartbeat_pending': False})
+                continue
+            try:
+                with self.env.cr.savepoint():
+                    # Extern dispatch frigör tråden även i kön (cron-arbetartrad).
+                    if coworker._dispatch_or_loop(
+                            session, session.job_prompt, 'heartbeat'):
+                        session.write({'heartbeat_pending': False})
+                        processed += 1
+                        continue
+                    coworker.run(session.job_prompt, session=session)
+                session.write({'heartbeat_pending': False})
+                # Checka in uppgiften med resultatet (5.6).
+                if session.ai_task_id:
+                    session.ai_task_id.action_checkin(
+                        session.summary or '')
+                processed += 1
+            except Exception as e:
+                _logger.warning('Heartbeat-session %s misslyckades: %s',
+                                session.id, e)
+                # 5.8: haveriet ska synas i data, inte bara i loggen.
+                try:
+                    session.write({
+                        'heartbeat_pending': False,
+                        'status': 'error',
+                        'finish_reason': 'error',
+                        'error_detail': str(e)[:4000],
+                    })
+                    if session.ai_task_id:
+                        session.ai_task_id.action_release()
+                except Exception:
+                    pass
+        return processed
+
+    @api.model
+        # ── Läsaren (bevakning-over-tid D6/7) ────────────────────────────────
+
+    @api.model
+    def _cron_measure_runs(self, window_hours=24):
+        """Mätande cron: aggregera körningar per init_type och utfall (7.1).
+
+        Läsaren MÄTER — den startar aldrig arbete (7.3). Det gör att den kan
+        se sina egna misslyckanden, till skillnad från `_heartbeat_all` som
+        både startar och mäter. Måtten skrivs till ir.config_parameter så
+        kaizen kan läsa dem (7.4); läsaren skapar inga kaizen-fynd själv.
+        """
+        from datetime import timedelta
+        cutoff = fields.Datetime.now() - timedelta(hours=window_hours)
+        sessions = self.env['ai.coworker.session'].search([
+            ('create_date', '>=', cutoff),
+        ])
+        by_init = {}
+        for s in sessions:
+            key = s.init_type or 'unknown'
+            entry = by_init.setdefault(key, {'total': 0, 'outcomes': {}})
+            entry['total'] += 1
+            fr = s.finish_reason or 'unset'
+            entry['outcomes'][fr] = entry['outcomes'].get(fr, 0) + 1
+
+        # Övergivna utcheckningar (7.2): utcheckad längre än förväntad körtid
+        # utan avslutad körning → frigör och rapportera.
+        from odoo.addons.ai_agent_core.core import runtime as rt
+        stale_min = rt.get_int(
+            self.env, 'ai_agent_core.checkout_stale_minutes', 60)
+        stale_cutoff = fields.Datetime.now() - timedelta(minutes=stale_min)
+        stale = self.env['ai.org.task'].search([
+            ('checkout_lock', '=', True),
+            ('checked_out_at', '!=', False),
+            ('checked_out_at', '<', stale_cutoff),
+        ])
+        released = 0
+        for task in stale:
+            _logger.warning(
+                'Läsaren: uppgift %s utcheckad sedan %s (> %d min) utan '
+                'avslutad körning — frigörs',
+                task.name, task.checked_out_at, stale_min)
+            task.action_release()
+            released += 1
+
+        import json as _json
+        self.env['ir.config_parameter'].sudo().set_param(
+            'ai_agent_core.run_metrics',
+            _json.dumps({'window_hours': window_hours,
+                         'by_init_type': by_init,
+                         'stale_released': released},
+                        ensure_ascii=False))
+        _logger.info(
+            'Läsaren: %d sessioner över %dh, %d övergivna utcheckningar '
+            'frigjorda', len(sessions), window_hours, released)
+        return {'sessions': len(sessions), 'by_init_type': by_init,
+                'stale_released': released}
+
     def _heartbeat_all(self):
         """Called by ir.cron — iterate all active coworkers."""
         from datetime import datetime, timedelta
@@ -7699,12 +7858,16 @@ class AICoworker(models.Model):
             return
 
         interval = int(icp.get_param('ai_agent_core.heartbeat_interval', '5'))
+        # Begränsa antalet coworkers per tick (5.10): en cykel ska inte
+        # bearbeta hela listan. Coworkers som står över tas i ett senare tick
+        # (5.11) — rotation via senaste heartbeat först.
+        per_tick = int(icp.get_param('ai_agent_core.heartbeat_per_tick', '20'))
 
         coworkers = self.search([
             ('active', '=', True),
             ('status', '=', 'active'),
             ('heartbeat_enabled', '=', True),
-        ])
+        ], order='last_heartbeat asc, id asc', limit=per_tick)
 
         now = datetime.now()
         for coworker in coworkers:
@@ -8367,4 +8530,3 @@ def _run_coworker_nested(dbname, coworker_id, prompt, system_prompt=None,
             prompt, system_prompt=system_prompt, force_model=force_model,
             force_agent=force_agent, session=session, history=history,
             interrupt_handler=interrupt_handler)
-

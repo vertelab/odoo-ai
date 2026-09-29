@@ -109,28 +109,59 @@ class AIOrgTask(models.Model):
         default=lambda self: self.env.company)
     active = fields.Boolean(default=True)
 
-    def action_checkout(self):
-        """Checka ut denna task — atomiskt."""
+    def action_checkout(self, init_type='cron', job_prompt=None):
+        """Checka ut denna task — ATOMISKT (bevakning-over-tid D4).
+
+        Villkorad UPDATE (`WHERE checkout_lock = FALSE`) i stället för
+        search+write: bara en villkorad UPDATE är atomisk under samtidighet.
+        Två samtidiga heartbeat-anrop mot samma lediga uppgift ska ge exakt
+        en lyckad utcheckning.
+
+        Misslyckas session-skapandet frigörs uppgiften (D5) — en uppgift får
+        aldrig lämnas utcheckad utan körning.
+        """
         self.ensure_one()
-        if self.checkout_lock:
+        self.env.cr.execute("""
+            UPDATE ai_org_task
+               SET checkout_lock = TRUE,
+                   checked_out_at = NOW(),
+                   status = 'in_progress'
+             WHERE id = %s AND checkout_lock = FALSE
+        """, (self.id,))
+        if self.env.cr.rowcount == 0:
             raise models.ValidationError(_(
                 'Task "%s" is already checked out.') % self.name)
-        self.write({
-            'checkout_lock': True,
-            'checked_out_at': fields.Datetime.now(),
-            'status': 'in_progress',
-        })
-        # Skapa session automatiskt
-        session = self.env['ai.coworker.session'].create({
-            'coworker_id': self.coworker_id.id,
-            'ai_task_id': self.id,
-            'init_type': 'cron',
-            'name': f'Task: {self.name[:50]}',
-            'status': 'active',
-        })
+        self.invalidate_recordset(['checkout_lock', 'checked_out_at', 'status'])
+
+        # Skapa session automatiskt — frigör uppgiften om det misslyckas.
+        try:
+            session = self.env['ai.coworker.session'].create({
+                'coworker_id': self.coworker_id.id,
+                'ai_task_id': self.id,
+                'init_type': init_type,
+                'name': f'Task: {self.name[:50]}',
+                'status': 'active',
+                'job_prompt': job_prompt or False,
+                'heartbeat_pending': bool(job_prompt),
+            })
+        except Exception:
+            # D5: frigör uppgiften — den får inte lämnas utcheckad utan körning.
+            self.action_release()
+            raise
         _logger.info('Task %s checked out by coworker %s, session %s',
                      self.name, self.coworker_id.name, session.id)
         return session
+
+    def action_release(self):
+        """Frigör en utcheckad uppgift utan körning (D5)."""
+        self.ensure_one()
+        self.write({
+            'checkout_lock': False,
+            'checked_out_at': False,
+            'status': 'todo',
+        })
+        _logger.info('Task %s frigjord (ingen körning köades)', self.name)
+        return True
 
     def action_checkin(self, result_summary=''):
         """Checka in task — markera som klar."""
