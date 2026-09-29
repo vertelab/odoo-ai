@@ -1685,6 +1685,13 @@ class AICoworkerSession(models.Model):
                     coworker, msg_dict, mail_it)
             else:
                 prompt = f"{subject}\n\n{body}".strip()
+                # Extern dispatch frigör mail-tråden (cron-arbetartrad 4.3):
+                # en extern agent svarar asynkront; svaret postas av
+                # `_post_pending_reply` när processen är klar.
+                if coworker._dispatch_or_loop(self, prompt, 'mail'):
+                    _logger.info(
+                        'Mail för session %s dispatchat externt', self.id)
+                    return self
                 reply = coworker.with_context(
                     _ai_context_model='ai.coworker.session',
                     _ai_context_id=self.id,
@@ -1767,6 +1774,14 @@ class AICoworkerSession(models.Model):
                 continue
             try:
                 with self.env.cr.savepoint():
+                    # Extern dispatch frigör cron-tråden (cron-arbetartrad
+                    # 4.1/4.2): watch-transaktionen får inte blockeras av en
+                    # 240 s LLM-körning när agenten är extern.
+                    if coworker._dispatch_or_loop(
+                            session, session.watch_prompt or '', 'watch'):
+                        session.write({'watch_pending': False})
+                        processed += 1
+                        continue
                     coworker.with_context(
                         _ai_context_model=session.watch_model,
                         _ai_context_id=session.watch_res_id,

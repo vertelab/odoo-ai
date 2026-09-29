@@ -5153,6 +5153,26 @@ class AICoworker(models.Model):
     INTERACTIVE_INIT_TYPES = ('server_action', 'powerbox', 'web_ui',
                               'chat', 'channel', 'openai_api', 'manual')
 
+    def _dispatch_or_loop(self, session, prompt, init_type):
+        """Välj extern dispatch eller in-process loop (cron-arbetartrad D1).
+
+        Automatiska körvägar (cron, heartbeat, watch, mail) blockerade en av
+        Odoos två cron-trådar i upp till `llm_timeout` (240 s) per körning.
+        Är agenten `runtime='external'` startas den som en `pi-agent`-
+        subprocess i stället, och cron-tråden frigörs.
+
+        Returnerar dispatch-mätningen (dict) när agenten är extern, annars
+        None — anroparen kör då `run()` som förut.
+
+        Identiteten löses FÖRE spawn (D4): API-nyckeln binds till användaren,
+        och systemuser är aldrig tillåtet. Saknad ägare ger ett högljutt fel.
+        """
+        agent = self.agent_ids[:1].agent_id if self.agent_ids else None
+        if not agent or not agent._runtime_is_external():
+            return None
+        user = self._resolve_dispatch_user(init_type, session)
+        return agent._dispatch_external(self, session, user, prompt=prompt)
+
     def _resolve_dispatch_user(self, init_type=None, session=None):
         """Lös upp `res.users` för en extern dispatch — FÖRE spawn (D5).
 
@@ -5844,6 +5864,17 @@ class AICoworker(models.Model):
             from odoo.addons.ai_agent_core.core.permission import (
                 PermissionEngine, PermissionMode,
             )
+
+            # Extern dispatch frigör cron-tråden (cron-arbetartrad 2.1):
+            # en `external`-agent startas som subprocess och cron-tråden
+            # släpper direkt i stället för att blockera i upp till 240 s.
+            _dispatch = self._dispatch_or_loop(session, None, 'cron')
+            if _dispatch:
+                _logger.info(
+                    'Scheduled run för %s dispatchad externt (pid=%s, %.2fs)',
+                    self.name, _dispatch.get('pid'), _dispatch.get('spawn_time', 0))
+                return {'status': 'dispatched', 'session_id': session.id,
+                        'pid': _dispatch.get('pid'), 'port': _dispatch.get('port')}
 
             provider_instance, provider_model = ProviderFactory.from_coworker(self)
             provider = provider_instance or get_default_provider()[0] 
@@ -7624,8 +7655,28 @@ class AICoworker(models.Model):
                 f'(progress {active_goals.progress:.0f}%). '
                 f'Föreslå och utför nästa steg mot målet.'
             )
+            # Extern dispatch frigör cron-tråden (cron-arbetartrad 3.1):
+            # heartbeat är den värsta blockeraren — `_heartbeat_all` itererar
+            # coworkers sekventiellt, så en extern agent får inte vänta ut
+            # de andra i kön.
+            session = None
             try:
-                self.run(prompt=goal_prompt)
+                session = self.env['ai.coworker.session'].create({
+                    'coworker_id': self.id,
+                    'status': 'active',
+                    'init_type': 'cron',
+                })
+                if self._dispatch_or_loop(session, goal_prompt, 'cron'):
+                    _logger.info(
+                        'Heartbeat %s: mål %s dispatchat externt — '
+                        'cron-tråden frigjord', self.name, active_goals.name)
+                    return
+            except Exception as e:
+                _logger.warning(
+                    'Heartbeat %s: extern dispatch av mål %s misslyckades: %s',
+                    self.name, active_goals.name, e, exc_info=True)
+            try:
+                self.run(prompt=goal_prompt, session=session)
             except Exception as e:
                 # En trasig körning ska loggas — inte lämna en tyst session.
                 _logger.warning(
