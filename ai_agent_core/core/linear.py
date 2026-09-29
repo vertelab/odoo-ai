@@ -33,6 +33,7 @@ class LinearLoop:
         base_system="",
         max_rounds=10,
         config=None,
+        session_headers=None,
     ):
         self.agents = agents  # ai.coworker.agent records sorted by sequence
         self.provider = provider
@@ -41,6 +42,9 @@ class LinearLoop:
         self.base_system = base_system
         self.max_rounds = max_rounds
         self.config = config or LinearConfig()
+        # Bifrost-sessionskorrelation (bifrost-session-lankning): samma
+        # per-anrops-headers till varje steg i kedjan.
+        self.session_headers = session_headers
 
     async def run(self, prompt, history=None):
         """Run the pipeline: each agent gets the previous output as prompt."""
@@ -70,6 +74,7 @@ class LinearLoop:
                     model=agent_model,
                     system_prompt=agent_system,
                     max_rounds=self.max_rounds,
+                    session_headers=self.session_headers,
                 ),
             )
 

@@ -275,8 +275,15 @@ class AIProvider:
         system_prompt: str = "",
         temperature: float = 0.7,
         max_tokens: int = 4096,
+        extra_headers: Optional[dict] = None,
     ) -> ChatResponse:
-        """Send a chat completion request. Non-streaming."""
+        """Send a chat completion request. Non-streaming.
+
+        extra_headers: per-anrops-headers (t.ex. Bifrosts `x-bf-session-id`).
+        Klienten cachas per modell och kan betjäna flera sessioner, så
+        sessionsidentiteten får INTE sättas vid klient-skapandet — den
+        skickas här och läggs till ovanpå klientens bas-headers.
+        """
         if not model:
             # bifrost-client-provisioning D6: ingen provider/modell konfigurerad
             # är en FELSITUATION — aldrig tyst hårdkodad fallback-sträng.
@@ -286,10 +293,12 @@ class AIProvider:
             )
         if self.api_style == "anthropic":
             return await self._chat_anthropic(
-                model, messages, tools, system_prompt, temperature, max_tokens
+                model, messages, tools, system_prompt, temperature, max_tokens,
+                extra_headers=extra_headers,
             )
         return await self._chat_openai_compat(
-            model, messages, tools, system_prompt, temperature, max_tokens
+            model, messages, tools, system_prompt, temperature, max_tokens,
+            extra_headers=extra_headers,
         )
 
     async def chat_stream(
@@ -300,8 +309,12 @@ class AIProvider:
         system_prompt: str = "",
         temperature: float = 0.7,
         max_tokens: int = 4096,
+        extra_headers: Optional[dict] = None,
     ) -> AsyncIterator[TokenEvent]:
-        """Send a chat completion request. Streaming via async generator."""
+        """Send a chat completion request. Streaming via async generator.
+
+        extra_headers: se `chat()` — sätts per anrop, aldrig på klienten.
+        """
         if not model:
             # D6: felsituation — ingen tyst hårdkodad fallback.
             raise ProviderError(
@@ -310,12 +323,14 @@ class AIProvider:
             )
         if self.api_style == "anthropic":
             async for event in self._stream_anthropic(
-                model, messages, tools, system_prompt, temperature, max_tokens
+                model, messages, tools, system_prompt, temperature, max_tokens,
+                extra_headers=extra_headers,
             ):
                 yield event
         else:
             async for event in self._stream_openai_compat(
-                model, messages, tools, system_prompt, temperature, max_tokens
+                model, messages, tools, system_prompt, temperature, max_tokens,
+                extra_headers=extra_headers,
             ):
                 yield event
 
@@ -389,11 +404,12 @@ class AIProvider:
     # -- HTTP helpers (retry + 400-debug + httpx 0.28-kompatibel) --
 
     @DEFAULT_RETRY
-    async def _post(self, path: str, body: dict) -> dict:
+    async def _post(self, path: str, body: dict,
+                    extra_headers: Optional[dict] = None) -> dict:
         client = await self._get_client()
         url = f"{self.base_url}{path}"
         _logger.debug("AIProvider %s %s", path, body.get("model", "?"))
-        response = await client.post(url, json=body)
+        response = await client.post(url, json=body, headers=extra_headers or None)
         if response.is_error:
             # Inkludera response-body i felet (t.ex. 400-detaljer från providern)
             _detail = response.text[:500]
@@ -406,14 +422,16 @@ class AIProvider:
         return response.json()
 
     @DEFAULT_RETRY
-    async def _stream_open(self, url: str, body: dict):
+    async def _stream_open(self, url: str, body: dict,
+                           extra_headers: Optional[dict] = None):
         """Öppna streaming-anrop med retry (429/5xx/connect).
 
         Returnerar en öppen httpx-response redo att itereras. Vid statusfel
         stängs anslutningen innan raise, så retry får en fräsch request.
         """
         client = await self._get_client()
-        request = client.build_request('POST', url, json=body)
+        request = client.build_request('POST', url, json=body,
+                                       headers=extra_headers or None)
         response = await client.send(request, stream=True)
         if response.is_error:
             await response.aread()  # läs body innan .text (streaming)
@@ -436,12 +454,13 @@ class AIProvider:
                     response=e.response) from e
         return response
 
-    async def _post_stream(self, path: str, body: dict):
+    async def _post_stream(self, path: str, body: dict,
+                           extra_headers: Optional[dict] = None):
         client = await self._get_client()
         url = f"{self.base_url}{path}"
         body["stream"] = True
         _logger.debug("AIProvider stream %s %s", path, body.get("model", "?"))
-        response = await self._stream_open(url, body)
+        response = await self._stream_open(url, body, extra_headers=extra_headers)
         # httpx 0.28: Response saknar __aenter__ — stäng explicit i finally
         try:
             async for line in response.aiter_lines():
@@ -457,7 +476,8 @@ class AIProvider:
         finally:
             await response.aclose()
 
-    async def _iter_stream_retry(self, path: str, body: dict):
+    async def _iter_stream_retry(self, path: str, body: dict,
+                                 extra_headers: Optional[dict] = None):
         """Iterera en streaming-response; retry utan stream_options vid 400.
 
         Vissa strikta providers/äldre gateways accepterar inte
@@ -466,7 +486,7 @@ class AIProvider:
         får estimera).
         """
         try:
-            async for chunk in self._post_stream(path, body):
+            async for chunk in self._post_stream(path, body, extra_headers=extra_headers):
                 yield chunk
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 400 and body.get("stream_options"):
@@ -474,7 +494,7 @@ class AIProvider:
                     'provider rejected stream_options (400); retrying without '
                     'include_usage: %s', body.get('model'))
                 body.pop("stream_options")
-                async for chunk in self._post_stream(path, body):
+                async for chunk in self._post_stream(path, body, extra_headers=extra_headers):
                     yield chunk
             else:
                 raise
@@ -482,11 +502,12 @@ class AIProvider:
     # -- OpenAI-compatible (OpenAI, DeepSeek, Cerebras, Groq, Google,
     #    OpenRouter, Ollama, custom) --
 
-    async def _chat_openai_compat(self, model, messages, tools, system_prompt, temperature, max_tokens):
+    async def _chat_openai_compat(self, model, messages, tools, system_prompt, temperature, max_tokens,
+                                  extra_headers=None):
         body = self._build_openai_body(
             model, messages, tools, system_prompt, temperature, max_tokens
         )
-        data = await self._post("/chat/completions", body)
+        data = await self._post("/chat/completions", body, extra_headers=extra_headers)
 
         choice = data["choices"][0]
         msg = choice.get("message", {})
@@ -509,7 +530,8 @@ class AIProvider:
             finish_reason=choice.get("finish_reason", "stop"),
         )
 
-    async def _stream_openai_compat(self, model, messages, tools, system_prompt, temperature, max_tokens):
+    async def _stream_openai_compat(self, model, messages, tools, system_prompt, temperature, max_tokens,
+                                    extra_headers=None):
         body = self._build_openai_body(
             model, messages, tools, system_prompt, temperature, max_tokens,
             include_usage=True,
@@ -520,7 +542,8 @@ class AIProvider:
         done_sent = False  # [DONE]-markören får inte ge en andra done
         last_usage: dict = {}
 
-        async for chunk in self._iter_stream_retry("/chat/completions", body):
+        async for chunk in self._iter_stream_retry("/chat/completions", body,
+                                                   extra_headers=extra_headers):
             if isinstance(chunk, TokenEvent):
                 if chunk.type == "done":
                     # Flush eventuella tool_call-buffers innan done
@@ -619,9 +642,10 @@ class AIProvider:
 
     # -- Anthropic-specific (api_style=anthropic) --
 
-    async def _chat_anthropic(self, model, messages, tools, system_prompt, temperature, max_tokens):
+    async def _chat_anthropic(self, model, messages, tools, system_prompt, temperature, max_tokens,
+                              extra_headers=None):
         body = self._build_anthropic_body(model, messages, tools, system_prompt, temperature, max_tokens)
-        data = await self._post("/messages", body)
+        data = await self._post("/messages", body, extra_headers=extra_headers)
 
         text = ""
         tool_calls = []
@@ -643,7 +667,8 @@ class AIProvider:
             finish_reason=data.get("stop_reason", "end_turn"),
         )
 
-    async def _stream_anthropic(self, model, messages, tools, system_prompt, temperature, max_tokens):
+    async def _stream_anthropic(self, model, messages, tools, system_prompt, temperature, max_tokens,
+                                extra_headers=None):
         body = self._build_anthropic_body(model, messages, tools, system_prompt, temperature, max_tokens)
         body["stream"] = True
 
@@ -652,7 +677,8 @@ class AIProvider:
         # output_tokens i message_delta — fångas för korrekt token-bokföring.
         usage_input = 0
         usage_output = 0
-        response = await self._stream_open(f"{self.base_url}/messages", body)
+        response = await self._stream_open(f"{self.base_url}/messages", body,
+                                           extra_headers=extra_headers)
         try:
             async for line in response.aiter_lines():
                 if not line.startswith("data: "):

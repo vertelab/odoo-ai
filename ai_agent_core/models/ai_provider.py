@@ -67,6 +67,17 @@ class AIProvider(models.Model):
         ('anthropic', 'Anthropic (/v1/messages)'),
     ], default='openai', string='API-stil')
 
+    # Sessionskorrelation (bifrost-session-lankning): mall för de
+    # dimensions-headers (`x-bf-dim-*`) som följer varje anrop till gatewayen.
+    # Platshållare expanderas av loopen ur sessionens kontext, t.ex.
+    # `coworker={coworker};agent={agent};init={init}`. Tomt värde → inga
+    # `x-bf-dim-*`-headers (krav 3.1).
+    bifrost_dim_template = fields.Char(
+        'Bifrost dimension-mall',
+        help='Mall för x-bf-dim-*-headers, t.ex. "coworker={coworker};'
+             'agent={agent};init={init}". Tomt = inga dimension-headers.',
+    )
+
     # Status
     status = fields.Selection([
         ('draft', 'Draft'),

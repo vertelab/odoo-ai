@@ -74,6 +74,13 @@ class AgentConfig:
     # User context for NATS tool execution (pi-agent-memory-bridge D5)
     nats_user_context: dict = None  # {"user_id": 42, "company_id": 1, "coworker_id": 7, "session_id": 123}
 
+    # Bifrost sessionskorrelation (bifrost-session-lankning): per-anrops-headers
+    # som loopen skickar med varje provider-anrop. Sätts av ägaren (ai.coworker)
+    # ur sessionens identitet — providern cachas per modell och kan betjäna
+    # flera sessioner, så identiteten får ALDRIG sättas på klienten.
+    # Tom dict/None → inga extra headers (t.ex. provider utan is_bifrost).
+    session_headers: dict = None
+
 
 # ---------------------------------------------------------------------------
 # AgentLoop (LOOP-001, LOOP-003, LOOP-005, LOOP-007)
@@ -172,6 +179,17 @@ class AgentLoop:
         for pt in planning_tools(self.todo_list):
             if pt.name not in self.tools:
                 self.tools.register(pt)
+
+    def _session_headers(self) -> Optional[dict]:
+        """Per-anrops-headers för Bifrost-sessionskorrelation.
+
+        Returnerar `config.session_headers` när providern är en gateway
+        (`is_bifrost`), annars None. Providers utan gateway ska inte få några
+        `x-bf-*`-headers alls (bifrost-session-lankning krav 3.3).
+        """
+        if not getattr(self.provider, "is_bifrost", False):
+            return None
+        return self.config.session_headers or None
 
     def _tool_defs(self, messages: list[Message]):
         """Build the tool definitions for a provider call.
@@ -298,6 +316,7 @@ class AgentLoop:
                         system_prompt=self.config.system_prompt,
                         temperature=self.config.temperature,
                         max_tokens=self.config.max_tokens,
+                        extra_headers=self._session_headers(),
                     )
                 )
                 cancel_task = asyncio.create_task(self._cancel_event.wait())
@@ -577,6 +596,7 @@ class AgentLoop:
                 system_prompt=self.config.system_prompt,
                 temperature=self.config.temperature,
                 max_tokens=self.config.max_tokens,
+                extra_headers=self._session_headers(),
             )
             if synth and synth.text:
                 return ChatResponse(
@@ -850,6 +870,7 @@ class AgentLoop:
                     system_prompt="Du sammanfattar konversationer. Var koncis.",
                     temperature=0.3,
                     max_tokens=2048,
+                    extra_headers=self._session_headers(),
                 ),
                 timeout=self.config.llm_timeout,
             )
@@ -913,6 +934,7 @@ class StreamingAgentLoop(AgentLoop):
                 system_prompt=self.config.system_prompt,
                 temperature=self.config.temperature,
                 max_tokens=self.config.max_tokens,
+                extra_headers=self._session_headers(),
             ):
                 if event.type == "token":
                     # Buffra rundans text — först vid done vet vi om det är
@@ -1036,6 +1058,7 @@ class StreamingAgentLoop(AgentLoop):
                 system_prompt=self.config.system_prompt,
                 temperature=self.config.temperature,
                 max_tokens=self.config.max_tokens,
+                extra_headers=self._session_headers(),
             ):
                 if event.type == "token":
                     yield event

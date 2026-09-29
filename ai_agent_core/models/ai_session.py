@@ -1047,6 +1047,37 @@ class AICoworkerSession(models.Model):
     round_count = fields.Integer('Rounds', default=0)
     finish_reason = fields.Char('Finish Reason')
 
+    # -- Bifrost-berikning (bifrost-session-lankning) --
+    # SEPARATA mått. De slås aldrig samman med `token_sys` (debitering) eller
+    # `cost_usd` (Odoos egen kostnad) — gatewayen mäter något annat, och en
+    # summering över dem vore att blanda tre sanningar (krav 5.5).
+    #
+    # `bifrost_cost` är omätt (False) tills en cron sett gateway-rader för
+    # sessionen — en direktkörd session (utan gateway) lämnar den omätt,
+    # aldrig 0.0 (krav 5.4).
+    bifrost_cost = fields.Float(
+        'Bifrost-kostnad (USD)',
+        help='Σ gateway-kostnad för sessionens anrop. Omätt = False.',
+    )
+    bifrost_retries = fields.Integer(
+        'Bifrost-retries',
+        help='Σ number_of_retries över sessionens gateway-anrop.',
+    )
+    bifrost_fallbacks = fields.Integer(
+        'Bifrost-fallbacks',
+        help='Antal anrop där gatewayen bytte provider (fallback_index > 1).',
+    )
+    bifrost_synced_at = fields.Datetime(
+        'Bifrost synkad',
+        help='Tidpunkt för senaste aggregering från gateway-loggen.',
+    )
+    bifrost_request_log_ids = fields.One2many(
+        'bifrost.request.log', 'session_ref_id',
+        string='Bifrost-anrop',
+        help='Gatewayens anrop för denna session. Kopplas av cronen som '
+             'matchar gatewayens session_id mot sessionens name.',
+    )
+
     user_id = fields.Many2one('res.users', default=lambda self: self.env.user)
     company_id = fields.Many2one('res.company', default=lambda self: self.env.company)
 
@@ -1495,9 +1526,6 @@ class AICoworkerSession(models.Model):
         return closed
 
     def mark_done(self, reason='stop'):
-        # Eftermälet skrivs INNAN statusen sätts: det som hann hända är
-        # kunskap (session-close krav 3), och en 'done'-session ska redan
-        # vara sammanfattad om någon läser den direkt efteråt.
         for session in self:
             try:
                 session._write_final_summary()
@@ -1510,6 +1538,38 @@ class AICoworkerSession(models.Model):
         self.finish_reason = reason
         self.end_date = fields.Datetime.now()
         self._push_done_notification()
+
+    #: Rangordning av finish_reason — hÖgre vinner när två källor säger olika.
+    #: Gatewayens `stop_reason` kan vara starkare än sessionens egen (t.ex. en
+    #: trunkering `length` som Odoo missade medan den stängde på `max_rounds`).
+    FINISH_REASON_RANK = {
+        'stop': 0,
+        'idle': 0,
+        'closed': 0,
+        'new_session': 0,
+        'cancelled': 1,
+        'interrupted': 1,
+        'max_rounds': 2,
+        'content_filter': 3,
+        'length': 4,
+        'error': 5,
+    }
+
+    def _raise_finish_reason(self, candidate):
+        """Höj sessionens `finish_reason` om kandidaten är starkare.
+
+        Gatewayens `stop_reason` (bifrost-session-lankning 6.1) kan veta något
+        Odoo inte visste — t.ex. att modellen trunkerades (`length`) medan
+        sessionen stängdes som `max_rounds`. Svagare värden skriver aldrig
+        över ett starkare. Tom/okänd kandidat ignoreras.
+        """
+        if not candidate:
+            return
+        current = self.finish_reason or ''
+        cur_rank = self.FINISH_REASON_RANK.get(current, -1)
+        new_rank = self.FINISH_REASON_RANK.get(candidate, -1)
+        if new_rank > cur_rank:
+            self.finish_reason = candidate
 
     def _push_done_notification(self):
         """Web push "svar klart" till sessionens användare (via web_pwa_push).

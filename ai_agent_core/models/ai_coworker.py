@@ -4695,6 +4695,11 @@ class AICoworker(models.Model):
         # NATS user context (pi-agent-memory-bridge D5)
         nats_ctx = self._get_nats_user_context()
 
+        # Bifrost-sessionskorrelation (bifrost-session-lankning): byggs EN gång
+        # och läggs på varje AgentConfig nedan. Providern cachas per modell, så
+        # identiteten måste följa anropet — inte klienten.
+        bifrost_headers = self._bifrost_session_headers()
+
         mode = self._get_effective_orchestration_mode()
         if self.env.context.get('ai_single_agent_run'):
             mode = 'single'
@@ -4709,6 +4714,7 @@ class AICoworker(models.Model):
                     max_rounds=max_rounds,
                     permission_mode='auto',
                     nats_user_context=nats_ctx,
+                    session_headers=bifrost_headers,
                 ),
                 tool_selector=tool_selector,
             )
@@ -4719,12 +4725,14 @@ class AICoworker(models.Model):
             if not agents:
                 return AgentLoop(provider=provider, tools=tools,
                     config=AgentConfig(model=model, system_prompt=system_prompt,
-                        max_rounds=max_rounds))
+                        max_rounds=max_rounds,
+                        session_headers=bifrost_headers))
             # Return a LinearLoop wrapper
             return LinearLoop(
                 agents=agents, provider=provider, tools=tools,
                 base_model=model, base_system=system_prompt,
-                max_rounds=max_rounds)
+                max_rounds=max_rounds,
+                session_headers=bifrost_headers)
 
         # ── Single agent mode ──
         if mode == 'single' or len(self.agent_ids) <= 1:
@@ -4736,6 +4744,7 @@ class AICoworker(models.Model):
                 config=AgentConfig(
                     model=agent_model, system_prompt=system_prompt,
                     max_rounds=max_rounds,
+                    session_headers=bifrost_headers,
                 ),
                 tool_selector=tool_selector,
             )
@@ -4803,6 +4812,7 @@ class AICoworker(models.Model):
                 config=AgentConfig(
                     model=supervisor_model, system_prompt=supervisor_prompt,
                     max_rounds=max_rounds,
+                    session_headers=bifrost_headers,
                 ),
             )
 
@@ -4962,6 +4972,90 @@ class AICoworker(models.Model):
         if sess_model == 'ai.coworker.session' and sess_id:
             ctx['session_id'] = sess_id
         return ctx
+
+    # ── Bifrost-sessionskorrelation (bifrost-session-lankning) ──
+
+    #: Bifrosts tak för sessions-id. Sessionens `name` är ett 8-teckens uuid,
+    #: långt under gränsen — men vi klipper defensivt så ett framtida längre
+    #: id aldrig tyst avvisas av gatewayen.
+    BIFROST_SESSION_ID_MAX = 64
+
+    def _bifrost_session_headers(self, session=None):
+        """Bygg per-anrops-headers för gatewayen ur sessionens identitet.
+
+        Returnerar `x-bf-session-id` + expanderade `x-bf-dim-*`-headers, eller
+        None när ingen session finns (krav 2.1). Sätts per anrop — providern
+        cachas per modell och kan betjäna flera sessioner (krav 2.3).
+
+        Providerns `bifrost_dim_template` styr dimensionerna, t.ex.
+        `coworker={coworker};agent={agent};init={init}` (krav 3.2).
+
+        OBS: HTTP-headers är ASCII/latin-1. Coworker- och agentnamn kan bära
+        `ä/ö/å` (t.ex. "Allmän assistent") — sådana värden saneras till
+        ASCII, annars kastar httpx `'ascii' codec can't encode` och HELA
+        anropet fallerar. Dimensionerna är aggregeringsetiketter, inte
+        identiteter, så en translitterering är rätt avvägning.
+        """
+        if session is None:
+            sess_id = self.env.context.get('_ai_context_id')
+            if self.env.context.get('_ai_context_model') == 'ai.coworker.session' and sess_id:
+                session = self.env['ai.coworker.session'].browse(sess_id)
+        if not session or not session.exists():
+            return None
+
+        def _ascii(value):
+            """Gör ett värde säkert som HTTP-header (ASCII, inga kontrolltecken)."""
+            import unicodedata
+            text = str(value or '')
+            # Translitterera å/ä/ö → a/a/o och ta bort övriga diakriter.
+            trans = {'å': 'a', 'ä': 'a', 'ö': 'o', 'Å': 'A', 'Ä': 'A', 'Ö': 'O'}
+            text = ''.join(trans.get(c, c) for c in text)
+            text = unicodedata.normalize('NFKD', text)
+            text = text.encode('ascii', 'ignore').decode('ascii')
+            return ''.join(c for c in text if c.isprintable() and c not in '\r\n')
+
+        headers = {}
+        if session.name:
+            headers['x-bf-session-id'] = _ascii(session.name)[:self.BIFROST_SESSION_ID_MAX]
+
+        # Dimension-mall från providern (om satt).
+        template = ''
+        try:
+            provider = self._resolve_provider_record()
+            template = (provider.bifrost_dim_template or '') if provider else ''
+        except Exception:
+            template = ''
+        if template:
+            agent = self.agent_ids[:1].agent_id if self.agent_ids else None
+            values = {
+                'coworker': self.name or '',
+                'agent': (agent.name if agent else '') or '',
+                'init': session.init_type or '',
+            }
+            for part in template.split(';'):
+                part = part.strip()
+                if '=' not in part:
+                    continue
+                dim, val = part.split('=', 1)
+                dim = _ascii(dim).strip()
+                val = val.strip()
+                for key, repl in values.items():
+                    val = val.replace('{' + key + '}', repl)
+                val = _ascii(val).strip()
+                if dim and val:
+                    headers[f'x-bf-dim-{dim}'] = val
+
+        return headers or None
+
+    def _resolve_provider_record(self):
+        """Provider-recordet som denna coworker kör mot (för dimension-mallen).
+
+        Speglar ProviderFactory.from_coworker:s uppslagning men returnerar
+        recordet i stället för en AIProvider-instans.
+        """
+        agent = self.agent_ids[:1].agent_id if self.agent_ids else None
+        model = agent.model_id if agent and agent.model_id else self.model_id
+        return model.provider if model and model.provider else None
 
     # ── Användarkontext före extern dispatch (external-agent-runtime D5) ──
 
