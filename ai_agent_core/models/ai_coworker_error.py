@@ -25,6 +25,12 @@ class AICoworkerError(models.Model):
         ('search_error', 'Sökfel'),
         ('provider_error', 'Provider-fel'),
         ('max_rounds', 'Max rounds'),
+        # Utfalls-typer (utfall-och-tokenmatning 5.5): härleds ur
+        # sessionens finish_reason så utfallet blir sökbart i felloggen.
+        ('timeout', 'Timeout'),
+        ('cancelled', 'Avbruten'),
+        ('length', 'Trunkerad (length)'),
+        ('usage_unreported', 'Usage ej rapporterad'),
         ('other', 'Annat'),
     ], string='Feltyp', default='other')
     tool_name = fields.Char('Verktyg')

@@ -197,6 +197,10 @@ class AIKaizenReport(models.Model):
             ('session_id.coworker_id', '=', coworker.id),
             ('create_date', '>=', week_start_dt),
             ('create_date', '<=', week_end_dt),
+            # informative=True = spårbarhet (per-agent), inte budget
+            # (utfall-och-tokenmatning 5.3). Utan detta matchar inte
+            # veckosummorna budgeten.
+            ('informative', '=', False),
         ])
 
         sessions = self.env['ai.coworker.session'].search([
@@ -225,6 +229,16 @@ class AIKaizenReport(models.Model):
         total_tokens = sum(l.token_input + l.token_output for l in lines)
         total_sys = sum(l.token_sys or 0 for l in lines)
 
+        # Utfalls-fördelning (utfall-och-tokenmatning 5.6): räknas ur
+        # sessionernas typade finish_reason, så kaizen kan larma på
+        # loop-trötthet (max_rounds), trunkering (length) och omätt usage.
+        finish_counts = {}
+        for s in sessions:
+            fr = s.finish_reason or ''
+            if fr:
+                finish_counts[fr] = finish_counts.get(fr, 0) + 1
+        n_sessions = len(sessions) or 1
+
         return {
             'session_count': len(sessions),
             'total_sys_tokens': total_sys,
@@ -233,6 +247,10 @@ class AIKaizenReport(models.Model):
             'error_count': len(error_sessions),
             'feedback_count': len(feedback),
             'avg_response_tokens': (total_tokens // len(lines)) if lines else 0,
+            'max_rounds_rate': finish_counts.get('max_rounds', 0) / n_sessions,
+            'length_rate': finish_counts.get('length', 0) / n_sessions,
+            'usage_unreported': sum(
+                1 for l in lines if not l.usage_reported),
         }
 
     def _gather_previous_week(self, quest, current_week_start):
@@ -275,6 +293,43 @@ class AIKaizenReport(models.Model):
                 'finding': f"{data['feedback_count']} förbättringsförslag mottogs denna vecka",
                 'recommendation': "Granska förbättringsförslagen och uppdatera questens beskrivning eller skills.",
                 'evidence': f"Feedback count: {data['feedback_count']}",
+            })
+
+        # Utfalls-regler (utfall-och-tokenmatning 5.6): en session som gav upp
+        # efter max_rounds ser frisk ut (status='done') men är ett
+        # kapacitetsproblem. Samma för trunkering och omätt usage.
+        if data.get('max_rounds_rate', 0) > 0.2:
+            findings.append({
+                'severity': 'medium',
+                'category': 'outcome',
+                'finding': (f"{data['max_rounds_rate']*100:.0f}% av sessionerna "
+                            f"nådde max_rounds utan att bli klara"),
+                'recommendation': ("Förenkla uppgiften eller höj max_iterations. "
+                                   "Upprepade max_rounds betyder att loopen ger "
+                                   "upp, inte att modellen är färdig."),
+                'evidence': f"max_rounds_rate={data['max_rounds_rate']:.2f}",
+            })
+
+        if data.get('length_rate', 0) > 0.1:
+            findings.append({
+                'severity': 'medium',
+                'category': 'outcome',
+                'finding': (f"{data['length_rate']*100:.0f}% av sessionerna "
+                            f"trunkerades av modellens max_tokens"),
+                'recommendation': ("Höj modellens max_tokens eller be om kortare "
+                                   "svar. Trunkering tappar slutet på svaret."),
+                'evidence': f"length_rate={data['length_rate']:.2f}",
+            })
+
+        if data.get('usage_unreported', 0) > 0:
+            findings.append({
+                'severity': 'low',
+                'category': 'cost',
+                'finding': (f"{data['usage_unreported']} rader saknade "
+                            f"token-usage — kostnaden är omätt"),
+                'recommendation': ("Kontrollera providerns usage-rapportering. "
+                                   "Omätt är inte gratis."),
+                'evidence': f"usage_unreported={data['usage_unreported']}",
             })
 
         return findings

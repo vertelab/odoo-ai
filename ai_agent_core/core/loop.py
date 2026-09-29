@@ -81,6 +81,13 @@ class AgentConfig:
     # Tom dict/None → inga extra headers (t.ex. provider utan is_bifrost).
     session_headers: dict = None
 
+    # Utfalls-persistens (utfall-och-tokenmatning D1): anropas vid VARJE
+    # returväg ur loopen med det slutliga ChatResponse. Sätts EN gång i
+    # ai.coworker._build_loop() — alla åtta körvägar går genom den, så en rad
+    # täcker dem alla. Loopen förblir domän-ren (ingen Odoo-import); callbacken
+    # äger skrivningen. Samma mönster som denial_callback.
+    outcome_callback: callable = None
+
 
 # ---------------------------------------------------------------------------
 # AgentLoop (LOOP-001, LOOP-003, LOOP-005, LOOP-007)
@@ -180,6 +187,22 @@ class AgentLoop:
             if pt.name not in self.tools:
                 self.tools.register(pt)
 
+    def _finish(self, response):
+        """Anropa outcome_callbacken (om satt) och returnera svaret oförändrat.
+
+        Varje returväg ur `run()` går genom denna (utfall-och-tokenmatning D1),
+        så utfallet persisteras oavsett VARFÖR körningen slutade. Callbacken får
+        aldrig kasta vidare fel — en trasig persistens ska inte fälla körningen
+        som redan är klar.
+        """
+        cb = getattr(self.config, 'outcome_callback', None)
+        if cb:
+            try:
+                cb(response)
+            except Exception:
+                _logger.exception('outcome_callback misslyckades')
+        return response
+
     def _session_headers(self) -> Optional[dict]:
         """Per-anrops-headers för Bifrost-sessionskorrelation.
 
@@ -262,12 +285,12 @@ class AgentLoop:
                     total_input_tokens, total_output_tokens,
                     time.time() - start_time,
                 )
-                return ChatResponse(
+                return self._finish(ChatResponse(
                     text=f"(cancelled after {round_num} rounds)",
                     input_tokens=total_input_tokens,
                     output_tokens=total_output_tokens,
                     finish_reason="cancelled",
-                )
+                ))
 
             _logger.debug(
                 "AgentLoop round %d/%d — %d messages, %d tools",
@@ -330,12 +353,12 @@ class AgentLoop:
                 if cancel_task in done:
                     chat_task.cancel()
                     _logger.info("LLM call cancelled by user")
-                    return ChatResponse(
+                    return self._finish(ChatResponse(
                         text="(cancelled)",
                         input_tokens=total_input_tokens,
                         output_tokens=total_output_tokens,
                         finish_reason="cancelled",
-                    )
+                    ))
 
                 if chat_task not in done:
                     chat_task.cancel()
@@ -343,31 +366,31 @@ class AgentLoop:
                         "LLM call timed out after %.0fs (round %d)",
                         self.config.llm_timeout, round_num,
                     )
-                    return ChatResponse(
+                    return self._finish(ChatResponse(
                         text="Error: LLM call timed out. Please try again.",
                         input_tokens=total_input_tokens,
                         output_tokens=total_output_tokens,
                         finish_reason="timeout",
-                    )
+                    ))
 
                 response = chat_task.result()
 
             except asyncio.CancelledError:
                 _logger.info("LLM call cancelled")
-                return ChatResponse(
+                return self._finish(ChatResponse(
                     text="(cancelled)",
                     input_tokens=total_input_tokens,
                     output_tokens=total_output_tokens,
                     finish_reason="cancelled",
-                )
+                ))
             except Exception as e:
                 _logger.error("LLM call failed: %s", e, exc_info=True)
-                return ChatResponse(
+                return self._finish(ChatResponse(
                     text=f"Error: LLM call failed — {e}",
                     input_tokens=total_input_tokens,
                     output_tokens=total_output_tokens,
                     finish_reason="error",
-                )
+                ))
 
             total_input_tokens += response.input_tokens
             total_output_tokens += response.output_tokens
@@ -412,7 +435,10 @@ class AgentLoop:
                 )
                 response.input_tokens = total_input_tokens
                 response.output_tokens = total_output_tokens
-                return response
+                # Den vanligaste vägen (lyckat textsvar) måste också gå genom
+                # _finish — annars persisteras aldrig det lyckade utfallet
+                # (utfall-och-tokenmatning 3.3).
+                return self._finish(response)
 
             # -- Tool calls → execute in parallel (LOOP-007) --
             if response.tool_calls:
@@ -565,12 +591,12 @@ class AgentLoop:
 
             # -- Empty response (shouldn't happen) --
             _logger.warning("Empty response from provider — stopping after round %d", round_num)
-            return ChatResponse(
+            return self._finish(ChatResponse(
                 text="(no response)",
                 input_tokens=total_input_tokens,
                 output_tokens=total_output_tokens,
                 finish_reason="error",
-            )
+            ))
 
         # -- Max rounds exceeded --
         elapsed = time.time() - start_time
@@ -599,12 +625,12 @@ class AgentLoop:
                 extra_headers=self._session_headers(),
             )
             if synth and synth.text:
-                return ChatResponse(
+                return self._finish(ChatResponse(
                     text=synth.text,
                     input_tokens=total_input_tokens + synth.input_tokens,
                     output_tokens=total_output_tokens + synth.output_tokens,
                     finish_reason="max_rounds",
-                )
+                ))
         except Exception as e:
             # Logga i stället för att tystna (web-ui-stream-turn-persistens
             # 1.1) — fallback-texten nedan returneras ändå.
@@ -612,12 +638,12 @@ class AgentLoop:
                 "max_rounds-avslutets sammanfattning misslyckades (sync): %s",
                 e, exc_info=True,
             )
-        return ChatResponse(
+        return self._finish(ChatResponse(
             text="(max rounds exceeded — stopping)",
             input_tokens=total_input_tokens,
             output_tokens=total_output_tokens,
             finish_reason="max_rounds",
-        )
+        ))
 
     # -- Tool execution (LOOP-003, LOOP-007) --
 
@@ -1031,6 +1057,9 @@ class StreamingAgentLoop(AgentLoop):
                         # klienten bokför riktiga input/output-tokens.
                         event.input_tokens = total_input_tokens
                         event.output_tokens = total_output_tokens
+                        # Utfalls-persistens även på streaming-vägen (3.4):
+                        # callbacken ser samma slutliga utfall som run().
+                        self._finish(event)
                         yield event
                         return
 
@@ -1077,10 +1106,10 @@ class StreamingAgentLoop(AgentLoop):
                 total_input_tokens, total_output_tokens, summary_error,
                 exc_info=True,
             )
-        yield TokenEvent(
+        yield self._finish(TokenEvent(
             type="done", finish_reason="max_rounds",
             input_tokens=total_input_tokens, output_tokens=total_output_tokens,
-            error=summary_error)
+            error=summary_error))
 
     @staticmethod
     def _extract_source_urls(result: str, tc: dict) -> list[str]:

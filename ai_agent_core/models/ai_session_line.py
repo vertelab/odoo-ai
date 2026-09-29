@@ -57,7 +57,10 @@ class AICoworkerSessionLine(models.Model):
     sys_multiplier = fields.Float('Systemtoken-multiplikator', default=1.0,
         help='Multiplier from ai.model at the time this line was created')
     token_sys = fields.Integer('Systemtokens', compute='_compute_token_sys', store=True,
-        help='(token_input + token_output) × sys_multiplier')
+        help='DEBITERINGSGRUND: (token_input + token_output) × sys_multiplier. '
+             'Inkluderar Vertel-marginalen — detta är vad kunden debiteras, '
+             'INTE en kostnad. Faktisk kostnad i USD ligger på radens '
+             'cost_usd (utfall-och-tokenmatning). De två slås aldrig ihop.')
 
     # ── Utfall per rad (utfall-och-tokenmatning) ────────────────────────
     # Radens eget utfall. `TokenEvent`/`ChatResponse` bär redan

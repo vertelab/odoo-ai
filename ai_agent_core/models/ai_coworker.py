@@ -1873,6 +1873,11 @@ class AICoworker(models.Model):
         for r in self:
             total = 0
             for line in r.session_line_ids:
+                # informative=True = spårbarhet (per-agent), inte budget
+                # (utfall-och-tokenmatning D5/5.1). Utan detta dubbelräknas
+                # supervisor/konsensus-rader.
+                if line.informative:
+                    continue
                 if line.create_date and line.create_date.date() >= month_start:
                     total += line.token_sys or 0
             r.session_line_count = total
@@ -1887,6 +1892,8 @@ class AICoworker(models.Model):
             # Aggregate token_sys per day over the last 7 days
             daily = {}
             for line in r.session_line_ids:
+                if line.informative:
+                    continue
                 if line.create_date and line.create_date.date() >= week_ago:
                     d = line.create_date.date()
                     daily[d] = daily.get(d, 0) + (line.token_sys or 0)
@@ -2057,7 +2064,8 @@ class AICoworker(models.Model):
         except Exception as e:
             _logger.error('Mail failed for quest %s: %s', self.name, e)
             if session:
-                session.write({'status': 'error', 'finish_reason': str(e)[:200],
+                # Fritext hör i error_detail (D3), inte finish_reason.
+                session.write({'status': 'error', 'finish_reason': 'error',
                                'error_detail': str(e)[:4000]})
             return None
 
@@ -2351,7 +2359,8 @@ class AICoworker(models.Model):
         except Exception as e:
             _logger.error('Chat failed for quest %s: %s', self.name, e)
             if session:
-                session.write({'status': 'error', 'finish_reason': str(e)[:200],
+                # Fritext hör i error_detail (D3), inte finish_reason.
+                session.write({'status': 'error', 'finish_reason': 'error',
                                'error_detail': str(e)[:4000]})
             return None
 
@@ -4661,7 +4670,75 @@ class AICoworker(models.Model):
             return _('Check status on agents: %s') % ', '.join(inactive.mapped('agent_id.name'))
         return False
 
-    def _build_loop(self, provider, tools, model, system_prompt, max_rounds=None):
+    def _line_cost_snapshot(self, model_rec=None, usage_reported=True,
+                            cached_tokens=0, finish_reason=None,
+                            interrupted=False):
+        """Ögonblicksbild av modellens priser + osäkerhetsflaggor för en rad.
+
+        (utfall-och-tokenmatning D4/4.1–4.4). Priserna fångas vid radens
+        skapande — en historisk rad ska visa vad den faktiskt kostade, inte
+        dagens pris. `usage_reported=False` skiljer "inga tokens" från "vi vet
+        inte" (annars ser en omätt körning gratis ut).
+        """
+        vals = {
+            'usage_reported': bool(usage_reported),
+            'cached_tokens': int(cached_tokens or 0),
+        }
+        if model_rec:
+            vals['cost_input_1k'] = model_rec.cost_input_1k or 0.0
+            vals['cost_output_1k'] = model_rec.cost_output_1k or 0.0
+        if finish_reason:
+            line_fields = self.env['ai.coworker.session.line']._fields
+            if finish_reason in dict(line_fields['finish_reason'].selection):
+                vals['finish_reason'] = finish_reason
+        if interrupted:
+            vals['interrupted'] = True
+        return vals
+
+    def _persist_outcome(self, response, session=None):
+        """Skriv körningens utfall på sessionen (utfall-och-tokenmatning D2).
+
+        Anropas av AgentLoop vid VARJE returväg (via `outcome_callback`).
+        Skriver ENDAST metadatafält — `session.line` är append-only och ägs av
+        anroparen. Detta är fixen för att cron/mail/channel/watch/powerbox
+        tappade utfallet: de släppte `loop.run()`:s returvärde.
+
+        `response` är ett ChatResponse (från run()) eller TokenEvent (från
+        run_stream()) — båda bär `finish_reason`. Sessionen binds vid
+        `_build_loop()` (partial) så callbacken vet vart den skriver.
+        """
+        sess = session
+        if not sess:
+            return
+        if not sess.exists():
+            return
+        reason = (getattr(response, 'finish_reason', '') or '').strip()
+        valid = dict(sess._fields['finish_reason'].selection)
+        vals = {}
+        if reason in valid:
+            vals['finish_reason'] = reason
+        elif reason:
+            # Okänt värde → error, med texten bevarad.
+            vals['finish_reason'] = 'error'
+            vals['error_detail'] = str(reason)[:4000]
+        # Status ur utfallet: en avbruten/felande körning är inte 'done'.
+        # OBS: `status`-vokabulären är draft/active/done/error — 'cancelled'
+        # är ett finish_reason, inte en status. En avbruten körning blir 'done'
+        # (den är avslutad, inte kraschad) men bär finish_reason='cancelled';
+        # bara error/timeout blir status='error'.
+        if reason in ('error', 'timeout'):
+            vals['status'] = 'error'
+        elif reason:
+            vals['status'] = 'done'
+        if vals:
+            try:
+                sess.sudo().write(vals)
+            except Exception:
+                _logger.exception(
+                    'Kunde inte persistera utfall på session %s', sess.id)
+
+    def _build_loop(self, provider, tools, model, system_prompt, max_rounds=None,
+                    session=None):
         """Build AgentLoop or loop based on orchestration mode.
 
         Supports: single, supervisor, buzz, linear, conference, automation.
@@ -4700,6 +4777,13 @@ class AICoworker(models.Model):
         # identiteten måste följa anropet — inte klienten.
         bifrost_headers = self._bifrost_session_headers()
 
+        # Utfalls-callbacken binds till sessionen (utfall-och-tokenmatning 3.6):
+        # alla åtta körvägar går genom _build_loop, så en rad täcker dem alla.
+        outcome_cb = None
+        if session is not None:
+            from functools import partial
+            outcome_cb = partial(self._persist_outcome, session=session)
+
         mode = self._get_effective_orchestration_mode()
         if self.env.context.get('ai_single_agent_run'):
             mode = 'single'
@@ -4715,6 +4799,7 @@ class AICoworker(models.Model):
                     permission_mode='auto',
                     nats_user_context=nats_ctx,
                     session_headers=bifrost_headers,
+                    outcome_callback=outcome_cb,
                 ),
                 tool_selector=tool_selector,
             )
@@ -4726,13 +4811,15 @@ class AICoworker(models.Model):
                 return AgentLoop(provider=provider, tools=tools,
                     config=AgentConfig(model=model, system_prompt=system_prompt,
                         max_rounds=max_rounds,
-                        session_headers=bifrost_headers))
+                        session_headers=bifrost_headers,
+                outcome_callback=outcome_cb))
             # Return a LinearLoop wrapper
             return LinearLoop(
                 agents=agents, provider=provider, tools=tools,
                 base_model=model, base_system=system_prompt,
                 max_rounds=max_rounds,
-                session_headers=bifrost_headers)
+                session_headers=bifrost_headers,
+                outcome_callback=outcome_cb)
 
         # ── Single agent mode ──
         if mode == 'single' or len(self.agent_ids) <= 1:
@@ -4745,6 +4832,7 @@ class AICoworker(models.Model):
                     model=agent_model, system_prompt=system_prompt,
                     max_rounds=max_rounds,
                     session_headers=bifrost_headers,
+                    outcome_callback=outcome_cb,
                 ),
                 tool_selector=tool_selector,
             )
@@ -4813,6 +4901,7 @@ class AICoworker(models.Model):
                     model=supervisor_model, system_prompt=supervisor_prompt,
                     max_rounds=max_rounds,
                     session_headers=bifrost_headers,
+                    outcome_callback=outcome_cb,
                 ),
             )
 
@@ -5785,6 +5874,7 @@ class AICoworker(models.Model):
             loop = self._build_loop(
                 provider=provider, tools=tools,
                 model=model, system_prompt=system_prompt,
+                session=session,
             )
             loop.interrupt_handler = interrupt
             loop.permission_engine = permissions
@@ -6800,6 +6890,7 @@ class AICoworker(models.Model):
                 loop_obj = self._build_loop(
                     provider=provider, tools=tools,
                     model=model, system_prompt=system_prompt,
+                    session=session,
                 )
 
                 # PermissionEngine får användarens grupper (defense-in-depth):
@@ -6844,11 +6935,20 @@ class AICoworker(models.Model):
             output_t = getattr(response, 'output_tokens', 0)
             model_real = getattr(response, 'model', '')
             sys_mult = 1.0
+            ai_model = None
             if model_real:
                 ai_model = self.env['ai.model']._resolve_from_real(
                     model_real, self)
                 if ai_model:
                     sys_mult = ai_model.sys_multiplier
+
+            # Kostnads-ögonblicksbild + utfall för raderna (4.1–4.4).
+            _usage_reported = bool(input_t or output_t)
+            _cached = int(getattr(response, 'cached_tokens', 0) or 0)
+            _finish = (getattr(response, 'finish_reason', '') or '')
+            _line_meta = self._line_cost_snapshot(
+                model_rec=ai_model, usage_reported=_usage_reported,
+                cached_tokens=_cached, finish_reason=_finish)
 
             # Reasoning + supervisor-/delegationsanalys (d): samla den
             # "gråa" tänketexten (reasoning_log) och rundornas narrering
@@ -6878,6 +6978,7 @@ class AICoworker(models.Model):
                 'token_input': input_t,
                 'token_output': 0,
                 'sys_multiplier': sys_mult,
+                **_line_meta,
             })
             self.env['ai.coworker.session.line'].create({
                 'session_id': session.id,
@@ -6898,6 +6999,7 @@ class AICoworker(models.Model):
                     {'name': n, 'preview': str(p)[:200]}
                     for n, p in getattr(loop_obj, 'tool_history', [])],
                     ensure_ascii=False),
+                **_line_meta,
             })
             # Persist tool executions recorded by the loop (observability
             # + lets tests assert expect_tools via session lines)
@@ -7043,6 +7145,10 @@ class AICoworker(models.Model):
                             'token_output': _out,
                             'model_real': _model,
                             'skill_id': agent.skill_ids[:1].id if agent.skill_ids else False,
+                            # Spårbarhet, inte budget (utfall-och-tokenmatning
+                            # 5.4): tokens ingår redan i den aggregerade
+                            # session-totalen — raden får aldrig räknas igen.
+                            'informative': True,
                         })
                         seq += 1
             except Exception:
@@ -7245,6 +7351,7 @@ class AICoworker(models.Model):
                 loop_obj = self._build_loop(
                     provider=provider, tools=tools,
                     model=model, system_prompt=system_prompt, max_rounds=5,
+                    session=session,
                 )
 
                 async def _run():
@@ -7290,7 +7397,20 @@ class AICoworker(models.Model):
                 # Update session and quest totals
                 session.token_input += input_t
                 session.token_output += output_t
-                session.status = 'done'
+                # Utfallet härleds ur körningen (utfall-och-tokenmatning 2.4):
+                # en avbruten powerbox-körning bär finish_reason='cancelled',
+                # inte ett tyst 'done' — men status är fortfarande 'done'
+                # (avslutad, inte kraschad). Bara error/timeout blir 'error'.
+                _pb_finish = (getattr(response, 'finish_reason', '') or 'stop')
+                if _pb_finish in ('error', 'timeout'):
+                    session.status = 'error'
+                else:
+                    session.status = 'done'
+                if _pb_finish in dict(
+                        session._fields['finish_reason'].selection):
+                    session.finish_reason = _pb_finish
+                else:
+                    session.finish_reason = 'stop'
 
                 self.total_input_tokens += input_t
                 self.total_output_tokens += output_t
@@ -7310,7 +7430,9 @@ class AICoworker(models.Model):
 
         except Exception as e:
             session.status = 'error'
-            session.finish_reason = str(e)[:200]
+            # Fritext hör i error_detail, inte i finish_reason (D3): annars
+            # förstörs räknebarheten i utfallsstatistiken.
+            session.finish_reason = 'error'
             session.error_detail = str(e)[:4000]
             _logger.error('Powerbox error for quest %s: %s', self.name, e)
             raise UserError(_('Powerbox error: %s') % str(e))

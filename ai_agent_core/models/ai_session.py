@@ -1045,16 +1045,38 @@ class AICoworkerSession(models.Model):
     create_date = fields.Datetime('Started', default=lambda self: fields.Datetime.now())
     end_date = fields.Datetime('Ended')
     round_count = fields.Integer('Rounds', default=0)
-    finish_reason = fields.Char('Finish Reason')
+    # Typat utfall (utfall-och-tokenmatning D3): Char → Selection. Fritext
+    # (t.ex. `str(e)[:200]`) flyttar till `error_detail` — annars förstörs
+    # räknebarheten. `length` skiljs från `max_rounds`: modellens egen gräns
+    # vs vår loop som ger upp (olika åtgärder hjälper).
+    finish_reason = fields.Selection([
+        ('stop', 'Stop'),
+        ('length', 'Length'),
+        ('tool_calls', 'Tool Calls'),
+        ('content_filter', 'Content Filter'),
+        ('refusal', 'Refusal'),
+        ('max_rounds', 'Max Rounds'),
+        ('max_tokens', 'Max Tokens'),
+        ('timeout', 'Timeout'),
+        ('cancelled', 'Cancelled'),
+        ('error', 'Error'),
+        ('setup_failed', 'Setup Failed'),
+        ('idle', 'Idle'),
+        ('closed', 'Closed'),
+        ('interrupted', 'Interrupted'),
+        ('new_session', 'New Session'),
+    ], string='Finish Reason')
 
-    # -- Bifrost-berikning (bifrost-session-lankning) --
-    # SEPARATA mått. De slås aldrig samman med `token_sys` (debitering) eller
-    # `cost_usd` (Odoos egen kostnad) — gatewayen mäter något annat, och en
-    # summering över dem vore att blanda tre sanningar (krav 5.5).
+    # Bifrost-berikningen (kostnad, retries, fallbacks) ägs av `ai_agent_core`
+    # som SKALÄRA fält — de nämner ingen brygga. Anropslistan
+    # (`bifrost_request_log_ids`) ligger i `bifrost` (computed), för kärnan får
+    # inte namnge bryggan: `bifrost.request.log` finns inte i en installation
+    # utan bifrost, och en One2many dit kraschade registry-laddningen
+    # (KeyError: 'session_ref_id', Failed to load registry).
     #
-    # `bifrost_cost` är omätt (False) tills en cron sett gateway-rader för
-    # sessionen — en direktkörd session (utan gateway) lämnar den omätt,
-    # aldrig 0.0 (krav 5.4).
+    # SEPARATA mått: slås aldrig samman med `token_sys` (debitering) eller
+    # `cost_usd` (Odoos egen kostnad) — gatewayen mäter något annat.
+    # `bifrost_cost` är omätt (False) tills en cron sett gateway-rader.
     bifrost_cost = fields.Float(
         'Bifrost-kostnad (USD)',
         help='Σ gateway-kostnad för sessionens anrop. Omätt = False.',
@@ -1070,12 +1092,6 @@ class AICoworkerSession(models.Model):
     bifrost_synced_at = fields.Datetime(
         'Bifrost synkad',
         help='Tidpunkt för senaste aggregering från gateway-loggen.',
-    )
-    bifrost_request_log_ids = fields.One2many(
-        'bifrost.request.log', 'session_ref_id',
-        string='Bifrost-anrop',
-        help='Gatewayens anrop för denna session. Kopplas av cronen som '
-             'matchar gatewayens session_id mot sessionens name.',
     )
 
     user_id = fields.Many2one('res.users', default=lambda self: self.env.user)
@@ -1230,6 +1246,14 @@ class AICoworkerSession(models.Model):
             if not ln.content:
                 continue
             parts.append('[%s] %s' % (ln.role, ln.content[:500]))
+        # Utfallet som kontext (utfall-och-tokenmatning D6/6.1): LLM:en kan då
+        # skriva VARFÖR sessionen slutade. Problemen lagras inte i `summary`
+        # som data — de bor i typade fält och kaizen. Summary är berättelsen;
+        # fälten är räkningen.
+        if self.finish_reason and self.finish_reason != 'stop':
+            parts.append(
+                '[outcome] finish_reason=%s status=%s'
+                % (self.finish_reason, self.status or ''))
         text = '\n'.join(parts)
         if len(text) > max_chars:
             text = text[-max_chars:]

@@ -35,6 +35,24 @@ from tenacity import (
 _logger = logging.getLogger(__name__)
 
 
+#: Provider-alias → den typade vokabulären (utfall-och-tokenmatning D3).
+#: Anthropic säger `end_turn`/`stop_sequence`; OpenAI säger `stop`. Sessionens
+#: finish_reason är en Selection, så aliasen måste normaliseras vid gränsen —
+#: annars sparas ett värde som inte finns i vokabulären.
+_FINISH_ALIASES = {
+    'end_turn': 'stop',
+    'stop_sequence': 'stop',
+    'function_call': 'tool_calls',
+    'completed': 'stop',
+}
+
+
+def _normalize_finish_reason(value):
+    """Mappa en providers stop_reason till sessionens typade vokabulär."""
+    v = (value or '').strip()
+    return _FINISH_ALIASES.get(v, v or 'stop')
+
+
 def _safe_json_loads(text, default=None):
     """Tolerant JSON-parsing av verktygsarguments.
 
@@ -664,7 +682,7 @@ class AIProvider:
             input_tokens=data.get("usage", {}).get("input_tokens", 0),
             output_tokens=data.get("usage", {}).get("output_tokens", 0),
             model=data.get("model", model),
-            finish_reason=data.get("stop_reason", "end_turn"),
+            finish_reason=_normalize_finish_reason(data.get("stop_reason", "end_turn")),
         )
 
     async def _stream_anthropic(self, model, messages, tools, system_prompt, temperature, max_tokens,
@@ -731,7 +749,7 @@ class AIProvider:
                         current_tool = None
                 elif ev_type == "message_stop":
                     yield TokenEvent(
-                        type="done", finish_reason="end_turn",
+                        type="done", finish_reason=_normalize_finish_reason("end_turn"),
                         input_tokens=usage_input, output_tokens=usage_output)
         finally:
             await response.aclose()
