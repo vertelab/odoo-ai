@@ -155,7 +155,14 @@ class TestOkfDirtyBridge(common.TransactionCase):
                          'ai.personal.memory,%s' % mem.id)
 
     def test_cron_is_idempotent(self):
-        """6.5: andra körningen ska inte göra något."""
+        """6.5: andra körningen ska inte göra något för DENNA post.
+
+        OBS 2026-09-30 (F4.2): taket fördelas nu rättvist mellan alla
+        registrerade modeller, så ett varv kan plocka upp poster från andra
+        modeller (t.ex. demo-partners). Idempotensen mäts därför på postens
+        EGET koncept — inte på cronens total, som medvetet kan vara > 0 när
+        andra modeller är dirty.
+        """
         mem = self.Personal.create({
             'user_id': self.user.id,
             'content': 'Idempotent post.',
@@ -166,12 +173,13 @@ class TestOkfDirtyBridge(common.TransactionCase):
 
         before = self.Concept.search_count([
             ('concept_key', '=', 'ai.personal.memory,%s' % mem.id)])
-        second = self.env['ai.okf.mixin']._okf_cron_index_dirty(batch_size=10)
+        self.env['ai.okf.mixin']._okf_cron_index_dirty(batch_size=10)
         after = self.Concept.search_count([
             ('concept_key', '=', 'ai.personal.memory,%s' % mem.id)])
 
-        self.assertEqual(second, 0, 'inget mer är dirty')
         self.assertEqual(before, after, 'inga nya versioner ska skapas')
+        mem.invalidate_recordset(['okf_dirty'])
+        self.assertFalse(mem.okf_dirty, 'posten ska inte vara dirty igen')
 
     def test_empty_memory_clears_flag_without_concept(self):
         """En tom post ska inte blockera kön för evigt."""
@@ -196,9 +204,18 @@ class TestOkfDirtyBridge(common.TransactionCase):
                          self.env.company.id)
 
     def test_unknown_model_is_safe(self):
-        """6.3: en modell som inte finns ska inte krascha cronen."""
-        self.assertEqual(
-            self.env['ai.okf.mixin']._okf_cron_index_dirty(batch_size=1), 0)
+        """6.3: en modell som inte finns ska inte krascha cronen.
+
+        OBS 2026-09-30 (F4.2): testet mäter att cronen inte KRASCHAR på en
+        okänd modell — inte att den ger 0. Med rättvis fördelning kan ett
+        varv indexera riktiga poster (demo-partners), så totalen är inte
+        längre en garanterad nolla.
+        """
+        mixin = self.env['ai.okf.mixin']
+        with patch.object(type(mixin), '_okf_indexable_models',
+                          return_value=['finns.inte.modell']):
+            result = mixin._okf_cron_index_dirty(batch_size=1)
+        self.assertEqual(result, 0, 'okänd modell ska hoppas över')
 
     def test_full_cron_covers_both_legacy_models(self):
         """Bryggan ska täcka båda legacy-modellerna.

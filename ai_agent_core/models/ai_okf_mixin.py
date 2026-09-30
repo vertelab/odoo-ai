@@ -204,6 +204,14 @@ class AIOkfMixin(models.AbstractModel):
     # men fältet heter `category_id` och målmodellen `category` — regel C
     # missade den helt, och en VIP-kund blev ingen tagg.
     #
+    # FYND 2026-09-30 (F4.4): listan innehöll domänmodeller
+    # (`blog.tag.category`, `event.tag.category`, `prd.*`) — kärnan namngav
+    # bryggor. De två första var dessutom REDUNDANTA (de matchar redan
+    # `_okf_is_tag_name` via 'tag'-delen). Kvar här är bara de modeller
+    # KÄRNAN äger (base/hr ur Odoo:s egen kärna). Bryggornas egna etikett-
+    # modeller registreras via `_okf_register_label_model()` (samma D11-
+    # mönster som `_okf_register_indexable`).
+    #
     # MEDVETET UTESLUTNA (de ÄR inte taggar):
     #   crm.stage, event.stage, utm.stage, project.project.stage
     #       — etapper är en POSITION i en process, inte en etikett
@@ -213,11 +221,32 @@ class AIOkfMixin(models.AbstractModel):
         'res.partner.category',
         'res.partner.industry',
         'hr.employee.category',
-        'blog.tag.category',
-        'event.tag.category',
-        'prd.function_category',
-        'prd.requirement_category',
     }
+
+    #: Bryggregistrerade etikett-modeller (D11-mönstret). Sätts lazy.
+    _okf_extra_label_models = None
+
+    @api.model
+    def _okf_register_label_model(self, model_name):
+        """Registrera en etikett-modell (kallas av bryggor).
+
+        Idempotent. Samma skäl som `_okf_register_indexable`: `OKF_LABEL_MODELS`
+        är en klasskonstant på den ABSTRAKTA modellen — en ärvande brygga kan
+        inte påverka den. Registrering är vägen.
+        """
+        if self._okf_extra_label_models is None:
+            type(self)._okf_extra_label_models = []
+        if model_name not in self._okf_extra_label_models:
+            self._okf_extra_label_models.append(model_name)
+            _logger.info('OKF: registrerade %s som etikett-modell', model_name)
+        return True
+
+    @api.model
+    def _okf_label_models(self):
+        """Kärnans etikett-modeller + bryggregistrerade."""
+        models = set(self.OKF_LABEL_MODELS)
+        models.update(self._okf_extra_label_models or [])
+        return models
 
     @staticmethod
     def _okf_is_tag_name(name):
@@ -267,7 +296,7 @@ class AIOkfMixin(models.AbstractModel):
             # eget ord i fältnamnet, eller i målmodellens sista led.
             if (not self._okf_is_tag_name(fname)
                     and not self._okf_is_tag_name(comodel)
-                    and comodel not in self.OKF_LABEL_MODELS):
+                    and comodel not in self._okf_label_models()):
                 continue
             value = self[fname]
             if not value:
@@ -760,6 +789,11 @@ class AIOkfMixin(models.AbstractModel):
         **`batch_size` är ett TAK, inte en kvot.** Tidigare tillämpades det
         per modell — med sex registrerade modeller blev det 6 × 50 = 300
         poster per körning. Nu räknas det mot ett gemensamt tak.
+        Taket fördelas dock RÄTTVIST (F4.2, mätt 2026-09-30): varje modell
+        garanteras minst en plats innan någon får sin andra. Utan det svalt
+        modeller sist i listan permanent — `res.partner` (10) +
+        `res.company` (1) + `res.users` (1) + `hr.employee` (9) = 21 > 20,
+        så `website.page` (sist) fick aldrig en plats och förblev dirty.
 
         **`time_budget` (sekunder)** gör att cronen ger tillbaka innan
         nästa körning startar. Utan den kan två körningar överlappa och
@@ -774,12 +808,50 @@ class AIOkfMixin(models.AbstractModel):
         total = 0
         skipped_for_time = 0
 
-        for model_name in self._okf_indexable_models():
-            if model_name not in self.env:
-                continue
+        # FYND 2026-09-30 (F4.2): taket fördelas RÄTTVIST mellan modellerna.
+        # Tidigare fyllde de första modellerna hela taket och de sista svalt:
+        # mätt på okf_ark var res.partner (10) + res.company (1) +
+        # res.users (1) + hr.employee (9) = 21 > batch_size 20, så
+        # `website.page` (sist) fick aldrig en plats och förblev dirty varje
+        # varv. Nu får varje modell en garanterad andel
+        # (`batch_size // antal modeller`, minst 1) — summan håller sig nära
+        # taket, men ingen modell lämnas utan.
+        #
+        # Rotationen gör dessutom att varvet börjar på olika modeller mellan
+        # körningar, så en modell med många poster inte alltid ligger först.
+        # Den bor i `ir.config_parameter`, inte i ett klassattribut: Odoo:s
+        # testramverk fäller nya klassattribut på modeller ("Found unexpected
+        # attributes on ai.okf.mixin"), och en systemparameter delas korrekt
+        # mellan processer.
+        rotation_param = 'ai_agent_core.okf_cron_rotation'
+        models = [m for m in self._okf_indexable_models() if m in self.env]
+        start = 0
+        if models:
+            raw = self.env['ir.config_parameter'].sudo().get_param(
+                rotation_param, '0')
+            try:
+                start = int(raw) % len(models)
+            except (TypeError, ValueError):
+                start = 0
+        ordered = models[start:] + models[:start]
+        consumed = 0
+        # Garanterad andel per modell — aldrig mindre än 1, och minst en
+        # fjärdedel av taket så en modell med många poster inte fastnar på
+        # en enda post per varv. Med 18 modeller och batch_size 20 blir
+        # andelen 5 (20 // 4), vilket ger varje modell verklig chans.
+        per_model = max(1, batch_size // 4) if ordered else 0
+        # Kvarvarande platser efter att alla fått sin andel, att ge bort
+        # när en modell har mer att indexera än sin andel.
+        spare = max(0, batch_size - per_model * len(ordered))
+
+        for idx, model_name in enumerate(ordered):
             if total >= batch_size:
                 break
-            remaining = batch_size - total
+            consumed += 1
+            # Egen andel + eventuell outnyttjad reserv från tidigare modeller.
+            remaining = per_model + spare
+            if remaining > batch_size - total:
+                remaining = batch_size - total
             Model = self.env[model_name].sudo()
             dirty = Model.search(
                 [('okf_dirty', '=', True)], limit=remaining,
@@ -800,6 +872,13 @@ class AIOkfMixin(models.AbstractModel):
                     _logger.warning(
                         'OKF cron: indexering misslyckades för %s,%s: %s',
                         model_name, rec.id, e, exc_info=True)
+            # Outnyttjad del av modellens andel går till nästa modell.
+            spare = max(0, spare - max(0, remaining - len(dirty)))
+
+        # Nästa varv börjar på modellen efter den sista vi hann med.
+        if models:
+            self.env['ir.config_parameter'].sudo().set_param(
+                rotation_param, str((start + consumed) % len(models)))
 
         if skipped_for_time:
             _logger.info(

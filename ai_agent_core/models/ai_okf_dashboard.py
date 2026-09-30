@@ -331,13 +331,56 @@ class AIOkfDashboard(models.TransientModel):
         samma nyckel är samma felklass som okf-recall-path §15 (skrivsidan
         byggdes på två ställen, lässidan antog att det var ett).
 
-        Nu delegerar den till `_okf_cron_index_dirty()` — samma kodväg,
-        samma sammanfattningskedja, samma flagghantering. Skillnaden är
-        bara filter och batchstorlek.
+        FYND (2026-09-29, F2.5 forts.): efter delegeringen ignorerades
+        `dirty_scope` och `artifact_types` TYST — knapparna i vyn lovar
+        "Indexera ändrade denna månad" och "Indexera ändrade idag", men
+        körde alltid hela kön. Nu verkställs filtren: `dirty_scope` avgränsar
+        på `write_date`, `artifact_types` på postens `_okf_artifact_type()`.
+        Filtreringen sker genom att posterna indexeras via SAMMA
+        `_okf_index_record` som cronen använder — ingen andra skrivväg.
         """
         Mixin = self.env['ai.okf.mixin']
-        total = Mixin._okf_cron_index_dirty(batch_size=limit or 200)
-        self.run_result = 'Indexerade %d artefakter (via cron-vägen).' % total
+        if not dirty_scope and not artifact_types:
+            total = Mixin._okf_cron_index_dirty(batch_size=limit or 200)
+            self.run_result = 'Indexerade %d artefakter (via cron-vägen).' % total
+            return
+
+        # Avgränsad körning: samma per-post-väg som cronen, men filtrerad.
+        from datetime import datetime, time
+        now = fields.Datetime.now()
+        if dirty_scope == 'today':
+            domain_date = fields.Datetime.to_string(
+                datetime.combine(now.date(), time.min))
+        elif dirty_scope == 'month':
+            domain_date = fields.Datetime.to_string(
+                datetime(now.year, now.month, 1))
+        else:
+            domain_date = None
+
+        wanted = set(artifact_types.mapped('name')) if artifact_types else None
+        max_chars = Mixin._okf_summary_max_chars()
+        session = Mixin._okf_summarize_session()
+        remaining = limit or 200
+        total = 0
+        for model_name in Mixin._okf_indexable_models():
+            if model_name not in self.env or total >= remaining:
+                break
+            Model = self.env[model_name].sudo()
+            dom = [('okf_dirty', '=', True)]
+            if domain_date:
+                dom.append(('write_date', '>=', domain_date))
+            for rec in Model.search(
+                    dom, limit=remaining - total, order='write_date asc'):
+                if wanted is not None and \
+                        rec._okf_artifact_type() not in wanted:
+                    continue
+                if rec._okf_index_record(max_chars=max_chars, session=session):
+                    total += 1
+
+        scope_label = {'today': ' idag', 'month': ' denna månad'}.get(
+            dirty_scope, '')
+        self.run_result = 'Indexerade %d artefakter%s (via cron-vägen).' % (
+            total, scope_label)
     def action_index_all(self):
         self._run_okf_index()
         return self._reopen()
