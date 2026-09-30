@@ -1,0 +1,146 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Nyhets-skills för Allmän assistent.
+
+    Två skills:
+      - news-briefing  (process: hur en nyhetsfråga besvaras, cache, HITL)
+      - news-sources   (delade startkällor: SVT, BBC, Computer Sweden m.fl.)
+
+    Källistan ligger i news-sources så den kan uppdateras utan att röra
+    processen. Personliga källor och intressen bor i ai.personal.memory
+    (följer användaren) — inte här.
+
+    Utanför noupdate → skapas vid BÅDE install och uppgradering.
+    Repo är källan för innehållet; redigera här, inte i UI:t.
+
+    Koppling: news-briefing läggs på agent_news_watcher (Nyhetsbevakaren) i
+    default_coworker.xml. Kräver att default_coworker.xml laddats först.
+-->
+<odoo>
+    <data>
+
+        <!-- ── 1. news-briefing (process) ──────────────────────────────── -->
+        <record id="skill_news_briefing" model="ai.skill">
+            <field name="name">news-briefing</field>
+            <field name="category">research</field>
+            <field name="source_type">odoo</field>
+            <field name="description">Omvärldsbevakning — svara på "vilka är de viktigaste nyheterna nu?" med 7-10 rangordnade nyheter. Cachad dygnsdigest i personligt minne, ämnesfiltrering, intresselärande.</field>
+            <field name="trigger_keywords">nyheter, nyhet, nyhetsbevakning, omvärldsbevakning, vad har hänt, aktuellt, news, briefing, digest, dagens nyheter, senaste nytt</field>
+            <field name="recipe_text"><![CDATA[
+# Nyhetsbevakning (news-briefing)
+
+Används för att snabbt svara på vad som hänt i omvärlden — "vilka är de
+viktigaste nyheterna nu?", "vad har hänt inom AI?" — utan att användaren
+själv bläddrar bland källor.
+
+## Verktyg
+
+- `news_digest(topic, count, digest_text)` — läser eller skriver **dagens
+  cachade digest** i användarens personliga minne.
+  - Utan `digest_text` → läser dagens cache. `cached: false` = ingen cache idag.
+  - Med `digest_text` → skriver digesten till cachen (gör detta efter att
+    du byggt den, så nästa fråga samma dag går snabbt).
+- `news_fetch(url, limit)` — läser en RSS/Atom-feed live och returnerar
+  poster (titel, url, tid, ingress). Används för att hämta artiklarna.
+- `okf_search(query)` — söker i användarens minne (t.ex. inlärda intressen).
+
+## Process
+
+1. **Läs cachen först:** `news_digest()`.
+   - `cached: true` → presentera digesten direkt. Snabbt, inget LLM-anrop.
+   - `cached: false` → bygg en ny (steg 2–4) och säg att svaret inte kom
+     från cachen (första frågan på dygnet tar längre tid).
+2. **Hämta källorna:** läs `news-sources`-skillen för de delade källorna,
+   och `okf_search` efter användarens egna källor (personliga minnen).
+   Anropa `news_fetch(url)` per källa.
+3. **Rangordna:** välj 7–10 nyheter och rangordna efter vad DU bedömer
+   viktigast. Vikta mot användarens inlärda intressen (ämnen/källor).
+   Antal: standard 7–10, eller det antal användaren lärt dig.
+4. **Cacha:** `news_digest(digest_text="...")` med sammanställningen —
+   titel, källa, en rad per nyhet, på användarens språk. Översätt utländska
+   källor till användarens språk i samma sammanställning.
+5. **Presentera:** titel + källa + en rad per nyhet.
+
+## Ämnesfråga
+
+"Vad har hänt inom AI?" → bygg/filtrera digesten på ämnet. Om dagens cache
+finns, filtrera den på ämnes-taggar (ingen ny hämtning).
+
+## HITL-policy
+
+- Att läsa nyheter och visa en digest är **ofarligt** → autonomt.
+- Att **lägga till en personlig källa** (som användaren ber om) → skriv ett
+  personligt minne (`preference`, "användaren vill följa <källa> <url>").
+- Att **skicka** digesten vidare (mail/kanal) → kräver godkännande.
+
+## Lärande (ai.personal.memory)
+
+Lär dig och lagra i användarens personliga minne:
+- **Antal** nyheter ("jag vill bara ha fem") → `preference`.
+- **Källor** användaren föredrar → `preference`.
+- **Ämnen** användaren följer → `preference`/`pattern`, som normaliserade
+  nyckelord (AI, politik, ekonomi) så matchning fungerar över språk.
+- **Nya personliga källor** → `preference` med namn + URL.
+
+Detta sker via den vanliga reflektionen vid sessionsslut — bekräfta gärna:
+"jag kommer ihåg att du gillar AI-nyheter".
+
+## Ärlighet
+
+- Hitta aldrig på nyheter. Om en källa inte svarar, säg det.
+- Säg vilket datum digesten avser (den är färskvara).
+- Nämn gärna en källa du känner till men inte följer som ett erbjudande:
+  "om du vill kan jag söka på Expressen och Svenska Dagbladet också" —
+  lägg till den först om användaren säger ja.
+]]></field>
+        </record>
+
+        <!-- ── 2. news-sources (delade startkällor) ────────────────────── -->
+        <record id="skill_news_sources" model="ai.skill">
+            <field name="name">news-sources</field>
+            <field name="category">research</field>
+            <field name="source_type">odoo</field>
+            <field name="description">Delade nyhetskällor (RSS) som Nyhetsbevakaren läser — SVT, BBC, Computer Sweden m.fl. Personliga källor läggs i användarens minne.</field>
+            <field name="trigger_keywords">nyhetskällor, news sources, rss, feed, källor</field>
+            <field name="recipe_text"><![CDATA[
+# Nyhetskällor (news-sources)
+
+Delade startkällor för alla användare av Allmän assistent. Verifierade
+2026-09-30 (svarade 200 med giltig RSS).
+
+## Verifierade källor (använd dessa)
+
+| Källa | Språk | RSS-URL |
+|---|---|---|
+| SVT Nyheter | sv | https://www.svt.se/rss.xml |
+| BBC News | en | https://feeds.bbci.co.uk/news/rss.xml |
+| Computer Sweden | sv | https://computersweden.se/feed |
+
+## Kända men overifierade (erbjud, läs inte förrän verifierade)
+
+| Källa | Status |
+|---|---|
+| Omni | flödesväg ej verifierad (404) — hitta rätt RSS innan användning |
+| Ny Teknik | flödesväg ej verifierad (404) — hitta rätt RSS innan användning |
+| Expressen, Svenska Dagbladet | ej kontrollerade — erbjud användaren |
+
+## Så läser du
+
+`news_fetch(url="<RSS-URL>", limit=20)` per källa.
+
+## Personliga källor
+
+Användarens egna källor bor i dennes personliga minne (ai.personal.memory,
+`preference`). Sök dem med `okf_search` innan du bygger digesten, och lägg
+till nya när användaren ber om det.
+
+## Utländska källor
+
+Källor på annat språk (usa, spanien, nederländerna, frankrike) får ingå.
+Översätt till användarens språk när du sammanställer digesten — inte som
+ett separat steg.
+]]></field>
+        </record>
+
+    </data>
+</odoo>

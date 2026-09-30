@@ -238,11 +238,12 @@ async def _tool_news_fetch(url: str = "", limit: int = 20) -> str:
     try:
         import httpx
         try:
-            async with httpx.AsyncClient(timeout=15) as client:
+            async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
                 r = await client.get(
                     url, headers={'User-Agent': 'Odoo-AI/1.0 (+news)'})
         except Exception:
-            async with httpx.AsyncClient(timeout=15, verify=False) as client:
+            async with httpx.AsyncClient(timeout=15, verify=False,
+                                         follow_redirects=True) as client:
                 r = await client.get(
                     url, headers={'User-Agent': 'Odoo-AI/1.0 (+news)'})
         r.raise_for_status()
@@ -264,7 +265,7 @@ async def _tool_news_fetch(url: str = "", limit: int = 20) -> str:
     return "\n".join(lines)
 
 
-async def _tool_news_digest(topic: str = "", count: int = 10,
+async def _tool_news_digest(env, topic: str = "", count: int = 10,
                             digest_text: str = "") -> str:
     """Read or write the user's cached news digest in ai.personal.memory.
 
@@ -273,19 +274,22 @@ async def _tool_news_digest(topic: str = "", count: int = 10,
     - With digest_text: store it as a memory for today (the agent writes).
 
     Topic filters the cached digest's items on their topic tags.
+
+    `env` is injected by wrap_tools_with_env (first parameter, like
+    _tool_odoo_search) — not a module global.
     """
     try:
         count = max(1, min(int(count or 10), 50))
     except (TypeError, ValueError):
         count = 10
     try:
-        Memory = env['ai.personal.memory']  # noqa: F821
+        Memory = env['ai.personal.memory']
     except KeyError:
         return _internal_error(
             'news_digest', Exception('ai.personal.memory saknas'),
             hint='ai_agent_core is not fully installed').to_json()
 
-    user = env.user  # noqa: F821
+    user = env.user
 
     # ── WRITE: agenten cachar dagens digest som ett personligt minne ──
     if digest_text and digest_text.strip():
