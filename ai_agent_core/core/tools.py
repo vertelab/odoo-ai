@@ -338,6 +338,105 @@ async def _tool_news_digest(env, topic: str = "", count: int = 10,
     }, ensure_ascii=False)
 
 
+def _tool_personal_memory(env, action: str = "", content: str = "",
+                         query: str = "", category: str = "fact",
+                         importance: str = "medium", source_ref: str = "",
+                         limit: int = 10) -> str:
+    """Läs eller skriv användarens PERSONLIGA minne (ai.personal.memory).
+
+    Generiskt verktyg (news-agent 5.3): agenten kunde läsa minnet via
+    `okf_search` men hade INGEN väg att SKRIVA det. Skillen instruerade
+    "lagra i personligt minne" utan att verktyget fanns. Detta är den
+    vägen — samma för alla agenter, ingen domän nämns.
+
+    Minnet följer PERSONEN (`res.users`), som allt personligt minne: en
+    preferens inlärd i en konversation är tillgänglig i nästa, oavsett
+    vilken coworker som kör.
+
+    action:
+      'write'  — spara `content` (kräver content)
+      'search' — sök med `query` (utan query: senaste `limit`)
+      'recent' — de senaste `limit` minnena
+
+    `env` injiceras av wrap_tools_with_env (första parametern, samma
+    mönster som _tool_news_digest).
+    """
+    action = (action or "").strip().lower()
+    if not action:
+        return _missing_argument_error(
+            'action', "'write', 'search' eller 'recent'",
+            example="action='write'",
+            tool_name='personal_memory').to_json()
+
+    try:
+        Memory = env['ai.personal.memory']
+    except KeyError:
+        return _internal_error(
+            'personal_memory', Exception('ai.personal.memory saknas'),
+            hint='ai_agent_core is not fully installed').to_json()
+
+    user = env.user
+
+    # ── WRITE ──
+    if action == 'write':
+        if not (content or "").strip():
+            return _missing_argument_error(
+                'content',
+                'texten som ska sparas (t.ex. "användaren vill ha fem nyheter")',
+                example="content='Användaren vill ha fem nyheter'",
+                tool_name='personal_memory').to_json()
+        valid_cat = dict(Memory._fields['category'].selection)
+        valid_imp = dict(Memory._fields['importance'].selection)
+        cat = category if category in valid_cat else 'fact'
+        imp = importance if importance in valid_imp else 'medium'
+        try:
+            mem = Memory.add_memory(
+                user.id, content.strip(), category=cat, source='chat',
+                session_id=env.context.get('_ai_context_id') or None,
+                coworker_id=env.context.get('ai_coworker_id') or None,
+                importance=imp,
+                source_ref=source_ref.strip() or None)
+        except Exception as e:  # noqa: BLE001
+            return _internal_error('personal_memory', e).to_json()
+        return json.dumps({
+            'ok': True, 'written': True, 'memory_id': mem.id,
+            'category': cat, 'importance': imp,
+        }, ensure_ascii=False)
+
+    # ── SEARCH / RECENT ──
+    try:
+        limit = max(1, min(int(limit or 10), 50))
+    except (TypeError, ValueError):
+        limit = 10
+    try:
+        if action == 'search' and (query or "").strip():
+            results = Memory.search_for_user(
+                user.id, query=query.strip(), limit=limit)
+        else:
+            results = Memory.search_recent(user.id, limit=limit)
+    except Exception as e:  # noqa: BLE001
+        return _internal_error('personal_memory', e).to_json()
+
+    def _row(r):
+        # search_for_user returnerar dictar; search_recent records.
+        if isinstance(r, dict):
+            return {
+                'id': r.get('id'),
+                'content': (r.get('content') or r.get('memory') or '')[:500],
+                'category': r.get('category'),
+                'score': r.get('score'),
+            }
+        return {
+            'id': r.id, 'content': (r.content or '')[:500],
+            'category': r.category,
+        }
+
+    return json.dumps({
+        'ok': True, 'action': action, 'count': len(results),
+        'memories': [_row(r) for r in results],
+    }, ensure_ascii=False)
+
+
 async def _tool_web_search(query: str = "", max_results: int = 5) -> str:
     """Search the web. Uses DuckDuckGo (DDGS); fallback till HTML-scrape
     om cert-laddning misslyckas (odoo-användaren saknar läsrätt till
@@ -874,6 +973,60 @@ def builtin_tools() -> list[Tool]:
                 "required": [],
             },
             handler=_tool_news_digest,
+            risk_level="safe",
+            source="builtin",
+        ),
+        Tool(
+            name="personal_memory",
+            description="Read or write the user's PERSONAL memory "
+                        "(ai.personal.memory) — preferences, facts, insights "
+                        "that follow the person across coworkers and "
+                        "conversations. Use action='write' to remember "
+                        "something the user told you (e.g. 'jag vill bara ha "
+                        "fem' -> category='preference'), action='search' to "
+                        "recall by query, action='recent' for the latest. "
+                        "This is how a learned preference survives the next "
+                        "session.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["write", "search", "recent"],
+                        "description": "write = store content; search = find by query; recent = latest memories",
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "The memory to store (required for action='write'), e.g. 'Användaren vill ha fem nyheter'",
+                    },
+                    "query": {
+                        "type": "string",
+                        "description": "Search query (for action='search'); empty = latest",
+                    },
+                    "category": {
+                        "type": "string",
+                        "enum": ["fact", "preference", "goal", "correction",
+                                 "pattern", "feedback", "context", "insight",
+                                 "policy", "skill"],
+                        "description": "Memory type (default 'fact'); use 'preference' for what the user wants",
+                    },
+                    "importance": {
+                        "type": "string",
+                        "enum": ["low", "medium", "high"],
+                        "description": "How important the memory is (default 'medium')",
+                    },
+                    "source_ref": {
+                        "type": "string",
+                        "description": "Optional reference to the source (e.g. a news URL)",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Max results for search/recent (1-50, default 10)",
+                    },
+                },
+                "required": ["action"],
+            },
+            handler=_tool_personal_memory,
             risk_level="safe",
             source="builtin",
         ),

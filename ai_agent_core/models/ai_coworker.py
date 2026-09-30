@@ -3072,6 +3072,13 @@ class AICoworker(models.Model):
             'cost_context_get', 'cost_context_set',
         ])
         _adopt('agent_research', ['odoo_web_search', 'odoo_fetch_url'])
+        # Nyhetsbevakaren: `personal_memory` tillkom efter att agenten
+        # seedades (news-agent 5.3). Utan den kunde agenten läsa minnet
+        # (`okf_search`) men inte SKRIVA ett inlärt antal/källa — skillen
+        # instruerade något verktyget inte hade.
+        _adopt('agent_news_watcher', [
+            'news_fetch', 'news_digest', 'okf_search', 'personal_memory',
+        ])
         _adopt('agent_invoice_partner', [
             'describe_model', 'odoo_search', 'odoo_create',
         ])

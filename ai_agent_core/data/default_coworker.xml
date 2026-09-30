@@ -141,6 +141,7 @@
                 ref('tool_news_fetch'),
                 ref('tool_news_digest'),
                 ref('tool_okf_search'),
+                ref('tool_personal_memory'),
             ])]"/>
         </record>
         <record id="coworker_agent_news_watcher" model="ai.coworker.agent">

@@ -43,9 +43,18 @@ själv bläddrar bland källor.
 - `news_fetch(url, limit)` — läser en RSS/Atom-feed live och returnerar
   poster (titel, url, tid, ingress). Används för att hämta artiklarna.
 - `okf_search(query)` — söker i användarens minne (t.ex. inlärda intressen).
+- `personal_memory(action, content, query, category)` — **skriver** eller
+  läser användarens personliga minne. Detta är hur en preferens överlever
+  till nästa session:
+  - `action='write', category='preference', content='...'` → spara direkt.
+  - `action='search', query='...'` → läs tillbaka.
 
 ## Process
 
+0. **Läs användarens preferenser FÖRST:**
+   `personal_memory(action='search', query='nyheter antal källor ämnen')`.
+   Hittar du ett inlärt antal (t.ex. "fem") används DET i steg 3 — inte
+   standard 7–10.
 1. **Läs cachen först:** `news_digest()`.
    - `cached: true` → presentera digesten direkt. Snabbt, inget LLM-anrop.
    - `cached: false` → bygg en ny (steg 2–4) och säg att svaret inte kom
@@ -58,6 +67,13 @@ själv bläddrar bland källor.
    Antal: standard 7–10, eller det antal användaren lärt dig.
 4. **Cacha:** `news_digest(digest_text="...")` med sammanställningen —
    titel, källa, en rad per nyhet, på användarens språk. Översätt utländska
+5. **Lär dig:** säger användaren något om sina önskemål (antal, källor,
+   ämnen) → spara DIREKT med
+   `personal_memory(action='write', category='preference', content='...')`.
+   Exempel: "jag vill bara ha fem" →
+   `content='Användaren vill ha fem nyheter i digesten'`. Vänta inte på
+   reflektionen vid sessionsslut — den är passiv om inte medarbetaren har
+   `learning='active'`, och då tappas preferensen.
    källor till användarens språk i samma sammanställning.
 5. **Presentera:** titel + källa + en rad per nyhet.
 
@@ -75,15 +91,24 @@ finns, filtrera den på ämnes-taggar (ingen ny hämtning).
 
 ## Lärande (ai.personal.memory)
 
-Lär dig och lagra i användarens personliga minne:
+Lär dig och lagra i användarens personliga minne **med verktyget
+`personal_memory`** (action='write'). Det sparar direkt — vänta inte på
+reflektionen vid sessionsslut:
+
+```
+personal_memory(action='write', category='preference',
+                content='Användaren vill ha fem nyheter i digesten')
+```
+
 - **Antal** nyheter ("jag vill bara ha fem") → `preference`.
 - **Källor** användaren föredrar → `preference`.
 - **Ämnen** användaren följer → `preference`/`pattern`, som normaliserade
   nyckelord (AI, politik, ekonomi) så matchning fungerar över språk.
 - **Nya personliga källor** → `preference` med namn + URL.
 
-Detta sker via den vanliga reflektionen vid sessionsslut — bekräfta gärna:
-"jag kommer ihåg att du gillar AI-nyheter".
+Läs tillbaka med `personal_memory(action='search', query='nyheter antal')`
+eller `action='recent'` innan du svarar — så används det inlärda antalet
+nästa gång. Bekräfta gärna: "jag kommer ihåg att du gillar AI-nyheter".
 
 ## Ärlighet
 
