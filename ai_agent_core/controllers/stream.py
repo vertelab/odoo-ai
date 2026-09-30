@@ -2844,7 +2844,7 @@ class AIOpenAIAPI(http.Controller):
         return result
 
     @staticmethod
-    def _announced_max_output_tokens(self, oai):
+    def _announced_max_output_tokens(oai):
         """Modellens tak för max_tokens, annonserat till API-klienter.
 
         Klienten (Pi) läser detta i stället för att hårdkoda 16384. 0 = okänt
@@ -2863,6 +2863,7 @@ class AIOpenAIAPI(http.Controller):
         except Exception:
             return 0
 
+    @staticmethod
     def _coworker_alias(quest):
         """Get a URL-safe alias for a coworker."""
         alias = (quest.channel_alias or '').strip()
