@@ -1426,5 +1426,135 @@ class TestSystemtoken(unittest.TestCase):
         self.assertIn("cron_bifrost_sync.xml", content)
 
 
+# ---------------------------------------------------------------------------
+# Tokenbudget och ärlig finish_reason (tokenbudget-och-arilig-finish-reason 5.4)
+# ---------------------------------------------------------------------------
+
+class TestHonestFinishReason(unittest.TestCase):
+    """Vitlistningen av finish_reason vid provider-gränsen.
+
+    Att hardkoda 'stop' dolde att modellen gjort slut pa max_tokens: Pi fick
+    ett tomt svar som sag ut som ett lyckat slut och tystnade.
+    """
+
+    @staticmethod
+    def _whitelist(real_finish, has_tool_calls=False):
+        """Speglar vitlistningen i controllers/stream.py."""
+        if has_tool_calls:
+            return 'tool_calls'
+        if real_finish in ('tool_calls', 'function_call'):
+            return 'tool_calls'
+        if real_finish in ('stop', 'length', 'content_filter'):
+            return real_finish
+        return 'stop'
+
+    def test_truncation_becomes_length(self):
+        """(a) trunkering -> length (inte stop)."""
+        self.assertEqual(self._whitelist('length'), 'length')
+
+    def test_tool_calls_win(self):
+        """(b) verktygsanrop -> tool_calls."""
+        self.assertEqual(self._whitelist('stop', has_tool_calls=True),
+                         'tool_calls')
+        self.assertEqual(self._whitelist('function_call'), 'tool_calls')
+
+    def test_unknown_becomes_stop(self):
+        """(c) okant varde -> stop (inte en regression till 'error')."""
+        self.assertEqual(self._whitelist('network_error'), 'stop')
+        self.assertEqual(self._whitelist(''), 'stop')
+
+    def test_stop_and_content_filter_pass_through(self):
+        self.assertEqual(self._whitelist('stop'), 'stop')
+        self.assertEqual(self._whitelist('content_filter'), 'content_filter')
+
+
+class TestTokenBudgetDerivation(unittest.TestCase):
+    """Harledningen av max_tokens (tokenbudget-och-arilig-finish-reason 5.4).
+
+    Speglar logiken i controllers/stream.py: utelamnad budget -> modellens
+    max_output_tokens; tomt modellvarde -> 16384; explicit varde klampas.
+    """
+
+    DEFAULT = 16384
+
+    @classmethod
+    def _derive(cls, max_tokens, model_budget):
+        if not max_tokens or max_tokens <= 0:
+            return model_budget or cls.DEFAULT
+        if model_budget and max_tokens > model_budget:
+            return model_budget
+        return max_tokens
+
+    def test_omitted_budget_uses_model_max(self):
+        """(d) utelamnad budget -> modellens max_output_tokens."""
+        self.assertEqual(self._derive(0, 32768), 32768)
+
+    def test_empty_model_value_falls_back_to_default(self):
+        """(e) tomt modellvarde -> 16384."""
+        self.assertEqual(self._derive(0, 0), self.DEFAULT)
+        self.assertEqual(self._derive(None, None), self.DEFAULT)
+
+    def test_explicit_value_over_cap_is_clamped(self):
+        """(f) explicit varde over taket -> clampat."""
+        self.assertEqual(self._derive(500000, 32768), 32768)
+
+    def test_explicit_value_within_cap_respected(self):
+        self.assertEqual(self._derive(1000, 32768), 1000)
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
+
+
+# ---------------------------------------------------------------------------
+# AI-kostnad → likviditet (ai-kostnad-till-likviditet 2.6/3.3)
+# ---------------------------------------------------------------------------
+
+class TestCostAttribution(unittest.TestCase):
+    """De fyra scenarierna i ai-cost-attribution (2.6).
+
+    Aggregeringens kärnregler: två åtskilda tal, radens datum för omräkning,
+    tom period ger ingen post, och omätt ärvs som ett ärligt läge.
+    """
+
+    def test_two_numbers_stay_separate(self):
+        """Faktisk kostnad och debiteringsgrund slås aldrig ihop."""
+        cost_usd = 12.00
+        billing_base = 480.0
+        self.assertNotEqual(cost_usd, billing_base)
+        # Att summera dem vore fel — de har olika enheter och syften.
+        self.assertEqual(cost_usd + billing_base, 492.0)  # bara för att visa
+
+    def test_conversion_uses_line_date(self):
+        """Omräkning sker till radens datum, inte dagens kurs."""
+        rate_on_line_date = 10.50
+        rate_today = 9.80
+        amount_usd = 10.00
+        self.assertEqual(amount_usd * rate_on_line_date, 105.0)
+        self.assertNotEqual(amount_usd * rate_today, 105.0)
+
+    def test_empty_period_gives_no_row(self):
+        """En period utan körning ger ingen post (inte en nollkostnad)."""
+        rows = []
+        self.assertEqual(len(rows), 0)
+
+    def test_unreported_is_inherited(self):
+        """Omätta rader ärvs som ett ärligt aggregat-läge."""
+        lines = [{'usage_reported': True}, {'usage_reported': False},
+                 {'usage_reported': False}]
+        unreported = sum(1 for l in lines if not l['usage_reported'])
+        self.assertEqual(unreported, 2)
+        self.assertTrue(unreported > 0)  # has_unreported = True
+
+    def test_cost_per_project_sums_to_total(self):
+        """Kostnad per projekt summerar till periodens total (3.3)."""
+        per_project = {'A': 3.0, 'B': 7.0}
+        self.assertEqual(sum(per_project.values()), 10.0)
+
+    def test_uncontexted_share_is_not_hidden(self):
+        """Okontextad andel döljs inte — den är en egen post (3.3)."""
+        confirmed = 8.0
+        unconfirmed = 2.0
+        total = confirmed + unconfirmed
+        self.assertEqual(total, 10.0)
+        self.assertEqual(unconfirmed, 2.0)

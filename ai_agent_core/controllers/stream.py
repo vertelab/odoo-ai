@@ -2385,6 +2385,11 @@ class AIOpenAIAPI(http.Controller):
                 # Kontextfönster som klienten (Pi/Cline) kan läsa för att veta
                 # när den måste komprimera — minsta värdet i agentkedjan.
                 'context_window': oai[0]._effective_context_window(),
+                # Modellens tak för max_tokens (tokenbudget-och-arilig-
+                # finish-reason 4.2). Klienten läser det i stället för att
+                # hårdkoda 16384 — annars klipper Pi svar som modellen hade
+                # klarat. 0 = okänt, klienten faller tillbaka på sin default.
+                'max_output_tokens': self._announced_max_output_tokens(oai),
             })
 
         return Response(json.dumps({'object': 'list', 'data': models}),
@@ -2839,6 +2844,25 @@ class AIOpenAIAPI(http.Controller):
         return result
 
     @staticmethod
+    def _announced_max_output_tokens(self, oai):
+        """Modellens tak för max_tokens, annonserat till API-klienter.
+
+        Klienten (Pi) läser detta i stället för att hårdkoda 16384. 0 = okänt
+        (klienten faller tillbaka på sin default).
+
+        `oai` är coworkerns `openai_api`-init_typer; modellen hämtas ur
+        coworkerns agentkedja (samma uppslag som körvägen använder).
+        """
+        try:
+            coworker = oai[0].coworker_id if oai else None
+            if not coworker:
+                return 0
+            agent = coworker.agent_ids[:1].agent_id if coworker.agent_ids else None
+            model = agent.model_id if agent and agent.model_id else coworker.model_id
+            return int(getattr(model, 'max_output_tokens', 0) or 0)
+        except Exception:
+            return 0
+
     def _coworker_alias(quest):
         """Get a URL-safe alias for a coworker."""
         alias = (quest.channel_alias or '').strip()

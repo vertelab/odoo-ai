@@ -220,6 +220,13 @@
                 <field name="token_input" optional="show" sum="1"/>
                 <field name="token_output" optional="show" sum="1"/>
                 <field name="token_sys" optional="show" sum="1"/>
+                <!-- Kostnad (ai-kostnad-till-likviditet 4.1): faktisk kostnad
+                     och debiteringsgrund är TVÅ tal — båda synliga i pivoten,
+                     aldrig hopslagna. usage_reported=False syns så omätt inte
+                     ser gratis ut. -->
+                <field name="cost_usd" optional="show" sum="1"/>
+                <field name="usage_reported" optional="hide"/>
+                <field name="informative" optional="hide"/>
             </list>
         </field>
     </record>

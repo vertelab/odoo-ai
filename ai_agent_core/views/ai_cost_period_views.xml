@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- AI-kostnad per period (ai-kostnad-till-likviditet 4.1): pivot som
+         visar faktisk kostnad och debiteringsgrund som två separata tal. -->
+    <record id="view_ai_cost_period_pivot" model="ir.ui.view">
+        <field name="name">ai.cost.period.line.pivot</field>
+        <field name="model">ai.cost.period.line</field>
+        <field name="arch" type="xml">
+            <pivot string="AI-kostnad">
+                <field name="period_start" type="row" interval="month"/>
+                <field name="partner_id" type="col"/>
+                <field name="cost_company" type="measure"/>
+                <field name="cost_usd" type="measure"/>
+                <field name="billing_base" type="measure"/>
+                <field name="unreported_line_count" type="measure"/>
+            </pivot>
+        </field>
+    </record>
+
+    <record id="view_ai_cost_period_list" model="ir.ui.view">
+        <field name="name">ai.cost.period.line.list</field>
+        <field name="model">ai.cost.period.line</field>
+        <field name="arch" type="xml">
+            <list string="AI-kostnad per period">
+                <field name="period_start"/>
+                <field name="granularity"/>
+                <field name="partner_id"/>
+                <field name="cost_company" sum="1"/>
+                <field name="cost_usd" sum="1"/>
+                <field name="billing_base" sum="1"/>
+                <field name="line_count" sum="1"/>
+                <field name="unreported_line_count" sum="1"/>
+                <field name="has_unreported" widget="boolean_toggle"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="action_ai_cost_period" model="ir.actions.act_window">
+        <field name="name">AI-kostnad per period</field>
+        <field name="res_model">ai.cost.period.line</field>
+        <field name="view_mode">pivot,list,graph</field>
+    </record>
+</odoo>
