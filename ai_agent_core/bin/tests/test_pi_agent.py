@@ -257,5 +257,144 @@ class TestServe(unittest.TestCase):
         self.assertFalse(state.is_busy())
 
 
+class _FakeLoop:
+    """Fångar anrop till AgentLoop.run och systemprompt-tilldelning."""
+
+    def __init__(self, *a, **kw):
+        self.system_prompt = kw.get("system_prompt", "")
+        self.last_session_id = 42
+        self.prompts = []
+
+    def run(self, prompt):
+        self.prompts.append(prompt)
+        return f"svar:{prompt}"
+
+
+class TestReplAndSingleShot(unittest.TestCase):
+    """Task 4.3: REPL-parse och single-shot."""
+
+    def setUp(self):
+        self._orig_loop = mod.AgentLoop
+        self._orig_fetch = mod.fetch_skills
+        self._orig_input = mod.input if hasattr(mod, "input") else None
+        self.loops = []
+
+        def _make_loop(*a, **kw):
+            loop = _FakeLoop(*a, **kw)
+            self.loops.append(loop)
+            return loop
+
+        mod.AgentLoop = _make_loop
+        mod.fetch_skills = lambda http, names: [
+            {"technical_name": n, "instruction": f"instruktion för {n}"} for n in names
+        ]
+
+    def tearDown(self):
+        mod.AgentLoop = self._orig_loop
+        mod.fetch_skills = self._orig_fetch
+
+    def _feed_input(self, lines):
+        """Returnerar en input()-ersättare som matar ut rader, sedan EOF."""
+        it = iter(lines)
+
+        def _inp(_prompt=""):
+            try:
+                return next(it)
+            except StopIteration:
+                raise EOFError
+        return _inp
+
+    # ── REPL-parse ──
+
+    def test_repl_quit_exits_zero(self):
+        mod.input = self._feed_input(["/quit"])
+        rc = mod.run_repl(_cfg(), MockHTTP())
+        self.assertEqual(rc, 0)
+        self.assertEqual(self.loops[0].prompts, [])  # inget uppdrag kört
+
+    def test_repl_exit_alias(self):
+        mod.input = self._feed_input(["/exit"])
+        self.assertEqual(mod.run_repl(_cfg(), MockHTTP()), 0)
+
+    def test_repl_eof_exits_zero(self):
+        mod.input = self._feed_input([])  # direkt EOF
+        self.assertEqual(mod.run_repl(_cfg(), MockHTTP()), 0)
+
+    def test_repl_empty_line_skipped(self):
+        mod.input = self._feed_input(["", "   ", "/quit"])
+        mod.run_repl(_cfg(), MockHTTP())
+        self.assertEqual(self.loops[0].prompts, [])  # tomma rader körs inte
+
+    def test_repl_prompt_runs_loop(self):
+        mod.input = self._feed_input(["hej", "/quit"])
+        mod.run_repl(_cfg(), MockHTTP())
+        self.assertEqual(self.loops[0].prompts, ["hej"])
+
+    def test_repl_skills_command_reloads_prompt(self):
+        mod.input = self._feed_input(["/skills saltstack,caddy", "/quit"])
+        mod.run_repl(_cfg(), MockHTTP())
+        # /skills är ett kommando — inte ett uppdrag
+        self.assertEqual(self.loops[0].prompts, [])
+        # systemprompten ska ha byggts om med de nya skillsen
+        self.assertIn("saltstack", self.loops[0].system_prompt)
+        self.assertIn("caddy", self.loops[0].system_prompt)
+
+    def test_repl_skills_without_args(self):
+        mod.input = self._feed_input(["/skills", "/quit"])
+        mod.run_repl(_cfg(), MockHTTP())
+        self.assertEqual(self.loops[0].prompts, [])
+
+    def test_repl_loop_error_does_not_crash(self):
+        """Ett fel i loopen ska fångas och REPL fortsätta."""
+        def _boom(prompt):
+            raise RuntimeError("nätverksfel")
+        mod.input = self._feed_input(["krascha", "/quit"])
+        mod.run_repl(_cfg(), MockHTTP())
+        self.loops[0].run = _boom
+        # kör om med trasig loop — ska ändå avsluta 0
+        mod.input = self._feed_input(["krascha", "/quit"])
+        self.assertEqual(mod.run_repl(_cfg(), MockHTTP()), 0)
+
+    # ── Single-shot ──
+
+    def test_single_shot_prints_answer(self):
+        import io
+        from contextlib import redirect_stdout
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            rc = mod.run_single_shot(_cfg(), MockHTTP(), "hej")
+        self.assertEqual(rc, 0)
+        self.assertIn("svar:hej", buf.getvalue())
+        self.assertEqual(self.loops[0].prompts, ["hej"])
+
+    def test_single_shot_json_output(self):
+        import io
+        from contextlib import redirect_stdout
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            rc = mod.run_single_shot(_cfg(json=True), MockHTTP(), "hej")
+        self.assertEqual(rc, 0)
+        payload = json.loads(buf.getvalue())
+        self.assertEqual(payload["result"], "svar:hej")
+        self.assertEqual(payload["session_id"], 42)
+
+    def test_single_shot_error_returns_one(self):
+        import io
+        from contextlib import redirect_stdout
+        loop = None
+
+        def _make_loop(*a, **kw):
+            nonlocal loop
+            loop = _FakeLoop(*a, **kw)
+            loop.run = lambda p: (_ for _ in ()).throw(RuntimeError("nej"))
+            return loop
+        mod.AgentLoop = _make_loop
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            rc = mod.run_single_shot(_cfg(), MockHTTP(), "hej")
+        self.assertEqual(rc, 1)
+        self.assertIn("nej", buf.getvalue())
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -593,14 +593,50 @@ class AIOkfMixin(models.AbstractModel):
         """
         return 'knowledge'
 
-    def _okf_concept_key(self):
-        """Konceptets stabila nyckel — överridbar.
+    def _okf_langs(self):
+        """Språk att indexera per post (okf-website-mixin 1.4b).
+
+        DEFAULT: `[None]` — EN språklös indexering. Det bevarar dagens
+        nyckelformat EXAKT (`<modell>,<id>`) och rör inte legacy-minnena
+        (`ai.personal.memory`, `ai.company.memory`), som är enspråkiga
+        oavsett hur många språk databasen har installerat.
+
+        En modell med ÖVERSÄTTBART innehåll (website.page, blog.post, …)
+        överrider denna och returnerar de installerade språken — bara då
+        blir en översättning ett syskon-koncept (D4).
+        """
+        return [None]
+
+    def _okf_installed_langs(self):
+        """De installerade språken — hjälpare för översättbara modeller.
+
+        Returnerar `[None]` när bara ett språk är installerat, så en
+        enspråkig installation får exakt dagens nyckelformat även för
+        webbinnehåll.
+        """
+        try:
+            installed = self.env['res.lang'].get_installed()
+        except Exception:  # noqa: BLE001
+            return [None]
+        codes = [c for c, _name in installed if c]
+        if len(codes) <= 1:
+            return [None]
+        return codes
+
+    def _okf_concept_key(self, lang=None):
+        """Konceptets stabila nyckel — överridbar, språkmedveten.
 
         Default `'<modell>,<id>'`. Nyckeln MÅSTE vara stabil över
         innehållsändringar: härled den aldrig ur text, längd eller radantal.
         En ändrad nyckel startar en ny kedja i stället för en ny version.
+
+        Med ett språk: `'<modell>,<id>,<lang>'`. En svensk översättning blir
+        då ett SYSKON (eget koncept), inte en ny version — annars skulle
+        `superseded` arkivera engelskt innehåll som fortfarande är giltigt.
         """
         self.ensure_one()
+        if lang:
+            return '%s,%s,%s' % (self._name, self.id, lang)
         return '%s,%s' % (self._name, self.id)
 
     def _okf_owner_vals(self):
@@ -612,9 +648,30 @@ class AIOkfMixin(models.AbstractModel):
         """Generera OKF-fälten och skriv konceptet. EN väg.
 
         Anropas av cronen OCH av debug-knappen — ingen separat
-        implementation finns. Returnerar konceptet, eller None om posten
-        hoppades över.
+        implementation finns. Returnerar konceptet (första språket) eller
+        None om posten hoppades över.
+
+        Med fler än ett språk indexeras posten EN gång per språk, som
+        syskon-koncept (okf-website-mixin D4/4.3b). Innehållet läses via
+        `with_context(lang=...)`, aldrig ur rå jsonb — då hanteras alla tre
+        översättningslägen (jsonb per fält, html_translate, xml_translate)
+        likadant.
         """
+        self.ensure_one()
+        if max_chars is None:
+            max_chars = self._okf_summary_max_chars()
+
+        first = None
+        for lang in self._okf_langs():
+            rec = self.with_context(lang=lang) if lang else self
+            concept = rec._okf_index_record_one(
+                lang=lang, max_chars=max_chars, session=session)
+            if concept and first is None:
+                first = concept
+        return first
+
+    def _okf_index_record_one(self, lang=None, max_chars=None, session=None):
+        """Indexera posten för ETT språk (eller språklöst)."""
         self.ensure_one()
         if max_chars is None:
             max_chars = self._okf_summary_max_chars()
@@ -667,7 +724,7 @@ class AIOkfMixin(models.AbstractModel):
         source_ref = '%s,%s' % (self._name, self.id)
         vals = {
             'artifact_type': self._okf_artifact_type(),
-            'concept_key': self._okf_concept_key(),
+            'concept_key': self._okf_concept_key(lang=lang),
             'summary': summary,
             'title': (self.display_name or source_ref)[:120],
             'source_ref': source_ref,
