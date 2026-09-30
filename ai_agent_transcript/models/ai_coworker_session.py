@@ -81,7 +81,7 @@ class AICoworkerSessionTranscript(models.Model):
                 parts.append("## Frontend context\n%s" % session.frontend_info)
 
             # 2. Record fields from context (if any)
-            record = session._get_ai_context_record()
+            record = session._get_transcript_context_record()
             if record and record.exists():
                 try:
                     json_data = record._ai_serialize_fields_data(
@@ -113,3 +113,54 @@ class AICoworkerSessionTranscript(models.Model):
                     "## Selected text\n%s" % session.text_selection)
 
             session.transcript_context = "\n\n".join(parts)
+
+    def _get_transcript_context_record(self):
+        """Hämta kontext-rekordet för sessionen.
+
+        Källan är `env.context`-nycklarna `_ai_context_model`/`_ai_context_id`
+        (samma som core `ai.coworker._get_ai_context_record`), med fallback
+        till sessionens kopplade objekt (`session_object_ids`).
+
+        OBS: `ai.coworker.session` har medvetet INGA `context_*`-fält i core
+        (se ai_session.py) — därför läses kontexten här, inte ur fält.
+        """
+        self.ensure_one()
+        model = self.env.context.get('_ai_context_model')
+        res_id = self.env.context.get('_ai_context_id')
+        if model and res_id:
+            try:
+                rec = self.env[model].browse(int(res_id))
+                if rec.exists():
+                    return rec
+            except Exception:
+                pass
+        # Fallback: sessionens kopplade objekt (relationen är villkorlig —
+        # `session_object_ids` finns bara om en session-object-modell laddats).
+        if 'session_object_ids' in self._fields:
+            obj = self.session_object_ids[:1]
+            if obj and getattr(obj, 'object_id', False):
+                return obj.object_id
+        return None
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        """Fånga interface_key/text_selection/frontend_info ur env.context
+        när sessionen skapas av core:s `powerbox()` (D2).
+
+        Core känner inte till powerbox-ytan — bryggan lägger värdena i
+        context (se models/ai_coworker.py) och den här hooken skriver dem
+        på sessionen. No-op när nycklarna saknas.
+        """
+        ctx = self.env.context
+        ik = ctx.get('_ai_interface_key')
+        ts = ctx.get('_ai_text_selection')
+        fi = ctx.get('_ai_frontend_info')
+        if ik or ts or fi:
+            for vals in vals_list:
+                if ik and not vals.get('interface_key'):
+                    vals['interface_key'] = ik
+                if ts and not vals.get('text_selection'):
+                    vals['text_selection'] = ts
+                if fi and not vals.get('frontend_info'):
+                    vals['frontend_info'] = fi
+        return super().create(vals_list)

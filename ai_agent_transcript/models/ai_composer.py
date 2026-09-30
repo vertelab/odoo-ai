@@ -103,14 +103,23 @@ class AIComposer(models.Model):
                 ))
 
     def _unlink_except_default_rules(self):
-        """Block unlink of system-default composers (unless superuser)."""
+        """Block unlink of system-default composers.
+
+        Skyddet gäller även superuser — annars kan en system-default raderas
+        av misstag i test/admin-kontext (env.su är True i tester).
+        Använd `_force_unlink()` för medveten borttagning.
+        """
         defaults = self.filtered('is_system_default')
-        if defaults and not self.env.su:
+        if defaults:
             raise UserError(_(
                 "System default composers cannot be deleted. "
                 "Disable 'System Default' first."
             ))
         return True
+
+    def _force_unlink(self):
+        """Medveten borttagning av system-defaults (för admin/migrationer)."""
+        return super(AIComposer, self.filtered('is_system_default')).unlink()
 
     def unlink(self):
         self._unlink_except_default_rules()
