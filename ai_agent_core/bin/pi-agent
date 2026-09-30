@@ -131,7 +131,20 @@ class ApiError(Exception):
     def __init__(self, status, data):
         self.status = status
         self.data = data
-        msg = data.get("error", {}).get("message", str(data)) if isinstance(data, dict) else str(data)
+        # `error` kan vara en STRÄNG ({"error": "Unauthorized"}) eller ett
+        # objekt ({"error": {"message": ...}}). Att anropa .get() på en
+        # sträng kraschade med AttributeError i stället för att visa det
+        # verkliga felet.
+        if isinstance(data, dict):
+            err = data.get("error")
+            if isinstance(err, dict):
+                msg = err.get("message", str(data))
+            elif err:
+                msg = str(err)
+            else:
+                msg = str(data)
+        else:
+            msg = str(data)
         super().__init__(f"API {status}: {msg}")
 
 
@@ -362,11 +375,16 @@ class AgentLoop:
     """Tunn OpenAI-klient: skickar messages, exekverar tool_calls lokalt."""
 
     def __init__(self, cfg: Config, http: HttpClient, system_prompt: str = "",
-                 on_hitl: Optional[Callable[[str, dict], str]] = None):
+                 on_hitl: Optional[Callable[[str, dict], str]] = None,
+                 on_tool_call: Optional[Callable[[str, dict, str], None]] = None):
         self.cfg = cfg
         self.http = http
         self.system_prompt = system_prompt
         self.on_hitl = on_hitl  # callable(fråga, tool_call) -> "approved"/"denied"/svar
+        # callable(namn, args, resultat) — anropas EFTER varje verktyg så
+        # server-läget kan emittera tool_calls-events (5b.12). Utan den syns
+        # verktygsanropen bara i Odoos logg, inte i /events.
+        self.on_tool_call = on_tool_call
         self.messages: List[Dict] = []
         self.last_session_id = 0
         self.abort_requested = False  # sätts av server-läget vid abort
@@ -448,6 +466,14 @@ class AgentLoop:
                         "tool_call_id": tc.get("id", ""),
                         "content": result,
                     })
+                    # 5b.12: rapportera verktygsanropet så server-läget kan
+                    # emittera det. HITL-anropen har egna events.
+                    if self.on_tool_call and name not in (
+                            "request_hitl_approval", "request_hitl_input"):
+                        try:
+                            self.on_tool_call(name, fn_args, result)
+                        except Exception:
+                            pass
                 continue
 
             # Normalt svar
@@ -696,9 +722,15 @@ def _run_serve_task(state: ServeState, prompt: str, skills_names: List[str],
     state.emit("status", status="running")
     try:
         skills = fetch_skills(state.http, [s for s in skills_names if s])
+
+        def _on_tool_call(name, args, result):
+            """5b.12: emittera varje verktygsanrop till /events."""
+            state.emit("tool_calls", tool=name, arguments=args,
+                       result=str(result)[:2000])
+
         loop = AgentLoop(state.cfg, state.http,
                          system_prompt=build_system_prompt("", skills),
-                         on_hitl=on_hitl)
+                         on_hitl=on_hitl, on_tool_call=_on_tool_call)
         state.last_loop = loop
         state.abort_flag = False
 

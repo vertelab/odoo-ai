@@ -2222,9 +2222,72 @@ class PICallbackController(http.Controller):
         """Validate pre-shared token from Authorization header."""
         auth = request.httprequest.headers.get('Authorization', '')
         expected = f'Bearer {_get_callback_secret()}'
-        if auth != expected:
-            return False
-        return True
+        if auth == expected:
+            return True
+        # `pi-agent --task` använder EN `--api-key` för både /pi/* och
+        # /ai/v1/*. Acceptera därför också en giltig res.users.apikeys —
+        # annars kunde den orkestrerade körningen inte hämta sitt uppdrag
+        # med samma nyckel som den hämtar skills med.
+        if auth.startswith('Bearer '):
+            token = auth[len('Bearer '):].strip()
+            if token:
+                try:
+                    uid = request.env['res.users.apikeys'].sudo()._check_credentials(
+                        scope='rpc', key=token)
+                    if uid:
+                        return True
+                except Exception:
+                    pass
+        return False
+
+    @http.route('/pi/task/<int:task_id>', type='http', auth='public',
+                methods=['GET'], csrf=False, sitemap=False)
+    def pi_task(self, task_id, **kw):
+        """GET /pi/task/<id> — hämta uppdrag + abort-poll (pi-agent-cli 5.5).
+
+        Pi-agenten använder detta för BÅDE uppdragshämtning och abort-poll:
+
+          1. GET /pi/task/<id>  → {task: {prompt, skills, model, state}}
+          2. ... LLM-loop ...
+          3. Mellan verktygsanrop: samma GET → om state=aborting: avbryt
+
+        `task_id` är sessions-id (samma som /pi/callback/<id>). Utan denna
+        route kunde `pi-agent --task` inte hämta sitt uppdrag — den fanns i
+        designen men aldrig i koden.
+        """
+        if not self._check_callback_auth():
+            return Response(json.dumps({'error': 'Unauthorized'}),
+                            status=403, content_type='application/json')
+
+        session = request.env['ai.coworker.session'].sudo().browse(task_id)
+        if not session.exists():
+            return Response(json.dumps({'error': 'Session not found'}),
+                            status=404, content_type='application/json')
+
+        # Uppdragets prompt: sessionens job_prompt (fryst vid köning) eller
+        # sista user-raden — samma källor som körvägarna använder.
+        prompt = session.job_prompt or ''
+        if not prompt:
+            user_line = session.session_line_ids.filtered(
+                lambda l: l.role == 'user')[-1:]
+            prompt = user_line.content if user_line else ''
+
+        coworker = session.coworker_id
+        agent = coworker.agent_ids[:1].agent_id if coworker.agent_ids else None
+        model = agent.model_id if agent and agent.model_id else coworker.model_id
+        skills = agent.skill_ids.mapped('name') if agent and agent.skill_ids else []
+
+        return Response(json.dumps({
+            'task': {
+                'id': session.id,
+                'prompt': prompt,
+                'skills': skills,
+                'model': model._get_api_name() if model else '',
+                # Abort-poll: 'aborting' när sessionen avbrutits.
+                'state': 'aborting' if session.status == 'cancelled'
+                         else session.status,
+            },
+        }, ensure_ascii=False), content_type='application/json')
 
     @http.route('/pi/callback/<int:task_id>', type='json', auth='public',
                 methods=['POST'], csrf=False, sitemap=False)
@@ -2248,10 +2311,15 @@ class PICallbackController(http.Controller):
             return {'error': 'Session not found', 'status': 404}
 
         # Update session
+        # `finish_reason` är en Selection (utfall-och-tokenmatning) — den får
+        # bara typade värden. Resultattexten hör i `error_detail`/raden, inte
+        # här; att skriva den gav ValueError och 500 på callbacken.
         session.write({
             'status': 'done' if state == 'done' else 'error',
-            'finish_reason': result_text[:2000] if result_text else state,
+            'finish_reason': 'stop' if state == 'done' else 'error',
         })
+        if state != 'done' and result_text:
+            session.write({'error_detail': result_text[:4000]})
 
         # Save as session line
         next_seq = _next_session_sequence(request.env, session.id)
@@ -2443,7 +2511,12 @@ class AIOpenAIAPI(http.Controller):
                     status=404, content_type='application/json')
             domain.append(('id', 'in', rec.skill_ids.ids))
 
-        skills = Skill.search(domain, order='sequence asc, name asc')
+        # `ai.skill` har inget `sequence`-fält (dess `_order` är
+        # `category, name asc`). Att sortera på `sequence` gav
+        # `ValueError: Invalid field 'sequence' on model 'ai.skill'` → 500
+        # på /ai/v1/skills, vilket i sin tur fällde `pi-agent --task`
+        # (den hämtar skills först). Sortera på modellens egna ordning.
+        skills = Skill.search(domain, order='category, name asc')
         data = [{
             'id': s.id,
             'name': s.name,

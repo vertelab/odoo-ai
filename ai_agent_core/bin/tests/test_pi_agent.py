@@ -131,6 +131,43 @@ class TestAgentLoop(unittest.TestCase):
         self.assertEqual(second[-2]["role"], "assistant")
         self.assertTrue(second[-2].get("tool_calls"))
 
+    def test_on_tool_call_callback_fires(self):
+        """5b.12: on_tool_call anropas EFTER varje verktyg.
+
+        Utan den syns verktygsanropen bara i Odoos logg, inte i
+        server-lägets /events — och en klient kan inte följa vad agenten
+        gjorde. Callbacken får aldrig fälla loopen.
+        """
+        http = MockHTTP(responses=[
+            {"choices": [{"message": {"role": "assistant", "content": None, "tool_calls": [{
+                "id": "c1", "type": "function",
+                "function": {"name": "bash", "arguments": json.dumps({"cmd": "echo hej"})}}]}}],
+             "session_id": 1},
+            {"choices": [{"message": {"role": "assistant", "content": "klar"}}], "session_id": 1},
+        ])
+        calls = []
+        loop = mod.AgentLoop(_cfg(), http, system_prompt="S",
+                             on_tool_call=lambda n, a, r: calls.append((n, a, r)))
+        result = loop.run("test")
+        self.assertEqual(result, "klar")
+        self.assertEqual(len(calls), 1, "callbacken ska anropas en gång")
+        self.assertEqual(calls[0][0], "bash")
+        self.assertIn("hej", calls[0][2])
+
+    def test_on_tool_call_failure_does_not_break_loop(self):
+        """En trasig callback får inte fälla körningen."""
+        http = MockHTTP(responses=[
+            {"choices": [{"message": {"role": "assistant", "content": None, "tool_calls": [{
+                "id": "c1", "type": "function",
+                "function": {"name": "bash", "arguments": json.dumps({"cmd": "echo hej"})}}]}}],
+             "session_id": 1},
+            {"choices": [{"message": {"role": "assistant", "content": "klar"}}], "session_id": 1},
+        ])
+        def _boom(*a):
+            raise RuntimeError("callback nere")
+        loop = mod.AgentLoop(_cfg(), http, system_prompt="S", on_tool_call=_boom)
+        self.assertEqual(loop.run("test"), "klar")
+
     def test_hitl_approved(self):
         """HITL via tool_calls: on_hitl godkänner → role:tool approved."""
         http = MockHTTP(responses=[
