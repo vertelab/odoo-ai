@@ -7,12 +7,15 @@
          _okf_upsert, rensning av flaggan. Tungt arbete sker här, aldrig i
          write().
 
-         Modellen är ai.okf.mixin (abstrakt) — cronen anropar en @api.model-
-         metod, så vilken konkret modell som helst hade fungerat; mixinen är
-         den ärliga adressen sedan ai.memory pensionerades (okf-mixin F2). -->
+         Modellen är ai.okf.concept: cronen anropar en @api.model-metod, så
+         vilken konkret modell som helst duger — men ai.okf.mixin är ABSTRAKT
+         och får ingen ir.model-post, så ref="model_ai_okf_mixin" kan aldrig
+         lösas upp (uppgraderingen kraschade på ParseError). ai.okf.concept är
+         den konkreta modell som bär mixinen sedan ai.memory pensionerades
+         (okf-mixin F2). -->
     <record id="cron_okf_index_dirty" model="ir.cron">
         <field name="name">OKF: Indexera dirty-artefakter</field>
-        <field name="model_id" ref="model_ai_okf_mixin"/>
+        <field name="model_id" ref="model_ai_okf_concept"/>
         <field name="state">code</field>
         <field name="code">env['ai.okf.mixin']._okf_cron_index_dirty(batch_size=25)</field>
         <field name="interval_number">5</field>
