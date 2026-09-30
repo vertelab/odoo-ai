@@ -845,6 +845,30 @@ def _make_serve_hitl(state: ServeState):
     return handler
 
 
+def _workdir() -> str:
+    """Agentens arbetskatalog: /tmp/<pid>/ (office-document-agent D4).
+
+    Samma konvention som `odoo_attach` använder när den löser en relativ
+    sökväg: katalogen namnges efter processens pid, så samtidiga agenter
+    aldrig krockar.
+    """
+    return os.path.join('/tmp', str(os.getpid()))
+
+
+def _cleanup_workdir() -> None:
+    """Ta bort arbetskatalogen när agent-processen avslutas (D4).
+
+    Best-effort: en kvarlämnad katalog är inte värd att fälla processen för.
+    """
+    path = _workdir()
+    if os.path.isdir(path):
+        try:
+            shutil.rmtree(path, ignore_errors=True)
+            print(f"pi-agent: städade {path}", file=sys.stderr)
+        except Exception:
+            pass
+
+
 def run_serve(cfg: Config, http: HttpClient) -> int:
     """Starta agenten som fristående server på localhost:<port>."""
     if not cfg.port:
@@ -870,6 +894,7 @@ def run_serve(cfg: Config, http: HttpClient) -> int:
         print(file=sys.stderr)
     finally:
         server.server_close()
+        _cleanup_workdir()
     return 0
 
 

@@ -1,0 +1,403 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Skill: office-dokument — läsa, skapa och ändra Office-dokument och PDF.
+
+    (office-document-agent 4.1–4.8)
+
+    Skillen är METODIK, inte förmåga: den beskriver vilka bibliotek som
+    finns och hur de används. Förmågan kommer från agentens runtime
+    (external → bash + python-pptx + soffice) och från odoo_attach, som
+    flyttar filbytes utan att de passerar modellkontexten.
+
+    Därför `compatibility=pi_python`: agenten körs som en pi-agent-process
+    med bash och kan anropa biblioteken direkt.
+-->
+<odoo>
+    <data noupdate="1">
+        <record id="skill_office_dokument" model="ai.skill">
+            <field name="name">office-dokument</field>
+            <field name="category">general</field>
+            <field name="source_type">odoo</field>
+            <field name="compatibility">pi_python</field>
+            <field name="description">Läs, skapa och ändra Office-dokument (docx, xlsx, pptx, odt, ods, odp) och PDF — inklusive OCR av skannade PDF:er. Dokument hämtas och lämnas via odoo_attach.</field>
+            <field name="trigger_keywords">dokument, document, presentation, powerpoint, pptx, odp, impress, word, docx, odt, writer, excel, xlsx, ods, kalkylark, pdf, ocr, skanna, förlaga, mall, euro-office, office</field>
+            <field name="recipe_text"><![CDATA[
+# Skill: office-dokument
+
+## Scope
+
+Förmåga: läsa, skapa och ändra Office-dokument och PDF, samt OCR.
+
+**Du körs som en extern process med bash.** Du har alltså tillgång till
+biblioteken nedan direkt — använd `bash` för att anropa dem.
+
+Verktyg du har:
+- `describe_model` — ta reda på en modells binärfält innan du rör den
+- `odoo_search` — hitta poster (t.ex. ett dokument att utgå från)
+- `odoo_create` — skapa en ny post (t.ex. en ny dms.file)
+- `odoo_attach` — **hämta och lämna filbytes** (se nedan)
+- `odoo_write`, `odoo_call_method` — övriga fält och affärsflöden
+
+⚠ **Filbytes passerar ALDRIG modellkontexten.** En base64-kodad
+presentation på 500 KB är ~667 000 tecken; verktygsresultat klipps vid
+8 000. Skicka därför aldrig filinnehåll genom ett verktygsanrop — använd
+`odoo_attach`, som tar en SÖKVÄG.
+
+---
+
+## 1. Arbetskatalogen
+
+Du arbetar i `/tmp/<ditt pid>/`. Skapas vid behov, städas automatiskt när
+processen avslutas. Använd **relativa sökvägar** — `odoo_attach` löser dem
+mot arbetskatalogen (t.ex. `path="deck.pptx"` → `/tmp/1234/deck.pptx`).
+
+---
+
+## 2. Hämta och lämna dokument — odoo_attach
+
+```
+odoo_attach(model, id, field, path, direction)
+```
+
+- `direction="out"` — fält → fil. Hämta dokumentet till arbetskatalogen.
+- `direction="in"`  — fil → fält. Lämna resultatet tillbaka.
+
+Resultatet innehåller **endast metadata** (sökväg, storlek, checksumma) —
+aldrig filens bytes. Det är avsiktligt.
+
+### Hitta rätt fält
+
+Fältet måste vara av typen `binary`. Kör `describe_model(model)` och leta
+efter `"type": "binary"`. Vanliga fält:
+
+| Modell | Fält | Not |
+|---|---|---|
+| `ir.attachment` | `raw` eller `datas` | `raw` = rådata, `datas` = base64 |
+| `dms.file` | `content` | exponerat fält — inversen äger lagringen |
+
+⚠ Skriv **aldrig** till underliggande lagringsfält (`content_binary`,
+`content_file`, `db_datas`). Verktyget nekar det och hänvisar till rätt
+fält. Skriv till det exponerade fältet och låt modellens invers avgöra
+lagringen.
+
+### Exempel: hämta en förlaga
+
+```
+# 1. Hitta förlagan
+odoo_search("dms.file", [("name", "ilike", "presentation")], ["name","extension"])
+
+# 2. Hämta den till arbetskatalogen
+odoo_attach("dms.file", 42, "content", "forlaga.pptx", "out")
+
+# 3. ... arbeta med den ...
+
+# 4. Skapa en ny post och lämna resultatet dit
+odoo_create("dms.file", {"name": "ny-presentation.pptx", "directory_id": 7})
+odoo_attach("dms.file", 99, "content", "resultat.pptx", "in")
+```
+
+⚠ `direction="in"` kräver **mänskligt godkännande** — det kan skriva över
+befintlig data. `direction="out"` gör det inte.
+
+### Incheckning
+
+Om dokumentet är incheckat (`is_locked`, `locked_by`) redigerar en människa
+det i Euro-Office. Att skriva då skriver över deras arbete. Kontrollera
+först, och skapa hellre en ny post.
+
+---
+
+## 3. Läsa dokument
+
+### MS-format
+
+```bash
+# PowerPoint
+python3 -c "
+from pptx import Presentation
+p = Presentation('deck.pptx')
+print('sidor:', len(p.slides))
+for i, s in enumerate(p.slides, 1):
+    print(f'--- sida {i} ---')
+    for sh in s.shapes:
+        if sh.has_text_frame and sh.text_frame.text.strip():
+            print(sh.text_frame.text)
+"
+
+# Word
+python3 -c "
+import docx
+d = docx.Document('doc.docx')
+for para in d.paragraphs:
+    if para.text.strip(): print(para.text)
+"
+
+# Excel
+python3 -c "
+import openpyxl
+wb = openpyxl.load_workbook('ark.xlsx', data_only=True)
+for name in wb.sheetnames:
+    ws = wb[name]
+    print(f'=== {name} ===')
+    for row in ws.iter_rows(values_only=True):
+        if any(c is not None for c in row): print(row)
+"
+```
+
+### ODF-format (odt, ods, odp)
+
+`odfpy` kan användas, men ODF är ett zip med `content.xml` — stdlib räcker
+och ger samma resultat:
+
+```bash
+python3 -c "
+import zipfile, xml.etree.ElementTree as ET
+with zipfile.ZipFile('fil.odp') as z:
+    root = ET.fromstring(z.read('content.xml'))
+for el in root.iter():
+    tag = el.tag.split('}')[-1]
+    if tag in ('p','h','title','td','th','li') and el.text and el.text.strip():
+        print(el.text.strip())
+"
+```
+
+⚠ Returnera **strukturerat** innehåll (per sida/blad/avsnitt), inte en rå
+textmassa. Användaren behöver veta VAR något står.
+
+---
+
+## 4. Skapa dokument
+
+### Från tomt
+
+```bash
+# PowerPoint
+python3 -c "
+from pptx import Presentation
+from pptx.util import Inches, Pt
+p = Presentation()
+s = p.slides.add_slide(p.slide_layouts[0])
+s.shapes.title.text = 'Rubrik'
+s.placeholders[1].text = 'Underrubrik'
+p.save('ny.pptx')
+"
+
+# Word
+python3 -c "
+import docx
+d = docx.Document()
+d.add_heading('Rubrik', 0)
+d.add_paragraph('Brödtext')
+d.save('ny.docx')
+"
+
+# Excel
+python3 -c "
+import openpyxl
+wb = openpyxl.Workbook(); ws = wb.active
+ws['A1'] = 'Rubrik'
+wb.save('ny.xlsx')
+"
+```
+
+### Utifrån en förlaga
+
+En **förlaga** är ett dokument du utgår från för stil och generiska sidor.
+Det är inte givet att den har platshållare — arbeta med dess struktur.
+
+Följ detta flöde (det ger dramatiskt bättre resultat än att bygga från tomt):
+
+1. **Analysera förlagan.** Läs den (§3) och lista dess sidor med layout och
+   syfte. Rita gärna en översikt:
+   ```bash
+   soffice --headless --convert-to pdf forlaga.pptx --outdir .
+   pdftoppm -jpeg -r 60 forlaga.pdf sida   # → sida-1.jpg, sida-2.jpg ...
+   ```
+2. **Planera sidmappning.** För varje innehållsavsnitt: välj en sida ur
+   förlagan att utgå från.
+   ⚠ **VARIERA LAYOUTER.** Monotona presentationer är det vanligaste
+   kvalitetsfelet. Leta aktivt efter: två-/trekolumnslayouter, bild+text,
+   helblecksbild med text, citat, avdelare, sifferutsagor, ikonrader.
+   Undvik att upprepa samma texttunga layout på varje sida.
+   Matcha innehållstyp mot layout (punkter → punktlista, team → kolumner,
+   citat → citatsida).
+3. **Kopiera och strukturera.** Duplicera de sidor du behöver, ta bort
+   resten, ordna om. Gör klart all struktur INNAN du redigerar text.
+4. **Redigera texten** sida för sida.
+5. **Städa och spara.**
+
+För pptx kan du arbeta på XML-nivå (zip + ElementTree) eller med
+`python-pptx` — båda fungerar. XML-nivå bevarar formgivningen bättre när
+du bara byter text.
+
+---
+
+## 5. Ändra dokument
+
+⚠ **Bevara formgivningen utanför det du ändrar.** Ändrar du texten på en
+bild ska bildens layout, typsnitt och färger vara oförändrade. Ändrar du
+ett cellvärde i ett kalkylark ska övriga blad och formler vara orörda.
+
+```bash
+# Byt text på en bild utan att röra layouten
+python3 -c "
+from pptx import Presentation
+p = Presentation('deck.pptx')
+s = p.slides[2]
+for sh in s.shapes:
+    if sh.has_text_frame and 'GAMMAL TEXT' in sh.text_frame.text:
+        for para in sh.text_frame.paragraphs:
+            for run in para.runs:
+                run.text = run.text.replace('GAMMAL TEXT', 'NY TEXT')
+p.save('deck-ny.pptx')
+"
+```
+
+⚠ Redigera `run.text`, inte `shape.text_frame.text` — det senare kastar
+formateringen på runs.
+
+---
+
+## 6. PDF — läsa, skapa, ändra
+
+`PyMuPDF` (`import fitz`) täcker hela trippeln. Ett bibliotek, inte fyra.
+
+### Läsa
+
+```bash
+python3 -c "
+import fitz
+d = fitz.open('fil.pdf')
+print('sidor:', len(d))
+for i, page in enumerate(d, 1):
+    print(f'--- sida {i} ---')
+    print(page.get_text())
+"
+```
+
+Saknar PDF:en textlager är `get_text()` tom → kör OCR (§7).
+
+### Skapa
+
+```bash
+python3 -c "
+import fitz
+d = fitz.open()
+page = d.new_page()
+page.insert_text((72, 72), 'Hej', fontsize=14)
+d.set_metadata({'title': 'Titel', 'author': 'Vertel'})
+d.save('ny.pdf')
+"
+```
+
+### Ändra
+
+```bash
+python3 -c "
+import fitz
+d = fitz.open('a.pdf')
+d.insert_pdf(fitz.open('b.pdf'), from_page=0, to_page=2)  # infoga sidor
+d.select([0, 2, 3])                                       # behåll/ordna om
+d.set_metadata({'title': 'Ny titel'})
+d.save('ut.pdf')
+"
+```
+
+`insert_pdf` (infoga), `delete_page` (ta bort), `select` (ordna om),
+`set_metadata` (metadata), `insert_textbox` (text).
+
+---
+
+## 7. OCR — PDF till dokument
+
+Använd PyMuPDF:s inbyggda Tesseract-integration:
+
+```bash
+python3 -c "
+import fitz
+d = fitz.open('skannad.pdf')
+for i, page in enumerate(d, 1):
+    tp = page.get_textpage_ocr(language='swe+eng', dpi=300, full=False)
+    print(f'--- sida {i} ---')
+    print(page.get_text(textpage=tp))
+"
+```
+
+⚠ **`full=False` är viktigt.** Det betyder: OCR:a bara områden som SAKNAR
+läsbar digital text. En PDF med blandat innehåll (digital text + skannade
+bilagor) får OCR bara på de skannade delarna — den digitala texten bevaras
+oförändrad. Med `full=True` OCR:as allt och den digitala texten försämras.
+
+⚠ **Om OCR-motorn saknas:** `get_textpage_ocr` kastar
+`RuntimeError: No tessdata specified and Tesseract is not installed`.
+Fånga det och säg till användaren att OCR-motorn inte är installerad —
+krascha inte. Utan OCR kan du fortfarande läsa PDF:er som har textlager.
+
+Lämna OCR-resultatet som ett dokument (t.ex. `.txt` eller `.docx`) via
+`odoo_attach` med `direction="in"`.
+
+---
+
+## 8. Formatkonvertering
+
+`soffice` (LibreOffice) konverterar mellan format:
+
+```bash
+# Office → PDF
+soffice --headless --convert-to pdf dokument.docx --outdir .
+
+# Äldre binärformat → läsbart (doc, xls, ppt)
+soffice --headless --convert-to docx gammal.doc --outdir .
+soffice --headless --convert-to xlsx gammal.xls --outdir .
+
+# PDF → bilder (för visuell kontroll av en presentation)
+soffice --headless --convert-to pdf deck.pptx --outdir .
+pdftoppm -jpeg -r 60 deck.pdf sida
+```
+
+⚠ `soffice` tar några sekunder och kan inte köra två instanser samtidigt
+mot samma profil. Kör en i taget.
+
+---
+
+## 9. Lämna resultatet
+
+Användaren avgör om resultatet ska bli en **ny post** eller en **ny version**.
+Fråga när det är relevant. Utan svar: skapa en ny post (vanligaste fallet).
+
+```
+# Ny post
+odoo_create("dms.file", {"name": "resultat.pptx", "directory_id": <id>})
+odoo_attach("dms.file", <nytt id>, "content", "resultat.pptx", "in")
+```
+
+⚠ **Ny version av ett DMS-dokument:** `dms` tillåter INTE två filer med
+samma namn i samma mapp (`A file with the same name already exists in this
+directory`). Modulen `document_version` är dessutom trasig i Odoo 18
+(anropar `name_get`, som togs bort i 17.0) — den kan inte användas.
+
+Två fungerande vägar:
+
+1. **Ny post med versionssuffix** — `resultat_v2.pptx`. Enkelt, spårbart,
+   ingen konflikt.
+2. **Skriv över innehållet på befintlig post** — samma post, nytt innehåll.
+   ⚠ Detta förstör föregående version. Fråga alltid användaren först, och
+   kontrollera `is_locked` (§2) så du inte skriver över någon annans arbete.
+
+Rapportera postens referens (id/namn) så användaren kan öppna den. Om
+modulen `dms_euro_office` är installerad kan dokumentet fortsätta redigeras
+i webbläsaren — nämn det.
+
+---
+
+## Checklista innan du är klar
+
+- [ ] Dokumentet är hämtat med `odoo_attach` (inte base64 i ett anrop)
+- [ ] Formgivningen utanför ändringen är bevarad
+- [ ] Layouterna varierar (inte samma texttunga layout på varje sida)
+- [ ] Resultatet är lämnat via `odoo_attach` med `direction="in"`
+- [ ] Postens referens är rapporterad till användaren
+]]></field>
+        </record>
+    </data>
+</odoo>

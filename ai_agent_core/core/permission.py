@@ -93,6 +93,30 @@ _ODOO_WRITE_TOOLS = {"odoo_create", "odoo_write"}
 _ODOO_EXEC_TOOLS = {"odoo_call_method"}
 _ODOO_EXTERNAL_TOOLS = {"odoo_unlink"}
 
+# Verktyg vars risk beror på ARGUMENTEN, inte bara på namnet
+# (office-document-agent 1.5). `odoo_attach` läser ut en fil (read_only) eller
+# skriver in en (write) — samma verktyg, olika risk. Utan detta skulle
+# antingen läsning kräva godkännande eller skrivning slippa igenom.
+_ARGUMENT_SENSITIVE_TOOLS = {
+    # tool_name → (argument, värde som gör anropet läsande)
+    "odoo_attach": ("direction", "out"),
+}
+
+
+def _argument_risk(tool_name: str, arguments: Any) -> Optional[RiskClass]:
+    """Riskklass som beror på anropets argument, annars None.
+
+    Returnerar READ när argumentet har det läsande värdet (t.ex.
+    `direction='out'`), annars None så att den statiska risknivån gäller.
+    """
+    spec = _ARGUMENT_SENSITIVE_TOOLS.get(tool_name)
+    if not spec or not isinstance(arguments, dict):
+        return None
+    arg_name, read_value = spec
+    if str(arguments.get(arg_name, "")).strip().lower() == read_value:
+        return RiskClass.READ
+    return None
+
 # Tool name prefixes that indicate EXTERNAL / destructive
 _EXTERNAL_PREFIXES = ("unlink_", "delete_")
 
@@ -245,7 +269,12 @@ class PermissionEngine:
             if hasattr(metadata, "risk_level"):
                 risk_level = metadata.risk_level
 
-        risk = classify(tool_name, risk_level, metadata)
+        # Argument-medveten risk (office-document-agent 1.5): vissa verktyg
+        # är läsande eller skrivande beroende på anropet. Argumenten vinner
+        # över den statiska risknivån.
+        arg_risk = _argument_risk(tool_name, arguments)
+        risk = arg_risk if arg_risk is not None else classify(
+            tool_name, risk_level, metadata)
 
         # -- Access-grupper (ai-tool-access-capabilities) --
         # Verktyg med group_ids kräver att användarens grupper korsar dem.

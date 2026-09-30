@@ -96,6 +96,60 @@
         </record>
         -->
 
+        <!-- Office-dokument (Office + PDF, extern runtime).
+             runtime='external' → agenten startas som en pi-agent-process
+             med bash, så den kan anropa python-pptx/soffice direkt.
+             Skillen är metodiken; odoo_attach är kanalen för filbytes. -->
+        <record id="agent_office_dokument" model="ai.agent">
+            <field name="name">Office-dokument</field>
+            <field name="ai_role">Office Document Specialist</field>
+            <field name="description">Dokumentexpert: läser, skapar och ändrar Office-dokument (docx, xlsx, pptx, odt, ods, odp) och PDF, inklusive OCR av skannade PDF:er. Hämtar och lämnar dokument via odoo_attach — modellagnostiskt (ir.attachment, dms.file eller vilken modell som helst med ett binärfält).</field>
+            <field name="status">active</field>
+            <field name="runtime">external</field>
+            <field name="skill_ids" eval="[(6, 0, [ref('skill_office_dokument')])]"/>
+            <field name="tool_ids" eval="[(6, 0, [
+                ref('tool_describe_model'),
+                ref('tool_odoo_search'),
+                ref('tool_odoo_create'),
+                ref('tool_odoo_write'),
+                ref('tool_odoo_attach'),
+                ref('tool_odoo_call_method'),
+            ])]"/>
+        </record>
+        <record id="coworker_agent_office_dokument" model="ai.coworker.agent">
+            <field name="coworker_id" ref="coworker_default_assistent"/>
+            <field name="agent_id" ref="agent_office_dokument"/>
+            <field name="role">member</field>
+            <field name="sequence" eval="40"/>
+        </record>
+
+        <!-- Nyhetsbevakare (omvärldsbevakning).
+             Läser RSS/Atom via news_fetch och svarar med en cachad
+             dygnsdigest (news_digest → ai.personal.memory). Källistan bor i
+             skillen news-sources; personliga källor och intressen i
+             användarens personliga minne. -->
+        <record id="agent_news_watcher" model="ai.agent">
+            <field name="name">Nyhetsbevakare</field>
+            <field name="ai_role">News Watcher</field>
+            <field name="description">Omvärldsbevakare: svarar på vad som hänt i nyheterna — en cachad dygnsdigest med 7-10 rangordnade nyheter, ämnesfiltrering och inlärda intressen (källor, ämnen, antal).</field>
+            <field name="status">active</field>
+            <field name="skill_ids" eval="[(6, 0, [
+                ref('skill_news_briefing'),
+                ref('skill_news_sources'),
+            ])]"/>
+            <field name="tool_ids" eval="[(6, 0, [
+                ref('tool_news_fetch'),
+                ref('tool_news_digest'),
+                ref('tool_okf_search'),
+            ])]"/>
+        </record>
+        <record id="coworker_agent_news_watcher" model="ai.coworker.agent">
+            <field name="coworker_id" ref="coworker_default_assistent"/>
+            <field name="agent_id" ref="agent_news_watcher"/>
+            <field name="role">member</field>
+            <field name="sequence" eval="50"/>
+        </record>
+
     </data>
 
     <!-- Adoption av legacy-poster + städning av duplikat. Körs vid BÅDE

@@ -175,6 +175,165 @@ async def _tool_calculator(expression: str) -> str:
             hint='the expression could not be evaluated').to_json()
 
 
+def _parse_feed_xml(text):
+    """Parse RSS 2.0 or Atom into normalized dicts.
+
+    Stdlib-only (xml.etree) so the tool works without feedparser — the
+    runtime spec requires an agent to start without third-party deps.
+    Returns [{title, url, published, summary}].
+    """
+    import xml.etree.ElementTree as ET
+
+    def _strip_ns(tag):
+        return tag.rsplit('}', 1)[-1] if '}' in tag else tag
+
+    items = []
+    try:
+        root = ET.fromstring(text)
+    except ET.ParseError:
+        return items
+
+    # RSS: rss > channel > item ; Atom: feed > entry
+    nodes = [e for e in root.iter() if _strip_ns(e.tag) in ('item', 'entry')]
+    for node in nodes:
+        rec = {'title': '', 'url': '', 'published': '', 'summary': ''}
+        for child in node:
+            tag = _strip_ns(child.tag)
+            if tag == 'title' and not rec['title']:
+                rec['title'] = (child.text or '').strip()
+            elif tag == 'link' and not rec['url']:
+                # Atom: <link href="..."/> ; RSS: <link>...</link>
+                rec['url'] = (child.get('href') or child.text or '').strip()
+            elif tag in ('pubDate', 'published', 'updated') and not rec['published']:
+                rec['published'] = (child.text or '').strip()
+            elif tag in ('description', 'summary') and not rec['summary']:
+                rec['summary'] = (child.text or '').strip()
+        if rec['title'] or rec['url']:
+            items.append(rec)
+    return items
+
+
+async def _tool_news_fetch(url: str = "", limit: int = 20) -> str:
+    """Fetch and parse an RSS/Atom feed. Returns normalized items.
+
+    Model-agnostic: takes a URL directly and returns data. The agent owns
+    the source list (in its skill); the tool knows nothing about news
+    models. This is the same class of tool as web_search/fetch_url.
+    """
+    if not url or not url.strip():
+        return _missing_argument_error(
+            'url', 'a feed URL starting with http:// or https://',
+            example='https://www.svt.se/nyheter/rss.xml',
+            tool_name='news_fetch').to_json()
+    if not (url.startswith('http://') or url.startswith('https://')):
+        return _invalid_value_error(
+            'url', 'a URL starting with http:// or https://', url,
+            example='https://www.svt.se/nyheter/rss.xml',
+            tool_name='news_fetch').to_json()
+    try:
+        limit = max(1, min(int(limit or 20), 100))
+    except (TypeError, ValueError):
+        limit = 20
+
+    try:
+        import httpx
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                r = await client.get(
+                    url, headers={'User-Agent': 'Odoo-AI/1.0 (+news)'})
+        except Exception:
+            async with httpx.AsyncClient(timeout=15, verify=False) as client:
+                r = await client.get(
+                    url, headers={'User-Agent': 'Odoo-AI/1.0 (+news)'})
+        r.raise_for_status()
+        items = _parse_feed_xml(r.text)
+    except ImportError as e:
+        return _internal_error(
+            'news_fetch', e,
+            hint='install the missing dependency: pip install httpx').to_json()
+    except Exception as e:
+        return _internal_error('news_fetch', e).to_json()
+
+    if not items:
+        return "No items found in the feed at %s." % url
+
+    lines = ["Feed: %s" % url]
+    for i, it in enumerate(items[:limit]):
+        lines.append("%d. %s\n   %s\n   %s" % (
+            i + 1, it['title'] or '?', it['published'] or '', it['url'] or ''))
+    return "\n".join(lines)
+
+
+async def _tool_news_digest(topic: str = "", count: int = 10,
+                            digest_text: str = "") -> str:
+    """Read or write the user's cached news digest in ai.personal.memory.
+
+    The digest follows the PERSON (res.users), like all personal memory.
+    - Without digest_text: read today's cached digest (fast, no LLM call).
+    - With digest_text: store it as a memory for today (the agent writes).
+
+    Topic filters the cached digest's items on their topic tags.
+    """
+    try:
+        count = max(1, min(int(count or 10), 50))
+    except (TypeError, ValueError):
+        count = 10
+    try:
+        Memory = env['ai.personal.memory']  # noqa: F821
+    except KeyError:
+        return _internal_error(
+            'news_digest', Exception('ai.personal.memory saknas'),
+            hint='ai_agent_core is not fully installed').to_json()
+
+    user = env.user  # noqa: F821
+
+    # ── WRITE: agenten cachar dagens digest som ett personligt minne ──
+    if digest_text and digest_text.strip():
+        from datetime import date
+        content = "[news-digest] %s\n%s" % (date.today().isoformat(),
+                                             digest_text.strip())
+        mem = Memory.add_memory(
+            user.id, content, category='context', source='system',
+            importance='medium',
+            source_ref='news-digest,%s' % date.today().isoformat())
+        return json.dumps({
+            'cached': True, 'written': True, 'memory_id': mem.id,
+            'date': date.today().isoformat(),
+        })
+
+    # ── READ: senaste digesten för idag ──
+    from datetime import date
+    today = date.today().isoformat()
+    marker = '[news-digest] %s' % today
+    found = Memory.search([
+        ('user_id', '=', user.id),
+        ('source_ref', 'like', 'news-digest,%s' % today),
+    ], limit=1, order='create_date desc')
+    if not found:
+        # Fallback: sök i content (äldre poster utan source_ref)
+        found = Memory.search([
+            ('user_id', '=', user.id),
+            ('content', 'like', marker),
+        ], limit=1, order='create_date desc')
+    if not found:
+        return json.dumps({
+            'cached': False,
+            'reason': 'no_digest_for_today',
+            'hint': 'No cached digest for today. Fetch feeds with news_fetch, '
+                    'build the digest, then store it with news_digest '
+                    '(digest_text=...). Tell the user it did not come from '
+                    'cache.',
+        })
+    text = found.content or ''
+    # Ta bort markören från svaret
+    if text.startswith(marker):
+        text = text[len(marker):].lstrip('\n')
+    return json.dumps({
+        'cached': True, 'date': today, 'topic': topic or '',
+        'digest': text,
+    }, ensure_ascii=False)
+
+
 async def _tool_web_search(query: str = "", max_results: int = 5) -> str:
     """Search the web. Uses DuckDuckGo (DDGS); fallback till HTML-scrape
     om cert-laddning misslyckas (odoo-användaren saknar läsrätt till
@@ -661,6 +820,60 @@ def builtin_tools() -> list[Tool]:
             source="builtin",
         ),
         Tool(
+            name="news_fetch",
+            description="Fetch and parse an RSS/Atom feed from a URL and return "
+                        "normalized items (title, url, published, summary). "
+                        "Model-agnostic: it takes a URL and returns data. The "
+                        "agent owns the source list in its skill.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "Feed URL (must include http:// or https://)",
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum number of items to return (1-100, default 20)",
+                    },
+                },
+                "required": ["url"],
+            },
+            handler=_tool_news_fetch,
+            risk_level="safe",
+            source="builtin",
+        ),
+        Tool(
+            name="news_digest",
+            description="Read or write the user's cached news digest in personal "
+                        "memory (ai.personal.memory). Without digest_text: read "
+                        "today's cached digest (fast, no LLM call). With "
+                        "digest_text: store it for today. The digest follows "
+                        "the person, like all personal memory.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "topic": {
+                        "type": "string",
+                        "description": "Optional topic filter (e.g. 'AI'); empty = all",
+                    },
+                    "count": {
+                        "type": "integer",
+                        "description": "Maximum number of news items (1-50, default 10)",
+                    },
+                    "digest_text": {
+                        "type": "string",
+                        "description": "The digest to cache (empty = read the cached one)",
+                    },
+                },
+                "required": [],
+            },
+            handler=_tool_news_digest,
+            risk_level="safe",
+            source="builtin",
+        ),
+        Tool(
             name="browser_navigate",
             description="Navigate to a URL using a headless browser and return the full page text content. "
                         "Useful for browsing websites that require JavaScript rendering, "
@@ -1101,6 +1314,38 @@ def builtin_tools() -> list[Tool]:
                 "required": ["model", "ids", "values"],
             },
             handler=_tool_odoo_write,
+            risk_level="write",
+            source="odoo_model",
+        ),
+        Tool(
+            name="odoo_attach",
+            description=(
+                "Move file bytes between a file path and a binary field on any "
+                "Odoo record — model-agnostic (works for ir.attachment or "
+                "any model with a binary field). Use this to fetch a "
+                "document to disk before working on it, and to store a "
+                "result back. The file content never passes through the "
+                "model context; only the path does. Requires approval when "
+                "writing to an existing record."),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "model": {"type": "string",
+                              "description": "Odoo model name, e.g. ir.attachment"},
+                    "id": {"type": "integer",
+                           "description": "Record id"},
+                    "field": {"type": "string",
+                              "description": "Binary field, e.g. content / raw"},
+                    "path": {"type": "string",
+                             "description": "File path (absolute, or relative "
+                                            "to the agent workdir)"},
+                    "direction": {
+                        "type": "string", "enum": ["in", "out"],
+                        "description": "'out' = field → path, 'in' = path → field"},
+                },
+                "required": ["model", "id", "field", "path", "direction"],
+            },
+            handler=_tool_odoo_attach,
             risk_level="write",
             source="odoo_model",
         ),
@@ -1639,7 +1884,7 @@ class ToolError(Exception):
 
     def to_json(self):
         import json as _json
-        return _json.dumps(self.to_dict(), ensure_ascii=False, default=str)
+        return json.dumps(self.to_dict(), ensure_ascii=False, default=str)
 
 
 def _tool_error(message, valid_fields=None, tool_name=''):
@@ -1758,12 +2003,12 @@ def _tool_describe_model(env, model=''):
             tool_name='describe_model').to_json()
     _scope_err = _model_scope_error(env, model)
     if _scope_err:
-        return _json.dumps({"error": _scope_err})
+        return json.dumps({"error": _scope_err})
     Model = env[model]
     try:
         fields_get = Model.fields_get()
     except Exception as e:
-        return _json.dumps({"error": f"fields_get failed for {model}: {e}"})
+        return json.dumps({"error": f"fields_get failed for {model}: {e}"})
 
     fields = {}
     for fname, finfo in fields_get.items():
@@ -1811,7 +2056,7 @@ def _tool_describe_model(env, model=''):
     except Exception:
         pass
 
-    return _json.dumps({
+    return json.dumps({
         'model': model,
         'fields': fields,
         'relations': relations,
@@ -1831,10 +2076,10 @@ def _tool_odoo_search(env, model='', domain=None, fields=None, limit=20,
     default men respekteras om explicit begärda."""
     import json as _json
     if not model or model not in env.registry:
-        return _json.dumps({"error": f"Unknown model: {model}"})
+        return json.dumps({"error": f"Unknown model: {model}"})
     _scope_err = _model_scope_error(env, model)
     if _scope_err:
-        return _json.dumps({"error": _scope_err})
+        return json.dumps({"error": _scope_err})
     Model = env[model]
     default_fields = fields is None
     if fields is None:
@@ -1870,7 +2115,7 @@ def _tool_odoo_search(env, model='', domain=None, fields=None, limit=20,
             actual=str(e),
             tool_name='odoo_search',
         ).to_json()
-    return _json.dumps(records, default=str)
+    return json.dumps(records, default=str)
 
 
 def _tool_odoo_create(env, model='', values=None):
@@ -1881,13 +2126,13 @@ def _tool_odoo_create(env, model='', values=None):
     """
     import json as _json
     if not model or model not in env.registry:
-        return _json.dumps({"error": f"Unknown model: {model}"})
+        return json.dumps({"error": f"Unknown model: {model}"})
     _scope_err = _model_scope_error(env, model)
     if _scope_err:
-        return _json.dumps({"error": _scope_err})
+        return json.dumps({"error": _scope_err})
     Model = env[model]
     if not Model.check_access_rights('create', raise_exception=False):
-        return _json.dumps({"error": f"No create access on {model}"})
+        return json.dumps({"error": f"No create access on {model}"})
     vals = dict(values or {})
     # Validera fältnamn mot modellens schema innan create — ger ett
     # åtgärdbart fel istället för ett generiskt ORM-undantag.
@@ -1912,7 +2157,7 @@ def _tool_odoo_create(env, model='', values=None):
             if _im:
                 vals['res_model_id'] = _im.id
             else:
-                return _json.dumps({
+                return json.dumps({
                     "error": f"Unknown res_model: {_rm}",
                     "parameter": "res_model",
                     "expected": "ett installerat modellnamn (ir.model.model)",
@@ -1928,7 +2173,7 @@ def _tool_odoo_create(env, model='', values=None):
             actual=str(e),
             tool_name='odoo_create',
         ).to_json()
-    return _json.dumps({
+    return json.dumps({
         "ok": True, "id": rec.id,
         "name": rec.display_name or rec.name or '',
         # Modellen eklas tillbaka så write-verify kan slå upp posten när
@@ -1955,12 +2200,12 @@ def _tool_odoo_call_method(env, model='', id=None, ids=None, record_id=None,
         elif record_id is not None:
             id = record_id
     if not model or model not in env.registry:
-        return _json.dumps({"error": f"Unknown model: {model}"})
+        return json.dumps({"error": f"Unknown model: {model}"})
     _scope_err = _model_scope_error(env, model)
     if _scope_err:
-        return _json.dumps({"error": _scope_err})
+        return json.dumps({"error": _scope_err})
     if not method or method.startswith('_'):
-        return _json.dumps({"error": f"Method '{method}' is not allowed"})
+        return json.dumps({"error": f"Method '{method}' is not allowed"})
     if not (method.startswith('action_') or method.startswith('button_')):
         try:
             whitelist = env['ir.config_parameter'].get_param(
@@ -1969,24 +2214,24 @@ def _tool_odoo_call_method(env, model='', id=None, ids=None, record_id=None,
         except Exception:
             allowed = set()
         if method not in allowed:
-            return _json.dumps({
+            return json.dumps({
                 "error": f"Method '{method}' not allowed "
                          f"(endast action_*/button_* eller vitlista)"})
     Model = env[model]
     rec = Model.browse(id)
     if not rec.exists():
-        return _json.dumps({"error": f"{model} {id} not found"})
+        return json.dumps({"error": f"{model} {id} not found"})
     if not hasattr(rec, method) or not callable(getattr(rec, method)):
-        return _json.dumps({"error": f"Method '{method}' not found on {model}"})
+        return json.dumps({"error": f"Method '{method}' not found on {model}"})
     try:
         if isinstance(args, (list, tuple)):
             result = getattr(rec, method)(*args)
         else:
             result = getattr(rec, method)(**(args or {}))
     except Exception as e:
-        return _json.dumps({
+        return json.dumps({
             "error": f"Method call {model}.{method} failed: {e}"})
-    return _json.dumps({"ok": True, "result": str(result)}, default=str)
+    return json.dumps({"ok": True, "result": str(result)}, default=str)
 
 
 def _tool_odoo_write(env, model='', ids=None, values=None):
@@ -1994,14 +2239,14 @@ def _tool_odoo_write(env, model='', ids=None, values=None):
     Skriv aldrig state direkt — affärsflöden via odoo_call_method."""
     import json as _json
     if not model or model not in env.registry:
-        return _json.dumps({"error": f"Unknown model: {model}"})
+        return json.dumps({"error": f"Unknown model: {model}"})
     _scope_err = _model_scope_error(env, model)
     if _scope_err:
-        return _json.dumps({"error": _scope_err})
+        return json.dumps({"error": _scope_err})
     Model = env[model]
     vals = dict(values or {})
     if not vals:
-        return _json.dumps({"error": "values krävs"})
+        return json.dumps({"error": "values krävs"})
     try:
         fg = Model.fields_get(list(vals.keys()))
     except Exception:
@@ -2027,6 +2272,25 @@ def _tool_odoo_write(env, model='', ids=None, values=None):
         has_html = [f for f in rejected
                     if f in Model._fields
                     and Model._fields[f].type in ('html', 'text')]
+        # Binärfält är `compute` (Odoos konvention) och kan därför aldrig nå
+        # hit. De skrivs via odoo_attach, som flyttar bytes utan att de
+        # passerar modellkontexten (office-document-agent 2.1).
+        has_binary = [f for f in rejected
+                      if f in Model._fields
+                      and Model._fields[f].type == 'binary']
+        if has_binary and not has_html:
+            return ToolError(
+                f"Binary fields not writable via odoo_write on {model}: "
+                f"{', '.join(has_binary)}",
+                parameter=has_binary[0],
+                expected=(
+                    'odoo_attach for binary fields — it moves file bytes '
+                    'between a path and the field without passing the file '
+                    'through the model context'),
+                actual=', '.join(has_binary),
+                retryable=True,
+                tool_name='odoo_write',
+            ).to_json()
         if has_html:
             expected = (
                 'HTML/text fields cannot be written by odoo_write. '
@@ -2052,30 +2316,239 @@ def _tool_odoo_write(env, model='', ids=None, values=None):
         ).to_json()
     recs = Model.browse(ids or [])
     if not recs:
-        return _json.dumps({"error": f"Inga {model}-poster med ids={ids}"})
+        return json.dumps({"error": f"Inga {model}-poster med ids={ids}"})
     try:
         recs.write(allowed)
     except Exception as e:
-        return _json.dumps({"error": f"write failed on {model}: {e}"})
-    return _json.dumps({"ok": True, "ids": list(recs.ids)})
+        return json.dumps({"error": f"write failed on {model}: {e}"})
+    return json.dumps({"ok": True, "ids": list(recs.ids)})
 
 
 def _tool_odoo_unlink(env, model='', ids=None):
     """Radera poster. EXTERNAL-risk — HITL + hårt stopp i permission engine."""
     import json as _json
     if not model or model not in env.registry:
-        return _json.dumps({"error": f"Unknown model: {model}"})
+        return json.dumps({"error": f"Unknown model: {model}"})
     _scope_err = _model_scope_error(env, model)
     if _scope_err:
-        return _json.dumps({"error": _scope_err})
+        return json.dumps({"error": _scope_err})
     recs = env[model].browse(ids or [])
     if not recs:
-        return _json.dumps({"error": f"Inga {model}-poster med ids={ids}"})
+        return json.dumps({"error": f"Inga {model}-poster med ids={ids}"})
     try:
         recs.unlink()
     except Exception as e:
-        return _json.dumps({"error": f"unlink failed on {model}: {e}"})
-    return _json.dumps({"ok": True, "deleted": list(recs.ids)})
+        return json.dumps({"error": f"unlink failed on {model}: {e}"})
+    return json.dumps({"ok": True, "deleted": list(recs.ids)})
+
+
+# Underliggande lagringsfält som ALDRIG får skrivas direkt. De ägs av
+# modellens egen invers (t.ex. väljer en modells invers mellan flera
+# lagringsfält utifrån sin storage-konfiguration; ir.attachment.create
+# poppar raw/datas och anropar _get_datas_related_values). Att skriva dem
+# direkt kringgår modellogiken och ger inkonsekvent state
+# (office-document-agent D3).
+_ATTACH_STORAGE_DENYLIST = (
+    'content_binary', 'content_file', 'db_datas', 'store_fname',
+)
+
+
+def _attach_workdir():
+    """Agentens arbetskatalog: /tmp/<pid>/ (office-document-agent D4).
+
+    Unik per process, så samtidiga agenter inte kolliderar. Skapas vid behov.
+    """
+    import os
+    path = os.path.join('/tmp', str(os.getpid()))
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
+def _binary_read_field(rec, field):
+    """Läs ett binärfält som rådata — utan att gissa på returtypen.
+
+    FÄLLA (verifierad 2026-09-30): Odoo:s binärfält returnerar `bytes` i
+    BÅDA fallen, så typen säger ingenting:
+        ir.attachment.raw   → bytes, RÅDATA
+        ir.attachment.datas → bytes, BASE64-TEXT
+        <modell>.content    → bytes, BASE64-TEXT
+    `bin_size=False` tvingar base64 för `datas`/`content` men lämnar `raw`
+    som rådata. Att läsa `raw` som om det vore base64 skriver en base64-kopia
+    till disk (440 bytes i stället för 328) — tyst korruption (T/11520).
+
+    Principen: läs alltid det fält som är base64-kodat. Är det begärda
+    fältet `raw` och modellen har ett `datas`-syskon, läs syskonet. Annars
+    läs fältet direkt (bin_size=False = base64-kontraktet).
+    """
+    import base64 as _b64
+    read_field = field
+    if field == 'raw' and 'datas' in rec._fields:
+        read_field = 'datas'
+    raw = rec.with_context(bin_size=False)[read_field]
+    if raw is None:
+        return b''
+    if isinstance(raw, bytes):
+        try:
+            return _b64.b64decode(raw)
+        except Exception:
+            return raw
+    try:
+        return _b64.b64decode(raw)
+    except Exception:
+        return str(raw).encode()
+
+
+def _binary_write_field(rec, field, data):
+    """Skriv rådata till ett binärfält — utan att gissa på förväntad form.
+
+    Speglar `_binary_read_field`: `raw` tar rådata, `datas`/`content` tar
+    base64. Att skicka base64 till `raw` ger en base64-kopia i databasen
+    (616 bytes i stället för 460) — samma tysta korruption, motsatt riktning.
+    """
+    import base64 as _b64
+    if field == 'raw':
+        # `raw` är det enda fältet som tar rådata. Modeller som exponerar
+        # `raw` har `datas` som base64-syskon — använd hellre det, så att
+        # vi alltid skriver base64 (en form, inte två).
+        if 'datas' in rec._fields:
+            rec.write({'datas': _b64.b64encode(data).decode()})
+            return
+        rec.write({'raw': data})
+        return
+    rec.write({field: _b64.b64encode(data).decode()})
+
+
+def _tool_odoo_attach(env, model='', id=None, field='', path='',
+                      direction='', **kwargs):
+    """Flytta filbytes mellan en sökväg och ett binärfält (modellagnostiskt).
+
+    `direction='out'`: fält → sökväg. `direction='in'`: sökväg → fält.
+    Resultatet innehåller ENDAST metadata (sökväg, storlek, checksumma,
+    fältnamn) — aldrig filens bytes. En base64-kodad fil passerar aldrig
+    LLM-kontexten (max_tool_result_chars=8000 gör det omöjligt).
+
+    Skrivning går via ORM:ens invers, så modellens egen lagringslogik avgör
+    var byten hamnar. Underliggande lagringsfält skrivs aldrig direkt.
+    """
+    import hashlib as _hashlib
+    import json as _json
+    import os
+
+    # ── 1. Argument (saknat/tomt = saknat, atgardbara-verktygsfel D2) ──
+    if not model or not str(model).strip():
+        return _missing_argument_error(
+            'model', 'an Odoo model name (technical name)',
+            example='ir.attachment', tool_name='odoo_attach').to_json()
+    if model not in env.registry:
+        return _invalid_value_error(
+            'model', 'an installed Odoo model', model,
+            example='ir.attachment', retryable=False,
+            tool_name='odoo_attach').to_json()
+    _scope_err = _model_scope_error(env, model)
+    if _scope_err:
+        return json.dumps({"error": _scope_err})
+    if not field or not str(field).strip():
+        return _missing_argument_error(
+            'field', 'a binary field on the model',
+            example='content', tool_name='odoo_attach').to_json()
+    if not path or not str(path).strip():
+        return _missing_argument_error(
+            'path', 'a file path (absolute, or relative to the agent workdir)',
+            example='/tmp/4711/deck.pptx', tool_name='odoo_attach').to_json()
+    if direction not in ('in', 'out'):
+        return _invalid_value_error(
+            'direction', "'in' (path → field) or 'out' (field → path)",
+            direction, example='out', tool_name='odoo_attach').to_json()
+
+    # ── 2. Fältvalidering INNAN något rör filsystemet ──
+    Model = env[model]
+    if field not in Model._fields:
+        return _unknown_field_error(
+            model, field, set(Model._fields),
+            tool_name='odoo_attach').to_json()
+    field_obj = Model._fields[field]
+    if field_obj.type != 'binary':
+        return _invalid_value_error(
+            'field', "a field of type 'binary'",
+            f"{field} (type: {field_obj.type})",
+            example='content', retryable=True,
+            tool_name='odoo_attach').to_json()
+    if field in _ATTACH_STORAGE_DENYLIST:
+        return ToolError(
+            f"Field '{field}' is an internal storage field on {model}",
+            parameter='field',
+            expected=("the model's exposed binary field (the one with the "
+                      "inverse) — e.g. 'raw' for ir.attachment"),
+            actual=field,
+            retryable=True,
+            tool_name='odoo_attach',
+        ).to_json()
+
+    # ── 3. Posten måste finnas ──
+    rec = Model.browse(id)
+    if not rec.exists():
+        return _missing_record_error(
+            model, id, tool_name='odoo_attach').to_json()
+
+    # ── 4. Sökväg: absolut eller relativ till arbetskatalogen ──
+    if not os.path.isabs(path):
+        path = os.path.join(_attach_workdir(), path)
+
+    try:
+        if direction == 'out':
+            # Rättigheter: ingen sudo. Läskontroll via ORM.
+            if not rec.check_access_rights('read', raise_exception=False):
+                return json.dumps({
+                    "error": f"No read access on {model}"})
+            data = _binary_read_field(rec, field)
+            os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+            with open(path, 'wb') as fh:
+                fh.write(data)
+        else:
+            # Rättigheter: ingen sudo. Skrivkontroll via ORM.
+            if not rec.check_access_rights('write', raise_exception=False):
+                return json.dumps({
+                    "error": f"No write access on {model}"})
+            if not os.path.isfile(path):
+                return _invalid_value_error(
+                    'path', 'an existing file to read', path,
+                    retryable=True, tool_name='odoo_attach').to_json()
+            with open(path, 'rb') as fh:
+                data = fh.read()
+            # Skriv till det EXPONERADE fältet — inversen äger lagringen.
+            _binary_write_field(rec, field, data)
+    except PermissionError as e:
+        return json.dumps({
+            "error": f"Access denied on {model}.{field}: {e}"})
+    except Exception as e:
+        # ir.rule (postnivå) ger AccessError även när modell-ACL:n tillåter.
+        # Kärnan importerar inte Odoo-exceptions (domän-ren), så vi känner
+        # igen dem på klassnamnet. Ett behörighetsfel är inte ett internt
+        # fel — det ska säga vad som saknas och inte vara omförsökbart.
+        if type(e).__name__ in ('AccessError', 'AccessDenied'):
+            return ToolError(
+                f"Access denied on {model}.{field}",
+                parameter='model',
+                expected=('a record the current user may ' +
+                          ('read' if direction == 'out' else 'write')),
+                actual=str(e)[:200],
+                retryable=False,
+                tool_name='odoo_attach',
+            ).to_json()
+        return _internal_error('odoo_attach', e).to_json()
+
+    # ── 5. Endast metadata tillbaka ──
+    size = os.path.getsize(path) if os.path.isfile(path) else len(data)
+    return json.dumps({
+        "ok": True,
+        "model": model,
+        "id": rec.id,
+        "field": field,
+        "direction": direction,
+        "path": path,
+        "size": size,
+        "checksum": _hashlib.sha1(data).hexdigest(),
+    })
 
 
 def _tool_okf_search(env, query='', scope='company', limit=10):
@@ -2087,9 +2560,9 @@ def _tool_okf_search(env, query='', scope='company', limit=10):
     """
     import json as _json
     if not query:
-        return _json.dumps({"error": "query krävs"})
+        return json.dumps({"error": "query krävs"})
     if 'ai.okf.concept' not in env:
-        return _json.dumps({"error": "OKF inte tillgängligt"})
+        return json.dumps({"error": "OKF inte tillgängligt"})
     try:
         kw = {'query': query, 'limit': limit or 10}
         if scope in ('company', 'personal', 'coworker'):
@@ -2109,7 +2582,7 @@ def _tool_okf_search(env, query='', scope='company', limit=10):
                         sess = env['ai.coworker.session'].browse(sess_id)
                         cw_id = sess.coworker_id.id if sess.exists() else None
                 if not cw_id:
-                    return _json.dumps({
+                    return json.dumps({
                         "error": "coworker-scope kräver en coworker i "
                                  "kontexten (default_coworker_id)"})
                 kw['owner_id'] = cw_id
@@ -2119,9 +2592,9 @@ def _tool_okf_search(env, query='', scope='company', limit=10):
             'summary': (c.summary or '')[:500],
             'concept_key': c.concept_key, 'scope': c.scope, 'status': c.status,
         } for c in results]
-        return _json.dumps(out, default=str)
+        return json.dumps(out, default=str)
     except Exception as e:
-        return _json.dumps({"error": f"okf_search failed: {e}"})
+        return json.dumps({"error": f"okf_search failed: {e}"})
 # ---------------------------------------------------------------------------
 # Quest Builder Tool Handlers
 # ---------------------------------------------------------------------------
@@ -2180,7 +2653,7 @@ def _tool_inventory_architecture(env, **kwargs):
                 except Exception:
                     pass
 
-    return _json.dumps(result, indent=2, default=str)
+    return json.dumps(result, indent=2, default=str)
 
 
 def _tool_inventory_quests(env, **kwargs):
@@ -2190,7 +2663,7 @@ def _tool_inventory_quests(env, **kwargs):
              "init_type": q.init_type, "is_supervisor": q.is_supervisor,
              "agent_count": q.agent_count}
             for q in quests]
-    return _json.dumps(data, indent=2)
+    return json.dumps(data, indent=2)
 
 
 def _tool_inventory_agents(env, **kwargs):
@@ -2202,7 +2675,7 @@ def _tool_inventory_agents(env, **kwargs):
         model_name = a.model_id.name if a.model_id else "none"
         data.append({"id": a.id, "name": a.name, "model": model_name,
                      "provider_type": a.provider_type, "skills": skills})
-    return _json.dumps(data, indent=2)
+    return json.dumps(data, indent=2)
 
 
 def _tool_inventory_skills(env, **kwargs):
@@ -2212,7 +2685,7 @@ def _tool_inventory_skills(env, **kwargs):
              "trigger_keywords": s.trigger_keywords or "",
              "description": (s.description or "")[:200]}
             for s in skills]
-    return _json.dumps(data, indent=2)
+    return json.dumps(data, indent=2)
 
 
 def _tool_inventory_models(env, **kwargs):
@@ -2223,7 +2696,7 @@ def _tool_inventory_models(env, **kwargs):
              "context_window": m.context_window,
              "provider": m.provider.name if m.provider else "unknown"}
             for m in models]
-    return _json.dumps(data, indent=2)
+    return json.dumps(data, indent=2)
 
 
 def _tool_inventory_tools(env, **kwargs):
@@ -2232,7 +2705,7 @@ def _tool_inventory_tools(env, **kwargs):
     data = [{"id": t.id, "name": t.name, "risk_level": t.risk_level,
              "description": (t.description or "")[:200]}
             for t in tools]
-    return _json.dumps(data, indent=2)
+    return json.dumps(data, indent=2)
 
 
 def _tool_inventory_identities(env, **kwargs):
@@ -2241,7 +2714,7 @@ def _tool_inventory_identities(env, **kwargs):
     data = [{"id": i.id, "name": i.name, "scope": i.scope,
              "description": (i.description or "")[:200]}
             for i in identities]
-    return _json.dumps(data, indent=2)
+    return json.dumps(data, indent=2)
 
 
 def _tool_inventory_odoo_models(env, **kwargs):
@@ -2249,7 +2722,7 @@ def _tool_inventory_odoo_models(env, **kwargs):
     models = env["ir.model"].search([("transient", "=", False)])
     data = [{"id": m.id, "model": m.model, "name": m.name}
             for m in models[:200]]  # Limit to avoid huge responses
-    return _json.dumps(data, indent=2)
+    return json.dumps(data, indent=2)
 
 
 def _tool_builder_create_quest(env, name, description="", init_types="", is_supervisor=False, **kwargs):
@@ -2443,9 +2916,9 @@ def _tool_search_github_skills(env, query, **kwargs):
                 "path": item["path"],
                 "raw_url": raw_url,
             })
-        return _json.dumps(results, indent=2) if results else "No matching skills found on GitHub"
+        return json.dumps(results, indent=2) if results else "No matching skills found on GitHub"
     except Exception as e:
-        return _json.dumps({"error": str(e), "tip": "Try web_search instead if GitHub API is rate-limited"})
+        return json.dumps({"error": str(e), "tip": "Try web_search instead if GitHub API is rate-limited"})
 
 
 def _tool_builder_draft_skill(env, name, recipe_text, category="general", trigger_keywords="", **kwargs):
