@@ -250,6 +250,17 @@ class AIOkfConcept(models.Model):
              'Behövs för att efterfyllnad ska veta vad som saknas — '
              'utan markering ser en tom kolumn likadan ut oavsett orsak.')
 
+    # Hybrid-sökningens vikt (okf-recall-path 2.4): hur mycket vektorsignalen
+    # väger mot BM25-textsignalen. Konfigurerbar i stället för hårdkodad —
+    # annars kan en installation utan embeddings (Bifrost) inte sänka den
+    # till 0 utan att röra koden. `_okf_search` läser denna när anroparen
+    # inte skickar en explicit `semantic_weight`.
+    hybrid_semantic_weight = fields.Float(
+        'Semantisk vikt (hybrid)', default=0.7,
+        help='Vikt för vektorsignalen i hybrid-sökningen (0–1). '
+             '0.7 = semantik dominerar; 0 = ren BM25 (för installationer '
+             'utan embeddings).')
+
     _sql_constraints = [
         # Unik per (scope, concept_key, version) — versioner delar
         # concept_key men skiljs åt av version (beslut 15 + 10).
@@ -322,7 +333,11 @@ class AIOkfConcept(models.Model):
         låsta; det är de som bär innebörden.
         """
         allowed = {'status', 'archived', 'verified', 'dirty',
-                   'embedding_state', 'embedding'}
+                   'embedding_state', 'embedding',
+                   # 14.2 (okf-recall-path): livscykelfält — pekar på
+                   # efterträdaren när raden blir superseded. Hör till
+                   # livscykeln, inte innehållet (summary/title är låsta).
+                   'superseded_by_id'}
         forbidden = set(vals) - allowed
         if forbidden:
             raise ValidationError(
@@ -409,21 +424,54 @@ class AIOkfConcept(models.Model):
 
     @api.model
     def _index_all_personal_sources(self):
-        """Cron: indexera roll + mål för alla aktiva användare."""
+        """Cron: indexera roll + mål för alla aktiva användare.
+
+        14.3/14.4 (okf-recall-path): fel PROPAGERAR i stället för att sväljas.
+        Den tysta `except: pass` gjorde att en användare vars indexering
+        kraschade såg ut som en användare utan roll/mål — samma tysta noll som
+        `okf-recall-path` jagat på fem andra ställen. Nu loggas felet med
+        användar-id och räknas, så en trasig källa syns.
+        """
         users = self.env['res.users'].search(
             [('active', '=', True), ('share', '=', False)])
-        roles = goals = 0
+        roles = goals = errors = 0
         for u in users:
             try:
                 roles += self._index_user_role(u.id)
-            except Exception:
-                pass
+            except Exception as e:
+                errors += 1
+                _logger.warning(
+                    'Personlig indexering: roll för användare %s misslyckades: %s',
+                    u.id, e, exc_info=True)
             try:
                 goals += self._index_user_goals(u.id)
-            except Exception:
-                pass
-        _logger.info('Personliga minneskällor: %d roller, %d mål', roles, goals)
-        return {'roles': roles, 'goals': goals}
+            except Exception as e:
+                errors += 1
+                _logger.warning(
+                    'Personlig indexering: mål för användare %s misslyckades: %s',
+                    u.id, e, exc_info=True)
+        _logger.info(
+            'Personliga minneskällor: %d roller, %d mål, %d fel',
+            roles, goals, errors)
+        return {'roles': roles, 'goals': goals, 'errors': errors}
+
+    def _cron_detect_superseded_gaps(self):
+        """14.5: hitta rader som är superseded utan att peka på efterträdaren.
+
+        `superseded_by_id` sattes aldrig före 14.2, så äldre rader kan vara
+        markerade som ersatta utan att veta av vad. Returnerar antalet och
+        loggar dem — en konsument kan då se att kedjan är bruten.
+        """
+        gaps = self.search([
+            ('status', '=', 'superseded'),
+            ('superseded_by_id', '=', False),
+        ])
+        if gaps:
+            _logger.warning(
+                'OKF versionskedja: %d superseded-rader saknar efterträdare '
+                '(superseded_by_id) — kör engångsmigrationen 14.6',
+                len(gaps))
+        return len(gaps)
 
     def _produce_embedding(self, summary, title=None, explicit=None):
         """Producera (eller validera) embedding för ett koncept (fas 3.1/3.2).
@@ -587,13 +635,15 @@ class AIOkfConcept(models.Model):
             raise ValidationError(
                 _('_okf_upsert() requires exactly one owner.'))
 
-        # Existerande senaste version inom (scope, concept_key)
+        # Existerande senaste version inom (scope, concept_key).
+        # 1.9: en språkmedveten nyckel söker även basnyckeln, så en gammal
+        # rad utan språksuffix fortsätter sin kedja i stället för att en
+        # parallell startas.
         existing = self.search([
             ('scope', '=', scope),
-            ('concept_key', '=', concept_key),
+            ('concept_key', 'in', self._okf_lookup_keys(concept_key)),
             ('status', '!=', 'superseded'),
         ], order='version desc', limit=1)
-
         if existing:
             # ── Är detta en GENUIN ny version? (Fas 14) ────────────────
             # Utan denna kontroll skapade varje cron-körning en ny rad även
@@ -658,7 +708,14 @@ class AIOkfConcept(models.Model):
                 if atype.okf_contract else 'none',
             }
             new = self.create(vals)
-            existing.write({'status': 'superseded'})
+            # 14.1/14.2 (okf-recall-path): ny version + superseded atomärt,
+            # och föregångaren pekar på sin efterträdare. Fältet
+            # `superseded_by_id` fanns men sattes aldrig — en konsument
+            # kunde se att en rad var ersatt men inte av vad.
+            existing.write({
+                'status': 'superseded',
+                'superseded_by_id': new.id,
+            })
             return new
 
         vec, vec_state = self._produce_embedding(
@@ -854,10 +911,14 @@ class AIOkfConcept(models.Model):
                 'OKF-sökning utan aktiv ai.provider — endast BM25 '
                 '(query=%.60s)', query)
 
-        # 2. Vikten. `semantic_weight` kommer från anroparen; default 0.7.
+        # 2. Vikten. `semantic_weight` kommer från anroparen; annars
+        #    modellens `hybrid_semantic_weight` (okf-recall-path 2.4) —
+        #    konfigurerbar i stället för hårdkodad.
         #    Är vektorn borta sätts vikten till 0 — annars hade den
         #    semantiska termen blivit konstant och bara skjutit upp alla
         #    rader lika mycket (en vikt utan signal är brus).
+        if semantic_weight is None:
+            semantic_weight = self.hybrid_semantic_weight
         w = 0.7 if semantic_weight is None else float(semantic_weight)
         w = max(0.0, min(1.0, w))
         if not embedding:
@@ -1046,6 +1107,13 @@ class AIOkfConcept(models.Model):
             rows = []
 
         if rows:
+            # 2.7: ange LÄGE så "inga träffar" kan skiljas från "ingen
+            # semantik". Utan detta ser en BM25-only-körning (vektor saknas)
+            # likadan ut som en hybrid-körning i loggen.
+            _logger.debug(
+                'OKF-sökning: %d träffar (läge=%s, vikt=%.2f, query=%.60s)',
+                len(rows), 'hybrid' if embedding and w > 0 else 'bm25-only',
+                w, query)
             return self.browse(rows)
 
         # 12.5: ÄRLIGT TOMT. Ingen create_date desc-fallback — en fråga
@@ -1053,11 +1121,34 @@ class AIOkfConcept(models.Model):
         # om de vore svar.
         in_scope = self.search_count(domain)
         _logger.info(
-            'OKF-sökning gav 0 träffar (query=%.60s, scope=%s, %d koncept '
-            'i scopet, vektor=%s)', query, scope or '-', in_scope,
+            'OKF-sökning gav 0 träffar (läge=%s, query=%.60s, scope=%s, '
+            '%d koncept i scopet, vektor=%s)',
+            'hybrid' if embedding and w > 0 else 'bm25-only',
+            query, scope or '-', in_scope,
             'ja' if embedding else 'nej')
         return self.browse([])
 
+
+    @api.model
+    def _okf_lookup_keys(self, concept_key):
+        """Nycklar att söka på för en given concept_key (1.9).
+
+        En språkmedveten nyckel är `'<modell>,<id>,<lang>'`. Äldre rader
+        kan ha basnyckeln `'<modell>,<id>'` (från tiden före språkstödet).
+        För att en befintlig kedja ska fortsätta — i stället för att en ny
+        startas — returnerar vi BÅDA när nyckeln har ett språk-suffix.
+
+        Utan detta skulle varje språkmedveten omskrivning av en gammal rad
+        skapa ett parallellt koncept i stället för version 2.
+        """
+        if not concept_key:
+            return [concept_key]
+        parts = concept_key.rsplit(',', 2)
+        # '<modell>,<id>,<lang>' → basnyckeln är de två första leden.
+        if len(parts) == 3 and parts[2]:
+            base = '%s,%s' % (parts[0], parts[1])
+            return [concept_key, base]
+        return [concept_key]
 
     def _latest_per_key(self):
         """Returnera bara senaste versionen per (scope, concept_key)."""

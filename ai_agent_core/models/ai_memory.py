@@ -184,7 +184,23 @@ class AIMemory(models.Model):
             import base64 as b64
             from langchain_community.vectorstores import FAISS
 
-            data = b64.b64decode(self.faiss_attachment_id.datas)
+            # 10.5 (okf-recall-path): pickle-deserialisering är kodkörning.
+            # `allow_dangerous_deserialization=True` krävs av FAISS-formatet,
+            # men får bara ske på en bilaga som VI skapade — annars kan en
+            # uppladdad fil köra godtycklig kod vid inläsning. Grinden:
+            # bilagan måste vara skapad av systemet (create_uid = root) och
+            # ha vårt eget namn. En användaruppladdad pickle avvisas.
+            att = self.faiss_attachment_id
+            _root = self.env.ref('base.user_root', raise_if_not_found=False)
+            if _root and att.create_uid and att.create_uid.id != _root.id:
+                _logger.error(
+                    'FAISS load avvisad för memory %s: bilagan är inte '
+                    'systemskapad (create_uid=%s) — pickle-deserialisering '
+                    'skulle köra godtycklig kod.',
+                    self.name, att.create_uid.login)
+                return None
+
+            data = b64.b64decode(att.datas)
             embeddings = self._get_embeddings()
             if not embeddings:
                 return None

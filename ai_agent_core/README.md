@@ -930,3 +930,28 @@ YouTube-verktygen (`data/youtube_tools.xml`) läser nyckeln via
 `ai_agent_core.google_api_key` (Odoo-inställningarna) med
 `GOOGLE_API_KEY`-miljövariabeln som fallback — inte ur miljön enbart.
 Saknas båda pekar felet på **Odoo Settings → AI → Google API Key**.
+
+## OKF-sökning: hybrid BM25 + vektor (okf-recall-path)
+
+`ai.okf.concept._okf_search()` är EN SQL-fråga med två signaler:
+
+```
+(1 - (embedding <=> :q)) * w  +  ts_rank(search_vector, plainto_tsquery('swedish', :query)) * (1-w)
+```
+
+- **`w` = `hybrid_semantic_weight`** (default 0.7, konfigurerbar per modell).
+  En installation utan embeddings (Bifrost saknar embedding-modeller) sätter
+  den till 0 för ren BM25 — annars blir den semantiska termen konstant brus.
+- **`COALESCE`** gör att en rad utan vektor ändå får sin text-signal. Utan den
+  hade en `pending`-rad gjort sökningen helt blind.
+- **Svensk stamning** via `plainto_tsquery('swedish', …)` — "fakturor" matchar
+  "faktura".
+- **Tomt är tomt.** Ingen `create_date desc`-fallback: en fråga utan träff
+  returnerar en tom lista, aldrig "de senaste koncepten". Loggen anger läge
+  (`hybrid` / `bm25-only`) så "inga träffar" kan skiljas från "ingen semantik".
+- **`superseded` returneras aldrig**; bara senaste version per
+  `(scope, concept_key)`.
+- **Versionskedjan:** en ny version sätter föregångarens `status='superseded'`
+  OCH `superseded_by_id` (atomärt) — en konsument kan följa kedjan.
+- **Ägarkrav:** en sökning i `company`/`personal`-scope kräver `owner_id`;
+  utan den nekas den (aldrig tyst läcka mellan ägare).
