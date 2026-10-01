@@ -230,6 +230,20 @@ class AIStreamController(http.Controller):
             except Exception:
                 pass
 
+        # session-history-relevance 3.1: cacha skill-katalogen per request.
+        # get_available_skills() är dyr och anropades tidigare tre gånger i
+        # samma request (slash-, katalog- och auto-aktiveringsvägen). Cachen
+        # är request-lokal (stängd över anropen nedan) — ingen delning mellan
+        # anrop, så den kan inte bli stale.
+        _skills_cache = {}
+
+        def _available_skills():
+            if 'v' not in _skills_cache:
+                _skills_cache['v'] = (
+                    quest.get_available_skills()
+                    if quest and quest.exists() else [])
+            return _skills_cache['v']
+
         # -- Slash command detection (Hermes-inspired) --
         user_instruction = prompt
         # Pattern: /skill-name rest of prompt
@@ -240,7 +254,7 @@ class AIStreamController(http.Controller):
 
             if quest and quest.exists():
                 # Look up skill from quest
-                available = quest.get_available_skills()
+                available = _available_skills()
                 matched = [s for s in available if s['name'] == skill_name]
                 if matched:
                     skill = matched[0]
@@ -265,7 +279,7 @@ class AIStreamController(http.Controller):
 
         # -- Inject available skills catalog into system prompt --
         if quest and quest.exists() and not (prompt and prompt.startswith('/')):
-            skills = quest.get_available_skills()
+            skills = _available_skills()
             if skills:
                 skill_lines = ["\n## Available Skills",
                     "(Activate explicitly with /skill-name. Skills also activate "
@@ -295,7 +309,7 @@ class AIStreamController(http.Controller):
             try:
                 _auto = []
                 _ptext = prompt.lower()
-                for _s in quest.get_available_skills():
+                for _s in _available_skills():
                     _trig = [
                         t.strip().lower()
                         for t in (_s.get('trigger_keywords') or '').split(',')
@@ -392,20 +406,30 @@ class AIStreamController(http.Controller):
                     # auktoritativa källan, och samma funktion används av
                     # coworker-vägen. En egen loop här tappade tool_calls, så
                     # modellen kunde inte relatera till vad den redan gjort.
+                    #
+                    # session-history-relevance 1.1: behåll Message-objekten
+                    # (inkl. tool_calls + tool-rader) hela vägen till AgentLoop.
+                    # Att serialisera till dictar här och bygga om i _stream()
+                    # kastade bort verktygsspåret.
                     lines = session.session_line_ids.sorted('sequence')
-                    history_messages = [
-                        m.to_openai()
-                        for m in session._build_history_from_lines()
-                    ]
+                    from odoo.addons.ai_agent_core.core.provider import (
+                        Message as _HMsg, Role as _HRole)
+                    history_messages = list(
+                        session._build_history_from_lines())
                     # Auto-summarize if too many messages
                     if len(lines) > 50:
                         summary = _summarize_history(session, lines)
+                        # session-history-relevance 2.2: relevansurval mot
+                        # frågan i stället för att blint ta de sista 20.
+                        # Senaste turen behålls alltid; äldre rankas mot prompt.
+                        _sel = session._select_history_for_query(
+                            history_messages, prompt, keep_last=1, budget=40)
                         if summary:
                             history_messages = (
-                                [{'role': 'system', 'content': summary}]
-                                + history_messages[-20:])
+                                [_HMsg(role=_HRole.SYSTEM, content=summary)]
+                                + _sel)
                         else:
-                            history_messages = history_messages[-20:]
+                            history_messages = _sel
 
                     # Save user message as session line (T7.4). Sekvensen
                     # härleds från sessionens HÖGSTA värde — inte radantalet,
@@ -526,6 +550,9 @@ class AIStreamController(http.Controller):
             no DB cursor. Only plain values captured above.
             """
             full_response = []
+            # session-history-relevance 3.5: tråd-handtag så att finally kan
+            # säkerställa att streaming-tråden är klar innan loopen rörs.
+            _thread_holder = {'thread': None}
             try:
                 _logger.info("SSE stream starting — prompt: %s...", prompt[:50])
                 loop = asyncio.new_event_loop()
@@ -537,27 +564,14 @@ class AIStreamController(http.Controller):
                         from odoo.addons.ai_agent_core.core.loop import StreamingAgentLoop, AgentConfig
                         from odoo.addons.ai_agent_core.core.supervisor import StreamingSupervisorLoop, SupervisorConfig, SpecialistAgent
                         from odoo.addons.ai_agent_core.core.interrupt import WebUIInterruptHandler
-                        from odoo.addons.ai_agent_core.core.provider import Message, Role
 
-                        # Konversationshistorik → Message-objekt (kontext mellan varv)
-                        # TOOL-rader hoppas över: de saknar assistant-tool_calls-
-                        # strukturen vid replay och ger 400 från providern.
-                        _ROLE_MAP = {
-                            'user': Role.USER, 'assistant': Role.ASSISTANT,
-                            'system': Role.SYSTEM,
-                        }
-                        history = []
-                        for item in (gen_history or []):
-                            content = item.get('content', '') or ''
-                            if not content:
-                                continue
-                            role = item.get('role')
-                            if role == 'tool':
-                                continue  # implementeringsdetalj, ej konversation
-                            history.append(Message(
-                                role=_ROLE_MAP.get(role, Role.USER),
-                                content=content,
-                            ))
+                        # Konversationshistorik (session-history-relevance 1.2):
+                        # gen_history är redan Message-objekt från sessionens
+                        # auktoritativa historikfunktion — inkl. assistant-
+                        # tool_calls och tool-rader parade. Ingen ombyggnad här:
+                        # den tidigare lokala loopen filtrerade bort tool-rader
+                        # och tappade verktygsspåret.
+                        history = list(gen_history or [])
                         # HITL: registrera WebUI-interrupt-handler för denna
                         # stream så att godkännanden (odoo_call_method,
                         # odoo_write, odoo_unlink …) når användaren i chatten.
@@ -701,9 +715,67 @@ class AIStreamController(http.Controller):
                     from odoo import api as _api
                     from odoo.modules.registry import Registry as _Registry
                     state = {'loop_obj': None}
+                    # ── ÄKTA STREAMING (session-history-relevance 3.4) ──
+                    # Tidigare samlades HELA strömmen i en lista
+                    # (`_collect(_stream(...))`) och yieldades först efteråt
+                    # → klienten såg ingenting förrän hela svaret var klart
+                    # (mätt: första SSE-händelse efter 2,41 s, totaltid 2,41 s).
+                    # Nu driver en bakgrundstråd async-generatorn och lägger
+                    # chunks i en kö som yieldas direkt — samma mönster som
+                    # /ai/v1/chat/completions använder.
+                    import queue as _queue
+                    import threading as _threading
+                    _chunk_q = _queue.Queue(maxsize=256)
+                    _SENTINEL = object()
+                    _stream_err = {'exc': None}
+                    _loop_holder = {'loop': loop}
+
                     with _Registry(gen_dbname).cursor() as gen_cr:
                         gen_env = _api.Environment(gen_cr, gen_uid, gen_context)
-                        results = loop.run_until_complete(_collect(_stream(gen_env)))
+
+                        def _drive_stream():
+                            """Kör async-generatorn i egen loop, putta chunks."""
+                            asyncio.set_event_loop(loop)
+                            try:
+                                async def _run(agen):
+                                    try:
+                                        async for chunk in agen:
+                                            _chunk_q.put(chunk)
+                                    finally:
+                                        try:
+                                            await agen.aclose()
+                                        except Exception:
+                                            pass
+
+                                _agen = _stream(gen_env)
+                                loop.run_until_complete(_run(_agen))
+                            except Exception as _e:
+                                _stream_err['exc'] = _e
+                            finally:
+                                _chunk_q.put(_SENTINEL)
+
+                        _thread = _threading.Thread(
+                            target=_drive_stream, daemon=True)
+                        _thread_holder['thread'] = _thread
+                        _thread.start()
+
+                        # Yielda direkt medan tråden producerar.
+                        while True:
+                            try:
+                                _item = _chunk_q.get(timeout=300)
+                            except _queue.Empty:
+                                _logger.error(
+                                    'stream timeout: ingen chunk på 300s')
+                                break
+                            if _item is _SENTINEL:
+                                break
+                            yield _item
+
+                        _thread.join(timeout=30)
+
+                        if _stream_err['exc'] is not None:
+                            raise _stream_err['exc']
+
                         # Efter streamen: persistera verktygsanrop som
                         # role='tool'-rader (granskningsbar kontext per
                         # meddelande) — loop_obj.tool_history fylls av
@@ -732,9 +804,13 @@ class AIStreamController(http.Controller):
                             _logger.warning(
                                 'persist stream answer failed', exc_info=True)
                         gen_cr.commit()
-                    for chunk in results:
-                        yield chunk
                 finally:
+                    # session-history-relevance 3.5: låt streaming-tråden bli
+                    # klar först — annars kan finally röra loopen medan tråden
+                    # fortfarande kör den (drain/aclose/close kolliderar).
+                    _th = _thread_holder.get('thread')
+                    if _th is not None and _th.is_alive():
+                        _th.join(timeout=30)
                     # Stäng providerns httpx-klient innan loopen stängs —
                     # annars lämnas httpx's interna task pending (asyncio
                     # 'Task was destroyed but it is pending!').

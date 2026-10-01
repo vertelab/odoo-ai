@@ -699,6 +699,101 @@ class AICoworkerSession(models.Model):
             return ''
         return '[Verktygsanrop i denna tur: %s]' % '; '.join(names)
 
+    # ── Relevansbedömning av sessionhistoriken ───────────────────────
+    # (session-history-relevance 2.x) Historiken injicerades tidigare blint
+    # som de sista N meddelandena. Det gjorde att irrelevanta turer kunde
+    # tränga ut relevanta. Här väljs i stället turer mot den aktuella
+    # frågan: senaste turen behålls alltid, äldre rankas deterministiskt
+    # (lexikal överlapp — ingen LLM, ingen latens i kritisk väg).
+
+    @staticmethod
+    def _history_turns(history):
+        """Dela historiken i turer (user → nästa user).
+
+        Returnerar en lista av (start_index, end_index_exklusiv, turn).
+        Meddelanden före första user-raden (t.ex. ett system-snapshot)
+        blir sin egen inledande grupp.
+        """
+        turns = []
+        start = 0
+        for i, m in enumerate(history):
+            role = getattr(m.role, 'value', m.role)
+            if role == 'user' and i > start:
+                turns.append((start, i, history[start:i]))
+                start = i
+        if start < len(history):
+            turns.append((start, len(history), history[start:]))
+        return turns
+
+    @staticmethod
+    def _history_tokens(text):
+        """Låg-normaliserade ord (>=3 tecken) för lexikalt överlapp."""
+        import re
+        return set(re.findall(r'\w{3,}', (text or '').lower()))
+
+    def _select_history_for_query(self, history, query, keep_last=1,
+                                  budget=40):
+        """Välj historik mot frågan (session-history-relevance D2).
+
+        Senaste `keep_last` turerna behålls alltid. Äldre turer rankas mot
+        `query` och tas med i fallande relevans tills `budget` meddelanden
+        nåtts (räknat i meddelanden, inte turer). En tur vars ord överlappar
+        frågan behålls framför en utan överlapp.
+
+        Deterministisk och billig: ingen LLM, ingen extern sökning — den
+        får inte ligga i den kritiska vägen (TTFT).
+
+        Args:
+            history: list[Message] (sessionens auktoritativa historik)
+            query: aktuell fråga (prompt)
+            keep_last: antal senaste turer som alltid behålls
+            budget: max antal meddelanden i det valda resultatet
+        """
+        history = list(history or [])
+        if not history:
+            return []
+        turns = self._history_turns(history)
+        if not turns:
+            return history
+        q_tokens = self._history_tokens(query)
+
+        # Senaste turerna behålls alltid.
+        n = len(turns)
+        keep_from = max(0, n - max(1, keep_last))
+        kept = [turns[i] for i in range(keep_from, n)]
+        older = [turns[i] for i in range(0, keep_from)]
+
+        def _overlap(turn):
+            text = ' '.join(getattr(m, 'content', '') or '' for m in turn[2])
+            return len(q_tokens & self._history_tokens(text))
+
+        # Äldre turer: högst överlapp först, därefter senast (stabil ordning).
+        older_ranked = sorted(
+            older, key=lambda t: (-_overlap(t), -t[0]))
+
+        selected = list(kept)
+        used = sum(end - start for start, end, _ in kept)
+        for turn in older_ranked:
+            size = turn[1] - turn[0]
+            if used + size > budget:
+                continue
+            selected.append(turn)
+            used += size
+
+        # Återställ ursprunglig ordning så historiken förblir kronologisk.
+        selected.sort(key=lambda t: t[0])
+        result = []
+        for _, _, turn in selected:
+            result.extend(turn)
+        # session-history-relevance 2.3: logga urvalet så beteendet går att
+        # följa i drift (hur många turer som behölls/uteslöts).
+        _logger.info(
+            'session %s: historikurval %s/%s turer, %s/%s meddelanden '
+            '(fråga: %s tecken)',
+            self.id, len(selected), len(turns), len(result), len(history),
+            len(query or ''))
+        return result
+
     def _sync_pi_message_count(self):
         """Avstäm pi_message_count mot antalet faktiska meddelanderader.
 
