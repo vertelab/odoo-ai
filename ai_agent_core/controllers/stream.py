@@ -25,6 +25,11 @@ from odoo.addons.ai_agent_core.core.dsml import (  # noqa: E402
     contains_dsml, parse_dsml, strip_dsml,
 )
 
+# ToolError: verktygen RETURNERAR den (i stallet for att kasta) — se
+# _run_one i /ai/v1/tools/run. Vi behover klassen for att kunna kanna igen
+# ett verktygsfel och satta is_error ratt.
+from odoo.addons.ai_agent_core.core.tools import ToolError  # noqa: E402
+
 # Import access control helper (quest-access-control change)
 # Fånga ALLA undantag: vid tidig import (stream.py → ai_coworker → models)
 # kan AssertionError uppstå (base_sparse_field ej laddad), vilket annars
@@ -106,6 +111,28 @@ def _clean_user_message(text):
 # ---------------------------------------------------------------------------
 # SSE Controller
 # ---------------------------------------------------------------------------
+
+
+def _looks_like_tool_error(text):
+    """Ser en verktygs-JSON ut som ett fel?
+
+    Verktygen svarar med HTTP 200 aven nar de misslyckas, och lagger felet i
+    ett 'error'-falt i JSON:en (core/tools.py). Utan denna kontroll satte
+    /ai/v1/tools/run is_error: False pa ett misslyckat anrop — felet sag ut
+    som framgang hela vagen upp till agenten.
+
+    Vi letar bara efter en 'error'-nyckel i ett JSON-objekt pa toppniva, sa
+    ett verktyg som legitimt returnerar {'error': ...} som DATA (t.ex. en
+    logg-lasning) far is_error: True. Det ar avsiktligt: hellre en falsk
+    positiv an att tysta ett verktygsfel.
+    """
+    if not isinstance(text, str) or not text.startswith('{'):
+        return False
+    try:
+        parsed = json.loads(text)
+    except (ValueError, TypeError):
+        return False
+    return isinstance(parsed, dict) and bool(parsed.get('error'))
 
 
 class AIStreamController(http.Controller):
@@ -3896,7 +3923,22 @@ class AIOpenAIAPI(http.Controller):
                             'is_error': True}
                 try:
                     result = await tool.execute(**args)
-                    return {'name': name, 'result': str(result),
+                    # Verktygen RETURNERAR ToolError(...).to_json() i stallet
+                    # for att kasta den (core/tools.py, 12 stallen). ToolError
+                    # ar ett undantag men blir har ett vanligt returvarde — och
+                    # da sattes is_error: False trots att verktyget
+                    # misslyckats. Las av resultatet och satt flaggan ratt;
+                    # annars ser ett fel ut som framgang.
+                    if isinstance(result, ToolError):
+                        return {'name': name,
+                                'result': result.to_json(),
+                                'is_error': True}
+                    text = str(result)
+                    if _looks_like_tool_error(text):
+                        return {'name': name,
+                                'result': text,
+                                'is_error': True}
+                    return {'name': name, 'result': text,
                             'is_error': False}
                 except Exception as e:
                     return {'name': name,
