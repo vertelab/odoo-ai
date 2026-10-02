@@ -1537,6 +1537,46 @@ def builtin_tools() -> list[Tool]:
             risk_level="read_only",
             source="odoo_model",
         ),
+        Tool(
+            name="delegate_task",
+            description=(
+                "Lägg ett uppdrag hos en kollega (ai.coworker) i din "
+                "avdelning. Använd när uppgiften ligger utanför din egen "
+                "förmåga men inom din avdelning (sidledes) eller under dig "
+                "(neråt) — t.ex. en redovisningscoworker som ber en "
+                "driftcoworker kolla loggarna. Delegering går ALDRIG uppåt "
+                "(det är eskalering) eller tvärs över avdelningar. "
+                "Uppdraget bär ditt tillitssteg och utförs av kollegan i "
+                "deras egen takt (heartbeat); du får svaret därifrån. "
+                "Se kollegakatalogen i systemprompten för giltiga mottagare."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "target_coworker": {
+                        "type": "string",
+                        "description": "Mottagarens namn (se kollegakatalogen)",
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Vad som ska göras (krävs — en tom uppgift ruttnar)",
+                    },
+                    "name": {
+                        "type": "string",
+                        "description": "Kort rubrik (default: description)",
+                    },
+                    "priority": {
+                        "type": "string",
+                        "enum": ["0", "1", "2", "3"],
+                        "description": "0=Låg, 1=Normal, 2=Hög, 3=Brådskande",
+                    },
+                },
+                "required": ["target_coworker", "description"],
+            },
+            handler=_tool_delegate_task,
+            risk_level="write",
+            source="builtin",
+        ),
     ]
 
 
@@ -2752,6 +2792,123 @@ def _tool_okf_search(env, query='', scope='company', limit=10):
         return json.dumps(out, default=str)
     except Exception as e:
         return json.dumps({"error": f"okf_search failed: {e}"})
+
+
+# ---------------------------------------------------------------------------
+# Delegering (coworker-delegation)
+# ---------------------------------------------------------------------------
+
+def _current_coworker(env):
+    """Coworkern som kör just nu (via session-kontexten), eller None.
+
+    Sessionen är den kanoniska "aktuella körningen" — samma idiom som
+    `_resolve_session` och okf_search använder.
+    """
+    if env.context.get('_ai_context_model') != 'ai.coworker.session':
+        return None
+    sess_id = env.context.get('_ai_context_id')
+    if not sess_id:
+        return None
+    sess = env['ai.coworker.session'].browse(int(sess_id))
+    if sess.exists() and sess.coworker_id:
+        return sess.coworker_id
+    return None
+
+
+def _delegation_error(message, parameter='', expected='', retryable=True,
+                      tool_name='delegate_task'):
+    """Åtgärdbart fel (spec: Actionable errors)."""
+    import json as _json
+    out = {"error": message, "ok": False}
+    if parameter:
+        out["parameter"] = parameter
+    if expected:
+        out["expected"] = expected
+    out["retryable"] = retryable
+    return _json.dumps(out, ensure_ascii=False)
+
+
+def _tool_delegate_task(env, target_coworker='', description='',
+                        name='', priority='1'):
+    """Lägg ett uppdrag hos en kollega i organisationen.
+
+    Delegering är ORGANISATION: mottagaren måste ligga i din avdelning
+    (sidledes) eller under dig i avdelningsträdet (neråt) — aldrig uppåt
+    (det är eskalering) eller tvärs över avdelningar. Uppdraget bär ditt
+    tillitssteg och utförs under min(beställare, utförare), så delegering
+    ger ingen ny befogenhet. Budgeten är mottagarens; kostnaden kan följas
+    via uppdragets träd (parent_task_id).
+
+    Använd när uppgiften ligger utanför din egen förmåga men inom din
+    avdelning. Ange mottagarens exakta namn (se kollegakatalogen).
+
+    Args:
+        target_coworker: mottagarens namn (eller id) — se kollegakatalogen.
+        description: vad som ska göras (krävs; en tom uppgift ruttnar).
+        name: kort rubrik (default: description).
+        priority: 0=Låg, 1=Normal, 2=Hög, 3=Brådskande.
+
+    Returns:
+        JSON med ok + task_id + mottagare, eller ett åtgärdbart fel.
+    """
+    import json as _json
+    requester = _current_coworker(env)
+    if requester is None:
+        return _delegation_error(
+            'delegate_task kan bara användas inuti en coworker-körning '
+            '(ingen aktuell session i kontexten).',
+            parameter='target_coworker', retryable=False)
+    if not (description or '').strip():
+        return _delegation_error(
+            'description krävs — en uppgift utan beskrivning köas inte.',
+            parameter='description',
+            expected='en tydlig beskrivning av uppdraget', retryable=True)
+    target_coworker = str(target_coworker or '').strip()
+    if not target_coworker:
+        return _delegation_error(
+            'target_coworker krävs — ange kollegans namn (se '
+            'kollegakatalogen).', parameter='target_coworker',
+            expected='en kollega i din avdelning (eller under dig)',
+            retryable=True)
+
+    Coworker = env['ai.coworker']
+    target = Coworker.browse(int(target_coworker)) \
+        if target_coworker.isdigit() else None
+    if target is not None and not target.exists():
+        target = None
+    if target is None:
+        target = Coworker.search([('name', '=', target_coworker)], limit=1)
+    if not target:
+        target = Coworker.search([('name', 'ilike', target_coworker)], limit=1)
+    if not target:
+        return _delegation_error(
+            'Hittade ingen kollega som matchar "%s".' % target_coworker,
+            parameter='target_coworker',
+            expected='exakt namn på en kollega i din avdelning '
+                     '(se kollegakatalogen)', retryable=True)
+
+    try:
+        task = requester._delegate_task_to(
+            target, description, name=(name or None), priority=priority)
+    except Exception as e:
+        # ValidationError från _delegate_task_to bär redan ett begripligt
+        # meddelande (riktning, mottagbarhet, djup, kvot). Andra fel blir
+        # ett internt fel — men aldrig en tyst framgång.
+        if type(e).__name__ == 'ValidationError':
+            return _delegation_error(str(e), retryable=True)
+        return _internal_error('delegate_task', e).to_json()
+
+    return _json.dumps({
+        "ok": True,
+        "task_id": task.id,
+        "name": task.name,
+        "target": target.name,
+        "delegation_depth": task.delegation_depth,
+        "message": ("Uppdraget ligger nu hos %s. Du får svaret därifrån när "
+                    "kollegan plockar upp det." % target.name),
+    }, ensure_ascii=False)
+
+
 # ---------------------------------------------------------------------------
 # Quest Builder Tool Handlers
 # ---------------------------------------------------------------------------

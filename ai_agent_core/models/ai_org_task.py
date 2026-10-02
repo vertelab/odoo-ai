@@ -24,6 +24,7 @@ TASK_SOURCES = [
 class AIOrgTask(models.Model):
     _name = 'ai.org.task'
     _description = 'AI Organization Task'
+    _inherit = ['mail.thread', 'mail.activity.mixin']
     _rec_name = 'name'
     _order = 'priority desc, create_date asc'
 
@@ -38,6 +39,27 @@ class AIOrgTask(models.Model):
         selection=[('res.users', 'User'), ('ai.agent', 'AI Agent')],
         string='Requester',
         help='Vem som beställde uppgiften.')
+
+    # Delegering (coworker-delegation): ett uppdrag som en coworker lagt hos
+    # en kollega via delegate_task. beställare_trust och delegation_depth
+    # frystes vid skapandet och kan inte ändras av mottagaren.
+    beställare_trust = fields.Integer(
+        'Requester Trust Step', readonly=True, default=0,
+        help='Beställarens tillitssteg när uppdraget skapades. Uppdraget '
+             'utförs under min(beställare, utförare) — delegering ger ingen '
+             'ny befogenhet. Readonly: sätts av delegate_task.')
+    delegation_depth = fields.Integer(
+        'Delegation Depth', readonly=True, default=0,
+        help='Antal delegeringsled bakåt (beställarens djup + 1). Skyddar '
+             'mot kedjor som växer obegränsat. Readonly: sätts av '
+             'delegate_task.')
+    parent_task_id = fields.Many2one(
+        'ai.org.task', string='Delegated From',
+        index=True, ondelete='set null',
+        help='Uppgiften som delegerade denna (task-trädet). Gör att en '
+             'delegeringskedjas samlade kostnad kan följas upp.')
+    delegated_task_ids = fields.One2many(
+        'ai.org.task', 'parent_task_id', string='Delegated Tasks')
 
     # Källa
     source = fields.Selection(TASK_SOURCES, default='manual')

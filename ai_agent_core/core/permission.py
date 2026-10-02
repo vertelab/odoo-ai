@@ -243,6 +243,14 @@ class PermissionEngine:
     # gruppbundna verktyg nekas.
     user_group_ids: set = field(default_factory=set)
 
+    # Delegerad tillit (coworker-delegation D4): None = inte ett delegerat
+    # uppdrag. När satt (0/1/2 = beställarens tillitssteg) gäller
+    # min(beställare, utförare) — uppdraget utförs under det MEST restriktiva
+    # av de två. Grinden kan bara SKÄRPAS, aldrig vidgas: en låg beställare
+    # kan inte låna utförarens autonomi. Hårda stopp ligger före och påverkas
+    # inte.
+    delegated_trust: Optional[int] = None
+
     # Write tool names that require path scoping (from OpenWorker)
     _WRITE_TOOLS = {"write", "write_file", "create"}
     _SHELL_TOOLS = {"run_shell", "shell", "exec", "eval"}
@@ -306,6 +314,29 @@ class PermissionEngine:
                 reason=(f"{tool_name} kräver alltid mänskligt godkännande "
                         "(hårt stopp)"),
             )
+
+        # -- Delegerad tillit (coworker-delegation D4) --
+        # Ett delegerat uppdrag utförs under min(beställare, utförare).
+        # `delegated_trust` är redan det effektiva min-värdet (0/1/2) som
+        # anroparen beräknat. Grinden kan bara SKÄRPAS: en låg beställare kan
+        # inte låna utförarens autonomi. Hårda stopp ovan påverkas inte.
+        #   < 2  → konsekventa handlingar kräver mänskligt godkännande
+        #   == 2 → utförarens normala grind gäller (faller igenom nedan)
+        if self.delegated_trust is not None \
+                and self.delegated_trust < 2 \
+                and self.mode not in READ_ONLY_MODES:
+            _arg_risk2 = _argument_risk(tool_name, arguments)
+            _risk2 = _arg_risk2 if _arg_risk2 is not None else classify(
+                tool_name, risk_level, metadata)
+            if _risk2 is not RiskClass.READ:
+                return Decision(
+                    allowed=True,
+                    needs_user=True,
+                    reason=(
+                        f"delegerat uppdrag: effektivt tillitssteg "
+                        f"{self.delegated_trust} (min(beställare, utförare)) "
+                        f"kräver mänskligt godkännande för '{tool_name}'"),
+                )
 
         # -- AUTO mode: everything allowed --
         if self.mode == PermissionMode.AUTO:

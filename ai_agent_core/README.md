@@ -955,3 +955,90 @@ Saknas båda pekar felet på **Odoo Settings → AI → Google API Key**.
   OCH `superseded_by_id` (atomärt) — en konsument kan följa kedjan.
 - **Ägarkrav:** en sökning i `company`/`personal`-scope kräver `owner_id`;
   utan den nekas den (aldrig tyst läcka mellan ägare).
+
+## Delegering mellan medarbetare (`coworker-delegation`)
+
+En AI-medarbetare kan lägga ett **uppdrag** hos en kollega istället för att
+absorbera förmågan själv — så att varje coworker förblir smal och bredden
+bärs av **organisationen**. Verktyget heter `delegate_task` och kräver
+explicit `tool_ids` på agenten (som alla andra verktyg).
+
+```
+delegate_task(target_coworker="Driftare", description="Kolla loggarna på gw0")
+```
+
+Uppdraget blir en `ai.org.task` med `coworker_id` = mottagaren och
+`beställare_ref` = beställarens agent. Mottagarens heartbeat plockar upp det
+i sin egen takt — uppdraget är **kontraktet**; notisen är bara dörrklockan.
+
+### Delegering är organisation
+
+Uppdraget får bara läggas **neråt** (mottagarens avdelning är en ättling i
+`hr.department.parent_id`-kedjan) eller **sidledes** (samma avdelning).
+**Uppåt** (till chefen) är eskalering, inte delegering, och **tvärs** över
+avdelningar nekas. Saknar mottagaren eller beställaren avdelning är det ett
+**hårt fel** — ingen fallback till en anonym pool.
+
+```python
+ok, reason = beställare._delegation_target_allowed(mottagare)   # riktning
+ok, reason = mottagare._is_receptive()                          # mottagbar?
+```
+
+### Tillit ärvs — delegering ger ingen ny befogenhet
+
+Uppdraget bär beställarens tillitssteg (`beställare_trust`) och utförs under
+`min(beställare, utförare)`. Grinden kan bara **skärpas**: en ny medarbetare
+(steg 0) kan inte låna en betrodd kollegas autonomi. Hårda stopp
+(`odoo_call_method`, `odoo_unlink`) kan aldrig kringgås via delegering.
+Implementerat som `PermissionEngine.delegated_trust` (core/permission.py).
+
+### Delegeringsdjup och kvot
+
+- `delegation_depth` (beställarens djup + 1) ärvs och kan inte ändras av
+  mottagaren. Maxdjup: `ai_agent_core.delegation_max_depth` (default 3) —
+  skyddar mot kedjor, eftersom varje steg är en ny session.
+- Dygnskvot per `(beställare, mottagare)`:
+  `ai_agent_core.delegation_max_per_recipient_per_day` (default 10).
+
+### Liveness — ett verkligt livstecken
+
+Mottagbarhet kräver `last_successful_run` inom
+`ai_agent_core.delegation_liveness_window_minutes` (default 30) — **inte**
+`last_heartbeat`, som är en rotationsmarkör (uppdateras varje cron-tick även
+utan arbete). En mottagare som är budget-tömd eller saknar livstecken nekas,
+så att uppdraget inte ruttnar i kön.
+
+### Budget och attribution — två axlar
+
+Körningen bokförs på **mottagarens** `session_line_count` (oförändrat).
+Den samlade kostnaden för ett ärende följs via task-trädet
+(`parent_task_id` / `delegated_task_ids`). Budget och attribution slås aldrig
+ihop — samma två-axel-princip som `ai.cost.period.line`.
+
+### Kollegakatalog och uppmärksamhet
+
+- Varje coworkers systemprompt får en **kollegakatalog** ("Kollegor du kan
+  delegera till") med namn, roll, kort beskrivning och mottagbarhet — byggd
+  av samma filter som riktningsregeln (`_build_colleague_catalog`).
+- `ai.org.task` ärver `mail.thread` + `mail.activity.mixin`: delegering
+  skapar en aktivitet i mottagarens klocka + en notis. Tappas notisen plockar
+  heartbeat upp uppdraget ändå.
+- Mätande cron (`_cron_measure_runs`) rapporterar **task-åldring**:
+  uppdrag i `todo`/`in_progress` äldre än
+  `ai_agent_core.task_stale_minutes` (default 1440 min) listas så att en
+  delegering som ruttnar blir synlig.
+
+### Nya fält
+
+| Modell | Fält | Betydelse |
+|---|---|---|
+| `ai.org.task` | `beställare_trust` | beställarens tillitssteg (readonly) |
+| `ai.org.task` | `delegation_depth` | kedjedjup (readonly) |
+| `ai.org.task` | `parent_task_id` | uppdraget som delegerade denna |
+| `ai.coworker` | `last_successful_run` | verkligt livstecken |
+
+### Icke-mål
+
+Ingen fri "skicka till vem som helst"-pool (delegering är organisationsbunden),
+ingen mesh/NATS som kontrakt, ingen ändring av `ai.coworker.hitl`, ingen
+kapabilitetsmatchning över avdelningsgränser.

@@ -4777,6 +4777,17 @@ class AICoworker(models.Model):
         if extra:
             system_prompt = (system_prompt or '') + extra
 
+        # Kollegakatalog (coworker-delegation D6): lista kollegor denna
+        # coworker får delegera till. Samma mönster som _build_pi_instruction
+        # bygger för verktyg/skills. Tom när inga delegeringsbara kollegor
+        # finns — då är beteendet oförändrat.
+        try:
+            colleague_catalog = self._build_colleague_catalog()
+            if colleague_catalog:
+                system_prompt = (system_prompt or '') + '\n\n' + colleague_catalog
+        except Exception as e:
+            _logger.warning('Kollegakatalog misslyckades (tyst): %s', e)
+
         # NATS user context (pi-agent-memory-bridge D5)
         nats_ctx = self._get_nats_user_context()
 
@@ -7001,6 +7012,12 @@ class AICoworker(models.Model):
                 if interrupt_handler is not None:
                     loop_obj.interrupt_handler = interrupt_handler
 
+                # Delegerad tillit (coworker-delegation D4): ett uppdrag som
+                # en kollega lagt bär beställarens tillitssteg. Uppdraget
+                # utförs under min(beställare, utförare) — grinden kan bara
+                # skärpas, aldrig vidgas.
+                self._apply_delegated_trust(loop_obj, session)
+
                 async def _run():
                     try:
                         return await loop_obj.run(
@@ -7657,6 +7674,357 @@ class AICoworker(models.Model):
         'hr.department', string='Department',
         help='Avdelningen som denna AI-medarbetare tillhör.')
 
+    # ── Delegering (coworker-delegation) ──
+    #
+    # Delegering är ORGANISATION: en coworker får lägga ett uppdrag
+    # (ai.org.task) hos en kollega i sin avdelning (sidledes) eller under sig
+    # i hr.department-hierarkin (neråt) — aldrig uppåt (det är eskalering),
+    # aldrig tvärs över avdelningar utan chefernas länk. Uppdraget bär
+    # beställarens tillitssteg och ett delegeringsdjup; mottagaren utför det
+    # under min(beställare, utförare). Budgeten är mottagarens (oförändrat);
+    # attribution sker via parent_task_id-trädet.
+
+    def _delegation_depth(self):
+        """Djupet denna coworker delegerar PÅ (0 = har inget uppdrag)."""
+        self.ensure_one()
+        sess = self._current_delegation_session()
+        if sess and sess.ai_task_id:
+            return sess.ai_task_id.delegation_depth or 0
+        return 0
+
+    def _current_delegation_session(self):
+        """Sessionen som körs just nu (via env.context), eller tomt."""
+        self.ensure_one()
+        if self.env.context.get('_ai_context_model') == 'ai.coworker.session':
+            sess_id = self.env.context.get('_ai_context_id')
+            if sess_id:
+                return self.env['ai.coworker.session'].browse(int(sess_id))
+        return self.env['ai.coworker.session']
+
+    def _is_delegation_ancestor_of(self, target):
+        """Är `self` en förfader till `target` i hr.department-hierarkin?"""
+        self.ensure_one()
+        target.ensure_one()
+        if not self.department_id or not target.department_id:
+            return False
+        node = target.department_id
+        seen = set()
+        while node and node.id not in seen:
+            if node.id == self.department_id.id:
+                return True
+            seen.add(node.id)
+            node = node.parent_id
+        return False
+
+    def _delegation_target_allowed(self, target):
+        """Riktningsregeln (D3): får `self` delegera till `target`?
+
+        Tillåtet: sidledes (samma avdelning) eller neråt (target:s avdelning
+        är en ättling till self:s). Nekat: uppåt, tvärs, eller när någon av
+        parterna saknar avdelning (D10 — hårt fel, ingen anonym pool).
+
+        Returnerar (ok, reason).
+        """
+        self.ensure_one()
+        target.ensure_one()
+        if self.id == target.id:
+            return False, 'En medarbetare kan inte delegera till sig själv.'
+        if not self.department_id:
+            return False, (
+                'Beställaren %s saknar avdelning — delegering kräver att '
+                'organisationen är ifylld.' % self.name)
+        if not target.department_id:
+            return False, (
+                'Mottagaren %s saknar avdelning — delegering kräver att '
+                'organisationen är ifylld.' % target.name)
+        if target.department_id.id == self.department_id.id:
+            return True, 'sidledes inom avdelningen'
+        if self._is_delegation_ancestor_of(target):
+            return True, 'neråt i avdelningsträdet'
+        return False, (
+            'Delegering till %s nekas: den ligger utanför din '
+            'delegeringsriktning (neråt eller sidledes inom %s). '
+            'Eskalering uppåt sker inte via delegering.'
+            % (target.name, self.department_id.name))
+
+    def _is_receptive(self, window_minutes=None):
+        """Mottagbarhetsgrinden (D5). Returnerar (ok, reason).
+
+        Mottagbar = active ∧ status='active' ∧ heartbeat_enabled
+        ∧ ¬budget_exhausted ∧ last_successful_run inom fönstret.
+        `last_heartbeat` används INTE (rotationsmarkör, falskt positiv).
+        """
+        self.ensure_one()
+        if not self.active or self.status != 'active':
+            return False, '%s är inte aktiv.' % self.name
+        if not self.heartbeat_enabled:
+            return False, (
+                '%s har heartbeat avstängt och vaknar inte för uppdrag.'
+                % self.name)
+        if self.budget_exhausted:
+            return False, '%s har slut på månadsbudget.' % self.name
+        if window_minutes is None:
+            try:
+                window_minutes = int(self.env['ir.config_parameter'].sudo()
+                    .get_param(
+                        'ai_agent_core.delegation_liveness_window_minutes',
+                        '30'))
+            except Exception:
+                window_minutes = 30
+        if not self.last_successful_run:
+            return False, (
+                '%s saknar ett verkligt livstecken (ingen lyckad körning '
+                'ännu) — uppdraget skulle ruttna i kön.' % self.name)
+        from datetime import timedelta
+        cutoff = fields.Datetime.now() - timedelta(minutes=window_minutes)
+        if self.last_successful_run < cutoff:
+            return False, (
+                '%s har inte haft en lyckad körning inom %d minuter — '
+                'anses inte levande för arbete.'
+                % (self.name, window_minutes))
+        return True, 'mottagbar'
+
+    def _delegation_candidates(self):
+        """Kollegor `self` får delegera till OCH som är mottagbara (D6).
+
+        Samma filter som riktningsregeln + mottagbarhet. Används både av
+        verktygets validering och av kollegakatalogen i systemprompten.
+        """
+        self.ensure_one()
+        if not self.department_id:
+            return self.env['ai.coworker']
+        allowed = self.env['ai.coworker']
+        for other in self.env['ai.coworker'].search([
+                ('active', '=', True), ('status', '=', 'active')]):
+            if other.id == self.id:
+                continue
+            ok, _reason = self._delegation_target_allowed(other)
+            if ok:
+                allowed |= other
+        return allowed
+
+    def _build_colleague_catalog(self):
+        """Kollegakatalog för systemprompten (D6).
+
+        Listar kollegor beställaren får delegera till, med namn, roll och
+        kort beskrivning (kapad) — samma mönster som `_build_pi_instruction`
+        bygger för verktyg och skills. Tom sträng när inga kollegor finns
+        (oförändrat beteende).
+        """
+        self.ensure_one()
+        try:
+            candidates = self._delegation_candidates()
+            if not candidates:
+                return ''
+            lines = []
+            for c in candidates.sorted('name'):
+                role = ''
+                if c.employee_id and c.employee_id.job_id:
+                    role = c.employee_id.job_id.name
+                desc = (c.description or '').strip().replace('\n', ' ')[:200]
+                ok, reason = c._is_receptive()
+                status = 'mottagbar' if ok else 'EJ mottagbar (%s)' % reason
+                entry = '- **%s**' % c.name
+                if role:
+                    entry += ' (%s)' % role
+                if desc:
+                    entry += ': %s' % desc
+                entry += ' [%s]' % status
+                lines.append(entry)
+            return (
+                '## Kollegor du kan delegera till\n'
+                'Lägg ett uppdrag hos en kollega med verktyget '
+                '`delegate_task` när uppgiften ligger utanför din egen '
+                'förmåga men inom din avdelning (sidledes) eller under dig '
+                '(neråt).\n' + '\n'.join(lines))
+        except Exception as e:
+            _logger.warning('_build_colleague_catalog failed: %s', e)
+            return ''
+
+    def _delegation_quota_used(self, target):
+        """Antal uppdrag `self` lagt hos `target` idag (D8)."""
+        self.ensure_one()
+        target.ensure_one()
+        from datetime import date
+        today = date.today()
+        start = fields.Datetime.to_string(
+            fields.Datetime.now().replace(hour=0, minute=0, second=0,
+                                          microsecond=0))
+        agent = self.agent_ids[:1].agent_id if self.agent_ids else None
+        if not agent:
+            return 0
+        return self.env['ai.org.task'].search_count([
+            ('coworker_id', '=', target.id),
+            ('beställare_ref', '=', 'ai.agent,%s' % agent.id),
+            ('create_date', '>=', start),
+        ])
+
+    def _delegate_task_to(self, target, description, name=None,
+                          priority='1', goal_id=None):
+        """Skapa ett uppdrag hos `target` från denna coworker (D1–D10).
+
+        Validerar riktning, mottagbarhet, djup och kvot. Skapar ai.org.task
+        med beställarens tillitssteg och delegeringsdjup, samt uppmärksammar
+        mottagaren (aktivitet + notis, D7). Kastar ValidationError med ett
+        åtgärdbart fel vid avslag — ingen tyst fallback.
+
+        Returns: den skapade ai.org.task-posten.
+        """
+        self.ensure_one()
+        target.ensure_one()
+        description = (description or '').strip()
+        if not description:
+            raise ValidationError(
+                'delegate_task kräver en beskrivning av uppdraget — en tom '
+                'uppgift skulle bara ruttna i mottagarens kö.')
+
+        # D3 + D10: riktning och fullständig organisation.
+        ok, reason = self._delegation_target_allowed(target)
+        if not ok:
+            raise ValidationError('Delegering nekas: %s' % reason)
+
+        # D5: mottagbarhet.
+        ok, reason = target._is_receptive()
+        if not ok:
+            raise ValidationError(
+                'Delegering nekas: %s Välj en annan kollega, eller vänta '
+                'tills mottagaren är tillbaka.' % reason)
+
+        # D2: djup-taket — ny session per steg nollställer annars rundräknare.
+        depth = self._delegation_depth() + 1
+        try:
+            max_depth = int(self.env['ir.config_parameter'].sudo()
+                .get_param('ai_agent_core.delegation_max_depth', '3'))
+        except Exception:
+            max_depth = 3
+        if depth > max_depth:
+            raise ValidationError(
+                'Delegering nekas: maxdjup (%d) nått. Kedjan skulle växa '
+                'obegränsat (varje steg är en ny session).' % max_depth)
+
+        # D8: dygnskvot per (beställare, mottagare).
+        try:
+            quota = int(self.env['ir.config_parameter'].sudo()
+                .get_param(
+                    'ai_agent_core.delegation_max_per_recipient_per_day',
+                    '10'))
+        except Exception:
+            quota = 10
+        if self._delegation_quota_used(target) >= quota:
+            raise ValidationError(
+                'Delegering nekas: dygnskvoten (%d) mot %s är nådd. '
+                'Försök igen imorgon.' % (quota, target.name))
+
+        # D2: beställarens tillitssteg frystes vid skapandet.
+        trust = 0
+        if self.hitl_threshold == 'high_risk':
+            trust = 1
+        elif self.hitl_threshold == 'autonomous':
+            trust = 2
+
+        agent = self.agent_ids[:1].agent_id if self.agent_ids else None
+        parent = None
+        sess = self._current_delegation_session()
+        if sess and sess.ai_task_id:
+            parent = sess.ai_task_id
+
+        task = self.env['ai.org.task'].create({
+            'name': (name or description)[:120],
+            'description': description,
+            'coworker_id': target.id,
+            'beställare_ref': 'ai.agent,%s' % agent.id if agent else False,
+            'source': 'manual',
+            'status': 'todo',
+            'priority': priority,
+            'goal_id': goal_id or (parent.goal_id.id if parent else False),
+            'beställare_trust': trust,
+            'delegation_depth': depth,
+            'parent_task_id': parent.id if parent else False,
+        })
+
+        # D7: uppmärksamma mottagaren (aktivitet + notis). Optimering —
+        # heartbeat plockar upp uppgiften ändå.
+        try:
+            self._notify_delegation(task, target)
+        except Exception as e:
+            _logger.warning('Delegeringsnotis misslyckades (tyst): %s', e)
+
+        _logger.info(
+            'Delegering: %s → %s (task %s, djup %d, tillit %d)',
+            self.name, target.name, task.id, depth, trust)
+        return task
+
+    def _apply_delegated_trust(self, loop_obj, session):
+        """Applicera delegerad tillit på en körnings PermissionEngine (D4).
+
+        När sessionen arbetar på ett DELEGERAT uppdrag (ai_task_id med
+        beställare_trust satt) sätts loopens effektiva tröskel till
+        min(beställare, utförare): uppdraget utförs under det mest
+        restriktiva av de två. Grinden kan bara skärpas — en låg beställare
+        kan inte låna utförarens autonomi. Hårda stopp påverkas inte.
+
+        Tyst no-op när uppdraget inte är delegerat (oförändrat beteende).
+        """
+        if not session or not getattr(session, 'ai_task_id', None):
+            return
+        task = session.ai_task_id
+        if not task:
+            return
+        # Ett delegerat uppdrag känns igen på att beställaren är en AI-agent
+        # (delegate_task sätter beställare_ref = ai.agent). Ett eget uppdrag
+        # (beställare = människa eller tomt) är oförändrat.
+        if not task.beställare_ref or \
+                not task.beställare_ref._name == 'ai.agent':
+            return
+        try:
+            engine = getattr(loop_obj, 'permissions', None)
+            if engine is None:
+                return
+            executor_trust = self._hitl_trust_step()
+            requester_trust = task.beställare_trust or 0
+            engine.delegated_trust = min(executor_trust, requester_trust)
+            _logger.info(
+                'Delegerad tillit: %s utför uppdrag %s under steg %d '
+                '(beställare %d, utförare %d)',
+                self.name, task.id, engine.delegated_trust,
+                requester_trust, executor_trust)
+        except Exception as e:
+            _logger.warning('Kunde inte sätta delegerad tillit: %s', e)
+
+    def _hitl_trust_step(self):
+        """Coworkerns tillitssteg som 0/1/2 (always/high_risk/autonomous)."""
+        self.ensure_one()
+        if self.hitl_threshold == 'autonomous':
+            return 2
+        if self.hitl_threshold == 'high_risk':
+            return 1
+        return 0
+
+    def _notify_delegation(self, task, target):
+        """Aktivitetsklocka + notis till mottagarens ägare (D7)."""
+        task.ensure_one()
+        target.ensure_one()
+        owner = target.chat_user_id
+        if not owner:
+            return
+        try:
+            task.activity_schedule(
+                'mail.mail_activity_data_todo',
+                summary='Uppdrag: %s' % (task.name or ''),
+                note=(task.description or '')[:1000],
+                user_id=owner.id,
+            )
+        except Exception as e:
+            _logger.warning('Delegeringsaktivitet misslyckades: %s', e)
+        try:
+            task.message_post(
+                body=('Nytt uppdrag från <b>%s</b>: %s'
+                      % (self.name, task.name or '')),
+                message_type='notification',
+                partner_ids=[owner.partner_id.id])
+        except Exception as e:
+            _logger.warning('Delegeringsnotis misslyckades: %s', e)
+
     # ── Heartbeat ──
 
     def _heartbeat(self):
@@ -7774,6 +8142,12 @@ class AICoworker(models.Model):
                         continue
                     coworker.run(session.job_prompt, session=session)
                 session.write({'heartbeat_pending': False})
+                # Verkligt livstecken (bevakning-over-tid): en LYCKAD körning
+                # uppdaterar last_successful_run — till skillnad från
+                # last_heartbeat, som cron uppdaterar varje tick även utan
+                # arbete (rotationsmarkör). Delegering använder detta för
+                # mottagbarhet.
+                coworker.write({'last_successful_run': fields.Datetime.now()})
                 # Checka in uppgiften med resultatet (5.6).
                 if session.ai_task_id:
                     session.ai_task_id.action_checkin(
@@ -7841,18 +8215,45 @@ class AICoworker(models.Model):
             task.action_release()
             released += 1
 
+        # Task-åldring (coworker-delegation 7.1): uppdrag som legat i
+        # todo/in_progress längre än förväntat — så att en delegering som
+        # ruttnar (mottagaren dör efter delegering) blir synlig, inte bara
+        # tyst. Läsaren frigör dem INTE (de kan fortfarande vara giltiga) —
+        # den rapporterar dem så beställaren kan underrättas.
+        age_min = rt.get_int(
+            self.env, 'ai_agent_core.task_stale_minutes', 1440)  # 24 h
+        age_cutoff = fields.Datetime.now() - timedelta(minutes=age_min)
+        aged = self.env['ai.org.task'].search([
+            ('status', 'in', ('todo', 'in_progress')),
+            ('create_date', '<', age_cutoff),
+        ])
+        stale_tasks = [{
+            'id': t.id, 'name': t.name,
+            'coworker': t.coworker_id.name or '',
+            'delegation_depth': t.delegation_depth,
+            'age_hours': round(
+                (fields.Datetime.now() - t.create_date).total_seconds()
+                / 3600.0, 1),
+        } for t in aged]
+        if stale_tasks:
+            _logger.warning(
+                'Läsaren: %d uppdrag äldre än %d min utan avslut '
+                '(task-åldring)', len(stale_tasks), age_min)
+
         import json as _json
         self.env['ir.config_parameter'].sudo().set_param(
             'ai_agent_core.run_metrics',
             _json.dumps({'window_hours': window_hours,
                          'by_init_type': by_init,
-                         'stale_released': released},
+                         'stale_released': released,
+                         'stale_tasks': stale_tasks},
                         ensure_ascii=False))
         _logger.info(
             'Läsaren: %d sessioner över %dh, %d övergivna utcheckningar '
-            'frigjorda', len(sessions), window_hours, released)
+            'frigjorda, %d åldrade uppdrag',
+            len(sessions), window_hours, released, len(stale_tasks))
         return {'sessions': len(sessions), 'by_init_type': by_init,
-                'stale_released': released}
+                'stale_released': released, 'stale_tasks': stale_tasks}
 
     def _heartbeat_all(self):
         """Called by ir.cron — iterate all active coworkers."""
@@ -7894,6 +8295,14 @@ class AICoworker(models.Model):
                             coworker.name, e)
 
     last_heartbeat = fields.Datetime('Last Heartbeat')
+
+    last_successful_run = fields.Datetime(
+        'Last Successful Run',
+        help='Tidpunkten för coworkerns senaste LYCKADE körning. Detta är '
+             'ett verkligt livstecken — till skillnad från `last_heartbeat`, '
+             'som uppdateras varje cron-tick även när ingen körning sker '
+             '(rotationsmarkör). Delegering använder detta för mottagbarhet '
+             '(bevakning-over-tid / coworker-delegation).')
 
     # ── Employee link ──
 

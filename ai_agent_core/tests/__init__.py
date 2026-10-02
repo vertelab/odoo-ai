@@ -58,3 +58,4 @@ from . import test_agent_identity
 # why the _add()/ensure_one() regression in executive_summary.py (nightly
 # distillation cron, server action #2848) shipped without a red test.
 from . import test_workspace
+from . import test_coworker_delegation
