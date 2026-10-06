@@ -1,6 +1,0 @@
-id,name,model_id/id,group_id/id,perm_read,perm_write,perm_create,perm_unlink
-access_postfix_alias_manager,res.groups,model_postfix_alias,base.group_erp_manager,1,1,1,1
-access_email_settings_user,res.groups,model_postfix_alias,user_mail_common.group_own_email_settings,1,1,1,1
-access_postfix_vacation_notification,access_postfix_vacation_notification,model_postfix_vacation_notification,base.group_user,1,1,1,1
-
-
