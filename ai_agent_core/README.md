@@ -310,6 +310,34 @@ Odoo Mind har ett flerskiktat minnessystem:
 └─────────────────────────────────────────────────────────────┘
 ```
 
+### Graf-skrivvägen — felsökning och krav
+
+Grafen (`odoo_mind`) kräver att `ag_catalog` finns i `search_path`,
+annars resolvas inte AGE:s operatorer (`@>`) inuti Cypher-kroppen och
+varje property-matchad skrivning (`MERGE`, `SET`, `DELETE`) felar med
+`operator does not exist: ag_catalog.agtype @> ag_catalog.agtype`.
+`graph.executor.cypher()` sätter `SET LOCAL search_path = ag_catalog,
+public` före varje anrop.
+
+**Upsert använder `MERGE`, aldrig "MATCH...SET, annars CREATE".** Den
+senare är en tyst no-op: `MATCH` mot en icke-existerande nod matchar 0
+rader och `SET` lyckas utan fel — så `CREATE` nås aldrig och synken
+rapporterar framgång med 0 noder.
+
+**Felsökning av en tom graf:**
+
+1. `SELECT cron_name FROM ir_cron WHERE cron_name = 'Odoo Mind Graph Sync'`
+   — saknas cronen? `_ensure_graph_cron()` skapar den (körs från
+   post_init_hook och vid settings-öppning).
+2. `SELECT graph_label, last_sync, last_error FROM graph_node_definition`
+   — `last_error` satt = skrivvägen felar. `last_error` tom MEN 0 noder =
+   kontrollera `_upsert_node` (MERGE) och `search_path`.
+3. `MATCH (n) RETURN count(n)` via `graph.executor.cypher()`.
+
+En **tom men frisk** graf (`last_error` tom) är inte ett fel. En graf med
+satt `last_error` är trasig och ska larmas — de två får inte förväxlas
+(`_graph_health()` skiljer dem).
+
 ### Memory Governance (agent-memory-governance)
 
 **Identitet → AI Medarbetare → Agent-koppling**
@@ -1042,3 +1070,44 @@ ihop — samma två-axel-princip som `ai.cost.period.line`.
 Ingen fri "skicka till vem som helst"-pool (delegering är organisationsbunden),
 ingen mesh/NATS som kontrakt, ingen ändring av `ai.coworker.hitl`, ingen
 kapabilitetsmatchning över avdelningsgränser.
+
+## Modell-drift mot gateway-katalog (fix-bifrost-entitlement-drift)
+
+Ett gateway-avslag (HTTP 403 `combo_forbidden`) visades tidigare som
+"Anslutningen till AI-servern bröts". Sessionen dog med `round_count: 0`,
+ingen LLM-runda kördes, och användaren fick ingen ledtråd om orsaken.
+Roten var att `ai.model`-registret och gatewayens katalog hade drivit isär:
+registret pekade på ett combo-namn som nyckeln inte var entitled till.
+
+### Driftlärdom
+
+**Gateway-modellnamn kan drifta från registret.** Registret (`ai.model`) är
+en kopia av gatewayens katalog vid importtillfället. Ändras katalogen
+(manuellt eller via `combo_maintenance`) blir importerade namn döda — utan
+att något i Odoo märker det. Tre skydd finns nu:
+
+1. **Begripligt fel.** `GatewayRejection` (i `core/provider.py`) mappar ett
+   strukturerat avslag till ett meddelande som namnger modellen. Mappningen
+   sker i både `_post` och `_stream_open`, så **alla** körvägar (web-UI,
+   openai_api, cron) får samma fel. Okänt felformat faller tillbaka på det
+   generiska felet — vi gissar inte på strängar.
+2. **Validering vid sparande.** Sätter man `ai.model.api_name` mot en
+   gateway-provider varnas det (aldrig blockeras) om namnet saknas i
+   katalogen. Fail-open: en nere gateway hindrar inte konfiguration.
+3. **Daglig driftkontroll.** Cron `AI: Modell-driftkontroll` jämför registret
+   mot katalogen. Den skiljer **"katalog otillgänglig"** från **"drift"** —
+   en nere gateway larmar inte falskt.
+
+### Fällan: `/v1/models` är entitlement-baserad
+
+Gatewayens `/v1/models` returnerar bara de modeller som **nyckeln** är
+entitled till. Admin-nyckeln ger en **tom lista**. Både valideringen och
+driftkontrollen måste därför använda **kundens** virtual key
+(`provider.api_key`) — annars rapporteras hela registret som drift.
+
+### Felsökning
+
+- 403 `combo_forbidden` i en session → kontrollera att agentens `model_id`
+  finns i gatewayens katalog **för kundens nyckel**.
+- Tom modellista från `/v1/models` → fel nyckel (admin istället för kund-VK).
+- Cron-logg "katalogen kunde inte hämtas" → gateway nere, **inte** drift.

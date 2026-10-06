@@ -199,6 +199,84 @@ class ProviderError(Exception):
         self.retryable = retryable
 
 
+class GatewayRejection(ProviderError):
+    """Gatewayen avvisade anropet med ett strukturerat fel.
+
+    Skiljer ett *avslag* (modellen är inte entitled / finns inte) från ett
+    *anslutningsfel* (timeout, DNS). Utan denna skillnad visades
+    "Anslutningen till AI-servern bröts" för ett 403 `combo_forbidden` —
+    användaren fick ingen ledtråd och coworkern gissade fel orsak.
+
+    Fälten bär vad användaren behöver för att förstå och åtgärda:
+      model  — modellnamnet som avvisades
+      status — HTTP-statusen (403, 404, …)
+      reason — gatewayens egen orsakstyp (t.ex. 'combo_forbidden')
+    """
+
+    def __init__(self, model: str, status_code: int, reason: str,
+                 detail: str = ''):
+        self.model = model or '?'
+        self.reason = reason or 'rejected'
+        self.detail = detail
+        if self.reason == 'combo_forbidden':
+            msg = (
+                "Modellen '%s' är inte tillgänglig för denna nyckel "
+                "(gateway-avslag: %s). Kontrollera att modellnamnet finns i "
+                "gatewayens katalog och att nyckeln är entitled till det."
+                % (self.model, self.reason))
+        elif self.reason in ('model_not_found', 'not_found'):
+            msg = (
+                "Modellen '%s' finns inte hos leverantören "
+                "(gateway-avslag: %s)." % (self.model, self.reason))
+        else:
+            msg = (
+                "Gatewayen avvisade modellen '%s' (HTTP %s, %s)."
+                % (self.model, status_code, self.reason))
+        if detail:
+            msg += ' Gateway: %s' % detail[:300]
+        super().__init__(msg, status_code=status_code, retryable=False)
+
+
+# Kända strukturerade avslags-typer från gatewayen. Okänt format faller
+# tillbaka på generiskt fel (fail-safe) — vi gissar inte på strängar.
+_GATEWAY_REJECTION_TYPES = frozenset([
+    'combo_forbidden', 'model_not_found', 'not_found',
+    'entitlement_denied', 'forbidden',
+])
+
+
+def map_gateway_rejection(status_code: int, body_text: str,
+                          model: str) -> Optional[GatewayRejection]:
+    """Mappa ett gateway-svar till ett strukturerat avslagsfel.
+
+    Returnerar None om svaret inte är ett känt strukturerat avslag — då
+    ska anroparen falla tillbaka på sitt generiska fel. Vi mappar på
+    HTTP-status + känt `type`-fält, aldrig på fri text.
+    """
+    if not body_text:
+        return None
+    payload = _safe_json_loads(body_text, default=None)
+    if not isinstance(payload, dict):
+        return None
+    err = payload.get('error')
+    if not isinstance(err, dict):
+        err = payload
+    reason = err.get('type') or err.get('code') or ''
+    message = err.get('message') or ''
+    if reason in _GATEWAY_REJECTION_TYPES:
+        return GatewayRejection(model, status_code, reason, message)
+    # 403/404 med ett känt meddelande men okänt type-fält.
+    if status_code in (403, 404) and message:
+        low = message.lower()
+        if 'entitle' in low or 'forbidden' in low:
+            return GatewayRejection(model, status_code,
+                                    'combo_forbidden', message)
+        if 'not found' in low or 'unknown model' in low:
+            return GatewayRejection(model, status_code,
+                                    'model_not_found', message)
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Retry logic (PROV-006)
 # ---------------------------------------------------------------------------
@@ -431,6 +509,17 @@ class AIProvider:
         if response.is_error:
             # Inkludera response-body i felet (t.ex. 400-detaljer från providern)
             _detail = response.text[:500]
+            # Strukturerat gateway-avslag (403 combo_forbidden m.m.) mappas
+            # till ett begripligt fel — annars ser användaren bara ett
+            # generiskt anslutningsfel.
+            rejection = map_gateway_rejection(
+                response.status_code, _detail, body.get('model', '?'))
+            if rejection:
+                _logger.warning(
+                    'Gateway avvisade modell %s: HTTP %s %s',
+                    body.get('model', '?'), response.status_code,
+                    rejection.reason)
+                raise rejection
             try:
                 response.raise_for_status()
             except httpx.HTTPStatusError as e:
@@ -455,6 +544,16 @@ class AIProvider:
             await response.aread()  # läs body innan .text (streaming)
             _detail = response.text[:500]
             await response.aclose()
+            # Strukturerat gateway-avslag — mappas innan den generiska vägen
+            # (så streaming-vägen ger samma begripliga fel som _post).
+            rejection = map_gateway_rejection(
+                response.status_code, _detail, body.get('model', '?'))
+            if rejection:
+                _logger.warning(
+                    'Gateway avvisade modell %s (stream): HTTP %s %s',
+                    body.get('model', '?'), response.status_code,
+                    rejection.reason)
+                raise rejection
             try:
                 response.raise_for_status()
             except httpx.HTTPStatusError as e:

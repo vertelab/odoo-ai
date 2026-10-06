@@ -314,6 +314,15 @@ class ResConfigSettings(models.TransientModel):
                           secrets.token_hex(32))
         company = self.env.company
 
+        # Säkerställ graf-cronen: post_init_hook skapade den bara vid
+        # install. Ett uppgraderat system (där grafen fanns innan cronen)
+        # fick den aldrig — och grafen förblev tyst tom.
+        try:
+            from odoo.addons.ai_agent_core.hooks import _ensure_graph_cron
+            _ensure_graph_cron(self.env)
+        except Exception as e:
+            _logger.warning('Kunde inte säkerställa graf-cronen: %s', e)
+
         # Website URL from partner
         res['company_website_url_edit'] = company.partner_id.website or ''
 

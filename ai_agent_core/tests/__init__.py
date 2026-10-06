@@ -59,3 +59,8 @@ from . import test_agent_identity
 # distillation cron, server action #2848) shipped without a red test.
 from . import test_workspace
 from . import test_coworker_delegation
+# Graf-skrivvägen (odoo-mind-graph-write-path). Filen fanns men var aldrig
+# importerad — samma mönster som test_workspace ovan: testerna kördes
+# aldrig, vilket är varför en tom graf (0 noder, last_sync=NULL) kunde
+# förbli oupptäckt.
+from . import test_graph_executor

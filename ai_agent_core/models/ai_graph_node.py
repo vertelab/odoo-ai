@@ -68,6 +68,10 @@ class GraphNodeDefinition(models.Model):
     last_sync = fields.Datetime('Last Sync', readonly=True)
     node_count = fields.Integer('Graph Nodes', compute='_compute_node_count')
     last_error = fields.Text('Last Error', readonly=True)
+    is_healthy = fields.Boolean(
+        'Healthy', compute='_compute_is_healthy',
+        help='False när senaste synken rapporterade fel — skiljer en trasig '
+             'skrivväg från en frisk men tom graf.')
 
     _sql_constraints = [
         ('unique_model_graph_label',
@@ -87,6 +91,35 @@ class GraphNodeDefinition(models.Model):
                 rec.node_count = res[0]['cnt'] if res else 0
             except Exception:
                 rec.node_count = 0
+
+    @api.depends('last_error')
+    def _compute_is_healthy(self):
+        """Frisk = ingen senaste felrapport. En tom men frisk graf är frisk."""
+        for rec in self:
+            rec.is_healthy = not rec.last_error
+
+    @api.model
+    def _graph_health(self):
+        """Sammanfattning för övervakning (Zabbix).
+
+        Returnerar antal aktiva definitioner, hur många som felar, och om
+        grafen alls är nåbar. En tom men frisk graf rapporteras som frisk —
+        bara en faktisk felrapport räknas som ohälsa.
+        """
+        defs = self.search([('active', '=', True)])
+        failing = defs.filtered(lambda d: d.last_error)
+        try:
+            self.env['graph.executor'].cypher(
+                'RETURN 1', read_only=True)
+            reachable = True
+        except Exception:
+            reachable = False
+        return {
+            'definitions': len(defs),
+            'failing': len(failing),
+            'reachable': reachable,
+            'healthy': reachable and not failing,
+        }
 
     def _get_properties_map(self):
         """Return node_properties as a dict."""
@@ -140,23 +173,26 @@ class GraphNodeDefinition(models.Model):
             f"n.{k} = {self._cypher_value(v)}"
             for k, v in props.items()
         )
-        cypher = f"""
-            MATCH (n:{self.graph_label} {{id: {record.id}}})
-            SET {set_clauses}
-            SET n.updated_at = timestamp()
-        """
-        try:
-            self.env['graph.executor'].cypher_write(cypher)
-            return  # Node existed, update succeeded
-        except Exception:
-            pass
-
-        # Node doesn't exist — create it
-        create_props = ", ".join(
+        # MERGE är rätt primitiv för upsert: skapa om noden saknas, annars
+        # matcha. Den krävde tidigare @>-operatorn som inte resolvades
+        # (search_path saknade ag_catalog) — det är nu åtgärdat i
+        # graph.executor.cypher().
+        #
+        # FÖRE: "MATCH ... SET, annars CREATE". Den logiken var tyst trasig:
+        # MATCH mot en icke-existerande nod matchar 0 rader och SET lyckas
+        # utan fel — så `return` kördes och CREATE nåddes aldrig. Synken
+        # rapporterade "63/63 synced" med 0 noder i grafen.
+        merge_props = ", ".join(
             f"{k}: {self._cypher_value(v)}" for k, v in props.items()
         )
+        set_clauses = ", ".join(
+            f"n.{k} = {self._cypher_value(v)}"
+            for k, v in props.items()
+        )
         cypher = f"""
-            CREATE (n:{self.graph_label} {{{create_props}}})
+            MERGE (n:{self.graph_label} {{id: {record.id}}})
+            SET {set_clauses}
+            SET n.updated_at = timestamp()
         """
         try:
             self.env['graph.executor'].cypher_write(cypher)
@@ -203,10 +239,16 @@ class GraphNodeDefinition(models.Model):
         Args:
             model: Odoo model (e.g. self.env['knowledge.article']).
             batch_size: Records per transaction.
+
+        Ärlig felrapportering: misslyckade records räknas och sätts i
+        `last_error`. En trasig skrivväg får inte se ut som en tom men
+        frisk graf (samma "tysta nolla" som okf-recall-path utrotade).
         """
         self.ensure_one()
         total = model.search_count([])
         synced = 0
+        failed = 0
+        first_error = None
         for offset in range(0, total, batch_size):
             batch = model.search([], limit=batch_size, offset=offset)
             for rec in batch:
@@ -214,14 +256,26 @@ class GraphNodeDefinition(models.Model):
                     self._upsert_node(rec)
                     self._create_edges(rec)
                     synced += 1
-                except Exception:
-                    pass  # Error already logged in _upsert_node
+                except Exception as e:
+                    failed += 1
+                    if first_error is None:
+                        first_error = str(e)
+                    _logger.warning(
+                        "Graph sync failed for %s #%d: %s",
+                        self.graph_label, rec.id, e)
         self.write({
             'last_sync': fields.Datetime.now(),
-            'last_error': False,
+            'last_error': (
+                '%d/%d misslyckades: %s' % (failed, total, first_error)
+                if failed else False),
         })
-        _logger.info("Synced %d/%d records for %s",
-                     synced, total, self.graph_label)
+        if failed:
+            _logger.warning(
+                "Synced %d/%d records for %s (%d failed)",
+                synced, total, self.graph_label, failed)
+        else:
+            _logger.info("Synced %d/%d records for %s",
+                         synced, total, self.graph_label)
         return synced
 
     @api.model
@@ -306,6 +360,14 @@ class GraphExecutor(models.Model):
         try:
             # Use savepoint to avoid aborting the entire transaction on error
             self.env.cr.execute("SAVEPOINT graph_executor")
+            # AGE:s operatorer (@>, som MERGE/SET/DELETE och
+            # property-matchning använder) är OQUALIFICERADE inuti
+            # Cypher-kroppen. Utan ag_catalog i search_path resolvas de
+            # inte → "operator does not exist: ag_catalog.agtype @>
+            # ag_catalog.agtype". SET LOCAL är transaktionslokalt och
+            # läcker inte i anslutningspoolen.
+            self.env.cr.execute(
+                "SET LOCAL search_path = ag_catalog, public")
             self.env.cr.execute(f"SET LOCAL statement_timeout = {timeout * 1000}")
             try:
                 self.env.cr.execute(sql)

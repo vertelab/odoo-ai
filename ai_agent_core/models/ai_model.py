@@ -53,6 +53,53 @@ class AIModel(models.Model):
         self.ensure_one()
         return self.api_name or self.name
 
+    def _check_against_gateway_catalog(self):
+        """Varna (aldrig blockera) om api_name saknas i gateway-katalogen.
+
+        Icke-blockerande av design: gatewayen kan vara tillfälligt nere, och
+        ett hårt stopp skulle göra konfiguration omöjlig under underhåll.
+        Otillhämtad katalog = ingen varning, bara en notering i loggen.
+        """
+        self.ensure_one()
+        provider = self.provider
+        if not provider or not provider._is_gateway():
+            return
+        name = self.api_name or self.name
+        if not name:
+            return
+        names, ok = provider._fetch_catalog_names()
+        if not ok:
+            _logger.info(
+                'Modell-validering: katalogen för %s kunde inte hämtas — '
+                "kontrollen utfördes inte för '%s'.", provider.name, name)
+            return
+        if name not in set(names):
+            _logger.warning(
+                "Modell-validering: '%s' finns inte i gatewayen %s:s katalog "
+                '(registret och katalogen har drivit isär).',
+                name, provider.name)
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        records = super().create(vals_list)
+        # Icke-blockerande: varna efter skapandet, spara alltid.
+        for rec in records:
+            try:
+                rec._check_against_gateway_catalog()
+            except Exception as e:  # validering får aldrig fälla create
+                _logger.info('Modell-validering misslyckades: %s', e)
+        return records
+
+    def write(self, vals):
+        res = super().write(vals)
+        if 'api_name' in vals or 'name' in vals or 'provider' in vals:
+            for rec in self:
+                try:
+                    rec._check_against_gateway_catalog()
+                except Exception as e:
+                    _logger.info('Modell-validering misslyckades: %s', e)
+        return res
+
     def _get_maker(self):
         """Tillverkaren: source_provider om satt, annars provider (direktkoppling)."""
         self.ensure_one()

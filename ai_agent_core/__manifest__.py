@@ -90,6 +90,7 @@
         'data/cron_monthly_summary.xml',
         'data/cron_bifrost_sync.xml',
         'data/cron_burn_rate.xml',
+        'data/cron_model_drift.xml',
         'data/cron_kaizen.xml',
         'data/cron_skill_improve.xml',
         'data/cron_onboard.xml',

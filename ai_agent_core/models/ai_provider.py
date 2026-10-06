@@ -349,6 +349,99 @@ class AIProvider(models.Model):
         """Är denna provider en gateway/återförsäljare (inte tillverkare)?"""
         return self.provider_type in ('bifrost', 'openrouter') or bool(self.is_bifrost)
 
+    def _fetch_catalog_names(self, timeout=5):
+        """Hämta gatewayens modellkatalog som en namnlista.
+
+        Returnerar (names, ok):
+          names — lista av modell-id:n, eller None om katalogen inte kunde
+                  hämtas (gateway nere, timeout, nätverksfel)
+          ok    — True om katalogen hämtades, False annars
+
+        Skiljer "katalogen kunde inte hämtas" från "katalogen hämtades och
+        är tom" — annars larmar en nere gateway falskt som drift.
+        Kort timeout: detta körs i validering och cron, inte i körvägen.
+        """
+        self.ensure_one()
+        if not self.base_url:
+            return None, False
+        url = self.base_url.rstrip('/') + '/models'
+        headers = {}
+        if self.api_key:
+            headers['Authorization'] = f'Bearer {self.api_key}'
+        try:
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
+                data = json.loads(resp.read().decode())
+        except Exception as e:
+            _logger.info(
+                'Katalog-hämtning misslyckades för %s: %s', self.name, e)
+            return None, False
+        items = data.get('data', data if isinstance(data, list) else [])
+        names = [m.get('id', '') for m in items if isinstance(m, dict)]
+        return [n for n in names if n], True
+
+    def _catalog_drift(self):
+        """Jämför registret mot gatewayens katalog.
+
+        Returnerar en dict:
+          checked        — True om katalogen hämtades
+          missing_in_catalog — aktiva ai.model-namn som saknas i katalogen
+          missing_in_register — katalognamn utan ai.model-post (informativt)
+
+        En otillhämtad katalog ger checked=False och inga driftlistor —
+        "gateway nere" är inte drift.
+        """
+        self.ensure_one()
+        names, ok = self._fetch_catalog_names()
+        if not ok:
+            return {'checked': False, 'missing_in_catalog': [],
+                    'missing_in_register': []}
+        catalog = set(names)
+        Model = self.env['ai.model'].sudo()
+        active = Model.search([
+            ('provider', '=', self.id), ('active', '=', True)])
+        reg_names = set()
+        for m in active:
+            for cand in (m.api_name, m.name):
+                if cand:
+                    reg_names.add(cand)
+        return {
+            'checked': True,
+            'missing_in_catalog': sorted(reg_names - catalog),
+            'missing_in_register': sorted(catalog - reg_names),
+        }
+
+    @api.model
+    def _run_drift_check(self):
+        """Cron: kontrollera modell-drift för alla aktiva gateways.
+
+        Skiljer "katalog otillgänglig" från "drift" — en nere gateway
+        larmar inte falskt. Loggar en sammanfattning och returnerar en
+        rapport så en anropare (cron/Zabbix) kan agera.
+        """
+        providers = self.search([('active', '=', True)])
+        report = []
+        for p in providers:
+            if not p._is_gateway():
+                continue
+            drift = p._catalog_drift()
+            if not drift['checked']:
+                _logger.info(
+                    'Driftkontroll: katalogen för %s kunde inte hämtas.',
+                    p.name)
+                continue
+            if drift['missing_in_catalog']:
+                _logger.warning(
+                    'Modell-drift hos %s: %d namn i registret saknas i '
+                    'katalogen: %s',
+                    p.name, len(drift['missing_in_catalog']),
+                    ', '.join(drift['missing_in_catalog'][:10]))
+            report.append({'provider': p.name, **drift})
+        return report
+
     def _resolve_maker(self, model_id: str):
         """Resolve maker (tillverkare) + kanoniskt namn från ett model-id.
 
