@@ -255,3 +255,104 @@ _MODEL_VERIFICATION_CONTRACTS = {
 | Fullständigt | 85 % | PASS |
 
 Tröskeln 0.6 skiljer alltså de tre fallen.
+
+## OKF: ägare och access i urvalet (okf-owner-and-access-scoping, 18.0.1.302)
+
+OKF:s urval (dedup + `limit`) skedde i SQL **före** access-filtret, och
+access-filtret defaultade till *synlig* när uppslaget saknades. Tre läckage
+stängdes i tre steg (varje steg är självständigt revertbart):
+
+| # | Läckage | Var | Fix |
+|---|---|---|---|
+| 1 | `limit` konsumerades av osynliga rader | `_okf_search` + `_format_concept_block` | access in i `WHERE` före dedup och `LIMIT` |
+| 2 | `DISTINCT ON` valde en osynlig version | `_okf_search` SQL | access-villkoret ligger före dedupen |
+| 3 | fail-open + radnivå avkopplad | `_format_concept_block` | `vis.get(r, False)`, `([], n)` utan attribution, `_get_visible_lines` inkopplad |
+
+### Ägaren bärs i nyckeln OCH i unikhetsvillkoret
+
+En post kan bli **N koncept**, ett per ägare — t.ex. en kalenderhändelse med
+flera deltagare. Två saker krävs, och båda behövs:
+
+```
+   nyckeln:      '<modell>,<id>,user.<uid>'      (särskiljer i sökning/dedup)
+   constraintet: UNIQUE(scope, owner_company_id, owner_user_id,
+                        owner_coworker_id, concept_key, version)
+```
+
+Constraintet är det som gör två ägares rader **lagliga**; nyckeln gör dem
+**särskiljbara**. Utan constraintet avvisar databasen den andra ägarens
+`version = 1`.
+
+**Ägarläget sätts bara när posten har fler än en ägare.** En enägd post
+(`ai.personal.memory,42`) behåller sitt nyckelformat — annars bytte varje
+befintligt personligt koncept nyckel utan vinst.
+
+`_okf_lookup_keys()` känner fyra nyckelformer:
+
+```
+   '<modell>,<id>'                      basnyckel
+   '<modell>,<id>,<lang>'               språksuffix
+   '<modell>,<id>,user.<uid>'           ägarsuffix
+   '<modell>,<id>,user.<uid>,<lang>'    båda
+```
+
+Leden skiljs av `user.`-prefixet. Basnyckeln returneras **utöver** den givna
+nyckeln, så en befintlig kedja fortsätter i stället för att en parallell
+startas.
+
+### Så tar en brygga flera ägare
+
+```python
+class CalendarEvent(models.Model):
+    _inherit = ['calendar.event', 'ai.okf.mixin']
+
+    def _okf_owner_vals_list(self):
+        """Ett koncept per deltagare som är en användare."""
+        return [{'owner_user_id': u.id}
+                for u in self._attendee_users()]
+
+    def _okf_concept_key(self, lang=None, owner_id=None):
+        # Ägarläget läggs på av _okf_index_record när det finns fler än
+        # en ägare — bryggan behöver inte göra något.
+        return super()._okf_concept_key(lang=lang, owner_id=owner_id)
+```
+
+`okf_dirty` är per **post**, inte per ägare: den rensas **en gång** efter
+samtliga ägare. Ett fel mitt i loopen lämnar posten dirty och hela loppet
+körs om — idempotent, men slösar.
+
+### Access-prövningen är asymmetrisk (ÖPPEN/STÄNGD/PARTIELL)
+
+Volymen kräver det: `project.task` ~50 000 och `res.partner` ~3 300 i
+`ledningssystem` (mätt 2026-10-06). En `IN`-lista över alla synliga id:n för
+en användare som ser allt spränger plan-cachen. Två `search_count` ger i
+stället ett av tre svar:
+
+```
+   visible == total  ->  ÖPPEN     inget villkor (source_ref LIKE '<modell>,%')
+   visible == 0      ->  STÄNGD    modellen nämns inte alls
+   annars            ->  PARTIELL  id-lista (mindre än modellens total)
+```
+
+Källmodellerna läses ur datan (`_okf_source_models()`), inte ur en hårdkodad
+lista — en ny brygga behöver inte registrera sig.
+
+**Fail-closed:** en modell som inte finns i `self.env`, eller där prövningen
+kastar, klassas STÄNGD — aldrig ÖPPEN. `source_ref IS NULL` ingår alltid i
+villkoret och faller till injektionens nät (som avför den), inte till
+"synligt".
+
+**Känd skalrisk:** klassningen hjälper bara när rättigheterna är
+**heltäckande**. `project.task` klassas PARTIELL även för `user_admin`
+(Odoos standard-`ir.rule` begränsar uppgifter till användarens egna), så en
+användare med 50 000 synliga uppgifter får en id-lista på 50 000 element.
+Om det visar sig för dyrt i drift är nästa steg ett **negativt** villkor
+(`source_ref NOT IN` för de få osynliga) i stället för ett positivt.
+
+### Testfälla: `assertLogs(level='INFO')` fungerar inte i Odoo
+
+Odoo sätter `logging.RUNBOT = 25` och döper om det till `'INFO'`
+(`netsvc.py`), så `logging.getLevelName('INFO')` returnerar **25**.
+`assertLogs(level='INFO')` sätter då loggerns nivå till 25 och filtrerar
+bort riktiga INFO-poster (20) — testet ser tomt ut trots att loggen skrivs.
+**Använd `level=logging.INFO` (talet), aldrig strängen.**
