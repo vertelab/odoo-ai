@@ -1252,10 +1252,16 @@ class AIOkfConcept(models.Model):
           synligt (ingen per-rad-filtrering möjlig).
         """
         self.ensure_one()
-        if not self.attribution:
-            return self.summary.split('\n') if self.summary else [], 0
-
         lines = self.summary.split('\n') if self.summary else []
+        if not self.attribution:
+            # FAIL-CLOSED (okf-owner-and-access-scoping D1): ett koncept utan
+            # attribution har ingen prövbar källa — då går det inte att bevisa
+            # att raden är läsbar. Tidigare returnerades HELA sammanfattningen
+            # här, vilket läckte varje rad i ett koncept vars källor blandade
+            # läsbar och hemlig data. Nu utelämnas raderna, och anroparen
+            # loggar varför (D4).
+            return [], len(lines)
+
         attributed_lines = {item.get('line') for item in self.attribution}
         visible_lines = []
         hidden = 0
@@ -1584,7 +1590,16 @@ class AIOkfConcept(models.Model):
         out = {}
         for concept in self:
             vis = visible_map.get(concept.id, {})
-            visible_refs = {src for src, ok in vis.items() if ok}
+            # FYND (okf-owner-and-access-scoping, task 1.3): här byggdes
+            # tidigare ett SET, men både `_filter_attribution` och
+            # `_filter_attribution_conservative` anropar `.get(src)` på
+            # argumentet. Ett set har ingen `.get()` → `AttributeError` så
+            # fort ett koncept med attribution nådde hit. Det är därför
+            # metoden aldrig kopplades in i produktionskoden: den kraschade
+            # första gången den användes. Kontraktet är en dict
+            # `{source_ref: True}` — samma form som `_resolve_visible_sources`
+            # returnerar och som testerna skickar.
+            visible_refs = {src: True for src, ok in vis.items() if ok}
             if conservative:
                 lines, hidden = concept._filter_attribution_conservative(
                     visible_refs)
@@ -2001,6 +2016,12 @@ class AIOkfConcept(models.Model):
             return ''
         concepts = concepts._latest_per_key()
         visible = self._resolve_visible_sources(concepts, user=user)
+        # Radnivå: bara de rader vars källa är prövad och läsbar får injiceras.
+        # `_get_visible_lines` fanns tidigare men anropades ALDRIG i
+        # produktionskoden — bara från ett test. Utan den kopplingen kunde en
+        # blandad sammanfattning (läsbar + hemlig källa) injiceras i sin helhet
+        # (okf-owner-and-access-scoping D1).
+        visible_lines = concepts._get_visible_lines(visible)
         entries = []
         chars = 0
         for c in concepts:
@@ -2014,13 +2035,35 @@ class AIOkfConcept(models.Model):
             if c.sources:
                 refs.extend(s.get('resource') for s in c.sources
                             if s.get('resource'))
+            # FAIL-CLOSED (D1): ett saknat prövningsresultat är INTE synligt.
+            # `vis.get(r, True)` tolkade en oprövad källa som synlig — den
+            # enda av de tre läckagen som var en verklig läcka, inte bara ett
+            # fel svar.
+            vis = visible.get(c.id, {})
             if refs:
-                vis = visible.get(c.id, {})
-                if not any(vis.get(r, True) for r in refs):
-                    # Alla källreferenser är osynliga → hoppa över
-                    if refs and all(vis.get(r, False) is False for r in refs):
-                        continue
-            content = c.summary or c.title or ''
+                if not any(vis.get(r, False) for r in refs):
+                    _logger.info(
+                        'OKF injektion: avför %s,%s (källor osynliga: %s)',
+                        c._name, c.id, sorted(refs)[:3])
+                    continue
+            else:
+                # Ingen källhänvisning alls → ingen källa att pröva. Avför.
+                _logger.info(
+                    'OKF injektion: avför %s,%s (ingen källhänvisning)',
+                    c._name, c.id)
+                continue
+            # Radnivå-filtreringen: använd bara de läsbara raderna.
+            row = visible_lines.get(c.id) or {}
+            lines = row.get('lines')
+            if lines:
+                content = '\n'.join(lines)
+            elif row.get('any_visible'):
+                content = c.summary or c.title or ''
+            else:
+                _logger.info(
+                    'OKF injektion: avför %s,%s (inga läsbara rader, '
+                    '%s dolda)', c._name, c.id, row.get('hidden', 0))
+                continue
             if chars + len(content) > max_chars:
                 break
             entries.append(content)
