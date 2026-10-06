@@ -1012,6 +1012,33 @@ class AIOkfConcept(models.Model):
             sql += ' AND write_date >= %(tw)s'
             params['tw'] = time_window
 
+        # ── ACCESS IN I URVALET (okf-owner-and-access-scoping D3) ──────
+        # Villkoret läggs i WHERE-ledet, FÖRE CTE:ns dedup och LIMIT. Bara
+        # så kan `limit` avse LÄSBARA rader (läckage 1) och dedupen välja
+        # en läsbar version (läckage 2). Att filtrera efteråt kan inte
+        # lösa någon av dem: en bortfiltrerad rad har redan upptagit en
+        # plats, och DISTINCT ON har redan valt en version användaren inte
+        # får se.
+        #
+        # Klassningen är asymmetrisk per källmodell (ÖPPEN/STÄNGD/PARTIELL)
+        # — se `ai.access.resolver._source_ref_condition`. En modell där
+        # användaren ser allt ger inget id-villkor; en där användaren ser
+        # noll nämns inte alls.
+        access_condition, access_params = \
+            self.env['ai.access.resolver']._source_ref_condition(
+                user, self._okf_source_models())
+        if access_condition is None:
+            # Alla källmodeller är STÄNGDA (eller kunde inte prövas). Inget
+            # koncept kan vara läsbart — ärligt tomt, ingen SQL behövs.
+            _logger.info(
+                'OKF-sökning: alla källmodeller stängda för uid=%s — '
+                'tomt resultat (query=%.60s)',
+                user.id if user else self.env.uid, query)
+            return self.browse([])
+        if access_condition:
+            sql += ' AND ' + access_condition
+            params.update(access_params)
+
         # Dedup i SQL: senaste versionen per (scope, ÄGARE, concept_key).
         # Samma princip som _latest_per_key(), men FÖRE limit — annars hade
         # limit=20 kunnat fyllas av 20 versioner av SAMMA koncept.
@@ -1351,6 +1378,34 @@ class AIOkfConcept(models.Model):
     # Access-resolver (sektion 4)
     # ════════════════════════════════════════════
     @api.model
+    @api.model
+    def _okf_source_models(self):
+        """Källmodeller som faktiskt förekommer i koncepten (D3).
+
+        Läses ur datan, inte ur en hårdkodad lista: en ny brygga ska inte
+        behöva registrera sig någonstans för att access-prövningen ska
+        täcka den. `DISTINCT` på prefixet före första kommat — modellnamn
+        innehåller inget komma.
+
+        En modell som inte finns i `self.env` filtreras bort av
+        klassningen (→ CLOSED, fail-closed).
+        """
+        try:
+            with self.env.cr.savepoint():
+                self.env.cr.execute("""
+                    SELECT DISTINCT split_part(source_ref, ',', 1) AS model
+                      FROM ai_okf_concept
+                     WHERE source_ref IS NOT NULL
+                       AND source_ref <> ''
+                       AND archived = false
+                """)
+                return sorted(r[0] for r in self.env.cr.fetchall() if r[0])
+        except Exception as e:  # noqa: BLE001
+            _logger.warning(
+                'OKF access: kunde inte läsa källmodeller — tom lista '
+                '(fail-closed): %s', e)
+            return []
+
     def _split_source_ref(self, source_ref):
         """Splitta 'res.partner,42' → ('res.partner', 42)."""
         if not source_ref or ',' not in source_ref:

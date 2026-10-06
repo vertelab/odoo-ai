@@ -76,3 +76,145 @@ class AIAccessResolver(models.Model):
         follower = self._resolve_domain(self.follower_domain, user)
         owner = self._resolve_domain(self.owner_domain, user)
         return follower, owner
+
+    # ════════════════════════════════════════════
+    # Klassning per källmodell (okf-owner-and-access-scoping D2)
+    # ════════════════════════════════════════════
+    #
+    # VARFÖR EN KLASSNING OCH INTE EN ID-LISTA: volymen. I `ledningssystem`
+    # (mätt 2026-10-06) har `project.task` ~50 000 rader och `res.partner`
+    # ~3 300. En `IN`-lista över alla synliga id:n för en projektledare som
+    # ser ALLT blir 50 000 element — det spränger plan-cachen och är ingen
+    # lösning. Klassningen ger i stället ett av tre svar, och bara PARTIELL
+    # behöver en id-lista (som då per definition är mindre än modellens
+    # total).
+
+    OPEN = 'open'          # användaren ser allt — inget villkor behövs
+    CLOSED = 'closed'      # användaren ser inget — modellen utesluts
+    PARTIAL = 'partial'    # användaren ser en delmängd — id-lista
+
+    @api.model
+    def _classify_source_model(self, model_name, user):
+        """Klassa en källmodell för en användare: OPEN/CLOSED/PARTIAL.
+
+        Två `search_count` — ett aggregat, ingen radhämtning:
+
+            total   = Model.sudo().search_count([])
+            visible = Model.with_user(uid).search_count([])
+
+            visible == total  -> OPEN
+            visible == 0      -> CLOSED
+            annars            -> PARTIAL
+
+        Returnerar `(kind, ids)` där `ids` bara är satt för PARTIAL.
+
+        Fail-closed: en modell som inte finns i `self.env`, eller där
+        prövningen kastar, klassas som CLOSED — inte OPEN. Ett saknat svar
+        får aldrig tolkas som "synligt".
+        """
+        Model = self.env.get(model_name)
+        if Model is None:
+            return self.CLOSED, None
+        uid = user.id if user else self.env.uid
+        try:
+            total = Model.sudo().search_count([])
+        except Exception as e:  # noqa: BLE001
+            _logger.warning(
+                'OKF access: kunde inte räkna %s — klassas CLOSED: %s',
+                model_name, e)
+            return self.CLOSED, None
+        if total == 0:
+            # Ingen post alls — inget att läsa, men inte heller något att
+            # utesluta. OPEN ger inget villkor och är billigast.
+            return self.OPEN, None
+        try:
+            visible_count = Model.with_user(uid).search_count([])
+        except Exception as e:  # noqa: BLE001
+            _logger.warning(
+                'OKF access: kunde inte pröva %s för uid=%s — klassas '
+                'CLOSED: %s', model_name, uid, e)
+            return self.CLOSED, None
+        if visible_count >= total:
+            return self.OPEN, None
+        if visible_count == 0:
+            return self.CLOSED, None
+        try:
+            visible_ids = Model.with_user(uid).search([]).ids
+        except Exception as e:  # noqa: BLE001
+            _logger.warning(
+                'OKF access: kunde inte hämta synliga id:n för %s — '
+                'klassas CLOSED: %s', model_name, e)
+            return self.CLOSED, None
+        return self.PARTIAL, visible_ids
+
+    @api.model
+    def _source_ref_condition(self, user, model_names):
+        """Bygg ett SQL-villkor mot `source_ref` ur klassningen (D3).
+
+        Returnerar `(sql_fragment, params)` där fragmentet är tomt när inget
+        villkor behövs (alla modeller OPEN), eller `None` när INGET koncept
+        kan vara läsbart (alla modeller CLOSED).
+
+        Formen:
+
+            (source_ref LIKE 'project.task,%'      -- OPEN
+             OR source_ref IN ('res.partner,10')   -- PARTIAL
+             OR source_ref IS NULL)                -- hanteras av D4-nätet
+
+        CLOSED-modeller nämns inte alls.
+
+        `source_ref IS NULL` ingår alltid: ett koncept utan källhänvisning
+        kan inte prövas här och faller till D4-nätet (fail-closed), inte
+        till "synligt".
+        """
+        or_parts = []
+        params = {}
+        open_models = []
+        partial_models = []
+        closed_models = []
+        for name in model_names:
+            kind, ids = self._classify_source_model(name, user)
+            if kind == self.OPEN:
+                open_models.append(name)
+            elif kind == self.CLOSED:
+                closed_models.append(name)
+            else:
+                partial_models.append((name, ids or []))
+
+        for name in open_models:
+            key = 'open_%s' % re.sub(r'\W', '_', name)
+            or_parts.append('source_ref LIKE %(' + key + ')s')
+            params[key] = '%s,%%' % name
+
+        idx = 0
+        for name, ids in partial_models:
+            if not ids:
+                continue
+            refs = ['%s,%s' % (name, rid) for rid in ids]
+            key = 'part_%s' % idx
+            or_parts.append('source_ref = ANY(%(' + key + ')s)')
+            params[key] = refs
+            idx += 1
+
+        _logger.info(
+            'OKF access: klassning open=%s partial=%s closed=%s',
+            open_models,
+            [(n, len(i)) for n, i in partial_models],
+            closed_models)
+
+        # Inget koncept kan vara läsbart: alla källmodeller är stängda.
+        #
+        # FYND (2026-10-06): detta får bara gälla när vi FAKTISKT klassade
+        # modeller och alla var stängda. En TOM modellista (inga koncept har
+        # `source_ref` alls — t.ex. i enhetstester som skapar koncept via rå
+        # SQL) är inte "allt stängt": det finns inget att begränsa, och
+        # koncepten faller till D4-nätet. Att tolka tomt som stängt gjorde
+        # att hela sökningen blev tom — 10 tester föll.
+        if not model_names:
+            return '', params
+        if not or_parts:
+            return None, params
+
+        # `source_ref IS NULL` alltid med: oprövade koncept faller till D4.
+        or_parts.append('source_ref IS NULL')
+        return '(' + ' OR '.join(or_parts) + ')', params
