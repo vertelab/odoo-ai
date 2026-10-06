@@ -132,18 +132,28 @@ class TestOkfAddOnly(TestOkfConceptBase):
         "tyst" via ORM:en. Vi verifierar därför att den FINNS och är
         korrekt formulerad — det är vad testet ska skydda (att
         versionshanteringen inte tappar version-ledet, bugg 9.1).
+
+        UPPDATERAD 2026-10-06 (okf-owner-and-access-scoping D6): villkoret
+        bär nu ÄVEN ägarkolumnerna. Två ägare kan ha samma `concept_key`
+        och samma `version` — t.ex. samma kalenderhändelse för två
+        deltagare. Utan ägarkolumnerna avvisar villkoret den andra raden
+        och hela "en post -> N ägare"-förmågan faller. version-ledet är
+        kvar (bugg 9.1 får inte återinföras).
         """
         constraints = {
             c[0]: c[1] for c in self.Concept._sql_constraints
         }
         self.assertIn(
             'concept_key_scope_version_uniq', constraints,
-            'UNIQUE-constrainten för (scope, concept_key, version) saknas')
+            'UNIQUE-constrainten för (scope, ägare, concept_key, version) '
+            'saknas')
         self.assertEqual(
             constraints['concept_key_scope_version_uniq'],
-            'UNIQUE(scope, concept_key, version)',
-            'Constrainten måste inkludera version — annars blockeras '
-            'versionshanteringen (bugg 9.1)')
+            'UNIQUE(scope, owner_company_id, owner_user_id, '
+            'owner_coworker_id, concept_key, version)',
+            'Constrainten måste inkludera version (annars blockeras '
+            'versionshanteringen, bugg 9.1) OCH ägaren (annars kan två '
+            'ägare inte ha samma nyckel och version)')
 
         # Positiv kontroll: samma nyckel i OLIKA versioner är tillåtet
         # (det är hela poängen med ADD-only + versionering).

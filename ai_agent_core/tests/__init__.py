@@ -10,6 +10,7 @@ from . import test_init_types_overhaul
 # Sätts på igen när beroendet är installerat.
 from . import test_okf_memory
 from . import test_okf_fail_closed
+from . import test_okf_owner_scoping
 from . import test_okf_embedding
 from . import test_session_summary
 from . import test_session_memory_bridge

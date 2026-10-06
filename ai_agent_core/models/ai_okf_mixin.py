@@ -439,6 +439,22 @@ class AIOkfMixin(models.AbstractModel):
         vals = dict(extra_vals or {})
         vals['okf_dirty'] = False
         vals.setdefault('okf_indexed_at', fields.Datetime.now())
+        self._write_okf_fields(vals)
+
+    def _write_okf_fields(self, vals):
+        """Skriv OKF-fält direkt i SQL, utan att röra flaggan.
+
+        Delas av `_clear_okf_dirty()` (som lägger på `okf_dirty = False`)
+        och av `_okf_index_record_one()` när anroparen äger rensningen
+        (okf-owner-and-access-scoping D5: N ägare ska ge EN rensning, inte
+        N — annars kan flaggan återtända mellan ägarna).
+
+        Rå SQL är avsiktligt: vägen genom `write()` tänder dirty-hooken
+        igen, vilket är självåtertändningen som gav 38 versioner av
+        `ai.memory,257`.
+        """
+        if not self or not vals:
+            return
         self.flush_recordset(list(vals))
         # jsonb-fält (okf_links) måste serialiseras — rå SQL går
         # förbi ORM:ens typkonvertering, och psycopg2 tolkar en Python-lista
@@ -623,8 +639,26 @@ class AIOkfMixin(models.AbstractModel):
             return [None]
         return codes
 
-    def _okf_concept_key(self, lang=None):
-        """Konceptets stabila nyckel — överridbar, språkmedveten.
+    def _okf_owner_id(self, owner_vals):
+        """Ägar-id ur ett `_okf_owner_vals()`-dict, för nyckeln.
+
+        Returnerar `user.<uid>`-ledet bara när ägaren är en ANVÄNDARE
+        (okf-owner-and-access-scoping D6): en post kan bli N personliga
+        koncept (ett per användare), och då måste nyckeln bära användaren
+        så att två användares koncept för samma post aldrig delar nyckel.
+
+        Företags- och coworker-ägare är redan entydiga per (scope, nyckel)
+        och får inget ägarled — deras nyckelformat är oförändrat.
+        """
+        if not owner_vals:
+            return None
+        uid = owner_vals.get('owner_user_id')
+        if uid:
+            return 'user.%s' % (uid.id if hasattr(uid, 'id') else uid)
+        return None
+
+    def _okf_concept_key(self, lang=None, owner_id=None):
+        """Konceptets stabila nyckel — överridbar, språk- och ägarmedveten.
 
         Default `'<modell>,<id>'`. Nyckeln MÅSTE vara stabil över
         innehållsändringar: härled den aldrig ur text, längd eller radantal.
@@ -633,55 +667,143 @@ class AIOkfMixin(models.AbstractModel):
         Med ett språk: `'<modell>,<id>,<lang>'`. En svensk översättning blir
         då ett SYSKON (eget koncept), inte en ny version — annars skulle
         `superseded` arkivera engelskt innehåll som fortfarande är giltigt.
+
+        Med en ägare (okf-owner-and-access-scoping D6):
+        `'<modell>,<id>,user.<uid>'`, och med båda
+        `'<modell>,<id>,user.<uid>,<lang>'`. Leden skiljs åt av prefixet
+        `user.` — `<lang>` (t.ex. `sv_SE`) har det aldrig.
         """
         self.ensure_one()
+        key = '%s,%s' % (self._name, self.id)
+        if owner_id:
+            key = '%s,%s' % (key, owner_id)
         if lang:
-            return '%s,%s,%s' % (self._name, self.id, lang)
-        return '%s,%s' % (self._name, self.id)
+            key = '%s,%s' % (key, lang)
+        return key
 
     def _okf_owner_vals(self):
         """Exakt EN ägare. `_okf_upsert` kastar ValidationError på noll/flera."""
         self.ensure_one()
         return {'owner_company_id': self.env.company.id}
 
+    def _okf_owner_vals_list(self):
+        """Ägare att indexera posten för. Default: EN (dagens beteende).
+
+        En post som tillhör flera ägare (t.ex. en kalenderhändelse med flera
+        deltagare) överrider denna och returnerar en post per ägare — och får
+        därmed ett koncept per ägare. Default-listan har exakt ett element, så
+        en modell utan egen implementation indexeras EXAKT som före ändringen
+        (okf-owner-and-access-scoping D5).
+
+        Flaggan `okf_dirty` är per POST, inte per ägare: den rensas EN gång
+        efter att samtliga ägare skrivits (av `_okf_index_record`). Att rensa
+        den mellan ägarna skulle återtända via write-hooken — samma bugg som
+        en gång gav 38 versioner av `ai.memory,257`.
+
+        Kvarvarande begränsning (dokumenterad, accepterad): en post som
+        indexeras för N ägare kan inte uttrycka "ägare 3 är fortfarande
+        dirty". Ett fel mitt i loopen lämnar posten dirty och hela loopen körs
+        om — idempotent, men slösar.
+        """
+        return [self._okf_owner_vals()]
+
     def _okf_index_record(self, max_chars=None, session=None):
         """Generera OKF-fälten och skriv konceptet. EN väg.
 
         Anropas av cronen OCH av debug-knappen — ingen separat
-        implementation finns. Returnerar konceptet (första språket) eller
-        None om posten hoppades över.
+        implementation finns. Returnerar konceptet (första ägaren/språket)
+        eller None om posten hoppades över.
 
         Med fler än ett språk indexeras posten EN gång per språk, som
         syskon-koncept (okf-website-mixin D4/4.3b). Innehållet läses via
         `with_context(lang=...)`, aldrig ur rå jsonb — då hanteras alla tre
         översättningslägen (jsonb per fält, html_translate, xml_translate)
         likadant.
+
+        Med fler än en ägare (`_okf_owner_vals_list()`) indexeras posten en
+        gång per ägare (okf-owner-and-access-scoping D5). Ägaren är YTTERST
+        och språket innerst: samma språkuppsättning gäller varje ägare.
         """
         self.ensure_one()
         if max_chars is None:
             max_chars = self._okf_summary_max_chars()
 
         first = None
-        for lang in self._okf_langs():
-            rec = self.with_context(lang=lang) if lang else self
-            concept = rec._okf_index_record_one(
-                lang=lang, max_chars=max_chars, session=session)
-            if concept and first is None:
-                first = concept
+        owners = self._okf_owner_vals_list()
+        # Ägaren hamnar i NYCKELN bara när posten indexeras för FLER ÄN EN
+        # ägare (okf-owner-and-access-scoping D6, rättat under
+        # implementationen 2026-10-06).
+        #
+        # VARFÖR: en post med EN ägare har redan en entydig nyckel —
+        # `ai.personal.memory,42` tillhör exakt en användare. Att suffixa
+        # ägaren där vore redundant och skulle byta nyckelformat för VARJE
+        # befintligt personligt koncept (churn utan vinst). Ägarläget behövs
+        # bara när SAMMA post ger N koncept, t.ex. en kalenderhändelse med
+        # flera deltagare: då är `<modell>,<id>` inte längre entydigt.
+        #
+        # Detta bevarar designens löfte: en modell utan egen implementation
+        # indexeras EXAKT som före ändringen.
+        multi_owner = len(owners) > 1
+        for owner_vals in owners:
+            key_owner = self._okf_owner_id(owner_vals) if multi_owner \
+                else None
+            for lang in self._okf_langs():
+                rec = self.with_context(lang=lang) if lang else self
+                concept = rec._okf_index_record_one(
+                    lang=lang, max_chars=max_chars, session=session,
+                    owner_vals=owner_vals, clear_dirty=False,
+                    key_owner_id=key_owner)
+                if concept and first is None:
+                    first = concept
+
+        # Flaggan rensas EN gång, efter samtliga ägare och språk — ÄVEN när
+        # inget koncept skapades (tom text, eller posten avfördes). Anroparen
+        # äger rensningen just för att N ägare inte ska ge N rensningar (som
+        # var och en kunde återtända flaggan).
+        #
+        # FYND (2026-10-06): den första versionen rensade bara när
+        # `first is not None`. Det bröt två befintliga tester: en tom post
+        # blockerade kön för evigt ("tombstone: flaggan rensas ändå"), och
+        # cronen rapporterade 0 skrivna trots att den rensat. `_okf_skip_reason`
+        # och den tomma kroppen MÅSTE rensa — det var beteendet före ändringen.
+        #
+        # OBS: `_clear_okf_dirty` bor på MIXINEN (källposten) — inte på
+        # `ai.okf.concept`. Att anropa den på det returnerade konceptet
+        # kastar AttributeError (fångat av testet 2026-10-06).
+        self._clear_okf_dirty()
         return first
 
-    def _okf_index_record_one(self, lang=None, max_chars=None, session=None):
-        """Indexera posten för ETT språk (eller språklöst)."""
+    def _okf_index_record_one(self, lang=None, max_chars=None, session=None,
+                              owner_vals=None, clear_dirty=True,
+                              key_owner_id=None):
+        """Indexera posten för ETT språk och EN ägare.
+
+        `owner_vals` (okf-owner-and-access-scoping D5): ägaren att skriva
+        konceptet för. `None` → `_okf_owner_vals()` (dagens beteende för
+        direktanrop, t.ex. från tester).
+
+        `clear_dirty` (D5): om False rensas INTE flaggan här — anroparen
+        (`_okf_index_record`) gör det en gång efter alla ägare. Default True
+        bevarar beteendet för den som anropar metoden direkt.
+
+        `key_owner_id` (D6): ägarläget att lägga i `concept_key`, eller None.
+        Sätts av `_okf_index_record` BARA när posten har fler än en ägare —
+        en enägd post behåller sitt nyckelformat.
+        """
         self.ensure_one()
         if max_chars is None:
             max_chars = self._okf_summary_max_chars()
+        if owner_vals is None:
+            owner_vals = self._okf_owner_vals()
 
         body = self._okf_body_source() or ''
         skip = self._okf_skip_reason()
 
         if skip:
             # "Tomt för alltid" — rensa så posten inte blockerar kön.
-            self._clear_okf_dirty({'okf_body': body, 'okf_summary': ''})
+            if clear_dirty:
+                self._clear_okf_dirty(
+                    {'okf_body': body, 'okf_summary': ''})
             _logger.info('OKF: avför %s,%s (%s)', self._name, self.id, skip)
             return None
 
@@ -699,11 +821,21 @@ class AIOkfMixin(models.AbstractModel):
         # Fälten skrivs och flaggan rensas i SAMMA SQL-anrop (D3).
         # Taggar sätts separat: de är en many2many och kan inte gå via
         # rå SQL på samma sätt.
-        self._clear_okf_dirty({
-            'okf_body': body,
-            'okf_summary': summary,
-            'okf_links': links,
-        })
+        #
+        # `clear_dirty=False` (D5): anroparen `_okf_index_record` rensar
+        # flaggan EN gång efter samtliga ägare. Här skrivs bara fälten.
+        if clear_dirty:
+            self._clear_okf_dirty({
+                'okf_body': body,
+                'okf_summary': summary,
+                'okf_links': links,
+            })
+        else:
+            self._write_okf_fields({
+                'okf_body': body,
+                'okf_summary': summary,
+                'okf_links': links,
+            })
 
         # Taggar: hitta/skapa ai.okf.tag. Fältet deklareras av modellen
         # (en many2many kan inte ligga på en abstrakt mixin — den ger
@@ -724,7 +856,8 @@ class AIOkfMixin(models.AbstractModel):
         source_ref = '%s,%s' % (self._name, self.id)
         vals = {
             'artifact_type': self._okf_artifact_type(),
-            'concept_key': self._okf_concept_key(lang=lang),
+            'concept_key': self._okf_concept_key(
+                lang=lang, owner_id=key_owner_id),
             'summary': summary,
             'title': (self.display_name or source_ref)[:120],
             'source_ref': source_ref,
@@ -735,7 +868,7 @@ class AIOkfMixin(models.AbstractModel):
             'source_text': body,
             'okf_tags': tag_ids,
         }
-        vals.update(self._okf_owner_vals())
+        vals.update(owner_vals)
 
         concept = self.env['ai.okf.concept']._okf_upsert(**vals)
         _logger.info(

@@ -262,13 +262,21 @@ class AIOkfConcept(models.Model):
              'utan embeddings).')
 
     _sql_constraints = [
-        # Unik per (scope, concept_key, version) — versioner delar
-        # concept_key men skiljs åt av version (beslut 15 + 10).
-        # Före detta var constraintet (scope, concept_key) vilket
+        # Unik per (scope, ÄGARE, concept_key, version).
+        #
+        # ÄGAREN INGÅR (okf-owner-and-access-scoping D6, rättat under
+        # implementationen): två ägare kan ha samma `concept_key` och samma
+        # `version` — t.ex. samma kalenderhändelse för två deltagare. Utan
+        # ägarkolumnerna avvisar villkoret den andra raden, och hela
+        # "en post -> N ägare"-förmågan faller.
+        #
+        # Historik: före detta var villkoret (scope, concept_key) vilket
         # blockerade versionshanteringen helt (bugg hittad av tester 9.1).
+        # Migration 18.0.1.302 bygger om villkoret på befintliga databaser.
         ('concept_key_scope_version_uniq',
-         'UNIQUE(scope, concept_key, version)',
-         'Concept key must be unique within scope and version.'),
+         'UNIQUE(scope, owner_company_id, owner_user_id, '
+         'owner_coworker_id, concept_key, version)',
+         'Concept key must be unique within scope, owner and version.'),
     ]
 
     @api.constrains('owner_company_id', 'owner_user_id', 'owner_coworker_id')
@@ -635,15 +643,28 @@ class AIOkfConcept(models.Model):
             raise ValidationError(
                 _('_okf_upsert() requires exactly one owner.'))
 
-        # Existerande senaste version inom (scope, concept_key).
+        # Existerande senaste version inom (scope, ÄGARE, concept_key).
         # 1.9: en språkmedveten nyckel söker även basnyckeln, så en gammal
         # rad utan språksuffix fortsätter sin kedja i stället för att en
         # parallell startas.
+        #
+        # D7 (okf-owner-and-access-scoping): ägarfiltret är OBLIGATORISKT.
+        # Utan det hittar A:s indexering B:s rad under samma nyckel och
+        # skriver version 2 av B:s koncept — och markerar B:s rad
+        # `superseded`. Det kastar inget fel; det skriver in i fel
+        # användares minne. Ägarfiltret måste vara explicit även när
+        # nyckeln bär ägaren, eftersom `_okf_lookup_keys` returnerar flera
+        # nycklar (basnyckeln kan kollidera mellan ägare).
+        owner_domain = self._owner_domain({
+            'owner_company_id': owner_company_id,
+            'owner_user_id': owner_user_id,
+            'owner_coworker_id': owner_coworker_id,
+        })
         existing = self.search([
             ('scope', '=', scope),
             ('concept_key', 'in', self._okf_lookup_keys(concept_key)),
             ('status', '!=', 'superseded'),
-        ], order='version desc', limit=1)
+        ] + owner_domain, order='version desc', limit=1)
         if existing:
             # ── Är detta en GENUIN ny version? (Fas 14) ────────────────
             # Utan denna kontroll skapade varje cron-körning en ny rad även
@@ -948,6 +969,7 @@ class AIOkfConcept(models.Model):
         #    hör ihop; det ena utan det andra är en lögn.
         sql = """
             SELECT id, scope, concept_key, version,
+                owner_company_id, owner_user_id, owner_coworker_id,
                 COALESCE(1 - (embedding <=> %(qvec)s::vector), NULL)
                     AS cosine,
                 ts_rank(search_vector,
@@ -990,24 +1012,32 @@ class AIOkfConcept(models.Model):
             sql += ' AND write_date >= %(tw)s'
             params['tw'] = time_window
 
-        # Dedup i SQL: senaste versionen per (scope, concept_key). Samma
-        # princip som _latest_per_key(), men FÖRE limit — annars hade
+        # Dedup i SQL: senaste versionen per (scope, ÄGARE, concept_key).
+        # Samma princip som _latest_per_key(), men FÖRE limit — annars hade
         # limit=20 kunnat fyllas av 20 versioner av SAMMA koncept.
         sql = """
             WITH ranked AS (
                 %s
             ),
             deduped AS (
-                SELECT DISTINCT ON (scope, concept_key)
+                SELECT DISTINCT ON (scope, owner_company_id, owner_user_id,
+                                    owner_coworker_id, concept_key)
                     id, cosine, ts_rank, score
                 FROM ranked
-                ORDER BY scope, concept_key, version DESC
+                ORDER BY scope, owner_company_id, owner_user_id,
+                         owner_coworker_id, concept_key, version DESC
             )
             SELECT id, cosine, ts_rank, score FROM deduped
         """ % sql
 
         # DISTINCT ON kräver att ORDER BY börjar med nycklarna — sorteringen
         # på score sker därför i ett yttre lager.
+        #
+        # ÄGAREN INGÅR I NYCKELN (okf-owner-and-access-scoping D7): två
+        # ägares kedjor under samma `concept_key` (t.ex. samma
+        # kalenderhändelse för två deltagare) måste dedupas var för sig.
+        # Utan ägarkolumnerna kollapsade de till EN rad, och den ena
+        # ägarens senaste version försvann ur urvalet.
         #
         # OBS: `score` MÅSTE projiceras genom båda lagren. Första versionen
         # valde bara `id` i det inre lagret och sorterade på `score` i det
@@ -1131,30 +1161,66 @@ class AIOkfConcept(models.Model):
 
     @api.model
     def _okf_lookup_keys(self, concept_key):
-        """Nycklar att söka på för en given concept_key (1.9).
+        """Nycklar att söka på för en given concept_key (1.9, D6).
 
-        En språkmedveten nyckel är `'<modell>,<id>,<lang>'`. Äldre rader
-        kan ha basnyckeln `'<modell>,<id>'` (från tiden före språkstödet).
-        För att en befintlig kedja ska fortsätta — i stället för att en ny
-        startas — returnerar vi BÅDA när nyckeln har ett språk-suffix.
+        Fyra nyckelformer finns (okf-owner-and-access-scoping D6):
 
-        Utan detta skulle varje språkmedveten omskrivning av en gammal rad
-        skapa ett parallellt koncept i stället för version 2.
+            '<modell>,<id>'                      basnyckel
+            '<modell>,<id>,<lang>'               språksuffix
+            '<modell>,<id>,user.<uid>'           ägarsuffix
+            '<modell>,<id>,user.<uid>,<lang>'    båda
+
+        Äldre rader kan ha basnyckeln `'<modell>,<id>'` (från tiden före
+        språk- OCH ägarstödet). För att en befintlig kedja ska fortsätta —
+        i stället för att en ny startas — returnerar vi basnyckeln UTÖVER
+        den givna nyckeln när det finns suffix.
+
+        Utan detta skulle varje språk- eller ägarmedveten omskrivning av en
+        gammal rad skapa ett parallellt koncept i stället för version 2.
+
+        Leden skiljs åt av `user.`-prefixet: `user.7` är ett ägarled,
+        `sv_SE` är ett språkled. Ett ägarled följt av ett språkled ger
+        basnyckeln de två första leden.
         """
         if not concept_key:
             return [concept_key]
-        parts = concept_key.rsplit(',', 2)
-        # '<modell>,<id>,<lang>' → basnyckeln är de två första leden.
-        if len(parts) == 3 and parts[2]:
+        parts = concept_key.split(',')
+        # Basnyckeln är alltid de två första leden: '<modell>,<id>'.
+        # (Modellnamn innehåller inget komma; id:t är ett heltal.)
+        if len(parts) >= 3 and parts[2]:
             base = '%s,%s' % (parts[0], parts[1])
-            return [concept_key, base]
+            if base != concept_key:
+                return [concept_key, base]
         return [concept_key]
 
+    def _owner_domain(self, owner_vals):
+        """Domän för ägarkolumnen ur ett `_okf_owner_vals()`-dict (D7).
+
+        Används av `_okf_upsert` så att två ägares koncept under samma
+        `concept_key` aldrig förväxlas. Utan detta hittar A:s indexering
+        B:s rad och skriver version 2 av B:s koncept — en tyst
+        korsanvändarskrivning som inte kastar något fel.
+        """
+        domain = []
+        for field in ('owner_company_id', 'owner_user_id',
+                      'owner_coworker_id'):
+            value = (owner_vals or {}).get(field)
+            if value:
+                domain.append((field, '=', value.id
+                               if hasattr(value, 'id') else value))
+        return domain
+
     def _latest_per_key(self):
-        """Returnera bara senaste versionen per (scope, concept_key)."""
+        """Returnera senaste versionen per (scope, ägare, concept_key).
+
+        Ägaren ingår i grupperingen (okf-owner-and-access-scoping D7):
+        annars kunde två ägares kedjor under samma nyckel kollapsa till en
+        rad, och den ena ägarens senaste version försvinna ur urvalet.
+        """
         latest_ids = self._read_group(
             [('id', 'in', self.ids)],
-            ['scope', 'concept_key'],
+            ['scope', 'owner_company_id', 'owner_user_id',
+             'owner_coworker_id', 'concept_key'],
             ['id:max'],
         )
         ids = []
