@@ -1860,12 +1860,39 @@ class AIOkfConcept(models.Model):
     def _invalidate_access_cache(self):
         """Ogiltigförklara access-cachen (task 4.9).
 
-        Anropas via hook på ir.rule/followers/groups-ändringar.
+        Anropas via hook på ir.rule/followers/groups-ändringar — mycket heta
+        vägar (`mail.followers` skrivs vid varje prenumeration).
+
+        Räknaren bumpas under ett RADLÅS. En läs-modifiera-skriv (get_param +
+        set_param) är en kapplöpning: två workers läser samma värde och skriver
+        tillbaka det, och PostgreSQL avbryter den ena med "could not serialize
+        access due to concurrent update" (Odoos set_param uppdaterar via en
+        VALUES-join, som inte kan omvärderas vid en samtidig uppdatering).
+        Låset serialiserar bumpen: den väntande transaktionen läser det
+        committade värdet (READ COMMITTED) i stället för att krascha.
+
+        Felet fortplantade sig tidigare upp i anroparens write() och gav 500
+        på AI-endpoints (ledningssystem 2026-10-07, 67 ggr/dygn, spridda över
+        hela arbetsdagen).
         """
-        self.env['ir.config_parameter'].set_param(
-            'okf.access_cache_version',
-            str(int(self.env['ir.config_parameter'].get_param(
-                'okf.access_cache_version', '0')) + 1))
+        icp = self.env['ir.config_parameter']
+        key = 'okf.access_cache_version'
+        try:
+            with self.env.cr.savepoint():
+                self.env.cr.execute(
+                    "SELECT value FROM ir_config_parameter "
+                    "WHERE key = %s FOR UPDATE", (key,))
+                row = self.env.cr.fetchone()
+                try:
+                    current = int(row[0]) if row and row[0] else 0
+                except (TypeError, ValueError):
+                    current = 0
+                icp.set_param(key, str(current + 1))
+        except Exception as e:
+            # En cache-ogiltigförklaring får ALDRIG fälla anroparens write:
+            # hookarna sitter på mail.followers/ir.rule/res.groups.
+            _logger.warning('OKF: kunde inte bumpa %s: %s', key, e)
+            return False
         return True
 
     @api.model

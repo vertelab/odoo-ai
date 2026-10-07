@@ -149,6 +149,27 @@ class AICoworkerSessionLine(models.Model):
         'sys_multiplier', 'reasoning', 'debug_info', 'source_urls',
     })
 
+    # PostgreSQL kan inte lagra NUL (0x00) i text — hela INSERT:en faller på
+    # "A string literal cannot contain NUL (0x00) characters".
+    # _persist_pi_messages sväljer felet med en varning, så symptomet blev
+    # tyst: sessionshistoriken tappades (ledningssystem 2026-10-07, 180 ggr).
+    # Verktygsutdata (binära filhuvuden, terminalfångst) kan innehålla NUL.
+    # Sanera därför ALLA strängvärden, inte bara `content` — annars återkommer
+    # felet på nästa textfält.
+    @api.model
+    def _strip_nul(self, vals):
+        cleaned = None
+        for fname, value in vals.items():
+            if isinstance(value, str) and '\x00' in value:
+                if cleaned is None:
+                    cleaned = dict(vals)
+                cleaned[fname] = value.replace('\x00', '')
+        return cleaned if cleaned is not None else vals
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        return super().create([self._strip_nul(v) for v in vals_list])
+
     def write(self, vals):
         """Tillåt endast metadatafält — innehållet är append-only."""
         blocked = set(vals) & self._IMMUTABLE_FIELDS
@@ -157,7 +178,7 @@ class AICoworkerSessionLine(models.Model):
             raise UserError(
                 'Session lines are append-only; cannot modify %s. '
                 'Create a new line instead.' % sorted(blocked))
-        return super().write(vals)
+        return super().write(self._strip_nul(vals))
 
     def unlink(self):
         """Sessionsrader får inte raderas (append-only, granskningsbart)."""
