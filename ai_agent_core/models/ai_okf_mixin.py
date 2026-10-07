@@ -162,7 +162,41 @@ class AIOkfMixin(models.AbstractModel):
                 parts.append(value)
         return '\n\n'.join(parts)
 
-    def _okf_summary_source(self):
+    def _okf_call_summary_source(self, owner_vals=None):
+        """Anropa `_okf_summary_source()` — med ägaren bara om den tar emot den.
+
+        BAKÅTKOMPATIBILITET (calendar-events-okf-scoping D3): åtta bryggor
+        implementerade `_okf_summary_source(self)` utan argument. Att skicka
+        `owner_vals=` som nyckelord hade kraschat samtliga med `TypeError`.
+        Vi inspekterar därför signaturen och anropar med argumentet bara när
+        metoden faktiskt accepterar det.
+
+        FYND (2026-10-07): den första versionen cachade svaret i ett
+        KLASSATTRIBUT som sattes dynamiskt (`type(self)._x = ...`). Odoo:s
+        testramverk fäller nya klassattribut på modeller —
+        "Found unexpected attributes on ai.company.memory:
+        _okf_summary_takes_owner". Samma fälla som `_okf_extra_indexable_models`
+        redan dokumenterar. Signaturen inspekteras därför varje gång: den
+        ligger i klassens `__dict__` och kostar ett uppslag, inte ett anrop.
+        """
+        self.ensure_one()
+        if owner_vals is None:
+            return self._okf_summary_source()
+        try:
+            import inspect
+            params = inspect.signature(
+                type(self)._okf_summary_source).parameters
+        except (TypeError, ValueError):
+            # Inbyggd eller C-implementerad — anta att den inte tar den.
+            return self._okf_summary_source()
+        takes_owner = ('owner_vals' in params or
+                       any(p.kind == p.VAR_KEYWORD
+                           for p in params.values()))
+        if takes_owner:
+            return self._okf_summary_source(owner_vals=owner_vals)
+        return self._okf_summary_source()
+
+    def _okf_summary_source(self, owner_vals=None):
         """Modellens EGEN sammanfattning, om den har en.
 
         Returnerar None när modellen inte kan sammanfatta — då tar
@@ -172,6 +206,13 @@ class AIOkfMixin(models.AbstractModel):
         har redan `subtitle` + `teaser`. Den behöver ingen LLM för att veta
         vad som sammanfattar den, och en deterministisk sammanfattning är
         bättre än en som varierar mellan körningar.
+
+        `owner_vals` (calendar-events-okf-scoping D3): ägaren konceptet byggs
+        för, eller None. En modell som indexeras för flera ägare kan använda
+        den för att sammanfatta olika per ägare. Valfritt med default `None`,
+        så en modell som inte bryr sig om ägaren är oförändrad — och en
+        befintlig implementation som inte tar argumentet kraschar inte (den
+        anropas med nyckelordet bara om den accepterar det).
         """
         return None
 
@@ -524,13 +565,20 @@ class AIOkfMixin(models.AbstractModel):
             })
         return session
 
-    def _okf_build_summary(self, text, max_chars, session=None):
+    def _okf_build_summary(self, text, max_chars, session=None,
+                           owner_vals=None):
         """Fallbackkedjan för sammanfattning.
 
             1. Modellens egen sammanfattning   (gratis, deterministisk)
             2. Text inom gränsen               (gratis)
             3. Allmän assistent                (LLM)
             4. Trunkering + loggad varning     (sista utväg)
+
+        `owner_vals` (calendar-events-okf-scoping D3): ägaren konceptet byggs
+        för, vidare till `_okf_summary_source()`. En post som indexeras för
+        flera ägare kan därmed sammanfattas olika per ägare — t.ex. genom att
+        utelämna uppgifter som bara hör till en delad vy. Valfritt med
+        default `None`, så en modell som inte tar argumentet är oförändrad.
 
         Returnerar `(summary, source)` där source är 'model' | 'text' |
         'coworker' | 'truncated'.
@@ -539,7 +587,7 @@ class AIOkfMixin(models.AbstractModel):
         text = text or ''
 
         # 1. Modellens egen
-        own = self._okf_summary_source()
+        own = self._okf_call_summary_source(owner_vals)
         if own:
             return own[:max_chars], 'model'
 
@@ -815,7 +863,8 @@ class AIOkfMixin(models.AbstractModel):
                           self._name, self.id)
             return None
 
-        summary, source = self._okf_build_summary(body, max_chars, session)
+        summary, source = self._okf_build_summary(
+            body, max_chars, session, owner_vals=owner_vals)
         links = self._okf_links_source() or []
 
         # Fälten skrivs och flaggan rensas i SAMMA SQL-anrop (D3).

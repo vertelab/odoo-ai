@@ -12,6 +12,7 @@ from . import test_okf_memory
 from . import test_okf_fail_closed
 from . import test_okf_owner_scoping
 from . import test_okf_access_selection
+from . import test_core_domain_purity
 from . import test_okf_embedding
 from . import test_session_summary
 from . import test_session_memory_bridge

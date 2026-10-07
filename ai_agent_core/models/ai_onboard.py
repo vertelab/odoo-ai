@@ -272,14 +272,21 @@ class AIOnboardCandidate(models.Model):
         """
         self.ensure_one()
         ticket_model = self.env.get('helpdesk.ticket')
-        if not ticket_model:
-            _logger.warning('ONBOARD: helpdesk not installed, cannot create ticket')
+        team_model = self.env.get('helpdesk.team')
+        if not ticket_model or not team_model:
+            # Guarda BADA modellerna explicit. `helpdesk.team` nås nedan, och
+            # att bara pröva `helpdesk.ticket` är en indirekt guard — den
+            # håller bara så länge båda modellerna kommer från samma modul.
+            # core-purity-testet fångade luckan (calendar-events-okf-scoping
+            # task 3.2, 2026-10-07).
+            _logger.warning(
+                'ONBOARD: helpdesk not installed, cannot create ticket')
             return self.action_notify()  # Fallback to notification
 
         # Find or create a team
-        team = self.env['helpdesk.team'].search([], limit=1)
+        team = team_model.search([], limit=1)
         if not team:
-            team = self.env['helpdesk.team'].create({
+            team = team_model.create({
                 'name': 'AI ONBOARD',
             })
 

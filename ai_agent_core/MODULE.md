@@ -356,3 +356,84 @@ Odoo sätter `logging.RUNBOT = 25` och döper om det till `'INFO'`
 `assertLogs(level='INFO')` sätter då loggerns nivå till 25 och filtrerar
 bort riktiga INFO-poster (20) — testet ser tomt ut trots att loggen skrivs.
 **Använd `level=logging.INFO` (talet), aldrig strängen.**
+
+## Kärnan är domän-ren — manifest OCH kod (18.0.1.303)
+
+Manifest-kravet fanns redan, och överträdelsen uppstod ändå — i **koden**:
+`ai_agent_core` beroende inte på `calendar`, men anropade
+`env['calendar.event']` **oskyddat** i en cron. Utan kalendern installerad
+kastade raden `KeyError`, och felet dolde sig bakom en `try/except` i
+cronens anropare.
+
+Ett krav som bara ser manifestet fångar inte detta. Regeln är därför:
+
+```
+   manifestet:  depends innehaller ingen domanmodul
+   koden:       ingen env['<domanmodell>'] oskyddat
+```
+
+### Vad som togs bort
+
+| Borttaget | Varför |
+|---|---|
+| `cron_index_calendar` | läste `calendar.event` oskyddat; ingen `ir.cron` |
+| `cron_index_chats` | ingen `ir.cron` — kördes aldrig |
+| `cron_daily_consolidation` | ingen `ir.cron` — kördes aldrig |
+| `cron_nightly_index` | enda anroparen av de tre ovan; ingen `ir.cron` |
+| `ai_calendar_event.py` | importerades aldrig — `ai_goal_id` fanns inte |
+| `ai_personal_goal.action_book_calendar()` | `raise UserError("Coming soon")` |
+
+Kalenderindexeringen flyttar till `calendar_ai`-bryggan, som äger domänen
+och registrerar sig via `_okf_register_indexable('calendar.event')`.
+
+**Fälla:** `cron_nightly_consolidation` (aktiv `ir.cron`) är
+`ai.company.memory`s metod — **inte** samma som `ai.personal.memory`s
+`cron_daily_consolidation`. Namnen liknar varandra; kontrollera modellen,
+inte namnet.
+
+### Guardat, inte bara borttaget
+
+En domänmodell nås via `env.get()` eller en närvaroprövning:
+
+```python
+   if 'calendar.event' in self.env:        # explicit guard
+       events = self.env['calendar.event'].search([...])
+
+   Model = self.env.get('dms.file')        # None om modulen saknas
+   if Model:
+       ...
+```
+
+**Indirekt guard räcker inte.** `ai_onboard` prövade `helpdesk.ticket` men
+nådde `helpdesk.team` — det håller bara så länge båda modellerna kommer
+från samma modul. `core-purity`-testet fångade luckan; båda prövas nu.
+
+### Så prövas det
+
+`tests/test_core_domain_purity.py` härleder kärnans beroenden ur manifestet
+och söker modellkoden efter `env['<domänmodell>']` där modellen inte är ett
+kärnberoende. Varje träff måste ha en guard inom åtta rader.
+
+```
+   DOMAIN_MODELS = ('calendar.event', 'dms.file', 'website.page',
+                    'helpdesk.team', 'helpdesk.ticket')
+```
+
+Listan namnger bara modeller vars brygga bor i ett **annat repo**
+(`calendar_ai`, `dms_ai`, `website_ai`, `helpdesk_ai`). Modeller kärnan äger
+(`ai.*`) eller får från sina egna beroenden (`base`, `mail`, `hr`,
+`web_pwa_push`) prövas inte — de är alltid tillgängliga.
+
+Testet faller om en oskyddad referens läggs tillbaka (verifierat med den
+oskyddade varianten 2026-10-07).
+
+### Sammanfattningen kan anpassas per ägare
+
+`_okf_build_summary()` och `_okf_summary_source()` tar ett valfritt
+`owner_vals`-argument, så en brygga kan sammanfatta olika per ägare — t.ex.
+utelämna en delad vy:s uppgifter i ett personligt koncept.
+
+**Bakåtkompatibilitet:** åtta bryggor implementerade
+`_okf_summary_source(self)` utan argumentet. `_okf_call_summary_source()`
+inspekterar signaturen en gång per klass och skickar ägaren bara om metoden
+accepterar den — annars hade samtliga kraschat med `TypeError`.

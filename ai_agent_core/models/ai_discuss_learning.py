@@ -20,7 +20,7 @@ class DiscussLearning(models.Model):
     def cron_extract_from_discuss(self):
         """Analysera gårdagens channel-meddelanden och extrahera lärdomar.
 
-        Körs nattetid efter cron_index_chats. För varje aktiv användare:
+        Körs nattetid. För varje aktiv användare:
         1. Samla alla channel-meddelanden från gårdagen
         2. EN LLM-anrop per användare för extraction
         3. Spara i ai.personal.memory

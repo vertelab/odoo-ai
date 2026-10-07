@@ -2,7 +2,7 @@
 """Tests för ai.personal.memory — personligt minne som följer användaren."""
 
 import json
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from odoo.tests import common, tagged
 from odoo.exceptions import UserError
@@ -167,31 +167,16 @@ class TestPersonalMemory(common.TransactionCase):
     # T12.3-12.4: Indexeringspipelines
     # ════════════════════════════════════════════
 
-    def test_cron_daily_consolidation(self):
-        """Konsolidering arkiverar gamla låg-importanta minnen."""
-        # Skapa ett gammalt låg-important minne
-        old_memory = self.env['ai.personal.memory'].create({
-            'user_id': self.user.id,
-            'content': 'Old low importance memory',
-            'category': 'fact',
-            'importance': 'low',
-            'create_date': datetime.utcnow() - timedelta(days=60),
-        })
-        # Tvinga create_date (normalt auto)
-        self.env.cr.execute(
-            'UPDATE ai_personal_memory SET create_date = %s WHERE id = %s',
-            (datetime.utcnow() - timedelta(days=60), old_memory.id))
-
-        self.env['ai.personal.memory'].cron_daily_consolidation()
-
-        # Odoo 18: refresh() är borttagen — läs om från DB i stället.
-        old_memory.invalidate_recordset()
-        self.assertTrue(old_memory.archived)
-
-    def test_nightly_cron_runs(self):
-        """Nightly cron körs utan fel."""
-        result = self.env['ai.personal.memory'].cron_nightly_index()
-        self.assertIsInstance(result, dict)
+    # FYND 2026-10-07 (calendar-events-okf-scoping, task 2.3):
+    # `test_cron_daily_consolidation` och `test_nightly_cron_runs` togs bort
+    # tillsammans med metoderna de testade. `cron_daily_consolidation`,
+    # `cron_nightly_index`, `cron_index_calendar` och `cron_index_chats`
+    # hade INGEN `ir.cron` — de kördes aldrig, och testerna bevisade bara att
+    # en död metod kunde anropas manuellt.
+    #
+    # Kalenderindexeringen flyttar till `calendar_ai`-bryggan. Historisk
+    # chattindexering är en egen fråga; live-vägen (`ai_discuss_learning`)
+    # är oberörd och testas separat.
 
     # ════════════════════════════════════════════
     # T12.6: System Prompt Injection

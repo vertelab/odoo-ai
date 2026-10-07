@@ -175,12 +175,6 @@ class AIPersonalGoal(models.Model):
         self.ensure_one()
         self.write({'status': 'cancelled', 'archived': True})
 
-    def action_book_calendar(self, recurrence='weekly'):
-        """Create recurring calendar events for this goal.
-        Requires calendar module. Currently disabled.
-        """
-        raise UserError(_("Calendar integration requires calendar module. Coming soon."))
-
     @api.model
     def search_for_user(self, user_id, status=None):
         """Find goals for a user, optionally filtered by status."""
