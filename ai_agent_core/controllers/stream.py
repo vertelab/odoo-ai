@@ -30,6 +30,13 @@ from odoo.addons.ai_agent_core.core.dsml import (  # noqa: E402
 # ett verktygsfel och satta is_error ratt.
 from odoo.addons.ai_agent_core.core.tools import ToolError  # noqa: E402
 
+# tool_history_triples: normaliserar (name, preview[, call_id])-poster fran
+# AgentLoop. Importeras modulniva av samma skal som dsml ovan — den anvands
+# inuti nastlade generatorer dar en lokal import ar kanslig.
+from odoo.addons.ai_agent_core.core.loop import (  # noqa: E402
+    tool_history_triples,
+)
+
 # Import access control helper (quest-access-control change)
 # Fånga ALLA undantag: vid tidig import (stream.py → ai_coworker → models)
 # kan AssertionError uppstå (base_sparse_field ej laddad), vilket annars
@@ -1895,6 +1902,33 @@ async def _collect(agen):
     return result
 
 
+def _openai_tool_call(name, preview, call_id):
+    """Bygg ett OpenAI-format tool_call för assistant-radens tool_calls.
+
+    OpenAI-formatet kräver {'id', 'type': 'function', 'function': {'name',
+    'arguments'}} — det är ENDA formatet där tool-raden kan paras med sin
+    assistant-rad via tool_call_id. Preview-texten behålls i arguments så
+    att historiken fortfarande är läsbar för modellen.
+
+    Saknas call_id (gamla poster) genereras ett stabilt id från namn+innehåll
+    så att paret ändå hänger ihop inom turen.
+    """
+    cid = (call_id or '').strip()
+    if not cid:
+        cid = 'call_%s_%s' % (
+            re.sub(r'[^A-Za-z0-9_]', '_', str(name or 'tool')),
+            abs(hash((name, str(preview)[:80]))) % 100000)
+    return {
+        'id': cid,
+        'type': 'function',
+        'function': {
+            'name': str(name or ''),
+            'arguments': json.dumps(
+                {'preview': str(preview)[:200]}, ensure_ascii=False),
+        },
+    }
+
+
 def _next_session_sequence(env, session_id):
     """Nästa lediga sekvensvärde för en sessionsrad.
 
@@ -1915,13 +1949,19 @@ def _persist_stream_tool_lines(env, session_id, loop_obj):
     """Persistera verktygsanrop från en web-chat-stream som tool-rader.
 
     Körs efter att SSE-generatorn strömmat klart (egen cursor). loop_obj.
-    tool_history = [(tool_name, preview), ...] fylls av AgentLoop.
-    Idempotent: rader som redan finns för sessionen (samma tool_name)
-    hoppas över, så en retry/återkörning inte duplicerar.
+    tool_history = [(tool_name, preview, tool_call_id), ...] fylls av
+    AgentLoop. Idempotent: rader som redan finns för sessionen (samma
+    tool_name) hoppas över, så en retry/återkörning inte duplicerar.
+
+    tool_call_id sparas på raden (2026-10-08) så att historiken kan byggas
+    om i giltigt OpenAI-format — utan det avvisar strikta providers hela
+    anropet med 422 "missing field tool_call_id".
     """
     if not session_id or not loop_obj:
         return
-    history = getattr(loop_obj, 'tool_history', None) or []
+    from odoo.addons.ai_agent_core.core.loop import tool_history_triples
+    history = tool_history_triples(
+        getattr(loop_obj, 'tool_history', None))
     if not history:
         return
     session = env['ai.coworker.session'].sudo().browse(int(session_id))
@@ -1930,7 +1970,7 @@ def _persist_stream_tool_lines(env, session_id, loop_obj):
     existing = set(session.session_line_ids.filtered(
         lambda l: l.role == 'tool').mapped('tool_name'))
     base_seq = _next_session_sequence(env, session.id)
-    for i, (t_name, t_preview) in enumerate(history):
+    for i, (t_name, t_preview, t_call_id) in enumerate(history):
         if t_name in existing:
             continue
         tool_cost = 500  # default (ai.tool.sys_token_cost)
@@ -1945,6 +1985,7 @@ def _persist_stream_tool_lines(env, session_id, loop_obj):
             'session_id': session.id,
             'role': 'tool',
             'tool_name': t_name,
+            'tool_call_id': t_call_id or False,
             'content': str(t_preview)[:2000],
             'sequence': base_seq + i,
             'token_input': tool_cost,
@@ -3302,15 +3343,19 @@ class AIOpenAIAPI(http.Controller):
                     # _persist_pi_messages dedupar den då.
                     if response_text:
                         try:
+                            _th = tool_history_triples(tool_history)
                             env['ai.coworker.session.line'].create({
                                 'session_id': sess.id, 'role': 'assistant',
                                 'content': response_text,
                                 'model_real': model_real or '',
                                 'sequence': _next_session_sequence(env, sess.id),
                                 'token_input': 0, 'token_output': 0,
+                                # OpenAI-format (med id) så tool-raderna kan
+                                # paras och historiken replayas. Preview-texten
+                                # behålls i content-sammanfattningen.
                                 'tool_calls': json.dumps([
-                                    {'name': n, 'preview': str(p)[:200]}
-                                    for n, p in (tool_history or [])],
+                                    _openai_tool_call(n, p, c)
+                                    for n, p, c in _th],
                                     ensure_ascii=False),
                             })
                         except Exception as e:
@@ -3328,6 +3373,7 @@ class AIOpenAIAPI(http.Controller):
                 # 1/2 kolliderade så snart verktygsrader skrivits direkt
                 # (web-ui-session-kontext D3).
                 _base_seq = _next_session_sequence(env, sess.id)
+                _th = tool_history_triples(tool_history)
                 Line.create({
                     'session_id': sess.id, 'role': 'user',
                     'content': (prompt or '')[:2000],
@@ -3343,14 +3389,14 @@ class AIOpenAIAPI(http.Controller):
                     'sequence': _base_seq + 1,
                     'sys_multiplier': sys_mult,
                     'tool_calls': json.dumps([
-                        {'name': n, 'preview': str(p)[:200]}
-                        for n, p in (tool_history or [])],
+                        _openai_tool_call(n, p, c) for n, p, c in _th],
                         ensure_ascii=False),
                 })
-                for i, (t_name, t_preview) in enumerate(tool_history or []):
+                for i, (t_name, t_preview, t_call_id) in enumerate(_th):
                     Line.create({
                         'session_id': sess.id, 'role': 'tool',
                         'tool_name': t_name, 'content': t_preview,
+                        'tool_call_id': t_call_id or False,
                         'sequence': _base_seq + 2 + i,
                     })
                 sess.write({

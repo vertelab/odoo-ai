@@ -48,6 +48,12 @@ class AICoworkerSessionLine(models.Model):
         help='URL:er som agenten använde (en per rad).')
     tool_calls = fields.Text('Tool Calls (JSON)')
     tool_name = fields.Char('Tool Name')
+    tool_call_id = fields.Char('Tool Call ID', index=True,
+        help='OpenAI:s tool_call_id för tool-rader. Parade med assistant-'
+             'radens tool_calls[].id så att historiken kan skickas tillbaka '
+             'till providern i giltigt format. Utan detta avvisar strikta '
+             'providers (t.ex. deepseek) hela anropet med 422 '
+             '"missing field tool_call_id".')
     token_input = fields.Integer('Input Tokens', default=0)
     token_output = fields.Integer('Output Tokens', default=0)
 

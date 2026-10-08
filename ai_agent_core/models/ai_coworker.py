@@ -7070,6 +7070,14 @@ class AICoworker(models.Model):
                 [('session_id', '=', session.id)],
                 order='sequence desc, id desc', limit=1)
             _base_seq = (_last_line.sequence or 0) + 1
+            # Normalisera tool_history till (namn, preview, tool_call_id) —
+            # äldre poster har bara två värden (se tool_history_triples).
+            from odoo.addons.ai_agent_core.core.loop import (
+                tool_history_triples)
+            from odoo.addons.ai_agent_core.controllers.stream import (
+                _openai_tool_call)
+            _th = tool_history_triples(
+                getattr(loop_obj, 'tool_history', None))
 
             self.env['ai.coworker.session.line'].create({
                 'session_id': session.id,
@@ -7097,10 +7105,12 @@ class AICoworker(models.Model):
                 'sys_multiplier': sys_mult,
                 'sequence': _base_seq + 1,
                 # Granskningsbar kontext: vilka verktyg anropades och med
-                # vilket resultat (preview).
+                # vilket resultat (preview). OpenAI-format (med id) så
+                # tool-raderna kan paras och historiken replayas — annars 422
+                # hos strikta providers.
                 'tool_calls': json.dumps([
-                    {'name': n, 'preview': str(p)[:200]}
-                    for n, p in getattr(loop_obj, 'tool_history', [])],
+                    _openai_tool_call(n, p, c)
+                    for n, p, c in _th],
                     ensure_ascii=False),
                 **_line_meta,
             })
@@ -7109,8 +7119,7 @@ class AICoworker(models.Model):
             # Systemtoken-kostnad per tool-anrop (budget-hard-cap D6):
             # token_input = tool.sys_token_cost, multiplier=1.0 → compute
             # ger token_sys = sys_token_cost direkt.
-            for i, (t_name, t_preview) in enumerate(
-                    getattr(loop_obj, 'tool_history', [])):
+            for i, (t_name, t_preview, t_call_id) in enumerate(_th):
                 tool_cost = 500  # default (ai.tool.sys_token_cost)
                 tool_rec_id = False
                 try:
@@ -7131,6 +7140,7 @@ class AICoworker(models.Model):
                     'role': 'tool',
                     'tool_name': t_name,
                     'tool_id': tool_rec_id or False,
+                    'tool_call_id': t_call_id or False,
                     'content': t_preview,
                     'sequence': _base_seq + 2 + i,
                     'token_input': tool_cost,

@@ -40,7 +40,7 @@ class TestWebUiSessionContext(common.TransactionCase):
         })
 
     def _line(self, sess, seq, role, content='', tool_name=False,
-              tool_calls=False):
+              tool_calls=False, tool_call_id=False):
         return self.Line.create({
             'session_id': sess.id,
             'sequence': seq,
@@ -48,6 +48,7 @@ class TestWebUiSessionContext(common.TransactionCase):
             'content': content,
             'tool_name': tool_name or False,
             'tool_calls': tool_calls or False,
+            'tool_call_id': tool_call_id or False,
         })
 
     # ── 1.2/1.3 Verktygsspåret bevaras ────────────────────────────────
@@ -61,7 +62,8 @@ class TestWebUiSessionContext(common.TransactionCase):
                        'id': 'call_1', 'type': 'function',
                        'function': {'name': 'salt_disk_usage',
                                     'arguments': '{}'}}]))
-        self._line(sess, 3, 'tool', '{"ok": true}', tool_name='salt_disk_usage')
+        self._line(sess, 3, 'tool', '{"ok": true}',
+                   tool_name='salt_disk_usage', tool_call_id='call_1')
 
         history = sess._build_history_from_lines()
         roles = [m.role.value for m in history]
@@ -71,6 +73,45 @@ class TestWebUiSessionContext(common.TransactionCase):
         self.assertEqual(assistant.tool_calls[0]['function']['name'],
                          'salt_disk_usage')
         self.assertEqual(history[2].name, 'salt_disk_usage')
+        # 2026-10-08: tool-raden måste bära sitt tool_call_id ut i
+        # OpenAI-serialiseringen — annars 422 hos strikta providers.
+        self.assertEqual(history[2].tool_call_id, 'call_1')
+        self.assertEqual(history[2].to_openai().get('tool_call_id'),
+                         'call_1')
+
+    def test_orphan_tool_line_is_dropped(self):
+        """2026-10-08: tool-rad utan deklarerat tool_call_id utelämnas.
+
+        Gamla sessioner (före tool_call_id-införandet) har tool-rader som
+        inte kan paras med någon assistant-rad. Att skicka dem ger 422
+        "missing field tool_call_id" och fäller HELA anropet — hellre
+        tappa raden än hela turen.
+        """
+        sess = self._session()
+        self._line(sess, 1, 'user', 'Hej')
+        self._line(sess, 2, 'tool', 'gammalt resultat',
+                   tool_name='odoo_web_search')  # inget tool_call_id
+        history = sess._build_history_from_lines()
+        self.assertEqual([m.role.value for m in history], ['user'],
+                         'föräldralös tool-rad ska utelämnas')
+
+    def test_tool_line_with_unknown_id_is_dropped(self):
+        """tool-rad vars id ingen assistant-rad deklarerat utelämnas."""
+        sess = self._session()
+        self._line(sess, 1, 'user', 'Hej')
+        self._line(sess, 2, 'assistant', 'Svar',
+                   tool_calls=json.dumps([{
+                       'id': 'call_1', 'type': 'function',
+                       'function': {'name': 'a', 'arguments': '{}'}}]))
+        self._line(sess, 3, 'tool', 'ok',
+                   tool_name='a', tool_call_id='call_1')
+        self._line(sess, 4, 'tool', 'fel',
+                   tool_name='b', tool_call_id='call_999')
+        history = sess._build_history_from_lines()
+        self.assertEqual([m.role.value for m in history],
+                         ['user', 'assistant', 'tool'],
+                         'bara den parade tool-raden ska med')
+        self.assertEqual(history[2].tool_call_id, 'call_1')
 
     def test_web_ui_and_coworker_paths_agree(self):
         """1.3: samma session ger samma historik i båda vägarna."""

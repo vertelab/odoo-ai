@@ -144,8 +144,12 @@ class AgentLoop:
         # workspace-approval-kön.
         self.denial_callback = denial_callback
 
-        # Observability: [(tool_name, result_preview), ...] per execution,
-        # read by callers (e.g. ai.coworker.run) for session-line persistence
+        # Observability: [(tool_name, result_preview, tool_call_id), ...] per
+        # execution, read by callers (e.g. ai.coworker.run) for session-line
+        # persistence. tool_call_id är OpenAI:s id för anropet — det krävs för
+        # att tool-raden ska kunna paras med assistant-radens tool_calls och
+        # skickas tillbaka i giltigt format (annars 422 hos strikta providers).
+        # Äldre konsumenter packar upp två värden; se _tool_history_triples().
         self.tool_history: list = []
         # Fullständiga verktygsresultat [(tool_name, arguments, result)] —
         # behövs för write-verify (3.2) eftersom tool_history trunkeras.
@@ -693,7 +697,8 @@ class AgentLoop:
         # NATS executor routing
         if tool.executor == "nats":
             result = await self._execute_via_nats(tool, tool_call.arguments)
-            self.tool_history.append((tool_call.name, str(result)[:500]))
+            self.tool_history.append(
+                (tool_call.name, str(result)[:500], tool_call.id or ''))
             self.tool_results.append(
                 (tool_call.name, dict(tool_call.arguments or {}), result))
             return result
@@ -733,7 +738,8 @@ class AgentLoop:
 
             result = execute_task.result()
             tool_elapsed = time.time() - tool_start
-            self.tool_history.append((tool_call.name, str(result)[:500]))
+            self.tool_history.append(
+                (tool_call.name, str(result)[:500], tool_call.id or ''))
             self.tool_results.append(
                 (tool_call.name, dict(args or {}), result))
             _logger.debug(
@@ -1128,3 +1134,25 @@ class StreamingAgentLoop(AgentLoop):
         if isinstance(args, dict) and args.get('url'):
             urls.add(str(args['url']))
         return sorted(urls)
+
+
+def tool_history_triples(history):
+    """Normalisera tool_history-poster till (name, preview, call_id).
+
+    tool_history bär sedan 2026-10-08 tre värden — (namn, preview,
+    tool_call_id) — eftersom OpenAI-formatet kräver att en tool-rad paras
+    med assistant-radens tool_calls[].id. Poster skrivna före ändringen (och
+    poster från tredjeparts-loopar) har bara två värden; de får en tom
+    call_id i stället för att krascha uppackningen.
+
+    Använd denna i stället för att packa upp tuplen direkt.
+    """
+    out = []
+    for entry in history or []:
+        if not entry:
+            continue
+        name = entry[0]
+        preview = entry[1] if len(entry) > 1 else ''
+        call_id = entry[2] if len(entry) > 2 else ''
+        out.append((name, preview, call_id or ''))
+    return out

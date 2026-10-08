@@ -634,6 +634,10 @@ class AICoworkerSession(models.Model):
             'system': Role.SYSTEM,
         }
         history = []
+        # Vilka tool_call_id:n som den senaste assistant-raden deklarerade.
+        # En tool-rad får bara skickas om dess id finns här — annars är den
+        # föräldralös och OpenAI-formatet ogiltigt (422 hos strikta providers).
+        declared_call_ids = set()
         for line in lines:
             role = role_map.get(line.role)
             if role is None:
@@ -658,15 +662,36 @@ class AICoworkerSession(models.Model):
                     tool_calls = None
                     tool_summary = ''
             if role == Role.TOOL:
+                call_id = (line.tool_call_id or '').strip()
+                # Säkerhetsnät (2026-10-08): en tool-rad utan tool_call_id —
+                # eller med ett id som ingen assistant-rad deklarerat — gör
+                # hela historiken ogiltig och får strikta providers att
+                # avvisa anropet med 422. Raden kan inte repareras i
+                # efterhand (gamla sessioner saknar id), så vi utelämnar den
+                # hellre än att fälla hela turen.
+                if not call_id or call_id not in declared_call_ids:
+                    continue
                 history.append(Message(
                     role=Role.TOOL,
                     content=line.content or '',
                     name=line.tool_name or '',
+                    # tool_call_id krävs av OpenAI-formatet: en tool-rad måste
+                    # paras med assistant-radens tool_calls[].id.
+                    tool_call_id=call_id,
                 ))
             elif role == Role.ASSISTANT:
                 content = line.content or ''
                 if tool_summary:
                     content = (content + '\n\n' + tool_summary).strip()
+                # Nya assistant-raden äger sina tool_calls — nollställ först
+                # så att tool-rader bara paras mot den rad som deklarerade dem.
+                declared_call_ids = set()
+                if tool_calls:
+                    for tc in tool_calls:
+                        cid = (tc.get('id') or '').strip() \
+                            if isinstance(tc, dict) else ''
+                        if cid:
+                            declared_call_ids.add(cid)
                 history.append(Message(
                     role=Role.ASSISTANT,
                     content=content,
