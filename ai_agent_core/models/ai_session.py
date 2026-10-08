@@ -548,8 +548,7 @@ class AICoworkerSession(models.Model):
 
     @api.model
     def _lookup_or_create_pi_session(self, pi_session_id,
-                                     copy_from_pi_session_id='',
-                                     context_hint=None):
+                                     copy_from_pi_session_id=''):
         """Find-or-create session via pi_session_id (session-cost-context).
 
         Används av POST /ai/v1/sessions/lookup och openai_api-vägen.
@@ -558,21 +557,12 @@ class AICoworkerSession(models.Model):
         (project/task/partner + cost_context_confirmed) kopierad från
         källsessionen.
 
-        context_hint (T/11862-fix): dict med {task_id, project_id,
-        partner_id} som Pi-klienten skickar med i provider-anropet. Utan
-        denna gissar `_session_auto_capture` task_id ur prompttexten
-        (regex `T/xxxx`) — skriver användaren inte uppgiftsnumret blir
-        sessionen föräldralös (6 av 10 sessioner 2026-10-08 saknade
-        task_id). Hinten skriver ENDAST tomma fält (senast kända kontext
-        vinner, inga nollställningar) och får aldrig fälla anropet.
-
         Returnerar (session, created: bool).
         """
         pi_session_id = (pi_session_id or '').strip().lower()
         session = self.search(
             [('pi_session_id', '=', pi_session_id)], limit=1)
         if session:
-            session._apply_context_hint(context_hint)
             return session, False
         vals = {
             'pi_session_id': pi_session_id,
@@ -591,62 +581,7 @@ class AICoworkerSession(models.Model):
                 if 'cost_context_confirmed' in self._fields:
                     vals['cost_context_confirmed'] = \
                         src.cost_context_confirmed
-        session = self.create(vals)
-        session._apply_context_hint(context_hint)
-        return session, True
-
-    def _apply_context_hint(self, hint):
-        """Skriv Pi-klientens kostnadskontext-hint på sessionen.
-
-        hint = {'task_id': int, 'project_id': int, 'partner_id': int}.
-        Skriver ENDAST fält som är tomma på sessionen (en känd uppgift
-        skrivs aldrig över av en äldre hint) och härleder project/partner
-        ur task när de saknas. Tyst no-op vid fel — en hint får aldrig
-        fälla en körning.
-        """
-        self.ensure_one()
-        if not hint or not isinstance(hint, dict):
-            return self
-        try:
-            Task = self.env['project.task'].sudo()
-            vals = {}
-            task_id = hint.get('task_id')
-            if task_id and 'task_id' in self._fields and not self.task_id:
-                task = Task.browse(int(task_id)).exists()
-                if task:
-                    vals['task_id'] = task.id
-                    if 'project_id' in self._fields and not self.project_id \
-                            and task.project_id:
-                        vals['project_id'] = task.project_id.id
-                    if not self.partner_id and task.project_id \
-                            and task.project_id.partner_id:
-                        vals['partner_id'] = \
-                            task.project_id.partner_id.id
-            project_id = hint.get('project_id')
-            if project_id and 'project_id' in self._fields \
-                    and not self.project_id:
-                project = self.env['project.project'].sudo() \
-                    .browse(int(project_id)).exists()
-                if project:
-                    vals['project_id'] = project.id
-                    if not self.partner_id and project.partner_id:
-                        vals['partner_id'] = project.partner_id.id
-            partner_id = hint.get('partner_id')
-            if partner_id and not self.partner_id:
-                partner = self.env['res.partner'].sudo() \
-                    .browse(int(partner_id)).exists()
-                if partner:
-                    vals['partner_id'] = partner.id
-            if vals:
-                self.sudo().write(vals)
-                _logger.info(
-                    'session %s: kostnadskontext-hint tillämpad: %s',
-                    self.id, vals)
-        except Exception as e:
-            _logger.warning(
-                'session %s: kunde inte tillämpa kontext-hint: %s',
-                self.id, e)
-        return self
+        return self.create(vals), True
 
     def _capture_context(self, task=None, project=None, partner=None,
                          object_ref=None, **kwargs):
