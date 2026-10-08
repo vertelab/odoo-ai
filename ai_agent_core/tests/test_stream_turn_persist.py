@@ -71,14 +71,15 @@ def _dummy_tools():
     return reg
 
 
-def _run_stream(provider, max_rounds=2, tools=None):
+def _run_stream(provider, max_rounds=2, tools=None, checkpoint_callback=None):
     from odoo.addons.ai_agent_core.core.loop import (
         StreamingAgentLoop, AgentConfig)
     loop = StreamingAgentLoop(
         provider=provider,
         tools=tools if tools is not None else _dummy_tools(),
         config=AgentConfig(model='test-model', system_prompt='sys',
-                           max_rounds=max_rounds),
+                           max_rounds=max_rounds,
+                           checkpoint_callback=checkpoint_callback),
     )
     events = []
 
@@ -310,3 +311,44 @@ class TestCleanupTimeout(common.TransactionCase):
             task.cancel()
         finally:
             loop.close()
+
+
+@tagged('post_install', '-at_install')
+class TestRoundCheckpoint(common.TransactionCase):
+    """Transaktionshygien: loopen släpper sin transaktion vid runda-gränser.
+
+    VARFÖR (mätt på ledningssystem 2026-10-08): en långlivad transaktion håller
+    ACCESS SHARE på varje tabell dess verktyg läst — en streaming-tur höll
+    project_project + project_task + ai_coworker i 35–39 s (idle in transaction
+    medan den väntade på LLM). En moduluppgradering som lägger till ett fält
+    behöver ACCESS EXCLUSIVE på en het tabell, och Odoo avbryter låsväntan efter
+    15 s (modules/loading.py: "SET SESSION lock_timeout = '15s'"). Följden var
+    att uppgraderingar med schemaändringar krävde nedtid.
+
+    Testet bevisar att checkpoint_callbacken anropas vid de två punkter där
+    ägaren committar sin cursor: före provider-anropet ('round-start') och när
+    rundans verktyg kört klart ('tools-done').
+    """
+
+    def test_checkpoint_fires_at_round_boundaries(self):
+        seen = []
+        _run_stream(
+            _ToolLoopingProvider(), max_rounds=2,
+            checkpoint_callback=lambda label, *a, **kw: seen.append(label))
+        self.assertIn(
+            'round-start', seen,
+            'checkpoint_callback ska anropas före varje provider-anrop')
+        self.assertIn(
+            'tools-done', seen,
+            'checkpoint_callback ska anropas när rundans verktyg kört klart')
+
+    def test_checkpoint_failure_does_not_break_the_turn(self):
+        """En trasig commit får inte fälla en tur som annars fungerar."""
+        def _boom(label):
+            raise RuntimeError('commit dog')
+
+        events = _run_stream(_ToolLoopingProvider(), max_rounds=2,
+                             checkpoint_callback=_boom)
+        self.assertTrue(
+            any(getattr(e, 'type', '') == 'done' for e in events),
+            'turen ska ändå nå ett done-event')

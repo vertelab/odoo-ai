@@ -549,6 +549,11 @@ class AIOpenAPIController(http.Controller):
                             config=AgentConfig(
                                 model=model_name, system_prompt=_sys_prompt,
                                 max_rounds=10,
+                                # Transaktionshygien (punkt 5): committa cursorn
+                                # vid varje runda-gräns så att inga lås hålls
+                                # över LLM-väntan (annars faller en
+                                # moduluppgradering med DDL på Odoos 15 s tak).
+                                checkpoint_callback=lambda _l, _cr=gen_env.cr: _cr.commit(),
                             ),
                         )
 

@@ -618,6 +618,21 @@ class AIStreamController(http.Controller):
                                 tools.register_many(ai_tool_records_to_tools(
                                     tool_recs, gen_env))
 
+                        # ── Transaktionshygien (punkt 5) ────────────────────
+                        # Loopen committar sin transaktion vid varje runda-gräns
+                        # (checkpoint_callback) så att inga lås hålls över
+                        # LLM-väntan. gen_cr skapas först längre ned, så
+                        # callbacken läser ur en hållare som fylls då.
+                        # Utan detta höll en tur AccessShareLock på allt dess
+                        # verktyg läst i tiotals sekunder → moduluppgraderingar
+                        # med DDL föll på Odoos 15 s låstak.
+                        _cr_holder = {'cr': None}
+
+                        def _checkpoint(_label, _h=_cr_holder):
+                            _cr = _h.get('cr')
+                            if _cr is not None and not _cr.closed:
+                                _cr.commit()
+
                         def _make_loop(**kw):
                             """Bygg StreamingAgentLoop med interrupt-handler."""
                             cfg = dict(
@@ -639,6 +654,7 @@ class AIStreamController(http.Controller):
                                             model=a['model'],
                                             system_prompt=system_prompt,
                                             max_rounds=10,
+                                            checkpoint_callback=_checkpoint,
                                             # Långa tool-resultat (YouTube-transkript ≈ 24k tecken) får plats
                                             max_tool_result_chars=40000,
                                             nats_api_secret=nats_api_secret,
@@ -657,6 +673,7 @@ class AIStreamController(http.Controller):
                                     model=model,
                                     system_prompt=system_prompt,
                                     max_rounds=10,
+                                    checkpoint_callback=_checkpoint,
                                     # Långa tool-resultat (YouTube-transkript ≈ 24k tecken) får plats
                                     max_tool_result_chars=40000,
                                     nats_api_secret=nats_api_secret,
@@ -739,6 +756,9 @@ class AIStreamController(http.Controller):
 
                     with _Registry(gen_dbname).cursor() as gen_cr:
                         gen_env = _api.Environment(gen_cr, gen_uid, gen_context)
+                        # Nu finns cursorn — låt loopens checkpoint callback
+                        # committa den vid varje runda-gräns.
+                        _cr_holder['cr'] = gen_cr
 
                         def _drive_stream():
                             """Kör async-generatorn i egen loop, putta chunks."""
@@ -3645,6 +3665,17 @@ class AIOpenAIAPI(http.Controller):
                     except Exception:
                         _gen_cr.close()
                         raise
+
+                    # Transaktionshygien (punkt 5): sessions-skapandet ovan har
+                    # DB-arbete på _gen_cr. Släpp transaktionen innan den långa
+                    # LLM-strömmen — annars hålls ACCESS SHARE på allt vi läst
+                    # (res_users, ai_coworker, sessionen) i minuter, och en
+                    # moduluppgradering med DDL faller på Odoos 15 s låstak.
+                    try:
+                        _gen_cr.commit()
+                    except Exception:
+                        _logger.warning(
+                            'kunde inte committa före stream', exc_info=True)
 
                     # HYBRID: REN streaming-generering — Pi:s messages +
                     # tools skickas oförändrade; tool_calls emitteras till Pi.

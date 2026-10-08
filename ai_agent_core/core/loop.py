@@ -88,6 +88,27 @@ class AgentConfig:
     # äger skrivningen. Samma mönster som denial_callback.
     outcome_callback: callable = None
 
+    # Transaktionshygien (2026-10-08): anropas vid varje punkt där loopen INTE
+    # behöver sin databastransaktion öppen — före ett provider-anrop och när
+    # rundans verktyg kört klart. Ägaren (controllern som äger cursorn) sätter
+    # den till att committa sin cursor.
+    #
+    # VARFÖR: en långlivad transaktion håller ACCESS SHARE på VARJE tabell dess
+    # verktyg läst. En streaming-tur kan pågå i minuter, och en `ALTER TABLE`
+    # (moduluppgradering som lägger till ett fält) behöver ACCESS EXCLUSIVE.
+    # Odoo avbryter låsväntan efter 15 s (modules/loading.py sätter
+    # "SET SESSION lock_timeout = '15s'"), så uppgraderingen faller — och en
+    # uppgradering som faller mitt i ett schema står halvfärdig.
+    #
+    # Mätt på ledningssystem 2026-10-08: en AI-turs transaktion höll
+    # AccessShareLock på project_project + project_task + ai_coworker i
+    # 35–39 s (idle in transaction medan den väntade på LLM) — exakt de
+    # tabeller en moduluppgradering behövde låsa.
+    #
+    # Loopen förblir domän-ren (ingen Odoo-import); callbacken äger committen.
+    # Samma mönster som outcome_callback/denial_callback.
+    checkpoint_callback: callable = None
+
 
 # ---------------------------------------------------------------------------
 # AgentLoop (LOOP-001, LOOP-003, LOOP-005, LOOP-007)
@@ -206,6 +227,24 @@ class AgentLoop:
             except Exception:
                 _logger.exception('outcome_callback misslyckades')
         return response
+
+    def _checkpoint(self, label: str):
+        """Släpp databastransaktionen vid en punkt där loopen inte behöver den.
+
+        Anropas före varje provider-anrop och när rundans verktyg kört klart
+        (se config.checkpoint_callback). Ägaren committar sin cursor, så att
+        inga lås hålls över LLM-väntan.
+
+        Får aldrig kasta vidare fel: en misslyckad commit ska inte fälla en tur
+        som annars fungerar (samma princip som _finish).
+        """
+        cb = getattr(self.config, 'checkpoint_callback', None)
+        if cb:
+            try:
+                cb(label)
+            except Exception:
+                _logger.exception(
+                    'checkpoint_callback misslyckades (%s)', label)
 
     def _session_headers(self) -> Optional[dict]:
         """Per-anrops-headers för Bifrost-sessionskorrelation.
@@ -330,6 +369,11 @@ class AgentLoop:
                                 break
                 except Exception:
                     pass  # Best-effort — never fail a turn over context injection
+
+            # Släpp transaktionen innan provider-anropet (kan ta tiotals
+            # sekunder) — annars hålls ACCESS SHARE på allt turen läst och en
+            # moduluppgradering med DDL faller på Odoos 15 s låstak.
+            self._checkpoint('round-start')
 
             # -- Provider call (with cancel support) --
             tool_defs = self._tool_defs(messages)
@@ -591,6 +635,9 @@ class AgentLoop:
                             name=tc.name,
                         ))
 
+                # Rundans DB-arbete är klart — släpp transaktionen innan
+                # loopen väntar på providern igen.
+                self._checkpoint('tools-done')
                 continue  # next round
 
             # -- Empty response (shouldn't happen) --
@@ -959,6 +1006,10 @@ class StreamingAgentLoop(AgentLoop):
             round_tokens: list[str] = []
             tool_calls_seen: list[dict] = []
 
+            # Släpp transaktionen innan vi väntar på providern — strömmen kan
+            # pågå i tiotals sekunder och låsen ska inte sitta under tiden.
+            self._checkpoint('round-start')
+
             async for event in self.provider.chat_stream(
                 model=self.config.model,
                 messages=messages,
@@ -1050,6 +1101,9 @@ class StreamingAgentLoop(AgentLoop):
                         tool_calls_seen = []
                         text_buffer = ""
                         round_tokens = []
+                        # Rundans DB-arbete är klart — släpp transaktionen
+                        # innan loopen går vidare.
+                        self._checkpoint('tools-done')
                         # break (inte continue!) — continue skulle bara hämta
                         # nästa event ur samma stream; en dubbel-done från
                         # providern skulle då avsluta loopen innan runda 2.
