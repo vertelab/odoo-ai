@@ -128,7 +128,7 @@ and cost-effective AI systems that drive innovation and efficiency across their 
         "security/ai_quest_record_rule.xml",
 
     """,
-    'author': "Vertel AB",
+    'author': "Vertel Sverige AB",
     'website': "https://vertel.se/apps/odoo-ai/ai_agent",
     'images': ["static/description/banner.png"],  # 560x280
     "license": "AGPL-3",

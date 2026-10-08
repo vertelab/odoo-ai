@@ -28,7 +28,7 @@
     'summary': "Adds MCP Power to AI Agent and AI Quests",
     'category': "AI Orchestration",
     "description": "Module to manage 'res.mcp' resources with interface and security rules.",
-    "author": "Vertel AB",
+    "author": "Vertel Sverige AB",
     'website': "https://vertel.se/apps/odoo-ai/ai_agent",
     'images': ["static/description/banner.png"],  # 560x280
     "license": "AGPL-3",
