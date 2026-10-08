@@ -55,7 +55,7 @@ Pi MCP Developer Server
         - Web integration: Exposes HTTP endpoints for external systems.
         - Extends Odoo: Builds on ai_pi_mcp.dev_tools, mcp.session, mcp.tool, mcp.tool.mixin.
     ''',
-    'author': 'Vertel AB',
+    'author': 'Vertel Sverige AB',
     'website': 'https://vertel.se/apps/odoo-ai/ai_pi_mcp',
     'license': 'AGPL-3',
     'depends': [

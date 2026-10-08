@@ -14,7 +14,7 @@ Gamification AI Bridge
         - Extends Odoo: Builds on ai.personal.goal.
     ''',
     'category': 'AI/Gamification',
-    'author': 'Vertel AB',
+    'author': 'Vertel Sverige AB',
     'website': 'https://vertel.se/apps/odoo-ai/gamification_ai',
     'license': 'AGPL-3',
     'depends': ['ai_agent_core', 'gamification'],

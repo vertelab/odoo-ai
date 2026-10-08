@@ -13,15 +13,14 @@
         * Data visualization and insights
         
         For professional implementation, customization and support services,
-        contact Vertel AB at https://vertel.se/contact
+        contact Vertel Sverige AB at https://vertel.se/contact
     """,
     'sequence': 10,
-    'author': 'Vertel AB',
+    'author': 'Vertel Sverige AB',
     'website': 'https://vertel.se/apps/odoo-ai/ai_agent_trend',
     'images': ['static/description/banner.png'],
     'license': 'AGPL-3', 
     'contributor': '',
-    'maintainer': 'Vertel AB',
     'depends': [
         'ai_agent_pgvector',
     ],

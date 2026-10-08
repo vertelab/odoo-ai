@@ -14,7 +14,7 @@ AI Agent Core — Academic Research Skills
         - Focused Fix: A small, targeted improvement to standard Odoo behaviour.
     ''',
     'category': 'AI Orchestration',
-    'author': 'Vertel AB',
+    'author': 'Vertel Sverige AB',
     'website': 'https://vertel.se/apps/odoo-ai/ai_agent_core_academic',
     'license': 'AGPL-3',
     'depends': ['ai_agent_core'],

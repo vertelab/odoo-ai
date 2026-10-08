@@ -6,7 +6,7 @@ Standalone AI agent engine for Odoo. No LangChain dependency. Provides:
 
 - **Agent Loop**: Buzz-inspired while-loop with Bifrost provider
 - **Web Chat**: `/ai/chat` with SSE streaming, threads, slash commands
-- **Models**: ai.quest, ai.agent, ai.skill, ai.tool, ai.identity, ai.model, ai.provider
+- **Models**: ai.coworker, ai.agent, ai.skill, ai.tool, ai.identity, ai.model, ai.provider
 - **Skills system**: Reusable competencies with recipes
 - **Identity system**: Agent personality (SOUL.md)
 
@@ -14,20 +14,20 @@ Standalone AI agent engine for Odoo. No LangChain dependency. Provides:
 
 | Model | Description | Key Fields |
 |-------|-------------|------------|
-| ai.quest | AI Quest — the top-level unit | name, description, init_type, is_supervisor, identity_id |
+| ai.coworker | AI Medarbetare — the top-level unit | name, description, init_type, is_supervisor, identity_id |
 | ai.agent | AI Agent — a specialized worker | name, bifrost_model, direct_model, provider_type, skill_ids |
-| ai.quest.agent | M2M: quest ↔ agent assignment | quest_id, agent_id, sequence |
+| ai.coworker.agent | M2M: coworker ↔ agent assignment | coworker_id, agent_id, sequence |
 | ai.skill | Reusable competency | name, recipe_text, category, trigger_keywords |
 | ai.identity | Agent personality/soul | name, system_prompt, style, scope, skill_ids |
 | ai.model | AI model with capabilities | name, is_vision, has_streaming, context_window, sys_multiplier |
 | ai.provider | AI provider (Bifrost, OpenAI, etc.) | name, provider_type, base_url |
 | ai.tool | Reusable tool | name, description, risk_level |
-| ai.memory | Quest memory (RAG facts) | name, content, category, importance |
+| ai.memory | Coworker memory (RAG facts) | name, content, category, importance |
 | ai.tag | Lightweight AI tags | name, color |
 
 ## Init Types
 
-Quests can be triggered in multiple ways via `ai.quest.init_type`:
+Coworkers can be triggered in multiple ways via `ai.coworker.init_type`:
 
 | Type | Description | Auto-created |
 |------|-------------|-------------|
@@ -41,10 +41,10 @@ Quests can be triggered in multiple ways via `ai.quest.init_type`:
 | manual | Manual trigger only | — |
 | openai_api | OpenAI-compatible endpoint | API key |
 
-## Key Methods on ai.quest
+## Key Methods on ai.coworker
 
 - `run(prompt, system_prompt=None)` — synchronous execution via AgentLoop
-- `get_available_skills()` — union of agent skills, identity skills, quest copies
+- `get_available_skills()` — union of agent skills, identity skills, coworker copies
 - `powerbox(prompt, res_model, res_id)` — context-aware execution
 - `action_run_scheduled()` — cron-triggered execution
 
@@ -61,7 +61,7 @@ agent.skill_ids      # M2M to ai.skill
 
 `ai.coworker.session` + `ai.coworker.session.line` är granskningsspåret för
 alla AI-konversationer (web-chat `/ai/chat`, openai_api `/ai/v1`,
-quest.run(), powerbox, mail). Bokföring per meddelande:
+coworker.run(), powerbox, mail). Bokföring per meddelande:
 
 - **User-rad** bär requestens **input-tokens** (`token_input`, `token_output=0`)
   — prompt-kostnaden för det meddelandet.

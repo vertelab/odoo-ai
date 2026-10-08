@@ -6,7 +6,7 @@
     'description': """
 Lär dig använda AI-assistenten: fråga, delegera och granska — med människan i kontrollen.
 """,
-    'author': 'Vertel AB',
+    'author': 'Vertel Sverige AB',
     'website': 'https://vertel.se',
     'license': 'LGPL-3',
     'category': 'Website/eLearning',

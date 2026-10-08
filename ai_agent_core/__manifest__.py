@@ -2,7 +2,7 @@
 # Part of Odoo. See LICENSE file for full copyright and licensing details.
 {
     'name': 'AI: Agent Core',
-    'version': '18.0.1.306',
+    'version': '18.0.1.305',
     'summary': 'AI Agent Core — Org-stomme, heartbeat, onboarding, task-system',
     'category': 'AI Orchestration',
     'description': """
@@ -17,7 +17,7 @@
         * Bridge Protocol — connect strategy, marketing, helpdesk modules
         * hr integration — AI coworkers as hr.employees, AI department managers
     """,
-    'author': 'Vertel AB',
+    'author': 'Vertel Sverige AB',
     'website': 'https://vertel.se/apps/odoo-ai/ai_agent_core',
     'license': 'AGPL-3',
     # ai_agent (legacy) definierar samma modeller/xmlids (ai.tool,
@@ -95,7 +95,7 @@
         'data/cron_skill_improve.xml',
         'data/cron_onboard.xml',
         'data/cron_memory_consolidation.xml',
-        'data/cron_scheduled_quests.xml',
+        'data/cron_scheduled_coworkers.xml',
         'data/cron_workspace_distill.xml',
         'data/cron_website_rag.xml',
         'data/cron_heartbeat.xml',

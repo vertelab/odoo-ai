@@ -11,7 +11,7 @@ BG_CRON_NAMES = [
     ('memory_consolidation', 'AI: Daglig minneskonsolidering'),
     ('monthly_summary', 'AI: Generera månadssammanställning'),
     ('onboard', 'AI: ONBOARD — scanna efter quest-kandidater'),
-    ('scheduled_quests', 'AI: Run Scheduled Quests'),
+    ('scheduled_coworkers', 'AI: Run Scheduled Coworkers'),
     ('bifrost_sync', 'AI: Synca modeller från Bifrost'),
     ('kaizen', 'AI: Veckovis Kaizen-rapport'),
     ('website_rag', 'Website RAG Refresh'),

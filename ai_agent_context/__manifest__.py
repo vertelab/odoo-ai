@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 ##############################################################################
 #
-#    Copyright (C) 2024- Vertel AB (<https://vertel.se>).
+#    Copyright (C) 2024- Vertel Sverige AB (<https://vertel.se>).
 #
 #    This program is free software: you can redistribute it and/or modify
 #    it under the terms of the GNU Affero General Public License as
@@ -55,7 +55,7 @@ Context Injection for AI Quests
         - UI Integration: Extends 3 view(s) in the Odoo interface.
         - Extends Odoo: Builds on ai.coworker, ai.coworker.session, discuss.channel.
     ''',
-    'author': 'Vertel AB',
+    'author': 'Vertel Sverige AB',
     'website': 'https://vertel.se/apps/odoo-ai/ai_agent_context',
     'images': ['static/description/banner.png'],
     'license': 'AGPL-3',

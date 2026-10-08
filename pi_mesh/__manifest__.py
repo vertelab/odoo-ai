@@ -23,7 +23,7 @@ trasig avsändare inte fastnar i retry-loopar.
 Depends on:
     - ai_agent_core: coworker- och sessionsmodellerna
     """,
-    'author': 'Vertel AB',
+    'author': 'Vertel Sverige AB',
     'website': 'https://vertel.se',
     'depends': ['ai_agent_core'],
     'data': [

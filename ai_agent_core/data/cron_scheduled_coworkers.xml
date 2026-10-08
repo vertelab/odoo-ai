@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Cron: Run all active cron-type coworkers every 5 minutes -->
+    <record id="cron_scheduled_coworkers" model="ir.cron">
+        <field name="name">AI: Run Scheduled Coworkers</field>
+        <field name="model_id" ref="model_ai_coworker"/>
+        <field name="state">code</field>
+        <field name="code"># Run all active cron-type coworkers
+coworkers = model.search([('init_type', '=', 'cron'), ('status', '=', 'active')])
+for coworker in coworkers:
+    try:
+        result = coworker.action_run_scheduled()
+    except Exception:
+        pass</field>
+        <field name="interval_number">5</field>
+        <field name="interval_type">minutes</field>
+        <field name="active" eval="True"/>
+    </record>
+</odoo>

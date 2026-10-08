@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# Copyright (C) 2026 Vertel AB (<https://vertel.se>).
+# Copyright (C) 2026 Vertel Sverige AB (<https://vertel.se>).
 # License AGPL-3.0 or later (http://www.gnu.org/licenses/agpl).
 
 {
@@ -35,7 +35,7 @@ agent_pi — Pi Agent Infrastructure
         - UI Integration: Extends 4 view(s) in the Odoo interface.
         - Extends Odoo: Builds on mail.thread, pi.agent, pi.artifact, pi.nats.
     ''',
-    'author': 'Vertel AB',
+    'author': 'Vertel Sverige AB',
     'website': 'https://vertel.se/apps/odoo-ai/agent_pi',
     'license': 'AGPL-3',
     'depends': ['mail', 'base'],

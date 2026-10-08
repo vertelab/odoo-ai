@@ -79,7 +79,7 @@ AGENTS = [
 
 
 def post_init_hook(env):
-    """Create agents and quest after module installation."""
+    """Create agents and coworker after module installation."""
 
     # Check if already installed (idempotent)
     existing = env['ai.skill'].search_count([('name', '=', 'Academic Paper Writing')])
@@ -112,25 +112,28 @@ def post_init_hook(env):
         })
         agents[xmlid] = agent
 
-    # Create quest
-    quest = env['ai.quest'].create({
+    # Create coworker (AI Medarbetare). OBS: 'init_type' är ett deprecated
+    # compute-fält (ingen inverse) — det får INTE skickas till create().
+    # Skriv init-typen på init_type_ids-raden i stället.
+    coworker = env['ai.coworker'].create({
         'name': 'Academic Paper Writer',
         'description': _RECIPE,
         'sub_description': '8-agent pipeline — research to publication',
-        'init_type': 'manual',
         'is_supervisor': True,
         'status': 'active',
         'use_chat_history': True,
         'use_time_context': True,
     })
+    coworker.init_type_ids.filtered(
+        lambda it: it.init_type == 'manual')[:1].enabled = True
 
     # Assign agents in sequence
     for seq, (xmlid, agent) in enumerate(agents.items(), 1):
-        env['ai.quest.agent'].create({
-            'quest_id': quest.id,
+        env['ai.coworker.agent'].create({
+            'coworker_id': coworker.id,
             'agent_id': agent.id,
             'sequence': seq,
         })
 
-    _logger.info('Created quest "%s" with %d agents and skill "%s"',
-                  quest.name, len(agents), skill.name)
+    _logger.info('Created coworker "%s" with %d agents and skill "%s"',
+                  coworker.name, len(agents), skill.name)

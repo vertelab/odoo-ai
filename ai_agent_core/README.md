@@ -76,9 +76,9 @@ ai_agent_core/
 ├── models/                 # Odoo models (require Odoo runtime)
 │   ├── ai_provider.py      # ai.provider — LLM provider configuration
 │   ├── ai_model.py         # ai.model — individual models with capabilities
-│   ├── ai_quest.py         # ai.quest — standalone quests + AICoworkerRun wizard
+│   ├── ai_coworker.py      # ai.coworker — standalone coworkers + AICoworkerRun wizard
 │   ├── ai_agent.py         # ai.agent — agents with identity, skills, tools, budget
-│   ├── ai_session.py       # ai.quest.session — extended with token tracking
+│   ├── ai_session.py       # ai.coworker.session — extended with token tracking
 │   ├── ai_identity.py      # ai.identity — SOUL.md (personality, style, values)
 │   ├── ai_skill.py         # ai.skill — reusable competencies (agentskills.io)
 │   ├── ai_tool.py          # ai.tool — user-defined custom tools
@@ -555,7 +555,7 @@ Efter en skrivande verktygsoperation verifieras utfallet mot verktygets
 
 ## License
 
-AGPL-3 — Vertel AB
+AGPL-3 — Vertel Sverige AB
 
 ---
 
@@ -895,7 +895,7 @@ inte bara när en människa väljer i formuläret. Två fall hanteras: identitet
 är en mall, eller den används redan av en annan medarbetare. Ompekningen
 skyddas mot rekursion med `__ai_identity_copy_guard`.
 
-För verklig isolation av erfarenheter finns dessutom **per-quest-forken**
+För verklig isolation av erfarenheter finns dessutom **per-coworker-forken**
 `ai.coworker.skill` (egna `success_cases`/`failure_cases` per medarbetare),
 eftersom erfarenheterna annars delas via den underliggande `ai.skill`-posten.
 
