@@ -2,7 +2,7 @@
 ##############################################################################
 #
 #    Odoo SA, Open Source Management Solution, third party addon
-#    Copyright (C) 2025- Vertel AB (<https://vertel.se>).
+#    Copyright (C) 2025- Vertel Sverige AB (<https://vertel.se>).
 #
 #    This program is free software: you can redistribute it and/or modify
 #    it under the terms of the GNU Affero General Public License as
@@ -20,7 +20,7 @@
 ##############################################################################
 
 {
-    'name': 'AI: pg_vector Connector',
+    'name': 'ai_agent: pg_vector-connector',
     'version': '1.0.3',
     'summary': 'Ao Orchestration and memory using pg_vector',
     # Categories can be used to filter modules in modules listing
@@ -38,12 +38,11 @@
         SELECT * FROM pg_extension WHERE extname = 'vector';
     """,
     #'sequence': '1',
-    'author': 'Vertel AB',
+    'author': 'Vertel Sverige AB',
     'website': 'https://vertel.se/apps/odoo-ai/ai_agent_pgvector',
     'images': ['static/description/banner.png'],  # 560x280 px.
     'license': 'AGPL-3',
     'contributor': '',
-    'maintainer': 'Vertel AB',
     # Any module necessary for this one to work correctly
     'depends': [
         'ai_agent',

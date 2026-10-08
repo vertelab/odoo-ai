@@ -22,7 +22,7 @@
 # https://www.odoo.com/documentation/14.0/reference/module.html
 #
 {
-    'name': "AI: Agent",
+    'name': "odoo-ai: AI Agent",
     'version': "1.0",
     'summary': "AI Agent orchestration",
     'category': "AI Orchestration",
@@ -128,7 +128,7 @@ and cost-effective AI systems that drive innovation and efficiency across their 
         "security/ai_quest_record_rule.xml",
 
     """,
-    'author': "Vertel AB",
+    'author': "Vertel Sverige AB",
     'website': "https://vertel.se/apps/odoo-ai/ai_agent",
     'images': ["static/description/banner.png"],  # 560x280
     "license": "AGPL-3",
@@ -166,16 +166,6 @@ and cost-effective AI systems that drive innovation and efficiency across their 
         ],
     },
     'assets': {
-        'web.assets_backend': [
-            'ai_agent/static/src/js/quest_plugin.js',
-
-            'ai_agent/static/src/js/components/quest_dialog.js',
-            'ai_agent/static/src/js/components/quest_prompt_dialog.js',
-            'ai_agent/static/src/js/components/quest_prompt_dialog.xml',
-
-            'ai_agent/static/src/js/components/quest_selector_dialog.xml',
-            'ai_agent/static/src/js/components/quest_selector_dialog.js',
-        ]
     },
     "demo": [
         "demo/ai_agent_demo.xml",
