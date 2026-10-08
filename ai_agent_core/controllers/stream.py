@@ -2662,7 +2662,9 @@ class AIOpenAIAPI(http.Controller):
         """POST /ai/v1/sessions/lookup — find-or-create session via pi_session_id.
 
         Body: {"pi_session_id": "<uuid>",
-               "copy_from_pi_session_id": "<käll-uuid>"}   (copy_from valfritt)
+               "copy_from_pi_session_id": "<käll-uuid>",   (copy_from valfritt)
+               "task_id": <int>, "project_id": <int>,      (kontext-hint)
+               "partner_id": <int>}                        (valfria)
         Auth: Bearer API-nyckel (samma mönster som övriga /ai/v1/*).
         Svar: {session_id, project_id, task_id, partner_id,
                cost_context_confirmed}
@@ -2670,6 +2672,10 @@ class AIOpenAIAPI(http.Controller):
         Idempotent: samma pi_session_id → samma session. Vid
         copy_from_pi_session_id (fork) skapas en NY session med kontexten
         (project/task/partner + bekräftelse) kopierad från källsessionen.
+
+        Kontext-hinten (T/11862-fix): Pi-klienten skickar med aktuell
+        uppgift/projekt/kund så att sessionen knyts rätt redan vid start —
+        utan att Odoo behöver gissa ur prompttexten.
         """
         if not self._check_api_key():
             return Response(json.dumps({
@@ -2690,10 +2696,19 @@ class AIOpenAIAPI(http.Controller):
                           'type': 'invalid_request_error'}}),
                 status=400, content_type='application/json')
         copy_from = (body.get('copy_from_pi_session_id') or '').strip()
+        # Kontext-hint (T/11862-fix): Pi skickar med aktuell uppgift/projekt/
+        # kund i varje anrop. Skrivs ENDAST på tomma fält (se
+        # _apply_context_hint) — en känd kontext skrivs aldrig över.
+        context_hint = {
+            'task_id': body.get('task_id'),
+            'project_id': body.get('project_id'),
+            'partner_id': body.get('partner_id'),
+        }
 
         Session = request.env['ai.coworker.session'].sudo()
         session, _created = Session._lookup_or_create_pi_session(
-            pi_session_id, copy_from_pi_session_id=copy_from)
+            pi_session_id, copy_from_pi_session_id=copy_from,
+            context_hint=context_hint)
 
         def _field_id(name):
             return (session[name].id
@@ -2850,6 +2865,11 @@ class AIOpenAIAPI(http.Controller):
             tools=body.get('tools', []),
             temperature=body.get('temperature', 0.7),
             max_tokens=body.get('max_tokens', 0),
+            context_hint={
+                'task_id': body.get('task_id'),
+                'project_id': body.get('project_id'),
+                'partner_id': body.get('partner_id'),
+            },
         )
 
     # ── Coworker helpers ──────────────────────────────────────────────
@@ -3052,7 +3072,7 @@ class AIOpenAIAPI(http.Controller):
 
     def _run_coworker_chat(self, quest, messages, model_ref, stream,
                            pi_session_id='', session_id=0, tools=None,
-                           temperature=0.7, max_tokens=0):
+                           temperature=0.7, max_tokens=0, context_hint=None):
         """Execute a chat completion through a coworker as Pi's LLM backend.
 
         HYBRID (pi+odoo, 2026-08): istället för att köra Odoos egen AgentLoop
@@ -3161,6 +3181,10 @@ class AIOpenAIAPI(http.Controller):
                         quest.id, env.user.id,
                         pi_session_id=pi_session_id, session_id=session_id,
                         prompt=prompt)
+                # Kontext-hint (T/11862-fix): Pi skickar med uppgift/projekt/
+                # kund i varje tur. Skrivs bara på tomma fält.
+                if sess:
+                    sess._apply_context_hint(context_hint)
                 return sess
             except Exception as e:
                 _logger.warning(

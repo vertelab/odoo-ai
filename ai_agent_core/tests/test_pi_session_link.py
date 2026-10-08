@@ -13,6 +13,8 @@ Verifierar att:
       (transport C) — inkl. versaler och `pi_session`-varianter.
 """
 
+import unittest
+
 from odoo.tests import common, tagged
 
 
@@ -218,3 +220,106 @@ class TestPiSessionLink(common.TransactionCase):
         assistants = sess.session_line_ids.filtered(
             lambda l: l.role == 'assistant')
         self.assertEqual(len(assistants), 1)
+
+
+@tagged('post_install', '-at_install')
+class TestPiContextHint(common.TransactionCase):
+    """Kontext-hint: Pi skickar uppgift/projekt/kund i provider-anropet.
+
+    T/11862-fix (2026-10-08): `_session_auto_capture` gissar task_id ur
+    prompttexten (regex `T/xxxx`). Skriver användaren inte uppgiftsnumret
+    blev sessionen föräldralös — 6 av 10 sessioner 2026-10-08 saknade
+    task_id. Hinten gör kopplingen deterministisk.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        # ai_agent_core beror inte på `project` — fälten task_id/project_id
+        # läggs på ai.coworker.session av bryggan project_ai. Utan bryggan
+        # finns de inte; skippa i stället för att krascha i setUpClass.
+        if 'task_id' not in cls.env['ai.coworker.session']._fields:
+            raise unittest.SkipTest(
+                'ai.coworker.session saknar task_id — kontext-hinten testas '
+                'i installationer med project_ai-bryggan')
+        cls.Session = cls.env['ai.coworker.session']
+        cls.user = cls.env['res.users'].create({
+            'name': 'Hint User',
+            'login': 'hint@example.com',
+            'email': 'hint@example.com',
+        })
+        cls.partner = cls.env['res.partner'].create({
+            'name': 'Hint Customer AB',
+        })
+        cls.project = cls.env['project.project'].create({
+            'name': 'Hint Project',
+            'partner_id': cls.partner.id,
+        })
+        cls.task = cls.env['project.task'].create({
+            'name': 'Hint Task',
+            'project_id': cls.project.id,
+        })
+
+    def _lookup(self, pi_id, hint=None):
+        return self.Session._lookup_or_create_pi_session(
+            pi_id, context_hint=hint)
+
+    # ── hint vid skapande ─────────────────────────────────────────────
+
+    def test_hint_sets_task_on_new_session(self):
+        """Ny session + task-hint → task_id satt (och projekt/kund härledda)."""
+        pid = 'hintaaaa-1111-2222-3333-444444444444'
+        sess, created = self._lookup(pid, {'task_id': self.task.id})
+        self.assertTrue(created)
+        self.assertEqual(sess.task_id, self.task)
+        self.assertEqual(sess.project_id, self.project)
+        self.assertEqual(sess.partner_id, self.partner)
+
+    def test_hint_sets_task_on_existing_session(self):
+        """Befintlig session utan task → hint fyller den."""
+        pid = 'hintbbbb-1111-2222-3333-444444444444'
+        sess, _ = self._lookup(pid)
+        self.assertFalse(sess.task_id)
+        sess2, created = self._lookup(pid, {'task_id': self.task.id})
+        self.assertFalse(created)
+        self.assertEqual(sess2.id, sess.id)
+        self.assertEqual(sess2.task_id, self.task)
+
+    def test_hint_never_overwrites_known_task(self):
+        """En känd uppgift skrivs aldrig över av en senare hint."""
+        pid = 'hintcccc-1111-2222-3333-444444444444'
+        other = self.env['project.task'].create({
+            'name': 'Other Task', 'project_id': self.project.id,
+        })
+        sess, _ = self._lookup(pid, {'task_id': self.task.id})
+        sess2, _ = self._lookup(pid, {'task_id': other.id})
+        self.assertEqual(sess2.task_id, self.task)
+
+    def test_hint_project_only(self):
+        """Projekt-hint utan uppgift → projekt + kund satta."""
+        pid = 'hintdddd-1111-2222-3333-444444444444'
+        sess, _ = self._lookup(pid, {'project_id': self.project.id})
+        self.assertEqual(sess.project_id, self.project)
+        self.assertEqual(sess.partner_id, self.partner)
+        self.assertFalse(sess.task_id)
+
+    def test_hint_partner_only(self):
+        """Kund-hint utan projekt → endast kund satt."""
+        pid = 'hintffff-1111-2222-3333-444444444444'
+        sess, _ = self._lookup(pid, {'partner_id': self.partner.id})
+        self.assertEqual(sess.partner_id, self.partner)
+        self.assertFalse(sess.project_id)
+
+    def test_bad_hint_is_tolerated(self):
+        """Skräp-hint (okänt id, fel typ, None) får aldrig fälla anropet."""
+        pid = 'hintgggg-1111-2222-3333-444444444444'
+        for bad in ({'task_id': 999999999}, {'task_id': 'nonsense'},
+                    {'task_id': None}, {}, None, 'inte-en-dict'):
+            sess, _ = self._lookup(pid, bad)
+            self.assertTrue(sess.exists())
+            self.assertFalse(sess.task_id)
+
+    def test_hint_without_pi_session_id_still_safe(self):
+        """Tomt pi_session_id + hint → ingen krasch (tolerant väg)."""
+        sess, created = self._lookup('', {'task_id': self.task.id})
+        self.assertTrue(sess.exists())
