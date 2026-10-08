@@ -237,6 +237,32 @@ class GatewayRejection(ProviderError):
         super().__init__(msg, status_code=status_code, retryable=False)
 
 
+def _is_stream_options_rejection(exception: "httpx.HTTPStatusError") -> bool:
+    """Gäller 400:an att providern inte accepterar stream_options?
+
+    Skiljer den ENDA 400 som retryen i _iter_stream_retry är till för
+    ("stream_options/include_usage stöds inte") från alla andra 400:or
+    (saldofel, okänd provider, modellfel ...). Utan denna kontroll
+    retryades varje 400 blint — se _iter_stream_retry.
+
+    Läser provider-texten ur exceptionens meddelande: _stream_open bäddar
+    in `response.text[:500]` som "... — provider: {_detail}", och
+    response-body är redan stängd när vi kommer hit.
+
+    Fail-safe: kan texten inte läsas returneras False — vi retryar hellre
+    inte än att göra ett onödigt anrop mot en gateway som redan sagt nej.
+    """
+    try:
+        detail = "%s" % (exception,)
+        response = getattr(exception, "response", None)
+        if response is not None and not getattr(response, "is_closed", True):
+            detail += " " + (response.text or "")
+    except Exception:
+        return False
+    low = detail.lower()
+    return "stream_options" in low or "include_usage" in low
+
+
 # Kända strukturerade avslags-typer från gatewayen. Okänt format faller
 # tillbaka på generiskt fel (fail-safe) — vi gissar inte på strängar.
 _GATEWAY_REJECTION_TYPES = frozenset([
@@ -601,12 +627,32 @@ class AIProvider:
         stream_options.include_usage och svarar 400. Då körs en andra
         iteration utan include_usage (usage rapporteras inte — klienten
         får estimera).
+
+        OBS (2026-10-08): retryen får BARA ske när 400:an faktiskt gäller
+        stream_options. Tidigare räckte det att `stream_options` fanns i
+        bodyn — och eftersom `_stream_openai_compat` alltid sätter
+        include_usage=True var villkoret alltid sant. Varje 400 retryades
+        då blint en gång, även när felet var något helt annat.
+
+        Det slog fel i produktion: en combo (OR+deepseek) vars primära
+        provider svarade 400 "Insufficient account funds" retryades utan
+        stream_options — vilket bara gav ett NYTT 400 (nästa target i
+        combon kunde svara "failed to get config for provider ...").
+        Resultatet blev ett extra anrop (dubblad last), längre svarstid och
+        att 400:an ändå nådde användaren som "SSE stream error".
+
+        Bifrost faller vidare inom sig själv på 400 — men bara när anropet
+        ser ut som Bifrost förväntar sig. Med stream_options ändras vägen,
+        och felet läcker igenom i stället för att fallbacka. Genom att inte
+        retrya i onödan lämnas hela fallback-trappan åt Bifrost.
         """
         try:
             async for chunk in self._post_stream(path, body, extra_headers=extra_headers):
                 yield chunk
         except httpx.HTTPStatusError as e:
-            if e.response.status_code == 400 and body.get("stream_options"):
+            if (e.response.status_code == 400
+                    and body.get("stream_options")
+                    and _is_stream_options_rejection(e)):
                 _logger.info(
                     'provider rejected stream_options (400); retrying without '
                     'include_usage: %s', body.get('model'))

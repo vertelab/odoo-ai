@@ -773,8 +773,36 @@ class AIStreamController(http.Controller):
 
                         _thread.join(timeout=30)
 
-                        if _stream_err['exc'] is not None:
-                            raise _stream_err['exc']
+                        # Strömfel fångas upp och persisteras INNAN det
+                        # kastas vidare (2026-10-08).
+                        #
+                        # Tidigare stod `raise _stream_err['exc']` FÖRE
+                        # persistensen nedan. Ett providerfel (t.ex. 400 från
+                        # en uttömd combo-provider) propagerade då förbi både
+                        # verktygsraderna och assistantsvaret och hamnade
+                        # direkt i except-grenen längst ned. Följden: turen
+                        # lämnades med enbart en user-rad — tråden såg
+                        # "stannad" ut och användaren fick inget svar alls
+                        # (session 23584, fråga 2).
+                        #
+                        # Nu persisteras turen alltid, oavsett om strömmen
+                        # lyckades: _persist_stream_answer är idempotent och
+                        # skriver en assistant-rad med felet i
+                        # sessionsmetadata (error_detail). Därefter kastas
+                        # felet vidare så klienten fortfarande får sitt
+                        # error-event.
+                        _stream_exc = _stream_err['exc']
+                        if _stream_exc is not None:
+                            state.setdefault(
+                                'error',
+                                '%s: %s' % (type(_stream_exc).__name__,
+                                            _stream_exc))
+                            # Markera avslutsorsaken som 'error' så sessionen
+                            # skiljer ett avbrutet anrop från en normal
+                            # avslutning (2.3). Sätts bara om loopen inte
+                            # redan hunnit rapportera en egen orsak.
+                            if not state.get('finish_reason'):
+                                state['finish_reason'] = 'error'
 
                         # Efter streamen: persistera verktygsanrop som
                         # role='tool'-rader (granskningsbar kontext per
@@ -804,6 +832,11 @@ class AIStreamController(http.Controller):
                             _logger.warning(
                                 'persist stream answer failed', exc_info=True)
                         gen_cr.commit()
+
+                        # Först nu — turen är persisterad — kastas strömfelet
+                        # vidare till except-grenen och blir ett error-event.
+                        if _stream_exc is not None:
+                            raise _stream_exc
                 finally:
                     # session-history-relevance 3.5: låt streaming-tråden bli
                     # klar först — annars kan finally röra loopen medan tråden
