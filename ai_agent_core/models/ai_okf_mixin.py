@@ -755,6 +755,56 @@ class AIOkfMixin(models.AbstractModel):
         """
         return [self._okf_owner_vals()]
 
+    #: Tak for hur manga texter ett batch-anrop far innehalla
+    #: (batched-okf-embedding D1). Bifrost tog 256 i ett anrop i matningen
+    #: 2026-10-08, men gransen ar INTE dokumenterad — och en post med manga
+    #: agare ska inte riskera ett anrop som faller. 64 ar val bevisat och
+    #: ger 4 anrop for 256 texter.
+    OKF_EMBED_BATCH_MAX = 64
+
+    def _okf_embed_texts(self, texts):
+        """Embedda flera texter i ett (eller nagra) batch-anrop.
+
+        Returnerar en lista i SAMMA ordning som `texts`, dar en post ar
+        vektorn eller None. None betyder "kunde inte" — anroparen skickar
+        da None vidare till `_okf_upsert`, som producerar vektorn sjalv
+        (fallbacken, D3).
+
+        VARFOR HÄR OCH INTE I `_okf_upsert` (D1): `_okf_upsert` anropas en
+        gang per (agare, sprak) och embeddar inne i sig. Det finns ingen
+        plats i den kedjan dar flera texter ar kanda samtidigt — utom hos
+        anroparen. `_okf_index_record` ar den platsen.
+        """
+        if not texts:
+            return []
+        provider = self.env['ai.provider']._embedding_provider()
+        if not provider:
+            # Ingen provider: lat `_okf_upsert` markera pending som forut.
+            return [None] * len(texts)
+        out = []
+        limit = self.OKF_EMBED_BATCH_MAX
+        for start in range(0, len(texts), limit):
+            chunk = texts[start:start + limit]
+            try:
+                got = provider._get_embedding_batch(
+                    inputs=chunk, input_type='search_document')
+            except Exception as e:  # noqa: BLE001
+                _logger.warning(
+                    'OKF: batch-embedding misslyckades (%d texter) — '
+                    'faller tillbaka pa per-koncept: %s', len(chunk), e)
+                got = [None] * len(chunk)
+            if not got or len(got) != len(chunk):
+                # `_get_embedding_batch` avvisar HELA batchen vid fel antal
+                # (hellre tomt an felkopplat). Da embeddas varje koncept
+                # sjalv — exakt dagens beteende.
+                _logger.warning(
+                    'OKF: batch gav %s vektorer for %s texter — '
+                    'faller tillbaka pa per-koncept',
+                    len(got) if got else 0, len(chunk))
+                got = [None] * len(chunk)
+            out.extend(got)
+        return out
+
     def _okf_index_record(self, max_chars=None, session=None):
         """Generera OKF-fälten och skriv konceptet. EN väg.
 
@@ -792,17 +842,56 @@ class AIOkfMixin(models.AbstractModel):
         # Detta bevarar designens löfte: en modell utan egen implementation
         # indexeras EXAKT som före ändringen.
         multi_owner = len(owners) > 1
+
+        # ── Batched-okf-embedding D1: bygg texterna FORE, embedda i ETT ──
+        # anrop, skriv sedan koncepten. Utan detta betalade en post med N
+        # agare N embedding-anrop (matt 9,1x dyrare an ett batch-anrop).
+        #
+        # Textformen ar EXAKT `_produce_embedding`s: ' '.join([title,
+        # summary]) — samma text som den enskilda vagen skulle embeddat, sa
+        # vektorerna blir identiska (verifierat i task 1.1).
+        plans = []
         for owner_vals in owners:
             key_owner = self._okf_owner_id(owner_vals) if multi_owner \
                 else None
             for lang in self._okf_langs():
                 rec = self.with_context(lang=lang) if lang else self
-                concept = rec._okf_index_record_one(
-                    lang=lang, max_chars=max_chars, session=session,
-                    owner_vals=owner_vals, clear_dirty=False,
-                    key_owner_id=key_owner)
-                if concept and first is None:
-                    first = concept
+                body = rec._okf_body_source() or ''
+                summary = None
+                if body.strip() and not rec._okf_skip_reason():
+                    summary, _src = rec._okf_build_summary(
+                        body, max_chars, session, owner_vals=owner_vals)
+                plans.append({
+                    'owner_vals': owner_vals,
+                    'key_owner': key_owner,
+                    'lang': lang,
+                    'summary': summary,
+                })
+
+        texts = []
+        for p in plans:
+            if p['summary'] is None:
+                texts.append('')
+                continue
+            title = (self.display_name or '')[:120]
+            texts.append(' '.join(filter(None, [title, p['summary']])).strip())
+
+        # Embedda bara de texter som finns; tomma far None utan anrop.
+        to_embed = [t for t in texts if t]
+        vectors = self._okf_embed_texts(to_embed)
+        it = iter(vectors)
+        for p, t in zip(plans, texts):
+            p['embedding'] = next(it) if t else None
+
+        for p in plans:
+            rec = self.with_context(lang=p['lang']) if p['lang'] else self
+            concept = rec._okf_index_record_one(
+                lang=p['lang'], max_chars=max_chars, session=session,
+                owner_vals=p['owner_vals'], clear_dirty=False,
+                key_owner_id=p['key_owner'], embedding=p['embedding'],
+                summary=p['summary'])
+            if concept and first is None:
+                first = concept
 
         # Flaggan rensas EN gång, efter samtliga ägare och språk — ÄVEN när
         # inget koncept skapades (tom text, eller posten avfördes). Anroparen
@@ -823,7 +912,8 @@ class AIOkfMixin(models.AbstractModel):
 
     def _okf_index_record_one(self, lang=None, max_chars=None, session=None,
                               owner_vals=None, clear_dirty=True,
-                              key_owner_id=None):
+                              key_owner_id=None, embedding=None,
+                              summary=None):
         """Indexera posten för ETT språk och EN ägare.
 
         `owner_vals` (okf-owner-and-access-scoping D5): ägaren att skriva
@@ -837,6 +927,16 @@ class AIOkfMixin(models.AbstractModel):
         `key_owner_id` (D6): ägarläget att lägga i `concept_key`, eller None.
         Sätts av `_okf_index_record` BARA när posten har fler än en ägare —
         en enägd post behåller sitt nyckelformat.
+
+        `embedding` (batched-okf-embedding D1): en färdig vektor från en
+        batch, eller None. `None` betyder "producera själv" — dagens
+        beteende — så en direktanropare är oförändrad. Batchen embeddar
+        alla (ägare × språk)-texter i ETT anrop och skickar hit resultatet.
+
+        `summary` (samma ändring): en redan byggd sammanfattning för just
+        denna (ägare, språk). Batchen måste bygga texterna INNAN den
+        embeddar, så anroparen skickar tillbaka dem i stället för att
+        bygga dem två gånger.
         """
         self.ensure_one()
         if max_chars is None:
@@ -863,8 +963,11 @@ class AIOkfMixin(models.AbstractModel):
                           self._name, self.id)
             return None
 
-        summary, source = self._okf_build_summary(
-            body, max_chars, session, owner_vals=owner_vals)
+        if summary is None:
+            summary, source = self._okf_build_summary(
+                body, max_chars, session, owner_vals=owner_vals)
+        else:
+            source = 'batch'
         links = self._okf_links_source() or []
 
         # Fälten skrivs och flaggan rensas i SAMMA SQL-anrop (D3).
@@ -918,6 +1021,10 @@ class AIOkfMixin(models.AbstractModel):
             'okf_tags': tag_ids,
         }
         vals.update(owner_vals)
+        # Batched-okf-embedding D2: en fardig vektor fran batchen. `None`
+        # lamnar faltet osatt -> `_okf_upsert` producerar sjalv (fallbacken).
+        if embedding is not None:
+            vals['embedding'] = embedding
 
         concept = self.env['ai.okf.concept']._okf_upsert(**vals)
         _logger.info(

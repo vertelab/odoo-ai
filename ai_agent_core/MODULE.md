@@ -437,3 +437,78 @@ utelämna en delad vy:s uppgifter i ett personligt koncept.
 `_okf_summary_source(self)` utan argumentet. `_okf_call_summary_source()`
 inspekterar signaturen en gång per klass och skickar ägaren bara om metoden
 accepterar den — annars hade samtliga kraschat med `TypeError`.
+
+## Batchad embedding vid OKF-indexering (18.0.1.308)
+
+`_okf_upsert()` producerade **en embedding per koncept** — ett HTTP-anrop i
+taget. En post med N ägare betalade N anrop. Mätt 2026-10-08:
+
+```
+   6 separata anrop:  2,91 s   (0,485 s per text)
+   1 batch-anrop:     0,32 s   (0,053 s per text)
+   -> 9,1x, identiska vektorer
+```
+
+Kostnaden uppmärksammades när `calendar_ai` började ge **N+1 koncept per
+händelse** (ett `company` + ett `personal` per deltagare). 21 000 händelser
+med 5 deltagare blev 126 000 anrop, ~14 timmar.
+
+### Var batchningen sitter — och varför inte i `_okf_upsert`
+
+```
+   _okf_index_record()
+     bygger texten for varje (agare, sprak)      <- har ar alla texter kanda
+     _okf_embed_texts(texts)                     <- ETT anrop (delat vid taket)
+     for plan in plans:
+       _okf_index_record_one(embedding=vec)      <- far den fardiga vektorn
+         _okf_upsert(embedding=vec)              <- skickar vidare
+```
+
+`_okf_upsert` anropas en gång per (ägare, språk) och embeddar inne i sig.
+Det finns ingen plats i den kedjan där flera texter är kända samtidigt —
+utom hos anroparen. `_okf_index_record` är den platsen.
+
+`_okf_upsert` hade redan ett `embedding`-argument (det används av
+efterfyllnaden), så ingen ny mekanism behövdes — bara en ny anropare.
+
+### Textformen måste vara exakt `_produce_embedding`s
+
+```python
+   text = ' '.join(filter(None, [title, summary])).strip()
+```
+
+Samma text som den enskilda vägen skulle embeddat, annars blir vektorerna
+inte identiska. `title` är `display_name[:120]` — samma som `_okf_upsert`
+sätter.
+
+### Fallback — en trasig batch får inte tysta
+
+`_get_embedding_batch()` avvisar **hela** batchen vid fel antal vektorer
+(`[None] * n`, "hellre tomt än felkopplat"). Då får varje koncept `None` och
+`_okf_upsert` producerar vektorn själv — exakt beteendet före ändringen.
+
+Vid **partiellt** fel (en text utan vektor) får just den texten `None` och
+embeddas enskilt. `embedding_state` sätts likadant i båda vägarna
+(`ready`/`pending`), verifierat.
+
+### Batchtaket
+
+`OKF_EMBED_BATCH_MAX = 64`. Bifrost tog 256 texter i ett anrop i mätningen
+(1,44 s), men gränsen är **inte dokumenterad** — och en post med många ägare
+ska inte riskera ett anrop som faller. 64 är väl bevisat och ger 4 anrop för
+256 texter. Taket delar texterna i chunkar och håller ordningen.
+
+### Mätt resultat
+
+```
+   5 agare (personal memory):   5 anrop 2,97 s  ->  1 anrop 0,38 s  (7,9x)
+   kalenderhandelse, 5 deltagare (6 koncept):
+                                6 anrop        ->  1 anrop (6 texter)
+```
+
+### Vad som INTE gjordes
+
+Batchning över **cron-varvets poster**. Det kräver att
+`_okf_index_record` delas i "bygg texter" och "skriv koncept", och vinsten
+är liten: de flesta poster har **en** ägare och gör därför redan ett anrop.
+Kalendern (N ägare) löses av batchningen inom posten.
