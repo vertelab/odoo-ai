@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 """Tests for graph executor and read-only validation."""
 
+import json
+
 from odoo.tests.common import TransactionCase
 from odoo.exceptions import UserError
 
@@ -221,3 +223,155 @@ class TestGraphWritePath(TransactionCase):
         count = self.env['ir.cron'].sudo().search_count([
             ('cron_name', '=', 'Odoo Mind Graph Sync')])
         self.assertLessEqual(count, 1)
+
+
+class TestGraphPartnerEdges(TransactionCase):
+    """graph-partner-edges: res.users-mål löses upp till sin partner.
+
+    `res.users` är samma objekt som `res.partner` (_inherits via
+    partner_id), men deras `id` skiljer sig. En edge mot :User skapades
+    aldrig (ingen noddefinition), och `{id: user_id}` skulle matcha fel
+    nod även med rätt label. Mätt i luke18 2026-10-07:
+    res_users.id = res_partner.id i 0 av 7 fall.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.Def = self.env['graph.node.definition']
+        self.executor = self.env['graph.executor']
+
+    def _age_available(self):
+        try:
+            self.executor.cypher('RETURN 1', read_only=True)
+            return True
+        except Exception:
+            return False
+
+    def test_target_id_via_resolves_user_to_partner(self):
+        """En edge med target_id_via löser res.users → partner_id."""
+        if not self._age_available():
+            self.skipTest('AGE ej användbar i denna miljö')
+        user = self.env['res.users'].search([('login', '!=', '__system__')],
+                                            limit=1)
+        if not user or not user.partner_id:
+            self.skipTest('Ingen användare med partner')
+        src = self.env['res.partner'].search([], limit=1)
+        if not src:
+            self.skipTest('Ingen partner')
+        defn = self.Def.create({
+            'model_id': self.env['ir.model']._get_id('res.partner'),
+            'graph_label': 'ViaProbeSource',
+            'name_field': 'name',
+            'edge_definitions': json.dumps([{
+                'type': 'VIA_REL',
+                'target_label': 'OdooPartner',
+                'target_id_field': 'user_id',
+                'target_id_via': 'partner_id',
+            }]),
+        })
+        try:
+            self.executor.cypher_write(
+                "MERGE (n:ViaProbeSource {id: %d})" % src.id)
+            # Målnoden måste finnas — _create_edges gör MATCH mot den.
+            self.executor.cypher_write(
+                "MERGE (p:OdooPartner {id: %d})" % user.partner_id.id)
+
+            class _Fake:
+                pass
+            fake = _Fake()
+            fake.id = src.id
+            fake.user_id = user
+            defn._create_edges(fake)
+            res = self.executor.cypher(
+                "MATCH (n:ViaProbeSource {id: %d})-[:VIA_REL]->(p:OdooPartner) "
+                "RETURN p.id" % src.id, read_only=True)
+            self.assertEqual(
+                res, [user.partner_id.id],
+                'kanten ska peka på användarens partner_id, inte user.id')
+        finally:
+            self.executor.cypher_write(
+                "MATCH (n:ViaProbeSource {id: %d}) DETACH DELETE n" % src.id)
+            self.executor.cypher_write(
+                "MATCH (p:OdooPartner {id: %d}) DETACH DELETE p"
+                % user.partner_id.id)
+            defn.unlink()
+
+    def test_target_id_via_empty_skips_without_error(self):
+        """Tom upplösning = målet finns inte → ingen kant, inget fel."""
+        defn = self.Def.create({
+            'model_id': self.env['ir.model']._get_id('res.partner'),
+            'graph_label': 'EmptyViaProbe',
+            'name_field': 'name',
+            'edge_definitions': json.dumps([{
+                'type': 'EMPTY_REL',
+                'target_label': 'OdooPartner',
+                'target_id_field': 'user_id',
+                'target_id_via': 'partner_id',
+            }]),
+        })
+        try:
+            class _Fake:
+                pass
+            fake = _Fake()
+            fake.id = 999999
+            fake.user_id = self.env['res.users']  # tomt recordset
+            defn._create_edges(fake)  # Ska inte kasta.
+        finally:
+            defn.unlink()
+
+    def test_undefined_target_label_is_reported(self):
+        """En edge mot ett odefinierat label ska bli ett synligt fel."""
+        defn = self.Def.create({
+            'model_id': self.env['ir.model']._get_id('res.partner'),
+            'graph_label': 'UndefProbe',
+            'name_field': 'name',
+            'edge_definitions': json.dumps([{
+                'type': 'GHOST_REL',
+                'target_label': 'NoSuchLabel',
+                'target_id_field': 'id',
+            }]),
+        })
+        try:
+            undefined = defn._undefined_edge_labels()
+            self.assertIn('NoSuchLabel', undefined,
+                          'odefinierat target_label ska hittas')
+        finally:
+            defn.unlink()
+
+    def test_defined_target_label_not_reported(self):
+        """En edge mot ett definierat label ska inte rapporteras."""
+        defn = self.Def.create({
+            'model_id': self.env['ir.model']._get_id('res.partner'),
+            'graph_label': 'DefProbe',
+            'name_field': 'name',
+            'edge_definitions': json.dumps([{
+                'type': 'OK_REL',
+                'target_label': 'OdooPartner',
+                'target_id_field': 'id',
+            }]),
+        })
+        try:
+            self.assertEqual(defn._undefined_edge_labels(), [])
+        finally:
+            defn.unlink()
+
+    def test_sync_batch_sets_last_error_on_undefined_label(self):
+        """_sync_batch ska sätta last_error när ett kantmål saknas."""
+        defn = self.Def.create({
+            'model_id': self.env['ir.model']._get_id('res.partner'),
+            'graph_label': 'SyncUndefProbe',
+            'name_field': 'name',
+            'edge_definitions': json.dumps([{
+                'type': 'GHOST_REL',
+                'target_label': 'NoSuchLabel2',
+                'target_id_field': 'id',
+            }]),
+        })
+        try:
+            defn._sync_batch(self.env['res.partner'].search([], limit=1))
+            self.assertTrue(
+                defn.last_error,
+                'last_error ska sättas när ett kantmål saknar noddefinition')
+            self.assertIn('NoSuchLabel2', defn.last_error)
+        finally:
+            defn.unlink()

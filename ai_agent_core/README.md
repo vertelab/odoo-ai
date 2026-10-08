@@ -338,6 +338,42 @@ En **tom men frisk** graf (`last_error` tom) är inte ett fel. En graf med
 satt `last_error` är trasig och ska larmas — de två får inte förväxlas
 (`_graph_health()` skiljer dem).
 
+**Kantmål — `target_id_via` och odefinierade labels:**
+
+En edge skapas med `MATCH (target:{target_label} {id: {target_id}})`.
+Om `target_id_field` pekar på en modell vars `id`-rum skiljer sig från
+nodens matchar kanten **fel nod** (eller ingen). Det gäller `res.users`,
+som är samma objekt som `res.partner` (`_inherits` via `partner_id`) men
+har ett annat `id` — mätt i luke18: `res_users.id = res_partner.id` i
+0 av 7 fall.
+
+Lösningen är `target_id_via` i `edge_definitions`: ett fältnamn som löses
+upp på målvärdet innan nod-id:t beräknas.
+
+```json
+{"type": "MANAGED_BY", "target_label": "OdooPartner",
+ "target_id_field": "manager_id", "target_id_via": "partner_id"}
+```
+
+Det finns **ingen `:User`-nod** — `res.users` löses alltid upp till sin
+partner. Upplösningen är explicit per edge; ingen delegationskedja härleds
+automatiskt. Tom upplösning (t.ex. systemanvändarens partner) hoppas över
+utan fel.
+
+En edge mot ett `target_label` som **saknar noddefinition** skapas aldrig
+(`MATCH` matchar 0 rader). Det är samma tysta nolla som `_upsert_node`
+hade. `_sync_batch` gör därför `_undefined_edge_labels()` till ett synligt
+fel: `last_error` sätts med definitionens namn och det saknade labelt.
+
+**Felsökning av en kant som inte skapas:**
+
+1. `SELECT graph_label, edge_definitions FROM graph_node_definition`
+   — finns `target_label` som en egen noddefinition?
+2. `SELECT last_error FROM graph_node_definition` — "kantmål utan
+   noddefinition: X" = labeln X saknas.
+3. `MATCH (p:OdooPartner)<-[:MANAGED_BY]-(x) RETURN count(x)` — 0 kan
+   betyda att källposten saknar fältet, inte att kanten är trasig.
+
 ### Memory Governance (agent-memory-governance)
 
 **Identitet → AI Medarbetare → Agent-koppling**

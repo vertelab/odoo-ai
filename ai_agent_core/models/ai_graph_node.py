@@ -203,7 +203,18 @@ class GraphNodeDefinition(models.Model):
             raise
 
     def _create_edges(self, record):
-        """Create edges from an Odoo record based on edge_definitions."""
+        """Create edges from an Odoo record based on edge_definitions.
+
+        `target_id_via` (valfritt): ett fältnamn som löses upp på målvärdet
+        innan nod-id:t beräknas. Används när `target_id_field` pekar på en
+        modell vars id-rum skiljer sig från nodens — t.ex. `res.users`,
+        som är samma objekt som `res.partner` (`_inherits`), men har ett
+        annat `id`. Utan upplösningen matchar `{id: user_id}` fel nod
+        (mätt: `res_users.id = res_partner.id` i 0 av 7 fall i luke18).
+
+        Upplösningen är explicit per edge — ingen automatisk härledning av
+        delegationskedjor.
+        """
         self.ensure_one()
         edge_defs = self._get_edge_defs()
         for edge in edge_defs:
@@ -214,6 +225,11 @@ class GraphNodeDefinition(models.Model):
             if not target_id:
                 continue
             if isinstance(target_id, models.BaseModel):
+                via = edge.get('target_id_via')
+                if via:
+                    target_id = getattr(target_id, via, None)
+                    if not target_id:
+                        continue
                 if not target_id.id:
                     continue
                 target_id = target_id.id
@@ -232,6 +248,30 @@ class GraphNodeDefinition(models.Model):
                 _logger.warning(
                     "Failed to create edge %s %s→%s #%d: %s",
                     edge_type, self.graph_label, target_label, target_id, e)
+
+    @api.model
+    def _undefined_edge_labels(self):
+        """Returnera de `target_label` i denna definitions edges som saknar
+        en registrerad `graph.node.definition`.
+
+        En kant mot ett odefinierat label skapas aldrig (`MATCH` mot en
+        icke-existerande nod matchar 0 rader) — det är samma tysta nolla
+        som `_upsert_node` hade. Här görs den synlig i stället.
+        """
+        self.ensure_one()
+        labels = {
+            e.get('target_label')
+            for e in self._get_edge_defs()
+            if e.get('target_label')
+        }
+        # Nodens eget label räknas inte som mål.
+        labels.discard(self.graph_label)
+        if not labels:
+            return []
+        defined = set(self.search([
+            ('graph_label', 'in', list(labels)),
+        ]).mapped('graph_label'))
+        return sorted(labels - defined)
 
     def _sync_batch(self, model, batch_size=500):
         """Batch upsert records from an Odoo model.
@@ -263,6 +303,18 @@ class GraphNodeDefinition(models.Model):
                     _logger.warning(
                         "Graph sync failed for %s #%d: %s",
                         self.graph_label, rec.id, e)
+
+        # Kants-mål: en edge mot ett odefinierat label skapas aldrig.
+        # Gör det till ett synligt fel i stället för en tyst nolla.
+        undefined = self._undefined_edge_labels()
+        if undefined:
+            msg = ('%s: kantmål utan noddefinition: %s'
+                   % (self.graph_label, ', '.join(undefined)))
+            _logger.warning(msg)
+            failed += 1
+            if first_error is None:
+                first_error = msg
+
         self.write({
             'last_sync': fields.Datetime.now(),
             'last_error': (
