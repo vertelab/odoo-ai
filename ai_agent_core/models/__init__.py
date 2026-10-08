@@ -39,7 +39,6 @@ from . import mail_message
 from . import discuss_channel
 from . import ai_graph_node
 from . import ai_personal_goal
-from . import ai_company_identity
 from . import ai_org_goal
 from . import ai_org_key_result
 from . import ai_org_task

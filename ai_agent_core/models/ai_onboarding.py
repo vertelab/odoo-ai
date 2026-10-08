@@ -296,36 +296,72 @@ class AIOnboarding(models.Model):
         return q_to_dept.get(question_id, 'Generellt')
 
     def _suggest_identity(self, answers):
-        """Föreslå mission/values från intervjusvaren."""
-        # Grundtext — kan förfinas med LLM om tillgängligt
-        mission = (
+        """Föreslå mission/values från intervjusvaren.
+
+        Den hårdkodade texten är en AVSIKTLIG fallback: den används bara
+        när ingen provider finns eller LLM:en felar. Den får inte
+        förväxlas med ett lyckat LLM-anrop — därför loggas orsaken.
+        """
+        # Avsiktlig standardtext (fallback, inte en tyst nolla).
+        fallback_mission = (
             f'{self.company_id.name or "Vårt företag"} levererar värde '
             'genom att kombinera expertis med smarta AI-lösningar.'
         )
-        values = (
+        fallback_values = (
             'Kvalitet och noggrannhet i allt vi gör.\n'
             'Personlig service med stöd av modern teknik.'
         )
+        mission, values = fallback_mission, fallback_values
         try:
-            # LLM-förfinad version om provider finns
+            # Kanonisk provider-kedja (samma som _llm_extract_facts).
+            # `ai.provider._call_llm` FINNS INTE — ett anrop gav
+            # AttributeError som svaldes av except och gjorde fallbacken
+            # till en tyst nolla.
+            import asyncio
+            from odoo.addons.ai_agent_core.core.provider import (
+                get_default_provider, get_default_model_name)
+            from odoo.addons.ai_agent_core.core.loop import (
+                AgentLoop, AgentConfig)
+            from odoo.addons.ai_agent_core.core.tools import ToolRegistry
+
             modules_text = ', '.join(
                 d.get('description', m) for m, d in
                 (self.detected_modules or {}).items()) or 'okänt'
             prompt = (
-                f'Företag: {self.company_id.name}\\n'
-                f'Installerade moduler: {modules_text}\\n'
-                f'Webbplats: {(self.website_summary or "")[:1000]}\\n'
-                f'Svar: {json.dumps(answers, ensure_ascii=False)[:1500]}\\n\\n'
+                f'Företag: {self.company_id.name}\n'
+                f'Installerade moduler: {modules_text}\n'
+                f'Webbplats: {(self.website_summary or "")[:1000]}\n'
+                f'Svar: {json.dumps(answers, ensure_ascii=False)[:1500]}\n\n'
                 'Generera mission (1 mening) och values (3 korta punkter). '
                 'Svara exakt i JSON: {"mission": "...", "values": "..."}'
             )
-            result = self.env['ai.provider']._call_llm(prompt)
-            if result:
-                data = json.loads(result) if isinstance(result, str) else result
-                mission = data.get('mission', mission)
-                values = data.get('values', values)
+            provider, model_rec = get_default_provider(self.env)
+            if not provider:
+                _logger.warning(
+                    'Identitetsförslag: ingen provider tillgänglig — '
+                    'använder avsiktlig standardtext')
+                return mission, values
+            loop = AgentLoop(
+                provider=provider, tools=ToolRegistry(),
+                config=AgentConfig(
+                    model=(model_rec and model_rec._get_api_name())
+                    or get_default_model_name(),
+                    max_rounds=1, max_tokens=1500))
+            raw = asyncio.run(loop.run(prompt))
+            response = (raw.text or '').strip()
+            # Modellen kan linda JSON i ```-block trots instruktionen.
+            if response.startswith('```'):
+                response = response.strip('`')
+                if response.startswith('json'):
+                    response = response[4:]
+                response = response.strip()
+            data = json.loads(response)
+            mission = data.get('mission', mission)
+            values = data.get('values', values)
         except Exception as e:
-            _logger.warning('LLM identity suggestion failed (using fallback): %s', e)
+            _logger.warning(
+                'Identitetsförslag: LLM-anrop misslyckades, använder '
+                'avsiktlig standardtext: %s', e)
         return mission, values
 
     # ════════════════════════════════════════════

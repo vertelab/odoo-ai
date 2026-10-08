@@ -148,3 +148,53 @@ class TestCoreDomainPurity(ConfigParamGuardedCase):
         self.assertIsNone(missing)
         with self.assertRaises(KeyError):
             self.env['finns.inte.modell']
+
+
+class TestProviderApiCalls(ConfigParamGuardedCase):
+    """Ingen kod anropar en provider-metod som inte finns.
+
+    VARFÖR (llm-call-provider-path): tre vägar anropade `provider._call_llm`
+    och `provider._chat_completion` — metoder som inte existerar. Varje
+    anrop kastade AttributeError, som svaldes av ett try/except och gjorde
+    en trasig väg till en tyst fallback (onboarding-cronen körde men gav
+    alltid den hårdkodade texten).
+
+    Detta test fångar nästa påhittade provider-metod innan den når drift.
+    """
+
+    def test_provider_methods_called_exist(self):
+        """Varje `provider._<namn>(`-anrop i kärnans kod finns på ai.provider.
+
+        Ett anrop som är guardat med `hasattr(provider, '_x')` i samma
+        uttryck är avsiktligt valfritt (t.ex. vision/whisper) och räknas
+        inte — det faller till ett tydligt fel, inte en tyst nolla.
+        """
+        provider = self.env['ai.provider']
+        missing = []
+        for path in _source_files():
+            with open(path, 'r', encoding='utf-8') as fh:
+                src = fh.read()
+            # Hoppa över kommentarer — de namnger avsiktligt döda anrop
+            # (t.ex. "ai.provider._generate FINNS INTE").
+            code = '\n'.join(
+                ln for ln in src.splitlines()
+                if not ln.lstrip().startswith('#'))
+            for m in re.finditer(
+                    r'(?:provider|\[\'ai\.provider\'\]|\["ai\.provider"\])\s*\.\s*(_[a-zA-Z_]+)\s*\(',
+                    code):
+                name = m.group(1)
+                # Guardat anrop: hasattr(provider, '_x') i närheten (samma
+                # rad eller inom ett litet fönster ovanför).
+                line_start = code.rfind('\n', 0, m.start()) + 1
+                window_start = code.rfind('\n', 0, max(0, line_start - 1))
+                for _ in range(4):
+                    window_start = code.rfind('\n', 0, max(0, window_start))
+                window = code[max(0, window_start):m.end()]
+                if "hasattr(" in window and "'%s'" % name in window:
+                    continue
+                if not hasattr(provider, name):
+                    missing.append('%s: provider.%s' % (
+                        os.path.basename(path), name))
+        self.assertEqual(
+            missing, [],
+            'anrop till icke-existerande provider-metoder: %s' % missing)

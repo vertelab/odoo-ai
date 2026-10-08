@@ -280,6 +280,44 @@ ollama, openrouter, bifrost. `ai.model` har fälten `provider` (rename av
 Supports: `bifrost`, `openai`, `anthropic`, `openrouter`, `deepseek`,
 `google`, `cerebras`, `groq`, `ollama`, `custom`
 
+**Kanonisk LLM-kedja — använd den, hitta inte på en metod.**
+
+All kod som gör ett LLM-anrop ska gå via `get_default_provider(env)` +
+`AgentLoop`, aldrig via en påhittad `provider._<metod>`:
+
+```python
+from odoo.addons.ai_agent_core.core.provider import (
+    get_default_provider, get_default_model_name)
+from odoo.addons.ai_agent_core.core.loop import AgentLoop, AgentConfig
+from odoo.addons.ai_agent_core.core.tools import ToolRegistry
+
+provider, model_rec = get_default_provider(self.env)
+if not provider:
+    _logger.warning('... ingen provider tillgänglig')
+    return <avsiktlig fallback>
+loop = AgentLoop(provider=provider, tools=ToolRegistry(),
+                 config=AgentConfig(
+                     model=(model_rec and model_rec._get_api_name())
+                     or get_default_model_name(),
+                     max_rounds=1, max_tokens=1500))
+raw = asyncio.run(loop.run(prompt))
+text = (raw.text or '').strip()
+```
+
+`get_default_provider(env)` tar `env` och fungerar i cron (den gamla
+versionen krävde `odoo.http.request` och returnerade alltid
+`(None, None)` i cron).
+
+⚠ **Två metoder som INTE finns** (de anropades och gav tysta nollor bakom
+`except`): `provider._call_llm` och `provider._chat_completion`. Ett test
+(`TestProviderApiCalls`) genomsöker kärnans kod efter `provider._<namn>(`
+och verifierar att metoden finns — kommentarer och `hasattr`-guardade
+valfria förmågor (vision/whisper) hoppas över.
+
+**Fallback ska vara avsiktlig.** En hårdkodad standardtext är OK, men den
+används bara när providern saknas eller LLM:en felar, och orsaken loggas —
+så fallbacken inte kan förväxlas med ett lyckat LLM-anrop.
+
 ### Memory Architecture
 
 Odoo Mind har ett flerskiktat minnessystem:
