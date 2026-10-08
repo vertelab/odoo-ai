@@ -4803,6 +4803,32 @@ class AICoworker(models.Model):
             from functools import partial
             outcome_cb = partial(self._persist_outcome, session=session)
 
+        # Transaktionshygien (2026-10-08): samma skäl som outcome-callbacken —
+        # de synkrona körvägarna (cron, mejl, webhook, knapp-åtgärd) går genom
+        # _build_loop, så en rad täcker dem.
+        #
+        # Loopen anropar den före varje provider-anrop och när rundans verktyg
+        # kört klart (AgentConfig.checkpoint_callback), och vi committar den
+        # cursor som ÄGER körningen (self.env.cr). Utan detta höll en
+        # schemalagd körning ACCESS SHARE på allt dess verktyg läst i minuter,
+        # och en moduluppgradering med schemaändring föll på Odoos 15 s låstak
+        # (mätt på ledningssystem: 35–39 s → 0,8 s efter samma fix i
+        # streaming-vägarna).
+        #
+        # SEMANTIK: verktygens skrivningar (och sessionsraderna) blir durable
+        # per runda i stället för allt-eller-inget per körning. Det är samma
+        # per-handling-semantik som en användare får i UI:t — och det är just
+        # det som gör att transaktionen kan släppas.
+        def _commit_checkpoint(_label):
+            try:
+                self.env.cr.commit()
+            except Exception:
+                _logger.warning(
+                    'checkpoint-commit misslyckades (%s)', _label,
+                    exc_info=True)
+
+        checkpoint_cb = _commit_checkpoint
+
         mode = self._get_effective_orchestration_mode()
         if self.env.context.get('ai_single_agent_run'):
             mode = 'single'
@@ -4819,6 +4845,7 @@ class AICoworker(models.Model):
                     nats_user_context=nats_ctx,
                     session_headers=bifrost_headers,
                     outcome_callback=outcome_cb,
+                    checkpoint_callback=checkpoint_cb,
                 ),
                 tool_selector=tool_selector,
             )
@@ -4831,7 +4858,8 @@ class AICoworker(models.Model):
                     config=AgentConfig(model=model, system_prompt=system_prompt,
                         max_rounds=max_rounds,
                         session_headers=bifrost_headers,
-                outcome_callback=outcome_cb))
+                outcome_callback=outcome_cb,
+                checkpoint_callback=checkpoint_cb))
             # Return a LinearLoop wrapper
             return LinearLoop(
                 agents=agents, provider=provider, tools=tools,
@@ -4852,6 +4880,7 @@ class AICoworker(models.Model):
                     max_rounds=max_rounds,
                     session_headers=bifrost_headers,
                     outcome_callback=outcome_cb,
+                    checkpoint_callback=checkpoint_cb,
                 ),
                 tool_selector=tool_selector,
             )
@@ -4921,6 +4950,7 @@ class AICoworker(models.Model):
                     max_rounds=max_rounds,
                     session_headers=bifrost_headers,
                     outcome_callback=outcome_cb,
+                    checkpoint_callback=checkpoint_cb,
                 ),
             )
 
