@@ -375,3 +375,55 @@ class TestGraphPartnerEdges(TransactionCase):
             self.assertIn('NoSuchLabel2', defn.last_error)
         finally:
             defn.unlink()
+
+
+class TestCypherValueEscaping(TransactionCase):
+    """AGE:s Cypher-parser följer INTE SQL-standardens ''-escaping.
+
+    Före fixen (2026-10-08): en partner vars namn innehöll ett citattecken
+    (t.ex. `'Carl Falk'`, importerat med citattecknen i datan) kraschade
+    _upsert_node → 5/3626 partners misslyckades med
+    `syntax error at or near "'Carl Falk'"`. Felet var osynligt innan
+    last_error fanns (rapporterades som "Synced 3626/3626").
+    """
+
+    def _cv(self, val):
+        return self.env['graph.node.definition']._cypher_value(val)
+
+    def test_plain_string(self):
+        self.assertEqual(self._cv('Carl Falk'), "'Carl Falk'")
+
+    def test_apostrophe_uses_backslash(self):
+        """AGE kräver \\' — inte SQL-standardens ''."""
+        self.assertEqual(self._cv("Ronaldo's Bageri"),
+                         "'Ronaldo\\'s Bageri'")
+
+    def test_quoted_name_roundtrips(self):
+        """Ett namn med citattecken i datan (partner 2858)."""
+        self.assertEqual(self._cv("'Carl Falk'"), "'\\'Carl Falk\\''")
+
+    def test_backslash_is_doubled(self):
+        """AGE: '\\s' är en ogiltig escape-sekvens → \\\\ krävs."""
+        self.assertEqual(self._cv('back\\slash'), "'back\\\\slash'")
+
+    def test_none_and_numbers(self):
+        self.assertEqual(self._cv(None), 'NULL')
+        self.assertEqual(self._cv(42), '42')
+        self.assertEqual(self._cv(True), 'true')
+
+    def test_quoted_name_persists_in_graph(self):
+        """End-to-end: ett namn med citattecken ska gå att skriva och läsa."""
+        Ex = self.env['graph.executor']
+        try:
+            Ex.cypher('RETURN 1', read_only=True)
+        except Exception:
+            self.skipTest('AGE ej användbar i denna miljö')
+        val = "'Carl Falk'"
+        cv = self._cv(val)
+        Ex.cypher_write(
+            "MERGE (n:QuoteEscape {id: 1}) SET n.v = %s" % cv)
+        res = Ex.cypher(
+            "MATCH (n:QuoteEscape {id: 1}) RETURN n.v", read_only=True)
+        self.assertEqual(res, [val],
+                         'värdet ska läsas tillbaka exakt som det skrevs')
+        Ex.cypher_write("MATCH (n:QuoteEscape {id: 1}) DETACH DELETE n")

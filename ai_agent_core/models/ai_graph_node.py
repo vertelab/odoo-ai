@@ -332,15 +332,26 @@ class GraphNodeDefinition(models.Model):
 
     @api.model
     def _cypher_value(self, val):
-        """Format a Python value for use in Cypher SET clause."""
+        """Format a Python value for use in Cypher SET clause.
+
+        AGE:s Cypher-parser följer INTE SQL-standardens ''-escaping inuti
+        Cypher-kroppen — `'Carl Falk''s'` ger `syntax error at or near
+        "'Carl Falk'"`. Backslash-escape (`\'`) fungerar och läses tillbaka
+        korrekt. Verifierat mot odoo_mind 2026-10-08.
+
+        Före fixen: en partner vars namn innehöll ett citattecken (t.ex.
+        `'Carl Falk'`, importerat med citattecknen i datan) kraschade
+        _upsert_node → 5/3626 partners misslyckades. Felet var osynligt
+        innan last_error fanns (rapporterades som "Synced 3626/3626").
+        """
         if val is None:
             return "NULL"
         if isinstance(val, bool):
             return "true" if val else "false"
         if isinstance(val, (int, float)):
             return str(val)
-        # String: escape single quotes and wrap
-        escaped = str(val).replace("'", "''")
+        # String: escape backslash först, sedan citattecken (AGE-stil).
+        escaped = str(val).replace("\\", "\\\\").replace("'", "\\'")
         return f"'{escaped}'"
 
     def action_sync_now(self):
