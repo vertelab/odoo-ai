@@ -213,6 +213,48 @@ class TestStreamAnswerPersist(common.TransactionCase):
         self.assertEqual(len(assistants), 1,
                          'servern ska inte dubblera ett befintligt svar')
 
+    def test_error_path_persists_before_raise(self):
+        """2.4 (2026-10-08): en felande tur lämnar ändå ett assistantsvar.
+
+        Providerfel propagerade tidigare förbi persistensen (raise stod
+        före _persist_stream_answer), så turen lämnades med enbart en
+        user-rad — tråden såg "stannad" ut (session 23584, fråga 2).
+
+        Testet verifierar kontraktsordningen i generate(): strömfelet
+        ska bäras in i persistensen och assistantsvaret skrivas INNAN
+        felet kastas vidare. Vi kör samma sekvens som generate() gör.
+        """
+        from odoo.addons.ai_agent_core.controllers.stream import (
+            _persist_stream_answer)
+        session = self._session()
+        self.env['ai.coworker.session.line'].create({
+            'session_id': session.id, 'role': 'user',
+            'content': '176-173 till rödgrönas favör', 'sequence': 1,
+        })
+
+        # Så här ser generate()s felväg ut efter fixen: felet fångas i
+        # state['error'], finish_reason sätts till 'error', persistensen
+        # körs — och först därefter kastas felet vidare.
+        state = {
+            'error': 'HTTPStatusError: Client error 400 Bad Request',
+            'finish_reason': 'error',
+        }
+        _persist_stream_answer(
+            self.env, session.id, '',
+            finish_reason=state.get('finish_reason', ''),
+            error=state.get('error', ''),
+        )
+
+        lines = session.session_line_ids.sorted('sequence')
+        assistants = lines.filtered(lambda l: l.role == 'assistant')
+        self.assertEqual(
+            len(assistants), 1,
+            'en felande tur ska ändå efterlämna ett assistantsvar')
+        self.assertEqual(lines[-1].role, 'assistant',
+                         'assistantsvaret ska vara turens sista rad')
+        self.assertEqual(session.finish_reason, 'error')
+        self.assertIn('400 Bad Request', session.error_detail or '')
+
 
 @tagged('post_install', '-at_install')
 class TestThreadSaveResponseIdempotent(common.TransactionCase):
