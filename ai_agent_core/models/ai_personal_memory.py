@@ -940,6 +940,11 @@ Return ONLY a JSON object: {{"memory": [{{"text": "...", "category": "fact|prefe
         1. Samla channel-meddelanden från gårdagen
         2. EN LLM-anrop per användare
         3. Spara i ai.personal.memory + uppdatera identity
+
+        Idempotent per källmeddelande: varje skapat minne bär
+        `source_ref = 'discuss,<message_id>'`, och ett meddelande som redan
+        gett ett minne för samma användare hoppas över. En dubbelkörning
+        (cron + manuellt) skapar därför inga dubbletter.
         """
         yesterday = date.today() - timedelta(days=1)
         today = date.today()
@@ -956,7 +961,8 @@ Return ONLY a JSON object: {{"memory": [{{"text": "...", "category": "fact|prefe
         ])
         _logger.info("Found %d discuss messages from %s", len(messages), yesterday)
 
-        # Gruppera per användare
+        # Gruppera per användare. Behåll meddelandet (för source_ref) och
+        # hoppa över meddelanden som redan bidragit för samma användare.
         by_user = {}
         for msg in messages:
             users = self.env['res.users'].search([
@@ -968,17 +974,31 @@ Return ONLY a JSON object: {{"memory": [{{"text": "...", "category": "fact|prefe
             if not channel.exists() or channel.channel_type != 'channel':
                 continue
 
-            by_user.setdefault(users.id, []).append(
-                f"[{channel.name}] {msg.author_id.name}: {self._html_to_text(msg.body)[:300]}"
-            )
+            source_ref = 'discuss,%d' % msg.id
+            already = self.search([
+                ('user_id', '=', users.id),
+                ('source_ref', '=', source_ref),
+            ], limit=1)
+            if already:
+                continue  # redan extraherad — idempotens
+
+            by_user.setdefault(users.id, []).append({
+                'ref': source_ref,
+                'text': f"[{channel.name}] {msg.author_id.name}: "
+                        f"{self._html_to_text(msg.body)[:300]}",
+            })
 
         total = 0
-        for uid, msgs in by_user.items():
-            if len(msgs) < 3:
+        for uid, items in by_user.items():
+            if len(items) < 3:
                 continue
             user = self.env['res.users'].browse(uid)
             quest = user.personal_coworker_id
             identity = quest.identity_id if quest else None
+            msgs = [it['text'] for it in items]
+            # Alla meddelanden i denna batch pekas ut som källa på varje
+            # skapat minne — grinden är "har meddelandet bidragit?".
+            refs = [it['ref'] for it in items]
 
             # LLM extraction
             prompt = f"""
@@ -1015,12 +1035,30 @@ Return ONLY a JSON object: {{"memory": [{{"text": "...", "category": "fact|prefe
                         or get_default_model_name(),
                         max_rounds=1, max_tokens=1500))
                 raw = asyncio.run(loop.run(prompt))
-                result = json.loads((raw.text or '').strip())
+                response = (raw.text or '').strip()
+                # Modellen kan linda JSON i ```-block trots instruktionen
+                # (samma hantering som _llm_extract_facts).
+                if response.startswith('```'):
+                    response = response.strip('`')
+                    if response.startswith('json'):
+                        response = response[4:]
+                    response = response.strip()
+                result = json.loads(response)
+                # Ett LLM-anrop extraherar fakta ur en BATCH av meddelanden.
+                # Varje extraherat minne skrivs en gång per meddelande-ref i
+                # batchen, så att VARJE meddelande markeras som bidragande —
+                # annars skulle nästa körning se de övriga som nya och
+                # extrahera om dem (idempotensen kräver det).
                 for mem in result.get('memories', []):
-                    self.add_memory(user_id=uid, content=mem['content'],
-                        category=mem.get('category','context'), source='discuss_chat',
-                        importance=mem.get('importance','medium'), company_id=user.company_id.id)
-                    total += 1
+                    for ref in refs:
+                        self.add_memory(
+                            user_id=uid, content=mem['content'],
+                            category=mem.get('category', 'context'),
+                            source='discuss_chat',
+                            importance=mem.get('importance', 'medium'),
+                            company_id=user.company_id.id,
+                            source_ref=ref)
+                        total += 1
                 if identity and result.get('identity_updates'):
                     up = result['identity_updates']
                     if up.get('style'): identity.style = up['style']

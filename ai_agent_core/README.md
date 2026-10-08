@@ -310,7 +310,37 @@ Odoo Mind har ett flerskiktat minnessystem:
 └─────────────────────────────────────────────────────────────┘
 ```
 
-### Graf-skrivvägen — felsökning och krav
+### Discuss-lärandet — väg, idempotens och varför cronen är inaktiv
+
+`ai.personal.memory.cron_extract_from_discuss` läser gårdagens
+**publika** kanalmeddelanden (`channel_type='channel'`, aldrig DM) och
+skriver lärdomar till **avsändarens** personliga minne — bara egna
+meddelanden (`author_id`), aldrig andras. En användare med
+`learn_from_discuss = False` hoppas över.
+
+**Cronen skapas inaktiv** (`data/cron_discuss_learning.xml`,
+`active=False`). Vägen har aldrig körts och läser riktiga kanaler; en
+människa aktiverar den efter att ha verifierat ett manuellt anrop.
+
+**Idempotens:** varje skapat minne bär `source_ref = 'discuss,<message_id>'`.
+Ett LLM-anrop extraherar fakta ur en **batch** meddelanden, och varje
+fakta skrivs en gång per meddelande-ref i batchen — så att varje
+meddelande markeras som bidragande. Grinden (`search([('user_id',...),
+('source_ref',...)])`) gör att en dubbelkörning inte ger dubbletter.
+
+⚠ **JSON-fällan:** modellen lindar ofta svaret i ` ```json `-block trots
+instruktionen. `cron_extract_from_discuss` strippar staketet innan
+`json.loads` (samma hantering som `_llm_extract_facts`). Utan det faller
+varje extraktion tyst och returnerar 0.
+
+**Felsökning:**
+
+1. `SELECT cron_name, active FROM ir_cron WHERE cron_name ILIKE '%Discuss%'`
+   — cronen ska finnas och vara inaktiv tills någon aktiverar den.
+2. `SELECT source_ref, content FROM ai_personal_memory WHERE source='discuss_chat'`
+   — 0 rader kan betyda "inga kanalmeddelanden igår", inte att vägen är trasig.
+3. `learn_from_discuss` på `res.users` (Min profil → AI-profil) styr om
+   användarens meddelanden extraheras.
 
 Grafen (`odoo_mind`) kräver att `ag_catalog` finns i `search_path`,
 annars resolvas inte AGE:s operatorer (`@>`) inuti Cypher-kroppen och

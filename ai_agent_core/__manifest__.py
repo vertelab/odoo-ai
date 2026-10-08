@@ -42,6 +42,7 @@
         'data/okf_artifact_types_personal.xml',
         'data/okf_access_resolvers.xml',
         'data/cron_personal_index.xml',
+        'data/cron_discuss_learning.xml',
         'data/cron_okf_index_dirty.xml',
         'data/search_sources.xml',
         'data/cron_session_idle.xml',

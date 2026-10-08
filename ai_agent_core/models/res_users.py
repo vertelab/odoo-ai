@@ -28,7 +28,12 @@ class ResUsers(models.Model):
         help='Number of personal memories for this user.')
 
     # ── Company Memory Access ──
-    learn_from_discuss = fields.Boolean('Learn from Discuss', default=True, help='Extract learnings from Discuss channel conversations.')
+    learn_from_discuss = fields.Boolean(
+        'Learn from Discuss', default=True,
+        help='Lär sig av dina egna meddelanden i publika Discuss-kanaler '
+             '(bara dina egna yttranden, aldrig andras). Stäng av för att '
+             'inte extrahera några lärdomar från Discuss till ditt '
+             'personliga minne.')
 
     company_memory_categories = fields.Many2many(
         'ai.company.memory.category',

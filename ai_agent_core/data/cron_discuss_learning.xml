@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Discuss-lärande (discuss-learning-cron).
+         Extraherar lärdomar ur gårdagens publika kanalmeddelanden till
+         avsändarens personliga minne (ai.personal.memory). Bara egna
+         meddelanden (author_id), bara channel_type='channel'.
+
+         SKAPAS INAKTIV: vägen har aldrig körts och läser riktiga kanaler.
+         En människa aktiverar den efter att ha verifierat ett manuellt
+         anrop. Idempotent per meddelande (source_ref='discuss,<id>'). -->
+    <record id="cron_discuss_learning" model="ir.cron">
+        <field name="name">AI: Extrahera lärdomar från Discuss</field>
+        <field name="model_id" ref="model_ai_personal_memory"/>
+        <field name="state">code</field>
+        <field name="code">model.cron_extract_from_discuss()</field>
+        <field name="interval_number">1</field>
+        <field name="interval_type">days</field>
+        <field name="active" eval="False"/>
+    </record>
+</odoo>

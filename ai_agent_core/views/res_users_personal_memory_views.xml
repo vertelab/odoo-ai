@@ -70,6 +70,7 @@
                                 — det som injiceras i deras systemprompt.
                             </p>
                         </div>
+                        <field name="learn_from_discuss"/>
                     </group>
                 </xpath>
             </field>

@@ -175,8 +175,9 @@ class TestPersonalMemory(common.TransactionCase):
     # en död metod kunde anropas manuellt.
     #
     # Kalenderindexeringen flyttar till `calendar_ai`-bryggan. Historisk
-    # chattindexering är en egen fråga; live-vägen (`ai_discuss_learning`)
-    # är oberörd och testas separat.
+    # chattindexering är en egen fråga; live-vägen
+    # (`ai.personal.memory.cron_extract_from_discuss`, discuss-learning-cron)
+    # testas separat.
 
     # ════════════════════════════════════════════
     # T12.6: System Prompt Injection
@@ -334,3 +335,135 @@ class TestPersonalMemory(common.TransactionCase):
             user_id=self.user.id, content='Test count', category='fact')
         self.user._compute_personal_memory_count()
         self.assertEqual(self.user.personal_memory_count, initial + 1)
+
+
+@tagged('-at_install', 'post_install')
+class TestDiscussLearning(common.TransactionCase):
+    """discuss-learning-cron: idempotens i cron_extract_from_discuss.
+
+    Vägen läser gårdagens publika kanalmeddelanden och skriver till
+    avsändarens personliga minne. Den ska vara idempotent per meddelande
+    (source_ref='discuss,<id>'), så att en dubbelkörning inte ger
+    dubbletter.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.Memory = cls.env['ai.personal.memory']
+        cls.user = cls.env['res.users'].create({
+            'name': 'Discuss Learner',
+            'login': 'discuss_learner@example.com',
+            'email': 'discuss_learner@example.com',
+            'learn_from_discuss': True,
+        })
+
+    def _channel_with_messages(self, count=3):
+        channel = self.env['discuss.channel'].create({
+            'name': 'Testkanal %s' % self.user.id,
+            'channel_type': 'channel',
+        })
+        # Gårdagens datum (cronen läser igår).
+        from datetime import date, timedelta, datetime as dt
+        y = date.today() - timedelta(days=1)
+        when = dt(y.year, y.month, y.day, 12, 0, 0)
+        msgs = self.env['mail.message']
+        for i in range(count):
+            m = self.env['mail.message'].create({
+                'model': 'discuss.channel',
+                'res_id': channel.id,
+                'message_type': 'comment',
+                'body': '<p>Meddelande %d från användaren</p>' % i,
+                'author_id': self.user.partner_id.id,
+            })
+            # create_date är readonly — sätt via SQL för att hamna på igår.
+            self.env.cr.execute(
+                "UPDATE mail_message SET create_date = %s WHERE id = %s",
+                (when, m.id))
+            m.invalidate_recordset(['create_date'])
+            msgs |= m
+        return channel, msgs
+
+    def test_second_run_skips_processed_messages(self):
+        """Ett meddelande som redan bidragit hoppas över (idempotens)."""
+        channel, msgs = self._channel_with_messages(3)
+        ref = 'discuss,%d' % msgs[0].id
+        # Första körningen: skapa ett minne med source_ref.
+        self.Memory.add_memory(
+            user_id=self.user.id, content='Redan extraherad',
+            category='fact', source='discuss_chat', source_ref=ref)
+        # Grinden: meddelandet finns redan för användaren.
+        already = self.Memory.search([
+            ('user_id', '=', self.user.id),
+            ('source_ref', '=', ref),
+        ], limit=1)
+        self.assertTrue(already, 'grinden ska hitta det redan extraherade')
+
+    def test_gate_is_user_scoped(self):
+        """Grinden är per användare — samma meddelande, olika användare."""
+        other = self.env['res.users'].create({
+            'name': 'Other Learner',
+            'login': 'other_learner@example.com',
+            'email': 'other_learner@example.com',
+        })
+        ref = 'discuss,999999'
+        self.Memory.add_memory(
+            user_id=self.user.id, content='Användare A',
+            category='fact', source='discuss_chat', source_ref=ref)
+        # Samma source_ref för en annan användare ska inte finnas.
+        other_hit = self.Memory.search([
+            ('user_id', '=', other.id),
+            ('source_ref', '=', ref),
+        ], limit=1)
+        self.assertFalse(other_hit, 'grinden ska vara user_id-scoped')
+        # Men den egna finns.
+        own_hit = self.Memory.search([
+            ('user_id', '=', self.user.id),
+            ('source_ref', '=', ref),
+        ], limit=1)
+        self.assertTrue(own_hit)
+
+    def test_cron_skips_already_processed_message(self):
+        """Ett meddelande som redan gett ett minne ingår inte i batchen.
+
+        Kör den riktiga cron-metoden med en mockad provider. Grinden ska
+        göra att ett redan extraherat meddelande inte bidrar igen.
+        """
+        from unittest.mock import patch
+        channel, msgs = self._channel_with_messages(4)
+        ref = 'discuss,%d' % msgs[0].id
+        self.Memory.add_memory(
+            user_id=self.user.id, content='Redan extraherad',
+            category='fact', source='discuss_chat', source_ref=ref)
+
+        captured = {}
+
+        class _FakeResult:
+            text = '{"memories": []}'
+
+        class _FakeLoop:
+            def __init__(self, *a, **k):
+                pass
+
+            def run(self, prompt):
+                captured['prompt'] = prompt
+
+                async def _coro():
+                    return _FakeResult()
+                return _coro()
+
+        with patch(
+                'odoo.addons.ai_agent_core.core.provider.get_default_provider',
+                return_value=(object(), None)), \
+             patch(
+                'odoo.addons.ai_agent_core.core.loop.AgentLoop',
+                _FakeLoop):
+            self.Memory.cron_extract_from_discuss()
+
+        # Prompten ska bara innehålla de icke-redan-extraherade meddelandena.
+        prompt = captured.get('prompt', '')
+        self.assertNotIn('Meddelande 0', prompt,
+                         'det redan extraherade meddelandet ska hoppas över')
+        self.assertIn('Meddelande 1', prompt)
+        self.assertIn('Meddelande 2', prompt)
+        self.assertIn('Meddelande 3', prompt)
