@@ -16,6 +16,7 @@ from . import test_okf_access_selection
 from . import test_core_domain_purity
 from . import test_okf_embedding
 from . import test_session_summary
+from . import test_session_title
 from . import test_session_memory_bridge
 from . import test_coworker_dispatch_owner
 from . import test_memory_consolidation

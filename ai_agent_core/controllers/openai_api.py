@@ -416,6 +416,14 @@ class AIOpenAPIController(http.Controller):
             except Exception:
                 pass
 
+            # Sessionsnamn (session-title steg B): döp sessionen till EN
+            # mening i bakgrunden. Steg A (första prompten) har redan gett
+            # ett namn — detta uppgraderar det när konversationen finns.
+            try:
+                _session._maybe_update_title_async()
+            except Exception:
+                pass
+
             response_text = result.text if hasattr(result, 'text') else str(result or '')
             input_t = getattr(result, 'input_tokens', estimated_tokens)
             output_t = getattr(result, 'output_tokens', len(response_text) // 4)
@@ -606,6 +614,15 @@ class AIOpenAPIController(http.Controller):
                         # Session-info (session-cost-context 3.3) — före [DONE]
                         yield f'data: {json.dumps({"session_id": _session_id, "cost_context": _cost})}\n\n'
                         yield 'data: [DONE]\n\n'
+
+                    # Sessionsnamn (session-title steg B): efter avslutad
+                    # stream — döp sessionen till EN mening i bakgrunden.
+                    # Steg A (första prompten) har redan gett ett namn;
+                    # detta uppgraderar det när konversationen finns.
+                    try:
+                        _session._maybe_update_title_async()
+                    except Exception:
+                        pass
 
                     from odoo import api as _api, registry as _registry
                     with _registry(gen_dbname).cursor() as gen_cr:

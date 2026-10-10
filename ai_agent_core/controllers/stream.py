@@ -2784,10 +2784,15 @@ class AIOpenAIAPI(http.Controller):
                           'type': 'invalid_request_error'}}),
                 status=400, content_type='application/json')
         copy_from = (body.get('copy_from_pi_session_id') or '').strip()
+        # session-title steg A: klienten kan skicka den första prompten så
+        # sessionen döps efter den i stället för efter UUID:ns åtta första
+        # tecken (som inte gick att skilja från någon annan session).
+        prompt = (body.get('prompt') or '').strip()
 
         Session = request.env['ai.coworker.session'].sudo()
         session, _created = Session._lookup_or_create_pi_session(
-            pi_session_id, copy_from_pi_session_id=copy_from)
+            pi_session_id, copy_from_pi_session_id=copy_from,
+            prompt=prompt)
 
         def _field_id(name):
             return (session[name].id
@@ -2795,6 +2800,8 @@ class AIOpenAIAPI(http.Controller):
 
         return Response(json.dumps({
             'session_id': session.id,
+            'name': session.name or '',
+            'title_source': session.title_source or '',
             'project_id': _field_id('project_id'),
             'task_id': _field_id('task_id'),
             'partner_id': session.partner_id.id if session.partner_id else None,
@@ -3542,6 +3549,14 @@ class AIOpenAIAPI(http.Controller):
                     getattr(response, 'input_tokens', 0),
                     getattr(response, 'output_tokens', 0),
                     model_ref, tool_history, messages=messages)
+                # Sessionsnamn (session-title steg B): döp sessionen till EN
+                # mening i bakgrunden. Steg A (första prompten) har redan
+                # gett ett namn — detta uppgraderar det när konversationen
+                # finns. Best-effort; får aldrig fälla en körning.
+                try:
+                    _sess._maybe_update_title_async()
+                except Exception:
+                    pass
                 cost_ctx = {
                     'project_id': (
                         _sess.project_id.id
@@ -3903,6 +3918,14 @@ class AIOpenAIAPI(http.Controller):
                             usage_state['input'] or (len(prompt) // 4),
                             usage_state['output'] or (len(''.join(full_response)) // 4),
                             model_ref, tool_history, messages=messages)
+                        # Sessionsnamn (session-title steg B): döp sessionen
+                        # till EN mening i bakgrunden. Steg A (första
+                        # prompten) har redan gett ett namn — detta
+                        # uppgraderar det när konversationen finns.
+                        try:
+                            _sess._maybe_update_title_async()
+                        except Exception:
+                            pass
                         _gen_cr.commit()
                     finally:
                         _gen_cr.close()

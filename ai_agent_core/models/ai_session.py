@@ -3,7 +3,7 @@
 
 import json, logging, re, uuid
 from datetime import timedelta
-from odoo import models, fields, api
+from odoo import models, fields, api, SUPERUSER_ID
 
 _logger = logging.getLogger(__name__)
 
@@ -331,6 +331,23 @@ class AICoworkerSession(models.Model):
              'session). Redan bekräftad session frågar inte om igen '
              '(inte heller efter resume/fork-kopiering).')
 
+    # ── Sessionsnamn (session-title A→B→C) ──────────────────────────────
+    # Namnet är det som visas i Pi:s /resume-lista och i Odoo:s trådvy.
+    # Det sätts i tre steg, i den ordning informationen finns:
+    #   A. _lookup_or_create_pi_session: första prompten (gratis, direkt).
+    #   B. _maybe_update_title: EN mening, LLM-genererad efter första turen.
+    #   C. _write_final_summary: eftermälet får förbättra namnet vid stängning.
+    # title_source spårar vilket steg som senast satte namnet, så ett senare
+    # steg kan uppgradera men aldrig ETT TIDIGARE steg skriva över ett senare.
+    title_source = fields.Selection([
+        ('prompt', 'Första prompten'),
+        ('llm', 'LLM-genererad mening'),
+        ('summary', 'Eftermälet'),
+        ('manual', 'Manuellt satt'),
+    ], string='Namnkälla', index=True, readonly=True,
+        help='Vilket steg som senast satte sessionens namn. Styr vilka '
+             'senare steg som får skriva över det (prompt < llm < summary).')
+
     # ── Rekordkontext (ai-coworker-record-context) ──────────────────────
     # Vilken record — eller vilken markering — gällde DENNA tur. Fälten
     # sätts när sessionen skapas från en chatt-tur där en record eller en
@@ -548,7 +565,8 @@ class AICoworkerSession(models.Model):
 
     @api.model
     def _lookup_or_create_pi_session(self, pi_session_id,
-                                     copy_from_pi_session_id=''):
+                                     copy_from_pi_session_id='',
+                                     prompt=''):
         """Find-or-create session via pi_session_id (session-cost-context).
 
         Används av POST /ai/v1/sessions/lookup och openai_api-vägen.
@@ -557,18 +575,31 @@ class AICoworkerSession(models.Model):
         (project/task/partner + cost_context_confirmed) kopierad från
         källsessionen.
 
+        Namnet (session-title steg A): när `prompt` skickas med döps
+        sessionen efter den i stället för efter UUID:ns första åtta tecken.
+        Ett namn ur UUID:t gick inte att skilja från någon annan session i
+        Pi:s /resume-lista. Saknas prompt faller vi tillbaka på det gamla
+        beteendet — en session utan namn är bättre än en krasch.
+
         Returnerar (session, created: bool).
         """
         pi_session_id = (pi_session_id or '').strip().lower()
         session = self.search(
             [('pi_session_id', '=', pi_session_id)], limit=1)
         if session:
+            # Resume: en senare tur kan ha en bättre prompt än den första,
+            # men aldrig bättre än ett LLM-namn (rangordningen i
+            # _maybe_set_title avgör).
+            if prompt:
+                session._maybe_set_title(prompt, source='prompt')
             return session, False
+        title = self._clean_title(prompt) if prompt else ''
         vals = {
             'pi_session_id': pi_session_id,
             'status': 'active',
             'init_type': 'openai_api',
-            'name': pi_session_id[:8],
+            'name': title or pi_session_id[:8],
+            'title_source': 'prompt' if title else False,
             'user_id': self.env.user.id,
         }
         if copy_from_pi_session_id:
@@ -1003,6 +1034,214 @@ class AICoworkerSession(models.Model):
                 'session %s: kunde inte backfilla coworker_id: %s',
                 self.id, e)
         return self
+
+    # ── Sessionsnamn (session-title A→B→C) ────────────────────────────
+    #
+    # VARFÖR: en session skapad via sessions-lookup hette `pi_session_id[:8]`
+    # — åtta hextecken. I Pi:s /resume-lista och i Odoo:s trådvy gick den
+    # inte att skilja från någon annan session. Namnet ska vara EN MENING
+    # som beskriver vad sessionen handlar om.
+    #
+    # Stegen är ordnade efter när informationen finns, inte efter kvalitet:
+    #   A. Första prompten — finns redan vid sessionens skapande, gratis.
+    #   B. EN mening via LLM — kräver att minst en tur körts.
+    #   C. Eftermälets första rad — finns först vid stängning/idle.
+    #
+    # Ett senare steg får uppgradera ett tidigare, men ett tidigare steg får
+    # ALDRIG skriva över ett senare (annars skulle t.ex. varje ny tur i en
+    # resume:ad session nolla ett LLM-namn tillbaka till prompten).
+    # Det är vad `title_source`-ordningen nedan upprätthåller.
+
+    #: Rangordning för namnkällor. Högre siffra = starkare anspråk.
+    TITLE_SOURCE_RANK = {
+        'prompt': 1,
+        'llm': 2,
+        'summary': 3,
+        'manual': 4,
+    }
+
+    #: Max antal tecken i ett genererat namn. Pi:s /resume-kolumn är smal
+    #: och Odoo:s trådvy klipper ändå — en mening ryms i 80.
+    TITLE_MAX_CHARS = 80
+
+    def _title_rank(self):
+        """Rang för sessionens nuvarande namnkälla (0 = inget namn)."""
+        self.ensure_one()
+        if not self.title_source:
+            return 0
+        return self.TITLE_SOURCE_RANK.get(self.title_source, 0)
+
+    @api.model
+    def _clean_title(self, text, max_chars=None):
+        """Normalisera en namnkandidat till EN rad, utan skräp.
+
+        Tar bort markdown-rubriker, citattecken, punktlistor och
+        radbrytningar — namnet ska vara en mening, inte ett dokument.
+        Returnerar '' om inget användbart återstår.
+        """
+        if not text:
+            return ''
+        max_chars = max_chars or self.TITLE_MAX_CHARS
+        line = str(text).strip()
+        # Första icke-tomma raden (LLM:er lägger gärna en rubrik först).
+        for candidate in line.splitlines():
+            candidate = candidate.strip()
+            if candidate:
+                line = candidate
+                break
+        # Markdown-rubrik, listmarkör, fetstil och citattecken.
+        line = re.sub(r'^#{1,6}\s*', '', line)
+        line = re.sub(r'^[-*•]\s+', '', line)
+        line = line.replace('**', '').replace('__', '')
+        line = line.strip().strip('"\'“”‘’')
+        # Rubrik-prefix som "Syfte:" eller "Titel:" hör inte i namnet.
+        line = re.sub(
+            r'^(titel|title|ämne|amne|subject|sammanfattning)\s*:\s*',
+            '', line, flags=re.IGNORECASE)
+        line = re.sub(r'\s+', ' ', line).strip()
+        if len(line) > max_chars:
+            line = line[:max_chars].rstrip()
+        return line
+
+    def _maybe_set_title(self, text, source='prompt', force=False):
+        """Sätt sessionens namn om källan är starkare än nuvarande.
+
+        Idempotent och tyst: ett svagare steg (t.ex. prompt vid varje ny tur
+        i en resume:ad session) rör inte ett starkare namn. Returnerar True
+        om namnet faktiskt skrevs.
+        """
+        self.ensure_one()
+        if not force and self.TITLE_SOURCE_RANK.get(source, 0) <= \
+                self._title_rank():
+            return False
+        title = self._clean_title(text)
+        if not title:
+            return False
+        try:
+            self.sudo().write({'name': title, 'title_source': source})
+            _logger.info(
+                'session %s: namn satt av %s → %r',
+                self.id, source, title)
+            return True
+        except Exception as e:
+            _logger.warning(
+                'session %s: kunde inte sätta namn (%s): %s',
+                self.id, source, e)
+            return False
+
+    def _maybe_update_title(self, force=False):
+        """Steg B: generera EN mening som namn på sessionen.
+
+        Anropas i bakgrunden efter en avslutad tur (samma mönster som
+        `_maybe_learn_async`). Kräver minst en user- och en assistant-rad —
+        annars finns inget att döpa efter. Idempotent: när ett LLM-namn
+        redan satts görs inget nytt anrop.
+
+        Returnerar namnet (str) eller None.
+        """
+        self.ensure_one()
+        if not force and self._title_rank() >= \
+                self.TITLE_SOURCE_RANK['llm']:
+            return self.name
+        lines = self.session_line_ids.sorted('sequence')
+        if not any(l.role == 'user' for l in lines) or \
+                not any(l.role == 'assistant' for l in lines):
+            return None
+        transcript = self._final_summary_transcript(lines, max_chars=6000)
+        if not transcript.strip():
+            return None
+        title = self._run_title_llm(transcript)
+        if not title:
+            return None
+        if self._maybe_set_title(title, source='llm', force=force):
+            return self.name
+        return None
+
+    def _title_prompt(self, transcript):
+        """Prompt för namngenereringen — EN mening, på svenska."""
+        return (
+            'Ge sessionen nedan ett namn på svenska. Svara med EXAKT en '
+            'mening, högst %d tecken, utan rubrik, utan citattecken och '
+            'utan avslutande punkt. Meningen ska beskriva vad sessionen '
+            'handlar om, inte vad som sades först.\n\n'
+            '--- KONVERSATION ---\n%s' % (self.TITLE_MAX_CHARS, transcript))
+
+    def _run_title_llm(self, transcript):
+        """Kör LLM-anropet för namnet. Returnerar str eller None.
+
+        Avskilt från `_maybe_update_title` så att flödet kan testas utan
+        att röra providern (samma mönster som `_run_final_summary_llm`).
+        """
+        import asyncio
+        try:
+            from odoo.addons.ai_agent_core.core.provider import (
+                ProviderFactory, get_default_provider, get_default_model_name)
+            from odoo.addons.ai_agent_core.core.loop import (
+                AgentLoop, AgentConfig)
+            from odoo.addons.ai_agent_core.core.tools import ToolRegistry
+            quest = self.coworker_id
+            provider, model_rec = (
+                ProviderFactory.from_coworker(quest) if quest else (None, None))
+            if not provider:
+                # `env` MÅSTE skickas in (samma fälla som eftermälet): utan
+                # den faller uppslaget tillbaka på `odoo.http.request`, som
+                # inte finns i en bakgrundstråd — och då blir svaret alltid
+                # (None, None).
+                provider, model_rec = get_default_provider(self.env)
+            if not provider:
+                _logger.warning(
+                    'Namn: ingen provider tillgänglig för session %s',
+                    self.id)
+                return None
+            model_name = (model_rec and model_rec._get_api_name()) \
+                or get_default_model_name()
+            loop = AgentLoop(
+                provider=provider, tools=ToolRegistry(),
+                config=AgentConfig(
+                    model=model_name, max_rounds=1, max_tokens=64))
+            result = asyncio.run(
+                loop.run(self._title_prompt(transcript)))
+            return self._clean_title(result.text or '') or None
+        except Exception as e:
+            _logger.warning(
+                'Namn: generering misslyckades för session %s: %s',
+                self.id, e)
+            return None
+
+    @api.model
+    def _run_title_in_env(self, dbname, session_id):
+        """Kör `_maybe_update_title` i en egen DB-cursor/env (bakgrund).
+
+        Samma mönster som `_run_learn_in_env`: requestens cursor stängs när
+        svaret gått ut, så en tråd som lånar den kraschar tyst.
+        """
+        try:
+            from odoo.api import Environment
+            from odoo.modules.registry import Registry
+            registry = Registry(dbname)
+            with registry.cursor() as cr:
+                env = Environment(cr, SUPERUSER_ID, {})
+                session = env['ai.coworker.session'].browse(session_id)
+                if session.exists():
+                    session._maybe_update_title()
+        except Exception as e:
+            _logger.warning('Bakgrundsnamngivning misslyckades: %s', e)
+
+    def _maybe_update_title_async(self):
+        """Trigga steg B i bakgrunden. Tyst no-op vid fel."""
+        self.ensure_one()
+        try:
+            import threading
+            threading.Thread(
+                target=self._run_title_in_env,
+                args=(self._cr.dbname, self.id),
+                daemon=True,
+            ).start()
+            return True
+        except Exception as e:
+            _logger.warning(
+                'session %s: kunde inte starta namngivning: %s', self.id, e)
+            return False
 
     # ── Pi-session-markör (transport C) ────────────────────────────────
     # Pi-klienten äger Pi-sessionens UUID. Primär transport är body-fältet
@@ -1446,6 +1685,12 @@ class AICoworkerSession(models.Model):
         _logger.info(
             'Eftermäle skrivet för session %s (%d rader, %d tecken)',
             self.id, total, len(summary))
+
+        # Steg C (session-title A→B→C): eftermälet är den sista och bästa
+        # källan till ett namn — det finns först här, men det beskriver
+        # HELA sessionen. `_maybe_set_title` rangordnar källorna, så ett
+        # manuellt satt namn rörs aldrig.
+        self._maybe_set_title(summary, source='summary')
 
         # Bron till det personliga minnet (session-memory-bridge D2).
         # Eftermälet är den naturliga platsen: här finns både transcriptet
