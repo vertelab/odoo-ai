@@ -79,14 +79,14 @@ class AICoworkerSkill(models.Model):
     def fork_for_quest(self, quest, skill):
         """Create a quest-specific copy of a shared skill."""
         existing = self.search([
-            ('coworker_id', '=', coworker.id),
+            ('coworker_id', '=', quest.id),
             ('source_skill_id', '=', skill.id),
         ], limit=1)
         if existing:
             return existing
 
         return self.create({
-            'coworker_id': coworker.id,
+            'coworker_id': quest.id,
             'source_skill_id': skill.id,
             'description': skill.description,
             'recipe_text': skill.recipe_text,

@@ -560,6 +560,22 @@ class AIStreamController(http.Controller):
             # session-history-relevance 3.5: tråd-handtag så att finally kan
             # säkerställa att streaming-tråden är klar innan loopen rörs.
             _thread_holder = {'thread': None}
+            # ── Transaktionshygien (punkt 5) ────────────────────────────────
+            # Loopen committar sin transaktion vid varje runda-gräns
+            # (checkpoint_callback) så att inga lås hålls över LLM-väntan.
+            # gen_cr skapas först längre ned, så callbacken läser ur en
+            # hållare som fylls då.
+            # Utan detta höll en tur AccessShareLock på allt dess verktyg
+            # läst i tiotals sekunder → moduluppgraderingar med DDL föll på
+            # Odoos 15 s låstak.
+            #
+            # OBS: hållaren MÅSTE skapas här i generate()-scopet, inte inuti
+            # _stream(). `_stream` är en nästlad funktion; en variabel som
+            # tilldelas där blir lokal för _stream och osynlig för den
+            # `_cr_holder['cr'] = gen_cr` som körs i generate() längre ned
+            # (rad ~761). Python löser då _cr_holder som en global i
+            # generate() → NameError vid varje streaming-anrop.
+            _cr_holder = {'cr': None}
             try:
                 _logger.info("SSE stream starting — prompt: %s...", prompt[:50])
                 loop = asyncio.new_event_loop()
@@ -619,15 +635,10 @@ class AIStreamController(http.Controller):
                                     tool_recs, gen_env))
 
                         # ── Transaktionshygien (punkt 5) ────────────────────
-                        # Loopen committar sin transaktion vid varje runda-gräns
-                        # (checkpoint_callback) så att inga lås hålls över
-                        # LLM-väntan. gen_cr skapas först längre ned, så
-                        # callbacken läser ur en hållare som fylls då.
-                        # Utan detta höll en tur AccessShareLock på allt dess
-                        # verktyg läst i tiotals sekunder → moduluppgraderingar
-                        # med DDL föll på Odoos 15 s låstak.
-                        _cr_holder = {'cr': None}
-
+                        # _cr_holder skapas i generate()-scopet (se ovan) så
+                        # att både denna callback och `_cr_holder['cr'] =
+                        # gen_cr` i generate() ser samma dict. Definiera den
+                        # INTE här — då blir den lokal för _stream.
                         def _checkpoint(_label, _h=_cr_holder):
                             _cr = _h.get('cr')
                             if _cr is not None and not _cr.closed:
@@ -1829,7 +1840,10 @@ class AIStreamController(http.Controller):
 # Helper functions
 # ---------------------------------------------------------------------------
 
-_webui_handlers: dict[str, 'WebUIInterruptHandler'] = {}
+# Forward reference only. WebUIInterruptHandler is imported lazily inside
+# generate() (to avoid a circular import at module load), so the name is not
+# bound at module level. The annotation is a string and is never evaluated.
+_webui_handlers: dict[str, 'WebUIInterruptHandler'] = {}  # noqa: F821
 
 def _start_title_thread(session):
     """Starta namngivningstråden (steg B) EFTER att turen committats.

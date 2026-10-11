@@ -4911,6 +4911,9 @@ class AICoworker(models.Model):
             )
 
         # ── Multi-agent modes (supervisor/buzz) ──
+        from odoo.addons.ai_agent_core.core.supervisor import (
+            SupervisorLoop, SupervisorConfig,
+        )
         specialists = self._build_specialists(
             provider, tools, model, system_prompt, max_rounds)
 

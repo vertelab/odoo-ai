@@ -2092,7 +2092,7 @@ class AICoworkerSession(models.Model):
                 reply = coworker.with_context(
                     _ai_context_model='ai.coworker.session',
                     _ai_context_id=self.id,
-                    _ai_auto_approve=True).run(prompt, session=session)
+                    _ai_auto_approve=True).run(prompt, session=self)
                 reply_text = reply or 'Klart — inget svar genererades.'
 
             if delay and delay > 0:

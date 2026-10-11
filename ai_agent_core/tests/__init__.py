@@ -56,6 +56,10 @@ from . import test_session_history_relevance
 from . import test_actionable_errors
 from . import test_content_verification
 from . import test_stream_turn_persist
+# SSE-generatorernas namnbindning (NameError i _cr_holder, 2026-10-11).
+# Filen MÅSTE importeras här — annars körs den aldrig. Det är samma fälla
+# som test_workspace och test_graph_executor ovan föll i.
+from . import test_stream_scope_bindings
 from . import test_explicit_agent_tools
 from . import test_builtin_fallback_removal
 from . import test_record_context

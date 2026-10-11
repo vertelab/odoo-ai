@@ -79,7 +79,7 @@ class AIKaizenReport(models.Model):
         week_end = week_start + timedelta(days=6)  # Last Sunday
 
         created = 0
-        for q in quests:
+        for q in coworkers:
             # Skip if already generated this week
             existing = self.search([
                 ('coworker_id', '=', q.id),
@@ -116,7 +116,7 @@ class AIKaizenReport(models.Model):
 
         # Create report
         report = self.create({
-            'coworker_id': coworker.id,
+            'coworker_id': quest.id,
             'week_start': week_start,
             'week_end': week_end,
             'status': 'draft',
@@ -138,7 +138,7 @@ class AIKaizenReport(models.Model):
                 except Exception as se:
                     _logger.warning('Skill suggestion failed: %s', se)
         except Exception as e:
-            _logger.warning('Kaizen analysis failed for %s: %s', coworker.name, e)
+            _logger.warning('Kaizen analysis failed for %s: %s', quest.name, e)
             # Still create the report even if analysis fails
 
         # Generate report text
@@ -147,7 +147,7 @@ class AIKaizenReport(models.Model):
 
         # Post to quest
         if quest:
-            coworker.message_post(
+            quest.message_post(
                 body=report.report_text,
                 message_type='notification',
             )
@@ -170,7 +170,7 @@ class AIKaizenReport(models.Model):
             )
 
         _logger.info('Kaizen report for %s: %d sessions, %d errors, %d findings',
-                     coworker.name, week_data['session_count'],
+                     quest.name, week_data['session_count'],
                      week_data['error_count'], len(report.finding_ids))
         return report
 
@@ -194,7 +194,7 @@ class AIKaizenReport(models.Model):
         week_end_dt = datetime.combine(week_end, datetime.max.time())
 
         lines = self.env['ai.coworker.session.line'].search([
-            ('session_id.coworker_id', '=', coworker.id),
+            ('session_id.coworker_id', '=', quest.id),
             ('create_date', '>=', week_start_dt),
             ('create_date', '<=', week_end_dt),
             # informative=True = spårbarhet (per-agent), inte budget
@@ -204,7 +204,7 @@ class AIKaizenReport(models.Model):
         ])
 
         sessions = self.env['ai.coworker.session'].search([
-            ('coworker_id', '=', coworker.id),
+            ('coworker_id', '=', quest.id),
             ('create_date', '>=', week_start_dt),
             ('create_date', '<=', week_end_dt),
         ])
@@ -213,14 +213,14 @@ class AIKaizenReport(models.Model):
         _logger.info(
             'Kaizen cross-user-läsning: coworker=%s vecka %s..%s — '
             '%d sessioner från %d användare',
-            coworker.name, week_start, week_end, len(sessions),
+            quest.name, week_start, week_end, len(sessions),
             len(set(sessions.mapped('user_id').ids)))
 
         error_sessions = sessions.filtered(lambda s: s.status == 'error')
 
         # Feedback from ai.memory
         feedback = self.env['ai.memory'].search([
-            ('quest_id', '=', coworker.id),
+            ('quest_id', '=', quest.id),
             ('category', '=', 'feedback'),
             ('create_date', '>=', week_start_dt),
             ('create_date', '<=', week_end_dt),

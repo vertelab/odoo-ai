@@ -3053,12 +3053,12 @@ def _tool_builder_create_quest(env, name, description="", init_types="", is_supe
     if init_types:
         for itype in [t.strip() for t in init_types.split(",") if t.strip()]:
             env["ai.coworker.init_type"].create({
-                "coworker_id": coworker.id,
+                "coworker_id": quest.id,
                 "init_type": itype,
                 "active": True,
             })
 
-    return f"Quest #{coworker.id} '{quest.name}' created with init_types: {init_types or 'none'}"
+    return f"Quest #{quest.id} '{quest.name}' created with init_types: {init_types or 'none'}"
 
 
 def _tool_builder_update_quest(env, coworker_id, **kwargs):
@@ -3076,7 +3076,7 @@ def _tool_builder_update_quest(env, coworker_id, **kwargs):
         updates["is_supervisor"] = bool(kwargs["is_supervisor"])
     if updates:
         quest.write(updates)
-    return f"Quest #{coworker.id} updated: {list(updates.keys())}"
+    return f"Quest #{quest.id} updated: {list(updates.keys())}"
 
 
 def _tool_builder_create_agent(env, name, description="", model="", skills="", **kwargs):
@@ -3135,13 +3135,13 @@ def _tool_builder_assign_agent(env, coworker_id, agent_id, sequence=10, **kwargs
             'ai.agent', agent_id,
             tool_name='builder_assign_agent').to_json()
     existing = env["ai.coworker.agent"].search([
-        ("coworker_id", "=", coworker.id),
+        ("coworker_id", "=", quest.id),
         ("agent_id", "=", agent.id),
     ])
     if existing:
         return f"Agent '{agent.name}' already assigned to quest '{quest.name}'"
     env["ai.coworker.agent"].create({
-        "coworker_id": coworker.id,
+        "coworker_id": quest.id,
         "agent_id": agent.id,
         "sequence": int(sequence),
     })
@@ -3158,7 +3158,7 @@ def _tool_builder_configure_init_type(env, coworker_id, init_type, config="{}", 
             tool_name='builder_configure_init_type').to_json()
     config_data = _json.loads(config) if isinstance(config, str) else config
     vals = {
-        "coworker_id": coworker.id,
+        "coworker_id": quest.id,
         "init_type": init_type,
         "active": True,
     }
