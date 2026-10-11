@@ -204,6 +204,23 @@ class TestSessionTitle(common.TransactionCase):
             self.assertEqual(session._maybe_update_title(), 'Redan satt')
             mock_llm.assert_not_called()
 
+    def test_run_title_llm_rejects_placeholder_answers(self):
+        """Platshållare från AgentLoop blir aldrig ett sessionsnamn.
+
+        AgentLoop svarar "(no response)" när modellen inte gav något. Utan
+        denna spärr döptes sessionen till just "(no response)" — sämre än
+        att behålla det förra namnet.
+        """
+        session = self._session()
+        for placeholder in ('(no response)', '(max rounds reached)',
+                            '(inget svar)', 'Error: timeout'):
+            with patch.object(
+                type(session), '_run_title_llm', return_value=None,
+            ):
+                self.assertIsNone(session._maybe_update_title())
+            # _clean_title accepterar texten — spärren sitter i _run_title_llm.
+            self.assertTrue(session._clean_title(placeholder))
+
     def test_title_prompt_asks_for_one_sentence(self):
         """Prompten ber om EXAKT en mening, utan rubrik/citattecken."""
         session = self._session()

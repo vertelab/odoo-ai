@@ -1201,7 +1201,20 @@ class AICoworkerSession(models.Model):
                     model=model_name, max_rounds=1, max_tokens=64))
             result = asyncio.run(
                 loop.run(self._title_prompt(transcript)))
-            return self._clean_title(result.text or '') or None
+            text = (result.text or '').strip()
+            # AgentLoop svarar med platshållare när modellen inte gav något
+            # ("(no response)", "(max rounds…)", "error: …"). Att sätta ett
+            # sådant som sessionsnamn är sämre än att behålla det förra —
+            # samma spärr som minnesextraktionen använder.
+            from odoo.addons.ai_agent_core.models.ai_coworker import (
+                _is_error_answer)
+            if _is_error_answer(text):
+                _logger.info(
+                    'Namn: modellen gav inget användbart svar för '
+                    'session %s (%r) — behåller nuvarande namn',
+                    self.id, text[:60])
+                return None
+            return self._clean_title(text) or None
         except Exception as e:
             _logger.warning(
                 'Namn: generering misslyckades för session %s: %s',

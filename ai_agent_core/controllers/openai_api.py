@@ -18,6 +18,21 @@ from odoo.http import request, Response
 _logger = logging.getLogger(__name__)
 
 
+def _start_title_thread(session):
+    """Starta namngivningstråden (steg B) EFTER att turen committats.
+
+    Tråden öppnar en egen cursor och skriver samma session-rad. Startas den
+    medan requestens transaktion ännu är öppen kolliderar den med radlåset
+    och dör på "could not serialize access due to concurrent update" — det
+    såg ut som att steg B aldrig körde. Därför anropas denna via Odoos
+    postcommit-hook; den får aldrig fälla en körning.
+    """
+    try:
+        session._maybe_update_title_async()
+    except Exception:
+        pass
+
+
 async def _collect_async(agen):
     """Collect all items from an async generator into a list."""
     result = []
@@ -416,11 +431,14 @@ class AIOpenAPIController(http.Controller):
             except Exception:
                 pass
 
-            # Sessionsnamn (session-title steg B): döp sessionen till EN
-            # mening i bakgrunden. Steg A (första prompten) har redan gett
-            # ett namn — detta uppgraderar det när konversationen finns.
+            # Sessionsnamn (session-title steg B): startas EFTER commit —
+            # tråden öppnar en egen cursor och skriver samma rad. Före commit
+            # håller requesten radlåset och tråden dör tyst på
+            # "could not serialize access due to concurrent update".
             try:
-                _session._maybe_update_title_async()
+                _title_sess = _session
+                _session.env.cr.postcommit.add(
+                    lambda: _start_title_thread(_title_sess))
             except Exception:
                 pass
 
@@ -619,8 +637,11 @@ class AIOpenAPIController(http.Controller):
                     # stream — döp sessionen till EN mening i bakgrunden.
                     # Steg A (första prompten) har redan gett ett namn;
                     # detta uppgraderar det när konversationen finns.
+                    # Tråden startas efter commit (se _start_title_thread).
                     try:
-                        _session._maybe_update_title_async()
+                        _title_sess = _session
+                        _session.env.cr.postcommit.add(
+                            lambda: _start_title_thread(_title_sess))
                     except Exception:
                         pass
 

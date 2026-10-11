@@ -1831,6 +1831,21 @@ class AIStreamController(http.Controller):
 
 _webui_handlers: dict[str, 'WebUIInterruptHandler'] = {}
 
+def _start_title_thread(session):
+    """Starta namngivningstråden (steg B) EFTER att turen committats.
+
+    Tråden öppnar en egen cursor och skriver samma session-rad. Startas den
+    medan requestens transaktion ännu är öppen kolliderar den med radlåset
+    och dör på "could not serialize access due to concurrent update" — det
+    såg ut som att steg B aldrig körde. Därför anropas denna först efter
+    commit; den får aldrig fälla en körning.
+    """
+    try:
+        session._maybe_update_title_async()
+    except Exception:
+        pass
+
+
 def _get_webui_handler(session_uuid: str):
     return _webui_handlers.get(session_uuid)
 
@@ -3552,11 +3567,10 @@ class AIOpenAIAPI(http.Controller):
                 # Sessionsnamn (session-title steg B): döp sessionen till EN
                 # mening i bakgrunden. Steg A (första prompten) har redan
                 # gett ett namn — detta uppgraderar det när konversationen
-                # finns. Best-effort; får aldrig fälla en körning.
-                try:
-                    _sess._maybe_update_title_async()
-                except Exception:
-                    pass
+                # finns. ⚠ Tråden startas EFTER commit (se
+                # _start_title_thread): annars kolliderar den med
+                # requestens radlås och dör tyst.
+                _title_session_id = _sess.id
                 cost_ctx = {
                     'project_id': (
                         _sess.project_id.id
@@ -3583,6 +3597,19 @@ class AIOpenAIAPI(http.Controller):
                             'arguments': json.dumps(tc.arguments),
                         },
                     } for tc in response.tool_calls]
+
+                # Sessionsnamn (session-title steg B): startas EFTER commit.
+                # request.env:s transaktion committas först när svaret gått
+                # ut — att starta tråden här skulle kollidera med radlåset
+                # ("could not serialize access due to concurrent update").
+                # Odoos post-commit-hook kör efter den faktiska commit:en.
+                try:
+                    _title_sess = _sess
+                    _env_cr = _sess.env.cr
+                    _env_cr.postcommit.add(
+                        lambda: _start_title_thread(_title_sess))
+                except Exception:
+                    pass
 
                 return Response(json.dumps({
                     'id': response_id,
@@ -3922,11 +3949,12 @@ class AIOpenAIAPI(http.Controller):
                         # till EN mening i bakgrunden. Steg A (första
                         # prompten) har redan gett ett namn — detta
                         # uppgraderar det när konversationen finns.
-                        try:
-                            _sess._maybe_update_title_async()
-                        except Exception:
-                            pass
+                        # ⚠ Tråden MÅSTE startas efter commit: den öppnar en
+                        # egen cursor och skriver samma rad. Före commit håller
+                        # requesten radlåset och tråden dör på
+                        # "could not serialize access due to concurrent update".
                         _gen_cr.commit()
+                        _start_title_thread(_sess)
                     finally:
                         _gen_cr.close()
 
