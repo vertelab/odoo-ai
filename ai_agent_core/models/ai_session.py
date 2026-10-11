@@ -1198,7 +1198,12 @@ class AICoworkerSession(models.Model):
             loop = AgentLoop(
                 provider=provider, tools=ToolRegistry(),
                 config=AgentConfig(
-                    model=model_name, max_rounds=1, max_tokens=64))
+                    # 64 räckte inte: en reasoning-modell bränner hela budgeten
+                    # på sitt tänkande och lämnar inget till svaret —
+                    # AgentLoop returnerade då '(no response)' och namnet
+                    # uteblev. Eftermälet använder 2048; en mening behöver
+                    # inte mer än så.
+                    model=model_name, max_rounds=1, max_tokens=512))
             result = asyncio.run(
                 loop.run(self._title_prompt(transcript)))
             text = (result.text or '').strip()
