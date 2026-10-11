@@ -232,6 +232,14 @@
                         </setting>
                     </block>
 
+                    <block title="Pi Skills">
+                        <setting id="pi_skills_path" title="Pi Skills Path"
+                                 help="Katalog med Pi-skills, en mapp per skill med SKILL.md. Standard: /usr/local/share/pi/skills.">
+                            <field name="pi_skills_path"
+                                   placeholder="/usr/local/share/pi/skills"/>
+                        </setting>
+                    </block>
+
                     <!-- ════════════════════════════════════════════
                          Tool Executor (NATS)
                          ════════════════════════════════════════════ -->

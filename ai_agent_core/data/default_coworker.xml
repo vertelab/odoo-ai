@@ -69,32 +69,20 @@
             <field name="sequence" eval="20"/>
         </record>
 
-        <!-- Research (webb + youtube) — kräver ai_skill_youtube + web-verktygsmoduler
-        <record id="agent_research" model="ai.agent">
-            <field name="name">Research</field>
-            <field name="ai_role">Web Research</field>
-            <field name="description">Research-agent: söker information på webben, hämtar sidor och bearbetar YouTube-innehåll via youtube-skills.</field>
-            <field name="status">active</field>
-            <field name="skill_ids" eval="[(6, 0, [
-                ref('skill_youtube_transcript'),
-                ref('skill_youtube_search'),
-                ref('skill_youtube_channels'),
-                ref('skill_youtube_playlist'),
-                ref('skill_youtube_full'),
-            ])]"/>
-            (explicit-agent-tools: web-verktyg anges EXPLICIT här — se tool_ids nedan)
-            <field name="tool_ids" eval="[(6, 0, [
-                ref('tool_web_search'),
-                ref('tool_fetch_url'),
-            ])]"/>
-        </record>
-        <record id="coworker_agent_research" model="ai.coworker.agent">
-            <field name="coworker_id" ref="coworker_default_assistent"/>
-            <field name="agent_id" ref="agent_research"/>
-            <field name="role">member</field>
-            <field name="sequence" eval="30"/>
-        </record>
-        -->
+        <!-- Research (webb + youtube) — skapas av _ensure_default_coworker()
+             (ai_coworker.py), som anropas av <function> längst ned i denna
+             fil. Se även _adopt('agent_research', ['odoo_web_search',
+             'odoo_fetch_url']) i _migrate_* för de odoo-prefixade verktygen.
+
+             OBS: agenten definieras INTE här som data-XML. Två definitioner
+             (XML + Python) gav en dubblerad coworker↔agent-koppling, så
+             agenten skulle anropas två gånger. Python-vägen är den enda
+             källan.
+
+             Skill-posterna (skill_youtube_*) ägs av ai_agent_core som
+             modul-data — SKILL.md-filerna på disk är kopior, och importören
+             rapporterar dem som kollisioner om de glider isär
+             (se openspec/changes/pi-skill-sync). -->
 
         <!-- Office-dokument (Office + PDF, extern runtime).
              runtime='external' → agenten startas som en pi-agent-process

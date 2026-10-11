@@ -61,6 +61,18 @@ class ResConfigSettings(models.TransientModel):
              'If empty, falls back to the AI_AGENT_API_SECRET '
              'environment variable.')
 
+    # Root directory for Pi skills (SKILL.md files). The importer reads
+    # every <root>/<name>/SKILL.md and reconciles ai.skill records with it.
+    # See openspec/changes/pi-skill-sync.
+    pi_skills_path = fields.Char(
+        'Pi Skills Path',
+        config_parameter='ai_agent_core.pi_skills_path',
+        help='Directory holding the Pi skills, one folder per skill with a '
+             'SKILL.md inside. Default: /usr/local/share/pi/skills. '
+             'The daily skill_sync task imports from here.',
+        groups='base.group_system',
+    )
+
     # Google API-nyckel (YouTube/Sök m.m.). Lagras säkert som ir.config_parameter
     # så AI-core-verktyg (yt-sök, Google-sök m.fl.) kan läsa den i stället för att
     # behöva nyckeln i process-miljöomgivningen (GOOGLE_API_KEY).

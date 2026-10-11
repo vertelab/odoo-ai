@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+        <!-- ============================================================
+             skill_sync — the first cron.task customer.
+
+             Reconciles ai.skill records with the SKILL.md files under
+             ai_agent_core.pi_skills_path. The canonical source of a Pi
+             skill is the filesystem (maintained in the Salt repo); Odoo
+             agents read recipe_text from the database.
+
+             Two triggers:
+               - this daily task is the safety net
+               - POST /cron/trigger/skill_sync fires right after a Salt
+                 deploy, so a skill change is live within seconds
+
+             See openspec/changes/pi-skill-sync.
+             ============================================================ -->
+        <record id="cron_task_skill_sync" model="cron.task">
+            <field name="name">Skill Sync</field>
+            <field name="technical_name">skill_sync</field>
+            <field name="module">ai_agent_core</field>
+            <field name="model_name">ai.skill</field>
+            <field name="method_name">_sync_from_filesystem</field>
+            <field name="cadence">daily</field>
+            <field name="sequence">20</field>
+            <field name="active" eval="True"/>
+        </record>
+    </data>
+</odoo>

@@ -2,7 +2,7 @@
 # Part of Odoo. See LICENSE file for full copyright and licensing details.
 {
     'name': 'AI: Agent Core',
-    'version': '18.0.1.311',
+    'version': '18.0.1.312',
     'summary': 'AI Agent Core — Org-stomme, heartbeat, onboarding, task-system',
     'category': 'AI Orchestration',
     'description': """
@@ -31,6 +31,10 @@
         'hr',
         'base_automation',
         'web_pwa_push',
+        # cron_tick provides the cron.task registry and the
+        # POST /cron/trigger/<technical_name> route used by skill_sync.
+        # It depends only on base, so this adds no transitive weight.
+        'cron_tick',
     ],
     'data': [
         'security/ai_groups.xml',
@@ -47,6 +51,7 @@
         'data/search_sources.xml',
         'data/cron_session_idle.xml',
         'data/cron_external_runtime.xml',
+        'data/skill_sync_cron.xml',
         'data/partner_enrichment_tools.xml',
         # builtin_tools_seed skapar ai.tool-poster för de inbyggda verktygen
         # (core/tools.py) via _ensure_builtin_tool_records(). Den MÅSTE köra

@@ -30,6 +30,17 @@ class AISkill(models.Model):
         ('github', 'Imported from GitHub'),
         ('pi', 'Pi Agent Skill'),
     ], default='odoo')
+    source_locator = fields.Char(
+        'Source Locator',
+        help='Path of the SKILL.md this record was imported from. '
+             'Only set for source_type=pi.')
+    source_hash = fields.Char(
+        'Source Hash',
+        help='SHA-256 hex digest of the source file content. Used to skip '
+             'writes when the file is unchanged.')
+    last_synced = fields.Datetime(
+        'Last Synced',
+        help='When the record was last successfully imported from disk.')
 
     def _compute_github_avatar(self):
         """Fetch GitHub user avatar when source_type is github."""
@@ -471,6 +482,270 @@ metadata:
             'target': 'new',
             'context': {'default_skill_md': md, 'default_skill_id': self.id},
         }
+
+    # ─────────────────────────────────────────────────────────────
+    # Import from the Pi skills filesystem
+    #
+    # The canonical source of a Pi skill is the filesystem:
+    #   <root>/<name>/SKILL.md
+    # maintained in the Salt repo and deployed to every minion. Odoo agents
+    # read `recipe_text` from the database, so the two must be reconciled.
+    # See openspec/changes/pi-skill-sync for the full design.
+    # ─────────────────────────────────────────────────────────────
+
+    SKILLS_DEFAULT_ROOT = '/usr/local/share/pi/skills'
+    SKILLS_PATH_PARAM = 'ai_agent_core.pi_skills_path'
+
+    @api.model
+    def _skill_root(self):
+        """Return the configured skill root directory.
+
+        Configurable so the dev box, ledningssystem and a containerised
+        Odoo can each point at their own mount without a code change.
+        """
+        return (self.env['ir.config_parameter'].sudo()
+                .get_param(self.SKILLS_PATH_PARAM)
+                or self.SKILLS_DEFAULT_ROOT)
+
+    @api.model
+    def _discover_skill_files(self, root):
+        """Return {path: directory_name} for every <root>/*/SKILL.md.
+
+        Only one level below the root. Hidden directories and deeper
+        nesting are ignored.
+        """
+        import os
+        found = {}
+        try:
+            entries = sorted(os.listdir(root))
+        except OSError:
+            return found
+        for entry in entries:
+            if entry.startswith('.'):
+                continue
+            path = os.path.join(root, entry, 'SKILL.md')
+            if os.path.isfile(path):
+                found[path] = entry
+        return found
+
+    @api.model
+    def _parse_skill_md(self, text, fallback_name):
+        """Parse a SKILL.md into (name, description, body).
+
+        The file opens with YAML frontmatter delimited by `---`. `name`
+        and `description` are read from it; the body is everything after
+        the closing delimiter. When `name` is absent the directory name is
+        used.
+        """
+        name = fallback_name
+        description = ''
+        body = text or ''
+
+        stripped = body.lstrip('\ufeff').lstrip()
+        if stripped.startswith('---'):
+            lines = stripped.split('\n')
+            end = None
+            for i in range(1, len(lines)):
+                if lines[i].strip() == '---':
+                    end = i
+                    break
+            if end is not None:
+                for line in lines[1:end]:
+                    if ':' not in line:
+                        continue
+                    key, _, value = line.partition(':')
+                    key = key.strip().lower()
+                    value = value.strip().strip('"').strip("'")
+                    if key == 'name' and value:
+                        name = value
+                    elif key == 'description' and value:
+                        description = value
+                body = '\n'.join(lines[end + 1:]).strip()
+
+        return name, description, body
+
+    @api.model
+    def _skill_slug(self, name):
+        """Return an xmlid-safe slug for a skill name."""
+        import re
+        slug = re.sub(r'[^a-z0-9]+', '_', (name or '').lower()).strip('_')
+        return slug or 'unnamed'
+
+    @api.model
+    def _sync_from_filesystem(self):
+        """Reconcile ai.skill records with the SKILL.md files on disk.
+
+        Idempotent. Matches on `name`, writes the full body to
+        `recipe_text`, and only ever touches `source_type='pi'` records.
+        A record whose file disappeared is deactivated, never deleted.
+
+        Returns a summary dict with counts and an error list.
+        """
+        import hashlib
+        import os
+
+        summary = {
+            'root': '',
+            'created': 0,
+            'updated': 0,
+            'unchanged': 0,
+            'deactivated': 0,
+            'reactivated': 0,
+            'skipped': 0,
+            'collisions': [],
+            'errors': [],
+        }
+
+        root = self._skill_root()
+        summary['root'] = root
+
+        # Guard: a missing root must never be read as "everything was
+        # deleted". Abort and change nothing.
+        if not os.path.isdir(root):
+            summary['errors'].append(
+                f'Skill root does not exist: {root} — nothing changed')
+            _logger.error('ai.skill sync: skill root does not exist: %s', root)
+            return summary
+
+        files = self._discover_skill_files(root)
+        seen_ids = self.env['ai.skill']
+        now = fields.Datetime.now()
+
+        for path, dirname in sorted(files.items()):
+            try:
+                with open(path, 'r', encoding='utf-8') as fh:
+                    content = fh.read()
+            except (OSError, UnicodeDecodeError) as exc:
+                summary['errors'].append(f'{path}: {exc}')
+                _logger.warning('ai.skill sync: cannot read %s: %s', path, exc)
+                continue
+
+            name, description, body = self._parse_skill_md(content, dirname)
+
+            if not description:
+                summary['errors'].append(
+                    f'{path}: no description in frontmatter — skipped')
+                _logger.warning(
+                    'ai.skill sync: %s has no description — skipped', path)
+                continue
+
+            digest = hashlib.sha256(content.encode('utf-8')).hexdigest()
+
+            # active_test=False: a deactivated record must be found so it
+            # can be reactivated, not duplicated.
+            existing = self.with_context(active_test=False).search(
+                [('name', '=', name)], limit=1)
+
+            if existing and existing.source_type != 'pi':
+                # Never overwrite a hand-authored skill. recipe_text is
+                # agent-visible prompt content.
+                #
+                # A SKILL.md may still exist for such a skill (6 do today:
+                # 5 youtube skills owned by ai_agent_core, and `saltstack`
+                # owned by saltstack_ai). The module owns the record; the
+                # file is a copy. We do not import it, but we DO report it
+                # as a collision so drift between the two is visible
+                # instead of silently ignored.
+                summary['skipped'] += 1
+                summary['collisions'].append({
+                    'name': name,
+                    'path': path,
+                    'owner': existing.source_type,
+                    'record_id': existing.id,
+                    'in_sync': (existing.recipe_text or '').strip()
+                               == body.strip(),
+                })
+                _logger.warning(
+                    'ai.skill sync: COLLISION on "%s" — the record is owned '
+                    'by source_type=%s (id=%s); the file %s is not imported',
+                    name, existing.source_type, existing.id, path)
+                continue
+
+            if existing:
+                seen_ids |= existing
+                if existing.source_hash == digest and existing.active:
+                    summary['unchanged'] += 1
+                    continue
+                was_active = existing.active
+                existing.write({
+                    'description': description,
+                    'recipe_text': body,
+                    'source_locator': path,
+                    'source_hash': digest,
+                    'last_synced': now,
+                    'active': True,
+                })
+                if was_active:
+                    summary['updated'] += 1
+                else:
+                    summary['reactivated'] += 1
+                self._ensure_skill_xmlid(existing)
+            else:
+                skill = self.create({
+                    'name': name,
+                    'description': description,
+                    'recipe_text': body,
+                    'source_type': 'pi',
+                    'source_locator': path,
+                    'source_hash': digest,
+                    'last_synced': now,
+                })
+                seen_ids |= skill
+                summary['created'] += 1
+                self._ensure_skill_xmlid(skill)
+
+        # Deactivate pi records whose file is gone. Never delete: the row
+        # carries history, statistics and M2M links from coworkers/agents.
+        orphans = self.search([
+            ('source_type', '=', 'pi'),
+            ('active', '=', True),
+            ('id', 'not in', seen_ids.ids),
+        ])
+        for skill in orphans:
+            skill.write({'active': False})
+            summary['deactivated'] += 1
+
+        _logger.info(
+            'ai.skill sync from %s: %s created, %s updated, %s unchanged, '
+            '%s deactivated, %s collisions, %s errors',
+            root, summary['created'], summary['updated'],
+            summary['unchanged'], summary['deactivated'],
+            summary['skipped'], len(summary['errors']))
+        for c in summary['collisions']:
+            _logger.info(
+                'ai.skill sync: collision "%s" owned by %s (id=%s), '
+                'file %s in sync: %s',
+                c['name'], c['owner'], c['record_id'], c['path'],
+                c['in_sync'])
+        return summary
+
+    def _ensure_skill_xmlid(self, skill):
+        """Give a skill a stable xmlid: ai_agent_core.skill_<slug>.
+
+        Created with noupdate=True so a later import cannot re-point an
+        xmlid a module already references.
+        """
+        module = 'ai_agent_core'
+        slug = self._skill_slug(skill.name)
+        name = f'skill_{slug}'
+        IMD = self.env['ir.model.data'].sudo()
+        existing = IMD.search([
+            ('module', '=', module),
+            ('name', '=', name),
+        ], limit=1)
+        if existing:
+            if existing.model == 'ai.skill' and existing.res_id == skill.id:
+                return
+            # Occupied by something else — do not clobber it.
+            _logger.warning(
+                'ai.skill sync: xmlid %s.%s already taken — skipped',
+                module, name)
+            return
+        IMD._update_xmlids([{
+            'xml_id': f'{module}.{name}',
+            'record': skill,
+            'noupdate': True,
+        }])
 
 
 class AISkillExportWizard(models.TransientModel):
