@@ -7619,7 +7619,135 @@ class AICoworker(models.Model):
                     'Kunde inte skapa egen identitetskopia för %s',
                     rec.name, exc_info=True)
 
+    # ── Identity links (coworker-access-identity-sync) ──
+    #
+    # A coworker has three identity links that must point at the same
+    # identity: employee_id (hr.employee) -> chat_user_id (res.users) ->
+    # partner_id (res.partner). The chain is employee.user_id -> user ->
+    # user.partner_id. The sync is BIDIRECTIONAL: both employee_id and
+    # chat_user_id act as sources.
+    #
+    # `source` decides the conflict when both are set and point at
+    # different employees: the field the user just changed wins.
+
+    _IDENTITY_LINK_FIELDS = ('employee_id', 'chat_user_id', 'partner_id')
+
+    def _identity_sync_values(self, vals, source):
+        """Compute the completed identity values (writes nothing).
+
+        Returns a dict of the fields to write - only fields whose value
+        actually changes (idempotency). This helper is the single
+        implementation point: both onchange and create/write call it.
+
+        When called on an empty recordset (the create path) there are no
+        existing values, so every current value is False.
+
+        :param vals: incoming values (may contain employee_id,
+            chat_user_id, partner_id)
+        :param source: 'employee_id' or 'chat_user_id' - the field the
+            user just changed (authoritative on conflict)
+        """
+        out = {}
+        has_record = bool(self)
+
+        def _current(field):
+            """Value the field holds once vals is applied."""
+            if field in vals:
+                return vals[field] or False
+            if not has_record:
+                return False
+            return self[field].id or False
+
+        def _set(field, value):
+            """Set only when the value actually changes."""
+            value = value or False
+            if _current(field) != value:
+                out[field] = value
+
+        employee = self.env['hr.employee'].sudo()
+        users = self.env['res.users'].sudo()
+
+        if source == 'employee_id':
+            emp_id = _current('employee_id')
+            if not emp_id:
+                return out
+            emp = employee.browse(emp_id)
+            if not emp.exists() or not emp.user_id:
+                # No user -> touch neither chat_user_id nor partner_id.
+                # Never write False over a set chat_user_id
+                # (ondelete='restrict').
+                return out
+            _set('chat_user_id', emp.user_id.id)
+            _set('partner_id', emp.user_id.partner_id.id or False)
+
+        elif source == 'chat_user_id':
+            user_id = _current('chat_user_id')
+            if not user_id:
+                return out
+            user = users.browse(user_id)
+            if not user.exists():
+                return out
+            _set('partner_id', user.partner_id.id or False)
+            # Reverse lookup: which employee points at this user?
+            emp = employee.search([('user_id', '=', user.id)], limit=1)
+            if emp:
+                _set('employee_id', emp.id)
+
+        return out
+
+    def _sync_identity_links(self, vals, source):
+        """Synchronise the identity links in vals (writes nothing).
+
+        Returns a new vals dict with the completed values. Logs a conflict
+        when the incoming source contradicts the existing counterpart
+        (the source wins, the counterpart is updated).
+        """
+        # The conflict check runs BEFORE the sync: compare the incoming
+        # source against the EXISTING counterpart. Otherwise the sync has
+        # already reconciled them and the conflict is never visible.
+        if self and source in vals:
+            incoming = vals[source] or False
+            if source == 'employee_id' and incoming and self.chat_user_id:
+                emp = self.env['hr.employee'].sudo().browse(incoming)
+                if (emp.exists() and emp.user_id
+                        and emp.user_id.id != self.chat_user_id.id):
+                    _logger.warning(
+                        'Identity conflict on ai.coworker %s: employee_id=%s '
+                        'points at user %s but chat_user_id=%s - %s wins',
+                        self.id, incoming, emp.user_id.id,
+                        self.chat_user_id.id, source)
+            elif source == 'chat_user_id' and incoming and self.employee_id:
+                if (self.employee_id.user_id
+                        and self.employee_id.user_id.id != incoming):
+                    _logger.warning(
+                        'Identity conflict on ai.coworker %s: chat_user_id=%s '
+                        'points at a different user than employee_id=%s '
+                        '(user %s) - %s wins', self.id, incoming,
+                        self.employee_id.id, self.employee_id.user_id.id,
+                        source)
+
+        extra = self._identity_sync_values(vals, source)
+        if not extra:
+            return vals
+
+        merged = dict(vals)
+        merged.update(extra)
+        return merged
+
     def write(self, vals):
+        # Identity sync (coworker-access-identity-sync): runs BEFORE
+        # super() so the create/write path yields the same state as the
+        # form. The guard flag (skip_identity_sync) stops our own write
+        # from starting another round.
+        if (not self.env.context.get('skip_identity_sync')
+                and any(k in vals for k in self._IDENTITY_LINK_FIELDS)):
+            source = 'employee_id' if 'employee_id' in vals else 'chat_user_id'
+            merged = dict(vals)
+            for rec in self:
+                merged = rec._sync_identity_links(merged, source)
+            # Write the synced value ONCE, guarded against recursion.
+            return super(AICoworker, self.with_context(
+                skip_identity_sync=True)).write(merged)
         res = super(AICoworker, self).write(vals)
         # Profilbyte → seeda om sökfälten (fas 13.3).
         # OBS: detta måste ligga i DENNA write() — AICoworker har bara en
@@ -7688,6 +7816,35 @@ class AICoworker(models.Model):
             agent_ids = quest.agent_ids.mapped('agent_id').ids
             quest.channel_id.ai_agent_ids = [(6, 0, agent_ids)]
             quest.channel_id._sync_ai_agent_members()
+
+    @api.onchange('employee_id')
+    def _onchange_employee_id_identity(self):
+        """Sync identity links when an employee is selected.
+
+        NEVER writes via self.write - sets the form values only, so the
+        user can undo before saving (design D4).
+        """
+        for rec in self:
+            extra = rec._identity_sync_values(
+                {'employee_id': rec.employee_id.id}, 'employee_id')
+            if 'chat_user_id' in extra:
+                rec.chat_user_id = extra['chat_user_id']
+            if 'partner_id' in extra:
+                rec.partner_id = extra['partner_id']
+
+    @api.onchange('chat_user_id')
+    def _onchange_chat_user_id_identity(self):
+        """Sync identity links when a user is selected.
+
+        NEVER writes via self.write - sets the form values only.
+        """
+        for rec in self:
+            extra = rec._identity_sync_values(
+                {'chat_user_id': rec.chat_user_id.id}, 'chat_user_id')
+            if 'partner_id' in extra:
+                rec.partner_id = extra['partner_id']
+            if 'employee_id' in extra:
+                rec.employee_id = extra['employee_id']
 
     @api.onchange('orchestration_mode')
     def _onchange_orchestration_mode(self):
@@ -8428,6 +8585,17 @@ class AICoworker(models.Model):
 
     @api.model_create_multi
     def create(self, vals_list):
+        # Identity sync (coworker-access-identity-sync): same rule as in
+        # write() so API/import yields the same state as the form. Runs
+        # before super() so the value is present at creation.
+        synced = []
+        for vals in vals_list:
+            if any(k in vals for k in self._IDENTITY_LINK_FIELDS):
+                source = ('employee_id' if 'employee_id' in vals
+                          else 'chat_user_id')
+                vals = self._sync_identity_links(vals, source)
+            synced.append(vals)
+        vals_list = synced
         records = super(AICoworker, self).create(vals_list)
         for record, vals in zip(records, vals_list):
             # Seed alla init_type-rader (en per typ) så UI:t

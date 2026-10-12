@@ -877,6 +877,56 @@ social-kanal) kan ärva. Avslaget → räknaren nollställs.
 - Integritet: `ir.rule` — användare ser bara requests där hen är
   godkännare; admin ser allt.
 
+## Identity links on ai.coworker (coworker-access-identity-sync)
+
+A coworker carries three identity links that must point at the same
+identity. They are exposed in the **Åtkomst** tab under the **Identitet**
+group and kept in sync automatically.
+
+| Field | Points at | Role |
+|---|---|---|
+| `employee_id` | `hr.employee` | The coworker in the HR view |
+| `chat_user_id` | `res.users` | Owner of automatic runs (bot user by default) |
+| `partner_id` | `res.partner` | Channel partner (avatar, discuss identity) |
+
+**The chain:** `employee.user_id` → `res.users` → `user.partner_id`.
+
+### Bidirectional sync
+
+Both `employee_id` and `chat_user_id` act as sources:
+
+- Setting `employee_id` fills `chat_user_id` from `employee.user_id` and
+  `partner_id` from `employee.user_id.partner_id`.
+- Setting `chat_user_id` fills `partner_id` from `user.partner_id` and
+  `employee_id` via a reverse lookup on `hr.employee.user_id`.
+
+An employee without a `user_id` leaves both fields untouched — the sync
+never guesses, and never writes `False` over a set `chat_user_id` (the
+field has `ondelete='restrict'`).
+
+### Runs outside the form too
+
+The sync is applied in `create` and `write`, not only via onchange, so
+import, API calls and cron runs reach the same state as the form. It is
+idempotent: a field is only written when its value actually changes.
+
+### Conflict rule
+
+When both links are set and point at different employees, the field the
+user just changed (`source`) wins and the counterpart is updated. The
+conflict is logged with the coworker id and the conflicting values — it is
+never overwritten silently.
+
+### Loop safety
+
+The internal write runs under the `skip_identity_sync` context flag, so a
+write caused by the sync cannot start another round. Onchange handlers set
+form values only (never `self.write`), so the mutual onchange chain cannot
+become circular.
+
+`partner_image_128` is a `related` field on `partner_id.image_128` and
+follows the partner automatically — it is displayed read-only.
+
 ## Channel-adapter-kontraktet (`core/channel.py`)
 
 Kanal-neutralt kontrakt för agenter som processar inkommande items

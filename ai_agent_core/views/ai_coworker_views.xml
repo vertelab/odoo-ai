@@ -462,6 +462,13 @@
                                     <field name="group_ids" widget="many2many_tags"/>
                                     <field name="company_id"/>
                                 </group>
+                                <group string="Identitet">
+                                    <field name="employee_id"/>
+                                    <field name="chat_user_id"/>
+                                    <field name="partner_id"/>
+                                    <field name="partner_image_128" widget="image"
+                                           readonly="1" options="{'size': [90, 90]}"/>
+                                </group>
                             </group>
                         </page>
                     </notebook>

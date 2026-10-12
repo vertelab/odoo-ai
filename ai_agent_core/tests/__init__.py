@@ -42,6 +42,9 @@ from . import test_search_settings
 from . import test_scheduled_run_failure
 from . import test_bifrost_key_resolution
 from . import test_openai_api_compaction
+# Identitetskopplingar på ai.coworker (coworker-access-identity-sync):
+# employee_id / chat_user_id / partner_id samordnas dubbelriktat.
+from . import test_coworker_identity_sync
 from . import test_session_memory
 from . import test_tool_errors
 from . import test_write_verify
