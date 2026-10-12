@@ -557,6 +557,12 @@ class AIStreamController(http.Controller):
             no DB cursor. Only plain values captured above.
             """
             full_response = []
+            # Avslutsmetadata för finaliseringen. Initieras HÄR i
+            # generate()-scopet (inte längre ned) så att finally kan lita på
+            # den även när ett fel inträffar innan strömmen ens startat
+            # (2026-10-12: state sattes först på rad ~752 och ett avbrott
+            # dessförinnan gav NameError i finally).
+            state = {'loop_obj': None}
             # session-history-relevance 3.5: tråd-handtag så att finally kan
             # säkerställa att streaming-tråden är klar innan loopen rörs.
             _thread_holder = {'thread': None}
@@ -576,6 +582,9 @@ class AIStreamController(http.Controller):
             # (rad ~761). Python löser då _cr_holder som en global i
             # generate() → NameError vid varje streaming-anrop.
             _cr_holder = {'cr': None}
+            # Loopen skapas inuti try; initiera till None så att finally kan
+            # guarda (ett fel i new_event_loop gav annars NameError i finally).
+            loop = None
             try:
                 _logger.info("SSE stream starting — prompt: %s...", prompt[:50])
                 loop = asyncio.new_event_loop()
@@ -749,7 +758,9 @@ class AIStreamController(http.Controller):
                     # tool handlers run ORM calls while streaming.
                     from odoo import api as _api
                     from odoo.modules.registry import Registry as _Registry
-                    state = {'loop_obj': None}
+                    # state initierades i generate()-scopets början (se ovan)
+                    # så att finally alltid har den. loop_obj fylls här.
+                    state['loop_obj'] = None
                     # ── ÄKTA STREAMING (session-history-relevance 3.4) ──
                     # Tidigare samlades HELA strömmen i en lista
                     # (`_collect(_stream(...))`) och yieldades först efteråt
@@ -842,34 +853,28 @@ class AIStreamController(http.Controller):
                             if not state.get('finish_reason'):
                                 state['finish_reason'] = 'error'
 
-                        # Efter streamen: persistera verktygsanrop som
-                        # role='tool'-rader (granskningsbar kontext per
-                        # meddelande) — loop_obj.tool_history fylls av
-                        # _execute_tool under strömningen.
-                        try:
-                            _persist_stream_tool_lines(
-                                gen_env, session_id, state.get('loop_obj'))
-                        except Exception:
+                        # Efter streamen: persistera turen (verktygsrader +
+                        # avslutande assistantsvar). Servern är garanten (2.1).
+                        #
+                        # Anropet sker via _finalize_stream_turn så att
+                        # EXAKT samma väg kan köras från finally när klienten
+                        # kopplar ner mitt i strömmen. Funktionen är
+                        # idempotent — den i finally blir en no-op härifrån.
+                        #
+                        # Tidigare stod _persist_stream_tool_lines,
+                        # _persist_stream_answer och gen_cr.commit() inline
+                        # HÄR. Ett GeneratorExit vid `yield` ovan hoppade då
+                        # över alltihop (session 23801: fyra user-rader, noll
+                        # assistantsvar, sessionen kvar som 'active').
+                        _finalize_ok = _finalize_stream_turn(
+                            gen_dbname, gen_uid, gen_context, session_id,
+                            full_response, state)
+                        if not _finalize_ok:
+                            # Faller igenom till finally, som försöker igen.
                             _logger.warning(
-                                'persist stream tool lines failed', exc_info=True)
-                        # Servern är garanten (2.1): skriv turens avslutande
-                        # assistantsvar även om klienten aldrig POST:ar.
-                        # Utan detta kunde en tur bli stående med enbart
-                        # user+tool-rader (session 20286) — tråden såg tom ut.
-                        try:
-                            _persist_stream_answer(
-                                gen_env, session_id,
-                                ''.join(full_response),
-                                reasoning='\n'.join(
-                                    getattr(state.get('loop_obj'),
-                                            'reasoning_log', None) or []),
-                                finish_reason=state.get('finish_reason', ''),
-                                error=state.get('error', ''),
-                            )
-                        except Exception:
-                            _logger.warning(
-                                'persist stream answer failed', exc_info=True)
-                        gen_cr.commit()
+                                'stream turn finalize missed in try-phase; '
+                                'retrying in finally (session %s)',
+                                session_id)
 
                         # Först nu — turen är persisterad — kastas strömfelet
                         # vidare till except-grenen och blir ett error-event.
@@ -879,9 +884,31 @@ class AIStreamController(http.Controller):
                     # session-history-relevance 3.5: låt streaming-tråden bli
                     # klar först — annars kan finally röra loopen medan tråden
                     # fortfarande kör den (drain/aclose/close kolliderar).
-                    _th = _thread_holder.get('thread')
-                    if _th is not None and _th.is_alive():
-                        _th.join(timeout=30)
+                    #
+                    # HELA städningen är kast-säker (2026-10-12): om klienten
+                    # kopplade ner är vi här via GeneratorExit, och en
+                    # generator får inte kasta ut något annat under stängning
+                    # — då blir det 'generator ignored GeneratorExit' och
+                    # generatorn kan aldrig stängas.
+                    try:
+                        # SERVERNS GARANTI (2.1) — körs ÄVEN när klienten
+                        # kopplat ner mitt i strömmen. Utan detta lämnades
+                        # turen med enbart en user-rad (session 23801).
+                        # Idempotent: no-op om try-fasen redan persisterade.
+                        _finalize_stream_turn(
+                            gen_dbname, gen_uid, gen_context, session_id,
+                            full_response, state)
+                    except Exception:
+                        _logger.warning(
+                            'stream turn finalize in finally failed',
+                            exc_info=True)
+                    try:
+                        _th = _thread_holder.get('thread')
+                        if _th is not None and _th.is_alive():
+                            _th.join(timeout=30)
+                    except Exception:
+                        _logger.warning(
+                            'stream thread join failed', exc_info=True)
                     # Stäng providerns httpx-klient innan loopen stängs —
                     # annars lämnas httpx's interna task pending (asyncio
                     # 'Task was destroyed but it is pending!').
@@ -892,16 +919,28 @@ class AIStreamController(http.Controller):
                         # Tidsbegränsad (4.1): en hängande uppstädning fick
                         # annars worker-tråden att leva till limit_time_real
                         # (session 20286: 21 min → tvingad reload).
-                        _drain_tasks_with_timeout(loop, timeout=5.0)
+                        if loop is not None:
+                            _drain_tasks_with_timeout(loop, timeout=5.0)
                     except Exception:
                         pass
                     try:
-                        if gen_provider is not None:
+                        if loop is not None and gen_provider is not None:
                             loop.run_until_complete(gen_provider.aclose())
                     except Exception:
                         _logger.warning(
                             'provider aclose failed', exc_info=True)
-                    loop.close()
+                    # loop.close() var OSKYDDAD och kastade 'Cannot close a
+                    # running event loop' när loopen var upptagen. Inuti
+                    # finally under GeneratorExit förvandlade det
+                    # BrokenPipeError till 'generator ignored GeneratorExit'
+                    # — generatorn kunde inte stängas och inget efter den
+                    # kördes (2026-10-12).
+                    try:
+                        if loop is not None:
+                            loop.close()
+                    except Exception:
+                        _logger.warning(
+                            'event loop close failed', exc_info=True)
             except Exception as e:
                 _logger.error("SSE stream error: %s", e, exc_info=True)
                 yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
@@ -2110,6 +2149,66 @@ def _persist_stream_answer(env, session_id, answer, reasoning='',
     except Exception as e:
         _logger.warning('persist stream answer failed: %s', e, exc_info=True)
         return 0
+
+
+def _finalize_stream_turn(dbname, uid, context, session_id, full_response,
+                          state):
+    """Persistera en SSE-turs avslutande rader — kallas BÅDE normalt och i
+    finally (2026-10-12).
+
+    Bakgrund: persisten låg tidigare efter yield-loopen i generate(). Om
+    klienten kopplade ner mitt i strömmen fick generatorn GeneratorExit vid
+    `yield`, kontrollen gick rakt till finally och raderna efter loopen —
+    inklusive `_persist_stream_answer` och `gen_cr.commit()` — kördes aldrig.
+    Följden: turen lämnades med enbart en user-rad (session 23801: fyra
+    identiska user-rader, noll assistantsvar), och sessionen stod kvar som
+    'active' med pi_message_count=0. Symptomet såg ut som en tyst död.
+
+    Därför körs finaliseringen från finally med en EGEN cursor (den vanliga
+    gen_cr kan vara stängd eller aborterad när vi kommer hit) och med
+    kast-säker semantik — en stängningsfas får aldrig kasta ut ett annat
+    undantag än GeneratorExit, annars blir det 'generator ignored
+    GeneratorExit' och generatorn kan inte stängas alls.
+
+    Idempotent: både _persist_stream_tool_lines (hoppar över tool_name som
+    redan finns) och _persist_stream_answer (skriver inget om sista raden
+    redan är assistant) är det. Att anropa oss två gånger — en gång i try,
+    en gång i finally — ger därför exakt en assistant-rad.
+
+    Returnerar True om en färsk cursor kunde användas, annars False. Kastar
+    aldrig.
+    """
+    if not session_id:
+        return False
+    from odoo import api as _api
+    from odoo.modules.registry import Registry as _Registry
+    try:
+        with _Registry(dbname).cursor() as _cr:
+            _env = _api.Environment(_cr, uid, context)
+            try:
+                _persist_stream_tool_lines(
+                    _env, session_id, state.get('loop_obj'))
+            except Exception:
+                _logger.warning(
+                    'persist stream tool lines failed', exc_info=True)
+            try:
+                _persist_stream_answer(
+                    _env, session_id,
+                    ''.join(full_response),
+                    reasoning='\n'.join(
+                        getattr(state.get('loop_obj'),
+                                'reasoning_log', None) or []),
+                    finish_reason=state.get('finish_reason', ''),
+                    error=state.get('error', ''),
+                )
+            except Exception:
+                _logger.warning(
+                    'persist stream answer failed', exc_info=True)
+            _cr.commit()
+        return True
+    except Exception as e:
+        _logger.warning('stream turn finalize failed: %s', e)
+        return False
 
 
 def _persist_session_with_retry(cr, env, sess, response_text, input_t,
