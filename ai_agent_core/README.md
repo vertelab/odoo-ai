@@ -925,6 +925,34 @@ Odoo-verktyg körs av **Odoo** via `POST /ai/v1/tools/run` (full kontext, aldrig
 Pi→Odoo-RPC direkt). Sessionen loggas i Odoo. `GET /ai/v1/<coworker>/tools`
 returnerar verktygens schemas.
 
+### Modell-id = coworkerns namn (`ai.coworker.name`)
+`GET /ai/v1/models` och `GET /ai/v1/<coworker>/models` annonserar
+coworkerns **`ai.coworker.name` ordagrant** som modellens `id` — versaler,
+mellanslag, bindestreck och nationella tecken bevaras. En medarbetare som
+heter `Faktura-Assistenten` annonseras alltså som `Faktura-Assistenten`,
+inte som @mention-slugen `fakturaassistenten`.
+
+```bash
+pi --provider odoo --model "Faktura-Assistenten"   # citattecken krävs
+```
+
+- **Citattecken krävs** när namnet innehåller mellanslag (annars delas
+  argumentet upp av skalet).
+- **`channel_alias` används inte längre för att bygga id:t.** Det behålls
+  som bakåtkompatibel *uppslagsväg*: en klient som skickar
+  `fakturaassistenten` löser fortfarande upp rätt coworker, liksom
+  `quest-<id>` och det normaliserade namnet (gemener, skiljetecken → `-`).
+- **Namnbytet slår igenom direkt:** `name` är auktoriteten, så ett byte av
+  coworkerns namn ändrar det annonserade modell-id:t omedelbart. En klient
+  som sparat det gamla namnet får ett tydligt fel som hänvisar till
+  `/ai/v1/models`.
+- **Dubbelt namn:** `ai.coworker.name` saknar unikhetsvillkor. Delar flera
+  aktiva coworkers med `openai_api` namn annonseras den med **lägst id**
+  (deterministiskt) och konflikten loggas som en varning med båda
+  coworker-id:na — ingen post utelämnas tyst.
+- Pi-extensionen (`extensions/odoo.ts`) läser `entry.id` rakt av och
+  behöver ingen ändring; det nya värdet följer med automatiskt.
+
 ### Kontextoptimering (`_select_relevant_tools`)
 Alla 50+ verktygs-schemas gör att LLM:en SVÄLJER tool_calls i content-text och
 misslyckas (verifierat: 58 verktyg → 87s svullnad utan exekvering; 2-8 relevanta

@@ -2821,14 +2821,33 @@ class AIOpenAIAPI(http.Controller):
             [('status', '=', 'active'), ('active', '=', True)],
             order='sequence asc, name asc')
 
+        seen_ids = {}
         for q in quests:
             oai = q.init_type_ids.filtered(
                 lambda it: it.init_type == 'openai_api' and it.enabled)
             if not oai:
                 continue
-            alias = self._coworker_alias(q)
+            model_id = self._model_id_for(q)
+
+            # ai.coworker.name har inget unikhetsvillkor. Vid dubbelt namn
+            # annonseras coworkern med lägst id (deterministiskt) och
+            # konflikten loggas så att den går att åtgärda — ingen post
+            # utelämnas tyst.
+            previous = seen_ids.get(model_id)
+            if previous is not None:
+                winner = min(previous, q.id)
+                loser = max(previous, q.id)
+                _logger.warning(
+                    "Två aktiva coworkers med openai_api delar name %r: "
+                    "id %s annonseras, id %s utelämnas",
+                    model_id, winner, loser)
+                if q.id > previous:
+                    continue
+                models = [m for m in models if m['id'] != model_id]
+            seen_ids[model_id] = q.id
+
             models.append({
-                'id': alias,
+                'id': model_id,
                 'object': 'model',
                 'created': int(q.create_date.timestamp()) if q.create_date else 0,
                 'owned_by': 'vertel',
@@ -2927,7 +2946,7 @@ class AIOpenAIAPI(http.Controller):
         oai = quest.sudo().init_type_ids.filtered(
             lambda it: it.init_type == 'openai_api' and it.enabled)
         return Response(json.dumps({'object': 'list', 'data': [{
-            'id': self._coworker_alias(quest),
+            'id': self._model_id_for(quest),
             'object': 'model',
             'owned_by': 'vertel',
             # Minsta context_window i agentkedjan (se ai_coworker
@@ -3336,6 +3355,22 @@ class AIOpenAIAPI(http.Controller):
             c if c.isalnum() or c in '-_' else '-'
             for c in quest.name
         ).strip('-').lower() or f'coworker-{quest.id}'
+
+    @staticmethod
+    def _model_id_for(quest):
+        """Modell-id som annonseras till OpenAI-kompatibla klienter.
+
+        Id:t är coworkerns `ai.coworker.name` ORDAGRANT — versaler,
+        mellanslag, bindestreck och nationella tecken bevaras. Det är
+        namnet användaren känner igen ("Faktura-Assistenten"), inte
+        @mention-slugen i `channel_alias` ("fakturaassistenten").
+
+        Används ENBART av modell-listningarna (/ai/v1/models och
+        /ai/v1/<coworker>/models). `_coworker_alias()` behålls oförändrad
+        för sina övriga anropare (tools-svar, sessionsreferenser) där ett
+        id med mellanslag och åäö vore olämpligt som maskinellt fältvärde.
+        """
+        return quest.name or f'coworker-{quest.id}'
 
     def _run_coworker_chat(self, quest, messages, model_ref, stream,
                            pi_session_id='', session_id=0, tools=None,
@@ -4393,8 +4428,9 @@ class AIOpenAIAPI(http.Controller):
     def _resolve_coworker(self, model_id):
         """Resolve a coworker from a model identifier.
 
-        Supports:
-          - quest-<ID>   (backward compat)
+        Supports (in order):
+          - exact name    (e.g. 'Faktura-Assistenten') — det annonserade id:t
+          - quest-<ID>    (backward compat)
           - channel_alias (e.g. 'redovisning')
           - name slug     (e.g. 'bokslut-britta')
         """
@@ -4403,6 +4439,18 @@ class AIOpenAIAPI(http.Controller):
         # Robusthet: model_id kan komma som icke-sträng i en JSON-body
         # (t.ex. ett tal) — undvik AttributeError → HTML-500.
         model_id = str(model_id or '')
+
+        # 0. Exact name match — id:t som /ai/v1/models annonserar. name har
+        #    inget unikhetsvillkor: lägst id vinner (deterministiskt, samma
+        #    regel som list_models).
+        if model_id:
+            q = coworker.search([
+                ('name', '=', model_id),
+                ('status', '=', 'active'),
+                ('active', '=', True),
+            ], order='id asc', limit=1)
+            if q:
+                return q
 
         # 1. quest-<ID> format
         if model_id.startswith('quest-'):
