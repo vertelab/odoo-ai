@@ -20,7 +20,7 @@
 ##############################################################################
 {
     'name': 'AI: Powerbox and Transcript',
-    'version': '18.0.1.0.7',
+    'version': '18.0.1.0.8',
     'summary': 'Powerbox-style AI interaction with transcript/context injection',
     'category': 'AI Orchestration',
     'description': """
