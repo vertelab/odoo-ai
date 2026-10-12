@@ -2112,6 +2112,64 @@ def _persist_stream_answer(env, session_id, answer, reasoning='',
         return 0
 
 
+def _persist_session_with_retry(cr, env, sess, response_text, input_t,
+                                output_t, model_real, tool_history, messages,
+                                persist_fn, max_attempts=3):
+    """Persistera en stream-tur med savepoint + retry vid serialisering.
+
+    Flera samtidiga /ai/stream- eller /ai/v1/chat/completions-anrop mot
+    SAMMA session skriver samma ai_coworker_session-rad. Odoo kör
+    SERIALIZABLE, så den ena transaktionen vinner och den andra kastas ut
+    med "could not serialize access due to concurrent update". Utan retry
+    dog hela strömmen TYST (inget fel till klienten) och sessionen lämnades
+    tom men 'active' (session 23801, 2026-10-12).
+
+    Mönstret (savepoint + retry) är samma som
+    ai_coworker._ensure_orchestration_skill(). `persist_fn` buffrar bara
+    writes; flush sker i savepointens __init__/_close. Vid kollision rullas
+    savepointen tillbaka OCH ORM-cachen rensas
+    (_FlushingSavepoint.rollback → cr.clear()), så nästa försök läser färskt
+    pi_message_count från DB och skriver samma delta — ingen dubblering.
+
+    ⚠ commit() ligger UTANFÖR savepointen: att committa inuti gör att
+    RELEASE SAVEPOINT kör mot en redan avslutad transaktion.
+
+    Fångar BÅDE TransactionRollbackError (SerializationFailure,
+    DeadlockDetected) och InFailedSqlTransaction — det senare när
+    persist_fn svalde felet internt och savepointens _close-flush körde mot
+    en redan aborterad transaktion.
+
+    Returnerar True om skrivningen lyckades, annars False. Kastar aldrig.
+    """
+    import psycopg2
+    for attempt in range(max_attempts):
+        try:
+            with cr.savepoint():
+                persist_fn(env, sess, response_text, input_t, output_t,
+                           model_real, tool_history, messages)
+            cr.commit()
+            return True
+        except (psycopg2.errors.TransactionRollbackError,
+                psycopg2.errors.InFailedSqlTransaction):
+            try:
+                cr.rollback()
+            except Exception:
+                pass
+            if attempt >= max_attempts - 1:
+                _logger.warning(
+                    'session %s: persist misslyckades även efter retries '
+                    '(serialization) — svaret levererades men loggades inte',
+                    sess.id if sess else '?')
+                return False
+            time.sleep(0.15 * (attempt + 1))
+        except Exception as e:
+            # Övriga fel (t.ex. programmeringsfel) — logga och ge upp.
+            # Persist får aldrig krascha en körning.
+            _logger.warning('session persist failed: %s', e)
+            return False
+    return False
+
+
 def _drain_tasks_with_timeout(loop, timeout=5.0):
     """Dränera kvarvarande asyncio-tasks med en tidsgräns.
 
@@ -3954,21 +4012,30 @@ class AIOpenAIAPI(http.Controller):
                         tool_history = [
                             (tc['name'], tc['arguments'][:200])
                             for tc in aggregated_tool_calls]
-                        _persist_session(
-                            _gen_env, _sess, ''.join(full_response),
+                        # Konkurrensskydd (2026-10-12): flera samtidiga
+                        # /ai/stream- eller /ai/v1/chat/completions-anrop mot
+                        # SAMMA session skriver samma ai_coworker_session-rad.
+                        # Savepoint + retry (se _persist_session_with_retry)
+                        # gör skrivningen idempotent i stället för att hela
+                        # strömmen dör tyst (session 23801).
+                        _persist_ok = _persist_session_with_retry(
+                            _gen_cr, _gen_env, _sess,
+                            ''.join(full_response),
                             usage_state['input'] or (len(prompt) // 4),
-                            usage_state['output'] or (len(''.join(full_response)) // 4),
-                            model_ref, tool_history, messages=messages)
-                        # Sessionsnamn (session-title steg B): döp sessionen
-                        # till EN mening i bakgrunden. Steg A (första
-                        # prompten) har redan gett ett namn — detta
-                        # uppgraderar det när konversationen finns.
-                        # ⚠ Tråden MÅSTE startas efter commit: den öppnar en
-                        # egen cursor och skriver samma rad. Före commit håller
-                        # requesten radlåset och tråden dör på
-                        # "could not serialize access due to concurrent update".
-                        _gen_cr.commit()
-                        _start_title_thread(_sess)
+                            usage_state['output'] or (
+                                len(''.join(full_response)) // 4),
+                            model_ref, tool_history, messages,
+                            _persist_session)
+                        if _persist_ok:
+                            # Sessionsnamn (session-title steg B): döp sessionen
+                            # till EN mening i bakgrunden. Steg A (första
+                            # prompten) har redan gett ett namn — detta
+                            # uppgraderar det när konversationen finns.
+                            # ⚠ Tråden MÅSTE startas efter commit: den öppnar en
+                            # egen cursor och skriver samma rad. Före commit håller
+                            # requesten radlåset och tråden dör på
+                            # "could not serialize access due to concurrent update".
+                            _start_title_thread(_sess)
                     finally:
                         _gen_cr.close()
 

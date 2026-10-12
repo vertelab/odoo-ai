@@ -352,3 +352,71 @@ class TestRoundCheckpoint(common.TransactionCase):
         self.assertTrue(
             any(getattr(e, 'type', '') == 'done' for e in events),
             'turen ska ändå nå ett done-event')
+
+
+@tagged('post_install', '-at_install')
+class TestPersistSessionRetry(common.TransactionCase):
+    """Konkurrensskydd: persist av en stream-tur tål serialiseringskonflikt.
+
+    VARFÖR (mätt på ledningssystem 2026-10-12): flera samtidiga anrop mot
+    SAMMA session skriver samma ai_coworker_session-rad. Odoo kör
+    SERIALIZABLE, så den ena transaktionen vinner och den andra kastas ut
+    med "could not serialize access due to concurrent update". Utan retry
+    dog hela SSE-strömmen TYST — inget fel till klienten, och sessionen
+    lämnades tom men 'active' (session 23801).
+
+    Testet bevisar att _persist_session_with_retry:
+      * lyckas på första försöket (happy path),
+      * retrar vid SerializationFailure och lyckas,
+      * ger upp efter max försök UTAN att kasta (persist får aldrig fälla
+        en körning — svaret har redan streamats till klienten).
+    """
+
+    def _session(self):
+        return self.env['ai.coworker.session'].create({
+            'name': 'persist-retry-test',
+            'status': 'active',
+            'init_type': 'web_ui',
+        })
+
+    def _call(self, persist_fn, max_attempts=3):
+        from odoo.addons.ai_agent_core.controllers.stream import (
+            _persist_session_with_retry)
+        session = self._session()
+        return _persist_session_with_retry(
+            self.env.cr, self.env, session, 'svar', 1, 2, '',
+            None, None, persist_fn, max_attempts=max_attempts)
+
+    def test_happy_path_succeeds_first_try(self):
+        calls = []
+
+        def _persist(env, sess, *a, **kw):
+            calls.append(1)
+
+        self.assertTrue(self._call(_persist))
+        self.assertEqual(len(calls), 1, 'persist ska köras exakt en gång')
+
+    def test_retries_on_serialization_failure_then_succeeds(self):
+        import psycopg2
+        calls = []
+
+        def _persist(env, sess, *a, **kw):
+            calls.append(1)
+            if len(calls) == 1:
+                raise psycopg2.errors.SerializationFailure('konflikt')
+
+        self.assertTrue(self._call(_persist),
+                        'andra försöket ska lyckas efter en konflikt')
+        self.assertEqual(len(calls), 2, 'persist ska ha retrats en gång')
+
+    def test_gives_up_without_raising_after_max_attempts(self):
+        import psycopg2
+        calls = []
+
+        def _persist(env, sess, *a, **kw):
+            calls.append(1)
+            raise psycopg2.errors.SerializationFailure('konflikt')
+
+        # Ska returnera False, inte kasta — svaret har redan streamats.
+        self.assertFalse(self._call(_persist, max_attempts=3))
+        self.assertEqual(len(calls), 3, 'ska försöka exakt max_attempts gånger')
