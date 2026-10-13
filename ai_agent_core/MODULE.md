@@ -96,6 +96,17 @@ Status-/livscykel (`/new`-semantik):
   `finish_reason`, `debug_info`, `tool_calls`, `model_real`, `token_input`,
   `token_output`, `token_sys`.
 
+## Felkontraktet — en regel per feltyp (T/50830, 18.0.1.315)
+
+Systemets felkontrakt finns i **[`docs/failures.md`](docs/failures.md)**:
+en regel per typ av fel, så att en host vet vad som händer utan att läsa
+kod. Täcker providerfel (avslag vs retrybart vs den enda 400:an),
+verktygsfel, persistensfel (turen rullas tillbaka), transaktionen vid
+runda-gränser, hook-fel, `finish_reason`-rangordningen, sessionens
+livscykel och fallback-fällan vid utebliven `pi_session_id`.
+
+Förebilden är Pi Durable:s spec (§10.1 *Failures*) — se T/50830.
+
 ## Verktygsfel — felkontraktet (atgardbara-verktygsfel, 18.0.1.215)
 
 Varje verktygsfel bär samma uppgifter, oavsett om verktyget är inbyggt

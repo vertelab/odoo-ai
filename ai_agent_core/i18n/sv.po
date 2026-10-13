@@ -8433,7 +8433,7 @@ msgstr ""
 #: model:ir.model.fields.selection,name:ai_agent_core.selection__ai_coworker__init_type__openai_api
 #: model:ir.model.fields.selection,name:ai_agent_core.selection__ai_coworker_init_type__init_type__openai_api
 #: model:ir.model.fields.selection,name:ai_agent_core.selection__ai_coworker_session__init_type__openai_api
-msgid "OpenAI API"
+msgid "Externt API (/ai/v1)"
 msgstr ""
 
 #. module: ai_agent_core

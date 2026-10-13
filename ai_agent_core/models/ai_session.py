@@ -60,7 +60,7 @@ class AICoworkerSession(models.Model):
         ('powerbox', 'Powerbox'),
         ('manual', 'Manual'),
         ('webhook', 'Webhook'),
-        ('openai_api', 'OpenAI API'),
+        ('openai_api', 'Externt API (/ai/v1)'),
         ('watch', 'Watch — Dataändring'),
         ('heartbeat', 'Heartbeat — Proaktiv'),
     ], string='Start via', index=True, readonly=True, tracking=True,

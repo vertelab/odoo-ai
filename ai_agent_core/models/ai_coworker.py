@@ -31,7 +31,7 @@ INIT_TYPES = [
     ('powerbox', 'Powerbox'),
     ('manual', 'Manual'),
     ('webhook', 'Webhook'),
-    ('openai_api', 'OpenAI API'),
+    ('openai_api', 'Externt API (/ai/v1)'),
     ('watch', 'Watch — Dataändring'),
     ('heartbeat', 'Heartbeat — Proaktiv'),
 ]
@@ -1550,7 +1550,7 @@ class AICoworker(models.Model):
     init_powerbox = fields.Boolean('Powerbox')
     init_manual = fields.Boolean('Manual')
     init_webhook = fields.Boolean('Webhook')
-    init_openai_api = fields.Boolean('OpenAI API')
+    init_openai_api = fields.Boolean('Externt API (/ai/v1)')
     init_watch = fields.Boolean('Watch — Dataändring')
 
     _INIT_BOOLEAN_MAP = [
