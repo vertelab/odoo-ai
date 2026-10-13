@@ -1,0 +1,211 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="0">
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         SEKTION 3: Delegera och granska
+         ═══════════════════════════════════════════════════════════════════ -->
+
+    <record id="slide_category_ai_s3" model="slide.slide">
+        <field name="name">3. Delegera och granska</field>
+        <field name="is_category" eval="True"/>
+        <field name="channel_id" ref="ai_onboarding.slide_channel_ai"/>
+        <field name="sequence">200</field>
+    </record>
+
+    <record id="slide_ai_s3_01" model="slide.slide">
+        <field name="name">Coworkern — en AI-medarbetare</field>
+        <field name="sequence">210</field>
+        <field name="slide_category">article</field>
+        <field name="channel_id" ref="ai_onboarding.slide_channel_ai"/>
+        <field name="is_published" eval="True"/>
+        <field name="is_preview" eval="True"/>
+        <field name="completion_time">0.30</field>
+        <field name="html_content" type="html">
+<section class="s_text_block pt64 pb40">
+    <div class="container s_allow_columns">
+        <h2>Vad en coworker är</h2>
+        <p>En <strong>coworker</strong> är en AI-medarbetare med en bestämd roll. Den har ett ansvarsområde, en uppsättning verktyg och en uppgift — ungefär som en kollega med en befattning.</p>
+        <p>Istället för att du ställer varje enskild fråga kan du delegera ett helt arbete: ”ta fram en analys av det här”, ”sammanställ underlaget”, ”gå igenom och föreslå förbättringar”.</p>
+    </div>
+</section>
+
+<section class="s_features pt32 pb64">
+    <div class="container">
+        <div class="row">
+            <div class="col-lg-6">
+                <h3 class="h4-fs">En coworker har</h3>
+                <ul>
+                    <li><strong>En roll</strong> — vad den ansvarar för</li>
+                    <li><strong>Verktyg</strong> — vad den får göra</li>
+                    <li><strong>Kunskap</strong> — instruktioner och rutiner för sitt område</li>
+                    <li><strong>Gränser</strong> — vad den inte får göra utan godkännande</li>
+                </ul>
+            </div>
+            <div class="col-lg-6">
+                <h3 class="h4-fs">Skillnaden mot co-piloten</h3>
+                <p>Co-piloten svarar när du frågar. Coworkern <strong>arbetar</strong> — den tar sig an en uppgift och levererar ett resultat.</p>
+                <p class="small text-muted">Du delegerar till en coworker ungefär som du delegerar till en kollega: du beskriver vad som ska göras och vad resultatet ska vara.</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="s_call_to_action o_cc o_cc5 pt48 pb48">
+    <div class="container">
+        <div class="row">
+            <div class="col-lg-9">
+                <h3>Delegera med tydligt uppdrag</h3>
+                <p class="lead">En coworker som får en otydlig uppgift levererar ett otydligt resultat — precis som en människa. Ange vad som ska göras, vad resultatet ska vara, och vilka ramar som gäller.</p>
+            </div>
+        </div>
+    </div>
+</section>
+        </field>
+        <field name="description">Vad en coworker är: en AI-medarbetare med roll, verktyg, kunskap och gränser. Skillnaden mot co-piloten och hur du delegerar.</field>
+    </record>
+
+    <record id="slide_ai_s3_02" model="slide.slide">
+        <field name="name">Granska innan du godkänner</field>
+        <field name="sequence">220</field>
+        <field name="slide_category">article</field>
+        <field name="channel_id" ref="ai_onboarding.slide_channel_ai"/>
+        <field name="is_published" eval="True"/>
+        <field name="is_preview" eval="True"/>
+        <field name="completion_time">0.30</field>
+        <field name="html_content" type="html">
+<section class="s_text_block pt64 pb40">
+    <div class="container s_allow_columns">
+        <h2>Godkännandet är din kontrollpunkt</h2>
+        <p>När en coworker vill utföra en skrivåtgärd — skapa en post, ändra ett fält, skicka något — stannar den och frågar. Det är <strong>din kontrollpunkt</strong>. Ingenting händer förrän du svarat.</p>
+        <p>Läs igenom vad som faktiskt föreslås. Det är lätt att trycka ”godkänn” av vana — men det är här ansvaret ligger.</p>
+    </div>
+</section>
+
+<section class="s_text_block pt32 pb64">
+    <div class="container s_allow_columns">
+        <h2>Vad du bör kontrollera</h2>
+        <table class="table table-bordered">
+            <thead>
+                <tr><th>Område</th><th>Fråga dig</th></tr>
+            </thead>
+            <tbody>
+                <tr><td><strong>Siffror</strong></td><td>Stämmer belopp, antal, procent?</td></tr>
+                <tr><td><strong>Datum</strong></td><td>Är perioden rätt? Är deadlinen rimlig?</td></tr>
+                <tr><td><strong>Namn</strong></td><td>Är det rätt person, rätt kund, rätt projekt?</td></tr>
+                <tr><td><strong>Åtaganden</strong></td><td>Lovar förslaget något vi kan hålla?</td></tr>
+                <tr><td><strong>Omfattning</strong></td><td>Görs mer än vad som efterfrågades?</td></tr>
+            </tbody>
+        </table>
+        <p class="small text-muted">Den sista är lätt att missa. En coworker kan göra <em>mer</em> än du bad om — kontrollera att omfattningen är den avsedda.</p>
+    </div>
+</section>
+
+<section class="s_text_block pt32 pb64">
+    <div class="container s_allow_columns">
+        <h2>Om något är fel</h2>
+        <p>Avvisa. Säg vad som är fel och be om en ny version. Det är billigare att rätta i godkännandesteget än att städa upp efteråt.</p>
+        <p class="small text-muted">Du kan också godkänna en del och avvisa en annan, om förslaget innehåller flera separata åtgärder.</p>
+    </div>
+</section>
+        </field>
+        <field name="description">Godkännandet som kontrollpunkt: vad du ska granska innan du säger ja till en coworkers förslag, och hur du avvisar fel.</field>
+    </record>
+
+    <record id="slide_ai_s3_03" model="slide.slide">
+        <field name="name">🧪 Testa dina kunskaper — Delegera</field>
+        <field name="sequence">230</field>
+        <field name="slide_category">quiz</field>
+        <field name="channel_id" ref="ai_onboarding.slide_channel_ai"/>
+        <field name="is_published" eval="True"/>
+        <field name="completion_time">0.25</field>
+        <field name="quiz_first_attempt_reward">100</field>
+        <field name="quiz_second_attempt_reward">75</field>
+        <field name="quiz_third_attempt_reward">50</field>
+        <field name="quiz_fourth_attempt_reward">25</field>
+        <field name="description">Testa dina kunskaper om att delegera till en coworker och granska förslag innan du godkänner.</field>
+    </record>
+
+    <record id="slide_ai_s3_03_q1" model="slide.question">
+        <field name="question">Vad skiljer en coworker från co-piloten?</field>
+        <field name="sequence">1</field>
+        <field name="slide_id" ref="slide_ai_s3_03"/>
+    </record>
+    <record id="slide_ai_s3_03_q1_a1" model="slide.answer">
+        <field name="text_value">Coworkern arbetar självständigt med en uppgift och levererar ett resultat</field>
+        <field name="sequence">1</field>
+        <field name="is_correct" eval="True"/>
+        <field name="comment">Rätt! Co-piloten svarar när du frågar — coworkern tar sig an ett helt arbete.</field>
+        <field name="question_id" ref="slide_ai_s3_03_q1"/>
+    </record>
+    <record id="slide_ai_s3_03_q1_a2" model="slide.answer">
+        <field name="text_value">Coworkern är snabbare</field>
+        <field name="sequence">2</field>
+        <field name="is_correct" eval="False"/>
+        <field name="comment">Nej — hastigheten är inte skillnaden.</field>
+        <field name="question_id" ref="slide_ai_s3_03_q1"/>
+    </record>
+    <record id="slide_ai_s3_03_q1_a3" model="slide.answer">
+        <field name="text_value">Coworkern har inga gränser</field>
+        <field name="sequence">3</field>
+        <field name="is_correct" eval="False"/>
+        <field name="comment">Nej — tvärtom. Coworkern har tydliga gränser för vad den får göra.</field>
+        <field name="question_id" ref="slide_ai_s3_03_q1"/>
+    </record>
+
+    <record id="slide_ai_s3_03_q2" model="slide.question">
+        <field name="question">Varför är godkännandesteget viktigt?</field>
+        <field name="sequence">2</field>
+        <field name="slide_id" ref="slide_ai_s3_03"/>
+    </record>
+    <record id="slide_ai_s3_03_q2_a1" model="slide.answer">
+        <field name="text_value">Det är där du tar ansvar för resultatet</field>
+        <field name="sequence">1</field>
+        <field name="is_correct" eval="True"/>
+        <field name="comment">Rätt! Det är här kontrollen ligger — och ansvaret.</field>
+        <field name="question_id" ref="slide_ai_s3_03_q2"/>
+    </record>
+    <record id="slide_ai_s3_03_q2_a2" model="slide.answer">
+        <field name="text_value">Det är ett tekniskt krav i systemet</field>
+        <field name="sequence">2</field>
+        <field name="is_correct" eval="False"/>
+        <field name="comment">Nej — det är ett medvetet val, inte en teknikalitet.</field>
+        <field name="question_id" ref="slide_ai_s3_03_q2"/>
+    </record>
+    <record id="slide_ai_s3_03_q2_a3" model="slide.answer">
+        <field name="text_value">Det gör att coworkern lär sig</field>
+        <field name="sequence">3</field>
+        <field name="is_correct" eval="False"/>
+        <field name="comment">Nej — det är inte poängen. Poängen är kontrollen.</field>
+        <field name="question_id" ref="slide_ai_s3_03_q2"/>
+    </record>
+
+    <record id="slide_ai_s3_03_q3" model="slide.question">
+        <field name="question">Vad är lätt att missa när man granskar ett förslag?</field>
+        <field name="sequence">3</field>
+        <field name="slide_id" ref="slide_ai_s3_03"/>
+    </record>
+    <record id="slide_ai_s3_03_q3_a1" model="slide.answer">
+        <field name="text_value">Att coworkern gjort mer än vad som efterfrågades</field>
+        <field name="sequence">1</field>
+        <field name="is_correct" eval="True"/>
+        <field name="comment">Rätt! Kontrollera alltid att omfattningen är den avsedda.</field>
+        <field name="question_id" ref="slide_ai_s3_03_q3"/>
+    </record>
+    <record id="slide_ai_s3_03_q3_a2" model="slide.answer">
+        <field name="text_value">Att förslaget är på svenska</field>
+        <field name="sequence">2</field>
+        <field name="is_correct" eval="False"/>
+        <field name="comment">Nej — språket är inte problemet.</field>
+        <field name="question_id" ref="slide_ai_s3_03_q3"/>
+    </record>
+    <record id="slide_ai_s3_03_q3_a3" model="slide.answer">
+        <field name="text_value">Att det finns en godkännandeknapp</field>
+        <field name="sequence">3</field>
+        <field name="is_correct" eval="False"/>
+        <field name="comment">Nej — knappen är svår att missa.</field>
+        <field name="question_id" ref="slide_ai_s3_03_q3"/>
+    </record>
+
+    </data>
+</odoo>

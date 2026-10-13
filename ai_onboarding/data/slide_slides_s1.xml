@@ -1,0 +1,249 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="0">
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         SEKTION 1: Vad AI-assistenten är
+         ═══════════════════════════════════════════════════════════════════ -->
+
+    <record id="slide_category_ai_s1" model="slide.slide">
+        <field name="name">1. Vad AI-assistenten är</field>
+        <field name="is_category" eval="True"/>
+        <field name="channel_id" ref="ai_onboarding.slide_channel_ai"/>
+        <field name="sequence">0</field>
+    </record>
+
+    <record id="slide_ai_s1_01" model="slide.slide">
+        <field name="name">En kollega av ett annat slag</field>
+        <field name="sequence">10</field>
+        <field name="slide_category">article</field>
+        <field name="channel_id" ref="ai_onboarding.slide_channel_ai"/>
+        <field name="is_published" eval="True"/>
+        <field name="is_preview" eval="True"/>
+        <field name="completion_time">0.25</field>
+        <field name="html_content" type="html">
+<section class="s_cover parallax o_cc o_cc5 pt200 pb200" data-scroll-background-ratio="1">
+    <div class="container">
+        <h1 class="display-3-fs" style="text-align: center;">En kollega av ett annat slag</h1>
+        <p class="lead" style="text-align: center;">AI-assistenten är ett verktyg — inte en person, inte en chef, inte en ersättare.</p>
+    </div>
+</section>
+
+<section class="s_text_block pt64 pb40">
+    <div class="container s_allow_columns">
+        <h2>Vad den är bra på</h2>
+        <p>Assistenten är snabb på att läsa, sammanfatta, föreslå och strukturera. Den blir aldrig trött, glömmer inte bort vad som sagts i en tråd, och kan arbeta med stora mängder text på kort tid.</p>
+        <p>Det gör den användbar för allt som handlar om att <strong>bearbeta information</strong>: sammanfatta en lång mejltråd, föreslå ett utkast, sortera en inkorg, hitta vad som beslutades i ett möte.</p>
+    </div>
+</section>
+
+<section class="s_features pt32 pb64">
+    <div class="container">
+        <div class="row">
+            <div class="col-lg-4">
+                <i class="s_features_icon fa fa-comments-o mb-3 rounded bg-o-color-3"/>
+                <div class="overflow-hidden">
+                    <h3 class="h5-fs">Co-piloten</h3>
+                    <p>Finns vid din sida i gränssnittet. Du frågar, den svarar — som en hjälpsam kollega vid skrivbordet intill.</p>
+                </div>
+            </div>
+            <div class="col-lg-4">
+                <i class="s_features_icon fa fa-users mb-3 rounded bg-o-color-3"/>
+                <div class="overflow-hidden">
+                    <h3 class="h5-fs">Coworkern</h3>
+                    <p>En AI-medarbetare med en roll. Den kan ta sig an en uppgift och arbeta självständigt inom sina ramar.</p>
+                </div>
+            </div>
+            <div class="col-lg-4">
+                <i class="s_features_icon fa fa-check-square-o mb-3 rounded bg-o-color-3"/>
+                <div class="overflow-hidden">
+                    <h3 class="h5-fs">Granskningen</h3>
+                    <p>Ingenting går igenom utan ditt godkännande. Du är alltid sista instans.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="s_call_to_action o_cc o_cc5 pt48 pb48">
+    <div class="container">
+        <div class="row">
+            <div class="col-lg-9">
+                <h3>Vad den inte är</h3>
+                <p class="lead">Den är inte en källa till sanning. Den kan formulera sig övertygande om något som är fel. Behandla dess svar som ett <em>förslag</em> — inte som ett faktum.</p>
+            </div>
+        </div>
+    </div>
+</section>
+        </field>
+        <field name="description">Vad AI-assistenten är: co-pilot, coworker och granskningsprincipen. Vad den är bra på och varför den inte är en källa till sanning.</field>
+    </record>
+
+    <record id="slide_ai_s1_02" model="slide.slide">
+        <field name="name">Människan i kontrollen</field>
+        <field name="sequence">20</field>
+        <field name="slide_category">article</field>
+        <field name="channel_id" ref="ai_onboarding.slide_channel_ai"/>
+        <field name="is_published" eval="True"/>
+        <field name="is_preview" eval="True"/>
+        <field name="completion_time">0.30</field>
+        <field name="html_content" type="html">
+<section class="s_text_block pt64 pb40">
+    <div class="container s_allow_columns">
+        <h2>Grundprincipen</h2>
+        <p>I Vertel gäller en regel utan undantag: <strong>AI:n föreslår, människan beslutar.</strong> Allt som har konsekvenser — att skicka ett mejl, ändra en post, fatta ett beslut — kräver att en människa godkänt det.</p>
+        <p>Det är inte en teknisk begränsning utan ett medvetet val. Ett system som agerar på egen hand i en verksamhet gör fel snabbare än någon hinner upptäcka det.</p>
+    </div>
+</section>
+
+<section class="s_text_block pt32 pb64">
+    <div class="container s_allow_columns">
+        <h2>Tre nivåer av kontroll</h2>
+        <table class="table table-bordered">
+            <thead>
+                <tr><th>Nivå</th><th>Vad den innebär</th><th>Exempel</th></tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>Läsa</strong></td>
+                    <td>Assistenten får titta men inte röra</td>
+                    <td>Sammanfatta en tråd, söka upp information</td>
+                </tr>
+                <tr>
+                    <td><strong>Föreslå</strong></td>
+                    <td>Assistenten tar fram ett förslag som du granskar</td>
+                    <td>Utkast till svar, förslag på uppdelning av en uppgift</td>
+                </tr>
+                <tr>
+                    <td><strong>Utföra</strong></td>
+                    <td>Assistenten gör något — men först efter ditt godkännande</td>
+                    <td>Skapa en uppgift, uppdatera ett fält</td>
+                </tr>
+            </tbody>
+        </table>
+        <p class="small text-muted">Du ser alltid vilken nivå som gäller. Skrivåtgärder kräver ett aktivt godkännande från dig.</p>
+    </div>
+</section>
+
+<section class="s_call_to_action o_cc o_cc5 pt48 pb48">
+    <div class="container">
+        <div class="row">
+            <div class="col-lg-9">
+                <h3>Du ansvarar för resultatet</h3>
+                <p class="lead">Om assistenten skriver något fel och du skickar det, är det ditt namn på mejlet. Granska därför alltid — särskilt siffror, datum, namn och åtaganden.</p>
+            </div>
+        </div>
+    </div>
+</section>
+        </field>
+        <field name="description">Grundprincipen människan-i-kontrollen och de tre nivåerna av kontroll: läsa, föreslå, utföra.</field>
+    </record>
+
+    <record id="slide_ai_s1_03" model="slide.slide">
+        <field name="name">Översikt — assistentens plats</field>
+        <field name="sequence">30</field>
+        <field name="slide_category">infographic</field>
+        <field name="channel_id" ref="ai_onboarding.slide_channel_ai"/>
+        <field name="is_published" eval="True"/>
+        <field name="is_preview" eval="True"/>
+        <field name="completion_time">0.10</field>
+        <field name="description">Flödesschema: hur en fråga färdas från dig via assistenten till ett svar eller ett förslag — och var godkännandet sitter.</field>
+    </record>
+
+    <record id="slide_ai_s1_04" model="slide.slide">
+        <field name="name">🧪 Testa dina kunskaper — Grunderna</field>
+        <field name="sequence">40</field>
+        <field name="slide_category">quiz</field>
+        <field name="channel_id" ref="ai_onboarding.slide_channel_ai"/>
+        <field name="is_published" eval="True"/>
+        <field name="completion_time">0.25</field>
+        <field name="quiz_first_attempt_reward">100</field>
+        <field name="quiz_second_attempt_reward">75</field>
+        <field name="quiz_third_attempt_reward">50</field>
+        <field name="quiz_fourth_attempt_reward">25</field>
+        <field name="description">Testa dina kunskaper om vad assistenten är och var gränsen för dess mandat går.</field>
+    </record>
+
+    <record id="slide_ai_s1_04_q1" model="slide.question">
+        <field name="question">Vem fattar beslut när assistenten föreslagit något?</field>
+        <field name="sequence">1</field>
+        <field name="slide_id" ref="slide_ai_s1_04"/>
+    </record>
+    <record id="slide_ai_s1_04_q1_a1" model="slide.answer">
+        <field name="text_value">Assistenten</field>
+        <field name="sequence">1</field>
+        <field name="is_correct" eval="False"/>
+        <field name="comment">Nej — assistenten föreslår, den beslutar inte.</field>
+        <field name="question_id" ref="slide_ai_s1_04_q1"/>
+    </record>
+    <record id="slide_ai_s1_04_q1_a2" model="slide.answer">
+        <field name="text_value">Du — människan</field>
+        <field name="sequence">2</field>
+        <field name="is_correct" eval="True"/>
+        <field name="comment">Rätt! Människan har sista ordet, alltid.</field>
+        <field name="question_id" ref="slide_ai_s1_04_q1"/>
+    </record>
+    <record id="slide_ai_s1_04_q1_a3" model="slide.answer">
+        <field name="text_value">Systemadministratören</field>
+        <field name="sequence">3</field>
+        <field name="is_correct" eval="False"/>
+        <field name="comment">Nej — det är du som använder assistenten som godkänner.</field>
+        <field name="question_id" ref="slide_ai_s1_04_q1"/>
+    </record>
+
+    <record id="slide_ai_s1_04_q2" model="slide.question">
+        <field name="question">Varför ska du inte behandla assistentens svar som fakta?</field>
+        <field name="sequence">2</field>
+        <field name="slide_id" ref="slide_ai_s1_04"/>
+    </record>
+    <record id="slide_ai_s1_04_q2_a1" model="slide.answer">
+        <field name="text_value">Den kan formulera sig övertygande om något som är fel</field>
+        <field name="sequence">1</field>
+        <field name="is_correct" eval="True"/>
+        <field name="comment">Rätt! Ett svar kan låta självsäkert och ändå vara fel. Granska alltid.</field>
+        <field name="question_id" ref="slide_ai_s1_04_q2"/>
+    </record>
+    <record id="slide_ai_s1_04_q2_a2" model="slide.answer">
+        <field name="text_value">Den svarar alltid på engelska</field>
+        <field name="sequence">2</field>
+        <field name="is_correct" eval="False"/>
+        <field name="comment">Nej — språket är inte problemet.</field>
+        <field name="question_id" ref="slide_ai_s1_04_q2"/>
+    </record>
+    <record id="slide_ai_s1_04_q2_a3" model="slide.answer">
+        <field name="text_value">Den har inte tillgång till era system</field>
+        <field name="sequence">3</field>
+        <field name="is_correct" eval="False"/>
+        <field name="comment">Nej — den har visst tillgång. Det är just därför granskningen behövs.</field>
+        <field name="question_id" ref="slide_ai_s1_04_q2"/>
+    </record>
+
+    <record id="slide_ai_s1_04_q3" model="slide.question">
+        <field name="question">Vilken nivå innebär att assistenten utför en handling?</field>
+        <field name="sequence">3</field>
+        <field name="slide_id" ref="slide_ai_s1_04"/>
+    </record>
+    <record id="slide_ai_s1_04_q3_a1" model="slide.answer">
+        <field name="text_value">Läsa</field>
+        <field name="sequence">1</field>
+        <field name="is_correct" eval="False"/>
+        <field name="comment">Nej — läsa innebär att den tittar men inte rör.</field>
+        <field name="question_id" ref="slide_ai_s1_04_q3"/>
+    </record>
+    <record id="slide_ai_s1_04_q3_a2" model="slide.answer">
+        <field name="text_value">Föreslå</field>
+        <field name="sequence">2</field>
+        <field name="is_correct" eval="False"/>
+        <field name="comment">Nej — förslaget är just ett förslag, inget utförs.</field>
+        <field name="question_id" ref="slide_ai_s1_04_q3"/>
+    </record>
+    <record id="slide_ai_s1_04_q3_a3" model="slide.answer">
+        <field name="text_value">Utföra — men först efter ditt godkännande</field>
+        <field name="sequence">3</field>
+        <field name="is_correct" eval="True"/>
+        <field name="comment">Rätt! Även på utförandenivån krävs ditt aktiva godkännande.</field>
+        <field name="question_id" ref="slide_ai_s1_04_q3"/>
+    </record>
+
+    </data>
+</odoo>

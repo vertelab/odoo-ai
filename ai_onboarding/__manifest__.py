@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 {
     'name': 'AI: Assistant Onboarding',
-    'version': '18.0.1.0.0',
+    'version': '18.0.2.0.0',
     'summary': 'Onboardingskurs: co-pilot, coworker och AI i vardagen',
     'description': """
 Lär dig använda AI-assistenten: fråga, delegera och granska — med människan i kontrollen.
@@ -12,10 +12,11 @@ Lär dig använda AI-assistenten: fråga, delegera och granska — med människa
     'category': 'Website/eLearning',
     'depends': ['website_slides'],
     'data': [
-        'views/slide_channel_data.xml',
-    ],
-    'demo': [
-        'demo/slide_slide_demo.xml',
+        'data/slide_channel.xml',
+        'data/slide_slides_s1.xml',
+        'data/slide_slides_s2.xml',
+        'data/slide_slides_s3.xml',
+        'data/slide_slides_s4.xml',
     ],
     'installable': True,
     'auto_install': False,

@@ -1,0 +1,218 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="0">
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         SEKTION 2: Fråga och få svar
+         ═══════════════════════════════════════════════════════════════════ -->
+
+    <record id="slide_category_ai_s2" model="slide.slide">
+        <field name="name">2. Fråga och få svar</field>
+        <field name="is_category" eval="True"/>
+        <field name="channel_id" ref="ai_onboarding.slide_channel_ai"/>
+        <field name="sequence">100</field>
+    </record>
+
+    <record id="slide_ai_s2_01" model="slide.slide">
+        <field name="name">Att ställa bra frågor</field>
+        <field name="sequence">110</field>
+        <field name="slide_category">article</field>
+        <field name="channel_id" ref="ai_onboarding.slide_channel_ai"/>
+        <field name="is_published" eval="True"/>
+        <field name="is_preview" eval="True"/>
+        <field name="completion_time">0.30</field>
+        <field name="html_content" type="html">
+<section class="s_cover o_cc o_cc3 pt160 pb160">
+    <div class="container">
+        <h1 class="display-3-fs" style="text-align: center;">Att ställa bra frågor</h1>
+        <p class="lead" style="text-align: center;">Kvaliteten på svaret beror på kvaliteten på frågan.</p>
+    </div>
+</section>
+
+<section class="s_text_block pt64 pb40">
+    <div class="container s_allow_columns">
+        <h2>Var konkret</h2>
+        <p>”Hjälp mig med det här projektet” ger ingenting användbart. Assistenten vet inte vad du menar, vilken del du behöver hjälp med, eller vad resultatet ska bli.</p>
+        <p>”Sammanfatta de tre senaste mejlen från kunden X och lista vad vi lovat” är en fråga som går att besvara.</p>
+    </div>
+</section>
+
+<section class="s_text_block pt32 pb64">
+    <div class="container s_allow_columns">
+        <h2>Fyra saker som gör frågan bättre</h2>
+        <table class="table table-bordered">
+            <thead>
+                <tr><th>Gör detta</th><th>Istället för</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>Ange <strong>vad</strong> du vill ha</td><td>”Hjälp mig”</td></tr>
+                <tr><td>Ange <strong>format</strong> — lista, tabell, kort sammanfattning</td><td>”Berätta om…”</td></tr>
+                <tr><td>Ange <strong>målgrupp</strong> — vem ska läsa svaret?</td><td>Utan sammanhang</td></tr>
+                <tr><td>Ange <strong>avgränsning</strong> — vilken period, vilket projekt?</td><td>”Allt om…”</td></tr>
+            </tbody>
+        </table>
+        <p class="small text-muted">Du kan alltid följa upp och be om justering. Det första svaret behöver inte vara perfekt.</p>
+    </div>
+</section>
+
+<section class="s_text_image pt32 pb64">
+    <div class="container">
+        <div class="row align-items-center">
+            <div class="col-lg-6 pt16 pb16">
+                <h3 class="h4-fs">Exempel — svag fråga</h3>
+                <p class="border-start border-4 ps-3 text-muted">”Kan du titta på mejlen från Anders?”</p>
+                <p class="small">Assistenten vet inte vilka mejl, vilken period, eller vad du vill veta.</p>
+            </div>
+            <div class="col-lg-6 pt16 pb16">
+                <h3 class="h4-fs">Exempel — stark fråga</h3>
+                <p class="border-start border-4 ps-3">”Sammanfatta mejlen från Anders den senaste veckan i tre punkter, och markera om något kräver svar från mig.”</p>
+                <p class="small">Tydligt vad, tydligt format, tydlig avgränsning.</p>
+            </div>
+        </div>
+    </div>
+</section>
+        </field>
+        <field name="description">Hur du ställer frågor som ger användbara svar: var konkret, ange format, målgrupp och avgränsning. Med exempel på svag och stark fråga.</field>
+    </record>
+
+    <record id="slide_ai_s2_02" model="slide.slide">
+        <field name="name">Följdfrågor och iteration</field>
+        <field name="sequence">120</field>
+        <field name="slide_category">article</field>
+        <field name="channel_id" ref="ai_onboarding.slide_channel_ai"/>
+        <field name="is_published" eval="True"/>
+        <field name="is_preview" eval="True"/>
+        <field name="completion_time">0.25</field>
+        <field name="html_content" type="html">
+<section class="s_text_block pt64 pb40">
+    <div class="container s_allow_columns">
+        <h2>Första svaret är ett utkast</h2>
+        <p>Assistenten träffar sällan perfekt på första försöket — och det är inte meningen. Arbetssättet är <strong>iterativt</strong>: du får ett svar, säger vad som ska ändras, och får ett nytt.</p>
+    </div>
+</section>
+
+<section class="s_text_block pt32 pb64">
+    <div class="container s_allow_columns">
+        <h2>Användbara följdfrågor</h2>
+        <ul>
+            <li><strong>”Kortare.”</strong> — när svaret är för långt</li>
+            <li><strong>”Mer detaljerat om punkt 2.”</strong> — när något är för tunt</li>
+            <li><strong>”Skriv om för en kund som inte är teknisk.”</strong> — när målgruppen är fel</li>
+            <li><strong>”Vilka antaganden gjorde du?”</strong> — för att hitta svagheter i svaret</li>
+            <li><strong>”Vad talar emot det här?”</strong> — för att få motargument</li>
+        </ul>
+        <p class="small text-muted">Den sista är särskilt användbar. Be assistenten argumentera mot sig själv innan du fattar beslut.</p>
+    </div>
+</section>
+
+<section class="s_call_to_action o_cc o_cc5 pt48 pb48">
+    <div class="container">
+        <div class="row">
+            <div class="col-lg-9">
+                <h3>Be om källan när något är viktigt</h3>
+                <p class="lead">Ska svaret ligga till grund för ett beslut? Be assistenten visa varifrån uppgifterna kommer. Kan den inte det — behandla svaret med försiktighet.</p>
+            </div>
+        </div>
+    </div>
+</section>
+        </field>
+        <field name="description">Arbetssättet är iterativt: första svaret är ett utkast. Användbara följdfrågor och varför du ska be om källan när något är viktigt.</field>
+    </record>
+
+    <record id="slide_ai_s2_03" model="slide.slide">
+        <field name="name">🧪 Testa dina kunskaper — Fråga</field>
+        <field name="sequence">130</field>
+        <field name="slide_category">quiz</field>
+        <field name="channel_id" ref="ai_onboarding.slide_channel_ai"/>
+        <field name="is_published" eval="True"/>
+        <field name="completion_time">0.25</field>
+        <field name="quiz_first_attempt_reward">100</field>
+        <field name="quiz_second_attempt_reward">75</field>
+        <field name="quiz_third_attempt_reward">50</field>
+        <field name="quiz_fourth_attempt_reward">25</field>
+        <field name="description">Testa dina kunskaper om att ställa bra frågor och arbeta iterativt med assistenten.</field>
+    </record>
+
+    <record id="slide_ai_s2_03_q1" model="slide.question">
+        <field name="question">Vilken fråga ger bäst svar?</field>
+        <field name="sequence">1</field>
+        <field name="slide_id" ref="slide_ai_s2_03"/>
+    </record>
+    <record id="slide_ai_s2_03_q1_a1" model="slide.answer">
+        <field name="text_value">”Hjälp mig med projektet”</field>
+        <field name="sequence">1</field>
+        <field name="is_correct" eval="False"/>
+        <field name="comment">Nej — för vagt. Vad ska hjälpas med, och vad ska resultatet bli?</field>
+        <field name="question_id" ref="slide_ai_s2_03_q1"/>
+    </record>
+    <record id="slide_ai_s2_03_q1_a2" model="slide.answer">
+        <field name="text_value">”Sammanfatta de tre senaste mejlen från kund X i tre punkter”</field>
+        <field name="sequence">2</field>
+        <field name="is_correct" eval="True"/>
+        <field name="comment">Rätt! Tydligt vad, tydligt format och tydlig avgränsning.</field>
+        <field name="question_id" ref="slide_ai_s2_03_q1"/>
+    </record>
+    <record id="slide_ai_s2_03_q1_a3" model="slide.answer">
+        <field name="text_value">”Berätta allt om kunden”</field>
+        <field name="sequence">3</field>
+        <field name="is_correct" eval="False"/>
+        <field name="comment">Nej — ingen avgränsning, inget format, ingen målgrupp.</field>
+        <field name="question_id" ref="slide_ai_s2_03_q1"/>
+    </record>
+
+    <record id="slide_ai_s2_03_q2" model="slide.question">
+        <field name="question">Varför är det bra att be assistenten argumentera mot sitt eget svar?</field>
+        <field name="sequence">2</field>
+        <field name="slide_id" ref="slide_ai_s2_03"/>
+    </record>
+    <record id="slide_ai_s2_03_q2_a1" model="slide.answer">
+        <field name="text_value">Det hittar svagheter innan du fattar beslut</field>
+        <field name="sequence">1</field>
+        <field name="is_correct" eval="True"/>
+        <field name="comment">Rätt! Motargument synliggör antaganden du annars missar.</field>
+        <field name="question_id" ref="slide_ai_s2_03_q2"/>
+    </record>
+    <record id="slide_ai_s2_03_q2_a2" model="slide.answer">
+        <field name="text_value">Det går snabbare</field>
+        <field name="sequence">2</field>
+        <field name="is_correct" eval="False"/>
+        <field name="comment">Nej — det tar en extra fråga. Poängen är kvaliteten.</field>
+        <field name="question_id" ref="slide_ai_s2_03_q2"/>
+    </record>
+    <record id="slide_ai_s2_03_q2_a3" model="slide.answer">
+        <field name="text_value">Det krävs av systemet</field>
+        <field name="sequence">3</field>
+        <field name="is_correct" eval="False"/>
+        <field name="comment">Nej — det är ett arbetssätt, inte ett krav.</field>
+        <field name="question_id" ref="slide_ai_s2_03_q2"/>
+    </record>
+
+    <record id="slide_ai_s2_03_q3" model="slide.question">
+        <field name="question">Vad bör du göra om svaret ska ligga till grund för ett viktigt beslut?</field>
+        <field name="sequence">3</field>
+        <field name="slide_id" ref="slide_ai_s2_03"/>
+    </record>
+    <record id="slide_ai_s2_03_q3_a1" model="slide.answer">
+        <field name="text_value">Be om källan till uppgifterna</field>
+        <field name="sequence">1</field>
+        <field name="is_correct" eval="True"/>
+        <field name="comment">Rätt! Kan assistenten inte visa varifrån uppgifterna kommer bör du vara försiktig.</field>
+        <field name="question_id" ref="slide_ai_s2_03_q3"/>
+    </record>
+    <record id="slide_ai_s2_03_q3_a2" model="slide.answer">
+        <field name="text_value">Skicka det vidare direkt</field>
+        <field name="sequence">2</field>
+        <field name="is_correct" eval="False"/>
+        <field name="comment">Nej — utan kontroll tar du en onödig risk.</field>
+        <field name="question_id" ref="slide_ai_s2_03_q3"/>
+    </record>
+    <record id="slide_ai_s2_03_q3_a3" model="slide.answer">
+        <field name="text_value">Fråga en kollega istället</field>
+        <field name="sequence">3</field>
+        <field name="is_correct" eval="False"/>
+        <field name="comment">Nej — assistenten kan vara rätt verktyg. Be bara om källan.</field>
+        <field name="question_id" ref="slide_ai_s2_03_q3"/>
+    </record>
+
+    </data>
+</odoo>

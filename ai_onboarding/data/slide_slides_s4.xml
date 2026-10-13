@@ -1,0 +1,218 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="0">
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         SEKTION 4: Gränser och ansvar
+         ═══════════════════════════════════════════════════════════════════ -->
+
+    <record id="slide_category_ai_s4" model="slide.slide">
+        <field name="name">4. Gränser och ansvar</field>
+        <field name="is_category" eval="True"/>
+        <field name="channel_id" ref="ai_onboarding.slide_channel_ai"/>
+        <field name="sequence">300</field>
+    </record>
+
+    <record id="slide_ai_s4_01" model="slide.slide">
+        <field name="name">Vad du aldrig ska lägga in</field>
+        <field name="sequence">310</field>
+        <field name="slide_category">article</field>
+        <field name="channel_id" ref="ai_onboarding.slide_channel_ai"/>
+        <field name="is_published" eval="True"/>
+        <field name="is_preview" eval="True"/>
+        <field name="completion_time">0.30</field>
+        <field name="html_content" type="html">
+<section class="s_cover o_cc o_cc3 pt160 pb160">
+    <div class="container">
+        <h1 class="display-3-fs" style="text-align: center;">Vad du aldrig ska lägga in</h1>
+        <p class="lead" style="text-align: center;">Assistenten arbetar inom företagets system — men det finns saker som inte hör dit.</p>
+    </div>
+</section>
+
+<section class="s_text_block pt64 pb40">
+    <div class="container s_allow_columns">
+        <h2>Känsliga uppgifter</h2>
+        <p>Assistenten hanterar information som redan finns i systemet. Men du ska inte klistra in känsliga uppgifter i en fråga om de inte redan finns där av ett skäl.</p>
+    </div>
+</section>
+
+<section class="s_text_block pt32 pb64">
+    <div class="container s_allow_columns">
+        <h2>Tre kategorier att vara försiktig med</h2>
+        <table class="table table-bordered">
+            <thead>
+                <tr><th>Kategori</th><th>Exempel</th><th>Varför</th></tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>Personuppgifter</strong></td>
+                    <td>Känsliga uppgifter om anställda eller kunder</td>
+                    <td>Omfattas av dataskyddsregler</td>
+                </tr>
+                <tr>
+                    <td><strong>Inloggningsuppgifter</strong></td>
+                    <td>Lösenord, API-nycklar, tokens</td>
+                    <td>Ska aldrig finnas i text — de hör i säker lagring</td>
+                </tr>
+                <tr>
+                    <td><strong>Affärshemligheter</strong></td>
+                    <td>Bud, avtalsvillkor, prissättning</td>
+                    <td>Kräver att du vet var uppgiften tar vägen</td>
+                </tr>
+            </tbody>
+        </table>
+        <p class="small text-muted">Är du osäker — fråga IT eller din chef innan du lägger in något.</p>
+    </div>
+</section>
+
+<section class="s_call_to_action o_cc o_cc5 pt48 pb48">
+    <div class="container">
+        <div class="row">
+            <div class="col-lg-9">
+                <h3>Assistenten är inte en hemlig kanal</h3>
+                <p class="lead">Det du skriver till assistenten är en del av systemet och kan granskas. Behandla den som vilket arbetsverktyg som helst — inte som ett privat samtal.</p>
+            </div>
+        </div>
+    </div>
+</section>
+        </field>
+        <field name="description">Vad du aldrig ska lägga in i assistenten: personuppgifter, inloggningsuppgifter och affärshemligheter. Och varför assistenten inte är en privat kanal.</field>
+    </record>
+
+    <record id="slide_ai_s4_02" model="slide.slide">
+        <field name="name">Ansvar och efterlevnad</field>
+        <field name="sequence">320</field>
+        <field name="slide_category">article</field>
+        <field name="channel_id" ref="ai_onboarding.slide_channel_ai"/>
+        <field name="is_published" eval="True"/>
+        <field name="is_preview" eval="True"/>
+        <field name="completion_time">0.25</field>
+        <field name="html_content" type="html">
+<section class="s_text_block pt64 pb40">
+    <div class="container s_allow_columns">
+        <h2>Ansvar flyttas inte till AI:n</h2>
+        <p>Att ett AI-system föreslog något är ingen ursäkt. Ansvaret för ett beslut, ett mejl eller en bokföringspost ligger hos den människa som godkände den.</p>
+        <p>Det är därför godkännandesteget finns — och varför det ska tas på allvar.</p>
+    </div>
+</section>
+
+<section class="s_text_block pt32 pb64">
+    <div class="container s_allow_columns">
+        <h2>Praktiska regler</h2>
+        <ul>
+            <li><strong>Granska alltid</strong> innan du godkänner en skrivåtgärd.</li>
+            <li><strong>Be om källan</strong> när svaret ska ligga till grund för ett beslut.</li>
+            <li><strong>Dokumentera</strong> omständigheterna när ett AI-stöd använts i ett viktigt ärende.</li>
+            <li><strong>Säg till</strong> om assistenten gör något fel — det är så systemet blir bättre.</li>
+        </ul>
+    </div>
+</section>
+
+<section class="s_text_block pt32 pb64">
+    <div class="container s_allow_columns">
+        <h2>När assistenten har fel</h2>
+        <p>Det kommer att hända. Assistenten kan missförstå, dra fel slutsats eller hitta på en detalj. Det är inte ett systemfel — det är så språkmodeller fungerar.</p>
+        <p>Rätt hantering: avvisa förslaget, säg vad som var fel, och gå vidare. Om felet är återkommande — rapportera det så att instruktionerna kan förbättras.</p>
+    </div>
+</section>
+        </field>
+        <field name="description">Ansvaret flyttas inte till AI:n. Praktiska regler för granskning, källdokumentation och vad du gör när assistenten har fel.</field>
+    </record>
+
+    <record id="slide_ai_s4_03" model="slide.slide">
+        <field name="name">🧪 Testa dina kunskaper — Gränser och ansvar</field>
+        <field name="sequence">330</field>
+        <field name="slide_category">quiz</field>
+        <field name="channel_id" ref="ai_onboarding.slide_channel_ai"/>
+        <field name="is_published" eval="True"/>
+        <field name="completion_time">0.25</field>
+        <field name="quiz_first_attempt_reward">100</field>
+        <field name="quiz_second_attempt_reward">75</field>
+        <field name="quiz_third_attempt_reward">50</field>
+        <field name="quiz_fourth_attempt_reward">25</field>
+        <field name="description">Testa dina kunskaper om gränser, känsliga uppgifter och var ansvaret ligger.</field>
+    </record>
+
+    <record id="slide_ai_s4_03_q1" model="slide.question">
+        <field name="question">Vem bär ansvaret om ett AI-förslag visar sig vara fel?</field>
+        <field name="sequence">1</field>
+        <field name="slide_id" ref="slide_ai_s4_03"/>
+    </record>
+    <record id="slide_ai_s4_03_q1_a1" model="slide.answer">
+        <field name="text_value">Den som godkände förslaget</field>
+        <field name="sequence">1</field>
+        <field name="is_correct" eval="True"/>
+        <field name="comment">Rätt! Ansvaret ligger hos människan som godkände — därför är granskningen viktig.</field>
+        <field name="question_id" ref="slide_ai_s4_03_q1"/>
+    </record>
+    <record id="slide_ai_s4_03_q1_a2" model="slide.answer">
+        <field name="text_value">Leverantören av AI-modellen</field>
+        <field name="sequence">2</field>
+        <field name="is_correct" eval="False"/>
+        <field name="comment">Nej — ansvaret flyttas inte till tekniken.</field>
+        <field name="question_id" ref="slide_ai_s4_03_q1"/>
+    </record>
+    <record id="slide_ai_s4_03_q1_a3" model="slide.answer">
+        <field name="text_value">IT-avdelningen</field>
+        <field name="sequence">3</field>
+        <field name="is_correct" eval="False"/>
+        <field name="comment">Nej — de driftar systemet, men besluten är dina.</field>
+        <field name="question_id" ref="slide_ai_s4_03_q1"/>
+    </record>
+
+    <record id="slide_ai_s4_03_q2" model="slide.question">
+        <field name="question">Vilket av följande ska du aldrig klistra in i en fråga?</field>
+        <field name="sequence">2</field>
+        <field name="slide_id" ref="slide_ai_s4_03"/>
+    </record>
+    <record id="slide_ai_s4_03_q2_a1" model="slide.answer">
+        <field name="text_value">Ett projektnamn</field>
+        <field name="sequence">1</field>
+        <field name="is_correct" eval="False"/>
+        <field name="comment">Nej — projektnamn är normalt arbetsmaterial.</field>
+        <field name="question_id" ref="slide_ai_s4_03_q2"/>
+    </record>
+    <record id="slide_ai_s4_03_q2_a2" model="slide.answer">
+        <field name="text_value">Ett lösenord eller en API-nyckel</field>
+        <field name="sequence">2</field>
+        <field name="is_correct" eval="True"/>
+        <field name="comment">Rätt! Inloggningsuppgifter hör i säker lagring, aldrig i text.</field>
+        <field name="question_id" ref="slide_ai_s4_03_q2"/>
+    </record>
+    <record id="slide_ai_s4_03_q2_a3" model="slide.answer">
+        <field name="text_value">En sammanfattning av ett möte</field>
+        <field name="sequence">3</field>
+        <field name="is_correct" eval="False"/>
+        <field name="comment">Nej — det är ett typiskt och lämpligt användningsområde.</field>
+        <field name="question_id" ref="slide_ai_s4_03_q2"/>
+    </record>
+
+    <record id="slide_ai_s4_03_q3" model="slide.question">
+        <field name="question">Vad gör du om assistenten upprepade gånger gör samma fel?</field>
+        <field name="sequence">3</field>
+        <field name="slide_id" ref="slide_ai_s4_03"/>
+    </record>
+    <record id="slide_ai_s4_03_q3_a1" model="slide.answer">
+        <field name="text_value">Rapporterar det så att instruktionerna kan förbättras</field>
+        <field name="sequence">1</field>
+        <field name="is_correct" eval="True"/>
+        <field name="comment">Rätt! Återkommande fel ska rapporteras — det är så systemet blir bättre.</field>
+        <field name="question_id" ref="slide_ai_s4_03_q3"/>
+    </record>
+    <record id="slide_ai_s4_03_q3_a2" model="slide.answer">
+        <field name="text_value">Slutar använda assistenten</field>
+        <field name="sequence">2</field>
+        <field name="is_correct" eval="False"/>
+        <field name="comment">Nej — det löser ingenting. Rapportera istället.</field>
+        <field name="question_id" ref="slide_ai_s4_03_q3"/>
+    </record>
+    <record id="slide_ai_s4_03_q3_a3" model="slide.answer">
+        <field name="text_value">Accepterar felet som normalt</field>
+        <field name="sequence">3</field>
+        <field name="is_correct" eval="False"/>
+        <field name="comment">Nej — återkommande fel ska åtgärdas, inte vänjas vid.</field>
+        <field name="question_id" ref="slide_ai_s4_03_q3"/>
+    </record>
+
+    </data>
+</odoo>
