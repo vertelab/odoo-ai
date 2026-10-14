@@ -296,6 +296,66 @@ class TestOkfAccessInSelection(ConfigParamGuardedCase):
 
 
 @tagged('okf', 'access', 'post_install', '-at_install')
+class TestOkfClassifyCache(ConfigParamGuardedCase):
+    """Klassningen cachas per transaktion (2026-10-14).
+
+    VARFÖR: `_classify_source_model` kör två `search_count` per modell och
+    gjordes om vid VARJE OKF-sökning. Med `project.task` (~50 000 rader) är
+    det dyra aggregat — och en sökning kan klassificera ett dussin modeller.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.Resolver = cls.env['ai.access.resolver']
+        cls.user = cls.env.ref('base.user_admin')
+
+    def test_repeated_classification_is_cached(self):
+        """Andra anropet för samma (modell, användare) ska inte räkna om."""
+        first = self.Resolver._classify_source_model('res.company', self.user)
+        cache = self.Resolver._classify_cache()
+        key = ('res.company', self.user.id)
+        self.assertIn(key, cache, 'klassningen cachades inte')
+        self.assertEqual(cache[key], first)
+        second = self.Resolver._classify_source_model('res.company', self.user)
+        self.assertEqual(first, second)
+
+    def test_cache_is_keyed_per_model_and_user(self):
+        """Olika modeller/användare får egna nycklar — ingen sammanblandning."""
+        self.Resolver._classify_source_model('res.company', self.user)
+        self.Resolver._classify_source_model('res.partner', self.user)
+        cache = self.Resolver._classify_cache()
+        self.assertIn(('res.company', self.user.id), cache)
+        self.assertIn(('res.partner', self.user.id), cache)
+
+    def test_semantic_false_skips_embedding(self):
+        """`semantic=False` ska ge träffar UTAN att anropa en embedding-provider.
+
+        Regression 2026-10-14: embedding är ett synkront HTTP-anrop (20 s x
+        3 försök) — upp till 60 s för en interaktiv sökning. Ren svensk FTS
+        svarar på millisekunder.
+        """
+        Concept = self.env['ai.okf.concept']
+        atype_id = self.env['ai.artifact.type'].search([], limit=1).id or \
+            self.env.ref('ai_agent_core.artifact_type_learning').id
+        self.env.cr.execute("""
+            INSERT INTO ai_okf_concept
+                (concept_key, summary, scope, version, status, archived,
+                 artifact_type_id, owner_company_id, create_date, write_date)
+            VALUES ('semcache.1', 'Faktura till leverantör', 'company', 1,
+                    'stable', false, %s, %s, now(), now())
+        """, (atype_id, self.env.company.id))
+        # Patches the provider lookup: om embedding-vägen körs kastar testet.
+        with patch.object(
+                type(self.env['ai.provider']), '_embedding_provider',
+                side_effect=AssertionError(
+                    'embedding-provider anropades trots semantic=False')):
+            results = Concept._okf_search(
+                'faktura', limit=10, semantic=False)
+        self.assertIn('semcache.1', {c.concept_key for c in results})
+
+
+@tagged('okf', 'access', 'post_install', '-at_install')
 class TestOkfOpaqueSourceRef(ConfigParamGuardedCase):
     """Ogenomskinliga källreferenser — mail-arkivet (2026-10-14).
 

@@ -14,6 +14,18 @@ from odoo.exceptions import ValidationError
 
 _logger = logging.getLogger(__name__)
 
+# Request-scoped cache för modellklassningen (2026-10-14).
+#
+# Klassningen kostar två `search_count` per källmodell och gjordes om vid
+# VARJE OKF-sökning — med `project.task` (~50 000 rader) är det dyra
+# aggregat. Cachen nycklas på cursorn (transaktionen): en ny request är en
+# ny cursor, så ingen inaktuell behörighet kan överleva mellan anrop.
+#
+# Städas i `_register_hook`-motsvarande via `cr`-livscykeln: en cursor som
+# stängs lämnar ingen referens kvar eftersom vi rensar vid varje ny
+# transaktion (se `_classify_cache`).
+_CLASSIFY_CACHE = {}
+
 
 class AIAccessResolver(models.Model):
     _name = 'ai.access.resolver'
@@ -95,6 +107,60 @@ class AIAccessResolver(models.Model):
 
     @api.model
     def _classify_source_model(self, model_name, user):
+        """Klassa en källmodell för en användare: OPEN/CLOSED/PARTIAL.
+
+        Två `search_count` — ett aggregat, ingen radhämtning:
+
+            total   = Model.sudo().search_count([])
+            visible = Model.with_user(uid).search_count([])
+
+            visible == total  -> OPEN
+            visible == 0      -> CLOSED
+            annars            -> PARTIAL
+
+        Returnerar `(kind, ids)` där `ids` bara är satt för PARTIAL.
+
+        Fail-closed: en modell som inte finns i `self.env`, eller där
+        prövningen kastar, klassas som CLOSED — inte OPEN. Ett saknat svar
+        får aldrig tolkas som "synligt".
+
+        **Cachas per (modell, användare) inom requesten (2026-10-14).**
+        Klassningen kostar två `search_count` per modell, och den gjordes
+        om vid VARJE OKF-sökning. Med `project.task` (~50 000 rader) och
+        `res.partner` (~3 300) är det dyra aggregat — och en sökning kan
+        klassificera ett dussin modeller. Cachen lever bara i den aktuella
+        requesten (`self.env.cr`), så ingen inaktuell behörighet läcker
+        mellan anrop.
+        """
+        cache = self._classify_cache()
+        cache_key = (model_name, user.id if user else self.env.uid)
+        if cache_key in cache:
+            return cache[cache_key]
+        result = self._classify_source_model_uncached(model_name, user)
+        cache[cache_key] = result
+        return result
+
+    def _classify_cache(self):
+        """Request-scoped cache för modellklassningen.
+
+        Nycklas på `env.cr` (transaktionen) så cachen aldrig läcker mellan
+        requests — en ny request är en ny cursor. Ingen inaktuell
+        behörighet kan därmed överleva.
+
+        Cachen hålls liten: en cursor som stängts lämnar en död nyckel
+        kvar, så vi tömmer helt när den passerat en rimlig gräns. Att
+        tömma allt är billigare än att gissa vilka cursors som lever —
+        och en missad cache är bara en extra klassning, aldrig ett fel.
+        """
+        if len(_CLASSIFY_CACHE) > 32:
+            _CLASSIFY_CACHE.clear()
+        cache = _CLASSIFY_CACHE.get(self.env.cr)
+        if cache is None:
+            cache = {}
+            _CLASSIFY_CACHE[self.env.cr] = cache
+        return cache
+
+    def _classify_source_model_uncached(self, model_name, user):
         """Klassa en källmodell för en användare: OPEN/CLOSED/PARTIAL.
 
         Två `search_count` — ett aggregat, ingen radhämtning:

@@ -817,7 +817,7 @@ class AIOkfConcept(models.Model):
     def _okf_search(self, query, scope=None, artifact_type_ids=None,
                     department_context=None, time_window=None,
                     limit=20, user=None, hybrid=True, semantic_weight=None,
-                    owner_id=None, cross_user=False, **kw):
+                    owner_id=None, cross_user=False, semantic=True, **kw):
         """Sammansatt retrieval-pipeline (D9).
 
         Ersätter den gamla tredelade fallback-kedjan (pgvector → ILIKE →
@@ -914,23 +914,33 @@ class AIOkfConcept(models.Model):
 
         # 1. Query-embedding. Misslyckas den fortsätter vi med ren BM25 —
         #    det är den ärliga halva som fungerar.
+        #
+        #    `semantic=False` (2026-10-14): HOPPA ÖVER HTTP-anropet helt.
+        #    Embedding är ett synkront anrop till en extern provider med
+        #    timeout 20 s × 3 försök — upp till 60 s för en sökning när
+        #    providern hänger. För en interaktiv sökruta är det oanvändbart.
+        #    Ren svensk FTS (BM25) svarar på millisekunder och räcker för
+        #    "hitta mailet med fakturan". Anroparen väljer: interaktiv sökning
+        #    → semantic=False; agent-retrieval (där kvaliteten väger tyngre
+        #    än latensen) → semantic=True (default, bakåtkompatibelt).
         embedding = None
-        provider = self.env['ai.provider']._embedding_provider()
-        if provider:
-            # Frågan är en SÖKFRÅGA, inte ett dokument. Asymmetriska
-            # modeller (som embed-multilingual-v3.0) lägger dem i olika
-            # delar av rummet — fel val ger sämre träff, inte ett fel.
-            embedding = provider._get_embedding(
-                input=query, input_type='search_query')
-            if not embedding:
+        if semantic:
+            provider = self.env['ai.provider']._embedding_provider()
+            if provider:
+                # Frågan är en SÖKFRÅGA, inte ett dokument. Asymmetriska
+                # modeller (som embed-multilingual-v3.0) lägger dem i olika
+                # delar av rummet — fel val ger sämre träff, inte ett fel.
+                embedding = provider._get_embedding(
+                    input=query, input_type='search_query')
+                if not embedding:
+                    _logger.warning(
+                        'OKF-sökning: ingen query-vektor (provider=%s). '
+                        'Endast BM25-signalen bär resultatet (query=%.60s)',
+                        provider.name, query)
+            else:
                 _logger.warning(
-                    'OKF-sökning: ingen query-vektor (provider=%s). '
-                    'Endast BM25-signalen bär resultatet (query=%.60s)',
-                    provider.name, query)
-        else:
-            _logger.warning(
-                'OKF-sökning utan aktiv ai.provider — endast BM25 '
-                '(query=%.60s)', query)
+                    'OKF-sökning utan aktiv ai.provider — endast BM25 '
+                    '(query=%.60s)', query)
 
         # 2. Vikten. `semantic_weight` kommer från anroparen; annars
         #    modellens `hybrid_semantic_weight` (okf-recall-path 2.4) —
