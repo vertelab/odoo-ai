@@ -1467,9 +1467,20 @@ class AICoworkerSession(models.Model):
                     'sys_multiplier': sys_mult,
                     'model_real': model_real or '',
                 }
-                # Tool-meddelanden: OpenAI:s tool_call_id → spara som namn.
+                # Tool-meddelanden: OpenAI:s tool_call_id paras med
+                # assistant-radens tool_calls[].id (pi-session-handover).
+                #
+                # VARFÖR båda fälten: `tool_call_id` är den EXAKTA
+                # parningen — utan den måste en läsare gissa ihop anrop
+                # och resultat via tool_name + ordning, vilket går sönder
+                # så snart två anrop av samma verktyg följer på varandra.
+                # `tool_name` är för läsbarhet och för ai.tool:s
+                # meddelandelista. Fram till 2026-10-14 sparades bara
+                # namnet, och id:t slängdes — kommentaren sa till och med
+                # "spara som namn".
                 if role == 'tool':
-                    vals['tool_name'] = m.get('name') or m.get('tool_call_id') or ''
+                    vals['tool_name'] = m.get('name') or ''
+                    vals['tool_call_id'] = m.get('tool_call_id') or ''
                 if m.get('tool_calls'):
                     vals['tool_calls'] = json.dumps(
                         m.get('tool_calls'), ensure_ascii=False)

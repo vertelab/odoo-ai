@@ -218,3 +218,59 @@ class TestPiSessionLink(common.TransactionCase):
         assistants = sess.session_line_ids.filtered(
             lambda l: l.role == 'assistant')
         self.assertEqual(len(assistants), 1)
+
+    # ── tool_call_id sparas (pi-session-handover 8.6) ─────────────────
+    #
+    # FYND 2026-10-14: openai_api-vägen (den Pi använder) sparade bara
+    # `tool_name` och använde tool_call_id som FALLBACK för namnet —
+    # id:t slängdes. Utan id kan en tool-rad inte paras exakt med sin
+    # assistant-rad; en läsare måste gissa via namn + ordning, vilket
+    # går sönder så snart två anrop av samma verktyg följer på varandra.
+    # Web-UI-vägen (stream.py) skrev id:t hela tiden.
+
+    def test_tool_call_id_persisted_from_pi_messages(self):
+        """openai_api-vägen ska spara tool_call_id, inte bara tool_name."""
+        session = self.env['ai.coworker.session'].create({
+            'name': 'tool-call-id-test', 'init_type': 'openai_api'})
+        messages = [
+            {'role': 'user', 'content': 'kör två verktyg'},
+            {'role': 'assistant', 'content': 'ok', 'tool_calls': [
+                {'id': 'call_aaa', 'type': 'function',
+                 'function': {'name': 'same_tool', 'arguments': '{}'}},
+                {'id': 'call_bbb', 'type': 'function',
+                 'function': {'name': 'same_tool', 'arguments': '{}'}},
+            ]},
+            {'role': 'tool', 'content': 'första', 'name': 'same_tool',
+             'tool_call_id': 'call_aaa'},
+            {'role': 'tool', 'content': 'andra', 'name': 'same_tool',
+             'tool_call_id': 'call_bbb'},
+        ]
+        self.env['ai.coworker.session']._persist_pi_messages(
+            self.env, session, messages)
+        tools = session.session_line_ids.sorted('sequence').filtered(
+            lambda l: l.role == 'tool')
+        self.assertEqual(len(tools), 2)
+        self.assertEqual(
+            [t.tool_call_id for t in tools], ['call_aaa', 'call_bbb'],
+            'tool_call_id ska sparas och skilja två anrop av samma verktyg')
+        self.assertEqual([t.tool_name for t in tools],
+                         ['same_tool', 'same_tool'])
+
+    def test_tool_call_ids_are_unique_in_assistant_row(self):
+        """Assistant-radens tool_calls ska bära unika id:n."""
+        import json as _json
+        session = self.env['ai.coworker.session'].create({
+            'name': 'tool-call-id-unique', 'init_type': 'openai_api'})
+        self.env['ai.coworker.session']._persist_pi_messages(
+            self.env, session, [
+                {'role': 'assistant', 'content': '', 'tool_calls': [
+                    {'id': 'call_1', 'type': 'function',
+                     'function': {'name': 'a', 'arguments': '{}'}},
+                    {'id': 'call_2', 'type': 'function',
+                     'function': {'name': 'b', 'arguments': '{}'}},
+                ]},
+            ])
+        line = session.session_line_ids.filtered(
+            lambda l: l.role == 'assistant')
+        ids = [t['id'] for t in _json.loads(line.tool_calls)]
+        self.assertEqual(len(ids), len(set(ids)), 'id:n måste vara unika')
