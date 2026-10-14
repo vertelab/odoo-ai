@@ -4546,6 +4546,20 @@ class AIOpenAIAPI(http.Controller):
                 # Sessionen kan sakna coworker_id (t.ex. Pi-extensionens
                 # sessions/lookup-väg) — lös istället via det skickade alias:et.
                 quest = self._resolve_coworker(coworker_ref)
+            # Steg 1 (T/11527) skapar ratt session innan fallback, sa en
+            # avvikelse har borde vara sallsynt — men om sessionen och den
+            # efterfragade coworkern anda pekar pa olika coworkers kor
+            # verktyget med sessionens register, inte den efterfragades.
+            # Gor avvikelsen synlig i stallet for tyst (T/11533 steg 2).
+            if sess.exists() and sess.coworker_id and coworker_ref:
+                ref_quest = self._resolve_coworker(coworker_ref)
+                if ref_quest and ref_quest.id != sess.coworker_id.id:
+                    _logger.warning(
+                        'tools/run: coworker mismatch — session %s is bound '
+                        'to coworker %s but request asked for coworker %s '
+                        '(%r); using the session coworker',
+                        sess.id, sess.coworker_id.id, ref_quest.id,
+                        coworker_ref)
             if not quest.exists():
                 return Response(json.dumps({'error': {
                     'message': 'No coworker session context; pass a valid session_id or coworker',
@@ -4589,8 +4603,27 @@ class AIOpenAIAPI(http.Controller):
                     args = args['arguments']
                 tool = reg.get(name)
                 if not tool:
+                    # Skilj pa tva fall (T/11533): verktyget finns inte alls
+                    # i Odoo (ai.tool) — eller finns men ar inte tillgangligt
+                    # i DENNA coworker-kontext (fel coworker/access-grupp/
+                    # nats-exkluderat). Ett enda meddelande dolde skillnaden
+                    # och gjorde felkonfiguration svar att diagnostisera.
+                    # Registret anvander saniterade namn; slå darfor upp bade
+                    # det råa och det saniterade namnet i ai.tool.
+                    from odoo.addons.ai_agent_core.core.tools import (
+                        _sanitize_tool_name)
+                    known = tool_env['ai.tool'].sudo().search(
+                        [('name', 'in', [name, _sanitize_tool_name(name)])],
+                        limit=1)
+                    if known:
+                        return {'name': name,
+                                'result': (
+                                    f"Tool '{name}' not available for "
+                                    f"coworker '{quest.name}' "
+                                    f"(session {sess.id})"),
+                                'is_error': True}
                     return {'name': name,
-                            'result': f"Unknown or not-allowed tool '{name}'",
+                            'result': f"Unknown tool '{name}'",
                             'is_error': True}
                 try:
                     result = await tool.execute(**args)
