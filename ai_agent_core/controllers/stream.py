@@ -3036,6 +3036,10 @@ class AIOpenAIAPI(http.Controller):
 
         Listan är användarens EGEN (behörighetsgräns i listmetoden, inte
         bara ett UI-filter).
+
+        Varje post bär `pi_session_id` — det är nyckeln klienten matchar
+        mot sina LOKALA sessioner för att sätta markeringen. Utan den kan
+        extensionen inte veta vilken av dess filer posten gäller.
         """
         if not self._check_api_key():
             return self._json_error('Unauthorized', 'authentication_error', 401)
@@ -3063,6 +3067,9 @@ class AIOpenAIAPI(http.Controller):
         return Response(json.dumps({
             'offered': [{
                 'session_id': s.id,
+                'pi_session_id': s.pi_session_id or '',
+                'pi_session_ids': s.pi_session_ids or '',
+                'state': 'offered',
                 'note': s.handover_note or '',
                 'mode': s.handover_mode or 'note',
                 'age': _age(s.handover_at),
@@ -3070,20 +3077,25 @@ class AIOpenAIAPI(http.Controller):
             } for s in offered],
             'suggestions': [{
                 'session_id': s.id,
+                'pi_session_id': s.pi_session_id or '',
+                'state': 'aborted',
                 'title': s.name or '',
                 'init_type': s.init_type or '',
                 'age': _age(s.write_date),
             } for s in suggestions],
         }), content_type='application/json')
 
-    @http.route('/ai/v1/handover/offer', type='http', auth='public',
+    @http.route('/ai/v1/handover/transcript', type='http', auth='public',
                 methods=['POST'], csrf=False, sitemap=False)
-    def handover_offer(self, **kw):
-        """POST /ai/v1/handover/offer — begär en explicit handover.
+    def handover_transcript(self, **kw):
+        """POST /ai/v1/handover/transcript — sessionens rader som JSON.
 
-        Body: {session_id, note, auto}
-        auto=true härleder anteckningen ur sessionens eftermäle och
-        föreslår mode utifrån hur arbetet såg ut (D6).
+        Pi-sessionens JSONL-fil bor på den URSPRUNGLIGA maskinens disk.
+        På en annan maskin finns den inte — därför REKONSTRUERAS
+        historiken ur Odoo:s rader (pi-session-handover D10).
+
+        Odoo levererar data; Pi bygger sin fil. Kärnan känner inte till
+        Pi:s sessionsformat (D12) — den skickar bara raderna i ordning.
         """
         if not self._check_api_key():
             return self._json_error('Unauthorized', 'authentication_error', 401)
@@ -3091,25 +3103,41 @@ class AIOpenAIAPI(http.Controller):
             body = json.loads(request.httprequest.data or '{}')
         except json.JSONDecodeError:
             return self._json_error('Invalid JSON', 'invalid_request_error', 400)
-        session = request.env['ai.coworker.session'].sudo().browse(
-            int(body.get('session_id') or 0))
-        if not session.exists():
+
+        Session = request.env['ai.coworker.session'].sudo()
+        session = None
+        sid = int(body.get('session_id') or 0)
+        if sid:
+            session = Session.browse(sid)
+        elif body.get('pi_session_id'):
+            session = Session.search(
+                [('pi_session_id', '=', body['pi_session_id'])], limit=1)
+        if not session or not session.exists():
             return self._json_error('Session not found', 'invalid_request_error', 404)
         if session.user_id != request.env.user:
             return self._json_error(
-                'Handover sker inom samma användare.',
+                'Sessionen tillhör en annan användare.',
                 'permission_error', 403)
 
-        note = (body.get('note') or '').strip()
-        mode = 'note'
-        if body.get('auto'):
-            note = note or session._handover_derive_note()
-            mode = session._handover_suggest_mode()
-        session.action_handover_offer(note=note, mode=mode)
+        lines = session.session_line_ids.sorted('sequence')
         return Response(json.dumps({
             'session_id': session.id,
-            'note': session.handover_note or '',
-            'mode': session.handover_mode,
+            'pi_session_id': session.pi_session_id or '',
+            'name': session.name or '',
+            'handover_note': session.handover_note or '',
+            'handover_mode': session.handover_mode or 'note',
+            'lines': [{
+                'sequence': l.sequence,
+                'role': l.role,
+                'content': l.content or '',
+                'tool_calls': l.tool_calls or '',
+                'tool_name': l.tool_name or '',
+                'tool_call_id': l.tool_call_id or '',
+                'reasoning': l.reasoning or '',
+                'model_real': l.model_real or '',
+                'token_input': l.token_input or 0,
+                'token_output': l.token_output or 0,
+            } for l in lines],
         }), content_type='application/json')
 
     @http.route('/ai/v1/handover/claim', type='http', auth='public',
@@ -3149,30 +3177,6 @@ class AIOpenAIAPI(http.Controller):
             'mode': session.handover_mode,
             'pi_session_id': session.pi_session_id or '',
             'pi_session_ids': session.pi_session_ids or '',
-        }), content_type='application/json')
-
-    @http.route('/ai/v1/handover/done', type='http', auth='public',
-                methods=['POST'], csrf=False, sitemap=False)
-    def handover_done(self, **kw):
-        """POST /ai/v1/handover/done — infria löftet."""
-        if not self._check_api_key():
-            return self._json_error('Unauthorized', 'authentication_error', 401)
-        try:
-            body = json.loads(request.httprequest.data or '{}')
-        except json.JSONDecodeError:
-            return self._json_error('Invalid JSON', 'invalid_request_error', 400)
-        session = request.env['ai.coworker.session'].sudo().browse(
-            int(body.get('session_id') or 0))
-        if not session.exists():
-            return self._json_error('Session not found', 'invalid_request_error', 404)
-        if session.user_id != request.env.user:
-            return self._json_error(
-                'Handover sker inom samma användare.',
-                'permission_error', 403)
-        session.action_handover_done()
-        return Response(json.dumps({
-            'session_id': session.id,
-            'state': session.handover_state,
         }), content_type='application/json')
 
     @http.route('/ai/v1/<string:coworker>/chat/completions', type='http', auth='public',
