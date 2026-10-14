@@ -3085,6 +3085,59 @@ class AIOpenAIAPI(http.Controller):
             } for s in suggestions],
         }), content_type='application/json')
 
+    @http.route('/ai/v1/handover/offer', type='http', auth='public',
+                methods=['POST'], csrf=False, sitemap=False)
+    def handover_offer(self, **kw):
+        """POST /ai/v1/handover/offer — skapa en EXPLICIT handover.
+
+        Luckan som D9 lämnade: väljaren kan läsa och claima, men inte sätta
+        `offered`. En implicit handover upptäcks automatiskt (avbruten tur);
+        en explicit är ett LÖFTE som bara kan skapas medvetet — och det
+        fanns ingen yta för det. Fältet gick bara att sätta via Odoo-shell.
+
+        Body: {"session_id": N | "pi_session_id": "...", "note": "..."}
+
+        Sessionen identifieras helst på `pi_session_id` — det är vad Pi
+        känner till om sig själv. `session_id` finns för Odoo-UI:t och
+        tester. Båda accepteras; `pi_session_id` vinner om båda anges.
+        """
+        if not self._check_api_key():
+            return self._json_error('Unauthorized', 'authentication_error', 401)
+        try:
+            body = json.loads(request.httprequest.data or '{}')
+        except json.JSONDecodeError:
+            return self._json_error('Invalid JSON', 'invalid_request_error', 400)
+
+        session_id = int(body.get('session_id') or 0)
+        pi_session_id = (body.get('pi_session_id') or '').strip()
+        note = (body.get('note') or '').strip()
+        mode = (body.get('mode') or 'note').strip() or 'note'
+
+        Session = request.env['ai.coworker.session'].sudo()
+        user = request.env.user
+        sess = Session.browse(0)
+        if pi_session_id:
+            sess = Session.search([('pi_session_id', '=', pi_session_id)],
+                                  limit=1)
+        if not sess.exists() and session_id:
+            sess = Session.browse(session_id)
+        if not sess.exists():
+            return self._json_error('Session not found', 'not_found', 404)
+
+        # Samma behörighetsgräns som listan: man lämnar bara över sitt eget.
+        if sess.user_id.id != user.id:
+            return self._json_error('Not your session', 'forbidden', 403)
+
+        sess.action_handover_offer(note=note, mode=mode)
+        request.env.cr.commit()
+        return Response(json.dumps({
+            'ok': True,
+            'session_id': sess.id,
+            'pi_session_id': sess.pi_session_id or '',
+            'state': sess.handover_state,
+            'note': sess.handover_note or '',
+        }), content_type='application/json')
+
     @http.route('/ai/v1/handover/transcript', type='http', auth='public',
                 methods=['POST'], csrf=False, sitemap=False)
     def handover_transcript(self, **kw):
