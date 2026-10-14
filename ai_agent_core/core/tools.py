@@ -1621,6 +1621,75 @@ async def _tool_graph_query(env, query: str = "") -> str:
 # Global NATS connection (lazy-init)
 _nats_connection = None
 
+#: NATS KV-bucket för mesh-lås — PROTOKOLL, samma som i `nats.ts`.
+#: Ändra inte namnet utan att tömma den gamla bucketen.
+NATS_KV_BUCKET = 'pi_mesh_locks'
+
+
+def nats_kv_create(key: str, value: str) -> bool:
+    """Atomiskt lås i NATS KV — compare-and-swap (pi-session-handover D5).
+
+    `create()` lyckas BARA om nyckeln inte finns. Atomiskt på servern:
+    den som först skriver vinner, den andra får en konflikt och backar.
+    Det är den koordinator som gör att två Pi:er aldrig samtidigt tror
+    att de äger samma session.
+
+    Synkron (körs i egen loop): anropas från ORM-kod, inte från
+    AgentLoop. Returnerar True om låset togs, False annars — aldrig ett
+    undantag (en handover som inte kan låsas ska nekas, inte krascha).
+    """
+    import asyncio
+    import os
+
+    async def _run():
+        from nats import connect as nats_connect
+        from nats.js.api import KeyValueConfig
+        nats_url = os.environ.get('NATS_URL', 'nats://localhost:4222')
+        nc = await asyncio.wait_for(nats_connect(nats_url), timeout=5.0)
+        try:
+            js = nc.jetstream()
+            try:
+                kv = await js.key_value(NATS_KV_BUCKET)
+            except Exception:
+                # Bucketen finns inte — skapa den. `history=1` räcker: vi
+                # bryr oss bara om nuvarande ägare, inte om historiken.
+                kv = await js.create_key_value(
+                    config=KeyValueConfig(bucket=NATS_KV_BUCKET, history=1))
+            await kv.create(key, value.encode())
+            return True
+        finally:
+            await nc.close()
+
+    try:
+        return asyncio.run(_run())
+    except Exception as e:
+        # Konflikt (nyckeln finns) eller NATS otillgängligt → neka.
+        _logger.info('NATS KV create nekad för %s: %s', key, e)
+        return False
+
+
+def nats_kv_delete(key: str) -> bool:
+    """Släpp ett KV-lås. Best-effort — returnerar False vid fel."""
+    import asyncio
+    import os
+
+    async def _run():
+        from nats import connect as nats_connect
+        nats_url = os.environ.get('NATS_URL', 'nats://localhost:4222')
+        nc = await asyncio.wait_for(nats_connect(nats_url), timeout=5.0)
+        try:
+            kv = await nc.jetstream().key_value(NATS_KV_BUCKET)
+            await kv.delete(key)
+            return True
+        finally:
+            await nc.close()
+
+    try:
+        return asyncio.run(_run())
+    except Exception as e:
+        _logger.debug('NATS KV delete misslyckades för %s: %s', key, e)
+        return False
+
 
 # ---------------------------------------------------------------------------
 # NATS Executor — request-reply for tool delegation (tool-executor-nats)

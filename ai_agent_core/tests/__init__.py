@@ -77,3 +77,7 @@ from . import test_coworker_delegation
 # aldrig, vilket är varför en tom graf (0 noder, last_sync=NULL) kunde
 # förbli oupptäckt.
 from . import test_graph_executor
+
+# Handover (pi-session-handover): tillståndet på sessionen, de tre
+# avbrottsformerna, behörighetsgränsen och mode-förslaget.
+from . import test_handover

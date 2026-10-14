@@ -3013,6 +3013,168 @@ class AIOpenAIAPI(http.Controller):
             'cost_context_confirmed': session.cost_context_confirmed,
         }), content_type='application/json')
 
+    @staticmethod
+    def _json_error(message, err_type='invalid_request_error', status=400):
+        """JSON-fel för /ai/v1/** — aldrig Werkzeug-HTML.
+
+        Samma skäl som _error_json: Odoo renderar HTTPException som en
+        HTML-sida för type='http'-routes, vilket blir ogenomskinligt i
+        klienten. Här blir det alltid giltig JSON.
+        """
+        return Response(json.dumps({
+            'error': {'message': message, 'type': err_type}}),
+            status=status, content_type='application/json')
+
+    @http.route('/ai/v1/handover/list', type='http', auth='public',
+                methods=['POST'], csrf=False, sitemap=False)
+    def handover_list(self, **kw):
+        """POST /ai/v1/handover/list — hängande handovers + förslag.
+
+        Två sektioner, för de är olika saker:
+          offered      explicita — ett LÖFTE, ligger kvar tills det infrias
+          suggestions  implicita — ingen state, en FRÅGA vid läsning
+
+        Listan är användarens EGEN (behörighetsgräns i listmetoden, inte
+        bara ett UI-filter).
+        """
+        if not self._check_api_key():
+            return self._json_error('Unauthorized', 'authentication_error', 401)
+        Session = request.env['ai.coworker.session'].sudo()
+        user = request.env.user
+
+        offered = Session.search(
+            Session._handover_owned_domain(user) + [
+                ('handover_state', '=', 'offered'),
+            ], order='handover_at asc')
+        suggestions = Session._handover_suggestions(user=user, limit=20)
+
+        def _age(dt):
+            if not dt:
+                return ''
+            delta = fields.Datetime.now() - dt
+            days = delta.days
+            hours = delta.seconds // 3600
+            if days:
+                return '%dd' % days
+            if hours:
+                return '%dh' % hours
+            return '%dm' % max(1, delta.seconds // 60)
+
+        return Response(json.dumps({
+            'offered': [{
+                'session_id': s.id,
+                'note': s.handover_note or '',
+                'mode': s.handover_mode or 'note',
+                'age': _age(s.handover_at),
+                'title': s.name or '',
+            } for s in offered],
+            'suggestions': [{
+                'session_id': s.id,
+                'title': s.name or '',
+                'init_type': s.init_type or '',
+                'age': _age(s.write_date),
+            } for s in suggestions],
+        }), content_type='application/json')
+
+    @http.route('/ai/v1/handover/offer', type='http', auth='public',
+                methods=['POST'], csrf=False, sitemap=False)
+    def handover_offer(self, **kw):
+        """POST /ai/v1/handover/offer — begär en explicit handover.
+
+        Body: {session_id, note, auto}
+        auto=true härleder anteckningen ur sessionens eftermäle och
+        föreslår mode utifrån hur arbetet såg ut (D6).
+        """
+        if not self._check_api_key():
+            return self._json_error('Unauthorized', 'authentication_error', 401)
+        try:
+            body = json.loads(request.httprequest.data or '{}')
+        except json.JSONDecodeError:
+            return self._json_error('Invalid JSON', 'invalid_request_error', 400)
+        session = request.env['ai.coworker.session'].sudo().browse(
+            int(body.get('session_id') or 0))
+        if not session.exists():
+            return self._json_error('Session not found', 'invalid_request_error', 404)
+        if session.user_id != request.env.user:
+            return self._json_error(
+                'Handover sker inom samma användare.',
+                'permission_error', 403)
+
+        note = (body.get('note') or '').strip()
+        mode = 'note'
+        if body.get('auto'):
+            note = note or session._handover_derive_note()
+            mode = session._handover_suggest_mode()
+        session.action_handover_offer(note=note, mode=mode)
+        return Response(json.dumps({
+            'session_id': session.id,
+            'note': session.handover_note or '',
+            'mode': session.handover_mode,
+        }), content_type='application/json')
+
+    @http.route('/ai/v1/handover/claim', type='http', auth='public',
+                methods=['POST'], csrf=False, sitemap=False)
+    def handover_claim(self, **kw):
+        """POST /ai/v1/handover/claim — ta över en handover.
+
+        Ägarskapet överförs atomiskt via NATS KV (D5). Kan låset inte tas
+        nekas claimen — ingen halv handover skrivs.
+        """
+        if not self._check_api_key():
+            return self._json_error('Unauthorized', 'authentication_error', 401)
+        try:
+            body = json.loads(request.httprequest.data or '{}')
+        except json.JSONDecodeError:
+            return self._json_error('Invalid JSON', 'invalid_request_error', 400)
+        session = request.env['ai.coworker.session'].sudo().browse(
+            int(body.get('session_id') or 0))
+        if not session.exists():
+            return self._json_error('Session not found', 'invalid_request_error', 404)
+        if session.user_id != request.env.user:
+            return self._json_error(
+                'Handover sker inom samma användare.',
+                'permission_error', 403)
+        pi_session_id = (body.get('pi_session_id') or '').strip()
+        try:
+            ok = session.action_handover_claim(pi_session_id=pi_session_id)
+        except Exception as exc:  # noqa: BLE001
+            return self._json_error(str(exc), 'invalid_request_error', 400)
+        if not ok:
+            return self._json_error(
+                'Sessionen ägs redan av en annan Pi (låset kunde inte tas).',
+                'conflict_error', 409)
+        return Response(json.dumps({
+            'session_id': session.id,
+            'note': session.handover_note or '',
+            'mode': session.handover_mode,
+            'pi_session_id': session.pi_session_id or '',
+            'pi_session_ids': session.pi_session_ids or '',
+        }), content_type='application/json')
+
+    @http.route('/ai/v1/handover/done', type='http', auth='public',
+                methods=['POST'], csrf=False, sitemap=False)
+    def handover_done(self, **kw):
+        """POST /ai/v1/handover/done — infria löftet."""
+        if not self._check_api_key():
+            return self._json_error('Unauthorized', 'authentication_error', 401)
+        try:
+            body = json.loads(request.httprequest.data or '{}')
+        except json.JSONDecodeError:
+            return self._json_error('Invalid JSON', 'invalid_request_error', 400)
+        session = request.env['ai.coworker.session'].sudo().browse(
+            int(body.get('session_id') or 0))
+        if not session.exists():
+            return self._json_error('Session not found', 'invalid_request_error', 404)
+        if session.user_id != request.env.user:
+            return self._json_error(
+                'Handover sker inom samma användare.',
+                'permission_error', 403)
+        session.action_handover_done()
+        return Response(json.dumps({
+            'session_id': session.id,
+            'state': session.handover_state,
+        }), content_type='application/json')
+
     @http.route('/ai/v1/<string:coworker>/chat/completions', type='http', auth='public',
                 methods=['POST'], csrf=False, sitemap=False)
     def coworker_chat(self, coworker, **kw):

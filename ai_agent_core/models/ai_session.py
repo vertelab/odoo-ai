@@ -19,6 +19,18 @@ def register_cost_context_strategy(key, fn):
     _COST_CONTEXT_STRATEGIES[key] = fn
 
 
+def _handover_kv_key(value):
+    """KV-nyckel för en session — NATS-nycklar tål inte `:` eller `/`.
+
+    Samma kodning som `lockKey()` i `nats.ts` (base64url): Pi-extensionen
+    och Odoo måste räkna fram EXAKT samma nyckel, annars låser de olika
+    nycklar och två ägare kan släppas in.
+    """
+    import base64
+    raw = str(value or '').encode('utf-8')
+    return base64.urlsafe_b64encode(raw).decode('ascii').rstrip('=')
+
+
 def get_cost_context_strategy(key):
     """Hämta en registrerad resolver-strategi (eller None)."""
     return _COST_CONTEXT_STRATEGIES.get(key)
@@ -313,7 +325,16 @@ class AICoworkerSession(models.Model):
     pi_session_id = fields.Char(
         'Pi Session ID', index=True,
         help='Pi-sessionens UUID (1:1 mot Pi-sessionen). Resumé av samma '
-             'Pi-session återfinner samma Odoo-session.')
+             'Pi-session återfinner samma Odoo-session. Vid handover byts '
+             'fältet till den NYA innehavaren — historiken finns i '
+             'pi_session_ids.')
+    pi_session_ids = fields.Char(
+        'Pi Sessions (historik)',
+        help='Komma-separerad lista av samtliga Pi-sessioners UUID som '
+             'arbetat i denna Odoo-session, i kronologisk ordning. '
+             'Append-only: den första är sessionens ursprung, den sista är '
+             'aktuell innehavare (samma som pi_session_id). Handover är det '
+             'enda fallet där två Pi-sessioner delar en Odoo-session.')
     pi_message_count = fields.Integer(
         'Pi Messages Persisted', default=0, copy=False,
         help='Antal poster i Pi-klientens messages[] som redan sparats som '
@@ -330,6 +351,50 @@ class AICoworkerSession(models.Model):
         help='Sätts när kostnadsbelastningen bekräftats (en gång per '
              'session). Redan bekräftad session frågar inte om igen '
              '(inte heller efter resume/fork-kopiering).')
+
+    # ── Handover (pi-session-handover) ──────────────────────────────────
+    # En användare avbryter en session på en dator och fortsätter på en
+    # annan Pi. Tillståndet bor här (Odoo är auktoritativt och överlever
+    # båda maskinerna). Fälten är LIFECYCLE — de får fyllas i efteråt,
+    # medan sessionens rader förblir orörbara (append-only).
+    #
+    # Två former, och de skiljer sig i hur mycket information som finns:
+    #   EXPLICIT (offered)  användaren bad om den. Ett LÖFTE — gäller
+    #                       tills den startas igen, kan ligga i dygn.
+    #                       Städas ALDRIG av cron.
+    #   IMPLICIT            ingen state alls. En FRÅGA vid läsning:
+    #                       "vilka sessioner slutade mitt i en tur?"
+    #                       Se _handover_suggestions().
+    handover_state = fields.Selection([
+        ('none', 'Ingen'),
+        ('offered', 'Erbjuden — väntar på att hämtas'),
+        ('claimed', 'Övertagen — arbetas i'),
+        ('done', 'Infriad'),
+    ], string='Handover', default='none', index=True, tracking=True,
+        help='Explicit handover: none → offered → claimed → done. '
+             'En offered handover är ett löfte och städas aldrig av cron.')
+    handover_note = fields.Text(
+        'Handover-anteckning',
+        help='Vad som beslutats och vad som väntar ("nästa: fixa certet på '
+             'gw1"). Skrivs av användaren, eller härleds ur eftermälet med '
+             '--auto. Injiceras som första kontext när sessionen claimas.')
+    handover_mode = fields.Selection([
+        ('note', 'Anteckning — friskt sammanhang'),
+        ('full', 'Full — verktygsspåret tillgängligt'),
+    ], string='Handover-läge', default='note',
+        help='note: anteckningen injiceras som första kontext (litet '
+             'kontextfönster). full: hela transkriptet finns tillgängligt '
+             '+ anteckningen — nödvändigt när arbetet var "mitt-i-handen" '
+             '(halvfärdiga kommandon, felsökning).')
+    handover_at = fields.Datetime('Handover begärd', readonly=True)
+    handover_by = fields.Many2one(
+        'res.users', string='Handover av', readonly=True, index=True,
+        help='Användaren som begärde handovern. Handover sker alltid inom '
+             'samma användare — att lämna över till en annan person är '
+             'delegering, inte handover.')
+    handover_claimed_by = fields.Many2one(
+        'res.users', string='Övertagen av', readonly=True, index=True)
+    handover_claimed_at = fields.Datetime('Övertagen', readonly=True)
 
     # ── Sessionsnamn (session-title A→B→C) ──────────────────────────────
     # Namnet är det som visas i Pi:s /resume-lista och i Odoo:s trådvy.
@@ -1945,6 +2010,249 @@ class AICoworkerSession(models.Model):
                 '(%d av dem var tomma)',
                 closed, idle_minutes, empty)
         return closed
+
+    def mark_done(self, reason='stop'):
+        for session in self:
+            try:
+                session._write_final_summary()
+            except Exception:
+                # Eftermälet får aldrig hindra stängningen.
+                _logger.exception(
+                    'Eftermäle misslyckades vid mark_done för session %s',
+                    session.id)
+        self.status = 'done'
+        self.finish_reason = reason
+        self.end_date = fields.Datetime.now()
+        self._push_done_notification()
+
+    # ── Handover (pi-session-handover) ────────────────────────────────
+    #
+    # Handover sker alltid INOM SAMMA ANVÄNDARE: samma person fortsätter
+    # sitt eget arbete på en annan maskin. Att lämna över till en annan
+    # person är delegering, inte handover.
+    #
+    # Listan är användarens EGEN — det är en behörighetsgräns, inte ett
+    # UI-filter. Sessioner bär konversationer, projektkontext och
+    # kundkoppling; att lista en kollegas avbrutna arbete vore ett
+    # dataläckage. Se _handover_owned_domain().
+
+    #: Init-typer som är AUTOMATISKA (ingen människa bad om körningen).
+    #: De kan se avbrutna ut men är inte någons ofärdiga arbete.
+    HANDOVER_AUTO_INIT_TYPES = (
+        'cron', 'watch', 'webhook', 'mail', 'heartbeat',
+    )
+
+    def _handover_owned_domain(self, user=None):
+        """Domän som begränsar handover till den aktuella användaren.
+
+        Behörighetsgränsen ligger här (och inte bara i ett vy-filter) så
+        att ett direkt anrop till listmetoden inte kan läsa någon annans
+        sessioner.
+        """
+        user = user or self.env.user
+        return [('user_id', '=', user.id)]
+
+    def action_handover_offer(self, note='', mode='note'):
+        """Begär en explicit handover (D3).
+
+        Ett LÖFTE, inte en timeout: tillståndet gäller tills sessionen
+        claimas och startas igen — det kan ligga i dagar eller dygn, och
+        städas aldrig av en cron.
+        """
+        self.ensure_one()
+        self.write({
+            'handover_state': 'offered',
+            'handover_note': note or '',
+            'handover_mode': mode or 'note',
+            'handover_at': fields.Datetime.now(),
+            'handover_by': self.env.user.id,
+        })
+        return True
+
+    def action_handover_claim(self, pi_session_id=''):
+        """Ta över en handover från en annan Pi (D1/D2/D5).
+
+        Handover fortsätter i SAMMA Odoo-session — ett medvetet undantag
+        från fork-regeln. `pi_session_id` blir den nya innehavaren;
+        `pi_session_ids` bär historiken (append-only).
+
+        Ägarskapet överförs atomiskt via mesh:ens NATS KV-lås (D5). Kan
+        låset inte tas skrivs INGET — en misslyckad claim får aldrig
+        lämna en felaktig pekare.
+        """
+        self.ensure_one()
+        if self.handover_state not in ('offered', 'claimed'):
+            from odoo.exceptions import UserError
+            raise UserError(
+                'Sessionen har ingen hängande handover att ta över '
+                '(state=%s).' % self.handover_state)
+        if self.handover_by and self.handover_by != self.env.user:
+            from odoo.exceptions import UserError
+            raise UserError(
+                'Handover sker inom samma användare. Den här sessionen '
+                'tillhör %s.' % self.handover_by.name)
+
+        # Atomiskt lås FÖRE varje skrivning (D5). Misslyckas låset
+        # returnerar vi False utan att ha rört sessionen.
+        if not self._handover_take_lock(pi_session_id):
+            return False
+
+        history = [s for s in (self.pi_session_ids or '').split(',') if s]
+        if pi_session_id and pi_session_id not in history:
+            history.append(pi_session_id)
+        self.write({
+            'handover_state': 'claimed',
+            'handover_claimed_by': self.env.user.id,
+            'handover_claimed_at': fields.Datetime.now(),
+            'pi_session_id': pi_session_id or self.pi_session_id,
+            'pi_session_ids': ','.join(history),
+        })
+        return True
+
+    def action_handover_done(self):
+        """Infria löftet — sessionen lämnar listan över hängande."""
+        self.ensure_one()
+        self.write({'handover_state': 'done'})
+        self._handover_release_lock()
+        return True
+
+    def _handover_take_lock(self, pi_session_id=''):
+        """Ta sessionslåset i mesh:ens NATS KV-bucket (D5).
+
+        Compare-and-swap: `create()` lyckas bara om nyckeln inte finns.
+        Den som först skriver vinner; den andra backar.
+
+        Best-effort: är NATS otillgängligt kan ingen claim göras — men
+        det är bättre att neka än att tillåta två ägare.
+
+        Bucketen är samma som resurslåsen (`pi_mesh_locks`, se
+        `nats.ts` i Pi-extensionen).
+        """
+        import json
+        key = 'session.' + _handover_kv_key(self.pi_session_id or str(self.id))
+        payload = {
+            'session_id': self.id,
+            'owner': pi_session_id or str(self.env.user.id),
+            'at': fields.Datetime.now().isoformat(),
+        }
+        try:
+            from ..core.tools import nats_kv_create
+            return nats_kv_create(key, json.dumps(payload))
+        except Exception:
+            _logger.exception(
+                'Handover: kunde inte ta sessionslåset för session %s',
+                self.id)
+            return False
+
+    def _handover_release_lock(self):
+        """Släpp sessionslåset (vid done). Best-effort."""
+        key = 'session.' + _handover_kv_key(self.pi_session_id or str(self.id))
+        try:
+            from ..core.tools import nats_kv_delete
+            nats_kv_delete(key)
+        except Exception:
+            _logger.debug(
+                'Handover: kunde inte släppa låset för session %s', self.id)
+
+    def _handover_derive_note(self):
+        """Härled en handover-anteckning ur sessionens eftermäle (--auto).
+
+        Eftermälet har redan de rubriker en handoff behöver (Syfte, Utfall,
+        Beslut, Fakta, Artefakter, Öppna frågor) — det är samma text som
+        Pi Durable:s reset(handoff) vill ha. Vi behöver inte bygga
+        anteckningsgenerering; vi behöver peka på den som redan finns.
+        """
+        self.ensure_one()
+        if self.summary:
+            return self.summary.strip()
+        # Ingen sammanfattning än — skriv en (idempotent, inget LLM-anrop
+        # om inga nya rader tillkommit).
+        try:
+            self._write_final_summary()
+        except Exception:
+            _logger.exception(
+                'Handover: kunde inte skriva eftermäle för session %s',
+                self.id)
+        return (self.summary or '').strip()
+
+    def _handover_suggest_mode(self):
+        """Föreslå handover-läge utifrån hur arbetet såg ut (D6).
+
+        Många verktygsanrop i svansen → `full` (verktygsspåret är beviset,
+        nödvändigt när arbetet är "mitt-i-handen"). Beslut i slutet och få
+        verktyg → `note` (friskt sammanhang, litet kontextfönster).
+
+        Människan kan alltid överrida — det är den "fyll på med
+        information" som det planerade fallet handlar om.
+        """
+        self.ensure_one()
+        lines = self.session_line_ids.sorted('sequence')
+        if not lines:
+            return 'note'
+        tail = lines[-10:]
+        tool_count = len([l for l in tail if l.role == 'tool'])
+        return 'full' if tool_count >= 3 else 'note'
+
+    @api.model
+    def _handover_suggestions(self, user=None, limit=20):
+        """Implicita förslag: sessioner som slutade mitt i en tur (D4).
+
+        Ingen state — en FRÅGA vid läsning. "Avbruten" är negationen av
+        "avslutad", och har TRE former (mätt 2026-10-14: den gamla
+        definitionen fångade 2 av 10 avbrott):
+
+          - sista raden är en tool-rad utan efterföljande assistant-rad
+          - sista raden är en bash-körning (bashExecution)
+          - sista raden är en assistant-rad med stopReason = toolUse
+
+        Klassificeringen är STRUKTURELL, inte tidsberoende: det finns
+        ingen tröskel som avgör när en session "räknas" som avbruten.
+        Precis som Pi:s /resume listar sessioner utan tidsgräns.
+
+        Sorteras nyast → äldst. Ett förslag åldras ALDRIG bort — det
+        sorteras sist, men raderas inte.
+        """
+        user = user or self.env.user
+        domain = self._handover_owned_domain(user) + [
+            ('handover_state', '=', 'none'),
+            ('init_type', 'not in', list(self.HANDOVER_AUTO_INIT_TYPES)),
+        ]
+        candidates = self.search(domain, limit=limit * 3,
+                                 order='write_date desc')
+        # OBS: bygg listan som en LISTA av id:n, inte som en recordset.
+        # `out |= session` sorterar om efter modellens _order
+        # (create_date desc) — den ordning vi byggde försvinner tyst.
+        ids = []
+        for session in candidates:
+            if session._handover_is_aborted():
+                ids.append(session.id)
+            if len(ids) >= limit:
+                break
+        # browse() bevarar ordningen i id-listan (Odoo 18).
+        return self.browse(ids)
+
+    def _handover_is_aborted(self):
+        """Är sessionens sista tur avbruten (någon av de tre formerna)?
+
+        Läser sessionens sista rad. `role` är user/assistant/tool/system
+        i session.line; Pi:s `bashExecution` och `toolResult` persisteras
+        som tool-rader, och `stopReason=toolUse` bärs av assistant-raden.
+        """
+        self.ensure_one()
+        lines = self.session_line_ids.sorted('sequence')
+        if not lines:
+            return False
+        last = lines[-1]
+        if last.role == 'tool':
+            # Form 1 och 2: verktygssvar (eller bash-körning) utan
+            # efterföljande assistantsvar.
+            return True
+        if last.role == 'assistant':
+            # Form 3: modellen bad om ett verktyg — och dog.
+            # Odoo:s vokabulär är `tool_calls` (Pi:s `stopReason` heter
+            # `toolUse`; samma tillstånd, olika namn).
+            return (last.finish_reason or '') in ('tool_calls', 'toolUse')
+        return False
 
     def mark_done(self, reason='stop'):
         for session in self:
