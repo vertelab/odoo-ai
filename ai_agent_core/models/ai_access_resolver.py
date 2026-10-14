@@ -212,9 +212,28 @@ class AIAccessResolver(models.Model):
         # att hela sökningen blev tom — 10 tester föll.
         if not model_names:
             return '', params
+
+        # `source_ref IS NULL` och ogenomskinliga referenser (utan komma)
+        # läggs till FÖRE `not or_parts`-kontrollen: de är oprövade
+        # kandidater som faller till D4-nätet, oberoende av om några
+        # modeller klassades.
+        #
+        # FYND (2026-10-14): en `source_ref` UTAN komma är ingen
+        # modellreferens (kan vara ett Message-ID, `<a@b>`) och kan därför
+        # inte prövas här — den ska falla till D4-nätet, inte uteslutas.
+        # Uteslöts den blev hela mail-arkivet osökbart: varje mail-koncept
+        # saknade en matchande OR-gren. Låg denna rad EFTER `not or_parts`
+        # slog `return None` till först när alla modeller var CLOSED — och
+        # då var sökningen tom i stället.
+        #
+        # Ägarkontrollen i `_okf_search` (`owner_user_id` för personal-scope)
+        # är ett OBEROENDE lager som prövar konceptets ägare — att släppa
+        # igenom ogenomskinliga referenser här öppnar ingen läcka mellan
+        # användare.
+        or_parts.append('source_ref IS NULL')
+        or_parts.append("source_ref NOT LIKE '%,%'")
+
         if not or_parts:
             return None, params
 
-        # `source_ref IS NULL` alltid med: oprövade koncept faller till D4.
-        or_parts.append('source_ref IS NULL')
         return '(' + ' OR '.join(or_parts) + ')', params

@@ -133,11 +133,23 @@ class TestOkfSourceRefCondition(ConfigParamGuardedCase):
                 value, list, 'OPEN får inte ge en id-lista')
 
     def test_closed_model_not_mentioned(self):
-        """CLOSED nämns inte alls — och alla stängda ger None."""
+        """CLOSED nämns inte alls — men oprövade faller till D4-nätet.
+
+        ÄNDRAT 2026-10-14: förr gav alla stängda `None` (inget koncept
+        kunde vara läsbart). Det var FEL så snart en `source_ref` inte är
+        en modellreferens: ett mails Message-ID (`<a@b>`, inget komma)
+        kunde aldrig prövas, och `None` gjorde hela mail-arkivet osökbart.
+        Nu ingår alltid de oprövade grenarna (`IS NULL`, utan komma), så
+        villkoret blir icke-tomt. Modellnamnet får fortfarande inte nämnas.
+        """
         sql, params = self.Resolver._source_ref_condition(
             self.user, ['finns.inte.modell'])
-        # Alla modeller stängda -> None (inget koncept kan vara läsbart)
-        self.assertIsNone(sql, 'alla stängda ska ge None')
+        self.assertIsNotNone(
+            sql, 'oprövade källor ska ge ett villkor, inte None')
+        self.assertNotIn('finns.inte.modell', sql,
+                         'en stängd modell får inte nämnas i villkoret')
+        self.assertNotIn('finns.inte.modell', params.values())
+        self.assertIn('source_ref IS NULL', sql)
 
     def test_closed_model_excluded_when_others_open(self):
         """En stängd modell nämns inte när en annan är öppen.
@@ -159,11 +171,30 @@ class TestOkfSourceRefCondition(ConfigParamGuardedCase):
         sql, params = self.Resolver._source_ref_condition(self.user, [])
         self.assertEqual(sql, '')
 
-    def test_all_closed_returns_none(self):
-        """Alla stängda ger None — inget koncept kan vara läsbart."""
+    def test_all_closed_still_admits_unprovable(self):
+        """Alla modeller stängda: oprövade källor är fortfarande kandidater.
+
+        ÄNDRAT 2026-10-14 (se test_closed_model_not_mentioned). Den gamla
+        `None`-regeln uteslöt också koncept vars `source_ref` inte är en
+        modellreferens — t.ex. varje mail-koncept. Nu överlever de.
+        """
         sql, params = self.Resolver._source_ref_condition(
             self.user, ['finns.inte.a', 'finns.inte.b'])
-        self.assertIsNone(sql)
+        self.assertIsNotNone(sql)
+        self.assertIn('source_ref IS NULL', sql)
+        self.assertIn("source_ref NOT LIKE '%,%'", sql)
+
+    def test_opaque_source_ref_is_admitted(self):
+        """En `source_ref` utan komma (Message-ID) faller till D4-nätet.
+
+        Regression 2026-10-14: `_okf_source_models()` gjorde hela
+        Message-ID:n till ett påhittat modellnamn → CLOSED → tom sökning
+        för hela mail-arkivet. Villkoret måste släppa igenom dem.
+        """
+        sql, params = self.Resolver._source_ref_condition(
+            self.user, ['finns.inte.modell'])
+        self.assertIn("source_ref NOT LIKE '%,%'", sql,
+                      'ogenomskinliga referenser måste nå D4-nätet')
 
     def test_condition_always_includes_null(self):
         """`source_ref IS NULL` ingår alltid — oprövade faller till D4."""
@@ -262,3 +293,95 @@ class TestOkfAccessInSelection(ConfigParamGuardedCase):
                      source_ref='res.company,%s' % (i + 1))
         results = self.Concept._okf_search('fakturor', limit=10)
         self.assertEqual(len(results), 3)
+
+
+@tagged('okf', 'access', 'post_install', '-at_install')
+class TestOkfOpaqueSourceRef(ConfigParamGuardedCase):
+    """Ogenomskinliga källreferenser — mail-arkivet (2026-10-14).
+
+    VARFÖR: ett mail-koncept lagrar `source_ref = <message-id>` (t.ex.
+    `<abc@host>`), enligt okf-mail-search D2. Det är ingen modellreferens —
+    den har inget komma. Den gamla `_okf_source_models()` körde
+    `split_part(source_ref, ',', 1)` och gjorde hela Message-ID:n till ett
+    påhittat modellnamn → `env.get()` None → CLOSED → tom sökning för hela
+    mail-arkivet. Detta var aldrig observerat eftersom ingen DB ännu hade
+    mail-koncept (verifierat 2026-10-14).
+
+    Dessa tester bevisar:
+      1. `_okf_source_models()` fabricerar inga modellnamn ur Message-ID:n
+      2. ett mail-koncept blir sökbart
+      3. ägarkontrollen isolerar ändå mellan användare (ingen läcka)
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.Concept = cls.env['ai.okf.concept']
+        cls.Resolver = cls.env['ai.access.resolver']
+        cls.Atype = cls.env['ai.artifact.type']
+        cls.atype_id = cls.Atype.search([], limit=1).id or \
+            cls.env.ref('ai_agent_core.artifact_type_learning').id
+        cls.owner = cls.env.ref('base.user_admin')
+
+    def _mk_mail(self, key, message_id, summary, owner_id):
+        """Ett personligt mail-koncept: source_ref = Message-ID (inget komma)."""
+        self.env.cr.execute("""
+            INSERT INTO ai_okf_concept
+                (concept_key, summary, scope, version, status, archived,
+                 artifact_type_id, owner_user_id, source_ref,
+                 create_date, write_date)
+            VALUES (%s, %s, 'personal', 1, 'stable', false, %s, %s, %s,
+                    now(), now())
+            RETURNING id
+        """, (key, summary, self.atype_id, owner_id, message_id))
+        return self.env.cr.fetchone()[0]
+
+    def test_message_id_is_not_a_source_model(self):
+        """En Message-ID får inte bli ett påhittat modellnamn."""
+        self._mk_mail('mail.1', '<probe-1@x>', 'Faktura från leverantör.',
+                      self.owner.id)
+        models = self.Concept._okf_source_models()
+        self.assertNotIn('<probe-1@x>', models,
+                         'Message-ID:t fabricerades till en modell')
+        for name in models:
+            self.assertIn(',', '%s,' % name,
+                          'modellnamn ska komma ur en komma-referens')
+
+    def test_mail_concept_is_searchable(self):
+        """Ett mail-koncept (Message-ID) ska ge träff — inte tomt."""
+        self._mk_mail('mail.sok', '<probe-sok@x>',
+                      'Faktura från leverantör.', self.owner.id)
+        results = self.Concept._okf_search(
+            'faktura', scope='personal', owner_id=self.owner.id, limit=10)
+        keys = {c.concept_key for c in results}
+        self.assertIn('mail.sok', keys,
+                      'mail-konceptet blev osökbart (access-resolvern)')
+
+    def test_mail_concepts_stay_isolated_per_owner(self):
+        """Ägarkontrollen isolerar mail mellan användare (ingen läcka).
+
+        Att släppa igenom ogenomskinliga referenser i source-ref-gaten får
+        INTE öppna en läcka: `_okf_search` filtrerar på `owner_user_id`
+        för personal-scope, ett oberoende lager.
+        """
+        other = self.env['res.users'].create({
+            'name': 'ZZ OKF Annan Ägare', 'login': 'zz_okf_other_owner',
+        })
+        self._mk_mail('mail.min', '<probe-min@x>',
+                      'Faktura till mig.', self.owner.id)
+        self._mk_mail('mail.annans', '<probe-annan@x>',
+                      'Faktura till annan.', other.id)
+
+        mine = self.Concept._okf_search(
+            'faktura', scope='personal', owner_id=self.owner.id, limit=10)
+        my_keys = {c.concept_key for c in mine}
+        self.assertIn('mail.min', my_keys)
+        self.assertNotIn('mail.annans', my_keys,
+                         'LÄCKA: annan användares mail-koncept synligt')
+
+        theirs = self.Concept._okf_search(
+            'faktura', scope='personal', owner_id=other.id, limit=10)
+        their_keys = {c.concept_key for c in theirs}
+        self.assertIn('mail.annans', their_keys)
+        self.assertNotIn('mail.min', their_keys,
+                         'LÄCKA: mina mail-koncept synliga för annan')

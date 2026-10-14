@@ -1387,6 +1387,14 @@ class AIOkfConcept(models.Model):
         täcka den. `DISTINCT` på prefixet före första kommat — modellnamn
         innehåller inget komma.
 
+        **Endast `source_ref` med komma är en modellreferens.** En
+        `source_ref` utan komma är en *ogenomskinlig referens* (t.ex. ett
+        mails Message-ID, `<abc@host>`) som inte kan prövas mot någon
+        modell. Utan detta filter blev hela Message-ID:n ett påhittat
+        "modellnamn" → `env.get()` None → CLOSED → tom sökning för hela
+        mail-arkivet. Ogenomskinliga referenser faller i stället till
+        D4-nätet i `_source_ref_condition`.
+
         En modell som inte finns i `self.env` filtreras bort av
         klassningen (→ CLOSED, fail-closed).
         """
@@ -1397,6 +1405,7 @@ class AIOkfConcept(models.Model):
                       FROM ai_okf_concept
                      WHERE source_ref IS NOT NULL
                        AND source_ref <> ''
+                       AND source_ref LIKE '%,%'
                        AND archived = false
                 """)
                 return sorted(r[0] for r in self.env.cr.fetchall() if r[0])
