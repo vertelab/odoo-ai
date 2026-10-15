@@ -5486,7 +5486,7 @@ class AICoworker(models.Model):
 
     # ── Bifrost-sessionskorrelation (bifrost-session-lankning) ──
 
-    #: Bifrosts tak för sessions-id. Sessionens `name` är ett 8-teckens uuid,
+    #: Bifrosts tak för sessions-id. Identiteten är ett UUID (36 tecken),
     #: långt under gränsen — men vi klipper defensivt så ett framtida längre
     #: id aldrig tyst avvisas av gatewayen.
     BIFROST_SESSION_ID_MAX = 64
@@ -5497,6 +5497,10 @@ class AICoworker(models.Model):
         Returnerar `x-bf-session-id` + expanderade `x-bf-dim-*`-headers, eller
         None när ingen session finns (krav 2.1). Sätts per anrop — providern
         cachas per modell och kan betjäna flera sessioner (krav 2.3).
+
+        `x-bf-session-id` bär sessionens `gateway_session_id` — ett stabilt
+        UUID, inte visningsnamnet. Se `ai.coworker.session.gateway_session_id`
+        för varför (två olika trunkeringar av samma prompt matchade aldrig).
 
         Providerns `bifrost_dim_template` styr dimensionerna, t.ex.
         `coworker={coworker};agent={agent};init={init}` (krav 3.2).
@@ -5526,8 +5530,25 @@ class AICoworker(models.Model):
             return ''.join(c for c in text if c.isprintable() and c not in '\r\n')
 
         headers = {}
-        if session.name:
-            headers['x-bf-session-id'] = _ascii(session.name)[:self.BIFROST_SESSION_ID_MAX]
+        # Sessionsidentiteten är ett stabilt UUID (gateway-anropseffektivitet
+        # D1), inte `session.name`. `name` är en visningsetikett som sätts
+        # från prompt/subject och klipps olika på olika ställen — headern
+        # klippte den till 64 tecken medan raden sparade 80, så
+        # korrelationen mot bifrost.request.log gav alltid noll träffar.
+        # Ett UUID är redan ASCII och behöver ingen translitterering; den
+        # defensiva klippningen behålls för ett framtida längre id.
+        sess_key = (session.gateway_session_id or '').strip()
+        if sess_key:
+            headers['x-bf-session-id'] = sess_key[:self.BIFROST_SESSION_ID_MAX]
+        elif session.name:
+            # Bakåtkompatibel fallback: sessioner skapade före D1 saknar
+            # gateway_session_id. Vi skickar då inget id hellre än att
+            # skicka en prompt-text som ändå aldrig matchar — korrelationen
+            # lämnar raden okopplad (krav: ingen gissning, ingen tystnad).
+            _logger.info(
+                'Session %s saknar gateway_session_id — skickar ingen '
+                'x-bf-session-id (kan inte korreleras mot gateway-loggen)',
+                session.id)
 
         # Dimension-mall från providern (om satt).
         template = ''

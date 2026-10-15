@@ -72,6 +72,22 @@ class AICoworkerSession(models.Model):
              '(project.task) som läggs av project_ai-bryggan.')
 
     name = fields.Char(default=lambda self: str(uuid.uuid4())[:8])
+
+    # Stabil sessionsidentitet för gateway-korrelation
+    # (gateway-anropseffektivitet D1). `name` är en VISNINGSETIKETT som
+    # sätts från prompt/subject och kan klippas olika på olika ställen
+    # (ai_session rad 1051: prompt[:80], ai_coworker: name[:64] som
+    # x-bf-session-id) — två trunkeringar av samma sträng blir aldrig
+    # lika, så korrelationen mot `bifrost.request.log.session_id` gav
+    # alltid noll träffar. Detta fält sätts EN gång vid skapande och
+    # skrivs aldrig över av visningsnamnet.
+    gateway_session_id = fields.Char(
+        'Gateway Session ID', index=True, copy=False,
+        default=lambda self: str(uuid.uuid4()),
+        help='Stabilt id som skickas som x-bf-session-id till gatewayen och '
+             'som gateway-loggen korreleras mot. Skiljt från `name` '
+             '(visningsetikett) — sätts en gång, skrivs aldrig över.')
+
     coworker_id = fields.Many2one('ai.coworker', string='Coworker', ondelete='cascade',
         index=True)
     skill_id = fields.Many2one('ai.skill', string='Skill',
@@ -129,6 +145,20 @@ class AICoworkerSession(models.Model):
         help='Kall start-tid i sekunder (D9: ska vara under ~1 s).')
     external_duration = fields.Float('Varaktighet (s)', readonly=True,
         help='Körningens varaktighet i sekunder.')
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        """Säkra gateway_session_id vid skapande (D1).
+
+        Fältet har en default, men en explicit `create`-override garanterar
+        att äldre anropsställen som skickar egna vals (t.ex. message_new via
+        mailgateway) aldrig lämnar det tomt — en session utan
+        gateway-identitet kan inte korreleras mot gateway-loggen.
+        """
+        for vals in vals_list:
+            if not vals.get('gateway_session_id'):
+                vals['gateway_session_id'] = str(uuid.uuid4())
+        return super().create(vals_list)
 
     def _record_external_run(self, measurement):
         """Skriv mätpunkten för en extern körning på sessionsraden (D10).
