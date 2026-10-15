@@ -87,3 +87,12 @@ from . import test_graph_executor
 # Handover (pi-session-handover): tillståndet på sessionen, de tre
 # avbrottsformerna, behörighetsgränsen och mode-förslaget.
 from . import test_handover
+
+# org-goal-integrity: ägarkedja, onboarding-kaskad, heartbeat målval,
+# AI-chefens utförarval och avdelningens ansiktslistor.
+from . import test_org_goal_integrity
+
+# schemalagt-arbete (heartbeat-scheduled-work): scheduled_at, dispatchern
+# (delad pool, två tak), heartbeat som cron.task, mottagbarhetsbesked och
+# behörighetsstyrd aktivering.
+from . import test_scheduled_work

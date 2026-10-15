@@ -81,6 +81,15 @@ class AIOrgTask(models.Model):
         ('3', 'Urgent'),
     ], default='1', index=True)
 
+    # Tidsättning (schemalagt-arbete): tidigast-tid. Tomt = omedelbar.
+    # Dispatchern hoppar över uppgifter vars tid ännu inte passerat — de
+    # förblir 'todo' och orörda (ingen utcheckning, ingen session).
+    scheduled_at = fields.Datetime(
+        'Scheduled At', index=True, tracking=True,
+        help='Tidigaste tidpunkt då uppgiften får plockas upp. Tomt = '
+             'omedelbart tillgänglig. En framtidsatt uppgift väntar med '
+             'avsikt — den är inte försenad och räknas inte som åldrad.')
+
     # Checkout (atomiskt — förhindrar dubbelarbete)
     checkout_lock = fields.Boolean(default=False,
         help='När True är uppgiften utcheckad av en coworker.')
@@ -121,6 +130,30 @@ class AIOrgTask(models.Model):
             rec.department_id = (
                 rec.goal_id.department_id or rec.job_id.department_id
             )
+
+    # AI-chefens utförarval (org-goal-integrity D7): avdelningens coworkers
+    # plus chefen själv. Gör valet av `coworker_id` uttryckligt när chefen
+    # lägger ut en task mot ett ägarlöst avdelningsmål — inkl. möjligheten
+    # att lägga jobbet på sig själv (D3). Ingen ny behörighet: chefen är
+    # redan hr.department.ai_manager_id.
+    department_coworker_ids = fields.Many2many(
+        'ai.coworker', string='Executor Candidates',
+        compute='_compute_department_coworker_ids',
+        help='Avdelningens AI-medarbetare plus avdelningschefen själv — '
+             'urvalet av utförare för en task mot avdelningens mål.')
+
+    @api.depends('department_id', 'department_id.ai_coworker_ids',
+                 'department_id.ai_manager_id')
+    def _compute_department_coworker_ids(self):
+        for rec in self:
+            dept = rec.department_id
+            if not dept:
+                rec.department_coworker_ids = False
+                continue
+            candidates = dept.ai_coworker_ids
+            if dept.ai_manager_id and dept.ai_manager_id not in candidates:
+                candidates |= dept.ai_manager_id
+            rec.department_coworker_ids = candidates
 
     # Resultat
     result_summary = fields.Text('Result Summary')

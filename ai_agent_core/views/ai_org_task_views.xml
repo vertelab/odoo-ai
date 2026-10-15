@@ -11,6 +11,8 @@
                     decoration-warning="status == 'in_progress'"
                     decoration-success="status == 'done'"/>
                 <field name="priority" widget="priority"/>
+                <field name="scheduled_at" optional="show"
+                    decoration-muted="scheduled_at and scheduled_at &gt; context_today().strftime('%Y-%m-%d %H:%M:%S')"/>
                 <field name="goal_id" optional="show"/>
                 <field name="checkout_lock" widget="boolean_fa"/>
                 <field name="create_date"/>
@@ -42,6 +44,7 @@
                         </group>
                         <group>
                             <field name="priority" widget="priority"/>
+                            <field name="scheduled_at"/>
                             <field name="goal_id" options="{'no_create': True}"/>
                             <field name="job_id" options="{'no_create': True}"/>
                             <field name="source"/>

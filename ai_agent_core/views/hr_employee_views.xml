@@ -33,7 +33,7 @@
                     <t t-set="coworker" t-value="record.ai_coworker_id.raw_value"/>
                     <t t-if="coworker">
                         <div class="text-muted small">
-                            💓 <t t-esc="coworker.last_heartbeat or 'Väntar'"/>
+                            💓 <t t-esc="coworker.last_successful_run or 'Ingen lyckad körning än'"/>
                         </div>
                     </t>
                 </t>

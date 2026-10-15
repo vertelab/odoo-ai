@@ -412,15 +412,46 @@ class AIOnboarding(models.Model):
                      len(self.created_coworker_ids))
         return True
 
+    def _get_or_create_company_goal(self):
+        """Slå upp (eller skapa) företagets company-nivå-mål.
+
+        Kaskadens rot (org-goal-integrity D5). Ett department-mål får
+        aldrig skapas föräldralöst: finns inget company-mål vid tillfället
+        skapas det först, så att parent_id alltid kan sättas.
+        """
+        Goal = self.env['ai.org.goal'].sudo()
+        goal = Goal.search([
+            ('level', '=', 'company'),
+            ('company_id', '=', self.company_id.id),
+        ], limit=1)
+        if goal:
+            return goal
+        return Goal.create({
+            'name': _('Company Goals'),
+            'level': 'company',
+            'status': 'active',
+            'company_id': self.company_id.id,
+        })
+
     def _create_goal(self, goal_data, level='company', department=None):
-        """Skapa ett ai.org.goal med key results."""
+        """Skapa ett ai.org.goal med key results.
+
+        Kaskadkopplar department-mål mot company-målet (D5): ett
+        department-mål får alltid `parent_id` satt mot företagets
+        company-nivå-mål — company-målet skapas först om det saknas, så
+        inget föräldralöst avdelningsmål uppstår.
+        """
         try:
+            parent_id = False
+            if level == 'department':
+                parent_id = self._get_or_create_company_goal().id
             goal = self.env['ai.org.goal'].sudo().create({
                 'name': goal_data.get('name', 'Mål'),
                 'description': goal_data.get('description'),
                 'level': level,
                 'status': 'active',
                 'department_id': department.id if department else False,
+                'parent_id': parent_id,
                 'deadline': goal_data.get('deadline'),
                 'company_id': self.company_id.id,
             })
@@ -432,7 +463,6 @@ class AIOnboarding(models.Model):
                     'current_value': 0.0,
                     'unit': kr_data.get('unit', '%'),
                 })
-            # Koppla till company-goal om department-nivå
             return goal
         except Exception as e:
             _logger.error('Goal creation failed: %s', e)
@@ -450,6 +480,66 @@ class AIOnboarding(models.Model):
         except Exception as e:
             _logger.error('Department creation failed for %s: %s', name, e)
             return False
+
+    def _ensure_heartbeat_waker(self):
+        """Säkerställ att heartbeat-väckaren finns i motorns register (7.1).
+
+        Väckaren är en delad `cron.task` (ai_heartbeat_dispatch, cadence min)
+        som skapas av modulens data-XML. Här kontrollerar vi att den finns och
+        är aktiv — annars är en "aktiverad" heartbeat ett tomt löfte.
+        Idempotent: skapar inget om posten redan finns.
+        """
+        if 'cron.task' not in self.env:
+            _logger.warning(
+                'cron_tick saknas — heartbeat-väckaren kan inte säkerställas')
+            return False
+        CronTask = self.env['cron.task'].sudo()
+        # `active=False` filtreras bort av search — sök även inaktiva så att
+        # en avaktiverad väckare ÅTERAKTIVERAS i stället för att en dubblett
+        # skapas (technical_name är unikt → UniqueViolation annars).
+        waker = CronTask.with_context(active_test=False).search([
+            ('technical_name', '=', 'ai_heartbeat_dispatch')], limit=1)
+        if not waker:
+            waker = CronTask.create({
+                'name': 'Heartbeat — dispatcher',
+                'technical_name': 'ai_heartbeat_dispatch',
+                'module': 'ai_agent_core',
+                'model_name': 'ai.coworker',
+                'method_name': '_heartbeat_all',
+                'cadence': 'min',
+                'sequence': 10,
+                'active': True,
+            })
+            _logger.info('Skapade heartbeat-väckaren (cron.task %s)', waker.id)
+        elif not waker.active:
+            waker.active = True
+            _logger.info('Aktiverade heartbeat-väckaren (cron.task %s)', waker.id)
+        return waker
+
+    def _ensure_coworker_owner(self, coworker):
+        """Säkerställ att coworkern har en ägare för automatiska körningar.
+
+        `_resolve_dispatch_user` vägrar systemuser — utan `chat_user_id`
+        skulle heartbeat-körningen avbrytas med ett högljutt fel. Vi sätter
+        den inloggade användaren (onboarding körs av en människa) som ägare.
+        Idempotent: rör inte en redan satt ägare.
+        """
+        try:
+            if coworker.chat_user_id:
+                return coworker.chat_user_id
+            user = self.env.user
+            if user and not user._is_public() and user.id != self.env.ref(
+                    'base.user_root').id:
+                coworker.write({'chat_user_id': user.id})
+                _logger.info(
+                    'Onboarding: satte %s som ägare för %s',
+                    user.login, coworker.name)
+                return user
+        except Exception as e:
+            _logger.warning(
+                'Onboarding: kunde inte sätta ägare för %s: %s',
+                coworker.name, e)
+        return False
 
     def _create_coworker(self, cw_data, department):
         """Skapa en ai.coworker med agent, skills, tools och tasks."""
@@ -480,11 +570,19 @@ class AIOnboarding(models.Model):
                 'agent_id': agent.id,
                 'role': 'lead',
             })
-            # Skapa init_types: web_ui + cron (heartbeat)
+            # Skapa init_types: web_ui + heartbeat.
+            #
+            # Schemalagt-arbete 7.1: onboarding ska skapa en OPERATIV
+            # heartbeat — inte bara flaggan. Väckaren är en delad cron.task
+            # (cadence min) som registreras av modulens data-XML; här
+            # säkerställer vi att den finns och är aktiv, och att coworkern
+            # har en ägare (chat_user_id) så att automatiska körningar kan
+            # lösa upp en användare (aldrig systemuser).
             InitType = self.env['ai.coworker.init_type']
             InitType.create({'coworker_id': coworker.id, 'init_type': 'web_ui', 'active': True})
-            InitType.create({'coworker_id': coworker.id, 'init_type': 'cron', 'active': True,
-                             'cron_interval_number': 5, 'cron_interval_type': 'minutes'})
+            InitType.create({'coworker_id': coworker.id, 'init_type': 'heartbeat', 'active': True})
+            self._ensure_heartbeat_waker()
+            self._ensure_coworker_owner(coworker)
 
             # Skapa initiala tasks så coworkern börjar jobba
             initial_tasks = cw_data.get('initial_tasks') or [

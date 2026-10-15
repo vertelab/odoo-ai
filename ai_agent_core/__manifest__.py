@@ -2,7 +2,7 @@
 # Part of Odoo. See LICENSE file for full copyright and licensing details.
 {
     'name': 'AI: Agent Core',
-    'version': '18.0.1.327',
+    'version': '18.0.1.330',
     'summary': 'AI Agent Core — Org-stomme, heartbeat, onboarding, task-system',
     'category': 'AI Orchestration',
     'description': """
@@ -105,6 +105,7 @@
         'data/cron_workspace_distill.xml',
         'data/cron_website_rag.xml',
         'data/cron_heartbeat.xml',
+        'data/cron_heartbeat_dispatch.xml',
         'data/cron_heartbeat_process.xml',
         'data/cron_cost_aggregate.xml',
         'views/ai_cost_period_views.xml',
@@ -159,6 +160,8 @@
     'assets': {
         'web.assets_backend': [
             'ai_agent_core/static/src/js/ai_record_context_patch.js',
+            'ai_agent_core/static/src/js/many2many_tags_avatar_overflow_patch.js',
+            'ai_agent_core/static/src/js/many2many_tags_avatar_overflow_patch.xml',
             'ai_agent_core/static/src/js/powerbox.js',
             'ai_agent_core/static/src/js/wysiwyg_powerbox.js',
             'ai_agent_core/static/src/js/user_menu_ai_chat.js',

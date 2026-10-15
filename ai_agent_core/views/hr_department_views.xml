@@ -44,6 +44,19 @@
                     <field name="health_reason" readonly="1"/>
                 </group>
             </xpath>
+            <!-- Medlemsöversikt (org-goal-integrity D9): två ansiktslistor
+                 sida vid sida — AI-medarbetare och mänskliga. Båda visar
+                 högst 10 poster (9 ansikten + "+N"). -->
+            <xpath expr="//field[@name='manager_id']/.." position="after">
+                <group string="Medlemmar" groups="ai_agent_core.group_ai_officer">
+                    <field name="ai_coworker_ids" widget="many2many_tags_avatar"
+                           options="{'visibleItemsLimit': 10}"
+                           help="AI-medarbetare i avdelningen."/>
+                    <field name="employee_ids" widget="many2many_tags_avatar"
+                           options="{'visibleItemsLimit': 10}"
+                           help="Mänskliga medarbetare i avdelningen."/>
+                </group>
+            </xpath>
         </field>
     </record>
 
@@ -132,11 +145,11 @@
                                         </t>
                                     </span>
                                     <span>
-                                        <t t-if="coworker.last_heartbeat">
-                                            💓 <t t-esc="coworker.last_heartbeat"/>
+                                        <t t-if="coworker.last_successful_run">
+                                            💓 <t t-esc="coworker.last_successful_run"/>
                                         </t>
-                                        <t t-if="!coworker.last_heartbeat">
-                                            ⏳ Väntar
+                                        <t t-if="!coworker.last_successful_run">
+                                            ⏳ Ingen lyckad körning än
                                         </t>
                                     </span>
                                 </div>

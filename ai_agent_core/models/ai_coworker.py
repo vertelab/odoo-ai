@@ -357,6 +357,18 @@ class AICoworker(models.Model):
                                        string='Partner Image',
                                        help='Avatar from channel partner')
 
+    # Ansiktslista (org-goal-integrity D8): `many2many_tags_avatar`-widgeten
+    # bygger sin bild-URL som /web/image/<relation>/<id>/avatar_128, dvs. den
+    # läser fältet `avatar_128` på relationen. `image_128` är syskonfältet
+    # som avatar.mixin härleder avatar_128 från. Båda speglar
+    # `partner_image_128` ovan (related mot res.partner, som ärver både
+    # image.mixin och avatar.mixin). Utan `avatar_128` visar widgeten trasiga
+    # bilder i stället för ansikten/initialer.
+    image_128 = fields.Binary(related='partner_id.image_128',
+                              string='Image 128')
+    avatar_128 = fields.Binary(related='partner_id.avatar_128',
+                               string='Avatar 128')
+
     identity_id = fields.Many2one('ai.identity', string='Agent Identity',
         help='Select a template to create a personal copy for this quest. '
              'The copy evolves independently — template changes do NOT affect it.')
@@ -8019,6 +8031,32 @@ class AICoworker(models.Model):
         help='När True vaknar coworkern regelbundet för att checka '
              'budget, tasks, mål och nudge-behov.')
 
+    # Heartbeat-status (schemalagt-arbete 6.1): ett löfte som kan infrias.
+    # `heartbeat_enabled=True` utan registrerad väckare är en felsituation som
+    # ska SYNAS, inte tigas ihjäl. Orsaken går att utläsa i heartbeat_status.
+    heartbeat_operational = fields.Boolean(
+        'Heartbeat Operational',
+        compute='_compute_heartbeat_status', store=False,
+        help='True när heartbeat faktiskt fungerar: aktiverad, väckare '
+             'registrerad, ägare satt och budget kvar.')
+    heartbeat_status = fields.Char(
+        'Heartbeat Status',
+        compute='_compute_heartbeat_status', store=False,
+        help='Mänskligt läsbar status — namnger hindret när heartbeat inte '
+             'är operativt (avstängt / ingen väckare / ingen ägare / tömd '
+             'budget).')
+
+    @api.depends('heartbeat_enabled', 'active', 'status', 'chat_user_id')
+    def _compute_heartbeat_status(self):
+        # `budget_exhausted` är store=False (härledd) och kan därför inte
+        # användas som depends-trigger — `_heartbeat_operational()` läser den
+        # färskt vid varje beräkning.
+        for rec in self:
+            ok, reason = rec._heartbeat_operational()
+            rec.heartbeat_operational = ok
+            rec.heartbeat_status = (
+                '💓 ' + reason if ok else '⚠ ' + reason)
+
     department_id = fields.Many2one(
         'hr.department', string='Department',
         help='Avdelningen som denna AI-medarbetare tillhör.')
@@ -8239,6 +8277,19 @@ class AICoworker(models.Model):
                 'Delegering nekas: %s Välj en annan kollega, eller vänta '
                 'tills mottagaren är tillbaka.' % reason)
 
+        # Heartbeat-operativ (schemalagt-arbete 5.2): en mottagare vars
+        # heartbeat inte är operativ får inget uppdrag — det skulle ruttna
+        # i en kö som ingen tömmer. Beskedet namnger det KONKRETA hindret
+        # (avstängt / ingen väckare / ingen ägare / tömd budget) i stället för
+        # att tiga. `_is_receptive` ovan kräver dessutom ett färskt
+        # `last_successful_run` — denna kontroll är den förklarande orsaken.
+        hb_ok, hb_reason = target._heartbeat_operational()
+        if not hb_ok:
+            raise ValidationError(
+                'Delegering nekas: %s Uppgiften skulle läggas i en kö som '
+                'ingen tömmer. Slå på heartbeat för medarbetaren (kräver '
+                'skrivrätt), eller välj en annan kollega.' % hb_reason)
+
         # D2: djup-taket — ny session per steg nollställer annars rundräknare.
         depth = self._delegation_depth() + 1
         try:
@@ -8376,6 +8427,47 @@ class AICoworker(models.Model):
 
     # ── Heartbeat ──
 
+    def _find_heartbeat_goal(self):
+        """Välj nästa mål för heartbeat via prioritetsordnad ägarkedja (D4).
+
+        Nivåerna frågas i ordning och första träffen vinner — en enda domän
+        med `|`-operatorer skulle inte ge prioritet (en avdelningspost
+        kunde slå ut coworkerns eget mål beroende på id-ordning):
+
+          1. coworker_id == self                        (enskild ägare)
+          2. self in coworker_ids                       (teammedlem)
+          3. coworker_id tomt OCH coworker_ids tomt
+             OCH department_id == self.department_id    (ägarlöst avdelningsmål)
+
+        Behåller status='active', progress < 100, limit=1 — ett mål per
+        varv. `sequence` styr inom varje nivå (modellens _order).
+        """
+        self.ensure_one()
+        Goal = self.env['ai.org.goal']
+        base = [('status', '=', 'active'), ('progress', '<', 100.0)]
+
+        # Nivå 1 — enskild ägare
+        goal = Goal.search(base + [('coworker_id', '=', self.id)], limit=1)
+        if goal:
+            return goal
+
+        # Nivå 2 — teammedlem
+        goal = Goal.search(base + [('coworker_ids', 'in', self.id)], limit=1)
+        if goal:
+            return goal
+
+        # Nivå 3 — ägarlöst mål i coworkerns avdelning
+        if self.department_id:
+            goal = Goal.search(base + [
+                ('coworker_id', '=', False),
+                ('coworker_ids', '=', False),
+                ('department_id', '=', self.department_id.id),
+            ], limit=1)
+            if goal:
+                return goal
+
+        return Goal
+
     def _heartbeat(self):
         """Heartbeat-väckaren: skapa sessionen, kör ALDRIG här (D1/5.3).
 
@@ -8429,11 +8521,7 @@ class AICoworker(models.Model):
             return
 
         # 3. Check goals — proactive work
-        active_goals = self.env['ai.org.goal'].search([
-            ('coworker_id', '=', self.id),
-            ('status', '=', 'active'),
-            ('progress', '<', 100.0),
-        ], limit=1)
+        active_goals = self._find_heartbeat_goal()
 
         if active_goals:
             _logger.info('Heartbeat %s: köar mål %s',
@@ -8461,6 +8549,205 @@ class AICoworker(models.Model):
 
         # 4. Nudge? (handled by kaizen/onboard separately)
         # 5. Sleep until next heartbeat
+
+    # ── Dispatchern (schemalagt-arbete D8) ─────────────────────────────
+
+    @api.model
+    def _heartbeat_dispatch(self, max_tasks=None, max_seconds=None):
+        """Dela ut uppgifter ur den DELADE poolen, en i taget (D8).
+
+        Till skillnad från `_heartbeat()` (som tittar på EN coworkers egen kö)
+        tittar dispatchern på uppgiftslistan och delar ut uppgifter till
+        uppgiftens coworker, i prioritetsordning.
+
+        Två oberoende tak skyddar cron-tråden:
+          - `max_tasks` (default `ai_agent_core.heartbeat_max_tasks_per_tick`)
+          - `max_seconds` (default tickens fönster, 5 min)
+
+        Har maxtiden passerat slutar vi dela ut — nästa tick tar resten.
+        En uppgift som inte delas ut förblir `todo` och tappas aldrig.
+
+        Uppgifter vars `scheduled_at` ligger i framtiden HOPPAS ÖVER (de väntar
+        med avsikt) — de checkas inte ut och får ingen session.
+
+        Samtidiga sessioner per coworker är tillåtna: det finns ingen delad
+        resurs som kolliderar (egen PID/port per dispatch). Därför finns
+        ingen "ledig coworker"-spärr.
+
+        Returns:
+            dict med räknare för loggning och mätning.
+        """
+        from odoo.addons.ai_agent_core.core import runtime as rt
+        import time as _time
+
+        icp = self.env['ir.config_parameter'].sudo()
+        if max_tasks is None:
+            max_tasks = rt.get_int(
+                self.env, 'ai_agent_core.heartbeat_max_tasks_per_tick', 20)
+        if max_seconds is None:
+            max_seconds = rt.get_int(
+                self.env, 'ai_agent_core.heartbeat_max_seconds_per_tick', 300)
+
+        # Systemomfattande avstängning (oförändrat från _heartbeat_all).
+        if icp.get_param('ai_agent_core.heartbeat_enabled', 'True') != 'True':
+            return {'dispatched': 0, 'skipped': 0, 'reason': 'disabled'}
+
+        now = fields.Datetime.now()
+        started = _time.monotonic()
+
+        # 1. Aktuella uppgifter ur poolen. Framtidsatta utesluts i domänen
+        #    (D1) — de är inte "försenade", de väntar.
+        tasks = self.env['ai.org.task'].search([
+            ('status', '=', 'todo'),
+            ('checkout_lock', '=', False),
+            '|', ('scheduled_at', '=', False),
+                 ('scheduled_at', '<=', now),
+        ], order='priority desc, create_date asc')
+
+        dispatched = 0
+        skipped = 0
+        for task in tasks:
+            # 2. Tidsgräns: har tickens fönster passerat slutar vi dela ut.
+            if _time.monotonic() - started >= max_seconds:
+                _logger.info(
+                    'Heartbeat-dispatcher: tidsgränsen (%ss) nådd efter %s '
+                    'uppgifter — resten tas i nästa tick',
+                    max_seconds, dispatched)
+                break
+            # 3. Antalstak.
+            if dispatched >= max_tasks:
+                _logger.info(
+                    'Heartbeat-dispatcher: antalstaket (%s) nått — resten '
+                    'tas i nästa tick', max_tasks)
+                break
+
+            coworker = task.coworker_id
+            if not coworker:
+                skipped += 1
+                continue
+
+            # 4. Körbar? (mottagbarhet — samma predikat som delegering)
+            ok, reason = coworker._heartbeat_operational()
+            if not ok:
+                _logger.info(
+                    'Heartbeat-dispatcher: uppgift %s hos %s hoppas över: %s',
+                    task.name, coworker.name, reason)
+                skipped += 1
+                continue
+
+            # 5. Bygg prompten FÖRE utcheckningen — en tom uppgift får inte
+            #    lämnas utcheckad (bevakning-over-tid D5).
+            try:
+                prompt = coworker._build_job_prompt(task)
+            except ValidationError:
+                _logger.warning(
+                    'Heartbeat-dispatcher: uppgift %s saknar prompt — '
+                    'köas inte', task.name)
+                skipped += 1
+                continue
+
+            try:
+                user = coworker._resolve_dispatch_user('heartbeat', None)
+            except ValidationError as e:
+                _logger.warning('Heartbeat-dispatcher: %s', e)
+                skipped += 1
+                continue
+
+            # 6. Checka ut atomiskt och köa sessionen.
+            try:
+                session = task.action_checkout(
+                    init_type='heartbeat', job_prompt=prompt)
+                session.write({'user_id': user.id})
+                dispatched += 1
+            except Exception as e:
+                # action_checkout frigör uppgiften vid session-fel (D5).
+                _logger.warning(
+                    'Heartbeat-dispatcher: kunde inte checka ut %s: %s',
+                    task.name, e)
+                skipped += 1
+
+        if dispatched or skipped:
+            _logger.info(
+                'Heartbeat-dispatcher: %s utdelade, %s överhoppade '
+                '(%.1fs)', dispatched, skipped, _time.monotonic() - started)
+        return {'dispatched': dispatched, 'skipped': skipped}
+
+    def _heartbeat_operational(self):
+        """Är denna coworkers heartbeat operativ? Returnerar (ok, orsak).
+
+        Kärnan i "löftet som kan infrias" (organization): sant
+        `heartbeat_enabled` förutsätter att väckaren finns, att coworkern har
+        en ägare och att budgeten inte är tömd.
+
+        Används av dispatchern (för att hoppa över) och av beskedet vid
+        köning (för att namnge hindret). Detta är INTE `_is_receptive()` —
+        den senare kräver dessutom ett färskt `last_successful_run` och hör
+        till delegeringens semantik.
+        """
+        self.ensure_one()
+        if not self.active or self.status != 'active':
+            return False, '%s är inte aktiv.' % self.name
+        if not self.heartbeat_enabled:
+            return False, (
+                '%s har heartbeat avstängt och vaknar inte.' % self.name)
+        if not self._heartbeat_waker_registered():
+            return False, (
+                '%s har heartbeat på men ingen väckare registrerad — '
+                'ingen delar ut uppgifter.' % self.name)
+        if not self.chat_user_id:
+            return False, (
+                '%s saknar ägare för automatiska körningar (chat_user_id) '
+                '— ingen systemuser-fallback finns.' % self.name)
+        if self.budget_exhausted:
+            return False, (
+                '%s har slut på månadsbudget och sover resten av perioden.'
+                % self.name)
+        return True, 'operativ'
+
+    def _heartbeat_waker_registered(self):
+        """Finns väckaren i schemaläggningsmotorns register och är aktiv?"""
+        if 'cron.task' not in self.env:
+            return False
+        task = self.env['cron.task'].sudo().search([
+            ('technical_name', '=', 'ai_heartbeat_dispatch'),
+            ('active', '=', True),
+        ], limit=1)
+        return bool(task)
+
+    def action_enable_heartbeat(self):
+        """Slå på heartbeat — behörighetsstyrt (schemalagt-arbete 5.4).
+
+        Kräver skrivrätt på coworkern. Utan rätt nekas åtgärden med ett
+        tydligt skäl och ingen ändring sker. Idempotent: en redan operativ
+        heartbeat ändras inte och väckaren dubbleras inte.
+
+        Väckaren är en `cron.task` (delad, en för hela systemet) — att slå på
+        heartbeat per coworker skapar därför ingen ny cron, bara flaggan.
+        Finns ingen väckare alls sägs det tydligt (den kan ha avaktiverats).
+        """
+        self.ensure_one()
+        if not self.env.user.has_access('write'):
+            raise ValidationError(
+                'Du saknar skrivrätt på AI Medarbetare och kan inte slå på '
+                'heartbeat. Be en administratör göra det.')
+
+        if not self.active or self.status != 'active':
+            raise ValidationError(
+                '%s är inte aktiv — aktivera medarbetaren först.' % self.name)
+
+        if not self._heartbeat_waker_registered():
+            raise ValidationError(
+                'Väckaren (cron.task ai_heartbeat_dispatch) är inte '
+                'registrerad eller är inaktiv — heartbeat kan inte slås på. '
+                'Kontakta en administratör.')
+
+        # Idempotent: redan operativ → ingen ändring.
+        if self.heartbeat_enabled:
+            return True
+        self.write({'heartbeat_enabled': True})
+        _logger.info('Heartbeat aktiverad för %s av %s',
+                     self.name, self.env.user.login)
+        return True
 
     @api.model
     def _process_heartbeat_sessions(self, batch_size=10):
@@ -8575,6 +8862,11 @@ class AICoworker(models.Model):
         aged = self.env['ai.org.task'].search([
             ('status', 'in', ('todo', 'in_progress')),
             ('create_date', '<', age_cutoff),
+            # En framtidsatt uppgift väntar MED AVSIKT — den är inte åldrad.
+            # Utan detta undantag skulle mätaren larma på precis det
+            # beteende `scheduled_at` finns för (schemalagt-arbete D6).
+            '|', ('scheduled_at', '=', False),
+                 ('scheduled_at', '<=', fields.Datetime.now()),
         ])
         stale_tasks = [{
             'id': t.id, 'name': t.name,
@@ -8605,43 +8897,34 @@ class AICoworker(models.Model):
                 'stale_released': released, 'stale_tasks': stale_tasks}
 
     def _heartbeat_all(self):
-        """Called by ir.cron — iterate all active coworkers."""
-        from datetime import datetime, timedelta
+        """Global väckare — körs av schemaläggningsmotorn (cron.task, min).
 
-        # Check system setting
-        icp = self.env['ir.config_parameter'].sudo()
-        enabled = icp.get_param('ai_agent_core.heartbeat_enabled', 'True')
-        if enabled != 'True':
-            return
+        **Beslut 2 (2026-10-15):** den globala väckaren behålls och startas av
+        `cron_tick`. Den är en `cron.task` med `cadence='min'` som anropar
+        denna metod; den gamla `cron_ai_heartbeat` avvecklas för heartbeat.
 
-        interval = int(icp.get_param('ai_agent_core.heartbeat_interval', '5'))
-        # Begränsa antalet coworkers per tick (5.10): en cykel ska inte
-        # bearbeta hela listan. Coworkers som står över tas i ett senare tick
-        # (5.11) — rotation via senaste heartbeat först.
-        per_tick = int(icp.get_param('ai_agent_core.heartbeat_per_tick', '20'))
+        Metoden delegerar till `_heartbeat_dispatch()` (D8): uppgiftslistan är
+        en DELAD pool och uppgifter delas ut en i taget med två tak. Den
+        gamla per-coworker-loopen (`_heartbeat()` med `limit=1`) är kvar för
+        bakåtkompatibilitet men används inte av denna väg.
 
-        coworkers = self.search([
+        `last_heartbeat` skrivs som rotationsmarkör (oförändrat) — den är
+        INTE ett livstecken; det är `last_successful_run`.
+        """
+        result = self._heartbeat_dispatch()
+        if result.get('reason') == 'disabled':
+            return result
+        # Rotationsmarkör: håll `last_heartbeat` levande för vyerna som
+        # fortfarande läser den (byts mot last_successful_run i uppgift 6.2).
+        now = fields.Datetime.now()
+        active = self.search([
             ('active', '=', True),
             ('status', '=', 'active'),
             ('heartbeat_enabled', '=', True),
-        ], order='last_heartbeat asc, id asc', limit=per_tick)
-
-        now = datetime.now()
-        for coworker in coworkers:
-            try:
-                # Check if enough time since last heartbeat
-                if coworker.last_heartbeat:
-                    last = coworker.last_heartbeat
-                    if last and isinstance(last, datetime):
-                        diff = (now - last).total_seconds() / 60
-                        if diff < interval:
-                            continue
-
-                coworker._heartbeat()
-                coworker.write({'last_heartbeat': now})
-            except Exception as e:
-                _logger.error('Heartbeat failed for %s: %s',
-                            coworker.name, e)
+        ])
+        if active:
+            active.write({'last_heartbeat': now})
+        return result
 
     last_heartbeat = fields.Datetime('Last Heartbeat')
 

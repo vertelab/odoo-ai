@@ -199,11 +199,14 @@
                             <field name="department_id"/>
                             <field name="is_default"/>
                             <field name="heartbeat_enabled"/>
+                            <field name="heartbeat_status" readonly="1"
+                                decoration-success="heartbeat_operational"
+                                decoration-danger="heartbeat_enabled and not heartbeat_operational"/>
                         </group>
                         <group string="HITL">
                             <field name="hitl_threshold" widget="radio"/>
                             <field name="active" widget="boolean_toggle"/>
-                            <field name="last_heartbeat" readonly="1"/>
+                            <field name="last_successful_run" readonly="1"/>
                         </group>
                     </group>
 

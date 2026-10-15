@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+        <!-- ============================================================
+             Heartbeat-dispatchern — en cron.task i schemaläggningsmotorn.
+
+             RÄTTELSE 2026-10-15: heartbeat ska INTE ha en egen ir.cron per
+             coworker. `cron_tick` (odoo-base) finns just för att avskaffa
+             individuella ir.cron: ett register (cron.task) + fem tick-croner.
+             ai_agent_core beror redan på cron_tick (skill_sync är första
+             kunden).
+
+             Kadensen `min` = var 5:e minut. Det är motorns granularitet —
+             README noterar uttryckligen att 1 minut var slöseri eftersom
+             `_heartbeat_all` ändå hade en intern 5-minutersspärr.
+
+             Motorn äger kadens, lås och körhistorik. Väckaren äger bara
+             utdelningen av uppgifter (D8): uppgiftslistan är en DELAD pool
+             och uppgifter delas ut en i taget, med två tak (antal + tid).
+
+             Kan även triggas manuellt (Run now) och via webhook:
+               POST /cron/trigger/ai_heartbeat_dispatch
+             ============================================================ -->
+        <record id="cron_task_heartbeat_dispatch" model="cron.task">
+            <field name="name">Heartbeat — dispatcher</field>
+            <field name="technical_name">ai_heartbeat_dispatch</field>
+            <field name="module">ai_agent_core</field>
+            <field name="model_name">ai.coworker</field>
+            <field name="method_name">_heartbeat_all</field>
+            <field name="cadence">min</field>
+            <field name="sequence">10</field>
+            <field name="active" eval="True"/>
+        </record>
+    </data>
+</odoo>

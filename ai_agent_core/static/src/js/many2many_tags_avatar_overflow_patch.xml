@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+    <!-- Overflow "+N" får en klick-hook (org-goal-integrity D10).
+         Ärver core-mallen web.TagsList och binder t-on-click på
+         overflow-brickan. Handlern är en no-op när proppen saknas, så
+         övriga användningar av widgeten är oförändrade. -->
+    <t t-name="ai_agent_core.Many2ManyTagsAvatarOverflowPatch"
+       t-inherit="web.TagsList" t-inherit-mode="primary">
+        <xpath expr="//span[hasclass('o_m2m_avatar_empty')]" position="attributes">
+            <attribute name="t-on-click.stop.prevent">onOverflowBadgeClick</attribute>
+            <attribute name="t-attf-class" add="{{ props.onOverflowClick ? 'cursor-pointer' : '' }}" separator=" "/>
+        </xpath>
+    </t>
+</templates>

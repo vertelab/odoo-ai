@@ -21,6 +21,37 @@ class Department(models.Model):
         string='AI-medarbetare',
         help='AI-medarbetare (ai.coworker) i denna avdelning.')
 
+    # Mänskliga medlemmar (org-goal-integrity D9): hr.employee med
+    # department_id = self OCH is_ai = False. Separat från ai_coworker_ids
+    # så att de två slagen visas i varsin ansiktslista — hr.employee bär
+    # redan is_ai + ai_coworker_id, så filtreringen är ett fält bort.
+    employee_ids = fields.Many2many(
+        'hr.employee', string='Medarbetare (mänskliga)',
+        compute='_compute_employee_ids',
+        help='Mänskliga medarbetare i avdelningen (is_ai = False). '
+             'AI-medarbetare visas separat i ai_coworker_ids.')
+
+    @api.depends('ai_coworker_ids')
+    def _compute_total_ai_staff(self):
+        for dept in self:
+            dept.total_ai_staff = len(dept.ai_coworker_ids)
+
+    def _compute_employee_ids(self):
+        # Icke-lagrad compute över hr.employee — slå upp per avdelning i en
+        # batchad sökning (undviker N+1 i listvyn).
+        Employee = self.env['hr.employee']
+        rows = Employee.search_read(
+            [('department_id', 'in', self.ids), ('is_ai', '=', False)],
+            fields=['department_id'])
+        by_dept = {}
+        for row in rows:
+            dept = row.get('department_id')
+            if dept:
+                dept_id = dept[0] if isinstance(dept, (list, tuple)) else dept
+                by_dept.setdefault(dept_id, []).append(row['id'])
+        for dept in self:
+            dept.employee_ids = [(6, 0, by_dept.get(dept.id, []))]
+
     total_ai_staff = fields.Integer(
         'Antal AI-medarbetare',
         compute='_compute_total_ai_staff',

@@ -294,6 +294,12 @@
                         <setting id="heartbeat_interval" help="Hur ofta coworkers vaknar och kollar läget">
                             <field name="heartbeat_interval"/>
                         </setting>
+                        <setting id="heartbeat_max_tasks_per_tick" help="Antalstak: högst så här många uppgifter delas ut per tick">
+                            <field name="heartbeat_max_tasks_per_tick"/>
+                        </setting>
+                        <setting id="heartbeat_max_seconds_per_tick" help="Tidsgräns: sluta dela ut uppgifter efter så här många sekunder (300 = tickens 5-minutersfönster)">
+                            <field name="heartbeat_max_seconds_per_tick"/>
+                        </setting>
                     </block>
 
                     <block title="Background Jobs">

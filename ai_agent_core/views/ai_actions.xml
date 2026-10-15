@@ -50,11 +50,8 @@
     </record>
 
     <!-- ===== New Org Actions ===== -->
-    <record id="action_ai_org_goal" model="ir.actions.act_window">
-        <field name="name">Goals (OKR)</field>
-        <field name="res_model">ai.org.goal</field>
-        <field name="view_mode">kanban,list,form</field>
-    </record>
+    <!-- Mål-actionen (OKR) definieras i views/ai_org_goal_views.xml
+         (org-goal-integrity D6) — endast EN definition i modulen. -->
     <record id="action_ai_org_task" model="ir.actions.act_window">
         <field name="name">AI Tasks</field>
         <field name="res_model">ai.org.task</field>

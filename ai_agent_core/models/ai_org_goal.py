@@ -42,9 +42,16 @@ class AIOrgGoal(models.Model):
         help='Avdelning som äger detta mål.')
     coworker_id = fields.Many2one('ai.coworker',
         string='Coworker',
-        help='AI-medarbetare som äger detta mål.')
-    agent_id = fields.Many2one('ai.agent',
-        help='Specifik agent som äger detta mål.')
+        help='AI-medarbetare som äger detta mål (enskild ägare). '
+             'Ägarkedjan är: en angiven coworker (coworker_id), ett '
+             'deklarerat team (coworker_ids), eller — utan utsedd ägare — '
+             'avdelningen (department_id). Ett mål ägs aldrig av en agent.')
+    coworker_ids = fields.Many2many(
+        'ai.coworker', 'ai_org_goal_coworker_rel',
+        'goal_id', 'coworker_id', string='Team',
+        help='Deklarerat team av coworker som tillsammans äger målet. '
+             'Kan sättas innan tasks finns. Tomt tillsammans med tomt '
+             'coworker_id = målet ägs av avdelningen.')
 
     # SMART
     specific = fields.Text('Specific — what exactly?')

@@ -303,8 +303,19 @@ class ResConfigSettings(models.TransientModel):
              'periodically to check for work.')
     heartbeat_interval = fields.Integer(
         'Heartbeat Interval (minutes)', default=5,
-        help='How often each active coworker wakes to check budget, '
-             'tasks, goals, and nudge needs.')
+        help='Hur ofta varje aktiv coworker vaknar för att checka budget, '
+             'tasks, mål och nudge-behov. OBS: väckaren körs nu av '
+             'schemaläggningsmotorn (cron.task, cadence min = 5 min) — '
+             'fältet är kvar för bakåtkompatibilitet.')
+    heartbeat_max_tasks_per_tick = fields.Integer(
+        'Max uppgifter per tick', default=20,
+        help='Antalstak för dispatchern: högst så här många uppgifter delas '
+             'ut per tick. Resten tas i nästa tick — ingen uppgift tappas.')
+    heartbeat_max_seconds_per_tick = fields.Integer(
+        'Max sekunder per tick', default=300,
+        help='Tidsgräns för dispatchern: har så här många sekunder passerat '
+             'slutar den dela ut uppgifter så att cron-tråden frigörs. '
+             'Default 300 s = tickens 5-minutersfönster.')
 
     # ─────────────────────────────────────────────
     # Background Jobs — dynamic fields per cron
@@ -415,6 +426,10 @@ class ResConfigSettings(models.TransientModel):
             'ai_agent_core.heartbeat_enabled', 'True') == 'True'
         res['heartbeat_interval'] = int(get_param(
             'ai_agent_core.heartbeat_interval', '5'))
+        res['heartbeat_max_tasks_per_tick'] = int(get_param(
+            'ai_agent_core.heartbeat_max_tasks_per_tick', '20'))
+        res['heartbeat_max_seconds_per_tick'] = int(get_param(
+            'ai_agent_core.heartbeat_max_seconds_per_tick', '300'))
 
         # Default Tools (explicit-agent-tools): kommaseparerade namn i
         # ir.config_parameter → M2M-värde. Tom parameter → default-uppsättningen.
@@ -466,6 +481,10 @@ class ResConfigSettings(models.TransientModel):
                   str(self.heartbeat_enabled))
         set_param('ai_agent_core.heartbeat_interval',
                   str(self.heartbeat_interval))
+        set_param('ai_agent_core.heartbeat_max_tasks_per_tick',
+                  str(self.heartbeat_max_tasks_per_tick))
+        set_param('ai_agent_core.heartbeat_max_seconds_per_tick',
+                  str(self.heartbeat_max_seconds_per_tick))
 
         # Default Tools (explicit-agent-tools)
         set_param('ai_agent_core.default_tool_ids',

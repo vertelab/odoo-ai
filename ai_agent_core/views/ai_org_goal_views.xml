@@ -42,7 +42,8 @@
                         <group>
                             <field name="department_id" options="{'no_create': True}"/>
                             <field name="coworker_id" options="{'no_create': True}"/>
-                            <field name="agent_id" options="{'no_create': True}"/>
+                            <field name="coworker_ids" widget="many2many_tags_avatar"
+                                options="{'no_create': True}"/>
                             <field name="deadline"/>
                         </group>
                     </group>
