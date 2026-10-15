@@ -194,8 +194,15 @@ class AIProvider(models.Model):
 
         Skiljer de avslag som ger samma HTTP-status men kräver olika
         åtgärder: slut på kredit, obehörig modell, modell saknas. Läser
-        `type`/`code`/`message` ur JSON-kroppen — fri text används bara
-        som sista utväg, och bara för loggning.
+        `type`/`code`/`message` ur JSON-kroppen och berikar med
+        `extra_fields.provider` + `extra_fields.error_type` — de två
+        senare finns bara i gatewayens svar (D5) och gör att en obehörig
+        modell (403 `policy_model_blocked`) går att skilja från ett
+        generiskt `combo_forbidden`.
+
+        Returnerar en sträng: `type` (eller `code`/`message`) med
+        `provider`/`error_type` som `key=value`-suffix när de finns.
+        Fri text används bara som sista utväg, och bara för loggning.
         """
         try:
             body = http_error.read().decode('utf-8', 'replace')
@@ -210,11 +217,29 @@ class AIProvider(models.Model):
         err = payload.get('error')
         if not isinstance(err, dict):
             err = payload
+        reason = ''
         for key in ('type', 'code', 'message'):
             val = err.get(key)
             if val:
-                return str(val)[:120]
-        return ''
+                reason = str(val)[:120]
+                break
+        # extra_fields kan ligga på toppnivån eller i error-objektet.
+        extra = payload.get('extra_fields')
+        if not isinstance(extra, dict):
+            extra = err.get('extra_fields')
+        if not isinstance(extra, dict):
+            extra = {}
+        provider = extra.get('provider')
+        error_type = extra.get('error_type')
+        suffix = []
+        if provider:
+            suffix.append('provider=%s' % str(provider)[:60])
+        if error_type:
+            suffix.append('error_type=%s' % str(error_type)[:60])
+        if suffix:
+            base = reason or 'gateway_rejection'
+            return ('%s (%s)' % (base, ', '.join(suffix)))[:200]
+        return reason
 
     @api.depends('model_ids')
     def _compute_model_count(self):
@@ -417,7 +442,11 @@ class AIProvider(models.Model):
             # Strukturerat avslag: koppla bort providern så nästa modell
             # inte probar samma döda endpoint (D3).
             if e.code in (402, 403, 404):
-                self._breaker_trip(e.code, self._rejection_reason(e))
+                reason = self._rejection_reason(e)
+                self._breaker_trip(e.code, reason)
+                _logger.warning(
+                    'Gateway-avslag vid modellimport från %s: HTTP %s — %s',
+                    self.name, e.code, reason or 'okänd orsak')
             _logger.error("Failed to fetch models from %s: %s", self.name, e)
             raise UserError(_('Failed to fetch models: %s') % str(e))
         except Exception as e:
@@ -480,7 +509,11 @@ class AIProvider(models.Model):
                 data = json.loads(resp.read().decode())
         except urllib.error.HTTPError as e:
             if e.code in (402, 403, 404):
-                self._breaker_trip(e.code, self._rejection_reason(e))
+                reason = self._rejection_reason(e)
+                self._breaker_trip(e.code, reason)
+                _logger.warning(
+                    'Gateway-avslag vid /v1/config för %s: HTTP %s — %s',
+                    self.name, e.code, reason or 'okänd orsak')
             _logger.debug("No /v1/config catalog for %s: %s", self.name, e)
             self._catalog_cache_set('config_map', {})
             return {}
@@ -594,10 +627,12 @@ class AIProvider(models.Model):
             with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
                 data = json.loads(resp.read().decode())
         except urllib.error.HTTPError as e:
+            reason = self._rejection_reason(e) if e.code in (402, 403, 404) else ''
             if e.code in (402, 403, 404):
-                self._breaker_trip(e.code, self._rejection_reason(e))
-            _logger.info(
-                'Katalog-hämtning misslyckades för %s: %s', self.name, e)
+                self._breaker_trip(e.code, reason)
+            _logger.warning(
+                'Katalog-hämtning misslyckades för %s: HTTP %s — %s',
+                self.name, e.code, reason or str(e))
             return None, False
         except Exception as e:
             _logger.info(

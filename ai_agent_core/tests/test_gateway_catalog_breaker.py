@@ -135,7 +135,13 @@ class TestCatalogCacheAndBreaker(common.TransactionCase):
                          'Utgången period ska inte blockera')
 
     def test_rejection_reason_distinguishes_types(self):
-        """(f) Avslagstyper hålls åtskilda."""
+        """(f) Avslagstyper hålls åtskilda — inkl. provider/error_type.
+
+        Gatewayens svar (v2.3.0) bär `extra_fields.provider` och
+        `extra_fields.error_type`; de två senare gör att en obehörig
+        modell (403 `policy_model_blocked`) går att skilja från ett
+        generiskt `combo_forbidden` i Odoo-loggen (D5).
+        """
         import io
 
         def make(code, body):
@@ -151,6 +157,29 @@ class TestCatalogCacheAndBreaker(common.TransactionCase):
                          'combo_forbidden')
         self.assertEqual(self.Provider._rejection_reason(missing),
                          'model_not_found')
+
+        # Riktigt gateway-svar: 403 med extra_fields (provider + error_type).
+        blocked = make(403, (
+            '{"type": "model_blocked", '
+            '"error": {"message": "Model is not allowed"}, '
+            '"extra_fields": {"provider": "cerebras", '
+            '"original_model_requested": "gemma-4-31b", '
+            '"error_type": "policy_model_blocked"}}'))
+        reason = self.Provider._rejection_reason(blocked)
+        self.assertIn('model_blocked', reason)
+        self.assertIn('provider=cerebras', reason)
+        self.assertIn('error_type=policy_model_blocked', reason)
+
+        # 429: provider i extra_fields, error_type saknas.
+        limited = make(429, (
+            '{"type": "rate_limited", "code": "1300", '
+            '"error": {"type": "rate_limited", "code": "1300", '
+            '"message": "Rate limit exceeded"}, '
+            '"extra_fields": {"provider": "mistral", "latency": 85}}'))
+        reason = self.Provider._rejection_reason(limited)
+        self.assertIn('rate_limited', reason)
+        self.assertIn('provider=mistral', reason)
+        self.assertNotIn('error_type=', reason)
 
     def test_non_rejection_does_not_trip(self):
         """Ett nätverksfel (inte avslag) kopplar inte bort providern."""
