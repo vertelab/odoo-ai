@@ -11,7 +11,7 @@ import logging
 from datetime import datetime, timedelta
 
 from odoo import models, fields, api, _
-from odoo.exceptions import ValidationError
+from odoo.exceptions import ValidationError, UserError
 
 from ..fields.pg_vector import PgVector
 
@@ -592,6 +592,128 @@ class AIOkfConcept(models.Model):
             return False
         return True
 
+    # ── Personligt minne: skrivgräns (D2, companion-memory-completeness) ──
+    #
+    # Hermes avvisar en skrivning över taket och kräver konsolidering i
+    # samma tur. odoo-ai hade bara en LÄS-trunkering (max_chars=2000 i
+    # _okf_build_system_prompt_block) — OKF växte fritt och det som föll
+    # utanför budgeten försvann tyst. Dessa metoder flyttar gränsen till
+    # skrivvägen.
+
+    @api.model
+    def _personal_memory_budget(self):
+        """Teckenbudget för en användares personliga minne (konfigurerbar)."""
+        raw = self.env['ir.config_parameter'].sudo().get_param(
+            'odoomind.personal_memory.char_budget', '4000')
+        try:
+            return max(0, int(raw))
+        except (TypeError, ValueError):
+            return 4000
+
+    @api.model
+    def _personal_memory_warn_pct(self):
+        """Andel av budgeten där en konsolideringsvarning registreras."""
+        raw = self.env['ir.config_parameter'].sudo().get_param(
+            'odoomind.personal_memory.warn_pct', '80')
+        try:
+            return min(100, max(0, int(raw)))
+        except (TypeError, ValueError):
+            return 80
+
+    @api.model
+    def _personal_memory_usage(self, user):
+        """Summerade tecken för en användares aktiva personal-koncept.
+
+        Räknar `summary` (det som faktiskt injiceras), inte `source_text`.
+        Endast senaste versionen av varje nyckel räknas — en superseded rad
+        injiceras inte och ska därför inte belasta budgeten.
+        """
+        uid = user.id if hasattr(user, 'id') else user
+        rows = self.search([
+            ('scope', '=', 'personal'),
+            ('owner_user_id', '=', uid),
+            ('archived', '=', False),
+            ('superseded_by_id', '=', False),
+        ])
+        return sum(len(r.summary or '') for r in rows)
+
+    @api.model
+    def _personal_memory_archive_candidates(self, user, limit=5):
+        """Koncept som är lämpligast att arkivera när taket nås.
+
+        OKF-konceptet saknar `access_count`/`last_accessed` (de finns bara
+        på legacy `ai.personal.memory`). Kandidaterna härleds därför ur
+        ålder: äldst `create_date` först, med `okf_indexed_at` som
+        tie-breaker. Det är en ärlig approximation — den säger "äldst",
+        inte "minst använd", och felet namnger dem som just kandidater.
+        """
+        uid = user.id if hasattr(user, 'id') else user
+        return self.search([
+            ('scope', '=', 'personal'),
+            ('owner_user_id', '=', uid),
+            ('archived', '=', False),
+            ('superseded_by_id', '=', False),
+        ], order='create_date asc, id asc', limit=limit)
+
+    @api.model
+    def _check_personal_memory_budget(self, user, incoming_chars=0):
+        """Pröva skrivgränsen innan en personal-skrivning (D2).
+
+        - Under varningszonen: tyst.
+        - I varningszonen: skrivningen går igenom, men en notis registreras.
+        - Vid/över taket: `UserError` som namnger budget, bruk och
+          arkiveringskandidater. Ingen rad skapas.
+
+        `incoming_chars` är den nya radens `summary`-längd. Anropas av
+        `_okf_upsert` för `scope='personal'`.
+        """
+        budget = self._personal_memory_budget()
+        if budget <= 0:
+            return  # 0 = ingen gräns (avstängd)
+        usage = self._personal_memory_usage(user)
+        projected = usage + max(0, int(incoming_chars))
+        warn_at = budget * self._personal_memory_warn_pct() // 100
+        if projected > budget:
+            candidates = self._personal_memory_archive_candidates(user)
+            names = '\n'.join(
+                '  - %s (%s, %d tecken)' % (
+                    (c.title or c.concept_key or '')[:60],
+                    str(c.create_date or '')[:10],
+                    len(c.summary or ''))
+                for c in candidates) or '  (inga kandidater hittades)'
+            raise UserError(_(
+                'Det personliga minnet är fullt.\n\n'
+                'Budget: %(budget)d tecken · i bruk: %(usage)d · '
+                'skrivningen skulle lägga till %(add)d.\n\n'
+                'Konsolidera genom att arkivera eller slå ihop — '
+                'minnet är ADD-only, inget skrivs över.\n\n'
+                'Kandidater att arkivera (äldst först):\n%(names)s'
+            ) % {
+                'budget': budget,
+                'usage': usage,
+                'add': max(0, int(incoming_chars)),
+                'names': names,
+            })
+        if projected >= warn_at:
+            self._record_personal_budget_warning(user, budget, projected)
+
+    def _record_personal_budget_warning(self, user, budget, projected):
+        """Registrera en konsolideringsvarning (varningszonen)."""
+        try:
+            if 'workspace.activity.suggestion' not in self.env:
+                return
+            pct = (projected * 100 // budget) if budget else 0
+            self.env['workspace.activity.suggestion']._create_suggestion(
+                summary='Personligt minne %d %% fullt — konsolidera' % pct,
+                detail=('Det personliga minnet är %d av %d tecken (%d %%). '
+                        'Arkivera eller slå ihop koncept för att göra plats.'
+                        % (projected, budget, pct)),
+                suggestion_type='mail.activity', source='coworker',
+                user=user,
+            )
+        except Exception:
+            pass
+
     def _okf_upsert(self, artifact_type, concept_key, summary, title=None,
                     attribution=None, source_ref=None, sources=None,
                     owner_company_id=None, owner_user_id=None,
@@ -698,6 +820,16 @@ class AIOkfConcept(models.Model):
                 # konceptet finns och är aktuellt.
                 return existing
 
+            # ── D2: skrivgränsen för det personliga minnet ───────────────
+            # En ny VERSION ersätter den gamla (gamla raden blir superseded
+            # och slutar räknas), så tillväxten är differensen. Ett helt nytt
+            # koncept tillför hela sin längd. Pröva mot taket INNAN raden
+            # skapas — annars är felet bara kosmetiskt.
+            if scope == 'personal':
+                delta = len(summary or '') - len(existing.summary or '')
+                self._check_personal_memory_budget(
+                    owner_user_id, incoming_chars=max(0, delta))
+
             # ADD-only: ny version istället för att skriva över
             vec, vec_state = self._produce_embedding(
                 summary, title=title, explicit=embedding)
@@ -738,6 +870,12 @@ class AIOkfConcept(models.Model):
                 'superseded_by_id': new.id,
             })
             return new
+
+        # ── D2: skrivgränsen för det personliga minnet (nytt koncept) ──
+        # Helt ny nyckel → hela längden tillförs budgeten.
+        if scope == 'personal':
+            self._check_personal_memory_budget(
+                owner_user_id, incoming_chars=len(summary or ''))
 
         vec, vec_state = self._produce_embedding(
             summary, title=title, explicit=embedding)
@@ -2133,6 +2271,31 @@ class AIOkfConcept(models.Model):
             parts.append(strategy_block)
             injected_ids.extend(strategy_concepts._latest_per_key().ids)
 
+        # Level 2b — Personligt: vem användaren är och vart de är på väg
+        # (D6). Kriteriet är TYP, inte innehåll — annars blir det en
+        # LLM-dom som kan flippra mellan körningar. Bara två typer lyfts:
+        #   - artifact_type 'roll' → L2 (vem användaren är)
+        #   - artifact_type 'mål'  → L2 (vart de är på väg)
+        #
+        # FYND (test 2026-10-14): `status` på ai.okf.concept är
+        # draft/stable/superseded/deprecated — INTE active/completed (de
+        # tillhör ai.personal.goal). Ett OKF-koncept för ett mål skapas
+        # bara för mål med active=True (_index_user_goals), så ett
+        # icke-deprecated 'mål'-koncept ÄR ett aktivt mål. Att filtrera på
+        # status='active' här hade tystat regeln helt.
+        if scope == 'personal':
+            personal_l2 = self.search(domain + [
+                ('artifact_type_id.name', 'in', ['roll', 'mål']),
+                ('status', 'not in', ['deprecated']),
+            ], order='version desc', limit=10)
+            personal_l2 = personal_l2._latest_per_key()
+            if personal_l2:
+                p_block = self._format_concept_block(
+                    personal_l2, max_chars // 4, 'PERSONLIGT', user=user)
+                if p_block:
+                    parts.append(p_block)
+                    injected_ids.extend(personal_l2.ids)
+
         # Level 1 — Indexerad data via _okf_search
         want_l1 = injection_level in ('summary_and_key', 'full')
         if want_l1 and include_level1 and query:
@@ -2142,6 +2305,12 @@ class AIOkfConcept(models.Model):
                 limit=limit or 10, user=user, hybrid=hybrid,
                 semantic_weight=semantic_weight)
             if search_results:
+                # D6: koncept som redan lyfts till L2 ska inte injiceras en
+                # andra gång i L1 — samma budget, dubbel kostnad.
+                if scope == 'personal' and personal_l2:
+                    _l2_ids = set(personal_l2.ids)
+                    search_results = search_results.filtered(
+                        lambda r: r.id not in _l2_ids)
                 l1_block = self._format_concept_block(
                     search_results, max_chars // 3, 'RELEVANT KUNSKAP',
                     user=user)

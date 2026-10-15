@@ -137,6 +137,13 @@
                                 <field name="personal_memory_consolidation_hours" class="d-inline"/>
                                 <span>timme/-ar</span>
                             </div>
+                            <div class="d-flex align-items-center gap-3 mt4">
+                                <span>Teckenbudget</span>
+                                <field name="personal_memory_char_budget" class="d-inline"/>
+                                <span>tecken — varna vid</span>
+                                <field name="personal_memory_warn_pct" class="d-inline"/>
+                                <span>%</span>
+                            </div>
                         </setting>
 
                         <!-- AI Coworker Memory -->

@@ -9,8 +9,11 @@ from . import test_init_types_overhaul
 # 99 tysta "No module named 'tenacity'" i Odoo-loggen sedan 23 aug.
 # Sätts på igen när beroendet är installerat.
 from . import test_okf_memory
+from . import test_companion_memory
 from . import test_okf_fail_closed
 from . import test_okf_owner_scoping
+# Ägar-åtgärden bakom smartknapparna (okf-smart-buttons F2.2).
+from . import test_okf_owner_action
 from . import test_okf_batched_embedding
 from . import test_okf_access_selection
 from . import test_core_domain_purity

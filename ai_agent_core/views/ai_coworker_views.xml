@@ -351,6 +351,8 @@
                                 <field name="memory_scopes" widget="many2many_tags"/>
                                 <field name="memory_level" widget="radio"/>
                                 <field name="learning" widget="radio"/>
+                                <field name="memory_learning_direct"
+                                       invisible="learning != 'active'"/>
                             </group>
                             <group string="Sökning (fas 13)">
                                 <field name="search_sources" widget="many2many_tags"

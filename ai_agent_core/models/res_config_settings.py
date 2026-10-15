@@ -216,6 +216,21 @@ class ResConfigSettings(models.TransientModel):
         config_parameter='odoomind.personal_memory.consolidation_hours',
         help='How often to consolidate personal memories.')
 
+    personal_memory_char_budget = fields.Integer(
+        'Personligt minne: teckenbudget', default=4000,
+        config_parameter='odoomind.personal_memory.char_budget',
+        help='Max antal tecken för en användares personliga minne. En '
+             'skrivning som skulle överskrida taket vägras med ett '
+             'åtgärdbart fel i stället för att tyst trunkeras vid injektion. '
+             'Konsolidering sker genom arkivering eller sammanslagning '
+             '(ADD-only).')
+
+    personal_memory_warn_pct = fields.Integer(
+        'Personligt minne: varningszon (%)', default=80,
+        config_parameter='odoomind.personal_memory.warn_pct',
+        help='Vid denna andel av teckenbudgeten registreras en varning om '
+             'att konsolidering behövs. Skrivningen går fortfarande igenom.')
+
     coworker_memory_retention = fields.Boolean(
         'Session Memory Retention', default=True,
         config_parameter='odoomind.coworker_memory.retention_enabled',
@@ -386,6 +401,10 @@ class ResConfigSettings(models.TransientModel):
             'odoomind.personal_memory.nudge_interval', '7'))
         res['personal_memory_consolidation_hours'] = int(get_param(
             'odoomind.personal_memory.consolidation_hours', '24'))
+        res['personal_memory_char_budget'] = int(get_param(
+            'odoomind.personal_memory.char_budget', '4000'))
+        res['personal_memory_warn_pct'] = int(get_param(
+            'odoomind.personal_memory.warn_pct', '80'))
         res['coworker_memory_retention'] = get_param(
             'odoomind.coworker_memory.retention_enabled', 'True') == 'True'
         res['coworker_memory_retention_limit'] = int(get_param(
@@ -433,6 +452,10 @@ class ResConfigSettings(models.TransientModel):
                   str(self.personal_memory_nudge_interval))
         set_param('odoomind.personal_memory.consolidation_hours',
                   str(self.personal_memory_consolidation_hours))
+        set_param('odoomind.personal_memory.char_budget',
+                  str(self.personal_memory_char_budget))
+        set_param('odoomind.personal_memory.warn_pct',
+                  str(self.personal_memory_warn_pct))
         set_param('odoomind.coworker_memory.retention_enabled',
                   str(self.coworker_memory_retention))
         set_param('odoomind.coworker_memory.retention_limit',

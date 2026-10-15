@@ -247,6 +247,15 @@ class AICoworker(models.Model):
     ], string='Learning', default='passive',
         help='Om medarbetaren skriver OKF-koncept från samtal (Hermes-lärande). ')
 
+    memory_learning_direct = fields.Boolean(
+        'Skriv personligt minne direkt', default=False,
+        help='Vidgar trust-grinden: vid hitl_threshold="high_risk" skriver '
+             'medarbetaren personal-scopet DIREKT i stället för att lägga ett '
+             'förslag i godkännandekön. Kräver dessutom learning="active" — '
+             'lärande och skrivrätt är två oberoende grindar. company-scopet '
+             'kräver alltid godkännande. Sätts av hermes-profilen; kan stängas '
+             'av per medarbetare.')
+
 
     # ── Buzz workspace settings ──
     allow_auto_create_agents = fields.Boolean(
@@ -3254,8 +3263,19 @@ class AICoworker(models.Model):
         `hybrid_search=False` och tomma källor: en session-only-medarbetare
         ska inte söka i ett beständigt minne alls.
         """
-        _src = lambda codes: [(6, 0, self.env['ai.search.source']
-                               .search([('code', 'in', codes)]).ids)]
+        # D5: en profil får bara peka på källor som faktiskt svarar.
+        # `is_wired` läses ur katalogen — hårdkoda aldrig listan, för då
+        # fortsätter profilen lova en källa som ingen kopplat in (mätt
+        # 2026-10-14: 1 av 4 källor wired; både hermes och balanced pekade
+        # på `graph`, som har 0 noder). Blir en källa wired följer den med
+        # automatiskt, utan att presetet rörs.
+        Source = self.env['ai.search.source']
+
+        def _src(codes):
+            wired = Source.search([
+                ('code', 'in', codes), ('is_wired', '=', True)]).ids
+            return [(6, 0, wired)]
+
         presets = {
             'hermes': {
                 'search_sources': _src(
@@ -4474,6 +4494,32 @@ class AICoworker(models.Model):
         # Undvik att en nyckel blir så lång att den spränger indexet.
         return key[:120]
 
+    def _learning_write_is_direct(self, scope):
+        """Trust-grinden för lärande (D1 companion-regel).
+
+        Sant när konceptet får skrivas direkt till OKF utan godkännande:
+
+        - `autonomous` → alla scopes.
+        - `high_risk` → `coworker` alltid; `personal` endast för en
+          companion (`memory_learning_direct`) med `learning='active'`.
+          `company` kräver alltid godkännande.
+        - `always` → inget skrivs direkt.
+
+        Lärande och skrivrätt är två oberoende grindar — båda måste vara
+        öppna för `personal`.
+        """
+        self.ensure_one()
+        if self.hitl_threshold == 'autonomous':
+            return True
+        if self.hitl_threshold != 'high_risk':
+            return False
+        if scope == 'coworker':
+            return True
+        if scope == 'personal':
+            return bool(self.memory_learning_direct
+                        and self.learning == 'active')
+        return False
+
     def _learn_from_session(self, session):
         """Hermes-lärande (agent-memory-governance 4.x).
 
@@ -4534,11 +4580,23 @@ class AICoworker(models.Model):
                              scope, summary[:60])
                 self._record_learning_discard(session, scope, summary)
                 continue
-            # 3. Trust-gate
-            direct = self.hitl_threshold == 'autonomous' or (
-                self.hitl_threshold == 'high_risk' and scope == 'coworker')
-            if not direct:
+            # 3. Trust-gate (D1 companion-regel: personal direkt för
+            #    companion med aktivt lärande)
+            if not self._learning_write_is_direct(scope):
                 self._record_learning_proposal(session, scope, summary)
+                continue
+            # 3b. D4: en återanvändbar PROCEDUR hör i en skill, inte i
+            #     minnet (som injiceras varje tur). Proceduren är en
+            #     coworker-lärdom — coworkern blir bättre — och skrivs
+            #     därför till scope='coworker' med source_user_id satt
+            #     (avgränsning per användare enligt befintlig regel).
+            if concept.get('kind') == 'procedure':
+                try:
+                    self._learn_procedure_from_session(
+                        session, summary, llm_key=concept.get('key'))
+                    written += 1
+                except Exception as e:
+                    _logger.warning('Procedur-inlärning misslyckades: %s', e)
                 continue
             # 4. Skrivning via _okf_upsert
             try:
@@ -4580,6 +4638,72 @@ class AICoworker(models.Model):
                          written, session.id)
         return written
 
+    def _learn_procedure_from_session(self, session, summary, llm_key=None):
+        """D4: skriv en inlärd procedur som `ai.skill`.
+
+        Procedurer injiceras inte varje tur — de läses när de aktiveras
+        (progressiv disclosure), precis som Hermes skiljer skill från
+        minne. Skrivningen sker till scope='coworker' (coworkern blir
+        bättre) och bär `source_user_id` = sessionens användare.
+
+        Dedup: samma namn (normaliserad nyckel) uppdaterar befintlig skill
+        i stället för att skapa en ny rad.
+        """
+        self.ensure_one()
+        if 'ai.skill' not in self.env:
+            return 0
+        Skill = self.env['ai.skill']
+        name = (summary or '').strip()[:120]
+        if not name:
+            return 0
+        # Deterministisk nyckel → samma procedur blir samma skill.
+        key = self._normalize_concept_key(
+            summary, 'coworker', llm_key=llm_key)
+        existing = Skill.search([
+            ('name', '=', name),
+            ('source_type', '=', 'odoo'),
+            ('source_locator', '=', 'ai.coworker.session,%s' % key),
+        ], limit=1)
+        vals = {
+            'name': name,
+            'description': (summary or '')[:1024],
+            'recipe_text': summary,
+            'category': 'general',
+            'source_type': 'odoo',
+            'source_locator': 'ai.coworker.session,%s' % key,
+        }
+        if existing:
+            existing.write({
+                'description': vals['description'],
+                'recipe_text': vals['recipe_text'],
+                'version': (existing.version or 1) + 1,
+                'last_improved': fields.Datetime.now(),
+            })
+            skill = existing
+        else:
+            skill = Skill.create(vals)
+        # Avgränsning per användare: koppla proceduren till coworkern och
+        # notera vem som lärde den (samma mönster som coworker-scopet).
+        try:
+            self.env['ai.okf.concept']._okf_upsert(
+                'learning',
+                concept_key='procedure.%s' % key,
+                summary=summary,
+                title=name[:80],
+                source_ref='ai.coworker.session,%s' % session.id,
+                attribution=[{
+                    'source': 'ai.coworker.session,%s' % session.id,
+                    'role': 'summary',
+                }],
+                generated_by='learning',
+                owner_coworker_id=self.id,
+                source_user_id=(session.user_id.id or None),
+            )
+        except Exception as e:
+            _logger.debug('Procedur-indexering misslyckades: %s', e)
+        _logger.info('Lärde mig procedur "%s" → skill %s', name[:60], skill.id)
+        return 1
+
     def _extract_concepts_from_conversation(self, conversation):
         """LLM-reflektion: föreslå 1-3 bestående koncept."""
         import json as _json
@@ -4602,7 +4726,21 @@ class AICoworker(models.Model):
                 "värda att minnas (inte småprat). Svara med JSON-lista:\n"
                 '[{"key": "kort.semantisk.nyckel", '
                 '"summary": "fakta i en mening", '
-                '"scope": "personal|company|coworker"}]\n\n'
+                '"scope": "personal|company|coworker", '
+                '"kind": "fact|procedure"}]\n\n'
+                "SPARA INTE:\n"
+                "- triviala eller självklara saker\n"
+                "- fakta som lätt kan återfinnas på nytt\n"
+                "- rådata-dumpar\n"
+                "- uppgiftsframsteg ('hur långt vi kom') — använd "
+                "sessionsökning i stället\n"
+                "- loggar över utfört arbete\n"
+                "- tillfälligt TODO-tillstånd\n"
+                "En återanvändbar PROCEDUR hör i en skill, inte i minnet.\n\n"
+                "SPARA ALLTID: en preferens, en korrigering eller ett mål."
+                "\n\n"
+                "Sätt kind='procedure' för en återanvändbar arbetsgång "
+                "('så här gör man X'), annars kind='fact'.\n\n"
                 "Nyckeln ska vara en semantisk, återanvändbar identifierare för "
                 "FAKTAN — inte för formuleringen. Samma faktum ska ge samma "
                 "nyckel även om den beskrivs med andra ord (t.ex. "
@@ -4630,7 +4768,18 @@ class AICoworker(models.Model):
             data = _json.loads(text)
             if isinstance(data, dict):
                 data = data.get('concepts', data.get('facts', []))
-            return data if isinstance(data, list) else []
+            if not isinstance(data, list):
+                return []
+            # D4: normalisera `kind` — saknat eller okänt värde blir 'fact'.
+            # En felaktig klassning får aldrig skicka en fakta till ai.skill.
+            out = []
+            for item in data:
+                if not isinstance(item, dict):
+                    continue
+                kind = str(item.get('kind') or '').strip().lower()
+                item['kind'] = kind if kind in ('fact', 'procedure') else 'fact'
+                out.append(item)
+            return out
         except Exception as e:
             _logger.warning('Reflektion misslyckades: %s', e)
             return []
@@ -8629,6 +8778,26 @@ class AICoworker(models.Model):
                         'Kunde inte seeda sökprofil på %s: %s', record.id, e)
             # Varje medarbetare ska äga sin identitet (egen kopia).
             records._ensure_own_identity()
+            # Companion-regeln (D1): hermes-profilen får skriva personal-
+            # scopet direkt. Seedas ENDAST här (create körs en gång) — inte i
+            # _seed_memory_settings, som även körs av backfill och därför
+            # skulle kunna återaktivera ett fält en människa stängt av.
+            #
+            # FYND (test 2026-10-14): `memory_profile` är INTE tom vid
+            # create — den har sin default 'balanced'. Att bara läsa
+            # `record.memory_profile` såg därför alltid 'balanced' och
+            # identitetens 'hermes' nåddes aldrig. Identitetens profil är
+            # den auktoritativa vid skapande (den är typens designintent),
+            # så den läses först; coworkerns eget värde används bara om
+            # anroparen uttryckligen satt ett annat än defaulten.
+            if 'memory_learning_direct' not in vals:
+                profile = None
+                if record.identity_id:
+                    profile = record.identity_id.memory_profile
+                if not profile:
+                    profile = record.memory_profile
+                if profile == 'hermes':
+                    record.memory_learning_direct = True
         return records
 
 
