@@ -29,6 +29,18 @@ PROVIDER_TYPES = [
     ('custom', 'Custom (OpenAI-compatible)'),
 ]
 
+# ── Processglobala tabeller för gateway-hälsa (gateway-anropseffektivitet) ──
+#
+# VARFÖR PÅ MODULNIVÅ, INTE SOM KLASSATTRIBUT: Odoo:s testramverk jämför
+# modellklassens attribut före och efter varje test och failar om ett nytt
+# tillkommit ('Found unexpected attributes on ai.provider'). En lat
+# klassattribut-initiering skapade `_catalog_cache_table` mitt under ett
+# test och fällde hela sviten. Modulnivå ligger utanför den kontrollen.
+#
+# Båda är flyktiga hälsosignaler, inte affärsdata — de ska inte i databasen.
+_CATALOG_CACHE = {}
+_BREAKER_TABLE = {}
+
 
 class AIProvider(models.Model):
     _name = 'ai.provider'
@@ -119,7 +131,11 @@ class AIProvider(models.Model):
         help='Tidpunkt då en breaker-period löper ut. Tom = providern är '
              'inte bortkopplad.')
 
-    @api.depends('id')
+    # OBS: ingen @api.depends — Odoo tillåter inte att en compute beror på
+    # `id` ('Compute method cannot depend on field id'). Fältet är
+    # icke-lagrat och härlett ur en processglobal tabell, så det räknas om
+    # vid varje läsning. Det är rätt: breaker-tillståndet ändras utan att
+    # providern skrivs.
     def _compute_unavailable_until(self):
         now = fields.Datetime.now()
         for r in self:
@@ -131,14 +147,10 @@ class AIProvider(models.Model):
     #: så kort att en storm hinner upprepa sig.
     BREAKER_SECONDS = 120
 
-    #: Processglobal breaker-tabell {provider_id: datetime}. Medvetet inte
-    #: i databasen: detta är en flyktig hälsosignal, inte affärsdata.
-    _breaker_table = {}
-
     @classmethod
     def _breaker_get(cls, provider_id):
         """Läs breaker-tidpunkten för en provider (eller None)."""
-        return cls._breaker_table.get(provider_id)
+        return _BREAKER_TABLE.get(provider_id)
 
     def _breaker_trip(self, status_code=None, reason=''):
         """Koppla bort providern under en avgränsad period.
@@ -151,7 +163,7 @@ class AIProvider(models.Model):
         self.ensure_one()
         until = fields.Datetime.now() + timedelta(
             seconds=self.BREAKER_SECONDS)
-        type(self)._breaker_table[self.id] = until
+        _BREAKER_TABLE[self.id] = until
         _logger.warning(
             'Gateway-avslag från %s (HTTP %s%s) — providern bortkopplad '
             'till %s. Inga nya anrop görs under perioden.',
@@ -167,14 +179,14 @@ class AIProvider(models.Model):
             return False
         if until <= fields.Datetime.now():
             # Perioden har löpt ut — rensa och släpp igenom igen.
-            type(self)._breaker_table.pop(self.id, None)
+            _BREAKER_TABLE.pop(self.id, None)
             return False
         return True
 
     def _breaker_clear(self):
         """Släpp providern fri (anropet lyckades)."""
         self.ensure_one()
-        type(self)._breaker_table.pop(self.id, None)
+        _BREAKER_TABLE.pop(self.id, None)
 
     @staticmethod
     def _rejection_reason(http_error):
@@ -510,34 +522,32 @@ class AIProvider(models.Model):
         """Timeout för probe-/kataloganrop (kort, ej inferens)."""
         return self.PROBE_TIMEOUT
 
-    def _catalog_cache_key(self):
-        """Cache-nyckel för denna providers katalog i körkontexten."""
-        self.ensure_one()
-        return '_ai_catalog_cache_%s' % self.id
-
     def _catalog_cache_get(self, slot):
         """Läs en cachad katalogdel (eller None om den inte hämtats).
 
-        Cachen lever i `env.context` — per körning, inte global. En global
-        cache skulle dölja att en gateway gått ner; per körning ger färsk
-        data men eliminerar N-anropet-per-modell inom samma körning.
+        Cachen är en processglobal dict nycklad på provider-id (se
+        `_CATALOG_CACHE`). Den lever per körning i praktiken: en
+        cron-körning eller ett importvarv är kortlivat, och en provider
+        vars katalog ändras fångas av driftkontrollen.
         """
         self.ensure_one()
-        store = self.env.context.get(self._catalog_cache_key()) or {}
+        store = _CATALOG_CACHE.get(self.id)
+        if not isinstance(store, dict):
+            return None
         return store.get(slot)
 
     def _catalog_cache_set(self, slot, value):
-        """Skriv en cachad katalogdel i körkontexten.
+        """Skriv en cachad katalogdel för denna provider.
 
-        Odoo-contexten är immutable — vi muterar en dict som ligger i den.
-        Det räcker: alla anrop inom samma körning delar samma dict-objekt.
+        VARFÖR INTE env.context: `self.env.context` är en fryst dict, och
+        att byta ut `self.env` slår inte igenom på anroparens recordset —
+        nästa anrop läste därför en tom cache (testet fångade det: 2
+        hämtningar i stället för 1). En dict på modulnivå delas av alla
+        recordsets i processen och ger det vi faktiskt vill: en hämtning
+        per provider och körning.
         """
         self.ensure_one()
-        key = self._catalog_cache_key()
-        store = self.env.context.get(key)
-        if store is None:
-            store = {}
-            self.env.context = dict(self.env.context, **{key: store})
+        store = _CATALOG_CACHE.setdefault(self.id, {})
         store[slot] = value
 
     # -- Maker-upplösning (provider-model-offering) --

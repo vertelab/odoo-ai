@@ -39,21 +39,38 @@ class TestCatalogCacheAndBreaker(common.TransactionCase):
 
     def setUp(self):
         super().setUp()
-        # Nollställ breakern mellan tester (processglobal tabell).
-        type(self.Provider)._breaker_table.pop(self.provider.id, None)
+        # Nollställ breakern mellan tester (modulglobal tabell).
+        from odoo.addons.ai_agent_core.models import ai_provider
+        ai_provider._BREAKER_TABLE.pop(self.provider.id, None)
+        ai_provider._CATALOG_CACHE.pop(self.provider.id, None)
 
     # -- Katalogcache (D2) --
 
     def test_catalog_cached_per_provider(self):
-        """(a) Två anrop gör en hämtning."""
+        """(a) Två anrop gör en hämtning.
+
+        Vi patchar HTTP-lagret (`urllib.request.urlopen`), inte
+        `_fetch_catalog_names` — annars kringgås cache-läsningen som
+        ligger inuti metoden och testet mäter fel sak.
+        """
         calls = []
 
-        def fake_fetch(timeout=5):
-            calls.append(timeout)
-            return ['model-a', 'model-b'], True
+        class FakeResp:
+            def __init__(self, body):
+                self._body = body.encode()
+            def read(self):
+                return self._body
+            def __enter__(self):
+                return self
+            def __exit__(self, *a):
+                return False
 
-        with mock.patch.object(type(self.provider), '_fetch_catalog_names',
-                               side_effect=fake_fetch):
+        def fake_urlopen(req, timeout=None, context=None):
+            calls.append(timeout)
+            return FakeResp('{"data": [{"id": "model-a"}, '
+                            '{"id": "model-b"}]}')
+
+        with mock.patch('urllib.request.urlopen', side_effect=fake_urlopen):
             first, ok1 = self.provider._fetch_catalog_names()
             second, ok2 = self.provider._fetch_catalog_names()
         self.assertTrue(ok1 and ok2)
@@ -65,12 +82,21 @@ class TestCatalogCacheAndBreaker(common.TransactionCase):
         """(b) Tom men hämtad katalog cachas som hämtad."""
         calls = []
 
-        def fake_fetch(timeout=5):
-            calls.append(1)
-            return [], True
+        class FakeResp:
+            def __init__(self, body):
+                self._body = body.encode()
+            def read(self):
+                return self._body
+            def __enter__(self):
+                return self
+            def __exit__(self, *a):
+                return False
 
-        with mock.patch.object(type(self.provider), '_fetch_catalog_names',
-                               side_effect=fake_fetch):
+        def fake_urlopen(req, timeout=None, context=None):
+            calls.append(1)
+            return FakeResp('{"data": []}')
+
+        with mock.patch('urllib.request.urlopen', side_effect=fake_urlopen):
             names, ok = self.provider._fetch_catalog_names()
             self.assertEqual(names, [])
             self.assertTrue(ok, 'Tom katalog är hämtad, inte misslyckad')
@@ -101,8 +127,9 @@ class TestCatalogCacheAndBreaker(common.TransactionCase):
         """(e) Perioden löper ut och providern släpps igen."""
         from datetime import timedelta
         from odoo import fields as odoo_fields
+        from odoo.addons.ai_agent_core.models import ai_provider
         # Sätt en tidpunkt i det förflutna.
-        type(self.Provider)._breaker_table[self.provider.id] = (
+        ai_provider._BREAKER_TABLE[self.provider.id] = (
             odoo_fields.Datetime.now() - timedelta(seconds=1))
         self.assertFalse(self.provider._breaker_active(),
                          'Utgången period ska inte blockera')
