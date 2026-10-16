@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Agenten "SEO & GEO-specialist" + koppling till coworkern
+    "Allmän assistent" (coworker_default_assistent, ägd av ai_agent_core).
+
+    Kopplingen är en ai.coworker.agent-rad med role=member — samma mönster
+    som agent_odoo_business och agent_news_watcher i ai_agent_core:s
+    default_coworker.xml. Ledaren (agent_default_core) delegerar hit.
+
+    ⚠ BEROR PÅ ai_agent_core: coworker_default_assistent måste finnas.
+    Modulen deklarerar 'ai_agent_core' i depends, så den laddas först.
+    Om xmlid:n inte finns (t.ex. annan coworker-struktur) hoppas kopplingen
+    över — agenten skapas ändå och kan kopplas manuellt i UI:t.
+
+    OBS: agenten ligger i ett eget data-XML (inte noupdate) så att
+    skill_ids/tool_ids uppdateras vid moduluppgradering. Redigera i repo.
+
+    OBS: okf_search (minnessökning) är INTE listad här — den skapas av
+    ai_agent_core:s Python (_ensure_builtin_tool_records) och har ingen
+    xmlid att referera. Den nås ändå via coworkerns verktygsunion.
+-->
+<odoo>
+    <data>
+
+        <!-- ── Agenten ─────────────────────────────────────────────────── -->
+        <record id="agent_seo_geo" model="ai.agent">
+            <field name="name">SEO &amp; GEO-specialist</field>
+            <field name="ai_role">SEO &amp; GEO Specialist</field>
+            <field name="description">Specialist på sökoptimering och generativ motor-optimering: granskar sidor mot SEO- och GEO-kriterier, verifierar llms.txt och JSON-LD, och föreslår konkreta åtgärder för att bli rankad av sökmotorer och citerad av AI-motorer (ChatGPT, Perplexity, AI Overviews).</field>
+            <field name="status">active</field>
+            <field name="skill_ids" eval="[(6, 0, [
+                ref('skill_seo_geo'),
+                ref('skill_llms_txt'),
+                ref('skill_structured_data'),
+            ])]"/>
+            <field name="tool_ids" eval="[(6, 0, [
+                ref('tool_seo_audit_url'),
+                ref('tool_seo_llms_txt'),
+                ref('tool_seo_json_ld_check'),
+            ])]"/>
+        </record>
+
+        <!-- ── Koppling till Allmän assistent ──────────────────────────── -->
+        <record id="coworker_agent_seo_geo" model="ai.coworker.agent">
+            <field name="coworker_id" ref="ai_agent_core.coworker_default_assistent"/>
+            <field name="agent_id" ref="agent_seo_geo"/>
+            <field name="role">member</field>
+            <field name="sequence" eval="60"/>
+        </record>
+
+    </data>
+</odoo>
