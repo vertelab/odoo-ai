@@ -2286,7 +2286,14 @@ def _finalize_stream_turn(dbname, uid, context, session_id, full_response,
                 _persist_stream_answer(
                     _env, session_id,
                     ''.join(full_response),
-                    reasoning='\n'.join(
+                    # reasoning_log är en lista av ENSKILDA TOKENS (loop.py
+                    # appendar varje `event.token` för sig). Att sätta ihop
+                    # dem med '\n' gav ett token per rad i den sparade
+                    # texten — t.ex. "The\n user\n is\n asking\n ..." — medan
+                    # modellens egna styckbrytningar (\n\n) bevarades. Det
+                    # såg ut som ett trasigt svar men var en trasig join.
+                    # Samma separator som full_response: ''.
+                    reasoning=''.join(
                         getattr(state.get('loop_obj'),
                                 'reasoning_log', None) or []),
                     finish_reason=state.get('finish_reason', ''),
@@ -2788,9 +2795,15 @@ class PICallbackController(http.Controller):
         # `finish_reason` är en Selection (utfall-och-tokenmatning) — den får
         # bara typade värden. Resultattexten hör i `error_detail`/raden, inte
         # här; att skriva den gav ValueError och 500 på callbacken.
+        #
+        # `end_date` sätts här (inte bara vid /new och /close). Utan den
+        # lämnade varje normalt avslutad körning `end_date=false` — sessionen
+        # såg ut att aldrig ha tagit slut, trots status='done'. Mätt
+        # 2026-10-16 på session 24206.
         session.write({
             'status': 'done' if state == 'done' else 'error',
             'finish_reason': 'stop' if state == 'done' else 'error',
+            'end_date': fields.Datetime.now(),
         })
         if state != 'done' and result_text:
             session.write({'error_detail': result_text[:4000]})
