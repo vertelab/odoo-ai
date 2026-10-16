@@ -118,14 +118,18 @@
                  med attachment=True genererar inga image_128/256-varianter
                  (column_type=None, värdet ligger i ir.attachment), så
                  /web/image/.../image_128 faller tillbaka på platshållaren.
-                 Storleken styrs i stället med width/height-parametrar. -->
-            <a type="open" position="before">
+                 Storleken styrs i stället med width/height-parametrar.
+
+                 VÄLJARE: `//a[@type='open']` är TVETYDIG — core-kanbanen har
+                 två sådana (kugghjulsmenyns "Configuration" och kortets namn).
+                 Vi ankrar därför på namn-fältet, som bara finns i kortet. -->
+            <xpath expr="//a[@type='open']/field[@name='name']" position="before">
                 <img t-att-src="'/web/image/hr.department/' + record.id.raw_value + '/image'
                                 + '?width=128&amp;height=128'
                                 + '&amp;unique=' + record.write_date.raw_value"
                      class="o_image_64_cover float-start me-2"
                      alt="Avdelningens bild"/>
-            </a>
+            </xpath>
 
             <!-- AI-chef + hälsa i kort-headern -->
             <field name="manager_id" position="after">
