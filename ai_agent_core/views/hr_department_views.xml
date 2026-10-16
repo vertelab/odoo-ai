@@ -100,16 +100,16 @@
                 <field name="ai_coworker_ids"/>
             </field>
 
-            <!-- Namnet i fet stil enligt timesheets-mönstret (fw-bold fs-5).
-                 Core sätter redan fw-bold fs-4, men har ett stavfel i
-                 klasslistan ('d-bolck'); vi normaliserar klasserna här så
-                 kortet får samma typografi som referensmönstret. -->
-            <xpath expr="//a[@type='open']/field[@name='name']" position="attributes">
-                <attribute name="class">fw-bold fs-5 d-block ms-2 text-truncate</attribute>
-            </xpath>
-
             <!-- Kort-header enligt timesheets-mönstret (department-kanban-visual
-                 2.2, D2): bilden flyter vänster, namnet i fet stil bredvid.
+                 2.2, D2 + putsning 2026-10-16).
+
+                 STRUKTUR: en flex-rad [bild | (namn + chef)]. Core lägger
+                 namn-länken och manager-fältet som SYSKON, så enbart
+                 `float-start` på bilden ger inte rätt ordning — texten hamnar
+                 under bilden i stället för bredvid. Vi döljer därför core:s
+                 manager-nod och ritar om hela headern i en egen flex-container
+                 där vi äger ordningen.
+
                  Rå <img> mot /web/image — image-widgeten är interaktiv
                  (klickbar för uppladdning) och fel i ett kanban-kort. ?unique=
                  mot write_date ger cache-busting så ett bildbyte syns direkt.
@@ -127,13 +127,33 @@
                 <img t-att-src="'/web/image/hr.department/' + record.id.raw_value + '/image'
                                 + '?width=128&amp;height=128'
                                 + '&amp;unique=' + record.write_date.raw_value"
-                     class="o_image_64_cover float-start me-2"
+                     class="o_image_64_cover flex-shrink-0 me-2"
                      alt="Avdelningens bild"/>
             </xpath>
 
-            <!-- AI-chef + hälsa i kort-headern -->
-            <field name="manager_id" position="after">
-                <div class="d-flex gap-1 mt-1 ms-2" groups="ai_agent_core.group_ai_officer">
+            <!-- Core:s manager-rad döljs: vi ritar den själva under namnet. -->
+            <field name="manager_id" position="attributes">
+                <attribute name="invisible">1</attribute>
+            </field>
+
+            <!-- Namnet: större än timesheets-referensen (fs-4, inte fs-5) —
+                 avdelningens namn är kortets huvudinformation och ska bära
+                 vikten. `d-block` + `text-truncate` håller en rad. -->
+            <xpath expr="//a[@type='open']/field[@name='name']" position="attributes">
+                <attribute name="class">fw-bold fs-4 d-block text-truncate</attribute>
+            </xpath>
+
+            <!-- Chef + hälsa UNDER namnet (putsat 2026-10-16). Core:s
+                 manager-rad är dold ovan; här ritas den i en egen rad under
+                 namn-länken, i samma flex-kolumn som namnet så att den linjerar
+                 med namnet och inte med bilden.
+
+                 VÄLJARE: ankra på namn-FÄLTET, inte på `<a type="open">` —
+                 samma tvetydighet som bilden råkade ut för (kugghjulsmenyn har
+                 också en `<a type="open">`). `..` går upp till namn-länken. -->
+            <xpath expr="//a[@type='open']/field[@name='name']/.." position="after">
+                <div class="d-flex flex-wrap align-items-center gap-1 mt-1"
+                     groups="ai_agent_core.group_ai_officer">
                     <t t-if="record.ai_manager_id.raw_value">
                         <span class="badge bg-info">🤖 <field name="ai_manager_id"/></span>
                     </t>
@@ -145,7 +165,7 @@
                            decoration-warning="health == 'yellow'"
                            decoration-danger="health == 'red'"/>
                 </div>
-            </field>
+            </xpath>
 
             <!-- AI-staff-knapp (kanban_primary_right) — sida vid sida med
                  core-kortets total_employee-knapp (department-kanban-visual
@@ -167,9 +187,6 @@
             <div name="kanban_card_lower_content" position="inside">
                 <div class="mt-2" groups="ai_agent_core.group_ai_officer">
                     <div class="d-flex flex-wrap gap-2 small text-muted">
-                        <span title="AI-medarbetare i avdelningen">
-                            🤖 <field name="total_ai_staff"/> AI
-                        </span>
                         <span title="AI-medarbetare med heartbeat aktiverad">
                             💓 <field name="ai_heartbeat_count"/> aktiva
                         </span>
