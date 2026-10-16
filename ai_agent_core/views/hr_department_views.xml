@@ -36,6 +36,12 @@
                        decoration-warning="health == 'yellow'"
                        decoration-danger="health == 'red'"/>
             </field>
+            <!-- Avdelningens bild (department-kanban-visual 1.2). Standard
+                 Odoo-mönstret: oe_avatar före oe_title, så bilden hamnar
+                 uppe till höger i formuläret och är klickbar för uppladdning. -->
+            <xpath expr="//div[hasclass('oe_title')]" position="before">
+                <field name="image" widget="image" class="oe_avatar"/>
+            </xpath>
             <xpath expr="//field[@name='manager_id']/.." position="after">
                 <group string="Odoo Mind-kontext">
                     <field name="artifact_type_ids" widget="many2many_tags"
@@ -84,11 +90,42 @@
         <field name="arch" type="xml">
             <!-- Fält som kanban-korten behöver läsa -->
             <field name="active" position="after">
+                <field name="image"/>
+                <field name="write_date"/>
                 <field name="ai_manager_id"/>
                 <field name="total_ai_staff"/>
+                <field name="ai_heartbeat_count"/>
+                <field name="ai_goal_count"/>
                 <field name="health"/>
                 <field name="ai_coworker_ids"/>
             </field>
+
+            <!-- Namnet i fet stil enligt timesheets-mönstret (fw-bold fs-5).
+                 Core sätter redan fw-bold fs-4, men har ett stavfel i
+                 klasslistan ('d-bolck'); vi normaliserar klasserna här så
+                 kortet får samma typografi som referensmönstret. -->
+            <xpath expr="//a[@type='open']/field[@name='name']" position="attributes">
+                <attribute name="class">fw-bold fs-5 d-block ms-2 text-truncate</attribute>
+            </xpath>
+
+            <!-- Kort-header enligt timesheets-mönstret (department-kanban-visual
+                 2.2, D2): bilden flyter vänster, namnet i fet stil bredvid.
+                 Rå <img> mot /web/image — image-widgeten är interaktiv
+                 (klickbar för uppladdning) och fel i ett kanban-kort. ?unique=
+                 mot write_date ger cache-busting så ett bildbyte syns direkt.
+
+                 OBS: fältnamnet är `image`, INTE `image_128`. fields.Image
+                 med attachment=True genererar inga image_128/256-varianter
+                 (column_type=None, värdet ligger i ir.attachment), så
+                 /web/image/.../image_128 faller tillbaka på platshållaren.
+                 Storleken styrs i stället med width/height-parametrar. -->
+            <a type="open" position="before">
+                <img t-att-src="'/web/image/hr.department/' + record.id.raw_value + '/image'
+                                + '?width=128&amp;height=128'
+                                + '&amp;unique=' + record.write_date.raw_value"
+                     class="o_image_64_cover float-start me-2"
+                     alt="Avdelningens bild"/>
+            </a>
 
             <!-- AI-chef + hälsa i kort-headern -->
             <field name="manager_id" position="after">
@@ -106,61 +143,36 @@
                 </div>
             </field>
 
-            <!-- AI-staff-knapp (kanban_primary_right) -->
+            <!-- AI-staff-knapp (kanban_primary_right) — sida vid sida med
+                 core-kortets total_employee-knapp (department-kanban-visual
+                 D3). Kort etikett + text-nowrap: "AI-medarbetare" är långt
+                 och col-6 är smal, så etiketten kapas till "AI". -->
             <div name="kanban_primary_right" position="inside">
-                <button class="btn btn-outline-primary w-100"
+                <button class="btn btn-outline-primary w-100 text-nowrap"
                         name="action_get_ai_staff" type="object"
                         groups="ai_agent_core.group_ai_officer">
-                    🤖 <field name="total_ai_staff"/> AI-medarbetare
+                    🤖 <field name="total_ai_staff"/> AI
                 </button>
             </div>
 
-            <!-- AI-coworker sub-kort (kanban_card_lower_content) -->
+            <!-- Kompakt AI-sammanfattning (department-kanban-visual D4):
+                 ersätter ett sub-kort per coworker. Aggregerade siffror i en
+                 enda rad — detaljlistan nås via action_get_ai_staff-knappen
+                 ovan. Detta håller korten jämnhöga oavsett antal AI-
+                 medarbetare (spec: "Kortet håller jämn höjd"). -->
             <div name="kanban_card_lower_content" position="inside">
                 <div class="mt-2" groups="ai_agent_core.group_ai_officer">
-                    <t t-if="record.ai_coworker_ids.raw_value">
-                        <t t-foreach="record.ai_coworker_ids.raw_value" t-as="coworker">
-                            <div class="mt-1 p-2 border rounded bg-light">
-                                <div class="d-flex justify-content-between align-items-center">
-                                    <span>
-                                        <t t-if="coworker.heartbeat_enabled">
-                                            <span class="text-success" title="Heartbeat aktiv">●</span>
-                                        </t>
-                                        <t t-if="!coworker.heartbeat_enabled">
-                                            <span class="text-muted" title="Heartbeat avstängt">○</span>
-                                        </t>
-                                        <strong><t t-esc="coworker.name"/></strong>
-                                    </span>
-                                    <span class="badge bg-warning text-dark">
-                                        <t t-esc="coworker.session_line_count or '0'"/> tokens
-                                    </span>
-                                </div>
-                                <div class="mt-1 small text-muted d-flex justify-content-between">
-                                    <span>
-                                        <t t-if="coworker.status == 'active'">
-                                            <span class="text-success">● Aktiv</span>
-                                        </t>
-                                        <t t-if="coworker.status == 'draft'">
-                                            <span class="text-muted">○ Utkast</span>
-                                        </t>
-                                    </span>
-                                    <span>
-                                        <t t-if="coworker.last_successful_run">
-                                            💓 <t t-esc="coworker.last_successful_run"/>
-                                        </t>
-                                        <t t-if="!coworker.last_successful_run">
-                                            ⏳ Ingen lyckad körning än
-                                        </t>
-                                    </span>
-                                </div>
-                            </div>
-                        </t>
-                    </t>
-                    <t t-if="!record.ai_coworker_ids.raw_value">
-                        <div class="mt-2 text-muted small">
-                            <i>Inga AI-medarbetare — starta onboarding!</i>
-                        </div>
-                    </t>
+                    <div class="d-flex flex-wrap gap-2 small text-muted">
+                        <span title="AI-medarbetare i avdelningen">
+                            🤖 <field name="total_ai_staff"/> AI
+                        </span>
+                        <span title="AI-medarbetare med heartbeat aktiverad">
+                            💓 <field name="ai_heartbeat_count"/> aktiva
+                        </span>
+                        <span title="OKR-mål för avdelningen">
+                            🎯 <field name="ai_goal_count"/> mål
+                        </span>
+                    </div>
 
                     <!-- Snabbliänkar: Tasks + OKR för avdelningen (som Time Off requests på hr.employee) -->
                     <div class="mt-2 d-flex flex-wrap gap-2" groups="ai_agent_core.group_ai_officer">

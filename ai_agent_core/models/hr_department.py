@@ -7,6 +7,16 @@ from odoo import models, fields, api, _
 class Department(models.Model):
     _inherit = 'hr.department'
 
+    # Avdelningens egen bild (department-kanban-visual D1). Avdelningen äger
+    # sin bild — den ärvs INTE från chefen, så ett chefsbyte ändrar inte
+    # avdelningens identitet och en avdelning utan chef blir inte bildlös.
+    # `fields.Image` genererar image_128/256/512 automatiskt; kanban-kortet
+    # använder image_128 direkt utan egen nedskalning.
+    image = fields.Image(
+        string='Avdelningens bild',
+        max_width=1920, max_height=1080,
+        help='Bild som visas på avdelningens kanban-kort.')
+
     ai_manager_id = fields.Many2one(
         'ai.coworker', string='AI Chef',
         help='AI-medarbetare som är chef för denna avdelning.')
@@ -20,6 +30,20 @@ class Department(models.Model):
         'ai.coworker', 'department_id',
         string='AI-medarbetare',
         help='AI-medarbetare (ai.coworker) i denna avdelning.')
+
+    # Antal AI-medarbetare med heartbeat påslagen. Räknas här i stället för i
+    # QWeb så kanban-kortet slipper en t-foreach (department-kanban-visual D4:
+    # sub-korten bort, korten ska hålla jämn höjd).
+    ai_heartbeat_count = fields.Integer(
+        'AI med heartbeat',
+        compute='_compute_ai_heartbeat_count',
+        help='Antal AI-medarbetare i avdelningen med heartbeat aktiverad.')
+
+    @api.depends('ai_coworker_ids', 'ai_coworker_ids.heartbeat_enabled')
+    def _compute_ai_heartbeat_count(self):
+        for dept in self:
+            dept.ai_heartbeat_count = len(
+                dept.ai_coworker_ids.filtered('heartbeat_enabled'))
 
     # Mänskliga medlemmar (org-goal-integrity D9): hr.employee med
     # department_id = self OCH is_ai = False. Separat från ai_coworker_ids
