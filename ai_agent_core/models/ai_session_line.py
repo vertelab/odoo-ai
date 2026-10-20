@@ -287,6 +287,9 @@ class AICoworkerSessionLine(models.Model):
         for coworker, day, token_sys in groups:
             if not coworker or not day:
                 continue
+            # `create_date:day` ger en datetime (midnatt) — jämför på datum,
+            # samma som den gamla loopen gjorde med `create_date.date()`.
+            day = day.date() if hasattr(day, 'date') else day
             bucket = totals.setdefault(
                 coworker.id,
                 {'month': 0, 'day': 0, 'week_by_day': {}})
