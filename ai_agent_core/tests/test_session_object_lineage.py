@@ -173,17 +173,20 @@ class TestSessionObjectLineage(TransactionCase):
                            operation='updated')
         self.assertEqual(len(first), 1)
 
-        # Tvinga en senare tidpunkt så jämförelsen blir meningsfull.
+        # Flytta den befintliga raden bakåt i tiden så att en uppdaterad
+        # tidpunkt måste vara SENARE — annars är jämförelsen meningslös
+        # (två anrop inom samma sekund ger samma datetime).
         self.env.cr.execute(
             "UPDATE ai_coworker_session_object SET datetime = "
             "datetime - interval '1 hour' WHERE id = %s", (first.id,))
         first.invalidate_recordset(['datetime'])
+        earlier = first.datetime
 
         _tool_odoo_write(env, 'res.partner', [created['id']], {'phone': '2'})
         rows = self._rows(res_model='res.partner', res_id=created['id'],
                           operation='updated')
         self.assertEqual(len(rows), 1, 'ingen dubblettrad')
-        self.assertGreater(rows.datetime, first.datetime,
+        self.assertGreater(rows.datetime, earlier,
                            'tidpunkten ska vara den senare')
 
     # ── 4. cascade ─────────────────────────────────────────────────────

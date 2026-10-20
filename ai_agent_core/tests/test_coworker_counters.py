@@ -78,9 +78,9 @@ class TestCoworkerCounters(TransactionCase):
 
     def test_sessions_counts_started_this_month(self):
         """F5.1: bara sessioner som STARTADE i månaden räknas."""
-        self._session()                 # idag
-        self._session(days_ago=1)       # i månaden (om vi inte är den 1:a)
-        self._session(days_ago=400)     # förra året — räknas inte
+        today = self._session()                 # idag
+        self._session(days_ago=1)               # i månaden
+        old = self._session(days_ago=400)       # förra året — räknas inte
         self.coworker.invalidate_recordset()
 
         month_start = date.today().replace(day=1)
@@ -89,10 +89,21 @@ class TestCoworkerCounters(TransactionCase):
             ('create_date', '>=', month_start),
         ])
         self.assertEqual(self.coworker.session_count, expected)
+        self.assertGreaterEqual(expected, 2,
+                                'dagens och gårdagens session räknas')
         self.assertLess(self.coworker.session_count,
                         self.Session.search_count(
                             [('coworker_id', '=', self.coworker.id)]),
                         'all-time räknas inte längre')
+        # Den gamla sessionen får inte ingå.
+        self.assertNotIn(old, self.Session.search([
+            ('coworker_id', '=', self.coworker.id),
+            ('create_date', '>=', month_start),
+        ]))
+        self.assertIn(today, self.Session.search([
+            ('coworker_id', '=', self.coworker.id),
+            ('create_date', '>=', month_start),
+        ]))
 
     def test_sessions_action_opens_the_same_rows(self):
         """F5.1: klicket öppnar exakt de sessioner räknaren räknade."""
@@ -141,6 +152,11 @@ class TestCoworkerCounters(TransactionCase):
                       action['domain'])
         self.assertIn(('informative', '=', False), action['domain'])
         self.assertEqual(self.Line.search_count(action['domain']), 1)
+        # Samma domän som räknaren summerar — knappen får inte öppna mer.
+        self.assertEqual(
+            self.Line.search_count(action['domain']),
+            self.coworker.session_line_count and 1 or 0,
+            'listan och räknaren ska visa samma rader')
 
     # ── 3. Odoo Mind räknar distinkta nycklar ──────────────────────────
 
