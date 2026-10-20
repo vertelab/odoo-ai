@@ -5862,13 +5862,24 @@ class AICoworker(models.Model):
         }
 
     def action_get_session_lines(self):
+        """Smartknapp: medarbetarens meddelanderader för innevarande månad.
+
+        Filtrerar på `coworker_id` (lagrad på raden sedan 18.0.1.335) i
+        stället för den tvåleds-join som `session_id.coworker_id` krävde —
+        samma domän som `session_line_count` summerar, så knappen och
+        räknaren alltid visar samma sak.
+        """
+        from datetime import date
+        month_start = date(date.today().year, date.today().month, 1)
         return {
             'name': 'Session Lines', 'type': 'ir.actions.act_window',
             'res_model': 'ai.coworker.session.line',
             'view_mode': 'list,form,pivot',
             'views': [[False, 'list'], [False, 'form'], [False, 'pivot']],
             'target': 'current',
-            'domain': [('session_id.coworker_id', '=', self.id)],
+            'domain': [('coworker_id', '=', self.id),
+                       ('informative', '=', False),
+                       ('create_date', '>=', month_start)],
         }
 
     def action_get_session_objects(self):
