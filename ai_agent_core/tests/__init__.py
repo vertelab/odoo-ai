@@ -96,3 +96,9 @@ from . import test_org_goal_integrity
 # (delad pool, två tak), heartbeat som cron.task, mottagbarhetsbesked och
 # behörighetsstyrd aktivering.
 from . import test_scheduled_work
+
+# coworker-form-performance: en aggregering i stället för fyra loopar,
+# lineage-tabellen och de tre räknarnas semantik.
+from . import test_token_totals
+from . import test_session_object_lineage
+from . import test_coworker_counters
