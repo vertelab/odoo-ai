@@ -5818,12 +5818,21 @@ class AICoworker(models.Model):
         return {'type': 'ir.actions.act_url', 'url': url, 'target': 'new'}
 
     def action_get_sessions(self):
+        """Smartknapp: sessioner som STARTADES i innevarande kalendermånad.
+
+        Räknaren mäter månaden (coworker-form-performance), så listan måste
+        göra det också — annars visar knappen 724 och öppnar 5 335.
+        """
+        from datetime import date
+        month_start = date(date.today().year, date.today().month, 1)
         return {
             'name': 'Sessions', 'type': 'ir.actions.act_window',
             'res_model': 'ai.coworker.session', 'view_mode': 'list,form',
             'views': [[False, 'list'], [False, 'form']],
             'target': 'current',
-            'domain': [('coworker_id', '=', self.id)],
+            'domain': [('coworker_id', '=', self.id),
+                       ('create_date', '>=', month_start)],
+            'context': {'search_default_group_started': 1},
         }
 
     def action_get_memory(self):
@@ -5863,15 +5872,24 @@ class AICoworker(models.Model):
         }
 
     def action_get_session_objects(self):
-        if 'ai.session.object' not in self.env:
+        """Smartknapp: objekt som medarbetarens sessioner SKAPADE.
+
+        Läser `ai.coworker.session.object` (session-object-lineage) — den
+        tabell som verktygslagret skriver. Den gamla `ai.session.object`
+        ligger i `ai_agent` (oinstallerad i drift) och saknade
+        coworker-koppling.
+        """
+        if 'ai.coworker.session.object' not in self.env:
             return {'type': 'ir.actions.act_window_close'}
         return {
             'name': 'Objects', 'type': 'ir.actions.act_window',
-            'res_model': 'ai.session.object',
+            'res_model': 'ai.coworker.session.object',
             'view_mode': 'list,form',
             'views': [[False, 'list'], [False, 'form']],
             'target': 'current',
-            'domain': [('ai_coworker_id', '=', self.id)],
+            'domain': [('coworker_id', '=', self.id),
+                       ('operation', '=', 'created')],
+            'context': {'search_default_group_res_model': 1},
         }
 
     def get_available_skills(self):
