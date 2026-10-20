@@ -172,7 +172,6 @@ class TestSessionObjectLineage(TransactionCase):
         first = self._rows(res_model='res.partner', res_id=created['id'],
                            operation='updated')
         self.assertEqual(len(first), 1)
-        first_dt = first.datetime
 
         # Tvinga en senare tidpunkt så jämförelsen blir meningsfull.
         self.env.cr.execute(
