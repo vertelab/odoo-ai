@@ -42,13 +42,38 @@ class AICoworkerSession(models.Model):
     _description = 'AI Session'
     _order = 'create_date desc'
 
+    # Index som inte hör till ett enskilt fält (coworker-form-performance D5).
+    # Skapas vid modulinitiering så en färsk databas får dem utan migration —
+    # `checkmodule --init` kör inte migrationsfiler. Migration 18.0.1.335 gör
+    # samma sak på befintliga databaser.
+    _PERF_INDEXES = (
+        # Sessionsräknaren (månad) och sessionens gruppering per användare.
+        ('ai_coworker_session_coworker_create_idx',
+         '(coworker_id, create_date)'),
+    )
+
+    def _auto_init(self):
+        res = super()._auto_init()
+        self._ensure_perf_indexes()
+        return res
+
+    @api.model
+    def _ensure_perf_indexes(self):
+        """Skapa de index som prestandafrågorna kräver (idempotent)."""
+        cr = self.env.cr
+        for name, columns in self._PERF_INDEXES:
+            cr.execute(
+                'CREATE INDEX IF NOT EXISTS %s ON %s %s' % (
+                    name, self._table, columns))
+
     ai_task_id = fields.Many2one('ai.org.task', string='AI Task',
         help='AI-org-uppgiften (ai.org.task) som denna session arbetar på. '
              'Skapas automatiskt vid checkout. OBS: skilj från task_id '
              '(project.task) som läggs av project_ai-bryggan.')
 
     name = fields.Char(default=lambda self: str(uuid.uuid4())[:8])
-    coworker_id = fields.Many2one('ai.coworker', string='Coworker', ondelete='cascade')
+    coworker_id = fields.Many2one('ai.coworker', string='Coworker', ondelete='cascade',
+        index=True)
     skill_id = fields.Many2one('ai.skill', string='Skill',
         help='Skill being built/improved in this session')
     agent_id = fields.Many2one('ai.agent', string='Agent')
@@ -1561,7 +1586,8 @@ class AICoworkerSession(models.Model):
         help='Tidpunkt för senaste aggregering från gateway-loggen.',
     )
 
-    user_id = fields.Many2one('res.users', default=lambda self: self.env.user)
+    user_id = fields.Many2one('res.users', default=lambda self: self.env.user,
+        index=True)
     company_id = fields.Many2one('res.company', default=lambda self: self.env.company)
 
     # Mail-svar med dröjsmål (mail-trigger): svarstexten postas av cron

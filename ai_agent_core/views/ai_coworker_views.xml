@@ -117,7 +117,7 @@
                        decoration-success="status=='active'"
                        decoration-warning="status=='draft'"/>
                 <field name="agent_count"/>
-                <field name="session_count"/>
+                <field name="session_count" string="Sessions (månad)"/>
                 <field name="company_id" groups="base.group_multi_company"/>
             </list>
         </field>
@@ -160,19 +160,23 @@
                         <button name="action_get_agents" class="oe_stat_button" type="object" icon="fa-users">
                             <field name="agent_count" widget="statinfo"/>
                         </button>
-                        <button name="action_get_sessions" class="oe_stat_button" type="object" icon="fa-flag-checkered">
-                            <field name="session_count" widget="statinfo"/>
+                        <button name="action_get_sessions" class="oe_stat_button" type="object" icon="fa-flag-checkered"
+                                help="Sessioner som STARTADES i innevarande kalendermånad.">
+                            <field name="session_count" widget="statinfo" string="Sessions"/>
                         </button>
-                        <button name="action_get_session_lines" class="oe_stat_button" type="object" icon="fa-money">
+                        <button name="action_get_session_lines" class="oe_stat_button" type="object" icon="fa-money"
+                                help="Systemtokens för innevarande kalendermånad (informativa rader uteslutna).">
                             <field name="session_line_count" widget="statinfo" string="Tokens"/>
                         </button>
-                        <button name="action_get_session_objects" class="oe_stat_button" type="object" icon="fa-puzzle-piece">
+                        <button name="action_get_session_objects" class="oe_stat_button" type="object" icon="fa-puzzle-piece"
+                                help="Affärsobjekt som medarbetarens sessioner SKAPADE (operation = created).">
                             <field name="session_object_count" widget="statinfo" string="Objects"/>
                         </button>
                         <!-- Odoo Mind: koncept som medarbetaren ÄGER
                              (scope coworker). Bredvid sessionsräknarna —
                              de säger vad den GJORT, denna vad den VET. -->
-                        <button name="action_open_okf_owned_concepts" class="oe_stat_button" type="object" icon="fa-brain">
+                        <button name="action_open_okf_owned_concepts" class="oe_stat_button" type="object" icon="fa-brain"
+                                help="Antal distinkta konceptnycklar som ägs av medarbetaren (arkiverade och superseded-koncept räknas inte).">
                             <field name="okf_concept_count" widget="statinfo" string="Odoo Mind"/>
                         </button>
                     </div>

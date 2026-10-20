@@ -2,7 +2,7 @@
 # Part of Odoo. See LICENSE file for full copyright and licensing details.
 {
     'name': 'AI: Agent Core',
-    'version': '18.0.1.334',
+    'version': '18.0.1.335',
     'summary': 'AI Agent Core — Org-stomme, heartbeat, onboarding, task-system',
     'category': 'AI Orchestration',
     'description': """
@@ -140,6 +140,7 @@
         'views/res_users_personal_memory_views.xml',
         'views/powerbox_templates.xml',
         'views/ai_session_views.xml',
+        'views/ai_session_object_views.xml',
         'views/workspace_activity_views.xml',
         'views/workspace_para_views.xml',
         'views/ai_coworker_error_views.xml',

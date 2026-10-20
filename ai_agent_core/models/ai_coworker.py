@@ -759,23 +759,30 @@ class AICoworker(models.Model):
     session_object_count = fields.Integer(compute='_compute_session_object_count')
 
     # ── Odoo Mind (okf-smart-buttons) ──────────────────────────────────
-    # Antal koncept som denna medarbetare ÄGER (scope `coworker`).
-    # Icke-lagrad: ai.okf.concept är ADD-only och skrivs av indexeraren —
-    # en lagrad räknare hade krävt invalidering över modellgränsen.
+    # Antal DISTINKTA konceptnycklar som denna medarbetare ÄGER (scope
+    # `coworker`). Icke-lagrad: ai.okf.concept är ADD-only och skrivs av
+    # indexeraren — en lagrad räknare hade krävt invalidering över
+    # modellgränsen.
     okf_concept_count = fields.Integer(
         'Odoo Mind', compute='_compute_okf_concept_count',
-        help='Antal OKF-koncept som ägs av denna AI-medarbetare '
-             '(scope coworker).')
+        help='Antal distinkta konceptnycklar som ägs av denna AI-medarbetare '
+             '(scope coworker). Varje nyckel räknas en gång — äldre versioner, '
+             'arkiverade och superseded-koncept räknas inte.')
 
     @api.depends()
     def _compute_okf_concept_count(self):
         Concept = self.env['ai.okf.concept']
         for r in self:
-            r.okf_concept_count = Concept.search_count([
-                ('owner_coworker_id', '=', r.id),
-                ('archived', '=', False),
-                ('status', '!=', 'superseded'),
-            ])
+            # Distinkta nycklar, inte rader: ett koncept i fem versioner är
+            # ETT koncept. `_read_group` trycker DISTINCT ned till SQL.
+            groups = Concept._read_group(
+                [('owner_coworker_id', '=', r.id),
+                 ('archived', '=', False),
+                 ('status', '!=', 'superseded')],
+                ['concept_key'],
+                ['__count'],
+            )
+            r.okf_concept_count = len(groups)
 
     def action_open_okf_owned_concepts(self):
         # Smartknapp: öppna de koncept medarbetaren ÄGER (scope coworker).
@@ -788,21 +795,35 @@ class AICoworker(models.Model):
 
     @api.depends('session_ids')
     def _compute_session_object_count(self):
+        """Antal objekt sessionerna SKAPADE (session-object-lineage).
+
+        Räknar `operation = 'created'` i `ai.coworker.session.object`. Modellen
+        finns alltid i den här modulen — men knappen utelämnas i vyn om
+        modellen saknas, så räknaren får aldrig visa en tyst nolla för en
+        fråga som inte kan besvaras.
+        """
+        has_model = 'ai.coworker.session.object' in self.env
         for r in self:
-            if 'ai.session.object' in self.env:
-                r.session_object_count = self.env['ai.session.object'].search_count(
-                    [('ai_coworker_id', '=', r.id)])
-            else:
-                r.session_object_count = 0
+            r.session_object_count = (
+                self.env['ai.coworker.session.object'].search_count([
+                    ('coworker_id', '=', r.id),
+                    ('operation', '=', 'created'),
+                ]) if has_model else 0)
 
     # Systemtoken tracking
+    # Direct one2many on the stored `coworker_id` (18.0.1.335) instead of the
+    # two-hop related `session_ids.session_line_ids` (coworker-form-performance
+    # D2). A related one2many cannot be used as a depends trigger in a way
+    # that avoids materialising every line, and it forces a join through the
+    # session table. Same records, one hop.
     session_line_ids = fields.One2many(
-        'ai.coworker.session.line', related='session_ids.session_line_ids',
+        'ai.coworker.session.line', 'coworker_id',
         string='Session Lines',
         help='Alla meddelanderader från alla sessioner för denna medarbetare')
     session_line_count = fields.Integer(
         'Systemtokens (månad)', compute='_compute_session_line_count',
-        help='Total systemtokens consumed this calendar month')
+        help='Systemtokens för innevarande kalendermånad (1:a → nu), '
+             'exklusive informativa rader.')
     started_mtokens = fields.Integer(
         'Påbörjade M-tokens', compute='_compute_started_mtokens',
         help='ceil(session_line_count / 1_000_000) — for billing')
@@ -901,34 +922,33 @@ class AICoworker(models.Model):
             if r.monthly_cap_mtokens < 0:
                 raise UserError(_('Månadstak får inte vara negativt'))
 
-    @api.depends('session_ids.session_line_ids.token_sys',
-                 'session_ids.session_line_ids.create_date',
+    @api.depends('session_line_ids.token_sys',
+                 'session_line_ids.create_date',
                  'monthly_cap_mtokens', 'daily_cap_mtokens')
     def _compute_budget_state(self):
         """Deterministisk budgetspärr (budget-hard-cap D1).
 
-        Beräknar Σ token_sys direkt från session_ids (inte via det related
-        fältet session_line_ids som inte triggar compute korrekt). Ny månad,
-        nytt dygn eller höjd budget öppnar automatiskt — inget cron-beroende.
+        Läser Σ token_sys ur `_token_totals()` — EN grupperad SQL-fråga — i
+        stället för att iterera sessionens rader i Python
+        (coworker-form-performance D1). Depends är ett led
+        (`session_line_ids`), inte två (`session_ids.session_line_ids`), så
+        Odoo materialiserar inte varje rad som ORM-objekt innan compute
+        börjar.
 
-        Månadstaket är ett HÅRT stopp (run() returnerar utan LLM-anrop).
-        Dagstaket är ett MJUKT stopp — samma effekt per körning, men det
-        öppnas av sig självt vid midnatt utan åtgärd.
+        Ny månad, nytt dygn eller höjd budget öppnar automatiskt — inget
+        cron-beroende. Månadstaket är ett HÅRT stopp (run() returnerar utan
+        LLM-anrop). Dagstaket är ett MJUKT stopp — samma effekt per körning,
+        men det öppnas av sig självt vid midnatt utan åtgärd.
         """
-        from datetime import date as _date
+        from datetime import date as _date, timedelta
         today = _date.today()
         month_start = _date(today.year, today.month, 1)
+        week_start = today - timedelta(days=7)
+        totals = self._token_totals_map(month_start, today, week_start)
         for r in self:
-            month_total = 0
-            day_total = 0
-            for line in r.session_ids.session_line_ids:
-                if not line.create_date:
-                    continue
-                line_day = line.create_date.date()
-                if line_day >= month_start:
-                    month_total += line.token_sys or 0
-                if line_day == today:
-                    day_total += line.token_sys or 0
+            bucket = totals.get(r.id) or {}
+            month_total = bucket.get('month', 0)
+            day_total = bucket.get('day', 0)
             month_cap = r.monthly_cap_mtokens * 1_000_000 if r.monthly_cap_mtokens else 0
             day_cap = r.daily_cap_mtokens * 1_000_000 if r.daily_cap_mtokens else 0
             r.budget_warning = bool(month_cap) and month_total >= month_cap * 0.8
@@ -936,6 +956,26 @@ class AICoworker(models.Model):
             r.daily_budget_warning = bool(day_cap) and day_total >= day_cap * 0.8
             r.daily_budget_exhausted = bool(day_cap) and day_total >= day_cap
             r.daily_budget_used_mtokens = day_total / 1_000_000.0
+
+    def _token_totals_map(self, month_start, day_start, week_start):
+        """Token-totaler för alla poster i `self`, cachat per (self, perioder).
+
+        Flera fält på samma formulär frågar samma sak (budget, dagsbudget,
+        burn rate, månadstokens). Cachen gör att de delar EN aggregering per
+        `self`-recordset — annars skulle varje fält göra om frågan
+        (coworker-form-performance: "token-totaler beräknas en gång per
+        formulärladdning").
+        """
+        key = (self._name, tuple(sorted(self.ids)),
+               month_start, day_start, week_start)
+        cache = self.env.context.get('_ai_token_totals_cache')
+        if isinstance(cache, dict) and key in cache:
+            return cache[key]
+        totals = self.env['ai.coworker.session.line']._token_totals(
+            self.ids, month_start, day_start, week_start)
+        if isinstance(cache, dict):
+            cache[key] = totals
+        return totals
 
     def check_cap(self):
         """Check budget state. Returns (warning, exhausted).
@@ -1883,26 +1923,35 @@ class AICoworker(models.Model):
             r.agent_count = len(r.agent_ids)
 
     def _compute_session_count(self):
-        for r in self:
-            r.session_count = len(r.session_ids)
+        """Sessioner som STARTADES i innevarande kalendermånad.
 
-    @api.depends('session_line_ids.token_sys', 'session_line_ids.create_date')
-    def _compute_session_line_count(self):
-        """Sum of systemtokens for the current calendar month."""
+        Perioden är månad så att räknaren är jämförbar med månadstaket
+        (coworker-form-performance: "Räknarna mäter kalendermånad"). En
+        session som startade förra månaden men fortsatte i denna räknas i
+        den månad den startade.
+        """
         from datetime import date
         today = date.today()
         month_start = date(today.year, today.month, 1)
         for r in self:
-            total = 0
-            for line in r.session_line_ids:
-                # informative=True = spårbarhet (per-agent), inte budget
-                # (utfall-och-tokenmatning D5/5.1). Utan detta dubbelräknas
-                # supervisor/konsensus-rader.
-                if line.informative:
-                    continue
-                if line.create_date and line.create_date.date() >= month_start:
-                    total += line.token_sys or 0
-            r.session_line_count = total
+            r.session_count = self.env['ai.coworker.session'].search_count([
+                ('coworker_id', '=', r.id),
+                ('create_date', '>=', month_start),
+            ])
+
+    @api.depends('session_line_ids.token_sys', 'session_line_ids.create_date')
+    def _compute_session_line_count(self):
+        """Sum of systemtokens for the current calendar month."""
+        from datetime import date, timedelta
+        today = date.today()
+        month_start = date(today.year, today.month, 1)
+        week_start = today - timedelta(days=7)
+        totals = self._token_totals_map(month_start, today, week_start)
+        for r in self:
+            # informative=True = spårbarhet (per-agent), inte budget
+            # (utfall-och-tokenmatning D5/5.1). Filtreringen ligger i
+            # `_token_totals` (informative = false).
+            r.session_line_count = (totals.get(r.id) or {}).get('month', 0)
 
     @api.depends('session_line_ids.token_sys', 'session_line_ids.create_date', 'monthly_cap_mtokens')
     def _compute_burn_forecast(self):
@@ -1910,21 +1959,19 @@ class AICoworker(models.Model):
         from datetime import date, timedelta
         today = date.today()
         week_ago = today - timedelta(days=7)
+        month_start = date(today.year, today.month, 1)
+        totals = self._token_totals_map(month_start, today, week_ago)
         for r in self:
-            # Aggregate token_sys per day over the last 7 days
-            daily = {}
-            for line in r.session_line_ids:
-                if line.informative:
-                    continue
-                if line.create_date and line.create_date.date() >= week_ago:
-                    d = line.create_date.date()
-                    daily[d] = daily.get(d, 0) + (line.token_sys or 0)
+            bucket = totals.get(r.id) or {}
+            # Token_sys per dag över de senaste 7 dagarna — från samma
+            # aggregering som budgeten, ingen egen loop över raderna.
+            daily = bucket.get('week_by_day') or {}
             days_with_data = len(daily)
             burn = (sum(daily.values()) / days_with_data / 1_000_000.0) if days_with_data else 0.0
             r.burn_rate_mtokens_day = round(burn, 4)
 
             cap_tokens = (r.monthly_cap_mtokens or 0) * 1_000_000
-            remaining = cap_tokens - r.session_line_count
+            remaining = cap_tokens - bucket.get('month', 0)
             if burn > 0 and remaining > 0 and cap_tokens:
                 days = remaining / (burn * 1_000_000.0)
                 r.days_until_budget_empty = round(days, 1)
@@ -8046,11 +8093,16 @@ class AICoworker(models.Model):
              'är operativt (avstängt / ingen väckare / ingen ägare / tömd '
              'budget).')
 
-    @api.depends('heartbeat_enabled', 'active', 'status', 'chat_user_id')
+    @api.depends('heartbeat_enabled', 'active', 'status', 'chat_user_id',
+                 'budget_exhausted')
     def _compute_heartbeat_status(self):
-        # `budget_exhausted` är store=False (härledd) och kan därför inte
-        # användas som depends-trigger — `_heartbeat_operational()` läser den
-        # färskt vid varje beräkning.
+        # `budget_exhausted` är store=False (härledd). Den kan därför inte
+        # användas som depends-trigger i Odoos strikta mening — men den läses
+        # här via `_heartbeat_operational()`, som i sin tur läser fältet
+        # färskt. Depends-listan namnger det fält som svaret beror på, så
+        # formuläret inte räknar om budgeten indirekt: `_heartbeat_operational`
+        # läser `self.budget_exhausted` ur cachen (formuläret har redan läst
+        # fältet) i stället för att starta en ny compute.
         for rec in self:
             ok, reason = rec._heartbeat_operational()
             rec.heartbeat_operational = ok

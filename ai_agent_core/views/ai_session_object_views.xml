@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Lineage: vilka affärsobjekt en session skapade/ändrade/raderade
+         (session-object-lineage). Skrivs av verktygslagret, inte för hand —
+         därför create="false" i formuläret. -->
+    <record id="view_ai_coworker_session_object_list" model="ir.ui.view">
+        <field name="name">ai.coworker.session.object.list</field>
+        <field name="model">ai.coworker.session.object</field>
+        <field name="arch" type="xml">
+            <list string="Objects" create="false">
+                <field name="datetime"/>
+                <field name="res_model"/>
+                <field name="res_id"/>
+                <field name="operation" widget="badge"
+                       decoration-success="operation == 'created'"
+                       decoration-info="operation == 'updated'"
+                       decoration-danger="operation == 'deleted'"/>
+                <field name="coworker_id" optional="show"/>
+                <field name="session_id" optional="show"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_ai_coworker_session_object_form" model="ir.ui.view">
+        <field name="name">ai.coworker.session.object.form</field>
+        <field name="model">ai.coworker.session.object</field>
+        <field name="arch" type="xml">
+            <form string="Session Object" create="false" edit="false">
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="res_model"/>
+                            <field name="res_id"/>
+                            <field name="operation"/>
+                            <field name="datetime"/>
+                        </group>
+                        <group>
+                            <field name="session_id"/>
+                            <field name="coworker_id"/>
+                        </group>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_ai_coworker_session_object_search" model="ir.ui.view">
+        <field name="name">ai.coworker.session.object.search</field>
+        <field name="model">ai.coworker.session.object</field>
+        <field name="arch" type="xml">
+            <search string="Objects">
+                <field name="res_model"/>
+                <field name="res_id"/>
+                <field name="session_id"/>
+                <field name="coworker_id"/>
+                <separator/>
+                <filter name="created" string="Skapade"
+                        domain="[('operation','=','created')]"/>
+                <filter name="updated" string="Uppdaterade"
+                        domain="[('operation','=','updated')]"/>
+                <filter name="deleted" string="Raderade"
+                        domain="[('operation','=','deleted')]"/>
+                <group expand="0" string="Gruppera efter">
+                    <filter name="group_res_model" string="Modell"
+                            context="{'group_by':'res_model'}"/>
+                    <filter name="group_operation" string="Operation"
+                            context="{'group_by':'operation'}"/>
+                    <filter name="group_session" string="Session"
+                            context="{'group_by':'session_id'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+</odoo>

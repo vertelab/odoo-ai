@@ -120,6 +120,15 @@
                 <filter name="group_scope" string="Scope" context="{'group_by':'scope'}"/>
                 <filter name="group_status" string="Status" context="{'group_by':'status'}"/>
                 <filter name="group_artifact" string="Artifact Type" context="{'group_by':'artifact_type_id'}"/>
+                <!-- Två ägarfrågor, inte ett sammansatt fält (D7): vem ÄGER
+                     konceptet (owner_user_id) och ur vems session det LÄRDES
+                     (source_user_id). Ett sammansatt fält hade dolt att det
+                     är två frågor — och company-scope-koncept (33 012 i
+                     drift) har ingen användare alls, så de hamnar i "(inget)"
+                     men syns. -->
+                <filter name="group_owner_user" string="Ägare (användare)" context="{'group_by':'owner_user_id'}"/>
+                <filter name="group_source_user" string="Källa (användare)" context="{'group_by':'source_user_id'}"/>
+                <filter name="group_owner_coworker" string="Ägare (medarbetare)" context="{'group_by':'owner_coworker_id'}"/>
                 <separator/>
                 <filter name="archived" string="Archived" domain="[('archived','=',True)]"/>
                 <filter name="not_archived" string="Not Archived" domain="[('archived','=',False)]"/>

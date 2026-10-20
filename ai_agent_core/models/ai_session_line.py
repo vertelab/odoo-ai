@@ -13,10 +13,48 @@ class AICoworkerSessionLine(models.Model):
     _description = 'Session Message Line'
     _order = 'session_id, sequence asc'
 
+    # Index som Odoo inte kan deklarera på ett fält (sammansatta eller
+    # uttrycksbaserade) skapas här (coworker-form-performance D5). Samma väg som
+    # ai.okf.concept._auto_init använder för sina SQL-funktioner: `checkmodule
+    # --init` kör INTE migrationsfiler, så en färsk databas får annars indexen
+    # först vid nästa `--update`. Migration 18.0.1.335 lägger dem på befintliga
+    # databaser; båda vägarna är idempotenta (IF NOT EXISTS).
+    _PERF_INDEXES = (
+        # Månads-/dags-/veckosumman filtrerar på create_date och grupperar på
+        # coworker_id. Utan dessa väljer Postgres två-värdes-indexet på
+        # `informative` och läser alla rader (mätt: 186 ms, 15 912 bortfiltrerade).
+        ('ai_coworker_session_line_coworker_create_idx',
+         '(coworker_id, create_date)'),
+        ('ai_coworker_session_line_create_date_idx',
+         '(create_date)'),
+    )
+
+    def _auto_init(self):
+        res = super()._auto_init()
+        self._ensure_perf_indexes()
+        return res
+
+    @api.model
+    def _ensure_perf_indexes(self):
+        """Skapa de index som prestandafrågorna kräver (idempotent)."""
+        cr = self.env.cr
+        for name, columns in self._PERF_INDEXES:
+            cr.execute(
+                'CREATE INDEX IF NOT EXISTS %s ON %s %s' % (
+                    name, self._table, columns))
+
     session_id = fields.Many2one(
         'ai.coworker.session', required=True, ondelete='cascade',
-        string='Thread',
+        string='Thread', index=True,
     )
+    # Coworker lagras på raden (coworker-form-performance D2) — samma mönster
+    # som ai.coworker.error använder sedan tidigare. Utan den här kolumnen
+    # måste varje budgetfråga joina sessionen, och depends-kedjan blir två led
+    # (`session_ids.session_line_ids`) vilket tvingar Odoo att materialisera
+    # varje rad som ORM-objekt innan compute ens börjar.
+    coworker_id = fields.Many2one(
+        'ai.coworker', string='AI Medarbetare',
+        related='session_id.coworker_id', store=True, index=True)
     # Vilken agent/roll/skill/tool som producerade denna rad — för spårning
     # per agent & modell samt smartknappar från ai.agent/ai.tool/ai.skill.
     agent_id = fields.Many2one('ai.agent', string='Agent', index=True,
@@ -132,6 +170,11 @@ class AICoworkerSessionLine(models.Model):
     # per-agent-tokens från supervisor/konsensus, där den aggregerade
     # totalen redan bokförts på sessionen). Utan denna flagga dubbelräknar
     # _compute_session_line_count dessa rader.
+    # NOT NULL med default false (coworker-form-performance D4): flaggan bär
+    # ingen tredje betydelse. Historiskt fanns NULL-rader som Python räknade
+    # som false men SQL exkluderade — två semantiker för samma fråga.
+    # Migration 18.0.1.335 backfillar dem; create()/write() normaliserar
+    # None → False så inget nytt NULL kan uppstå.
     informative = fields.Boolean('Informative', default=False, index=True,
         help='True = raden är spårbarhet men räknas INTE i budget/burn rate.')
 
@@ -172,9 +215,18 @@ class AICoworkerSessionLine(models.Model):
                 cleaned[fname] = value.replace('\x00', '')
         return cleaned if cleaned is not None else vals
 
+    @api.model
+    def _normalize_informative(self, vals):
+        """`informative=None` lagras som False (kolumnen är NOT NULL)."""
+        if vals.get('informative', False) is None:
+            vals = dict(vals, informative=False)
+        return vals
+
     @api.model_create_multi
     def create(self, vals_list):
-        return super().create([self._strip_nul(v) for v in vals_list])
+        return super().create([
+            self._strip_nul(self._normalize_informative(v))
+            for v in vals_list])
 
     def write(self, vals):
         """Tillåt endast metadatafält — innehållet är append-only."""
@@ -184,13 +236,68 @@ class AICoworkerSessionLine(models.Model):
             raise UserError(
                 'Session lines are append-only; cannot modify %s. '
                 'Create a new line instead.' % sorted(blocked))
-        return super().write(self._strip_nul(vals))
+        return super().write(
+            self._strip_nul(self._normalize_informative(vals)))
 
     def unlink(self):
         """Sessionsrader får inte raderas (append-only, granskningsbart)."""
         from odoo.exceptions import UserError
         raise UserError(
             'Session lines are append-only and cannot be deleted.')
+
+    # ── Token-totaler (coworker-form-performance D1) ─────────────────────
+    # EN grupperad fråga för alla perioder som formuläret frågar efter.
+    # Tidigare hade fyra computes var sin Python-loop över alla rader, vilket
+    # gjorde formulärladdningen 27 s för en medarbetare med 225 774 rader.
+
+    @api.model
+    def _token_totals(self, coworker_ids, month_start, day_start, week_start):
+        """Σ token_sys per medarbetare och period, ur en `_read_group`.
+
+        Returnerar ``{coworker_id: {'month': int, 'day': int,
+        'week_by_day': {date: int}}}``.
+
+        * ``month``      — summan från ``month_start`` (kalendermånad)
+        * ``day``        — summan för ``day_start`` (kalenderdag)
+        * ``week_by_day`` — per dag från ``week_start`` (burn rate)
+
+        Endast icke-informativa rader räknas (utfall-och-tokenmatning).
+        ``informative`` är NOT NULL sedan 18.0.1.335, så ``= false`` täcker
+        även de historiska rader som tidigare var NULL — samma summa som den
+        gamla Python-loopen gav.
+
+        Datumgränserna jämförs på Python-datum. Odoos ``create_date:day``
+        grupperar i användarens tidszon, medan den gamla loopen läste
+        ``create_date.date()`` (UTC). Samma dag som nuvarande kod räknar.
+        """
+        ids = [int(c) for c in (coworker_ids or []) if c]
+        totals = {
+            cid: {'month': 0, 'day': 0, 'week_by_day': {}}
+            for cid in ids
+        }
+        if not ids:
+            return totals
+        groups = self._read_group(
+            [('coworker_id', 'in', ids),
+             ('informative', '=', False),
+             ('create_date', '>=', week_start)],
+            ['coworker_id', 'create_date:day'],
+            ['token_sys:sum'],
+        )
+        for coworker, day, token_sys in groups:
+            if not coworker or not day:
+                continue
+            bucket = totals.setdefault(
+                coworker.id,
+                {'month': 0, 'day': 0, 'week_by_day': {}})
+            amount = int(token_sys or 0)
+            bucket['week_by_day'][day] = (
+                bucket['week_by_day'].get(day, 0) + amount)
+            if day >= month_start:
+                bucket['month'] += amount
+            if day >= day_start:
+                bucket['day'] += amount
+        return totals
 
     @api.model
     def _tokens_since(self, days=30, extra=(), create_field='create_date'):

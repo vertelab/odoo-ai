@@ -31,6 +31,11 @@
                 <group expand="0" string="Gruppera efter">
                     <filter name="group_started" string="Started"
                             context="{'group_by':'create_date'}"/>
+                    <!-- Sessionens användare är grupperbar (sessions-specen):
+                         en grupp per användare, användarlösa sessioner hamnar i
+                         en synlig "(inget)"-grupp. user_id är indexerat. -->
+                    <filter name="group_user" string="Användare"
+                            context="{'group_by':'user_id'}"/>
                     <filter name="group_ended" string="Ended"
                             context="{'group_by':'end_date'}"/>
                     <filter name="group_partner" string="Kund"

@@ -18,6 +18,7 @@ from . import ai_coworker_skill
 from . import ai_identity
 from . import ai_skill
 from . import ai_session_line
+from . import ai_session_object
 from . import ai_coworker_init_type
 from . import ai_coworker_hitl
 from . import res_users

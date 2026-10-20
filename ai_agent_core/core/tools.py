@@ -2384,6 +2384,42 @@ def _tool_odoo_search(env, model='', domain=None, fields=None, limit=20,
     return json.dumps(records, default=str)
 
 
+def _log_session_object(env, model, res_ids, operation):
+    """Registrera en lyckad operation i sessionens lineage (session-object-lineage).
+
+    Skrivpunkten ligger HÄR — i den väg som utför operationen — inte i
+    efterhandsanalys av sessionens text. Anropas först efter att ORM:en
+    returnerat utan fel, så ett avvisat (HITL) eller misslyckat anrop aldrig
+    lämnar en rad.
+
+    Sessionen läses ur env.context (samma två nycklar som HITL:s
+    `_resolve_session`): `_ai_context_model`/`_ai_context_id` (kanonisk
+    aktuell session) eller `ai_lineage_session_id` (lineage-nyckeln). Saknas
+    sessionen görs ingenting — en lineage-rad utan session vore en påhittad
+    koppling.
+
+    Kastar aldrig: lineage är spårbarhet, inte ett affärsvillkor. Ett fel här
+    får inte fälla ett verktygsanrop som redan lyckats.
+    """
+    try:
+        if 'ai.coworker.session.object' not in env:
+            return 0
+        sess_id = 0
+        if env.context.get('_ai_context_model') == 'ai.coworker.session':
+            sess_id = env.context.get('_ai_context_id') or 0
+        if not sess_id:
+            sess_id = env.context.get('ai_lineage_session_id') or 0
+        if not sess_id:
+            return 0
+        return env['ai.coworker.session.object'].sudo()._log_operation(
+            sess_id, model, res_ids, operation)
+    except Exception as e:  # noqa: BLE001
+        _logger.warning(
+            'Session lineage: kunde inte logga %s %s: %s',
+            operation, model, e)
+        return 0
+
+
 def _tool_odoo_create(env, model='', values=None):
     """Create a record via ORM (affärslager). Returnerar id + display_name.
 
@@ -2439,6 +2475,7 @@ def _tool_odoo_create(env, model='', values=None):
             actual=str(e),
             tool_name='odoo_create',
         ).to_json()
+    _log_session_object(env, model, [rec.id], 'created')
     return json.dumps({
         "ok": True, "id": rec.id,
         "name": rec.display_name or rec.name or '',
@@ -2587,6 +2624,7 @@ def _tool_odoo_write(env, model='', ids=None, values=None):
         recs.write(allowed)
     except Exception as e:
         return json.dumps({"error": f"write failed on {model}: {e}"})
+    _log_session_object(env, model, list(recs.ids), 'updated')
     return json.dumps({"ok": True, "ids": list(recs.ids)})
 
 
@@ -2601,11 +2639,13 @@ def _tool_odoo_unlink(env, model='', ids=None):
     recs = env[model].browse(ids or [])
     if not recs:
         return json.dumps({"error": f"Inga {model}-poster med ids={ids}"})
+    deleted_ids = list(recs.ids)
     try:
         recs.unlink()
     except Exception as e:
         return json.dumps({"error": f"unlink failed on {model}: {e}"})
-    return json.dumps({"ok": True, "deleted": list(recs.ids)})
+    _log_session_object(env, model, deleted_ids, 'deleted')
+    return json.dumps({"ok": True, "deleted": deleted_ids})
 
 
 # Underliggande lagringsfält som ALDRIG får skrivas direkt. De ägs av
