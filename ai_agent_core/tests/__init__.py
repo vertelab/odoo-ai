@@ -8,6 +8,11 @@ from . import test_init_types_overhaul
 # Modulen importeras inte heller av core/provider.py i drift: felet syns som
 # 99 tysta "No module named 'tenacity'" i Odoo-loggen sedan 23 aug.
 # Sätts på igen när beroendet är installerat.
+# OKF-mixins kontrakt (F4.1–4.4, D3/D4). Filen fanns men var aldrig
+# importerad — samma fälla som test_workspace och test_graph_executor:
+# testerna kördes aldrig, vilket är varför det adaptiva taket och den
+# garanterade andelen kunde sakna röd test.
+from . import test_okf_mixin
 from . import test_okf_memory
 from . import test_companion_memory
 from . import test_okf_fail_closed

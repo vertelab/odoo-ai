@@ -14,10 +14,13 @@ Dessa tester bevisar:
   5. indexeringslistan är utökningsbar
 """
 
+import ast
+import pathlib
 import time
 from unittest.mock import patch
 
 from odoo.tests import common, tagged
+from odoo.addons.ai_agent_core.models import ai_okf_mixin
 from ._config_param_guard import ConfigParamGuardedCase
 
 
@@ -36,9 +39,17 @@ class TestOkfMixinContract(_OkfTestModel):
     """F1.1–1.6, 1.12: kontraktet är generiskt."""
 
     def test_fields_exist(self):
-        for f in ('okf_body', 'okf_summary', 'okf_tags', 'okf_links',
+        """`okf_tags` är medvetet INTE på mixinen.
+
+        FYND 2026-09-23: en many2many på en abstrakt modell ger samma
+        relationstabell för alla ärvande modeller (TypeError: "... use the
+        same table"). Fältet deklareras därför av varje konkret modell.
+        """
+        for f in ('okf_body', 'okf_summary', 'okf_links',
                   'okf_dirty', 'okf_indexed_at'):
             self.assertIn(f, self.Mixin._fields, f)
+        self.assertNotIn('okf_tags', self.Mixin._fields,
+                         'okf_tags får inte deklareras på mixinen')
 
     def test_dirty_is_indexed_and_not_copied(self):
         f = self.Mixin._fields['okf_dirty']
@@ -48,12 +59,17 @@ class TestOkfMixinContract(_OkfTestModel):
 
     def test_json_defaults_are_lists(self):
         """Tomma listor, aldrig None — OKF-frontmattern kräver en lista."""
-        self.assertEqual(self.Mixin._fields['okf_tags'].default, list)
         self.assertEqual(self.Mixin._fields['okf_links'].default, list)
 
     def test_source_defaults_do_not_crash(self):
-        """En modell som inte överrider källmetoderna ska inte krascha."""
-        rec = self.env['ai.personal.memory'].new({})
+        """En modell som inte överrider källmetoderna ska inte krascha.
+
+        Använder mixin-basen direkt: `ai.personal.memory` ÄRVER
+        `ai.memory.mixin`, som överrider `_okf_dirty_fields()` med sina egna
+        fält — defaulten (tom mängd) gäller bara en modell som inte
+        deklarerar några.
+        """
+        rec = self.Mixin.new({})
         self.assertEqual(rec._okf_body_source(), '')
         self.assertIsNone(rec._okf_summary_source())
         self.assertEqual(rec._okf_tags_source(), [])
@@ -61,13 +77,32 @@ class TestOkfMixinContract(_OkfTestModel):
         self.assertEqual(rec._okf_dirty_fields(), set())
 
     def test_no_domain_in_mixin(self):
-        """Kärnan får inte känna någon domän (F1.12)."""
-        import inspect
-        src = inspect.getsource(type(self.Mixin))
+        """Kärnan får inte känna någon domän (F1.12).
+
+        Läser källfilen direkt: `inspect.getsource(type(self.Mixin))` fäller
+        "could not find class definition" eftersom mixinen laddas via Odoos
+        modulladdare och inte har någon sökbar filreferens i den här
+        processen.
+        """
+        raw = pathlib.Path(
+            ai_okf_mixin.__file__).read_text(encoding='utf-8')
+        # Bara KODEN granskas — docstrings nämner domäner som exempel
+        # ("en modell med översättbart innehåll (website.page, blog.post)")
+        # och det är dokumentation, inte ett beroende.
+        tree = ast.parse(raw)
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.Module, ast.ClassDef,
+                                 ast.FunctionDef, ast.AsyncFunctionDef)):
+                body = getattr(node, 'body', [])
+                if (body and isinstance(body[0], ast.Expr)
+                        and isinstance(body[0].value, ast.Constant)
+                        and isinstance(body[0].value.value, str)):
+                    node.body = body[1:]
+        src = ast.unparse(tree).lower()
         for domain in ('website', 'blog', 'event', 'hr.job', 'project',
                        'crm', 'prd'):
-            self.assertNotIn(domain, src.lower(),
-                             'domänen %r nämns i mixinen' % domain)
+            self.assertNotIn(domain, src,
+                             'domänen %r nämns i mixinens kod' % domain)
 
     def test_no_search_engine_in_mixin(self):
         """Mixinen äger inga sökfunktioner — de bor i ai.memory.mixin."""
@@ -109,10 +144,15 @@ class TestOkfDirtyFlag(_OkfTestModel):
         """Rensningen får inte återtändas av write()-hooken.
 
         Detta är buggen som gav 38 versioner av `ai.memory,257` (2026-09-21).
+
+        OBS: fältet som skrivs måste ligga UTANFÖR `_okf_dirty_fields()`.
+        `importance` ligger INUTI (`ai_memory_mixin.py:60-61`) — en ändring
+        av det SKA tända flaggan, så det duger inte som bevis. Här används
+        ett fält som inte påverkar konceptet.
         """
         mem = self._memory()
         mem._clear_okf_dirty()
-        mem.write({'importance': 'low'})  # ett fält UTANFÖR dirty_fields
+        mem.write({'okf_summary': 'ny sammanfattning'})
         mem.invalidate_recordset(['okf_dirty'])
         self.assertFalse(mem.okf_dirty)
 
@@ -289,6 +329,99 @@ class TestIndexableModels(_OkfTestModel):
                 batch_size=100, time_budget=0.01)
         self.assertLessEqual(total, 3, 'budgeten ska stoppa körningen')
 
+    # ── D3: adaptivt tak (2026-10-21) ───────────────────────────────
+
+    def test_adaptive_cap_never_below_floor(self):
+        """`batch_size` är ett GOLV — taket kan aldrig bli lägre."""
+        self.assertEqual(self.Mixin._okf_adaptive_cap(25, 0), 25)
+        self.assertEqual(self.Mixin._okf_adaptive_cap(25, 10), 25)
+
+    def test_adaptive_cap_rises_with_queue_depth(self):
+        """En djup kö höjer taket över batch_size."""
+        cap = self.Mixin._okf_adaptive_cap(25, 100000)
+        self.assertGreater(cap, 25)
+        self.assertLessEqual(cap, self.Mixin.OKF_CRON_TAK_MAX)
+
+    def test_adaptive_cap_stops_at_max(self):
+        """Taket stannar på OKF_CRON_TAK_MAX oavsett hur djup kön är."""
+        self.assertEqual(self.Mixin._okf_adaptive_cap(25, 10 ** 9),
+                         self.Mixin.OKF_CRON_TAK_MAX)
+
+    def test_cap_does_not_extend_past_time_budget(self):
+        """Ett höjt tak får aldrig förlänga körningen (4.2).
+
+        Tidsbudgeten är orörd — deadline-kontrollen i loopen gäller
+        fortfarande, så ett höjt tak ger fler poster per sekund, inte en
+        längre körning.
+        """
+        for i in range(5):
+            self.env['ai.personal.memory'].create({
+                'user_id': self.env.ref('base.user_admin').id,
+                'content': 'Tak-tid %s.' % i, 'category': 'fact'})
+        with patch.object(type(self.Mixin), '_okf_index_record',
+                          side_effect=lambda **kw: time.sleep(0.05) or None):
+            start = time.monotonic()
+            total = self.Mixin._okf_cron_index_dirty(
+                batch_size=100, time_budget=0.01)
+            elapsed = time.monotonic() - start
+        self.assertLessEqual(total, 5, 'budgeten ska stoppa körningen')
+        self.assertLess(elapsed, 1.0, 'körningen fick inte förlängas')
+
+    # ── D4: garanterad andel (2026-10-21) ───────────────────────────
+
+    def _set_priority(self, models):
+        """Sätt prioritetslistan via systemparametern (D4).
+
+        Listan bor i `ir.config_parameter` — ett klassattribut fälls av
+        Odoos testramverk ("Found unexpected attributes on ai.okf.mixin").
+        """
+        self.env['ir.config_parameter'].sudo().set_param(
+            self.Mixin.OKF_PRIORITY_PARAM, ','.join(models))
+
+    def test_priority_registration(self):
+        """Prioriterade modeller kan registreras och listas."""
+        self._set_priority([])
+        self.Mixin._okf_register_priority_indexable('ai.personal.memory')
+        self.Mixin._okf_register_priority_indexable('ai.personal.memory')
+        self.assertEqual(self.Mixin._okf_priority_indexable(),
+                         ['ai.personal.memory'],
+                         'registreringen ska vara idempotent')
+
+    def test_priority_model_gets_its_share(self):
+        """En prioriterad modell får sin andel även när kön domineras (4.3)."""
+        for i in range(30):
+            self.env['ai.company.memory'].create({
+                'company_id': self.env.company.id,
+                'content': 'Dominerande %s.' % i, 'category': 'knowledge'})
+        mem = self.env['ai.personal.memory'].create({
+            'user_id': self.env.ref('base.user_admin').id,
+            'content': 'Prioriterad post.', 'category': 'fact'})
+        self._set_priority(['ai.personal.memory'])
+        with patch.object(type(self.Mixin), '_okf_indexable_models',
+                          return_value=['ai.company.memory',
+                                        'ai.personal.memory']):
+            self.Mixin._okf_cron_index_dirty(batch_size=4)
+        mem.invalidate_recordset(['okf_dirty'])
+        self.assertFalse(mem.okf_dirty,
+                         'prioriterad modell fick ingen plats i körningen')
+
+    def test_no_model_starves_with_more_models_than_cap(self):
+        """Fler modeller än taket: minst en post per modell (4.4)."""
+        names = ['ai.personal.memory', 'ai.company.memory']
+        for i in range(3):
+            self.env['ai.personal.memory'].create({
+                'user_id': self.env.ref('base.user_admin').id,
+                'content': 'Svalt-a %s.' % i, 'category': 'fact'})
+            self.env['ai.company.memory'].create({
+                'company_id': self.env.company.id,
+                'content': 'Svalt-b %s.' % i, 'category': 'knowledge'})
+        self._set_priority([])
+        with patch.object(type(self.Mixin), '_okf_indexable_models',
+                          return_value=names):
+            total = self.Mixin._okf_cron_index_dirty(batch_size=2)
+        self.assertGreaterEqual(
+            total, 2, 'båda modellerna ska få minst en post var')
+
     def test_cron_is_idempotent(self):
         """Andra körningen skapar inga nya versioner."""
         self.env['ai.personal.memory'].create({
@@ -335,15 +468,29 @@ class TestDebugMenu(_OkfTestModel):
         self.assertIn('readonly="1"', view.arch)
 
     def test_concepts_are_filtered_by_source_ref(self):
+        """Åtgärden visar postens egna koncept — inga andras.
+
+        Koden förberäknar id-listan (`'id', 'in', concept_ids`) i stället
+        för att skicka `source_ref` som domän: `version desc`-ordningen
+        bevaras då i åtgärden. Testet verifierar resultatet, inte formen.
+        """
         mem = self.env['ai.personal.memory'].create({
             'user_id': self.env.ref('base.user_admin').id,
             'content': 'Koncept-test.', 'category': 'fact'})
+        other = self.env['ai.personal.memory'].create({
+            'user_id': self.env.ref('base.user_admin').id,
+            'content': 'Annans koncept.', 'category': 'fact'})
         mem._okf_index_record()
+        other._okf_index_record()
         action = mem.action_okf_show_concepts()
         self.assertEqual(action['res_model'], 'ai.okf.concept')
         domain = action['domain'][0]
-        self.assertEqual(domain[0], 'source_ref')
-        self.assertEqual(domain[2], 'ai.personal.memory,%s' % mem.id)
+        self.assertEqual(domain[0], 'id')
+        self.assertEqual(domain[1], 'in')
+        shown = self.env['ai.okf.concept'].search(action['domain'])
+        refs = set(shown.mapped('source_ref'))
+        self.assertEqual(refs, {'ai.personal.memory,%s' % mem.id},
+                         'bara postens egna koncept ska visas')
 
     def test_manual_run_clears_flag(self):
         """F3b.8: knappen kör SAMMA väg som cronen."""
@@ -361,3 +508,57 @@ class TestDebugMenu(_OkfTestModel):
         names = [n for n in dir(self.Mixin) if 'index' in n.lower()]
         self.assertIn('_okf_index_record', names)
         self.assertIn('_okf_cron_index_dirty', names)
+
+
+class TestQueueStats(_OkfTestModel):
+    """D5: ködjupet per modell ska gå att läsa ut."""
+
+    def test_stats_cover_indexable_models(self):
+        """En rad per indexerad modell som finns i miljön."""
+        stats = self.Mixin._okf_queue_stats()
+        names = {s['model'] for s in stats}
+        for model_name in self.Mixin._okf_indexable_models():
+            if model_name in self.env:
+                self.assertIn(model_name, names, model_name)
+
+    def test_stats_shape(self):
+        """Varje rad bär de fält dashboarden läser."""
+        for row in self.Mixin._okf_queue_stats():
+            self.assertEqual(
+                set(row),
+                {'model', 'dirty', 'total', 'oldest_age_s', 'priority'})
+
+    def test_stats_counts_dirty_records(self):
+        """`dirty` räknar faktiskt flaggade poster."""
+        mem = self.env['ai.personal.memory'].create({
+            'user_id': self.env.ref('base.user_admin').id,
+            'content': 'Köstatistik-test.', 'category': 'fact'})
+        self.assertTrue(mem.okf_dirty)
+        row = [s for s in self.Mixin._okf_queue_stats()
+               if s['model'] == 'ai.personal.memory'][0]
+        self.assertGreaterEqual(row['dirty'], 1)
+        self.assertIsNotNone(row['oldest_age_s'])
+
+    def test_empty_queue_has_no_age(self):
+        """Tom kö rapporterar ingen ålder — inte 0."""
+        self.env['ai.personal.memory'].search(
+            [('okf_dirty', '=', True)])._clear_okf_dirty()
+        row = [s for s in self.Mixin._okf_queue_stats()
+               if s['model'] == 'ai.personal.memory'][0]
+        self.assertEqual(row['dirty'], 0)
+        self.assertIsNone(row['oldest_age_s'])
+
+    def test_priority_flag_is_reported(self):
+        """Sökdrivande modell markeras i statistiken."""
+        self.Mixin._okf_register_priority_indexable('ai.personal.memory')
+        row = [s for s in self.Mixin._okf_queue_stats()
+               if s['model'] == 'ai.personal.memory'][0]
+        self.assertTrue(row['priority'])
+
+    def test_format_does_not_crash_on_empty_queue(self):
+        """Dashboardens textfält ska klara en tom kö."""
+        self.env['ai.personal.memory'].search(
+            [('okf_dirty', '=', True)])._clear_okf_dirty()
+        text = self.env['ai.okf.dashboard']._format_queue_status()
+        self.assertIsInstance(text, str)
+        self.assertIn('tom', text)

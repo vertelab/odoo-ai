@@ -111,6 +111,8 @@ class AIOkfDashboard(models.TransientModel):
     dirty_count = fields.Integer(compute='_compute_stats', string='Dirty')
     superseded_count = fields.Integer(compute='_compute_stats')
     cron_status = fields.Text(compute='_compute_stats', string='Cron Status')
+    queue_status = fields.Text(
+        compute='_compute_stats', string='Indexeringskö')
 
     # ── Manuella körningar ──
     artifact_type_ids = fields.Many2many(
@@ -317,6 +319,44 @@ class AIOkfDashboard(models.TransientModel):
                     cron.cron_name or cron.code[:50],
                     cron.interval_number, cron.interval_type, mark))
             rec.cron_status = '\n'.join(lines) if lines else 'Inga OKF-crons'
+            rec.queue_status = self._format_queue_status()
+
+    @api.model
+    def _format_queue_status(self):
+        """Ködjupet per modell som läsbar text (d5).
+
+        Visar bara modeller som har något kvar att indexera — en tom kö är
+        inget att rapportera. Sorterat på djup, djupast först: det är den
+        kön som bestämmer hur länge sökfältet svarar ofullständigt.
+
+        `äldst` är åldern på den äldsta flaggade posten. Ett värde som
+        stiger mellan två på varandra följande tittar betyder att
+        indexeraren inte hinner ikapp — oavsett hur litet `kvar` ser ut.
+        """
+        try:
+            stats = self.env['ai.okf.mixin']._okf_queue_stats()
+        except Exception as e:  # noqa: BLE001 — dashboarden får inte krascha
+            _logger.warning('OKF: kunde inte läsa ködjupet: %s', e)
+            return ''
+        rows = [s for s in stats if s['dirty']]
+        if not rows:
+            return 'Kön är tom — alla indexerade modeller är ajour.'
+        rows.sort(key=lambda s: s['dirty'], reverse=True)
+        lines = []
+        for s in rows:
+            age = s['oldest_age_s']
+            if age is None:
+                age_txt = '—'
+            elif age >= 86400:
+                age_txt = '%d d' % (age // 86400)
+            elif age >= 3600:
+                age_txt = '%d h' % (age // 3600)
+            else:
+                age_txt = '%d min' % max(1, age // 60)
+            lines.append('%s%-32s %8d kvar  (av %d, äldst %s)' % (
+                '★ ' if s['priority'] else '  ',
+                s['model'], s['dirty'], s['total'], age_txt))
+        return '\n'.join(lines)
 
     # ════════════════════════════════════════════
     # Manuella körningar (task 5.3)

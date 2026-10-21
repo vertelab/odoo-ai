@@ -29,6 +29,11 @@
                         <field name="cron_status" readonly="1" class="font-monospace small"/>
                     </group>
 
+                    <group string="Indexeringskö">
+                        <field name="queue_status" readonly="1" nolabel="1"
+                               class="font-monospace small"/>
+                    </group>
+
                     <notebook>
                         <page name="categories" string="Kategorier">
                             <group string="Hälsa per kategori (artefakttyp)">

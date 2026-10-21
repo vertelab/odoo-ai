@@ -1121,6 +1121,115 @@ class AIOkfMixin(models.AbstractModel):
     #: transaction" i upp till 8 minuter, ir_cron låst 60/60 stickprov.
     OKF_CRON_TIME_BUDGET = 240  # sekunder (4 min < 5 min intervall)
 
+    #: Adaptivt tak (D3, 2026-10-21). `batch_size` är ett GOLV, inte ett tak:
+    #: när kön är djupare än vad som hinner tömmas på `OKF_CRON_VARV` varv
+    #: höjs taket — men aldrig över `OKF_CRON_TAK_MAX`, och aldrig så att
+    #: tidsbudgeten överskrids (deadline-kontrollen i loopen gäller alltid).
+    #:
+    #: VARFÖR: mätt i drift 2026-10-21 stod `mail_message` för 83 959 av
+    #: 108 378 köade poster (77,5 %). Med `batch_size=25` fördelat på 10
+    #: köande modeller fick mail ~1 % av kapaciteten — 146 dygn att tömma.
+    #: Ett fast tak kan inte både vara snällt mot cronen och hinna ifatt en
+    #: kö som växer snabbare än den töms.
+    OKF_CRON_TAK_MAX = 500
+
+    #: Antal cron-varv kön antas behöva för att tömmas. 5 minuters intervall
+    #: × 288 varv = ett dygn. Används bara för att räkna fram det adaptiva
+    #: taket — aldrig som ett löfte om att kön är tom då.
+    OKF_CRON_VARV = 288
+
+    #: Modeller som driver ett interaktivt sökfält och därför garanteras en
+    #: minimiandel av varje körning, oavsett hur kön ser ut i övrigt (D4).
+    #: Sätts av bryggan via `_okf_register_priority_indexable()`, så kärnan
+    #: förblir domän-agnostisk — den känner inte till `user_mail_ai.mail`.
+    #:
+    #: Listan bor i `ir.config_parameter`, inte i ett klassattribut: Odoos
+    #: testramverk fäller nya klassattribut på modeller ("Found unexpected
+    #: attributes on ai.okf.mixin"), och en systemparameter delas korrekt
+    #: mellan processer — samma skäl som `okf_cron_rotation` ovan.
+    OKF_PRIORITY_PARAM = 'ai_agent_core.okf_priority_models'
+
+    @api.model
+    def _okf_register_priority_indexable(self, model_name):
+        """Märk en modell som sökdrivande (garanterad andel varje varv).
+
+        Idempotent. Parametern lagrar en kommaseparerad lista, så
+        registreringen överlever omstart och delas mellan workers.
+        """
+        current = self._okf_priority_indexable()
+        if model_name not in current:
+            current.append(model_name)
+            self.env['ir.config_parameter'].sudo().set_param(
+                self.OKF_PRIORITY_PARAM, ','.join(current))
+            _logger.info('OKF: %s får garanterad andel (sökdrivande)',
+                         model_name)
+        return True
+
+    @api.model
+    def _okf_priority_indexable(self):
+        """Modeller med garanterad minimiandel."""
+        raw = self.env['ir.config_parameter'].sudo().get_param(
+            self.OKF_PRIORITY_PARAM, '')
+        return [m.strip() for m in raw.split(',') if m.strip()]
+
+    @api.model
+    def _okf_queue_stats(self):
+        """Ködjupet per indexerad modell — för dashboard och felsökning (d5).
+
+        Returnerar en lista av dictar, en per modell som finns i miljön:
+
+            {'model': 'user_mail_ai.mail', 'dirty': 992,
+             'total': 1051, 'oldest_age_s': 43200, 'priority': True}
+
+        `oldest_age_s` är åldern på den äldsta flaggade posten i sekunder
+        (`write_date`), eller `None` när kön är tom. Det är talet som
+        avslöjar en kö som inte töms: ett konstant högt värde betyder att
+        indexeraren aldrig hinner fram, oavsett hur litet `dirty` ser ut.
+
+        EN `search_count` + EN `search` per modell — inte per post. Anropas
+        från dashboarden, som öppnas sällan; cronen räknar sitt eget ködjup
+        i `_okf_cron_index_dirty` och använder inte denna metod.
+        """
+        now = fields.Datetime.now()
+        priority = set(self._okf_priority_indexable())
+        out = []
+        for model_name in self._okf_indexable_models():
+            if model_name not in self.env:
+                continue
+            model = self.env[model_name].sudo()
+            dirty = model.search_count([('okf_dirty', '=', True)])
+            oldest_age = None
+            if dirty:
+                oldest = model.search(
+                    [('okf_dirty', '=', True)],
+                    limit=1, order='write_date asc')
+                if oldest and oldest.write_date:
+                    delta = now - oldest.write_date
+                    oldest_age = int(delta.total_seconds())
+            out.append({
+                'model': model_name,
+                'dirty': dirty,
+                'total': model.search_count([]),
+                'oldest_age_s': oldest_age,
+                'priority': model_name in priority,
+            })
+        return out
+
+    @api.model
+    def _okf_adaptive_cap(self, batch_size, queue_depth):
+        """Räkna fram körningens tak ur ködjupet (D3).
+
+        `batch_size` är ett GOLV: taket blir aldrig lägre. Det höjs bara
+        när kön är djupare än vad som hinner tömmas på `OKF_CRON_VARV`
+        varv, och stannar på `OKF_CRON_TAK_MAX`. Tidsbudgeten är orörd —
+        loopen avbryter fortfarande vid deadline, så ett höjt tak förläng
+        aldrig körningen.
+        """
+        if queue_depth <= 0:
+            return batch_size
+        behov = -(-queue_depth // self.OKF_CRON_VARV)  # ceil
+        return max(batch_size, min(self.OKF_CRON_TAK_MAX, behov))
+
     @api.model
     def _okf_cron_index_dirty(self, batch_size=25, time_budget=None):
         """Lätt cron: plocka upp flaggade poster, generera OKF-fälten.
@@ -1181,23 +1290,54 @@ class AIOkfMixin(models.AbstractModel):
                 start = 0
         ordered = models[start:] + models[:start]
         consumed = 0
+
+        # D3 (2026-10-21): `batch_size` är ett GOLV. Taket räknas fram ur
+        # ködjupet en gång per varv — en COUNT per modell, inte per post.
+        # Tidsbudgeten är orörd: loopen nedan avbryter fortfarande vid
+        # deadline, så ett höjt tak förlänger aldrig körningen.
+        queue_depth = 0
+        for model_name in ordered:
+            queue_depth += self.env[model_name].sudo().search_count(
+                [('okf_dirty', '=', True)])
+        cap = self._okf_adaptive_cap(batch_size, queue_depth)
+        if cap != batch_size:
+            _logger.info(
+                'OKF cron: ködjup %s → tak %s (golv %s, max %s)',
+                queue_depth, cap, batch_size, self.OKF_CRON_TAK_MAX)
+
         # Garanterad andel per modell — aldrig mindre än 1, och minst en
         # fjärdedel av taket så en modell med många poster inte fastnar på
-        # en enda post per varv. Med 18 modeller och batch_size 20 blir
-        # andelen 5 (20 // 4), vilket ger varje modell verklig chans.
-        per_model = max(1, batch_size // 4) if ordered else 0
+        # en enda post per varv.
+        per_model = max(1, cap // 4) if ordered else 0
+
+        # D4 (2026-10-21): sökdrivande modeller garanteras en andel oavsett
+        # hur kön ser ut i övrigt. Rättvis fördelning antar att alla modeller
+        # är lika viktiga — det är de inte. `user_mail_ai.mail` driver
+        # sökfältet; en modell som bara fyller ett arkiv kan vänta.
+        priority = [m for m in ordered if m in self._okf_priority_indexable()]
+        priority_share = {}
+        if priority:
+            # Varje prioriterad modell får minst en fjärdedel av taket,
+            # delat mellan dem — men aldrig mer än cap totalt.
+            each = max(1, cap // 4 // len(priority))
+            for name in priority:
+                priority_share[name] = each
+
         # Kvarvarande platser efter att alla fått sin andel, att ge bort
         # när en modell har mer att indexera än sin andel.
-        spare = max(0, batch_size - per_model * len(ordered))
+        spare = max(0, cap - per_model * len(ordered))
 
         for idx, model_name in enumerate(ordered):
-            if total >= batch_size:
+            if total >= cap:
                 break
             consumed += 1
             # Egen andel + eventuell outnyttjad reserv från tidigare modeller.
             remaining = per_model + spare
-            if remaining > batch_size - total:
-                remaining = batch_size - total
+            # Prioriterad modell: minst sin garanterade andel, även om
+            # rättvisefördelningen annars skulle ge den mindre.
+            remaining = max(remaining, priority_share.get(model_name, 0))
+            if remaining > cap - total:
+                remaining = cap - total
             Model = self.env[model_name].sudo()
             dirty = Model.search(
                 [('okf_dirty', '=', True)], limit=remaining,
