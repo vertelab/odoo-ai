@@ -297,7 +297,12 @@ class AIAccessResolver(models.Model):
         # igenom ogenomskinliga referenser här öppnar ingen läcka mellan
         # användare.
         or_parts.append('source_ref IS NULL')
-        or_parts.append("source_ref NOT LIKE '%,%'")
+        # `%%` — psycopg2 kör strängen genom `%`-formatering när params är
+        # en dict, så ett ensamt `%` blir en platshållare och kraschar med
+        # "argument formats can't be mixed". Buggen gjorde att VARJE
+        # OKF-sökning kastade ProgrammingError så snart någon modell var
+        # öppen — sökfältet föll tillbaka till IMAP och såg tomt ut.
+        or_parts.append("source_ref NOT LIKE '%%,%%'")
 
         if not or_parts:
             return None, params
