@@ -132,6 +132,29 @@ class TestOkfSourceRefCondition(ConfigParamGuardedCase):
             self.assertNotIsInstance(
                 value, list, 'OPEN får inte ge en id-lista')
 
+    def test_condition_executes_with_dict_params(self):
+        """Villkoret måste gå att KÖRA med dict-params, inte bara se rätt ut.
+
+        Regression: grenen `source_ref NOT LIKE '%,%'` skrevs med ett
+        ensamt `%`. psycopg2 kör SQL-strängen genom %-formatering när
+        params är en dict, så `%` lästes som platshållare och VARJE
+        OKF-sökning kastade `ProgrammingError: argument formats can't be
+        mixed`. `_okf_search` fångade felet och returnerade tomt — sökfältet
+        svarade noll träffar på allt.
+
+        Testet inspekterar därför inte strängen: det kör den.
+        """
+        sql, params = self.Resolver._source_ref_condition(
+            self.user, ['res.company'])
+        self.assertIsNotNone(sql)
+        try:
+            self.env.cr.execute(
+                'SELECT count(*) FROM ai_okf_concept WHERE ' + sql,
+                dict(params))
+            self.env.cr.fetchall()
+        except Exception as e:  # noqa: BLE001 — det är felet vi prövar
+            self.fail('access-villkoret går inte att köra: %s' % e)
+
     def test_closed_model_not_mentioned(self):
         """CLOSED nämns inte alls — men oprövade faller till D4-nätet.
 
@@ -182,7 +205,7 @@ class TestOkfSourceRefCondition(ConfigParamGuardedCase):
             self.user, ['finns.inte.a', 'finns.inte.b'])
         self.assertIsNotNone(sql)
         self.assertIn('source_ref IS NULL', sql)
-        self.assertIn("source_ref NOT LIKE '%,%'", sql)
+        self.assertIn("source_ref NOT LIKE '%%,%%'", sql)
 
     def test_opaque_source_ref_is_admitted(self):
         """En `source_ref` utan komma (Message-ID) faller till D4-nätet.
@@ -193,7 +216,7 @@ class TestOkfSourceRefCondition(ConfigParamGuardedCase):
         """
         sql, params = self.Resolver._source_ref_condition(
             self.user, ['finns.inte.modell'])
-        self.assertIn("source_ref NOT LIKE '%,%'", sql,
+        self.assertIn("source_ref NOT LIKE '%%,%%'", sql,
                       'ogenomskinliga referenser måste nå D4-nätet')
 
     def test_condition_always_includes_null(self):
