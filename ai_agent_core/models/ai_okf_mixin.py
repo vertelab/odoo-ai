@@ -427,8 +427,25 @@ class AIOkfMixin(models.AbstractModel):
     @api.model_create_multi
     def create(self, vals_list):
         records = super().create(vals_list)
-        # Nya poster ska genereras. `filtered` undviker en skrivning när
-        # flaggan redan är satt (default=True).
+        # Nya poster ska genereras — men bara om modellen har något att
+        # indexera. Samma kontrakt som `write()`: en tom
+        # `_okf_dirty_fields()` betyder att modellen inte indexeras, och då
+        # ska `default=True` inte heller sätta flaggan. Utan den kontrollen
+        # fylldes kön på igen med varje ny post för modeller som medvetet
+        # avregistrerat sig (t.ex. `mail.message`).
+        if not self._okf_dirty_fields():
+            # `default=True` på fältet har redan satt flaggan i
+            # `super().create()`. En modell utan dirty-fält indexeras inte,
+            # så flaggan måste bort — annars fylls kön på igen med varje ny
+            # post för modeller som medvetet avregistrerat sig.
+            flagged = records.filtered('okf_dirty')
+            if flagged:
+                # `_write_okf_fields`, inte `_clear_okf_dirty`: den senare
+                # stämplar `okf_indexed_at`, och posten har aldrig
+                # indexerats. Bara flaggan ska bort.
+                flagged._write_okf_fields({'okf_dirty': False})
+            return records
+        # `filtered` undviker en skrivning när flaggan redan är satt.
         stale = records.filtered(lambda r: not r.okf_dirty)
         if stale:
             stale._set_okf_dirty()
