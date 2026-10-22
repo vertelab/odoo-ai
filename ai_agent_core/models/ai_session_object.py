@@ -13,7 +13,7 @@ Den här tabellen skrivs av DEN VÄG SOM UTFÖR OPERATIONEN (verktygslagret,
 uppdaterar tidpunkten i stället för att skapa en ny rad (idempotens).
 """
 
-from odoo import api, fields, models
+from odoo import _, api, fields, models
 
 
 class AICoworkerSessionObject(models.Model):
@@ -57,6 +57,85 @@ class AICoworkerSessionObject(models.Model):
          'UNIQUE(session_id, res_model, res_id, operation)',
          'Samma objekt och operation loggas en gång per session.'),
     ]
+
+    # ── Navigering till målet (session-object-navigation) ──────────────
+    #
+    # Lineage är polymorf: `res_model`/`res_id` kan peka på vilken modell som
+    # helst, och det finns ingen FK. Målet slås därför upp först när
+    # åtgärden används — aldrig vid listladdning (kravet "Navigeringen är
+    # billig vid listladdning"). Uppslaget går via målmodellens EGET
+    # `get_formview_action()`, inte via en handbyggd URL, så att modellens
+    # vy, meny och behörighetsregler gäller (Beslut 1 och 6).
+
+    def action_open_target(self):
+        """Öppna det affärsobjekt raden pekar på.
+
+        Returnerar målmodellens egen formuläråtgärd, eller en notis som
+        förklarar varför objektet inte kan öppnas (Beslut 3). Aldrig `False`:
+        en åtgärd som returnerar `False` gör ingenting alls och lämnar
+        användaren utan förklaring.
+        """
+        self.ensure_one()
+        failure = self._target_unavailable_reason()
+        if failure:
+            return self._target_unavailable_notification(failure)
+        target = self.env[self.res_model].browse(int(self.res_id))
+        return target.get_formview_action()
+
+    def _target_unavailable_reason(self):
+        """Varför målet inte kan öppnas — eller `None` om det går.
+
+        Tre fall, i den ordning de kan avgöras billigast:
+          1. modellen finns inte i registret (avinstallerad)
+          2. modellen finns men användaren saknar läsrätt
+          3. posten finns inte längre (raderad sedan raden skrevs)
+
+        Prövningen sker med användarens EGET env — aldrig `sudo()`.
+        Lineage-läsning får inte eskalera behörigheter, och ett `sudo()` här
+        skulle göra `has_access()` till en tyst ja-stämpel.
+        """
+        if not self.res_model or self.res_model not in self.env:
+            return 'missing_model'
+        if not self.res_id:
+            return 'missing_record'
+        target_model = self.env[self.res_model]
+        if not target_model.has_access('read'):
+            return 'no_access'
+        if not target_model.browse(int(self.res_id)).exists():
+            return 'missing_record'
+        return None
+
+    def _target_unavailable_notification(self, reason):
+        """Notis som säger VARFÖR objektet inte öppnas.
+
+        Ett raderat objekt är normal historik, inte ett systemfel — därför
+        en notis i stället för `UserError` (Beslut 3). Raden ligger kvar i
+        listan; bara navigeringen är stängd.
+        """
+        messages = {
+            'missing_model': _(
+                'Modellen %(model)s är inte tillgänglig i den här '
+                'databasen. Objektet kan inte öppnas.',
+                model=self.res_model or '-'),
+            'missing_record': _(
+                'Objektet finns inte längre. Det kan ha raderats efter att '
+                'sessionen loggade det.'),
+            'no_access': _(
+                'Du saknar behörighet att läsa %(model)s. Objektet kan inte '
+                'öppnas.', model=self.res_model),
+        }
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'title': _('Objektet kan inte öppnas'),
+                'message': messages.get(
+                    reason, _('Objektet kan inte öppnas.')),
+                'type': 'warning',
+                'sticky': False,
+                'next': {'type': 'ir.actions.act_window_close'},
+            },
+        }
 
     @api.model
     def _log_operation(self, session_id, res_model, res_ids, operation):

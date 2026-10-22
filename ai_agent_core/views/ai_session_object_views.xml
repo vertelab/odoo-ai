@@ -8,6 +8,14 @@
         <field name="model">ai.coworker.session.object</field>
         <field name="arch" type="xml">
             <list string="Objects" create="false">
+                <!-- Radåtgärden öppnar det affärsobjekt raden pekar på.
+                     Ligger i listvyn (inte bara i formuläret) så att man kan
+                     hoppa direkt från lineage-listan till posten — och så att
+                     båda ingångarna (Objects-knappen och sessionsformuläret)
+                     delar exakt samma vy (Beslut 4). -->
+                <button name="action_open_target" type="object"
+                        string="Öppna objekt" icon="fa-external-link"
+                        help="Öppna det objekt raden pekar på"/>
                 <field name="datetime"/>
                 <field name="res_model"/>
                 <field name="res_id"/>

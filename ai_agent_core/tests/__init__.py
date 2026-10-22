@@ -106,4 +106,5 @@ from . import test_scheduled_work
 # lineage-tabellen och de tre räknarnas semantik.
 from . import test_token_totals
 from . import test_session_object_lineage
+from . import test_session_object_navigation
 from . import test_coworker_counters

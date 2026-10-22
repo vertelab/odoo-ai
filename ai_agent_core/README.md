@@ -1293,3 +1293,50 @@ driftkontrollen måste därför använda **kundens** virtual key
   finns i gatewayens katalog **för kundens nyckel**.
 - Tom modellista från `/v1/models` → fel nyckel (admin istället för kund-VK).
 - Cron-logg "katalogen kunde inte hämtas" → gateway nere, **inte** drift.
+
+## Lineage-listan navigerar till objektet (add-ai-coworker-session-object-visit-button)
+
+`ai.coworker.session.object` är en polymorphisk lineage-rad: `res_model` +
+`res_id` pekar på ett affärsobjekt men det finns ingen främmandenyckel. Att
+hitta objektet krävde tidigare att man kopierade id:t och bytte meny själv.
+
+Listvyn **Objects** har nu radåtgärden **Öppna objekt**
+(`action_open_target`). Den hämtar målet via `get_formview_action()` — samma
+mekanism som Odoos egna spårlänkar — i stället för att bygga en URL. Det gör
+att modeller som överskuggar `get_formview_action()` (t.ex. `hr.employee`)
+får sin egen vy, och att åtgärden ärver modellens meny och åtkomstregler.
+
+### Varför en notis i stället för ett fel
+
+Ett raderat objekt är **normal historik**, inte ett systemfel. Raden ligger
+kvar i listan; bara navigeringen är stängd. Tre fall ger var sin
+`display_notification` med förklaring:
+
+| Fall | Text |
+|---|---|
+| Modellen är inte installerad | "… modellen är inte tillgänglig" |
+| Användaren saknar läsrätt | "… du saknar behörighet" |
+| Posten finns inte längre | "… finns inte längre" |
+
+Aldrig `False` som returvärde — en åtgärd som returnerar `False` gör
+ingenting alls och lämnar användaren utan förklaring.
+
+### Behörighet eskaleras aldrig
+
+Uppslaget körs i användarens **eget** `env`, aldrig `sudo()`. Ett `sudo()`
+här skulle göra `has_access('read')` till en tyst ja-stämpel och visa
+lineage-rader för objekt användaren inte får se. `has_access()` används i
+stället för det deprecade `check_access_rights()` (Odoo 18).
+
+### Ingen kostnad vid listladdning
+
+Uppslaget sker **bara vid klick**. Modellen har inga `compute`-fält som
+körs vid laddning (`coworker_id` är `related` men `store=True, index=True`),
+så listan kostar detsamma som före ändringen — mätt till 0,3 ms för 500
+rader.
+
+### En vy, två ingångar
+
+Både `Objects`-knappen på `ai.coworker` och objektlistan inifrån en session
+använder samma listvy. Det finns exakt **en** listvy för modellen — två
+skulle glida isär (samma bugg som `coworker-form-performance` rättade).
