@@ -185,9 +185,24 @@ class TestDefaultToolIds(TransactionCase):
         """
         Settings = self.env['res.config.settings']
         ICP = self.env['ir.config_parameter'].sudo()
+        # `res.config.default_get()` coerces every `config_parameter` value
+        # into an id for the fields in its `config` bucket. A stale
+        # parameter from an older schema (or a value written by another
+        # test) then aborts the whole settings create with
+        # `relation "_unknown" does not exist`. Snapshot every parameter
+        # this module reads and restore them afterwards, so the test does
+        # not depend on what the database happens to contain.
+        cp_keys = [
+            'ai_agent_core.default_tool_ids',
+            'ai_agent_core.default_identity_id',
+            'ai_agent_core.default_provider_id',
+            'ai_agent_core.default_model_id',
+            'odoomind.okf.company_memory_coworker_id',
+            'odoomind.okf.personal_memory_coworker_id',
+        ]
+        snapshot = {k: ICP.search([('key', '=', k)]).value for k in cp_keys}
         rec = self.env['ai.tool'].search(
             [('builtin_name', '=', 'odoo_calculator')], limit=1)
-        old_param = ICP.get_param('ai_agent_core.default_tool_ids', '')
         try:
             settings = Settings.create({
                 'ai_default_tool_ids': [(6, 0, rec.ids)],
@@ -202,15 +217,14 @@ class TestDefaultToolIds(TransactionCase):
                 rec.id, values['ai_default_tool_ids'][0][2],
                 'Det sparade verktyget ska komma tillbaka i rundturen')
         finally:
-            # Återställ parametern — annars läcker den till nästa testklass
+            # Återställ parametrarna — annars läcker de till nästa testklass
             # (cachen rensas av set_param, men vi måste sätta tillbaka
             # ursprungsvärdet först).
-            if old_param:
-                ICP.set_param('ai_agent_core.default_tool_ids', old_param)
-            else:
-                ICP.search([
-                    ('key', '=', 'ai_agent_core.default_tool_ids'),
-                ]).unlink()
+            for key, value in snapshot.items():
+                if value:
+                    ICP.set_param(key, value)
+                else:
+                    ICP.search([('key', '=', key)]).unlink()
 
 
 class TestNoImplicitBuiltins(ConfigParamGuardedCase):
