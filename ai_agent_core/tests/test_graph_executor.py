@@ -215,14 +215,17 @@ class TestGraphWritePath(TransactionCase):
 
     def test_ensure_graph_cron_idempotent(self):
         from odoo.addons.ai_agent_core.hooks import _ensure_graph_cron
-        cron1 = _ensure_graph_cron(self.env)
-        self.assertTrue(cron1, 'cronen ska skapas/finnas')
-        cron2 = _ensure_graph_cron(self.env)
-        self.assertEqual(cron1.id, cron2.id, 'ingen dubblett')
-        # Bara en cron med namnet.
-        count = self.env['ir.cron'].sudo().search_count([
-            ('cron_name', '=', 'Odoo Mind Graph Sync')])
-        self.assertLessEqual(count, 1)
+        task1 = _ensure_graph_cron(self.env)
+        self.assertTrue(task1, 'cron.task ska skapas/finnas')
+        task2 = _ensure_graph_cron(self.env)
+        self.assertEqual(task1.id, task2.id, 'ingen dubblett')
+        # Jobbet är en cron.task, aldrig en ir.cron — en ir.cron som skrivs
+        # vid modulladdning kan inte uppdateras medan jobbet kör.
+        self.assertEqual(task1._name, 'cron.task')
+        self.assertEqual(task1.technical_name, 'ai_graph_sync')
+        count = self.env['cron.task'].sudo().search_count([
+            ('technical_name', '=', 'ai_graph_sync')])
+        self.assertEqual(count, 1)
 
 
 class TestGraphPartnerEdges(TransactionCase):

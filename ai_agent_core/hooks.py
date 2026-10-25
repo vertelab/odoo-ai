@@ -692,46 +692,42 @@ def post_init_hook(env):
 
 
 def _ensure_graph_cron(env):
-    """Säkerställ att cronen för graf-synk finns (idempotent).
+    """Säkerställ att graf-synken finns som `cron.task` (idempotent).
 
-    `post_init_hook` skapade cronen bara vid installation. Ett system som
+    `post_init_hook` skapade förr en `ir.cron` här. Ett system som
     installerade `ai_agent_core` innan grafen fanns fick den aldrig — och
     grafen förblev tyst tom (0 noder, `last_sync = NULL` på alla
     definitioner, ingen cron). Samma mönster som `_ensure_webhook_config()`
     i saltstack-modulen: skapa vid behov, inte bara vid install.
 
-    Anropas från post_init_hook och från settings-öppning så att även
-    redan installerade system får cronen.
+    **Varför cron.task och inte ir.cron** (2026-10-25): en `ir.cron` som
+    skrivs vid modulladdning kan inte uppdateras medan jobbet kör
+    ("Record cannot be modified right now"), och en post som skapas här
+    fick ingen xmlid — den gick varken att spåra eller uppgradera. Jobbet
+    ligger nu i `data/cron_graph_sync.xml`; den här funktionen är bara en
+    efterfyllnad för system som installerade modulen innan datafilen
+    fanns.
+
+    Anropas från post_init_hook och från settings-öppning.
     """
-    if 'ir.cron' not in env:
+    Task = env['cron.task'].sudo()
+    task = Task.search([('technical_name', '=', 'ai_graph_sync')], limit=1)
+    if task:
+        return task
+    if 'graph.node.definition' not in env:
         return False
-    model = env['ir.model']._get('graph.node.definition')
-    if not model:
-        return False
-    # Odoo 18: fältet heter cron_name (name är deprecated men finns kvar).
-    cron = env['ir.cron'].sudo().search([
-        ('cron_name', '=', 'Odoo Mind Graph Sync'),
-    ], limit=1)
-    if not cron:
-        cron = env['ir.cron'].sudo().search([
-            ('name', '=', 'Odoo Mind Graph Sync'),
-        ], limit=1)
-    if cron:
-        return cron
-    cron = env['ir.cron'].sudo().create({
+    task = Task.create({
         'name': 'Odoo Mind Graph Sync',
-        'cron_name': 'Odoo Mind Graph Sync',
-        'model_id': model.id,
-        'state': 'code',
-        'code': 'model._sync_all()',
+        'technical_name': 'ai_graph_sync',
+        'module': 'ai_agent_core',
+        'model_name': 'graph.node.definition',
+        'method_name': '_sync_all',
         'interval_number': 5,
         'interval_type': 'minutes',
         'active': True,
-        'priority': 0,
-        'user_id': env.ref('base.user_root').id,
     })
-    _logger.info('Created cron: Odoo Mind Graph Sync')
-    return cron
+    _logger.info('Created cron.task: Odoo Mind Graph Sync')
+    return task
 
 
 def _ensure_default_model(env):

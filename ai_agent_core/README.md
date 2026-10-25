@@ -373,8 +373,8 @@ varje extraktion tyst och returnerar 0.
 
 **Felsökning:**
 
-1. `SELECT cron_name, active FROM ir_cron WHERE cron_name ILIKE '%Discuss%'`
-   — cronen ska finnas och vara inaktiv tills någon aktiverar den.
+1. `SELECT technical_name, active FROM cron_task WHERE technical_name ILIKE '%discuss%'`
+   — jobbet ska finnas och vara inaktivt tills någon aktiverar det.
 2. `SELECT source_ref, content FROM ai_personal_memory WHERE source='discuss_chat'`
    — 0 rader kan betyda "inga kanalmeddelanden igår", inte att vägen är trasig.
 3. `learn_from_discuss` på `res.users` (Min profil → AI-profil) styr om
@@ -394,8 +394,8 @@ rapporterar framgång med 0 noder.
 
 **Felsökning av en tom graf:**
 
-1. `SELECT cron_name FROM ir_cron WHERE cron_name = 'Odoo Mind Graph Sync'`
-   — saknas cronen? `_ensure_graph_cron()` skapar den (körs från
+1. `SELECT technical_name, active FROM cron_task WHERE technical_name = 'ai_graph_sync'`
+   — saknas jobbet? `_ensure_graph_cron()` skapar det (körs från
    post_init_hook och vid settings-öppning).
 2. `SELECT graph_label, last_sync, last_error FROM graph_node_definition`
    — `last_error` satt = skrivvägen felar. `last_error` tom MEN 0 noder =
@@ -648,6 +648,81 @@ Efter en skrivande verktygsoperation verifieras utfallet mot verktygets
   försök → fel → rättelse → verifiering loggas som session-rader.
 - Aktivering: `ai.tool.verification_json` — ett verktyg utan avtal körs utan
   write-verify (inget fel).
+
+## Schemalagt arbete — `cron.task`, aldrig `ir.cron`
+
+**Sedan 18.0.2.0.0 är varje schemalagt jobb i den här modulen en
+`cron.task`** (motorn i `cron_tick`). Inga `ir.cron`-poster skapas av
+datafiler, hooks eller kod.
+
+Skälet är en verklig uppgraderingskrasch (2026-10-25):
+
+```
+ir_cron.py:605 raise UserError(
+    "Det går inte att ändra posten just nu: Denna cronuppgift utförs
+     för närvarande och kan inte ändras")
+ParseError: while parsing data/cron_okf_index_dirty.xml:16
+```
+
+En `ir.cron` i en datafil skrivs om vid **varje** modulladdning. Odoo
+vägrar skriva en cron medan den kör (`_try_lock`), och ett jobb med
+1–5 minuters intervall kör nästan jämt. Uppgraderingen kan därför aldrig
+bli pålitlig så länge schemalagda jobb ligger i `ir.cron`.
+
+`cron.task` har ingen sådan spärr: `_load_records_write()` skriver vanliga
+fält, och motorn tar sitt eget advisory-lås vid körning. Motorn ger
+dessutom det som `ir.cron` saknade — körhistorik (`cron.task.log`), lås så
+två workers inte kör samma jobb, felräknare med automatisk avaktivering
+och en "Kör nu"-knapp.
+
+### Skriva ett nytt jobb
+
+```xml
+<record id="cron_task_my_job" model="cron.task">
+    <field name="name">AI: My job</field>
+    <field name="technical_name">ai_my_job</field>
+    <field name="module">ai_agent_core</field>
+    <field name="model_name">ai.coworker</field>
+    <field name="method_name">_my_job_method</field>
+    <field name="interval_number">1</field>
+    <field name="interval_type">days</field>
+    <field name="sequence">10</field>
+    <field name="active" eval="True"/>
+</record>
+```
+
+- **`model_name` + `method_name`** — metoden anropas **utan argument**.
+  Ligger logiken i en loop (t.ex. "för varje coworker"), flytta in den i
+  en `@api.model`-metod; en inline `code`-sträng kan inte uttryckas.
+- **`model_name` måste vara den modell som ÄGER metoden.** Ärvs metoden
+  via en mixin (`ai.okf.mixin`), namnge mixin-modellen — inte en konkret
+  arvtagare. Felet blir annars `The method "..." does not exist on the
+  model "..."`.
+- **Antingen `cadence` (`min`/`hour`/`daily`/`week`/`month`) ELLER
+  `interval_number` + `interval_type`** — aldrig båda. `cadence`-jobb
+  plockas av minut-ticken, intervalljobb av 5-minutersticken.
+- **`technical_name` är unik** — och xmlid:t bör vara `cron_task_<något>`
+  så att en uppgradering uppdaterar raden i stället för att skapa en
+  dubblett.
+- **`<data noupdate="1">`** — en administratör som stängt av ett jobb ska
+  inte få det påslaget igen vid nästa uppgradering.
+
+### Felsökning
+
+```sql
+-- körhistorik, nyast först
+SELECT task_name, status, trigger, run_at, duration_ms, text
+  FROM cron_task_log ORDER BY run_at DESC LIMIT 20;
+
+-- jobb som felar
+SELECT technical_name, failure_count, last_run
+  FROM cron_task WHERE failure_count > 0 ORDER BY failure_count DESC;
+```
+
+Motorn själv är `ir.cron` **991 "Cron: Tick (5 min)"** — den enda
+`ir.cron` som ska vara aktiv för den här modulen. Är den avstängd körs
+**inga** `cron.task` alls.
+
 
 ## Dependencies
 
