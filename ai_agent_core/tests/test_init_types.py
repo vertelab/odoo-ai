@@ -584,11 +584,17 @@ class TestPiInstruction(TransactionCase):
             'trigger_keywords': 'test',
         })
         coworker.write({'skill_ids': [(4, skill.id, 0)]})
-        # Tool
-        tool = self.Tool.create({
-            'name': 'task_get',
-            'description': 'Hämta uppgift',
-        })
+        # Tool — `task_get` is a real tool in production, so it may already
+        # exist. Reuse it instead of creating a duplicate: `ai_tool.name` has a
+        # unique constraint, and the test used to abort with
+        # "duplicate key value violates unique constraint ai_tool_name_unique"
+        # as soon as the production DB had the tool.
+        tool = self.Tool.search([('name', '=', 'task_get')], limit=1)
+        if not tool:
+            tool = self.Tool.create({
+                'name': 'task_get',
+                'description': 'Hämta uppgift',
+            })
         coworker.write({'tool_ids': [(4, tool.id, 0)]})
 
         result = coworker._build_pi_instruction()
