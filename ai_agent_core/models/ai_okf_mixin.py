@@ -1167,6 +1167,59 @@ class AIOkfMixin(models.AbstractModel):
     OKF_PRIORITY_PARAM = 'ai_agent_core.okf_priority_models'
 
     @api.model
+    def _okf_stall_warn_hours(self):
+        """Timmar innan en kvarvarande dirty-post räknas som stillestånd.
+
+        `ir_cron.failure_count` är oanvändbar som larmsignal: indexeringen
+        fångar felet PER POST (se `except Exception` i
+        `_okf_cron_index_dirty`), så cronen "lyckas" varje varv medan
+        ingenting blir indexerat. Mätt i drift 2026-10-25: 3 dygn 3 timmar
+        utan en enda personal-post, `failure_count 0`.
+
+        Den ärliga signalen är åldern på den äldsta post som fortfarande
+        är dirty. Default 24 timmar — ett dygn utan framsteg är stillestånd.
+        """
+        raw = self.env['ir.config_parameter'].sudo().get_param(
+            'odoomind.personal_memory.stall_warn_hours', '24')
+        try:
+            return max(0, int(raw))
+        except (TypeError, ValueError):
+            return 24
+
+    def _okf_check_stall(self, model_name):
+        """Varna när äldsta dirty-posten i en modell passerat tröskeln.
+
+        Dedupliceras per modell och dygn: cronen kör var 5:e minut, och en
+        varning som upprepas 288 gånger per dygn är brus, inte larm.
+        """
+        hours = self._okf_stall_warn_hours()
+        if hours <= 0:
+            return
+        Model = self.env[model_name].sudo()
+        oldest = Model.search(
+            [('okf_dirty', '=', True)], order='write_date asc', limit=1)
+        if not oldest or not oldest.write_date:
+            return
+        age = fields.Datetime.now() - oldest.write_date
+        age_hours = age.total_seconds() / 3600.0
+        if age_hours < hours:
+            return
+        # En varning per modell och dygn — inte per cron-varv.
+        key = 'ai_agent_core.okf_stall_warned.%s' % model_name
+        today = fields.Date.today().isoformat()
+        params = self.env['ir.config_parameter'].sudo()
+        if params.get_param(key, '') == today:
+            return
+        params.set_param(key, today)
+        remaining = Model.search_count([('okf_dirty', '=', True)])
+        _logger.warning(
+            'OKF stillestånd: %s har %d poster kvar att indexera, äldsta '
+            'är %.1f timmar gammal (tröskel %d h). Ingen post har '
+            'indexerats på den tiden — kontrollera om indexeringen kastar '
+            'fel per post (failure_count är 0 även då).',
+            model_name, remaining, age_hours, hours)
+
+    @api.model
     def _okf_register_priority_indexable(self, model_name):
         """Märk en modell som sökdrivande (garanterad andel varje varv).
 
@@ -1343,6 +1396,21 @@ class AIOkfMixin(models.AbstractModel):
         # Kvarvarande platser efter att alla fått sin andel, att ge bort
         # när en modell har mer att indexera än sin andel.
         spare = max(0, cap - per_model * len(ordered))
+
+        # D5 (2026-10-25): stilleståndsvarning. `failure_count` är 0 även
+        # när indexeringen kastar fel per post, så den enda ärliga signalen
+        # är åldern på den äldsta kvarvarande dirty-posten. Körs före loopen
+        # — en varning ska komma även det varv som tar slut på tiden.
+        for model_name in ordered:
+            self._okf_check_stall(model_name)
+
+
+        # D5 (2026-10-25): stilleståndsvarning. `failure_count` är 0 även
+        # när indexeringen kastar fel per post, så den enda ärliga signalen
+        # är åldern på den äldsta kvarvarande dirty-posten. Körs före loopen
+        # — en varning ska komma även det varv som tar slut på tiden.
+        for model_name in ordered:
+            self._okf_check_stall(model_name)
 
         for idx, model_name in enumerate(ordered):
             if total >= cap:

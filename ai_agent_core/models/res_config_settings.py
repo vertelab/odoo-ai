@@ -225,7 +225,7 @@ class ResConfigSettings(models.TransientModel):
         help='How often to consolidate personal memories.')
 
     personal_memory_char_budget = fields.Integer(
-        'Personligt minne: teckenbudget', default=4000,
+        'Personligt minne: teckenbudget', default=2500000,
         config_parameter='odoomind.personal_memory.char_budget',
         help='Max antal tecken för en användares personliga minne. En '
              'skrivning som skulle överskrida taket vägras med ett '

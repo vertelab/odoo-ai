@@ -285,10 +285,23 @@ class TestIndexableModels(_OkfTestModel):
         self.assertIn('ai.company.memory', models)
 
     def test_base_list_names_no_domain(self):
-        for m in self.Mixin._okf_indexable_models():
-            for domain in ('website', 'blog', 'event', 'crm', 'project',
-                           'prd'):
-                self.assertNotIn(domain, m, m)
+        """Kärnans lista ska inte bygga på domänmoduler.
+
+        `calendar.event` är kärna (calendar är en basmodul i Odoo) och
+        indexeras av ai_agent_core själv — den får inte räknas som ett
+        domänbidrag. `event` (Event-appen) är en annan modell och får
+        fortfarande inte förekomma.
+        """
+        models = self.Mixin._okf_indexable_models()
+        self.assertNotIn('event.event', models)
+        # Domänmodulernas modeller får inte komma in via kärnlistan. Matcha
+        # på modellens PREFIX (`crm.`), inte på delsträng: `crm.lead` är en
+        # domänmodell, men `crm` som delsträng förekommer också i namn där
+        # den inte betyder något.
+        for prefix in ('website.', 'blog.', 'crm.', 'project.', 'prd.'):
+            for m in models:
+                self.assertFalse(m.startswith(prefix),
+                                 '%s är ett domänbidrag, inte kärna' % m)
 
     def test_unknown_model_is_skipped(self):
         """En modell som inte finns i miljön hoppas över utan fel."""
@@ -313,9 +326,14 @@ class TestIndexableModels(_OkfTestModel):
             self.env['ai.company.memory'].create({
                 'company_id': self.env.company.id,
                 'content': 'Batch-test %s.' % i, 'category': 'knowledge'})
+        # D3 (2026-10-21): `batch_size` är ett GOLV. Taket räknas fram ur
+        # ködjupet — på en databas med hundratals dirty-poster blir det
+        # högre än 3. Det som prövas här är att taket är GEMENSAMT: totalen
+        # får aldrig bli `batch_size` per modell (4+4 poster × 2 modeller).
         total = self.Mixin._okf_cron_index_dirty(batch_size=3)
-        self.assertLessEqual(total, 3,
-                             'taket ska gälla totalt, inte per modell')
+        self.assertLessEqual(
+            total, self.Mixin.OKF_CRON_TAK_MAX,
+            'taket ska gälla totalt, inte per modell')
 
     def test_time_budget_stops_the_run(self):
         """Tidsbudgeten gör att cronen ger tillbaka innan nästa startar."""
@@ -400,7 +418,17 @@ class TestIndexableModels(_OkfTestModel):
         with patch.object(type(self.Mixin), '_okf_indexable_models',
                           return_value=['ai.company.memory',
                                         'ai.personal.memory']):
-            self.Mixin._okf_cron_index_dirty(batch_size=4)
+            # Taket räknas fram ur ködjupet (D3), så `batch_size=4` är ett
+            # golv — på en databas med djup kö blir körningen större. Det
+            # som prövas är att den prioriterade posten FÅR PLATS, och
+            # prioritetsandelen delas ut per varv. Kör därför flera varv
+            # (max 5) i stället för att kräva att första varvet når den.
+            for _ in range(5):
+                self.Mixin._okf_cron_index_dirty(
+                    batch_size=4, time_budget=120)
+                mem.invalidate_recordset(['okf_dirty'])
+                if not mem.okf_dirty:
+                    break
         mem.invalidate_recordset(['okf_dirty'])
         self.assertFalse(mem.okf_dirty,
                          'prioriterad modell fick ingen plats i körningen')
@@ -423,14 +451,32 @@ class TestIndexableModels(_OkfTestModel):
             total, 2, 'båda modellerna ska få minst en post var')
 
     def test_cron_is_idempotent(self):
-        """Andra körningen skapar inga nya versioner."""
-        self.env['ai.personal.memory'].create({
+        """Andra körningen skapar inga nya versioner FÖR SAMMA POST.
+
+        Taket fördelas mellan alla registrerade modeller, så en körning kan
+        plocka upp poster från andra modeller — på en populär databas är
+        `second` därför inte 0. Idempotensen mäts på postens eget koncept,
+        samma mått som test_okf_dirty_bridge.test_cron_is_idempotent.
+        """
+        mem = self.env['ai.personal.memory'].create({
             'user_id': self.env.ref('base.user_admin').id,
             'content': 'Idempotens-test.', 'category': 'fact'})
-        first = self.Mixin._okf_cron_index_dirty(batch_size=10)
-        second = self.Mixin._okf_cron_index_dirty(batch_size=10)
-        self.assertGreaterEqual(first, 1)
-        self.assertEqual(second, 0, 'andra körningen ska vara en no-op')
+        key = 'ai.personal.memory,%s' % mem.id
+        # Kön är djup i drift och taket fördelas mellan alla modeller, så
+        # EN körning räcker inte alltid fram till vår post. Kör tills den
+        # har indexerats (max 5 varv) — det som prövas är idempotensen,
+        # inte att första varvet hinner.
+        for _ in range(5):
+            self.Mixin._okf_cron_index_dirty(batch_size=10, time_budget=120)
+            before = self.env['ai.okf.concept'].search_count(
+                [('concept_key', '=', key)])
+            if before:
+                break
+        self.assertGreaterEqual(before, 1, 'posten ska ha indexerats')
+        self.Mixin._okf_cron_index_dirty(batch_size=10, time_budget=120)
+        after = self.env['ai.okf.concept'].search_count(
+            [('concept_key', '=', key)])
+        self.assertEqual(before, after, 'inga nya versioner ska skapas')
 
     def test_empty_legacy_memory_clears_flag(self):
         """ADD-only: tomt innehåll blir aldrig icke-tomt → avför."""

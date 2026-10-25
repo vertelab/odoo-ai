@@ -11,6 +11,8 @@ Verifierar att:
   (1.5) rader är append-only (write/unlink nekas).
 """
 
+import json
+
 from odoo.tests import common, tagged
 from odoo.exceptions import UserError
 
@@ -49,9 +51,15 @@ class TestSessionMemory(common.TransactionCase):
     def test_history_built_from_lines_in_order(self):
         """Känd radsekvens → exakt samma meddelandesekvens ut."""
         sess = self._new_session()
+        # Tool-raden MÅSTE paras med ett tool_call_id som assistant-raden
+        # deklarerar — annars utelämnas den med flit (en föräldralös
+        # tool-rad gör hela historiken ogiltig hos strikta providers, 422).
+        call_id = 'call_1'
         seq = [
             ('user', 'hej', None, None),
-            ('assistant', 'jag kollar', None, None),
+            ('assistant', 'jag kollar', None, json.dumps([{
+                'id': call_id, 'type': 'function',
+                'function': {'name': 'odoo_search', 'arguments': '{}'}}])),
             ('tool', 'resultat', 'odoo_search', None),
             ('assistant', 'klart', None, None),
         ]
@@ -64,6 +72,7 @@ class TestSessionMemory(common.TransactionCase):
             }
             if tool_name:
                 vals['tool_name'] = tool_name
+                vals['tool_call_id'] = call_id
             if tool_calls:
                 vals['tool_calls'] = tool_calls
             self.Line.create(vals)

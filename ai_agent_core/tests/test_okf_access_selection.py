@@ -239,7 +239,7 @@ class TestOkfAccessInSelection(ConfigParamGuardedCase):
             cls.env.ref('ai_agent_core.artifact_type_learning').id
 
     def _mk(self, key, summary, source_ref=None, version=1, scope='company',
-            owner_id=None):
+            owner_id=None, query=None):
         owner_id = owner_id or self.env.company.id
         self.env.cr.execute("""
             INSERT INTO ai_okf_concept
@@ -251,7 +251,19 @@ class TestOkfAccessInSelection(ConfigParamGuardedCase):
             RETURNING id
         """, (key, summary, scope, version, self.atype_id, owner_id,
               source_ref))
-        return self.env.cr.fetchone()[0]
+        rec_id = self.env.cr.fetchone()[0]
+        # `search_vector` byggs vid INSERT och uppdateras inte här. Den
+        # delade driftdatabasen har 57 000 koncept, så ett vanligt ord som
+        # "fakturor" ger `ts_rank` på driftens golv (~0.06) och vårt
+        # testkoncept hamnar utanför `limit`. En unik term gör träffen
+        # vår, oavsett korpus — access-logiken prövas lika fullt.
+        if query:
+            self.env.cr.execute("""
+                UPDATE ai_okf_concept
+                   SET search_vector = to_tsvector('swedish', %s)
+                 WHERE id = %s
+            """, (query, rec_id))
+        return rec_id
 
     def test_limit_filled_with_visible_rows(self):
         """Osynliga rader konsumerar inte limit.
@@ -262,12 +274,12 @@ class TestOkfAccessInSelection(ConfigParamGuardedCase):
         # 5 koncept från en ÖPPEN modell, 5 från en STÄNGD
         for i in range(5):
             self._mk('vis.%s' % i, 'Fakturor synliga %s' % i,
-                     source_ref='res.company,%s' % (i + 1))
+                     source_ref='res.company,%s' % (i + 1), query='synterm')
         for i in range(5):
             self._mk('hem.%s' % i, 'Fakturor hemliga %s' % i,
-                     source_ref='finns.inte,%s' % (i + 1))
+                     source_ref='finns.inte,%s' % (i + 1), query='synterm')
 
-        results = self.Concept._okf_search('fakturor', limit=5)
+        results = self.Concept._okf_search('synterm', limit=5)
         keys = {c.concept_key for c in results}
         self.assertEqual(len(results), 5,
                          'limit ska fyllas av läsbara rader')
@@ -276,11 +288,15 @@ class TestOkfAccessInSelection(ConfigParamGuardedCase):
                             'en osynlig rad slank igenom: %s' % key)
 
     def test_closed_source_is_not_returned(self):
-        """Ett koncept vars enda källa är stängd returneras inte."""
+        """Ett koncept vars enda källa är stängd returneras inte.
+
+        Databasen är delad och innehåller riktiga koncept som också matchar
+        "fakturor" — därför mäts det här konceptet, inte totalen.
+        """
         self._mk('hemlig.1', 'Fakturor hemliga.',
-                 source_ref='finns.inte,1')
-        results = self.Concept._okf_search('fakturor', limit=10)
-        self.assertEqual(len(results), 0)
+                 source_ref='finns.inte,1', query='hemligterm')
+        results = self.Concept._okf_search('hemligterm', limit=50)
+        self.assertNotIn('hemlig.1', [c.concept_key for c in results])
 
     def test_dedup_picks_visible_version(self):
         """Dedupen väljer en läsbar version, inte en osynlig senare.
@@ -290,32 +306,40 @@ class TestOkfAccessInSelection(ConfigParamGuardedCase):
         """
         # v1 läsbar, v2 osynlig (samma concept_key)
         self._mk('kedja.1', 'Fakturor version ett.',
-                 source_ref='res.company,1', version=1)
+                 source_ref='res.company,1', version=1, query='kedjeterm')
         self._mk('kedja.1', 'Fakturor version två.',
-                 source_ref='finns.inte,1', version=2)
+                 source_ref='finns.inte,1', version=2, query='kedjeterm')
 
-        results = self.Concept._okf_search('fakturor', limit=10)
-        self.assertEqual(len(results), 1,
-                         'den läsbara versionen ska returneras')
-        self.assertEqual(results[0].version, 1,
+        results = self.Concept._okf_search('kedjeterm', limit=50)
+        hits = [c for c in results if c.concept_key == 'kedja.1']
+        self.assertEqual(len(hits), 1,
+                         'den läsbara versionen ska returneras, en gång')
+        self.assertEqual(hits[0].version, 1,
                          'den osynliga senare versionen får inte vinna')
 
     def test_unresolved_source_falls_to_net(self):
         """Ett koncept utan källhänvisning injiceras inte (D4-nätet)."""
-        self._mk('utan.kalla', 'Fakturor utan källa.', source_ref=None)
-        results = self.Concept._okf_search('fakturor', limit=10)
+        self._mk('utan.kalla', 'Fakturor utan källa.', source_ref=None,
+                 query='källterm')
+        results = self.Concept._okf_search('källterm', limit=10)
         # Sökningen får returnera den (SQL-villkoret släpper igenom NULL),
         # men injektionen ska avföra den — det testas i
         # test_okf_fail_closed.py. Här verifierar vi att den inte kraschar.
         self.assertIsInstance(results.ids, list)
 
     def test_unrestricted_user_gets_same_count(self):
-        """En obegränsad användare får samma antal som före ändringen."""
+        """En obegränsad användare ser alla tre öppna koncept.
+
+        Totalen kan vara större — databasen har egna koncept som matchar
+        "fakturor". Det som prövas är att ingen av de tre filtreras bort.
+        """
         for i in range(3):
             self._mk('oppen.%s' % i, 'Fakturor öppna %s' % i,
-                     source_ref='res.company,%s' % (i + 1))
-        results = self.Concept._okf_search('fakturor', limit=10)
-        self.assertEqual(len(results), 3)
+                     source_ref='res.company,%s' % (i + 1), query='öppenterm')
+        results = self.Concept._okf_search('öppenterm', limit=50)
+        keys = {c.concept_key for c in results}
+        for i in range(3):
+            self.assertIn('oppen.%s' % i, keys)
 
 
 @tagged('okf', 'access', 'post_install', '-at_install')
@@ -374,7 +398,7 @@ class TestOkfClassifyCache(ConfigParamGuardedCase):
                 side_effect=AssertionError(
                     'embedding-provider anropades trots semantic=False')):
             results = Concept._okf_search(
-                'faktura', limit=10, semantic=False)
+                'faktura till leverantör', limit=50, semantic=False)
         self.assertIn('semcache.1', {c.concept_key for c in results})
 
 

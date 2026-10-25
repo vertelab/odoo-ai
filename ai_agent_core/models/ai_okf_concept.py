@@ -10,6 +10,8 @@ import json
 import logging
 from datetime import datetime, timedelta
 
+from psycopg2 import errors as pg_errors
+
 from odoo import models, fields, api, _
 from odoo.exceptions import ValidationError, UserError
 
@@ -600,15 +602,24 @@ class AIOkfConcept(models.Model):
     # utanför budgeten försvann tyst. Dessa metoder flyttar gränsen till
     # skrivvägen.
 
+    # Standardtak för en användares personliga minne. 4 000 tecken var för
+    # lågt: den som använt systemet i ett år låg på 2,2 miljoner, och varje
+    # skrivning vägrades — inklusive digest-arkivering och OKF-cronen, som
+    # bara loggade en varning och gick vidare. Taket ska fånga en verklig
+    # överfull situation, inte normal drift. ADD-only + arkivering gäller
+    # fortfarande; det är bara nivån som är rimlig.
+    DEFAULT_CHAR_BUDGET = 2500000
+
     @api.model
     def _personal_memory_budget(self):
         """Teckenbudget för en användares personliga minne (konfigurerbar)."""
         raw = self.env['ir.config_parameter'].sudo().get_param(
-            'odoomind.personal_memory.char_budget', '4000')
+            'odoomind.personal_memory.char_budget',
+            str(self.DEFAULT_CHAR_BUDGET))
         try:
             return max(0, int(raw))
         except (TypeError, ValueError):
-            return 4000
+            return self.DEFAULT_CHAR_BUDGET
 
     @api.model
     def _personal_memory_warn_pct(self):
@@ -621,20 +632,40 @@ class AIOkfConcept(models.Model):
             return 80
 
     @api.model
+    def _personal_memory_domain(self, uid):
+        """Domänen för det som ÄR ett personligt minne.
+
+        `scope` (ägare) och `kind` (artefakt) är två oberoende axlar.
+        `_okf_upsert()` härleder `scope` ur ägaren, så en personligt ägd
+        PDF blir `scope='personal'` utan att för den skull vara ett minne.
+        Budgeten ska mäta minnen, inte allt en person äger — därför
+        filtrerar domänen även på `artifact_type_id.kind`.
+
+        EN definition, fyra konsumenter: bruk, arkiveringskandidater,
+        budgetprövning och kunskapstaket. Går de isär mäter de olika saker.
+        """
+        uid = uid.id if hasattr(uid, 'id') else uid
+        return [
+            ('scope', '=', 'personal'),
+            ('owner_user_id', '=', uid),
+            ('archived', '=', False),
+            ('superseded_by_id', '=', False),
+            ('artifact_type_id.kind', '=', 'memory'),
+        ]
+
+    @api.model
     def _personal_memory_usage(self, user):
         """Summerade tecken för en användares aktiva personal-koncept.
 
         Räknar `summary` (det som faktiskt injiceras), inte `source_text`.
         Endast senaste versionen av varje nyckel räknas — en superseded rad
         injiceras inte och ska därför inte belasta budgeten.
+
+        Mäts på `kind='memory'` (se `_personal_memory_domain`). Dokument,
+        kalender, mail och anteckningar som råkar ägas av användaren är
+        kunskap, inte minne, och belastar kunskapstaket i stället.
         """
-        uid = user.id if hasattr(user, 'id') else user
-        rows = self.search([
-            ('scope', '=', 'personal'),
-            ('owner_user_id', '=', uid),
-            ('archived', '=', False),
-            ('superseded_by_id', '=', False),
-        ])
+        rows = self.search(self._personal_memory_domain(user))
         return sum(len(r.summary or '') for r in rows)
 
     @api.model
@@ -648,12 +679,9 @@ class AIOkfConcept(models.Model):
         inte "minst använd", och felet namnger dem som just kandidater.
         """
         uid = user.id if hasattr(user, 'id') else user
-        return self.search([
-            ('scope', '=', 'personal'),
-            ('owner_user_id', '=', uid),
-            ('archived', '=', False),
-            ('superseded_by_id', '=', False),
-        ], order='create_date asc, id asc', limit=limit)
+        return self.search(
+            self._personal_memory_domain(uid),
+            order='create_date asc, id asc', limit=limit)
 
     @api.model
     def _check_personal_memory_budget(self, user, incoming_chars=0):
@@ -696,6 +724,62 @@ class AIOkfConcept(models.Model):
             })
         if projected >= warn_at:
             self._record_personal_budget_warning(user, budget, projected)
+
+    @api.model
+    def _personal_knowledge_budget(self):
+        """Teckentak för en användares personliga KUNSKAP (konfigurerbart).
+
+        Default `0` = inget tak. En oinstallerad eller oconfigurerad
+        installation beter sig då exakt som före denna ändring — taket är
+        en synlighetsåtgärd, inte en spärr som slår till av misstag.
+        """
+        raw = self.env['ir.config_parameter'].sudo().get_param(
+            'odoomind.personal_knowledge.char_budget', '0')
+        try:
+            return max(0, int(raw))
+        except (TypeError, ValueError):
+            return 0
+
+    @api.model
+    def _personal_knowledge_usage(self, user):
+        """Summerade tecken för en användares aktiva personal-KUNSKAP.
+
+        Samma domän som minnet men med `kind='knowledge'` — dokument,
+        kalender, mail, anteckningar. Detta är volymen som tidigare
+        felaktigt belastade minnesbudgeten (93 % av det som mättes).
+        """
+        uid = user.id if hasattr(user, 'id') else user
+        domain = [
+            ('scope', '=', 'personal'),
+            ('owner_user_id', '=', uid),
+            ('archived', '=', False),
+            ('superseded_by_id', '=', False),
+            ('artifact_type_id.kind', '=', 'knowledge'),
+        ]
+        rows = self.search(domain)
+        return sum(len(r.summary or '') for r in rows)
+
+    @api.model
+    def _check_personal_knowledge_budget(self, user):
+        """Rapportera kunskapsvolymen — varnar, spärrar aldrig.
+
+        Fältet heter `char_budget` men får ALDRIG kasta `UserError`: det
+        mäter något annat än minnet (dokument man äger), och att vägra
+        lagra ett dokument för att en räknare är hög vore fel avvägning.
+        Synlighet, inte spärr.
+        """
+        budget = self._personal_knowledge_budget()
+        if budget <= 0:
+            return  # 0 = inget tak
+        usage = self._personal_knowledge_usage(user)
+        if usage <= budget:
+            return
+        uid = user.id if hasattr(user, 'id') else user
+        _logger.warning(
+            'OKF: personlig kunskap för användare %s är %d tecken, över '
+            'taket %d (%d %%). Kunskap spärras inte — arkivera eller '
+            'flytta till företagsomfattning om volymen ska ner.',
+            uid, usage, budget, usage * 100 // budget)
 
     def _record_personal_budget_warning(self, user, budget, projected):
         """Registrera en konsolideringsvarning (varningszonen)."""
@@ -829,6 +913,7 @@ class AIOkfConcept(models.Model):
                 delta = len(summary or '') - len(existing.summary or '')
                 self._check_personal_memory_budget(
                     owner_user_id, incoming_chars=max(0, delta))
+                self._check_personal_knowledge_budget(owner_user_id)
 
             # ADD-only: ny version istället för att skriva över
             vec, vec_state = self._produce_embedding(
@@ -876,6 +961,7 @@ class AIOkfConcept(models.Model):
         if scope == 'personal':
             self._check_personal_memory_budget(
                 owner_user_id, incoming_chars=len(summary or ''))
+            self._check_personal_knowledge_budget(owner_user_id)
 
         vec, vec_state = self._produce_embedding(
             summary, title=title, explicit=embedding)
@@ -1281,6 +1367,16 @@ class AIOkfConcept(models.Model):
         # `test_bm25_alone_carries_result_when_no_embedding` (0 != 1).
         if min_cosine is None and min_ts_rank is None:
             min_cosine = 0.39
+            min_ts_rank = 1e-20
+        elif min_ts_rank is None:
+            # Bara den semantiska tröskeln angavs. Utan ett eget BM25-golv
+            # blir grinden ett ensamt `cosine >= x`, och då tystnar den
+            # andra signalen helt: en rad utan vektor (cosine = NULL)
+            # uppfyller aldrig villkoret, och en svag men ÄKTA BM25-träff
+            # försvinner. Det var precis vad som hände i drift — en
+            # anropare som satte `min_cosine` fick noll träffar på en
+            # korpus utan embeddings. ELLER-semantiken kräver att BÅDA
+            # signalerna har ett golv.
             min_ts_rank = 1e-20
 
         having = []
@@ -2045,6 +2141,23 @@ class AIOkfConcept(models.Model):
                 except (TypeError, ValueError):
                     current = 0
                 icp.set_param(key, str(current + 1))
+        except pg_errors.SerializationFailure as e:
+            # RADLÅSET RÄCKER INTE ENSAMT (mätt 2026-10-25). `FOR UPDATE`
+            # serialiserar bumpen, men den kan ändå dö: en transaktion som
+            # REDAN läst raden tidigare i samma transaktion (Odoos
+            # parameter-cache, `get_param`) får "could not serialize access
+            # due to concurrent update" när en annan worker hunnit committa
+            # emellan. PostgreSQL tillåter inte att en sådan transaktion
+            # läser om raden — den måste rullas tillbaka.
+            #
+            # Det gör inget: räknaren är en OGILTIGFÖRKLARING, inte data.
+            # Nästa bump (eller nästa läsning efter commit) ser det nya
+            # värdet. Att kasta vidare hade fällt anroparens write — det var
+            # precis vad som gav 500 på AI-endpoints (67 ggr/dygn).
+            _logger.info(
+                'OKF: %s bumpades av en annan transaktion — hoppar över '
+                'den här gången (%s)', key, e)
+            return False
         except Exception as e:
             # En cache-ogiltigförklaring får ALDRIG fälla anroparens write:
             # hookarna sitter på mail.followers/ir.rule/res.groups.

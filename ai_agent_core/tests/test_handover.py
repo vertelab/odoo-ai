@@ -174,6 +174,11 @@ class TestHandover(TransactionCase):
         self.assertIn(new, found)
         ids = found.mapped('id')
         self.assertLess(ids.index(new.id), ids.index(old.id), 'nyast först')
+        # Ordningen ska vara fallande över HELA listan — databasen har egna
+        # sessioner, så det räcker inte att jämföra de två vi skapade.
+        dates = [s.write_date for s in found]
+        self.assertEqual(dates, sorted(dates, reverse=True),
+                         'hela listan ska vara sorterad nyast först')
 
     # ── 5.4: mode-förslag ─────────────────────────────────────────────
     def test_mode_full_with_many_tools(self):

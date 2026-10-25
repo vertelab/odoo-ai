@@ -238,8 +238,11 @@ class TestDispatcher(HeartbeatBase):
 
         result = self.Coworker._heartbeat_dispatch()
 
+        # Databasen kan ha egna icke-operativa coworkers med köade uppgifter
+        # — `skipped` räknar dem också. Det som prövas är att VÅR uppgift
+        # inte delades ut.
         self.assertEqual(result['dispatched'], 0)
-        self.assertEqual(result['skipped'], 1)
+        self.assertGreaterEqual(result['skipped'], 1)
         task.invalidate_recordset()
         self.assertEqual(task.status, 'todo')
         self.assertFalse(task.checkout_lock)
@@ -273,11 +276,18 @@ class TestCronTaskRegistration(HeartbeatBase):
         self.assertTrue(waker.active)
 
     def test_old_heartbeat_ir_cron_deactivated(self):
-        """3.2: den gamla cron_ai_heartbeat är inaktiverad (ingen dubbelväckning)."""
+        """3.2: ingen dubbelväckning — den gamla väckaren finns inte längre.
+
+        Den var en `ir.cron` med `active=False` för spårbarhetens skull.
+        Sedan 18.0.2.0.0 får ingen `ir.cron` skrivas av en datafil: Odoo
+        vägrar uppdatera en cron medan den kör, och det var precis vad som
+        fällde uppgraderingen. Posten togs därför bort helt — det som
+        bevisas här är att den inte kommit tillbaka.
+        """
         cron = self.env.ref(
             'ai_agent_core.cron_ai_heartbeat', raise_if_not_found=False)
-        self.assertTrue(cron, 'Den gamla cronen ska finnas kvar (spårbarhet)')
-        self.assertFalse(cron.active, 'Den ska vara inaktiverad')
+        self.assertFalse(
+            cron, 'Den gamla ir.cron-väckaren ska vara borta, inte bara avstängd')
 
     def test_no_ir_cron_created_for_heartbeat_init_type(self):
         """3.3: att aktivera heartbeat-init-typen skapar ingen ir.cron."""

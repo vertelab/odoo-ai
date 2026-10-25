@@ -200,7 +200,13 @@ class TestDefaultToolIds(TransactionCase):
             'odoomind.okf.company_memory_coworker_id',
             'odoomind.okf.personal_memory_coworker_id',
         ]
+        # Också `default_tool_ids` MÅSTE vara tom eller innehålla giltiga
+        # namn: `res.config.settings.default_get()` tolkar parametern som
+        # id:n för ett many2many-fält vars comodel inte går att slå upp →
+        # `relation "_unknown" does not exist`. Testet skriver därför en
+        # känd, tom parameter före rundturen och återställer sedan.
         snapshot = {k: ICP.search([('key', '=', k)]).value for k in cp_keys}
+        ICP.set_param('ai_agent_core.default_tool_ids', '')
         rec = self.env['ai.tool'].search(
             [('builtin_name', '=', 'odoo_calculator')], limit=1)
         try:
@@ -226,11 +232,17 @@ class TestDefaultToolIds(TransactionCase):
             # Återställ parametrarna — annars läcker de till nästa testklass
             # (cachen rensas av set_param, men vi måste sätta tillbaka
             # ursprungsvärdet först).
-            for key, value in snapshot.items():
-                if value:
-                    ICP.set_param(key, value)
-                else:
-                    ICP.search([('key', '=', key)]).unlink()
+            #
+            # Egen savepoint: kraschar `set_values()` ovan har den lämnat
+            # transaktionen i "aborted"-läge, och då dör ÄVEN städningen
+            # (`InFailedSqlTransaction`). Vi rullar tillbaka till punkten
+            # före städningen så att den kan köras.
+            with self.env.cr.savepoint():
+                for key, value in snapshot.items():
+                    if value:
+                        ICP.set_param(key, value)
+                    else:
+                        ICP.search([('key', '=', key)]).unlink()
 
 
 class TestNoImplicitBuiltins(ConfigParamGuardedCase):

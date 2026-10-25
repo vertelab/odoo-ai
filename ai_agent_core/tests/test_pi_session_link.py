@@ -13,6 +13,8 @@ Verifierar att:
       (transport C) — inkl. versaler och `pi_session`-varianter.
 """
 
+import uuid
+
 from odoo.tests import common, tagged
 
 
@@ -52,7 +54,10 @@ class TestPiSessionLink(common.TransactionCase):
             'user_id': self.user.id,
             'name': 'Existing active',
         })
-        new_id = '11111111-2222-3333-4444-555555555555'
+        # Unikt id per körning: driftsdatabasen innehåller redan en session
+        # med det gamla hårdkodade id:t (skapad 2026-09-17), så sökningen
+        # hittade den och `created` blev False.
+        new_id = str(uuid.uuid4())
         sess, created = self._find_or_create(pi_session_id=new_id)
         self.assertTrue(created)
         self.assertNotEqual(sess.id, existing.id)

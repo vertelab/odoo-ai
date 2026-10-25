@@ -41,8 +41,13 @@ class DelegationTestBase(TransactionCase):
         })
 
         # Coworkers.
+        # chat_user_id krävs för att mottagaren ska vara heartbeat-operativ
+        # (schemalagt-arbete 5.2). Utan ägare nekas delegeringen innan
+        # djup- och kvotreglerna ens prövas — testerna här handlar om
+        # delegeringen, inte om väckaren.
         self.chief = self._cw('Driftchef-DELTEST', self.dept_drift,
-                              threshold='high_risk')
+                              threshold='high_risk',
+                              chat_user_id=self.owner.id)
         self.worker = self._cw('Driftare-DELTEST', self.dept_drift,
                                threshold='autonomous',
                                chat_user_id=self.owner.id)
