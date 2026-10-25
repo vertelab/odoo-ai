@@ -204,9 +204,15 @@ class TestDefaultToolIds(TransactionCase):
         rec = self.env['ai.tool'].search(
             [('builtin_name', '=', 'odoo_calculator')], limit=1)
         try:
-            settings = Settings.create({
-                'ai_default_tool_ids': [(6, 0, rec.ids)],
-            })
+            # `Settings.create({'ai_default_tool_ids': ...})` går INTE: Odoo
+            # varnar "unknown field" för many2many i res.config.settings
+            # (fältet är inte i `_config_parameter_fields`), och den
+            # efterföljande `default_get()` kraschar på den stale
+            # `default_tool_ids`-parametern. Skriv därför fältet på en
+            # befintlig settings-post och verifiera rundturen via
+            # set_values() → get_values().
+            settings = Settings.new({})
+            settings.ai_default_tool_ids = [(6, 0, rec.ids)]
             settings.set_values()
 
             values = Settings.get_values()
