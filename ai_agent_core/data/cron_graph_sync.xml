@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+        <!-- Graf-synk: graph.node.definition._sync_all() var 5:e minut.
+             Låg tidigare som en ir.cron i databasen utan xmlid (skapad
+             manuellt), vilket gjorde att den varken kunde spåras eller
+             uppgraderas — och den var avstängd. Samma jobb som cron.task. -->
+        <record id="cron_task_graph_sync" model="cron.task">
+            <field name="name">Odoo Mind Graph Sync</field>
+            <field name="technical_name">ai_graph_sync</field>
+            <field name="module">ai_agent_core</field>
+            <field name="model_name">graph.node.definition</field>
+            <field name="method_name">_sync_all</field>
+            <field name="interval_number">5</field>
+            <field name="interval_type">minutes</field>
+            <field name="sequence">20</field>
+            <field name="active" eval="True"/>
+        </record>
+    </data>
+</odoo>
