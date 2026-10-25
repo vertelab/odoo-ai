@@ -135,7 +135,7 @@ class AIOnboardCandidate(models.Model):
         """Scan quest session errors for patterns."""
         error_sessions = self.env['ai.coworker.session'].search([
             ('status', '=', 'error'),
-            ('create_date', '>=', fields.Datetime.now() + ' - 30 days'),
+            ('create_date', '>=', fields.Datetime.now() - timedelta(days=30)),
         ])
         if not error_sessions:
             return

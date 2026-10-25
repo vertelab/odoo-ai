@@ -63,4 +63,17 @@
         <field name="model_id" ref="base.model_res_partner"/>
         <field name="okf_contract" eval="{'generated_by': 'process', 'stale_policy': 'source', 'stale_ttl_days': 0, 'retention_purpose': 'crm_lead', 'retention_days': 180}"/>
     </record>
+
+    <!-- Ledningssammanfattningen (L2) skrivs av
+         ai.company.memory.cron_generate_management_summary med
+         artifact_type='mgmt_summary'. Typen saknades i registret, så cronen
+         föll på ValidationError "Unknown artifact type 'mgmt_summary'"
+         varje natt. genererad av ai, källberoende (den sammanställs ur
+         koncepten) och ingen retention — den skrivs om, inte över. -->
+    <record id="artifact_type_mgmt_summary" model="ai.artifact.type">
+        <field name="name">mgmt_summary</field>
+        <field name="kind">knowledge</field>
+        <field name="bridge_module">ai_agent_core</field>
+        <field name="okf_contract" eval="{'generated_by': 'ai', 'stale_policy': 'source', 'stale_ttl_days': 1, 'retention_purpose': 'none', 'retention_days': 0}"/>
+    </record>
 </odoo>
