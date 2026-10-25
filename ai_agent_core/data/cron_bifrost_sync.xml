@@ -1,24 +1,26 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <!-- Cron: Sync models from config-managed providers (auto_sync) — weekly.
+    <data noupdate="1">
+        <!-- Cron: Sync models from config-managed providers (auto_sync) — weekly.
          bifrost-client-provisioning: generaliserad från "bifrost only" till
          alla providers med auto_sync=True (Salt provisionerar via odoo.conf).
          Ordning: sync först (modeller måste finnas), sedan default-modell. -->
-    <record id="cron_bifrost_sync" model="ir.cron">
-        <field name="name">AI: Synca modeller (config-styrda providers)</field>
-        <field name="model_id" ref="model_ai_provider"/>
-        <field name="state">code</field>
-        <field name="code"># Sync models from all config-managed providers (auto_sync)
-Provider = env['ai.provider']
-Provider._reconcile_from_config()
-for provider in Provider.search([('auto_sync', '=', True), ('status', '=', 'confirmed')]):
-    try:
-        provider.action_fetch_models()
-    except Exception:
-        pass
-Provider._apply_default_model_from_config()</field>
-        <field name="interval_number">7</field>
-        <field name="interval_type">days</field>
-        <field name="active" eval="True"/>
-    </record>
+        <!-- Konverterade från ir.cron till cron.task (schemalagt-arbete).
+             Se data/cron_mail_reply.xml för varför: ett ir.cron som
+             skrivs vid modulladdning kan inte uppdateras medan jobbet
+             kör, och uppgraderingen faller på
+             "Record cannot be modified right now". cron.task har ingen
+             sådan spärr, och motorn äger kadens, lås och körhistorik. -->
+        <record id="cron_task_cron_bifrost_sync" model="cron.task">
+            <field name="name">AI: Synca modeller (config-styrda providers)</field>
+            <field name="technical_name">ai_bifrost_sync</field>
+            <field name="module">ai_agent_core</field>
+            <field name="model_name">ai.provider</field>
+            <field name="method_name">_cron_sync_from_config</field>
+            <field name="interval_number">7</field>
+            <field name="interval_type">days</field>
+            <field name="sequence">10</field>
+            <field name="active" eval="True"/>
+        </record>
+    </data>
 </odoo>

@@ -1,19 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <!-- Cron: Daily memory consolidation (runs at 02:00) -->
-    <record id="cron_memory_consolidation" model="ir.cron">
-        <field name="name">AI: Daglig minneskonsolidering</field>
-        <field name="model_id" ref="model_ai_coworker"/>
-        <field name="state">code</field>
-        <field name="code"># Consolidate memories for all active quests with identities
-quests = env['ai.coworker'].search([('status', '=', 'active'), ('identity_id', '!=', False)])
-for quest in quests:
-    try:
-        quest.consolidate_memories()
-    except Exception:
-        pass</field>
-        <field name="interval_number">1</field>
-        <field name="interval_type">days</field>
-        <field name="active" eval="True"/>
-    </record>
+    <data noupdate="1">
+        <!-- Cron: Daily memory consolidation (runs at 02:00) -->
+        <!-- Konverterade från ir.cron till cron.task (schemalagt-arbete).
+             Se data/cron_mail_reply.xml för varför: ett ir.cron som
+             skrivs vid modulladdning kan inte uppdateras medan jobbet
+             kör, och uppgraderingen faller på
+             "Record cannot be modified right now". cron.task har ingen
+             sådan spärr, och motorn äger kadens, lås och körhistorik. -->
+        <record id="cron_task_cron_memory_consolidation" model="cron.task">
+            <field name="name">AI: Daglig minneskonsolidering</field>
+            <field name="technical_name">ai_memory_consolidation</field>
+            <field name="module">ai_agent_core</field>
+            <field name="model_name">ai.coworker</field>
+            <field name="method_name">_cron_consolidate_all</field>
+            <field name="interval_number">1</field>
+            <field name="interval_type">days</field>
+            <field name="sequence">10</field>
+            <field name="active" eval="True"/>
+        </record>
+    </data>
 </odoo>

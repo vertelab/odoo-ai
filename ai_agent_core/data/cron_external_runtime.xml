@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <!-- Cron: livs-heartbeat + städning av externa agent-processer
+    <data noupdate="1">
+        <!-- Cron: livs-heartbeat + städning av externa agent-processer
          (external-agent-runtime D6/D10).
 
          Bakgrund: Odoo äger livscykeln för processer den startat, och
@@ -21,14 +22,22 @@
          Idempotent: en session vars process redan är borta och som redan
          markerats error plockas inte upp igen (status är då inte längre
          active/draft, och ingen PID-gren matchar). -->
-    <record id="cron_reap_external_agents" model="ir.cron">
-        <field name="name">Extern agent: livs-heartbeat och städning</field>
-        <field name="model_id" ref="model_ai_coworker_session"/>
-        <field name="state">code</field>
-        <field name="code">env['ai.coworker.session']._cron_reap_external(batch_size=200)</field>
-        <field name="interval_number">5</field>
-        <field name="interval_type">minutes</field>
-        <field name="active" eval="True"/>
-        <field name="priority">6</field>
-    </record>
+        <!-- Konverterade från ir.cron till cron.task (schemalagt-arbete).
+             Se data/cron_mail_reply.xml för varför: ett ir.cron som
+             skrivs vid modulladdning kan inte uppdateras medan jobbet
+             kör, och uppgraderingen faller på
+             "Record cannot be modified right now". cron.task har ingen
+             sådan spärr, och motorn äger kadens, lås och körhistorik. -->
+        <record id="cron_task_cron_reap_external_agents" model="cron.task">
+            <field name="name">Extern agent: livs-heartbeat och städning</field>
+            <field name="technical_name">ai_reap_external_agents</field>
+            <field name="module">ai_agent_core</field>
+            <field name="model_name">ai.coworker.session</field>
+            <field name="method_name">_cron_reap_external</field>
+            <field name="interval_number">5</field>
+            <field name="interval_type">minutes</field>
+            <field name="sequence">6</field>
+            <field name="active" eval="True"/>
+        </record>
+    </data>
 </odoo>

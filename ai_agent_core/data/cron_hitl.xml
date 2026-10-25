@@ -1,21 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <!-- Utgångna HITL-requests: asked → expired (decision=timeout) -->
-    <record id="ir_actions_server_hitl_expire" model="ir.actions.server">
-        <field name="name">AI: Expire stale HITL requests</field>
-        <field name="model_id" ref="model_ai_coworker_hitl"/>
-        <field name="state">code</field>
-        <field name="code">
-model._expire_stale()
-        </field>
-    </record>
-
-    <record id="cron_hitl_expire" model="ir.cron">
-        <field name="name">AI: Expire stale HITL requests</field>
-        <field name="cron_name">AI: Expire stale HITL requests</field>
-        <field name="ir_actions_server_id" ref="ir_actions_server_hitl_expire"/>
-        <field name="interval_number">1</field>
-        <field name="interval_type">days</field>
-        <field name="active">True</field>
-    </record>
+    <data noupdate="1">
+        <!-- Utgångna HITL-requests: asked → expired (decision=timeout) -->
+        <!-- Konverterade från ir.cron till cron.task (schemalagt-arbete).
+             Se data/cron_mail_reply.xml för varför: ett ir.cron som
+             skrivs vid modulladdning kan inte uppdateras medan jobbet
+             kör, och uppgraderingen faller på
+             "Record cannot be modified right now". cron.task har ingen
+             sådan spärr, och motorn äger kadens, lås och körhistorik. -->
+        <record id="cron_task_cron_hitl_expire" model="cron.task">
+            <field name="name">AI: Expire stale HITL requests</field>
+            <field name="technical_name">ai_hitl_expire</field>
+            <field name="module">ai_agent_core</field>
+            <field name="model_name">ai.coworker.hitl</field>
+            <field name="method_name">_expire_stale</field>
+            <field name="interval_number">1</field>
+            <field name="interval_type">days</field>
+            <field name="sequence">10</field>
+            <field name="active" eval="True"/>
+        </record>
+    </data>
 </odoo>

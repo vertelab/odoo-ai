@@ -1,19 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <!-- Cron: Run all active cron-type coworkers every 5 minutes -->
-    <record id="cron_scheduled_coworkers" model="ir.cron">
-        <field name="name">AI: Run Scheduled Coworkers</field>
-        <field name="model_id" ref="model_ai_coworker"/>
-        <field name="state">code</field>
-        <field name="code"># Run all active cron-type coworkers
-coworkers = model.search([('init_type', '=', 'cron'), ('status', '=', 'active')])
-for coworker in coworkers:
-    try:
-        result = coworker.action_run_scheduled()
-    except Exception:
-        pass</field>
-        <field name="interval_number">5</field>
-        <field name="interval_type">minutes</field>
-        <field name="active" eval="True"/>
-    </record>
+    <data noupdate="1">
+        <!-- Cron: Run all active cron-type coworkers every 5 minutes -->
+        <!-- Konverterade från ir.cron till cron.task (schemalagt-arbete).
+             Se data/cron_mail_reply.xml för varför: ett ir.cron som
+             skrivs vid modulladdning kan inte uppdateras medan jobbet
+             kör, och uppgraderingen faller på
+             "Record cannot be modified right now". cron.task har ingen
+             sådan spärr, och motorn äger kadens, lås och körhistorik. -->
+        <record id="cron_task_cron_scheduled_coworkers" model="cron.task">
+            <field name="name">AI: Run Scheduled Coworkers</field>
+            <field name="technical_name">ai_scheduled_coworkers</field>
+            <field name="module">ai_agent_core</field>
+            <field name="model_name">ai.coworker</field>
+            <field name="method_name">_cron_run_scheduled</field>
+            <field name="interval_number">5</field>
+            <field name="interval_type">minutes</field>
+            <field name="sequence">10</field>
+            <field name="active" eval="True"/>
+        </record>
+    </data>
 </odoo>

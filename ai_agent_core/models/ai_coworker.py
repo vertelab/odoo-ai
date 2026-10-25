@@ -8977,6 +8977,39 @@ class AICoworker(models.Model):
         return {'sessions': len(sessions), 'by_init_type': by_init,
                 'stale_released': released, 'stale_tasks': stale_tasks}
 
+    @api.model
+    def _cron_consolidate_all(self):
+        """cron.task entry point: consolidate memories for every active coworker.
+
+        Converted from an `ir.cron` with an inline loop. A `cron.task`
+        calls a model method without arguments, so the loop lives here.
+        """
+        quests = self.search([
+            ('status', '=', 'active'), ('identity_id', '!=', False),
+        ])
+        for quest in quests:
+            try:
+                quest.consolidate_memories()
+            except Exception:
+                _logger.exception(
+                    'Memory consolidation failed for coworker %s', quest.name)
+
+    @api.model
+    def _cron_run_scheduled(self):
+        """cron.task entry point: run every active cron-type coworker.
+
+        Converted from an `ir.cron` with an inline loop.
+        """
+        coworkers = self.search([
+            ('init_type', '=', 'cron'), ('status', '=', 'active'),
+        ])
+        for coworker in coworkers:
+            try:
+                coworker.action_run_scheduled()
+            except Exception:
+                _logger.exception(
+                    'Scheduled run failed for coworker %s', coworker.name)
+
     def _heartbeat_all(self):
         """Global väckare — körs av schemaläggningsmotorn (cron.task, min).
 

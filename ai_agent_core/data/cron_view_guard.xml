@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <!-- sv_SE view-translation guard:
+    <data noupdate="1">
+        <!-- sv_SE view-translation guard:
          Vertel i18n_extra/sv.po (crm) translated FIELD NAMES inside
          invisible expressions (duplicate_lead_count -> duplicate_kundamne_count,
          use_leads -> use_kundamnen) which breaks Odoo 18 expression parser.
@@ -15,22 +16,22 @@
          so the cron only catches a regression introduced between two
          updates. A broken view translation is cosmetic, not urgent -
          weekly is enough. Was every 30 minutes (48 runs/day). -->
-    <record id="ir_actions_server_view_translation_guard" model="ir.actions.server">
-        <field name="name">AI: Korrigera sv_SE-vyoversattningar</field>
-        <field name="model_id" ref="model_ir_ui_view"/>
-        <field name="state">code</field>
-        <field name="code">
-model._fix_swedish_view_arch()
-        </field>
-    </record>
-
-    <record id="cron_view_translation_guard" model="ir.cron">
-        <field name="name">AI: Korrigera sv_SE-vyoversattningar</field>
-        <field name="cron_name">AI: Korrigera sv_SE-vyoversattningar</field>
-        <field name="ir_actions_server_id" ref="ir_actions_server_view_translation_guard"/>
-        <field name="interval_number">1</field>
-        <field name="interval_type">weeks</field>
-        <field name="active">True</field>
-        <field name="user_id" ref="base.user_root"/>
-    </record>
+        <!-- Konverterade från ir.cron till cron.task (schemalagt-arbete).
+             Se data/cron_mail_reply.xml för varför: ett ir.cron som
+             skrivs vid modulladdning kan inte uppdateras medan jobbet
+             kör, och uppgraderingen faller på
+             "Record cannot be modified right now". cron.task har ingen
+             sådan spärr, och motorn äger kadens, lås och körhistorik. -->
+        <record id="cron_task_cron_view_translation_guard" model="cron.task">
+            <field name="name">AI: Korrigera sv_SE-vyoversattningar</field>
+            <field name="technical_name">ai_view_translation_guard</field>
+            <field name="module">ai_agent_core</field>
+            <field name="model_name">ir.ui.view</field>
+            <field name="method_name">_fix_swedish_view_arch</field>
+            <field name="interval_number">1</field>
+            <field name="interval_type">weeks</field>
+            <field name="sequence">10</field>
+            <field name="active" eval="True"/>
+        </record>
+    </data>
 </odoo>

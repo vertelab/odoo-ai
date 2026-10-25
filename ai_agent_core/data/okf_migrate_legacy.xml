@@ -1,32 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <!-- Server action: migrera legacy-data → OKF (tasks 6.1–6.5) -->
-    <record id="ir_actions_server_migrate_legacy" model="ir.actions.server">
-        <field name="name">OKF: Migrera legacy-data</field>
-        <field name="model_id" ref="model_ai_okf_concept"/>
-        <field name="state">code</field>
-        <field name="code">
-action = False
-records = env['ai.okf.concept'].action_migrate_legacy()
-# Visa resultatet i en notis
-env['bus.bus']._sendone(
-    env.user.partner_id, 'simple_notification',
-    {'type': 'info', 'title': 'OKF Migrering',
-     'message': 'Klart: %s' % records})
-        </field>
-    </record>
-
-    <!-- Engångscron som kör migreringen (körs strax efter installation) -->
-    <record id="cron_okf_migrate_legacy_once" model="ir.cron">
-        <field name="name">OKF: Migrera legacy-data (engång)</field>
-        <field name="model_id" ref="model_ai_okf_concept"/>
-        <field name="state">code</field>
-        <field name="code">
-env['ai.okf.concept'].action_migrate_legacy()
-        </field>
-        <field name="interval_number">1</field>
-        <field name="interval_type">days</field>
-        <field name="active" eval="False"/>
-        <field name="priority">1</field>
-    </record>
+    <data noupdate="1">
+        <!-- Server action: migrera legacy-data → OKF (tasks 6.1–6.5) -->
+        <!-- Konverterade från ir.cron till cron.task (schemalagt-arbete).
+             Se data/cron_mail_reply.xml för varför: ett ir.cron som
+             skrivs vid modulladdning kan inte uppdateras medan jobbet
+             kör, och uppgraderingen faller på
+             "Record cannot be modified right now". cron.task har ingen
+             sådan spärr, och motorn äger kadens, lås och körhistorik. -->
+        <record id="cron_task_cron_okf_migrate_legacy_once" model="cron.task">
+            <field name="name">OKF: Migrera legacy-data (engång)</field>
+            <field name="technical_name">ai_okf_migrate_legacy_once</field>
+            <field name="module">ai_agent_core</field>
+            <field name="model_name">ai.okf.concept</field>
+            <field name="method_name">action_migrate_legacy</field>
+            <field name="interval_number">1</field>
+            <field name="interval_type">days</field>
+            <field name="sequence">1</field>
+            <field name="active" eval="True"/>
+        </record>
+    </data>
 </odoo>

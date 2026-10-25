@@ -188,6 +188,26 @@ class AIProvider(models.Model):
         return provider, bool(vals)
 
     @api.model
+    def _cron_sync_from_config(self):
+        """cron.task entry point: sync models from config-managed providers.
+
+        Converted from an `ir.cron` whose code block did this inline. A
+        `cron.task` calls a model method without arguments, so the loop
+        lives here. Order matters: reconcile first (the provider row must
+        exist), then fetch models, then apply the default model.
+        """
+        self._reconcile_from_config()
+        for provider in self.search([
+            ('auto_sync', '=', True), ('status', '=', 'confirmed'),
+        ]):
+            try:
+                provider.action_fetch_models()
+            except Exception:
+                _logger.exception(
+                    'Model sync failed for provider %s', provider.name)
+        self._apply_default_model_from_config()
+
+    @api.model
     def _apply_default_model_from_config(self):
         """Sätt ai_agent_core.default_model_id från ai_default_model (name/api_name)."""
         default_model = self._config_get('ai_default_model')

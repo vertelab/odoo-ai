@@ -4,21 +4,17 @@
         <!-- ============================================================
              AVVECKLAD 2026-10-15 (schemalagt-arbete D9).
 
-             Den globala heartbeat-väckaren kördes tidigare av denna ir.cron
+             Den globala heartbeat-väckaren kördes tidigare av en ir.cron
              (`_heartbeat_all`, varje minut). Den är nu en `cron.task` med
              cadence `min` — se data/cron_heartbeat_dispatch.xml — och körs
              av cron_tick-motorn.
 
              Två vägar väckte coworker-listan (denna + motorn) = dubbelväckning.
-             Endast EN väg ska finnas. Posten behålls därför med FULLSTÄNDIG
-             definition men `active=False`:
-
-               - att bara skriva <field name="active"> utan namn kraschar
-                 nyinstallation (Odoo försöker SKAPA en ir.cron utan name →
-                 "null value in column name violates not-null constraint").
-               - att radera posten kräver <delete> på ett xmlid som kan saknas
-                 → kraschar uppgradering.
-               - en inaktiv post är dessutom spårbar.
+             Endast EN väg ska finnas, så posten togs bort helt 2026-10-25.
+             Tidigare behölls den som en inaktiv ir.cron för spårbarhet, men
+             en ir.cron som skrivs vid modulladdning kan inte uppdateras medan
+             jobbet kör ("Record cannot be modified right now") — och en
+             avvecklad post är inte värd den risken.
 
              FYNDET: cron 980 (processorn) körde varje minut och fanns — men
              inget LADE något i kön. Cron 988 (Run Scheduled Coworkers) körde
@@ -26,15 +22,5 @@
              alltså ingen aktiv väckare alls: has_cron=false, cron_id=false,
              run_count=0, last_heartbeat ett seed-värde.
              ============================================================ -->
-        <record id="cron_ai_heartbeat" model="ir.cron">
-            <field name="name">AI: Heartbeat — väck alla coworkers (avvecklad)</field>
-            <field name="model_id" ref="model_ai_coworker"/>
-            <field name="state">code</field>
-            <field name="code">model._heartbeat_all()</field>
-            <field name="interval_number">1</field>
-            <field name="interval_type">minutes</field>
-            <field name="active">False</field>
-            <field name="user_id" ref="base.user_root"/>
-        </record>
     </data>
 </odoo>

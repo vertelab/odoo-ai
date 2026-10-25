@@ -2,14 +2,22 @@
 <!-- Personliga minneskällor: HR-roll + mål (agent-memory-governance 5.x) -->
 <odoo>
     <data noupdate="1">
-        <record id="cron_personal_memory_index" model="ir.cron">
+        <!-- Konverterade från ir.cron till cron.task (schemalagt-arbete).
+             Se data/cron_mail_reply.xml för varför: ett ir.cron som
+             skrivs vid modulladdning kan inte uppdateras medan jobbet
+             kör, och uppgraderingen faller på
+             "Record cannot be modified right now". cron.task har ingen
+             sådan spärr, och motorn äger kadens, lås och körhistorik. -->
+        <record id="cron_task_cron_personal_memory_index" model="cron.task">
             <field name="name">AI: Indexera personliga minneskällor (roll + mål)</field>
-            <field name="model_id" ref="model_ai_okf_concept"/>
-            <field name="state">code</field>
-            <field name="code">model._index_all_personal_sources()</field>
+            <field name="technical_name">ai_personal_memory_index</field>
+            <field name="module">ai_agent_core</field>
+            <field name="model_name">ai.okf.concept</field>
+            <field name="method_name">_index_all_personal_sources</field>
             <field name="interval_number">24</field>
             <field name="interval_type">hours</field>
-            <field name="active">True</field>
+            <field name="sequence">10</field>
+            <field name="active" eval="True"/>
         </record>
     </data>
 </odoo>

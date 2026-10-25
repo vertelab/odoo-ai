@@ -2,7 +2,7 @@
 # Part of Odoo. See LICENSE file for full copyright and licensing details.
 {
     'name': 'AI: Agent Core',
-    'version': '18.0.1.347',
+    'version': '18.0.2.0.0',
     'summary': 'AI Agent Core — Org-stomme, heartbeat, onboarding, task-system',
     'category': 'AI Orchestration',
     'description': """
@@ -31,9 +31,13 @@
         'hr',
         'base_automation',
         'web_pwa_push',
-        # cron_tick provides the cron.task registry and the
-        # POST /cron/trigger/<technical_name> route used by skill_sync.
-        # It depends only on base, so this adds no transitive weight.
+        # cron_tick provides the cron.task registry, the scheduling engine
+        # and the POST /cron/trigger/<technical_name> route. Since
+        # 18.0.2.0.0 EVERY scheduled job in this module is a cron.task —
+        # an `ir.cron` that is rewritten on module load cannot be updated
+        # while the job is running ("Record cannot be modified right now"),
+        # which is what broke the upgrade on 2026-10-25. It depends only on
+        # base and mail, so this adds no transitive weight.
         'cron_tick',
     ],
     'data': [

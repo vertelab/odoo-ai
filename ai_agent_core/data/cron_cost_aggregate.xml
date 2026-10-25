@@ -1,15 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <!-- AI-kostnadsaggregat (ai-kostnad-till-likviditet 2.x): bygger om
+    <data noupdate="1">
+        <!-- AI-kostnadsaggregat (ai-kostnad-till-likviditet 2.x): bygger om
          ai.cost.period.line för innevarande och förra perioden. Idempotent. -->
-    <record id="cron_cost_aggregate" model="ir.cron">
-        <field name="name">AI: Aggregera kostnad per period</field>
-        <field name="model_id" ref="model_ai_cost_period_line"/>
-        <field name="state">code</field>
-        <field name="code">model.cron_aggregate(granularity='month')</field>
-        <field name="interval_number">1</field>
-        <field name="interval_type">days</field>
-        <field name="active">True</field>
-        <field name="user_id" ref="base.user_root"/>
-    </record>
+        <!-- Konverterade från ir.cron till cron.task (schemalagt-arbete).
+             Se data/cron_mail_reply.xml för varför: ett ir.cron som
+             skrivs vid modulladdning kan inte uppdateras medan jobbet
+             kör, och uppgraderingen faller på
+             "Record cannot be modified right now". cron.task har ingen
+             sådan spärr, och motorn äger kadens, lås och körhistorik. -->
+        <record id="cron_task_cron_cost_aggregate" model="cron.task">
+            <field name="name">AI: Aggregera kostnad per period</field>
+            <field name="technical_name">ai_cost_aggregate</field>
+            <field name="module">ai_agent_core</field>
+            <field name="model_name">ai.cost.period.line</field>
+            <field name="method_name">cron_aggregate</field>
+            <field name="interval_number">1</field>
+            <field name="interval_type">days</field>
+            <field name="sequence">10</field>
+            <field name="active" eval="True"/>
+        </record>
+    </data>
 </odoo>

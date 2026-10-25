@@ -1,46 +1,37 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <!-- Heartbeat-processorn (bevakning-over-tid D1): väckaren
+    <data noupdate="1">
+        <!-- Heartbeat-processorn (bevakning-over-tid D1): väckaren
          (_heartbeat_all → _heartbeat) skapar bara sessionen med
          heartbeat_pending=True; den här cron:en kör coworkern asynkront i
          en egen transaktion per session. Samma mönster som watch-kön. -->
-    <record id="ir_actions_server_heartbeat_process" model="ir.actions.server">
-        <field name="name">AI: Processera heartbeat-kön</field>
-        <field name="model_id" ref="model_ai_coworker"/>
-        <field name="state">code</field>
-        <field name="code">
-model._process_heartbeat_sessions()
-        </field>
-    </record>
-
-    <record id="cron_heartbeat_process" model="ir.cron">
-        <field name="name">AI: Processera heartbeat-kön</field>
-        <field name="cron_name">AI: Processera heartbeat-kön</field>
-        <field name="ir_actions_server_id" ref="ir_actions_server_heartbeat_process"/>
-        <field name="interval_number">1</field>
-        <field name="interval_type">minutes</field>
-        <field name="active">True</field>
-        <field name="user_id" ref="base.user_root"/>
-    </record>
-
-    <!-- Läsaren (bevakning-over-tid D6): mäter körningar per init_type och
-         utfall, och frigör övergivna utcheckningar. Startar ALDRIG arbete. -->
-    <record id="ir_actions_server_run_metrics" model="ir.actions.server">
-        <field name="name">AI: Mät körningar per init-typ</field>
-        <field name="model_id" ref="model_ai_coworker"/>
-        <field name="state">code</field>
-        <field name="code">
-model._cron_measure_runs()
-        </field>
-    </record>
-
-    <record id="cron_run_metrics" model="ir.cron">
-        <field name="name">AI: Mät körningar per init-typ</field>
-        <field name="cron_name">AI: Mät körningar per init-typ</field>
-        <field name="ir_actions_server_id" ref="ir_actions_server_run_metrics"/>
-        <field name="interval_number">1</field>
-        <field name="interval_type">hours</field>
-        <field name="active">True</field>
-        <field name="user_id" ref="base.user_root"/>
-    </record>
+        <!-- Konverterade från ir.cron till cron.task (schemalagt-arbete).
+             Se data/cron_mail_reply.xml för varför: ett ir.cron som
+             skrivs vid modulladdning kan inte uppdateras medan jobbet
+             kör, och uppgraderingen faller på
+             "Record cannot be modified right now". cron.task har ingen
+             sådan spärr, och motorn äger kadens, lås och körhistorik. -->
+        <record id="cron_task_cron_heartbeat_process" model="cron.task">
+            <field name="name">AI: Processera heartbeat-kön</field>
+            <field name="technical_name">ai_heartbeat_process</field>
+            <field name="module">ai_agent_core</field>
+            <field name="model_name">ai.coworker</field>
+            <field name="method_name">_process_heartbeat_sessions</field>
+            <field name="interval_number">1</field>
+            <field name="interval_type">minutes</field>
+            <field name="sequence">10</field>
+            <field name="active" eval="True"/>
+        </record>
+        <record id="cron_task_cron_run_metrics" model="cron.task">
+            <field name="name">AI: Mät körningar per init-typ</field>
+            <field name="technical_name">ai_run_metrics</field>
+            <field name="module">ai_agent_core</field>
+            <field name="model_name">ai.coworker</field>
+            <field name="method_name">_cron_measure_runs</field>
+            <field name="interval_number">1</field>
+            <field name="interval_type">hours</field>
+            <field name="sequence">10</field>
+            <field name="active" eval="True"/>
+        </record>
+    </data>
 </odoo>

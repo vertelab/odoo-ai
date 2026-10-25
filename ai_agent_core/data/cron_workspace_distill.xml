@@ -1,13 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <!-- Löpande destillering (task 4.3): distillerar nya koncept nattetid -->
-    <record id="cron_workspace_distill" model="ir.cron">
-        <field name="name">Workspace: Distill new concepts (L2/L3)</field>
-        <field name="model_id" ref="model_ai_okf_concept"/>
-        <field name="state">code</field>
-        <field name="code">model._distill_inbox_batch(limit=50, generated_by='nightly')</field>
-        <field name="interval_number">6</field>
-        <field name="interval_type">hours</field>
-        <field name="active">True</field>
-    </record>
+    <data noupdate="1">
+        <!-- Löpande destillering (task 4.3): distillerar nya koncept nattetid -->
+        <!-- Konverterade från ir.cron till cron.task (schemalagt-arbete).
+             Se data/cron_mail_reply.xml för varför: ett ir.cron som
+             skrivs vid modulladdning kan inte uppdateras medan jobbet
+             kör, och uppgraderingen faller på
+             "Record cannot be modified right now". cron.task har ingen
+             sådan spärr, och motorn äger kadens, lås och körhistorik. -->
+        <record id="cron_task_cron_workspace_distill" model="cron.task">
+            <field name="name">Workspace: Distill new concepts (L2/L3)</field>
+            <field name="technical_name">ai_workspace_distill</field>
+            <field name="module">ai_agent_core</field>
+            <field name="model_name">ai.okf.concept</field>
+            <field name="method_name">_distill_inbox_batch</field>
+            <field name="interval_number">6</field>
+            <field name="interval_type">hours</field>
+            <field name="sequence">10</field>
+            <field name="active" eval="True"/>
+        </record>
+    </data>
 </odoo>

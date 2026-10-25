@@ -1,15 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <!-- Cron: OKF uppladdningskö (var 2:a minut) — processar köade
+    <data noupdate="1">
+        <!-- Cron: OKF uppladdningskö (var 2:a minut) — processar köade
          uppladdningar i bakgrunden (Web UI async). -->
-    <record id="cron_okf_process_uploads" model="ir.cron">
-        <field name="name">OKF: Processa uppladdningskö</field>
-        <field name="model_id" ref="model_ai_okf_upload"/>
-        <field name="state">code</field>
-        <field name="code">env['ai.okf.upload']._cron_process_uploads()</field>
-        <field name="interval_number">2</field>
-        <field name="interval_type">minutes</field>
-        <field name="active" eval="True"/>
-        <field name="priority">5</field>
-    </record>
+        <!-- Konverterade från ir.cron till cron.task (schemalagt-arbete).
+             Se data/cron_mail_reply.xml för varför: ett ir.cron som
+             skrivs vid modulladdning kan inte uppdateras medan jobbet
+             kör, och uppgraderingen faller på
+             "Record cannot be modified right now". cron.task har ingen
+             sådan spärr, och motorn äger kadens, lås och körhistorik. -->
+        <record id="cron_task_cron_okf_process_uploads" model="cron.task">
+            <field name="name">OKF: Processa uppladdningskö</field>
+            <field name="technical_name">ai_okf_process_uploads</field>
+            <field name="module">ai_agent_core</field>
+            <field name="model_name">ai.okf.upload</field>
+            <field name="method_name">_cron_process_uploads</field>
+            <field name="interval_number">2</field>
+            <field name="interval_type">minutes</field>
+            <field name="sequence">5</field>
+            <field name="active" eval="True"/>
+        </record>
+    </data>
 </odoo>

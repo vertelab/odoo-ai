@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <!-- Cron: stäng övergivna sessioner och skriv eftermäle (okf-recall-path
+    <data noupdate="1">
+        <!-- Cron: stäng övergivna sessioner och skriv eftermäle (okf-recall-path
          fas 4.4, beslut D4).
 
          Bakgrund: `mark_done()` anropas bara från webhook-vägen och
@@ -14,14 +15,22 @@
 
          Idempotent: `_write_final_summary` gör inget LLM-anrop när inga nya
          rader tillkommit, och stängda sessioner plockas inte upp igen. -->
-    <record id="cron_close_idle_sessions" model="ir.cron">
-        <field name="name">Session: Stäng inaktiva och skriv eftermäle</field>
-        <field name="model_id" ref="model_ai_coworker_session"/>
-        <field name="state">code</field>
-        <field name="code">env['ai.coworker.session']._cron_close_idle_sessions(batch_size=20)</field>
-        <field name="interval_number">15</field>
-        <field name="interval_type">minutes</field>
-        <field name="active" eval="True"/>
-        <field name="priority">7</field>
-    </record>
+        <!-- Konverterade från ir.cron till cron.task (schemalagt-arbete).
+             Se data/cron_mail_reply.xml för varför: ett ir.cron som
+             skrivs vid modulladdning kan inte uppdateras medan jobbet
+             kör, och uppgraderingen faller på
+             "Record cannot be modified right now". cron.task har ingen
+             sådan spärr, och motorn äger kadens, lås och körhistorik. -->
+        <record id="cron_task_cron_close_idle_sessions" model="cron.task">
+            <field name="name">Session: Stäng inaktiva och skriv eftermäle</field>
+            <field name="technical_name">ai_close_idle_sessions</field>
+            <field name="module">ai_agent_core</field>
+            <field name="model_name">ai.coworker.session</field>
+            <field name="method_name">_cron_close_idle_sessions</field>
+            <field name="interval_number">15</field>
+            <field name="interval_type">minutes</field>
+            <field name="sequence">7</field>
+            <field name="active" eval="True"/>
+        </record>
+    </data>
 </odoo>

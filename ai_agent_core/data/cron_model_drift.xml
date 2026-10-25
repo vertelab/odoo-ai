@@ -1,21 +1,29 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <!-- Periodisk driftkontroll: jämför ai.model-registret mot gatewayens
+    <data noupdate="1">
+        <!-- Periodisk driftkontroll: jämför ai.model-registret mot gatewayens
          katalog. Drift uppstår när gatewayens katalog ändras (manuellt
          eller via combo_maintenance) — en engångsvalidering vid sparande
          fångar inte att ett namn blir dött EFTERÅT.
 
          Skiljer "katalog otillgänglig" från "drift": en nere gateway
          larmar inte falskt (se _run_drift_check). -->
-    <record id="cron_model_drift_check" model="ir.cron">
-        <field name="name">AI: Modell-driftkontroll (gateway-katalog)</field>
-        <field name="cron_name">AI: Modell-driftkontroll (gateway-katalog)</field>
-        <field name="model_id" ref="model_ai_provider"/>
-        <field name="state">code</field>
-        <field name="code">model._run_drift_check()</field>
-        <field name="interval_number">1</field>
-        <field name="interval_type">days</field>
-        <field name="active">True</field>
-        <field name="user_id" ref="base.user_root"/>
-    </record>
+        <!-- Konverterade från ir.cron till cron.task (schemalagt-arbete).
+             Se data/cron_mail_reply.xml för varför: ett ir.cron som
+             skrivs vid modulladdning kan inte uppdateras medan jobbet
+             kör, och uppgraderingen faller på
+             "Record cannot be modified right now". cron.task har ingen
+             sådan spärr, och motorn äger kadens, lås och körhistorik. -->
+        <record id="cron_task_cron_model_drift_check" model="cron.task">
+            <field name="name">AI: Modell-driftkontroll (gateway-katalog)</field>
+            <field name="technical_name">ai_model_drift_check</field>
+            <field name="module">ai_agent_core</field>
+            <field name="model_name">ai.provider</field>
+            <field name="method_name">_run_drift_check</field>
+            <field name="interval_number">1</field>
+            <field name="interval_type">days</field>
+            <field name="sequence">10</field>
+            <field name="active" eval="True"/>
+        </record>
+    </data>
 </odoo>

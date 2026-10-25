@@ -1,26 +1,34 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <!-- Burn rate local warning + conflict + budget change detection (hourly) -->
-    <record id="cron_burn_rate_check" model="ir.cron">
-        <field name="name">Bifrost: burn rate check</field>
-        <field name="model_id" ref="model_ai_coworker"/>
-        <field name="state">code</field>
-        <field name="code">model.cron_burn_rate_check()</field>
-        <field name="interval_number">1</field>
-        <field name="interval_type">hours</field>
-        <field name="active">True</field>
-        <field name="user_id" ref="base.user_root"/>
-    </record>
-
-    <!-- Periodisk budget-sammanställning till bifrost (biweekly default) -->
-    <record id="cron_budget_summary" model="ir.cron">
-        <field name="name">Bifrost: budget summary</field>
-        <field name="model_id" ref="model_ai_coworker"/>
-        <field name="state">code</field>
-        <field name="code">model.cron_budget_summary()</field>
-        <field name="interval_number">14</field>
-        <field name="interval_type">days</field>
-        <field name="active">True</field>
-        <field name="user_id" ref="base.user_root"/>
-    </record>
+    <data noupdate="1">
+        <!-- Burn rate local warning + conflict + budget change detection (hourly) -->
+        <!-- Konverterade från ir.cron till cron.task (schemalagt-arbete).
+             Se data/cron_mail_reply.xml för varför: ett ir.cron som
+             skrivs vid modulladdning kan inte uppdateras medan jobbet
+             kör, och uppgraderingen faller på
+             "Record cannot be modified right now". cron.task har ingen
+             sådan spärr, och motorn äger kadens, lås och körhistorik. -->
+        <record id="cron_task_cron_burn_rate_check" model="cron.task">
+            <field name="name">Bifrost: burn rate check</field>
+            <field name="technical_name">ai_burn_rate_check</field>
+            <field name="module">ai_agent_core</field>
+            <field name="model_name">ai.coworker</field>
+            <field name="method_name">cron_burn_rate_check</field>
+            <field name="interval_number">1</field>
+            <field name="interval_type">hours</field>
+            <field name="sequence">10</field>
+            <field name="active" eval="True"/>
+        </record>
+        <record id="cron_task_cron_budget_summary" model="cron.task">
+            <field name="name">Bifrost: budget summary</field>
+            <field name="technical_name">ai_budget_summary</field>
+            <field name="module">ai_agent_core</field>
+            <field name="model_name">ai.coworker</field>
+            <field name="method_name">cron_budget_summary</field>
+            <field name="interval_number">14</field>
+            <field name="interval_type">days</field>
+            <field name="sequence">10</field>
+            <field name="active" eval="True"/>
+        </record>
+    </data>
 </odoo>
