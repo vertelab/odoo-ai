@@ -1,21 +1,42 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <!-- Fördröjda mail-svar: cron som postar pendande svar när reply_at passerats. -->
-    <record id="ir_actions_server_mail_reply_due" model="ir.actions.server">
-        <field name="name">AI: Posta fördröjda mail-svar</field>
-        <field name="model_id" ref="model_ai_coworker_session"/>
-        <field name="state">code</field>
-        <field name="code">
-model._post_pending_reply()
-        </field>
-    </record>
+    <data noupdate="1">
+        <!-- ============================================================
+             Delayed mail replies — a cron.task, not an ir.cron.
 
-    <record id="cron_mail_reply_due" model="ir.cron">
-        <field name="name">AI: Posta fördröjda mail-svar</field>
-        <field name="cron_name">AI: Posta fördröjda mail-svar</field>
-        <field name="ir_actions_server_id" ref="ir_actions_server_mail_reply_due"/>
-        <field name="interval_number">1</field>
-        <field name="interval_type">minutes</field>
-        <field name="active">True</field>
-    </record>
+             `ai.coworker.session._post_pending_reply()` posts the replies
+             whose `reply_at` has passed. It ran as an `ir.cron` every
+             minute, which made it the one scheduled job in this module
+             outside the cron.task engine: no run history, no lock, no
+             failure counter, and — the reason it was converted — an
+             `ir.cron.write()` that Odoo refuses while the job is running.
+
+             That refusal is what broke the module upgrade on 2026-10-25:
+
+                 ir_cron.py:597 _try_lock -> SerializationFailure
+                 ir_cron.py:605 raise UserError(
+                     "Record cannot be modified right now: this cron job is
+                      currently running and cannot be modified")
+
+             A one-minute interval means the window is open most of the
+             time. cron.task has no such guard: `_load_records_write()`
+             writes plain fields, and the engine takes its own advisory
+             lock at run time instead.
+
+             The interval is unchanged (1 minute). `_post_pending_reply`
+             is idempotent — it clears `pending_reply`/`reply_at` on each
+             posted session — so a retried run posts nothing twice.
+             ============================================================ -->
+        <record id="cron_task_mail_reply_due" model="cron.task">
+            <field name="name">AI: Posta fördröjda mail-svar</field>
+            <field name="technical_name">ai_mail_reply_due</field>
+            <field name="module">ai_agent_core</field>
+            <field name="model_name">ai.coworker.session</field>
+            <field name="method_name">_post_pending_reply</field>
+            <field name="interval_number">1</field>
+            <field name="interval_type">minutes</field>
+            <field name="sequence">30</field>
+            <field name="active" eval="True"/>
+        </record>
+    </data>
 </odoo>
