@@ -158,14 +158,14 @@ class ResConfigSettings(models.TransientModel):
 
     ai_default_tool_ids = fields.Many2many(
         'ai.tool', string='Default Tools (nya agenter)',
-        # Ingen `config_parameter`: fältet är en M2M och sparas i
-        # set_values() som kommaseparerade NAMN i
-        # `ai_agent_core.default_tool_ids`. Med config_parameter försöker
-        # Odoos `res.config.default_get()` tolka det lagrade värdet som ett
-        # id (`browse(int(value))`) och kraschar på
-        # `relation "_unknown" does not exist` så snart parametern är satt.
-        # Fältet är dessutom INTE i `_config_parameter_fields` — det syns
-        # bara i get_values/set_values.
+        # Ingen `config_parameter` — fältet sparas som kommaseparerade NAMN
+        # i `ai_agent_core.default_tool_ids` (se set_values). Fällan:
+        # `res.config.default_get()` tolkar ALLA `config_parameter`-värden
+        # som id:n för many2one-fält, men för many2many blir
+        # `field.comodel_name` tom → `browse(int(value))` mot en icke-
+        # existerande tabell → `relation "_unknown" does not exist`. Det
+        # slog till först när parametern faktiskt hade ett värde, därför
+        # grönt på tom DB och rött i produktion.
         help='Vilka verktyg nya agenter får som default när de skapas utan '
              'explicita verktyg. Builtin-verktyg syns här efter seeding.',
     )
