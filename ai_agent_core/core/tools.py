@@ -15,6 +15,14 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Callable, Awaitable, List, Dict, Optional
 
+from odoo.addons.ai_agent_core.core.ssrf import (
+    MAX_REDIRECTS,
+    REDIRECT_STATUSES,
+    SsrfBlocked,
+    validate_redirect,
+    validate_url,
+)
+
 _logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -581,23 +589,66 @@ async def _tool_fetch_url(url: str = "", max_length: int = 5000) -> str:
             example='https://docs.saltproject.io/',
             tool_name='fetch_url').to_json()
     if not (url.startswith('http://') or url.startswith('https://')):
+        # Ett annat schema (file:, ftp:, data:) ger samma svar varje gång —
+        # att försöka igen med samma argument hjälper inte.
         return _invalid_value_error(
             'url', 'a URL starting with http:// or https://', url,
             example='https://docs.saltproject.io/',
-            tool_name='fetch_url').to_json()
+            tool_name='fetch_url',
+            retryable=False,
+            hint='Only http and https are fetchable; other schemes are '
+                 'rejected before any network call.').to_json()
     try:
         max_length = max(1000, min(int(max_length or 5000), 20000))
     except (TypeError, ValueError):
         max_length = 5000
+
+    # SSRF-skydd: URL:en kommer från en LLM som kan ha fått den från en
+    # webbsida (prompt injection). Utan kontroll kan den nå molnmetadata,
+    # interna admin-gränssnitt eller Odoo självt på loopback.
+    try:
+        validate_url(url)
+    except SsrfBlocked as exc:
+        _logger.warning('fetch_url blocked by SSRF guard: %s (%s)', url, exc.reason)
+        return _invalid_value_error(
+            'url', 'a publicly reachable http(s) URL', url,
+            example='https://docs.saltproject.io/',
+            tool_name='fetch_url',
+            retryable=False,
+            hint=f'Blocked: {exc.reason}. Internal, private and loopback '
+                 'addresses are not reachable from this tool.',
+        ).to_json()
+
     try:
         import httpx
+
+        # Redirects följs INTE automatiskt — varje hopp valideras på nytt,
+        # annars räcker det att en publik URL redirectar till en intern.
+        async def _get_following_redirects(client):
+            current = url
+            for hop in range(MAX_REDIRECTS + 1):
+                r = await client.get(current, headers={'User-Agent': 'Odoo-AI/1.0'})
+                if r.status_code not in REDIRECT_STATUSES:
+                    return r
+                location = r.headers.get('location')
+                if not location:
+                    return r
+                current = str(httpx.URL(current).join(location))
+                validate_redirect(url, current, hop + 1)
+            raise SsrfBlocked(url, f'too many redirects (more than {MAX_REDIRECTS})')
+
         try:
-            async with httpx.AsyncClient(timeout=15) as client:
-                r = await client.get(url, headers={'User-Agent': 'Odoo-AI/1.0'})
+            async with httpx.AsyncClient(timeout=15, follow_redirects=False) as client:
+                r = await _get_following_redirects(client)
+        except SsrfBlocked:
+            raise
         except Exception:
-            # Cert-fallback (odoo-användaren kan inte läsa mycacert.crt)
-            async with httpx.AsyncClient(timeout=15, verify=False) as client:
-                r = await client.get(url, headers={'User-Agent': 'Odoo-AI/1.0'})
+            # Cert-fallback (odoo-användaren kan inte läsa mycacert.crt).
+            # verify=False påverkar inte SSRF-skyddet — det validerar
+            # adressen, inte certifikatet.
+            async with httpx.AsyncClient(timeout=15, verify=False,
+                                         follow_redirects=False) as client:
+                r = await _get_following_redirects(client)
         r.raise_for_status()
         from bs4 import BeautifulSoup
         soup = BeautifulSoup(r.text, 'html.parser')
@@ -605,6 +656,16 @@ async def _tool_fetch_url(url: str = "", max_length: int = 5000) -> str:
             tag.decompose()
         text = soup.get_text(separator=' ', strip=True)
         return text[:max_length] if len(text) > max_length else text
+    except SsrfBlocked as exc:
+        _logger.warning('fetch_url blocked by SSRF guard (redirect): %s (%s)',
+                        url, exc.reason)
+        return _invalid_value_error(
+            'url', 'a publicly reachable http(s) URL', url,
+            example='https://docs.saltproject.io/',
+            tool_name='fetch_url',
+            retryable=False,
+            hint=f'Blocked: {exc.reason}.',
+        ).to_json()
     except ImportError as e:
         return _internal_error(
             'fetch_url', e,
@@ -2112,7 +2173,7 @@ class ToolError(Exception):
     """
 
     def __init__(self, message, parameter='', expected='', actual='',
-                 valid_fields=None, retryable=True, tool_name=''):
+                 valid_fields=None, retryable=True, tool_name='', hint=''):
         super().__init__(message)
         self.message = message
         self.parameter = parameter
@@ -2121,6 +2182,10 @@ class ToolError(Exception):
         self.valid_fields = list(valid_fields or [])
         self.retryable = retryable
         self.tool_name = tool_name
+        # Valfri vägledning om VARFÖR anropet avvisades och vad man gör
+        # istället — t.ex. SSRF-skyddets förklaring. Skiljer sig från
+        # ``expected`` som beskriver rätt format.
+        self.hint = hint
 
     def to_text(self):
         """LLM-läsbar text med vägledning."""
@@ -2133,6 +2198,8 @@ class ToolError(Exception):
             parts.append(f"Actual: {self.actual}")
         if self.valid_fields:
             parts.append("Valid fields: %s" % ', '.join(self.valid_fields))
+        if self.hint:
+            parts.append(f"Hint: {self.hint}")
         parts.append("Retryable: %s" % ('yes' if self.retryable else 'no'))
         return '\n'.join(parts)
 
@@ -2146,6 +2213,7 @@ class ToolError(Exception):
             'valid_fields': self.valid_fields,
             'retryable': self.retryable,
             'tool_name': self.tool_name,
+            'hint': self.hint,
         }
 
     def to_json(self):
@@ -2185,7 +2253,7 @@ def _missing_argument_error(parameter, expected, example='', tool_name=''):
 
 
 def _invalid_value_error(parameter, expected, actual, example='',
-                         retryable=True, tool_name=''):
+                         retryable=True, tool_name='', hint=''):
     """Fel format/värde på ett argument → åtgärdbart fel."""
     msg = f"Invalid value for '{parameter}'"
     if example:
@@ -2197,6 +2265,7 @@ def _invalid_value_error(parameter, expected, actual, example='',
         actual=str(actual),
         retryable=retryable,
         tool_name=tool_name,
+        hint=hint,
     )
 
 

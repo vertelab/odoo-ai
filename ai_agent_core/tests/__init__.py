@@ -68,6 +68,7 @@ from . import test_daily_budget
 from . import test_web_ui_context
 from . import test_session_history_relevance
 from . import test_actionable_errors
+from . import test_ssrf_guard
 from . import test_content_verification
 from . import test_stream_turn_persist
 # SSE-generatorernas namnbindning (NameError i _cr_holder, 2026-10-11).
