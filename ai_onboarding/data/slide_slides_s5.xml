@@ -1,0 +1,235 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="0">
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         SEKTION 5: Manuellt test — verifiera att det fungerar
+         Slides: 2 (1 article, 1 quiz)
+         ═══════════════════════════════════════════════════════════════════ -->
+
+    <!-- SECTION HEADER -->
+    <record id="slide_category_ai_s5" model="slide.slide">
+        <field name="name">5. Manuellt test</field>
+        <field name="is_category" eval="True"/>
+        <field name="channel_id" ref="ai_onboarding.slide_channel_ai"/>
+        <field name="sequence">400</field>
+    </record>
+
+    <!-- SLIDE 5.1: Manuellt test -->
+    <record id="slide_ai_s5_01" model="slide.slide">
+        <field name="name">Manuellt test — fråga, granska, godkänn</field>
+        <field name="sequence">410</field>
+        <field name="slide_category">article</field>
+        <field name="channel_id" ref="ai_onboarding.slide_channel_ai"/>
+        <field name="is_published" eval="True"/>
+        <field name="is_preview" eval="False"/>
+        <field name="completion_time">0.50</field>
+        <field name="html_content" type="html">
+<section class="s_cover o_cc o_cc3 pt160 pb160">
+    <div class="container">
+        <h1 class="display-3-fs" style="text-align: center;">Manuellt test</h1>
+        <p class="lead" style="text-align: center;">Ett svar du kan kontrollera, och en åtgärd som inte händer förrän du klickat. Det är hela poängen.</p>
+    </div>
+</section>
+
+<section class="s_text_block pt64 pb40">
+    <div class="container s_allow_columns">
+        <h2>Innan du börjar</h2>
+        <p>Du behöver:</p>
+        <ul>
+            <li>tillgång till AI-assistenten i din meny</li>
+            <li>minst ett dokument i kunskapsbasen som du känner till innehållet i — det är din facit</li>
+        </ul>
+        <p class="small text-muted">Testet handlar inte om att AI:n ska imponera. Det handlar om att du ska kunna avgöra när den har rätt — och att inget händer utan ditt godkännande.</p>
+    </div>
+</section>
+
+<section class="s_text_block pt32 pb40">
+    <div class="container s_allow_columns">
+        <h2>Test 1 — fråga och kontrollera</h2>
+        <ol>
+            <li>Öppna AI-assistenten.</li>
+            <li>Ställ en fråga om något som står i ett dokument du känner till väl.</li>
+            <li>Läs svaret. Stämmer det med dokumentet?</li>
+            <li>Be om en sammanfattning av samma dokument och jämför med originalet.</li>
+        </ol>
+        <p><strong>Förväntat resultat:</strong> svaret stämmer med dokumentets innehåll, och assistenten hänvisar till vilket dokument den bygger på. <em>Hittar den på saker den inte kan veta</em> är det ett fel som ska rapporteras — inte något man vänjer sig vid.</p>
+    </div>
+</section>
+
+<section class="s_text_block pt32 pb40">
+    <div class="container s_allow_columns">
+        <h2>Test 2 — människan i kontrollen</h2>
+        <ol>
+            <li>Be assistenten utföra en åtgärd som <em>ändrar</em> något — till exempel skapa en uppgift eller uppdatera ett fält.</li>
+            <li>Observera att den stannar och begär ditt godkännande.</li>
+            <li>Läs igenom vad den tänker göra. Godkänn.</li>
+            <li>Kontrollera att ändringen blev rätt.</li>
+        </ol>
+        <p><strong>Förväntat resultat:</strong> inget händer förrän du klickat. Det är detta som är <strong>människan i kontrollen</strong> — assistenten föreslår, du beslutar.</p>
+    </div>
+</section>
+
+<section class="s_text_block pt32 pb40">
+    <div class="container s_allow_columns">
+        <h2>Test 3 — säg nej</h2>
+        <ol>
+            <li>Be assistenten om en åtgärd till.</li>
+            <li>När den begär godkännande: <strong>avböj</strong>.</li>
+            <li>Kontrollera att ingenting ändrades.</li>
+        </ol>
+        <p><strong>Förväntat resultat:</strong> systemet står oförändrat. Kan du inte stoppa den är det ett allvarligt fel — rapportera omedelbart.</p>
+    </div>
+</section>
+
+<section class="s_text_block pt32 pb64">
+    <div class="container s_allow_columns">
+        <h2>Om det inte fungerar</h2>
+        <ol>
+            <li><strong>Assistenten svarar inte alls.</strong> Tjänsten kan vara otillgänglig — prova igen om en stund och rapportera om det håller i sig.</li>
+            <li><strong>Svaren är påhittade.</strong> Assistenten kan bara bygga på det den har tillgång till. Frågar du om något utanför kunskapsbasen ska den säga det — hittar den på, rapportera.</li>
+            <li><strong>Åtgärden utförs utan godkännande.</strong> Allvarligt fel. Kontakta IT direkt, fortsätt inte använda funktionen.</li>
+        </ol>
+    </div>
+</section>
+
+<section class="s_call_to_action o_cc o_cc5 pt48 pb48">
+    <div class="container">
+        <div class="row">
+            <div class="col-lg-9">
+                <h3>Test 3 är det viktigaste</h3>
+                <p class="lead">Att assistenten kan svara är bra. Att du kan stoppa den är avgörande. Klarar den inte ditt nej ska den inte användas till något som ändrar data.</p>
+            </div>
+        </div>
+    </div>
+</section>
+        </field>
+        <field name="description">Steg för steg: ställ en fråga du kan kontrollera, delegera en åtgärd och verifiera att inget händer förrän du godkänt — och att ett nej stoppar den.</field>
+    </record>
+
+    <!-- SLIDE 5.2: Quiz — Manuellt test -->
+    <record id="slide_ai_s5_02" model="slide.slide">
+        <field name="name">🧪 Testa dina kunskaper — Manuellt test</field>
+        <field name="sequence">420</field>
+        <field name="slide_category">quiz</field>
+        <field name="channel_id" ref="ai_onboarding.slide_channel_ai"/>
+        <field name="is_published" eval="True"/>
+        <field name="is_preview" eval="False"/>
+        <field name="completion_time">0.25</field>
+        <field name="quiz_first_attempt_reward">100</field>
+        <field name="quiz_second_attempt_reward">75</field>
+        <field name="quiz_third_attempt_reward">50</field>
+        <field name="quiz_fourth_attempt_reward">25</field>
+        <field name="description">Kontrollera att du vet hur du verifierar AI-assistenten själv.</field>
+    </record>
+
+    <record id="slide_ai_s5_02_q1" model="slide.question">
+        <field name="question">Vilket av testerna är det viktigaste att klara?</field>
+        <field name="sequence">1</field>
+        <field name="slide_id" ref="slide_ai_s5_02"/>
+    </record>
+    <record id="slide_ai_s5_02_q1_a1" model="slide.answer">
+        <field name="text_value">Att assistenten ger bra svar</field>
+        <field name="sequence">1</field>
+        <field name="is_correct" eval="False"/>
+        <field name="comment">Bra svar är önskvärt — men det är inte det som gör verktyget säkert.</field>
+        <field name="question_id" ref="slide_ai_s5_02_q1"/>
+    </record>
+    <record id="slide_ai_s5_02_q1_a2" model="slide.answer">
+        <field name="text_value">Att den går att stoppa — att ett nej verkligen stoppar den</field>
+        <field name="sequence">2</field>
+        <field name="is_correct" eval="True"/>
+        <field name="comment">Rätt. Människan i kontrollen är förutsättningen för att få delegera något som ändrar data.</field>
+        <field name="question_id" ref="slide_ai_s5_02_q1"/>
+    </record>
+    <record id="slide_ai_s5_02_q1_a3" model="slide.answer">
+        <field name="text_value">Att den svarar snabbt</field>
+        <field name="sequence">3</field>
+        <field name="is_correct" eval="False"/>
+        <field name="comment">Snabbhet är bekvämt, inte säkert.</field>
+        <field name="question_id" ref="slide_ai_s5_02_q1"/>
+    </record>
+
+    <record id="slide_ai_s5_02_q2" model="slide.question">
+        <field name="question">Assistenten ger ett svar som inte stämmer med dokumentet. Vad gör du?</field>
+        <field name="sequence">2</field>
+        <field name="slide_id" ref="slide_ai_s5_02"/>
+    </record>
+    <record id="slide_ai_s5_02_q2_a1" model="slide.answer">
+        <field name="text_value">Rapporterar det — påhittade svar ska inte vänjas vid</field>
+        <field name="sequence">1</field>
+        <field name="is_correct" eval="True"/>
+        <field name="comment">Rätt. Att acceptera felaktiga svar gör assistenten farligare än ingen assistent.</field>
+        <field name="question_id" ref="slide_ai_s5_02_q2"/>
+    </record>
+    <record id="slide_ai_s5_02_q2_a2" model="slide.answer">
+        <field name="text_value">Frågar igen och hoppas på bättre tur</field>
+        <field name="sequence">2</field>
+        <field name="is_correct" eval="False"/>
+        <field name="comment">Att försöka igen kan ge ett annat svar — men felet kvarstår och ska rapporteras.</field>
+        <field name="question_id" ref="slide_ai_s5_02_q2"/>
+    </record>
+    <record id="slide_ai_s5_02_q2_a3" model="slide.answer">
+        <field name="text_value">Rättar svaret själv i huvudet och går vidare</field>
+        <field name="sequence">3</field>
+        <field name="is_correct" eval="False"/>
+        <field name="comment">Då är det du som gör jobbet — och nästa person luras av samma svar.</field>
+        <field name="question_id" ref="slide_ai_s5_02_q2"/>
+    </record>
+
+    <record id="slide_ai_s5_02_q3" model="slide.question">
+        <field name="question">Varför ska man fråga om något man redan vet svaret på?</field>
+        <field name="sequence">3</field>
+        <field name="slide_id" ref="slide_ai_s5_02"/>
+    </record>
+    <record id="slide_ai_s5_02_q3_a1" model="slide.answer">
+        <field name="text_value">För att man då kan avgöra om svaret är rätt</field>
+        <field name="sequence">1</field>
+        <field name="is_correct" eval="True"/>
+        <field name="comment">Rätt. Utan facit kan du inte skilja ett bra svar från ett övertygande felaktigt.</field>
+        <field name="question_id" ref="slide_ai_s5_02_q3"/>
+    </record>
+    <record id="slide_ai_s5_02_q3_a2" model="slide.answer">
+        <field name="text_value">För att assistenten lär sig snabbare då</field>
+        <field name="sequence">2</field>
+        <field name="is_correct" eval="False"/>
+        <field name="comment">Testet handlar om att granska assistenten, inte om att träna den.</field>
+        <field name="question_id" ref="slide_ai_s5_02_q3"/>
+    </record>
+    <record id="slide_ai_s5_02_q3_a3" model="slide.answer">
+        <field name="text_value">För att det går fortare</field>
+        <field name="sequence">3</field>
+        <field name="is_correct" eval="False"/>
+        <field name="comment">Snabbhet är inte skälet.</field>
+        <field name="question_id" ref="slide_ai_s5_02_q3"/>
+    </record>
+
+    <record id="slide_ai_s5_02_q4" model="slide.question">
+        <field name="question">Vad betyder "människan i kontrollen" i praktiken?</field>
+        <field name="sequence">4</field>
+        <field name="slide_id" ref="slide_ai_s5_02"/>
+    </record>
+    <record id="slide_ai_s5_02_q4_a1" model="slide.answer">
+        <field name="text_value">Att assistenten föreslår och människan beslutar</field>
+        <field name="sequence">1</field>
+        <field name="is_correct" eval="True"/>
+        <field name="comment">Rätt. Inget som ändrar data sker utan att en människa klickat ja.</field>
+        <field name="question_id" ref="slide_ai_s5_02_q4"/>
+    </record>
+    <record id="slide_ai_s5_02_q4_a2" model="slide.answer">
+        <field name="text_value">Att man läser svaret innan man skickar det vidare</field>
+        <field name="sequence">2</field>
+        <field name="is_correct" eval="False"/>
+        <field name="comment">Det är en del av det — men kontrollen gäller även åtgärder, inte bara text.</field>
+        <field name="question_id" ref="slide_ai_s5_02_q4"/>
+    </record>
+    <record id="slide_ai_s5_02_q4_a3" model="slide.answer">
+        <field name="text_value">Att assistenten aldrig får ändra något alls</field>
+        <field name="sequence">3</field>
+        <field name="is_correct" eval="False"/>
+        <field name="comment">Den får ändra — men bara efter godkännande. Det är skillnaden.</field>
+        <field name="question_id" ref="slide_ai_s5_02_q4"/>
+    </record>
+
+    </data>
+</odoo>
