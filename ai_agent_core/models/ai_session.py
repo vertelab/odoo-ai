@@ -2,8 +2,8 @@
 """ai.coworker.session — standalone session model for agent runs."""
 
 import json, logging, re, uuid
-from datetime import timedelta
-from odoo import models, fields, api, SUPERUSER_ID
+from datetime import date, timedelta
+from odoo import models, fields, api, SUPERUSER_ID, _
 
 _logger = logging.getLogger(__name__)
 
@@ -198,6 +198,71 @@ class AICoworkerSession(models.Model):
             vals['external_rss_kb'] = rss_kb
         self.sudo().write(vals)
         return vals
+
+    # ── Sessionsdomänen (coworker-session-smart-button D2) ─────────────
+    # EN definition av "månaden", använd av BÅDE räknaren på ai.coworker
+    # och det förvalda filtret i sökvyn. Två kopior glider isär när någon
+    # rör tidszonen eller create_date-hanteringen — det var precis vad som
+    # hände med `informative` i coworker-form-performance (Beslut 4).
+    SESSION_PERIODS = ('all', 'this_month', 'last_month', 'last_7_days')
+
+    @api.model
+    def _session_period_start(self, period):
+        """Startdatum för en namngiven period, eller None för 'all'.
+
+        Serverns tidszon (Python `date.today()`), samma uttryck som
+        `_token_totals_map` använder — `Sessions` och `Tokens` står bredvid
+        varandra i knappraden och måste slå om vid samma månadsskifte.
+        """
+        if period not in self.SESSION_PERIODS:
+            raise ValueError(
+                'Okänd sessionsperiod %r (giltiga: %s)'
+                % (period, ', '.join(self.SESSION_PERIODS)))
+        today = date.today()
+        if period == 'all':
+            return None
+        if period == 'this_month':
+            return date(today.year, today.month, 1)
+        if period == 'last_month':
+            return date(today.year - (today.month == 1),
+                        (today.month - 2) % 12 + 1, 1)
+        return today - timedelta(days=7)  # last_7_days
+
+    @api.model
+    def _session_period_end(self, period):
+        """Exklusiv slutgräns för en period (endast 'last_month' har en)."""
+        if period != 'last_month':
+            return None
+        return self._session_period_start('this_month')
+
+    @api.model
+    def _month_label(self):
+        """Aktuellt månadsnamn för knappetiketten, t.ex. "okt".
+
+        Serverns tidszon (samma månad som `_session_period_start`
+        beräknar), förkortat och översatt. Strängen går genom `_()` så att
+        `sv.po` kan sätta svenskt namn; `strftime('%b')` ger engelsk
+        förkortning i källspråket.
+        """
+        return _(date.today().strftime('%b'))
+
+    @api.model
+    def _session_domain(self, coworker_id, period='all'):
+        """Domän för en medarbetares sessioner inom en period.
+
+        `'all'` ger bara medarbetaren — ingen datumgräns. Det är domänen
+        smartknappen skickar, så att hela historiken går att nå; månaden
+        ligger som ett borttagbart förvalt filter i stället
+        (coworker-session-smart-button D1).
+        """
+        domain = [('coworker_id', '=', coworker_id)]
+        start = self._session_period_start(period)
+        if start:
+            domain.append(('create_date', '>=', start))
+        end = self._session_period_end(period)
+        if end:
+            domain.append(('create_date', '<', end))
+        return domain
 
     @api.model
     def _live_external_count(self):

@@ -138,6 +138,13 @@ def migrate(cr, version):
             filled)
 
     # ── 2. informative: NULL → false, därefter NOT NULL ────────────────
+    # pre-migrate körs FÖRE _auto_init, så ett fält som är nytt i den här
+    # versionen har ännu ingen kolumn. Skapa den först — annars faller
+    # backfillen på "column informative does not exist".
+    if not _column_exists(cr, 'ai_coworker_session_line', 'informative'):
+        cr.execute(
+            'ALTER TABLE ai_coworker_session_line '
+            'ADD COLUMN IF NOT EXISTS informative boolean DEFAULT false')
     normalized = _backfill_informative(cr)
     if normalized:
         _logger.info(

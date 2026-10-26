@@ -13351,3 +13351,80 @@ msgstr ""
 #: model_terms:ir.ui.view,arch_db:ai_agent_core.view_ai_okf_dashboard_form
 msgid "🧬 Migrera legacy-data → OKF"
 msgstr ""
+
+#. module: ai_agent_core
+#. odoo-python
+#: code:addons/ai_agent_core/models/ai_session.py:0
+msgid "Jan"
+msgstr "jan"
+
+#. module: ai_agent_core
+#. odoo-python
+#: code:addons/ai_agent_core/models/ai_session.py:0
+msgid "Feb"
+msgstr "feb"
+
+#. module: ai_agent_core
+#. odoo-python
+#: code:addons/ai_agent_core/models/ai_session.py:0
+msgid "Mar"
+msgstr "mar"
+
+#. module: ai_agent_core
+#. odoo-python
+#: code:addons/ai_agent_core/models/ai_session.py:0
+msgid "Apr"
+msgstr "apr"
+
+#. module: ai_agent_core
+#. odoo-python
+#: code:addons/ai_agent_core/models/ai_session.py:0
+msgid "May"
+msgstr "maj"
+
+#. module: ai_agent_core
+#. odoo-python
+#: code:addons/ai_agent_core/models/ai_session.py:0
+msgid "Jun"
+msgstr "jun"
+
+#. module: ai_agent_core
+#. odoo-python
+#: code:addons/ai_agent_core/models/ai_session.py:0
+msgid "Jul"
+msgstr "jul"
+
+#. module: ai_agent_core
+#. odoo-python
+#: code:addons/ai_agent_core/models/ai_session.py:0
+msgid "Aug"
+msgstr "aug"
+
+#. module: ai_agent_core
+#. odoo-python
+#: code:addons/ai_agent_core/models/ai_session.py:0
+msgid "Sep"
+msgstr "sep"
+
+#. module: ai_agent_core
+#. odoo-python
+#: code:addons/ai_agent_core/models/ai_session.py:0
+msgid "Oct"
+msgstr "okt"
+
+#. module: ai_agent_core
+#. odoo-python
+#: code:addons/ai_agent_core/models/ai_session.py:0
+msgid "Nov"
+msgstr "nov"
+
+#. module: ai_agent_core
+#. odoo-python
+#: code:addons/ai_agent_core/models/ai_session.py:0
+msgid "Dec"
+msgstr "dec"
+
+#. module: ai_agent_core
+#: model_terms:ir.ui.view,arch_db:ai_agent_core.view_ai_coworker_form
+msgid "Antal sessioner som startade denna månad. Klick öppnar samtliga sessioner — månaden ligger som ett filter du kan ta bort."
+msgstr "Antal sessioner som startade denna månad. Klick öppnar samtliga sessioner — månaden ligger som ett filter du kan ta bort."

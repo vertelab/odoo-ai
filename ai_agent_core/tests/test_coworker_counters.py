@@ -12,7 +12,9 @@ Dessa tester bevisar:
   2. Tokens läser samma aggregering som budgeten
   3. Odoo Mind räknar distinkta konceptnycklar (fem versioner = 1)
   4. arkiverade och superseded-koncept räknas inte
-  5. klicket öppnar exakt de rader räknaren räknade
+  5. klicket öppnar HELA historiken med månaden som borttagbart filter
+     (coworker-session-smart-button — upphäver F5.1:s "öppnar exakt de
+     sessionerna": månaden är en etikett, inte ett tak)
 """
 
 from datetime import date, timedelta
@@ -105,15 +107,36 @@ class TestCoworkerCounters(TransactionCase):
             ('create_date', '>=', month_start),
         ]))
 
-    def test_sessions_action_opens_the_same_rows(self):
-        """F5.1: klicket öppnar exakt de sessioner räknaren räknade."""
+    def test_sessions_action_opens_the_full_history(self):
+        """Upphäver F5.1 (coworker-session-smart-button).
+
+        Den gamla raden krävde att åtgärdens domän gav exakt samma antal som
+        räknaren — vilket gjorde månaden till ett tak: en session från
+        september gick inte att nå från formuläret. Nu gäller två saker:
+
+          (a) räknaren mäter fortfarande månaden, och
+          (b) åtgärdens domän har INGEN datumgräns — månaden ligger som
+              `search_default_this_month`, ett synligt filter som kan tas bort.
+        """
         self._session()
         self._session(days_ago=400)
         self.coworker.invalidate_recordset()
         action = self.coworker.action_get_sessions()
-        self.assertEqual(
-            self.Session.search_count(action['domain']),
-            self.coworker.session_count)
+
+        # (a) räknaren = månaden, inte totalen
+        self.assertEqual(self.coworker.session_count, 1)
+
+        # (b) åtgärden öppnar allt — ingen create_date i domänen
+        self.assertNotIn('create_date',
+                         [term[0] for term in action['domain']],
+                         'månaden får inte ligga i domänen — då blir den ett tak')
+        self.assertEqual(self.Session.search_count(action['domain']), 2)
+        self.assertEqual(action['context'].get('search_default_this_month'), 1,
+                         'månaden ska vara ett förvalt, borttagbart filter')
+        self.assertEqual(action.get('search_view_id'),
+                         self.env.ref('ai_agent_core.view_ai_session_search').id,
+                         'åtgärden ska peka på sessionens sökvy (annars finns '
+                         'inget this_month-filter att förvala)')
 
     def test_session_across_month_boundary_counts_once(self):
         """Sessions-specen: en session som startade förra månaden räknas där."""

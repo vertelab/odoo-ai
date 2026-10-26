@@ -161,8 +161,16 @@
                             <field name="agent_count" widget="statinfo"/>
                         </button>
                         <button name="action_get_sessions" class="oe_stat_button" type="object" icon="fa-flag-checkered"
-                                help="Sessioner som STARTADES i innevarande kalendermånad.">
-                            <field name="session_count" widget="statinfo" string="Sessions"/>
+                                help="Antal sessioner som startade denna månad. Klick öppnar samtliga sessioner — månaden ligger som ett filter du kan ta bort.">
+                            <div class="o_stat_info">
+                                <!-- Etiketten namnger månaden: "Sessions (okt)".
+                                     Utan månaden läses siffran som ett totalantal,
+                                     vilket var hela buggen
+                                     (coworker-session-smart-button D4). -->
+                                <span class="o_stat_text">Sessions</span>
+                                <span class="o_stat_value"><field name="session_count" widget="statinfo"/></span>
+                                <span class="o_stat_text"><field name="session_count_label"/></span>
+                            </div>
                         </button>
                         <button name="action_get_session_lines" class="oe_stat_button" type="object" icon="fa-money"
                                 help="Systemtokens för innevarande kalendermånad (informativa rader uteslutna).">

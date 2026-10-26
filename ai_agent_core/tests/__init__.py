@@ -108,3 +108,8 @@ from . import test_token_totals
 from . import test_session_object_lineage
 from . import test_session_object_navigation
 from . import test_coworker_counters
+
+# coworker-session-smart-button: räknaren mäter månaden, listan visar allt.
+# `_session_domain` är EN definition av månaden — delad av räknaren och
+# sökvyns `this_month`-filter — så att siffran och listan inte kan glida isär.
+from . import test_session_smart_button

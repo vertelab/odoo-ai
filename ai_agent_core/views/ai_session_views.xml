@@ -20,8 +20,22 @@
                         domain="[('create_date','&gt;=',context_today()-datetime.timedelta(days=7))]"/>
                 <filter name="last_30_days" string="Senaste 30 dagar"
                         domain="[('create_date','&gt;=',context_today()-datetime.timedelta(days=30))]"/>
+                <!-- Månadsfiltret är SAMMA definition som räknaren på
+                     ai.coworker använder (`_session_domain(id,'this_month')`:
+                     create_date >= första dagen i innevarande kalendermånad).
+                     Det öppnas som FÖRVALT filter från smartknappen
+                     (coworker-session-smart-button) — månaden är en synlig,
+                     borttagbar avgränsning, aldrig ett tak i domänen.
+                     Namnet `this_month` MÅSTE matcha `search_default_this_month`
+                     i action_get_sessions; ett stavfel ger tyst ofiltrerad lista. -->
+                <filter name="this_month" string="Denna månad"
+                        domain="[('create_date','&gt;=', context_today() - relativedelta(day=1, hour=0, minute=0, second=0))]"/>
+                <filter name="last_month" string="Förra månaden"
+                        domain="[('create_date','&gt;=', context_today() - relativedelta(months=1, day=1, hour=0, minute=0, second=0)),('create_date','&lt;', context_today() - relativedelta(day=1, hour=0, minute=0, second=0))]"/>
                 <!-- OBS: använder INTE .weekday()/.replace() i domäner — de kraschar
-                     i Odoo-webklientens domän-evaluator (fnValue is not a function). -->
+                     i Odoo-webklientens domän-evaluator (fnValue is not a function).
+                     `relativedelta(day=1)` är idiomets säkra form (jfr OCA
+                     hr_attendance_full_history, mgmtsystem_sam). -->
                 <separator/>
                 <filter name="has_record_context" string="Med rekordkontext"
                         domain="[('ai_record_model','!=',False)]"/>
@@ -31,6 +45,14 @@
                 <group expand="0" string="Gruppera efter">
                     <filter name="group_started" string="Started"
                             context="{'group_by':'create_date'}"/>
+                    <!-- Månadsgruppering: den billigaste vägen till "hur såg
+                         augusti ut?" (coworker-session-smart-button D5). -->
+                    <filter name="group_by_month" string="Månad"
+                            context="{'group_by':'create_date:month'}"/>
+                    <filter name="group_status" string="Status"
+                            context="{'group_by':'status'}"/>
+                    <filter name="group_init_type" string="Start via"
+                            context="{'group_by':'init_type'}"/>
                     <!-- Sessionens användare är grupperbar (sessions-specen):
                          en grupp per användare, användarlösa sessioner hamnar i
                          en synlig "(inget)"-grupp. user_id är indexerat. -->

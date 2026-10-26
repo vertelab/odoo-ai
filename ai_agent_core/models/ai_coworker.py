@@ -755,6 +755,13 @@ class AICoworker(models.Model):
     use_core_loop = fields.Boolean('Use Core Loop', default=False)
 
     session_count = fields.Integer(compute='_compute_session_count')
+    # Etiketten på smartknappen: "Sessions (okt)". Månadsnamnet kommer ur
+    # serverns tidszon (samma som räknaren) och översätts — annars läses
+    # siffran som ett totalantal, vilket var hela buggen
+    # (coworker-session-smart-button D4). Icke-lagrad: ett månadsskifte är
+    # ingen skrivning.
+    session_count_label = fields.Char(
+        compute='_compute_session_count_label', store=False)
     session_ids = fields.One2many('ai.coworker.session', 'coworker_id')
     session_object_count = fields.Integer(compute='_compute_session_object_count')
 
@@ -1929,15 +1936,27 @@ class AICoworker(models.Model):
         (coworker-form-performance: "Räknarna mäter kalendermånad"). En
         session som startade förra månaden men fortsatte i denna räknas i
         den månad den startade.
+
+        Domänen hämtas ur `_session_domain` — SAMMA definition som det
+        förvalda `this_month`-filtret i sessionslistan använder, så att
+        siffran och listan aldrig kan visa olika saker
+        (coworker-session-smart-button D2).
         """
-        from datetime import date
-        today = date.today()
-        month_start = date(today.year, today.month, 1)
+        Session = self.env['ai.coworker.session']
         for r in self:
-            r.session_count = self.env['ai.coworker.session'].search_count([
-                ('coworker_id', '=', r.id),
-                ('create_date', '>=', month_start),
-            ])
+            r.session_count = Session.search_count(
+                Session._session_domain(r.id, 'this_month'))
+
+    def _compute_session_count_label(self):
+        """"Sessions (okt)" — månaden i etiketten, inte bara i hjälptexten.
+
+        Månadsnamnet hämtas ur `_month_label()` (serverns tidszon, samma
+        månad som räknaren mäter) och går genom `_()` så att svensk UI visar
+        svenskt månadsnamn. Etiketten är icke-lagrad, precis som räknaren.
+        """
+        label = self.env['ai.coworker.session']._month_label()
+        for r in self:
+            r.session_count_label = label
 
     @api.depends('session_line_ids.token_sys', 'session_line_ids.create_date')
     def _compute_session_line_count(self):
@@ -5818,21 +5837,29 @@ class AICoworker(models.Model):
         return {'type': 'ir.actions.act_url', 'url': url, 'target': 'new'}
 
     def action_get_sessions(self):
-        """Smartknapp: sessioner som STARTADES i innevarande kalendermånad.
+        """Smartknapp: sessioner — månaden som FÖRVALT FILTER, inte som tak.
 
-        Räknaren mäter månaden (coworker-form-performance), så listan måste
-        göra det också — annars visar knappen 724 och öppnar 5 335.
+        Räknaren mäter innevarande kalendermånad (coworker-form-performance).
+        Tidigare byggde den här åtgärden samma domän, vilket gjorde månaden
+        till en osynlig gräns: en session från september gick inte att nå från
+        formuläret, och inget i UI:t sa att något filtrerats bort.
+
+        Nu är domänen bara medarbetaren. Månaden ligger som
+        `search_default_this_month` — ett synligt filter i sökfältet som går
+        att ta bort med ett klick, varefter hela historiken visas i samma
+        lista. Domänen för filtret är samma `_session_domain(id, 'this_month')`
+        som räknaren använder, så siffran och listan kan inte glida isär
+        (coworker-session-smart-button D1/D2).
         """
-        from datetime import date
-        month_start = date(date.today().year, date.today().month, 1)
         return {
             'name': 'Sessions', 'type': 'ir.actions.act_window',
             'res_model': 'ai.coworker.session', 'view_mode': 'list,form',
             'views': [[False, 'list'], [False, 'form']],
+            'search_view_id': self.env.ref(
+                'ai_agent_core.view_ai_session_search').id,
             'target': 'current',
-            'domain': [('coworker_id', '=', self.id),
-                       ('create_date', '>=', month_start)],
-            'context': {'search_default_group_started': 1},
+            'domain': [('coworker_id', '=', self.id)],
+            'context': {'search_default_this_month': 1},
         }
 
     def action_get_memory(self):
