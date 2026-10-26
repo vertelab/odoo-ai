@@ -13,6 +13,7 @@ men kräver ingen internetåtkomst för de blockerade fallen (literal-IP och
 scheman kontrolleras utan DNS).
 """
 import asyncio
+import unittest
 
 from odoo.tests import tagged
 from odoo.tests.common import TransactionCase
@@ -22,6 +23,7 @@ from odoo.addons.ai_agent_core.core.ssrf import (
     validate_redirect,
     validate_url,
 )
+from odoo.addons.ai_agent_core.core.tools import _looks_relevant
 
 
 @tagged('post_install', '-at_install')
@@ -126,3 +128,33 @@ class TestFetchUrlSsrf(TransactionCase):
         self.assertEqual(data.get('parameter'), 'url')
         self.assertFalse(data.get('retryable', True))
         self.assertTrue(data.get('hint'))
+
+
+class TestLookRelevant(unittest.TestCase):
+    """Relevanskontrollen som fångar DDGS skräpsvar.
+
+    DuckDuckGo svarar ibland med orelaterade träffar (Telenor för
+    "saltstack pillar") i stället för att returnera 429. Kontrollen är
+    grov med flit — den ska bara fånga uppenbart skräp.
+    """
+
+    def test_relevant(self):
+        results = [{'title': 'Pillar Walkthrough - Salt',
+                    'body': 'Pillar is important',
+                    'href': 'https://docs.saltproject.io/pillar'}]
+        self.assertTrue(_looks_relevant('saltstack pillar', results))
+
+    def test_irrelevant(self):
+        # Verkligt fall: "saltstack pillar" gav Telenor.
+        results = [{'title': 'Telenor på svenskehandel',
+                    'body': 'Finansavisen',
+                    'href': 'https://finansavisen.no/telenor'}]
+        self.assertFalse(_looks_relevant('saltstack pillar', results))
+
+    def test_short_query_trusted(self):
+        # Kan inte bedöma korta frågor — lita på resultatet.
+        self.assertTrue(_looks_relevant('ab cd',
+                                        [{'title': 'X', 'body': '', 'href': ''}]))
+
+    def test_empty_results(self):
+        self.assertTrue(_looks_relevant('saltstack pillar', []))

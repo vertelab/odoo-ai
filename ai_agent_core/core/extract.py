@@ -174,3 +174,120 @@ def extract_readable(html: str, url: str = '', max_length: int = 5000) -> str:
 
     text = _tidy(text or '')
     return text[:max_length] if len(text) > max_length else text
+
+
+# ---------------------------------------------------------------------------
+# PDF
+# ---------------------------------------------------------------------------
+
+def is_pdf(content_type: str = '', data: bytes = b'') -> bool:
+    """Är svaret en PDF?
+
+    Content-Type ljuger ibland (särskilt bakom proxys), så filsignaturen
+    ``%PDF-`` kontrolleras också.
+    """
+    if 'application/pdf' in (content_type or '').lower():
+        return True
+    return bool(data) and data[:5] == b'%PDF-'
+
+
+def extract_pdf(data: bytes, max_length: int = 5000) -> str:
+    """Extrahera text ur en PDF med PyMuPDF.
+
+    PyMuPDF (fitz) är redan installerat för andra delar av stacken. Det är
+    snabbare och mer tolerant mot trasiga PDF:er än rena Python-läsare.
+
+    :return: text, eller tom sträng om PDF:en saknar textlager (skannad
+             bild — då krävs OCR, som inte görs här).
+    """
+    if not data:
+        return ''
+    # `import pymupdf` är det aktuella namnet; `fitz` är deprecated och
+    # varnar vid import. Behåll fitz som fallback för äldre installationer.
+    try:
+        import pymupdf
+    except ImportError:
+        try:
+            import fitz as pymupdf
+        except ImportError:
+            return ''
+    try:
+        doc = pymupdf.open(stream=data, filetype='pdf')
+    except Exception:
+        return ''
+    try:
+        parts = []
+        for page in doc:
+            try:
+                parts.append(page.get_text('text'))
+            except Exception:
+                continue
+            # Sluta tidigt när vi har mer än nog — stora PDF:er ska inte
+            # läsas klart i onödan.
+            if sum(len(p) for p in parts) > max_length * 2:
+                break
+        text = '\n'.join(parts)
+    finally:
+        try:
+            doc.close()
+        except Exception:
+            pass
+    text = _tidy(text)
+    return text[:max_length] if len(text) > max_length else text
+
+
+# ---------------------------------------------------------------------------
+# YouTube
+# ---------------------------------------------------------------------------
+
+_YOUTUBE_ID = re.compile(
+    r'(?:youtube\.com/(?:watch\?(?:.*&)?v=|embed/|shorts/|live/)|'
+    r'youtu\.be/)([A-Za-z0-9_-]{11})'
+)
+
+
+def youtube_video_id(url: str) -> str | None:
+    """Plocka ut video-ID ur en YouTube-URL, annars None."""
+    if not url:
+        return None
+    match = _YOUTUBE_ID.search(url)
+    return match.group(1) if match else None
+
+
+def extract_youtube(url: str, max_length: int = 5000,
+                    languages: tuple = ('en', 'sv')) -> str:
+    """Hämta transkript för en YouTube-video.
+
+    Transkriptet är det enda meningsfulla att ge en textmodell — videon
+    kan inte ses. Saknas undertexter returneras en förklaring, inte tom
+    sträng, så modellen vet varför.
+
+    :return: transkript, eller förklarande text om det inte finns
+    """
+    video_id = youtube_video_id(url)
+    if not video_id:
+        return ''
+    try:
+        from youtube_transcript_api import YouTubeTranscriptApi
+    except ImportError:
+        return ''
+    try:
+        api = YouTubeTranscriptApi()
+        fetched = api.fetch(video_id, languages=list(languages))
+    except Exception as exc:
+        # Vanligaste fallet: videon saknar undertexter, eller är
+        # åldersbegränsad/geoblockerad. Ett försök utan språkval fångar
+        # videor som bara har auto-genererade spår på annat språk.
+        try:
+            fetched = YouTubeTranscriptApi().fetch(video_id)
+        except Exception:
+            return (f'YouTube video {video_id} has no accessible transcript '
+                    f'({type(exc).__name__}). The video content cannot be read '
+                    f'as text.')
+    lines = []
+    for snippet in getattr(fetched, 'snippets', []) or []:
+        text = (getattr(snippet, 'text', '') or '').strip()
+        if text:
+            lines.append(text)
+    joined = _tidy(' '.join(lines))
+    return joined[:max_length] if len(joined) > max_length else joined

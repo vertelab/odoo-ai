@@ -12,12 +12,17 @@ Serialization is lazy — only when needed for API calls.
 
 import json
 import logging
+import time as _time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Awaitable, List, Dict, Optional
 
 from odoo.addons.ai_agent_core.core.extract import (
     extract_meta_refresh,
+    extract_pdf,
     extract_readable,
+    extract_youtube,
+    is_pdf,
+    youtube_video_id,
 )
 from odoo.addons.ai_agent_core.core.ssrf import (
     MAX_REDIRECTS,
@@ -446,10 +451,37 @@ def _tool_personal_memory(env, action: str = "", content: str = "",
     }, ensure_ascii=False)
 
 
-async def _tool_web_search(query: str = "", max_results: int = 5) -> str:
+def _looks_relevant(query: str, results: list) -> bool:
+    """Grov relevanskontroll av sökträffar.
+
+    DuckDuckGo svarar ibland med orelaterade resultat (Telenor för
+    "saltstack pillar") i stället för att returnera 429. Vi kan inte
+    avgöra relevans säkert, men om INGEN träff innehåller något av frågans
+    meningsbärande ord är svaret med stor sannolikhet skräp.
+
+    Kortare ord (< 4 tecken) hoppas över — de matchar för brett.
+    """
+    if not results:
+        return True  # inget att bedöma — låt anroparen hantera tomt svar
+    words = [w for w in (query or '').lower().split() if len(w) >= 4]
+    if not words:
+        return True  # kan inte bedöma, lita på resultatet
+    haystack = ' '.join(
+        f"{r.get('title', '')} {r.get('body', '')} {r.get('href', '')}"
+        for r in results
+    ).lower()
+    return any(w in haystack for w in words)
+
+
+async def _tool_web_search(query: str = "", max_results: int = 5,
+                            recency: str = "") -> str:
     """Search the web. Uses DuckDuckGo (DDGS); fallback till HTML-scrape
-    om cert-laddning misslyckas (odoo-användaren saknar läsrätt till
-    /usr/local/share/ca-certificates/mycacert.crt)."""
+    hos DuckDuckGo, Bing och Brave.
+
+    ``recency`` begränsar träffarna i tid. Pi har samma parameter
+    (recencyFilter) — nyheter och versionsinformation är ofta värdelös om
+    den är två år gammal.
+    """
     if not query or not query.strip():
         return _missing_argument_error(
             'query', 'a search query (1-200 characters)',
@@ -459,19 +491,53 @@ async def _tool_web_search(query: str = "", max_results: int = 5) -> str:
         max_results = max(1, min(int(max_results or 5), 15))
     except (TypeError, ValueError):
         max_results = 5
-    # 1. DDGS (primärt)
+
+    # recency → DDGS timelimit (d/w/m/y) + scrape-leverantörernas datumfilter
+    recency = (recency or '').strip().lower()
+    if recency not in ('', 'day', 'week', 'month', 'year'):
+        return _invalid_value_error(
+            'recency', 'one of: day, week, month, year (or empty for all time)',
+            recency, example='week', tool_name='web_search',
+            retryable=False).to_json()
+    _timelimit = {'day': 'd', 'week': 'w', 'month': 'm', 'year': 'y'}.get(recency)
+    # Bing/DDG HTML använder df=freshness; Brave använder tf.
+    _df = {'day': 'd', 'week': 'w', 'month': 'm', 'year': 'y'}.get(recency)
+
+    # 1. DDGS (primärt). Paketet heter numera `ddgs` — det gamla
+    # `duckduckgo_search` är omdöpt och returnerar allt oftare 0 träffar
+    # (ratelimiting). Prova det nya namnet först, fall tillbaka på det
+    # gamla för maskiner som inte uppgraderats.
     try:
-        from duckduckgo_search import DDGS
-        results = list(DDGS().text(query, max_results=max_results))
-        if results:
+        try:
+            from ddgs import DDGS
+        except ImportError:
+            from duckduckgo_search import DDGS
+        _kw = {'max_results': max_results}
+        if _timelimit:
+            _kw['timelimit'] = _timelimit
+        # DDGS ratelimitar och kan ge 0 träffar — eller helt orelaterade
+        # träffar (Telenor för "saltstack pillar") — på ett försök som
+        # lyckas nästa gång. Mätt: samma fråga gav 0, 0, 3. Två försök med
+        # kort paus tar bort de flesta falska svar.
+        for attempt in range(2):
+            results = list(DDGS().text(query, **_kw))
+            if not results:
+                if attempt == 0:
+                    _time.sleep(0.6)
+                continue
+            if not _looks_relevant(query, results) and attempt == 0:
+                _time.sleep(0.8)
+                continue
             return "\n".join(
                 f"{i+1}. {r.get('title','?')}\n   {r.get('body','')[:200]}\n   {r.get('href','')}"
                 for i, r in enumerate(results)
             )
     except ImportError:
         pass
-    except Exception:
-        pass
+    except Exception as exc:
+        # Tyst sväljning dolde att DDGS kastade — logga så nästa felsökning
+        # inte börjar om från noll.
+        _logger.warning('web_search: DDGS misslyckades: %s', exc)
     # 2+3+4. HTML-scrape med flera leverantörer (fallback): DuckDuckGo är
     # blockerad/ej nabbara från vissa nät (verifierat på ledningssystem:
     # html.duckduckgo.com ger ingen anslutning) — försök därför även Bing
@@ -504,12 +570,19 @@ async def _tool_web_search(query: str = "", max_results: int = 5) -> str:
             async with _httpx.AsyncClient(timeout=20,
                                           follow_redirects=True) as client:
                 r = await client.get(url, headers={'User-Agent': UA})
-                if r.status_code != 200:
+                # DDG svarar 202 (rate-limit) och Brave 429 — men båda kan
+                # ändå leverera HTML med träffar. Parsa allt utom rena fel.
+                if r.status_code >= 400:
+                    _logger.info('web_search: %s svarade %s', label,
+                                 r.status_code)
                     return None
             soup = _Soup(r.text, 'html.parser')
             items = parser(soup)
+            if not items:
+                _logger.info('web_search: %s gav inga parsade träffar', label)
             return items
-        except Exception:
+        except Exception as exc:
+            _logger.info('web_search: %s misslyckades: %s', label, exc)
             return None
 
     async def _to_lines(items):
@@ -536,7 +609,8 @@ async def _tool_web_search(query: str = "", max_results: int = 5) -> str:
         return res
 
     links = await _search('ddg',
-        'https://html.duckduckgo.com/html/?q=' + _q(query) + '&kl=wt-wt&l=wt-wt',
+        'https://html.duckduckgo.com/html/?q=' + _q(query) + '&kl=wt-wt&l=wt-wt'
+        + ('&df=' + _df if _df else ''),
         _ddg)
     if links:
         lines = await _to_lines(links)
@@ -555,7 +629,13 @@ async def _tool_web_search(query: str = "", max_results: int = 5) -> str:
                         sn.get_text(strip=True) if sn else ''))
         return res
 
-    lines2 = await _search('bing', 'https://www.bing.com/search?q=' + _q(query), _bing)
+    _bing_url = 'https://www.bing.com/search?q=' + _q(query)
+    if _df:
+        # Bing använder filters=ex1:"ez5" för senaste dygnet osv. Den enkla
+        # formen (&filters=ex1%3a%22ez<kod>%22) är stabil över tid.
+        _bing_fresh = {'d': '1', 'w': '2', 'm': '3', 'y': '4'}[_df]
+        _bing_url += '&filters=ex1%3a%22ez' + _bing_fresh + '%22'
+    lines2 = await _search('bing', _bing_url, _bing)
     out = await _to_lines(lines2 or [])
     if out:
         return '\n'.join(out)
@@ -573,13 +653,17 @@ async def _tool_web_search(query: str = "", max_results: int = 5) -> str:
                             sn.get_text(strip=True) if sn else ''))
         return res
 
-    lines3 = await _search('brave', 'https://search.brave.com/search?q=' + _q(query), _brave)
+    _brave_url = 'https://search.brave.com/search?q=' + _q(query)
+    if _df:
+        _brave_url += '&tf=' + {'d': 'pd', 'w': 'pw', 'm': 'pm', 'y': 'py'}[_df]
+    lines3 = await _search('brave', _brave_url, _brave)
     out3 = await _to_lines(lines3 or [])
     if out3:
         return '\n'.join(out3)
 
-    return ("No web results (DuckDuckGo/Bing/Brave nåddes inte eller gav "
-            "inga träffar för denna sökning). Prova en mer specifik fråga.")
+    return ("No web results. DuckDuckGo, Bing and Brave were tried; the "
+            "search engines may be rate-limiting, or the query may be too "
+            "narrow. Retry once, or rephrase the query.")
 
 
 async def _tool_fetch_url(url: str = "", max_length: int = 5000,
@@ -610,6 +694,14 @@ async def _tool_fetch_url(url: str = "", max_length: int = 5000,
         max_length = max(1000, min(int(max_length or 5000), 20000))
     except (TypeError, ValueError):
         max_length = 5000
+
+    # YouTube: transkriptet är det enda meningsfulla att ge en textmodell —
+    # videon kan inte ses. Görs före hämtningen; att ladda videosidan hade
+    # bara gett HTML-skalet.
+    if youtube_video_id(url):
+        transcript = extract_youtube(url, max_length)
+        if transcript:
+            return transcript
 
     # SSRF-skydd: URL:en kommer från en LLM som kan ha fått den från en
     # webbsida (prompt injection). Utan kontroll kan den nå molnmetadata,
@@ -665,6 +757,16 @@ async def _tool_fetch_url(url: str = "", max_length: int = 5000,
                 validate_redirect(url, target, hop + 1)
                 r = await client.get(target, headers={'User-Agent': 'Odoo-AI/1.0'})
                 r.raise_for_status()
+
+        # PDF: extrahera textlagret. Content-Type ljuger ibland, så
+        # filsignaturen kontrolleras också.
+        content = r.content or b''
+        if is_pdf(r.headers.get('content-type', ''), content):
+            text = extract_pdf(content, max_length)
+            if not text:
+                return ('The PDF was fetched but has no text layer — it is '
+                        'probably a scanned image, which needs OCR.')
+            return text
 
         # Riktig artikelutvinning i stället för soup.get_text(): den senare
         # returnerade menyrader, cookie-banners och brödsmulor, så modellen
@@ -956,9 +1058,10 @@ def builtin_tools() -> list[Tool]:
         ),
         Tool(
             name="odoo_web_search",
-            description="Search the web for current information. Uses DuckDuckGo (free, no API key). "
-                        "Returns top results with title, snippet, and URL. Good for finding documentation, "
-                        "news, or anything online.",
+            description="Search the web for current information. Uses DuckDuckGo "
+                        "(free, no API key) with Bing and Brave as fallback. "
+                        "Returns top results with title, snippet and URL. Good for "
+                        "documentation, news and anything online.",
             parameters={
                 "type": "object",
                 "properties": {
@@ -971,6 +1074,13 @@ def builtin_tools() -> list[Tool]:
                         "type": "integer",
                         "description": "Maximum number of results to return (1-15, default 5)",
                     },
+                    "recency": {
+                        "type": "string",
+                        "enum": ["day", "week", "month", "year"],
+                        "description": "Limit results by age. Leave empty for all "
+                                       "time. Use for news, releases and anything "
+                                       "where an old answer is wrong.",
+                    },
                 },
                 "required": ["query"],
             },
@@ -980,11 +1090,11 @@ def builtin_tools() -> list[Tool]:
         ),
         Tool(
             name="odoo_fetch_url",
-            description="Fetch a web page and return its readable text (article body, "
-                        "not menus or cookie banners). Handles HTTP redirects and "
-                        "meta-refresh pages. Private, loopback and cloud-metadata "
-                        "addresses are blocked. Useful for articles, documentation, "
-                        "blogs and API docs.",
+            description="Fetch a URL and return its readable text. Handles web pages "
+                        "(article body, not menus or cookie banners), PDFs (text "
+                        "layer) and YouTube videos (transcript). Follows HTTP "
+                        "redirects and meta-refresh pages. Private, loopback and "
+                        "cloud-metadata addresses are blocked.",
             parameters={
                 "type": "object",
                 "properties": {
@@ -998,9 +1108,10 @@ def builtin_tools() -> list[Tool]:
                     },
                     "prompt": {
                         "type": "string",
-                        "description": "What you are looking for on the page. Helps you "
-                                       "read the result in context (e.g. 'the retry "
-                                       "timeout for uploads').",
+                        "description": "What you are looking for. Does not filter the "
+                                       "result — the full text is returned — but it "
+                                       "keeps your intent attached to the fetch "
+                                       "(e.g. 'the retry timeout for uploads').",
                     },
                 },
                 "required": ["url"],
