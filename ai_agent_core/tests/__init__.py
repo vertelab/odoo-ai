@@ -115,3 +115,10 @@ from . import test_coworker_counters
 # `_session_domain` är EN definition av månaden — delad av räknaren och
 # sökvyns `this_month`-filter — så att siffran och listan inte kan glida isär.
 from . import test_session_smart_button
+
+# fix-personal-memory-budget-scope D5: stilleståndsvarningen och budget-scopet.
+# Filerna fanns men var inte importerade — samma fälla som test_okf_mixin och
+# test_workspace: testerna körs aldrig, vilket är varför varningen kunde sakna
+# en röd test medan kön stod still i 3 dygn.
+from . import test_okf_stall_warning
+from . import test_okf_personal_budget_scope

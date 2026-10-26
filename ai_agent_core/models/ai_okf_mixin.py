@@ -1259,6 +1259,12 @@ class AIOkfMixin(models.AbstractModel):
         EN `search_count` + EN `search` per modell — inte per post. Anropas
         från dashboarden, som öppnas sällan; cronen räknar sitt eget ködjup
         i `_okf_cron_index_dirty` och använder inte denna metod.
+
+        D5 (2026-10-25): `oldest_age_s` är också grunden för
+        stilleståndsvarningen. En nyckel `ai_agent_core.okf_stall_warned.<model>`
+        lagrar vilket dygn en varning har skickats för modellen, så en
+        varning kommer högst en gång per dygn per modell — inte varje
+        cron-varv (288 gånger i dygnet är brus, inte ett larm).
         """
         now = fields.Datetime.now()
         priority = set(self._okf_priority_indexable())
@@ -1396,14 +1402,6 @@ class AIOkfMixin(models.AbstractModel):
         # Kvarvarande platser efter att alla fått sin andel, att ge bort
         # när en modell har mer att indexera än sin andel.
         spare = max(0, cap - per_model * len(ordered))
-
-        # D5 (2026-10-25): stilleståndsvarning. `failure_count` är 0 även
-        # när indexeringen kastar fel per post, så den enda ärliga signalen
-        # är åldern på den äldsta kvarvarande dirty-posten. Körs före loopen
-        # — en varning ska komma även det varv som tar slut på tiden.
-        for model_name in ordered:
-            self._okf_check_stall(model_name)
-
 
         # D5 (2026-10-25): stilleståndsvarning. `failure_count` är 0 även
         # när indexeringen kastar fel per post, så den enda ärliga signalen
