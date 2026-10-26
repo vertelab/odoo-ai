@@ -13428,3 +13428,63 @@ msgstr "dec"
 #: model_terms:ir.ui.view,arch_db:ai_agent_core.view_ai_coworker_form
 msgid "Antal sessioner som startade denna månad. Klick öppnar samtliga sessioner — månaden ligger som ett filter du kan ta bort."
 msgstr "Antal sessioner som startade denna månad. Klick öppnar samtliga sessioner — månaden ligger som ett filter du kan ta bort."
+
+#. module: ai_agent_core
+#: model:ir.model.fields.selection,name:ai_agent_core.selection__ai_coworker_session__month_label__jan
+msgid "Jan"
+msgstr "jan"
+
+#. module: ai_agent_core
+#: model:ir.model.fields.selection,name:ai_agent_core.selection__ai_coworker_session__month_label__feb
+msgid "Feb"
+msgstr "feb"
+
+#. module: ai_agent_core
+#: model:ir.model.fields.selection,name:ai_agent_core.selection__ai_coworker_session__month_label__mar
+msgid "Mar"
+msgstr "mar"
+
+#. module: ai_agent_core
+#: model:ir.model.fields.selection,name:ai_agent_core.selection__ai_coworker_session__month_label__apr
+msgid "Apr"
+msgstr "apr"
+
+#. module: ai_agent_core
+#: model:ir.model.fields.selection,name:ai_agent_core.selection__ai_coworker_session__month_label__may
+msgid "May"
+msgstr "maj"
+
+#. module: ai_agent_core
+#: model:ir.model.fields.selection,name:ai_agent_core.selection__ai_coworker_session__month_label__jun
+msgid "Jun"
+msgstr "jun"
+
+#. module: ai_agent_core
+#: model:ir.model.fields.selection,name:ai_agent_core.selection__ai_coworker_session__month_label__jul
+msgid "Jul"
+msgstr "jul"
+
+#. module: ai_agent_core
+#: model:ir.model.fields.selection,name:ai_agent_core.selection__ai_coworker_session__month_label__aug
+msgid "Aug"
+msgstr "aug"
+
+#. module: ai_agent_core
+#: model:ir.model.fields.selection,name:ai_agent_core.selection__ai_coworker_session__month_label__sep
+msgid "Sep"
+msgstr "sep"
+
+#. module: ai_agent_core
+#: model:ir.model.fields.selection,name:ai_agent_core.selection__ai_coworker_session__month_label__oct
+msgid "Oct"
+msgstr "okt"
+
+#. module: ai_agent_core
+#: model:ir.model.fields.selection,name:ai_agent_core.selection__ai_coworker_session__month_label__nov
+msgid "Nov"
+msgstr "nov"
+
+#. module: ai_agent_core
+#: model:ir.model.fields.selection,name:ai_agent_core.selection__ai_coworker_session__month_label__dec
+msgid "Dec"
+msgstr "dec"

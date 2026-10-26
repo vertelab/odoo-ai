@@ -235,16 +235,38 @@ class AICoworkerSession(models.Model):
             return None
         return self._session_period_start('this_month')
 
+    # Månadsnamnen som ett `Selection`-FÄLT, inte som `_()` på `strftime('%b')`.
+    # Varför: `_()` på kodtermer kräver att `code_translations` laddar
+    # modulens `sv.po` via `file_open` — och i drift trunkerar den läsningen
+    # (92 kod-poster finns i filen, men `get_python_translations()` returnerar
+    # 0 för modulen), så etiketten blev "Oct" i svensk UI. Ett
+    # `Selection`-fält översätts via fältets jsonb-värde, som laddas av
+    # moduluppgraderingen och bevisligen fungerar i drift.
+    month_label = fields.Selection([
+        ('Jan', 'Jan'), ('Feb', 'Feb'), ('Mar', 'Mar'), ('Apr', 'Apr'),
+        ('May', 'May'), ('Jun', 'Jun'), ('Jul', 'Jul'), ('Aug', 'Aug'),
+        ('Sep', 'Sep'), ('Oct', 'Oct'), ('Nov', 'Nov'), ('Dec', 'Dec'),
+    ], string='Månad', compute='_compute_month_label')
+
+    def _compute_month_label(self):
+        key = date.today().strftime('%b')
+        valid = {k for k, _v in self._fields['month_label'].selection}
+        value = key if key in valid else False
+        for r in self:
+            r.month_label = value
+
     @api.model
     def _month_label(self):
         """Aktuellt månadsnamn för knappetiketten, t.ex. "okt".
 
         Serverns tidszon (samma månad som `_session_period_start`
-        beräknar), förkortat och översatt. Strängen går genom `_()` så att
-        `sv.po` kan sätta svenskt namn; `strftime('%b')` ger engelsk
-        förkortning i källspråket.
+        beräknar). Översättningen hämtas ur `month_label`-fältets
+        `Selection` — fältöversättning fungerar i drift där kodtermer inte
+        gör det (se kommentaren ovan).
         """
-        return _(date.today().strftime('%b'))
+        key = date.today().strftime('%b')
+        field = self._fields['month_label']
+        return dict(field._description_selection(self.env)).get(key, key)
 
     @api.model
     def _session_domain(self, coworker_id, period='all'):
