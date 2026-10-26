@@ -380,12 +380,21 @@ class TestPersistSessionRetry(common.TransactionCase):
         })
 
     def _call(self, persist_fn, max_attempts=3):
+        from unittest.mock import patch
         from odoo.addons.ai_agent_core.controllers.stream import (
             _persist_session_with_retry)
         session = self._session()
-        return _persist_session_with_retry(
-            self.env.cr, self.env, session, 'svar', 1, 2, '',
-            None, None, persist_fn, max_attempts=max_attempts)
+        # _persist_session_with_retry kommiterar och rullar tillbaka — det är
+        # hela poängen (retry vid serialiseringskonflikt kräver en riktig
+        # transaktionsgräns). TransactionCase sätter `forbidden` på
+        # INSTANSMETODERNA commit/rollback (common.py), så de måste patchas
+        # på instansen — inte på klassen. Testet gäller retry-logiken, inte
+        # transaktionssemantik.
+        with patch.object(self.env.cr, 'commit', lambda *a, **kw: None), \
+                patch.object(self.env.cr, 'rollback', lambda *a, **kw: None):
+            return _persist_session_with_retry(
+                self.env.cr, self.env, session, 'svar', 1, 2, '',
+                None, None, persist_fn, max_attempts=max_attempts)
 
     def test_happy_path_succeeds_first_try(self):
         calls = []

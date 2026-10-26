@@ -15,6 +15,10 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Callable, Awaitable, List, Dict, Optional
 
+from odoo.addons.ai_agent_core.core.extract import (
+    extract_meta_refresh,
+    extract_readable,
+)
 from odoo.addons.ai_agent_core.core.ssrf import (
     MAX_REDIRECTS,
     REDIRECT_STATUSES,
@@ -245,15 +249,12 @@ async def _tool_news_fetch(url: str = "", limit: int = 20) -> str:
 
     try:
         import httpx
-        try:
-            async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
-                r = await client.get(
-                    url, headers={'User-Agent': 'Odoo-AI/1.0 (+news)'})
-        except Exception:
-            async with httpx.AsyncClient(timeout=15, verify=False,
-                                         follow_redirects=True) as client:
-                r = await client.get(
-                    url, headers={'User-Agent': 'Odoo-AI/1.0 (+news)'})
+        # Cert-validering är PÅ. Den tidigare verify=False-fallbacken dolde
+        # det verkliga felet genom att göra om anropet osäkert så fort
+        # något gick fel — inklusive 404 och timeout.
+        async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
+            r = await client.get(
+                url, headers={'User-Agent': 'Odoo-AI/1.0 (+news)'})
         r.raise_for_status()
         items = _parse_feed_xml(r.text)
     except ImportError as e:
@@ -500,7 +501,7 @@ async def _tool_web_search(query: str = "", max_results: int = 5) -> str:
 
     async def _search(label, url, parser):
         try:
-            async with _httpx.AsyncClient(timeout=20, verify=False,
+            async with _httpx.AsyncClient(timeout=20,
                                           follow_redirects=True) as client:
                 r = await client.get(url, headers={'User-Agent': UA})
                 if r.status_code != 200:
@@ -581,8 +582,15 @@ async def _tool_web_search(query: str = "", max_results: int = 5) -> str:
             "inga träffar för denna sökning). Prova en mer specifik fråga.")
 
 
-async def _tool_fetch_url(url: str = "", max_length: int = 5000) -> str:
-    """Fetch and extract text content from a URL."""
+async def _tool_fetch_url(url: str = "", max_length: int = 5000,
+                          prompt: str = "") -> str:
+    """Fetch a URL and return its readable text.
+
+    ``prompt`` beskriver vad man letar efter. Det styr inte hämtningen —
+    hela texten returneras — men det följer med i svaret så att modellen
+    ser vad syftet var när den läser. Pi har samma parameter och använder
+    den för att rikta extraktionen; här är den dokumentation.
+    """
     if not url:
         return _missing_argument_error(
             'url', 'a URL starting with http:// or https://',
@@ -637,25 +645,35 @@ async def _tool_fetch_url(url: str = "", max_length: int = 5000) -> str:
                 validate_redirect(url, current, hop + 1)
             raise SsrfBlocked(url, f'too many redirects (more than {MAX_REDIRECTS})')
 
-        try:
-            async with httpx.AsyncClient(timeout=15, follow_redirects=False) as client:
-                r = await _get_following_redirects(client)
-        except SsrfBlocked:
-            raise
-        except Exception:
-            # Cert-fallback (odoo-användaren kan inte läsa mycacert.crt).
-            # verify=False påverkar inte SSRF-skyddet — det validerar
-            # adressen, inte certifikatet.
-            async with httpx.AsyncClient(timeout=15, verify=False,
-                                         follow_redirects=False) as client:
-                r = await _get_following_redirects(client)
+        # Cert-validering är PÅ. Den tidigare verify=False-fallbacken
+        # antog att odoo-användaren saknade läsrätt till ett lokalt CA-cert
+        # (mycacert.crt) — men det certet finns inte, och valideringen
+        # fungerar som odoo. Fallbacken gjorde i praktiken alla hämtningar
+        # ocertifierade så fort något gick fel.
+        async with httpx.AsyncClient(timeout=15, follow_redirects=False) as client:
+            r = await _get_following_redirects(client)
         r.raise_for_status()
-        from bs4 import BeautifulSoup
-        soup = BeautifulSoup(r.text, 'html.parser')
-        for tag in soup(['script', 'style', 'nav', 'footer', 'header']):
-            tag.decompose()
-        text = soup.get_text(separator=' ', strip=True)
-        return text[:max_length] if len(text) > max_length else text
+
+        # Vissa sajter (t.ex. docs.saltproject.io) svarar 200 med en
+        # <meta http-equiv="refresh"> i stället för HTTP 30x. Följ den —
+        # annars återstår bara metataggen efter städningen.
+        async with httpx.AsyncClient(timeout=15, follow_redirects=False) as client:
+            for hop in range(MAX_REDIRECTS):
+                target = extract_meta_refresh(r.text, str(r.url))
+                if not target:
+                    break
+                validate_redirect(url, target, hop + 1)
+                r = await client.get(target, headers={'User-Agent': 'Odoo-AI/1.0'})
+                r.raise_for_status()
+
+        # Riktig artikelutvinning i stället för soup.get_text(): den senare
+        # returnerade menyrader, cookie-banners och brödsmulor, så modellen
+        # fick skräp och svarade därefter.
+        text = extract_readable(r.text, str(r.url), max_length)
+        if not text:
+            return ('The page was fetched but no readable text could be '
+                    'extracted (it may be JavaScript-rendered or empty).')
+        return text
     except SsrfBlocked as exc:
         _logger.warning('fetch_url blocked by SSRF guard (redirect): %s (%s)',
                         url, exc.reason)
@@ -962,9 +980,11 @@ def builtin_tools() -> list[Tool]:
         ),
         Tool(
             name="odoo_fetch_url",
-            description="Fetch and read the text content of a web page. Strips HTML tags and returns plain "
-                        "text. Useful for reading articles, documentation, blogs, or API docs. "
-                        "Validate the URL starts with http:// or https:// before calling.",
+            description="Fetch a web page and return its readable text (article body, "
+                        "not menus or cookie banners). Handles HTTP redirects and "
+                        "meta-refresh pages. Private, loopback and cloud-metadata "
+                        "addresses are blocked. Useful for articles, documentation, "
+                        "blogs and API docs.",
             parameters={
                 "type": "object",
                 "properties": {
@@ -975,6 +995,12 @@ def builtin_tools() -> list[Tool]:
                     "max_length": {
                         "type": "integer",
                         "description": "Maximum characters to return (1000-20000, default 5000)",
+                    },
+                    "prompt": {
+                        "type": "string",
+                        "description": "What you are looking for on the page. Helps you "
+                                       "read the result in context (e.g. 'the retry "
+                                       "timeout for uploads').",
                     },
                 },
                 "required": ["url"],

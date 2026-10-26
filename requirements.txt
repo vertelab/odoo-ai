@@ -56,6 +56,7 @@ faiss-cpu
 httpx
 markdownify
 beautifulsoup4
+trafilatura>=2.0  # article extraction for fetch_url (optional)
 lxml
 lxml_html_clean
 unidecode
