@@ -62,11 +62,10 @@ lxml_html_clean
 unidecode
 Markdown
 scrapy
-# ddgs: DuckDuckGo-sok. Paketet `duckduckgo_search` ar omdopt till `ddgs`
-#   och det gamla namnet ger allt oftare 0 traffar (ratelimiting). Koden
-#   provar `ddgs` forst och faller tillbaka pa det gamla namnet.
+# ddgs: DuckDuckGo-sok. Hette tidigare `duckduckgo_search`, men det gamla
+#   namnet ger allt oftare 0 traffar (ratelimiting). Endast `ddgs` — det
+#   gamla paketet ar borttaget (2026-10-26).
 ddgs
-duckduckgo_search
 
 # ── Dokument- och mediehantering ─────────────────────────────────────────
 pymupdf

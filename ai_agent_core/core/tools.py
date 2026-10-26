@@ -503,15 +503,12 @@ async def _tool_web_search(query: str = "", max_results: int = 5,
     # Bing/DDG HTML använder df=freshness; Brave använder tf.
     _df = {'day': 'd', 'week': 'w', 'month': 'm', 'year': 'y'}.get(recency)
 
-    # 1. DDGS (primärt). Paketet heter numera `ddgs` — det gamla
-    # `duckduckgo_search` är omdöpt och returnerar allt oftare 0 träffar
-    # (ratelimiting). Prova det nya namnet först, fall tillbaka på det
-    # gamla för maskiner som inte uppgraderats.
+    # 1. DDGS (primärt). Paketet hette tidigare `duckduckgo_search` men är
+    # omdöpt till `ddgs` — det gamla namnet returnerar allt oftare 0 träffar
+    # (ratelimiting). Endast `ddgs` används; det gamla är borttaget ur
+    # requirements.txt.
     try:
-        try:
-            from ddgs import DDGS
-        except ImportError:
-            from duckduckgo_search import DDGS
+        from ddgs import DDGS
         _kw = {'max_results': max_results}
         if _timelimit:
             _kw['timelimit'] = _timelimit

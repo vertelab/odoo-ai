@@ -3,7 +3,7 @@ import requests
 import sys
 from langchain.tools import tool
 from bs4 import BeautifulSoup
-from duckduckgo_search import DDGS
+from ddgs import DDGS
 from odoo.addons.ai_agent.models.ai_quest import AgentState
 
 # Import things that are needed generically
