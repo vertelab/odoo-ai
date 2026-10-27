@@ -252,31 +252,84 @@ class AIMemory(models.Model):
             return []
 
     def _get_embeddings(self):
-        """Get embeddings instance from configured LLM or Bifrost fallback."""
-        try:
-            # Try quest's agent LLM first
-            if self.quest_id:
-                for agent_rel in self.quest_id.agent_ids:
-                    agent = agent_rel.agent_id
-                    if agent and hasattr(agent, 'ai_agent_llm_id'):
-                        llm = agent.ai_agent_llm_id
-                        if llm and hasattr(llm, 'get_embedding'):
-                            emb = llm.get_embedding()
-                            if emb:
-                                return emb
+        """Get a langchain Embeddings instance for FAISS.
 
-            # Fallback: basic HuggingFace embedding
+        Ordningen är avsiktlig och speglar `ai.provider._embedding_provider()`
+        — den enda sanningen om vilken provider som kan skapa vektorer:
+
+          1. `ai.provider` (Bifrost m.fl.) via en brygga. Detta är den väg
+             som FUNGERAR i drift: providern är konfigurerad, nyckeln finns
+             och `/embeddings` svarar.
+          2. HuggingFace `sentence-transformers` som lokal fallback — men
+             paketet är INTE installerat på den här servern, så i praktiken
+             ger den alltid None.
+
+        FYND (2026-10-27): före den här ändringen fanns bara väg 2 plus en
+        `quest_id`-bunden LLM-väg. En agent-bunden RAG (`agent_id`, utan
+        quest) hade därför INGEN fungerande embeddings-backend: varje
+        `create_vector` föll tillbaka på `memory_type='text'` och varje
+        `faiss_search` returnerade 0 träffar — tyst, med bara en varning i
+        loggen. RAG-poster kunde alltså stå som `faiss` med `chunk_count`
+        satt men 0-byte-index, utan att någonstans synas som fel.
+        """
+        try:
+            # 1. ai.provider — den konfigurerade vektorkällan (Bifrost).
+            bridge = self._provider_embeddings()
+            if bridge is not None:
+                return bridge
+
+            # 2. Lokal fallback (kräver sentence-transformers).
             from langchain_community.embeddings import HuggingFaceEmbeddings
             return HuggingFaceEmbeddings(
                 model_name='sentence-transformers/all-MiniLM-L6-v2'
             )
 
         except ImportError:
-            _logger.warning('No embedding backend available')
+            _logger.warning(
+                'Ingen embeddings-backend: ai.provider saknar can_embed och '
+                'sentence-transformers är inte installerat. RAG-index kan '
+                'inte byggas eller läsas — minnet faller tillbaka på text.')
             return None
         except Exception as e:
             _logger.warning('Embedding init failed: %s', e)
             return None
+
+    def _provider_embeddings(self):
+        """Brygga: `ai.provider` -> langchain `Embeddings`.
+
+        Returnerar None när ingen provider kan embedda, så att anroparen kan
+        falla vidare i stället för att få en halvfungerande instans.
+
+        `input_type` är asymmetriskt och måste vara rätt: dokument som ska
+        hittas embeddas som 'search_document', sökfrågan som 'search_query'.
+        Att skicka samma typ för båda ger sämre träffar utan att något fel
+        syns.
+        """
+        try:
+            from langchain_core.embeddings import Embeddings as LcEmbeddings
+        except ImportError:
+            return None
+
+        provider = self.env['ai.provider'].sudo()._embedding_provider()
+        if not provider:
+            return None
+
+        class _ProviderEmbeddings(LcEmbeddings):
+            def __init__(self, prov):
+                self._prov = prov
+
+            def embed_documents(self, texts):
+                return self._prov._get_embedding_batch(
+                    inputs=list(texts), input_type='search_document')
+
+            def embed_query(self, text):
+                return self._prov._get_embedding(
+                    input=text, input_type='search_query')
+
+        _logger.info(
+            'RAG-embeddings via provider %s (%s)',
+            provider.name, provider.embedding_model or 'default')
+        return _ProviderEmbeddings(provider)
 
     # ════════════════════════════════════════════
     # OKF trigger-modell (task 5.1)
