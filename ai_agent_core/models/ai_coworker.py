@@ -353,9 +353,13 @@ class AICoworker(models.Model):
         return ''
 
     # Kanban images (related for efficient kanban display)
-    partner_image_128 = fields.Binary(related='partner_id.image_128',
-                                       string='Partner Image',
-                                       help='Avatar from channel partner')
+    partner_image_128 = fields.Binary(
+        related='partner_id.image_128',
+        inverse='_inverse_partner_image_128',
+        readonly=False,
+        string='Partner Image',
+        help='Avatar from channel partner. Redigerbar: en uppladdad bild '
+             'skrivs vidare till partnerns image_1920 (image_128 räknas om).')
 
     # Ansiktslista (org-goal-integrity D8): `many2many_tags_avatar`-widgeten
     # bygger sin bild-URL som /web/image/<relation>/<id>/avatar_128, dvs. den
@@ -368,6 +372,18 @@ class AICoworker(models.Model):
                               string='Image 128')
     avatar_128 = fields.Binary(related='partner_id.avatar_128',
                                string='Avatar 128')
+
+    def _inverse_partner_image_128(self):
+        """Skriv en uppladdad partnerbild vidare till partnern.
+
+        `partner_image_128` är `related='partner_id.image_128'` och saknade
+        inverse — skrivningar fran formuläret accepterades men kastades bort,
+        sa en uppladdad bild sparades aldrig. Vi skriver till image_1920
+        (originalet); image_128/avatar_128 räknas om av image.mixin/avatar.mixin.
+        """
+        for rec in self:
+            if rec.partner_id:
+                rec.partner_id.image_1920 = rec.partner_image_128
 
     identity_id = fields.Many2one('ai.identity', string='Agent Identity',
         help='Select a template to create a personal copy for this quest. '
