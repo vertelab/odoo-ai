@@ -145,6 +145,25 @@ def _looks_like_tool_error(text):
 class AIStreamController(http.Controller):
     """Server-Sent Events endpoint for streaming AI responses."""
 
+    @staticmethod
+    def _sse_error(message, code=None):
+        """Skicka ett fel som en SSE-event med HTTP 200.
+
+        Varför inte HTTP 402/500: web-UI:t lyssnar med EventSource, och
+        EventSource kan INTE läsa svarskroppen när status != 200. Allt annat
+        än 200 blir "Anslutningen till AI-servern bröts — försök igen." —
+        användaren får ett intetsägande fel i stället för det verkliga
+        (drift 2026-10-27: dagsbudget slut visades som "anslutningen bröts").
+
+        Frontendens handleStreamEvent har `case 'error':` som renderar
+        e.message, så beskedet når fram den vägen.
+        """
+        payload = {'type': 'error', 'message': message}
+        if code:
+            payload['code'] = code
+        body = 'data: %s\n\n' % json.dumps(payload)
+        return Response(body, status=200, content_type='text/event-stream')
+
     @http.route('/ai/ping', type='http', auth='none', cors='*', sitemap=False)
     def ping(self):
         return request.make_response('pong', [('Content-Type', 'text/plain')])
@@ -192,14 +211,13 @@ class AIStreamController(http.Controller):
                             quest.check_cap()
                         _logger.info(
                             'stream: %s for %s', _budget_code, quest.name)
-                        return Response(
-                            json.dumps({
-                                "error": _budget_code,
-                                "message": _budget_msg,
-                            }),
-                            status=402,
-                            content_type='application/json',
-                        )
+                        # SSE, inte HTTP 402. Frontend använder EventSource,
+                        # som inte kan läsa svarskroppen vid felstatus — ett
+                        # 402 blev "Anslutningen till AI-servern bröts" och
+                        # vårt meddelande kastades bort. Frontend har ett
+                        # `case 'error':` som visar e.message, så vi skickar
+                        # beskedet som en error-event med HTTP 200.
+                        return self._sse_error(_budget_msg, _budget_code)
                     if quest.description:
                         system_prompt = quest.description
                     # Inject skill context for Skill Builder (sudo needed — public users can't read ai.skill)
