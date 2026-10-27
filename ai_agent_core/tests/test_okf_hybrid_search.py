@@ -66,9 +66,9 @@ class TestOkfHybridSearch(common.TransactionCase):
         if query:
             self.env.cr.execute("""
                 UPDATE ai_okf_concept
-                   SET search_vector = to_tsvector('swedish', %s)
+                       SET summary = %s
                  WHERE id = %s
-            """, (query, rec_id))
+                """, (summary + ' ' + query, rec_id))
         return rec_id
 
     # ── 12.6: dedup ──

@@ -2203,12 +2203,12 @@ class AIOkfConcept(models.Model):
         # Level 2 — Management Summary
         mgmt_concepts = self.search(domain + [
             ('concept_key', 'ilike', 'mgmt_summary%'),
-        ], order='version desc')
+        ], order='id desc')
         if not mgmt_concepts:
             # Fallback: artifact type 'mgmt_summary' eller 'strategy'
             mgmt_concepts = self.search(domain + [
                 ('artifact_type_id.name', '=', 'mgmt_summary'),
-            ], order='version desc')
+            ], order='id desc')
 
         parts = []
         injected_ids = []  # för lineage: koncept som faktiskt injiceras
@@ -2224,11 +2224,11 @@ class AIOkfConcept(models.Model):
         # Level 3 — Strategy
         strategy_concepts = self.search(domain + [
             ('artifact_type_id.name', 'in', ['strategy', 'knowledge']),
-        ], order='version desc', limit=10)
+        ], order='id desc', limit=10)
         if not strategy_concepts:
             strategy_concepts = self.search(domain + [
                 ('concept_key', 'ilike', 'strategy%'),
-            ], order='version desc', limit=10)
+            ], order='id desc', limit=10)
         strategy_block = self._format_concept_block(
             strategy_concepts._latest_per_key(), max_chars // 2, 'STRATEGY',
             user=user)
@@ -2252,7 +2252,7 @@ class AIOkfConcept(models.Model):
             personal_l2 = self.search(domain + [
                 ('artifact_type_id.name', 'in', ['roll', 'mål']),
                 ('status', 'not in', ['deprecated']),
-            ], order='version desc', limit=10)
+            ], order='id desc', limit=10)
             personal_l2 = personal_l2._latest_per_key()
             if personal_l2:
                 p_block = self._format_concept_block(

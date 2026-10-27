@@ -57,7 +57,6 @@ class TestPersonalMemoryBudgetScope(common.TransactionCase):
             'artifact_type_id': atype.id,
             'scope': 'personal',
             'concept_key': key,
-            'version': 1,
             'title': key,
             'summary': summary,
             'owner_user_id': user.id,
@@ -92,13 +91,11 @@ class TestPersonalMemoryBudgetScope(common.TransactionCase):
         self._concept(self.other, self.memory_type, 'y' * 900, 'mem-c')
         self.assertEqual(self.Concept._personal_memory_usage(self.user), 100)
 
-    def test_usage_ignores_archived_and_superseded(self):
-        """Arkiverade och ersatta rader injiceras inte och ska inte räknas."""
+    def test_usage_ignores_archived(self):
+        """Arkiverade rader injiceras inte och ska inte räknas."""
         live = self._concept(self.user, self.memory_type, 'x' * 40, 'mem-d')
         gone = self._concept(self.user, self.memory_type, 'y' * 400, 'mem-e')
         gone.write({'archived': True})
-        replaced = self._concept(self.user, self.memory_type, 'z' * 400, 'mem-f')
-        replaced.write({'superseded_by_id': live.id})
         self.assertEqual(self.Concept._personal_memory_usage(self.user), 40)
 
     # ── D1: arkiveringskandidaterna ─────────────────────────────────────

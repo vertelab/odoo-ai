@@ -553,9 +553,9 @@ def okf_ensure_search_infrastructure(env):
     if not cr.fetchone():
         cr.execute("""
             CREATE INDEX idx_ai_okf_concept_scope_key
-            ON ai_okf_concept (scope, concept_key, version DESC)
+            ON ai_okf_concept (scope, concept_key)
         """)
-        _logger.info('OKF: skapade B-tree-index (scope, concept_key, version)')
+        _logger.info('OKF: skapade B-tree-index (scope, concept_key)')
 
 
 def post_init_hook(env):

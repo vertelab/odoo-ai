@@ -260,7 +260,7 @@ class TestOkfAccessInSelection(ConfigParamGuardedCase):
         if query:
             self.env.cr.execute("""
                 UPDATE ai_okf_concept
-                   SET search_vector = to_tsvector('swedish', %s)
+                   SET summary = summary || ' ' || %s
                  WHERE id = %s
             """, (query, rec_id))
         return rec_id
@@ -306,18 +306,15 @@ class TestOkfAccessInSelection(ConfigParamGuardedCase):
         (modellen speglar källan), så frågan är enklare: pekar konceptets
         källa på något användaren inte får läsa, returneras det inte.
         """
-        # v1 läsbar, v2 osynlig (samma concept_key)
-        self._mk('kedja.1', 'Fakturor version ett.',
-                 source_ref='res.company,1', version=1, query='kedjeterm')
-        self._mk('kedja.1', 'Fakturor version två.',
-                 source_ref='finns.inte,1', version=2, query='kedjeterm')
+        # Ett koncept per nyckel (beslut 2026-10-26): pekar källan på
+        # något användaren inte får läsa, returneras konceptet inte.
+        self._mk('kedja.1', 'Fakturor osynlig källa.',
+                 source_ref='finns.inte,1', query='kedjeterm')
 
         results = self.Concept._okf_search('kedjeterm', limit=50)
         hits = [c for c in results if c.concept_key == 'kedja.1']
-        self.assertEqual(len(hits), 1,
-                         'den läsbara versionen ska returneras, en gång')
-        self.assertEqual(hits[0].version, 1,
-                         'den osynliga senare versionen får inte vinna')
+        self.assertEqual(len(hits), 0,
+                         'en osynlig källa ska inte ge träff')
 
     def test_unresolved_source_falls_to_net(self):
         """Ett koncept utan källhänvisning injiceras inte (D4-nätet)."""

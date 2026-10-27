@@ -323,8 +323,10 @@ class TestPersonalMemory(common.TransactionCase):
         coworker = self.env['ai.coworker'].create({
             'name': 'Cnt Coworker', 'status': 'active'})
         self._mk_concept('cnt.cw', 'coworker', owner_coworker=coworker)
-        coworker._compute_okf_memory_count()
-        self.assertEqual(coworker.okf_memory_count, 1)
+        # ai.coworker bär `okf_concept_count` (distinkta nycklar), inte
+        # `okf_memory_count` — det senare finns bara på res.users/res.company.
+        coworker._compute_okf_concept_count()
+        self.assertEqual(coworker.okf_concept_count, 1)
 
     def test_personal_memory_count(self):
         """personal_memory_count räknas korrekt."""

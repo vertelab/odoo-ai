@@ -1512,7 +1512,7 @@ class AIOkfMixin(models.AbstractModel):
         source_ref = '%s,%s' % (self._name, self.id)
         concepts = self.env['ai.okf.concept'].search([
             ('source_ref', '=', source_ref),
-        ], order='version desc')
+        ], order='id desc')
         return {
             'type': 'ir.actions.act_window',
             'name': 'OKF-koncept: %s' % source_ref,
