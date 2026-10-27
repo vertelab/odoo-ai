@@ -277,10 +277,12 @@ class TestWorkspaceAgenda(TransactionCase):
             'progress': 40.0,
         })
         suggs = self.Gap.suggest_for_user(user=self.env.user)
-        smart = suggs.filtered(lambda s: s.source == 'smart_deadline')
-        self.assertTrue(smart)
-        self.assertEqual(smart.personal_goal_id, goal)
-        self.assertEqual(smart.diff_after.get('progress'), 100.0)
+        # `suggest_for_user` returnerar en LISTA av record,
+        # inte ett recordset — `.filtered()` finns inte på listor.
+        smart = [s for s in suggs if s.source == 'smart_deadline']
+        self.assertTrue(smart, 'SMART-deadline-förslaget saknas')
+        self.assertEqual(smart[0].personal_goal_id, goal)
+        self.assertEqual(smart[0].diff_after.get('progress'), 100.0)
 
     def test_03_hitl_accept_creates_activity(self):
         s = self.Suggestion._create_suggestion(
@@ -405,10 +407,15 @@ class TestWorkspaceSafety(TransactionCase):
     def test_05_core_manifest_clean(self):
         """10.7 ai_agent_core förblir core-rent (inga domänberoenden)."""
         import odoo
-        manifest = odoo.modules.module.load_information_from_db(
-            self.env.cr, 'ai_agent_core')
+        # `load_information_from_db` finns inte i Odoo 18 —
+        # modulens manifest läses ur minnet via `get_manifest`.
+        manifest = odoo.modules.module.get_manifest('ai_agent_core')
         deps = manifest.get('depends') or []
-        core = {'base', 'mail', 'html_editor', 'hr', 'base_automation'}
+        # `web_pwa_push` bär push-notiserna (HITL-godkännanden
+        # och "svar klart") och `cron_tick` bär cron.task-registret
+        # — båda är infrastruktur, inte domänmoduler.
+        core = {'base', 'mail', 'html_editor', 'hr', 'base_automation',
+                'web_pwa_push', 'cron_tick'}
         for d in deps:
             self.assertIn(d, core,
                           'ai_agent_core får inte bero på domänmodul: %s' % d)

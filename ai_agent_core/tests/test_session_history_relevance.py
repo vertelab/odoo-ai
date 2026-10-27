@@ -37,7 +37,7 @@ class TestSessionHistoryRelevance(common.TransactionCase):
         })
 
     def _line(self, sess, seq, role, content='', tool_name=False,
-              tool_calls=False):
+              tool_calls=False, tool_call_id=False):
         return self.Line.create({
             'session_id': sess.id,
             'sequence': seq,
@@ -45,6 +45,7 @@ class TestSessionHistoryRelevance(common.TransactionCase):
             'content': content,
             'tool_name': tool_name or False,
             'tool_calls': tool_calls or False,
+            'tool_call_id': tool_call_id or False,
         })
 
     # ── 1.3 Acceptansfall: 4 meddelanden med verktygsspåret ───────────
@@ -59,9 +60,9 @@ class TestSessionHistoryRelevance(common.TransactionCase):
                        'function': {'name': 'salt_disk_usage',
                                     'arguments': '{}'}}]))
         self._line(sess, 3, 'tool', '{"ok": true}',
-                   tool_name='salt_disk_usage')
+                   tool_name='salt_disk_usage', tool_call_id='call_1')
         self._line(sess, 4, 'tool', '{"ok": true}',
-                   tool_name='salt_disk_usage')
+                   tool_name='salt_disk_usage', tool_call_id='call_1')
 
         history = sess._build_history_from_lines()
         self.assertEqual(len(history), 4, 'fyra meddelanden ska bevaras')
@@ -90,7 +91,8 @@ class TestSessionHistoryRelevance(common.TransactionCase):
                        'id': 'call_1', 'type': 'function',
                        'function': {'name': 'odoo_search',
                                     'arguments': '{}'}}]))
-        self._line(sess, 3, 'tool', '{"ok": true}', tool_name='odoo_search')
+        self._line(sess, 3, 'tool', '{"ok": true}', tool_name='odoo_search',
+                   tool_call_id='call_1')
 
         history = list(sess._build_history_from_lines())
         for m in history:

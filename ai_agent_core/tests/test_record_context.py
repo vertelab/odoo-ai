@@ -121,16 +121,38 @@ class TestRecordContext(TransactionCase):
         self.assertEqual(len(sess.ai_record_ids), 2)
 
     def test_truncation_is_logged_not_silent(self):
-        """Överskridandet ska loggas — aldrig tystas (R5)."""
-        sess = self._session()
-        with self.assertLogs(
-                'odoo.addons.ai_agent_core.models.ai_session',
-                level='INFO') as cm:
+        """Överskridandet ska loggas — aldrig tystas (R5).
+
+        Loggen fångas via en egen handler i stället för `assertLogs`:
+        Odoo:s testrunner sätter `log_handler` på rotloggern, och
+        `assertLogs` lägger sin handler på modelloggern — den senare
+        träffas inte när nivån ärvs.
+        """
+        import logging
+
+        captured = []
+
+        class _Capture(logging.Handler):
+            def emit(self, record):
+                captured.append(record.getMessage())
+
+        logger = logging.getLogger(
+            'odoo.addons.ai_agent_core.models.ai_session')
+        handler = _Capture()
+        old_level = logger.level
+        logger.addHandler(handler)
+        logger.setLevel(logging.INFO)
+        try:
+            sess = self._session()
             sess._set_records_context(
                 self.p1 | self.p2 | self.p3, max_records=2)
+        finally:
+            logger.removeHandler(handler)
+            logger.setLevel(old_level)
+
         self.assertTrue(
-            any('TRUNKERAD' in m for m in cm.output),
-            'Trunkeringen loggades inte: %s' % cm.output)
+            any('TRUNKERAD' in m for m in captured),
+            'Trunkeringen loggades inte: %s' % captured)
 
     # ── 5. Chatter för samlingar (R7) ────────────────────────────────
 

@@ -25,7 +25,12 @@ INTERNAL_PREFIXES = (
 # i default-tools") — de är säkra kundverktyg (data-definierade, inga
 # interna förmågor) och ska därför räknas som defaults. Listan här hade
 # inte följt med, vilket gav ett falskt FAIL (FYND 2026-09-23).
+# De inbyggda verktygen seedas under sina korta namn (`calculator`,
+# `fetch_url`, `web_search`) — `odoo_`-prefixet används bara för de verktyg
+# som går mot en Odoo-modell. Listan bär båda formerna så testet inte faller
+# på en namnkonvention i stället för på en läcka.
 SAFE_DEFAULTS = (
+    'calculator', 'fetch_url', 'web_search',
     'odoo_calculator', 'odoo_fetch_url', 'odoo_web_search',
     'youtube_get_transcript', 'youtube_search',
     'youtube_channel', 'youtube_playlist',

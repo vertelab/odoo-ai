@@ -293,15 +293,27 @@ class TestIndexableModels(_OkfTestModel):
         fortfarande inte förekomma.
         """
         models = self.Mixin._okf_indexable_models()
-        self.assertNotIn('event.event', models)
+        # `event.event` får förekomma när bryggan
+        # `website_ai_event` registrerat den — det som
+        # prövas är att KÄRNAN inte lägger till den själv.
+        extra = self.Mixin._okf_extra_indexable_models or []
+        for name in ('event.event', 'crm.lead', 'project.task'):
+            if name in models:
+                self.assertIn(
+                    name, extra,
+                    '%s kom in utan att en brygga registrerade den' % name)
         # Domänmodulernas modeller får inte komma in via kärnlistan. Matcha
         # på modellens PREFIX (`crm.`), inte på delsträng: `crm.lead` är en
         # domänmodell, men `crm` som delsträng förekommer också i namn där
         # den inte betyder något.
         for prefix in ('website.', 'blog.', 'crm.', 'project.', 'prd.'):
             for m in models:
-                self.assertFalse(m.startswith(prefix),
-                                 '%s är ett domänbidrag, inte kärna' % m)
+                if not m.startswith(prefix):
+                    continue
+                self.assertIn(
+                    m, extra,
+                    '%s är ett domänbidrag som kom in utan att en brygga '
+                    'registrerade den' % m)
 
     def test_unknown_model_is_skipped(self):
         """En modell som inte finns i miljön hoppas över utan fel."""

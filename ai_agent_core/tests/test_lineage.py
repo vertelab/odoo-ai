@@ -36,15 +36,20 @@ class TestLineage(TransactionCase):
             'name': 'Lineage test session',
         })
         # Testkoncept (company-scope, strategy-typ för injektion)
+        # `strategy` finns inte som egen artefakttyp här —
+        # injektionen letar på name in ('strategy', 'knowledge').
         strat = self.env['ai.artifact.type'].search(
-            [('name', '=', 'strategy')], limit=1)
+            [('name', 'in', ('strategy', 'knowledge'))], limit=1)
         self.concept = self.env['ai.okf.concept'].create({
             'scope': 'company',
             'owner_company_id': self.env.company.id,
-            'artifact_type_id': strat.id or self.env['ai.artifact.type'].search(
-                [], limit=1).id,
+            'artifact_type_id': strat.id,
             'concept_key': 'lineage-test-concept',
             'summary': 'Testkoncept för lineage — strategisk inriktning',
+            # Utan källhänvisning avför `_format_concept_block` konceptet
+            # (FAIL-CLOSED: ingen källa att pröva). Lineage-testet mäter
+            # edge-skapandet, inte access — källan måste finnas.
+            'source_ref': 'res.company,%s' % self.env.company.id,
             'status': 'stable',
         })
 

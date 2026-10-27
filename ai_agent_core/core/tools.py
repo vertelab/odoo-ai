@@ -59,6 +59,10 @@ class Tool:
     nats_subject: str = "pi.task.do"
     nats_skills: str = ""
     nats_timeout: int = 30
+    # NATS-agentens id som sträng (tom = ingen styrning). `loop.py` läser
+    # fältet med `getattr(tool, 'nats_agent', '')`, så det måste finnas här —
+    # annars kastar `to_core_tool()` TypeError på ett giltigt värde.
+    nats_agent: str = ""
 
     # Access-grupper (ai-tool-access-capabilities): Odoo group ids som får
     # använda verktyget. Tom = obegränsat. PermissionEngine nekar anrop när
