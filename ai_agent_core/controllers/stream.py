@@ -3397,6 +3397,28 @@ class AIOpenAIAPI(http.Controller):
             return Response(json.dumps({'error': {'message': 'Unauthorized', 'type': 'authentication_error'}}),
                           status=401, content_type='application/json')
 
+        # ── Budgetkontroll (2026-10-27) ────────────────────────────────────
+        # Denna route hade INGEN budgetkontroll: varken månads- eller
+        # dagsbudget. En medarbetare som låg 937 % över sitt dagstak svarade
+        # ändå HTTP 200 — användaren fick ett glatt svar i stället för besked
+        # om att budgeten var slut. openai_api.py hade kontrollen, men Pi
+        # använder denna route.
+        #
+        # budget_block_message() är EN källa för texten i alla kanaler.
+        _budget_code, _budget_msg = quest.budget_block_message()
+        if _budget_code:
+            if _budget_code == 'daily_budget_exhausted':
+                quest.check_daily_cap()
+            else:
+                quest.check_cap()
+            _logger.info('/ai/v1/chat/completions: %s for %s',
+                         _budget_code, quest.name)
+            return Response(json.dumps({'error': {
+                'message': _budget_msg,
+                'type': 'insufficient_quota',
+                'code': _budget_code,
+            }}), status=429, content_type='application/json')
+
         # ── Pi-session-id (transport A + C) ───────────────────────────────
         # Primär transport: body-fältet `pi_session_id` (Pi-klienten äger
         # UUID:t). Fallback (C): klienten märker system-/första user-

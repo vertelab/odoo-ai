@@ -1,14 +1,20 @@
 # -*- coding: utf-8 -*-
 """Budget-meddelandet ska nå ALLA kanaler — inte bara två av fyra.
 
-Bakgrund (drift 2026-10-27): Infrastructure Operator hade förbrukat 7,55M av
-dagstaket på 1M (755%). I DM/kanal kom ett meddelande, men i web-UI och via
+Bakgrund (drift 2026-10-27): Infrastructure Operator hade förbrukat 11,3M av
+dagstaket på 1M (1126%). I DM/kanal kom ett meddelande, men i web-UI och via
 OpenAI-API:t fick användaren **tyst ingenting** — ingen förklaring, ingen
-ledtråd om att taket öppnar sig vid midnatt. Månadstaket fanns i alla fyra
-kanaler; dagstaket bara i två.
+ledtråd om att taket öppnar sig vid midnatt.
 
-Fixen är EN källa: `ai.coworker.budget_block_message()`. Dessa tester låser
-att den finns, att den prioriterar rätt tak, och att den säger något begripligt.
+Två separata fel hittades:
+
+1. `openai_api.py` (/ai/openai/<id>/v1/chat/completions) kontrollerade bara
+   `budget_exhausted`, som med `monthly_budget_soft=True` aldrig blockerar.
+2. `/ai/v1/chat/completions` (stream.py) — den route Pi faktiskt använder —
+   hade INGEN budgetkontroll alls. En medarbetare 1126% över dagstaket
+   svarade glatt HTTP 200.
+
+Fixen är EN källa: `ai.coworker.budget_block_message()`.
 """
 
 from odoo.tests.common import TransactionCase, tagged
@@ -26,7 +32,7 @@ class TestBudgetBlockMessage(TransactionCase):
         })
 
     def test_no_block_when_under_cap(self):
-        """Inget tak nått → (None, None), inte en tom sträng."""
+        """Inget tak nått -> (None, None), inte en tom sträng."""
         code, msg = self.coworker.budget_block_message()
         self.assertIsNone(code)
         self.assertIsNone(msg)
@@ -44,12 +50,11 @@ class TestBudgetBlockMessage(TransactionCase):
         self.assertEqual(code, 'daily_budget_exhausted')
         self.assertIn('Dagsbudget slut', msg)
         self.assertIn('midnatt', msg)
-        # Siffrorna ska vara med — annars går det inte att förstå läget.
         self.assertIn('7.55', msg)
-        self.assertIn('755', msg)  # procent
+        self.assertIn('755', msg)
 
     def test_monthly_exhausted_when_daily_is_fine(self):
-        """Bara månadstaket nått → månadskoden, inte dagskoden."""
+        """Bara månadstaket nått -> månadskoden, inte dagskoden."""
         self.coworker.write({
             'daily_cap_mtokens': 100.0,
             'daily_budget_used_mtokens': 1.0,
@@ -89,8 +94,7 @@ class TestBudgetBlockMessage(TransactionCase):
         """Regressionsvakt: ingen kanal får ha sin egen budget-text kvar.
 
         Fällan var att varje kanal formulerade sig själv och att två av dem
-        glömde dagsbudgeten. Om någon återinför en hårdkodad sträng här
-        fallerar detta test.
+        glömde dagsbudgeten — och att /ai/v1-route:n saknade kontrollen helt.
         """
         import inspect
         from odoo.addons.ai_agent_core.controllers import openai_api, stream
@@ -100,3 +104,19 @@ class TestBudgetBlockMessage(TransactionCase):
             self.assertIn(
                 'budget_block_message', src,
                 '%s använder inte den gemensamma budget-källan' % mod.__name__)
+
+    def test_ai_v1_route_has_budget_check(self):
+        """/ai/v1/chat/completions (stream.py) måste kontrollera budgeten.
+
+        Pi använder denna route. Den saknade kontrollen helt fram till
+        2026-10-27, vilket är varför en medarbetare 1126% över dagstaket
+        svarade HTTP 200.
+        """
+        import inspect
+        from odoo.addons.ai_agent_core.controllers import stream
+
+        src = inspect.getsource(stream)
+        self.assertIn('insufficient_quota', src,
+                      '/ai/v1-route:n svarar inte med insufficient_quota')
+        self.assertIn('daily_budget_exhausted', src,
+                      '/ai/v1-route:n kontrollerar inte dagsbudgeten')
