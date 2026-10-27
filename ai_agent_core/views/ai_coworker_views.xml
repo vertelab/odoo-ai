@@ -184,7 +184,7 @@
                              (scope coworker). Bredvid sessionsräknarna —
                              de säger vad den GJORT, denna vad den VET. -->
                         <button name="action_open_okf_owned_concepts" class="oe_stat_button" type="object" icon="fa-brain"
-                                help="Antal distinkta konceptnycklar som ägs av medarbetaren (arkiverade och superseded-koncept räknas inte).">
+                                help="Antal distinkta konceptnycklar som ägs av medarbetaren (arkiverade koncept räknas inte).">
                             <field name="okf_concept_count" widget="statinfo" string="Odoo Mind"/>
                         </button>
                     </div>

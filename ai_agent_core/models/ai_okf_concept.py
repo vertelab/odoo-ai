@@ -26,7 +26,7 @@ EMBEDDING_DIM = 1024
 class AIOkfConcept(models.Model):
     _name = 'ai.okf.concept'
     _description = 'OKF Concept'
-    _order = 'scope, concept_key, version desc'
+    _order = 'scope, concept_key'
     _rec_name = 'title'
 
     def _auto_init(self):
@@ -126,14 +126,25 @@ class AIOkfConcept(models.Model):
         'ai.artifact.type', string='Artifact Type', required=True,
         help='Bär med sig kind (memory|knowledge) som styr beteendet.')
 
-    # ── Versionshantering (ADD-only, beslut 10) ──
+    # -- Identitet: ETT koncept per (scope, agare, concept_key) --
+    #
+    # Ingen versionshantering (beslut 2026-10-26). Modellen ar en SPEGEL av
+    # kallan, inte en logg over indexeringar.
+    #
+    # VARFOR: `okf_contract.stale_policy = "source"` sager att konceptet ska
+    # folja kallposten. En `superseded`-kedja ar oforenlig med det -- och i
+    # drift blev den en logg over cron-korningar, inte over andringar:
+    #
+    #   dms,1     49 versioner, en per dygn, identiskt innehall
+    #   website,4 49 versioner, samma
+    #
+    # Historiken finns redan i kallan (document.page.history, mail.message pa
+    # project.task, dms-filversioner). Att duplicera den har gav en andra
+    # sanning som gled isar -- och 1 591 rader som konkurrerade i sokindexet.
     concept_key = fields.Char(
         string='Concept Key', required=True,
-        help='Grupperar versioner av samma koncept, t.ex. res.partner,42. '
-             'Unik inom scope.')
-    version = fields.Integer(string='Version', default=1)
-    supersedes_id = fields.Many2one('ai.okf.concept', string='Supersedes')
-    superseded_by_id = fields.Many2one('ai.okf.concept', string='Superseded By')
+        help='Identifierar konceptet, t.ex. res.partner,42. Unik inom scope '
+             'och agare.')
 
     # ── Innehåll ──
     title = fields.Char(string='Title')
@@ -151,8 +162,7 @@ class AIOkfConcept(models.Model):
     source_text = fields.Text(
         'Source Text',
         help='Källtexten som summary härleddes ur (okf-mixin D5). Styr '
-             'versionsbeslutet: en LLM som formulerar om samma text ger '
-             'ingen ny version, men en faktisk källändring gör det.')
+             'Sparas som den är — konceptet speglar källan.')
     source_ref = fields.Char(
         string='Source Ref',
         help='Primary source reference, t.ex. res.partner,42')
@@ -170,10 +180,10 @@ class AIOkfConcept(models.Model):
     status = fields.Selection([
         ('draft', 'Draft'),
         ('stable', 'Stable'),
-        ('superseded', 'Superseded'),
         ('deprecated', 'Deprecated'),
     ], string='Status', default='stable',
-        help='superseded = äldre version av ett koncept')
+        help='Livscykel for konceptet. Ingen superseded: ett koncept per '
+             'concept_key, alltid den aktuella speglingen av kallan.')
 
     # ── Livscykel ──
     stale_after = fields.Datetime(
@@ -264,21 +274,20 @@ class AIOkfConcept(models.Model):
              'utan embeddings).')
 
     _sql_constraints = [
-        # Unik per (scope, ÄGARE, concept_key, version).
+        # ETT koncept per (scope, AGARE, concept_key).
         #
-        # ÄGAREN INGÅR (okf-owner-and-access-scoping D6, rättat under
-        # implementationen): två ägare kan ha samma `concept_key` och samma
-        # `version` — t.ex. samma kalenderhändelse för två deltagare. Utan
-        # ägarkolumnerna avvisar villkoret den andra raden, och hela
-        # "en post -> N ägare"-förmågan faller.
+        # AGAREN INGAR (okf-owner-and-access-scoping D6): tva agare kan ha
+        # samma `concept_key` -- t.ex. samma kalenderhandelse for tva
+        # deltagare. Utan agarkolumnerna avvisar villkoret den andra raden,
+        # och hela "en post -> N agare"-formagan faller.
         #
-        # Historik: före detta var villkoret (scope, concept_key) vilket
-        # blockerade versionshanteringen helt (bugg hittad av tester 9.1).
-        # Migration 18.0.1.302 bygger om villkoret på befintliga databaser.
-        ('concept_key_scope_version_uniq',
+        # Ingen `version` i villkoret (beslut 2026-10-26): modellen ar en
+        # spegel av kallan, inte en versionslogg. Migration 18.0.1.338
+        # kollapsar befintliga versioner till en rad per nyckel.
+        ('concept_key_scope_uniq',
          'UNIQUE(scope, owner_company_id, owner_user_id, '
-         'owner_coworker_id, concept_key, version)',
-         'Concept key must be unique within scope, owner and version.'),
+         'owner_coworker_id, concept_key)',
+         'Concept key must be unique within scope and owner.'),
     ]
 
     @api.constrains('owner_company_id', 'owner_user_id', 'owner_coworker_id')
@@ -310,50 +319,39 @@ class AIOkfConcept(models.Model):
                     % (rec.scope, expected))
 
     def write(self, vals):
-        """ADD-only: concept-rader är immutabla (beslut 10).
+        """Konceptet ar en SPEGEL av kallan -- innehall far skrivas over.
 
-        Endast livscykelfält får ändras: status (superseded av
-        _okf_upsert), archived (offboarding), verified (cron/process),
-        dirty (trigger-modellen), embedding_state och embedding
-        (efterfyllnaden). Allt INNEHÅLL är låst.
+        (Beslut 2026-10-26. Ersatter ADD-only-regeln fran beslut 10.)
 
-        `embedding_state` är ett livscykelfält och inte innehåll: det säger
-        vad som hänt med raden, inte vad raden betyder.
+        VARFOR ADD-ONLY FALLER: `okf_contract.stale_policy = "source"`
+        sager att konceptet ska folja kallposten. Med ADD-only kunde det
+        aldrig folja -- varje andring blev en ny rad, och den gamla la
+        kvar som `superseded` i sokindexet. I drift blev kedjan en logg
+        over cron-korningar (dms,1: 49 rader, en per dygn, identiskt
+        innehall), inte over andringar.
 
-        `embedding` RÄKNAS OCKSÅ SOM LIVSCYKEL (rättat 2026-09-22).
-        Den tidigare regeln — "vektorn är innehåll, efterfyllnaden skapar en
-        ny version" — var en återvändsgränd i drift:
+        Historiken finns redan i kallan: document.page.history,
+        mail.message pa project.task, dms-filversioner. Att duplicera den
+        har gav en andra sanning som gled isar.
 
-          Efterfyllnaden anropar `_okf_upsert` med SAMMA summary som den
-          gamla raden. Då slår `_version_is_unchanged` till och returnerar
-          den befintliga raden UTAN att skapa en version. Ingen ny rad, och
-          därför ingen `existing.write({'status': 'superseded'})` — den
-          gamla raden förblev 'pending' för evigt. Efterfyllnaden plockade
-          samma 20 koncept varje körning (order='id asc'), loggade
-          "20 av 20 koncept fick vektor" och gjorde ingenting.
+        Skrivbart: summary, source_text, title, source_ref, okf_tags,
+        attribution, sources, embedding, embedding_state, stale_after,
+        status, dirty, verified, archived.
 
-        Bevis i drift: `user.140.role` hade 44 versioner där v44 var 'ready'
-        och v1–v42 låg kvar som 'pending' + 'stable'. Kön stod still på 449
-        medan cronen rapporterade framsteg var 30:e sekund.
-
-        En vektor är HÄRLEDD ur texten — den beskriver inte konceptet, den
-        är ett index över det. Att fylla i den ändrar inte vad raden betyder,
-        och att tvinga fram en ny version för den skapade bara en oändlig
-        svans av dubbletter. `summary`/`title`/`source_ref` är fortfarande
-        låsta; det är de som bär innebörden.
+        Inte skrivbart: concept_key, scope, owner_*, artifact_type_id.
+        Identiteten ar inte innehall -- att byta den vore att gora om
+        raden till ett annat koncept.
         """
-        allowed = {'status', 'archived', 'verified', 'dirty',
-                   'embedding_state', 'embedding',
-                   # 14.2 (okf-recall-path): livscykelfält — pekar på
-                   # efterträdaren när raden blir superseded. Hör till
-                   # livscykeln, inte innehållet (summary/title är låsta).
-                   'superseded_by_id'}
-        forbidden = set(vals) - allowed
+        immutable = {'concept_key', 'scope', 'owner_company_id',
+                     'owner_user_id', 'owner_coworker_id',
+                     'artifact_type_id'}
+        forbidden = set(vals) & immutable
         if forbidden:
             raise ValidationError(
-                _('ai.okf.concept rows are ADD-only (immutable). '
+                _('ai.okf.concept identity fields are immutable. '
                   'Cannot write fields: %s') % ', '.join(sorted(forbidden)))
         return super().write(vals)
+
 
     # ════════════════════════════════════════════
     # _okf_upsert() — konventionen (task 2.4/5.4)
@@ -465,24 +463,6 @@ class AIOkfConcept(models.Model):
             roles, goals, errors)
         return {'roles': roles, 'goals': goals, 'errors': errors}
 
-    def _cron_detect_superseded_gaps(self):
-        """14.5: hitta rader som är superseded utan att peka på efterträdaren.
-
-        `superseded_by_id` sattes aldrig före 14.2, så äldre rader kan vara
-        markerade som ersatta utan att veta av vad. Returnerar antalet och
-        loggar dem — en konsument kan då se att kedjan är bruten.
-        """
-        gaps = self.search([
-            ('status', '=', 'superseded'),
-            ('superseded_by_id', '=', False),
-        ])
-        if gaps:
-            _logger.warning(
-                'OKF versionskedja: %d superseded-rader saknar efterträdare '
-                '(superseded_by_id) — kör engångsmigrationen 14.6',
-                len(gaps))
-        return len(gaps)
-
     def _produce_embedding(self, summary, title=None, explicit=None):
         """Producera (eller validera) embedding för ett koncept (fas 3.1/3.2).
 
@@ -537,62 +517,6 @@ class AIOkfConcept(models.Model):
                                             dim=EMBEDDING_DIM):
             return (None, 'failed')
         return (vector, 'ready')
-
-    @api.model
-    def _version_is_unchanged(self, existing, summary, title, source_ref,
-                             attribution, source_text=None):
-        """Är den nya datan innehållsligt identisk med senaste versionen?
-
-        Jämför de fält som BESKRIVER konceptet. Avsiktligt UTELÄMNADE:
-        `generated`/`verified` (tidsstämplar — de är alltid nya och hade
-        gjort varje körning till en 'ändring'), `embedding` (härleds ur
-        texten, så samma text ger samma vektor) och `id`/`version`.
-
-        `attribution` jämförs normaliserat (sorterad på source+role) — två
-        listor med samma källor i olika ordning är samma attribution, och
-        att behandla dem som olika hade återinfört en rad per körning.
-
-        None och '' normaliseras båda till '' innan jämförelsen, så ett
-        utelämnat `title` inte ser ut som en ändring mot ett tomt.
-
-        FYND (2026-09-21): metoden är `@api.model` och anropas som
-        `self._version_is_unchanged(existing, ...)` — där `self` är MODELLEN
-        (oftast ett tomt recordset), inte raden. `self.ensure_one()` kastade
-        därför `Expected singleton: ai.okf.concept()` så fort en befintlig
-        version hittades, och hela `_okf_upsert` föll. Felet dolde sig bakom
-        versionsstormen: cronens try/except loggade bara en varning, så
-        varje post förblev dirty och försökte igen var 5:e minut.
-        Kontrollen ska gälla den befintliga raden — det är den vi jämför mot.
-        """
-        existing.ensure_one()
-
-        def _norm_attr(attr):
-            rows = attr or []
-            out = []
-            for row in rows:
-                if isinstance(row, dict):
-                    out.append((str(row.get('source', '')),
-                                str(row.get('role', ''))))
-                else:
-                    out.append((str(row), ''))
-            return sorted(out)
-
-        # D5 (okf-mixin): när källtexten är känd styr DEN versionen — inte
-        # derivatet. En LLM som formulerar om samma text ska inte skapa en
-        # ny version; en faktisk källändring ska. Utan källtexten (legacy-
-        # anropare) jämförs summary som förut.
-        if source_text is not None:
-            if (existing.source_text or '') != (source_text or ''):
-                return False
-        elif (existing.summary or '') != (summary or ''):
-            return False
-        if (existing.title or '') != (title or ''):
-            return False
-        if (existing.source_ref or '') != (source_ref or ''):
-            return False
-        if _norm_attr(existing.attribution) != _norm_attr(attribution):
-            return False
-        return True
 
     # ── Personligt minne: skrivgräns (D2, companion-memory-completeness) ──
     #
@@ -649,7 +573,6 @@ class AIOkfConcept(models.Model):
             ('scope', '=', 'personal'),
             ('owner_user_id', '=', uid),
             ('archived', '=', False),
-            ('superseded_by_id', '=', False),
             ('artifact_type_id.kind', '=', 'memory'),
         ]
 
@@ -658,8 +581,8 @@ class AIOkfConcept(models.Model):
         """Summerade tecken för en användares aktiva personal-koncept.
 
         Räknar `summary` (det som faktiskt injiceras), inte `source_text`.
-        Endast senaste versionen av varje nyckel räknas — en superseded rad
-        injiceras inte och ska därför inte belasta budgeten.
+        Ett koncept per nyckel (beslut 2026-10-26) — ingen version att
+        filtrera bort.
 
         Mäts på `kind='memory'` (se `_personal_memory_domain`). Dokument,
         kalender, mail och anteckningar som råkar ägas av användaren är
@@ -753,7 +676,6 @@ class AIOkfConcept(models.Model):
             ('scope', '=', 'personal'),
             ('owner_user_id', '=', uid),
             ('archived', '=', False),
-            ('superseded_by_id', '=', False),
             ('artifact_type_id.kind', '=', 'knowledge'),
         ]
         rows = self.search(domain)
@@ -806,28 +728,29 @@ class AIOkfConcept(models.Model):
                     embedding=None, search_vector=None, source_text=None,
                     force_new_version=False, okf_tags=None,
                     source_user_id=None, **kwargs):
-        """Skapa ny concept eller ny version vid re-index (ADD-only).
+        """Skapa eller UPPDATERA konceptet for (scope, agare, concept_key).
 
-        - Memory-koncept (kind=memory): ny rad endast vid genuint ny inlärning
-          (kallaren ansvarar för att bara anropa vid nytt); samma concept_key
-          med samma version-rad → ny version.
-        - Knowledge-koncept: re-index av samma concept_key skapar ny version
-          (version+1, supersedes_id → föregående), föregående blir superseded.
-        - Rader är immutabla (ADD-only gäller alltid).
+        ETT koncept per nyckel (beslut 2026-10-26). Modellen ar en spegel av
+        kallan, inte en versionslogg.
 
-        `force_new_version` (okf-mixin): skapa en ny version även när
-        innehållet är oförändrat. Används av efterfyllnaden, som lägger till
-        en vektor — en genuin ändring av raden som `_version_is_unchanged`
-        annars skulle avvisa.
+        VARFOR: `okf_contract.stale_policy = "source"` sager att konceptet ska
+        folja kallposten. Med ADD-only kunde det aldrig folja -- varje andring
+        blev en ny rad, den gamla blev `superseded`, och bada lag kvar i
+        sokindexet. I drift blev kedjan en logg over cron-korningar:
 
-        `source_text` (okf-mixin D5): källtexten som `summary` härleddes ur.
-        När den är satt styr DEN versionsbeslutet — en LLM som formulerar om
-        samma text ger ingen ny version, men en faktisk källändring gör det.
-        Utelämnad → `summary` jämförs som förut (legacy-anropare oförändrade).
+            dms,1     49 rader, en per dygn, identiskt innehall
+            website,4 49 rader, samma
+            crm.lead  732 nycklar med tva rader var
+
+        Historiken finns redan i kallan (document.page.history, mail.message pa
+        project.task, dms-filversioner). Att duplicera den har gav en andra
+        sanning som gled isar.
+
+        `force_new_version` behalls som parameter for bakåtkompatibilitet men
+        har ingen verkan -- det finns ingen version att tvinga fram.
         """
         ArtifactType = self.env['ai.artifact.type']
         if isinstance(artifact_type, str):
-            # Namn på artefakttyp (t.ex. 'learning', 'knowledge')
             atype = ArtifactType.search([('name', '=', artifact_type)],
                                         limit=1)
             if not atype:
@@ -838,7 +761,7 @@ class AIOkfConcept(models.Model):
         else:
             atype = ArtifactType.browse(artifact_type)
 
-        # Scope härleds från ägare (beslut 15)
+        # Scope harleds fran agare (beslut 15)
         if owner_company_id:
             scope = 'company'
         elif owner_user_id:
@@ -849,18 +772,11 @@ class AIOkfConcept(models.Model):
             raise ValidationError(
                 _('_okf_upsert() requires exactly one owner.'))
 
-        # Existerande senaste version inom (scope, ÄGARE, concept_key).
-        # 1.9: en språkmedveten nyckel söker även basnyckeln, så en gammal
-        # rad utan språksuffix fortsätter sin kedja i stället för att en
-        # parallell startas.
+        # Befintligt koncept inom (scope, AGARE, concept_key).
         #
-        # D7 (okf-owner-and-access-scoping): ägarfiltret är OBLIGATORISKT.
-        # Utan det hittar A:s indexering B:s rad under samma nyckel och
-        # skriver version 2 av B:s koncept — och markerar B:s rad
-        # `superseded`. Det kastar inget fel; det skriver in i fel
-        # användares minne. Ägarfiltret måste vara explicit även när
-        # nyckeln bär ägaren, eftersom `_okf_lookup_keys` returnerar flera
-        # nycklar (basnyckeln kan kollidera mellan ägare).
+        # D7 (okf-owner-and-access-scoping): agarfiltret ar OBLIGATORISKT.
+        # Utan det hittar A:s indexering B:s rad under samma nyckel och skriver
+        # in i fel anvandares minne.
         owner_domain = self._owner_domain({
             'owner_company_id': owner_company_id,
             'owner_user_id': owner_user_id,
@@ -869,108 +785,12 @@ class AIOkfConcept(models.Model):
         existing = self.search([
             ('scope', '=', scope),
             ('concept_key', 'in', self._okf_lookup_keys(concept_key)),
-            ('status', '!=', 'superseded'),
-        ] + owner_domain, order='version desc', limit=1)
-        if existing:
-            # ── Är detta en GENUIN ny version? (Fas 14) ────────────────
-            # Utan denna kontroll skapade varje cron-körning en ny rad även
-            # när innehållet var bokstavligen identiskt. Mätt mot `social`
-            # 2026-09-14:
-            #
-            #   personal|user.2.role : 22 rader, 1 unik text
-            #   personal|user.6.role : 22 rader, 1 unik text
-            #   company|partner,10   : 22 rader, 1 unik text
-            #
-            # Kedjan såg ut som en historik men var en logg över att cron
-            # hade kört. Värre: eftersom `search_vector` genereras ur
-            # summary||title blev 22 identiska rader 22 identiska
-            # fulltextposter — sökningen fick 22 chanser att hitta samma
-            # sak, vilket förvränger rankningen (DISTINCT ON räddade
-            # dedupen i fas 12, men bara för att den fanns).
-            #
-            # Regeln: samma innehåll = ingen ny version. Villkoret är
-            # innehållsligt, inte tidsmässigt — `verified`/`generated`
-            # uppdateras ändå inte på den gamla raden (ADD-only), så en
-            # 'oförändrad' rad är den ärliga representationen.
-            if not force_new_version and self._version_is_unchanged(
-                    existing, summary, title, source_ref, attribution,
-                    source_text=source_text):
-                _logger.debug(
-                    'OKF: %s|%s oförändrat sedan v%s — ingen ny version '
-                    '(annars skapas en rad per cron-körning)',
-                    scope, concept_key, existing.version)
-                # Returnera den BEFINTLIGA raden. Anroparen (t.ex.
-                # _index_user_role) räknar 1 = 'indexerad', vilket är sant:
-                # konceptet finns och är aktuellt.
-                return existing
-
-            # ── D2: skrivgränsen för det personliga minnet ───────────────
-            # En ny VERSION ersätter den gamla (gamla raden blir superseded
-            # och slutar räknas), så tillväxten är differensen. Ett helt nytt
-            # koncept tillför hela sin längd. Pröva mot taket INNAN raden
-            # skapas — annars är felet bara kosmetiskt.
-            if scope == 'personal':
-                delta = len(summary or '') - len(existing.summary or '')
-                self._check_personal_memory_budget(
-                    owner_user_id, incoming_chars=max(0, delta))
-                self._check_personal_knowledge_budget(owner_user_id)
-
-            # ADD-only: ny version istället för att skriva över
-            vec, vec_state = self._produce_embedding(
-                summary, title=title, explicit=embedding)
-            vals = {
-                'artifact_type_id': atype.id,
-                'scope': scope,
-                'concept_key': concept_key,
-                'version': existing.version + 1,
-                'supersedes_id': existing.id,
-                'title': title,
-                'summary': summary,
-                'source_text': source_text,
-                'okf_tags': okf_tags or [],
-                'attribution': attribution or [],
-                'source_ref': source_ref,
-                'sources': sources or [],
-                'generated': {'by': generated_by, 'at': fields.Datetime.now().isoformat()},
-                'verified': {'by': 'process', 'at': fields.Datetime.now().isoformat()},
-                'status': status,
-                'stale_after': stale_after,
-                'entities': entities or [],
-                'embedding': vec,
-                'embedding_state': vec_state,
-                'owner_company_id': owner_company_id,
-                'owner_user_id': owner_user_id,
-                'owner_coworker_id': owner_coworker_id,
-                'source_user_id': source_user_id,
-                'retention_purpose': atype.okf_contract.get('retention_purpose', 'none')
-                if atype.okf_contract else 'none',
-            }
-            new = self.create(vals)
-            # 14.1/14.2 (okf-recall-path): ny version + superseded atomärt,
-            # och föregångaren pekar på sin efterträdare. Fältet
-            # `superseded_by_id` fanns men sattes aldrig — en konsument
-            # kunde se att en rad var ersatt men inte av vad.
-            existing.write({
-                'status': 'superseded',
-                'superseded_by_id': new.id,
-            })
-            return new
-
-        # ── D2: skrivgränsen för det personliga minnet (nytt koncept) ──
-        # Helt ny nyckel → hela längden tillförs budgeten.
-        if scope == 'personal':
-            self._check_personal_memory_budget(
-                owner_user_id, incoming_chars=len(summary or ''))
-            self._check_personal_knowledge_budget(owner_user_id)
+        ] + owner_domain, limit=1)
 
         vec, vec_state = self._produce_embedding(
             summary, title=title, explicit=embedding)
-        vals = {
-            'artifact_type_id': atype.id,
-            'scope': scope,
-            'concept_key': concept_key,
-            'version': 1,
-            'supersedes_id': None,
+
+        common = {
             'title': title,
             'summary': summary,
             'source_text': source_text,
@@ -978,21 +798,50 @@ class AIOkfConcept(models.Model):
             'attribution': attribution or [],
             'source_ref': source_ref,
             'sources': sources or [],
-            'generated': {'by': generated_by, 'at': fields.Datetime.now().isoformat()},
-            'verified': {'by': 'process', 'at': fields.Datetime.now().isoformat()},
+            'generated': {'by': generated_by,
+                          'at': fields.Datetime.now().isoformat()},
+            'verified': {'by': 'process',
+                         'at': fields.Datetime.now().isoformat()},
             'status': status,
             'stale_after': stale_after,
             'entities': entities or [],
             'embedding': vec,
             'embedding_state': vec_state,
+            'source_user_id': source_user_id,
+        }
+
+        if existing:
+            # -- Spegla kallan: skriv over innehallsfalten --
+            if scope == 'personal':
+                delta = len(summary or '') - len(existing.summary or '')
+                if delta > 0:
+                    self._check_personal_memory_budget(
+                        owner_user_id, incoming_chars=delta)
+            existing.write(common)
+            _logger.debug(
+                'OKF: %s|%s speglad (inga versioner -- en rad per nyckel)',
+                scope, concept_key)
+            return existing
+
+        # -- Nytt koncept --
+        if scope == 'personal':
+            self._check_personal_memory_budget(
+                owner_user_id, incoming_chars=len(summary or ''))
+            self._check_personal_knowledge_budget(owner_user_id)
+
+        vals = dict(common)
+        vals.update({
+            'artifact_type_id': atype.id,
+            'scope': scope,
+            'concept_key': concept_key,
             'owner_company_id': owner_company_id,
             'owner_user_id': owner_user_id,
             'owner_coworker_id': owner_coworker_id,
-            'source_user_id': source_user_id,
             'retention_purpose': atype.okf_contract.get('retention_purpose', 'none')
             if atype.okf_contract else 'none',
-        }
+        })
         return self.create(vals)
+
 
     def _compute_stale_after(self, last_modified=None):
         """Beräkna stale_after från artefakttypens stale_policy (task 8.1).
@@ -1021,7 +870,6 @@ class AIOkfConcept(models.Model):
         now = fields.Datetime.now()
         domain = [
             ('archived', '=', False),
-            ('status', '!=', 'superseded'),
         ]
         if not include_stale_searchable:
             domain.extend(['|', ('stale_after', '=', False),
@@ -1202,7 +1050,7 @@ class AIOkfConcept(models.Model):
         #    icke-tomma fallback som skulle bort. Filtret och @@-villkoret
         #    hör ihop; det ena utan det andra är en lögn.
         sql = """
-            SELECT id, scope, concept_key, version,
+            SELECT id, scope, concept_key,
                 owner_company_id, owner_user_id, owner_coworker_id,
                 COALESCE(1 - (embedding <=> %(qvec)s::vector), NULL)
                     AS cosine,
@@ -1215,7 +1063,6 @@ class AIOkfConcept(models.Model):
                 ) AS score
             FROM ai_okf_concept
             WHERE archived = false
-              AND status != 'superseded'
               AND (embedding IS NOT NULL
                    OR search_vector @@ plainto_tsquery('swedish', %(q)s))
         """
@@ -1233,7 +1080,7 @@ class AIOkfConcept(models.Model):
         # måste filtrera ägaren precis som domain-vägen gör. Utan
         # detta returnerar personal-scope ALLA användares koncept.
         if owner_column and owner_id is not None:
-            sql += ' AND %s = %%(owner)s' % owner_column
+            sql += ' AND ' + owner_column + ' = %(owner)s'
             params['owner'] = owner_id
         if scope == 'coworker' and not cross_user:
             sql += (' AND (source_user_id IS NULL OR '
@@ -1276,9 +1123,15 @@ class AIOkfConcept(models.Model):
         # Dedup i SQL: senaste versionen per (scope, ÄGARE, concept_key).
         # Samma princip som _latest_per_key(), men FÖRE limit — annars hade
         # limit=20 kunnat fyllas av 20 versioner av SAMMA koncept.
+        # Den inre sql bär psycopg2-platshållare. Ingen escape behövs:
+        # .replace() kör ingen %-expansion, så de når psycopg2 intakta.
+        # (Skriv dem INTE i den här kommentaren — den ligger utanför
+        # strängen men inuti metodkroppen, och en platshållare här skulle
+        # räknas som en saknad parameter.)
+        inner_sql = sql
         sql = """
             WITH ranked AS (
-                %s
+                __INNER__
             ),
             deduped AS (
                 SELECT DISTINCT ON (scope, owner_company_id, owner_user_id,
@@ -1286,10 +1139,10 @@ class AIOkfConcept(models.Model):
                     id, cosine, ts_rank, score
                 FROM ranked
                 ORDER BY scope, owner_company_id, owner_user_id,
-                         owner_coworker_id, concept_key, version DESC
+                         owner_coworker_id, concept_key
             )
             SELECT id, cosine, ts_rank, score FROM deduped
-        """ % sql
+        """.replace('__INNER__', inner_sql)
 
         # DISTINCT ON kräver att ORDER BY börjar med nycklarna — sorteringen
         # på score sker därför i ett yttre lager.
@@ -2334,7 +2187,6 @@ class AIOkfConcept(models.Model):
         domain = [
             ('scope', '=', scope),
             ('archived', '=', False),
-            ('status', '!=', 'superseded'),
         ]
         if scope == 'company':
             domain.append(('owner_company_id', '=', owner_id))
@@ -2391,7 +2243,7 @@ class AIOkfConcept(models.Model):
         #   - artifact_type 'mål'  → L2 (vart de är på väg)
         #
         # FYND (test 2026-10-14): `status` på ai.okf.concept är
-        # draft/stable/superseded/deprecated — INTE active/completed (de
+        # draft/stable/deprecated — INTE active/completed (de
         # tillhör ai.personal.goal). Ett OKF-koncept för ett mål skapas
         # bara för mål med active=True (_index_user_goals), så ett
         # icke-deprecated 'mål'-koncept ÄR ett aktivt mål. Att filtrera på
@@ -2551,7 +2403,6 @@ class AIOkfConcept(models.Model):
         pending = self.search([
             ('embedding_state', 'in', ('pending', 'failed')),
             ('archived', '=', False),
-            ('status', '!=', 'superseded'),
         ], limit=batch_size, order='id asc')
 
         if not pending:
@@ -2687,7 +2538,6 @@ class AIOkfConcept(models.Model):
         domain = [
             (owner_field, "=", res_id),
             ("archived", "=", False),
-            ("status", "!=", "superseded"),
         ]
         count = self.search_count(domain)
         return {

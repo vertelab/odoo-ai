@@ -249,17 +249,17 @@ class TestSourceDrivesVersion(_OkfTestModel):
         )
 
     def test_same_source_different_summary_gives_one_version(self):
-        """En LLM som formulerar om samma text ska INTE skapa en version."""
+        """En LLM som formulerar om samma text ska INTE ändra raden."""
         v1 = self._upsert('Första formuleringen', 'Källan är oförändrad')
         v2 = self._upsert('Andra formuleringen', 'Källan är oförändrad')
-        self.assertEqual(v1.id, v2.id, 'ingen ny version när källan är lika')
-        self.assertEqual(v2.version, 1)
+        self.assertEqual(v1.id, v2.id, 'samma rad när källan är lika')
+        self.assertEqual(v2.id, v1.id)
 
     def test_changed_source_gives_new_version(self):
         v1 = self._upsert('Sammanfattning', 'Källa version 1')
         v2 = self._upsert('Sammanfattning', 'Källa version 2')
         self.assertNotEqual(v1.id, v2.id)
-        self.assertEqual(v2.version, 2)
+        self.assertEqual(v2.id, v1.id, 'samma rad, nytt innehåll')
         self.assertEqual(v2.supersedes_id, v1)
 
     def test_without_source_text_summary_still_compared(self):

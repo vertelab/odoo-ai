@@ -348,16 +348,25 @@ class TestWorkspaceSafety(TransactionCase):
             ('summary', '=', 'Måste godkännas')])
         self.assertGreater(after, 0)
 
-    def test_02_concept_rows_immutable(self):
-        """8.4 ADD-only: konceptet får inte skrivas på innehållsfält."""
+    def test_02_concept_content_is_writable(self):
+        """Konceptet är en spegel — innehåll får skrivas över.
+
+        (Beslut 2026-10-26: ADD-only borttagen. `okf_contract.stale_policy =
+        "source"` kräver att konceptet följer källposten, och med ADD-only
+        kunde det aldrig följa.)
+        """
         from odoo.exceptions import ValidationError
         atype = self.env['ai.artifact.type'].search(
             [('kind', '=', 'knowledge')], limit=1)
         concept = self.env['ai.okf.concept']._okf_upsert(
             atype, 'test:immut', 'Original', title='Org',
             owner_user_id=self.env.user.id)
+        # Innehåll får skrivas
+        concept.write({'summary': 'Ändrad'})
+        self.assertEqual(concept.summary, 'Ändrad')
+        # Identiteten är låst
         with self.assertRaises(ValidationError):
-            concept.write({'summary': 'Försök till ändring'})
+            concept.write({'concept_key': 'annan.nyckel'})
         # Lifecycle-fält tillåts
         concept.write({'archived': True})
         self.assertTrue(concept.archived)

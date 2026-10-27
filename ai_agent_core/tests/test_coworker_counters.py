@@ -61,17 +61,15 @@ class TestCoworkerCounters(TransactionCase):
             session.invalidate_recordset(['create_date'])
         return session
 
-    def _concept(self, key, version=1, status='stable', archived=False,
+    def _concept(self, key, status='stable', archived=False,
                  supersedes=None):
         return self.Concept.create({
             'scope': 'coworker',
             'owner_coworker_id': self.coworker.id,
             'artifact_type_id': self.artifact.id,
             'concept_key': key,
-            'version': version,
             'status': status,
             'archived': archived,
-            'supersedes_id': supersedes.id if supersedes else False,
             'title': key,
             'summary': 'x',
         })
@@ -183,24 +181,22 @@ class TestCoworkerCounters(TransactionCase):
 
     # ── 3. Odoo Mind räknar distinkta nycklar ──────────────────────────
 
-    def test_five_versions_are_one_concept(self):
-        """F5.3: ett koncept i fem versioner räknas som 1."""
-        previous = None
-        for version in range(1, 6):
-            previous = self._concept(
-                'counter-versioned', version=version,
-                status='superseded' if version < 5 else 'stable',
-                supersedes=previous)
+    def test_one_concept_per_key(self):
+        """F5.3: ett koncept per nyckel räknas som 1.
+
+        (Före 2026-10-26 fanns fem versioner av samma nyckel; nu finns en
+        rad, så räkningen är trivial — men den ska fortfarande vara 1.)
+        """
+        self._concept('counter-versioned')
         self.coworker.invalidate_recordset()
         self.assertEqual(self.coworker.okf_concept_count, 1)
 
-    def test_archived_and_superseded_not_counted(self):
-        """F5.3: arkiverade och superseded-koncept räknas inte."""
+    def test_archived_not_counted(self):
+        """F5.3: arkiverade koncept räknas inte."""
         self._concept('counter-a')
         self._concept('counter-b')
         self._concept('counter-c')
         self._concept('counter-archived', archived=True)
-        self._concept('counter-old', version=1, status='superseded')
         self.coworker.invalidate_recordset()
         self.assertEqual(self.coworker.okf_concept_count, 3)
 
@@ -211,7 +207,7 @@ class TestCoworkerCounters(TransactionCase):
         self.Concept.create({
             'scope': 'coworker', 'owner_coworker_id': other.id,
             'artifact_type_id': self.artifact.id,
-            'concept_key': 'counter-theirs', 'version': 1,
+            'concept_key': 'counter-theirs',
             'title': 'theirs', 'summary': 'x',
         })
         self.coworker.invalidate_recordset()

@@ -190,7 +190,7 @@ class TestOkfOwnerList(_MultiOwnerMemory):
 class TestOkfCrossUserWrite(_MultiOwnerMemory):
     """D7: den tysta korsanvändarskrivningen."""
 
-    def _mk_concept(self, key, user, version=1, summary='Text'):
+    def _mk_concept(self, key, user, summary='Text'):
         return self.Concept.create({
             'artifact_type_id': self.atype.id,
             'scope': 'personal',
@@ -214,20 +214,19 @@ class TestOkfCrossUserWrite(_MultiOwnerMemory):
             owner_user_id=self.user_a.id, generated_by='test')
         a.invalidate_recordset()
         b.invalidate_recordset()
-        self.assertEqual(b.version, 1, 'B:s version ska vara orörd')
-        self.assertNotEqual(b.status, 'superseded',
-                            'B:s rad får inte bli superseded av A:s skrivning')
-        self.assertEqual(a.status, 'superseded',
-                         'A:s föregående version ska bli superseded')
+        self.assertEqual(a.summary, 'A:s nya text',
+                         'A:s rad ska bära den nya texten')
+        self.assertEqual(b.summary, 'B:s text',
+                         'B:s rad får inte röras av A:s skrivning')
 
     def test_upsert_creates_new_row_for_other_owner(self):
-        """En annan ägare får sin EGEN version 1, inte version 2."""
+        """En annan ägare får sin EGEN rad, inte A:s."""
         key = 'ai.personal.memory,998'
         self._mk_concept(key, self.user_a)
         created = self.Concept._okf_upsert(
             self.atype, key, 'B:s text',
             owner_user_id=self.user_b.id, generated_by='test')
-        self.assertEqual(created.version, 1)
+        self.assertNotEqual(created.id, self._mk_concept(key, self.user_a).id)
         self.assertEqual(created.owner_user_id, self.user_b)
 
     def test_latest_per_key_separates_owners(self):
@@ -315,6 +314,6 @@ class TestOkfConceptKeyGrammar(_MultiOwnerMemory):
             self.atype, '%s,user.%s' % (key, self.user_a.id), 'Ny text',
             owner_user_id=self.user_a.id, generated_by='test')
         v1.invalidate_recordset()
-        self.assertEqual(new.version, 2,
-                         'befintlig kedja ska fortsätta, inte starta om')
-        self.assertEqual(v1.status, 'superseded')
+        self.assertEqual(new.id, v1.id,
+                         'befintlig rad ska skrivas över, inte starta om')
+        self.assertEqual(v1.summary, 'Ny text')

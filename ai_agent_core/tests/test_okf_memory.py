@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Tester för OKF-memory-lagret (task 9.1).
 
-Täcker: exakt-en-ägare, ADD-only (immutabla rader), versionshantering,
+Täcker: exakt-en-ägare, ett koncept per nyckel (spegel av källan),
 attribution-filtrering, access-resolver, migrering, retention.
 """
 
@@ -93,24 +93,31 @@ class TestOkfExactlyOneOwner(TestOkfConceptBase):
 
 
 @tagged('okf', 'post_install')
-class TestOkfAddOnly(TestOkfConceptBase):
-    """ADD-only: rader är immutabla (task 9.1)."""
+class TestOkfIdentityLocked(TestOkfConceptBase):
+    """Identiteten är låst, innehållet är speglat (beslut 2026-10-26)."""
 
-    def test_write_summary_blocked(self):
-        c = self._mk_concept(concept_key='addonly.summary')
-        with self.assertRaises(ValidationError):
-            c.write({'summary': 'Ändrad!'})
+    def test_write_summary_allowed(self):
+        """Innehållet får skrivas — konceptet speglar källan."""
+        c = self._mk_concept(concept_key='mirror.summary')
+        c.write({'summary': 'Ändrad!'})
+        self.assertEqual(c.summary, 'Ändrad!')
 
-    def test_write_title_blocked(self):
-        c = self._mk_concept(concept_key='addonly.title')
+    def test_write_title_allowed(self):
+        c = self._mk_concept(concept_key='mirror.title')
+        c.write({'title': 'Nytt namn'})
+        self.assertEqual(c.title, 'Nytt namn')
+
+    def test_write_concept_key_blocked(self):
+        """Identiteten får INTE skrivas — det vore ett annat koncept."""
+        c = self._mk_concept(concept_key='mirror.key')
         with self.assertRaises(ValidationError):
-            c.write({'title': 'Nytt namn'})
+            c.write({'concept_key': 'annan.nyckel'})
 
     def test_status_allowed(self):
-        """status får ändras (superseded av _okf_upsert)."""
-        c = self._mk_concept(concept_key='addonly.status')
-        c.write({'status': 'superseded'})
-        self.assertEqual(c.status, 'superseded')
+        """status får ändras (livscykel)."""
+        c = self._mk_concept(concept_key='mirror.status')
+        c.write({'status': 'deprecated'})
+        self.assertEqual(c.status, 'deprecated')
 
     def test_archived_allowed(self):
         c = self._mk_concept(concept_key='addonly.archived')
@@ -118,7 +125,7 @@ class TestOkfAddOnly(TestOkfConceptBase):
         self.assertTrue(c.archived)
 
     def test_unique_key_within_scope(self):
-        """(scope, concept_key, version) är unikt — verifierat utan DB-krock.
+        """(scope, ägare, concept_key) är unikt — verifierat utan DB-krock.
 
         FYND 2026-09-23: testet skapade tidigare två identiska rader och
         förlitade sig på att UNIQUE-brottet fångades av assertRaises. Det
@@ -144,80 +151,88 @@ class TestOkfAddOnly(TestOkfConceptBase):
             c[0]: c[1] for c in self.Concept._sql_constraints
         }
         self.assertIn(
-            'concept_key_scope_version_uniq', constraints,
-            'UNIQUE-constrainten för (scope, ägare, concept_key, version) '
+            'concept_key_scope_uniq', constraints,
+            'UNIQUE-constrainten för (scope, ägare, concept_key) '
             'saknas')
         self.assertEqual(
-            constraints['concept_key_scope_version_uniq'],
+            constraints['concept_key_scope_uniq'],
             'UNIQUE(scope, owner_company_id, owner_user_id, '
-            'owner_coworker_id, concept_key, version)',
-            'Constrainten måste inkludera version (annars blockeras '
-            'versionshanteringen, bugg 9.1) OCH ägaren (annars kan två '
-            'ägare inte ha samma nyckel och version)')
+            'owner_coworker_id, concept_key)',
+            'Constrainten får inte inkludera version (det finns ingen) '
+            'men måste inkludera ägaren (annars kan två ägare inte ha '
+            'samma nyckel)')
 
-        # Positiv kontroll: samma nyckel i OLIKA versioner är tillåtet
-        # (det är hela poängen med ADD-only + versionering).
-        self._mk_concept(concept_key='addonly.uniq', version=1)
-        self._mk_concept(concept_key='addonly.uniq', version=2)
+        # Positiv kontroll: samma nyckel för OLIKA ägare är tillåtet.
+        # (_mk_concept defaultar till company-ägare; den andra raden får
+        # explicit en annan ägare.)
+        self._mk_concept(concept_key='addonly.uniq')
+        self.Concept.create({
+            'artifact_type_id': self.atype_learning.id,
+            'scope': 'personal',
+            'concept_key': 'addonly.uniq',
+            'summary': 'x',
+            'owner_user_id': self.env.user.id,
+        })
         count = self.Concept.search_count([
             ('concept_key', '=', 'addonly.uniq'),
-            ('scope', '=', 'company'),
         ])
-        self.assertEqual(count, 2, 'två versioner ska samexistera')
+        self.assertEqual(count, 2, 'två ägare ska kunna ha samma nyckel')
 
 
 @tagged('okf', 'post_install')
-class TestOkfVersioning(TestOkfConceptBase):
-    """Versionshantering: ny version vid re-index, superseded,
-    bara senaste versionen i sök (task 9.1)."""
+class TestOkfMirror(TestOkfConceptBase):
+    """Spegeln: re-index skriver över samma rad, ingen version skapas.
 
-    def test_reindex_creates_new_version(self):
-        c1 = self._mk_concept(concept_key='version.test')
+    (Beslut 2026-10-26: versioneringen borttagen. Modellen är en spegel
+    av källan, inte en logg över indexeringar.)
+    """
+
+    def test_reindex_updates_the_same_row(self):
+        c1 = self._mk_concept(concept_key='mirror.test')
+        rows_before = self.Concept.search_count([
+            ('concept_key', '=', 'mirror.test')])
         c2 = self.Concept._okf_upsert(
             artifact_type='knowledge',
-            concept_key='version.test',
-            summary='Ny version',
-            title='Version 2',
+            concept_key='mirror.test',
+            summary='Nytt innehåll',
+            title='Ny titel',
             owner_company_id=self.company.id,
             generated_by='cron_test',
         )
-        self.assertEqual(c2.version, c1.version + 1)
-        self.assertEqual(c2.supersedes_id.id, c1.id)
-        self.assertEqual(c1.status, 'superseded')
-        self.assertEqual(c2.status, 'stable')
+        self.assertEqual(c2.id, c1.id, 'samma rad ska skrivas över')
+        rows_after = self.Concept.search_count([
+            ('concept_key', '=', 'mirror.test')])
+        self.assertEqual(rows_after, rows_before,
+                         'ingen ny rad får skapas')
+        self.assertEqual(c2.summary, 'Nytt innehåll')
 
-    def test_only_latest_in_search(self):
-        self._mk_concept(concept_key='version.search')
-        self.Concept._okf_upsert(
-            artifact_type='knowledge',
-            concept_key='version.search',
-            summary='Senaste',
-            owner_company_id=self.company.id,
-        )
-        # Sök först på concept_key, applicera sedan _latest_per_key
-        found = self.Concept.search([('concept_key', '=', 'version.search')])
-        self.assertEqual(len(found), 2)  # båda versionerna
-        latest = found._latest_per_key()
-        self.assertEqual(len(latest), 1)
-        self.assertEqual(latest.version, 2)
+    def test_reindex_is_idempotent(self):
+        self._mk_concept(concept_key='mirror.idem')
+        for _ in range(5):
+            self.Concept._okf_upsert(
+                artifact_type='knowledge',
+                concept_key='mirror.idem',
+                summary='Samma text',
+                owner_company_id=self.company.id,
+            )
+        count = self.Concept.search_count([
+            ('concept_key', '=', 'mirror.idem')])
+        self.assertEqual(count, 1,
+                         'fem indexeringar ska ge en rad, inte fem')
 
-    def test_memory_concept_not_overwritten(self):
-        """memory-kind: samma concept_key re-upsert → ej ny version om
-        kallaren inte ber om ny inlärning (kallaren ansvarar). Här testar
-        vi att _okf_upsert på en learning-artefakttyp skapar ny version
-        men aldrig skriver över (ADD-only)."""
-        c1 = self._mk_concept(concept_key='version.memory',
+    def test_memory_concept_is_overwritten_too(self):
+        """Även learning-koncept speglas — källan är sanningen."""
+        c1 = self._mk_concept(concept_key='mirror.memory',
                               artifact_type_id=self.atype_learning.id)
-        c2 = self.Concept._okf_upsert(
+        self.Concept._okf_upsert(
             artifact_type='learning',
-            concept_key='version.memory',
+            concept_key='mirror.memory',
             summary='Ny inlärning',
             owner_company_id=self.company.id,
         )
-        # ADD-only: c1:s innehåll är oförändrat
-        self.assertNotEqual(c1.summary, c2.summary)
-        self.assertEqual(c1.summary, 'Rad 1\nRad 2\nRad 3')
-        self.assertEqual(c2.version, 2)
+        c1.invalidate_recordset()
+        self.assertEqual(c1.summary, 'Ny inlärning',
+                         'raden ska bära det nya innehållet')
 
 
 @tagged('okf', 'post_install')

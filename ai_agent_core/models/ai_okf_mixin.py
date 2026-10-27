@@ -1065,7 +1065,7 @@ class AIOkfMixin(models.AbstractModel):
                 'type': 'success' if concept else 'warning',
                 'title': 'OKF',
                 'message': (
-                    'Koncept skapat (version %s).' % concept.version
+                    'Koncept sparat.'
                     if concept else
                     'Inget koncept skapades — texten är tom eller posten '
                     'avfördes. Se loggen.'),

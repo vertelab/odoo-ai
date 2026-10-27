@@ -71,7 +71,7 @@ class TestPersonalMemorySources(common.TransactionCase):
         self.assertIn('Tech Department', injection)
 
     def test_hr_indexer_versioning(self):
-        """Ändrad befattning → ny OKF-version (supersedes)."""
+        """Ändrad befattning → samma OKF-rad skrivs över."""
         concept = self.env['ai.okf.concept'].search([
             ('scope', '=', 'personal'),
             ('owner_user_id', '=', self.user.id),
@@ -103,7 +103,7 @@ class TestPersonalMemorySources(common.TransactionCase):
             source_ref='hr.employee,%s' % self.employee.id,
         )
 
-        self.assertEqual(new_concept.version, 2)
+        self.assertEqual(new_concept.id, concept.id)
         self.assertEqual(new_concept.supersedes_id.id, concept.id)
 
     # ── Mål-indexering ──
@@ -140,7 +140,7 @@ class TestPersonalMemorySources(common.TransactionCase):
         self.assertIn('Learn GraphQL', concept.summary)
 
     def test_goal_status_update_versions(self):
-        """Målstatus-uppdatering → ny version."""
+        """Målstatus-uppdatering → samma rad skrivs över."""
         if 'ai.personal.goal' not in self.env:
             self.skipTest('ai.personal.goal not available')
 
@@ -170,7 +170,7 @@ class TestPersonalMemorySources(common.TransactionCase):
             source_ref='ai.personal.goal,%s' % goal.id,
         )
 
-        self.assertEqual(concept2.version, 2)
+        self.assertEqual(concept2.id, concept.id)
         self.assertEqual(concept2.supersedes_id.id, concept1.id)
 
     # ── Webb/browser-indexering ──

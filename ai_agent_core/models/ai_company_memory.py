@@ -328,7 +328,6 @@ class AICompanyMemory(models.Model):
             ('scope', '=', 'company'),
             ('owner_company_id', '=', company_id),
             ('archived', '=', False),
-            ('status', '!=', 'superseded'),
         ])
         if okf_count:
             try:
@@ -709,7 +708,6 @@ class AICompanyMemory(models.Model):
             ('scope', '=', 'company'),
             ('owner_company_id', '=', company_id),
             ('archived', '=', False),
-            ('status', '!=', 'superseded'),
         ], limit=200)
         if not concepts:
             return {'kind': 'management_summary', 'indexed': 0}

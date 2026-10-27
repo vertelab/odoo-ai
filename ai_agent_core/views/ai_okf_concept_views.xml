@@ -9,7 +9,6 @@
             <list string="OKF Concepts" limit="80">
                 <field name="scope"/>
                 <field name="concept_key"/>
-                <field name="version"/>
                 <field name="title"/>
                 <field name="artifact_type_id"/>
                 <field name="status"/>
@@ -40,10 +39,7 @@
                             <field name="title"/>
                             <field name="scope"/>
                             <field name="concept_key"/>
-                            <field name="version"/>
-                            <field name="supersedes_id"/>
-                            <field name="superseded_by_id"/>
-                            <field name="artifact_type_id"/>
+                                        <field name="artifact_type_id"/>
                             <field name="status"/>
                             <field name="archived"/>
                             <field name="in_inbox"/>

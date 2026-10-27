@@ -774,7 +774,7 @@ class AICoworker(models.Model):
         'Odoo Mind', compute='_compute_okf_concept_count',
         help='Antal distinkta konceptnycklar som ägs av denna AI-medarbetare '
              '(scope coworker). Varje nyckel räknas en gång — äldre versioner, '
-             'arkiverade och superseded-koncept räknas inte.')
+             'arkiverade koncept räknas inte.')
 
     @api.depends()
     def _compute_okf_concept_count(self):
@@ -785,7 +785,7 @@ class AICoworker(models.Model):
             groups = Concept._read_group(
                 [('owner_coworker_id', '=', r.id),
                  ('archived', '=', False),
-                 ('status', '!=', 'superseded')],
+                 ],
                 ['concept_key'],
                 ['__count'],
             )

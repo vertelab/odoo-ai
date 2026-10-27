@@ -249,10 +249,10 @@ class TestPersonalMemory(common.TransactionCase):
         atype = self.env['ai.artifact.type'].search([], limit=1)
         self.env.cr.execute("""
             INSERT INTO ai_okf_concept
-                (concept_key, summary, scope, version, status, archived,
+                (concept_key, summary, scope, status, archived,
                  artifact_type_id, owner_user_id, owner_company_id,
                  owner_coworker_id, source_user_id, create_date, write_date)
-            VALUES (%s, %s, %s, 1, 'stable', false, %s, %s, %s, %s, %s,
+            VALUES (%s, %s, %s, 'stable', false, %s, %s, %s, %s, %s,
                     now(), now())
             RETURNING id
         """, (key, key, scope, atype.id,

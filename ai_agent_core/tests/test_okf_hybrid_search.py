@@ -31,9 +31,9 @@ class TestOkfHybridSearch(common.TransactionCase):
         cls.atype_id = cls.Atype.search([], limit=1).id or \
             cls.env.ref('ai_agent_core.artifact_type_learning').id
 
-    def _mk(self, key, summary, scope='company', version=1, atype=None,
+    def _mk(self, key, summary, scope='company', atype=None,
             owner_id=None, source_user_id=None, query=None):
-        """Skapa ett koncept. Direkt via SQL för att styra version/status —
+        """Skapa ett koncept. Direkt via SQL för att styra status —
         `_okf_upsert` skulle lägga på versionslogik vi vill testa runt.
 
         Ägaren sätts alltid (sökningen kräver den): company → env.company,
@@ -47,13 +47,13 @@ class TestOkfHybridSearch(common.TransactionCase):
                 else self.env.user.id
         self.env.cr.execute("""
             INSERT INTO ai_okf_concept
-                (concept_key, summary, scope, version, status, archived,
+                (concept_key, summary, scope, status, archived,
                  artifact_type_id, %s, source_user_id,
                  create_date, write_date)
-            VALUES (%%s, %%s, %%s, %%s, 'stable', false, %%s, %%s, %%s,
+            VALUES (%%s, %%s, %%s, 'stable', false, %%s, %%s, %%s,
                     now(), now())
             RETURNING id
-        """ % owner_col, (key, summary, scope, version,
+        """ % owner_col, (key, summary, scope,
                           atype.id if atype else self.atype_id,
                           owner_id, source_user_id))
         rec_id = self.env.cr.fetchone()[0]
@@ -77,22 +77,20 @@ class TestOkfHybridSearch(common.TransactionCase):
         """KÄRNBUGGEN: 110 rader returnerades där 4 unika koncept fanns."""
         for v in range(1, 12):
             self._mk('dedup.test', 'Kunden vill ha fakturor via e-post.',
-                     version=v, query='dedupterm')
+           query='dedupterm')
 
         results = self.Concept._okf_search('dedupterm', limit=50)
         keys = [c.concept_key for c in results]
         self.assertEqual(
             keys.count('dedup.test'), 1,
-            '11 versioner av SAMMA koncept ska ge 1 träff, inte 11')
+            'ett koncept ska ge en träff')
 
     def test_dedup_happens_before_limit(self):
         """Utan dedup FÖRE limit kunde limit=2 fyllas av 2 versioner av
         ett enda koncept — och resten av tabellen aldrig nås."""
         for v in range(1, 20):
-            self._mk('limit.hog', 'Fakturor och fakturering.', version=v,
-                     query='gränsterm')
-        self._mk('limit.annan', 'Fakturor skickas varje månad.', version=1,
-                 query='gränsterm')
+            self._mk('limit.hog', 'Fakturor och fakturering.',                      query='gränsterm')
+        self._mk('limit.annan', 'Fakturor skickas varje månad.',                  query='gränsterm')
 
         results = self.Concept._okf_search('gränsterm', limit=50)
         keys = [c.concept_key for c in results]
@@ -102,18 +100,20 @@ class TestOkfHybridSearch(common.TransactionCase):
         self.assertIn('limit.annan', keys,
                       'det andra konceptet ska också nås')
 
-    def test_dedup_picks_highest_version(self):
-        """Senaste versionen ska vinna — inte en slumpmässig."""
-        self._mk('ver.test', 'Gammal text om fakturor.', version=1,
-                 query='versionsterm')
-        newest = self._mk('ver.test', 'Nyare text om fakturor.', version=7,
-                          query='versionsterm')
-
+    def test_reindex_replaces_the_row(self):
+        """Om-indexering skriver över samma rad."""
+        first = self._mk('ver.test', 'Gammal text om fakturor.',
+                         query='versionsterm')
+        self.Concept._okf_upsert(
+            artifact_type='knowledge',
+            concept_key='ver.test',
+            summary='Nyare text om fakturor.',
+            owner_company_id=self.env.company.id,
+        )
         results = self.Concept._okf_search('versionsterm', limit=50)
         hits = [c for c in results if c.concept_key == 'ver.test']
         self.assertEqual(len(hits), 1)
-        self.assertEqual(hits[0].id, newest)
-
+        self.assertEqual(hits[0].id, first)
     # ── 12.5: ärlig tomhet ──
 
     def test_no_match_is_actually_empty(self):

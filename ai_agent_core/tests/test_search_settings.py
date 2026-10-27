@@ -308,9 +308,9 @@ class TestSearchSettings(TransactionCase):
                 else self.env.user.id
         self.env.cr.execute("""
             INSERT INTO ai_okf_concept
-                (concept_key, summary, scope, version, status, archived,
+                (concept_key, summary, scope, status, archived,
                  artifact_type_id, %s, create_date, write_date)
-            VALUES (%%s, %%s, %%s, 1, 'stable', false, %%s, %%s, now(), now())
+            VALUES (%%s, %%s, %%s, 'stable', false, %%s, %%s, now(), now())
             RETURNING id
         """ % owner_col, (key, summary, scope, atype.id, owner_id))
         return self.env.cr.fetchone()[0]
@@ -397,10 +397,10 @@ class TestSearchSettings(TransactionCase):
         atype = self.env['ai.artifact.type'].search([], limit=1)
         self.env.cr.execute("""
             INSERT INTO ai_okf_concept
-                (concept_key, summary, scope, version, status, archived,
+                (concept_key, summary, scope, status, archived,
                  artifact_type_id, create_date, write_date)
             VALUES ('vag2.ingen-gate', 'kvantmekanik sällsynt ordet',
-                    'company', 1, 'stable', false, %s, now(), now())
+                    'company', 'stable', false, %s, now(), now())
             RETURNING id
         """, (atype.id,))
         truth = self.Concept._okf_search('kvantmekanik', limit=10)
@@ -420,10 +420,10 @@ class TestSearchSettings(TransactionCase):
         atype = self.env['ai.artifact.type'].search([], limit=1)
         self.env.cr.execute("""
             INSERT INTO ai_okf_concept
-                (concept_key, summary, scope, version, status, archived,
+                (concept_key, summary, scope, status, archived,
                  artifact_type_id, create_date, write_date)
             VALUES ('vag2.brus', 'Kunden vill ha fakturor via e-post.',
-                    'company', 1, 'stable', false, %s, now(), now())
+                    'company', 'stable', false, %s, now(), now())
             RETURNING id
         """, (atype.id,))
         hits = self.Concept._okf_search('zzzznonsensezzz', limit=20)

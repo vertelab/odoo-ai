@@ -64,7 +64,6 @@ class ResCompany(models.Model):
                 ('scope', '=', 'company'),
                 ('owner_company_id', '=', r.id),
                 ('archived', '=', False),
-                ('status', '!=', 'superseded'),
             ])
 
     def action_open_company_memory(self):

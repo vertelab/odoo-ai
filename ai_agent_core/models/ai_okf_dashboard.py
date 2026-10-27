@@ -57,7 +57,6 @@ class AIOkfDashboardLine(models.TransientModel):
 
     concept_count = fields.Integer(string='Koncept')
     dirty_count = fields.Integer(string='Dirty')
-    superseded_count = fields.Integer(string='Superseded')
     stale_count = fields.Integer(string='Stale')
     node_count = fields.Integer(string='AGE-noder')
     size_estimate = fields.Char(string='Storlek')
@@ -109,7 +108,6 @@ class AIOkfDashboard(models.TransientModel):
     personal_concept_count = fields.Integer(compute='_compute_stats')
     coworker_concept_count = fields.Integer(compute='_compute_stats')
     dirty_count = fields.Integer(compute='_compute_stats', string='Dirty')
-    superseded_count = fields.Integer(compute='_compute_stats')
     cron_status = fields.Text(compute='_compute_stats', string='Cron Status')
     queue_status = fields.Text(
         compute='_compute_stats', string='Indexeringskö')
@@ -139,28 +137,25 @@ class AIOkfDashboard(models.TransientModel):
 
         type_ids = tuple(types.ids)
 
-        # 1. Koncept-räkningar (total/dirty/superseded) i EN fråga
+        # 1. Koncept-räkningar (total/dirty) i EN fråga
         self.env.cr.execute("""
             SELECT artifact_type_id,
                    count(*) AS total,
-                   count(*) FILTER (WHERE dirty) AS dirty,
-                   count(*) FILTER (WHERE status = 'superseded') AS superseded
+                   count(*) FILTER (WHERE dirty) AS dirty
             FROM ai_okf_concept
             WHERE artifact_type_id IN %s
             GROUP BY artifact_type_id
         """, (type_ids,))
-        stats = {row[0]: {'total': row[1], 'dirty': row[2],
-                          'superseded': row[3]}
+        stats = {row[0]: {'total': row[1], 'dirty': row[2]}
                  for row in self.env.cr.fetchall()}
 
-        # 2. Stale-koncept (stale_after passerad, ej superseded) — EN fråga
+        # 2. Stale-koncept (stale_after passerad) — EN fråga
         self.env.cr.execute("""
             SELECT artifact_type_id, count(*)
             FROM ai_okf_concept
             WHERE artifact_type_id IN %s
               AND stale_after IS NOT NULL
               AND stale_after < now()
-              AND status != 'superseded'
             GROUP BY artifact_type_id
         """, (type_ids,))
         stale_counts = dict(self.env.cr.fetchall())
@@ -212,7 +207,6 @@ class AIOkfDashboard(models.TransientModel):
             for t in types:
                 total = stats.get(t.id, {}).get('total', 0)
                 dirty = stats.get(t.id, {}).get('dirty', 0)
-                superseded = stats.get(t.id, {}).get('superseded', 0)
                 stale = stale_counts.get(t.id, 0)
 
                 type_crons = crons_by_type.get(t.id, [])
@@ -257,7 +251,6 @@ class AIOkfDashboard(models.TransientModel):
                     'health_reason': reason,
                     'concept_count': total,
                     'dirty_count': dirty,
-                    'superseded_count': superseded,
                     'stale_count': stale,
                     'node_count': node_count,
                     'size_estimate': size,
@@ -289,8 +282,6 @@ class AIOkfDashboard(models.TransientModel):
             rec.coworker_concept_count = Concept.search_count(
                 [('scope', '=', 'coworker')])
             rec.dirty_count = Concept.search_count([('dirty', '=', True)])
-            rec.superseded_count = Concept.search_count(
-                [('status', '=', 'superseded')])
 
             # Graph-status
             try:

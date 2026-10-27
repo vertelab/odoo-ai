@@ -261,17 +261,15 @@ class TestEmbeddingBackfill(common.TransactionCase):
         return stack
 
     def test_backfill_fills_pending_and_clears_marker(self):
-        """En 'pending'-rad ska få en NY VERSION med vektor (fas 3.5).
+        """En 'pending'-rad ska få sin vektor ifylld på SAMMA rad (fas 3.5).
 
-        Koncept-rader är ADD-only — därför skapas en ny version istället
-        för att skriva in vektorn i den gamla raden. Den gamla blir
-        'superseded' och den nya bär vektorn.
+        (Före 2026-10-26 skapades en ny version eftersom raderna var
+        ADD-only. Nu är konceptet en spegel — vektorn skrivs in direkt.)
         """
         concept = self.Concept.create({
             'artifact_type_id': self.atype.id,
             'scope': 'company',
             'concept_key': 'test.backfill.fills',
-            'version': 1,
             'title': 'Backfill-koncept',
             'summary': 'Text som ska vektoriseras av cron',
             'owner_company_id': self.company.id,
@@ -283,22 +281,17 @@ class TestEmbeddingBackfill(common.TransactionCase):
                 batch_size=50)
 
         self.assertGreaterEqual(filled, 1)
-        # Ny version skapad med vektorn — immutabiliteten bevarad
-        versions = self.Concept.search([
+        rows = self.Concept.search([
             ('concept_key', '=', 'test.backfill.fills'),
             ('scope', '=', 'company'),
-        ], order='version desc')
-        self.assertEqual(len(versions), 2, 'förväntade två versioner')
-        newest = versions[0]
-        self.assertEqual(newest.version, 2)
-        self.assertIsNotNone(newest.embedding)
-        self.assertEqual(newest.embedding_state, 'ready')
-        # Den gamla raden är superseded, inte ändrad
-        self.assertEqual(versions[1].status, 'superseded')
-        self.assertFalse(versions[1].embedding)
+        ])
+        self.assertEqual(len(rows), 1, 'ingen ny rad ska skapas')
+        concept.invalidate_recordset()
+        self.assertIsNotNone(concept.embedding)
+        self.assertEqual(concept.embedding_state, 'ready')
 
     def test_backfill_does_not_touch_ready_rows(self):
-        """En 'ready'-rad ska aldrig skapa en ny version (fas 3.3).
+        """En 'ready'-rad ska aldrig röras (fas 3.3).
 
         Immutabilitet + ADD-only gör detta extra viktigt: en felaktig
         efterfyllnad skulle annars skapa oändliga versioner av oförändrade
@@ -308,8 +301,7 @@ class TestEmbeddingBackfill(common.TransactionCase):
             'artifact_type_id': self.atype.id,
             'scope': 'company',
             'concept_key': 'test.backfill.idempotent',
-            'version': 1,
-            'title': 'Redan klar',
+                        'title': 'Redan klar',
             'summary': 'Ska inte röras',
             'owner_company_id': self.company.id,
             'embedding_state': 'ready',
@@ -322,21 +314,20 @@ class TestEmbeddingBackfill(common.TransactionCase):
             self.env['ai.okf.concept']._okf_cron_backfill_embeddings(batch_size=50)
         after = self.Concept.search_count([
             ('concept_key', '=', 'test.backfill.idempotent')])
-        self.assertEqual(before, after, 'ingen ny version av en klar rad')
+        self.assertEqual(before, after, 'en klar rad ska inte röras')
 
     def test_backfill_leaves_pending_when_provider_fails(self):
-        """Provider utan svar → raden förblir 'pending' och ingen ny version.
+        """Provider utan svar → raden förblir 'pending'.
 
         Skillnaden är viktig: 'pending' betyder "försök igen", 'failed'
         betyder "något är fel, titta på det". Och eftersom rader är
-        ADD-only får ett misslyckande ALDRIG skapa en tom version.
+        Ett misslyckande får ALDRIG skriva en tom vektor.
         """
         concept = self.Concept.create({
             'artifact_type_id': self.atype.id,
             'scope': 'company',
             'concept_key': 'test.backfill.stays_pending',
-            'version': 1,
-            'title': 'Försök igen',
+                        'title': 'Försök igen',
             'summary': 'Providern svarar inte just nu',
             'owner_company_id': self.company.id,
             'embedding_state': 'pending',
@@ -349,7 +340,7 @@ class TestEmbeddingBackfill(common.TransactionCase):
         concept.invalidate_recordset()
         self.assertEqual(concept.embedding_state, 'pending')
         self.assertFalse(concept.embedding)
-        # Ingen ny version skapades av ett misslyckat försök
+        # Ingen vektor skrevs av ett misslyckat försök
         self.assertEqual(
             self.Concept.search_count([
                 ('concept_key', '=', 'test.backfill.stays_pending')]), 1)
@@ -360,8 +351,7 @@ class TestEmbeddingBackfill(common.TransactionCase):
             'artifact_type_id': self.atype.id,
             'scope': 'company',
             'concept_key': 'test.backfill.empty_text',
-            'version': 1,
-            'title': '',
+                        'title': '',
             'summary': '',
             'owner_company_id': self.company.id,
             'embedding_state': 'pending',

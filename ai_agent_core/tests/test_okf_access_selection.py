@@ -243,13 +243,13 @@ class TestOkfAccessInSelection(ConfigParamGuardedCase):
         owner_id = owner_id or self.env.company.id
         self.env.cr.execute("""
             INSERT INTO ai_okf_concept
-                (concept_key, summary, scope, version, status, archived,
+                (concept_key, summary, scope, status, archived,
                  artifact_type_id, owner_company_id, source_ref,
                  create_date, write_date)
-            VALUES (%s, %s, %s, %s, 'stable', false, %s, %s, %s,
+            VALUES (%s, %s, %s, 'stable', false, %s, %s, %s,
                     now(), now())
             RETURNING id
-        """, (key, summary, scope, version, self.atype_id, owner_id,
+        """, (key, summary, scope, self.atype_id, owner_id,
               source_ref))
         rec_id = self.env.cr.fetchone()[0]
         # `search_vector` byggs vid INSERT och uppdateras inte här. Den
@@ -298,11 +298,13 @@ class TestOkfAccessInSelection(ConfigParamGuardedCase):
         results = self.Concept._okf_search('hemligterm', limit=50)
         self.assertNotIn('hemlig.1', [c.concept_key for c in results])
 
-    def test_dedup_picks_visible_version(self):
-        """Dedupen väljer en läsbar version, inte en osynlig senare.
+    def test_invisible_source_does_not_win(self):
+        """Ett koncept vars källa är osynlig returneras inte.
 
-        Föll på den gamla koden: `DISTINCT ON` valde senaste versionen utan
-        att pröva läsbarhet — och förkastade därmed hela kedjan.
+        Före 2026-10-26 fanns versioner: v1 läsbar, v2 osynlig, och dedupen
+        var tvungen att välja den läsbara. Nu finns ett koncept per nyckel
+        (modellen speglar källan), så frågan är enklare: pekar konceptets
+        källa på något användaren inte får läsa, returneras det inte.
         """
         # v1 läsbar, v2 osynlig (samma concept_key)
         self._mk('kedja.1', 'Fakturor version ett.',
@@ -387,9 +389,9 @@ class TestOkfClassifyCache(ConfigParamGuardedCase):
             self.env.ref('ai_agent_core.artifact_type_learning').id
         self.env.cr.execute("""
             INSERT INTO ai_okf_concept
-                (concept_key, summary, scope, version, status, archived,
+                (concept_key, summary, scope, status, archived,
                  artifact_type_id, owner_company_id, create_date, write_date)
-            VALUES ('semcache.1', 'Faktura till leverantör', 'company', 1,
+            VALUES ('semcache.1', 'Faktura till leverantör', 'company',
                     'stable', false, %s, %s, now(), now())
         """, (atype_id, self.env.company.id))
         # Patches the provider lookup: om embedding-vägen körs kastar testet.
@@ -434,10 +436,10 @@ class TestOkfOpaqueSourceRef(ConfigParamGuardedCase):
         """Ett personligt mail-koncept: source_ref = Message-ID (inget komma)."""
         self.env.cr.execute("""
             INSERT INTO ai_okf_concept
-                (concept_key, summary, scope, version, status, archived,
+                (concept_key, summary, scope, status, archived,
                  artifact_type_id, owner_user_id, source_ref,
                  create_date, write_date)
-            VALUES (%s, %s, 'personal', 1, 'stable', false, %s, %s, %s,
+            VALUES (%s, %s, 'personal', 'stable', false, %s, %s, %s,
                     now(), now())
             RETURNING id
         """, (key, summary, self.atype_id, owner_id, message_id))

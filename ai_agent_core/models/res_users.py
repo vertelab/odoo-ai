@@ -66,7 +66,6 @@ class ResUsers(models.Model):
                 ('scope', '=', 'personal'),
                 ('owner_user_id', '=', r.id),
                 ('archived', '=', False),
-                ('status', '!=', 'superseded'),
             ])
 
     # ── Personal Goals (ai.personal.goal) ──
