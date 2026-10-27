@@ -178,16 +178,24 @@ class AIStreamController(http.Controller):
                             status=403,
                             content_type='application/json',
                         )
-                    # Budgetcheck (budget-hard-cap D4): web-UI visar budget slut
+                    # Budgetcheck (budget-hard-cap D4): web-UI visar budget slut.
+                    # Dagsbudgeten kontrollerades tidigare INTE här — bara
+                    # månadstaket — så när dagstaket slog till fick användaren
+                    # tyst ingenting. budget_block_message() är EN källa för
+                    # alla kanaler.
                     quest._unlock_budget_activities()
-                    if quest.budget_exhausted:
-                        quest.check_cap()
+                    _budget_code, _budget_msg = quest.budget_block_message()
+                    if _budget_code:
+                        if _budget_code == 'daily_budget_exhausted':
+                            quest.check_daily_cap()
+                        else:
+                            quest.check_cap()
+                        _logger.info(
+                            'stream: %s for %s', _budget_code, quest.name)
                         return Response(
                             json.dumps({
-                                "error": "budget_exhausted",
-                                "message": "Budget slut: AI-medarbetaren har nått "
-                                           "månadstaket. Höj taket i inställningarna "
-                                           "eller vänta till nästa månad.",
+                                "error": _budget_code,
+                                "message": _budget_msg,
                             }),
                             status=402,
                             content_type='application/json',

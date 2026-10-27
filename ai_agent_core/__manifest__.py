@@ -2,8 +2,7 @@
 # Part of Odoo. See LICENSE file for full copyright and licensing details.
 {
     'name': 'AI: Agent Core',
-    'version': '18.0.2.0.20',
-        'summary': 'AI Agent Core — Org-stomme, heartbeat, onboarding, task-system',
+    'version': '18.0.2.0.21',
     'category': 'AI Orchestration',
     'description': """
         AI Agent Core — self-sufficient AI agent platform for Odoo.

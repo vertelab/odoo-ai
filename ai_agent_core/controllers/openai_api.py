@@ -121,16 +121,24 @@ class AIOpenAPIController(http.Controller):
             return self._error(404, "OpenAI API not configured for this coworker")
 
         # Budgetcheck (budget-hard-cap D4): hårt stopp — 429 + OpenAI-
-        # kompatibel felstruktur. Notis en gång per månad.
+        # kompatibel felstruktur. Notis en gång per tak.
+        #
+        # Dagsbudgeten saknades här tidigare: bara månadstaket kontrollerades,
+        # så en API-klient som slog i dagstaket fick inget svar alls i stället
+        # för ett tydligt fel. budget_block_message() är EN källa för alla
+        # kanaler.
         coworker._unlock_budget_activities()
-        if coworker.budget_exhausted:
-            coworker.check_cap()
+        _budget_code, _budget_msg = coworker.budget_block_message()
+        if _budget_code:
+            if _budget_code == 'daily_budget_exhausted':
+                coworker.check_daily_cap()
+            else:
+                coworker.check_cap()
             return self._error(
                 429,
-                'Budget slut: AI-medarbetaren har nått månadstaket. '
-                'Höj taket i inställningarna eller vänta till nästa månad.',
+                _budget_msg,
                 error_type='insufficient_quota',
-                code='budget_exhausted',
+                code=_budget_code,
             )
 
         # Parse request body

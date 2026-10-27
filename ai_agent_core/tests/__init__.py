@@ -122,3 +122,6 @@ from . import test_session_smart_button
 # en röd test medan kön stod still i 3 dygn.
 from . import test_okf_stall_warning
 from . import test_okf_personal_budget_scope
+
+# budget-kanaler (2026-10-27): dagsbudgeten nådde bara 2 av 4 kanaler.
+from . import test_budget_channels
