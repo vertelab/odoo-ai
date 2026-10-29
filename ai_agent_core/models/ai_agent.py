@@ -409,7 +409,11 @@ class AIAgent(models.Model):
         if self.ai_role:
             parts.append(f"Role: {self.ai_role}")
         if self.ai_goal:
-            parts.append(f"Goal: {self.ai_goal[:100]}")
+            # 100 tecken klippte bort precis den mening som skiljer två
+            # specialister åt (STOPPREGEL-prefixet är identiskt och ~200
+            # tecken långt) — routern fick då identiska beskrivningar och
+            # valde på minnesfilnamn. 400 rymmer hela avgränsningsmeningen.
+            parts.append(f"Goal: {self.ai_goal[:400]}")
 
         # Tools
         if self.tool_ids:

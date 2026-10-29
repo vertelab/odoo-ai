@@ -542,11 +542,31 @@ class AIStreamController(http.Controller):
                 if gen_is_supervisor and len(quest.agent_ids) > 1:
                     for agent_rel in quest.agent_ids:
                         agent = agent_rel.agent_id
-                        gen_agents.append({
-                            'name': agent.name,
-                            'description': agent.get_agent_name(),
-                            'model': (agent.model_id._get_api_name() if agent.model_id else model),
-                        })
+                        # Routern väljer specialist på denna sträng. Den MÅSTE
+                        # börja med agentens eget ansvarsområde — annars är två
+                        # agenter med samma ai_role/ai_goal oskiljbara och
+                        # routern gissar (t.ex. Vera svarar på lastbilsfrågor).
+                        # get_agent_name() är kompletterande metadata (verktyg,
+                        # minnen, modell) och får aldrig ensam beskriva agenten.
+                        _desc = (agent.description or '').strip()
+                        _meta = agent.get_agent_name()
+                        if _desc:
+                            _meta = _meta.replace(
+                                'Goal: ' + (agent.ai_goal or '')[:100],
+                                'Goal: ' + (agent.ai_goal or '')[:400])
+                            gen_agents.append({
+                                'name': agent.name,
+                                'description': _desc + '\n' + _meta,
+                                'model': (agent.model_id._get_api_name()
+                                          if agent.model_id else model),
+                            })
+                        else:
+                            gen_agents.append({
+                                'name': agent.name,
+                                'description': _meta,
+                                'model': (agent.model_id._get_api_name()
+                                          if agent.model_id else model),
+                            })
                 # Resolve provider from quest's agent chain.
                 # Coworker = skal, agent = hjärna: en coworker utan agent
                 # (eller agent utan modell) ger ingen provider → chatten
