@@ -307,16 +307,35 @@ class AIStreamController(http.Controller):
         # mot skillsens triggers och injicerar receptet for de basta
         # traffarna. Litet antal (MAX_AUTO_SKILLS) sa prompten inte svaller
         # — samma lardom som for verktygsvalet.
+        # Två spår (2026-10-29):
+        #
+        #   A. COWORKER-NIVÅ (source='quest' / 'quest_copy') — laddas ALLTID.
+        #      En skill som är kopplad direkt på coworkern är ett medvetet
+        #      val av den som byggde assistenten: den ska gälla, inte gissas
+        #      fram ur en trigger-fras. Saknar den trigger_keywords fanns
+        #      tidigare ingen väg in alls — receptet kunde aldrig aktiveras.
+        #
+        #   B. AGENT-NIVÅ (source='agent' / 'identity') — aktiveras via
+        #      trigger-nyckelord. Här är katalogen stor och delad mellan
+        #      flera agenter, så en matchning behövs för att inte svälla
+        #      prompten. MAX_AUTO_SKILLS begränsar antalet per tur.
         MAX_AUTO_SKILLS = 2
         _explicit_skill = bool(
             prompt and prompt.startswith('/') and
             '/' not in prompt.split()[0][1:])
-        if (quest and quest.exists() and not _explicit_skill
-                and prompt):
+        if quest and quest.exists() and not _explicit_skill:
             try:
-                _auto = []
-                _ptext = prompt.lower()
+                _always, _auto = [], []
+                _ptext = (prompt or '').lower()
                 for _s in _available_skills():
+                    _recipe = (_s.get('recipe_text') or '').strip()
+                    if not _recipe:
+                        continue
+                    if _s.get('source') in ('quest', 'quest_copy'):
+                        _always.append(_s)
+                        continue
+                    if not _ptext:
+                        continue
                     _trig = [
                         t.strip().lower()
                         for t in (_s.get('trigger_keywords') or '').split(',')
@@ -327,23 +346,34 @@ class AIStreamController(http.Controller):
                     _hits = [t for t in _trig if t in _ptext]
                     if _hits:
                         _auto.append((len(_hits), _hits, _s))
+
+                # B först (längst ned i prompten), A sist → coworker-skills
+                # hamnar närmast användarens fråga och vinner vid konflikt.
                 _auto.sort(key=lambda x: -x[0])
                 for _n, _hits, _s in _auto[:MAX_AUTO_SKILLS]:
-                    _recipe = (_s.get('recipe_text') or '').strip()
-                    if not _recipe:
-                        continue
                     system_prompt = (
                         f"[SKILL AUTO-ACTIVATED: {_s['name']}]\n"
                         f"Matched triggers: {', '.join(_hits)}\n"
                         f"Follow the recipe below for this task:\n\n"
-                        f"{_recipe}\n\n"
+                        f"{_s['recipe_text']}\n\n"
                         f"[END SKILL: {_s['name']}]\n\n"
                     ) + (system_prompt or '')
                     _logger.info(
                         'Auto-skill aktiverad: %s (triggers=%s)',
                         _s['name'], _hits)
+
+                for _s in _always:
+                    system_prompt = (
+                        f"[SKILL ACTIVE: {_s['name']}]\n"
+                        f"This skill is attached to the coworker and always "
+                        f"applies. Follow the recipe below:\n\n"
+                        f"{_s['recipe_text']}\n\n"
+                        f"[END SKILL: {_s['name']}]\n\n"
+                    ) + (system_prompt or '')
+                    _logger.info(
+                        'Coworker-skill alltid aktiv: %s', _s['name'])
             except Exception as e:
-                _logger.warning('Auto-skill aktivering misslyckades: %s', e)
+                _logger.warning('Skill-aktivering misslyckades: %s', e)
 
         # Aktuell användare + minne via gemensam injiceringsfunktion
         # (agent-memory-governance 3.x — D1/D2)
@@ -507,7 +537,8 @@ class AIStreamController(http.Controller):
             'pi.nats.max_retries', '3'))
         if quest and quest.exists():
             try:
-                gen_is_supervisor = bool(quest.is_supervisor)
+                gen_is_supervisor = (
+                    quest._get_effective_orchestration_mode() == 'supervisor')
                 if gen_is_supervisor and len(quest.agent_ids) > 1:
                     for agent_rel in quest.agent_ids:
                         agent = agent_rel.agent_id

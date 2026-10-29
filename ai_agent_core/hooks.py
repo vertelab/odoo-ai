@@ -597,7 +597,6 @@ def post_init_hook(env):
             'init_type': 'manual',
             'status': 'active',
             'show_in_chat': False,
-            'is_supervisor': False,
             'use_chat_history': True,
             'use_time_context': True,
         })
@@ -614,7 +613,6 @@ def post_init_hook(env):
             'init_type': 'manual',
             'status': 'active',
             'show_in_chat': False,
-            'is_supervisor': False,
             'use_chat_history': True,
             'use_time_context': True,
         })

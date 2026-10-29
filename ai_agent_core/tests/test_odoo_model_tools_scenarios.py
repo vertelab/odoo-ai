@@ -143,7 +143,11 @@ class TestSupervisorRouting(TransactionCase):
     """8.5: Odoo-fråga delegeras till Odoo-specialisten, research till Research."""
 
     def test_default_coworker_is_supervisor_with_three_agents(self):
-        """Default-medarbetaren ska vara supervisor med kärna + två specialister."""
+        """Default-medarbetaren ska vara supervisor med kärna + två specialister.
+
+        Läser `orchestration_mode` — det gamla `is_supervisor` togs bort i
+        18.0.2.0.19 eftersom det alltid stod False efter dataimport.
+        """
         cw = self.env['ai.coworker'].search(
             [('name', '=', 'Allmän assistent')], limit=1)
         if not cw:

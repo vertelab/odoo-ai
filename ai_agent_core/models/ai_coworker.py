@@ -113,11 +113,6 @@ class AICoworker(models.Model):
 
     agent_ids = fields.One2many('ai.coworker.agent', 'coworker_id', string='Agents')
     agent_count = fields.Integer(compute='_compute_agent_count')
-    is_supervisor = fields.Boolean(
-        'Supervisor Mode', readonly=True,
-        help='DEPRECATED (change ai-orchestration-tidy-up 6.5): använd '
-             'orchestration_mode="supervisor" istället. Fältet synkas bakåt '
-             'från orchestration_mode och är inte längre redigerbart.')
 
     orchestration_mode = fields.Selection([
         ('single', 'Single Agent'),
@@ -298,13 +293,15 @@ class AICoworker(models.Model):
     # ── Orchestration helpers ──
 
     def _get_effective_orchestration_mode(self):
-        """Return effective orchestration mode, honoring legacy is_supervisor."""
+        """Return effective orchestration mode.
+
+        `orchestration_mode` är den enda sanningen. Det gamla fältet
+        `is_supervisor` togs bort 2026-10-29: det var readonly, synkades bara
+        av en onchange (som aldrig körde vid dataimport) och läste därför
+        alltid False i web-chatten — supervisor-läget aktiverades aldrig.
+        """
         self.ensure_one()
-        if self.orchestration_mode and self.orchestration_mode != 'single':
-            return self.orchestration_mode
-        if self.is_supervisor:
-            return 'supervisor'
-        return 'single'
+        return self.orchestration_mode or 'single'
 
     def _ensure_orchestration_skill(self):
         """Se till att orchestration.supervisor-skillen är kopplad.
@@ -8072,7 +8069,7 @@ class AICoworker(models.Model):
                     _logger.warning(
                         'Kunde inte seeda sökprofil %s på %s: %s',
                         vals.get('memory_profile'), rec.id, e)
-        if any(k in vals for k in ('orchestration_mode', 'channel_id', 'is_supervisor')):
+        if any(k in vals for k in ('orchestration_mode', 'channel_id')):
             self._sync_buzz_agents_to_channel()
         # Synka init_type_ids från stored init_*-booleans. Stored-fält (ej
         # computed+inverse) är den pålitliga Odoo-vägen — computed+inverse
@@ -8156,14 +8153,6 @@ class AICoworker(models.Model):
                 rec.partner_id = extra['partner_id']
             if 'employee_id' in extra:
                 rec.employee_id = extra['employee_id']
-
-    @api.onchange('orchestration_mode')
-    def _onchange_orchestration_mode(self):
-        """Keep legacy is_supervisor in sync."""
-        if self.orchestration_mode == 'supervisor':
-            self.is_supervisor = True
-        elif self.orchestration_mode and self.orchestration_mode != 'single':
-            self.is_supervisor = False
 
     # ── Org integration fields (ai-org-onboarding) ──
 

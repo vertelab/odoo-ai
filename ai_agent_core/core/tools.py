@@ -1447,12 +1447,12 @@ def builtin_tools() -> list[Tool]:
         # ── Quest Builder: Execution tools (write, destructive) ──
         Tool(
             name="builder_create_quest",
-            description="Create a new ai.coworker record. Params: name (required), description, init_types (list), is_supervisor (bool). Returns quest ID.",
+            description="Create a new ai.coworker record. Params: name (required), description, init_types (list), orchestration_mode (single|supervisor|buzz). Returns quest ID.",
             parameters={"type": "object", "properties": {
                 "name": {"type": "string", "description": "Quest name"},
                 "description": {"type": "string", "description": "System prompt / quest description"},
                 "init_types": {"type": "string", "description": "Comma-separated init types: web_ui,chat,powerbox,mail,cron,server_action,manual"},
-                "is_supervisor": {"type": "boolean", "description": "Enable supervisor mode for multi-agent orchestration"},
+                "orchestration_mode": {"type": "string", "enum": ["single", "supervisor", "buzz"], "description": "Orchestration mode; 'supervisor' enables multi-agent delegation"},
             }, "required": ["name"]},
             handler=_tool_builder_create_quest,
             risk_level="destructive",
@@ -1460,12 +1460,12 @@ def builtin_tools() -> list[Tool]:
         ),
         Tool(
             name="builder_update_quest",
-            description="Update an existing ai.coworker. Params: coworker_id (required), then any of: name, description, is_supervisor.",
+            description="Update an existing ai.coworker. Params: coworker_id (required), then any of: name, description, orchestration_mode.",
             parameters={"type": "object", "properties": {
                 "coworker_id": {"type": "integer", "description": "Quest ID to update"},
                 "name": {"type": "string"},
                 "description": {"type": "string"},
-                "is_supervisor": {"type": "boolean"},
+                "orchestration_mode": {"type": "string", "enum": ["single", "supervisor", "buzz"]},
             }, "required": ["coworker_id"]},
             handler=_tool_builder_update_quest,
             risk_level="destructive",
@@ -3290,7 +3290,7 @@ def _tool_inventory_quests(env, **kwargs):
     import json as _json
     quests = env["ai.coworker"].search([("active", "=", True)])
     data = [{"id": q.id, "name": q.name, "status": q.status,
-             "init_type": q.init_type, "is_supervisor": q.is_supervisor,
+             "init_type": q.init_type, "orchestration_mode": q.orchestration_mode,
              "agent_count": q.agent_count}
             for q in quests]
     return json.dumps(data, indent=2)
@@ -3355,13 +3355,13 @@ def _tool_inventory_odoo_models(env, **kwargs):
     return json.dumps(data, indent=2)
 
 
-def _tool_builder_create_quest(env, name, description="", init_types="", is_supervisor=False, **kwargs):
+def _tool_builder_create_quest(env, name, description="", init_types="", orchestration_mode="single", **kwargs):
     """Create a new ai.coworker. Returns quest ID."""
     vals = {
         "name": name,
         "description": description,
         "status": "active",
-        "is_supervisor": bool(is_supervisor),
+        "orchestration_mode": orchestration_mode or "single",
     }
     quest = env["ai.coworker"].create(vals)
 
@@ -3388,8 +3388,8 @@ def _tool_builder_update_quest(env, coworker_id, **kwargs):
     for field in ("name", "description"):
         if field in kwargs and kwargs[field]:
             updates[field] = kwargs[field]
-    if "is_supervisor" in kwargs:
-        updates["is_supervisor"] = bool(kwargs["is_supervisor"])
+    if kwargs.get("orchestration_mode"):
+        updates["orchestration_mode"] = kwargs["orchestration_mode"]
     if updates:
         quest.write(updates)
     return f"Quest #{quest.id} updated: {list(updates.keys())}"
