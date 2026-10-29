@@ -14,6 +14,10 @@ from datetime import date, datetime, timedelta
 from odoo import models, fields, api, _
 from odoo.exceptions import UserError
 
+from ..fields.pg_vector import PgVector
+
+EMBEDDING_DIM = 1024
+
 _logger = logging.getLogger(__name__)
 
 
@@ -103,9 +107,12 @@ class AICompanyMemory(models.Model):
     # ════════════════════════════════════════════
     # SEARCH
     # ════════════════════════════════════════════
-    embedding = fields.Text(
-        string='Vector Embedding',
-        help='pgvector(1536d) as PostgreSQL vector literal.')
+    # Se ai_personal_memory.py: typen MÅSTE vara PgVector, annars blir
+    # kolumnen TEXT och den semantiska sokvagen kastar SQL-fel.
+    embedding = PgVector(
+        string='Vector Embedding', dimension=EMBEDDING_DIM,
+        help='pgvector(%d) embedding. Kolumnen ar vector(%d)-typ.'
+             % (EMBEDDING_DIM, EMBEDDING_DIM))
     entities = fields.Json(
         string='Extracted Entities',
         help='Entities extracted for entity linking boost.')

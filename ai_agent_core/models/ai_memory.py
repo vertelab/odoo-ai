@@ -2,11 +2,38 @@
 """ai.memory — FAISS/pgvector memory for agents."""
 
 import logging
+import os
+
 from odoo import models, fields, api
 
 from .ai_okf_concept import EMBEDDING_DIM as _OKF_EMBEDDING_DIM
 
 _logger = logging.getLogger(__name__)
+
+# ── OpenMP-trådar: faiss segfaultar annars i worker-kontext ─────────────
+# faiss-cpu (pip-hjul) bär SIN EGEN libgomp + OpenBLAS
+# (faiss_cpu.libs/libgomp-*.so, libopenblaso-*.so), medan numpy bär sin
+# (numpy.libs/libscipy_openblas64_*.so) och Odoo/gevent har egna trådar.
+# Två OpenMP-runtimes i samma process startar två trådpooler; vid import
+# av faiss i en Odoo-worker kolliderar de och processen dör på C-nivå:
+#
+#   Fatal Python error: Segmentation fault
+#     faiss/loader.py:187  from .swigfaiss import *
+#     faiss/swigfaiss.py:10  from . import _swigfaiss   ← kraschen
+#
+# Symptom (2026-10-29): /ai/stream?session_id=<n> gav 502 i Caddy och
+# "Empty reply from server" direkt mot :8069 — workern dog tyst, och
+# inget hamnade i odoo-server.log eftersom kraschen sker under import i
+# C-lagret. UTAN session_id gick det bra, eftersom _get_quest_memories()
+# då aldrig nådde faiss_search(). Samma anrop fungerade i `odoo shell`
+# (annan process, annan tråd-/biblioteksordning) — därför svårt att se.
+#
+# OMP_NUM_THREADS=1 tvingar faiss till en enda tråd: ingen pool-konflikt,
+# ingen segfault. Måste sättas INNAN faiss importeras — dvs. här, vid
+# modulimport, inte i load_faiss(). setdefault respekterar ett värde som
+# redan satts i processmiljön (t.ex. systemd-drop-in).
+for _var in ('OMP_NUM_THREADS', 'OPENBLAS_NUM_THREADS', 'MKL_NUM_THREADS'):
+    os.environ.setdefault(_var, '1')
 
 
 class AIMemory(models.Model):

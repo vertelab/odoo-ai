@@ -1406,14 +1406,16 @@ class AIStreamController(http.Controller):
 
             # Senaste user-raden får requestens input-tokens (riktig usage
             # eller estimat) så varje meddelande visar sin prompt-kostnad.
-            user_lines = session.session_line_ids.filtered(
-                lambda l: l.role == 'user').sorted('sequence', reverse=True)
-            if user_lines:
-                user_lines[0].write({
-                    'token_input': token_input,
-                    'token_output': 0,
-                    'sys_multiplier': sys_mult,
-                })
+            #
+            # OBS: ai.coworker.session.line är APPEND-ONLY. Både
+            # `sys_multiplier`, `token_input` och `token_output` står i
+            # `_IMMUTABLE_FIELDS` (models/ai_session_line.py) — att skriva
+            # dem på en befintlig rad kastar UserError → HTTP 400 →
+            # SSE-avbrott → "Anslutningen till AI-servern bröts" i webb-UI:t
+            # (dina 2026-10-28). Token-fälten sätts när raden skapas
+            # (servern persisterar turen med usage redan där), så någon
+            # efterhands-write behövs inte. Sessions- och medarbetartotalerna
+            # nedan bokförs på sessionen/coworkern, som är muterbara.
 
             # Also update session totals
             session.token_input += token_input

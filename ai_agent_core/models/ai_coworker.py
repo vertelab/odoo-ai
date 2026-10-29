@@ -4396,16 +4396,47 @@ class AICoworker(models.Model):
                 agent.write({'name': 'Allmän kärna'})
                 _logger.info('Döpte om lead-agent → Allmän kärna')
 
-        # 5. Säkerställ web_ui-init aktiverad
-        if not keep.init_type_ids.filtered(
-                lambda it: it.init_type == 'web_ui' and it.enabled):
-            self.env['ai.coworker.init_type'].sudo().create({
-                'coworker_id': keep.id,
-                'init_type': 'web_ui',
-                'enabled': True,
-                'show_in_chat': True,
-            })
-            _logger.info('Skapade web_ui-init för default-coworkern')
+        # 5. Säkerställ att init-typerna speglar data-XML:ens init_*-booleans.
+        #
+        # Tidigare hårdkodades ENDAST web_ui här, vilket gjorde att
+        # default-coworkern aldrig fick chat/channel — trots att den ska nås
+        # från alla kanaler. Sanningen bor nu i data/default_coworker.xml
+        # (init_web_ui/init_chat/init_channel = True) och speglas hit av
+        # _sync_init_types_from_booleans(). Ingen kanal är hårdkodad i Python.
+        #
+        # Fälten skrivs inte av data-XML:en på en befintlig post (noupdate=1),
+        # så vi sätter dem här när de är osatta — annars får uppgraderade
+        # installationer aldrig de nya kanalerna.
+        _default_channels = ('init_web_ui', 'init_chat', 'init_channel')
+        _missing = [f for f in _default_channels if not keep[f]]
+        if _missing:
+            keep.write({f: True for f in _missing})
+            _logger.info(
+                'Aktiverade default-kanaler för %s: %s', keep.name,
+                ', '.join(_missing))
+        # Spegla booleans → init_type-rader (idempotent). Kör även när inget
+        # skrevs, så en post vars rader raderats manuellt repareras.
+        #
+        # Detta skapar/aktiverar channel-raden, vilket triggar
+        # ai.coworker.init_type._after_change() → _ensure_channel() som
+        # skapar discuss.channel och kopplar in coworkern i kanalens
+        # ai_coworker_ids (krävs för @mention-routing).
+        keep._sync_init_types_from_booleans()
+
+        # 5a. Kanalen: init_channel=True utan channel_id ger ingen kanal.
+        # _ensure_channel() sätter channel_id på INIT_TYPE-raden, men
+        # coworkerns eget channel_id-fält lämnades tomt — så default-
+        # medarbetaren saknade kanal trots att init_channel var på.
+        # Härleds från init_type-raden (data-driven), inte hårdkodat.
+        if keep.init_channel and not keep.channel_id:
+            ch_row = keep.init_type_ids.filtered(
+                lambda it: it.init_type == 'channel' and it.enabled)[:1]
+            channel = (ch_row.channel_ids[:1] or ch_row.channel_id)
+            if channel:
+                keep.write({'channel_id': channel.id})
+                _logger.info(
+                    'Kopplade kanal %s till default-coworkern %s',
+                    channel.name, keep.name)
 
         # 5b. Seeda minnesinställningar om tomma (default-coworkern skapades
         # före memory-governance-featuren).

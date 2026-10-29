@@ -20,6 +20,10 @@ from datetime import date, datetime, timedelta
 from odoo import models, fields, api, _
 from odoo.exceptions import UserError, AccessError
 
+from ..fields.pg_vector import PgVector
+
+EMBEDDING_DIM = 1024
+
 _logger = logging.getLogger(__name__)
 
 
@@ -108,12 +112,16 @@ class AIPersonalMemory(models.Model):
     # ════════════════════════════════════════════
     # HYBRID SEARCH — pgvector + tsvector
     # ════════════════════════════════════════════
-    embedding = fields.Text(
-        string='Vector Embedding',
-        help='pgvector(1536d) embedding from AI-provider '
-             '(OpenAI text-embedding-3-small). '
-             'Stored as PostgreSQL vector literal, e.g. "[0.1,0.2,...]". '
-             'Set via cron or on-create.')
+    # OBS: PgVector, INTE fields.Text. Med Text blev kolumnen TEXT och den
+    # semantiska sokvagen (embedding <=> %s::vector) kastade
+    # "operator does not exist: text <=> vector" -> forgiftad transaktion ->
+    # HTTP 500 pa /ai/stream ("Anslutningen till AI-servern brots", 2026-10-29).
+    # En manuell ALTER holl bara till nasta moduluppgradering: Odoo aterskapar
+    # kolumnen enligt faltdeklarationen. Typen maste darfor vara ratt i koden.
+    embedding = PgVector(
+        string='Vector Embedding', dimension=EMBEDDING_DIM,
+        help='pgvector(%d) embedding fran AI-provider. '
+             'Kolumnen ar vector(%d)-typ.' % (EMBEDDING_DIM, EMBEDDING_DIM))
     # search_vector — GENERATED COLUMN via SQL migration:
     #   ALTER TABLE ai_personal_memory ADD COLUMN search_vector tsvector
     #     GENERATED ALWAYS AS (to_tsvector('swedish', content)) STORED;
@@ -255,10 +263,12 @@ class AIPersonalMemory(models.Model):
     def _embedding_column_is_vector(self):
         """Är `embedding`-kolumnen en riktig pgvector-kolumn?
 
-        Fältet deklareras som `fields.Text` (se ovan), så Odoo skapar en
-        TEXT-kolumn. Endast `ai_okf_concept.embedding` använder PgVector.
-        `1 - (embedding <=> %s::vector)` är därför ett SQL-fel på denna
-        tabell tills kolumnen migrerats.
+        Fältet deklareras numera som `PgVector` (se ovan), så Odoo skapar en
+        riktig vector(1024)-kolumn — samma typ som `ai_okf_concept.embedding`.
+        Kollen behålls som skyddsnät för databaser som ännu inte uppgraderats:
+        med `fields.Text` blev kolumnen TEXT och
+        `1 - (embedding <=> %s::vector)` kastade
+        "operator does not exist: text <=> vector" (driftfel 2026-10-29).
 
         Kollen är billig (en information_schema-fråga i en savepoint) och
         gör att den semantiska signalen kan hoppas över i stället för att

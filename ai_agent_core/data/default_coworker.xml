@@ -7,8 +7,16 @@
     - agent_default_core           → hjärnan (agent), "Allmän kärna"
     - coworker_agent_default_core  → länk coworker ↔ agent
 
-    Init-types (web_ui m.fl.) skapas av ai.coworker.create()
-    (_ensure_all_init_types) — de behöver inga xmlids.
+    Init-typer ägs av denna data-XML via de stored init_*-booleskorna
+    (init_web_ui, init_chat, init_channel m.fl.). De speglas till
+    ai.coworker.init_type-rader av _sync_init_types_from_booleans(),
+    som körs i write() när init_*-fälten ändras.
+
+    Varför inte lita på create()/_ensure_all_init_types: den sätter bara
+    manual + web_ui som aktiva, och körs aldrig om för en post som redan
+    finns (noupdate). Default-medarbetaren ska vara synlig i BÅDE
+    web-UI:t, Discuss-chatten och team-kanalen — det ska stå här, inte
+    härledas av en hårdkodad tuple i Python.
 
     Adoption av legacy-poster ("Allmän" från hooks/migration 1.8) görs av
     _ensure_default_coworker — anropas av <function> NEDANFÖR noupdate-
@@ -21,7 +29,14 @@
         <record id="coworker_default_assistent" model="ai.coworker">
             <field name="name">Allmän assistent</field>
             <field name="description">Allmän AI-assistent. Hjälper med frågor, styr upp organisationen, och tipsar om förbättringar via kaizen.</field>
+            <!-- Legacy-fältet init_type behålls för bakåtkompatibilitet
+                 (migrationskod läser det). Sanningen om vilka kanaler som
+                 är aktiva är init_*-booleskorna nedan. -->
             <field name="init_type">manual</field>
+            <!-- Kanaler: default-medarbetaren ska nås överallt ifrån. -->
+            <field name="init_web_ui" eval="True"/>
+            <field name="init_chat" eval="True"/>
+            <field name="init_channel" eval="True"/>
             <field name="status">active</field>
             <field name="heartbeat_enabled" eval="True"/>
             <field name="inject_company_memory" eval="True"/>
