@@ -24,6 +24,15 @@
 #   libs kraver >=49. Att installera nagot som drar in cryptography utan tak
 #   gav:  AttributeError: module 'lib' has no attribute 'GEN_EMAIL'
 #   -> bruten TLS i hela Odoo. Darfor ar de tva ihoplasta nedan.
+#
+#   ANDRA FALLET (2026-10-29): `extendable-pydantic` 1.4.1 monkeypatchade
+#   `pydantic._internal._generate_schema.get_type_ref` via en .pth-fil som
+#   kors vid VARJE python-start. pydantic 2.14.0 flyttade funktionen till
+#   `_type_refs` -> AttributeError i varje login-shell pa dms. Paketet drogs
+#   in som transitivt beroende (extendable_fastapi -> extendable-pydantic)
+#   och importerades aldrig av Odoo. Atgardat: 1.5.0 (monkeypatchar inte
+#   langre) + tak nedan. Poangen: aven ett paket vi inte ber om kan sla
+#   sonder pydantic for hela installationen.
 
 # ── Karna (ai_agent_core) ────────────────────────────────────────────────
 # tenacity: retry-logik i ai_agent_core/core/provider.py. KRITISK —
@@ -35,13 +44,13 @@ markupsafe
 requests
 
 # ── LLM / LangChain ──────────────────────────────────────────────────────
-langchain
-langchain-core
-langchain_community
-langchain_openai
-langchain_postgres
-langgraph
-langchain_text_splitters
+langchain>=1.4,<1.5
+langchain-core>=1.6,<1.7
+langchain_community>=0.4,<0.5
+langchain_openai>=1.7,<1.8
+langchain_postgres>=0.0.19,<0.1
+langgraph>=1.2,<1.3
+langchain_text_splitters>=1.1,<1.2
 tiktoken
 openai
 
@@ -89,7 +98,10 @@ python-pptx
 PyPDF2
 
 # ── api_agent / MCP ──────────────────────────────────────────────────────
-fastapi-mcp
+# fastapi-mcp drar via mcp -> starlette -> pydantic. Taket hindrar att en ny
+# minor drar in ett pydantic som bryter langchain eller extendable-pydantic
+# (se kommentaren om delade paket hogst upp).
+fastapi-mcp>=0.4,<0.5
 
 # ── ai_agent_context — record context injection ──────────────────────────
 pytz
