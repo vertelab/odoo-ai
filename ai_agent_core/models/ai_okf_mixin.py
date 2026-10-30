@@ -63,23 +63,14 @@ class AIOkfMixin(models.AbstractModel):
     _name = 'ai.okf.mixin'
     _description = 'OKF Mixin — generic knowledge-format fields'
     _auto = False
+    # Format-fälten (okf_body, okf_summary, okf_links) bor i
+    # ai.okf.format.mixin sedan ai-memory-okf-format (2026-10-30).
+    # Den här mixinen lägger till INDEXERINGSKONTRAKTET på dem.
+    _inherit = ['ai.okf.format.mixin']
 
     # -- Fälten ---------------------------------------------------------
-    # Mappningen mot OKF:s markdown-fil:
-    #   frontmatter:  title, description (okf_summary), tags (okf_tags)
-    #   body:         okf_body  ("everything after the frontmatter")
-    #   länkar:       okf_links (OKF §6.1 — koncept till koncept)
-    okf_body = fields.Text(
-        'OKF Body',
-        help='OKF:ns body — modellens hela text (name, description, notes, '
-             'arch_db ...). Materialet, inte det som söks. Fylls av '
-             'modellens _okf_body_source().')
-    okf_summary = fields.Text(
-        'OKF Summary',
-        help='OKF:ns description — det tunna konceptet som embeddas och '
-             'söks. Hålls inom den konfigurerade gränsen '
-             '(%s, default %s).' % (SUMMARY_MAX_CHARS_PARAM,
-                                    SUMMARY_MAX_CHARS_DEFAULT))
+    # okf_body, okf_summary och okf_links ärvdes från ai.okf.format.mixin.
+    #
     # OBS: `okf_tags` är INTE deklarerat här.
     #
     # FYND 2026-09-23: en many2many på en ABSTRAKT modell ger SAMMA
@@ -96,12 +87,6 @@ class AIOkfMixin(models.AbstractModel):
     #
     # Mixinen äger LÄSNINGEN (_okf_tags_source) och skrivningen
     # (_okf_index_record sätter relationen om fältet finns).
-    okf_links = fields.Json(
-        'OKF Links', default=list,
-        help='OKF:ns [[länkar]] — referenser till andra poster, som '
-             '"res.partner,10". Otypade (OKF §6.1): relationen bor i '
-             'okf_body, inte i länken. Trasiga länkar är tillåtna — målet '
-             'kanske ännu inte har ett koncept.')
     okf_dirty = fields.Boolean(
         'OKF Dirty', default=True, index=True, copy=False,
         help='Satt när OKF-fälten är inaktuella och måste genereras om. '

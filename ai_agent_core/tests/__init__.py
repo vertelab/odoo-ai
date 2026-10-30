@@ -2,6 +2,7 @@
 from . import _config_param_guard  # noqa: F401 (test-helper)
 from . import test_init_types
 from . import test_ai_memory_pgvector
+from . import test_ai_memory_okf_format
 from . import test_init_types_overhaul
 # from . import test_provider_resolution  # AVSTÄNGD: kräver `tenacity`, som
 # saknas på minionen. tenacity står i /usr/share/odoo-ai/requirements.txt men

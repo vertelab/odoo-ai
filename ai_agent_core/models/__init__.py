@@ -11,6 +11,7 @@ from . import ai_session
 from . import ai_cost_period
 from . import ai_coworker_error
 from . import ai_mail_test_wizard
+from . import ai_okf_format_mixin
 from . import ai_memory
 from . import ai_memory_chunk
 from . import ai_tool

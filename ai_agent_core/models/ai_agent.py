@@ -58,11 +58,23 @@ class AIAgent(models.Model):
              'Lagra flera tools per agent. Speglar ai.tool.agent_ids.',
     )
 
-    # Memories (FAISS/pgvector RAG)
-    memory_ids = fields.One2many('ai.agent.memory', 'agent_id', string='Skill Memories',
-                                  help='Skill-specific memories linked to this agent')
-    rag_memory_ids = fields.One2many('ai.memory', 'agent_id', string='RAG Knowledge',
-                                      help='Permanent FAISS/pgvector knowledge bases (handbooks, websites)')
+    # Memories — en äkta flera-till-flera-koppling (ai-memory-okf-format).
+    #
+    # `rag_memory_ids` (One2many mot ai.memory.agent_id) är BORTTAGEN. Den
+    # var en parallell envägsväg: ett minne kunde bara ägas av EN agent.
+    # Kravet är det motsatta — samma handbok ska kunna vara kunskapsbas för
+    # fem agenter. Att behålla båda gav den garanterade driftfällan: samma
+    # minne syns i två listor, den ena utan sequence, och vilken som vinner
+    # beror på vilken väg anroparen råkade ta.
+    #
+    # `active_test=False` i kontexten: en avkopplad koppling ska synas i
+    # formuläret så den kan kopplas in igen.
+    memory_ids = fields.One2many(
+        'ai.agent.memory', 'agent_id', string='Memories',
+        context={'active_test': False},
+        help='Artefakter kopplade till denna agent. Samma artefakt kan '
+             'höra till flera agenter — kopplingen bär roll, ordning och '
+             'giltighetsfönster.')
 
     # Model (points to ai.model — handles both Bifrost and Direct)
     model_id = fields.Many2one('ai.model', string='Model',
@@ -506,11 +518,53 @@ class AIAgentTool(models.Model):
 
 class AIAgentMemory(models.Model):
     _name = 'ai.agent.memory'
-    _description = 'Agent Memory Link'
+    _description = 'Agent ↔ Memory link (many-to-many)'
     _order = 'sequence asc'
 
+    # Inverse-fälten heter agent_id och memory_id — INGA parallella namn.
+    # Legacy-modulen ai_agent deklarerade samma tabell med ai_agent_id och
+    # ai_memory_id; två olika inverse-fältnamn för samma relation. De
+    # kolumnerna är droppade (migration 18.0.2.0.21), inte aliasade: en
+    # alias-kolumn löser inte krocken, den lägger en tredje deklaration
+    # ovanpå.
     agent_id = fields.Many2one('ai.agent', required=True, ondelete='cascade',
                                 string='Agent')
     memory_id = fields.Many2one('ai.memory', required=True, ondelete='cascade',
                                  string='Memory')
     sequence = fields.Integer(default=10)
+
+    # Avkoppling arkiverar raden, den raderar den inte. Att radera hade
+    # tagit bort artefakten för de andra agenterna också.
+    active = fields.Boolean(
+        default=True,
+        help='Avkopplad koppling behåller raden men injiceras inte.')
+
+    # Rollen ligger på KOPPLINGEN, inte på artefakten: samma handbok ska
+    # inte bära olika instruktioner per agent, men en agent kan använda
+    # den som instruktion och en annan som kunskapskälla.
+    role = fields.Selection([
+        ('knowledge', 'Kunskapskälla'),
+        ('instruction', 'Instruktion'),
+    ], default='knowledge', required=True,
+        help='Hur agenten använder artefakten.')
+
+    # Tidsbunden koppling: en kvartalsrapport gäller Q3, inte för evigt.
+    not_before = fields.Date(help='Giltig från och med.')
+    expires_at = fields.Date(help='Giltig till och med. Tomt = ingen gräns.')
+
+    _sql_constraints = [
+        ('agent_memory_uniq', 'unique(agent_id, memory_id)',
+         'Samma minne kan bara kopplas en gång per agent.'),
+    ]
+
+    def _is_current(self, today=None):
+        """True om kopplingen är giltig idag."""
+        self.ensure_one()
+        today = today or fields.Date.context_today(self)
+        if not self.active:
+            return False
+        if self.not_before and today < self.not_before:
+            return False
+        if self.expires_at and today > self.expires_at:
+            return False
+        return True

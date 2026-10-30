@@ -5879,16 +5879,16 @@ class AICoworker(models.Model):
         return specialists
 
     def _get_quest_memories(self, query: str, k: int = 3) -> str:
-        """Search all FAISS memories for this quest and return context.
+        """Sök i medarbetarens artefakter och returnera kontext.
 
-        Called by system prompt building to inject relevant memory
-        into the agent's context.
+        Anropas när systemprompten byggs. `memory_type='faiss'` är borta
+        (ai-memory-pgvector): memory_type bär källan, inte lagringsformatet,
+        och alla artefakter söks nu med pgvector.
         """
         self.ensure_one()
         memories = self.env['ai.memory'].search([
             ('quest_id', '=', self.id),
             ('archived', '=', False),
-            ('memory_type', '=', 'faiss'),
         ])
         if not memories:
             return ''
@@ -9753,17 +9753,18 @@ class AICoworkerAgent(models.Model):
         for rec in self:
             rec.agent_model_id = rec.agent_id.model_id
 
-    @api.depends('agent_id.tool_ids.name', 'agent_id.memory_ids.memory_id.name',
-                 'agent_id.rag_memory_ids.name')
+    @api.depends('agent_id.tool_ids.name', 'agent_id.memory_ids.memory_id.name')
     def _compute_agent_display(self):
         for rec in self:
             tools = rec.agent_id.tool_ids.mapped('name')
-            memories = (
-                rec.agent_id.memory_ids.mapped('memory_id.name')
-                + rec.agent_id.rag_memory_ids.mapped('name')
-            )
+            # Kopplingen är den enda vägen (ai-memory-okf-format):
+            # `rag_memory_ids` finns inte längre, så minnena hämtas ur
+            # memory_ids. Bara aktiva kopplingar visas.
+            memories = rec.agent_id.memory_ids.filtered(
+                lambda l: l.active).mapped('memory_id.name')
             rec.agent_tools_display = ', '.join([t for t in tools if t])
-            rec.agent_memories_display = ', '.join([m for m in memories if m])
+            rec.agent_memories_display = ', '.join(
+                [m for m in memories if m])
 
     @api.model_create_multi
     def create(self, vals_list):

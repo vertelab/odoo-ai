@@ -57,17 +57,51 @@ for _var in ('OMP_NUM_THREADS', 'OPENBLAS_NUM_THREADS', 'MKL_NUM_THREADS'):
 
 class AIMemory(models.Model):
     _name = 'ai.memory'
-
-    # OKF-taggar: egen relationstabell (en many2many kan inte ligga
-    # pa en abstrakt mixin — den ger samma tabell for alla arvande).
-    okf_tags = fields.Many2many(
-        'ai.okf.tag', 'ai_memory_okf_tag_rel', 'res_id', 'tag_id',
-        string='OKF Tags')
     _description = 'AI Memory'
     _order = 'create_date desc'
 
+    # OKF-FORMATET, inte indexeringskontraktet (ai-memory-okf-format).
+    #
+    # ai.memory ärver ai.okf.format.mixin — okf_body, okf_summary,
+    # okf_links — men INTE ai.okf.mixin, som bär okf_dirty och
+    # okf_indexed_at. memory-specen förbjuder dem på artefakten: den är
+    # material, inte inlärning, och ska inte indexeras till
+    # ai.okf.concept av någon cron.
+    #
+    # Att regeln nu är STRUKTURELL (fältet finns inte) i stället för en
+    # kommentar är hela poängen med delningen.
+    _inherit = ['ai.okf.format.mixin']
+
+    # OKF-taggar: egen relationstabell (en many2many kan inte ligga
+    # på en abstrakt mixin — den ger samma tabell för alla ärvande).
+    # Tabellnamnet är oförändrat sedan tidigare, så inga data flyttas.
+    okf_tags = fields.Many2many(
+        'ai.okf.tag', 'ai_memory_okf_tag_rel', 'res_id', 'tag_id',
+        string='OKF Tags')
+
     name = fields.Char('Memory Key')
-    content = fields.Text('Content')
+
+    # `content` är ett BAKÅTKOMPATIBELT ALIAS för okf_body
+    # (ai-memory-okf-format D4). Fältet läses på flera ställen
+    # (controllers/stream.py, ai_coworker.py, ai_memory_mixin.py) och
+    # byttes inte ut rakt av — ett compute/inverse-alias kostar noll
+    # anropare och kan tas bort när inget läser det längre.
+    content = fields.Text(
+        'Content', compute='_compute_content',
+        inverse='_inverse_content', search='_search_content',
+        help='Alias för okf_body — behålls för bakåtkompatibilitet.')
+
+    @api.depends('okf_body')
+    def _compute_content(self):
+        for rec in self:
+            rec.content = rec.okf_body
+
+    def _inverse_content(self):
+        for rec in self:
+            rec.okf_body = rec.content
+
+    def _search_content(self, operator, value):
+        return [('okf_body', operator, value)]
     # memory_type betecknar artefaktens KÄLLA, inte dess lagringsformat
     # (ai-memory-pgvector T6.1). Ett värde som 'faiss' beskrev en
     # implementation och togs bort — lagringen är nu alltid pgvector.
@@ -278,13 +312,13 @@ class AIMemory(models.Model):
     def _memory_body_text(self):
         """Artefaktens text för embedding.
 
-        `okf_body` finns när ai-memory-okf-format är körd; fram till dess
-        bär `content` texten.
+        Läser `okf_body` DIREKT — inte `content`. Sedan `content` blev ett
+        compute/inverse-alias för `okf_body` skulle `self.content` här
+        skapa en cirkel (compute läser okf_body, som denna metod läste via
+        content).
         """
         self.ensure_one()
-        if 'okf_body' in self._fields:
-            return self.okf_body or self.content or ''
-        return self.content or ''
+        return self.okf_body or ''
 
     def _embed_texts(self, texts):
         """Embedda en lista texter via ai.provider (batch).

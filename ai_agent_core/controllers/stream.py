@@ -1985,17 +1985,29 @@ def _get_quest_memories(quest, session_id=None, query=None) -> str:
         pass
 
     try:
-        # 2. Agent-level FAISS memories
+        # 2. Agent-artefakter — via KOPPLINGEN, inte via ai.memory.agent_id
+        # (ai-memory-okf-format). Den gamla envägsvägen kunde bara se
+        # artefakter som ägdes av en enda agent; nu ser varje agent de
+        # artefakter som kopplats till den, oavsett vem som skapade dem.
+        #
+        # `memory_type='faiss'` är borta: memory_type bär KÄLLAN, inte
+        # lagringsformatet, och alla artefakter söks nu med pgvector.
         if query:
-            agent_memories = request.env['ai.memory'].sudo().search([
-                ('agent_id', 'in', quest.agent_ids.agent_id.ids),
-                ('archived', '=', False),
-                ('memory_type', '=', 'faiss'),
-            ])
-            for mem in agent_memories:
-                chunks = mem.faiss_search(query, k=3)
-                if chunks:
-                    parts.append("## Agent Knowledge\n" + '\n---\n'.join(chunks[:3]))
+            agent_ids = quest.agent_ids.mapped('agent_id').ids
+            if agent_ids:
+                links = request.env['ai.agent.memory'].sudo().search([
+                    ('agent_id', 'in', agent_ids),
+                    ('active', '=', True),
+                    ('role', '=', 'knowledge'),
+                ])
+                today = fields.Date.context_today(links)
+                current = links.filtered(lambda l: l._is_current(today))
+                for mem in current.mapped('memory_id').filtered(
+                        lambda m: not m.archived):
+                    chunks = mem.faiss_search(query, k=3)
+                    if chunks:
+                        parts.append(
+                            "## Agent Knowledge\n" + '\n---\n'.join(chunks[:3]))
     except Exception:
         pass
 
