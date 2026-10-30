@@ -157,6 +157,35 @@ class TestCoworkerIdentitySync(TransactionCase):
         c._onchange_employee_id_identity()
         self.assertEqual((c.chat_user_id.id, c.partner_id.id), first)
 
+    # -- 1.4 partner_id is derived, never a sync source --
+
+    def test_partner_id_write_is_respected(self):
+        """Ett explicit partner_id får inte skrivas över av synken.
+
+        `partner_id` är HÄRLET ur användaren, inte en källa. Låg det i
+        synkvillkoret blev fallbacken `source='chat_user_id'`,
+        `_current('chat_user_id')` föll tillbaka på det befintliga värdet
+        och synken skrev tillbaka användarens partner — över det
+        användaren just bad om (mätt 2026-10-27).
+        """
+        c = self._coworker(employee_id=self.emp_a.id)
+        other = self.env['res.partner'].create({'name': 'Annan partner'})
+        c.write({'partner_id': other.id})
+        c.invalidate_recordset()
+        self.assertEqual(
+            c.partner_id, other,
+            'partner_id ska behålla det explicit skrivna värdet')
+
+    def test_partner_id_alone_does_not_trigger_sync(self):
+        """Enbart partner_id rör inte chat_user_id eller employee_id."""
+        c = self._coworker(employee_id=self.emp_a.id)
+        before = (c.chat_user_id.id, c.employee_id.id)
+        other = self.env['res.partner'].create({'name': 'Annan partner 2'})
+        c.write({'partner_id': other.id})
+        c.invalidate_recordset()
+        self.assertEqual((c.chat_user_id.id, c.employee_id.id), before,
+                         'identiteten ska vara orörd')
+
     # -- 7.2 same end state regardless of path --
 
     def test_create_and_write_give_same_state(self):

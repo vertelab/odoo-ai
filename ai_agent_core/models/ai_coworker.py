@@ -7964,7 +7964,19 @@ class AICoworker(models.Model):
     # `source` decides the conflict when both are set and point at
     # different employees: the field the user just changed wins.
 
+    #: Alla identitetsfält — dokumentation och samhörighet.
     _IDENTITY_LINK_FIELDS = ('employee_id', 'chat_user_id', 'partner_id')
+
+    #: De fält som STYR synken. `partner_id` ingår med flit inte:
+    # det är ett HÄRLET fält, inte en källa. Skrevs det in i
+    # villkoret blev fallbacken `source = 'chat_user_id'`,
+    # `_current('chat_user_id')` föll tillbaka på det befintliga
+    # värdet och synken skrev tillbaka användarens partner — över
+    # det användaren just bad om. Mätt 2026-10-27:
+    #
+    #     c.write({'partner_id': annan.id})   # ignorerades
+    #     c.partner_id                        # oförändrad
+    _IDENTITY_SYNC_SOURCES = ('employee_id', 'chat_user_id')
 
     def _identity_sync_values(self, vals, source):
         """Compute the completed identity values (writes nothing).
@@ -8074,7 +8086,7 @@ class AICoworker(models.Model):
         # form. The guard flag (skip_identity_sync) stops our own write
         # from starting another round.
         if (not self.env.context.get('skip_identity_sync')
-                and any(k in vals for k in self._IDENTITY_LINK_FIELDS)):
+                and any(k in vals for k in self._IDENTITY_SYNC_SOURCES)):
             source = 'employee_id' if 'employee_id' in vals else 'chat_user_id'
             merged = dict(vals)
             for rec in self:
@@ -9225,7 +9237,7 @@ class AICoworker(models.Model):
         # before super() so the value is present at creation.
         synced = []
         for vals in vals_list:
-            if any(k in vals for k in self._IDENTITY_LINK_FIELDS):
+            if any(k in vals for k in self._IDENTITY_SYNC_SOURCES):
                 source = ('employee_id' if 'employee_id' in vals
                           else 'chat_user_id')
                 vals = self._sync_identity_links(vals, source)
