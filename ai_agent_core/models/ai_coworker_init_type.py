@@ -503,17 +503,28 @@ class AICoworkerInitType(models.Model):
         session till personligt minne kunde aldrig skriva något.
         """
         if not self.chat_user_id:
+            # Ateranvand coworkerns befintliga partner i stallet for att skapa
+            # en ny. `_ensure_employee()` (kors i create()) har redan skapat
+            # hr.employee -> res.partner med coworkerns namn, och dms_field har
+            # skapat en DMS-katalog for den partnern. Skapade vi en NY partner
+            # med samma namn skulle dms_field forsoka skapa en andra rotkatalog
+            # med samma namn i samma storage -> ValidationError "A directory
+            # with the same name already exists." (verifierat 2026-10-30).
             quest = self.coworker_id
+            login = 'bot_' + quest.name.lower().replace(' ', '_')
             user = self.env['res.users'].search([
                 ('name', '=', quest.name),
-                ('login', '=', 'bot_' + quest.name.lower().replace(' ', '_')),
+                ('login', '=', login),
             ], limit=1)
             if not user:
+                vals = {'name': quest.name, 'login': login}
+                partner = quest.partner_id or (
+                    quest.employee_id.work_contact_id
+                    if quest.employee_id else False)
+                if partner:
+                    vals['partner_id'] = partner.id
                 user = self.env['res.users'].with_context(
-                    no_reset_password=True).create({
-                        'name': quest.name,
-                        'login': 'bot_' + quest.name.lower().replace(' ', '_'),
-                    })
+                    no_reset_password=True).create(vals)
             self.chat_user_id = user.id
 
         # Koppla ägaren till coworkern — det är HÄR den levande vägen läser.
