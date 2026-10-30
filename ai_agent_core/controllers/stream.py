@@ -145,6 +145,25 @@ def _looks_like_tool_error(text):
 class AIStreamController(http.Controller):
     """Server-Sent Events endpoint for streaming AI responses."""
 
+    @staticmethod
+    def _sse_error(message, code=None):
+        """Skicka ett fel som en SSE-event med HTTP 200.
+
+        Varför inte HTTP 402/500: web-UI:t lyssnar med EventSource, och
+        EventSource kan INTE läsa svarskroppen när status != 200. Allt annat
+        än 200 blir "Anslutningen till AI-servern bröts — försök igen." —
+        användaren får ett intetsägande fel i stället för det verkliga
+        (drift 2026-10-27: dagsbudget slut visades som "anslutningen bröts").
+
+        Frontendens handleStreamEvent har `case 'error':` som renderar
+        e.message, så beskedet når fram den vägen.
+        """
+        payload = {'type': 'error', 'message': message}
+        if code:
+            payload['code'] = code
+        body = 'data: %s\n\n' % json.dumps(payload)
+        return Response(body, status=200, content_type='text/event-stream')
+
     @http.route('/ai/ping', type='http', auth='none', cors='*', sitemap=False)
     def ping(self):
         return request.make_response('pong', [('Content-Type', 'text/plain')])
@@ -178,20 +197,27 @@ class AIStreamController(http.Controller):
                             status=403,
                             content_type='application/json',
                         )
-                    # Budgetcheck (budget-hard-cap D4): web-UI visar budget slut
+                    # Budgetcheck (budget-hard-cap D4): web-UI visar budget slut.
+                    # Dagsbudgeten kontrollerades tidigare INTE här — bara
+                    # månadstaket — så när dagstaket slog till fick användaren
+                    # tyst ingenting. budget_block_message() är EN källa för
+                    # alla kanaler.
                     quest._unlock_budget_activities()
-                    if quest.budget_exhausted:
-                        quest.check_cap()
-                        return Response(
-                            json.dumps({
-                                "error": "budget_exhausted",
-                                "message": "Budget slut: AI-medarbetaren har nått "
-                                           "månadstaket. Höj taket i inställningarna "
-                                           "eller vänta till nästa månad.",
-                            }),
-                            status=402,
-                            content_type='application/json',
-                        )
+                    _budget_code, _budget_msg = quest.budget_block_message()
+                    if _budget_code:
+                        if _budget_code == 'daily_budget_exhausted':
+                            quest.check_daily_cap()
+                        else:
+                            quest.check_cap()
+                        _logger.info(
+                            'stream: %s for %s', _budget_code, quest.name)
+                        # SSE, inte HTTP 402. Frontend använder EventSource,
+                        # som inte kan läsa svarskroppen vid felstatus — ett
+                        # 402 blev "Anslutningen till AI-servern bröts" och
+                        # vårt meddelande kastades bort. Frontend har ett
+                        # `case 'error':` som visar e.message, så vi skickar
+                        # beskedet som en error-event med HTTP 200.
+                        return self._sse_error(_budget_msg, _budget_code)
                     if quest.description:
                         system_prompt = quest.description
                     # Inject skill context for Skill Builder (sudo needed — public users can't read ai.skill)
@@ -3400,6 +3426,28 @@ class AIOpenAIAPI(http.Controller):
         if not self._check_api_key():
             return Response(json.dumps({'error': {'message': 'Unauthorized', 'type': 'authentication_error'}}),
                           status=401, content_type='application/json')
+
+        # ── Budgetkontroll (2026-10-27) ────────────────────────────────────
+        # Denna route hade INGEN budgetkontroll: varken månads- eller
+        # dagsbudget. En medarbetare som låg 937 % över sitt dagstak svarade
+        # ändå HTTP 200 — användaren fick ett glatt svar i stället för besked
+        # om att budgeten var slut. openai_api.py hade kontrollen, men Pi
+        # använder denna route.
+        #
+        # budget_block_message() är EN källa för texten i alla kanaler.
+        _budget_code, _budget_msg = quest.budget_block_message()
+        if _budget_code:
+            if _budget_code == 'daily_budget_exhausted':
+                quest.check_daily_cap()
+            else:
+                quest.check_cap()
+            _logger.info('/ai/v1/chat/completions: %s for %s',
+                         _budget_code, quest.name)
+            return Response(json.dumps({'error': {
+                'message': _budget_msg,
+                'type': 'insufficient_quota',
+                'code': _budget_code,
+            }}), status=429, content_type='application/json')
 
         # ── Pi-session-id (transport A + C) ───────────────────────────────
         # Primär transport: body-fältet `pi_session_id` (Pi-klienten äger

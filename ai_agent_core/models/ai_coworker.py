@@ -1240,6 +1240,42 @@ class AICoworker(models.Model):
             except Exception as e:
                 _logger.warning('Zabbix notification failed (non-critical): %s', e)
 
+    def budget_block_message(self):
+        """Returnera (code, message) för det tak som blockerar körning.
+
+        EN källa för alla kanaler (DM/kanal, web-UI, OpenAI-API, powerbox).
+        Returnerar (None, None) när inget tak är nått.
+
+        Varför en metod och inte fyra strängar: månadstaket fanns i alla
+        kanaler men dagstaket saknades i web-UI och OpenAI-API:t, så de
+        svarade tyst. Med en källa kan inte kanalerna glida isär igen.
+
+        Dagsbudgeten har företräde: den öppnar sig själv vid midnatt och
+        kräver ingen åtgärd, medan månadstaket kräver att någon höjer det.
+        """
+        self.ensure_one()
+        if self.daily_budget_exhausted:
+            used = self.daily_budget_used_mtokens or 0.0
+            cap = self.daily_cap_mtokens or 0.0
+            return (
+                'daily_budget_exhausted',
+                'Dagsbudget slut: AI-medarbetaren "%s" har förbrukat %.2fM av '
+                'dagstaket på %.0fM systemtokens (%.0f%%).\n\n'
+                'Körningar återupptas automatiskt vid midnatt — ingen åtgärd '
+                'krävs. Höj dagstaket i medarbetarens inställningar om den '
+                'ska köra vidare idag.'
+                % (self.name, used, cap, (used / cap * 100.0) if cap else 0.0),
+            )
+        if self.budget_exhausted and not self.monthly_budget_soft:
+            return (
+                'budget_exhausted',
+                'Budget slut: AI-medarbetaren "%s" har nått månadstaket på '
+                '%.0fM systemtokens.\n\n'
+                'Höj taket i inställningarna eller vänta till nästa månad.'
+                % (self.name, self.monthly_cap_mtokens or 0.0),
+            )
+        return (None, None)
+
     # ── Burn rate warning + push signals (budget-burn-rate) ────────────
 
     def _burn_rate_warning_message(self):
@@ -2801,34 +2837,26 @@ class AICoworker(models.Model):
                 self.check_cap()
                 _logger.info('Buzz chat: mjukt månadstak för %s — kör vidare',
                              self.name)
-            elif self.budget_exhausted:
-                self.check_cap()
-                _logger.info('Buzz chat skippad för %s: budget slut', self.name)
-                if channel:
-                    channel.message_post(
-                        body=self._md_to_html(
-                            '⚠️ **Budget slut**: AI-medarbetaren har nått '
-                            'månadstaket. Höj taket i inställningarna eller '
-                            'vänta till nästa månad.'
-                        ),
-                        message_type='notification',
-                        subtype_xmlid='mail.mt_note',
-                    )
-                return None
-            if self.daily_budget_exhausted:
-                self.check_daily_cap()
-                _logger.info('Buzz chat skippad för %s: dagsbudget slut', self.name)
-                if channel:
-                    channel.message_post(
-                        body=self._md_to_html(
-                            '⚠️ **Dagsbudget slut**: AI-medarbetaren har nått '
-                            'dagstaket. Körningar återupptas automatiskt vid '
-                            'midnatt.'
-                        ),
-                        message_type='notification',
-                        subtype_xmlid='mail.mt_note',
-                    )
-                return None
+            else:
+                # EN källa för budget-texten (budget_block_message) — samma
+                # ordval som web-UI och OpenAI-API:t. Tidigare hade varje
+                # kanal sin egen formulering, och dagsbudgeten saknades helt
+                # i två av dem.
+                _budget_code, _budget_msg = self.budget_block_message()
+                if _budget_code:
+                    if _budget_code == 'daily_budget_exhausted':
+                        self.check_daily_cap()
+                    else:
+                        self.check_cap()
+                    _logger.info('Buzz chat skippad för %s: %s',
+                                 self.name, _budget_code)
+                    if channel:
+                        channel.message_post(
+                            body=self._md_to_html('⚠️ **%s**' % _budget_msg),
+                            message_type='notification',
+                            subtype_xmlid='mail.mt_note',
+                        )
+                    return None
 
         # Avoid responding to our own agents (prevents loops)
         author_partner = message.author_id
@@ -7345,9 +7373,8 @@ class AICoworker(models.Model):
             _logger.info('run() skippad för %s: dagsbudget slut (%.2fM/%.0fM)',
                          self.name, self.daily_budget_used_mtokens,
                          self.daily_cap_mtokens)
-            return 'Dagsbudget slut: AI-medarbetaren har nått dagstaket ' \
-                   '(%sM systemtokens). Körningar återupptas automatiskt ' \
-                   'vid midnatt.' % self.daily_cap_mtokens
+            # EN källa för texten — samma ordval i alla kanaler.
+            return self.budget_block_message()[1]
 
         try:
             import asyncio
@@ -7848,8 +7875,7 @@ class AICoworker(models.Model):
         if self.daily_budget_exhausted:
             self.check_daily_cap()
             _logger.info('powerbox skippad för %s: dagsbudget slut', self.name)
-            return 'Dagsbudget slut: AI-medarbetaren har nått dagstaket. ' \
-                   'Körningar återupptas automatiskt vid midnatt.'
+            return self.budget_block_message()[1]
 
         # Get model from first agent
         from odoo.addons.ai_agent_core.core.provider import get_default_model_name
@@ -8009,7 +8035,19 @@ class AICoworker(models.Model):
     # `source` decides the conflict when both are set and point at
     # different employees: the field the user just changed wins.
 
+    #: Alla identitetsfält — dokumentation och samhörighet.
     _IDENTITY_LINK_FIELDS = ('employee_id', 'chat_user_id', 'partner_id')
+
+    #: De fält som STYR synken. `partner_id` ingår med flit inte:
+    # det är ett HÄRLET fält, inte en källa. Skrevs det in i
+    # villkoret blev fallbacken `source = 'chat_user_id'`,
+    # `_current('chat_user_id')` föll tillbaka på det befintliga
+    # värdet och synken skrev tillbaka användarens partner — över
+    # det användaren just bad om. Mätt 2026-10-27:
+    #
+    #     c.write({'partner_id': annan.id})   # ignorerades
+    #     c.partner_id                        # oförändrad
+    _IDENTITY_SYNC_SOURCES = ('employee_id', 'chat_user_id')
 
     def _identity_sync_values(self, vals, source):
         """Compute the completed identity values (writes nothing).
@@ -8119,7 +8157,7 @@ class AICoworker(models.Model):
         # form. The guard flag (skip_identity_sync) stops our own write
         # from starting another round.
         if (not self.env.context.get('skip_identity_sync')
-                and any(k in vals for k in self._IDENTITY_LINK_FIELDS)):
+                and any(k in vals for k in self._IDENTITY_SYNC_SOURCES)):
             source = 'employee_id' if 'employee_id' in vals else 'chat_user_id'
             merged = dict(vals)
             for rec in self:
@@ -9270,7 +9308,7 @@ class AICoworker(models.Model):
         # before super() so the value is present at creation.
         synced = []
         for vals in vals_list:
-            if any(k in vals for k in self._IDENTITY_LINK_FIELDS):
+            if any(k in vals for k in self._IDENTITY_SYNC_SOURCES):
                 source = ('employee_id' if 'employee_id' in vals
                           else 'chat_user_id')
                 vals = self._sync_identity_links(vals, source)
