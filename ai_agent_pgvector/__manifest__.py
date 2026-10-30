@@ -48,7 +48,24 @@
         'ai_agent',
     ],
     'data': ["security/ir.model.access.csv" ,"views/ai_memory_views.xml", "views/ai_quest_views.xml"],
-    'installable': True,
+    # PENSIONERAD (ai-memory-pgvector T6.2, 2026-10-30).
+    #
+    # Modulen får inte installeras. Skälen:
+    #   1. Den interpolerar dokumentinnehåll rakt in i SQL-strängar:
+    #        INSERT INTO documents (content, embedding, metadata)
+    #        VALUES ('{document.page_content}', ...)
+    #      Ett citattecken i en PDF kraschar satsen; ett ont citattecken
+    #      injicerar.
+    #   2. Den skapar en OHANTERAD tabell `documents` utanför ORM:en —
+    #      avinstallation städar aldrig upp den.
+    #   3. Den kräver superuser för CREATE EXTENSION och faller med
+    #      UserError annars — fel modell för Ubuntu 24.04 + LXD.
+    #   4. Den bygger på langchain_postgres + OpenAIEmbeddings, en ANDRA
+    #      embedding-väg vid sidan av ai.provider._get_embedding().
+    #
+    # pgvector-stödet bor nu i ai_agent_core (fields/pg_vector.py +
+    # ai.memory.chunk), med samma PgVector-typ som ai.okf.concept använder.
+    'installable': False,
     'auto_install': False,
     'application': False,
     "external_dependencies": {

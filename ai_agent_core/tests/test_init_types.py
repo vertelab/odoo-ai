@@ -178,19 +178,25 @@ class TestModelIdsMigration(TransactionCase):
         self.assertTrue(web_ui)
 
 
-class TestFAISS(TransactionCase):
-    """Test FAISS vector operations via ir.attachment (13.3)."""
+class TestMemoryVectors(TransactionCase):
+    """Vektorlagring för ai.memory — pgvector (ai-memory-pgvector T6.1).
+
+    Klassen hette TestFAISS och testade det serialiserade FAISS-indexet i
+    en ir.attachment. Den lagringen är borta: chunkarna är nu egna rader
+    med vector(1024). `faiss_search` finns kvar som namn (det skuggar
+    annars ORM:ets search), men söker pgvector.
+    """
 
     def setUp(self):
         super().setUp()
         self.Memory = self.env['ai.memory']
         self.Quest = self.env['ai.coworker']
 
-    def test_create_faiss_memory(self):
-        """FAISS index can be created and stored as attachment."""
-        quest = self.Quest.create({'name': 'FAISS Test', 'status': 'active'})
+    def test_create_text_memory(self):
+        """Ett textminne skapas utan vektor och utan chunkar."""
+        quest = self.Quest.create({'name': 'Mem Test', 'status': 'active'})
         mem = self.Memory.create({
-            'name': 'Test FAISS',
+            'name': 'Test Memory',
             'quest_id': quest.id,
             'memory_type': 'text',
             'category': 'fact',
@@ -200,18 +206,29 @@ class TestFAISS(TransactionCase):
         self.assertFalse(mem.faiss_attachment_id)
         self.assertEqual(mem.chunk_count, 0)
 
-    def test_faiss_fields_exist(self):
-        """FAISS attachment and chunk_count fields are present."""
-        quest = self.Quest.create({'name': 'FAISS Fields', 'status': 'active'})
+    def test_chunk_count_is_computed_not_writable(self):
+        """chunk_count räknas ur rag_ids — det gick inte att sätta till 42."""
+        quest = self.Quest.create({'name': 'Chunk Test', 'status': 'active'})
         mem = self.Memory.create({
-            'name': 'FAISS Fields Test',
+            'name': 'Chunk Count Test',
             'quest_id': quest.id,
-            'memory_type': 'faiss',
-            'chunk_count': 42,
+            'memory_type': 'text',
         })
-        self.assertEqual(mem.chunk_count, 42)
-        self.assertEqual(mem.memory_type, 'faiss')
-        self.assertFalse(mem.faiss_attachment_id)
+        self.assertEqual(mem.chunk_count, 0)
+        self.env['ai.memory.chunk'].create({
+            'memory_id': mem.id, 'sequence': 0, 'content': 'a'})
+        mem.invalidate_recordset()
+        self.assertEqual(mem.chunk_count, 1)
+
+    def test_memory_type_is_a_source(self):
+        """memory_type bär källan — 'faiss' är ett format och finns inte."""
+        selection = dict(
+            self.Memory._fields['memory_type']._description_selection(
+                self.env))
+        self.assertNotIn('faiss', selection)
+        self.assertIn('pdf', selection)
+        self.assertIn('website', selection)
+        self.assertIn('markdown', selection)
 
     def test_embedding_model_field(self):
         """Embedding model field tracks which model was used."""
@@ -220,16 +237,16 @@ class TestFAISS(TransactionCase):
             'name': 'Embed Memory',
             'quest_id': quest.id,
             'embedding_model': 'text-embedding-3-small',
-            'memory_type': 'faiss',
+            'memory_type': 'text',
         })
         self.assertEqual(mem.embedding_model, 'text-embedding-3-small')
 
-    def test_search_empty_faiss(self):
-        """Search on FAISS memory without index returns empty."""
-        quest = self.Quest.create({'name': 'Empty FAISS', 'status': 'active'})
+    def test_search_without_chunks_returns_empty(self):
+        """Sökning på ett minne utan chunkar och utan text ger tomt."""
+        quest = self.Quest.create({'name': 'Empty Mem', 'status': 'active'})
         mem = self.Memory.create({
-            'name': 'Empty FAISS', 'quest_id': quest.id,
-            'memory_type': 'faiss',
+            'name': 'Empty Mem', 'quest_id': quest.id,
+            'memory_type': 'text',
         })
         results = mem.faiss_search('test query')
         self.assertEqual(results, [])

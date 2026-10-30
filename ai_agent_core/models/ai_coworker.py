@@ -3422,6 +3422,7 @@ class AICoworker(models.Model):
         backend som ingen kan köra.
         """
         Okf = self.env['ai.okf.concept']
+        Mem = self.env['ai.memory']
 
         def _okf(query, scope, owner_id, params, **kw):
             return Okf._okf_search(
@@ -3436,7 +3437,53 @@ class AICoworker(models.Model):
                 min_cosine=params.get('min_cosine'),
                 min_ts_rank=params.get('min_ts_rank'))
 
-        return {'okf_concept': _okf}
+        def _ai_memory(query, scope, owner_id, params, **kw):
+            """Sök i ai.memory — artefaktens egna vektorlager (pgvector).
+
+            Ägandet avgörs av kopplingen, inte av ett fält på artefakten
+            (ai-memory-okf-format): en artefakt syns för de agenter som
+            kopplat den via ai.agent.memory, för sessionen den skapades i,
+            eller för företaget.
+
+            `scope='coworker'` ger den här medarbetarens agenters artefakter;
+            `scope='personal'` användarens egna sessioner; `scope='company'`
+            det delade lagret.
+            """
+            limit = params['limit']
+            domain = [('archived', '=', False)]
+
+            if scope == 'coworker':
+                agent_ids = self.agent_ids.mapped('agent_id').ids
+                if not agent_ids:
+                    return []
+                links = self.env['ai.agent.memory'].search([
+                    ('agent_id', 'in', agent_ids),
+                    ('active', '=', True),
+                ])
+                mem_ids = links.mapped('memory_id').ids
+                if not mem_ids:
+                    return []
+                domain.append(('id', 'in', mem_ids))
+            elif scope == 'personal':
+                domain.append(('session_id.user_id', '=', owner_id))
+            elif scope == 'company':
+                domain.append(('quest_id.company_id', '=', owner_id))
+            else:
+                return []
+
+            hits = []
+            for mem in Mem.search(domain, limit=limit):
+                chunks = mem.faiss_search(query, k=1)
+                if not chunks:
+                    continue
+                # Score: cosine-värdet finns inte kvar efter faiss_search,
+                # så vi använder en fast träffpoäng. Det är ärligt —
+                # sökningen GJORDE en träff, och ordningen inom artefakten
+                # är redan avgjord. Att hitta på ett tal vore värre.
+                hits.append((mem, 0.5))
+            return hits
+
+        return {'okf_concept': _okf, 'ai_memory': _ai_memory}
 
     def _recall_from_source(self, source, query, scope, owner_id, params,
                             **kw):
@@ -3479,7 +3526,18 @@ class AICoworker(models.Model):
             return ''
         budget = budget if budget is not None else self.graph_enrichment_budget
         hops = hops if hops is not None else self.graph_enrichment_hops
-        keys = [r.concept_key for r in records if r.concept_key][:5]
+        # `_multi_source_recall` returnerar numera dictar (blandade modeller),
+        # men den här metoden kan också anropas med ett ai.okf.concept-
+        # recordset. Normalisera till en lista av record-objekt och filtrera
+        # bort allt som inte är ett koncept — grafen har bara koncept som
+        # noder.
+        objs = []
+        for r in records:
+            if isinstance(r, dict):
+                r = r.get('record')
+            if r is not None and getattr(r, '_name', '') == 'ai.okf.concept':
+                objs.append(r)
+        keys = [r.concept_key for r in objs if r.concept_key][:5]
         if not keys:
             return ''
         try:
@@ -3563,7 +3621,12 @@ class AICoworker(models.Model):
                 'strategy': strategy, 'sources': [], 'per_source': {},
                 'empty_reason': 'inga aktiva källor'}
 
-        best = {}          # record-id → (record, score)
+        # Dedup-nyckeln är (MODELL, id), inte id. Två källor kan returnera
+        # olika modeller med samma id — en ai.memory och ett ai.okf.concept
+        # kan båda ha id 7. Med enbart `record.id` som nyckel försvann den
+        # ena träffen tyst: sökningen såg ut att fungera och tappade
+        # hälften (ai-memory-pgvector T5.3).
+        best = {}          # (modell, id) → (record, score)
         per_source = {}
         for source in sources:
             hits = self._recall_from_source(
@@ -3571,9 +3634,10 @@ class AICoworker(models.Model):
                 hybrid=self.hybrid_search, **kw)
             per_source[source.code] = len(hits)
             for record, score in hits:
-                prev = best.get(record.id)
+                key = (record._name, record.id)
+                prev = best.get(key)
                 if prev is None or score > prev[1]:
-                    best[record.id] = (record, score)
+                    best[key] = (record, score)
 
         ranked = sorted(best.values(), key=lambda t: t[1], reverse=True)
         # Trösklarna tillämpas INNE i `_okf_search`, per signal (väg 2,
@@ -3589,8 +3653,15 @@ class AICoworker(models.Model):
         # genom att ge varje signal sin egen tröskel i sin egen enhet.
         # `limit` bär fortfarande budgeten.
         ranked = ranked[:params['limit']]
-        records = self.env['ai.okf.concept'].browse(
-            [r.id for r, _s in ranked])
+        # Returvärdet får inte vara `ai.okf.concept.browse(...)`: listan kan
+        # nu innehålla ai.memory-poster också, och browse skulle tolka deras
+        # id:n som koncept-id. Vi returnerar en dict per träff i stället —
+        # anroparen (_build_injection_prompt, _graph_enrich) läser `id` och
+        # `_name` och behöver ingen gemensam modell.
+        records = [
+            {'id': r.id, '_name': r._name, 'record': r, 'score': s}
+            for r, s in ranked
+        ]
         return records, {
             'strategy': strategy,
             'params': params,

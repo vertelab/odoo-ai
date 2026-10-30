@@ -558,6 +558,182 @@ def okf_ensure_search_infrastructure(env):
         _logger.info('OKF: skapade B-tree-index (scope, concept_key)')
 
 
+def memory_ensure_search_infrastructure(env):
+    """Skapa `search_vector` + index på `ai_memory` och `ai_memory_chunk`.
+
+    Samma mönster som `okf_ensure_search_infrastructure`, av samma skäl:
+    kolumnerna måste skapas EFTER att ORM:en byggt tabellen. En migration
+    som kör `ALTER TABLE` före tabellen finns slår i tomma luften, och om
+    felet sväljs (`except: _logger.warning('non-fatal')`) står det "klart"
+    i loggen medan kolumnen aldrig uppstod — exakt vad som hände i
+    migration 1.11.
+
+    Idempotent: varje steg kontrollerar information_schema/pg_indexes först.
+
+    Raises:
+        Exception: om ett steg misslyckas. En tyst tom sökväg är värre än
+            ett högljutt fel.
+    """
+    cr = env.cr
+
+    # ── ai_memory ────────────────────────────────────────────────────
+    cr.execute("""
+        SELECT 1 FROM information_schema.tables
+        WHERE table_name = 'ai_memory' AND table_schema = 'public'
+    """)
+    if not cr.fetchone():
+        raise Exception(
+            'ai_memory-tabellen finns inte — '
+            'memory_ensure_search_infrastructure måste köras efter '
+            'tabellskapande (post_init_hook, inte en migration)'
+        )
+
+    # 1. search_vector — GENERATED STORED över okf_body + name (svensk stemming)
+    #    `okf_body` kommer från ai.okf.format.mixin (ai-memory-okf-format).
+    #    Fram till dess att den mixinen finns bär `content` texten, så
+    #    kolumnen faller tillbaka på den om okf_body saknas.
+    cr.execute("""
+        SELECT column_name FROM information_schema.columns
+        WHERE table_name = 'ai_memory' AND column_name = 'search_vector'
+    """)
+    if not cr.fetchone():
+        cr.execute("""
+            SELECT column_name FROM information_schema.columns
+            WHERE table_name = 'ai_memory' AND column_name = 'okf_body'
+        """)
+        body_col = 'okf_body' if cr.fetchone() else 'content'
+        cr.execute("""
+            ALTER TABLE ai_memory
+            ADD COLUMN search_vector tsvector
+            GENERATED ALWAYS AS (
+                to_tsvector('swedish',
+                            coalesce(%s, '') || ' ' || coalesce(name, ''))
+            ) STORED
+        """ % body_col)
+        _logger.info(
+            'Memory: skapade search_vector på ai_memory '
+            '(svensk FTS över %s + name)', body_col)
+
+    # 2. GIN-index för fulltext
+    cr.execute("""
+        SELECT 1 FROM pg_indexes
+        WHERE tablename = 'ai_memory' AND indexname = 'idx_ai_memory_fts'
+    """)
+    if not cr.fetchone():
+        cr.execute("""
+            CREATE INDEX idx_ai_memory_fts
+            ON ai_memory USING GIN(search_vector)
+        """)
+        _logger.info('Memory: skapade GIN-index idx_ai_memory_fts')
+
+    # 3. ivfflat-index över embedding (kräver pgvector + rätt kolumntyp)
+    cr.execute("SELECT 1 FROM pg_extension WHERE extname = 'vector'")
+    if cr.fetchone():
+        cr.execute("""
+            SELECT format_type(a.atttypid, a.atttypmod)
+            FROM pg_attribute a
+            JOIN pg_class c ON a.attrelid = c.oid
+            WHERE c.relname = 'ai_memory' AND a.attname = 'embedding'
+        """)
+        fmt = cr.fetchone()
+        if fmt and fmt[0] == 'vector':
+            # Dimensionslös `vector` gör ivfflat omöjligt
+            # ("column does not have dimensions").
+            cr.execute("""
+                ALTER TABLE ai_memory
+                ALTER COLUMN embedding TYPE vector(1024)
+                USING NULL
+            """)
+            _logger.info(
+                'Memory: satte embedding till vector(1024) — kolumnen var '
+                'dimensionslös')
+
+        cr.execute("""
+            SELECT 1 FROM pg_indexes
+            WHERE tablename = 'ai_memory'
+              AND indexname = 'idx_ai_memory_embedding'
+        """)
+        if not cr.fetchone():
+            cr.execute("""
+                CREATE INDEX idx_ai_memory_embedding
+                ON ai_memory USING ivfflat (embedding vector_cosine_ops)
+                WITH (lists = 100)
+            """)
+            _logger.info('Memory: skapade ivfflat-index över embedding')
+
+    # ── ai_memory_chunk ──────────────────────────────────────────────
+    # Chunkarna bär sin egen text och vektor; BM25 sker på chunkens
+    # content (förälderns search_vector räcker inte för en 900-sidig PDF).
+    cr.execute("""
+        SELECT 1 FROM information_schema.tables
+        WHERE table_name = 'ai_memory_chunk' AND table_schema = 'public'
+    """)
+    if not cr.fetchone():
+        # Modellen är inte installerad än (T2 i ai-memory-pgvector) —
+        # post_init kan köra före den finns. Inte ett fel: nästa
+        # uppgradering skapar kolumnerna.
+        _logger.info(
+            'Memory: ai_memory_chunk finns inte än — hoppar över '
+            'chunk-index (skapas vid nästa uppgradering)')
+        return
+
+    cr.execute("""
+        SELECT column_name FROM information_schema.columns
+        WHERE table_name = 'ai_memory_chunk' AND column_name = 'search_vector'
+    """)
+    if not cr.fetchone():
+        cr.execute("""
+            ALTER TABLE ai_memory_chunk
+            ADD COLUMN search_vector tsvector
+            GENERATED ALWAYS AS (
+                to_tsvector('swedish', coalesce(content, ''))
+            ) STORED
+        """)
+        _logger.info('Memory: skapade search_vector på ai_memory_chunk')
+
+    cr.execute("""
+        SELECT 1 FROM pg_indexes
+        WHERE tablename = 'ai_memory_chunk'
+          AND indexname = 'idx_ai_memory_chunk_fts'
+    """)
+    if not cr.fetchone():
+        cr.execute("""
+            CREATE INDEX idx_ai_memory_chunk_fts
+            ON ai_memory_chunk USING GIN(search_vector)
+        """)
+        _logger.info('Memory: skapade GIN-index idx_ai_memory_chunk_fts')
+
+    cr.execute("""
+        SELECT format_type(a.atttypid, a.atttypmod)
+        FROM pg_attribute a
+        JOIN pg_class c ON a.attrelid = c.oid
+        WHERE c.relname = 'ai_memory_chunk' AND a.attname = 'embedding'
+    """)
+    fmt = cr.fetchone()
+    if fmt and fmt[0] == 'vector':
+        cr.execute("""
+            ALTER TABLE ai_memory_chunk
+            ALTER COLUMN embedding TYPE vector(1024)
+            USING NULL
+        """)
+        _logger.info(
+            'Memory: satte ai_memory_chunk.embedding till vector(1024)')
+
+    cr.execute("""
+        SELECT 1 FROM pg_indexes
+        WHERE tablename = 'ai_memory_chunk'
+          AND indexname = 'idx_ai_memory_chunk_embedding'
+    """)
+    if not cr.fetchone():
+        cr.execute("""
+            CREATE INDEX idx_ai_memory_chunk_embedding
+            ON ai_memory_chunk USING ivfflat (embedding vector_cosine_ops)
+            WITH (lists = 100)
+        """)
+        _logger.info(
+            'Memory: skapade ivfflat-index över ai_memory_chunk.embedding')
+
+
 def post_init_hook(env):
     """Create Quest Builder and Skill Builder quests if they don't exist."""
 
@@ -574,6 +750,10 @@ def post_init_hook(env):
     # OKF-sökvägen: search_vector + index (okf-recall-path fas 11).
     # Körs här och inte i migration 1.11 — där fanns inte tabellen ännu.
     okf_ensure_search_infrastructure(env)
+
+    # Minnessökvägen: search_vector + index på ai_memory (ai-memory-pgvector).
+    # Samma skäl som ovan — kolumnerna kräver att tabellen finns.
+    memory_ensure_search_infrastructure(env)
 
     # Personal/company memory: search_vector + GIN + pgvector-index.
     #

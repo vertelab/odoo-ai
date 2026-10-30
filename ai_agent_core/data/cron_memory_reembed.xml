@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+        <!-- Cron: re-embedding av legacy-artefakter (ai-memory-pgvector T4.3).
+
+             Bakgrund: 6 ai.memory-artefakter skapades med FAISS-index före
+             pgvector-övergången. 3 av dem har `content`, 3 har varken
+             `content` eller `source_attachment_id` — deras enda kvarvarande
+             text ligger i FAISS-bloben. Utan denna cron blir de osökbara
+             när `faiss_search` slutar läsa FAISS.
+
+             cron.task, inte ir.cron: ett ir.cron som skrivs vid
+             modulladdning kan inte uppdateras medan jobbet kör, och
+             uppgraderingen faller på "Record cannot be modified right now".
+             Se data/cron_okf_process_uploads.xml.
+
+             Idempotent: hoppar över artefakter som redan har chunkar, så
+             den kan stå kvar med låg frekvens som säkerhetsnät. -->
+        <record id="cron_task_cron_memory_reembed" model="cron.task">
+            <field name="name">Minne: re-embedda legacy-artefakter</field>
+            <field name="technical_name">ai_memory_reembed</field>
+            <field name="module">ai_agent_core</field>
+            <field name="model_name">ai.memory</field>
+            <field name="method_name">_cron_reembed_legacy</field>
+            <field name="interval_number">1</field>
+            <field name="interval_type">days</field>
+            <field name="sequence">15</field>
+            <field name="active" eval="True"/>
+        </record>
+    </data>
+</odoo>

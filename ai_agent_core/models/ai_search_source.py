@@ -90,10 +90,11 @@ class AiSearchSource(models.Model):
                 'name': 'Minnesrader',
                 'backend': 'ai_memory',
                 'sequence': 20,
-                'is_wired': False,
-                'wired_note': 'Ännu inte kopplad i multi_source_recall.',
-                'description': 'Sökning i ai.memory / ai.personal.memory / '
-                               'ai.company.memory. Endast katalogpost.',
+                'is_wired': True,
+                'wired_note': 'Inkopplad via _search_chunks (ai-memory-pgvector).',
+                'description': 'Sökning i ai.memory-artefakter: pgvector-cosine '
+                               '+ svensk BM25 över ai.memory.chunk. Ägandet '
+                               'avgörs av kopplingen (ai.agent.memory).',
             },
             {
                 'code': 'graph',
