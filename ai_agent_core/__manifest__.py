@@ -173,6 +173,8 @@
             'ai_agent_core/static/src/js/wysiwyg_powerbox.js',
             'ai_agent_core/static/src/js/user_menu_ai_chat.js',
             'ai_agent_core/static/src/js/okf_debug_menu.js',
+            'ai_agent_core/static/src/js/okf_global_search.js',
+            'ai_agent_core/static/src/xml/okf_global_search.xml',
             'ai_agent_core/static/src/css/powerbox.css',
             'ai_agent_core/static/src/org_chart/*',
         ],

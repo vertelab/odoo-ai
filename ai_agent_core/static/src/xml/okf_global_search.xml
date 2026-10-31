@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+
+    <!--
+        OKF Global Search (dms-global-search D5, D6).
+
+        Gruppering sker på artifact_type_id — konceptets egen taxonomi — inte
+        på source_ref:ens modell. Att gruppera på modell hade krävt att varje
+        ref parsades, och taxonomin finns redan.
+
+        Ägarbadgen svarar på "varför ser jag det här?", som är frågan EFTER
+        "vad är det?".
+    -->
+    <t t-name="ai_agent_core.OkfGlobalSearch" owl="1">
+        <div class="o_okf_global_search d-flex flex-column h-100 p-3">
+
+            <!-- Sökrutan -->
+            <div class="o_okf_search_bar d-flex align-items-center gap-2 mb-2">
+                <i class="fa fa-search text-muted"/>
+                <input
+                    t-ref="input"
+                    type="text"
+                    class="form-control"
+                    t-att-value="state.query"
+                    t-on-input="onInput"
+                    t-on-keydown="onKeydown"
+                    placeholder="Search documents, notes and records…"
+                    aria-label="Search"
+                />
+                <span t-if="state.loading" class="text-muted">
+                    <i class="fa fa-spinner fa-spin"/>
+                </span>
+            </div>
+
+            <!-- Ärlighetsraden: detta är textsökning, inte semantik (D3) -->
+            <div class="o_okf_search_mode small text-muted mb-2 d-flex align-items-center gap-2">
+                <t t-if="state.semantic">
+                    <i class="fa fa-circle-o-notch"/>
+                    <span>Semantic search — slower, uses the embedding provider.</span>
+                    <button class="btn btn-link btn-sm p-0"
+                            t-on-click="onSearchTextOnly">Use text search</button>
+                </t>
+                <t t-else="">
+                    <i class="fa fa-font"/>
+                    <span>Text search (Swedish stemming).</span>
+                    <button class="btn btn-link btn-sm p-0"
+                            t-on-click="onSearchDeeper"
+                            t-att-disabled="state.loading">Search deeper (semantic)</button>
+                </t>
+            </div>
+
+            <!-- Fel -->
+            <div t-if="state.error" class="alert alert-warning py-2 small" role="alert">
+                <t t-esc="state.error"/>
+            </div>
+
+            <!-- Resultat -->
+            <div class="o_okf_search_results flex-grow-1 overflow-auto">
+                <t t-if="!state.searched and !state.query">
+                    <p class="text-muted small">
+                        Type to search everything you have access to.
+                    </p>
+                </t>
+
+                <!-- Ärligt tomt (D6): ingen "senaste koncept"-fallback -->
+                <t t-elif="state.searched and !hasResults and !state.loading">
+                    <p class="text-muted small">
+                        No hits for
+                        <strong t-esc="state.query"/>
+                        <t t-if="state.semantic"> (semantic)</t>
+                    </p>
+                </t>
+
+                <t t-foreach="state.groups" t-as="group" t-key="group.key">
+                    <t t-if="group.concepts.length">
+                        <h6 class="o_okf_group_title text-uppercase small text-muted mt-3 mb-1">
+                            <t t-esc="group.label"/>
+                            <span class="badge text-bg-light ms-1"
+                                  t-esc="group.concepts.length"/>
+                        </h6>
+                        <ul class="list-unstyled mb-0">
+                            <t t-foreach="group.concepts" t-as="concept" t-key="concept.id">
+                                <li class="o_okf_result border-bottom py-2">
+                                    <div class="d-flex align-items-start gap-2">
+                                        <div class="flex-grow-1">
+                                            <div class="d-flex align-items-center gap-2">
+                                                <button
+                                                    t-if="concept.action"
+                                                    class="btn btn-link p-0 text-start fw-bold"
+                                                    t-on-click="() => this.openConcept(concept)"
+                                                    t-esc="concept.title"
+                                                />
+                                                <span t-else="" class="fw-bold text-muted"
+                                                      t-esc="concept.title"/>
+                                                <span t-if="!concept.action"
+                                                      class="badge text-bg-secondary"
+                                                      title="You cannot read the source record">no access</span>
+                                            </div>
+                                            <div class="small text-muted o_okf_excerpt"
+                                                 t-esc="concept.excerpt"/>
+                                        </div>
+                                        <span t-if="concept.owner_label"
+                                              class="badge text-bg-light"
+                                              t-esc="concept.owner_label"/>
+                                    </div>
+                                </li>
+                            </t>
+                        </ul>
+                    </t>
+                </t>
+            </div>
+
+            <!-- Fot: antal -->
+            <div t-if="hasResults" class="o_okf_search_footer small text-muted pt-2">
+                <t t-esc="totalCount"/> result(s)
+            </div>
+        </div>
+    </t>
+
+</templates>

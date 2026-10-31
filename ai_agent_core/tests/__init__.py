@@ -33,6 +33,7 @@ from . import test_memory_consolidation
 from . import test_okf_dirty_bridge
 from . import test_okf_dirty_self_reignite
 from . import test_okf_hybrid_search
+from . import test_okf_visible_to
 from . import test_lineage
 from . import test_odoo_model_tools
 from . import test_odoo_model_tools_scenarios

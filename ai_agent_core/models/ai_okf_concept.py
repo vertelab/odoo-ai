@@ -13,7 +13,7 @@ from datetime import datetime, timedelta
 from psycopg2 import errors as pg_errors
 
 from odoo import models, fields, api, _
-from odoo.exceptions import ValidationError, UserError
+from odoo.exceptions import AccessError, MissingError, ValidationError, UserError
 
 from ..fields.pg_vector import PgVector
 
@@ -1282,6 +1282,220 @@ class AIOkfConcept(models.Model):
             'ja' if embedding else 'nej')
         return self.browse([])
 
+
+    # ════════════════════════════════════════════
+    # visible_to() — användarvänd sökning (dms-global-search D2)
+    # ════════════════════════════════════════════
+
+    @api.model
+    def _visible_owner_pairs(self, user=None):
+        """De (scope, owner_id) par som `user` får söka i.
+
+        EN sanning om vad en användare ser. `visible_to()` söker per par;
+        inget annat får gissa samma sak på egen hand.
+
+        Paret är alltid explicit. `_okf_search` kastar på scope utan ägare
+        (odoo-mind-memory-scope-isolation), och det skyddet är funktionen —
+        en global sökning ska vara globalt NÅBAR, aldrig globalt SCOPAD.
+
+        Returnerar en lista av tupler, aldrig tom: company-paret finns alltid
+        för en inloggad användare.
+        """
+        user = user or self.env.user
+        pairs = []
+
+        # 1. Company — det delade lagret för AKTIV company. Cross-company är
+        #    en hård gräns (D1 Non-Goals): en multi-company-användare ser den
+        #    aktiva companyn, inte unionen.
+        if user.company_id:
+            pairs.append(('company', user.company_id.id))
+
+        # 2. Personal — användarens egna minnen.
+        pairs.append(('personal', user.id))
+
+        # 3. Coworker — de medarbetare användaren ÄGER (chat_user_id).
+        #    Läses ur ai.coworker, gissas aldrig. En bot-ägd coworker hör
+        #    alltså inte till någon människa, vilket är meningen: dess minne
+        #    är isolerat.
+        Coworker = self.env['ai.coworker'].sudo()
+        owned = Coworker.search([('chat_user_id', '=', user.id)])
+        for coworker in owned:
+            pairs.append(('coworker', coworker.id))
+
+        return pairs
+
+    @api.model
+    def visible_to(self, query, user=None, limit=20, semantic=False, **kw):
+        """Sök allt `user` får se. Vidgar aldrig ett scope.
+
+        Det här är den användarvända ingången (dms-global-search D2). Den
+        löser upp användarens (scope, ägare)-par via `_visible_owner_pairs()`
+        och anropar `_okf_search()` EN gång per par, sedan slås resultaten
+        samman.
+
+        Varför per par och inte en UNION över scopes: `_okf_search` räknar
+        sin `score` i SQL per anrop. Att slå ihop i Python håller
+        fusionsformeln på ETT ställe. En UNION hade krävt att vikterna
+        applicerades utanför queryn — alltså formeln duplicerad, och två
+        ställen att få fel på. Priset är tre till fem frågor i stället för
+        en; alla är indexerade och BM25-only, så summan är ensiffrig ms.
+
+        `semantic=False` är default (D3): `_okf_search` dokumenterar att ett
+        embedding-anrop är 20 s × 3 försök — upp till 60 s för en sökning när
+        providern hänger. För en sökruta är det oanvändbart. Anroparen väljer
+        explicit när den vill betala.
+
+        Returnerar en recordset sorterad på score, dedupad per
+        (scope, ägare, concept_key) — samma dedup som `_okf_search` gör internt,
+        men nödvändig igen eftersom samma koncept kan nås via två par.
+        """
+        user = user or self.env.user
+        if not query or not query.strip():
+            return self.browse([])
+
+        pairs = self._visible_owner_pairs(user)
+        if not pairs:
+            return self.browse([])
+
+        # Varje par får samma limit: det är det totala antalet vi vill ha,
+        # inte per par. Ett par som ger 20 träffar får inte tränga ut ett
+        # annat pars enda träff — därför söker vi brett och klipper sist.
+        per_pair = max(limit, 20)
+
+        merged = self.browse([])
+        for scope, owner_id in pairs:
+            hits = self._okf_search(
+                query, scope=scope, owner_id=owner_id,
+                limit=per_pair, user=user, semantic=semantic, **kw)
+            if hits:
+                merged |= hits
+
+        if not merged:
+            return self.browse([])
+
+        # Dedup per (scope, ägare, concept_key) — `_latest_per_key()` gör
+        # exakt det, och ägaren ingår i nyckeln (okf-owner-and-access-scoping
+        # D7). Samma koncept kan alltså nås via två par utan att kollapsa.
+        merged = merged._latest_per_key()
+
+        # Sortering: `_okf_search` sorterar internt per anrop, men samman-
+        # slagningen tappar den ordningen. Vi sorterar på `create_date` —
+        # scoren är inte jämförbar mellan par (olika kandidatmängder ger
+        # olika ts_rank-skala), och att låtsas annat vore att rangordna på
+        # en enhet som inte finns. `create_date` är också det `_okf_search`
+        # själv faller tillbaka på i icke-hybrid-grenen.
+        merged = merged.sorted(lambda r: r.create_date or r.id, reverse=True)
+        return merged[:limit]
+
+
+    @api.model
+    def _okf_owner_label(self, concept, user=None):
+        """En läsbar ägarbadge: Company / Personal / coworker-namn.
+
+        Svarar på "varför ser jag det här?" — frågan EFTER "vad är det?".
+        """
+        self.ensure_one()
+        if concept.scope == 'company':
+            return _('Company')
+        if concept.scope == 'personal':
+            return _('Personal')
+        if concept.scope == 'coworker':
+            return concept.owner_coworker_id.name or _('Coworker')
+        return ''
+
+    @api.model
+    def _okf_source_action(self, concept, user=None):
+        """En act_window mot källposten — eller None om den inte får läsas.
+
+        Ett läsbart koncept betyder INTE att källposten är läsbar. Knappen får
+        aldrig bli en väg runt record rules, därför prövas både modellrättighet
+        och postregel innan actionen byggs (dms-global-search D4).
+        """
+        self.ensure_one()
+        ref = concept.source_ref or ''
+        if ',' not in ref:
+            return None
+        model_name, _, rid = ref.rpartition(',')
+        if not model_name or not rid.isdigit():
+            return None
+        if model_name not in self.env:
+            # Modellen är avinstallerad — visa träffen utan länk.
+            return None
+        try:
+            model = self.env[model_name].with_user(user or self.env.user)
+            model.check_access_rights('read')
+            record = model.browse(int(rid))
+            record.check_access_rule('read')
+            if not record.exists():
+                return None
+        except (AccessError, MissingError, ValidationError):
+            return None
+        return {
+            'type': 'ir.actions.act_window',
+            'res_model': model_name,
+            'res_id': int(rid),
+            'view_mode': 'form',
+            'target': 'current',
+            'name': concept.title or record.display_name,
+        }
+
+    @api.model
+    def _okf_excerpt(self, concept, query, width=160):
+        """Ett utsnitt ur sammanfattningen runt den matchande termen.
+
+        Vi klipper i Python, inte i SQL: sammanfattningen är redan hämtad, och
+        ett andra indexeringspass för att hitta träffen hade kostat mer än det
+        smakar.
+        """
+        self.ensure_one()
+        text = (concept.summary or '').strip()
+        if not text:
+            return ''
+        lowered = text.lower()
+        pos = lowered.find((query or '').lower())
+        if pos < 0:
+            return text[:width] + ('…' if len(text) > width else '')
+        start = max(0, pos - width // 3)
+        end = min(len(text), start + width)
+        prefix = '…' if start > 0 else ''
+        suffix = '…' if end < len(text) else ''
+        return prefix + text[start:end].strip() + suffix
+
+    @api.model
+    def visible_to_grouped(self, query, user=None, limit=30, semantic=False,
+                           **kw):
+        """visible_to() grupperat för sökytan (dms-global-search D6).
+
+        Klienten får aldrig veta vilka scopes som finns — den frågar och får
+        ett svar som redan är filtrerat. All ägarupplösning, dedup och
+        access-prövning ligger i `visible_to()` / `_okf_search()`.
+        """
+        user = user or self.env.user
+        hits = self.visible_to(query, user=user, limit=limit,
+                               semantic=semantic, **kw)
+        if not hits:
+            return []
+
+        groups = {}
+        for concept in hits:
+            artifact = concept.artifact_type_id
+            key = artifact.id if artifact else 0
+            group = groups.setdefault(key, {
+                'key': key,
+                'label': artifact.name if artifact else _('Other'),
+                'concepts': [],
+            })
+            group['concepts'].append({
+                'id': concept.id,
+                'title': concept.title or concept.concept_key or '',
+                'excerpt': self._okf_excerpt(concept, query),
+                'owner_label': self._okf_owner_label(concept, user=user),
+                'action': self._okf_source_action(concept, user=user),
+            })
+
+        # Största gruppen först — den bär mest sannolikt svaret.
+        return sorted(groups.values(),
+                      key=lambda g: len(g['concepts']), reverse=True)
 
     @api.model
     def _okf_lookup_keys(self, concept_key):

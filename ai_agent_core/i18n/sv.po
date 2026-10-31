@@ -5389,10 +5389,14 @@ msgid ""
 msgstr ""
 
 #. module: ai_agent_core
-#: model:ir.actions.server,name:ai_agent_core.action_workspace_search_hybrid
 #: model:ir.ui.menu,name:ai_agent_core.menu_workspace_search_hybrid
-msgid "Hybridsök (AI)"
-msgstr ""
+msgid "Sök (OKF)"
+msgstr "Sök (OKF)"
+
+#. module: ai_agent_core
+#: model:ir.actions.client,name:ai_agent_core.action_okf_global_search
+msgid "Search"
+msgstr "Sök"
 
 #. module: ai_agent_core
 #: model:ir.model.fields,field_description:ai_agent_core.field_ai_coworker__hybrid_search
