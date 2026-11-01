@@ -319,7 +319,8 @@ class AIOnboarding(models.Model):
             # till en tyst nolla.
             import asyncio
             from odoo.addons.ai_agent_core.core.provider import (
-                get_default_provider, get_default_model_name)
+                _run_provider, get_default_provider,
+                get_default_model_name)
             from odoo.addons.ai_agent_core.core.loop import (
                 AgentLoop, AgentConfig)
             from odoo.addons.ai_agent_core.core.tools import ToolRegistry
@@ -347,7 +348,8 @@ class AIOnboarding(models.Model):
                     model=(model_rec and model_rec._get_api_name())
                     or get_default_model_name(),
                     max_rounds=1, max_tokens=1500))
-            raw = asyncio.run(loop.run(prompt))
+            # B7: stäng providern — annars lämnas httpx-tasken pending.
+            raw = _run_provider(loop.run(prompt), provider)
             response = (raw.text or '').strip()
             # Modellen kan linda JSON i ```-block trots instruktionen.
             if response.startswith('```'):

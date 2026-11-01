@@ -82,6 +82,10 @@ from . import test_ssrf_guard
 from . import test_extract
 from . import test_content_verification
 from . import test_stream_turn_persist
+# WebUI:s token-/kostnadsvisning (restore-webui-token-usage 6.1-6.3).
+# usage-blocket i thread_get, bokföringen på assistant-raden och
+# dubbelbokningsskyddet i _save_client_response.
+from . import test_webui_token_usage
 # SSE-generatorernas namnbindning (NameError i _cr_holder, 2026-10-11).
 # Filen MÅSTE importeras här — annars körs den aldrig. Det är samma fälla
 # som test_workspace och test_graph_executor ovan föll i.
@@ -135,3 +139,45 @@ from . import test_okf_personal_budget_scope
 
 # budget-kanaler (2026-10-27): dagsbudgeten nådde bara 2 av 4 kanaler.
 from . import test_budget_channels
+# HITL-grinden på /ai/v1/tools/run (ai-agent-core-fault-remediation A3).
+# Vägen byggde ToolRegistry och körde tool.execute() utan PermissionEngine —
+# de hårda stoppen (odoo_call_method/odoo_unlink) gällde inte där.
+from . import test_tools_run_gate
+# Strukturtest: varje körväg har samma godkännandegrind
+# (init-type-execution-parity). run_stream() exekverade verktyg utan
+# PermissionEngine — de hårda stoppen gällde inte på web-UI:ts väg.
+from . import test_execution_parity
+# Callback-hemlighet + API-nyckelbindning (ai-agent-core-fault-remediation A2/A3).
+# Default-hemligheten 'CHANGE_ME_IN_PILLAR' autentiserade vem som helst, och
+# vilken giltig API-nyckel som helst kunde läsa vilken session som helst.
+from . import test_callback_auth_binding
+# Publika /ai/*-rutter: ägarkontroll + åtkomstprövning (A4/A5/A8).
+# Rutterna slog upp med sudo() utan att jämföra mot användaren — vem som
+# helst kunde läsa/radera/plantera filer i någon annans tråd.
+from . import test_public_route_ownership
+# A6 (poll-tidsgräns) + B1 (dedupe på tool_call_id).
+from . import test_interrupt_poll_and_tool_dedupe
+# B2: unik sekvens per session. Migrationen 18.0.1.334 städar dubbletter
+# FÖRE constrainten — annars faller ALTER TABLE vid uppgradering.
+from . import test_session_line_sequence
+# B3: checkpoint/outcome-callbacks i linear, conference och specialist-vägen.
+from . import test_loop_callbacks_all_modes
+# B4/B6: AutoInterruptHandler fail-closed + select_interrupt_handler kopplad.
+from . import test_auto_interrupt_handler_approval
+from . import test_hitl_selector_wiring
+# B5: HITL utan session — felet ska vara lokaliserbart.
+from . import test_hitl_without_session
+# B7: provider-livscykel — _run_provider stänger httpx-klienten.
+from . import test_provider_lifecycle
+# B8: signerad _ai_auto_approve (HMAC bunden till sessionen).
+from . import test_auto_approve_signature
+# B9/B10: en sekvensstrategi (_next_session_sequence) i hela turen.
+from . import test_sequence_strategies
+# B11: personal memory — input_type + model, samt backfill.
+from . import test_personal_memory_embedding
+# B12: ai_memory — död fältgren bort, ingen tyst modellnedladdning.
+from . import test_memory_embedding_backend
+# fix-memory-vector-dimension: vector(1024) + ivfflat på alla minnesmodeller.
+from . import test_memory_vector_dimension
+# C: hygien — _parse_skill_md med YAML-fortsättning.
+from . import test_skill_md_parsing

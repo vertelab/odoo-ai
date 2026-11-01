@@ -85,6 +85,17 @@ class AISkill(models.Model):
         help='Agents that must exist for this skill to function. '
              'Auto-created when skill is activated on a coworker.')
 
+    # Åtkomstgrupper (ai-agent-core-fault-remediation A4/5.4).
+    # Tom = skillen är öppen för alla inloggade. Satt = bara användare som
+    # delar minst en grupp får läsa `recipe_text` via /ai/skill/<id>.
+    # Fältet fanns inte tidigare: rutten var publik och returnerade hela
+    # receptet till vem som helst som kunde gissa ett id.
+    group_ids = fields.Many2many(
+        'res.groups', 'ai_skill_group_rel', 'skill_id', 'group_id',
+        string='Access Groups',
+        help='Only users sharing at least one of these groups may read the '
+             "skill's recipe through the public /ai/skill endpoint.")
+
     # Verify
     success_cases = fields.Text('Success Cases')
     failure_cases = fields.Text('Failure Cases')
@@ -550,16 +561,58 @@ metadata:
                     end = i
                     break
             if end is not None:
+                # C (ai-agent-core-fault-remediation): frontmatter är YAML,
+                # och YAML tillåter fortsättningsrader — en `description:`
+                # som fortsätter på nästa rad (indenterad, eller som
+                # block-scalar `>`/`|`). Den tidigare enfaldiga parsern
+                # krävde att värdet stod på samma rad; annars blev
+                # beskrivningen TOM och filen hoppades över i
+                # `_sync_from_filesystem`. 28 av de installerade SKILL.md-
+                # filerna har precis den formen.
+                fields = {}
+                current_key = None
+                block_indent = None
                 for line in lines[1:end]:
+                    if not line.strip():
+                        continue
+                    indent = len(line) - len(line.lstrip())
+                    stripped_line = line.strip()
+
+                    # Fortsättningsrad till föregående nyckel?
+                    if current_key and indent > 0 and (
+                            block_indent is None or indent >= block_indent
+                            or stripped_line[:1] not in ('-',)):
+                        # Block-scalar-markörer (>, |, >-, |-) är inte text.
+                        if stripped_line in ('>', '|', '>-', '|-', '>+', '|+'):
+                            block_indent = None
+                            continue
+                        fields[current_key] = (
+                            fields.get(current_key, '') + ' ' + stripped_line
+                        ).strip()
+                        continue
+
                     if ':' not in line:
                         continue
                     key, _, value = line.partition(':')
                     key = key.strip().lower()
                     value = value.strip().strip('"').strip("'")
-                    if key == 'name' and value:
-                        name = value
-                    elif key == 'description' and value:
-                        description = value
+                    current_key = key
+                    block_indent = None
+                    if value in ('>', '|', '>-', '|-', '>+', '|+'):
+                        # Block-scalar: värdet kommer på följande rader.
+                        fields[key] = ''
+                        continue
+                    if value:
+                        fields[key] = value
+                    else:
+                        # Nyckel utan värde på samma rad — kan fortsätta.
+                        fields[key] = ''
+
+                if fields.get('name'):
+                    name = fields['name']
+                if fields.get('description'):
+                    description = ' '.join(
+                        fields['description'].split()).strip()
                 body = '\n'.join(lines[end + 1:]).strip()
 
         return name, description, body

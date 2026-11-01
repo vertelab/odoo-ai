@@ -34,6 +34,9 @@ class LinearLoop:
         max_rounds=10,
         config=None,
         session_headers=None,
+        outcome_callback=None,
+        checkpoint_callback=None,
+        interrupt_handler=None,
     ):
         self.agents = agents  # ai.coworker.agent records sorted by sequence
         self.provider = provider
@@ -45,6 +48,50 @@ class LinearLoop:
         # Bifrost-sessionskorrelation (bifrost-session-lankning): samma
         # per-anrops-headers till varje steg i kedjan.
         self.session_headers = session_headers
+        # Utfalls-persistens och transaktionshygien (ai-agent-core-fault-
+        # remediation A1/B3): `_build_loop` skickar båda hit, precis som till
+        # AgentLoop. Utan dem tappade linear-vägen utfallsmätningen OCH höll
+        # ACCESS SHARE-lås öppna över provider-anropen — samma buggklass som
+        # checkpoint-commit-fixen 2026-10-08 botade för de andra vägarna.
+        #
+        # Loopen förblir domän-ren: den anropar bara callbacks, äger ingen
+        # skrivning. Samma mönster som AgentConfig.
+        self.outcome_callback = outcome_callback
+        self.checkpoint_callback = checkpoint_callback
+        # HITL-kanalen (init-type-execution-parity 2.1): varje steg i
+        # pipelinen är en egen AgentLoop — utan den här skulle ett
+        # `needs_user`-beslut i steg 2 nekas tyst medan steg 1 pausade.
+        self.interrupt_handler = interrupt_handler
+
+    def _checkpoint(self, label: str):
+        """Släpp transaktionen mellan stegen (samma kontrakt som AgentLoop).
+
+        Anropas före varje provider-anrop i kedjan. Får aldrig kasta vidare:
+        en misslyckad commit ska inte fälla en pipeline som annars fungerar.
+        """
+        cb = self.checkpoint_callback
+        if cb:
+            try:
+                cb(label)
+            except Exception:
+                _logger.exception(
+                    'checkpoint_callback misslyckades (%s)', label)
+
+    def _finish(self, response):
+        """Anropa outcome_callbacken (om satt) och returnera svaret oförändrat.
+
+        Samma kontrakt som `AgentLoop._finish`: varje returväg ur `run()` går
+        genom denna, så utfallet persisteras oavsett hur pipelinen slutade.
+        Stegen har sin EGEN AgentLoop som redan anropar sin callback; denna
+        täcker pipelinesvaret (det som ägaren faktiskt får tillbaka).
+        """
+        cb = self.outcome_callback
+        if cb:
+            try:
+                cb(response)
+            except Exception:
+                _logger.exception('outcome_callback misslyckades')
+        return response
 
     async def run(self, prompt, history=None):
         """Run the pipeline: each agent gets the previous output as prompt."""
@@ -57,6 +104,12 @@ class LinearLoop:
             agent = agent_rel.agent_id
             if not agent:
                 continue
+
+            # Transaktionshygien: släpp låsen innan vi väntar på providern.
+            # Steget ovan kan ha kört verktyg som läste tabeller; en lång
+            # LLM-väntan med öppen transaktion blockerar moduluppgraderingar
+            # (mätt 35–39 s idle-in-transaction, T/50690).
+            self._checkpoint('round-start')
 
             agent_model = agent.model_id._get_api_name() if agent and agent.model_id else self.base_model
             agent_system = self.base_system
@@ -75,6 +128,12 @@ class LinearLoop:
                     system_prompt=agent_system,
                     max_rounds=self.max_rounds,
                     session_headers=self.session_headers,
+                    # Stegets loop bär SAMMA callbacks som pipelinesvaret, så
+                    # att ett steg som når max_rounds eller ett provider-fel
+                    # persisteras på sessionen i stället för att tystna.
+                    outcome_callback=self.outcome_callback,
+                    checkpoint_callback=self.checkpoint_callback,
+                    interrupt_handler=self.interrupt_handler,
                 ),
             )
 
@@ -100,9 +159,9 @@ class LinearLoop:
                 'tokens_out': result.output_tokens,
             })
 
-        return ChatResponse(
+        return self._finish(ChatResponse(
             text=current_prompt,
             input_tokens=total_in,
             output_tokens=total_out,
             finish_reason="stop",
-        )
+        ))

@@ -109,6 +109,18 @@ class AgentConfig:
     # Samma mönster som outcome_callback/denial_callback.
     checkpoint_callback: callable = None
 
+    # HITL-hanterare för den här körningen (init-type-execution-parity 2.1).
+    #
+    # Sätts av `_build_loop` via `select_interrupt_handler` — den enda
+    # beslutsplatsen — så att varje init-typ får rätt mekanism utan att
+    # anropsplatsen behöver komma ihåg det. `None` betyder "ingen kanal":
+    # ett `needs_user`-beslut nekar då (fail-closed, beslut 2).
+    #
+    # Ligger i AgentConfig (inte som AgentLoop-argument) därför att
+    # `_build_loop` har fem returpunkter — en rad här täcker alla fem, och
+    # en framtida sjätte kan inte glömma den.
+    interrupt_handler: callable = None
+
 
 # ---------------------------------------------------------------------------
 # AgentLoop (LOOP-001, LOOP-003, LOOP-005, LOOP-007)
@@ -152,8 +164,24 @@ class AgentLoop:
         self.provider = provider
         self.tools = tools
         self.config = config or AgentConfig()
-        self.interrupt_handler = interrupt_handler
+        # Explicit argument vinner över config (bakåtkompatibelt: de vägar
+        # som redan skickar `interrupt_handler` till konstruktorn, t.ex.
+        # stream.py och openai_api.py, fortsätter att göra det).
+        self.interrupt_handler = (
+            interrupt_handler
+            if interrupt_handler is not None
+            else getattr(self.config, 'interrupt_handler', None)
+        )
         self.context_provider = context_provider
+        # Grindens spår (init-type-execution-parity 3.4): vilka tool_call_id
+        # som passerade `_gate_tool_calls`. `_execute_tool` varnar om den
+        # anropas med ett id som inte finns här — det betyder att en NY
+        # exekveringsväg har uppstått utan grind, och då ska det synas i
+        # loggen i stället för att upptäckas av en säkerhetsgranskning.
+        self._gated_call_ids: set = set()
+        # Nekorsak per tool_call_id — används för att skriva ett begripligt
+        # TOOL-meddelande till modellen ("denied: <skäl>").
+        self._denial_reasons: dict = {}
         # Tool selection (priority 1): narrow the registry to a task-matched
         # subset before each provider call. None = send everything (old
         # behaviour). Never widens access — only narrows the authorised set.
@@ -567,55 +595,18 @@ class AgentLoop:
                     continue  # All calls were propose_plan — go to next round
 
                 # -- Permission check (HITL-005 + PermissionEngine) --
-                denied_tool_ids: set[str] = set()
+                # Grinden ligger i `_gate_tool_calls` så att run_stream()
+                # använder EXAKT samma logik (init-type-execution-parity 3.2).
+                denied_tool_ids = await self._gate_tool_calls(
+                    response.tool_calls)
                 for tc in response.tool_calls:
-                    tool = self.tools.get(tc.name)
-
-                    # 1. PermissionEngine.evaluate()
-                    decision = self.permissions.evaluate(
-                        tc.name, tc.arguments, metadata=tool,
-                    )
-
-                    if not decision.allowed:
-                        # Engine says no — append error, mark denied
-                        _logger.info(
-                            "Permission denied for '%s': %s",
-                            tc.name, decision.reason,
-                        )
-                        if self.denial_callback:
-                            try:
-                                self.denial_callback(
-                                    tc.name, tc.arguments, decision.reason)
-                            except Exception:
-                                _logger.warning(
-                                    'Denial callback failed', exc_info=True)
+                    if tc.id in denied_tool_ids:
                         messages.append(Message(
                             role=Role.TOOL,
-                            content=f"Tool '{tc.name}' was denied: {decision.reason}",
+                            content=self._denial_message(tc),
                             tool_call_id=tc.id,
                             name=tc.name,
                         ))
-                        denied_tool_ids.add(tc.id)
-                        continue
-
-                    # 2. If needs_user approval and we have a handler, ask
-                    if decision.needs_user and self.interrupt_handler:
-                        approved = await self.interrupt_handler.approve_tool(
-                            tc.name,
-                            tool.risk_level if tool else "read_only",
-                            tc.arguments,
-                        )
-                        if not approved:
-                            messages.append(Message(
-                                role=Role.TOOL,
-                                content=f"Tool '{tc.name}' was denied by user.",
-                                tool_call_id=tc.id,
-                                name=tc.name,
-                            ))
-                            denied_tool_ids.add(tc.id)
-                            continue
-                        # User approved — record as standing rule if applicable
-                        self.permissions.allow_tool_for_session(tc.name)
 
                 # Remove denied tool calls
                 if denied_tool_ids:
@@ -698,6 +689,112 @@ class AgentLoop:
 
     # -- Tool execution (LOOP-003, LOOP-007) --
 
+    async def _gate_tool_calls(self, tool_calls: list) -> set[str]:
+        """Pröva verktygsanropen mot behörighetsgrinden. Returnerar nekade id:n.
+
+        DETTA ÄR DEN ENDA GRINDEN. Både `run()` och `run_stream()` anropar
+        den innan något exekveras — tidigare låg logiken inline i `run()`, och
+        `run_stream()` (som når samma `_execute_tool`) hade ingen grind alls.
+        Det gjorde att `/ai/stream` (`auth='public'`) och `/ai/v1`-strömvägen
+        kunde köra `odoo_unlink` — ett hårt stopp — utan godkännande.
+
+        Felklassen är dokumenterad i `docs/failures.md` §10 ("Grind utanför
+        loopen"); botemedlet är att grinden ligger i exekveringsvägen, inte
+        på en enskild endpoint.
+
+        Två steg per anrop:
+          1. `permissions.evaluate()` — får verktyget köras alls?
+          2. `needs_user` → `interrupt_handler.approve_tool()`.
+
+        Steg 2 är FAIL-CLOSED (beslut 2): saknas hanteraren nekas anropet.
+        Tidigare löd villkoret `and self.interrupt_handler`, vilket gjorde
+        att ett `needs_user`-beslut UTAN hanterare föll igenom och verktyget
+        kördes — motsatsen till vad ett godkännandekrav betyder.
+
+        Args:
+            tool_calls: providerns `tool_calls` för rundan.
+
+        Returns:
+            set[str]: id:n för de anrop som nekades (ska inte exekveras).
+        """
+        denied: set[str] = set()
+        for tc in tool_calls:
+            tool = self.tools.get(tc.name)
+            # 1. PermissionEngine.evaluate()
+            decision = self.permissions.evaluate(
+                tc.name, tc.arguments, metadata=tool,
+            )
+
+            if not decision.allowed:
+                _logger.info(
+                    "Permission denied for '%s': %s",
+                    tc.name, decision.reason,
+                )
+                if self.denial_callback:
+                    try:
+                        self.denial_callback(
+                            tc.name, tc.arguments, decision.reason)
+                    except Exception:
+                        _logger.warning(
+                            'Denial callback failed', exc_info=True)
+                self._denial_reasons[tc.id] = decision.reason
+                denied.add(tc.id)
+                continue
+
+            # 2. needs_user → fråga människan (eller neka om ingen kanal)
+            if decision.needs_user:
+                approved = await self._request_approval(tc, tool)
+                if not approved:
+                    self._denial_reasons[tc.id] = (
+                        'denied by user' if self.interrupt_handler
+                        else 'no approval channel on this path')
+                    denied.add(tc.id)
+                    continue
+                # Godkänt — registrera som stående regel om tillämpligt
+                self.permissions.allow_tool_for_session(tc.name)
+
+        # Grinden har prövat dessa anrop. Spåret läses av `_execute_tool`
+        # (defensiv varning) och av strukturtestet i testsviten.
+        self._gated_call_ids.update(
+            tc.id for tc in tool_calls if tc.id not in denied)
+        return denied
+
+    def _denial_message(self, tool_call) -> str:
+        """TOOL-meddelandet som talar om VARFÖR ett anrop nekades.
+
+        Modellen behöver orsaken för att kunna välja en annan väg; ett tomt
+        "denied" får den att försöka igen med samma anrop.
+        """
+        reason = self._denial_reasons.get(tool_call.id, 'denied')
+        return f"Tool '{tool_call.name}' was denied: {reason}"
+
+    async def _request_approval(self, tool_call, tool) -> bool:
+        """Fråga HITL-kanalen om ett `needs_user`-anrop. Fail-closed.
+
+        Ingen hanterare ⇒ neka. En hanterare som kastar ⇒ neka (en trasig
+        godkännandekanal får aldrig bli en tyst auto-godkännande).
+        """
+        if self.interrupt_handler is None:
+            _logger.warning(
+                "Tool '%s' requires approval but this execution path has no "
+                "approval channel — denying (fail-closed). init_type=%s",
+                tool_call.name,
+                getattr(self.config, 'init_type', None) or 'unknown',
+            )
+            return False
+        try:
+            return bool(await self.interrupt_handler.approve_tool(
+                tool_call.name,
+                tool.risk_level if tool else "read_only",
+                tool_call.arguments,
+            ))
+        except Exception:
+            _logger.exception(
+                "Approval channel failed for '%s' — denying (fail-closed)",
+                tool_call.name,
+            )
+            return False
+
     async def _execute_tools_parallel(
         self, tool_calls: list
     ) -> list[tuple]:
@@ -736,7 +833,18 @@ class AgentLoop:
         Supports executor routing:
         - executor="local" → tool.execute() (befintligt beteende)
         - executor="nats"  → _execute_via_nats() (tool-executor-nats)
+
+        Grinden ligger i `_gate_tool_calls` och anropas av båda loopvägarna
+        INNAN hit. Den defensiva varningen nedan fångar en framtida väg som
+        glömmer det: hellre en loggrad än en tyst ogrindad exekvering.
         """
+        if tool_call.id not in self._gated_call_ids:
+            _logger.warning(
+                "Tool '%s' (id=%s) executed without passing the permission "
+                "gate — a call path bypasses _gate_tool_calls. See "
+                "docs/failures.md section 10.",
+                tool_call.name, tool_call.id,
+            )
         tool = self.tools.get(tool_call.name)
         if not tool:
             return f"Error: unknown tool '{tool_call.name}'"
@@ -1072,7 +1180,44 @@ class StreamingAgentLoop(AgentLoop):
                         )
                         messages.append(assistant_msg)
 
+                        # -- Permission check (init-type-execution-parity 3.3) --
+                        #
+                        # SAMMA grind som run(). Fram till nu exekverade
+                        # denna väg verktyg direkt: `/ai/stream`
+                        # (`auth='public'`) och `/ai/v1`-strömmen kunde köra
+                        # `odoo_unlink` — ett hårt stopp — utan godkännande.
+                        # `handler` skickades in och `get_pending()` pollades,
+                        # men `approve_tool()` anropades aldrig.
+                        _gate_calls = [
+                            ToolCall(id=tc["id"], name=tc["name"],
+                                     arguments=tc["arguments"])
+                            for tc in tool_calls_seen
+                        ]
+                        _denied_ids = await self._gate_tool_calls(_gate_calls)
+
                         for tc in tool_calls_seen:
+                            if tc["id"] in _denied_ids:
+                                _denial = self._denial_message(
+                                    ToolCall(id=tc["id"], name=tc["name"],
+                                             arguments=tc["arguments"]))
+                                messages.append(Message(
+                                    role=Role.TOOL,
+                                    content=_denial,
+                                    tool_call_id=tc["id"],
+                                    name=tc["name"],
+                                ))
+                                # Klienten får se nekandet — annars ser en
+                                # webb-användare bara att inget hände.
+                                yield TokenEvent(
+                                    type="needs_approval",
+                                    token=json.dumps({
+                                        "tool": tc["name"],
+                                        "tool_call_id": tc["id"],
+                                        "reason": self._denial_reasons.get(
+                                            tc["id"], "denied"),
+                                    }),
+                                )
+                                continue
                             # SSE-progress for NATS tools
                             tool_obj = self.tools.get(tc["name"])
                             if tool_obj and tool_obj.executor == "nats":

@@ -45,6 +45,21 @@ class AICoworkerSessionLine(models.Model):
             cr.execute(
                 'CREATE INDEX IF NOT EXISTS %s ON %s %s' % (
                     name, self._table, columns))
+    # B2: sekvensen är ORDNING, inte identitet — och ordningen måste vara
+    # entydig. `_next_session_sequence` läser max och skriver max+1 utan lås,
+    # så två samtidiga skrivningar i samma session kunde få samma sekvens
+    # (dubblettraden i session 18204). Utan constraint kan historiken inte
+    # sorteras deterministiskt, och `_build_history_from_lines` kan para fel
+    # assistant-rad med fel verktygsspår.
+    #
+    # Migrationen i migrations/18.0.1.334 städar befintliga dubbletter FÖRE
+    # denna constraint läggs på — annars faller ALTER TABLE och hela
+    # uppgraderingen rullas tillbaka.
+    _sql_constraints = [
+        ('session_sequence_uniq',
+         'UNIQUE(session_id, sequence)',
+         'Sekvensen måste vara unik inom en session.'),
+    ]
 
     session_id = fields.Many2one(
         'ai.coworker.session', required=True, ondelete='cascade',

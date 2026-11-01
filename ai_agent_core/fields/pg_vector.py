@@ -41,7 +41,18 @@ class PgVector(fields.Field):
         self.dimension = dimension
 
     def convert_to_column(self, value, record, values=None, validate=True):
-        """Konvertera Python-värde (sträng-vektorliteral) till databas-format."""
+        """Konvertera Python-värde (sträng-vektorliteral) till databas-format.
+
+        Tre former förekommer i praktiken:
+          - sträng "[0.1,0.2,...]" (vad providern returnerar)
+          - list/tuple av tal
+          - numpy-array (när anroparen gjort `np.array(...)`)
+
+        numpy-fallet kräver `tolist()`: `Vector._to_db` itererar värdet och
+        numpy skapar då en array per element, vilket får `if not value` att
+        kasta "truth value of an array is ambiguous" — felet som tystade
+        backfillen (test_personal_memory_embedding.TestBackfill).
+        """
         if value is None:
             return None
         if Vector is None:
@@ -51,16 +62,33 @@ class PgVector(fields.Field):
             value = value.strip()
             if value.startswith('[') and value.endswith(']'):
                 value = value[1:-1].split(',')
+        elif hasattr(value, 'tolist'):
+            # numpy-array (eller annan array-liknande) → vanlig lista
+            value = value.tolist()
         return Vector._to_db(value, self.dimension)
 
     def convert_to_cache(self, value, record, validate=True):
-        """Konvertera DB-värde (vector-typ) till cache (list)."""
+        """Konvertera DB-värde (vector-typ) till cache (list).
+
+        Cachen MÅSTE hålla en vanlig lista. Odoo jämför cache-värden med
+        `val != value` (fields.py:1212, `get_records_different_from`), och
+        en numpy-array ger då "truth value of an array with more than one
+        element is ambiguous" — skrivningen faller innan den nått databasen.
+        Det var felet som tystade backfillen: `convert_to_column` var rätt,
+        men cachen kastade först.
+        """
         if value is None:
             return None
         if Vector is None:
             return value
         if isinstance(value, str):
-            return Vector._from_db(value)
+            # `Vector._from_db` returnerar en numpy-array (astype(np.float32)),
+            # inte en lista. Den måste ner till lista här — annars ligger en
+            # ndarray i cachen och Odoos `val != value` kastar vid nästa
+            # skrivning.
+            return Vector._from_db(value).tolist()
+        if hasattr(value, 'tolist'):
+            return value.tolist()
         return value
 
     def create_column(self, cr, table, column, **kwargs):

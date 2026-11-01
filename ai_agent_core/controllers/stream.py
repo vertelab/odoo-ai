@@ -37,13 +37,25 @@ from odoo.addons.ai_agent_core.core.loop import (  # noqa: E402
     tool_history_triples,
 )
 
+# Loggern måste finnas FÖRE import-blocken nedan: de loggar sina egna
+# misslyckanden (A5), och en sen definition gav NameError vid import.
+_logger = logging.getLogger(__name__)
+
 # Import access control helper (quest-access-control change)
 # Fånga ALLA undantag: vid tidig import (stream.py → ai_coworker → models)
 # kan AssertionError uppstå (base_sparse_field ej laddad), vilket annars
 # dödar hela controllers-paketet (openai_api/webhook/stream = /ai/* 404).
 try:
     from odoo.addons.ai_agent_core.models.ai_coworker import _quest_is_accessible
-except Exception:
+except Exception as _qia_err:  # noqa: BLE001 — vid tidig import kan
+    # base_sparse_field saknas (AssertionError), vilket annars dödar hela
+    # controllers-paketet. Men utfallet måste synas: utan loggen blev A5
+    # (TypeError → 500 i stället för 403) osynligt.
+    _logger.warning(
+        'Kunde inte importera _quest_is_accessible (%s: %s) — '
+        'åtkomstkontrollen för quests är AVSTÄNGD tills modulen är '
+        'fulladdat. /ai/stream svarar 403 för quest-bundna sessioner.',
+        type(_qia_err).__name__, _qia_err)
     _quest_is_accessible = None
 
 # Import providers at module level so every handler (SSE stream, OpenAI API,
@@ -53,8 +65,6 @@ try:
         ProviderFactory, get_default_provider)
 except Exception:
     ProviderFactory = get_default_provider = None
-
-_logger = logging.getLogger(__name__)
 
 
 def _content_to_text(content):
@@ -120,6 +130,11 @@ def _clean_user_message(text):
 # ---------------------------------------------------------------------------
 
 
+# A6: tak för hur länge `/ai/interrupt/poll` får hålla en WSGI-worker.
+# Utan tak blockerade loopen en worker för evigt när inget interrupt kom.
+INTERRUPT_POLL_TIMEOUT = 30.0
+
+
 def _looks_like_tool_error(text):
     """Ser en verktygs-JSON ut som ett fel?
 
@@ -140,6 +155,77 @@ def _looks_like_tool_error(text):
     except (ValueError, TypeError):
         return False
     return isinstance(parsed, dict) and bool(parsed.get('error'))
+
+
+def _thread_usage_block(session):
+    """Sessionens token-/kostnadsaggregat för WebUI (2.1).
+
+    Klienten får ALDRIG summera `messages[].token_sys` själv: den ser inte
+    `informative`-flaggan och skulle därför drifta från
+    `_compute_session_line_count` (som utesluter informativa rader,
+    utfall-och-tokenmatning D5/5.1 → dubbelräknade supervisor-/konsensus-
+    rader). Servern äger summan; klienten renderar den.
+
+    `token_sys` är DEBITERINGSGRUND (inkl. marginal) och `cost_usd` är
+    FAKTISK kostnad — de slås aldrig ihop. `unmeasured_lines` skiljer
+    "inga tokens" från "vi vet inte": omätt är inte noll.
+
+    Utdragen till en egen funktion så den kan testas utan HTTP-lager
+    (tests/test_webui_token_usage.py 6.1).
+    """
+    lines = session.session_line_ids
+    billed_lines = [l for l in lines if not l.informative]
+    return {
+        'token_input': sum(l.token_input or 0 for l in billed_lines),
+        'token_output': sum(l.token_output or 0 for l in billed_lines),
+        'token_sys': sum(l.token_sys or 0 for l in billed_lines),
+        'cost_usd': round(
+            sum(l.cost_usd or 0.0 for l in billed_lines), 8),
+        'lines': len(billed_lines),
+        'unmeasured_lines': len([
+            l for l in billed_lines if not l.usage_reported]),
+    }
+
+
+def _require_session_owner(session_id):
+    """Slå upp en session och kräv att anroparen äger den.
+
+    Returnerar `(session, None)` när anroparen får agera på sessionen, annars
+    `(None, Response)` med 403/404.
+
+    A4: de publika /ai/*-rutterna (`thread_get`, `thread_rename`,
+    `thread_delete`, `memory_archive`, `session_documents`, `upload_document`)
+    slog upp sessionen med `sudo()` och gjorde ingen ägarkontroll. Vem som
+    helst som kunde gissa ett id kunde läsa, byta namn på, radera eller
+    ladda upp dokument till någon annans tråd.
+
+    Uppslaget sker UTAN `sudo()` — det är själva poängen. Med `sudo()` hade
+    vi fått posten oavsett ACL och sedan behövt lita på en manuell
+    jämförelse; utan `sudo()` gäller Odoos record rules, och den explicita
+    jämförelsen blir ett andra lager.
+
+    `thread_list` och `thread_search` var redan korrekta (`user_id`-domän)
+    och är mallen för den här funktionen.
+    """
+    Sess = request.env['ai.coworker.session']
+    session = Sess.browse(int(session_id or 0))
+    if not session.exists():
+        return None, Response(
+            json.dumps({'error': 'Not found'}),
+            status=404, content_type='application/json')
+
+    user = request.env.user
+    is_admin = (user.id == request.env.ref('base.user_admin').id
+                or user.has_group('base.group_system'))
+    if is_admin or session.user_id.id == user.id:
+        return session, None
+
+    _logger.warning(
+        'Ägarkontroll nekad: uid %s försökte nå session %s som ägs av uid %s',
+        user.id, session.id, session.user_id.id)
+    return None, Response(
+        json.dumps({'error': 'Forbidden'}),
+        status=403, content_type='application/json')
 
 
 class AIStreamController(http.Controller):
@@ -191,6 +277,19 @@ class AIStreamController(http.Controller):
                 quest = request.env['ai.coworker'].sudo().browse(int(coworker_id))
                 if quest.exists():
                     # Access check
+                    # A5: `_quest_is_accessible` kan vara None om importen
+                    # misslyckades (modulnivå except → None). Att anropa None
+                    # gav TypeError → HTTP 500 i stället för 403, vilket såg
+                    # ut som en serverkrasch. Fail-closed: neka med orsak.
+                    if _quest_is_accessible is None:
+                        _logger.error(
+                            '/ai/stream: _quest_is_accessible är None '
+                            '(importfel) — nekar anropet')
+                        return Response(
+                            json.dumps({"error": "Quest access check unavailable"}),
+                            status=403,
+                            content_type='application/json',
+                        )
                     if request.env.user and not _quest_is_accessible(quest, request.env.user):
                         return Response(
                             json.dumps({"error": "Quest not accessible"}),
@@ -750,7 +849,10 @@ class AIStreamController(http.Controller):
                                         config=AgentConfig(
                                             model=a['model'],
                                             system_prompt=system_prompt,
-                                            max_rounds=10,
+                                            # None → härleds ur
+                                            # coworkerns max_iterations
+                                            # (init-type-execution-parity 5.1)
+                                            max_rounds=None,
                                             checkpoint_callback=_checkpoint,
                                             # Långa tool-resultat (YouTube-transkript ≈ 24k tecken) får plats
                                             max_tool_result_chars=40000,
@@ -769,7 +871,9 @@ class AIStreamController(http.Controller):
                                 config=AgentConfig(
                                     model=model,
                                     system_prompt=system_prompt,
-                                    max_rounds=10,
+                                    # None → härleds ur max_iterations
+                                    # (init-type-execution-parity 5.1)
+                                    max_rounds=None,
                                     checkpoint_callback=_checkpoint,
                                     # Långa tool-resultat (YouTube-transkript ≈ 24k tecken) får plats
                                     max_tool_result_chars=40000,
@@ -779,6 +883,10 @@ class AIStreamController(http.Controller):
                                 ),
                             )
                         state['loop_obj'] = loop_obj
+                        # Modellreferensen som bokförs på turens rad om
+                        # providern inte rapporterar något eget modellnamn
+                        # (TokenEvent bär ingen `model`).
+                        state.setdefault('model_real', model or '')
 
                         async for event in loop_obj.run_stream(prompt, history=history):
                             # Vidarebefordra pending HITL-interrupts som SSE
@@ -799,6 +907,18 @@ class AIStreamController(http.Controller):
                                 data["token"] = event.token
                             elif event.type in ("debug", "source", "tool_progress"):
                                 data["token"] = event.token
+                            elif event.type == "needs_approval":
+                                # Ett nekande från grinden (init-type-execution-
+                                # parity 3.3). Klienten måste få veta VARFÖR
+                                # inget hände — annars ser webb-användaren
+                                # bara att verktyget inte kördes.
+                                data["token"] = event.token
+                                try:
+                                    _denial = json.loads(event.token or '{}')
+                                except (ValueError, TypeError):
+                                    _denial = {}
+                                data["tool"] = _denial.get("tool", "")
+                                data["reason"] = _denial.get("reason", "")
                             elif event.type == "tool_call_start":
                                 if event.tool_call:
                                     data["tool_call"] = {
@@ -818,6 +938,21 @@ class AIStreamController(http.Controller):
                                     # persistens (2.1/2.3): avslutsorsak +
                                     # ev. fel från max_rounds-avslutet.
                                     state['finish_reason'] = event.finish_reason
+                                    # Verklig usage till serverns egen
+                                    # persistens (restore-webui-token-usage
+                                    # 3.1). Utan den skrevs assistant-raden
+                                    # med 0/0 och `usage_reported=True` →
+                                    # raden SÅG mätt ut men cost_usd blev
+                                    # strukturellt 0. Klientens POST kunde
+                                    # inte rädda det: den nås inte vid tomt
+                                    # svar, och den bokför på en annan rad.
+                                    state['input_tokens'] = data["input_tokens"]
+                                    state['output_tokens'] = data["output_tokens"]
+                                    # TokenEvent bär ingen cached/model — de
+                                    # fylls av _finalize_stream_turn via
+                                    # _persist_stream_answer (modell ur
+                                    # state['model_real'] satt nedan, eller ur
+                                    # sessionens coworker).
                                     ev_err = getattr(event, 'error', '') or ''
                                     if ev_err:
                                         state['error'] = ev_err
@@ -1163,6 +1298,18 @@ class AIStreamController(http.Controller):
             if not skill.exists():
                 return Response(json.dumps({'error': 'Skill not found'}),
                               status=404, content_type='application/json')
+            # A4: `recipe_text` är skillens hela instruktionsrecept. En
+            # gruppbunden skill får inte läcka den till en användare utan
+            # gruppen — rutten är publik och gjorde ingen prövning alls.
+            if skill.group_ids:
+                user_groups = set(request.env.user.groups_id.ids)
+                if not (user_groups & set(skill.group_ids.ids)):
+                    _logger.warning(
+                        'skill_get nekad: uid %s saknar grupp för skill %s',
+                        request.env.user.id, skill.id)
+                    return Response(json.dumps({'error': 'Forbidden'}),
+                                  status=403,
+                                  content_type='application/json')
             return Response(json.dumps({
                 'id': skill.id,
                 'name': skill.name,
@@ -1229,12 +1376,26 @@ class AIStreamController(http.Controller):
                 yield f"data: {json.dumps({'type': 'done'})}\n\n"
                 return
 
-            while True:
+            # A6: loopen hade ingen tidsgräns. `while True: ... sleep(0.5)` i
+            # en WSGI-tråd blockerar EN worker tills ett interrupt dyker upp
+            # — eller för alltid om inget kommer. Med ett fåtal samtidiga
+            # webbsessioner tog poll-rutterna slut på worker-poolen och HELA
+            # Odoo slutade svara, inte bara AI-vyn.
+            #
+            # 30 s räcker gott: klienten poll:ar om efter `done`, och ett
+            # interrupt som dröjer längre än så levereras på nästa poll.
+            # Tidsgränsen är ett tak för hur länge en worker får hållas, inte
+            # en garanti att interruptet kommer inom 30 s.
+            deadline = time.monotonic() + INTERRUPT_POLL_TIMEOUT
+            while time.monotonic() < deadline:
                 pending = handler.get_pending()
                 if pending:
                     yield f"data: {json.dumps(pending)}\n\n"
                     return
                 time.sleep(0.5)
+
+            # Tidsgränsen nådd — säg `done` så klienten kan poll:a om.
+            yield f"data: {json.dumps({'type': 'done', 'reason': 'poll_timeout'})}\n\n"
 
         return request.make_response(
             generate(),
@@ -1371,15 +1532,19 @@ class AIStreamController(http.Controller):
                 methods=['GET'], csrf=False, sitemap=False)
     def thread_get(self, thread_id, **kw):
         """Get thread with messages."""
-        session = request.env['ai.coworker.session'].sudo().browse(thread_id)
-        if not session.exists():
-            return Response(json.dumps({"error": "Thread not found"}), content_type='application/json', status=404)
+        # A4: ägarkontroll — annars läste vem som helst någon annans tråd.
+        session, _denied = _require_session_owner(thread_id)
+        if _denied:
+            return _denied
         lines = session.session_line_ids.sorted('sequence')
         # Konversationsrader (user/assistant/system) visas i UI:t;
         # tool-rader är granskningsdata och exponeras separat som tool_lines
         # så de inte renderas som AI-meddelanden i trådvyn.
         conv_lines = [l for l in lines if l.role != 'tool']
         tool_lines = [l for l in lines if l.role == 'tool']
+        # Sessionsaggregat (restore-webui-token-usage 2.1) — se
+        # `_thread_usage_block` för varför klienten inte får summera själv.
+        usage = _thread_usage_block(session)
         return Response(json.dumps({
             "id": session.id,
             "name": session.name or '',
@@ -1403,26 +1568,29 @@ class AIStreamController(http.Controller):
                 "content": (l.content or '')[:500],
                 "token_sys": l.token_sys or 0,
             } for l in tool_lines],
+            "usage": usage,
         }), content_type='application/json')
 
     @http.route('/ai/threads/<int:thread_id>', type='http', auth='public',
                 methods=['PUT'], csrf=False, sitemap=False)
     def thread_rename(self, thread_id, **kw):
         """Rename a thread."""
+        session, _denied = _require_session_owner(thread_id)
+        if _denied:
+            return _denied
         body = json.loads(request.httprequest.data or '{}')
         name = body.get('name', '')
-        session = request.env['ai.coworker.session'].sudo().browse(thread_id)
-        if session.exists():
-            session.name = name[:200]
+        session.name = name[:200]
         return Response(json.dumps({"status": "ok"}), content_type='application/json')
 
     @http.route('/ai/threads/<int:thread_id>', type='http', auth='public',
                 methods=['DELETE'], csrf=False, sitemap=False)
     def thread_delete(self, thread_id, **kw):
         """Delete a thread (soft-delete by setting active=False)."""
-        session = request.env['ai.coworker.session'].sudo().browse(thread_id)
-        if session.exists():
-            session.active = False
+        session, _denied = _require_session_owner(thread_id)
+        if _denied:
+            return _denied
+        session.active = False
         return Response(json.dumps({"status": "ok"}), content_type='application/json')
 
     @http.route('/ai/threads/<int:thread_id>/respond', type='http', auth='public',
@@ -1481,30 +1649,69 @@ class AIStreamController(http.Controller):
                 sys_multiplier=sys_mult,
             )
 
-            # Senaste user-raden får requestens input-tokens (riktig usage
-            # eller estimat) så varje meddelande visar sin prompt-kostnad.
+            # ── "En rad bokförs en gång" (3.4) ───────────────────────
+            # Servern bokför numera turens verkliga usage själv
+            # (_persist_stream_answer → assistant-raden). Klientens POST
+            # får berika (debug/källor/tool_calls), men INTE lägga samma
+            # tokens en gång till: då dubbelräknas sessionens token_sys
+            # och därmed budgettaket. Vi bokför därför bara det som
+            # servern inte redan skrivit.
             #
-            # OBS: ai.coworker.session.line är APPEND-ONLY. Både
-            # `sys_multiplier`, `token_input` och `token_output` står i
-            # `_IMMUTABLE_FIELDS` (models/ai_session_line.py) — att skriva
-            # dem på en befintlig rad kastar UserError → HTTP 400 →
-            # SSE-avbrott → "Anslutningen till AI-servern bröts" i webb-UI:t
-            # (dina 2026-10-28). Token-fälten sätts när raden skapas
-            # (servern persisterar turen med usage redan där), så någon
-            # efterhands-write behövs inte. Sessions- och medarbetartotalerna
-            # nedan bokförs på sessionen/coworkern, som är muterbara.
+            # OBS: ai.coworker.session.line är APPEND-ONLY. `sys_multiplier`,
+            # `token_input` och `token_output` står i `_IMMUTABLE_FIELDS`
+            # (models/ai_session_line.py) — att skriva dem på en redan
+            # bokförd rad kastar UserError → HTTP 400 → SSE-avbrott →
+            # "Anslutningen till AI-servern bröts" i webb-UI:t (2026-10-28).
+            # Skrivningen nedan sker därför bara när `usage_reported` är
+            # False, dvs. när raden ännu inte bokförts.
+            booked_input = 0
+            booked_output = 0
+            user_lines = session.session_line_ids.filtered(
+                lambda l: l.role == 'user').sorted('sequence', reverse=True)
+            _u = user_lines[:1] if user_lines else None
+            if _u:
+                booked_input = _u.token_input or 0
+                # Senaste user-raden får requestens input-tokens (riktig
+                # usage eller estimat) så varje meddelande visar sin
+                # prompt-kostnad — men bara om den inte redan är bokförd.
+                # ⚠ 0 sätts ALDRIG över ett befintligt värde: en
+                # upprepad POST med tom usage nollade tidigare den
+                # riktiga siffran.
+                if token_input and not booked_input:
+                    _u.write({
+                        'token_input': token_input,
+                        'token_output': 0,
+                        'sys_multiplier': sys_mult,
+                        'usage_reported': True,
+                    })
+                    booked_input = token_input
+                elif booked_input and not _u.usage_reported:
+                    _u.write({'usage_reported': True})
+            # Assistant-raden: räkna in den bara om den inte redan är
+            # mätt. `_save_client_response` skriver 0/0 när servern äger
+            # siffrorna, så ett värde här betyder att den inte gjorde det.
+            if role == 'assistant':
+                a_lines = session.session_line_ids.filtered(
+                    lambda l: l.role == 'assistant').sorted(
+                        'sequence', reverse=True)
+                _a = a_lines[:1] if a_lines else None
+                if _a and not _a.usage_reported:
+                    booked_output = _a.token_output or 0
+                    if _a.token_input:
+                        booked_input = _a.token_input
 
             # Also update session totals
-            session.token_input += token_input
-            session.token_output += token_output
+            session.token_input += booked_input
+            session.token_output += booked_output
             session.write_date = fields.Datetime.now()
 
             # Increment quest all-time totals
             if session.coworker_id:
                 quest = session.coworker_id
-                quest.total_input_tokens += token_input
-                quest.total_output_tokens += token_output
-                quest.total_sys_tokens += int((token_input + token_output) * sys_mult)
+                quest.total_input_tokens += booked_input
+                quest.total_output_tokens += booked_output
+                quest.total_sys_tokens += int(
+                    (booked_input + booked_output) * sys_mult)
                 # Trigger cap check
                 if quest.monthly_cap_mtokens:
                     quest.check_cap()
@@ -1539,8 +1746,11 @@ class AIStreamController(http.Controller):
                 except Exception:
                     pass  # Never fail the response over mission detection
 
-            _logger.info("Saved response to session %s: %d in/%d out tokens, model=%s",
-                        thread_id, token_input, token_output, model_real or 'unknown')
+            _logger.info(
+                "Saved response to session %s: booked %d in/%d out "
+                "tokens (POST offered %d/%d), model=%s",
+                thread_id, booked_input, booked_output, token_input,
+                token_output, model_real or 'unknown')
 
             # Multi-surface: mirror assistant response to channel for buzz workspaces
             if quest and quest.orchestration_mode == 'buzz' and quest.channel_id and role == 'assistant':
@@ -1649,6 +1859,20 @@ class AIStreamController(http.Controller):
         if not quest.exists():
             return Response(json.dumps({"error": "Quest not found"}),
                           content_type='application/json', status=404)
+        # A4: pröva åtkomst INNAN någon LLM-körning startas — annars kunde
+        # vem som helst bränna en coworker's budget genom att gissa ett id.
+        if _quest_is_accessible is None:
+            _logger.error(
+                'powerbox_run: _quest_is_accessible är None (importfel) — '
+                'nekar anropet i stället för att köra oskyddat')
+            return Response(json.dumps({"error": "Forbidden"}),
+                          content_type='application/json', status=403)
+        if not _quest_is_accessible(quest, request.env.user):
+            _logger.warning(
+                'powerbox_run nekad: uid %s saknar åtkomst till coworker %s',
+                request.env.user.id, quest.id)
+            return Response(json.dumps({"error": "Forbidden"}),
+                          content_type='application/json', status=403)
         if 'powerbox' not in quest.init_type_ids.filtered('enabled').mapped('init_type'):
             return Response(json.dumps({"error": "Quest not configured as powerbox"}),
                           content_type='application/json', status=404)
@@ -1688,7 +1912,22 @@ class AIStreamController(http.Controller):
         # Find the quest (personal companion or specified)
         quest = None
         if coworker_id:
-            quest = request.env['ai.coworker'].sudo().browse(int(coworker_id))
+            # A4: `/learn` skriver till en coworkers identitet. Ett godtyckligt
+            # coworker_id lät vem som helst ändra någon annans companion.
+            # Bind till användarens EGEN companion: antingen den angivna om
+            # den är användarens personal_coworker, eller användarens egen.
+            candidate = request.env['ai.coworker'].sudo().browse(
+                int(coworker_id))
+            own = user.personal_coworker_id
+            if not candidate.exists() or not own or candidate.id != own.id:
+                _logger.warning(
+                    '/learn nekad: uid %s försökte skriva till coworker %s '
+                    '(egen companion: %s)',
+                    user.id, coworker_id, own.id if own else None)
+                return Response(json.dumps({
+                    "error": "You can only teach your own companion"
+                }), content_type='application/json', status=403)
+            quest = candidate
         elif user.personal_coworker_id:
             quest = user.personal_coworker_id
 
@@ -1772,10 +2011,9 @@ class AIStreamController(http.Controller):
                 methods=['GET'], csrf=False, sitemap=False)
     def session_documents(self, session_id, **kw):
         """List uploaded documents for a session."""
-        session = request.env['ai.coworker.session'].sudo().browse(session_id)
-        if not session.exists():
-            return Response(json.dumps({"documents": []}),
-                          content_type='application/json')
+        session, _denied = _require_session_owner(session_id)
+        if _denied:
+            return _denied
 
         memories = request.env['ai.memory'].sudo().search([
             ('session_id', '=', session.id),
@@ -1814,8 +2052,26 @@ class AIStreamController(http.Controller):
     def memory_archive(self, memory_id, **kw):
         """Archive a memory (soft delete)."""
         memory = request.env['ai.memory'].sudo().browse(memory_id)
-        if memory.exists():
-            memory.archived = True
+        if not memory.exists():
+            return Response(json.dumps({"status": "ok"}),
+                          content_type='application/json')
+        # A4: minnet kan höra till en session — då gäller sessionens ägare.
+        # Minnen utan session (globala/companion) kräver admin, eftersom det
+        # inte finns någon ägare att pröva mot.
+        if memory.session_id:
+            _sess, _denied = _require_session_owner(memory.session_id.id)
+            if _denied:
+                return _denied
+        else:
+            user = request.env.user
+            if not (user.id == request.env.ref('base.user_admin').id
+                    or user.has_group('base.group_system')):
+                _logger.warning(
+                    'memory_archive nekad: uid %s mot sessionslöst minne %s',
+                    user.id, memory.id)
+                return Response(json.dumps({"error": "Forbidden"}),
+                              status=403, content_type='application/json')
+        memory.archived = True
         return Response(json.dumps({"status": "ok"}),
                       content_type='application/json')
 
@@ -1880,7 +2136,15 @@ class AIStreamController(http.Controller):
             return Response(json.dumps({"error": "Kunde ej extrahera text"}),
                           content_type='application/json', status=400)
         quest = request.env['ai.coworker'].sudo().browse(int(coworker_id)) if coworker_id else None
-        session = request.env['ai.coworker.session'].sudo().browse(int(session_id)) if session_id else None
+        session = None
+        if session_id:
+            # A4: uppladdning till någon annans session nekas. Rutten var en
+            # oautentiserad filläsare som skapade ir.attachment med sudo()
+            # kopplad till ett valfritt session_id — vem som helst kunde
+            # därmed plantera filer i en annan användares tråd.
+            session, _denied = _require_session_owner(session_id)
+            if _denied:
+                return _denied
 
         # Store original file as ir.attachment linked to session
         attachment = None
@@ -1961,7 +2225,14 @@ class AIStreamController(http.Controller):
 # Forward reference only. WebUIInterruptHandler is imported lazily inside
 # generate() (to avoid a circular import at module load), so the name is not
 # bound at module level. The annotation is a string and is never evaluated.
+#
+# KÄND BEGRÄNSNING (A7): denna dict är IN-PROCESS. `/ai/interrupt/poll` och
+# `/ai/interrupt/respond` fungerar därför bara om båda träffar samma
+# worker-process. Med flera workers (eller efter en omstart) svarar
+# respond "No pending interrupt for this session" trots att ett interrupt
+# väntar i en annan process. Se docs/failures.md.
 _webui_handlers: dict[str, 'WebUIInterruptHandler'] = {}  # noqa: F821
+
 
 def _start_title_thread(session):
     """Starta namngivningstråden (steg B) EFTER att turen committats.
@@ -1974,8 +2245,10 @@ def _start_title_thread(session):
     """
     try:
         session._maybe_update_title_async()
-    except Exception:
-        pass
+    except Exception as _title_err:  # noqa: BLE001 — får aldrig fälla en körning
+        _logger.warning(
+            'Titel-uppdatering misslyckades för session %s: %s',
+            getattr(session, 'id', '?'), _title_err)
 
 
 def _get_webui_handler(session_uuid: str):
@@ -2129,8 +2402,15 @@ def _persist_stream_tool_lines(env, session_id, loop_obj):
 
     Körs efter att SSE-generatorn strömmat klart (egen cursor). loop_obj.
     tool_history = [(tool_name, preview, tool_call_id), ...] fylls av
-    AgentLoop. Idempotent: rader som redan finns för sessionen (samma
-    tool_name) hoppas över, så en retry/återkörning inte duplicerar.
+    AgentLoop. Idempotent: rader som redan finns för sessionen hoppas över,
+    så en retry/återkörning inte duplicerar.
+
+    B1: idempotensen nycklas på `tool_call_id`, inte på `tool_name`. Att
+    nyckla på namnet tappade alla upprepade anrop av samma verktyg — en tur
+    som gjorde `odoo_search` två gånger med olika argument skrev bara EN rad,
+    och den andra sökningen försvann ur historiken. Poster utan call_id
+    (skrivna före 2026-10-08) faller tillbaka på namnet, eftersom de inte har
+    något annat att identifiera sig med.
 
     tool_call_id sparas på raden (2026-10-08) så att historiken kan byggas
     om i giltigt OpenAI-format — utan det avvisar strikta providers hela
@@ -2146,11 +2426,19 @@ def _persist_stream_tool_lines(env, session_id, loop_obj):
     session = env['ai.coworker.session'].sudo().browse(int(session_id))
     if not session.exists():
         return
-    existing = set(session.session_line_ids.filtered(
-        lambda l: l.role == 'tool').mapped('tool_name'))
+    tool_lines = session.session_line_ids.filtered(
+        lambda l: l.role == 'tool')
+    existing_ids = {l.tool_call_id for l in tool_lines if l.tool_call_id}
+    # Poster utan call_id kan bara identifieras på namn — behåll den
+    # bakåtkompatibla nyckeln för dem.
+    existing_names = {l.tool_name for l in tool_lines
+                      if l.tool_name and not l.tool_call_id}
     base_seq = _next_session_sequence(env, session.id)
-    for i, (t_name, t_preview, t_call_id) in enumerate(history):
-        if t_name in existing:
+    written = 0
+    for (t_name, t_preview, t_call_id) in history:
+        if t_call_id and t_call_id in existing_ids:
+            continue
+        if not t_call_id and t_name in existing_names:
             continue
         tool_cost = 500  # default (ai.tool.sys_token_cost)
         try:
@@ -2166,12 +2454,19 @@ def _persist_stream_tool_lines(env, session_id, loop_obj):
             'tool_name': t_name,
             'tool_call_id': t_call_id or False,
             'content': str(t_preview)[:2000],
-            'sequence': base_seq + i,
+            'sequence': base_seq + written,
             'token_input': tool_cost,
             'sys_multiplier': 1.0,
         })
-    _logger.info('persisted %d tool line(s) for session %s',
-                 len(history), session_id)
+        written += 1
+        # Håll koll inom samma körning också: identiska call_id:n i
+        # historiken (kan hända vid retry) får inte skriva två rader.
+        if t_call_id:
+            existing_ids.add(t_call_id)
+        else:
+            existing_names.add(t_name)
+    _logger.info('persisted %d of %d tool line(s) for session %s',
+                 written, len(history), session_id)
 
 
 # Marker som skrivs när en tur avslutats utan något visningsbart innehåll.
@@ -2180,7 +2475,8 @@ _NO_ANSWER_MARKER = '(inget svar)'
 
 
 def _persist_stream_answer(env, session_id, answer, reasoning='',
-                           finish_reason='', error=''):
+                           finish_reason='', error='', token_input=0,
+                           token_output=0, model_real='', cached_tokens=0):
     """Persistera turens avslutande assistantsvar server-side.
 
     Servern är garanten (web-ui-stream-turn-persistens 2.1): klienten kan
@@ -2213,13 +2509,54 @@ def _persist_stream_answer(env, session_id, answer, reasoning='',
         if not content:
             content = _NO_ANSWER_MARKER
         seq = _next_session_sequence(env, session.id)
-        env['ai.coworker.session.line'].sudo().create({
+        # ── Boka turens VERKLIGA usage på raden (3.2) ──────────────────
+        # Tidigare skapades raden utan tokenfält → token_input/output = 0
+        # och `usage_reported` föll på modellens default True. Resultatet
+        # var en rad som SÅG mätt ut men hade cost_usd strukturellt 0:
+        # tomheten var omöjlig att skilja från "inga tokens".
+        #
+        # Följer samma bokföringskonvention som övriga vägar
+        # (ai_coworker.chat / _persist_session): assistant-raden bär
+        # output, user-raden bär input. Här finns ingen user-rad att
+        # skriva på (den skapas av /ai/stream-requesten), så input bokförs
+        # på assistant-raden — annars tappas promptkostnaden helt.
+        in_t = int(token_input or 0)
+        out_t = int(token_output or 0)
+        usage_reported = bool(in_t or out_t)
+        m_real = (model_real or '').strip()
+        sys_mult = 1.0
+        ai_model = None
+        if m_real:
+            try:
+                ai_model = env['ai.model']._resolve_from_real(
+                    m_real, session.coworker_id)
+            except Exception:
+                ai_model = None
+            if ai_model:
+                sys_mult = ai_model.sys_multiplier
+        line_vals = {
             'session_id': session.id,
             'role': 'assistant',
             'content': content,
             'reasoning': (reasoning or '').strip() or False,
             'sequence': seq,
-        })
+            'token_input': in_t,
+            'token_output': out_t,
+            'model_real': m_real,
+            'sys_multiplier': sys_mult,
+            'usage_reported': usage_reported,
+            'cached_tokens': int(cached_tokens or 0),
+        }
+        # Prisögonblickbild (utfall-och-tokenmatning 4.1–4.4): frys
+        # modellens priser vid radens skapande så en historisk rad visar
+        # vad den faktiskt kostade.
+        try:
+            if ai_model:
+                line_vals['cost_input_1k'] = ai_model.cost_input_1k or 0.0
+                line_vals['cost_output_1k'] = ai_model.cost_output_1k or 0.0
+        except Exception:
+            pass
+        env['ai.coworker.session.line'].sudo().create(line_vals)
         # Avslutsorsak i sessionsmetadata (2.3): skilj "avslutad utan
         # sammanfattning" från normal avslutning, och fyll feldetalj när
         # det avslutande anropet felat.
@@ -2310,6 +2647,12 @@ def _finalize_stream_turn(dbname, uid, context, session_id, full_response,
                                 'reasoning_log', None) or []),
                     finish_reason=state.get('finish_reason', ''),
                     error=state.get('error', ''),
+                    # Verklig usage (3.3) — annars skrevs raden med 0/0 och
+                    # såg mätt ut trots att providern rapporterat siffror.
+                    token_input=state.get('input_tokens', 0) or 0,
+                    token_output=state.get('output_tokens', 0) or 0,
+                    model_real=state.get('model_real', '') or '',
+                    cached_tokens=state.get('cached_tokens', 0) or 0,
                 )
             except Exception:
                 _logger.warning(
@@ -2683,7 +3026,6 @@ def _detect_and_suggest_mission(session_id, last_response, company_id, threshold
 # Callback Controllers — external systems report results back to Odoo
 # ---------------------------------------------------------------------------
 
-CALLBACK_SECRET_DEFAULT = 'CHANGE_ME_IN_PILLAR'
 CALLBACK_SECRET_PARAM = 'ai_agent_core.api_secret'
 
 
@@ -2695,7 +3037,15 @@ def _get_callback_secret():
          (Settings → Technical → System Parameters)
       2. Environment variable ``AI_AGENT_API_SECRET``
          (injectable via Salt pillar → systemd Environment=)
-      3. Hardcoded default (development only — should never ship to prod)
+
+    Returnerar None när ingen källa är satt — fail-closed.
+
+    A2: tidigare fanns en hårdkodad default ('CHANGE_ME_IN_PILLAR') som sista
+    steg. Den betydde att `Bearer CHANGE_ME_IN_PILLAR` autentiserade mot
+    /pi/* på varje installation som inte konfigurerat hemligheten — och
+    strängen stod i källkoden, så alla som läst repot kände den. En
+    oskyddad endpoint är värre än en otillgänglig: hellre 403 än tyst
+    full åtkomst.
     """
     try:
         param = request.env['ir.config_parameter'].sudo().get_param(
@@ -2705,32 +3055,60 @@ def _get_callback_secret():
     except Exception:
         pass
     import os
-    return os.environ.get('AI_AGENT_API_SECRET', CALLBACK_SECRET_DEFAULT)
+    return os.environ.get('AI_AGENT_API_SECRET') or None
 
 
 class PICallbackController(http.Controller):
     """Endpoints for Pi workers, Zabbix, and Bifrost to report results."""
 
-    def _check_callback_auth(self):
-        """Validate pre-shared token from Authorization header."""
+    def _check_callback_auth(self, session=None):
+        """Validate pre-shared token from Authorization header.
+
+        Två vägar in:
+          1. Den delade hemligheten (systemparameter eller env). Jämförs i
+             konstant tid. Saknas hemligheten nekas anropet — A2.
+          2. En giltig res.users.apikeys. `pi-agent --task` använder EN
+             `--api-key` för både /pi/* och /ai/v1/*, så den vägen måste
+             finnas. Men nyckeln ska binda till SESSIONENS ÄGARE, inte bara
+             till "någon giltig användare" — annars kunde användare A läsa
+             användare B:s uppdrag med sin egen nyckel (A3).
+
+        `session` är sessionen anropet gäller. Skickas den inte nekas
+        API-nyckelvägen (fail-closed) — den delade hemligheten fungerar
+        fortfarande, eftersom den inte är knuten till en person.
+        """
+        import hmac
+
         auth = request.httprequest.headers.get('Authorization', '')
-        expected = f'Bearer {_get_callback_secret()}'
-        if auth == expected:
+        if not auth.startswith('Bearer '):
+            return False
+        token = auth[len('Bearer '):].strip()
+        if not token:
+            return False
+
+        secret = _get_callback_secret()
+        if secret and hmac.compare_digest(token, secret):
             return True
-        # `pi-agent --task` använder EN `--api-key` för både /pi/* och
-        # /ai/v1/*. Acceptera därför också en giltig res.users.apikeys —
-        # annars kunde den orkestrerade körningen inte hämta sitt uppdrag
-        # med samma nyckel som den hämtar skills med.
-        if auth.startswith('Bearer '):
-            token = auth[len('Bearer '):].strip()
-            if token:
-                try:
-                    uid = request.env['res.users.apikeys'].sudo()._check_credentials(
-                        scope='rpc', key=token)
-                    if uid:
-                        return True
-                except Exception:
-                    pass
+
+        # API-nyckelvägen — kräver en känd session och ägarskap.
+        if session is None:
+            return False
+        try:
+            uid = request.env['res.users.apikeys'].sudo()._check_credentials(
+                scope='rpc', key=token)
+        except Exception:
+            return False
+        if not uid:
+            return False
+        if not session.exists():
+            return False
+        if uid == request.env.ref('base.user_admin').id:
+            return True
+        if session.user_id.id == uid:
+            return True
+        _logger.warning(
+            'Callback-nekad: API-nyckel för uid %s mot session %s som ägs '
+            'av uid %s', uid, session.id, session.user_id.id)
         return False
 
     @http.route('/pi/task/<int:task_id>', type='http', auth='public',
@@ -2756,6 +3134,15 @@ class PICallbackController(http.Controller):
         if not session.exists():
             return Response(json.dumps({'error': 'Session not found'}),
                             status=404, content_type='application/json')
+
+        # Ägarskapet prövas EFTER uppslaget — `_check_callback_auth` behöver
+        # sessionen för att kunna binda API-nyckeln till dess ägare (A3).
+        # Den delade hemligheten har redan passerat ovan; här prövas bara
+        # API-nyckelvägen. Ett andra anrop är billigt (ingen DB-åtkomst när
+        # hemligheten redan matchat).
+        if not self._check_callback_auth(session=session):
+            return Response(json.dumps({'error': 'Unauthorized'}),
+                            status=403, content_type='application/json')
 
         # Uppdragets prompt: sessionens job_prompt (fryst vid köning) eller
         # sista user-raden — samma källor som körvägarna använder.
@@ -2802,6 +3189,10 @@ class PICallbackController(http.Controller):
         session = request.env['ai.coworker.session'].sudo().browse(task_id)
         if not session.exists():
             return {'error': 'Session not found', 'status': 404}
+
+        # A3: API-nyckeln måste tillhöra sessionens ägare.
+        if not self._check_callback_auth(session=session):
+            return {'error': 'Unauthorized', 'status': 403}
 
         # Update session
         # `finish_reason` är en Selection (utfall-och-tokenmatning) — den får
@@ -4246,6 +4637,10 @@ class AIOpenAIAPI(http.Controller):
                 # (dödar hela SSE-strömmen).
                 _dsml = {'hold': [], 'prefixes': (
                     '<\uff5c\uff5cDSML\uff5c\uff5c', '<||DSML||')}
+                # Avslutsmetadata/usage for turens persisterade rad
+                # (restore-webui-token-usage 3.1). Samma nycklar som
+                # AgentLoop-vagen sa att bokforingen blir identisk.
+                state = {'loop_obj': None, 'model_real': model_ref or ''}
 
                 try:
                     provider = _gen_provider
@@ -4391,6 +4786,9 @@ class AIOpenAIAPI(http.Controller):
                                     event, 'input_tokens', 0) or 0
                                 usage_state['output'] = getattr(
                                     event, 'output_tokens', 0) or 0
+                                state['input_tokens'] = usage_state['input']
+                                state['output_tokens'] = usage_state['output']
+                                state.setdefault('model_real', model_ref or '')
                                 # finish_reason: tool_calls om verktyg, annars
                                 # providerns VERKLIGA orsak (t.ex. "length").
                                 # Att hardkoda "stop" dolde att modellen gjort
@@ -4729,6 +5127,28 @@ class AIOpenAIAPI(http.Controller):
             aloop = asyncio.new_event_loop()
             asyncio.set_event_loop(aloop)
 
+            # ── HITL-grinden ──
+            # Den här vägen är den mest trafikerade (Pi-extensionen kör alla
+            # Odoo-verktyg här) och byggde tidigare en ToolRegistry och
+            # anropade tool.execute() DIREKT — utan PermissionEngine. De två
+            # hårda stoppen (odoo_call_method, odoo_unlink) i
+            # core/permission.py:303 kunde därför köras utan mänskligt
+            # godkännande, trots approvals-specens "Hard stops SHALL apply
+            # regardless of trust step and runtime".
+            #
+            # Läget är INTERACTIVE, inte AUTO: den här ytan har ingen
+            # människa i loopen som kan svara på en godkännandefråga, så
+            # AUTO vore att bevilja full access utan människa. INTERACTIVE
+            # släpper igenom läsande verktyg tyst och låter hårda stopp
+            # kräva människa → de nekas här (fail-closed), vilket är rätt
+            # svar på en yta som saknar godkännandekanal.
+            from odoo.addons.ai_agent_core.core.permission import (
+                PermissionEngine, PermissionMode)
+            _permissions = PermissionEngine(
+                mode=PermissionMode.INTERACTIVE,
+                user_group_ids=set(request.env.user.groups_id.ids),
+            )
+
             async def _run_one(tc):
                 name = tc.get('name', '')
                 args = tc.get('arguments') or {}
@@ -4766,6 +5186,20 @@ class AIOpenAIAPI(http.Controller):
                     return {'name': name,
                             'result': f"Unknown tool '{name}'",
                             'is_error': True}
+
+                # Grinden FÖRE exekvering. needs_user på en yta utan
+                # godkännandekanal = neka (fail-closed), inte köra.
+                _decision = _permissions.evaluate(
+                    name, args, metadata=tool)
+                if not _decision.allowed or _decision.needs_user:
+                    _logger.warning(
+                        'tools/run nekade %s (session %s): %s',
+                        name, sess.id if sess.exists() else 0,
+                        _decision.reason)
+                    return {'name': name,
+                            'result': f'Permission denied: {_decision.reason}',
+                            'is_error': True}
+
                 try:
                     result = await tool.execute(**args)
                     # Verktygen RETURNERAR ToolError(...).to_json() i stallet
