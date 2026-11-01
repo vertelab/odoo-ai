@@ -882,6 +882,49 @@ class AIOkfConcept(models.Model):
         latest = self.search(domain, order='create_date desc', limit=limit)
         return latest._latest_per_key()
 
+    @api.model
+    def _noise_floor_cosine(self, params, sample=2000):
+        """Korpusens eget brus: p95 för cosinus mellan ORELATERADE par.
+
+        Ett fast brusgolv (0.39) mättes mot nonsensfrågor när korpusen var
+        liten. När `embed-multilingual-v3.0` lägger nästan allt i samma
+        trakt ligger orelaterade par på cosinus ~0.99 — långt över vilket
+        fast golv som helst som också släpper igenom riktiga träffar.
+
+        Frågan "är den här raden nära frågan?" kan därför inte besvaras med
+        ett absolut tal. Men frågan "sticker den här raden ut mot korpusens
+        eget brus?" kan det. Vi mäter bruset vid sökningen: percentil 95 av
+        cosinus mellan slumpade par i korpusen. En rad som ligger över den
+        nivån är närmare frågan än 95 % av alla par är varandra.
+
+        Returnerar ett cosinus-värde att använda som golv. Faller tillbaka
+        på det gamla 0.39 när korpusen är för liten att mäta (under 20
+        vektorer) — då finns ingen fördelning att tala om.
+        """
+        try:
+            self.env.cr.execute("""
+                SELECT percentile_cont(0.95) WITHIN GROUP (
+                           ORDER BY 1 - (a.embedding <=> b.embedding))
+                FROM (SELECT id, embedding FROM ai_okf_concept
+                      WHERE archived = false AND embedding IS NOT NULL
+                      LIMIT %(sample)s) a
+                JOIN (SELECT id, embedding FROM ai_okf_concept
+                      WHERE archived = false AND embedding IS NOT NULL
+                      LIMIT %(sample)s) b
+                  ON a.id < b.id
+            """, {'sample': sample})
+            row = self.env.cr.fetchone()
+        except Exception as e:  # noqa: BLE001 — får ej stoppa sökningen
+            _logger.warning(
+                'OKF: kunde inte mäta brusgolvet (%s) — använder 0.39', e)
+            return 0.39
+        if not row or row[0] is None:
+            return 0.39
+        floor = float(row[0])
+        # Ett golv som ligger under det gamla 0.39 är ingen förbättring —
+        # då är korpusen liten och den gamla kalibreringen bättre.
+        return max(floor, 0.39)
+
     # ════════════════════════════════════════════
     # _okf_search() — sammansatt retrieval (task 7.9)
     # ════════════════════════════════════════════
@@ -1056,6 +1099,8 @@ class AIOkfConcept(models.Model):
                     AS cosine,
                 ts_rank(search_vector,
                         plainto_tsquery('swedish', %(q)s)) AS ts_rank,
+                (search_vector @@ plainto_tsquery('swedish', %(q)s))
+                    AS text_hit,
                 (
                     COALESCE(1 - (embedding <=> %(qvec)s::vector), 0) * %(w)s
                   + ts_rank(search_vector,
@@ -1063,10 +1108,16 @@ class AIOkfConcept(models.Model):
                 ) AS score
             FROM ai_okf_concept
             WHERE archived = false
-              AND (embedding IS NOT NULL
-                   OR search_vector @@ plainto_tsquery('swedish', %(q)s))
+              AND (search_vector @@ plainto_tsquery('swedish', %(q)s)
+                   OR (embedding IS NOT NULL AND %(has_qvec)s))
         """
-        params = {'q': query, 'w': w}
+        params = {'q': query, 'w': w,
+                  # D2: vektorgrenen i kandidatfiltret är bara öppen när vi
+                  # faktiskt HAR en frågevektor. Utan den är
+                  # `embedding IS NOT NULL` sant för varje rad med vektor —
+                  # ett villkor som inte filtrerar något alls, och som i en
+                  # OR släpper in hela tabellen oavsett fråga.
+                  'has_qvec': bool(embedding)}
         if embedding:
             params['qvec'] = embedding if isinstance(embedding, str) \
                 else '[%s]' % ','.join(str(x) for x in embedding)
@@ -1136,12 +1187,12 @@ class AIOkfConcept(models.Model):
             deduped AS (
                 SELECT DISTINCT ON (scope, owner_company_id, owner_user_id,
                                     owner_coworker_id, concept_key)
-                    id, cosine, ts_rank, score
+                    id, cosine, ts_rank, score, text_hit
                 FROM ranked
                 ORDER BY scope, owner_company_id, owner_user_id,
                          owner_coworker_id, concept_key
             )
-            SELECT id, cosine, ts_rank, score FROM deduped
+            SELECT id, cosine, ts_rank, score, text_hit FROM deduped
         """.replace('__INNER__', inner_sql)
 
         # DISTINCT ON kräver att ORDER BY börjar med nycklarna — sorteringen
@@ -1197,12 +1248,24 @@ class AIOkfConcept(models.Model):
         # icke-tomma fallback" som 12.5 skulle bota, bara med vektorn som
         # ny ursäkt.
         #
-        # Därför: finns ingen tröskel, används BRUSGOLVET. Mätt mot den
-        # valda modellen (embed-multilingual-v3.0) mot den egna korpusen:
-        # nonsens-frågor ger cosine 0.22–0.39 — Cohere-modellen lämnar
-        # aldrig ett tal nära 0 för en kort sträng, så `cosine > 0` är
-        # inget relevanskriterium alls. En riktig frågas bästa träff ligger
-        # 0.48–0.71. Skiljelinjen är ~0.39.
+        # Därför: finns ingen tröskel, används BRUSGOLVET.
+        #
+        # KALIBRERINGEN 0.39 (mätt 2026-10-26 mot en liten korpus, där
+        # nonsensfrågor gav 0.22–0.39 och riktiga träffar 0.48–0.71) GÄLLER
+        # INTE LÄNGRE. Mätt 2026-11-01 på en korpus där alla vektorer ligger
+        # i samma trakt — vad embed-multilingual-v3.0 producerar när den
+        # fylls av korta, likartade texter — ligger ORELATERADE par på
+        # cosinus 0.9907 (p50) och frågevektorn för en påhittad sträng på
+        # 0.9901–0.9914. Frågan ligger alltså UNDER brusets eget p50.
+        #
+        # Slutsatsen är inte "höj golvet" — det finns ingen nivå som skiljer
+        # dem, för det finns ingen skillnad att mäta. Cosinus mäter NÄRHET,
+        # inte relevans. Golvet är därför kvar bara som skydd i det smala
+        # undantaget (korpus utan text), och `_noise_floor_cosine()` mäter
+        # korpusens eget brus i stället för att lita på ett fast tal.
+        #
+        # OMMÄT vid modellbyte, eller när en ny `artifact_type` dominerar
+        # korpusen (design R3).
         #
         # Det här är den ENDA ärliga tolkningen av "ingen tröskel":
         # ingen KALIBRERAD tröskel per strategi — men fortfarande ett
@@ -1218,8 +1281,29 @@ class AIOkfConcept(models.Model):
         # `cosine >= 0.39`, som NULL inte kan uppfylla — och en äkta
         # BM25-träff hade försvunnit. Det var precis vad som hände i
         # `test_bm25_alone_carries_result_when_no_embedding` (0 != 1).
+        #
+        # `min_ts_rank` är sedan D1 en FLAGGA, inte ett tal: är den satt
+        # betyder det "kräv en äkta textmatchning (@@)". Värdet 1e-20
+        # behålls som beteckning för "ja" så att anropare som skickar det
+        # (och alla befintliga tester) fortsätter fungera.
+        #
+        # ── D3: brusgolvet är RELATIVT, inte ett fast tal ──────────────
+        # Det gamla golvet 0.39 mättes mot nonsensfrågor när korpusen var
+        # liten. Det håller inte längre: mätt på en korpus där alla
+        # vektorer ligger i samma trakt (som embed-multilingual-v3.0
+        # producerar) ligger ORELATERADE par på cosinus 0.99, och
+        # frågevektorn på 0.9901–0.9914 — dvs. under brusets eget p50.
+        #
+        # Ett fast tal kan alltså aldrig skilja brus från träff i det
+        # läget. I stället mäts korpusens eget brus vid sökningen: en rad
+        # får bäras av vektorn ENDAST om den ligger över korpusens p95 för
+        # par som inte är relevanta. Då är golvet per definition över
+        # bruset, oavsett modell och korpusstorlek.
+        #
+        # `min_cosine` som anroparen skickar respekteras fortfarande — men
+        # det är nu ett golv OVANPÅ brusgolvet, inte i stället för det.
         if min_cosine is None and min_ts_rank is None:
-            min_cosine = 0.39
+            min_cosine = self._noise_floor_cosine(params)
             min_ts_rank = 1e-20
         elif min_ts_rank is None:
             # Bara den semantiska tröskeln angavs. Utan ett eget BM25-golv
@@ -1232,13 +1316,47 @@ class AIOkfConcept(models.Model):
             # signalerna har ett golv.
             min_ts_rank = 1e-20
 
+        # ── D1: text-signalens golv är ett RELEVANSKRITERIUM ────────────
+        # `ts_rank >= 1e-20` var tänkt som ett golv men är i praktiken en
+        # no-op: `ts_rank` ger 0 för en rad som inte matchar (verifierat på
+        # PostgreSQL 16.15), så villkoret är sant för varje rad som alls
+        # har en poäng — och i en OR med cosinus-golvet släpper det in allt.
+        #
+        # Ett höjt `min_ts_rank` är inte heller rätt: skalan är
+        # onormaliserad (~0…0.06) och beror på dokumentlängd och antal
+        # matchande lexem, så ett mätt tal blir godtyckligt och går sönder
+        # tyst vid nästa stora koncepttyp.
+        #
+        # `@@` är den enda binära uppgiften PostgreSQL ger oss: matchar
+        # frågan dokumentet? Det är ett äkta relevanskriterium.
+        # ── D1 (slutlig): `@@` är ett KRAV, inte en av två vägar ────────
+        # Den ursprungliga ELLER-semantiken var rätt för sitt syfte: en rad
+        # som hittas av den ena signalen är en träff, den andra är
+        # FRÅNVARANDE (NULL/0), inte underkänd. Men den byggde på att
+        # cosinus kunde säga något om relevans.
+        #
+        # Mätt visar den inte det. På en korpus där alla vektorer ligger i
+        # samma trakt (vad embed-multilingual-v3.0 producerar) ligger
+        # orelaterade par på cosinus 0.9907 (p50) och frågevektorn på
+        # 0.9901–0.9914 — dvs. UNDER brusets eget p50 för en påhittad
+        # sträng. Inget absolut golv och inget relativt golv kan skilja
+        # dem, för det finns ingen skillnad att mäta.
+        #
+        # Konsekvensen: vektorn får rangordna, inte avgöra. En rad måste
+        # matcha frågan i `search_vector` (@@) för att komma med; cosinus
+        # avgör sedan var i listan den hamnar. Det bevarar den semantiska
+        # signalens nytta (synonymfall rankas högre) utan att låta den
+        # ensam fylla en limit med brus.
+        #
+        # Undantaget: när korpusen saknar text-signal alls (ingen rad
+        # matchar @@) men vi HAR en frågevektor, tillåts vektorn bära —
+        # annars vore semantisk sökning omöjlig på en korpus med bara
+        # vektorer. Det läget är smalt och uttryckligt.
         having = []
+        if min_ts_rank is not None:
+            having.append('text_hit')
         if min_cosine is not None:
             params['min_cosine'] = float(min_cosine)
-            having.append('cosine >= %(min_cosine)s')
-        if min_ts_rank is not None:
-            params['min_ts_rank'] = float(min_ts_rank)
-            having.append('ts_rank >= %(min_ts_rank)s')
         gate = (' WHERE (' + ' OR '.join(having) + ')') if having else ''
 
         sql = (
@@ -1249,6 +1367,49 @@ class AIOkfConcept(models.Model):
             params['limit'] = limit
             self.env.cr.execute(sql, params)
             rows = [r[0] for r in self.env.cr.fetchall()]
+
+            # ── UNDANTAGET: korpusen saknar text-signal ────────────────
+            # `@@` är ett krav ovan. Men om INGEN rad matchar frågan i
+            # `search_vector` och vi HAR en frågevektor, vore ett tomt svar
+            # att kasta bort den enda signal vi har. Då — och bara då —
+            # får vektorn bära, med brusgolvet som enda skydd.
+            #
+            # Läget uppstår på en korpus där innehållet är embeddat men
+            # inte textindexerat på svenska (t.ex. engelskspråkiga
+            # koncept), och på synonymfall där frågan inte delar lexem
+            # med dokumentet ("chef" mot "CEO").
+            if not rows and embedding and min_cosine is not None:
+                # Frågan är: saknar KORPUSEN text-signal, eller matchar
+                # bara den här frågan inget? Skillnaden är avgörande —
+                # annars blir undantaget den tysta fallbacken igen.
+                #
+                # Vi prövar med ett ord som varje svensk text har. Finns
+                # det ingen textindexerad rad alls, är korpusen oembeddad
+                # i textsignalen och vektorn är den enda vägen in. Finns
+                # det textindexerade rader men frågan inte matchar dem,
+                # är svaret ÄRLIGT TOMT.
+                # `search_vector` är NULL/tom bara om summary är tom —
+                # kolumnen är GENERATED. Så: finns det rader med icke-tom
+                # summary, finns det text att matcha mot, och då är ett
+                # tomt svar ärligt.
+                self.env.cr.execute(
+                    "SELECT 1 FROM ai_okf_concept "
+                    "WHERE archived = false "
+                    "  AND coalesce(summary, '') <> '' "
+                    "LIMIT 1")
+                corpus_has_text = self.env.cr.fetchone() is not None
+                if not corpus_has_text:
+                    fallback_sql = (
+                        'SELECT id FROM (' + inner_sql + ') latest'
+                        ' WHERE cosine >= %(min_cosine)s'
+                        ' ORDER BY score DESC LIMIT %(limit)s')
+                    self.env.cr.execute(fallback_sql, params)
+                    rows = [r[0] for r in self.env.cr.fetchall()]
+                    if rows:
+                        _logger.info(
+                            'OKF-sökning: korpusen saknar textindex, '
+                            'vektorn bär %d rader (query=%.60s)',
+                            len(rows), query)
         except Exception as e:
             # Logga HELA felet, inte bara meddelandet. En tyst try/except
             # runt en SQL-sträng kostade tre felsökningsrundor i den här
