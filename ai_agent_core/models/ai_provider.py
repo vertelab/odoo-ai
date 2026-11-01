@@ -7,7 +7,8 @@ Wizard: fetch provider info from name/URL.
 Smart button: fetch available models with capabilities.
 """
 
-import json, logging, re, time, urllib.request, ssl
+import json, logging, re, time, urllib.request, urllib.error, ssl
+from datetime import timedelta
 from typing import Optional
 
 from odoo import models, fields, api, _
@@ -27,6 +28,18 @@ PROVIDER_TYPES = [
     ('bifrost', 'Bifrost Gateway'),
     ('custom', 'Custom (OpenAI-compatible)'),
 ]
+
+# ── Processglobala tabeller för gateway-hälsa (gateway-anropseffektivitet) ──
+#
+# VARFÖR PÅ MODULNIVÅ, INTE SOM KLASSATTRIBUT: Odoo:s testramverk jämför
+# modellklassens attribut före och efter varje test och failar om ett nytt
+# tillkommit ('Found unexpected attributes on ai.provider'). En lat
+# klassattribut-initiering skapade `_catalog_cache_table` mitt under ett
+# test och fällde hela sviten. Modulnivå ligger utanför den kontrollen.
+#
+# Båda är flyktiga hälsosignaler, inte affärsdata — de ska inte i databasen.
+_CATALOG_CACHE = {}
+_BREAKER_TABLE = {}
 
 
 class AIProvider(models.Model):
@@ -105,6 +118,128 @@ class AIProvider(models.Model):
     # Config
     timeout = fields.Integer('Timeout (s)', default=120)
     retry_count = fields.Integer('Max Retries', default=3)
+
+    # Circuit breaker (gateway-anropseffektivitet D3). Ett avslag
+    # (402/403/404) betyder att providern sagt nej NU — att proba samma
+    # döda endpoint för nästa modell gör ingen nytta och triggar
+    # självförvållade 429-vågor. Fältet är transient: det lever i minnet
+    # under processens livstid och nollställs vid omstart, vilket är rätt
+    # — en omstart är ett naturligt tillfälle att pröva igen.
+    unavailable_until = fields.Datetime(
+        'Otillgänglig till', compute='_compute_unavailable_until',
+        store=False,
+        help='Tidpunkt då en breaker-period löper ut. Tom = providern är '
+             'inte bortkopplad.')
+
+    # OBS: ingen @api.depends — Odoo tillåter inte att en compute beror på
+    # `id` ('Compute method cannot depend on field id'). Fältet är
+    # icke-lagrat och härlett ur en processglobal tabell, så det räknas om
+    # vid varje läsning. Det är rätt: breaker-tillståndet ändras utan att
+    # providern skrivs.
+    def _compute_unavailable_until(self):
+        now = fields.Datetime.now()
+        for r in self:
+            until = self._breaker_get(r.id)
+            r.unavailable_until = until if until and until > now else False
+
+    #: Breaker-fönstrets längd i sekunder. Kort med flit: en provider som
+    #: återhämtat sig ska tas i bruk igen utan manuellt ingrepp, men inte
+    #: så kort att en storm hinner upprepa sig.
+    BREAKER_SECONDS = 120
+
+    @classmethod
+    def _breaker_get(cls, provider_id):
+        """Läs breaker-tidpunkten för en provider (eller None)."""
+        return _BREAKER_TABLE.get(provider_id)
+
+    def _breaker_trip(self, status_code=None, reason=''):
+        """Koppla bort providern under en avgränsad period.
+
+        Anropas när ett gateway-avslag (402/403/404) setts. Loggar orsaken
+        så att avslagstyperna går att skilja åt i driften — "slut på
+        kredit", "obehörig modell" och "modell saknas" kräver olika
+        åtgärder men ger samma HTTP-status.
+        """
+        self.ensure_one()
+        until = fields.Datetime.now() + timedelta(
+            seconds=self.BREAKER_SECONDS)
+        _BREAKER_TABLE[self.id] = until
+        _logger.warning(
+            'Gateway-avslag från %s (HTTP %s%s) — providern bortkopplad '
+            'till %s. Inga nya anrop görs under perioden.',
+            self.name, status_code or '?',
+            (' — %s' % reason) if reason else '', until)
+        return until
+
+    def _breaker_active(self):
+        """Är providern bortkopplad just nu?"""
+        self.ensure_one()
+        until = self._breaker_get(self.id)
+        if not until:
+            return False
+        if until <= fields.Datetime.now():
+            # Perioden har löpt ut — rensa och släpp igenom igen.
+            _BREAKER_TABLE.pop(self.id, None)
+            return False
+        return True
+
+    def _breaker_clear(self):
+        """Släpp providern fri (anropet lyckades)."""
+        self.ensure_one()
+        _BREAKER_TABLE.pop(self.id, None)
+
+    @staticmethod
+    def _rejection_reason(http_error):
+        """Läs gatewayens orsak ur ett HTTPError-svar.
+
+        Skiljer de avslag som ger samma HTTP-status men kräver olika
+        åtgärder: slut på kredit, obehörig modell, modell saknas. Läser
+        `type`/`code`/`message` ur JSON-kroppen och berikar med
+        `extra_fields.provider` + `extra_fields.error_type` — de två
+        senare finns bara i gatewayens svar (D5) och gör att en obehörig
+        modell (403 `policy_model_blocked`) går att skilja från ett
+        generiskt `combo_forbidden`.
+
+        Returnerar en sträng: `type` (eller `code`/`message`) med
+        `provider`/`error_type` som `key=value`-suffix när de finns.
+        Fri text används bara som sista utväg, och bara för loggning.
+        """
+        try:
+            body = http_error.read().decode('utf-8', 'replace')
+        except Exception:
+            return ''
+        try:
+            payload = json.loads(body)
+        except (ValueError, TypeError):
+            return body[:120]
+        if not isinstance(payload, dict):
+            return ''
+        err = payload.get('error')
+        if not isinstance(err, dict):
+            err = payload
+        reason = ''
+        for key in ('type', 'code', 'message'):
+            val = err.get(key)
+            if val:
+                reason = str(val)[:120]
+                break
+        # extra_fields kan ligga på toppnivån eller i error-objektet.
+        extra = payload.get('extra_fields')
+        if not isinstance(extra, dict):
+            extra = err.get('extra_fields')
+        if not isinstance(extra, dict):
+            extra = {}
+        provider = extra.get('provider')
+        error_type = extra.get('error_type')
+        suffix = []
+        if provider:
+            suffix.append('provider=%s' % str(provider)[:60])
+        if error_type:
+            suffix.append('error_type=%s' % str(error_type)[:60])
+        if suffix:
+            base = reason or 'gateway_rejection'
+            return ('%s (%s)' % (base, ', '.join(suffix)))[:200]
+        return reason
 
     @api.depends('model_ids')
     def _compute_model_count(self):
@@ -271,6 +406,10 @@ class AIProvider(models.Model):
         api_name = full path (wire), source_provider = tillverkaren.
         """
         self.ensure_one()
+        if self._breaker_active():
+            raise UserError(_(
+                'Providern %s är tillfälligt bortkopplad efter ett '
+                'gateway-avslag. Försök igen om en stund.') % self.name)
         url = self.base_url.rstrip('/') + '/models'
         headers = {}
         if self.provider_type == 'bifrost':
@@ -293,13 +432,35 @@ class AIProvider(models.Model):
             ctx.check_hostname = False
             ctx.verify_mode = ssl.CERT_NONE
             req = urllib.request.Request(url, headers=headers)
-            with urllib.request.urlopen(req, timeout=30, context=ctx) as resp:
+            # Probe-timeout, inte providerns generella (gateway-
+            # anropseffektivitet D4): en död endpoint ska inte kunna
+            # blockera importen i 30 s. Inferensanrop har egen timeout.
+            with urllib.request.urlopen(req, timeout=self._probe_timeout(),
+                                        context=ctx) as resp:
                 data = json.loads(resp.read().decode())
+        except urllib.error.HTTPError as e:
+            # Strukturerat avslag: koppla bort providern så nästa modell
+            # inte probar samma döda endpoint (D3).
+            if e.code in (402, 403, 404):
+                reason = self._rejection_reason(e)
+                self._breaker_trip(e.code, reason)
+                _logger.warning(
+                    'Gateway-avslag vid modellimport från %s: HTTP %s — %s',
+                    self.name, e.code, reason or 'okänd orsak')
+            _logger.error("Failed to fetch models from %s: %s", self.name, e)
+            raise UserError(_('Failed to fetch models: %s') % str(e))
         except Exception as e:
             _logger.error("Failed to fetch models from %s: %s", self.name, e)
             raise UserError(_('Failed to fetch models: %s') % str(e))
+        else:
+            self._breaker_clear()
 
         models = data.get('data', data if isinstance(data, list) else [])
+        # Cacha katalognamnen så driftkontrollen delar denna hämtning (D2).
+        self._catalog_cache_set(
+            'catalog_names',
+            [m.get('id', '') for m in models
+             if isinstance(m, dict) and m.get('id')])
         # Berika varje modell med context/pris från providerns rika
         # /v1/config-katalog (där sådan finns — t.ex. combo-adaptern).
         # /v1/models ger bara modell-id:n; /v1/config ger contextWindow,
@@ -320,7 +481,14 @@ class AIProvider(models.Model):
 
         Returnerar en map med context/maxOutput/cost per modell-id. Tyst
         fallback till {} om endpointen saknas / misslyckas (ej kritiskt).
+
+        Cachas per provider i körkontexten (gateway-anropseffektivitet D2):
+        importen hämtar katalogen en gång och återanvänder den för alla
+        modeller från samma provider i stället för ett anrop per modell.
         """
+        cached = self._catalog_cache_get('config_map')
+        if cached is not None:
+            return cached
         headers = {}
         if self.provider_type == 'bifrost':
             if self.api_key:
@@ -336,10 +504,22 @@ class AIProvider(models.Model):
             ctx.check_hostname = False
             ctx.verify_mode = ssl.CERT_NONE
             req = urllib.request.Request(url, headers=headers)
-            with urllib.request.urlopen(req, timeout=30, context=ctx) as resp:
+            with urllib.request.urlopen(req, timeout=self._probe_timeout(),
+                                        context=ctx) as resp:
                 data = json.loads(resp.read().decode())
+        except urllib.error.HTTPError as e:
+            if e.code in (402, 403, 404):
+                reason = self._rejection_reason(e)
+                self._breaker_trip(e.code, reason)
+                _logger.warning(
+                    'Gateway-avslag vid /v1/config för %s: HTTP %s — %s',
+                    self.name, e.code, reason or 'okänd orsak')
+            _logger.debug("No /v1/config catalog for %s: %s", self.name, e)
+            self._catalog_cache_set('config_map', {})
+            return {}
         except Exception as e:
             _logger.debug("No /v1/config catalog for %s: %s", self.name, e)
+            self._catalog_cache_set('config_map', {})
             return {}
         models = data.get('models', data.get('data', data if isinstance(data, list) else []))
         out = {}
@@ -361,7 +541,47 @@ class AIProvider(models.Model):
                 'cost_input': cost_in,
                 'cost_output': cost_out,
             }
+        self._catalog_cache_set('config_map', out)
         return out
+
+    # -- Katalogcache per provider (gateway-anropseffektivitet D2) --
+
+    #: Kort timeout för probe-/kataloganrop. Skild från providerns
+    #: `timeout` (120 s) som är rätt för ett LLM-svar men fel för en
+    #: nåbarhetskontroll: en död endpoint ska inte kunna blockera i 30 s.
+    PROBE_TIMEOUT = 5
+
+    def _probe_timeout(self):
+        """Timeout för probe-/kataloganrop (kort, ej inferens)."""
+        return self.PROBE_TIMEOUT
+
+    def _catalog_cache_get(self, slot):
+        """Läs en cachad katalogdel (eller None om den inte hämtats).
+
+        Cachen är en processglobal dict nycklad på provider-id (se
+        `_CATALOG_CACHE`). Den lever per körning i praktiken: en
+        cron-körning eller ett importvarv är kortlivat, och en provider
+        vars katalog ändras fångas av driftkontrollen.
+        """
+        self.ensure_one()
+        store = _CATALOG_CACHE.get(self.id)
+        if not isinstance(store, dict):
+            return None
+        return store.get(slot)
+
+    def _catalog_cache_set(self, slot, value):
+        """Skriv en cachad katalogdel för denna provider.
+
+        VARFÖR INTE env.context: `self.env.context` är en fryst dict, och
+        att byta ut `self.env` slår inte igenom på anroparens recordset —
+        nästa anrop läste därför en tom cache (testet fångade det: 2
+        hämtningar i stället för 1). En dict på modulnivå delas av alla
+        recordsets i processen och ger det vi faktiskt vill: en hämtning
+        per provider och körning.
+        """
+        self.ensure_one()
+        store = _CATALOG_CACHE.setdefault(self.id, {})
+        store[slot] = value
 
     # -- Maker-upplösning (provider-model-offering) --
 
@@ -380,9 +600,20 @@ class AIProvider(models.Model):
         Skiljer "katalogen kunde inte hämtas" från "katalogen hämtades och
         är tom" — annars larmar en nere gateway falskt som drift.
         Kort timeout: detta körs i validering och cron, inte i körvägen.
+
+        Cachas per provider i körkontexten (D2): en driftkontroll över tio
+        modeller gör ett anrop, inte tio.
         """
         self.ensure_one()
+        cached = self._catalog_cache_get('catalog_names')
+        if cached is not None:
+            return cached, True
         if not self.base_url:
+            return None, False
+        # Respektera breakern: en bortkopplad provider ska inte probas igen
+        # (D3). Returnera "kunde inte hämtas" — inte "tom katalog" — så
+        # att en bortkopplad provider inte larmar falskt som drift.
+        if self._breaker_active():
             return None, False
         url = self.base_url.rstrip('/') + '/models'
         headers = {}
@@ -395,13 +626,27 @@ class AIProvider(models.Model):
             req = urllib.request.Request(url, headers=headers)
             with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
                 data = json.loads(resp.read().decode())
+        except urllib.error.HTTPError as e:
+            reason = self._rejection_reason(e) if e.code in (402, 403, 404) else ''
+            if e.code in (402, 403, 404):
+                self._breaker_trip(e.code, reason)
+            _logger.warning(
+                'Katalog-hämtning misslyckades för %s: HTTP %s — %s',
+                self.name, e.code, reason or str(e))
+            return None, False
         except Exception as e:
             _logger.info(
                 'Katalog-hämtning misslyckades för %s: %s', self.name, e)
             return None, False
+        else:
+            self._breaker_clear()
         items = data.get('data', data if isinstance(data, list) else [])
         names = [m.get('id', '') for m in items if isinstance(m, dict)]
-        return [n for n in names if n], True
+        names = [n for n in names if n]
+        # Cacha resultatet så driftkontrollen och importen delar en hämtning
+        # per provider i stället för ett anrop per modell (D2).
+        self._catalog_cache_set('catalog_names', names)
+        return names, True
 
     def _catalog_drift(self):
         """Jämför registret mot gatewayens katalog.

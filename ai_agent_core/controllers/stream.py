@@ -2223,17 +2223,29 @@ def _persist_stream_answer(env, session_id, answer, reasoning='',
         # Avslutsorsak i sessionsmetadata (2.3): skilj "avslutad utan
         # sammanfattning" från normal avslutning, och fyll feldetalj när
         # det avslutande anropet felat.
-        meta = {}
+        #
+        # STATUS RÖRS INTE HÄR. En session är en KONVERSATION, inte en
+        # enskild fråga: den ska förbli 'active' så att nästa tur återupptar
+        # SAMMA session (ai_session._find_or_create letar på status='active')
+        # i stället för att fragmentera historiken. Att sätta 'done' efter
+        # varje tur stängde tråden så fort användaren ställde en följdfråga.
+        # mark_interrupted gör samma avvägning: behåller 'active', sätter
+        # end_date + finish_reason.
+        #
+        # TURENS SLUT markeras med finish_reason — inte med status. Det är
+        # skillnaden mellan "turen är klar" och "konversationen är stängd".
+        meta = {
+            'end_date': fields.Datetime.now(),
+        }
         if finish_reason:
             meta['finish_reason'] = finish_reason
         if error:
             meta['error_detail'] = error
-        if meta:
-            try:
-                session.sudo().write(meta)
-            except Exception as e:
-                _logger.warning(
-                    'kunde inte skriva sessionsmetadata: %s', e)
+        try:
+            session.sudo().write(meta)
+        except Exception as e:
+            _logger.warning(
+                'kunde inte skriva sessionsmetadata: %s', e)
         _logger.info('persisted stream answer for session %s (seq=%s)',
                      session_id, seq)
         return 1
@@ -2286,7 +2298,14 @@ def _finalize_stream_turn(dbname, uid, context, session_id, full_response,
                 _persist_stream_answer(
                     _env, session_id,
                     ''.join(full_response),
-                    reasoning='\n'.join(
+                    # reasoning_log är en lista av ENSKILDA TOKENS (loop.py
+                    # appendar varje `event.token` för sig). Att sätta ihop
+                    # dem med '\n' gav ett token per rad i den sparade
+                    # texten — t.ex. "The\n user\n is\n asking\n ..." — medan
+                    # modellens egna styckbrytningar (\n\n) bevarades. Det
+                    # såg ut som ett trasigt svar men var en trasig join.
+                    # Samma separator som full_response: ''.
+                    reasoning=''.join(
                         getattr(state.get('loop_obj'),
                                 'reasoning_log', None) or []),
                     finish_reason=state.get('finish_reason', ''),
@@ -2788,9 +2807,18 @@ class PICallbackController(http.Controller):
         # `finish_reason` är en Selection (utfall-och-tokenmatning) — den får
         # bara typade värden. Resultattexten hör i `error_detail`/raden, inte
         # här; att skriva den gav ValueError och 500 på callbacken.
+        #
+        # Här sätts status='done' med flit: /pi/callback är Pi-agentens
+        # SLUTRAPPORT — uppgiften är genuint avslutad, inte en tur i en
+        # pågående konversation. (Stream-vägen gör motsatt avvägning: den
+        # behåller 'active' så nästa fråga återupptar samma session.)
+        #
+        # `end_date` sätts samtidigt — annars stod den kvar som false trots
+        # status='done'. Mätt 2026-10-16.
         session.write({
             'status': 'done' if state == 'done' else 'error',
             'finish_reason': 'stop' if state == 'done' else 'error',
+            'end_date': fields.Datetime.now(),
         })
         if state != 'done' and result_text:
             session.write({'error_detail': result_text[:4000]})
