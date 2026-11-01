@@ -1393,8 +1393,11 @@ class AIOkfConcept(models.Model):
         """En läsbar ägarbadge: Company / Personal / coworker-namn.
 
         Svarar på "varför ser jag det här?" — frågan EFTER "vad är det?".
+
+        Ingen ensure_one(): anropas av visible_to_grouped på en TOM
+        model-recordset med konceptet som argument. Metoden läser allt ur
+        ``concept``, aldrig ur ``self``.
         """
-        self.ensure_one()
         if concept.scope == 'company':
             return _('Company')
         if concept.scope == 'personal':
@@ -1410,8 +1413,11 @@ class AIOkfConcept(models.Model):
         Ett läsbart koncept betyder INTE att källposten är läsbar. Knappen får
         aldrig bli en väg runt record rules, därför prövas både modellrättighet
         och postregel innan actionen byggs (dms-global-search D4).
+
+        Ingen ensure_one(): anropas av visible_to_grouped på en TOM
+        model-recordset med konceptet som argument. ``self`` används bara för
+        ``self.env``, vilket fungerar på en tom recordset.
         """
-        self.ensure_one()
         ref = concept.source_ref or ''
         if ',' not in ref:
             return None
@@ -1446,8 +1452,10 @@ class AIOkfConcept(models.Model):
         Vi klipper i Python, inte i SQL: sammanfattningen är redan hämtad, och
         ett andra indexeringspass för att hitta träffen hade kostat mer än det
         smakar.
+
+        Ingen ensure_one(): anropas av visible_to_grouped på en TOM
+        model-recordset med konceptet som argument.
         """
-        self.ensure_one()
         text = (concept.summary or '').strip()
         if not text:
             return ''

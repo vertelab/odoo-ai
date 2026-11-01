@@ -252,3 +252,75 @@ class TestOkfVisibleToThreeUsers(ConfigParamGuardedCase):
         # Mängderna är faktiskt olika — inte bara icke-tomma.
         self.assertNotEqual(plain_keys, owner_keys,
                             'två användare med olika ägande såg samma mängd')
+
+
+@tagged('okf', 'search', 'post_install', '-at_install')
+class TestOkfVisibleToGrouped(ConfigParamGuardedCase):
+    """visible_to_grouped() — sökytans faktiska ingång (dms-global-search D6).
+
+    VARFÖR: `visible_to()` var testad, men `visible_to_grouped()` — den metod
+    `okf_global_search.js` faktiskt anropar — var det inte. Den kraschade på
+    varje träff: `_okf_excerpt`, `_okf_owner_label` och `_okf_source_action`
+    är `@api.model` men anropade `self.ensure_one()` och kördes av
+    `visible_to_grouped` på en TOM model-recordset med konceptet som argument.
+    `visible_to()` fungerade, så felet syntes aldrig i testsviten.
+
+    Dessa tester bevisar att grupperingen renderar en träff — inte bara att
+    sökningen hittar den.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.Okf = cls.env['ai.okf.concept']
+        cls.company = cls.env.company
+
+    def _concept(self, key, summary, **kw):
+        return self.Okf._okf_upsert(
+            'learning', concept_key=key, summary=summary,
+            generated_by='test', **kw)
+
+    def test_grouped_renders_a_hit(self):
+        """En träff ska ge en grupp med excerpt, owner_label och action.
+
+        Detta är regressionstestet för singleton-kraschen: det faller med
+        `ValueError: Expected singleton: ai.okf.concept()` om ensure_one()
+        återinförs i de tre hjälparna.
+        """
+        self._concept('grp.one', 'kungsfiskare group note',
+                      owner_company_id=self.company.id)
+        groups = self.Okf.visible_to_grouped('kungsfiskare')
+
+        self.assertTrue(groups, 'grupperingen gav inga grupper')
+        concepts = [c for g in groups for c in g['concepts']]
+        self.assertTrue(concepts, 'grupperingen gav inga koncept')
+        hit = next(c for c in concepts if c['title'] or c['excerpt'])
+        # Fälten måste vara beräknade, inte tomma på grund av en krasch.
+        self.assertIn('excerpt', hit)
+        self.assertIn('owner_label', hit)
+        self.assertIn('action', hit)
+        self.assertIsInstance(hit['excerpt'], str)
+        self.assertIsInstance(hit['owner_label'], str)
+
+    def test_grouped_excerpt_contains_the_query(self):
+        """Excerpten ska klippas runt söktermen — inte vara tom."""
+        self._concept('grp.two', 'en havsörn seglar över fjorden',
+                      owner_company_id=self.company.id)
+        groups = self.Okf.visible_to_grouped('havsörn')
+        excerpts = [c['excerpt'] for g in groups for c in g['concepts']]
+        self.assertTrue(
+            any('havsörn' in e.lower() for e in excerpts),
+            'ingen excerpt innehöll söktermen: %r' % excerpts)
+
+    def test_grouped_owner_label_is_not_empty(self):
+        """Ägarbadgen svarar på "varför ser jag det här?"."""
+        self._concept('grp.three', 'en tornfalk hovrar',
+                      owner_company_id=self.company.id)
+        groups = self.Okf.visible_to_grouped('tornfalk')
+        labels = [c['owner_label'] for g in groups for c in g['concepts']]
+        self.assertTrue(labels)
+        self.assertTrue(all(labels), 'ägarbadge saknades: %r' % labels)
+
+    def test_grouped_empty_query_returns_no_groups(self):
+        """Ingen träff ska ge en tom lista, inte en krasch."""
+        self.assertEqual(self.Okf.visible_to_grouped(''), [])
