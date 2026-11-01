@@ -94,6 +94,12 @@ def ensure_vector_column(cr, table, column='embedding', dim=1024):
     där `skipped` är en orsakskod när steget inte kunde köras alls
     ('table_missing', 'column_missing', 'no_vector_extension').
     """
+    # Registrera psycopg2-adaptern först: utan den läses kolumnen som en
+    # rå sträng och hamnar oconverterad i Odoos cache (api.py insert_missing
+    # går inte via convert_to_cache). Adaptern gör att läsning ger en lista.
+    from .fields.pg_vector import register_vector_adapter
+    register_vector_adapter(cr)
+
     result = {
         'table': table,
         'converted': False,

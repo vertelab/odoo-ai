@@ -13,17 +13,51 @@ from odoo import fields, tools
 _logger = logging.getLogger(__name__)
 
 try:
-    # OBS: `pgvector.psycopg2.vector.Vector` är en ANNAN klass än
-    # `pgvector.utils.Vector`. Den förstas `_to_db(self, value)` tar ett
-    # argument (bunden metod), den andras `_to_db(value, dim=None)` tar två.
-    # Importen pekade på den första, så `Vector._to_db(value, dim)` gav
-    # "takes 2 positional arguments but 3 were given" — och varje
-    # `convert_to_column` kraschade. Felet var osynligt så länge ingen rad
-    # med en embedding skrevs (coworker-dispatch-owner, 2026-09-18).
-    from pgvector.utils import Vector
+    # `pgvector.utils` finns INTE i pgvector 0.5.x — modulen heter
+    # `pgvector.vector`. Importen pekade på den gamla sökvägen, så den
+    # misslyckades alltid och `Vector` blev None även med paketet installerat.
+    # Konsekvensen var tyst: `convert_to_column` returnerade None och varje
+    # embedding blev NULL i databasen.
+    #
+    # OBS: `Vector._to_db(value)` tar ETT argument — ingen dimension.
+    # `pgvector.psycopg2.vector.Vector._to_db` är en bunden metod med samma
+    # signatur, så den går inte heller att anropa med (value, dim).
+    from pgvector.vector import Vector
 except ImportError:
     Vector = None
-    _logger.warning('pgvector python-paket saknas — OKF-embedding fungerar inte')
+    _logger.warning(
+        'pgvector python-paket saknas — vektorer skrivs som literaler. '
+        'Installera med: pip install pgvector (och lägg den i '
+        'external_dependencies).')
+
+
+def register_vector_adapter(cr):
+    """Registrera en psycopg2-adapter så att `vector` läses som en lista.
+
+    Utan den här får Odoo en RÅ STRÄNG från databasen. Odoo 18 lägger
+    DB-värdet direkt i cachen (`api.py:1260 insert_missing`) utan att gå
+    via `convert_to_cache`, så en oregistrerad typ blir en sträng i cachen.
+    Konsekvensen: `len(value)` är 4097 i stället för 1024, och Odoos
+    `val != value`-jämförelse ser skillnad vid varje skrivning.
+
+    Anropas från post_init och migration. Idempotent — psycopg2 tillåter
+    att samma typ registreras om.
+    """
+    if Vector is None:
+        return False
+    try:
+        from psycopg2.extensions import new_type, register_type
+        cr.execute("SELECT oid FROM pg_type WHERE typname = 'vector'")
+        row = cr.fetchone()
+        if not row:
+            return False
+        oid = row[0]
+        VECTOR = new_type((oid,), 'VECTOR', lambda value, cur: Vector._from_db(value))
+        register_type(VECTOR)
+        return True
+    except Exception as e:  # noqa: BLE001 — får ej stoppa uppgraderingen
+        _logger.warning('Kunde inte registrera vector-adaptern: %s', e)
+        return False
 
 
 class PgVector(fields.Field):
@@ -55,8 +89,6 @@ class PgVector(fields.Field):
         """
         if value is None:
             return None
-        if Vector is None:
-            return None
         # value är en pgvector-literal-sträng "[0.1,0.2,...]" eller list
         if isinstance(value, str):
             value = value.strip()
@@ -65,7 +97,15 @@ class PgVector(fields.Field):
         elif hasattr(value, 'tolist'):
             # numpy-array (eller annan array-liknande) → vanlig lista
             value = value.tolist()
-        return Vector._to_db(value, self.dimension)
+        if Vector is not None:
+            return Vector._to_db(value)
+        # UTAN pgvector-paketet: bygg literalen själv.
+        #
+        # Den tidigare koden returnerade None här, vilket gjorde att VARJE
+        # skrivning av en embedding tystnade: cachen höll 1024 flyttal,
+        # `write()` gick igenom, och kolumnen blev NULL i databasen. Felet
+        # syntes aldrig — sökningen hittade bara ingenting.
+        return '[' + ','.join(str(float(x)) for x in value) + ']'
 
     def convert_to_cache(self, value, record, validate=True):
         """Konvertera DB-värde (vector-typ) till cache (list).
@@ -80,13 +120,22 @@ class PgVector(fields.Field):
         if value is None:
             return None
         if Vector is None:
+            # Utan pgvector-paketet: parsa literalen själv till en lista.
+            # Att returnera strängen hade gjort att Odoos
+            # `val != value`-jämförelse såg skillnad varje gång.
+            if isinstance(value, str):
+                inner = value.strip().lstrip('[').rstrip(']')
+                if not inner:
+                    return None
+                return [float(x) for x in inner.split(',')]
             return value
         if isinstance(value, str):
-            # `Vector._from_db` returnerar en numpy-array (astype(np.float32)),
-            # inte en lista. Den måste ner till lista här — annars ligger en
-            # ndarray i cachen och Odoos `val != value` kastar vid nästa
-            # skrivning.
-            return Vector._from_db(value).tolist()
+            # `Vector._from_db` ger en lista i pgvector 0.5.x, men en
+            # numpy-array i äldre versioner. Cachen MÅSTE hålla en vanlig
+            # lista: Odoo jämför med `val != value`, och en ndarray kastar
+            # "truth value of an array is ambiguous" vid nästa skrivning.
+            parsed = Vector._from_db(value)
+            return parsed.tolist() if hasattr(parsed, 'tolist') else parsed
         if hasattr(value, 'tolist'):
             return value.tolist()
         return value

@@ -47,7 +47,7 @@
     # dem syns vid modulinstall i stället för i en request-tråd.
     # `python` = importnamnet Odoo prövar.
     'external_dependencies': {
-        'python': ['langchain_core'],
+        'python': ['langchain_core', 'pgvector'],
     },
     'data': [
         'security/ai_groups.xml',
