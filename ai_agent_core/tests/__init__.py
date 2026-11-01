@@ -136,6 +136,10 @@ from . import test_budget_channels
 # Vägen byggde ToolRegistry och körde tool.execute() utan PermissionEngine —
 # de hårda stoppen (odoo_call_method/odoo_unlink) gällde inte där.
 from . import test_tools_run_gate
+# Strukturtest: varje körväg har samma godkännandegrind
+# (init-type-execution-parity). run_stream() exekverade verktyg utan
+# PermissionEngine — de hårda stoppen gällde inte på web-UI:ts väg.
+from . import test_execution_parity
 # Callback-hemlighet + API-nyckelbindning (ai-agent-core-fault-remediation A2/A3).
 # Default-hemligheten 'CHANGE_ME_IN_PILLAR' autentiserade vem som helst, och
 # vilken giltig API-nyckel som helst kunde läsa vilken session som helst.

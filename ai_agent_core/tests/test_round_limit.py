@@ -91,6 +91,11 @@ class TestRoundLimit(common.TransactionCase):
         # Signatur + härledning ska finnas i _build_specialists.
         idx = src.find('def _build_specialists')
         self.assertGreater(idx, -1)
-        block = src[idx:idx + 600]
+        # Fönstret måste rymma signatur + docstring + härledning. Det var
+        # 600 tecken; docstringen växte (init-type-execution-parity 2.1) och
+        # härledningen hamnade utanför — testet mätte sin egen brytpunkt i
+        # stället för koden. Läs till nästa metoddefinition i stället.
+        end = src.find('\n    def ', idx + 10)
+        block = src[idx:end if end > idx else idx + 1500]
         self.assertIn('max_rounds=None', block)
         self.assertIn('self.max_iterations or 8', block)

@@ -289,6 +289,23 @@ människa.
 fail-closed — `return False` med orsaken i loggen — och en selektor
 (`select_interrupt_handler`) som är den ENDA platsen som väljer hanterare.
 
+**Grind i en väg, inte i exekveringen.** `AgentLoop` har två körvägar:
+`run()` och `run_stream()`. Grinden (`evaluate` + `approve_tool`) låg inline i
+`run()`. `run_stream()` — som når SAMMA `_execute_tool` — hade ingen grind
+alls, så `/ai/stream` (`auth='public'`) och `/ai/v1`-strömmen kunde köra
+`odoo_unlink` utan godkännande. Samma klass som raden ovan, men på
+*loop-nivå*: botemedlet mot "grind utanför loopen" (endpoint-nivå) hade inte
+flyttats ner i loopen.
+
+*Kännetecken:* två funktioner som anropar samma exekveringsfunktion, där bara
+en av dem prövar behörighet — och en kommentar som säger "alla vägar går
+här" om en tredje sak (konstruktionen, inte exekveringen). *Botemedel:*
+grinden är ett **delat steg** (`_gate_tool_calls`) som varje väg anropar före
+`_execute_tool`, plus ett strukturtest som läser källkoden och kräver att
+varje anropare av `_execute_tool`/`_execute_tools_parallel` också anropar
+grinden. Lärdomen: **räkna vägarna till exekveringsfunktionen, inte till
+endpointen.**
+
 ---
 
 ## 11. Kända begränsningar
@@ -297,6 +314,14 @@ Begränsningar vi känner till, accepterar och inte åtgärdar i den här
 ändringen. De står här för att de annars upptäcks som buggar om och om igen.
 
 ### 11.1 `_webui_handlers` är in-process (A7)
+
+> **Uppdaterad 2026-11 (init-type-execution-parity):** grinden är nu stängd
+och `needs_user` nekar fail-closed. Det gör den här begränsningen *säker*
+men inte *osynlig*: en felroutad poll kan inte längre leda till att ett
+verktyg körs utan godkännande — den leder till att verktyget NEKAS med
+orsaken `no approval channel on this path`. Klienten ser ett
+`needs_approval`-event. Det som återstår är en sämre upplevelse (ett
+avslag i stället för en fråga), inte en säkerhetslucka.
 
 `controllers/stream.py` håller en modulnivå-dict `_webui_handlers` som mappar
 `session_uuid → WebUIInterruptHandler`. `/ai/interrupt/poll` och

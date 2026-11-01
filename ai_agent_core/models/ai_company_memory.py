@@ -16,8 +16,6 @@ from odoo.exceptions import UserError
 
 from ..fields.pg_vector import PgVector
 
-EMBEDDING_DIM = 1024
-
 _logger = logging.getLogger(__name__)
 
 
@@ -107,12 +105,16 @@ class AICompanyMemory(models.Model):
     # ════════════════════════════════════════════
     # SEARCH
     # ════════════════════════════════════════════
-    # Se ai_personal_memory.py: typen MÅSTE vara PgVector, annars blir
-    # kolumnen TEXT och den semantiska sokvagen kastar SQL-fel.
+    # PgVector, inte fields.Text (rättat 2026-11-01) — samma skäl som i
+    # ai_personal_memory: kolumnen är vector(1024) sedan migration
+    # 18.0.2.0.23, och ett `fields.Text` fick Odoo att försöka konvertera
+    # den tillbaka till text vid varje uppgradering. Det föll på
+    # ivfflat-indexet ("operator class vector_cosine_ops does not accept
+    # data type text"). `PgVector.column_type[0] == 'vector'` matchar
+    # kolumnens typnamn, så Odoo lämnar den orörd.
     embedding = PgVector(
-        string='Vector Embedding', dimension=EMBEDDING_DIM,
-        help='pgvector(%d) embedding. Kolumnen ar vector(%d)-typ.'
-             % (EMBEDDING_DIM, EMBEDDING_DIM))
+        string='Vector Embedding', dimension=1024,
+        help='pgvector(1024) embedding — kolumnen är vector(1024)-typ.')
     entities = fields.Json(
         string='Extracted Entities',
         help='Entities extracted for entity linking boost.')
@@ -410,8 +412,11 @@ class AICompanyMemory(models.Model):
                 'archive_date': fields.Datetime.now(),
             })
 
+        # IS NULL, inte `= False`: sedan 18.0.2.0.23 är kolumnen
+        # vector(1024) och Odoo genererar `= ''` för False, vilket inte är
+        # en giltig vector-literal (InvalidTextRepresentation).
         no_emb = self.search([
-            ('embedding', '=', False),
+            ('embedding', '=', None),
             ('archived', '=', False),
         ], limit=200)
         emb_count = 0

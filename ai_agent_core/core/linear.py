@@ -36,6 +36,7 @@ class LinearLoop:
         session_headers=None,
         outcome_callback=None,
         checkpoint_callback=None,
+        interrupt_handler=None,
     ):
         self.agents = agents  # ai.coworker.agent records sorted by sequence
         self.provider = provider
@@ -57,6 +58,10 @@ class LinearLoop:
         # skrivning. Samma mönster som AgentConfig.
         self.outcome_callback = outcome_callback
         self.checkpoint_callback = checkpoint_callback
+        # HITL-kanalen (init-type-execution-parity 2.1): varje steg i
+        # pipelinen är en egen AgentLoop — utan den här skulle ett
+        # `needs_user`-beslut i steg 2 nekas tyst medan steg 1 pausade.
+        self.interrupt_handler = interrupt_handler
 
     def _checkpoint(self, label: str):
         """Släpp transaktionen mellan stegen (samma kontrakt som AgentLoop).
@@ -128,6 +133,7 @@ class LinearLoop:
                     # persisteras på sessionen i stället för att tystna.
                     outcome_callback=self.outcome_callback,
                     checkpoint_callback=self.checkpoint_callback,
+                    interrupt_handler=self.interrupt_handler,
                 ),
             )
 

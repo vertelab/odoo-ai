@@ -22,9 +22,11 @@ from odoo.exceptions import UserError, AccessError
 
 from ..fields.pg_vector import PgVector
 
-EMBEDDING_DIM = 1024
-
 _logger = logging.getLogger(__name__)
+
+# Dimensionen på embedding-kolumnen. Samma konstant som ai.okf.concept
+# använder — providerns text-embedding-3-small ger 1024 dimensioner.
+EMBEDDING_DIM = 1024
 
 
 class AIPersonalMemory(models.Model):
@@ -112,16 +114,30 @@ class AIPersonalMemory(models.Model):
     # ════════════════════════════════════════════
     # HYBRID SEARCH — pgvector + tsvector
     # ════════════════════════════════════════════
-    # OBS: PgVector, INTE fields.Text. Med Text blev kolumnen TEXT och den
-    # semantiska sokvagen (embedding <=> %s::vector) kastade
-    # "operator does not exist: text <=> vector" -> forgiftad transaktion ->
-    # HTTP 500 pa /ai/stream ("Anslutningen till AI-servern brots", 2026-10-29).
-    # En manuell ALTER holl bara till nasta moduluppgradering: Odoo aterskapar
-    # kolumnen enligt faltdeklarationen. Typen maste darfor vara ratt i koden.
+    # PgVector, inte fields.Text (rättat 2026-11-01).
+    #
+    # VARFÖR: kolumnen är `vector(1024)` sedan migration 18.0.2.0.23, men
+    # fältet deklarerades som `fields.Text`. Odoo jämför i
+    # `fields.Field.update_db_column`:
+    #
+    #     if column['udt_name'] == self.column_type[0]:
+    #         return                      # matchar → rör inte kolumnen
+    #     self._convert_db_column(...)    # annars: ALTER TYPE
+    #
+    # `Text.column_type[0]` är 'text', kolumnens `typname` är 'vector' —
+    # alltså mismatch, och Odoo försökte konvertera vector(1024) → text vid
+    # VARJE uppgradering. Det föll på ivfflat-indexet:
+    #
+    #     operator class "vector_cosine_ops" does not accept data type text
+    #
+    # Följden var att modulen inte gick att uppgradera alls. `PgVector`
+    # har `column_type = ('vector', 'vector')`, så `typname` matchar och
+    # Odoo lämnar kolumnen orörd — precis som `ai.okf.concept` redan gör.
     embedding = PgVector(
         string='Vector Embedding', dimension=EMBEDDING_DIM,
-        help='pgvector(%d) embedding fran AI-provider. '
-             'Kolumnen ar vector(%d)-typ.' % (EMBEDDING_DIM, EMBEDDING_DIM))
+        help='pgvector(%d) embedding från AI-providern '
+             '(text-embedding-3-small, 1024 dimensioner). '
+             'Kolumnen är vector(%d)-typ.' % (EMBEDDING_DIM, EMBEDDING_DIM))
     # search_vector — GENERATED COLUMN via SQL migration:
     #   ALTER TABLE ai_personal_memory ADD COLUMN search_vector tsvector
     #     GENERATED ALWAYS AS (to_tsvector('swedish', content)) STORED;
@@ -263,17 +279,16 @@ class AIPersonalMemory(models.Model):
     def _embedding_column_is_vector(self):
         """Är `embedding`-kolumnen en riktig pgvector-kolumn?
 
-        Fältet deklareras numera som `PgVector` (se ovan), så Odoo skapar en
-        riktig vector(1024)-kolumn — samma typ som `ai_okf_concept.embedding`.
-        Kollen behålls som skyddsnät för databaser som ännu inte uppgraderats:
-        med `fields.Text` blev kolumnen TEXT och
-        `1 - (embedding <=> %s::vector)` kastade
-        "operator does not exist: text <=> vector" (driftfel 2026-10-29).
+        Sedan 2026-11-01 är fältet `PgVector` (tidigare `fields.Text`), så
+        kolumnen är `vector(1024)` och svaret är alltid True. Kollen finns
+        kvar för att en databas som ännu inte kört migration 18.0.2.0.23
+        kan ha en TEXT-kolumn — då ska den semantiska signalen hoppas över
+        i stället för att kasta.
 
+        `1 - (embedding <=> %s::vector)` är ett SQL-fel på en TEXT-kolumn.
         Kollen är billig (en information_schema-fråga i en savepoint) och
-        gör att den semantiska signalen kan hoppas över i stället för att
-        krascha. Resultatet cachas på modellklassen — kolumntypen ändras
-        bara av en migration, aldrig under en körande process.
+        resultatet cachas på modellklassen — kolumntypen ändras bara av en
+        migration, aldrig under en körande process.
 
         Returns:
             bool: True om kolumnen är av typen vector.
@@ -298,8 +313,8 @@ class AIPersonalMemory(models.Model):
         if not is_vector:
             _logger.warning(
                 'ai_personal_memory.embedding är inte en vector-kolumn '
-                '(saknad migration?) — semantisk sökning hoppas över, '
-                'BM25 bär resultatet')
+                '(migration 18.0.2.0.23 har inte kört?) — semantisk '
+                'sökning hoppas över, BM25 bär resultatet')
         cls._embedding_is_vector_cache = is_vector
         return is_vector
 
@@ -678,7 +693,12 @@ class AIPersonalMemory(models.Model):
             dict med 'found', 'filled', 'failed'.
         """
         Memory = self.sudo()
-        domain = [('embedding', '=', False)]
+        # `('embedding', '=', False)` genererar `= ''` för icke-text-kolumner.
+        # Sedan 18.0.2.0.23 är kolumnen vector(1024) och `''` är ingen giltig
+        # vector-literal → InvalidTextRepresentation. IS NULL är rätt villkor
+        # för en vektorkolumn (och matchar även en tom textkolumn före
+        # migreringen, eftersom NULL är det enda "saknar vektor" kan betyda).
+        domain = [('embedding', '=', None)]
         found = Memory.search_count(domain)
         if not found:
             _logger.info('Backfill: inga minnen saknar vektor')
@@ -701,7 +721,11 @@ class AIPersonalMemory(models.Model):
                 failed += len(chunk)
                 continue
             for rec, vector in zip(chunk, vectors):
-                if not vector:
+                # `if not vector` på en numpy-array kastar "truth value of an
+                # array is ambiguous" — det gjorde att backfillen räknade
+                # VARJE rad som misslyckad när providern returnerade numpy.
+                # `len()` fungerar för både list, tuple och ndarray.
+                if vector is None or len(vector) == 0:
                     failed += 1
                     continue
                 try:
@@ -710,7 +734,7 @@ class AIPersonalMemory(models.Model):
                 except Exception as e:  # noqa: BLE001
                     _logger.warning(
                         'Backfill: kunde inte skriva vektor på minne %s: %s',
-                        rec.id, e)
+                        rec.id, e, exc_info=True)
                     failed += 1
         _logger.info(
             'Backfill klar: %s saknade vektor, %s fyllda, %s misslyckade',

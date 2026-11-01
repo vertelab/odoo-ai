@@ -2641,6 +2641,12 @@ class AICoworkerSession(models.Model):
                     coworker.with_context(
                         _ai_context_model=session.watch_model,
                         _ai_context_id=session.watch_res_id,
+                        # B8 + F4 (init-type-execution-parity 2.5): watch är
+                        # en obevakad väg precis som mail, men saknade
+                        # signaturen. Utan den blev läget INTERACTIVE med
+                        # handler=None — dvs. fail-open (verktyget kördes
+                        # utan godkännande). Samma mekanism som mail-vägen.
+                        **coworker._sign_auto_approve(session)
                     ).run(session.watch_prompt or '', session=session)
                 session.write({'watch_pending': False})
                 processed += 1

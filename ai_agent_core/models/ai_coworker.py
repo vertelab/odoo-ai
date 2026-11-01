@@ -5162,7 +5162,8 @@ class AICoworker(models.Model):
                     'Kunde inte persistera utfall på session %s', sess.id)
 
     def _build_loop(self, provider, tools, model, system_prompt, max_rounds=None,
-                    session=None):
+                    session=None, init_type=None, web_ui_session=None,
+                    discuss_channel=None, discuss_bot_user=None):
         """Build AgentLoop or loop based on orchestration mode.
 
         Supports: single, supervisor, buzz, linear, conference, automation.
@@ -5171,6 +5172,17 @@ class AICoworker(models.Model):
         max_rounds: None → härleds från self.max_iterations (fallback 8).
         Tidigare hårdkodades 10 på anropsplatserna, vilket gjorde att
         medarbetarens Max Iterations-inställning aldrig nådde specialisterna.
+
+        init_type: vilken kanal körningen kom in genom. Styr vilken
+        HITL-mekanism loopen får — se `select_interrupt_handler`. `None`
+        (default) betyder oförändrat beteende: ingen hanterare sätts här,
+        anroparen ansvarar själv (bakåtkompatibelt för de vägar som redan
+        sätter den, t.ex. cron).
+
+        VARFÖR HÄR OCH INTE PÅ ANROPAREN: `_build_loop` är den enda
+        konstruktionsplatsen för loopar — alla åtta körvägar går genom den.
+        Att sätta hanteraren här gör att en ny väg inte kan glömma den, och
+        `select_interrupt_handler` blir den enda beslutsplatsen (F3).
         """
         if not max_rounds:
             max_rounds = self.max_iterations or 8
@@ -5249,6 +5261,29 @@ class AICoworker(models.Model):
         if self.env.context.get('ai_single_agent_run'):
             mode = 'single'
 
+        # ── HITL-hanterare per init-typ (init-type-execution-parity 2.1) ──
+        #
+        # `select_interrupt_handler` är den ENDA beslutsplatsen. Att sätta
+        # hanteraren här — i stället för på varje anropsplats — gör att en ny
+        # körväg inte kan glömma den: 9 av 12 init-typer saknade hanterare
+        # helt, och `run()` släppte då igenom `needs_user` (fail-open).
+        #
+        # `init_type=None` lämnar hanteraren orörd. Det är avsiktligt: cron
+        # sätter sin egen (`AutoInterruptHandler`) efter `_build_loop`, och
+        # web_ui/openai_api skickar in sin till `run()`. Bakåtkompatibelt.
+        interrupt_handler = None
+        if init_type:
+            from odoo.addons.ai_agent_core.core.interrupt import (
+                select_interrupt_handler)
+            interrupt_handler = select_interrupt_handler(
+                init_type,
+                hitl_request=self._make_hitl_request(),
+                web_ui_session=web_ui_session,
+                discuss_channel=discuss_channel,
+                discuss_bot_user=discuss_bot_user,
+                env=self.env,
+            )
+
         # ── Automation: single + AUTO permission ──
         if mode == 'automation':
             from odoo.addons.ai_agent_core.core.permission import PermissionMode
@@ -5262,6 +5297,7 @@ class AICoworker(models.Model):
                     session_headers=bifrost_headers,
                     outcome_callback=outcome_cb,
                     checkpoint_callback=checkpoint_cb,
+                    interrupt_handler=interrupt_handler,
                 ),
                 tool_selector=tool_selector,
             )
@@ -5275,7 +5311,8 @@ class AICoworker(models.Model):
                         max_rounds=max_rounds,
                         session_headers=bifrost_headers,
                 outcome_callback=outcome_cb,
-                checkpoint_callback=checkpoint_cb))
+                checkpoint_callback=checkpoint_cb,
+                    interrupt_handler=interrupt_handler))
             # Return a LinearLoop wrapper
             return LinearLoop(
                 agents=agents, provider=provider, tools=tools,
@@ -5286,7 +5323,8 @@ class AICoworker(models.Model):
                 # Transaktionshygien (B3): utan checkpoint håller VARJE steg i
                 # pipelinen ACCESS SHARE-lås öppna över provider-väntan —
                 # samma buggklass som T/50690 botade för de andra vägarna.
-                checkpoint_callback=checkpoint_cb)
+                checkpoint_callback=checkpoint_cb,
+                interrupt_handler=interrupt_handler)
 
         # ── Single agent mode ──
         if mode == 'single' or len(self.agent_ids) <= 1:
@@ -5301,6 +5339,7 @@ class AICoworker(models.Model):
                     session_headers=bifrost_headers,
                     outcome_callback=outcome_cb,
                     checkpoint_callback=checkpoint_cb,
+                    interrupt_handler=interrupt_handler,
                 ),
                 tool_selector=tool_selector,
             )
@@ -5325,7 +5364,8 @@ class AICoworker(models.Model):
                 provider, tools, model,
                 system_prompt + conf_suffix, max_rounds,
                 outcome_callback=outcome_cb,
-                checkpoint_callback=checkpoint_cb)
+                checkpoint_callback=checkpoint_cb,
+                interrupt_handler=interrupt_handler)
             return ConferenceLoop(
                 router_provider=provider, agents=specialists,
                 config=SupervisorConfig(router_model=supervisor_model),
@@ -5339,7 +5379,8 @@ class AICoworker(models.Model):
         specialists = self._build_specialists(
             provider, tools, model, system_prompt, max_rounds,
             outcome_callback=outcome_cb,
-            checkpoint_callback=checkpoint_cb)
+            checkpoint_callback=checkpoint_cb,
+                interrupt_handler=interrupt_handler)
 
         # Skill-baserad supervisor är DEFAULT (change ai-orchestration-tidy-up
         # 6.1): koppla orchestration.supervisor automatiskt om den saknas.
@@ -5378,6 +5419,7 @@ class AICoworker(models.Model):
                     session_headers=bifrost_headers,
                     outcome_callback=outcome_cb,
                     checkpoint_callback=checkpoint_cb,
+                    interrupt_handler=interrupt_handler,
                 ),
             )
 
@@ -5387,11 +5429,107 @@ class AICoworker(models.Model):
             config=SupervisorConfig(
                 router_model=supervisor_model,
                 skill_recipe=skill_recipe,
-                max_rounds=3,
+                # Routerns EGNA tak (hur många gånger den får välja om),
+                # inte agenternas rundtak. Det senare är max_iterations
+                # nedan — som därför får styra båda när det är lägre, så att
+                # en medarbetare med Max Iterations=2 inte ändå får 3
+                # router-varv (init-type-execution-parity 5.3).
+                max_rounds=min(self.max_iterations or 3, 3),
                 max_iterations=self.max_iterations or 3,
                 min_confidence=self.min_confidence or 0.8,
             ),
         )
+
+    def _run_init_type(self, channel=None):
+        """Vilken init-typ kör `run()` just nu?
+
+        En coworker kan ha FLERA init-typer (`init_type_ids`), men en
+        enskild körning sker genom EN kanal. Den kanalen är det som avgör
+        HITL-mekanismen — inte vilka typer coworkern råkar ha aktiva.
+
+        Ordning:
+          1. `channel` satt → 'chat' (Discuss/DM; `chat()` skickar den).
+          2. Exakt en aktiv init-typ → den typen.
+          3. Flera eller ingen → 'manual' (interaktiv, säkraste default:
+             pausar i stället för att köra autonomt).
+
+        `manual` som fallback är avsiktligt: hellre en pausad körning än
+        en tyst autonom.
+        """
+        if channel:
+            return 'chat'
+        try:
+            types = [t.init_type for t in self.init_type_ids if t.init_type]
+        except Exception:
+            types = []
+        if len(types) == 1:
+            return types[0]
+        return 'manual'
+
+    def _run_discuss_bot_user(self):
+        """Bot-användaren för Discuss-vägen (krävs av DiscussInterruptHandler)."""
+        try:
+            return self.user_id or self.env.user
+        except Exception:
+            return self.env.user
+
+    def _make_hitl_request(self, session=None):
+        """Bygg `hitl_request`-callable för record-HITL-vägen.
+
+        `select_interrupt_handler` kräver en callable för de icke-interaktiva
+        init-typerna (cron, mail, watch, webhook, heartbeat): den
+        materialiserar ett `ai.coworker.hitl`-ärende i godkännandekön i
+        stället för att blockera körningen.
+
+        Returnerar `None` när ingen session finns — `AutoInterruptHandler`
+        nekar då (den auto-godkänner aldrig utan `hitl_request`, se B4).
+
+        Args:
+            session: ai.coworker.session som körningen tillhör. Default:
+                `self._resolve_session()` (context-baserad).
+        """
+        def _hitl_request(tool_name, risk_level, arguments):
+            try:
+                sess = session or self._resolve_session()
+                if not sess:
+                    _logger.warning(
+                        'HITL: ingen session för %s (%s) — kan inte skapa '
+                        'godkännandeärende', tool_name, risk_level)
+                    return None
+                return self.with_context(
+                    _ai_context_model='ai.coworker.session',
+                    _ai_context_id=sess.id,
+                )._request_hitl(
+                    action_type='tool_approval',
+                    summary=(
+                        f"Godkänn {tool_name} för {self.name} "
+                        f"({self._get_init_type_label()})"),
+                    context={
+                        'model': 'ai.coworker.session',
+                        'res_id': sess.id,
+                        'tool_name': tool_name,
+                        'risk_level': risk_level,
+                        'arguments': arguments,
+                    },
+                    risk_level=('destructive'
+                                if risk_level == 'destructive'
+                                else 'high'),
+                    session=sess,
+                )
+            except Exception as e:  # noqa: BLE001 — HITL får ej krascha
+                _logger.warning(
+                    'HITL: kunde inte skapa ärende för %s (%s): %s',
+                    tool_name, risk_level, e)
+                return None
+
+        return _hitl_request
+
+    def _get_init_type_label(self):
+        """Läsbar etikett för coworkerns init-typ (för HITL-summeringar)."""
+        try:
+            return self.init_type or 'okänd kanal'
+        except Exception:
+            return 'okänd kanal'
 
     def _build_pi_instruction(self, session=None):
         """Bygg system_prompt_add för externa klienter (openai_api-vägen).
@@ -5966,11 +6104,15 @@ class AICoworker(models.Model):
 
     def _build_specialists(self, provider, tools, model, system_prompt,
                            max_rounds=None, outcome_callback=None,
-                           checkpoint_callback=None):
+                           checkpoint_callback=None, interrupt_handler=None):
         """Build list of SpecialistAgent from agent_ids.
 
         max_rounds: None → härleds från self.max_iterations (fallback 8), så
         att medarbetarens Max Iterations styr även specialisternas rundtak.
+
+        interrupt_handler: HITL-kanalen för körningen. Skickas vidare till
+        varje specialist så att en delegerad agent har samma grind som
+        orkestreraren (init-type-execution-parity 2.1).
         """
         if not max_rounds:
             max_rounds = self.max_iterations or 8
@@ -6027,6 +6169,7 @@ class AICoworker(models.Model):
                         # deras mätning helt.
                         outcome_callback=outcome_callback,
                         checkpoint_callback=checkpoint_callback,
+                        interrupt_handler=interrupt_handler,
                     ),
                 ),
                 triggers=[],
@@ -7600,6 +7743,9 @@ class AICoworker(models.Model):
                     provider=provider, tools=tools,
                     model=model, system_prompt=system_prompt,
                     session=session,
+                    init_type=self._run_init_type(channel=channel),
+                    discuss_channel=channel,
+                    discuss_bot_user=self._run_discuss_bot_user(),
                 )
 
                 # PermissionEngine får användarens grupper (defense-in-depth):
@@ -8111,8 +8257,11 @@ class AICoworker(models.Model):
 
                 loop_obj = self._build_loop(
                     provider=provider, tools=tools,
-                    model=model, system_prompt=system_prompt, max_rounds=5,
+                    model=model, system_prompt=system_prompt,
+                    # None → härleds ur max_iterations (parity 5.2)
+                    max_rounds=None,
                     session=session,
+                    init_type='powerbox',
                 )
 
                 async def _run():
@@ -9239,7 +9388,12 @@ class AICoworker(models.Model):
                         session.write({'heartbeat_pending': False})
                         processed += 1
                         continue
-                    coworker.run(session.job_prompt, session=session)
+                    coworker.with_context(
+                        # B8 + F4 (init-type-execution-parity 2.5): heartbeat
+                        # är obevakad som mail/watch men saknade signaturen →
+                        # INTERACTIVE med handler=None → fail-open.
+                        **coworker._sign_auto_approve(session)
+                    ).run(session.job_prompt, session=session)
                 session.write({'heartbeat_pending': False})
                 # Verkligt livstecken (bevakning-over-tid): en LYCKAD körning
                 # uppdaterar last_successful_run — till skillnad från
@@ -10005,11 +10159,10 @@ class AICoworkerAgent(models.Model):
     def _compute_agent_display(self):
         for rec in self:
             tools = rec.agent_id.tool_ids.mapped('name')
-            # Kopplingen är den enda vägen (ai-memory-okf-format):
-            # `rag_memory_ids` finns inte längre, så minnena hämtas ur
-            # memory_ids. Bara aktiva kopplingar visas.
-            memories = rec.agent_id.memory_ids.filtered(
-                lambda l: l.active).mapped('memory_id.name')
+            # `rag_memory_ids` (ai.memory.agent_id) är borta sedan
+            # 18.0.2.0.23 — kolumnen lästes av ingen kod och var en andra
+            # sanning om samma relation som ai.agent.memory.
+            memories = rec.agent_id.memory_ids.mapped('memory_id.name')
             rec.agent_tools_display = ', '.join([t for t in tools if t])
             rec.agent_memories_display = ', '.join(
                 [m for m in memories if m])

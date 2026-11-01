@@ -446,6 +446,15 @@ INTERACTIVE_INIT_TYPES = (
     'openai_api', 'manual',
 )
 
+# Init-typer som körs utan någon som kan svara just nu. De får record-HITL:
+# ett ärende i godkännandekön, ingen blockering (init-type-execution-parity
+# 2.2 — watch och heartbeat saknades i tabellen och föll därför i den
+# underförstådda else-grenen, vilket gjorde dem till en oavsiktlig
+# tredje kategori: INTERACTIVE-läge med handler=None → fail-open).
+NON_INTERACTIVE_INIT_TYPES = (
+    'cron', 'mail', 'watch', 'webhook', 'heartbeat',
+)
+
 
 def select_interrupt_handler(init_type, hitl_request=None, web_ui_session=None,
                              discuss_channel=None, discuss_bot_user=None,
@@ -460,9 +469,14 @@ def select_interrupt_handler(init_type, hitl_request=None, web_ui_session=None,
       openai_api, manual) → PAUSAD HITL via OpenAI `tool_calls`
       (`OpenAIInterruptHandler` → `AgentLoopPaused`); körningen återupptas
       i samma session när svaret kommer.
-    - icke-interaktiv (cron, mail, watch, webhook) → RECORD-HITL
-      (`AutoInterruptHandler` med `hitl_request`), som skapar en
-      `ai.coworker.hitl`-post och INTE blockerar körningen.
+    - icke-interaktiv (cron, mail, watch, webhook, heartbeat) →
+      RECORD-HITL (`AutoInterruptHandler` med `hitl_request`), som skapar
+      en `ai.coworker.hitl`-post och INTE blockerar körningen.
+
+    Varje init-typ i `INIT_TYPES` måste hamna i någon av de två listorna —
+    en typ som hamnar i ingen av dem får en hanterare som nekar allt, vilket
+    ser ut som en trasig kanal i stället för ett säkerhetsbeslut.
+    `tests/test_execution_parity.py` bevakar att så inte sker.
 
     Args:
         init_type: str — coworkerns init-typ.
@@ -487,4 +501,8 @@ def select_interrupt_handler(init_type, hitl_request=None, web_ui_session=None,
                 discuss_channel, discuss_bot_user, env)
         return OpenAIInterruptHandler()
     # Icke-interaktiv: record-HITL, blockerar aldrig.
+    #
+    # En okänd init-typ hamnar också här. Det är avsiktligt fail-closed:
+    # `AutoInterruptHandler` utan `hitl_request` NEKAR (B4), så en ny
+    # init-typ som glöms bort stoppas i stället för att köra ogrindat.
     return AutoInterruptHandler(hitl_request=hitl_request)

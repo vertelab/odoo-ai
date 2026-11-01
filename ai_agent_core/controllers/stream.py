@@ -849,7 +849,10 @@ class AIStreamController(http.Controller):
                                         config=AgentConfig(
                                             model=a['model'],
                                             system_prompt=system_prompt,
-                                            max_rounds=10,
+                                            # None → härleds ur
+                                            # coworkerns max_iterations
+                                            # (init-type-execution-parity 5.1)
+                                            max_rounds=None,
                                             checkpoint_callback=_checkpoint,
                                             # Långa tool-resultat (YouTube-transkript ≈ 24k tecken) får plats
                                             max_tool_result_chars=40000,
@@ -868,7 +871,9 @@ class AIStreamController(http.Controller):
                                 config=AgentConfig(
                                     model=model,
                                     system_prompt=system_prompt,
-                                    max_rounds=10,
+                                    # None → härleds ur max_iterations
+                                    # (init-type-execution-parity 5.1)
+                                    max_rounds=None,
                                     checkpoint_callback=_checkpoint,
                                     # Långa tool-resultat (YouTube-transkript ≈ 24k tecken) får plats
                                     max_tool_result_chars=40000,
@@ -902,6 +907,18 @@ class AIStreamController(http.Controller):
                                 data["token"] = event.token
                             elif event.type in ("debug", "source", "tool_progress"):
                                 data["token"] = event.token
+                            elif event.type == "needs_approval":
+                                # Ett nekande från grinden (init-type-execution-
+                                # parity 3.3). Klienten måste få veta VARFÖR
+                                # inget hände — annars ser webb-användaren
+                                # bara att verktyget inte kördes.
+                                data["token"] = event.token
+                                try:
+                                    _denial = json.loads(event.token or '{}')
+                                except (ValueError, TypeError):
+                                    _denial = {}
+                                data["tool"] = _denial.get("tool", "")
+                                data["reason"] = _denial.get("reason", "")
                             elif event.type == "tool_call_start":
                                 if event.tool_call:
                                     data["tool_call"] = {

@@ -1454,3 +1454,59 @@ rader.
 Både `Objects`-knappen på `ai.coworker` och objektlistan inifrån en session
 använder samma listvy. Det finns exakt **en** listvy för modellen — två
 skulle glida isär (samma bugg som `coworker-form-performance` rättade).
+---
+
+## HITL-paritet mellan körvägarna (init-type-execution-parity)
+
+`AgentLoop` har två körvägar — `run()` (synkron) och `run_stream()`
+(strömmande). De når **samma** exekveringsfunktion (`_execute_tool`), men
+fram till 2026-11 hade bara `run()` en behörighetsgrind. `run_stream()` —
+som bär `/ai/stream` (`auth='public'`) och `/ai/v1`-strömmen — körde
+verktyg direkt, inklusive hårda stopp som `odoo_unlink`.
+
+Tre saker ändrades, i den här ordningen (ordningen är säkerhetskritisk):
+
+1. **Hanterare först.** `_build_loop` väljer HITL-mekanism via
+   `select_interrupt_handler(init_type, …)` — den enda beslutsplatsen.
+   Tidigare hade 9 av 12 init-typer ingen hanterare alls.
+2. **Sedan grinden.** `_gate_tool_calls` är ett delat steg som båda vägarna
+   anropar före exekvering. Nekade anrop får ett TOOL-meddelande med orsaken,
+   och den strömmande vägen emitterar ett `needs_approval`-event.
+3. **Fail-closed.** `needs_user` utan hanterare **nekar** (tidigare föll
+   beslutet igenom och verktyget kördes).
+
+### Init-typ → hanterare → autonomi
+
+| Init-typ | Hanterare | Autonomi | Väg |
+|---|---|---|---|
+| `web_ui` | `WebUIInterruptHandler` | pausar, frågar i web-UI:t | `/ai/stream` |
+| `chat` | `DiscussInterruptHandler` | pausar, frågar i Discuss | `chat()` → `run()` |
+| `channel` | `DiscussInterruptHandler` | pausar, frågar i kanalen | `chat()` → `run()` |
+| `powerbox` | `OpenAIInterruptHandler` | pausar (klienten är orkestratör) | `powerbox()` |
+| `server_action` | `OpenAIInterruptHandler` | pausar | `run()` |
+| `manual` | `OpenAIInterruptHandler` | pausar | `run()` |
+| `openai_api` | `OpenAIInterruptHandler` | pausar (tool_calls till klienten) | `/ai/v1` |
+| `cron` | `AutoInterruptHandler` + record-HITL | nek­ar, ärende i kön | `action_run_scheduled` |
+| `mail` | `AutoInterruptHandler` + record-HITL | AUTO (signerad `_ai_auto_approve`) | `_process_mail_sessions` |
+| `watch` | `AutoInterruptHandler` + record-HITL | AUTO (signerad) | `_process_watch_sessions` |
+| `heartbeat` | `AutoInterruptHandler` + record-HITL | AUTO (signerad) | `_process_heartbeat_sessions` |
+| `webhook` | `AutoInterruptHandler` + record-HITL | AUTO (signerad) | `run()` |
+
+**Pariteten gäller grinden, inte tillitsnivån.** `cron` ska fortsätta neka,
+`mail` fortsätta vara autonom. Det som är lika är att *beslutet fattas* på
+alla vägar — inte vad beslutet blir.
+
+### `max_rounds` härleds
+
+Anropsplatserna hårdkodade `10` (stream) och `5` (powerbox), vilket gjorde
+att medarbetarens **Max Iterations** aldrig nådde de vägarna. Nu skickas
+`max_rounds=None` och `_build_loop` härleder ur `max_iterations`
+(fallback 8). Supervisorns router-tak är `min(max_iterations, 3)`.
+
+### Strukturtestet
+
+`tests/test_execution_parity.py` läser **källkoden** och kräver att varje
+metod som anropar `_execute_tool`/`_execute_tools_parallel` också anropar
+`_gate_tool_calls`. Det fångar en ny körväg innan den hunnit få ett eget
+test. Felklassen är dokumenterad i `docs/failures.md` §10 ("Grind i en väg,
+inte i exekveringen").
