@@ -2,6 +2,7 @@
 """Post-install hook: create Quest Builder and Skill Builder quests."""
 
 import logging
+import re
 
 _logger = logging.getLogger(__name__)
 
@@ -30,6 +31,151 @@ def pre_init_hook_check_conflicts(env):
             'action_ai_tool) och är inkompatibla. Avinstallera ai_agent '
             'först (Appar → ai_agent → Avinstallera).'
         )
+
+
+# ── Delad vektor-kolumnhjälpare ──────────────────────────────────────────
+#
+# VARFÖR DEN FINNS: `post_init_hook_personal_memory` läste kolumntypen EN
+# gång och använde samma värde för att styra två på varandra följande steg:
+#
+#     row = cr.fetchone()              # 'text' eller 'vector'
+#     if row and row[0] != 'vector':
+#         ALTER ... TYPE vector(1024)  # kolumnen blir vector(1024)
+#     if row and row[0] == 'vector':   # row är FORTFARANDE 'text'
+#         CREATE INDEX ...             # körs aldrig i samma anrop
+#
+# Efter en lyckad konvertering beskriver `row` inte längre verkligheten.
+# Nästa uppgradering läser 'vector' (dimensionslös), hoppar över ALTER
+# eftersom row[0] == 'vector', och når index-blocket — där CREATE INDEX
+# USING ivfflat faller på "column does not have dimensions". Båda grenarna
+# var döda för en dimensionslös kolumn: ingen konvertering, inget index.
+#
+# Mätt i drift (dina, 2026-10-30):
+#     ai_personal_memory | vector    ← ingen dimension
+#     ai_company_memory  | vector    ← ingen dimension
+#     ivfflat-index      | (inga alls)
+#
+# Rättelsen är att aldrig spara ett "före"-värde: varje steg verifierar
+# resultatet mot katalogen EFTER att det kört.
+
+_IDENT_RE = re.compile(r'^[a-z_][a-z0-9_]*$')
+
+
+def _vector_column_type(cr, table, column):
+    """Läs kolumnens faktiska typ som format_type ger den.
+
+    Returnerar t.ex. 'text', 'vector' (dimensionslös) eller 'vector(1024)'.
+    `None` om kolumnen inte finns.
+    """
+    cr.execute("""
+        SELECT format_type(a.atttypid, a.atttypmod)
+        FROM pg_attribute a
+        JOIN pg_class c ON a.attrelid = c.oid
+        JOIN pg_namespace n ON c.relnamespace = n.oid
+        WHERE c.relname = %s AND a.attname = %s
+          AND n.nspname = 'public' AND a.attnum > 0 AND NOT a.attisdropped
+    """, (table, column))
+    row = cr.fetchone()
+    return row[0] if row else None
+
+
+def ensure_vector_column(cr, table, column='embedding', dim=1024):
+    """Gör `column` till vector(dim) och säkerställ ivfflat-indexet.
+
+    Idempotent. Läser kolumntypen EFTER varje steg i stället för att spara
+    ett "före"-värde — det var den cirkulära logiken som gjorde att varken
+    konverteringen eller indexet någonsin kördes.
+
+    Kastar vid fel. Ett saknat ivfflat-index syns aldrig i ett svar (bara
+    som sekventiell scan i last), så en tyst varning är en tyst degradering.
+
+    Returnerar dict:
+        {'table', 'converted', 'index_created', 'skipped'}
+    där `skipped` är en orsakskod när steget inte kunde köras alls
+    ('table_missing', 'column_missing', 'no_vector_extension').
+    """
+    result = {
+        'table': table,
+        'converted': False,
+        'index_created': False,
+        'skipped': None,
+    }
+
+    # Namn kan inte parametriseras i DDL — validera dem.
+    for ident in (table, column):
+        if not _IDENT_RE.match(ident or ''):
+            raise ValueError(
+                'ensure_vector_column: ogiltigt identifierarnamn %r' % (ident,))
+
+    # (a) Tabellen måste finnas. Anroparen kan köra före tabellskapande —
+    # det är ett förväntat tillstånd, inte ett fel.
+    cr.execute("""
+        SELECT 1 FROM information_schema.tables
+        WHERE table_name = %s AND table_schema = 'public'
+    """, (table,))
+    if not cr.fetchone():
+        result['skipped'] = 'table_missing'
+        return result
+
+    # (b) Utan vector-extensionen kan ingen vektor lagras alls. Det är ett
+    # annat och större fel än ett trasigt index — hjälparen ska inte fälla
+    # uppgraderingen för det, men det ska synas.
+    cr.execute("SELECT 1 FROM pg_extension WHERE extname = 'vector'")
+    if not cr.fetchone():
+        _logger.warning(
+            'pgvector-extensionen saknas — hoppar över %s.%s. '
+            'Kör: salt \'*\' state.apply postgres.pgvector', table, column)
+        result['skipped'] = 'no_vector_extension'
+        return result
+
+    # (c) Kolumnen måste finnas.
+    before = _vector_column_type(cr, table, column)
+    if before is None:
+        result['skipped'] = 'column_missing'
+        return result
+
+    # (d) Konvertera. Läs om typen efteråt — aldrig besluta på `before`.
+    if before == 'text':
+        # Textvärden skrivna som '[0.1,0.2,...]' är giltiga vector-literaler.
+        # NULL bevaras som NULL i stället för att fälla hela ALTER:en.
+        cr.execute(
+            'ALTER TABLE {t} ALTER COLUMN {c} TYPE vector({d}) '
+            'USING CASE WHEN {c} IS NULL THEN NULL ELSE {c}::vector({d}) END'
+            .format(t=table, c=column, d=int(dim)))
+        result['converted'] = True
+        _logger.info('%s.%s: text → vector(%s)', table, column, dim)
+    elif before == 'vector':
+        # Dimensionslös vector kan inte castas till en dimension — och den
+        # är oanvändbar för ivfflat. Värdena nollställs medvetet.
+        cr.execute(
+            'ALTER TABLE {t} ALTER COLUMN {c} TYPE vector({d}) USING NULL'
+            .format(t=table, c=column, d=int(dim)))
+        result['converted'] = True
+        _logger.info(
+            '%s.%s: dimensionslös vector → vector(%s) '
+            '(dimensionslösa vektorer kan inte castas; nollställda)',
+            table, column, dim)
+
+    after = _vector_column_type(cr, table, column)
+    if after != 'vector(%s)' % dim:
+        raise Exception(
+            'ensure_vector_column: %s.%s är %r efter konvertering, '
+            'förväntade vector(%s)' % (table, column, after, dim))
+
+    # (e) Indexet — i SAMMA anrop som konverteringen.
+    index_name = 'idx_%s_embedding' % table
+    cr.execute(
+        'SELECT 1 FROM pg_indexes WHERE tablename = %s AND indexname = %s',
+        (table, index_name))
+    if not cr.fetchone():
+        cr.execute(
+            'CREATE INDEX {i} ON {t} USING ivfflat ({c} vector_cosine_ops) '
+            'WITH (lists = 100)'.format(i=index_name, t=table, c=column))
+        result['index_created'] = True
+        _logger.info('Skapade ivfflat-index %s på %s.%s',
+                     index_name, table, column)
+
+    return result
 
 
 def post_init_hook_personal_memory(env):
@@ -76,49 +222,6 @@ def post_init_hook_personal_memory(env):
                 cr.execute("CREATE INDEX idx_ai_personal_memory_fts ON ai_personal_memory USING GIN(search_vector)")
                 _logger.info('Created GIN index on search_vector')
 
-            # pgvector: konvertera text → vector(1024) och skapa index.
-            #
-            # BUGGEN (mätt i drift 2026-09-22): villkoret var
-            # `if row and row[0] == 'USER-DEFINED'` — dvs. kolumnen
-            # konverterades bara om den REDAN var en vector-typ. En
-            # TEXT-kolumn (vilket `fields.Text` skapar) lämnades som text,
-            # så `1 - (embedding <=> %s::vector)` kastade
-            # `UndefinedFunction: operator does not exist: text <=> vector`.
-            # Cirkulär logik: den migreras bara om den redan är migrerad.
-            #
-            # Följden i drift: /ai/stream svarade HTTP 500 för varje session
-            # med >50 rader (de som anropar _summarize_history →
-            # _bridge_to_personal_memory → search_for_user), och användaren
-            # såg "Anslutningen till AI-servern bröts".
-            #
-            # Konverteringen är idempotent och tål att köras om: en kolumn
-            # som redan är vector lämnas orörd.
-            cr.execute("SELECT 1 FROM pg_extension WHERE extname = 'vector'")
-            if cr.fetchone():
-                cr.execute(
-                    "SELECT udt_name FROM information_schema.columns "
-                    "WHERE table_name = 'ai_personal_memory' "
-                    "AND column_name = 'embedding'")
-                row = cr.fetchone()
-                if row and row[0] != 'vector':
-                    # Värden skrivna som text-literal ('[0.1,0.2,...]') är
-                    # redan giltiga vector-literaler → casten fungerar.
-                    # NULL/otolkbara värden nollställs i stället för att
-                    # fälla hela ALTER:en.
-                    cr.execute(
-                        "ALTER TABLE ai_personal_memory "
-                        "ALTER COLUMN embedding TYPE vector(1024) "
-                        "USING CASE WHEN embedding IS NULL THEN NULL "
-                        "ELSE embedding::vector(1024) END")
-                    _logger.info(
-                        'ai_personal_memory.embedding: %s → vector(1024)'
-                        ' (var %s)', 'vector(1024)', row[0])
-                if row and row[0] == 'vector':
-                    cr.execute("SELECT 1 FROM pg_indexes WHERE tablename = 'ai_personal_memory' AND indexname = 'idx_ai_personal_memory_embedding'")
-                    if not cr.fetchone():
-                        cr.execute("CREATE INDEX idx_ai_personal_memory_embedding ON ai_personal_memory USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100)")
-                        _logger.info('Created ivfflat index on embedding')
-
             # B-tree-index
             cr.execute("SELECT 1 FROM pg_indexes WHERE tablename = 'ai_personal_memory' AND indexname = 'idx_ai_personal_memory_user_id'")
             if not cr.fetchone():
@@ -130,6 +233,13 @@ def post_init_hook_personal_memory(env):
             cr.execute('ROLLBACK TO SAVEPOINT pre_personal_memory_sql')
         except Exception:
             cr.rollback()
+
+    # ── Vektorsteget: PROPAGERAR fel (till skillnad från B-tree/GIN) ──
+    #
+    # Ett saknat ivfflat-index gör sökningen långsam men korrekt — det syns
+    # aldrig i ett svar, bara i last. En varning i uppgraderingsloggen är
+    # därför en tyst degradering. Det här steget får fälla uppgraderingen.
+    ensure_vector_column(cr, 'ai_personal_memory')
 
     # ════════════════════════════════════════════
     # Company Memory SQL
@@ -147,31 +257,6 @@ def post_init_hook_personal_memory(env):
             if not cr.fetchone():
                 cr.execute("CREATE INDEX idx_ai_company_memory_fts ON ai_company_memory USING GIN(search_vector)")
 
-            cr.execute("SELECT 1 FROM pg_extension WHERE extname = 'vector'")
-            if cr.fetchone():
-                cr.execute(
-                    "SELECT udt_name FROM information_schema.columns "
-                    "WHERE table_name = 'ai_company_memory' "
-                    "AND column_name = 'embedding'")
-                row = cr.fetchone()
-                # Samma cirkulära villkor som ai_personal_memory hade:
-                # `== 'USER-DEFINED'` konverterade bara en kolumn som redan
-                # var vector. En TEXT-kolumn lämnades som text →
-                # `text <=> vector` kastade UndefinedFunction i drift.
-                if row and row[0] != 'vector':
-                    cr.execute(
-                        "ALTER TABLE ai_company_memory "
-                        "ALTER COLUMN embedding TYPE vector(1024) "
-                        "USING CASE WHEN embedding IS NULL THEN NULL "
-                        "ELSE embedding::vector(1024) END")
-                    _logger.info(
-                        'ai_company_memory.embedding: → vector(1024) '
-                        '(var %s)', row[0])
-                if row and row[0] == 'vector':
-                    cr.execute("SELECT 1 FROM pg_indexes WHERE tablename = 'ai_company_memory' AND indexname = 'idx_ai_company_memory_embedding'")
-                    if not cr.fetchone():
-                        cr.execute("CREATE INDEX idx_ai_company_memory_embedding ON ai_company_memory USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100)")
-
             cr.execute("SELECT 1 FROM pg_indexes WHERE tablename = 'ai_company_memory' AND indexname = 'idx_ai_company_memory_company'")
             if not cr.fetchone():
                 cr.execute("CREATE INDEX idx_ai_company_memory_company ON ai_company_memory (company_id, create_date DESC)")
@@ -181,6 +266,9 @@ def post_init_hook_personal_memory(env):
             cr.execute('ROLLBACK TO SAVEPOINT pre_company_memory_sql')
         except Exception:
             cr.rollback()
+
+    # ── Vektorsteget: PROPAGERAR fel (samma skäl som för personal) ──
+    ensure_vector_column(cr, 'ai_company_memory')
 
     # ════════════════════════════════════════════
     # AGE Graph initialization (Odoo Mind)

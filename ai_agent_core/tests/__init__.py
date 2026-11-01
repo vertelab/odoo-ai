@@ -170,5 +170,7 @@ from . import test_sequence_strategies
 from . import test_personal_memory_embedding
 # B12: ai_memory — död fältgren bort, ingen tyst modellnedladdning.
 from . import test_memory_embedding_backend
+# fix-memory-vector-dimension: vector(1024) + ivfflat på alla minnesmodeller.
+from . import test_memory_vector_dimension
 # C: hygien — _parse_skill_md med YAML-fortsättning.
 from . import test_skill_md_parsing

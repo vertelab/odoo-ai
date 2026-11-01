@@ -123,7 +123,6 @@ class AIMemory(models.Model):
 
     # Relations
     identity_id = fields.Many2one('ai.identity', string='Identity')
-    agent_id = fields.Many2one('ai.agent', string='Agent')
 
     # Quest learning (quest-learning-memory)
     quest_id = fields.Many2one('ai.coworker', string='Quest',
