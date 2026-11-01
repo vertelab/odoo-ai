@@ -19,10 +19,9 @@ Testerna rör inte nätverket: `_fetch_catalog_names` och
 from unittest import mock
 import urllib.error
 
-from odoo.tests import common, tagged
+from odoo.tests import common
 
 
-@tagged('post_install')
 class TestCatalogCacheAndBreaker(common.TransactionCase):
     """Katalogcache per provider + breaker på gateway-avslag."""
 

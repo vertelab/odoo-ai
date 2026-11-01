@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Migrate to 18.0.1.328: gateway_session_id på ai.coworker.session.
+"""Migrate to 18.0.2.0.24: gateway_session_id på ai.coworker.session.
 
 VARFÖR: gateway-anropseffektivitet D1 inför ett stabilt sessions-id för
 korrelation mot Bifrost-gatewayens logg. Fältet är additivt med en

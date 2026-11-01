@@ -17,10 +17,9 @@ aldrig matchar varandra. Korrelationen mot `bifrost.request.log.session_id`
 gav därför alltid noll träffar och `bifrost_cost` förblev omätt.
 """
 
-from odoo.tests import common, tagged
+from odoo.tests import common
 
 
-@tagged('post_install')
 class TestGatewaySessionIdentity(common.TransactionCase):
     """Stabil sessionsidentitet för gateway-korrelation."""
 
