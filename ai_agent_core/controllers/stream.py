@@ -37,6 +37,10 @@ from odoo.addons.ai_agent_core.core.loop import (  # noqa: E402
     tool_history_triples,
 )
 
+# Loggern måste finnas FÖRE import-blocken nedan: de loggar sina egna
+# misslyckanden (A5), och en sen definition gav NameError vid import.
+_logger = logging.getLogger(__name__)
+
 # Import access control helper (quest-access-control change)
 # Fånga ALLA undantag: vid tidig import (stream.py → ai_coworker → models)
 # kan AssertionError uppstå (base_sparse_field ej laddad), vilket annars
@@ -61,8 +65,6 @@ try:
         ProviderFactory, get_default_provider)
 except Exception:
     ProviderFactory = get_default_provider = None
-
-_logger = logging.getLogger(__name__)
 
 
 def _content_to_text(content):
