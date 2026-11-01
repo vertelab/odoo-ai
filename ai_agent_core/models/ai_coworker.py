@@ -10,15 +10,31 @@ _logger = logging.getLogger(__name__)
 
 
 def _quest_is_accessible(quest, user):
-    """Check if a user can access a quest via the web chat."""
+    """Check if a user can access a quest via the web chat.
+
+    Två vägar till åtkomst (A8):
+      * `group_ids` — användaren delar minst en av coworkerns grupper.
+      * `user_ids` — användaren är explicit uppräknad på coworkern.
+
+    Tidigare prövades BARA `group_ids`. En coworker som delades med en
+    enskild användare via `user_ids` (och saknade grupp) blev därför
+    otillgänglig för just den användaren — medan en coworker UTAN både
+    grupper och användare var öppen för alla. Båda felen kom från samma
+    halva implementation.
+
+    Semantik: tomma båda fälten = öppen för alla inloggade (oförändrat).
+    """
     if user.has_group('base.group_system'):
         return True
-    if quest.group_ids:
-        user_grp = set(user.groups_id.ids)
-        quest_grp = set(quest.group_ids.ids)
-        if not (user_grp & quest_grp):
-            return False
-    return True
+    quest_groups = set(quest.group_ids.ids) if quest.group_ids else set()
+    quest_users = set(quest.user_ids.ids) if quest.user_ids else set()
+    if not quest_groups and not quest_users:
+        return True
+    if user.id in quest_users:
+        return True
+    if quest_groups and (set(user.groups_id.ids) & quest_groups):
+        return True
+    return False
 
 
 INIT_TYPES = [
@@ -763,6 +779,17 @@ class AICoworker(models.Model):
             'context': {'default_coworker_id': self.id},
         }
     group_ids = fields.Many2many('res.groups', 'ai_coworker_group_rel', 'coworker_id', 'group_id', string='Access Groups')
+
+    # Explicit användarlista (ai-agent-core-fault-remediation A8/6.3).
+    # `group_ids` räcker inte när en coworker ska delas med EN person: att
+    # skapa en grupp per person är administrativt orimligt, och utan detta
+    # fält blev en coworker som delades via `user_ids` otillgänglig för just
+    # den användaren. Tomt båda fälten = öppen för alla inloggade.
+    user_ids = fields.Many2many(
+        'res.users', 'ai_coworker_user_rel', 'coworker_id', 'user_id',
+        string='Access Users',
+        help='Users who may use this coworker even without a matching '
+             'access group. Empty group_ids AND empty user_ids = open to all.')
 
     # Core loop migration
     use_core_loop = fields.Boolean('Use Core Loop', default=False)
@@ -2778,13 +2805,32 @@ class AICoworker(models.Model):
         self.buzz_channel_session_id = session.id
         return session
 
+    def _next_session_sequence(self, session):
+        """Nästa lediga sekvens för en sessionsrad.
+
+        B9/B10 (ai-agent-core-fault-remediation): sekvensen härleddes på TRE
+        olika sätt i samma kodbas — `_base_seq`, hårdkodat `+2`, och
+        `len(session.session_line_ids) + 1`. Den sista är fel så snart
+        sekvenserna inte är kontinuerliga (vilket de inte är: verktygsrader
+        och statistikrader hoppar). Med constrainten från B2 blir det ett
+        fel; utan den blev ordningen godtycklig.
+
+        EN strategi: högsta befintliga sekvens + 1. Samma som
+        `controllers/stream._next_session_sequence` använder — de två får
+        inte glida isär.
+        """
+        last = self.env['ai.coworker.session.line'].sudo().search(
+            [('session_id', '=', session.id)],
+            order='sequence desc, id desc', limit=1)
+        return (last.sequence or 0) + 1
+
     def _buzz_sync_message_to_session(self, body, role='user', agent=None):
         """Mirror a channel message to the shared web UI session."""
         self.ensure_one()
         if self.orchestration_mode != 'buzz':
             return None
         session = self._buzz_ensure_channel_session()
-        seq = len(session.session_line_ids) + 1
+        seq = self._next_session_sequence(session)
         prefix = ''
         if agent and role == 'assistant':
             prefix = f'[{agent.name}] '
@@ -5236,7 +5282,11 @@ class AICoworker(models.Model):
                 base_model=model, base_system=system_prompt,
                 max_rounds=max_rounds,
                 session_headers=bifrost_headers,
-                outcome_callback=outcome_cb)
+                outcome_callback=outcome_cb,
+                # Transaktionshygien (B3): utan checkpoint håller VARJE steg i
+                # pipelinen ACCESS SHARE-lås öppna över provider-väntan —
+                # samma buggklass som T/50690 botade för de andra vägarna.
+                checkpoint_callback=checkpoint_cb)
 
         # ── Single agent mode ──
         if mode == 'single' or len(self.agent_ids) <= 1:
@@ -5273,7 +5323,9 @@ class AICoworker(models.Model):
                     'Håll answer-delen komplett och användbar.')
             specialists = self._build_specialists(
                 provider, tools, model,
-                system_prompt + conf_suffix, max_rounds)
+                system_prompt + conf_suffix, max_rounds,
+                outcome_callback=outcome_cb,
+                checkpoint_callback=checkpoint_cb)
             return ConferenceLoop(
                 router_provider=provider, agents=specialists,
                 config=SupervisorConfig(router_model=supervisor_model),
@@ -5285,7 +5337,9 @@ class AICoworker(models.Model):
             SupervisorLoop, SupervisorConfig,
         )
         specialists = self._build_specialists(
-            provider, tools, model, system_prompt, max_rounds)
+            provider, tools, model, system_prompt, max_rounds,
+            outcome_callback=outcome_cb,
+            checkpoint_callback=checkpoint_cb)
 
         # Skill-baserad supervisor är DEFAULT (change ai-orchestration-tidy-up
         # 6.1): koppla orchestration.supervisor automatiskt om den saknas.
@@ -5490,6 +5544,69 @@ class AICoworker(models.Model):
     #: långt under gränsen — men vi klipper defensivt så ett framtida längre
     #: id aldrig tyst avvisas av gatewayen.
     BIFROST_SESSION_ID_MAX = 64
+
+    # ── B8: signerad AUTO-mode ──────────────────────────────────────────
+    # `_ai_auto_approve` i context var en naken flagga: vem som helst som
+    # kunde sätta den fick PermissionEngine(mode=AUTO) — dvs. full
+    # behörighet utan människa, inklusive odoo_unlink. Flaggan sattes av
+    # mail/webhook-vägen, men ingenting band den till DEN sessionen.
+    #
+    # Nu krävs en HMAC över (session-id, coworker-id) med nyckeln i
+    # systemparametern `ai_agent_core.api_secret`. Signaturer kan bara
+    # produceras av kod som redan har databasåtkomst — en angripare som
+    # bara kan påverka context kan inte längre eskalera.
+    #
+    # Hårda stopp gäller ÄVEN med giltig signatur: PermissionEngine.evaluate
+    # prövar hard stops FÖRE AUTO (core/permission.py:258), så signaturen
+    # vidgar inte den gränsen. Se test_hard_stops_still_apply.
+
+    AUTO_APPROVE_PARAM = 'ai_agent_core.api_secret'
+
+    def _auto_approve_signature(self, session=None):
+        """Beräkna HMAC-signaturen för (session, coworker)."""
+        import hashlib
+        import hmac
+        secret = self.env['ir.config_parameter'].sudo().get_param(
+            self.AUTO_APPROVE_PARAM, '')
+        if not secret:
+            return None
+        payload = '%s|%s' % (
+            getattr(session, 'id', 0) or 0, self.id or 0)
+        return hmac.new(
+            secret.encode('utf-8'), payload.encode('utf-8'),
+            hashlib.sha256).hexdigest()
+
+    def _sign_auto_approve(self, session=None):
+        """Context-värden som ger AUTO-mode för DENNA session.
+
+        Används av mail/webhook-vägen::
+
+            coworker.with_context(
+                **coworker._sign_auto_approve(session)
+            ).run(prompt, session=session)
+        """
+        sig = self._auto_approve_signature(session)
+        if not sig:
+            # Ingen hemlighet konfigurerad → ingen AUTO. Fail-closed.
+            return {}
+        return {
+            '_ai_auto_approve': True,
+            '_ai_auto_approve_sig': sig,
+        }
+
+    def _auto_approve_is_signed(self, session=None):
+        """True endast om flaggan bär en giltig signatur för sessionen."""
+        import hmac as _hmac
+        if not self.env.context.get('_ai_auto_approve'):
+            return False
+        given = self.env.context.get('_ai_auto_approve_sig') or ''
+        expected = self._auto_approve_signature(session)
+        if not expected or not given:
+            return False
+        try:
+            return _hmac.compare_digest(str(given), str(expected))
+        except Exception:  # noqa: BLE001 — jämförelse får ej kasta
+            return False
 
     def _bifrost_session_headers(self, session=None):
         """Bygg per-anrops-headers för gatewayen ur sessionens identitet.
@@ -5847,7 +5964,9 @@ class AICoworker(models.Model):
             len(agents), default_model.name)
         return len(agents)
 
-    def _build_specialists(self, provider, tools, model, system_prompt, max_rounds=None):
+    def _build_specialists(self, provider, tools, model, system_prompt,
+                           max_rounds=None, outcome_callback=None,
+                           checkpoint_callback=None):
         """Build list of SpecialistAgent from agent_ids.
 
         max_rounds: None → härleds från self.max_iterations (fallback 8), så
@@ -5900,6 +6019,14 @@ class AICoworker(models.Model):
                         model=agent_model,
                         system_prompt=agent_system,
                         max_rounds=max_rounds,
+                        # B3: specialisterna byggdes UTAN callbacks. Varje
+                        # specialist är en egen AgentLoop som kör sina egna
+                        # rundor — utan checkpoint håller de ACCESS
+                        # SHARE-lås öppna över provider-väntan (samma
+                        # buggklass som T/50690), och utan outcome tappas
+                        # deras mätning helt.
+                        outcome_callback=outcome_callback,
+                        checkpoint_callback=checkpoint_callback,
                     ),
                 ),
                 triggers=[],
@@ -6366,7 +6493,6 @@ class AICoworker(models.Model):
                 planning_tools, TodoList,
             )
             from odoo.addons.ai_agent_core.core.loop import AgentLoop, AgentConfig
-            from odoo.addons.ai_agent_core.core.interrupt import AutoInterruptHandler
             from odoo.addons.ai_agent_core.core.permission import (
                 PermissionEngine, PermissionMode,
             )
@@ -6405,8 +6531,55 @@ class AICoworker(models.Model):
             for cmd in allowed_commands:
                 permissions.session_allow_commands.add(cmd.strip())
 
-            # Use auto-interrupt handler (never blocks)
-            interrupt = AutoInterruptHandler()
+            # HITL-routing (B6, ai-agent-core-fault-remediation): välj
+            # mekanism UTFRÅN INIT-TYPEN via den enda beslutsplatsen
+            # `select_interrupt_handler` — inte genom att instansiera
+            # AutoInterruptHandler direkt här. Tidigare hade
+            # `select_interrupt_handler` NOLL anropare i drift; routing-
+            # arkitekturen var ren fiktion och cron fick en handler utan
+            # `hitl_request` (→ auto-godkände allt, B4).
+            #
+            # Cron är en ICKE-interaktiv init-typ: den får record-HITL som
+            # skapar ett `ai.coworker.hitl`-ärende och nekar tills vidare.
+            # Ärendet hamnar i godkännandekön — människan svarar där.
+            def _cron_hitl_request(tool_name, risk_level, arguments):
+                """Materialisera ett HITL-ärende för en obevakad körning."""
+                try:
+                    self.with_context(
+                        _ai_context_model='ai.coworker.session',
+                        _ai_context_id=session.id,
+                    )._request_hitl(
+                        action_type='tool_approval',
+                        summary=(
+                            f"Godkänn {tool_name} för {self.name} "
+                            f"(schemalagd körning)"),
+                        context={
+                            'model': 'ai.coworker.session',
+                            'res_id': session.id,
+                            'tool_name': tool_name,
+                            'risk_level': risk_level,
+                            'arguments': arguments,
+                            'init_type': 'cron',
+                        },
+                        risk_level=('destructive'
+                                    if risk_level == 'destructive'
+                                    else 'high'),
+                        session=session,
+                    )
+                except Exception as e:  # noqa: BLE001 — HITL får ej krascha
+                    # B5: logga VILKEN körväg som saknade kontext. Utan
+                    # detta blev ett ValidationError från _resolve_session
+                    # en anonym varning — felsökningen blev gissning.
+                    _logger.warning(
+                        'Cron (init_type=cron, session=%s): kunde inte '
+                        'skapa HITL-ärende för %s (%s): %s',
+                        getattr(session, 'id', None), tool_name,
+                        risk_level, e)
+
+            from odoo.addons.ai_agent_core.core.interrupt import (
+                select_interrupt_handler)
+            interrupt = select_interrupt_handler(
+                'cron', hitl_request=_cron_hitl_request, env=self.env)
 
             loop = self._build_loop(
                 provider=provider, tools=tools,
@@ -6536,7 +6709,7 @@ class AICoworker(models.Model):
                     })
                     self.env['ai.coworker.session.line'].sudo().create({
                         'session_id': session.id,
-                        'sequence': len(session.session_line_ids) + 1,
+                        'sequence': self._next_session_sequence(session),
                         'role': 'system',
                         'content': (
                             'Schemalagd korning avbrots innan den borjade: '
@@ -7437,14 +7610,30 @@ class AICoworker(models.Model):
 
                 # Mail/webhook-flöden (tillitsfulla automatiska kontexter):
                 # kör med AUTO-mode så odoo_create/odoo_write/odoo_call_method
-                # inte fastnar i HITL-kön. Endast när context flaggan sätts av
-                # initierings-koden (aldrig från chat).
-                if self.env.context.get('_ai_auto_approve'):
+                # inte fastnar i HITL-kön.
+                #
+                # B8 (ai-agent-core-fault-remediation): flaggan var en naken
+                # context-nyckel — vem som helst som kunde sätta
+                # `_ai_auto_approve=True` i context fick AUTO, dvs. full
+                # behörighet utan människa. Nu krävs en HMAC-signatur som
+                # binder flaggan till sessionen. Nyckeln är systemparametern
+                # `ai_agent_core.api_secret` (samma som /pi/* använder).
+                #
+                # Cron behöver INTE flaggan — den går genom
+                # select_interrupt_handler och får record-HITL. Mail/webhook
+                # signerar via `_sign_auto_approve()`.
+                if self._auto_approve_is_signed(session):
                     from odoo.addons.ai_agent_core.core.permission import (
                         PermissionEngine, PermissionMode)
                     loop_obj.permissions = PermissionEngine(
                         mode=PermissionMode.AUTO)
                     loop_obj.permissions.user_group_ids = set(tool_access_groups)
+                elif self.env.context.get('_ai_auto_approve'):
+                    _logger.warning(
+                        'AUTO-mode NEKAD: _ai_auto_approve sattes utan giltig '
+                        'signatur (session=%s). Kör vidare med normal '
+                        'behörighetsprövning.',
+                        getattr(session, 'id', None))
 
                 # HITL-handler (openai_api-vägen): pausar loopen vid
                 # godkännanden/förtydliganden istället för auto-approve.
@@ -7614,8 +7803,12 @@ class AICoworker(models.Model):
                                 f'backend={", ".join(backends)}): '
                                 f'verktygsblocket ~{before:,} → ~{after:,} '
                                 f'tokens (−{pct}%, sparat ~{saved:,}).'),
-                            'sequence': _base_seq + 2 + len(
-                                getattr(loop_obj, 'tool_history', [])),
+                            # B9: `_base_seq + 2 + len(tool_history)` antog
+                            # att verktygsraderna alltid ligger direkt efter
+                            # assistant-raden — men tool_history kan innehålla
+                            # poster som inte skrevs (okända verktyg), och då
+                            # kolliderar statistikraden med en verktygsrad.
+                            'sequence': self._next_session_sequence(session),
                             'token_input': 0,
                             'token_output': 0,
                             'sys_multiplier': 0.0,
@@ -7626,11 +7819,19 @@ class AICoworker(models.Model):
             # ── Fel-loggning (ai.coworker.error) ──
             # Skanna verktygshistoriken + resultatet för fel så de kan
             # triageras och lösas vart efter (inte bara narreras bort).
+            #
+            # A9: tool_history bär sedan 2026-10-08 TRE värden
+            # (name, preview, tool_call_id). Direkt tvåvärdes-uppackning gav
+            # ValueError vid varje körning med minst ett verktygsanrop — och
+            # felet svaldes av except:pass nedan, så den här instrumenteringen
+            # var tyst död. Läs alltid via tool_history_triples().
             try:
                 if 'ai.coworker.error' in self.env:
+                    from odoo.addons.ai_agent_core.core.loop import (
+                        tool_history_triples)
                     err_model = self.env['ai.coworker.error']
-                    for t_name, t_preview in getattr(
-                            loop_obj, 'tool_history', []):
+                    for t_name, t_preview, _t_call_id in tool_history_triples(
+                            getattr(loop_obj, 'tool_history', None)):
                         low = (t_preview or '').strip().lower()
                         if low.startswith(('error:', 'search error:',
                                            'fetch error:', 'no results found',
@@ -7658,8 +7859,12 @@ class AICoworker(models.Model):
                             'error_type': etype,
                             'message': str(result_text)[:1000],
                         })
-            except Exception:
-                pass
+            except Exception as _err_log_err:
+                # Får inte fälla turen — men får inte heller vara tyst.
+                # A9 var osynlig just för att detta var `pass`.
+                _logger.warning(
+                    'Fel-loggning (ai.coworker.error) misslyckades: %s',
+                    _err_log_err)
 
             # ── Write-verify (3.2): verifiera skrivande verktygsutfall ──
             # mot verktygets deklarativa avtal. Utan avtal → ingen åtgärd.
@@ -7677,7 +7882,10 @@ class AICoworker(models.Model):
             try:
                 usage = getattr(response, 'agent_usage', None) or []
                 if usage and self.env.get('ai.agent'):
-                    seq = len(session.session_line_ids) + 1
+                    # B10: radantalet är inte sekvensen. Räknaren stegas
+                    # per rad här — annars får alla agent_usage-rader
+                    # samma sekvens (och kolliderar med statistikraden).
+                    seq = self._next_session_sequence(session)
                     for u in usage:
                         agent = self.env['ai.agent'].search(
                             [('name', '=', u.get('agent', ''))], limit=1)
@@ -7719,7 +7927,9 @@ class AICoworker(models.Model):
                             "[Supervisor-undersökning/val]\n"
                             + narration_text[:8000]),
                         'reasoning': reasoning_text[:12000] or False,
-                        'sequence': 5,
+                        # B9: hårdkodat 5 kolliderade med _base_seq+2+i så
+                        # snart turen hade ≥3 verktygsrader. Härledd sekvens.
+                        'sequence': self._next_session_sequence(session),
                     })
                 except Exception:
                     pass

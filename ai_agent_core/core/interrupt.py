@@ -106,14 +106,19 @@ class AutoInterruptHandler(InterruptHandler):
     `ai.coworker.hitl`-post och körningen fortsätter (nekas tills vidare)
     i stället för att vänta på en människa.
 
-    OBS: tidigare returnerade `approve_tool()` alltid True — vilket
-    auto-godkände även destruktiva verktyg. Det motsade
-    hitl-dispatch-routing: en obevakad körning ska INTE kunna kringgå
-    gaten, den ska lämna ett ärende efter sig.
+    OBS: tidigare returnerade `approve_tool()` alltid True när `hitl_request`
+    var None — vilket auto-godkände även destruktiva verktyg. Det motsade
+    hitl-dispatch-routing: en obevakad körning ska INTE kunna kringgå gaten.
 
-    `hitl_request` är en callable (tool_name, risk_level, arguments) →
-    som skapar posten. Är den None (t.ex. i enhetstester av loopen)
-    behålls det gamla beteendet, så inga befintliga tester krossas.
+    B4 (ai-agent-core-fault-remediation): reservgrenen är BORTTAGEN. Saknas
+    `hitl_request` finns ingen mottagare för ärendet — då nekar vi med
+    orsaken "no approval recipient" i stället för att godkänna. Fail-closed:
+    en obevakad körning som inte kan lämna ett ärende efter sig får inte
+    heller utföra handlingen.
+
+    Konsekvens i drift: cron-körningar som anropar godkännandekrävande
+    verktyg nekas nu (tidigare släpptes de igenom). Det är avsiktligt —
+    se `docs/failures.md`.
     """
 
     def __init__(self, hitl_request=None):
@@ -123,10 +128,14 @@ class AutoInterruptHandler(InterruptHandler):
         return {"action": "timeout", "reason": "unattended execution"}
 
     async def approve_tool(self, tool_name: str, risk_level: str, arguments: dict) -> bool:
-        if self.hitl_request is None:
-            return True   # inget ärende att skapa — oförändrat beteende
         if risk_level in ('safe', 'read_only'):
             return True   # läsverktyg kräver inget godkännande
+        if self.hitl_request is None:
+            # Ingen mottagare för ärendet → ingen kan godkänna → neka.
+            _logger.warning(
+                'AutoInterruptHandler: nekar %s (%s) — no approval recipient '
+                '(hitl_request saknas i denna körväg)', tool_name, risk_level)
+            return False
         # Destruktivt/skrivande: materialisera ärendet och neka tills vidare.
         try:
             self.hitl_request(tool_name, risk_level, arguments)

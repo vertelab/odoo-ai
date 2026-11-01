@@ -256,6 +256,68 @@ I Pi Durable:s anda — explicita icke-mål är ett kontrakt:
 - **Ingen halvskriven tur.** Antingen persisteras svaret, eller så
   felmarkeras det. Aldrig tyst bortfall.
 
+### Tre felklasser vi hittat — och känner igen igen
+
+De här tre mönstren låg bakom merparten av felen i
+`ai-agent-core-fault-remediation` (2026-11). De är inte enskilda buggar utan
+*klasser*: samma form återkommer på nya ställen.
+
+**Tyst uppackning.** `for name, preview in tool_history:` när posterna sedan
+2026-10-08 bär TRE värden. Varje körning med verktygsanrop kastade
+`ValueError` — och den svaldes av en `except Exception: pass`. Effekten var
+att all felinstrumentering var död, även för fel som inte hade med saken att
+göra (`max_rounds`, `provider_error`).
+
+*Kännetecken:* en `except` som sväljer allt, kombinerad med en datastruktur
+som ändrat form. *Botemedel:* normalisera vid gränsen (`tool_history_triples`)
+och bevaka med ett strukturtest att ingen packar upp direkt.
+
+**Grind utanför loopen.** `/ai/v1/tools/run` byggde ett `ToolRegistry` och
+körde `tool.execute()` direkt — `PermissionEngine.evaluate` anropades aldrig.
+Hårda stopp (`odoo_unlink`) gällde alltså i chatten men inte på den ytan.
+
+*Kännetecken:* en ny väg till samma verktyg som inte går genom den plats där
+beslutet fattas. *Botemedel:* ett strukturtest som kräver att `evaluate`
+anropas **före** `execute` i varje väg.
+
+**Hanterare utan mottagare.** `AutoInterruptHandler()` skapades utan
+`hitl_request`. Utan mottagare fanns ingen att fråga — och koden valde då att
+godkänna. En obevakad cron-körning kunde köra destruktiva verktyg utan
+människa.
+
+*Kännetecken:* en `if x is None: return True` i en säkerhetsgrind. *Botemedel:*
+fail-closed — `return False` med orsaken i loggen — och en selektor
+(`select_interrupt_handler`) som är den ENDA platsen som väljer hanterare.
+
+---
+
+## 11. Kända begränsningar
+
+Begränsningar vi känner till, accepterar och inte åtgärdar i den här
+ändringen. De står här för att de annars upptäcks som buggar om och om igen.
+
+### 11.1 `_webui_handlers` är in-process (A7)
+
+`controllers/stream.py` håller en modulnivå-dict `_webui_handlers` som mappar
+`session_uuid → WebUIInterruptHandler`. `/ai/interrupt/poll` och
+`/ai/interrupt/respond` slår upp handlern där.
+
+**Symptom:** `{"error": "No pending interrupt for this session"}` trots att
+ett interrupt väntar — eller en poll som aldrig får något.
+
+**Orsak:** handlern registreras i den worker-process som körde `/ai/stream`.
+Med flera workers (eller efter en omstart) träffar poll/respond en annan
+process med en tom dict.
+
+**Varför det inte åtgärdas nu:** en korrekt lösning kräver delat tillstånd
+(Postgres-tabell eller Redis) plus en livscykel för städning. Det är en egen
+ändring, inte en buggfix. Tidsgränsen i A6 (30 s) gör att en felroutad poll
+inte längre håller en worker — den ger `done` och klienten poll:ar om.
+
+**Tillfällig lösning i drift:** kör en worker (`workers = 0`) om
+interrupt-flödet är kritiskt, eller acceptera att godkännanden kan kräva en
+omladdning.
+
 ---
 
 ## Referenser

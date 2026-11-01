@@ -352,7 +352,9 @@ class AIPersonalMemory(models.Model):
         semantic_results = []
         query_embedding = None
         try:
-            query_embedding = self._generate_embedding(query)
+            # Frågan är en FRÅGA, inte ett dokument — 'search_query'.
+            query_embedding = self._generate_embedding(
+                query, input_type='search_query')
         except Exception as e:
             _logger.warning('Query embedding failed: %s', e)
 
@@ -656,8 +658,75 @@ class AIPersonalMemory(models.Model):
     # ════════════════════════════════════════════
 
     @api.model
-    def _generate_embedding(self, text):
-        return self._embed_text(text)
+    @api.model
+    def _backfill_missing_embeddings(self, batch_size=100, limit=0):
+        """Fyll på vektorer för minnen som saknar dem (B11).
+
+        Rättningen i `_embed_text` gör att NYA minnen får vektor. Befintliga
+        rader som skrevs med den trasiga koden har `embedding IS NULL` och
+        blir aldrig sökbara semantiskt — bara BM25 hittar dem.
+
+        Körs som engångsskript eller från en cron. Idempotent: rader som
+        redan har vektor rörs inte.
+
+        Args:
+            batch_size: hur många rader som embeddas per anrop till
+                providern (batch-vägen är mycket billigare än en och en).
+            limit: max antal rader totalt (0 = alla).
+
+        Returns:
+            dict med 'found', 'filled', 'failed'.
+        """
+        Memory = self.sudo()
+        domain = [('embedding', '=', False)]
+        found = Memory.search_count(domain)
+        if not found:
+            _logger.info('Backfill: inga minnen saknar vektor')
+            return {'found': 0, 'filled': 0, 'failed': 0}
+
+        to_fix = Memory.search(
+            domain, limit=limit or None, order='id asc')
+        filled = 0
+        failed = 0
+        ids = to_fix.ids
+        for start in range(0, len(ids), batch_size):
+            chunk = Memory.browse(ids[start:start + batch_size])
+            texts = [(rec.content or '')[:8192] for rec in chunk]
+            try:
+                vectors = self.embed_batch(texts)
+            except Exception as e:  # noqa: BLE001 — en batch får ej stoppa allt
+                _logger.warning(
+                    'Backfill: batch-embedding misslyckades för %s rader: %s',
+                    len(chunk), e)
+                failed += len(chunk)
+                continue
+            for rec, vector in zip(chunk, vectors):
+                if not vector:
+                    failed += 1
+                    continue
+                try:
+                    rec.write({'embedding': vector})
+                    filled += 1
+                except Exception as e:  # noqa: BLE001
+                    _logger.warning(
+                        'Backfill: kunde inte skriva vektor på minne %s: %s',
+                        rec.id, e)
+                    failed += 1
+        _logger.info(
+            'Backfill klar: %s saknade vektor, %s fyllda, %s misslyckade',
+            found, filled, failed)
+        return {'found': found, 'filled': filled, 'failed': failed}
+
+    def _generate_embedding(self, text, input_type='search_document'):
+        """Embedda en text — med rätt `input_type`.
+
+        B11: `input_type` är inte kosmetiskt. Modeller som kräver det svarar
+        inte alls utan det (gatewayen hänger ~45 s och ger tyst None). Ett
+        MINNE är ett dokument ('search_document'); en SÖKFRÅGA är en fråga
+        ('search_query'). Asymmetrin är avsiktlig — den är vad modellerna
+        tränats på.
+        """
+        return self._embed_text(text, input_type=input_type)
 
     @api.model
     def embed_batch(self, texts):
@@ -686,7 +755,11 @@ class AIPersonalMemory(models.Model):
                 'Embedding (batch): ingen provider som kan embedda — '
                 '%s texter lämnas utan vektor', len(truncated))
             return [None] * len(truncated)
+        # B11: modellen måste anges — annars faller batch-vägen tillbaka på
+        # DEFAULT_EMBEDDING_MODEL, som Bifrost avvisar (401). Providerns
+        # eget `embedding_model` ska vinna.
         embeddings = emb_provider._get_embedding_batch(
+            model=emb_provider._effective_embedding_model(),
             inputs=truncated,
             input_type='search_document',
         )
@@ -704,7 +777,7 @@ class AIPersonalMemory(models.Model):
         return [None] * len(truncated)
 
     @api.model
-    def _embed_text(self, text):
+    def _embed_text(self, text, input_type='search_document'):
         """Generera embedding via AI-provider.
 
         Använder samma provider som ai.coworker använder.
@@ -719,16 +792,31 @@ class AIPersonalMemory(models.Model):
         """
         # `_get_embedding` kräver EN provider (ensure_one) — att anropa den
         # på ett tomt recordset ger "Expected singleton: ai.provider()".
-        # Skicka heller inget model-argument: konstanten
-        # DEFAULT_EMBEDDING_MODEL ('text-embedding-3-small') är den modell
-        # Bifrost avvisar (401), och ett argument slår ut providerns fält.
         provider = self.env['ai.provider'].sudo()._embedding_provider()
         if not provider:
             _logger.warning(
                 'Embedding: ingen provider kan skapa vektorer — '
                 'texten lämnas utan vektor')
             return None
-        embedding = provider._get_embedding(input=text[:8192])
+
+        # B11 (ai-agent-core-fault-remediation): två fel här gjorde att
+        # personliga minnen TYST saknade vektor.
+        #
+        #  1. `input_type` skickades aldrig. Modeller som kräver det (t.ex.
+        #     mistral-embed via Bifrost) svarar då inte alls — gatewayen
+        #     hänger i ~45 s och ger tyst None (mätt 2026-09-14). OKF-vägen
+        #     skickar 'search_document' och fungerar; den här vägen gjorde
+        #     det inte.
+        #  2. Modellen skickades aldrig, så `_get_embedding` föll tillbaka på
+        #     DEFAULT_EMBEDDING_MODEL ('text-embedding-3-small') — den modell
+        #     Bifrost avvisar med 401. Providerns EGEN `embedding_model`
+        #     hoppades alltså över.
+        #
+        # Ett minne är ett DOKUMENT som senare ska hittas av en fråga —
+        # därför 'search_document' (frågan använder 'search_query').
+        model = provider._effective_embedding_model()
+        embedding = provider._get_embedding(
+            model=model, input=text[:8192], input_type=input_type)
         if embedding and isinstance(embedding, (list, tuple)):
             # PostgreSQL vector literal: [0.1,0.2,...]
             return '[' + ','.join(str(v) for v in embedding) + ']'
@@ -883,7 +971,8 @@ Return ONLY a JSON object: {{"memory": [{{"text": "...", "category": "fact|prefe
         # coworkern (→ agent → ai.model → ai.provider), annars default.
         try:
             from odoo.addons.ai_agent_core.core.provider import (
-                ProviderFactory, get_default_provider, get_default_model_name)
+                ProviderFactory, _run_provider,
+                get_default_provider, get_default_model_name)
             from odoo.addons.ai_agent_core.core.loop import (
                 AgentLoop, AgentConfig)
             from odoo.addons.ai_agent_core.core.tools import ToolRegistry
@@ -904,7 +993,8 @@ Return ONLY a JSON object: {{"memory": [{{"text": "...", "category": "fact|prefe
                 provider=provider, tools=ToolRegistry(),
                 config=AgentConfig(model=model_name, max_rounds=1,
                                    max_tokens=1500))
-            result = asyncio.run(loop.run(prompt))
+            # B7: stäng providern — annars lämnas httpx-tasken pending.
+            result = _run_provider(loop.run(prompt), provider)
             response = (result.text or '').strip()
 
             # Modellen kan linda JSON i ```-block trots instruktionen.
@@ -1028,8 +1118,8 @@ Return ONLY a JSON object: {{"memory": [{{"text": "...", "category": "fact|prefe
                 # av except) och 'gpt-4o-mini' finns inte i installationen.
                 # Använd samma provider-kedja som resten av systemet.
                 from odoo.addons.ai_agent_core.core.provider import (
-                    ProviderFactory, get_default_provider,
-                    get_default_model_name)
+                    ProviderFactory, _run_provider,
+                    get_default_provider, get_default_model_name)
                 from odoo.addons.ai_agent_core.core.loop import (
                     AgentLoop, AgentConfig)
                 from odoo.addons.ai_agent_core.core.tools import ToolRegistry
@@ -1044,7 +1134,8 @@ Return ONLY a JSON object: {{"memory": [{{"text": "...", "category": "fact|prefe
                         model=(model_rec and model_rec._get_api_name())
                         or get_default_model_name(),
                         max_rounds=1, max_tokens=1500))
-                raw = asyncio.run(loop.run(prompt))
+                # B7: stäng providern — annars lämnas httpx-tasken pending.
+                raw = _run_provider(loop.run(prompt), provider)
                 response = (raw.text or '').strip()
                 # Modellen kan linda JSON i ```-block trots instruktionen
                 # (samma hantering som _llm_extract_facts).

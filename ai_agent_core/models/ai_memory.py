@@ -606,153 +606,62 @@ class AIMemory(models.Model):
                 'Chunksökning misslyckades för minne %s: %s', self.name, e)
             return []
 
-    def _bm25_matches(self, query):
-        """True om artefaktens search_vector matchar frågan (svensk FTS)."""
-        self.ensure_one()
-        try:
-            with self.env.cr.savepoint():
-                self.env.cr.execute("""
-                    SELECT 1 FROM ai_memory
-                    WHERE id = %s
-                      AND search_vector @@ plainto_tsquery('swedish', %s)
-                    LIMIT 1
-                """, (self.id, query))
-                return bool(self.env.cr.fetchone())
-        except Exception as exc:
-            _logger.warning('BM25-kontroll misslyckades: %s', exc)
-            return False
-
-    def _search_chunks(self, query, k=3):
-        """Hybrid sökning över chunkar: cosine + svensk BM25.
-
-        Två signaler i en fråga, samma mönster som ai.memory.mixin:s
-        _search_memory — men här söks CHUNKAR, inte rader. `limit` avser
-        chunkar: en artefakt med 900 chunkar får inte förbruka hela
-        budgeten på en enda artefakt.
-
-        Returns:
-            list[str] — chunktexter, högst `k` stycken.
-        """
-        self.ensure_one()
-        if not self.rag_ids:
-            return []
-
-        vec = None
-        try:
-            vecs = self._embed_texts([query])
-            raw = vecs[0] if vecs else None
-            # SQL-parametern ska vara en pgvector-literal, inte en Python-lista
-            if raw:
-                vec = '[' + ','.join(str(v) for v in raw) + ']'
-        except Exception as exc:
-            _logger.warning('Fråge-embedding misslyckades: %s', exc)
-
-        scored = {}
-
-        # SIGNAL 1: cosine (pgvector)
-        #
-        # Tröskeln är nödvändig: utan den returnerar cosine ALLTID de
-        # närmaste grannarna, även för en fråga som inte har någon
-        # semantisk koppling alls. Mätt 2026-10-30: frågan
-        # 'obegripligtord' gav 2 träffar mot en artefakt om avtal.
-        # Samma princip som _okf_search (memory-spec rad 87): varje signal
-        # får sin egen tröskel i sin egen enhet.
-        if vec:
-            try:
-                with self.env.cr.savepoint():
-                    self.env.cr.execute("""
-                        SELECT id, content,
-                               1 - (embedding <=> %s::vector) AS score
-                        FROM ai_memory_chunk
-                        WHERE memory_id = %s
-                          AND embedding IS NOT NULL
-                          AND 1 - (embedding <=> %s::vector) >= %s
-                        ORDER BY score DESC
-                        LIMIT %s
-                    """, (vec, self.id, vec, _CHUNK_MIN_COSINE, k * 4))
-                    for row in self.env.cr.dictfetchall():
-                        scored[row['id']] = {
-                            'content': row['content'],
-                            'score': float(row['score'] or 0.0),
-                        }
-            except Exception as exc:
-                _logger.warning(
-                    'Cosine-sökning över chunkar misslyckades: %s', exc)
-
-        # SIGNAL 2: svensk BM25 (tsvector)
-        try:
-            with self.env.cr.savepoint():
-                self.env.cr.execute("""
-                    SELECT id, content,
-                           ts_rank(search_vector,
-                                   plainto_tsquery('swedish', %s)) AS score
-                    FROM ai_memory_chunk
-                    WHERE memory_id = %s
-                      AND search_vector @@ plainto_tsquery('swedish', %s)
-                    ORDER BY score DESC
-                    LIMIT %s
-                """, (query, self.id, query, k * 4))
-                for row in self.env.cr.dictfetchall():
-                    prev = scored.get(row['id'])
-                    ts = float(row['score'] or 0.0)
-                    if prev:
-                        prev['score'] = min(1.0, prev['score'] + ts)
-                    else:
-                        scored[row['id']] = {
-                            'content': row['content'],
-                            'score': ts,
-                        }
-        except Exception as exc:
-            _logger.warning('BM25-sökning över chunkar misslyckades: %s', exc)
-
-        if not scored:
-            return []
-
-        ranked = sorted(
-            scored.values(), key=lambda r: r['score'], reverse=True)[:k]
-        return [r['content'] for r in ranked if r['content']]
-
     def _get_embeddings(self):
-        """Get a langchain Embeddings instance for FAISS.
+        """Embeddings-instans för FAISS — eller None med en begriplig orsak.
+
+        B12 (ai-agent-core-fault-remediation): den här metoden prövade
+        `hasattr(agent, 'ai_agent_llm_id')` — ett fält som inte längre finns
+        (enda förekomsten i kodbasen var raden själv). Grenen var alltså död
+        kod, och resultatet blev att varje FAISS-anrop föll tillbaka på
+        `HuggingFaceEmbeddings('sentence-transformers/all-MiniLM-L6-v2')`,
+        som **laddar ner modellen i runtime** vid första anropet — tyst, i en
+        request-tråd, utan att `langchain_community` deklareras i manifestet.
 
         Ordningen är avsiktlig och speglar `ai.provider._embedding_provider()`
         — den enda sanningen om vilken provider som kan skapa vektorer:
 
-          1. `ai.provider` (Bifrost m.fl.) via en brygga. Detta är den väg
-             som FUNGERAR i drift: providern är konfigurerad, nyckeln finns
-             och `/embeddings` svarar.
-          2. HuggingFace `sentence-transformers` som lokal fallback — men
-             paketet är INTE installerat på den här servern, så i praktiken
-             ger den alltid None.
+          1. `ai.provider` via `_provider_embeddings()`. Detta är den väg som
+             FUNGERAR i drift: providern är konfigurerad, nyckeln finns och
+             `/embeddings` svarar.
+          2. Lokal HuggingFace-modell — men bara med ett uttalat ja i
+             systemparametern `ai_agent_core.faiss_allow_download`, eftersom
+             den laddar ner hundratals MB i en request-tråd.
 
-        FYND (2026-10-27): före den här ändringen fanns bara väg 2 plus en
-        `quest_id`-bunden LLM-väg. En agent-bunden RAG (`agent_id`, utan
-        quest) hade därför INGEN fungerande embeddings-backend: varje
-        `create_vector` föll tillbaka på `memory_type='text'` och varje
-        `faiss_search` returnerade 0 träffar — tyst, med bara en varning i
-        loggen. RAG-poster kunde alltså stå som `faiss` med `chunk_count`
-        satt men 0-byte-index, utan att någonstans synas som fel.
+        Utan (1) och utan (2) returneras None med orsaken i loggen — ingen
+        nätverksåtkomst i runtime utan att någon bett om det.
         """
         try:
-            # 1. ai.provider — den konfigurerade vektorkällan (Bifrost).
             bridge = self._provider_embeddings()
             if bridge is not None:
                 return bridge
 
-            # 2. Lokal fallback (kräver sentence-transformers).
+            allow = self.env['ir.config_parameter'].sudo().get_param(
+                'ai_agent_core.faiss_allow_download', '')
+            if str(allow).lower() not in ('1', 'true', 'yes'):
+                _logger.warning(
+                    'FAISS: ingen embedding-provider konfigurerad, och '
+                    'lokal HuggingFace-nedladdning är inte tillåten '
+                    '(sätt ai_agent_core.faiss_allow_download=1 för att '
+                    'tillåta den). Minnesindexet kan inte byggas.')
+                return None
+
             from langchain_community.embeddings import HuggingFaceEmbeddings
+            _logger.info(
+                'FAISS: använder lokal HuggingFace-modell '
+                '(all-MiniLM-L6-v2) — nedladdning tillåten via '
+                'ai_agent_core.faiss_allow_download')
             return HuggingFaceEmbeddings(
                 model_name='sentence-transformers/all-MiniLM-L6-v2'
             )
 
-        except ImportError:
+        except ImportError as e:
             _logger.warning(
-                'Ingen embeddings-backend: ai.provider saknar can_embed och '
-                'sentence-transformers är inte installerat. RAG-index kan '
-                'inte byggas eller läsas — minnet faller tillbaka på text.')
+                'FAISS: embedding-backend saknas (%s) — minnesindexet kan '
+                'inte byggas. Deklarera langchain-beroendena eller '
+                'konfigurera en provider.', e)
             return None
         except Exception as e:
-            _logger.warning('Embedding init failed: %s', e)
+            _logger.warning('FAISS: embedding-init misslyckades: %s', e)
             return None
 
     def _provider_embeddings(self):

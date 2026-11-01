@@ -1074,6 +1074,20 @@ class AICoworkerSession(models.Model):
 
         Ett ANNAT svar appendas normalt (t.ex. en nyare formulering).
         Returnerar den skapade raden, eller en tom recordset vid dedup.
+
+        ── Skrivregeln "en rad bokförs en gång" (3.4) ────────────────────
+        Klienten får berika en rad — aldrig bokföra samma tokens två
+        gånger. Servern bokför numera turens verkliga usage på
+        assistant-raden (`_persist_stream_answer`, restore-webui-token-
+        usage 3.2). Klientens POST skickar dessutom ett eget
+        `token_output` (frontendens `lastUsageOutput`). Utan denna grind
+        kunde samma turs output läggas på två rader → sessionens
+        `token_sys` (och därmed budgettaket) blåstes upp.
+
+        Regeln: om den senaste assistant-raden redan är mätt
+        (`usage_reported = True`) meddelar vi klienten att usage är
+        serverägd — svaret bokförs ändå (debug/sources/tool_calls), men
+        tokenfälten lämnas orörda.
         """
         self.ensure_one()
         Line = self.env['ai.coworker.session.line'].sudo()
@@ -1083,6 +1097,12 @@ class AICoworkerSession(models.Model):
         if (role == 'assistant' and last and last.role == 'assistant'
                 and (last.content or '') == (content or '')):
             return Line.browse(0)
+        # Servern äger bokföringen: en redan mätt assistant-rad får inte
+        # skrivas om med klientens (potentiellt dubbelräknade) siffror.
+        if (role == 'assistant' and last and last.role == 'assistant'
+                and last.usage_reported):
+            token_input = 0
+            token_output = 0
         seq = 0
         if last:
             seq = (last.sequence or 0) + 1
@@ -1352,7 +1372,8 @@ class AICoworkerSession(models.Model):
         import asyncio
         try:
             from odoo.addons.ai_agent_core.core.provider import (
-                ProviderFactory, get_default_provider, get_default_model_name)
+                ProviderFactory, _run_provider,
+                get_default_provider, get_default_model_name)
             from odoo.addons.ai_agent_core.core.loop import (
                 AgentLoop, AgentConfig)
             from odoo.addons.ai_agent_core.core.tools import ToolRegistry
@@ -1381,8 +1402,9 @@ class AICoworkerSession(models.Model):
                     # uteblev. Eftermälet använder 2048; en mening behöver
                     # inte mer än så.
                     model=model_name, max_rounds=1, max_tokens=512))
-            result = asyncio.run(
-                loop.run(self._title_prompt(transcript)))
+            # B7: stäng providern — annars lämnas httpx-tasken pending.
+            result = _run_provider(
+                loop.run(self._title_prompt(transcript)), provider)
             text = (result.text or '').strip()
             # AgentLoop svarar med platshållare när modellen inte gav något
             # ("(no response)", "(max rounds…)", "error: …"). Att sätta ett
@@ -2022,7 +2044,8 @@ class AICoworkerSession(models.Model):
         import asyncio
         try:
             from odoo.addons.ai_agent_core.core.provider import (
-                ProviderFactory, get_default_provider, get_default_model_name)
+                ProviderFactory, _run_provider,
+                get_default_provider, get_default_model_name)
             from odoo.addons.ai_agent_core.core.loop import (
                 AgentLoop, AgentConfig)
             from odoo.addons.ai_agent_core.core.tools import ToolRegistry
@@ -2046,8 +2069,9 @@ class AICoworkerSession(models.Model):
                 or get_default_model_name()
             loop = AgentLoop(provider=provider, tools=ToolRegistry(), config=AgentConfig(
                 model=model_name, max_rounds=1, max_tokens=2048))
-            result = asyncio.run(
-                loop.run(self._final_summary_prompt(transcript)))
+            # B7: stäng providern — annars lämnas httpx-tasken pending.
+            result = _run_provider(
+                loop.run(self._final_summary_prompt(transcript)), provider)
             return (result.text or '').strip()[:4000] or None
         except Exception as e:
             _logger.warning(
@@ -2521,10 +2545,13 @@ class AICoworkerSession(models.Model):
                     _logger.info(
                         'Mail för session %s dispatchat externt', self.id)
                     return self
+                # B8: AUTO-mode kräver en HMAC-signatur bunden till
+                # sessionen — en naken flagga ignoreras (och loggas).
                 reply = coworker.with_context(
                     _ai_context_model='ai.coworker.session',
                     _ai_context_id=self.id,
-                    _ai_auto_approve=True).run(prompt, session=self)
+                    **coworker._sign_auto_approve(self)).run(
+                        prompt, session=self)
                 reply_text = reply or 'Klart — inget svar genererades.'
 
             if delay and delay > 0:
@@ -2641,10 +2668,11 @@ class AICoworkerSession(models.Model):
                'med odoo_search/odoo_create/odoo_write. Svara kort med vad '
                'du gjorde och recordets id.' if target else '')
         )
+        # B8: signerad AUTO-mode (se _sign_auto_approve).
         return coworker.with_context(
             _ai_context_model='ai.coworker.session',
             _ai_context_id=self.id,
-            _ai_auto_approve=True).run(prompt, session=self)
+            **coworker._sign_auto_approve(self)).run(prompt, session=self)
 
     def _process_mail_generic(self, coworker, msg_dict):
         """Generiskt mail-flöde (process/invoice_ai) — körs av coworkern själv.
@@ -2684,10 +2712,11 @@ class AICoworkerSession(models.Model):
             '— annars lämna i draft.\n'
             'Svara kort: vad du skapade, account.move-id:t och beloppet.'
         )
+        # B8: signerad AUTO-mode (se _sign_auto_approve).
         reply = coworker.with_context(
             _ai_context_model='ai.coworker.session',
             _ai_context_id=self.id,
-            _ai_auto_approve=True).run(prompt, session=self)
+            **coworker._sign_auto_approve(self)).run(prompt, session=self)
         return (
             f'Leverantörsfaktura bearbetad. Avsändare: '
             f'{partner.name if partner else sender_name or email or "okänd"}.\n'

@@ -40,6 +40,15 @@
         # base and mail, so this adds no transitive weight.
         'cron_tick',
     ],
+    # B12 (ai-agent-core-fault-remediation): FAISS-vägen i ai.memory använder
+    # langchain. Paketen fanns tidigare bara som en tyst förutsättning —
+    # saknades de föll `_get_embeddings` tillbaka på en HuggingFace-modell
+    # som laddades ner i runtime. Nu deklareras de, så en installation utan
+    # dem syns vid modulinstall i stället för i en request-tråd.
+    # `python` = importnamnet Odoo prövar.
+    'external_dependencies': {
+        'python': ['langchain_core'],
+    },
     'data': [
         'security/ai_groups.xml',
         'security/ir.model.access.csv',

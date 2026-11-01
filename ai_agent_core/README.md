@@ -622,6 +622,45 @@ räknare eller en klientbild.
 - Session-lines får sin `sequence` efter sessionens högsta värde (inte
   hårdkodat 1/2), så varje ny körning appendas efter tidigare historik.
 
+## WebUI:s token- och kostnadsvisning (restore-webui-token-usage)
+
+WebUI visar sessionens förbrukning under chatten. Två saker gäller:
+
+**Servern äger summan, klienten renderar den.** `GET /ai/threads/<id>`
+returnerar ett `usage`-block:
+
+| Fält | Betydelse |
+|---|---|
+| `token_input` / `token_output` | Summerade råa tokens |
+| `token_sys` | **DEBITERINGSGRUND** = (input+output) × `sys_multiplier`, inkl. marginal |
+| `cost_usd` | **FAKTISK kostnad** i USD (cachade tokens avräknade) |
+| `lines` | Antal debiterbara rader |
+| `unmeasured_lines` | Rader där providern inte rapporterade usage |
+
+`token_sys` och `cost_usd` slås **aldrig** ihop — det första är vad kunden
+debiteras, det andra vad det kostade oss.
+
+Klienten får inte summera `messages[].token_sys` själv: den ser inte
+`informative`-flaggan och skulle därför dubbelräkna supervisor-/konsensus-
+rader som redan bokförts på sessionen (samma filter som
+`_compute_session_line_count`).
+
+**Omätt är inte noll.** `unmeasured_lines > 0` med `token_sys = 0` visas som
+"förbrukning ej rapporterad" — en rad utan usage-rapport får aldrig se
+gratis ut.
+
+**Skrivregeln "en rad bokförs en gång".** Servern bokför turens verkliga
+usage på assistant-raden (`_persist_stream_answer`, `usage_reported =
+bool(in or out)`). Klientens `POST /ai/threads/<id>/respond` får **berika**
+raden (debug, källor, tool_calls) men inte lägga samma tokens igen — annars
+dubbelräknas `token_sys` och därmed budgettaket. `_save_client_response`
+nollställer därför tokenfälten när den senaste assistant-raden redan är
+mätt, och `thread_save_response` bokför bara det servern inte redan skrivit.
+
+⚠ `cached_tokens` påverkar bara `cost_usd` — debiteringen (`token_sys`)
+räknar hela input. Priserna fryses vid radens skapande (`cost_input_1k`/
+`cost_output_1k`) så en historisk rad visar vad den faktiskt kostade.
+
 ## Write-verify och självkorrigering
 
 Efter en skrivande verktygsoperation verifieras utfallet mot verktygets
