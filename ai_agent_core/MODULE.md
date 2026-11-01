@@ -523,3 +523,47 @@ Batchning över **cron-varvets poster**. Det kräver att
 `_okf_index_record` delas i "bygg texter" och "skriv koncept", och vinsten
 är liten: de flesta poster har **en** ägare och gör därför redan ett anrop.
 Kalendern (N ägare) löses av batchningen inom posten.
+
+## 18.0.2.0.24 — HITL-paritet mellan körvägarna
+
+`run_stream()` exekverade verktyg utan behörighetsgrind. `/ai/stream`
+(`auth='public'`) och `/ai/v1`-strömmen kunde därför köra `odoo_unlink` —
+ett hårt stopp — utan godkännande, medan samma anrop i `run()` nekades.
+
+**Rotorsak:** grinden låg inline i `run()`, inte i exekveringsvägen. Båda
+vägarna når `_execute_tool`; bara en prövade behörighet. Kommentaren i
+`_build_loop` ("alla åtta körvägar går genom _build_loop") var sann om
+*konstruktionen* och användes som om den gällde *exekveringen*.
+
+**Åtgärd (i säkerhetskritisk ordning):**
+
+1. `_build_loop(..., init_type=)` väljer hanterare via
+   `select_interrupt_handler` — den enda beslutsplatsen. `watch` och
+   `heartbeat` fördes in i den icke-interaktiva grenen; de föll tidigare i
+   en underförstådd else-gren.
+2. `chat()` skickar `init_type='chat'` + kanal/bot-användare, `powerbox()`
+   skickar `'powerbox'`. `run()` härleder typen ur kanalen
+   (`_run_init_type`).
+3. `_process_watch_sessions` och `_process_heartbeat_sessions` signerar
+   `_ai_auto_approve` som mail-vägen gör — utan signaturen blev de
+   INTERACTIVE med `handler=None`, dvs. fail-open.
+4. `AgentLoop._gate_tool_calls` är ett delat steg; `run()` och
+   `run_stream()` anropar det före `_execute_tool`. Den strömmande vägen
+   emitterar `needs_approval` per nekande.
+5. `needs_user` utan hanterare **nekar** (fail-closed). Tidigare löd
+   villkoret `and self.interrupt_handler`, så hela blocket hoppades över och
+   verktyget kördes.
+6. `max_rounds` härleds ur `max_iterations` (stream och powerbox
+   hårdkodade 10 respektive 5).
+
+**Bieffekt som fixades:** `PgVector.convert_to_cache` returnerade en
+numpy-array (`Vector._from_db` gör `astype(np.float32)`). Odoos
+`val != value` kastade då "truth value of an array is ambiguous" vid varje
+skrivning — backfill av minnes-embeddings räknade varje rad som misslyckad.
+Nu returneras alltid en lista.
+
+**Tester:** `tests/test_execution_parity.py` (13 fall). Det viktigaste är
+strukturtestet: det läser källkoden och kräver att varje anropare av
+`_execute_tool`/`_execute_tools_parallel` också anropar `_gate_tool_calls`.
+Sviten: 14 failed / 12 error av 1065 — inga nya fel mot baslinjen
+(14/14 av 1043), två `test_actionable_errors` fixade.

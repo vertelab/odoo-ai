@@ -27,6 +27,9 @@ class AICoworkerSessionLine(models.Model):
          '(coworker_id, create_date)'),
         ('ai_coworker_session_line_create_date_idx',
          '(create_date)'),
+        # Dedup-uppslagningen (pi-message-persist-dedup): session + hash.
+        ('ai_coworker_session_line_session_hash_idx',
+         '(session_id, content_hash)'),
     )
 
     def _auto_init(self):
@@ -42,6 +45,21 @@ class AICoworkerSessionLine(models.Model):
             cr.execute(
                 'CREATE INDEX IF NOT EXISTS %s ON %s %s' % (
                     name, self._table, columns))
+    # B2: sekvensen är ORDNING, inte identitet — och ordningen måste vara
+    # entydig. `_next_session_sequence` läser max och skriver max+1 utan lås,
+    # så två samtidiga skrivningar i samma session kunde få samma sekvens
+    # (dubblettraden i session 18204). Utan constraint kan historiken inte
+    # sorteras deterministiskt, och `_build_history_from_lines` kan para fel
+    # assistant-rad med fel verktygsspår.
+    #
+    # Migrationen i migrations/18.0.1.334 städar befintliga dubbletter FÖRE
+    # denna constraint läggs på — annars faller ALTER TABLE och hela
+    # uppgraderingen rullas tillbaka.
+    _sql_constraints = [
+        ('session_sequence_uniq',
+         'UNIQUE(session_id, sequence)',
+         'Sekvensen måste vara unik inom en session.'),
+    ]
 
     session_id = fields.Many2one(
         'ai.coworker.session', required=True, ondelete='cascade',
@@ -74,6 +92,14 @@ class AICoworkerSessionLine(models.Model):
         ('tool', 'Tool'),
         ('system', 'System'),
     ], required=True, default='user')
+    # Innehålls-hash för dedup (pi-message-persist-dedup D1). Pi skickar hela
+    # sin messages[] vid varje anrop; samma post får bara ge en rad. Hashen
+    # gör uppslagningen till en punktfråga i stället för en genomgång av
+    # sessionens alla rader (mätt: 34 866 rader i en session).
+    content_hash = fields.Char(
+        'Content Hash', size=32, index=True, readonly=True,
+        help='md5 av role|tool_call_id|content. Används för att dedupa '
+             'Pi-poster — samma post ska bara ge en rad per session.')
     content = fields.Text('Message Content')
     reasoning = fields.Text('Reasoning',
         help='Modellens "gråa" tänketext (reasoning_content/reasoning) som '
@@ -222,10 +248,29 @@ class AICoworkerSessionLine(models.Model):
             vals = dict(vals, informative=False)
         return vals
 
+    @api.model
+    def _content_hash(self, vals):
+        """md5 av role|tool_call_id|content — dedup-nyckeln (D1)."""
+        import hashlib
+        raw = '|'.join([
+            str(vals.get('role') or ''),
+            str(vals.get('tool_call_id') or ''),
+            str(vals.get('content') or ''),
+        ])
+        return hashlib.md5(raw.encode('utf-8')).hexdigest()
+
+    @api.model
+    def _with_content_hash(self, vals):
+        """Sätt content_hash om det inte redan är satt."""
+        if vals.get('content_hash'):
+            return vals
+        return dict(vals, content_hash=self._content_hash(vals))
+
     @api.model_create_multi
     def create(self, vals_list):
         return super().create([
-            self._strip_nul(self._normalize_informative(v))
+            self._with_content_hash(
+                self._strip_nul(self._normalize_informative(v)))
             for v in vals_list])
 
     def write(self, vals):

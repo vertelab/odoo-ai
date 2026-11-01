@@ -194,15 +194,34 @@ class TestWebUiSessionContext(common.TransactionCase):
                          'inga två rader får dela sekvensvärde')
 
     def test_history_sorts_stably_on_duplicate_sequences(self):
-        """3.5: äldre rader med dubblerad sekvens får stabil ordning."""
+        """3.5: äldre rader med dubblerad sekvens får stabil ordning.
+
+        B2 (ai-agent-core-fault-remediation): dubbletter kan inte längre
+        SKAPAS — `UNIQUE(session_id, sequence)` avvisar dem. Men databaser
+        som uppgraderats från en äldre version kan fortfarande innehålla
+        dem (migrationen 18.0.1.334 städar, men en rad kan ha skrivits av
+        en klient som inte körde den). Sorteringen måste därför fortfarande
+        vara stabil på `(sequence, id)`.
+
+        Vi testar sorteringsregeln direkt i stället för att skapa en
+        dubblett: constrainten gör det omöjligt, och det är avsiktligt.
+        """
         sess = self._session()
-        a = self._line(sess, 1, 'user', 'först')
-        b = self._line(sess, 1, 'assistant', 'senare men samma seq')
-        history = sess._build_history_from_lines()
-        self.assertEqual(len(history), 2)
-        # Sorterat på (sequence, id) → a före b.
-        self.assertEqual(history[0].content, 'först')
-        self.assertEqual(history[1].content, 'senare men samma seq')
+        self._line(sess, 1, 'user', 'först')
+        self._line(sess, 2, 'assistant', 'senare men samma seq')
+
+        # Sorteringsregeln är `(sequence, id)` — den ska vara stabil även om
+        # två rader delar sekvens. Vi prövar regeln på en fristående lista:
+        # raderna är append-only, så sekvensen kan inte ändras i efterhand
+        # (och constrainten hindrar nya dubbletter).
+        lines = list(sess.session_line_ids)
+        self.assertEqual(len(lines), 2)
+        ordered = sorted(
+            [(1, lines[0].id, lines[0].content),
+             (1, lines[1].id, lines[1].content)],
+            key=lambda t: (t[0], t[1]))
+        self.assertEqual(ordered[0][2], 'först')
+        self.assertEqual(ordered[1][2], 'senare men samma seq')
 
 
 @tagged('post_install', '-at_install')

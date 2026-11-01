@@ -119,9 +119,11 @@ class AIMemoryMixin(models.AbstractModel):
     def _embedding_column_is_vector(self):
         """Är `embedding`-kolumnen på DENNA tabell en riktig vector-kolumn?
 
-        Mixin delas av `ai.personal.memory` och `ai.company.memory`, som
-        båda deklarerar `embedding = fields.Text(...)` — Odoo skapar alltså
-        en TEXT-kolumn. `1 - (embedding <=> %s::vector)` är då ett SQL-fel,
+        Mixin delas av `ai.personal.memory` och `ai.company.memory`. Sedan
+        2026-11-01 deklarerar båda `embedding = PgVector(...)`, så kolumnen
+        är `vector(1024)` och svaret är alltid True. Kollen finns kvar för
+        att en databas som ännu inte kört migration 18.0.2.0.23 kan ha en
+        TEXT-kolumn — `1 - (embedding <=> %s::vector)` är då ett SQL-fel,
         och utan savepoint förgiftas hela requesten.
 
         Returns:

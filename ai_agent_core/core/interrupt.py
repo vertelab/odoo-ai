@@ -106,14 +106,19 @@ class AutoInterruptHandler(InterruptHandler):
     `ai.coworker.hitl`-post och körningen fortsätter (nekas tills vidare)
     i stället för att vänta på en människa.
 
-    OBS: tidigare returnerade `approve_tool()` alltid True — vilket
-    auto-godkände även destruktiva verktyg. Det motsade
-    hitl-dispatch-routing: en obevakad körning ska INTE kunna kringgå
-    gaten, den ska lämna ett ärende efter sig.
+    OBS: tidigare returnerade `approve_tool()` alltid True när `hitl_request`
+    var None — vilket auto-godkände även destruktiva verktyg. Det motsade
+    hitl-dispatch-routing: en obevakad körning ska INTE kunna kringgå gaten.
 
-    `hitl_request` är en callable (tool_name, risk_level, arguments) →
-    som skapar posten. Är den None (t.ex. i enhetstester av loopen)
-    behålls det gamla beteendet, så inga befintliga tester krossas.
+    B4 (ai-agent-core-fault-remediation): reservgrenen är BORTTAGEN. Saknas
+    `hitl_request` finns ingen mottagare för ärendet — då nekar vi med
+    orsaken "no approval recipient" i stället för att godkänna. Fail-closed:
+    en obevakad körning som inte kan lämna ett ärende efter sig får inte
+    heller utföra handlingen.
+
+    Konsekvens i drift: cron-körningar som anropar godkännandekrävande
+    verktyg nekas nu (tidigare släpptes de igenom). Det är avsiktligt —
+    se `docs/failures.md`.
     """
 
     def __init__(self, hitl_request=None):
@@ -123,10 +128,14 @@ class AutoInterruptHandler(InterruptHandler):
         return {"action": "timeout", "reason": "unattended execution"}
 
     async def approve_tool(self, tool_name: str, risk_level: str, arguments: dict) -> bool:
-        if self.hitl_request is None:
-            return True   # inget ärende att skapa — oförändrat beteende
         if risk_level in ('safe', 'read_only'):
             return True   # läsverktyg kräver inget godkännande
+        if self.hitl_request is None:
+            # Ingen mottagare för ärendet → ingen kan godkänna → neka.
+            _logger.warning(
+                'AutoInterruptHandler: nekar %s (%s) — no approval recipient '
+                '(hitl_request saknas i denna körväg)', tool_name, risk_level)
+            return False
         # Destruktivt/skrivande: materialisera ärendet och neka tills vidare.
         try:
             self.hitl_request(tool_name, risk_level, arguments)
@@ -437,6 +446,15 @@ INTERACTIVE_INIT_TYPES = (
     'openai_api', 'manual',
 )
 
+# Init-typer som körs utan någon som kan svara just nu. De får record-HITL:
+# ett ärende i godkännandekön, ingen blockering (init-type-execution-parity
+# 2.2 — watch och heartbeat saknades i tabellen och föll därför i den
+# underförstådda else-grenen, vilket gjorde dem till en oavsiktlig
+# tredje kategori: INTERACTIVE-läge med handler=None → fail-open).
+NON_INTERACTIVE_INIT_TYPES = (
+    'cron', 'mail', 'watch', 'webhook', 'heartbeat',
+)
+
 
 def select_interrupt_handler(init_type, hitl_request=None, web_ui_session=None,
                              discuss_channel=None, discuss_bot_user=None,
@@ -451,9 +469,14 @@ def select_interrupt_handler(init_type, hitl_request=None, web_ui_session=None,
       openai_api, manual) → PAUSAD HITL via OpenAI `tool_calls`
       (`OpenAIInterruptHandler` → `AgentLoopPaused`); körningen återupptas
       i samma session när svaret kommer.
-    - icke-interaktiv (cron, mail, watch, webhook) → RECORD-HITL
-      (`AutoInterruptHandler` med `hitl_request`), som skapar en
-      `ai.coworker.hitl`-post och INTE blockerar körningen.
+    - icke-interaktiv (cron, mail, watch, webhook, heartbeat) →
+      RECORD-HITL (`AutoInterruptHandler` med `hitl_request`), som skapar
+      en `ai.coworker.hitl`-post och INTE blockerar körningen.
+
+    Varje init-typ i `INIT_TYPES` måste hamna i någon av de två listorna —
+    en typ som hamnar i ingen av dem får en hanterare som nekar allt, vilket
+    ser ut som en trasig kanal i stället för ett säkerhetsbeslut.
+    `tests/test_execution_parity.py` bevakar att så inte sker.
 
     Args:
         init_type: str — coworkerns init-typ.
@@ -478,4 +501,8 @@ def select_interrupt_handler(init_type, hitl_request=None, web_ui_session=None,
                 discuss_channel, discuss_bot_user, env)
         return OpenAIInterruptHandler()
     # Icke-interaktiv: record-HITL, blockerar aldrig.
+    #
+    # En okänd init-typ hamnar också här. Det är avsiktligt fail-closed:
+    # `AutoInterruptHandler` utan `hitl_request` NEKAR (B4), så en ny
+    # init-typ som glöms bort stoppas i stället för att köra ogrindat.
     return AutoInterruptHandler(hitl_request=hitl_request)

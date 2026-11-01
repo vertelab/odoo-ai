@@ -1093,3 +1093,89 @@ class ProviderFactory:
             )
             result.append((agent_rel, provider, model))
         return result
+
+
+# ---------------------------------------------------------------------------
+# Synkron körning av provider-coroutines (B7)
+# ---------------------------------------------------------------------------
+
+def _close_provider_sync(provider):
+    """Stäng en provider från SYNKRON kod — utan att skapa en ny loop.
+
+    `aclose()` är async. Anropas den från sync-kod måste den köras någonstans.
+    Vi vill INTE skapa en ny event-loop bara för att stänga (det var hela
+    problemet: `asyncio.run()` stänger loopen men lämnade httpx-klienten
+    öppen). I stället stänger vi den underliggande httpx-klienten direkt.
+    """
+    if provider is None:
+        return
+    client = getattr(provider, '_client', None)
+    if client is None:
+        return
+    try:
+        # httpx.AsyncClient.aclose() är async — men själva stängningen av
+        # transporten kan göras synkront via transportens close(). Vi
+        # använder den privata men stabila vägen och faller tillbaka tyst.
+        transport = getattr(client, '_transport', None)
+        if transport is not None and hasattr(transport, 'close'):
+            transport.close()
+    except Exception:  # noqa: BLE001 — städning får aldrig kasta
+        pass
+    finally:
+        try:
+            provider._client = None
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def _run_provider(coro, provider=None):
+    """Kör en provider-coroutine och stäng providern — alltid.
+
+    B7 (ai-agent-core-fault-remediation): nio callsites körde
+    `asyncio.run(loop.run(prompt))` utan att stänga providern. Varje sådan
+    körning lämnade en pending httpx-connection-task efter sig, och Odoo-
+    loggen fylldes av:
+
+        Task was destroyed but it is pending!
+        task: <Task pending name='...' coro=<<async_generator_athrow ...>>
+
+    Bara `ai_coworker.py` (koncept-extraktionen) stängde korrekt, och den
+    gjorde det genom att bygga en egen `_run_and_close()`-wrapper på varje
+    ställe. Den här hjälparen är samma mönster på ett ställe.
+
+    Args:
+        coro: coroutine att köra (t.ex. ``loop.run(prompt)``).
+        provider: providern som äger httpx-klienten. Får vara None.
+
+    Returns:
+        Resultatet av coroutinen.
+
+    Raises:
+        Samma undantag som coroutinen — providern stängs ändå (finally).
+    """
+    import asyncio
+
+    async def _wrapped():
+        try:
+            return await coro
+        finally:
+            if provider is not None and hasattr(provider, 'aclose'):
+                try:
+                    await provider.aclose()
+                except Exception:  # noqa: BLE001 — städning får ej kasta
+                    _logger.debug(
+                        '_run_provider: aclose misslyckades', exc_info=True)
+
+    try:
+        running = asyncio.get_running_loop()
+    except RuntimeError:
+        running = None
+
+    if running is not None:
+        # Vi är redan i en loop (t.ex. inuti en async-väg). asyncio.run()
+        # skulle kasta RuntimeError. Kör i en egen tråd med egen loop.
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            return pool.submit(asyncio.run, _wrapped()).result()
+
+    return asyncio.run(_wrapped())

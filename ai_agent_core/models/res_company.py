@@ -275,7 +275,8 @@ class ResCompany(models.Model):
             # och gjorde knappen till en tyst no-op.
             import asyncio
             from odoo.addons.ai_agent_core.core.provider import (
-                get_default_provider, get_default_model_name)
+                _run_provider, get_default_provider,
+                get_default_model_name)
             from odoo.addons.ai_agent_core.core.loop import (
                 AgentLoop, AgentConfig)
             from odoo.addons.ai_agent_core.core.tools import ToolRegistry
@@ -292,7 +293,8 @@ class ResCompany(models.Model):
                     model=(model_rec and model_rec._get_api_name())
                     or get_default_model_name(),
                     max_rounds=1, max_tokens=2000))
-            raw = asyncio.run(loop.run(prompt))
+            # B7: stäng providern — annars lämnas httpx-tasken pending.
+            raw = _run_provider(loop.run(prompt), provider)
             response_text = (raw.text or '').strip()
 
             # Parse response

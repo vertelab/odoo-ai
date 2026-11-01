@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Pre-migration 18.0.1.328: bevara agent-koppling innan kolumnen släpps.
+"""Pre-migration 18.0.2.0.24: bevara agent-koppling innan kolumnen släpps.
 
 VARFÖR: org-goal-integrity D1 tar bort `agent_id` hårt från `ai.org.goal`.
 När modellen inte längre deklarerar fältet släpper Odoo kolumnen under
@@ -38,7 +38,7 @@ def migrate(cr, version):
     """)
     if not cr.fetchone():
         _logger.info(
-            'Pre-migration 18.0.1.328: ai_org_goal.agent_id saknas — '
+            'Pre-migration 18.0.2.0.24: ai_org_goal.agent_id saknas — '
             'inget att bevara')
         return
 
@@ -59,5 +59,5 @@ def migrate(cr, version):
     """, (NOTE_PREFIX,))
     updated = cr.rowcount
     _logger.info(
-        'Pre-migration 18.0.1.328: bevarade agent-koppling på %s mål',
+        'Pre-migration 18.0.2.0.24: bevarade agent-koppling på %s mål',
         updated)

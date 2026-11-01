@@ -221,8 +221,13 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);overflow:hid
 /* Sidebar overlay mobile */
 .sidebar-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:var(--overlay);z-index:99}
 
-/* Token info */
-.token-info{font-size:11px;color:var(--text-muted);padding:2px 16px 4px;text-align:right}
+/* Token-/kostnadsrad för sessionen (restore-webui-token-usage 4.1).
+   Två etiketter, aldrig ett ihopslaget tal: `token_sys` är
+   DEBITERING (inkl. marginal), `cost_usd` är FAKTISK kostnad. */
+.session-usage{font-size:11px;color:var(--text-muted);padding-top:4px;text-align:right;line-height:1.5}
+.session-usage .usage-part{white-space:nowrap}
+.session-usage .usage-sep{opacity:.5;padding:0 6px}
+.session-usage .usage-warn{color:var(--danger)}
 
 /* Snurrande hjul (medan agenten jobbar) */
 .ai-spinner-wrap{display:flex;align-items:center;gap:8px;padding:6px 2px;color:var(--text-muted);font-size:13px}
@@ -357,7 +362,6 @@ a.doc-name:hover{text-decoration:underline}
             <div class="welcome-desc">Ställ en fråga eller välj en agent i sidopanelen för att komma igång.</div>
         </div>
     </div>
-    <div class="token-info" id="token-info" style="display:none"></div>
 
     <!-- Interrupt dialog -->
     <div class="interrupt-dialog" id="interrupt-dialog">
@@ -396,8 +400,10 @@ a.doc-name:hover{text-decoration:underline}
         <button id="send-btn" onclick="sendMessage()">Skicka</button>
         <button id="cancel-btn" onclick="cancelStream()" class="cancel-btn">Avbryt</button>
     </div>
-    <div class="systemtoken-status" id="systemtoken-status" style="display:none;font-size:11px;color:var(--text-muted);padding-top:4px;text-align:right">
-        Session: <span id="sys-tokens">0</span> tokens
+    <div class="session-usage" id="session-usage" style="display:none">
+        <span class="usage-part" id="usage-billing"></span>
+        <span class="usage-sep" id="usage-sep" style="display:none">·</span>
+        <span class="usage-part" id="usage-cost"></span>
     </div>
     </div>
 </div>
@@ -758,6 +764,9 @@ function newThread(){
     document.getElementById('thread-edit-btn').style.display='none';
     removeImagePreview();
     document.getElementById('messages').innerHTML='';
+    // Ny tråd = ingen session: nollställ räknaren (5.3). Utan detta stod
+    // föregående tråds debitering kvar och såg ut att gälla den nya.
+    usageCache=null;renderUsage(null);
     updateWelcomeScreen();
     loadThreads();
     if(window.innerWidth<=768){toggleSidebar()}
@@ -796,6 +805,11 @@ function selectThread(id,name){
             });
         }
         scrollBottom();
+        // Sessionsvisning (5.1): tidigare rördes den aldrig här, så en
+        // nyss öppnad tråd visade FÖREGÅENDE tråds siffra (eller inget).
+        // `selectThread` har redan hela svaret — rendera usage direkt i
+        // stället för att göra ett extra anrop.
+        renderUsage(data.usage);
         if(window.innerWidth<=768){toggleSidebar()}
     });
     loadThreads()
@@ -1016,17 +1030,78 @@ function addMessageActions(htmlContent){
 }
 
 function scrollBottom(){var e=document.getElementById('messages');e.scrollTop=e.scrollHeight}
-function updateTokenInfo(){document.getElementById('token-info').textContent='Tokens: ~'+tokenCount}
+
+// ── Sessionsvisning för tokens/kostnad (restore-webui-token-usage 4.x) ──
+// Klienten RÄKNAR INTE själv. Att summera `messages[].token_sys` gav en
+// siffra som drev från servern: klienten ser inte `informative`-flaggan
+// (per-agent-spårbarhet som redan bokförts på sessionen) och räknade
+// därför dubbelt. Servern äger summan i `usage`-blocket — vi renderar den.
+//
+// Två etiketter, aldrig ett ihopslaget tal:
+//   token_sys = DEBITERING (input+output × sys_multiplier, inkl. marginal)
+//   cost_usd  = FAKTISK kostnad i USD
+// `unmeasured_lines > 0` betyder "vi vet inte", inte "noll".
+var usageCache=null;
+
+function renderUsage(usage){
+    var el=document.getElementById('session-usage');
+    var billing=document.getElementById('usage-billing');
+    var cost=document.getElementById('usage-cost');
+    var sep=document.getElementById('usage-sep');
+    if(!el||!billing||!cost||!sep)return;
+    usage=usage||null;usageCache=usage;
+    if(!usage||!usage.lines){el.style.display='none';return}
+
+    var unmeasured=usage.unmeasured_lines||0;
+    if(unmeasured&&!usage.token_sys){
+        // Omätt är inte noll — säg det i stället för att visa 0.
+        billing.className='usage-part usage-warn';
+        billing.textContent='förbrukning ej rapporterad';
+        cost.textContent='';
+        sep.style.display='none';
+    }else{
+        billing.className='usage-part';
+        billing.textContent='Debitering: '+
+            Number(usage.token_sys||0).toLocaleString('sv-SE')+' tokens';
+        if(unmeasured)billing.textContent+=' ('+unmeasured+' rad'+
+            (unmeasured===1?'':'er')+' omätt)';
+        // Kostnad visas bara när den finns — 0 USD är inte "gratis", det är
+        // "ingen prisuppgift på raderna".
+        if(usage.cost_usd>0){
+            cost.textContent='Kostnad: $'+Number(usage.cost_usd).toFixed(4)+' USD';
+            sep.style.display='inline';
+        }else{
+            cost.textContent='';
+            sep.style.display='none';
+        }
+    }
+    el.style.display='block';
+}
 
 function updateSystemtokenDisplay(){
-    if(!activeSessionId)return;
-    fetch('/ai/threads/'+activeSessionId).then(r=>r.json()).then(d=>{
-        var total=0;
-        if(d.messages){d.messages.forEach(function(m){if(m.token_sys)total+=m.token_sys})}
-        var el=document.getElementById('systemtoken-status');
-        var sp=document.getElementById('sys-tokens');
-        if(el&&sp&&total>0){sp.textContent=total.toLocaleString();el.style.display='block'}
+    if(!activeSessionId){renderUsage(null);return}
+    var want=activeSessionId;
+    fetch('/ai/threads/'+want).then(r=>r.json()).then(d=>{
+        // Tråden kan ha hunnit bytas medan anropet låg i luften.
+        if(String(activeSessionId)!==String(want))return;
+        renderUsage(d&&d.usage);
     }).catch(function(){})
+}
+
+// Löpande turräknare medan strömmen pågår (5.4). Uppmärkt som ESTIMAT —
+// den ersätts av serverns siffror när `done` kommit och tråden laddats om.
+function updateTokenInfo(){
+    var el=document.getElementById('session-usage');
+    var billing=document.getElementById('usage-billing');
+    var cost=document.getElementById('usage-cost');
+    var sep=document.getElementById('usage-sep');
+    if(!el||!billing||!cost||!sep)return;
+    if(!streaming){renderUsage(usageCache);return}
+    billing.className='usage-part';
+    billing.textContent='Pågår: ~'+tokenCount.toLocaleString('sv-SE')+' tokens';
+    cost.textContent='';
+    sep.style.display='none';
+    el.style.display='block';
 }
 
 function sendMessage(){
@@ -1175,14 +1250,26 @@ function finishStream(){
             // (web-ui-stream-turn-persistens 2.1) — denna POST berikar
             // raden med debug/källor/tool_calls och riktig token-usage.
             // Servern dedupar identiskt innehåll (3.1), så inget dubbleras.
-            if(activeSessionId&&(txt||currentDebugText)){
-                // Riktig usage från SSE done-händelsen (providerns
-                // usage-rapport); fallback till estimat om den saknas.
-                var realInput=lastUsageInput||Math.round(txt.length/4);
-                var realOutput=lastUsageOutput||tokenCount;
+            // Sessionsvisningen uppdateras ALLTID (5.2) — den hängde
+            // tidigare enbart på POST:en nedan, som i sin tur bara kördes
+            // när turen hade visningsbart innehåll. Ett tomt svar (t.ex.
+            // providerns "length"-avslut) uppdaterade därför aldrig
+            // siffrorna, trots att servern bokfört raden.
+            if(activeSessionId){
+                // Skicka usage bara när vi har en RIKTIG siffra från
+                // providern (SSE `done`). Utan den lämnar vi fälten tomma
+                // och låter servern avgöra — ett gissat estimat ska inte
+                // bokföras som om det vore mätt (§ usage_reported).
+                var usageBody={content:txt||'(inget svar)',model_real:selectedModel||'web-chat',debug:currentDebugText||'',sources:currentSources,tool_calls:currentToolCalls};
+                if(lastUsageInput)usageBody.token_input=lastUsageInput;
+                if(lastUsageOutput)usageBody.token_output=lastUsageOutput;
+                // Servern dedupar och äger bokföringen ("en rad bokförs en
+                // gång"), så POST:en berikar bara raden med debug/källor.
                 fetch('/ai/threads/'+activeSessionId+'/respond',{method:'POST',headers:{'Content-Type':'application/json'},
-                    body:JSON.stringify({content:txt||'(inget svar)',token_input:realInput,token_output:realOutput,model_real:selectedModel||'web-chat',debug:currentDebugText||'',sources:currentSources,tool_calls:currentToolCalls})})
-                    .then(r=>r.json()).then(d=>{updateSystemtokenDisplay()})
+                    body:JSON.stringify(usageBody)})
+                    .then(function(r){return r.json()})
+                    .catch(function(){return null})
+                    .then(function(){updateSystemtokenDisplay()});
             }
         }
     }

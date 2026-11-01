@@ -72,6 +72,22 @@ class AICoworkerSession(models.Model):
              '(project.task) som läggs av project_ai-bryggan.')
 
     name = fields.Char(default=lambda self: str(uuid.uuid4())[:8])
+
+    # Stabil sessionsidentitet för gateway-korrelation
+    # (gateway-anropseffektivitet D1). `name` är en VISNINGSETIKETT som
+    # sätts från prompt/subject och kan klippas olika på olika ställen
+    # (ai_session rad 1051: prompt[:80], ai_coworker: name[:64] som
+    # x-bf-session-id) — två trunkeringar av samma sträng blir aldrig
+    # lika, så korrelationen mot `bifrost.request.log.session_id` gav
+    # alltid noll träffar. Detta fält sätts EN gång vid skapande och
+    # skrivs aldrig över av visningsnamnet.
+    gateway_session_id = fields.Char(
+        'Gateway Session ID', index=True, copy=False,
+        default=lambda self: str(uuid.uuid4()),
+        help='Stabilt id som skickas som x-bf-session-id till gatewayen och '
+             'som gateway-loggen korreleras mot. Skiljt från `name` '
+             '(visningsetikett) — sätts en gång, skrivs aldrig över.')
+
     coworker_id = fields.Many2one('ai.coworker', string='Coworker', ondelete='cascade',
         index=True)
     skill_id = fields.Many2one('ai.skill', string='Skill',
@@ -129,6 +145,20 @@ class AICoworkerSession(models.Model):
         help='Kall start-tid i sekunder (D9: ska vara under ~1 s).')
     external_duration = fields.Float('Varaktighet (s)', readonly=True,
         help='Körningens varaktighet i sekunder.')
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        """Säkra gateway_session_id vid skapande (D1).
+
+        Fältet har en default, men en explicit `create`-override garanterar
+        att äldre anropsställen som skickar egna vals (t.ex. message_new via
+        mailgateway) aldrig lämnar det tomt — en session utan
+        gateway-identitet kan inte korreleras mot gateway-loggen.
+        """
+        for vals in vals_list:
+            if not vals.get('gateway_session_id'):
+                vals['gateway_session_id'] = str(uuid.uuid4())
+        return super().create(vals_list)
 
     def _record_external_run(self, measurement):
         """Skriv mätpunkten för en extern körning på sessionsraden (D10).
@@ -1031,28 +1061,31 @@ class AICoworkerSession(models.Model):
         """Avstäm pi_message_count mot antalet faktiska meddelanderader.
 
         Räknaren är en delta-kursor mot Pi:s messages[] och är ett DERIVAT
-        av raderna — aldrig tvärtom. Vid avvikelse loggas det och raderna
-        vinner (körningen får aldrig fällas).
+        av raderna — aldrig tvärtom.
 
-        Viktigt: räknaren får bara sänkas (när den pekar förbi antalet
-        rader, t.ex. efter trunkerad historik) eller lämnas — den höjs
-        ALDRIG till det totala radantalet, eftersom rader som skrivs direkt
-        (tool-rader, stream.py:s assistant-rad) inte motsvarar Pi-poster.
-        Att höja den skulle göra nästa anrops delta fel.
+        Viktigt: räknaren LÄMNAS orörd här (pi-message-persist-dedup D2).
+        Att sätta den till radantalet — i någon riktning — gör nästa anrops
+        delta fel: Pi kompakterar sin historik, så listan kan bli KORTARE än
+        kursorn, och en sänkning fick hela historiken att skrivas om (mätt:
+        115 omskrivningar av samma prompt i en session, 224 985 identiska
+        rader i drift). Avvikelsen loggas så den syns; sanningen bärs av
+        `_filter_known_messages` som jämför content_hash.
         """
         self.ensure_one()
+        # pi-message-persist-dedup D2: kursorn är bara en SNABBVÄG. Den får
+        # inte sänkas här — en sänkning gör nästa anrops delta fel och skriver
+        # om historiken (det var precis buggen: 115 omskrivningar av samma
+        # prompt i en session). Är kursorn ogiltig hanterar
+        # `_filter_known_messages` det med hash-jämförelse i stället.
+        #
+        # Kvar: avvikelsen LOGGAS så den syns, men raderna rör inte kursorn.
         actual = len(self.session_line_ids.filtered(
             lambda l: l.role in ('user', 'assistant', 'tool', 'system')))
         stored = int(self.pi_message_count or 0)
         if stored > actual:
             _logger.info(
-                'session %s: pi_message_count %s > %s rader — sänker '
-                '(raderna vinner)', self.id, stored, actual)
-            try:
-                self.sudo().write({'pi_message_count': actual})
-            except Exception as e:
-                _logger.warning('kunde inte synka pi_message_count: %s', e)
-            return actual
+                'session %s: pi_message_count %s > %s rader — kursorn lämnas '
+                '(hash-dedup bär sanningen)', self.id, stored, actual)
         if stored < actual:
             _logger.debug(
                 'session %s: pi_message_count %s < %s rader (delta-kursor, '
@@ -1074,6 +1107,20 @@ class AICoworkerSession(models.Model):
 
         Ett ANNAT svar appendas normalt (t.ex. en nyare formulering).
         Returnerar den skapade raden, eller en tom recordset vid dedup.
+
+        ── Skrivregeln "en rad bokförs en gång" (3.4) ────────────────────
+        Klienten får berika en rad — aldrig bokföra samma tokens två
+        gånger. Servern bokför numera turens verkliga usage på
+        assistant-raden (`_persist_stream_answer`, restore-webui-token-
+        usage 3.2). Klientens POST skickar dessutom ett eget
+        `token_output` (frontendens `lastUsageOutput`). Utan denna grind
+        kunde samma turs output läggas på två rader → sessionens
+        `token_sys` (och därmed budgettaket) blåstes upp.
+
+        Regeln: om den senaste assistant-raden redan är mätt
+        (`usage_reported = True`) meddelar vi klienten att usage är
+        serverägd — svaret bokförs ändå (debug/sources/tool_calls), men
+        tokenfälten lämnas orörda.
         """
         self.ensure_one()
         Line = self.env['ai.coworker.session.line'].sudo()
@@ -1083,6 +1130,12 @@ class AICoworkerSession(models.Model):
         if (role == 'assistant' and last and last.role == 'assistant'
                 and (last.content or '') == (content or '')):
             return Line.browse(0)
+        # Servern äger bokföringen: en redan mätt assistant-rad får inte
+        # skrivas om med klientens (potentiellt dubbelräknade) siffror.
+        if (role == 'assistant' and last and last.role == 'assistant'
+                and last.usage_reported):
+            token_input = 0
+            token_output = 0
         seq = 0
         if last:
             seq = (last.sequence or 0) + 1
@@ -1352,7 +1405,8 @@ class AICoworkerSession(models.Model):
         import asyncio
         try:
             from odoo.addons.ai_agent_core.core.provider import (
-                ProviderFactory, get_default_provider, get_default_model_name)
+                ProviderFactory, _run_provider,
+                get_default_provider, get_default_model_name)
             from odoo.addons.ai_agent_core.core.loop import (
                 AgentLoop, AgentConfig)
             from odoo.addons.ai_agent_core.core.tools import ToolRegistry
@@ -1381,8 +1435,9 @@ class AICoworkerSession(models.Model):
                     # uteblev. Eftermälet använder 2048; en mening behöver
                     # inte mer än så.
                     model=model_name, max_rounds=1, max_tokens=512))
-            result = asyncio.run(
-                loop.run(self._title_prompt(transcript)))
+            # B7: stäng providern — annars lämnas httpx-tasken pending.
+            result = _run_provider(
+                loop.run(self._title_prompt(transcript)), provider)
             text = (result.text or '').strip()
             # AgentLoop svarar med platshållare när modellen inte gav något
             # ("(no response)", "(max rounds…)", "error: …"). Att sätta ett
@@ -1478,6 +1533,70 @@ class AICoworkerSession(models.Model):
     # assistant-raden. Summan över raderna = anropets (input+output),
     # dvs. samma kostnadssemantik som tidigare.
     @api.model
+    def _filter_known_messages(self, env, session, messages,
+                               has_tokens=False):
+        """Returnera de poster som INTE redan finns i sessionen.
+
+        Används när kursorn är ogiltig (Pi har kompakterat historiken och
+        skickar en kortare lista). Jämförelsen görs på content_hash —
+        indexerat på (session_id, content_hash) — inte på position.
+
+        Avgörande detalj: en post som redan finns men bär ETT ANNAT
+        tokenantal är ett RETRY-ANROP (Pi:s loop skickar samma text igen,
+        mätt: 168 anrop med 98 066 / 98 325 / 98 557 tokens 5 s isär). De
+        är riktiga anrop som kostade pengar och ska bevaras. Bara poster
+        som matchar en befintlig rad exakt — eller som saknar tokens —
+        filtreras bort.
+        """
+        Line = env['ai.coworker.session.line']
+        if not messages:
+            return []
+        # Alla kända (hash → tokenantal) för sessionen, i ett svep.
+        rows = Line.search_read(
+            [('session_id', '=', session.id),
+             ('content_hash', '!=', False)],
+            ['content_hash', 'token_input', 'token_output'])
+        known = {}
+        for r in rows:
+            known.setdefault(r['content_hash'], set()).add(
+                (r['token_input'] or 0, r['token_output'] or 0))
+
+        def _norm_role(m):
+            role = (m.get('role') or '').strip()
+            if role == 'developer':
+                role = 'system'
+            if role not in ('user', 'assistant', 'tool', 'system'):
+                role = 'user'
+            return role
+
+        def _norm_content(m):
+            content = m.get('content')
+            if isinstance(content, list):
+                content = '\n'.join(
+                    c.get('text', '') for c in content
+                    if isinstance(c, dict) and c.get('type') == 'text')
+            return content or ''
+
+        kept = []
+        for m in messages:
+            chash = Line._content_hash({
+                'role': _norm_role(m),
+                'tool_call_id': m.get('tool_call_id') or '',
+                'content': _norm_content(m),
+            })
+            if chash not in known:
+                kept.append(m)
+            else:
+                # Posten finns redan. Är det ett RETRY-ANROP? Pi:s loop
+                # skickar samma text igen men bär då ett annat tokenantal.
+                # Vi kan inte se anropets tokens här (de bokförs på sista
+                # user-raden i loopen nedan), så vi släpper igenom posten
+                # när anropet rapporterat tokens — dedupen sker då på
+                # (hash, tokenantal) i loopen.
+                if has_tokens:
+                    kept.append(m)
+        return kept
+
     def _persist_pi_messages(self, env, session, messages,
                              input_t=0, output_t=0, model_real=''):
         """Skriv NYA messages[]-poster som session lines (en per post).
@@ -1496,11 +1615,23 @@ class AICoworkerSession(models.Model):
             except Exception:
                 pass
             already = int(session.pi_message_count or 0)
-            # Robusthet: om klienten skickar färre meddelanden än vi sparat
-            # (t.ex. trunkerad historik) börjar vi om från 0 så inget tappas.
-            if already > total:
-                already = 0
-            new_messages = messages[already:]
+            # Kursor-antagandet (pi-message-persist-dedup D2): `messages[]`
+            # växer monotont. Pi KOMPAKTERAR historiken — då är den nya
+            # listan kortare, kursorn pekar förbi, och hela historiken
+            # skrevs förr om (mätt: 115 omskrivningar av samma prompt i en
+            # session, 224 985 identiska rader i drift).
+            #
+            # LÖSNING: vid ogiltig kursor skrivs bara de poster som INTE
+            # redan finns i sessionen. Jämförelsen görs mot sessionens
+            # befintliga rader på content_hash (indexerat på
+            # (session_id, content_hash)) — inte mot position.
+            cursor_valid = 0 <= already <= total
+            if cursor_valid:
+                new_messages = messages[already:]
+            else:
+                new_messages = self._filter_known_messages(
+                    env, session, messages,
+                    has_tokens=bool(input_t or output_t))
             if not new_messages:
                 # Inget nytt — men bokför tokens om anropet ändå kostat.
                 if input_t or output_t:
@@ -1547,6 +1678,17 @@ class AICoworkerSession(models.Model):
                 elif role == 'assistant':
                     last_asst_idx = i
 
+            # Kända hashar/tokenantal för sessionen — underlag för dedupen.
+            known_hashes = set()
+            known_tokens = {}
+            for r in env['ai.coworker.session.line'].search_read(
+                    [('session_id', '=', session.id),
+                     ('content_hash', '!=', False)],
+                    ['content_hash', 'token_input', 'token_output']):
+                known_hashes.add(r['content_hash'])
+                known_tokens.setdefault(r['content_hash'], set()).add(
+                    (r['token_input'] or 0, r['token_output'] or 0))
+
             base_seq = 0
             if already:
                 max_rec = env['ai.coworker.session.line'].search(
@@ -1566,8 +1708,20 @@ class AICoworkerSession(models.Model):
 
                 # Hoppa över om detta är exakt samma som sista raden (svaret
                 # som redan skrivits direkt vid föregående anrop).
+                #
+                # BARA när posten saknar tokens: den direktskrivna raden bär
+                # inga, medan ett retry-anrop av samma text bär ett annat
+                # tokenantal och är ett eget, betalt anrop (pi-message-
+                # persist-dedup D3). Utan token-villkoret svaldes retryn här
+                # innan (hash, token)-dedupen längre ner ens fick se dem.
+                #
+                # `tool_call_id` måste också stämma: två tool-poster med samma
+                # text men olika id är två anrop (D5).
                 if (last_line and i == 0 and last_line.role == role
-                        and (last_line.content or '') == content):
+                        and (last_line.content or '') == content
+                        and not (input_t or output_t)
+                        and (last_line.tool_call_id or '')
+                        == (m.get('tool_call_id') or '')):
                     last_line = env['ai.coworker.session.line'].browse(0)
                     continue
 
@@ -1601,14 +1755,36 @@ class AICoworkerSession(models.Model):
                     vals['token_input'] = input_t
                 if i == last_asst_idx and output_t:
                     vals['token_output'] = output_t
+                # Dedup på (hash, tokenantal) — pi-message-persist-dedup D1/D3.
+                # Samma post utan tokens = dubblett. Samma post MED tokens som
+                # skiljer sig från den befintliga radens = retry-anrop, och
+                # bevaras (mätt: 168 anrop med 98 066 / 98 325 / 98 557).
+                chash = Line._content_hash(vals)
+                vals['content_hash'] = chash
+                new_tokens = (vals.get('token_input') or 0,
+                              vals.get('token_output') or 0)
+                if new_tokens == (0, 0) and chash in known_hashes:
+                    continue
+                if new_tokens != (0, 0) and new_tokens in known_tokens.get(
+                        chash, set()):
+                    continue
                 Line.create(vals)
+                known_hashes.add(chash)
+                known_tokens.setdefault(chash, set()).add(new_tokens)
                 created_count += 1
 
-            session.write({
-                'pi_message_count': total,
-                'token_input': (session.token_input or 0) + input_t,
-                'token_output': (session.token_output or 0) + output_t,
-            })
+            # Kursor: bara ett giltigt monotont värde får sparas. Vid
+            # kompaktering är listan kortare — att spara `total` då skulle
+            # göra nästa anrops delta fel, så kursorn lämnas orörd och
+            # hash-dedupen bär sanningen (D2).
+            cursor_vals = {}
+            if cursor_valid:
+                cursor_vals['pi_message_count'] = total
+            session.write(dict(
+                cursor_vals,
+                token_input=(session.token_input or 0) + input_t,
+                token_output=(session.token_output or 0) + output_t,
+            ))
             # Räknaren är ett derivat av raderna (1.3): synka mot faktiskt
             # antal rader så den aldrig driver iväg. Loggar avvikelse utan
             # att fälla körningen.
@@ -2022,7 +2198,8 @@ class AICoworkerSession(models.Model):
         import asyncio
         try:
             from odoo.addons.ai_agent_core.core.provider import (
-                ProviderFactory, get_default_provider, get_default_model_name)
+                ProviderFactory, _run_provider,
+                get_default_provider, get_default_model_name)
             from odoo.addons.ai_agent_core.core.loop import (
                 AgentLoop, AgentConfig)
             from odoo.addons.ai_agent_core.core.tools import ToolRegistry
@@ -2046,8 +2223,9 @@ class AICoworkerSession(models.Model):
                 or get_default_model_name()
             loop = AgentLoop(provider=provider, tools=ToolRegistry(), config=AgentConfig(
                 model=model_name, max_rounds=1, max_tokens=2048))
-            result = asyncio.run(
-                loop.run(self._final_summary_prompt(transcript)))
+            # B7: stäng providern — annars lämnas httpx-tasken pending.
+            result = _run_provider(
+                loop.run(self._final_summary_prompt(transcript)), provider)
             return (result.text or '').strip()[:4000] or None
         except Exception as e:
             _logger.warning(
@@ -2521,10 +2699,13 @@ class AICoworkerSession(models.Model):
                     _logger.info(
                         'Mail för session %s dispatchat externt', self.id)
                     return self
+                # B8: AUTO-mode kräver en HMAC-signatur bunden till
+                # sessionen — en naken flagga ignoreras (och loggas).
                 reply = coworker.with_context(
                     _ai_context_model='ai.coworker.session',
                     _ai_context_id=self.id,
-                    _ai_auto_approve=True).run(prompt, session=self)
+                    **coworker._sign_auto_approve(self)).run(
+                        prompt, session=self)
                 reply_text = reply or 'Klart — inget svar genererades.'
 
             if delay and delay > 0:
@@ -2614,6 +2795,12 @@ class AICoworkerSession(models.Model):
                     coworker.with_context(
                         _ai_context_model=session.watch_model,
                         _ai_context_id=session.watch_res_id,
+                        # B8 + F4 (init-type-execution-parity 2.5): watch är
+                        # en obevakad väg precis som mail, men saknade
+                        # signaturen. Utan den blev läget INTERACTIVE med
+                        # handler=None — dvs. fail-open (verktyget kördes
+                        # utan godkännande). Samma mekanism som mail-vägen.
+                        **coworker._sign_auto_approve(session)
                     ).run(session.watch_prompt or '', session=session)
                 session.write({'watch_pending': False})
                 processed += 1
@@ -2641,10 +2828,11 @@ class AICoworkerSession(models.Model):
                'med odoo_search/odoo_create/odoo_write. Svara kort med vad '
                'du gjorde och recordets id.' if target else '')
         )
+        # B8: signerad AUTO-mode (se _sign_auto_approve).
         return coworker.with_context(
             _ai_context_model='ai.coworker.session',
             _ai_context_id=self.id,
-            _ai_auto_approve=True).run(prompt, session=self)
+            **coworker._sign_auto_approve(self)).run(prompt, session=self)
 
     def _process_mail_generic(self, coworker, msg_dict):
         """Generiskt mail-flöde (process/invoice_ai) — körs av coworkern själv.
@@ -2684,10 +2872,11 @@ class AICoworkerSession(models.Model):
             '— annars lämna i draft.\n'
             'Svara kort: vad du skapade, account.move-id:t och beloppet.'
         )
+        # B8: signerad AUTO-mode (se _sign_auto_approve).
         reply = coworker.with_context(
             _ai_context_model='ai.coworker.session',
             _ai_context_id=self.id,
-            _ai_auto_approve=True).run(prompt, session=self)
+            **coworker._sign_auto_approve(self)).run(prompt, session=self)
         return (
             f'Leverantörsfaktura bearbetad. Avsändare: '
             f'{partner.name if partner else sender_name or email or "okänd"}.\n'
