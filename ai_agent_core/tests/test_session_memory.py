@@ -150,16 +150,22 @@ class TestSessionMemory(common.TransactionCase):
 
     # ── 1.3 pi_message_count som derivat ───────────────────────────────
 
-    def test_counter_corrected_down_when_ahead_of_lines(self):
-        """Räknare som pekar förbi antalet rader sänks (raderna vinner)."""
+    def test_counter_left_alone_when_ahead_of_lines(self):
+        """Räknare som pekar förbi antalet rader lämnas (pi-message-persist-dedup D2).
+
+        Kursorn är en snabbväg mot Pi:s messages[], inte ett derivat av
+        radantalet. Att sänka den gjorde nästa anrops delta fel och skrev om
+        historiken — det var buggen (115 omskrivningar av samma prompt i en
+        session). En ogiltig kursor hanteras i stället av hash-dedupen.
+        """
         sess = self._new_session(pi_message_count=99)
         self.Line.create({
             'session_id': sess.id, 'role': 'user', 'content': 'a',
             'sequence': 1,
         })
         result = sess._sync_pi_message_count()
-        self.assertEqual(result, 1)
-        self.assertEqual(sess.pi_message_count, 1)
+        self.assertEqual(result, 99, 'kursorn lämnas orörd')
+        self.assertEqual(sess.pi_message_count, 99)
 
     def test_counter_not_raised_above_lines(self):
         """Räknare som ligger under radantalet lämnas (delta-kursor)."""

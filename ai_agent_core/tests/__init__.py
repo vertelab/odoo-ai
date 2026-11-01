@@ -49,6 +49,9 @@ from . import test_use_cases
 from . import test_channel
 from . import test_pwa_push_triggers
 from . import test_pi_session_link
+
+# pi-message-persist-dedup: samma Pi-post ger en rad, retry-anrop bevaras.
+from . import test_pi_message_dedup
 # tools/run coworker-kontext (T/11533): steg 1-prioritering + de
 # separerade felmeddelandena (Unknown tool vs not available).
 from . import test_tools_run_coworker_context
