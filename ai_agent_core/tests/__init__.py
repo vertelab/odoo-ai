@@ -54,6 +54,8 @@ from . import test_pi_session_link
 from . import test_gateway_session_identity
 # Katalogcache + circuit breaker (gateway-anropseffektivitet D2-D4).
 from . import test_gateway_catalog_breaker
+# pi-message-persist-dedup: samma Pi-post ger en rad, retry-anrop bevaras.
+from . import test_pi_message_dedup
 # tools/run coworker-kontext (T/11533): steg 1-prioritering + de
 # separerade felmeddelandena (Unknown tool vs not available).
 from . import test_tools_run_coworker_context
