@@ -51,6 +51,10 @@ from . import test_hitl_routing
 from . import test_partner_enrichment
 from . import test_use_cases
 from . import test_channel
+# Karaktäriseringstester för kanalerna (channel-adapter-wiring 1.1-1.4):
+# beteendet FÖRE migreringen till process_item(), oförändrat efter.
+from . import test_mail_channel_characterization
+from . import test_chat_channel_characterization
 from . import test_pwa_push_triggers
 from . import test_pi_session_link
 # Gateway-sessionsidentiteten (gateway-anropseffektivitet D1): stabilt id
