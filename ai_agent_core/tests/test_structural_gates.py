@@ -19,6 +19,15 @@ Två grindar bor i den här filen, med var sin undantagslista:
    ``core/``-klassen alls?".
 
 Filen är gemensam med flit: två AST-grindar i två filer hade glidit isär.
+
+Dessutom bor två grindar som bevakar *mekanismer* i ``core/``:
+
+3. **Tysta ``except``** (``test_silent_excepts_are_labelled``)
+   — ägs av ``structural-discipline-gates``.
+
+4. **Trovärdighetsmärkningen** (``test_web_tools_are_untrusted``)
+   — ägs av ``untrusted-tool-output``. Frågan är "är ett verktyg som når
+   internet märkt som otrovärdigt?".
 """
 
 import ast
@@ -547,6 +556,128 @@ class TestDetectRecordFallbackLogging(TransactionCase):
         self.assertEqual(
             len(self._new_rows(before_ids)), 1,
             'källan 3 kastade och ska ha loggats en gång')
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Grind 5 — trovärdighetsmärkningen (untrusted-tool-output 2.4)
+# ──────────────────────────────────────────────────────────────────────
+
+#: Förmågor som betyder att verktyget når internet och därför returnerar
+#: otrovärdigt innehåll. Ett verktyg med någon av dessa ska ha
+#: ``trust="untrusted"``.
+WEB_CAPABILITIES = frozenset({'web'})
+
+#: Verktyg som når internet UTAN att bära `web`-förmågan. Grinden kan inte
+#: se dem i `capabilities`, så de listas här med sitt skäl — annars vore
+#: listan tom och grinden hade bara fångat den dag någon råkar sätta rätt
+#: förmåga på ett verktyg som redan är märkt.
+#:
+#: `browser_navigate` bär `browser` (den går via NATS till en Pi-agent) och
+#: returnerar sidtext — samma klass av innehåll som `fetch_url`.
+WEB_TOOLS_WITHOUT_CAPABILITY = {
+    'browser_navigate': 'hämtar sidtext via en webbläsare (capability: browser)',
+}
+
+
+def _builtin_tool_trust():
+    """``{verktygsnamn: (trust, capabilities)}`` för ``builtin_tools()``.
+
+    Läser den riktiga registreringen i stället för källkoden: grinden ska
+    bevaka vad ett verktyg FAKTISKT får, inte vad som står i en docstring.
+    """
+    from odoo.addons.ai_agent_core.core.tools import builtin_tools
+
+    return {
+        tool.name: (getattr(tool, 'trust', 'tool'), set(tool.capabilities or []))
+        for tool in builtin_tools()
+    }
+
+
+@tagged('post_install', '-at_install')
+class StructuralGateToolTrust(TransactionCase):
+    """Grind: ett verktyg som når internet ska vara märkt ``untrusted``.
+
+    Märkningen sätts vid verktygets definition (untrusted-tool-output D1).
+    Glöms den bort får agenten webinnehåll i kontexten utan inramning — och
+    det syns ingenstans. Grinden gör glömskan till ett rött test.
+    """
+
+    def test_web_tools_are_untrusted(self):
+        """Varje verktyg med ``web``-förmåga ska ha ``trust="untrusted"``."""
+        tools = _builtin_tool_trust()
+        offenders = [
+            '%s (trust=%r)' % (name, trust)
+            for name, (trust, caps) in sorted(tools.items())
+            if caps & WEB_CAPABILITIES and trust != 'untrusted'
+        ]
+        self.assertFalse(
+            offenders,
+            'Verktyg med web-förmåga som inte är märkta som otrovärdiga. '
+            'Sätt trust="untrusted" på Tool(...) — annars går deras '
+            'resultat in i kontexten utan inramning:\n  '
+            + '\n  '.join(offenders),
+        )
+
+    def test_known_web_tools_are_untrusted(self):
+        """De kända internetverktygen är märkta, även utan `web`-förmåga."""
+        tools = _builtin_tool_trust()
+        expected = {
+            'odoo_web_search', 'odoo_fetch_url', 'news_fetch', 'news_digest',
+        } | set(WEB_TOOLS_WITHOUT_CAPABILITY)
+        missing = sorted(
+            name for name in expected
+            if name not in tools or tools[name][0] != 'untrusted'
+        )
+        self.assertFalse(
+            missing,
+            'Dessa internetverktyg saknas eller är inte märkta '
+            'trust="untrusted": %s' % missing,
+        )
+
+    def test_odoo_tools_stay_trusted_as_data(self):
+        """Odoo-data är ``tool``, inte ``untrusted`` och inte ``trusted``.
+
+        Att slå ihop ``tool`` med ``untrusted`` hade gett varje
+        `odoo_search` samma behandling som en hämtad webbsida; att slå ihop
+        den med ``trusted`` hade gett den systempromptens auktoritet.
+        """
+        tools = _builtin_tool_trust()
+        for name in ('odoo_search', 'describe_model', 'okf_search',
+                     'graph_query'):
+            self.assertIn(name, tools, '%s saknas i builtin_tools()' % name)
+            self.assertEqual(
+                tools[name][0], 'tool',
+                '%s ska vara trust="tool" (data, inte otrovärdigt)' % name)
+
+    def test_default_trust_is_tool(self):
+        """Ett verktyg som inte sätter ``trust`` är ``tool``."""
+        from odoo.addons.ai_agent_core.core.tools import Tool
+
+        tool = Tool(
+            name='grindens_default',
+            description='testverktyg',
+            parameters={'type': 'object', 'properties': {}},
+        )
+        self.assertEqual(tool.trust, 'tool')
+
+    def test_gate_catches_an_unmarked_web_tool(self):
+        """Grinden fallerar på ett verktyg med ``web`` men ``trust="tool"``.
+
+        Utan det här provet vore grinden en påstående utan täckning: den
+        kunde vara grön för att den letar efter fel sak.
+        """
+        from odoo.addons.ai_agent_core.core.tools import Tool
+
+        unmarked = Tool(
+            name='grindens_otrovardiga_verktyg',
+            description='testverktyg',
+            parameters={'type': 'object', 'properties': {}},
+            capabilities=['web'],
+            trust='tool',
+        )
+        caps = set(unmarked.capabilities or [])
+        self.assertTrue(caps & WEB_CAPABILITIES)
+        self.assertNotEqual(unmarked.trust, 'untrusted')
 
 
 if __name__ == '__main__':

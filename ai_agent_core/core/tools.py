@@ -53,6 +53,20 @@ class Tool:
     risk_level: str = "read_only"  # safe | read_only | write | destructive | execute
     source: str = "custom"  # odoo_model | mcp | custom
 
+    # Trovärdigheten hos det verktyget RETURNERAR (untrusted-tool-output D1).
+    #
+    #   trusted   — systemprompten och annat vi själva skrivit
+    #   tool      — data ur Odoo: betrodd i den meningen att en användare med
+    #               behörighet redan kan se den, men inte en instruktion
+    #   untrusted — innehåll från internet (webbsidor, sökträffar, RSS)
+    #
+    # Fältet sätts vid verktygets DEFINITION, inte vid konsumtion: att avgöra
+    # trovärdighet i `loop.py` hade krävt att loopen kände varje verktygs
+    # semantik — och då glöms ett nytt verktyg bort. Här syns valet i
+    # registreringen, och `tests/test_structural_gates.py` kräver att varje
+    # verktyg med `web`-förmåga är `untrusted`.
+    trust: str = "tool"  # trusted | tool | untrusted
+
     # Executor routing (tool-executor-nats)
     executor: str = "local"  # "local" | "nats" | "mcp"
     capabilities: List[str] = field(default_factory=list)  # e.g. ["browser", "web", "infra"]
@@ -1087,6 +1101,7 @@ def builtin_tools() -> list[Tool]:
             },
             handler=_tool_web_search,
             risk_level="safe",
+            trust="untrusted",
             source="builtin",
         ),
         Tool(
@@ -1119,6 +1134,7 @@ def builtin_tools() -> list[Tool]:
             },
             handler=_tool_fetch_url,
             risk_level="safe",
+            trust="untrusted",
             source="builtin",
         ),
         Tool(
@@ -1144,6 +1160,7 @@ def builtin_tools() -> list[Tool]:
             },
             handler=_tool_news_fetch,
             risk_level="safe",
+            trust="untrusted",
             source="builtin",
         ),
         Tool(
@@ -1173,6 +1190,7 @@ def builtin_tools() -> list[Tool]:
             },
             handler=_tool_news_digest,
             risk_level="safe",
+            trust="untrusted",
             source="builtin",
         ),
         Tool(

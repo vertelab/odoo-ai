@@ -270,3 +270,232 @@ def register_mail_channel():
 def process_mail_item(item):
     """Kör ett mail-item genom den gemensamma loopen (synkront)."""
     return run_coroutine_sync(process_item(item))
+
+
+# ── Chat / channel (Discuss) ────────────────────────────────────────
+
+class DiscussChannelAdapter:
+    """`ChannelAdapter` för Discuss (DM + kanal).
+
+    Kanalen är *interaktiv* — det finns ingen kö att polla, så `fetch_new()`
+    returnerar tomt. Det som behövs är normaliseringen (HTML → text,
+    @mention-rensning) och postningen, och de bor här i stället för i
+    `chat()`.
+    """
+
+    channel = 'chat'
+
+    def fetch_new(self, env, since=None):
+        """Ingen kö: Discuss-meddelanden kommer via `_route_message()`."""
+        return []
+
+    def normalize(self, raw, bot_user=None):
+        """`mail.message` → `NormalizedItem`, med @mention rensad.
+
+        `@<alias>`/`@<namn>` tas bort ur frågan — annars tolkar agenten
+        "@allmän assistent" som en del av frågan. Även rester av
+        @mention-HTML/Odoo-länkar (`[1] /odoo/res.partner/N`) rensas.
+        """
+        import re
+
+        from odoo.tools.mail import html2plaintext
+
+        try:
+            msg_text = html2plaintext(raw.body or '')
+        except Exception:
+            # fallback: rå HTML är bättre än ingen text alls
+            msg_text = raw.body or ''
+        for token in (bot_user.channel_alias if bot_user else '',
+                      bot_user.name if bot_user else ''):
+            if token:
+                msg_text = re.sub(
+                    r'@' + re.escape(token), '', msg_text, flags=re.I)
+        msg_text = re.sub(r'\[\d\]\s*/odoo/[^\s]+', '', msg_text)
+        return NormalizedItem(
+            channel=self.channel,
+            external_id=str(raw.id or ''),
+            sender=raw.email_from or '',
+            content=msg_text.strip(),
+            received_at=str(raw.date or ''),
+            raw=raw,
+        )
+
+    def dispose(self, item, disposition):
+        """Discuss-kanalen verkställer inget själv — se processorn."""
+        return None
+
+    def draft_outbound(self, env, item, content):
+        """Discusssvar skickas direkt; inget utkaststeg finns."""
+        return {'body': content}
+
+    def send_outbound(self, env, item, content):
+        """Posta svaret i kanalen som botens partner.
+
+        Markdown → HTML (`extra` ger tabellstöd) och `Markup` så Odoo
+        renderar som HTML i stället för att escapera. Faller tillbaka på
+        råtext om `markdown`/`markupsafe` saknas — svaret ska ut ändå.
+        """
+        if not item.channel_record:
+            return None
+        body_html = content
+        try:
+            import markdown
+            body_html = markdown.markdown(body_html, extensions=['extra'])
+        except Exception:
+            # fallback: råtext postas i stället för att svaret uteblir
+            body_html = content
+        try:
+            from markupsafe import Markup
+            body_html = Markup(body_html)
+        except Exception:
+            # fallback: en vanlig sträng escapas av Odoo — läsbart men fult
+            body_html = content
+        author_id = (
+            item.bot_user.partner_id.id
+            if item.bot_user and item.bot_user.partner_id
+            else item.coworker.partner_id.id)
+        return item.channel_record.message_post(
+            body=body_html, author_id=author_id,
+            message_type='comment', subtype_xmlid='mail.mt_comment')
+
+
+class ChatItemProcessor:
+    """`ItemProcessor` för Discuss.
+
+    De tre särdrag `chat()` hade egen kod för kan uttryckas i kontraktet
+    (task 5.1):
+
+    - **@mention-rensning** → `DiscussChannelAdapter.normalize()` (kanalens
+      sak, inte domänens).
+    - **historik-kontext** → `context()` (den här klassen), läst av `chat()`.
+    - **cache-snabbspår** → `dispose()` (den här klassen): en `cache_hit`
+      i itemet betyder "posta det sparade svaret och spara sessionen".
+
+    Klassificeringen är regelbaserad — ingen LLM.
+    """
+
+    channel = 'chat'
+
+    async def classify(self, item):
+        """Regelbaserad disposition — inga LLM-anrop."""
+        if item.cache_hit:
+            return {'disposition': 'draft'}
+        return {'disposition': 'nudge'}
+
+    def context(self, item):
+        """Historik-kontexten som `chat()` lägger i systemprompten.
+
+        Läser de senaste meddelandena i kanalen (samma fråga och samma
+        gräns som före migreringen) och formaterar dem som
+        `[role] text`-rader. Tom sträng när historiken är avstängd eller
+        kanalen saknas.
+        """
+        if not item.use_history or not item.channel_record:
+            return ''
+        messages = item.env['mail.message'].search([
+            ('model', '=', 'discuss.channel'),
+            ('res_id', '=', item.channel_record.id),
+        ], limit=item.history_limit, order='create_date asc')
+        lines = []
+        for msg in messages:
+            role = 'assistant' if msg.author_id == item.bot_user else 'user'
+            text = (msg.body or '')[:500]
+            if text.strip():
+                lines.append(f'[{role}] {text}')
+        if not lines:
+            return ''
+        return '\n'.join(lines[-item.history_limit:])
+
+    def dispose(self, item, disposition):
+        """Verkställ dispositionen.
+
+        - `draft` (cache-träff): spara sessionen med fråga + sparat svar och
+          posta svaret — ingen körning.
+        - `nudge` (vanlig tur): posta `item.reply_text`, som `chat()` sätter
+          efter `run()`.
+        """
+        if disposition == 'draft':
+            self._record_cache_hit(item)
+        elif disposition != 'nudge':
+            return None
+        if not item.reply_text:
+            return None
+        adapter = channel_registry.get_adapter(self.channel)
+        if adapter is None:
+            return None
+        return adapter.send_outbound(item.env, item, item.reply_text)
+
+    def hitl(self, item, action_type, context):
+        """Begär godkännande via `ai.coworker.hitl`."""
+        if not item.session:
+            return type('Approval', (), {'approved': False})()
+        request = item.coworker.with_context(
+            _ai_context_model='ai.coworker.session',
+            _ai_context_id=item.session.id,
+        )._request_hitl(
+            action_type,
+            f'Godkänn {action_type} för {item.coworker.name}',
+            context=context or {},
+            session=item.session,
+        )
+        return type('Approval', (), {
+            'approved': bool(request) and request.state == 'approved',
+            'request': request,
+        })()
+
+    def nudge(self, item, message):
+        """Ingen separat nudge-kanal i Discuss — tyst no-op."""
+        return None
+
+    def remember(self, item):
+        """Spara till minne — `run()` och `_maybe_learn_async()` äger det."""
+        return None
+
+    def _record_cache_hit(self, item):
+        """Spåra en cache-träff som en egen session + två rader.
+
+        Sessionen bär record-identiteten (`ai_record_*`) så att nästa
+        cachesökning kan matcha på SAMMA record — utan den tappas
+        kopplingen och en liknande fråga kan återigen besvaras med en annan
+        records svar.
+        """
+        env = item.env
+        vals = {
+            'coworker_id': item.coworker.id, 'status': 'active',
+            'init_type': 'chat',
+            'name': f'Chat: {item.content[:50]}',
+            'user_id': item.bot_user.id if item.bot_user else 1,
+        }
+        record_key = item.record_key
+        if record_key:
+            rk_model, rk_id = record_key[0], record_key[1]
+            vals['ai_record_model'] = rk_model
+            if isinstance(rk_id, int):
+                vals['ai_record_id'] = rk_id
+            else:
+                vals['ai_record_ids'] = list(rk_id)
+        session = env['ai.coworker.session'].create(vals)
+        env['ai.coworker.session.line'].create({
+            'session_id': session.id, 'sequence': 1,
+            'role': 'user', 'content': item.content[:4000],
+        })
+        env['ai.coworker.session.line'].create({
+            'session_id': session.id, 'sequence': 2,
+            'role': 'assistant', 'content': item.reply_text[:4000],
+        })
+        session.status = 'done'
+
+
+def register_chat_channel():
+    """Registrera chat-kanalen i `channel_registry` (idempotent)."""
+    channel_registry.register(
+        'chat',
+        adapter=DiscussChannelAdapter(),
+        processor=ChatItemProcessor(),
+    )
+    return 'chat'
+
+
+def process_chat_item(item):
+    """Kör ett chat-item genom den gemensamma loopen (synkront)."""
+    return run_coroutine_sync(process_item(item))

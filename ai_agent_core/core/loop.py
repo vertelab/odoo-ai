@@ -33,8 +33,10 @@ from .permission import (
     PermissionEngine,
     PermissionMode,
     Decision,
+    RiskClass,
     classify as risk_classify,
 )
+from .trust import scan_untrusted, wrap_untrusted
 
 _logger = logging.getLogger(__name__)
 
@@ -182,6 +184,13 @@ class AgentLoop:
         # Nekorsak per tool_call_id — används för att skriva ett begripligt
         # TOOL-meddelande till modellen ("denied: <skäl>").
         self._denial_reasons: dict = {}
+        # Eskalering efter ett flaggat otrovärdigt resultat
+        # (untrusted-tool-output D4). Sätts av `_execute_tool` när skannern
+        # ger `hitl`, läses av `_gate_tool_calls`: nästa `EXTERNAL`- eller
+        # `WRITE_LOCAL`-anrop kräver mänskligt godkännande även i AUTO.
+        # Flaggan gäller ETT anrop — en injektion ska inte låsa agenten för
+        # resten av sessionen.
+        self._untrusted_escalation: bool = False
         # Tool selection (priority 1): narrow the registry to a task-matched
         # subset before each provider call. None = send everything (old
         # behaviour). Never widens access — only narrows the authorised set.
@@ -702,14 +711,22 @@ class AgentLoop:
         loopen"); botemedlet är att grinden ligger i exekveringsvägen, inte
         på en enskild endpoint.
 
-        Två steg per anrop:
+        Tre steg per anrop:
           1. `permissions.evaluate()` — får verktyget köras alls?
           2. `needs_user` → `interrupt_handler.approve_tool()`.
+          3. `_untrusted_escalation` satt och anropet är `EXTERNAL` eller
+             `WRITE_LOCAL` → `interrupt_handler.approve_tool()` (steg 2:s
+             fail-closed-regel gäller även här).
 
         Steg 2 är FAIL-CLOSED (beslut 2): saknas hanteraren nekas anropet.
         Tidigare löd villkoret `and self.interrupt_handler`, vilket gjorde
         att ett `needs_user`-beslut UTAN hanterare föll igenom och verktyget
         kördes — motsatsen till vad ett godkännandekrav betyder.
+
+        Steg 3 flyttar eskaleringen för ett flaggat otrovärdigt resultat hit
+        i stället för in i verktyget (untrusted-tool-output D4): grinden är
+        den enda exekveringsvägen, och en eskalering i verktyget hade skapat
+        en andra.
 
         Args:
             tool_calls: providerns `tool_calls` för rundan.
@@ -753,11 +770,62 @@ class AgentLoop:
                 # Godkänt — registrera som stående regel om tillämpligt
                 self.permissions.allow_tool_for_session(tc.name)
 
+            # 3. Eskalering efter ett flaggat otrovärdigt resultat
+            #    (untrusted-tool-output D4).
+            #
+            #    Ett `hitl`-resultat betyder att ett verktygsresultat bar en
+            #    tydlig attack. Nästa konsekventa anrop — `EXTERNAL` (nät) eller
+            #    `WRITE_LOCAL` (databasen) — får då INTE köras på agentens eget
+            #    initiativ, inte ens i AUTO. Läsvägar påverkas inte: en
+            #    injektion som bara får agenten att läsa är inte den skada
+            #    lagret finns för att stoppa.
+            #
+            #    Flaggan förbrukas här — ett anrop, inte en session. Den
+            #    nollställs oavsett om anropet godkänns eller nekas: annars
+            #    hade ett nekande lämnat flaggan satt och eskaleringen blivit
+            #    permanent.
+            if self._untrusted_escalation and not decision.needs_user:
+                risk = self._risk_class(tc, tool)
+                if risk in (RiskClass.EXTERNAL, RiskClass.WRITE_LOCAL):
+                    self._untrusted_escalation = False
+                    _logger.warning(
+                        "Tool '%s' escalated to human approval: a previous "
+                        "tool result was flagged as a prompt-injection "
+                        "attempt (risk=%s).",
+                        tc.name, risk.value,
+                    )
+                    approved = await self._request_approval(tc, tool)
+                    if not approved:
+                        self._denial_reasons[tc.id] = (
+                            'denied by user after a flagged tool result'
+                            if self.interrupt_handler
+                            else 'no approval channel on this path')
+                        denied.add(tc.id)
+                        continue
+                    self.permissions.allow_tool_for_session(tc.name)
+
         # Grinden har prövat dessa anrop. Spåret läses av `_execute_tool`
         # (defensiv varning) och av strukturtestet i testsviten.
         self._gated_call_ids.update(
             tc.id for tc in tool_calls if tc.id not in denied)
         return denied
+
+    def _risk_class(self, tool_call, tool) -> RiskClass:
+        """Anropets effektiva riskklass — samma beräkning som grinden gör.
+
+        `PermissionEngine.evaluate()` räknar ut klassen internt men lämnar
+        inte tillbaka den i `Decision`. Eskaleringen behöver den för att
+        avgöra om anropet är konsekvent (`EXTERNAL`/`WRITE_LOCAL`), så
+        beräkningen upprepas här med samma ingångar — argument-medveten risk
+        först, annars den statiska.
+        """
+        from .permission import _argument_risk
+
+        risk_level = getattr(tool, 'risk_level', 'read_only')
+        arg_risk = _argument_risk(tool_call.name, tool_call.arguments)
+        if arg_risk is not None:
+            return arg_risk
+        return risk_classify(tool_call.name, risk_level, tool)
 
     def _denial_message(self, tool_call) -> str:
         """TOOL-meddelandet som talar om VARFÖR ett anrop nekades.
@@ -856,7 +924,7 @@ class AgentLoop:
                 (tool_call.name, str(result)[:500], tool_call.id or ''))
             self.tool_results.append(
                 (tool_call.name, dict(tool_call.arguments or {}), result))
-            return result
+            return self._frame_untrusted(tool, result)
 
         # Local execution (default, existing behavior)
         tool_start = time.time()
@@ -912,7 +980,50 @@ class AgentLoop:
         # Detta är INTE en sammanfattning: ingen LLM anropas, inget skrivs
         # till `session.summary`. Det är en ren längdbegränsning för att
         # resultatet ska rymmas i kontextfönstret (okf-recall-path 4.5).
-        return self._chunk_tool_result(result)
+        return self._frame_untrusted(tool, self._chunk_tool_result(result))
+
+    def _frame_untrusted(self, tool: 'Tool', result: str) -> str:
+        """Skanna och rama in ett otrovärdigt verktygsresultat.
+
+        Ligger i `_execute_tool` — den gemensamma exekveringsvägen — så att
+        BÅDE `run()` och `run_stream()` får inramningen (untrusted-tool-output
+        3.3). Att lägga den på en enskild endpoint hade gett nästa väg ingen.
+
+        Betrott resultat (`trust != "untrusted"`) returneras oförändrat och
+        skannas inte: Odoo-data är data som en användare med behörighet redan
+        kan se, och att skanna den hade kostat tid utan att skydda något.
+
+        Ett `hitl`-utfall sätter `self._untrusted_escalation`, som grinden
+        läser för nästa konsekventa anrop (D4). Flaggan sätts här och inte i
+        `_execute_tools_parallel`: den senare kör anropen samtidigt, och en
+        flagga satt inuti en parallell gren hade påverkat syskonanrop som
+        redan passerat grinden — utan att påverka nästa runda, vilket är det
+        som spelar roll.
+
+        Args:
+            tool: Verktyget som gav resultatet.
+            result: Resultatet, redan klippt.
+
+        Returns:
+            Resultatet inramat när verktyget är otrovärdigt, annars orört.
+        """
+        if getattr(tool, 'trust', 'tool') != 'untrusted' or not result:
+            return result
+        scan = scan_untrusted(result)
+        if scan.is_flagged:
+            # Logga VERDICT och KATEGORIER — aldrig innehållet. Ett
+            # verktygsresultat kan bära användarens data, och en logg som
+            # citerar injektionen blir själv en injektionskanal för den som
+            # läser loggen.
+            _logger.warning(
+                "Untrusted tool result flagged: tool=%s verdict=%s "
+                "categories=%s matches=%d",
+                tool.name, scan.verdict, ','.join(scan.categories),
+                len(scan.matches),
+            )
+            if scan.verdict == 'hitl':
+                self._untrusted_escalation = True
+        return wrap_untrusted(tool.name, result, scan)
 
     def _chunk_tool_result(self, result: str) -> str:
         """Klipp ett stort verktygsresultat så att både början och slutet bevaras.
