@@ -105,6 +105,14 @@
                 <header>
                     <field name="status" widget="statusbar"
                            statusbar_visible="draft,active,done,error"/>
+                    <!-- Befordran till eval-fall (wire-orphaned-core-mechanisms
+                         4.3): bara för sessioner som SLUTADE dåligt. En
+                         lyckad session är inte ett regressionstest, och
+                         knappen ska inte erbjuda det. -->
+                    <button name="action_promote_to_eval_case" type="object"
+                            string="Promote to Eval Case"
+                            class="btn-primary"
+                            invisible="finish_reason not in ['error', 'max_rounds', 'length', 'timeout']"/>
                 </header>
                 <sheet>
                     <div class="oe_button_box" name="button_box">

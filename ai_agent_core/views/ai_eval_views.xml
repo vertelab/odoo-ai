@@ -1,0 +1,154 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Eval-vyer (wire-orphaned-core-mechanisms sektion 3/5).
+         Läsvyer för de tre persistensmodellerna; redigering av fall sker i
+         formuläret (förväntan måste fyllas i av en människa — se
+         ai.coworker.session.action_promote_to_eval_case). -->
+
+    <record id="view_ai_eval_case_list" model="ir.ui.view">
+        <field name="name">ai.eval.case.list</field>
+        <field name="model">ai.eval.case</field>
+        <field name="arch" type="xml">
+            <list string="Evaluation Cases">
+                <field name="coworker_id"/>
+                <field name="category"/>
+                <field name="input"/>
+                <field name="source_session_id"/>
+                <field name="active" widget="boolean_toggle"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_ai_eval_case_form" model="ir.ui.view">
+        <field name="name">ai.eval.case.form</field>
+        <field name="model">ai.eval.case</field>
+        <field name="arch" type="xml">
+            <form string="Evaluation Case">
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="coworker_id"/>
+                            <field name="category"/>
+                            <field name="active"/>
+                        </group>
+                        <group>
+                            <field name="source_session_id"/>
+                        </group>
+                    </group>
+                    <group string="Expectations">
+                        <field name="input"/>
+                        <field name="expected_contains"
+                               placeholder='["expected string", "..."]'/>
+                        <field name="expected_not_contains"
+                               placeholder='["forbidden string", "..."]'/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_ai_eval_case_search" model="ir.ui.view">
+        <field name="name">ai.eval.case.search</field>
+        <field name="model">ai.eval.case</field>
+        <field name="arch" type="xml">
+            <search string="Evaluation Cases">
+                <field name="coworker_id"/>
+                <field name="input"/>
+                <filter name="filter_inactive" string="Archived"
+                        domain="[('active', '=', False)]"/>
+                <group expand="0" string="Group By">
+                    <filter name="group_coworker" string="Coworker"
+                            context="{'group_by': 'coworker_id'}"/>
+                    <filter name="group_category" string="Category"
+                            context="{'group_by': 'category'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <record id="view_ai_eval_run_list" model="ir.ui.view">
+        <field name="name">ai.eval.run.list</field>
+        <field name="model">ai.eval.run</field>
+        <field name="arch" type="xml">
+            <list string="Evaluation Runs">
+                <field name="run_date"/>
+                <field name="coworker_id"/>
+                <field name="accuracy" widget="percentage"/>
+                <field name="passed"/>
+                <field name="failed"/>
+                <field name="total_cases"/>
+                <field name="total_cost"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_ai_eval_run_form" model="ir.ui.view">
+        <field name="name">ai.eval.run.form</field>
+        <field name="model">ai.eval.run</field>
+        <field name="arch" type="xml">
+            <form string="Evaluation Run">
+                <sheet>
+                    <group>
+                        <group>
+                            <field name="coworker_id"/>
+                            <field name="run_date"/>
+                            <field name="accuracy" widget="percentage"/>
+                        </group>
+                        <group>
+                            <field name="passed"/>
+                            <field name="failed"/>
+                            <field name="total_cases"/>
+                            <field name="total_cost"/>
+                        </group>
+                    </group>
+                    <field name="result_ids">
+                        <list string="Results">
+                            <field name="case_id"/>
+                            <field name="passed"/>
+                            <field name="score"/>
+                            <field name="latency_ms"/>
+                            <field name="errors"/>
+                        </list>
+                    </field>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="view_ai_eval_result_list" model="ir.ui.view">
+        <field name="name">ai.eval.result.list</field>
+        <field name="model">ai.eval.result</field>
+        <field name="arch" type="xml">
+            <list string="Evaluation Results">
+                <field name="run_id"/>
+                <field name="case_id"/>
+                <field name="passed"/>
+                <field name="score"/>
+                <field name="latency_ms"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="action_ai_eval_case" model="ir.actions.act_window">
+        <field name="name">Evaluation Cases</field>
+        <field name="res_model">ai.eval.case</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="view_ai_eval_case_search"/>
+        <field name="context">{'search_default_group_coworker': 1}</field>
+    </record>
+
+    <record id="action_ai_eval_run" model="ir.actions.act_window">
+        <field name="name">Evaluation Runs</field>
+        <field name="res_model">ai.eval.run</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+    <menuitem id="menu_ai_eval_case" name="Evaluation Cases"
+              parent="menu_ai_configuration" sequence="22"
+              groups="ai_agent_core.group_ai_admin"
+              action="action_ai_eval_case"/>
+    <menuitem id="menu_ai_eval_run" name="Evaluation Runs"
+              parent="menu_ai_configuration" sequence="23"
+              groups="ai_agent_core.group_ai_admin"
+              action="action_ai_eval_run"/>
+</odoo>

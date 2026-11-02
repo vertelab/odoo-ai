@@ -9574,6 +9574,169 @@ class AICoworker(models.Model):
                 'stale_released': released, 'stale_tasks': stale_tasks}
 
     @api.model
+    def _cron_run_evals(self):
+        """cron.task entry point: kör veckans eval-fall per medarbetare.
+
+        Ändring: wire-orphaned-core-mechanisms 5.1–5.5. Detta är den ENDA
+        anroparen av `AgentEvaluator`/`EvalRunner` — utan den var
+        `core/eval.py` komplett men oanvänd, och kaizen kunde aldrig svara
+        på "blev det bättre?".
+
+        Tre grindar innan ett run skapas:
+
+        1. `budget_exhausted` → hoppa över. Eval kostar tokens precis som
+           en vanlig körning, och ett tak som gäller chatten måste gälla
+           mätningen också (5.2).
+        2. `ai_agent_core.eval_max_cases` (default 20) → tak per körning.
+           Kostnaden ska vara förutsägbar, inte proportionell mot hur
+           många fall som råkar finnas (5.3).
+        3. Ingen provider/loop → hoppa över med en varning. En
+           felkonfigurerad medarbetare ska inte fälla hela cronen.
+
+        Returns:
+            dict: {'runs': antal skapade run, 'skipped': antal överhoppade}.
+        """
+        max_cases = self._eval_max_cases()
+        runs_created = 0
+        skipped = 0
+
+        coworkers = self.search([('status', '=', 'active')])
+        for coworker in coworkers:
+            cases = self.env['ai.eval.case'].search([
+                ('coworker_id', '=', coworker.id),
+                ('active', '=', True),
+            ], limit=max_cases)
+            if not cases:
+                continue
+
+            # 5.2 — ett tak som gäller chatten gäller också mätningen.
+            if coworker.budget_exhausted:
+                _logger.info(
+                    'Eval: hoppar över %s — budget_exhausted', coworker.name)
+                skipped += 1
+                continue
+
+            try:
+                run = coworker._run_eval_cases(cases)
+            except Exception:
+                # En medarbetare som inte kan köras får inte stoppa de
+                # andra. Felet loggas med spår — tystnad här hade gjort
+                # en trasig eval-kedja omöjlig att upptäcka.
+                _logger.exception(
+                    'Eval misslyckades för %s', coworker.name)
+                skipped += 1
+                continue
+
+            if run:
+                runs_created += 1
+
+        _logger.info(
+            'Eval: %d run skapade, %d medarbetare överhoppade (tak %d fall)',
+            runs_created, skipped, max_cases)
+        return {'runs': runs_created, 'skipped': skipped}
+
+    @api.model
+    def _eval_max_cases(self):
+        """Tak för antal fall per eval-körning (`eval_max_cases`, 20)."""
+        raw = self.env['ir.config_parameter'].sudo().get_param(
+            'ai_agent_core.eval_max_cases', '20')
+        try:
+            value = int(raw)
+        except (TypeError, ValueError):
+            _logger.warning(
+                'Eval: ai_agent_core.eval_max_cases="%s" är inte ett tal — '
+                'använder 20', raw)
+            return 20
+        return value if value > 0 else 20
+
+    def _run_eval_cases(self, cases):
+        """Kör `cases` mot medarbetarens loop och spara ett `ai.eval.run`.
+
+        Loopen byggs av `_build_loop` — samma konstruktionsplats som alla
+        andra körvägar — så eval mäter den loop som faktiskt används, inte
+        en kopia. Verktygen är medarbetarens auktoriserade register
+        (`_session_tools`), av samma skäl.
+
+        Returns:
+            ai.eval.run record, eller None om ingen provider kunde lösas.
+        """
+        import asyncio
+
+        from odoo.addons.ai_agent_core.core.eval import AgentEvaluator
+        from odoo.addons.ai_agent_core.core.provider import (
+            ProviderFactory, get_default_provider)
+
+        self.ensure_one()
+        provider, model_rec = ProviderFactory.from_coworker(self)
+        if not provider:
+            provider, model_rec = get_default_provider(self.env)
+        if not provider:
+            _logger.warning(
+                'Eval: hoppar över %s — ingen provider kunde lösas upp',
+                self.name)
+            return None
+
+        model_name = (model_rec._get_api_name() if model_rec else '') \
+            or 'default'
+        system_prompt = (
+            f"Today is {fields.Date.today().isoformat()}.\n\n"
+            + (self.description or ''))
+        if self.identity_id and self.identity_id.system_prompt:
+            system_prompt = self.identity_id.system_prompt
+
+        tools, _access_groups = self._session_tools()
+        loop = self._build_loop(
+            provider=provider, tools=tools, model=model_name,
+            system_prompt=system_prompt,
+        )
+
+        evaluator = AgentEvaluator()
+        runner = evaluator.create_runner(
+            loop, model=model_name, agent_name=self.name or 'coworker')
+        eval_cases = [case._to_eval_case() for case in cases]
+
+        # Egen event-loop: en cron.task körs synkront, och providerns
+        # httpx-klient måste stängas innan loopen stängs (annars lämnas en
+        # pending connection-task i Odoo-loggen).
+        async def _run_and_close():
+            try:
+                return await runner.run_eval(eval_cases)
+            finally:
+                await provider.aclose()
+
+        event_loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(event_loop)
+        try:
+            result = event_loop.run_until_complete(_run_and_close())
+        finally:
+            event_loop.close()
+
+        run = self.env['ai.eval.run'].create({
+            'coworker_id': self.id,
+            'run_date': fields.Datetime.now(),
+            'accuracy': result.accuracy,
+            'passed': result.passed,
+            'failed': result.failed,
+            'total_cases': result.total_cases,
+            'total_cost': result.total_cost,
+            'result_ids': [(0, 0, {
+                'case_id': case.id,
+                'passed': case_result.passed,
+                'score': case_result.score,
+                'actual_output': case_result.actual_output or '',
+                'errors': '\n'.join(case_result.errors) or False,
+                'latency_ms': case_result.latency_ms,
+            }) for case, case_result in zip(cases, result.results)],
+        })
+        # 5.5 — accuracy till veckorapporten (trendkällan för kaizen).
+        run._write_accuracy_to_kaizen()
+        _logger.info(
+            'Eval: %s — %d/%d godkända (accuracy %.0f%%)',
+            self.name, result.passed, result.total_cases,
+            result.accuracy * 100)
+        return run
+
+    @api.model
     def _cron_consolidate_all(self):
         """cron.task entry point: consolidate memories for every active coworker.
 

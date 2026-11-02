@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+        <!-- Eval-cron (wire-orphaned-core-mechanisms 5.4): kör veckans
+             eval-fall per medarbetare och skriver accuracy till
+             ai.kaizen.report.eval_accuracy_trend. Detta är den enda
+             anroparen av AgentEvaluator/EvalRunner — utan den är
+             core/eval.py byggd men oanvänd.
+
+             cron.task (inte ir.cron): se data/cron_mail_reply.xml för
+             varför. Motorn äger kadens, lås och körhistorik.
+
+             Veckoschema: eval kostar tokens, och analyze_trend() kräver
+             minst två punkter för att säga något om riktningen. -->
+        <record id="cron_task_cron_run_evals_weekly" model="cron.task">
+            <field name="name">AI: Kör eval-fall (veckovis)</field>
+            <field name="technical_name">ai_run_evals_weekly</field>
+            <field name="module">ai_agent_core</field>
+            <field name="model_name">ai.coworker</field>
+            <field name="method_name">_cron_run_evals</field>
+            <field name="interval_number">7</field>
+            <field name="interval_type">days</field>
+            <field name="sequence">20</field>
+            <field name="active" eval="True"/>
+        </record>
+    </data>
+</odoo>

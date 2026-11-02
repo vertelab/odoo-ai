@@ -4,6 +4,7 @@
 import json, logging, re, uuid
 from datetime import date, timedelta
 from odoo import models, fields, api, SUPERUSER_ID, _
+from odoo.exceptions import ValidationError
 
 _logger = logging.getLogger(__name__)
 
@@ -1932,6 +1933,69 @@ class AICoworkerSession(models.Model):
             'target': 'current',
             'domain': [('session_id', '=', self.id)],
             'context': {'default_session_id': self.id},
+        }
+
+    #: Utfall där sessionen är värd att befordras till ett regressionstest.
+    #: `stop`/`tool_calls` saknas med flit — en lyckad session är inte ett
+    #: testfall, och knappen ska inte erbjuda det.
+    PROMOTABLE_FINISH_REASONS = ('error', 'max_rounds', 'length', 'timeout')
+
+    def action_promote_to_eval_case(self):
+        """Befordra sessionen till ett `ai.eval.case` (HITL).
+
+        Ändring: wire-orphaned-core-mechanisms 4.1/4.2.
+
+        Människan trycker på knappen — inget automatiskt anrop finns (4.4).
+        Testfallets `input` är sessionens första `user`-rad: det som
+        faktiskt efterfrågades, inte en sammanfattning av det. Förväntan
+        (`expected_contains`) lämnas TOM — den måste fyllas i av en
+        människa, annars poängsätter testet bara "gav samma svar som förra
+        gången".
+
+        Returns:
+            dict: action som öppnar det nya testfallet.
+
+        Raises:
+            ValidationError: om sessionen saknar en `user`-rad, redan är
+                befordrad, eller saknar medarbetare.
+        """
+        self.ensure_one()
+        if not self.coworker_id:
+            raise ValidationError(_(
+                'Sessionen saknar medarbetare — den kan inte bli ett '
+                'testfall.'))
+
+        existing = self.env['ai.eval.case'].search(
+            [('source_session_id', '=', self.id)], limit=1)
+        if existing:
+            raise ValidationError(_(
+                'Sessionen är redan befordrad till testfall "%(case)s".',
+                case=existing.display_name or existing.id))
+
+        first_user_line = self.session_line_ids.filtered(
+            lambda line: line.role == 'user').sorted('sequence')[:1]
+        if not first_user_line:
+            raise ValidationError(_(
+                'Sessionen saknar en user-rad — det finns ingen prompt att '
+                'befordra. En session utan fråga kan inte bli ett testfall.'))
+
+        case = self.env['ai.eval.case'].create({
+            'coworker_id': self.coworker_id.id,
+            'source_session_id': self.id,
+            'input': first_user_line.content or '',
+            'category': self.finish_reason or 'general',
+        })
+        _logger.info(
+            'Session %s befordrad till eval-fall %s (finish_reason=%s)',
+            self.id, case.id, self.finish_reason or '-')
+        return {
+            'name': _('Evaluation Case'),
+            'type': 'ir.actions.act_window',
+            'res_model': 'ai.eval.case',
+            'res_id': case.id,
+            'view_mode': 'form',
+            'views': [[False, 'form']],
+            'target': 'current',
         }
 
     def save_config(self, config: dict):

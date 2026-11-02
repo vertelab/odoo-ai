@@ -40,6 +40,14 @@ class AIKaizenReport(models.Model):
     cost_trend = fields.Float('Cost Trend %', default=0.0)
     error_trend = fields.Float('Error Trend %', default=0.0)
 
+    # Eval-accuracy (wire-orphaned-core-mechanisms 3.4/5.5): skrivs av
+    # `ai.eval.run._write_accuracy_to_kaizen()` när ett eval-run skapas.
+    # 0.0 = ingen mätning — inte "noll rätt".
+    eval_accuracy_trend = fields.Float(
+        'Eval Accuracy', digits=(5, 4),
+        help='Accuracy från det senaste eval-runnet för medarbetaren. '
+             '0.0 betyder att inget run finns, inte att alla fall föll.')
+
     # Status
     status = fields.Selection([
         ('draft', 'Draft'), ('generated', 'Generated'),
@@ -295,6 +303,29 @@ class AIKaizenReport(models.Model):
                 'evidence': f"Feedback count: {data['feedback_count']}",
             })
 
+        # Eval-regel (wire-orphaned-core-mechanisms 6.1): sjunker accuracy
+        # mellan två run är det den enda signalen som svarar på "blev det
+        # bättre?" — sessionstrenden mäter aktivitet, inte förmåga. Fyndet
+        # är ett FÖRSLAG (status='pending'): det appliceras aldrig av sig
+        # självt.
+        if report.eval_accuracy_trend:
+            previous = self._previous_eval_accuracy(quest, report)
+            if previous is not None and report.eval_accuracy_trend < previous:
+                findings.append({
+                    'severity': 'medium',
+                    'category': 'performance',
+                    'finding': (
+                        f"Eval-accuracy sjönk från {previous:.0%} till "
+                        f"{report.eval_accuracy_trend:.0%}"),
+                    'recommendation': (
+                        'Granska de fall som föll i det senaste eval-runnet '
+                        'och åtgärda orsaken innan nästa vecka — annars '
+                        'mäter vi bara att det blev sämre.'),
+                    'evidence': (
+                        f"previous_accuracy={previous:.4f}, "
+                        f"current_accuracy={report.eval_accuracy_trend:.4f}"),
+                })
+
         # Utfalls-regler (utfall-och-tokenmatning 5.6): en session som gav upp
         # efter max_rounds ser frisk ut (status='done') men är ett
         # kapacitetsproblem. Samma för trunkering och omätt usage.
@@ -333,6 +364,21 @@ class AIKaizenReport(models.Model):
             })
 
         return findings
+
+    def _previous_eval_accuracy(self, quest, report):
+        """Accuracy från runnet FÖRE det senaste (None om det saknas).
+
+        Två run krävs för att kunna säga något om riktning (samma krav som
+        `core.eval.analyze_trend`: `len(runs) < 2` → tom trend). Det
+        senaste runnet är det som skrevs till `report.eval_accuracy_trend`,
+        så jämförelsen görs mot näst senaste.
+        """
+        runs = self.env['ai.eval.run'].search(
+            [('coworker_id', '=', quest.id)],
+            order='run_date desc, id desc', limit=2)
+        if len(runs) < 2:
+            return None
+        return runs[1].accuracy
 
     def _generate_skill_suggestion(self, finding):
         """Generate an orchestration skill improvement suggestion (HITL).

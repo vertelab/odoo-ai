@@ -27,6 +27,7 @@ from . import res_users
 from . import res_company
 from . import res_config_settings
 from . import ai_kaizen
+from . import ai_eval
 from . import ai_tag
 from . import ai_onboard
 from . import base_model

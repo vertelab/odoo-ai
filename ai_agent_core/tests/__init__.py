@@ -183,3 +183,7 @@ from . import test_memory_vector_dimension
 from . import test_pgvector_persistence
 # C: hygien — _parse_skill_md med YAML-fortsättning.
 from . import test_skill_md_parsing
+# wire-orphaned-core-mechanisms 3–6: eval-persistensen (ai.eval.case/run/
+# result), befordran session → fall (HITL), eval-cronen och kaizen-fyndet
+# när accuracy sjunker. Utan dessa tester är core/eval.py åter oanvänd.
+from . import test_eval_pipeline
