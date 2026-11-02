@@ -74,6 +74,7 @@
         'data/builtin_tools_seed.xml',
         'data/partner_enrichment_coworker.xml',
         'data/cron_okf_process_uploads.xml',
+        'data/cron_okf_retention.xml',
         'data/cron_memory_reembed.xml',
         'data/cron_company_memory_indexers.xml',
         'data/okf_migrate_legacy.xml',

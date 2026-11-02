@@ -70,6 +70,17 @@ class AIArtifactType(models.Model):
                     raise ValidationError(
                         _('Invalid retention_purpose %r in OKF contract. '
                           'Allowed: %s') % (rp, ', '.join(allowed_retention)))
+            # Motsägelsen 'none' + dagar är annars TYST: fristen deklareras
+            # men gäller inte, och ingenstans syns varför. Avvisa den.
+            days = contract.get('retention_days', 0)
+            if (contract.get('retention_purpose') == 'none'
+                    and isinstance(days, (int, float)) and days > 0):
+                raise ValidationError(_(
+                    'Contradictory retention configuration on artifact type '
+                    "'%(name)s': retention_purpose is 'none' but "
+                    'retention_days is %(days)s. A period without a purpose '
+                    'is never enforced — set a purpose or set the days to 0.',
+                    name=rec.name, days=days))
             if 'stale_policy' in contract:
                 sp = contract['stale_policy']
                 if sp not in ('source', 'fixed'):
@@ -92,3 +103,23 @@ class AIArtifactType(models.Model):
         contract = self.okf_contract or {}
         return (contract.get('stale_policy', 'source'),
                 contract.get('stale_ttl_days', 0))
+
+    def _get_retention(self):
+        """Returnera (retention_purpose, retention_days) från kontraktet.
+
+        Samma form som `_get_stale_policy()`: en läsare som svarar på
+        "vilken frist gäller?" utan att varje anropare tolkar JSON:en
+        själv. Default `('none', 0)` = ingen frist — en typ som inte säger
+        något om retention ska inte ärva en frist från ingenstans.
+
+        Negativa dagar normaliseras till 0: en negativ frist skulle ge ett
+        `retention_end` i det förflutna och arkivera konceptet vid skapandet.
+        """
+        self.ensure_one()
+        contract = self.okf_contract or {}
+        purpose = contract.get('retention_purpose', 'none') or 'none'
+        try:
+            days = int(contract.get('retention_days', 0) or 0)
+        except (TypeError, ValueError):
+            days = 0
+        return (purpose, max(0, days))

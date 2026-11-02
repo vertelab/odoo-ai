@@ -198,13 +198,34 @@ class AIOkfConcept(models.Model):
         ('marketing', 'Marketing'),
         ('none', 'None'),
     ], string='Retention Purpose', default='none')
+    # ── Retention (memory-retention-enforcement) ──
+    #
+    # TVÅ OLIKA AXLAR (design D1). Att slå ihop dem hade gjort en
+    # gallringsfrist till en kvalitetsfråga — och då hade ingen gallrat:
+    #
+    #   stale_after    "använd inte den här datan"  (INJEKTION)
+    #   retention_end  "behåll inte den här datan"  (EXISTENS)
+    #
+    # Ett koncept kan vara färskt men utgånget (en CRM-lead som är aktuell
+    # men ska gallras efter 180 dagar enligt policy). `retention_end`
+    # beräknas därför ur `create_date` + typens `retention_days`, oberoende
+    # av `stale_after`.
     retention_end = fields.Datetime(
-        string='Retention End',
-        help='Beräknad från retention purpose. Fältet skapas men är passivt '
-             'tills GDPR-modulen implementeras (SENARELAGT).')
+        string='Retention End', index=True,
+        help='Sista datum konceptet får behållas, beräknat ur '
+             'artefakttypens retention_days och konceptets create_date. '
+             'Tomt = ingen frist. Verkställs av _cron_enforce_retention(), '
+             'som arkiverar (aldrig raderar) utgångna koncept.')
+    retention_warned_at = fields.Datetime(
+        string='Retention Warned At', readonly=True,
+        help='När ägaren varnades om att fristen närmar sig. Gör '
+             'varningen engångs — annars blir den en daglig aktivitet som '
+             'ingen läser.')
     archived = fields.Boolean(
         string='Archived', default=False,
-        help='Global soft-delete — tas bort från ALL sökning + injektion.')
+        help='Global soft-delete — tas bort från ALL sökning + injektion. '
+             'Sätts av retention-cronen när fristen passerats; raden finns '
+             'kvar så att gallringen går att spåra och ångra.')
 
     # ── Workspace inbox / PARA (D2) ──
     # ADD-only-konceptet skrivs aldrig — inbox-placering sker via
@@ -351,6 +372,258 @@ class AIOkfConcept(models.Model):
                 _('ai.okf.concept identity fields are immutable. '
                   'Cannot write fields: %s') % ', '.join(sorted(forbidden)))
         return super().write(vals)
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        """Beräkna retention_end när konceptet skapas (1.3).
+
+        Fristen räknas ur `create_date` — när uppgiften togs emot — inte ur
+        källans `last_modified` (design D1). `create_date` sätts av Odoo i
+        samma INSERT, så värdet finns inte i `vals`. Vi beräknar därför
+        fristen EFTER create och skriver den med `sudo()`: fältet är
+        maskinellt (härlett ur typen), inte användarens uppgift att sätta,
+        och en användare utan skrivrätt på konceptet ska ändå få en frist.
+        """
+        records = super().create(vals_list)
+        for rec in records:
+            if rec.retention_end:
+                continue
+            end = rec._retention_end_for_type(rec.artifact_type_id)
+            if end:
+                rec.sudo().write({'retention_end': end})
+        return records
+
+    # ════════════════════════════════════════════
+    # Retention — beräkning, varning, verkställighet
+    # ════════════════════════════════════════════
+
+    #: Hur långt före `retention_end` ägaren varnas. En gallring som sker
+    #: obemärkt är en dataförlust ur användarens perspektiv; varningen gör
+    #: den till ett beslut (design D3).
+    RETENTION_WARN_DAYS = 30
+
+    def _retention_end_for_type(self, artifact_type):
+        """`create_date` + typens `retention_days`, eller False (1.2).
+
+        Ingen frist när typen saknas, `retention_purpose='none'` eller
+        `retention_days=0`. `create_date` sätts alltid av Odoo; saknas den
+        ändå blir svaret False (fail-open på data — att hitta på ett datum
+        vore värre än att sakna en frist).
+        """
+        self.ensure_one()
+        if not artifact_type:
+            return False
+        purpose, days = artifact_type._get_retention()
+        if purpose == 'none' or days <= 0:
+            return False
+        if not self.create_date:
+            _logger.warning(
+                'OKF: koncept %s saknar create_date — ingen retention_end '
+                'beräknad trots retention_days=%s', self.id, days)
+            return False
+        return self.create_date + timedelta(days=days)
+
+    @api.model
+    def _cron_backfill_retention(self):
+        """Engångs (idempotent): sätt retention_end på befintliga koncept (3.1).
+
+        Arkiverar INTE koncept som redan passerat fristen (3.2) — de fångas
+        av varnings-cronen först, så att en backfill på en produktions-
+        databas inte gallrar i smyg vid uppgraderingen.
+        """
+        candidates = self.with_context(active_test=False).search([
+            ('retention_end', '=', False),
+            ('archived', '=', False),
+        ])
+        updated = 0
+        for rec in candidates:
+            end = rec._retention_end_for_type(rec.artifact_type_id)
+            if not end:
+                continue
+            rec.sudo().write({'retention_end': end})
+            updated += 1
+        _logger.info(
+            'OKF retention-backfill: %d av %d koncept utan frist fick en '
+            '(ingen arkiverades)', updated, len(candidates))
+        return updated
+
+    @api.model
+    def _cron_warn_retention(self):
+        """Varna ägaren 30 dagar före utgång (4.1–4.4).
+
+        En `mail.activity` per koncept, en gång: `retention_warned_at`
+        stämplas när aktiviteten skapats. Utan den stämpeln hade cronen
+        skapat en ny aktivitet varje dygn i trettio dagar.
+        """
+        now = fields.Datetime.now()
+        deadline = now + timedelta(days=self.RETENTION_WARN_DAYS)
+        concepts = self.search([
+            ('archived', '=', False),
+            ('retention_end', '!=', False),
+            ('retention_end', '<=', deadline),
+            ('retention_warned_at', '=', False),
+        ])
+        warned = 0
+        for rec in concepts:
+            user = rec._retention_recipient()
+            if not user:
+                _logger.warning(
+                    'OKF retention: koncept %s (%s) går ut %s men ingen '
+                    'mottagare kunde lösas — ingen varning skickad',
+                    rec.id, rec.concept_key, rec.retention_end)
+                continue
+            rec._schedule_retention_warning(user)
+            rec.sudo().write({'retention_warned_at': now})
+            warned += 1
+        _logger.info(
+            'OKF retention: %d varningar skapade (%d koncept inom %d dagar)',
+            warned, len(concepts), self.RETENTION_WARN_DAYS)
+        return warned
+
+    def _retention_recipient(self):
+        """Vem ska varnas? (4.3)
+
+        `owner_user_id` om satt, annars coworkerns ägare (`chat_user_id` —
+        den som får coworkerns automatiska körningar skrivna till sitt
+        minne), annars systemadministratören. Ordningen är densamma som
+        ägarskapet: den som äger konceptet ska få frågan om det ska gallras.
+        """
+        self.ensure_one()
+        if self.owner_user_id:
+            return self.owner_user_id
+        if self.owner_coworker_id and self.owner_coworker_id.chat_user_id:
+            return self.owner_coworker_id.chat_user_id
+        admin = self.env.ref('base.user_admin', raise_if_not_found=False)
+        if admin:
+            return admin
+        _logger.warning(
+            'OKF retention: ingen mottagare för koncept %s (ingen ägare, '
+            'ingen coworker-ägare, ingen base.user_admin)', self.id)
+        return self.env['res.users']
+
+    def _schedule_retention_warning(self, user):
+        """Skapa aktiviteten som namnger konceptet och utgångsdatumet."""
+        self.ensure_one()
+        end = fields.Datetime.to_datetime(self.retention_end)
+        end_text = end.strftime('%Y-%m-%d') if end else '?'
+        title = self.title or self.concept_key or ''
+        try:
+            return self.sudo().activity_schedule(
+                'mail.mail_activity_data_todo',
+                summary=_('Retention: %(title)s expires %(date)s',
+                          title=title[:60], date=end_text),
+                note=_(
+                    'The concept will be archived on %(date)s according to '
+                    'its artifact type\'s retention policy. Move it, change '
+                    'the type, or let it expire.',
+                    date=end_text),
+                user_id=user.id,
+            )
+        except Exception as e:  # noqa: BLE001 — en varning får ej stoppa cronen
+            _logger.warning(
+                'OKF retention: kunde inte skapa aktivitet för koncept %s: %s',
+                self.id, e)
+            return None
+
+    @api.model
+    def _cron_enforce_retention(self):
+        """Arkivera koncept vars frist passerat (5.1–5.3), och mät (6.1).
+
+        Arkivering, inte radering (design D2): `archived` är redan den
+        globala soft-deleten som exkluderar ur sökning och injektion. En
+        felkonfigurerad `retention_days` (1 i stället för 365) töms då inte
+        — den kan ångras.
+
+        Cronen mäter sig själv (design D4): antal arkiverade och antal
+        FÖRFALLNA MEN EJ ARKIVERADE skrivs till ir.config_parameter. En cron
+        som slutar köra är annars tyst; med ett räknat eftersläp blir '
+        tystnaden synlig för kaizen.
+        """
+        now = fields.Datetime.now()
+        overdue_domain = [
+            ('archived', '=', False),
+            ('retention_end', '!=', False),
+            ('retention_end', '<=', now),
+        ]
+        overdue = self.search(overdue_domain)
+        archived = 0
+        for rec in overdue:
+            rec.sudo().write({'archived': True})
+            archived += 1
+        remaining = self.search_count(overdue_domain)
+        # Historiken är det kaizen jämför mot (6.2): `overdue` ensamt säger
+        # ingenting om riktningen. Bunden till de senaste körningarna —
+        # parametern ska inte växa för evigt.
+        history = self._read_retention_history()
+        history.append({'at': now.isoformat(), 'archived': archived,
+                        'overdue': remaining})
+        metrics = {'archived': archived, 'overdue': remaining,
+                   'history': history[-self.RETENTION_HISTORY_LIMIT:]}
+        self.env['ir.config_parameter'].sudo().set_param(
+            'ai_agent_core.retention_metrics',
+            json.dumps(metrics, ensure_ascii=False))
+        _logger.info(
+            'OKF retention: %d koncept arkiverade, %d förfallna kvar',
+            archived, remaining)
+        return metrics
+
+    #: Antal körningar som sparas i mätvärdet. Två behövs för riktningen;
+    #: tio räcker för att se en trend utan att parametern växer.
+    RETENTION_HISTORY_LIMIT = 10
+
+    @api.model
+    def _read_retention_history(self):
+        """Tidigare mätpunkter ur `ai_agent_core.retention_metrics`.
+
+        En trasig eller saknad parameter ger en tom historik — cronen ska
+        mäta, inte krascha på sitt eget mätvärde.
+        """
+        raw = self.env['ir.config_parameter'].sudo().get_param(
+            'ai_agent_core.retention_metrics')
+        if not raw:
+            return []
+        try:
+            history = json.loads(raw).get('history') or []
+        except (TypeError, ValueError, AttributeError):
+            return []
+        return [h for h in history if isinstance(h, dict)]
+
+    def _recompute_retention(self, artifact_type):
+        """Räkna om fristen när artefakttypen ändras (7.1–7.3).
+
+        `artifact_type_id` är låst i `write()` — identiteten är inte
+        innehåll. Ett typbyte måste därför gå en uttrycklig väg, och det är
+        den här: byt typ OCH räkna om fristen i samma andetag, så de två
+        aldrig kan glida isär.
+
+        Fristen räknas om ur `create_date` med den nya typens
+        `retention_days` (design D5). Ligger det nya värdet FÖRE det gamla
+        — eller tas fristen bort — loggas ändringen med båda värdena: att
+        byta typ är ett medvetet beslut, men att det tyst gallrar
+        datalagret är det inte.
+
+        Returns:
+            bool: True om `retention_end` ändrades.
+        """
+        self.ensure_one()
+        if not artifact_type:
+            raise ValidationError(
+                _('Cannot recompute retention without an artifact type.'))
+        old_end = self.retention_end
+        new_end = self._retention_end_for_type(artifact_type)
+        self.sudo().write({
+            'artifact_type_id': artifact_type.id,
+            'retention_end': new_end,
+        })
+        if new_end == old_end:
+            return False
+        if not new_end or (old_end and new_end < old_end):
+            _logger.info(
+                'OKF retention: koncept %s (%s) bytte typ till %s — '
+                'retention_end %s → %s',
+                self.id, self.concept_key, artifact_type.name,
+                old_end or '(ingen)', new_end or '(ingen)')
+        return True
 
 
     # ════════════════════════════════════════════
@@ -840,6 +1113,9 @@ class AIOkfConcept(models.Model):
             'retention_purpose': atype.okf_contract.get('retention_purpose', 'none')
             if atype.okf_contract else 'none',
         })
+        # Fristen sätts inte här: den räknas ur `create_date`, som Odoo sätter
+        # först i INSERT. `create()` beräknar den (memory-retention-
+        # enforcement 1.3) — en väg, inte två.
         return self.create(vals)
 
 

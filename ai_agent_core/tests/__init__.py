@@ -30,6 +30,9 @@ from . import test_session_title
 from . import test_session_memory_bridge
 from . import test_coworker_dispatch_owner
 from . import test_memory_consolidation
+# Retention är en VERKSTÄLLD frist (memory-retention-enforcement):
+# retention_days deklarerades i data men lästes av ingen kod.
+from . import test_retention_enforcement
 from . import test_okf_dirty_bridge
 from . import test_okf_dirty_self_reignite
 from . import test_okf_hybrid_search

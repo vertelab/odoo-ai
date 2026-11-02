@@ -363,7 +363,59 @@ class AIKaizenReport(models.Model):
                 'evidence': f"usage_unreported={data['usage_unreported']}",
             })
 
+        # Retention-regel (memory-retention-enforcement 6.2): en cron som
+        # slutar köra är TYST — inget fel, inget larm, bara koncept som
+        # aldrig gallras. `_cron_enforce_retention()` mäter därför antalet
+        # FÖRFALLNA MEN EJ ARKIVERADE koncept. Växer den siffran mellan två
+        # körningar har verkställigheten slutat fungera, och det är först då
+        # det syns. Oförändrat eller minskande tal är inget fynd (6.3): en
+        # konstant eftersläpning är inte en regression.
+        retention = self._retention_backlog_finding()
+        if retention:
+            findings.append(retention)
+
         return findings
+
+    def _retention_backlog_finding(self):
+        """Fynd när eftersläpningen av utgångna koncept växer (6.2/6.3).
+
+        Läser mätvärdet som `ai.okf.concept._cron_enforce_retention()`
+        skriver. Saknas det (cronen har aldrig kört) finns ingenting att
+        jämföra med — och då ska kaizen inte larma om sin egen frånvaro.
+        """
+        raw = self.env['ir.config_parameter'].sudo().get_param(
+            'ai_agent_core.retention_metrics')
+        if not raw:
+            return None
+        try:
+            metrics = json.loads(raw)
+        except (TypeError, ValueError):
+            _logger.warning(
+                'Kaizen: ai_agent_core.retention_metrics är inte JSON: %r',
+                raw)
+            return None
+        history = metrics.get('history') or []
+        if len(history) < 2:
+            return None
+        previous = history[-2].get('overdue', 0)
+        current = history[-1].get('overdue', 0)
+        if current <= previous:
+            return None
+        return {
+            'severity': 'high',
+            'category': 'error',
+            'finding': (
+                f"Retention-eftersläpningen växer: {previous} → {current} "
+                f"förfallna koncept som ännu inte arkiverats"),
+            'recommendation': (
+                'Kontrollera att ai_retention_enforce körs. Ett växande '
+                'antal förfallna koncept betyder att arkiverings-cronen '
+                'inte verkställer retentionen — och då är gallringsfristen '
+                'återigen bara en deklaration.'),
+            'evidence': (
+                f"previous_overdue={previous}, current_overdue={current}, "
+                f"runs={len(history)}"),
+        }
 
     def _previous_eval_accuracy(self, quest, report):
         """Accuracy från runnet FÖRE det senaste (None om det saknas).

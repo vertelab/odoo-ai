@@ -13,6 +13,7 @@
                 <field name="artifact_type_id"/>
                 <field name="status"/>
                 <field name="stale_after"/>
+                <field name="retention_end"/>
                 <field name="archived"/>
                 <field name="owner_company_id" optional="show"/>
                 <field name="owner_user_id" optional="show"/>
@@ -52,6 +53,7 @@
                             <field name="stale_after"/>
                             <field name="retention_purpose"/>
                             <field name="retention_end"/>
+                            <field name="retention_warned_at"/>
                             <field name="dirty"/>
                         </group>
                     </group>
