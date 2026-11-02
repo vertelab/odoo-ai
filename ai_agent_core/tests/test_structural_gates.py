@@ -463,9 +463,15 @@ class TestDetectRecordFallbackLogging(TransactionCase):
         self.error_model = self.env['ai.coworker.error']
 
     def _error_rows(self):
+        """Rader från fallback-kedjan — inte andra fel i samma tabell."""
         return self.error_model.search([
             ('message', 'ilike', DETECT_ERROR_PREFIX),
         ])
+
+    def _new_rows(self, before_ids):
+        """Rader tillkomna sedan ``before_ids`` lästes."""
+        return self._error_rows().filtered(
+            lambda r: r.id not in before_ids)
 
     def _session(self, model, rec_id):
         """En session vars record-kontext pekar på ``model``/``rec_id``."""
@@ -477,25 +483,24 @@ class TestDetectRecordFallbackLogging(TransactionCase):
             'ai_record_id': rec_id,
         })
 
-    def _detect(self, session):
+    def _detect(self, session, **kwargs):
         """Kör `_detect_record()` med sessionen som env-context."""
         return self.coworker.with_context(
             _ai_context_model='ai.coworker.session',
             _ai_context_id=session.id,
-        )._detect_record({})
+        )._detect_record(kwargs)
 
     def test_raising_source_creates_error_row(self):
         """En källa som kastar lämnar en rad — och turen fortsätter."""
         # 'no.such.model' får env[...] att kasta — exakt den sortens
         # trasiga kontextväg som tidigare blev tyst.
         session = self._session('no.such.model', 1)
-        before = len(self._error_rows())
+        before_ids = set(self._error_rows().ids)
 
         result = self._detect(session)
 
         self.assertIsNone(result, 'källan gav ingen record')
-        rows = self._error_rows() - self.error_model.browse(
-            self._error_rows().ids[:before])
+        rows = self._new_rows(before_ids)
         self.assertEqual(len(rows), 1, 'ett kast → exakt en rad')
         self.assertIn('session_record', rows.message)
         self.assertEqual(rows.session_id, session)
@@ -505,44 +510,42 @@ class TestDetectRecordFallbackLogging(TransactionCase):
         """En källa som returnerar tomt är ett giltigt svar — ingen rad."""
         # Modellen finns, men id:t gör inte → browse().exists() är tomt.
         session = self._session('res.partner', 0)
-        before = len(self._error_rows())
+        before_ids = set(self._error_rows().ids)
 
         result = self._detect(session)
 
         self.assertIsNone(result, 'inga källor gav en record')
         self.assertEqual(
-            len(self._error_rows()), before,
+            len(self._new_rows(before_ids)), 0,
             'en tom källa ska inte fylla felloggen')
 
     def test_working_source_does_not_create_error_row(self):
         """En källa som svarar lämnar recorden — och ingen rad."""
         session = self._session('res.partner', self.partner.id)
-        before = len(self._error_rows())
+        before_ids = set(self._error_rows().ids)
 
         result = self._detect(session)
 
         self.assertEqual(result, self.partner)
-        self.assertEqual(len(self._error_rows()), before)
+        self.assertEqual(len(self._new_rows(before_ids)), 0)
 
     def test_fallback_chain_continues_past_raising_source(self):
         """Ett kast i en tidig källa stoppar inte de senare källorna."""
         session = self._session('no.such.model', 1)
-        before = len(self._error_rows())
+        before_ids = set(self._error_rows().ids)
 
         # Källan 5 (meddelandet) svarar — källan 3 kastade före den.
         message = self.env['mail.message'].create({
             'model': 'res.partner',
             'res_id': self.partner.id,
+            'message_type': 'comment',
             'body': 'fallback-kedjans meddelandekälla',
         })
-        result = self.coworker.with_context(
-            _ai_context_model='ai.coworker.session',
-            _ai_context_id=session.id,
-        )._detect_record({'message': message})
+        result = self._detect(session, message=message)
 
         self.assertEqual(result, self.partner, 'källan 5 svarade')
         self.assertEqual(
-            len(self._error_rows()), before + 1,
+            len(self._new_rows(before_ids)), 1,
             'källan 3 kastade och ska ha loggats en gång')
 
 
