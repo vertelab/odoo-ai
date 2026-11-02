@@ -25,7 +25,7 @@ import ast
 import pathlib
 import unittest
 
-from odoo.tests.common import TransactionCase
+from odoo.tests.common import TransactionCase, tagged
 
 
 MODULE_ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -282,8 +282,9 @@ class StructuralGateSilentExcept(TransactionCase):
 #: Uppmätt mot 18.0 @ 54cd3618: 21 publika klasser i core/, 12 utan
 #: anropare utanför core/ och tests/. Posterna nedan är de som har ett
 #: skrivet skäl att stanna. Resten åtgärdas i wire-orphaned-core-mechanisms
-#: §2 och §7–§9 (BudgetTracker, BudgetEnforcingProvider, EvalRunner,
-#: IntelligentRouter, ExternalAgentHandle, JevClient, LexicalSelector).
+#: §7–§9 (EvalRunner, IntelligentRouter, ExternalAgentHandle, JevClient,
+#: LexicalSelector). `BudgetTracker`/`BudgetEnforcingProvider` fanns aldrig
+#: här — de togs bort ur core/budget.py i §2.
 CORE_WIRING_ALLOWLIST = [
     (
         'AIProvider',
@@ -421,6 +422,128 @@ class StructuralGateCoreWiring(TransactionCase):
             'Undantag som inte längre behövs (klassen är inkopplad) — '
             'ta bort posten:\n  ' + '\n  '.join(stale),
         )
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Grind 4 — fallback-kedjan i record-detektionen
+# (structural-discipline-gates §5)
+# ──────────────────────────────────────────────────────────────────────
+
+#: Prefixet varje rad från fallback-kedjan bär i `message`.
+#: Används för att skilja grindens rader från andra fel i samma tabell.
+DETECT_ERROR_PREFIX = 'kontextkälla'
+
+
+@tagged('post_install', '-at_install')
+class TestDetectRecordFallbackLogging(TransactionCase):
+    """En källa som KASTAR ska ge en `ai.coworker.error`-rad — tomt ska inte.
+
+    Fallback-kedjan i `_detect_record()` prövar källor i prioritetsordning.
+    Att en källa faller tillbaka på nästa är normalt; att den kastar är ett
+    fel som tidigare svaldes av `except: pass`. Grinden bevakar att de två
+    går att skilja i efterhand (design D5).
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.coworker = cls.env['ai.coworker'].create({
+            'name': 'Fallback-loggnings-test',
+            'orchestration_mode': 'single',
+            'status': 'active',
+        })
+        cls.partner = cls.env['res.partner'].create({
+            'name': 'Fallback Test Partner',
+        })
+
+    def setUp(self):
+        super().setUp()
+        if 'ai.coworker.error' not in self.env:
+            self.skipTest('ai.coworker.error saknas i denna installation')
+        self.error_model = self.env['ai.coworker.error']
+
+    def _error_rows(self):
+        return self.error_model.search([
+            ('message', 'ilike', DETECT_ERROR_PREFIX),
+        ])
+
+    def _session(self, model, rec_id):
+        """En session vars record-kontext pekar på ``model``/``rec_id``."""
+        return self.env['ai.coworker.session'].create({
+            'coworker_id': self.coworker.id,
+            'status': 'active',
+            'name': 'Fallback-loggnings-test',
+            'ai_record_model': model,
+            'ai_record_id': rec_id,
+        })
+
+    def _detect(self, session):
+        """Kör `_detect_record()` med sessionen som env-context."""
+        return self.coworker.with_context(
+            _ai_context_model='ai.coworker.session',
+            _ai_context_id=session.id,
+        )._detect_record({})
+
+    def test_raising_source_creates_error_row(self):
+        """En källa som kastar lämnar en rad — och turen fortsätter."""
+        # 'no.such.model' får env[...] att kasta — exakt den sortens
+        # trasiga kontextväg som tidigare blev tyst.
+        session = self._session('no.such.model', 1)
+        before = len(self._error_rows())
+
+        result = self._detect(session)
+
+        self.assertIsNone(result, 'källan gav ingen record')
+        rows = self._error_rows() - self.error_model.browse(
+            self._error_rows().ids[:before])
+        self.assertEqual(len(rows), 1, 'ett kast → exakt en rad')
+        self.assertIn('session_record', rows.message)
+        self.assertEqual(rows.session_id, session)
+        self.assertEqual(rows.error_type, 'other')
+
+    def test_empty_source_does_not_create_error_row(self):
+        """En källa som returnerar tomt är ett giltigt svar — ingen rad."""
+        # Modellen finns, men id:t gör inte → browse().exists() är tomt.
+        session = self._session('res.partner', 0)
+        before = len(self._error_rows())
+
+        result = self._detect(session)
+
+        self.assertIsNone(result, 'inga källor gav en record')
+        self.assertEqual(
+            len(self._error_rows()), before,
+            'en tom källa ska inte fylla felloggen')
+
+    def test_working_source_does_not_create_error_row(self):
+        """En källa som svarar lämnar recorden — och ingen rad."""
+        session = self._session('res.partner', self.partner.id)
+        before = len(self._error_rows())
+
+        result = self._detect(session)
+
+        self.assertEqual(result, self.partner)
+        self.assertEqual(len(self._error_rows()), before)
+
+    def test_fallback_chain_continues_past_raising_source(self):
+        """Ett kast i en tidig källa stoppar inte de senare källorna."""
+        session = self._session('no.such.model', 1)
+        before = len(self._error_rows())
+
+        # Källan 5 (meddelandet) svarar — källan 3 kastade före den.
+        message = self.env['mail.message'].create({
+            'model': 'res.partner',
+            'res_id': self.partner.id,
+            'body': 'fallback-kedjans meddelandekälla',
+        })
+        result = self.coworker.with_context(
+            _ai_context_model='ai.coworker.session',
+            _ai_context_id=session.id,
+        )._detect_record({'message': message})
+
+        self.assertEqual(result, self.partner, 'källan 5 svarade')
+        self.assertEqual(
+            len(self._error_rows()), before + 1,
+            'källan 3 kastade och ska ha loggats en gång')
 
 
 if __name__ == '__main__':
