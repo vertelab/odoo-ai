@@ -2262,8 +2262,9 @@ class AICoworker(models.Model):
                     return (recs._name, recs.id)
                 if len(recs) > 1:
                     return (recs._name, tuple(sorted(recs.ids)))
-            except Exception:
-                pass  # best-effort: tyst fallback — se etiketteringsregeln
+            except Exception as e:
+                self._log_detect_source_error(
+                    'channel_view_context (cache-nyckel)', e)
         # 2. Frontend-kontexten (env.context).
         try:
             model = (self.env.context.get('_ai_context_ids_model')
@@ -2285,16 +2286,18 @@ class AICoworker(models.Model):
                 rec = self.env[model].browse(int(active_id)).exists()
                 if rec:
                     return (rec._name, rec.id)
-        except Exception:
-            pass  # best-effort: tyst fallback — se etiketteringsregeln
+        except Exception as e:
+            self._log_detect_source_error(
+                'env_context (cache-nyckel)', e)
         # 3. Session/kanal/meddelande-vägarna.
         try:
             rec = self._detect_record({'channel': channel,
                                        'message': message})
             if rec:
                 return (rec._name, rec.id)
-        except Exception:
-            pass  # best-effort: tyst fallback — se etiketteringsregeln
+        except Exception as e:
+            self._log_detect_source_error(
+                'detect_record (cache-nyckel)', e)
         return None
 
     def chat(self, message, channel=None, bot_user=None):
@@ -4145,6 +4148,35 @@ class AICoworker(models.Model):
             parts.append(
                 f"### Chatter History (oldest -> newest)\n{chatter}\n")
 
+    def _log_detect_source_error(self, source, error):
+        """Registrera att en kontextkälla KASTADE — inte att den var tom.
+
+        Fallback-kedjorna i `_detect_record()`, `_detect_records()` och
+        `_chat_record_key()` prövar källor i prioritetsordning. Att en
+        källa faller tillbaka på nästa är normalt; att den kastar är inte
+        det. Utan den här raden går de två inte att skilja i efterhand
+        (structural-discipline-gates D5).
+
+        Skriver bara när källan kastar — en källa som returnerar tomt är
+        ett giltigt svar och ska inte fylla felloggen.
+        """
+        _logger.warning('kontextkälla %s kastade: %s', source, error)
+        try:
+            if 'ai.coworker.error' not in self.env:
+                return
+            sess = self._get_context_session()
+            self.env['ai.coworker.error'].create({
+                'session_id': sess.id if sess else False,
+                'error_type': 'other',
+                'message': 'kontextkälla %s kastade: %s' % (source, error),
+                'context': 'kontext-detektion (fallback-kedja)',
+            })
+        except Exception as log_err:
+            # Får inte fälla turen — men får inte heller vara tyst.
+            _logger.warning(
+                'kunde inte skriva ai.coworker.error för %s: %s',
+                source, log_err)
+
     def _detect_record(self, kwargs):
         """Detect context record from available sources.
 
@@ -4155,6 +4187,9 @@ class AICoworker(models.Model):
         (ai-coworker-record-context D1c): den var en tredje
         namnkonvention för samma sak. Se `_detect_records()` för den
         kanoniska vägen.
+
+        En källa som kastar registreras i `ai.coworker.error` (D5) — en
+        källa som returnerar tomt gör det inte. Fallback i sig är normalt.
         """
         # 1. Direct record parameter
         r = kwargs.get('record')
@@ -4172,8 +4207,8 @@ class AICoworker(models.Model):
                     int(sess.ai_record_id))
                 if r.exists():
                     return r
-            except Exception:
-                pass  # best-effort: tyst fallback — se etiketteringsregeln
+            except Exception as e:
+                self._log_detect_source_error('session_record', e)
         # 4. Channel context — den INKOMMANDE kanalen (D1b), inte
         #    self.channel_id.
         #
@@ -4189,8 +4224,8 @@ class AICoworker(models.Model):
                 recs, _vt = ch._get_ai_context_record()
                 if recs:
                     return recs[0]
-            except Exception:
-                pass  # best-effort: tyst fallback — se etiketteringsregeln
+            except Exception as e:
+                self._log_detect_source_error('channel_view_context', e)
             try:
                 ch_sess = self._get_session_for_channel(ch)
                 if ch_sess and ch_sess.ai_record_model \
@@ -4199,8 +4234,8 @@ class AICoworker(models.Model):
                         int(ch_sess.ai_record_id))
                     if r.exists():
                         return r
-            except Exception:
-                pass  # best-effort: tyst fallback — se etiketteringsregeln
+            except Exception as e:
+                self._log_detect_source_error('channel_session_record', e)
         # 5. Message model/res_id
         msg = kwargs.get('message')
         if msg:
@@ -4214,8 +4249,8 @@ class AICoworker(models.Model):
                         r = self.env[m].browse(rid)
                         if r.exists():
                             return r
-                    except Exception:
-                        pass  # best-effort: tyst fallback — se etiketteringsregeln
+                    except Exception as e:
+                        self._log_detect_source_error('message_record', e)
         # 6. Session objects
         if ch:
             sess = getattr(ch, 'ai_coworker_session_id', None)
@@ -4251,8 +4286,9 @@ class AICoworker(models.Model):
                 recs, _vt = ch._get_ai_context_record()
                 if len(recs) > 1:
                     return recs
-            except Exception:
-                pass  # best-effort: tyst fallback — se etiketteringsregeln
+            except Exception as e:
+                self._log_detect_source_error(
+                    'channel_view_context (markering)', e)
 
         # 2. env.context (server actions, webb-UI).
         model = (self.env.context.get('_ai_context_ids_model')
@@ -4275,6 +4311,7 @@ class AICoworker(models.Model):
         except Exception as e:
             _logger.warning('_detect_records: kunde inte browsa %s: %s',
                             model, e)
+            self._log_detect_source_error('env_context_ids', e)
             return empty
         return recs
 
