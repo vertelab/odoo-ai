@@ -106,6 +106,13 @@ class TestNoNakedAsyncioRun(TransactionCase):
         'models/ai_coworker.py',
         # Hjälparens egen implementation.
         'core/provider.py',
+        # Kanal-körningen (channel-adapter-wiring 3.1): `run_coroutine_sync`
+        # kör `process_item()` från synkron Odoo-kod. Ingen provider-klient
+        # ägs av anropet — providern skapas och stängs inne i loopen.
+        'core/channels.py',
+        # NATS KV-låsen (create/delete): rena nats-anrop, ingen LLM-provider
+        # och därmed ingen httpx-klient att lämna pending.
+        'core/tools.py',
     }
 
     def test_no_unclosed_asyncio_run_in_models(self):

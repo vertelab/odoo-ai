@@ -9672,6 +9672,13 @@ class AICoworker(models.Model):
             empty_skipped += len(candidates) - len(measurable)
             cases = measurable[:max_cases]
             if not cases:
+                # Logga per medarbetare: annars syns ett fall utan förväntan
+                # bara i totalen, och en medarbetare vars alla fall saknar
+                # förväntan ser ut som en medarbetare utan fall.
+                if candidates:
+                    _logger.info(
+                        'Eval: %s — %d fall utan förväntan överhoppade',
+                        coworker.name, len(candidates))
                 continue
 
             # 5.2 — ett tak som gäller chatten gäller också mätningen.
