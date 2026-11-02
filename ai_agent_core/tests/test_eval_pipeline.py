@@ -768,3 +768,57 @@ class TestOutcomeVerification(EvalTestBase):
         self.assertFalse(
             finding.verification,
             'rapportgenereringen får inte verifiera — bara eval-körningen')
+
+
+@tagged('post_install', '-at_install')
+class TestKaizenReportRendering(EvalTestBase):
+    """4.1–4.2: rapporttexten visar mätpunkten och utfallet."""
+
+    def _report(self, coworker):
+        return self.env['ai.kaizen.report'].create({
+            'coworker_id': coworker.id,
+            'week_start': '2026-01-05',
+            'week_end': '2026-01-11',
+        })
+
+    def test_eval_accuracy_shown_in_overview(self):
+        """4.1: accuracy-raden finns när fältet är satt."""
+        coworker = self._coworker('Rendering accuracy')
+        report = self._report(coworker)
+        report.eval_accuracy_trend = 0.75
+        text = report._render_report()
+        self.assertIn('Eval-accuracy: 75%', text)
+
+    def test_eval_accuracy_omitted_when_unset(self):
+        """4.1: ingen rad när ingen mätning finns — 0.0 är inte noll rätt."""
+        coworker = self._coworker('Rendering tom')
+        report = self._report(coworker)
+        self.assertNotIn('Eval-accuracy', report._render_report())
+
+    def test_verification_shown_for_applied_finding(self):
+        """4.2: utfall + evidens visas för ett verifierat fynd."""
+        coworker = self._coworker('Rendering utfall')
+        report = self._report(coworker)
+        self.env['ai.kaizen.finding'].create({
+            'report_id': report.id,
+            'severity': 'medium',
+            'category': 'performance',
+            'finding': 'Eval-accuracy sjönk',
+            'verification': 'improved',
+            'verification_evidence': 'accuracy 0.62 → 0.81',
+        })
+        text = report._render_report()
+        self.assertIn('Utfall:', text)
+        self.assertIn('accuracy 0.62 → 0.81', text)
+
+    def test_no_verification_line_for_unverified_finding(self):
+        """4.2: ett oapplicerat fynd har inget utfall att visa."""
+        coworker = self._coworker('Rendering utan utfall')
+        report = self._report(coworker)
+        self.env['ai.kaizen.finding'].create({
+            'report_id': report.id,
+            'severity': 'low',
+            'category': 'performance',
+            'finding': 'Ett förslag',
+        })
+        self.assertNotIn('Utfall:', report._render_report())

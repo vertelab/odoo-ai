@@ -454,6 +454,12 @@ class AIKaizenReport(models.Model):
             lines.append(f"- Session-trend: {self.session_trend:+.0f}%")
         if self.cost_trend:
             lines.append(f"- Kostnadstrend: {self.cost_trend:+.0f}%")
+        # 4.1 — veckans mätpunkt. Utelämnas när inget run finns: 0.0 är
+        # "ingen mätning", inte "noll rätt" (samma princip som fältets
+        # help-text).
+        if self.eval_accuracy_trend:
+            lines.append(
+                f"- Eval-accuracy: {self.eval_accuracy_trend:.0%}")
 
         # Findings by severity
         findings = self.finding_ids.sorted('severity', reverse=True)
@@ -468,6 +474,24 @@ class AIKaizenReport(models.Model):
                     lines.append(f"  → {f.recommendation}")
                 if f.evidence:
                     lines.append(f"  *Evidens:* {f.evidence}")
+                # 4.2 — utfall av åtgärden, bara för applicerade fynd som
+                # verifierats. Ett fynd utan `verification` har inte mätts
+                # ännu, och ska inte se ut som om det gjort det.
+                if f.verification:
+                    outcome_icon = {
+                        'improved': '✅',
+                        'unchanged': '➖',
+                        'worse': '❌',
+                    }.get(f.verification, '•')
+                    outcome_label = dict(
+                        f._fields['verification'].selection).get(
+                            f.verification, f.verification)
+                    detail = (
+                        f" ({f.verification_evidence})"
+                        if f.verification_evidence else '')
+                    lines.append(
+                        f"  {outcome_icon} **Utfall:** {outcome_label}"
+                        f"{detail}")
 
         if not findings:
             lines.append("\n✅ Inga anmärkningar denna vecka.")
