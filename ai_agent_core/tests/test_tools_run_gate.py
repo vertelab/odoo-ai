@@ -422,3 +422,28 @@ class TestApprovalChannelAuth(TransactionCase):
         idx_set = src.find('handler.set_response(response)')
         idx_auth = src.find('_check_api_key')
         self.assertGreater(idx_set, idx_auth)
+
+
+@tagged('ai_core', 'post_install', '-at_install')
+class TestPiFlagLeavesATrace(TransactionCase):
+    """Path B: `approved_by_user` finns kvar men lämnar nu ett spår."""
+
+    def test_flag_logs_the_approval(self):
+        """Flaggan ska loggas — annars finns godkännandet bara i Pi."""
+        import inspect
+        import textwrap
+        from odoo.addons.ai_agent_core.controllers import stream as stream_mod
+        src = textwrap.dedent(
+            inspect.getsource(stream_mod.AIOpenAIAPI.tools_run))
+        self.assertIn(
+            '_log_approval(sess, name', src,
+            'godkännande via flaggan måste lämna ett spår på sessionen')
+
+    def test_flag_still_exempts_hard_stops(self):
+        """Hårda stopp nekas fortfarande — flaggan är inget undantag."""
+        import inspect
+        import textwrap
+        from odoo.addons.ai_agent_core.controllers import stream as stream_mod
+        src = textwrap.dedent(
+            inspect.getsource(stream_mod.AIOpenAIAPI.tools_run))
+        self.assertIn('approved_by_user and not _is_hard_stop', src)

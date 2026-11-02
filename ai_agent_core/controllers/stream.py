@@ -5391,6 +5391,13 @@ class AIOpenAIAPI(http.Controller):
                 _needs_user_unmet = (
                     _decision.needs_user
                     and not (approved_by_user and not _is_hard_stop))
+                if _needs_user_unmet and approved_by_user and not _is_hard_stop:
+                    # Path B (OVERLAP-16a06ba7.md): flaggan finns kvar under
+                    # övergången, men lämnar nu ett SPÅR. Utan loggraden
+                    # fanns godkännandet bara i Pi:s lokala session, och
+                    # servern kunde inte visa vem som sagt ja.
+                    _log_approval(sess, name, 'pi-flag', args)
+
                 if not _decision.allowed or _needs_user_unmet:
                     # Svarskanal (tools-run-approval-channel 3.1): finns en
                     # handler registrerad för sessionen kan vi FRÅGA i
