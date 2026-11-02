@@ -5417,9 +5417,6 @@ class AICoworker(models.Model):
             )
 
         # ── Multi-agent modes (supervisor/buzz) ──
-        from odoo.addons.ai_agent_core.core.supervisor import (
-            SupervisorLoop, SupervisorConfig,
-        )
         specialists = self._build_specialists(
             provider, tools, model, system_prompt, max_rounds,
             outcome_callback=outcome_cb,
@@ -5467,20 +5464,29 @@ class AICoworker(models.Model):
                 ),
             )
 
-        return SupervisorLoop(
-            router_provider=provider,
-            agents=specialists,
-            config=SupervisorConfig(
-                router_model=supervisor_model,
-                skill_recipe=skill_recipe,
-                # Routerns EGNA tak (hur många gånger den får välja om),
-                # inte agenternas rundtak. Det senare är max_iterations
-                # nedan — som därför får styra båda när det är lägre, så att
-                # en medarbetare med Max Iterations=2 inte ändå får 3
-                # router-varv (init-type-execution-parity 5.3).
-                max_rounds=min(self.max_iterations or 3, 3),
-                max_iterations=self.max_iterations or 3,
-                min_confidence=self.min_confidence or 0.8,
+        # SupervisorLoop är pensionerad (wire-orphaned-core-mechanisms §7):
+        # skill-vägen ovan är den enda supervisorn. Att nå hit betyder att
+        # ingen orchestration-recipe kunde kopplas — då är en ensam AgentLoop
+        # med specialisternas verktyg rätt svar, inte en hårdkodad router.
+        _logger.warning(
+            'Supervisor-läge utan orchestration-recipe för %s — kör som '
+            'enskild loop med specialisternas verktyg', self.name)
+        from odoo.addons.ai_agent_core.core.tools import specialist_tools
+        spec_tools = specialist_tools([
+            (s.name, s.description, s.loop) for s in specialists
+        ])
+        for t in spec_tools:
+            if t.name not in tools:
+                tools.register(t)
+        return AgentLoop(
+            provider=provider, tools=tools,
+            config=AgentConfig(
+                model=supervisor_model, system_prompt=system_prompt,
+                max_rounds=max_rounds,
+                session_headers=bifrost_headers,
+                outcome_callback=outcome_cb,
+                checkpoint_callback=checkpoint_cb,
+                interrupt_handler=interrupt_handler,
             ),
         )
 

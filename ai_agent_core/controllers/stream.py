@@ -803,7 +803,7 @@ class AIStreamController(http.Controller):
                         import uuid as _uuid_mod
                         from odoo.addons.ai_agent_core.core.tools import ToolRegistry, ai_tool_records_to_tools
                         from odoo.addons.ai_agent_core.core.loop import StreamingAgentLoop, AgentConfig
-                        from odoo.addons.ai_agent_core.core.supervisor import StreamingSupervisorLoop, SupervisorConfig, SpecialistAgent
+                        from odoo.addons.ai_agent_core.core.supervisor import SpecialistAgent
                         from odoo.addons.ai_agent_core.core.interrupt import WebUIInterruptHandler
 
                         # Konversationshistorik (session-history-relevance 1.2):
@@ -895,9 +895,19 @@ class AIStreamController(http.Controller):
                                         ),
                                     ),
                                 ))
-                            loop_obj = StreamingSupervisorLoop(
-                                router_provider=provider, agents=specialists,
-                                config=SupervisorConfig(router_model=model),
+                            # StreamingSupervisorLoop är pensionerad
+                            # (wire-orphaned-core-mechanisms §7). Skill-vägen
+                            # använder en vanlig StreamingAgentLoop med
+                            # specialisternas verktyg — samma väg som
+                            # single-läget, och därmed samma grind.
+                            _register_specialist_tools(tools, specialists)
+                            loop_obj = _make_loop(
+                                config=AgentConfig(
+                                    model=model,
+                                    system_prompt=system_prompt,
+                                    max_rounds=None,
+                                    checkpoint_callback=_checkpoint,
+                                ),
                             )
                         else:
                             loop_obj = _make_loop(
@@ -2417,6 +2427,20 @@ def _log_denial(sess, tool_name, request_id, reason):
     _logger.warning(
         'tools/run NEKAT: tool=%s session=%s request=%s reason=%s',
         tool_name, getattr(sess, 'id', 0), request_id or '-', reason)
+
+
+def _register_specialist_tools(tools, specialists):
+    """Registrera specialisternas verktyg på ett ToolRegistry.
+
+    Bryts ut ur `stream()` så att den funktionen inte växer över
+    komplexitetsgränsen i .ruff.toml (C901 = 113). Samma tre rader användes
+    på två ställen när SupervisorLoop pensionerades.
+    """
+    from odoo.addons.ai_agent_core.core.tools import specialist_tools
+    for spec_tool in specialist_tools([
+            (s.name, s.description, s.loop) for s in specialists]):
+        if spec_tool.name not in tools:
+            tools.register(spec_tool)
 
 
 def _get_webui_handler(session_uuid: str):

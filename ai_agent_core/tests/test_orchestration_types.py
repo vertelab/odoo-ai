@@ -252,13 +252,6 @@ class TestLinearLoopModule(TransactionCase):
         except ImportError as e:
             self.fail(f"LinearLoop import failed: {e}")
 
-    def test_supervisor_has_conference(self):
-        """SupervisorLoop has conference method."""
-        from odoo.addons.ai_agent_core.core.supervisor import SupervisorLoop
-        self.assertTrue(hasattr(SupervisorLoop, 'conference'))
-
-
-@tagged('orchestration', 'ai_core', 'buzz')
 class TestBuzzEnhanced(TransactionCase):
     """Buzz enhanced features — LLM router, A2A config, per-agent resources."""
 
