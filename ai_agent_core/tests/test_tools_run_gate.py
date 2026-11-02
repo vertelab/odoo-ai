@@ -391,3 +391,34 @@ class TestApprovalChannel(TransactionCase):
         self.assertIn(
             'not _is_hard_stop', src,
             'kanal-grenen måste undanta hårda stopp')
+
+
+@tagged('ai_core', 'post_install', '-at_install')
+class TestApprovalChannelAuth(TransactionCase):
+    """4.1 — ett godkännande är en behörighetshandling."""
+
+    def test_respond_requires_api_key_for_approvals(self):
+        """Ett godkännandesvar får inte lämnas utan API-nyckel."""
+        import inspect
+        import textwrap
+        from odoo.addons.ai_agent_core.controllers import stream as stream_mod
+        src = textwrap.dedent(
+            inspect.getsource(stream_mod.AIStreamController.interrupt_respond))
+        # Kontrollen måste ligga INUTI request_id-grenen.
+        idx_approval = src.find("response.get('request_id')")
+        idx_auth = src.find('_check_api_key', idx_approval)
+        self.assertGreater(
+            idx_auth, idx_approval,
+            'godkännandegrenen måste pröva API-nyckeln innan svaret tas emot')
+
+    def test_plain_ask_response_is_not_gated(self):
+        """Det vanliga `ask`-svaret lämnas orört (web-UI:ts egen kanal)."""
+        import inspect
+        import textwrap
+        from odoo.addons.ai_agent_core.controllers import stream as stream_mod
+        src = textwrap.dedent(
+            inspect.getsource(stream_mod.AIStreamController.interrupt_respond))
+        # set_response ska nås utan API-nyckel — den ligger efter grenen.
+        idx_set = src.find('handler.set_response(response)')
+        idx_auth = src.find('_check_api_key')
+        self.assertGreater(idx_set, idx_auth)

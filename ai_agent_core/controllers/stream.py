@@ -1462,7 +1462,14 @@ class AIStreamController(http.Controller):
         # på en begäran med `request_id` + `approved`. Formen skiljs från
         # det vanliga `ask`-svaret (en sträng) så att de två kanalerna inte
         # blandas ihop.
+        #
+        # AUTENTISERING (4.1): ett godkännande är en behörighetshandling och
+        # får inte kunna lämnas av en anonym anropare. Samma API-nyckel som
+        # `/ai/v1/tools/run` kräver. `ask`-svaret (en sträng) lämnas orört —
+        # det är web-UI:ts egen kanal och har sin egen auth-modell.
         if isinstance(response, dict) and response.get('request_id'):
+            if not self._check_api_key():
+                return {"error": "Unauthorized"}
             request_id = str(response['request_id'])
             approved = response.get('approved') is True
             reason = str(response.get('reason') or '')

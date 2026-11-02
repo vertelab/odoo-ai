@@ -364,6 +364,56 @@ class StructuralGateStandingRules(TransactionCase):
 
 
 # ──────────────────────────────────────────────────────────────────────
+# Grind 6 — varje exekverande endpoint prövar grinden (tools-run 5.1)
+# ──────────────────────────────────────────────────────────────────────
+
+#: Filer som bygger en ``ToolRegistry`` och därför måste anropa
+#: ``PermissionEngine.evaluate()`` innan ``tool.execute()``.
+TOOL_EXECUTION_FILES = ('controllers/stream.py',)
+
+
+def _tool_execution_without_gate(root):
+    """Returnerar ``[(relpath, funcname)]`` där execute() saknar grind."""
+    offenders = []
+    for rel in TOOL_EXECUTION_FILES:
+        path = root / rel
+        if not path.exists():
+            continue
+        tree = _parse(path)
+        if tree is None:
+            continue
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            src = ast.unparse(node)
+            if 'ToolRegistry(' not in src:
+                continue
+            if '.execute(' not in src:
+                continue
+            if 'evaluate(' not in src:
+                offenders.append((rel, node.name))
+    return offenders
+
+
+class StructuralGateToolExecution(TransactionCase):
+    """Grind: en endpoint som kör verktyg måste pröva grinden först.
+
+    Bakgrunden är konkret: `/ai/v1/tools/run` byggde en ToolRegistry och
+    anropade `tool.execute()` DIREKT. De två hårda stoppen kunde därför
+    köras utan mänskligt godkännande, trots att `approvals`-specen säger
+    att de ska gälla oavsett väg.
+    """
+
+    def test_tool_execution_goes_through_the_gate(self):
+        offenders = _tool_execution_without_gate(MODULE_ROOT)
+        self.assertFalse(
+            offenders,
+            'En endpoint kör verktyg utan PermissionEngine.evaluate():\n  '
+            + '\n  '.join('%s::%s' % o for o in offenders),
+        )
+
+
+# ──────────────────────────────────────────────────────────────────────
 # Grind 2 — klass-wiringen (wire-orphaned-core-mechanisms 1.1)
 # ──────────────────────────────────────────────────────────────────────
 
@@ -764,3 +814,29 @@ class StructuralGateToolTrust(TransactionCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+@tagged('ai_core', 'post_install', '-at_install')
+class TestApprovalsSpecConsistency(TransactionCase):
+    """1.3 — ingen formulering i `approvals`-specen motsäger en svarskanal."""
+
+    def test_spec_requires_the_same_gate_not_a_silent_denial(self):
+        """Specen kräver samma GRIND — inte samma NEKANDE.
+
+        "A path that resolves a tool registry and executes tools SHALL
+        evaluate the same gate as the agent loop" — kanalen låter
+        `/tools/run` göra precis det: `evaluate()` anropas, och när den
+        säger `needs_user` frågar ytan i stället för att neka. Grinden är
+        oförändrad; det är svaret som nu kan lämnas.
+        """
+        import pathlib
+        spec = pathlib.Path(
+            '/home/waland/plan/odoo-ai/openspec/specs/approvals/spec.md')
+        if not spec.exists():
+            self.skipTest('approvals-specen finns inte i den här miljön')
+        text = spec.read_text()
+        self.assertIn('SHALL evaluate the same gate', text)
+        # Ingen formulering får kräva att en yta UTAN kanal ska neka —
+        # det vore att göra kanalen otillåten.
+        self.assertNotIn('SHALL NOT prompt', text)
+        self.assertNotIn('must deny when no approval channel', text)
