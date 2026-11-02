@@ -561,6 +561,47 @@ Nya tester för sessionsminne och write-verify:
 `test_tool_self_correction.py`, `test_document_page_acceptance.py`
 (körs med `-t`; acceptanstestet hoppas över om `document.page` saknas).
 
+## Strukturella grindar (structural-discipline-gates)
+
+Två AST-baserade grindar bevakar **var** kod får byggas — inte vad den gör.
+De bor i `tests/test_structural_gates.py` och körs med modultestet.
+
+| Grind | Fråga | Ägs av |
+|---|---|---|
+| `test_agent_loop_constructed_only_in_build_loop` | Byggs `AgentLoop` på rätt ställe? | `structural-discipline-gates` |
+| `test_core_classes_are_wired` | Anropas den här `core/`-klassen alls? | `wire-orphaned-core-mechanisms` |
+
+Båda använder `ast`, aldrig regex: docstrings och kommentarer i kodbasen
+nämner medvetet de klassnamn de varnar för, och en regex skulle räkna dem
+som träffar.
+
+### Baseline är fryst — höj den medvetet
+
+`ai_agent_core/.ruff.toml` pinnar de värden som uppmättes mot orörd träd
+(18.0 @ 54cd3618):
+
+| Regel | Uppmätt | Form |
+|---|---|---|
+| `C901` (mccabe) | max komplexitet **113** | tröskel, verkställs av ruff |
+| `BLE001` (blind except) | **488** förekomster | volym, mäts av grinden |
+| `S110` (try-except-pass) | **94** förekomster | volym, mäts av grinden |
+
+Ruff har ingen inställning för "högst N förekomster", så `BLE001` och `S110`
+är avstängda i `.ruff.toml` och mäts i stället som volym. `C901` är en
+tröskel och verkställs direkt — en ny funktion över 113 fallerar
+`ruff check`.
+
+**Att höja en siffra är ett beslut, inte en justering.** Skriv skälet i
+commit-meddelandet och uppdatera tabellen ovan. Att sänka kräver ingen
+motivering.
+
+### Pre-commit-hooken
+
+Repot har `core.hooksPath = .githooks` (satt 2026-11-02). Hooken expanderar
+staged p-filer för den utgåva grenen anger. En gren som inte matchar 17.0,
+18.0 eller 19.0 hoppar tyst över expansionen — det är avsiktligt, så att
+arbetsgrenar inte kräver `preprocess` installerat.
+
 ## Minnesscope-isolering (odoo-mind-memory-scope-isolation)
 
 De tre OKF-scopen (`company`, `personal`, `coworker`) filtreras nu på
