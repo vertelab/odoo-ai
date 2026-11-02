@@ -239,12 +239,11 @@ class AgentLoop:
         self._partial_results: list[tuple[str, str]] = []
 
         # Todo list (plan-before-action) — use TodoList from tools
-        from .tools import TodoList
+        from .tools import TodoList, planning_tools
         self.todo_list = TodoList()
-        # Wire up the todo holder so todo_write tool can access it
-        from .tools import planning_tools
-        planning_tools(self.todo_list)
-        # Also register planning tools if not already present
+        # Register planning tools bound to THIS loop's todo list (D6).
+        # The tools close over the holder, so two loops in the same worker
+        # no longer overwrite each other's state via a module-level global.
         for pt in planning_tools(self.todo_list):
             if pt.name not in self.tools:
                 self.tools.register(pt)

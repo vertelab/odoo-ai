@@ -42,6 +42,7 @@ from . import test_okf_hybrid_search
 from . import test_okf_search_no_silent_fallback
 from . import test_injection_semantic
 from . import test_stream_teardown
+from . import test_planning_tools_state
 from . import test_okf_visible_to
 from . import test_lineage
 from . import test_odoo_model_tools

@@ -2070,33 +2070,46 @@ class TodoList:
         return self.done_count / self.total_count * 100
 
 
-async def _tool_todo_write(todos: list = None, items: list = None) -> str:
-    """Replace the task list. Each item has 'content' and 'status'.
+def _make_todo_write(holder: 'TodoList'):
+    """Bygg `todo_write` som stänger över EN hållare (D6).
 
-    Status must be one of: pending, in_progress, done.
-    The list replaces any previous list — provide ALL items each call.
+    Tidigare skrev verktyget till en modulnivå-global (`_TODO_HOLDER`) som
+    sattes när en loop skapades. Två loopar i samma worker — supervisor +
+    specialist, eller två samtidiga sessioner — skrev då över varandras
+    state. Det är ett korrekthetsfel, inte bara en läcka: den första loopens
+    `todo_write` hamnade i den andras lista.
+
+    En closure per `planning_tools()`-anrop ger varje loop sin egen lista
+    utan att någon global behöver existera.
     """
-    import json
-    from .tools import _TODO_HOLDER
 
-    normalized = []
-    for entry in (todos if todos is not None else items) or []:
-        if isinstance(entry, dict):
-            status = entry.get("status", "pending")
-            if status == "completed":
-                status = "done"
-            if status not in ("pending", "in_progress", "done"):
-                status = "pending"
-            normalized.append({
-                "content": str(entry.get("content", "")),
-                "status": status,
-            })
-        else:
-            normalized.append({"content": str(entry), "status": "pending"})
+    async def _tool_todo_write(todos: list = None, items: list = None) -> str:
+        """Replace the task list. Each item has 'content' and 'status'.
 
-    if _TODO_HOLDER is not None:
-        _TODO_HOLDER.items = normalized
-    return json.dumps({"count": len(normalized), "todos": normalized})
+        Status must be one of: pending, in_progress, done.
+        The list replaces any previous list — provide ALL items each call.
+        """
+        import json
+
+        normalized = []
+        for entry in (todos if todos is not None else items) or []:
+            if isinstance(entry, dict):
+                status = entry.get("status", "pending")
+                if status == "completed":
+                    status = "done"
+                if status not in ("pending", "in_progress", "done"):
+                    status = "pending"
+                normalized.append({
+                    "content": str(entry.get("content", "")),
+                    "status": status,
+                })
+            else:
+                normalized.append({"content": str(entry), "status": "pending"})
+
+        holder.items = normalized
+        return json.dumps({"count": len(normalized), "todos": normalized})
+
+    return _tool_todo_write
 
 
 def _tool_propose_plan(plan: str = "") -> str:
@@ -2116,34 +2129,43 @@ def _tool_propose_plan(plan: str = "") -> str:
     })
 
 
-# Module-level holder for todo state — set by AgentLoop
-_TODO_HOLDER: TodoList | None = None
+# Modulnivå-globaler för todo-state och skill-källa togs bort (D6):
+# de gjorde att två loopar i samma worker skrev över varandras state.
+# `planning_tools()` och `skill_tools()` returnerar nu verktyg som stänger
+# över sin egen hållare/källa.
 
-# Module-level skill source — set by AgentLoop or Odoo environment
-_SKILL_SOURCE: callable | None = None  # async (name: str) -> dict
 
+def _make_load_skill(skill_source: callable | None):
+    """Bygg `load_skill` som stänger över EN källa (D6).
 
-async def _tool_load_skill(name: str = "") -> str:
-    """Load a skill's full instructions by name. Call this when a skill from
+    Samma skäl som för `todo_write`: en global källa sattes när en loop
+    skapades, så två samtidiga loopar läste varandras skills. En closure per
+    `skill_tools()`-anrop ger varje loop sin egen källa.
+    """
+
+    async def _tool_load_skill(name: str = "") -> str:
+        """Load a skill's full instructions by name. Call this when a skill from
 the catalog is relevant to the current task."""
-    import json
-    if not name or not name.strip():
-        return _missing_argument_error(
-            'name', 'the name of a skill from the catalog',
-            example='saltstack',
-            tool_name='load_skill').to_json()
+        import json
+        if not name or not name.strip():
+            return _missing_argument_error(
+                'name', 'the name of a skill from the catalog',
+                example='saltstack',
+                tool_name='load_skill').to_json()
 
-    if _SKILL_SOURCE is None:
-        return json.dumps({
-            "error": "no skill source configured",
-            "note": "This environment doesn't support dynamic skill loading.",
-        })
+        if skill_source is None:
+            return json.dumps({
+                "error": "no skill source configured",
+                "note": "This environment doesn't support dynamic skill loading.",
+            })
 
-    try:
-        result = await _SKILL_SOURCE(name.strip())
-        return json.dumps(result, default=str)
-    except Exception as e:
-        return json.dumps({"error": f"failed to load skill '{name}': {e}"})
+        try:
+            result = await skill_source(name.strip())
+            return json.dumps(result, default=str)
+        except Exception as e:
+            return json.dumps({"error": f"failed to load skill '{name}': {e}"})
+
+    return _tool_load_skill
 
 
 def skill_tools(skill_source: callable | None = None) -> list[Tool]:
@@ -2154,10 +2176,7 @@ def skill_tools(skill_source: callable | None = None) -> list[Tool]:
                       a dict with name, instructions, resources_path etc.
                       If None, load_skill returns an error.
     """
-    global _SKILL_SOURCE
-    if skill_source is not None:
-        _SKILL_SOURCE = skill_source
-
+    load_skill = _make_load_skill(skill_source)
     return [
         Tool(
             name="load_skill",
@@ -2177,7 +2196,7 @@ def skill_tools(skill_source: callable | None = None) -> list[Tool]:
                 },
                 "required": ["name"],
             },
-            handler=_tool_load_skill,
+            handler=load_skill,
             risk_level="safe",
             source="builtin",
         ),
@@ -2189,13 +2208,11 @@ def planning_tools(todo_holder: TodoList | None = None) -> list[Tool]:
 
     Args:
         todo_holder: A TodoList instance to hold the agent's task state.
-                     If None, a module-level holder is used.
+                     If None, a fresh holder is created for this call — it
+                     is NOT stored in a module-level global (D6).
     """
-    global _TODO_HOLDER
-    if todo_holder is not None:
-        _TODO_HOLDER = todo_holder
-    elif _TODO_HOLDER is None:
-        _TODO_HOLDER = TodoList()
+    holder = todo_holder if todo_holder is not None else TodoList()
+    todo_write = _make_todo_write(holder)
 
     return [
         Tool(
@@ -2233,7 +2250,7 @@ def planning_tools(todo_holder: TodoList | None = None) -> list[Tool]:
                 },
                 "required": ["todos"],
             },
-            handler=_tool_todo_write,
+            handler=todo_write,
             risk_level="safe",
             source="builtin",
         ),
