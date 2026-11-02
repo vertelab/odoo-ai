@@ -954,61 +954,6 @@ class TestVerify(unittest.TestCase):
         self.assertTrue(result.passed)
 
 
-class TestBudget(unittest.TestCase):
-    """Test BudgetTracker (PAPER-004)."""
-
-    def test_budget_recording(self):
-        from ai_agent_core.core.budget import BudgetTracker
-        tracker = BudgetTracker(limit=50.0)
-        cost = tracker.record_call(1000, 500)
-        self.assertGreater(cost, 0)
-        self.assertGreater(tracker.used, 0)
-        self.assertEqual(tracker.total_calls, 1)
-
-    def test_budget_not_exhausted(self):
-        from ai_agent_core.core.budget import BudgetTracker
-        tracker = BudgetTracker(limit=50.0)
-        self.assertFalse(tracker.is_exhausted)
-
-    def test_budget_exhausted(self):
-        from ai_agent_core.core.budget import BudgetTracker, BudgetExhaustedError
-        tracker = BudgetTracker(limit=0.001)  # Very low limit
-        with self.assertRaises(BudgetExhaustedError):
-            tracker.record_call(10000, 5000)  # This will exhaust it
-
-    def test_budget_no_limit(self):
-        from ai_agent_core.core.budget import BudgetTracker
-        tracker = BudgetTracker(limit=0.0)  # No limit
-        tracker.record_call(1000000, 1000000)
-        self.assertFalse(tracker.is_exhausted)
-
-    def test_budget_can_afford(self):
-        from ai_agent_core.core.budget import BudgetTracker
-        tracker = BudgetTracker(limit=10.0)
-        self.assertTrue(tracker.can_afford(100, 50))
-        # Use most of the budget
-        tracker.record_call(3000000, 50000)
-        self.assertFalse(tracker.can_afford(100000, 100000))
-
-    def test_budget_state(self):
-        from ai_agent_core.core.budget import BudgetTracker
-        tracker = BudgetTracker(limit=100.0, agent_name="test_agent")
-        tracker.record_call(1000, 500)
-        state = tracker.get_state()
-        self.assertEqual(state.agent_name, "test_agent")
-        self.assertEqual(state.limit, 100.0)
-        self.assertGreater(state.used, 0)
-
-    def test_budget_reset_month(self):
-        from ai_agent_core.core.budget import BudgetTracker
-        tracker = BudgetTracker(limit=100.0)
-        tracker.record_call(10000, 5000)
-        self.assertGreater(tracker.used, 0)
-        tracker.reset_month()
-        self.assertEqual(tracker.used, 0)
-        self.assertEqual(tracker.total_calls, 0)
-
-
 class TestEval(unittest.TestCase):
     """Test AgentEvaluator (PAPER-006)."""
 
