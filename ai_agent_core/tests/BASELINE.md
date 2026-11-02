@@ -29,38 +29,35 @@ omgångar av "försök 1/3").
 ## Uppmätt baslinje
 
 ```
-ai_agent_core: 1899 tester, 344 s, 120414 queries
-Module ai_agent_core: 11 failures, 9 errors of 500 tests
+ai_agent_core: 1920 tester, 347 s, 124103 queries
+Module ai_agent_core: 0 failures, 0 errors
 ```
 
-De 500 är modul-fasen; de 1 899 är hela sviten inklusive beroenden.
+De 500 är modul-fasen; de 1 920 är hela sviten inklusive beroenden.
 
-## Kända fel — accepterade
+## Kända fel
 
-| Klass | Antal | Orsak | Åtgärd |
-|---|---|---|---|
-| `TestDefaultModel` | 2 | Ingen provider i testdatabasen | Testet bör skapa sin egen provider i `setUp` |
-| `TestProviderPrecheck` | 3 | Samma — ingen modell/provider att prechecka | Samma |
-| `TestLineage` | 2 | `suggestion_to_action`-kanten skapas inte | Riktig bugg — utreds |
-| `TestHandover` | 1 | Sortering av förslag | Utreds |
-| `TestTokenTotals` | 6 | Token-aggregeringen ger andra tal än förväntat | Utreds |
-| `TestBudgetBlockMessage` | 3 | Meddelandetexten matchar inte | Utreds |
-| `TestRetentionWarning` | 2 | Varningen skapas inte/dupliceras | Utreds |
-| `TestRetentionBackfill` | 2 | Backfill räknar/loggar fel | Utreds |
-| `TestRetentionTypeChange` | 3 | Omräkning vid typbyte | Utreds |
-| `TestOkfAccessResolver` | 2 (ERROR) | Resolvern kastar | Utreds |
-| `TestSearchSettings` | 2 | Sökprofilen | Utreds |
-| `TestPowerboxScoping` | 2 (ERROR) | Scoping-env | Utreds |
-| `TestPiMessageDedup` | 1 | Snabbspåret | Utreds |
-| `TestDiscussLearning` | 1 | Cron hoppar över fel | Utreds |
-| `TestPgVectorPersistsWithoutPackage` | 1 | Läs tillbaka | Utreds |
-| `TestAiMemoryPgvector` | 1 | Sökning utan agent-länk | Utreds |
-| `TestNoSilentDownload` | 2 (ERROR) | Nedladdningsskydd | Utreds |
-| `TestCoworkerCounters` | 1 | Token-summa | Utreds |
-| `TestDailyBudget` | 1 (ERROR) | Dagsbudget | Utreds |
-| `TestOutcomeVerification` | 1 (ERROR) | Utfallsverifiering | Utreds |
-| `MailChannelCharacterization` | 4 | Karaktäriseringstester skrivna före migreringen | Utreds |
-| `ChatChannelCharacterization` | 7 | Samma | Utreds |
+**Inga.** Baslinjen är noll sedan 2026-11-02.
+
+De 20 fel som fanns när baslinjen skrevs är åtgärdade:
+
+| Kategori | Åtgärd |
+|---|---|
+| Miljöberoende (`TestDefaultModel`, `TestProviderPrecheck`) | Testerna skapar sin egen provider/modell — `_ensure_test_provider_and_model()` |
+| Fixture-kollisioner (`TestTokenTotals`, `TestCoworkerCounters`) | Sekvensen allokeras som produktionen gör (`_next_session_sequence`) |
+| Skrivning till icke-lagrade computes (`TestBudgetBlockMessage`) | Testerna skapar de sessionsrader som computes summerar |
+| `assertLogs` fångar inte addon-loggers | `_capture_okf_logs()` öppnar propagation och nivå |
+| Karaktäriseringstester (mail/chat) | Fake `run()` patchades på klassen → fick `self` som första argument |
+| `TestLineage` | Kedjan satte `current_*` inne i kantloopen och hoppade fel |
+| `TestHandover` | `write_date` är `automatic` — tidsstämpeln sätts med rå SQL |
+| `TestPgVector*` | `convert_to_cache` prövas direkt; ingen `cr.rollback()` i test |
+| `TestPowerboxScoping` | Hoppar över när `sale.order` inte är installerad |
+
+## Regeln
+
+En ändring får **inte** öka antalet fel. Ett nytt fel ska antingen åtgärdas
+eller läggas till i en tabell här med ett skrivet skäl. Att lägga till ett fel
+utan skäl är att sänka ribban i smyg.
 
 ## Kända fel — utanför `ai_agent_core`
 
