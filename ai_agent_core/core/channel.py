@@ -11,14 +11,22 @@ domän-fritt:
 - channel_registry + process_item — gemensam loop som kanaler anropar
   istället för att duplicera loopen.
 
-Användning (social_ai när den byggs, mail-kanalen vid delat behov):
+Sedan channel-adapter-wiring (2026-11-02) har kontraktet
+produktionsanropare: `models/ai_coworker.py` registrerar `mail`-kanalen
+vid moduluppstart och `ai.coworker.mail()` / `ai.coworker.chat()` kör sina
+inkommande items genom `process_item()`.
+
+Användning:
     channel_registry.register('mail', adapter=mail_adapter,
                               processor=mail_processor)
     await process_item(item)
 """
 
+import logging
 from dataclasses import dataclass, field
 from typing import Any, Optional, Protocol
+
+_logger = logging.getLogger(__name__)
 
 
 # ── Normaliserat item ────────────────────────────────────────────────
@@ -103,21 +111,59 @@ _HITL_GATED = ('create', 'link', 'handoff')
 
 # ── Registry + gemensam loop ────────────────────────────────────────
 
+#: Metoderna som respektive kontrakt kräver. `satisfies_*` och
+#: registreringsgrinden läser SAMMA lista — annars kan de två glida isär och
+#: grinden godkänna något som `satisfies_*` underkänner.
+_ADAPTER_METHODS = ('fetch_new', 'normalize', 'dispose',
+                    'draft_outbound', 'send_outbound')
+_PROCESSOR_METHODS = ('classify', 'dispose', 'hitl', 'nudge', 'remember')
+
+
 class ChannelRegistry:
     """Registrering av kanal-adaptrar + processorer."""
 
     def __init__(self):
         self._adapters: dict = {}
         self._processors: dict = {}
+        # Kanaler som redan fått 'no_processor'-varningen (D3). En varning
+        # räcker — annars skriver varje item om samma glömda registrering.
+        self._warned_no_processor: set = set()
 
     def register(self, name: str, adapter: Optional[ChannelAdapter] = None,
                  processor: Optional[ItemProcessor] = None) -> str:
-        """Registrera en kanal. Adapter och/eller processor kan anges."""
+        """Registrera en kanal. Adapter och/eller processor kan anges.
+
+        Registreringen sker ALLTID (en kanal som inte uppfyller kontraktet
+        ska inte krascha) — men ett ofullständigt objekt varnas om, med
+        namnet på varje saknad metod (D5).
+        """
         if adapter is not None:
+            self._check_contract(name, 'adapter', adapter,
+                                 satisfies_adapter, _ADAPTER_METHODS)
             self._adapters[name] = adapter
         if processor is not None:
+            self._check_contract(name, 'processor', processor,
+                                 satisfies_processor, _PROCESSOR_METHODS)
             self._processors[name] = processor
         return name
+
+    @staticmethod
+    def _check_contract(name, kind, obj, check, required):
+        """Varna när ett registrerat objekt inte uppfyller kontraktet."""
+        if check(obj):
+            return
+        missing = [
+            method for method in required
+            if not callable(getattr(obj, method, None))
+        ]
+        _logger.warning(
+            'channel_registry: kanalen %r registreras med en %s som inte '
+            'uppfyller kontraktet — saknar: %s',
+            name, kind, ', '.join(missing) or '(okänt)')
+
+    def forget_no_processor_warning(self, name: str) -> None:
+        """Glöm att kanalen varnats (används av tester och omregistrering)."""
+        self._warned_no_processor.discard(name)
 
     def get_adapter(self, name: str) -> Optional[ChannelAdapter]:
         return self._adapters.get(name)
@@ -144,6 +190,17 @@ async def process_item(item: NormalizedItem, processor: Optional[ItemProcessor] 
     reg = registry or channel_registry
     proc = processor or reg.get_processor(item.channel)
     if proc is None:
+        # D3: degraderingen är rätt (en kanal utan processor ska inte
+        # krascha) men får inte vara tyst — en glömd registrering ska synas
+        # i loggen i stället för att bara göra ingenting. En varning per
+        # kanal räcker.
+        if item.channel not in reg._warned_no_processor:
+            reg._warned_no_processor.add(item.channel)
+            _logger.warning(
+                'process_item: ingen processor registrerad för kanalen %r — '
+                "returnerar 'no_processor'. Registrera kanalen med "
+                'channel_registry.register(%r, processor=...).',
+                item.channel, item.channel)
         return 'no_processor'
 
     classification = await proc.classify(item) or {}
@@ -172,12 +229,10 @@ async def process_item(item: NormalizedItem, processor: Optional[ItemProcessor] 
 
 def satisfies_adapter(obj) -> bool:
     """Strukturell kontroll: uppfyller objektet ChannelAdapter-kontraktet?"""
-    required = ('fetch_new', 'normalize', 'dispose',
-                'draft_outbound', 'send_outbound')
-    return all(callable(getattr(obj, name, None)) for name in required)
+    return all(callable(getattr(obj, name, None)) for name in _ADAPTER_METHODS)
 
 
 def satisfies_processor(obj) -> bool:
     """Strukturell kontroll: uppfyller objektet ItemProcessor-kontraktet?"""
-    required = ('classify', 'dispose', 'hitl', 'nudge', 'remember')
-    return all(callable(getattr(obj, name, None)) for name in required)
+    return all(callable(getattr(obj, name, None))
+               for name in _PROCESSOR_METHODS)
