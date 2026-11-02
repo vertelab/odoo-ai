@@ -12,6 +12,7 @@ Verifierar:
 Körs med `checkmodule -t` (kräver `-l test` för att skriva ut resultatet).
 """
 
+from unittest.mock import patch
 from odoo.exceptions import UserError
 from odoo.tests.common import TransactionCase, tagged
 
@@ -147,10 +148,25 @@ class TestCompanionTrustGate(TransactionCase):
 
 @tagged('companion_memory', 'post_install')
 class TestCompanionWriteBudget(TransactionCase):
-    """D2 — skrivgränsen för det personliga minnet."""
+    """D2 — skrivgränsen för det personliga minnet.
+
+    OBS: testerna skriver koncept via `_okf_upsert`, som försöker producera
+    en embedding. Utan en mockad provider går det anropet till Bifrost, och
+    Odoos testramverk blockerar externa HTTP-anrop (`BlockedRequest`) —
+    vilket triggade en oändlig retry-loop i `_get_embedding` och fick hela
+    testsviten att hänga (mätt 2026-11-02: 292 blockerade anrop, 106
+    omgångar av "försök 1/3"). `_embedding_provider` mockas därför till
+    None: konceptet sparas med `embedding_state='pending'`, vilket är
+    exakt det tillstånd budgettestet bryr sig om.
+    """
 
     def setUp(self):
         super().setUp()
+        # Mocka bort embedding-providern (se klassens docstring).
+        self._embed_patch = patch.object(
+            type(self.env['ai.provider']), '_embedding_provider',
+            return_value=self.env['ai.provider'])
+        self._embed_patch.start()
         self.user = self.env['res.users'].create({
             'name': 'Budget-testare',
             'login': 'budget_user_%s' % self.env['res.users'].search_count([]),
@@ -158,6 +174,10 @@ class TestCompanionWriteBudget(TransactionCase):
             'groups_id': [(6, 0, [self.env.ref('base.group_user').id])],
         })
         self.Okf = self.env['ai.okf.concept']
+
+    def tearDown(self):
+        self._embed_patch.stop()
+        super().tearDown()
 
     def test_budget_is_configurable(self):
         """Budgeten läses ur konfigurationen, inte ur en konstant."""
