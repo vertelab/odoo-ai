@@ -1117,6 +1117,15 @@ class AIProvider(models.Model):
         ~3×timeout i värsta fall i stället för att blockera 120 s per
         post (110 poster × 120 s = 3,7 timmar för en cron-körning).
 
+        FYND 2026-11-02: en anslutning som ALDRIG nådde fram försöktes om
+        tre gånger. `requests.ConnectionError` ärvs av Odoos
+        `BlockedRequest`, som testramverket kastar för varje extern
+        förfrågan — så i testsviten betydde retryn bara tre väntetider per
+        post. Samma sak gäller en provider vars `base_url` saknas eller
+        pekar fel: nätet svarar "nej" direkt, och då är ett omförsök bara
+        mer väntan. De felen kastas därför vidare direkt. HTTP-fel och
+        timeout gör det fortfarande — de är övergående.
+
         Kastar vidare nätverksfel till anroparen, som loggar och ger None.
         """
         import requests
@@ -1137,6 +1146,11 @@ class AIProvider(models.Model):
                     raise ValueError('HTTP %s: %s' % (
                         resp.status_code, resp.text[:200]))
                 return resp.json()
+            except (requests.ConnectionError,
+                    requests.exceptions.InvalidURL) as e:
+                # Ingen anslutning, ingen retry: nästa försök möter samma
+                # stängda dörr. Se FYND 2026-11-02 ovan.
+                raise e
             except Exception as e:  # requests.RequestException + ValueError
                 last_error = e
                 if attempt < attempts:
