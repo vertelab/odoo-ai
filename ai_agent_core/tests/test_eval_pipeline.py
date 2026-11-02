@@ -80,12 +80,17 @@ class EvalTestBase(TransactionCase):
         return session
 
     def _case(self, coworker, session=None, expected_contains='["4"]'):
+        """Ett fall; `expected_contains=False` ger ett fall UTAN förväntan.
+
+        Befordran skapar precis ett sådant fall (förväntan fylls i av en
+        människa efteråt), så det måste gå att skapa i test.
+        """
         session = session or self._session(coworker)
         return self.Case.create({
             'coworker_id': coworker.id,
             'source_session_id': session.id,
             'input': 'Vad är 2+2?',
-            'expected_contains': expected_contains,
+            'expected_contains': expected_contains or False,
         })
 
 
@@ -454,3 +459,83 @@ class TestKaizenEvalFinding(EvalTestBase):
         with self.assertRaises(ValueError):
             finding.action_apply_to_skill()
         self.assertEqual(finding.status, 'pending')
+
+
+@tagged('post_install', '-at_install')
+class TestEvalCasesWithoutExpectation(EvalTestBase):
+    """1.1–1.3: ett fall utan förväntan mäter ingenting och körs inte.
+
+    Befordran lämnar `expected_contains` tomt med flit (människan fyller i
+    efteråt). Ett sådant fall skulle alltid ge score 1.0 — `_evaluate_case`
+    har inget att dra av för — och göra varje modell- eller promptändring
+    osynlig i mätningen.
+    """
+
+    def _patched_coworker(self):
+        coworker = self._coworker('Eval utan förväntan')
+        return coworker, patch.object(
+            type(coworker), '_run_eval_cases',
+            autospec=True,
+            side_effect=lambda rec, cases: self.Run.create({
+                'coworker_id': rec.id,
+                'accuracy': 1.0,
+                'passed': len(cases),
+                'failed': 0,
+                'total_cases': len(cases),
+            }))
+
+    def test_case_without_expectation_is_not_run(self):
+        """1.1: tomt `expected_contains` ⇒ fallet skickas inte till körningen."""
+        coworker, mocked = self._patched_coworker()
+        self._case(coworker, expected_contains=False)
+        with mocked as run_mock:
+            result = self.Coworker._cron_run_evals()
+        self.assertEqual(run_mock.call_count, 0)
+        self.assertEqual(result['runs'], 0)
+        self.assertFalse(self.Run.search([('coworker_id', '=', coworker.id)]))
+
+    def test_case_without_expectation_not_counted_in_total_cases(self):
+        """1.1: fallet räknas inte i `total_cases` — bara det mätbara gör det."""
+        coworker, mocked = self._patched_coworker()
+        self._case(coworker, expected_contains='["4"]')
+        self._case(coworker, expected_contains=False)
+        with mocked as run_mock:
+            self.Coworker._cron_run_evals()
+        cases = run_mock.call_args[0][1]
+        self.assertEqual(len(cases), 1)
+        self.assertEqual(cases.expected_contains, '["4"]')
+
+    def test_case_with_only_not_contains_is_measurable(self):
+        """1.2: enbart `expected_not_contains` är en giltig förväntan."""
+        coworker, mocked = self._patched_coworker()
+        case = self._case(coworker, expected_contains=False)
+        case.expected_not_contains = '["hittepå"]'
+        with mocked as run_mock:
+            result = self.Coworker._cron_run_evals()
+        self.assertEqual(run_mock.call_count, 1)
+        self.assertEqual(len(run_mock.call_args[0][1]), 1)
+        self.assertEqual(result['empty_skipped'], 0)
+
+    def test_measurable_filter_keeps_expected_output(self):
+        """1.2: ett exakt förväntat svar räknas också som förväntan."""
+        coworker = self._coworker('Eval expected_output')
+        case = self._case(coworker, expected_contains=False)
+        core_case = case._to_eval_case()
+        self.assertFalse(core_case.expected_contains)
+        self.assertFalse(core_case.expected_not_contains)
+        self.assertFalse(core_case.expected_output)
+        self.assertEqual(len(self.Coworker._measurable_eval_cases(case)), 0)
+
+    def test_skipped_count_is_logged(self):
+        """1.3: antalet överhoppade fall loggas per körning."""
+        coworker, mocked = self._patched_coworker()
+        self._case(coworker, expected_contains=False)
+        self._case(coworker, expected_contains=False)
+        with mocked, self.assertLogs(
+                'odoo.addons.ai_agent_core.models.ai_coworker',
+                level='INFO') as logs:
+            result = self.Coworker._cron_run_evals()
+        self.assertEqual(result['empty_skipped'], 2)
+        self.assertTrue(
+            any('2 fall utan' in line for line in logs.output),
+            'loggraden ska nämna antalet fall utan förväntan')

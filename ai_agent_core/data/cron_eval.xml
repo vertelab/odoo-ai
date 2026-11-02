@@ -11,7 +11,13 @@
              varför. Motorn äger kadens, lås och körhistorik.
 
              Veckoschema: eval kostar tokens, och analyze_trend() kräver
-             minst två punkter för att säga något om riktningen. -->
+             minst två punkter för att säga något om riktningen.
+
+             Sequence 10 — FÖRE kaizen-rapporten (cron_kaizen.xml, 20).
+             Verifieringen av applicerade fynd (kaizen-eval-learning-loop
+             3.6) körs härifrån, och den mäter mot det run som just skapats.
+             Låg kaizen först hade varje fynd verifierats mot förra veckans
+             run — ett helt veckofönster för sent. -->
         <record id="cron_task_cron_run_evals_weekly" model="cron.task">
             <field name="name">AI: Kör eval-fall (veckovis)</field>
             <field name="technical_name">ai_run_evals_weekly</field>
@@ -20,7 +26,7 @@
             <field name="method_name">_cron_run_evals</field>
             <field name="interval_number">7</field>
             <field name="interval_type">days</field>
-            <field name="sequence">20</field>
+            <field name="sequence">10</field>
             <field name="active" eval="True"/>
         </record>
     </data>

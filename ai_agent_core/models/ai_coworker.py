@@ -9593,19 +9593,31 @@ class AICoworker(models.Model):
         3. Ingen provider/loop → hoppa över med en varning. En
            felkonfigurerad medarbetare ska inte fälla hela cronen.
 
+        Ett fall utan förväntan körs inte (kaizen-eval-learning-loop 1.1):
+        befordran lämnar `expected_contains` tomt med flit, och ett fall som
+        aldrig fyllts i skulle alltid ge score 1.0 — det mäter "samma svar
+        som förra gången", motsatsen till regressionstest. Sådana fall
+        filtreras bort INNAN taket räknas, så `eval_max_cases` gäller fall
+        som faktiskt mäter något.
+
         Returns:
-            dict: {'runs': antal skapade run, 'skipped': antal överhoppade}.
+            dict: {'runs': antal skapade run, 'skipped': antal överhoppade,
+                   'empty_skipped': antal fall utan förväntan}.
         """
         max_cases = self._eval_max_cases()
         runs_created = 0
         skipped = 0
+        empty_skipped = 0
 
         coworkers = self.search([('status', '=', 'active')])
         for coworker in coworkers:
-            cases = self.env['ai.eval.case'].search([
+            candidates = self.env['ai.eval.case'].search([
                 ('coworker_id', '=', coworker.id),
                 ('active', '=', True),
-            ], limit=max_cases)
+            ])
+            measurable = self._measurable_eval_cases(candidates)
+            empty_skipped += len(candidates) - len(measurable)
+            cases = measurable[:max_cases]
             if not cases:
                 continue
 
@@ -9631,9 +9643,34 @@ class AICoworker(models.Model):
                 runs_created += 1
 
         _logger.info(
-            'Eval: %d run skapade, %d medarbetare överhoppade (tak %d fall)',
-            runs_created, skipped, max_cases)
-        return {'runs': runs_created, 'skipped': skipped}
+            'Eval: %d run skapade, %d medarbetare överhoppade, %d fall utan '
+            'förväntan överhoppade (tak %d fall)',
+            runs_created, skipped, empty_skipped, max_cases)
+        return {'runs': runs_created, 'skipped': skipped,
+                'empty_skipped': empty_skipped}
+
+    @api.model
+    def _measurable_eval_cases(self, cases):
+        """Fallen som faktiskt har något att mäta (1.1/1.2).
+
+        Ett fall är mätbart om det har minst en förväntan: något som måste
+        finnas (`expected_contains`), något som inte får finnas
+        (`expected_not_contains`) eller ett exakt svar (`expected_output`).
+        Enbart frånvaro är en giltig förväntan — "svaret får inte hitta på
+        ett ordernummer" är ett regressionstest, inte ett tomt fall.
+
+        Ett fall utan alla tre skulle alltid ge score 1.0 (`_evaluate_case`
+        har inget att dra av för), vilket gör varje modell- eller
+        promptförbättring osynlig i mätningen.
+        """
+        measurable = self.env['ai.eval.case']
+        for case in cases:
+            core_case = case._to_eval_case()
+            if (core_case.expected_contains
+                    or core_case.expected_not_contains
+                    or core_case.expected_output):
+                measurable |= case
+        return measurable
 
     @api.model
     def _eval_max_cases(self):
