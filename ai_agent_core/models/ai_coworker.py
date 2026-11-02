@@ -2308,11 +2308,15 @@ class AICoworker(models.Model):
             lambda it: it.init_type in ('chat', 'channel') and it.enabled)
         if active_init and active_init[0].response_mode == 'trigger':
             trigger_words = active_init[0].chat_trigger_words or ''
-            if trigger_words:
-                msg_lower = (message.body or '').lower()
-                triggers = [w.strip().lower() for w in trigger_words.split(',')]
-                if not any(t in msg_lower for t in triggers):
-                    return None
+            # Inga träfford alls = inget att trigga på. `_route_message()`
+            # returnerar None för samma fall; `chat()` får inte glida isär
+            # och köra ändå — då svarar boten på allt i trigger-läge.
+            if not trigger_words:
+                return None
+            msg_lower = (message.body or '').lower()
+            triggers = [w.strip().lower() for w in trigger_words.split(',')]
+            if not any(t in msg_lower for t in triggers):
+                return None
 
         # Chat history context
         history_ctx = ''
@@ -2479,9 +2483,13 @@ class AICoworker(models.Model):
             # anrop (router + specialister + syntes) som fastnar i rate-limit.
             # Kanalen skickas vidare (D1b) så _detect_record() källa 4 får
             # något att läsa — den är annars alltid None här.
+            # `full_system` (med `## Recent conversation`) byggdes här
+            # men skickades aldrig vidare — `run()` byggde då sin egen
+            # systemprompt och historiken tappades. Skicka den explicit.
             result = self.with_context(
                 ai_single_agent_run=True).run(
-                    prompt=msg_text, session=session, channel=channel)
+                    prompt=msg_text, session=session, channel=channel,
+                    system_prompt=full_system)
             if session and channel:
                 # Sista ASSISTANT-raden (sista raden kan vara en tool-rad)
                 last_line = session.session_line_ids.filtered(

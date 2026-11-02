@@ -60,7 +60,13 @@ class MailChannelCharacterization(TransactionCase):
         run_calls = []
         sent = []
 
-        def _fake_run(prompt=None, session=None, **kwargs):
+        # `run` patchas på KLASSEN (type(self.coworker)), alltså anropas
+        # den som en o-bunden funktion: `self` kommer som första POSITIONELLA
+        # argument. Signaturer som `def _fake_run(prompt, ...)` får därför
+        # "multiple values for argument 'prompt'" — `self` hamnar i `prompt`.
+        # `_self` fångar den, precis som `lambda *a, **k` gör i
+        # test_coworker_delegation.
+        def _fake_run(_self, prompt=None, session=None, **kwargs):
             run_calls.append({'prompt': prompt, 'session': session})
             if side_effect is not None:
                 raise side_effect
@@ -128,12 +134,17 @@ class MailChannelCharacterization(TransactionCase):
 
     def test_attachment_text_is_appended_to_the_prompt(self):
         """Bilageinnehållet hamnar under '## Attachments' i prompten."""
-        self.env['ir.attachment'].create({
+        attachment = self.env['ir.attachment'].create({
             'name': 'anteckning.txt',
             'datas': base64.b64encode(b'Bilageinnehall har'),
             'res_model': 'mail.message',
             'res_id': self.message.id,
         })
+        # Bilagan kopplas till meddelandet via m2m-fältet
+        # (`message_attachment_rel`) — `res_model`/`res_id` räcker inte,
+        # de pekar bara ut meddelandet som dokument. Utan den här raden
+        # är `message.attachment_ids` tom och inget extraheras.
+        self.message.attachment_ids = [(4, attachment.id)]
         self.message.invalidate_recordset(['attachment_ids'])
         _value, run_calls, _sent = self._run_mail()
         prompt = run_calls[0]['prompt']

@@ -74,7 +74,13 @@ class ChatChannelCharacterization(TransactionCase):
         run_calls = []
         captured_prompts = system_prompts if system_prompts is not None else []
 
-        def _fake_run(prompt=None, session=None, **kwargs):
+        # `run` patchas på KLASSEN (type(self.coworker)), alltså anropas
+        # den som en o-bunden funktion: `self` kommer som första POSITIONELLA
+        # argument. Signaturer som `def _fake_run(prompt, ...)` får därför
+        # "multiple values for argument 'prompt'" — `self` hamnar i `prompt`.
+        # `_self` fångar den, precis som `lambda *a, **k` gör i
+        # test_coworker_delegation.
+        def _fake_run(_self, prompt=None, session=None, **kwargs):
             run_calls.append({'prompt': prompt, 'session': session,
                               'kwargs': kwargs})
             captured_prompts.append(kwargs.get('system_prompt'))
@@ -127,9 +133,14 @@ class ChatChannelCharacterization(TransactionCase):
         self.assertEqual(session.name, 'Chat: Vad är momsen på böcker?')
 
     def test_bot_mention_is_stripped_from_the_prompt(self):
-        """@mention av boten rensas bort ur frågan."""
+        """@mention av boten rensas bort ur frågan.
+
+        Tokenet som rensas är COWORKERNS `channel_alias`/`name` — det är
+        samma token `_route_message()` matchar på (`@<coworker.name>`),
+        inte bot-användarens namn. Testet använder därför coworkerns namn.
+        """
         self.message.body = '<p>@%s Vad är momsen på böcker?</p>' % (
-            self.bot_user.name)
+            self.coworker.name)
         _value, run_calls = self._chat()
         self.assertEqual(run_calls[0]['prompt'],
                          'Vad är momsen på böcker?')
@@ -182,8 +193,12 @@ class ChatChannelCharacterization(TransactionCase):
         self.assertIn('Sex procent på böcker.', posted.body)
 
     def test_empty_question_returns_none(self):
-        """En fråga som bara är en @mention blir tom → None."""
-        self.message.body = '<p>@%s</p>' % self.bot_user.name
+        """En fråga som bara är en @mention blir tom → None.
+
+        Rensningen gäller coworkerns namn (se
+        `test_bot_mention_is_stripped_from_the_prompt`).
+        """
+        self.message.body = '<p>@%s</p>' % self.coworker.name
         value, run_calls = self._chat()
         self.assertIsNone(value)
         self.assertEqual(run_calls, [])
