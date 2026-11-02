@@ -1,0 +1,29 @@
+# Ruff-konfiguration för ai_agent_core.
+#
+# Skapad av ändringen structural-discipline-gates (2026-11-02).
+# Syftet är INTE att städa hela kodbasen — det är att frysa en mätbar
+# baslinje så att den inte får växa. Gränserna nedan är satta på de värden
+# som uppmättes mot orörd träd (18.0 @ 54cd3618) och får bara sänkas
+# medvetet, aldrig höjas i smyg.
+#
+#   C901  (mccabe complexity)  uppmätt max: 113
+#   BLE001 (blind except)      uppmätt antal: 488
+#   S110  (try-except-pass)    uppmätt antal: 94
+#
+# Höjningar ska motiveras i commit-meddelandet och i README:s grind-avsnitt.
+
+[lint]
+select = ["C901", "BLE001", "S110"]
+
+[lint.mccabe]
+max-complexity = 113
+
+[lint.per-file-ignores]
+# Baslinjen för BLE001 (488) och S110 (94) är volymer, inte trösklar.
+# Ruff har ingen "högst N förekomster"-inställning, så de två reglerna
+# mäts i stället av grinden i tests/test_structural_gates.py, som jämför
+# mot de frysta talen. Här stängs de av för att `ruff check` ska vara
+# grönt på orörd träd — det är förutsättningen för att C901-grinden ska
+# kunna köras i CI utan att drunkna i befintlig skuld.
+"**/*.py" = ["BLE001", "S110"]
+
