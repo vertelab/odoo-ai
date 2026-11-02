@@ -301,10 +301,26 @@ class TestOkfAccessResolver(TestOkfConceptBase):
         self.assertIn(c.id, result)
         # Modellen finns inte → källan ej i resultatet, men inget undantag
 
+    def _mk_internal_user(self, login):
+        """En vanlig intern användare — inte admin.
+
+        Testerna använde tidigare `base.user_demo`, men den posten skapas av
+        demodata. Sviten körs med `--without-demo=all` (se BASELINE.md), så
+        uppslaget kastade `ValueError: External ID not found`. En egen
+        användare är dessutom det mönster resten av modulens tester använder
+        (test_okf_access_selection.py) — och den är inte admin, vilket är
+        hela poängen med ett behörighetstest.
+        """
+        return self.env['res.users'].create({
+            'name': login,
+            'login': login,
+            'groups_id': [(6, 0, [self.env.ref('base.group_user').id])],
+        })
+
     def test_resolve_visible_sources_res_partner(self):
         """res.partner har follower-domän → partnern synlig för följare.
 
-        En användare som följer partnern (message_follower_ids) ser den;
+        En användare som följer partnern (message_partner_ids) ser den;
         en som inte följer ser den inte (access = ir.rule ∩ resolver).
         """
         partner = self.env['res.partner'].create({'name': 'OKF Test Partner'})
@@ -312,7 +328,7 @@ class TestOkfAccessResolver(TestOkfConceptBase):
             concept_key='resolver.partner',
             source_ref='res.partner,%s' % partner.id,
         )
-        user = self.env.ref('base.user_demo')
+        user = self._mk_internal_user('zz_okf_follower')
         # 1. Icke-följare → ej synlig (follower-domänen filtrerar)
         result = self.Concept.with_user(user.id)._resolve_visible_sources(c)
         self.assertFalse(
@@ -324,20 +340,39 @@ class TestOkfAccessResolver(TestOkfConceptBase):
             result[c.id].get('res.partner,%s' % partner.id, False))
 
     def test_resolve_visible_sources_restricted(self):
-        """Källa i modell som användaren inte får läsa → ej synlig."""
-        # res.users: vanlig användare saknar read-access på andra users
-        user = self.env.ref('base.user_demo')
-        admin = self.env.ref('base.user_admin')
+        """En källa användaren inte får läsa rapporteras som osynlig.
+
+        Modellen är `res.partner` med en ir.rule som stänger ute användaren
+        helt — samma teknik som test_okf_access_selection.py använder.
+        Tidigare användes `res.users` i tron att en vanlig användare saknar
+        läsrätt på andra användare; det stämmer inte. Bas-regeln
+        (`res_users_rule`) är global och släpper igenom alla interna
+        användare i företaget, så testet kunde bara påstå "ingen krasch".
+        Med en egen regel prövas det som står i namnet: att en otillåten
+        källa blir False, inte att anropet råkar gå igenom.
+        """
+        partner = self.env['res.partner'].create({'name': 'ZZ OKF Stängd'})
         c = self._mk_concept(
-            concept_key='resolver.users',
-            source_ref='res.users,%s' % admin.id,
+            concept_key='resolver.restricted',
+            source_ref='res.partner,%s' % partner.id,
         )
-        # Användaren är admin i testmiljön — kolla via demo istället:
-        # demo-användarens egna id är alltid synlig, andras ej.
-        result = self.Concept.with_user(user.id)._resolve_visible_sources(c)
-        # Med sudo/admin ska admin vara synlig; här verifierar vi bara
-        # att anropet inte kraschar och returnerar dict.
-        self.assertIn(c.id, result)
+        user = self._mk_internal_user('zz_okf_restricted')
+        rule = self.env['ir.rule'].create({
+            'name': 'ZZ OKF restricted (test)',
+            'model_id': self.env['ir.model']._get_id('res.partner'),
+            'domain_force': '[(0, "=", 1)]',  # matchar inget
+            'groups': [(6, 0, [self.env.ref('base.group_user').id])],
+            'perm_read': True, 'perm_write': False, 'perm_create': False,
+            'perm_unlink': False,
+        })
+        try:
+            result = self.Concept.with_user(user.id)._resolve_visible_sources(c)
+            self.assertIn(c.id, result)
+            self.assertFalse(
+                result[c.id].get('res.partner,%s' % partner.id, True),
+                'en källa användaren inte får läsa ska rapporteras osynlig')
+        finally:
+            rule.unlink()
 
     def test_okf_can_read_sql(self):
         """SQL-hjälpfunktionen ai_okf_can_read existerar (task 4.9)."""

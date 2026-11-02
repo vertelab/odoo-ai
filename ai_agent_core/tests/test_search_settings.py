@@ -15,6 +15,7 @@ krascha — den ska degradera, inte ljuga.
 """
 
 import logging
+from unittest.mock import patch
 
 from odoo.tests.common import TransactionCase, tagged
 
@@ -124,15 +125,35 @@ class TestSearchSettings(TransactionCase):
             'katalogen ska innehålla alla fyra källorna, fick: %s' % codes)
 
     def test_only_okf_is_wired(self):
-        """Fas 13 kopplar in EN backend. De andra är katalogposter.
+        """Endast källor med en riktig backend får vara inkopplade.
 
-        Om `is_wired` vore True för en okopplad källa skulle den synas i
-        search_sources utan att bidra med en rad — exakt mönstret från
-        design.md §15.
+        Historik: testet hette `test_only_okf_is_wired` och pinnade att
+        `okf_concept` var den ENDA inkopplade källan — sant i fas 13, då
+        `ai_memory` bara var en katalogpost. Sedan ai-memory-pgvector finns
+        en `_ai_memory`-backend i dispatch-tabellen och seedningen sätter
+        `is_wired=True` med motiveringen "Inkopplad via _search_chunks".
+        Testet föll på en giltig ändring, inte på en regression.
+
+        Det som fortfarande måste hålla — och som var den ursprungliga
+        poängen (design.md §15: "skrivsidan byggdes, lässidan antogs") — är
+        att `is_wired` inte får ljuga: varje inkopplad källa ska ha en
+        backend som `_search_backends` faktiskt kan dispatca till, och
+        varje okopplad källa ska förklara sig. `graph` och `documents` är
+        fortfarande katalogposter.
         """
         wired = self.Source.search([('is_wired', '=', True)])
-        self.assertEqual(wired.mapped('code'), ['okf_concept'],
-                         'endast okf_concept får vara inkopplad i fas 13')
+        self.assertEqual(
+            set(wired.mapped('code')), {'okf_concept', 'ai_memory'},
+            'okf_concept och ai_memory är de inkopplade källorna')
+        backends = self.Coworker._search_backends()
+        for src in wired:
+            self.assertIn(
+                src.backend, backends,
+                '%s är inkopplad men saknar backend — is_wired ljuger'
+                % src.code)
+        unwired = self.Source.search([('is_wired', '=', False)])
+        self.assertEqual(set(unwired.mapped('code')), {'graph', 'documents'},
+                         'graph och documents är fortfarande katalogposter')
 
     def test_unwired_sources_explain_themselves(self):
         for s in self.Source.search([('is_wired', '=', False)]):
@@ -212,8 +233,6 @@ class TestSearchSettings(TransactionCase):
         anropet returnerar (inte kastar) samt att källan blir tom — men att
         den ÄR kvar i per_source, så att felet går att se.
         """
-        from unittest.mock import patch
-
         c = self.coworker
         src = self.Source.search([('code', '=', 'okf_concept')], limit=1)
         self.assertTrue(src.is_wired)
@@ -255,11 +274,33 @@ class TestSearchSettings(TransactionCase):
         self.assertEqual(hits, [])
 
     def test_recall_returns_tuples_of_record_and_score(self):
+        """Träffarna är dictar med `id`, `_name`, `record` och `score`.
+
+        Returvärdet var tidigare ett `ai.okf.concept`-recordset. När
+        ai-memory-pgvector gjorde `ai_memory` till en riktig källa kunde
+        listan blanda modeller, och ett recordset hade tolkat ai.memory-
+        id:n som koncept-id:n. Kontraktet är därför en lista av dictar.
+
+        Testet läste `r._name` direkt på varje element, vilket bara gick
+        igenom så länge listan var TOM — det passade utan att pröva något.
+        Här skapas en träff först, så formen faktiskt granskas.
+        """
         c = self.coworker
-        recs, diag = c._multi_source_recall(
-            'roller', scope='personal', owner_id=self.env.user.id)
+        self._mk_concept('recall.form', 'kvantmekanik sällsynt ordet',
+                         scope='personal', owner_id=self.env.user.id)
+        # Embedding-providern mockas bort — se
+        # test_thresholds_do_not_make_real_hits_disappear.
+        with patch.object(
+                type(self.env['ai.provider']), '_embedding_provider',
+                return_value=self.env['ai.provider'].browse()):
+            recs, diag = c._multi_source_recall(
+                'kvantmekanik', scope='personal', owner_id=self.env.user.id)
+        self.assertTrue(recs, 'en skapad träff ska komma tillbaka')
         for r in recs:
-            self.assertEqual(r._name, 'ai.okf.concept')
+            self.assertIsInstance(r, dict)
+            self.assertEqual(set(r), {'id', '_name', 'record', 'score'})
+            self.assertEqual(r['_name'], 'ai.okf.concept')
+            self.assertEqual(r['record'].id, r['id'])
         self.assertIn('strategy', diag)
         self.assertIn('per_source', diag)
 
@@ -328,6 +369,11 @@ class TestSearchSettings(TransactionCase):
         testet kunde passera fastän sökningen var blind — det räckte att
         filtret var borta. Det här testet fallerar om trösklarna blir
         för höga, vilket är den faktiska risken.
+
+        Embedding-providern mockas bort: annars går `_okf_search` (via
+        `_multi_source_recall`, som inte skickar `semantic=False`) till
+        Bifrost, som testramverket blockerar — och `_get_embedding` retryar
+        i oändlighet (se BASELINE.md). BM25-signalen är den som prövas här.
         """
         c = self.Coworker.create({
             'name': 'Trogav (fas 13)', 'is_default': True,
@@ -337,10 +383,17 @@ class TestSearchSettings(TransactionCase):
         # Konceptet SKA hittas. En BM25-träff ligger långt under de gamla
         # min_score-värdena men över min_ts_rank — det är skillnaden mellan
         # ett filter på fel skala och ett på rätt.
-        recs, diag = c._multi_source_recall('kvantmekanik', scope='company')
+        with patch.object(
+                type(self.env['ai.provider']), '_embedding_provider',
+                return_value=self.env['ai.provider'].browse()):
+            recs, diag = c._multi_source_recall('kvantmekanik',
+                                                scope='company')
         self.assertTrue(
             recs, 'en faktisk träff får inte filtreras bort av trösklarna')
-        self.assertIn('trogav.test', recs.mapped('concept_key'))
+        self.assertIn(
+            'trogav.test',
+            [r['record'].concept_key for r in recs
+             if r['_name'] == 'ai.okf.concept'])
 
         # Och trösklarna ska vara på RÄTT skala för sina signaler: BM25-
         # tröskeln under skalans tak (~0.061), cosine-golvet över bruset.
