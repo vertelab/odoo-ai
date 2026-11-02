@@ -122,6 +122,13 @@ class TestNoSilentDownload(TransactionCase):
             def _get_embedding(self, model=None, input=None, input_type=None):
                 return [0.1] * 4
 
+            # `_provider_embeddings` läser providerns namn och modell för
+            # sin loggrad (ai_memory.py:803). Utan dem kastar anropet
+            # AttributeError, som fångas och ger None — testet faller på
+            # en ofullständig stubbe, inte på koden.
+            name = 'Stub-provider'
+            embedding_model = 'stub-model'
+
         with patch.object(
                 type(self.env['ai.provider']), '_embedding_provider',
                 lambda self_: _Prov()):

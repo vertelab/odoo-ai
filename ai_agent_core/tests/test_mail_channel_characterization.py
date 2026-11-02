@@ -60,7 +60,7 @@ class MailChannelCharacterization(TransactionCase):
         run_calls = []
         sent = []
 
-        def _fake_run(prompt, session=None, **kwargs):
+        def _fake_run(prompt=None, session=None, **kwargs):
             run_calls.append({'prompt': prompt, 'session': session})
             if side_effect is not None:
                 raise side_effect

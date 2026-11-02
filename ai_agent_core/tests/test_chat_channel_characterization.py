@@ -74,7 +74,7 @@ class ChatChannelCharacterization(TransactionCase):
         run_calls = []
         captured_prompts = system_prompts if system_prompts is not None else []
 
-        def _fake_run(prompt, session=None, **kwargs):
+        def _fake_run(prompt=None, session=None, **kwargs):
             run_calls.append({'prompt': prompt, 'session': session,
                               'kwargs': kwargs})
             captured_prompts.append(kwargs.get('system_prompt'))

@@ -13,6 +13,32 @@ from ._config_param_guard import ConfigParamGuardedCase
 from odoo.exceptions import ValidationError
 
 
+def _ensure_test_provider_and_model(env):
+    """Skapa provider + modell om testdatabasen saknar dem.
+
+    En färsk testdatabas har inga ai.provider/ai.model-rader —
+    post_init-hooken som skapar dem kör bara vid installation. Testerna
+    ska vara självförsörjande: skapa det de behöver i stället för att
+    falla på sin egen miljö.
+    """
+    Provider = env['ai.provider'].sudo()
+    Model = env['ai.model'].sudo()
+    if not Provider.search_count([]):
+        Provider.create({
+            'name': 'Default-model test provider',
+            'provider_type': 'bifrost',
+            'can_embed': False,
+            'api_key': 'test-key',
+        })
+    if not Model.search_count([('active', '=', True)]):
+        Model.create({
+            'name': 'cheap',
+            'provider': Provider.search([], limit=1).id,
+            'api_name': 'cheap',
+            'active': True,
+        })
+
+
 @tagged('post_install', '-at_install')
 class TestDefaultModel(ConfigParamGuardedCase):
 
@@ -20,6 +46,8 @@ class TestDefaultModel(ConfigParamGuardedCase):
         super().setUp()
         self.param = 'ai_agent_core.default_model_id'
         self.Model = self.env['ai.model']
+        self.Provider = self.env['ai.provider']
+        _ensure_test_provider_and_model(self.env)
 
     def test_ensure_default_model_sets_parameter(self):
         """Parametern ska sättas av _ensure_default_model."""
@@ -76,6 +104,7 @@ class TestProviderPrecheck(ConfigParamGuardedCase):
     def setUp(self):
         super().setUp()
         self.Coworker = self.env['ai.coworker']
+        _ensure_test_provider_and_model(self.env)
 
     def test_repair_gives_model_to_agents_without(self):
         """Agenter utan modell ska få default-modellen."""
