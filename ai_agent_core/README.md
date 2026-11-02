@@ -44,9 +44,7 @@ Standalone AI agent engine for Odoo. Buzz-inspired architecture.
 │  └──────────────────────────────────────────────────────────────┘    │
 │                                                                      │
 │  ┌──────────────────────────────────────────────────────────────┐    │
-│  │                 Taskless Layer (TASK-001..004)                │    │
-│  │  detect.py — scan environment before acting                   │    │
-│  │  route.py  — intelligent path: existing → local → remote      │    │
+│  │                 Taskless Layer (TASK-003..004)                │    │
 │  │  improve.py — structured feedback: guidance → iterate (max 3) │    │
 │  │  verify.py  — 3-layer validation: schema, reqs, tests         │    │
 │  │  eval.py    — per-agent statistics + trend analysis           │    │
@@ -66,8 +64,6 @@ ai_agent_core/
 │   ├── tools.py            # Tool + ToolRegistry + OdooModelTools + MCP (596 lines)
 │   ├── interrupt.py        # InterruptHandler ABC + Discuss/WebUI/Auto handlers (305 lines)
 │   ├── context.py          # Auto-summarize + token estimation (74 lines)
-│   ├── detect.py           # TASK-001: Environment scanning
-│   ├── route.py            # TASK-002: Intelligent path selection
 │   ├── improve.py          # TASK-003: Structured feedback loop
 │   ├── verify.py           # TASK-004: Three-layer output validation
 │   ├── budget.py           # BudgetState + BudgetExhaustedError (cap: ai.coworker.check_cap)
@@ -153,21 +149,10 @@ if coworker.budget_exhausted:
 loop = AgentLoop(provider=provider, tools=tools, config=config)
 ```
 
-### 4. With Taskless (detect → route → improve → verify)
+### 4. With Taskless (improve → verify)
 
 ```python
-from ai_agent_core.core.detect import EnvironmentDetector
-from ai_agent_core.core.route import IntelligentRouter
 from ai_agent_core.core.verify import OutputVerifier
-
-# Detect: scan environment
-detector = EnvironmentDetector()
-env = detector.scan()  # Quick scan (no Odoo needed)
-
-# Route: find best path
-router = IntelligentRouter()
-decision = router.route("List all customers", env_info=env)
-print(decision.destination)  # "local" — can use search_read directly
 
 # Verify: validate output
 verifier = OutputVerifier()
@@ -495,7 +480,7 @@ class AgentConfig:
 | **HITL** (HITL-001..010) | 70% | ✅ Handlers + Clarify + Approve |
 | **Identity** (ID-001..008) | 60% | ✅ SOUL + Compilation + Templates |
 | **Skills** (SHARE-001..008) | 50% | ✅ Model + Triggers + Recipes |
-| **Taskless** (TASK-001..008) | 50% | ✅ DETECT + ROUTE + IMPROVE + VERIFY |
+| **Taskless** (TASK-003..008) | 50% | ✅ IMPROVE + VERIFY |
 | **Budget + Evals** (PAPER-004,006) | 100% | ✅ Cap på coworkern + eval-pipeline |
 | **Supervisor** | 100% | ✅ Routing + Fan-out + Merge |
 | **Sessions** (SESS-001..004) | 100% | ✅ Model + Lifecycle + Persistence |

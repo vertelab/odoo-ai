@@ -422,10 +422,12 @@ class StructuralGateToolExecution(TransactionCase):
 #:
 #: Uppmätt mot 18.0 @ 54cd3618: 21 publika klasser i core/, 12 utan
 #: anropare utanför core/ och tests/. Posterna nedan är de som har ett
-#: skrivet skäl att stanna. Resten åtgärdas i wire-orphaned-core-mechanisms
-#: §7–§9 (EvalRunner, IntelligentRouter, ExternalAgentHandle, JevClient,
-#: LexicalSelector). `BudgetTracker`/`BudgetEnforcingProvider` fanns aldrig
-#: här — de togs bort ur core/budget.py i §2.
+#: skrivet skäl att stanna. `BudgetTracker`/`BudgetEnforcingProvider` fanns
+#: aldrig här — de togs bort ur core/budget.py i §2. `AgentEvaluator` och
+#: `EvalRunner` försvann i §5 (cronen i models/ai_coworker.py anropar dem).
+#: `IntelligentRouter`/`RuleBasedRouter`/`EnvironmentDetector` stod här som
+#: kvarvarande §8-arbete; de togs bort i §8 tillsammans med core/route.py
+#: och core/detect.py — de hade ingen produktionsanropare.
 #:
 #: `ChannelRegistry`/`ChannelAdapter`/`ItemProcessor` stod här när
 #: `channel-adapter-wiring` började. De togs bort i §6.3: `hooks.py`
@@ -456,6 +458,31 @@ CORE_WIRING_ALLOWLIST = [
         'DiscussInterruptHandler',
         'HITL-002: väljs av select_interrupt_handler på samma sätt som '
         'AutoInterruptHandler. Inkopplad via val, inte via import.',
+    ),
+    (
+        'ExternalAgentHandle',
+        'Returtyp från runtime.spawn() (core/runtime.py:328). Anroparen i '
+        'models/ai_agent.py:227 får handtaget och läser dess fält (pid, port, '
+        'duration(), rss_kb()) — men namnger aldrig typen, därför ingen '
+        'referens utanför core/. Ingen anropare behövs: klassen är ett '
+        'databärande handtag som bara skapas av spawn() och konsumeras '
+        'strukturellt. Att importera den i ai_agent.py vore en import för '
+        'importens skull.',
+    ),
+    (
+        'JevClient',
+        'Intern komposition i ToolSelector: instansieras i '
+        'ToolSelector.from_env() (core/tool_select.py:589) och hålls som '
+        'self.jev. Ingen anropare utanför core/ behövs — Jev är en valfri '
+        'beslutsmodell som bara ToolSelector talar med; faller tillbaka på '
+        'lexikal matchning när den saknas.',
+    ),
+    (
+        'LexicalSelector',
+        'Intern komposition i ToolSelector: instansieras i '
+        'ToolSelector.__init__ (core/tool_select.py:530) som self._lexical. '
+        'Ingen anropare utanför core/ behövs — den är den lexikala '
+        'fallbacken inuti selectorn, aldrig en egen ingång.',
     ),
 ]
 

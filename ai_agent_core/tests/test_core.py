@@ -780,69 +780,8 @@ class TestModelTools(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Taskless Tests: Detect, Route, Improve, Verify
+# Taskless Tests: Improve, Verify
 # ---------------------------------------------------------------------------
-
-class TestDetect(unittest.TestCase):
-    """Test EnvironmentDetector (TASK-001)."""
-
-    def test_scan_returns_result(self):
-        from ai_agent_core.core.detect import EnvironmentDetector
-        detector = EnvironmentDetector()
-        result = detector.scan()
-        self.assertIsNotNone(result)
-        self.assertIsInstance(result.codebase_todos, list)
-        self.assertIsInstance(result.recurring_patterns, list)
-
-    def test_scan_has_timestamp(self):
-        from ai_agent_core.core.detect import EnvironmentDetector
-        detector = EnvironmentDetector()
-        result = detector.scan()
-        self.assertTrue(result.timestamp)
-
-    def test_result_to_json(self):
-        from ai_agent_core.core.detect import EnvironmentDetector
-        detector = EnvironmentDetector()
-        result = detector.scan()
-        json_str = result.to_json()
-        self.assertIn("timestamp", json_str)
-        self.assertIn("codebase_todos", json_str)
-
-
-class TestRoute(unittest.TestCase):
-    """Test IntelligentRouter (TASK-002)."""
-
-    def test_route_returns_decision(self):
-        from ai_agent_core.core.route import IntelligentRouter
-        router = IntelligentRouter()
-        decision = router.route("Analyze sales data")
-        self.assertIn(decision.destination, ("existing", "local", "remote"))
-        self.assertTrue(decision.reasoning)
-
-    def test_route_remote_with_no_matches(self):
-        from ai_agent_core.core.route import IntelligentRouter
-        router = IntelligentRouter()
-        decision = router.route("Some complex ambiguous request")
-        self.assertEqual(decision.destination, "remote")
-
-    def test_route_local_data_query(self):
-        from ai_agent_core.core.route import IntelligentRouter
-        from ai_agent_core.core.detect import DetectResult, ModelInfo
-
-        router = IntelligentRouter()
-        env_info = DetectResult()
-        env_info.registered_models = [
-            ModelInfo(name="res.partner", display_name="Contact", record_count=100),
-        ]
-        decision = router.route("Show me all contacts", env_info=env_info)
-        self.assertEqual(decision.destination, "local")
-
-    def test_rule_based_router(self):
-        from ai_agent_core.core.route import RuleBasedRouter
-        router = RuleBasedRouter()
-        decision = router.route("List all customers")
-        self.assertIn(decision.destination, ("local", "remote"))
-
 
 class TestImprove(unittest.TestCase):
     """Test ImprovementLoop (TASK-003)."""
